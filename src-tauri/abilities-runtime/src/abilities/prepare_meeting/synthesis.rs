@@ -1571,7 +1571,7 @@ fn provenance_actor(actor: RegistryActor) -> crate::abilities::provenance::Actor
         },
         // TODO: W1-B+ wiring — SurfaceClient provenance attribution for
         // prepare_meeting lands once SurfaceClientBridge is plumbed.
-        RegistryActor::SurfaceClient(_) => {
+        RegistryActor::SurfaceClient { .. } => {
             todo!("W1-B+ wiring for Actor::SurfaceClient")
         }
     }

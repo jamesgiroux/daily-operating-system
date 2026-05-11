@@ -3,7 +3,7 @@
 //! Per ADR-0102 §181-258. Type definitions consumed by the `#[ability]`
 //! proc macro (W3-A part 3) for `inventory::submit!` registration.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::OnceLock;
@@ -71,11 +71,14 @@ impl std::fmt::Display for SurfaceClientId {
 /// enforce that every required scope is present in the instance's grant
 /// before registry lookup.
 ///
-/// The newtype is intentionally string-backed for stage-1a: the canonical
-/// scope vocabulary (e.g. `read.account_overview`, `write.feedback`) is
-/// agreed at the contract layer in W1-B and validated there. The substrate
-/// type holds the wire shape.
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+/// The newtype is intentionally string-backed: the canonical scope
+/// vocabulary (e.g. `read.account_overview`, `read.composition`,
+/// `submit.feedback`, `manage.pairing`) is extensible per ability without a
+/// substrate recompile, while [`ScopeSet`] enforces a runtime-registered
+/// allowlist at deserialization. ADR-0111 §8 names scopes as "the defined
+/// enum"; the substrate models that as an allowlist owned by the runtime
+/// (registered as abilities declare their scopes via `#[ability]` in W1-B).
+#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
 #[serde(transparent)]
 pub struct SurfaceScope(String);
 
@@ -97,18 +100,183 @@ impl std::fmt::Display for SurfaceScope {
     }
 }
 
+/// Construction / deserialization errors for [`ScopeSet`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ScopeSetError {
+    /// The set was empty. Per ADR-0111 §8 / DOS-546 W1-A edge case, a
+    /// SurfaceClient with no scopes is a misconfiguration, not a paired
+    /// surface, and must be rejected at construction.
+    Empty,
+    /// One or more scopes are outside the runtime-registered allowlist.
+    /// Carries the offending scope values for audit / error surfacing.
+    UnknownScopes(Vec<SurfaceScope>),
+}
+
+impl std::fmt::Display for ScopeSetError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ScopeSetError::Empty => formatter.write_str(
+                "ScopeSet construction rejected: SurfaceClient requires at least one scope",
+            ),
+            ScopeSetError::UnknownScopes(scopes) => {
+                write!(
+                    formatter,
+                    "ScopeSet construction rejected: unknown scope(s) outside the registered allowlist: {}",
+                    scopes
+                        .iter()
+                        .map(SurfaceScope::as_str)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for ScopeSetError {}
+
+/// Process-global allowlist of known scope values. Empty (uninitialized) =
+/// lenient bootstrap mode (any scope accepted); once populated, unknown
+/// scopes are rejected at [`ScopeSet`] construction and deserialization.
+///
+/// W1-B populates this from `#[ability]` macro `required_scopes` declarations
+/// at registry boot. Tests may seed it via [`ScopeSet::set_allowlist_for_tests`].
+static SCOPE_ALLOWLIST: OnceLock<BTreeSet<SurfaceScope>> = OnceLock::new();
+
+/// A typed, non-empty set of [`SurfaceScope`] values carried by every
+/// [`Actor::SurfaceClient`] invocation. Per ADR-0111 §8 and DOS-546 W1-A
+/// acceptance criteria.
+///
+/// Construction enforces two invariants:
+///
+/// 1. **Non-empty.** An empty grant is a misconfiguration; see
+///    [`ScopeSetError::Empty`].
+/// 2. **Allowlisted.** If the process-global allowlist has been initialized
+///    (via W1-B `#[ability]` macro registration or `set_allowlist_for_tests`),
+///    every scope must be present in it; otherwise the constructor accepts
+///    any scope (lenient bootstrap mode, intentional for v1.4.2 substrate
+///    staging — W1-B is what populates the allowlist).
+///
+/// Deserialization (via `serde`) routes through [`ScopeSet::new`] so both
+/// invariants apply on the wire boundary as well as the constructor.
+///
+/// The inner storage is a `BTreeSet` for deterministic ordering on
+/// serialization and audit-log emission.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, JsonSchema)]
+pub struct ScopeSet(BTreeSet<SurfaceScope>);
+
+impl ScopeSet {
+    /// Construct a [`ScopeSet`] from any iterator of [`SurfaceScope`].
+    ///
+    /// Returns [`ScopeSetError::Empty`] if the resulting set is empty
+    /// (including the case where the input iterator yielded only duplicates
+    /// that collapsed away — still empty after dedup is still empty, which
+    /// is impossible without an empty input).
+    ///
+    /// Returns [`ScopeSetError::UnknownScopes`] when the global allowlist is
+    /// initialized and any of the scopes are not in it.
+    pub fn new(scopes: impl IntoIterator<Item = SurfaceScope>) -> Result<Self, ScopeSetError> {
+        let set: BTreeSet<SurfaceScope> = scopes.into_iter().collect();
+        if set.is_empty() {
+            return Err(ScopeSetError::Empty);
+        }
+        if let Some(allowed) = SCOPE_ALLOWLIST.get() {
+            let unknown: Vec<SurfaceScope> = set
+                .iter()
+                .filter(|scope| !allowed.contains(*scope))
+                .cloned()
+                .collect();
+            if !unknown.is_empty() {
+                return Err(ScopeSetError::UnknownScopes(unknown));
+            }
+        }
+        Ok(Self(set))
+    }
+
+    /// True if `scope` is present in this set.
+    pub fn contains(&self, scope: &SurfaceScope) -> bool {
+        self.0.contains(scope)
+    }
+
+    /// Iterate the scopes in deterministic (sorted) order.
+    pub fn iter(&self) -> impl Iterator<Item = &SurfaceScope> {
+        self.0.iter()
+    }
+
+    /// Always returns `false` — a [`ScopeSet`] cannot be empty by
+    /// construction. Provided for ergonomic parity with collection APIs.
+    #[allow(clippy::unused_self)]
+    pub fn is_empty(&self) -> bool {
+        false
+    }
+
+    /// Number of scopes in the set. Always >= 1.
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Initialize the global scope allowlist. Idempotent: only the first
+    /// call wins (returns `Err` with the rejected set on subsequent calls).
+    ///
+    /// W1-B `#[ability]` macro registration calls this once at registry
+    /// boot, after collecting every ability's declared `required_scopes`.
+    pub fn initialize_allowlist(
+        scopes: impl IntoIterator<Item = SurfaceScope>,
+    ) -> Result<(), BTreeSet<SurfaceScope>> {
+        let set: BTreeSet<SurfaceScope> = scopes.into_iter().collect();
+        SCOPE_ALLOWLIST.set(set)
+    }
+
+    /// Test-only: install (or replace, for non-`OnceLock` test setups) the
+    /// allowlist. Production code path is [`Self::initialize_allowlist`].
+    ///
+    /// Because the underlying `OnceLock` cannot be reset, this is a
+    /// no-op on subsequent calls within a single process — tests should
+    /// pick a stable allowlist and seed it once before the suite runs, or
+    /// use distinct scope values per test.
+    #[doc(hidden)]
+    pub fn set_allowlist_for_tests(scopes: impl IntoIterator<Item = SurfaceScope>) {
+        // `OnceLock::set` returns `Err` once the cell is initialized; tests
+        // are expected to seed at most once per process and tolerate
+        // subsequent calls as a no-op.
+        if SCOPE_ALLOWLIST.set(scopes.into_iter().collect()).is_err() {
+            // Already initialized — intentional no-op for repeat test seeds.
+        }
+    }
+}
+
+impl Serialize for ScopeSet {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.0.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for ScopeSet {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let raw = BTreeSet::<SurfaceScope>::deserialize(deserializer)?;
+        ScopeSet::new(raw).map_err(serde::de::Error::custom)
+    }
+}
+
 /// Who is invoking. ADR-0102 §250-258, amended 2026-05-10 (Accepted) to add
 /// [`Actor::SurfaceClient`] as the fourth actor class per ADR-0111 §8.
 ///
 /// The first three variants are unit; `SurfaceClient` carries the paired
-/// instance identity. Per-instance scope grants ride alongside the actor
-/// through `SurfaceClientBridge` request context in W1-B; this stage-1a
-/// landing ships the identity-only shape so downstream wave plans can
-/// compile against the variant.
+/// instance identity AND its scope grant as a struct variant per ADR-0111
+/// §8 and DOS-546 W1-A acceptance criteria. Per-request enforcement uses
+/// `scopes` directly; the bridge does not re-derive scopes from a side
+/// channel.
 ///
-/// `Copy` was removed in this amendment because `SurfaceClient` carries an
-/// owned `SurfaceClientId(String)`. Callers that previously relied on
-/// implicit copy now `.clone()` explicitly or pass by reference.
+/// `Copy` was removed in the W1-A amendment because `SurfaceClient` carries
+/// an owned [`SurfaceClientId`] (`String`) and [`ScopeSet`] (`BTreeSet`).
+/// Callers that previously relied on implicit copy now `.clone()` explicitly
+/// or pass by reference.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 pub enum Actor {
     Agent,
@@ -116,9 +284,18 @@ pub enum Actor {
     Admin,
     System,
     /// Third-party local surface invoking on behalf of a paired user.
-    /// See ADR-0111 §8. Per-instance scope grants are attached at the
-    /// bridge in W1-B; the variant currently carries identity only.
-    SurfaceClient(SurfaceClientId),
+    /// See ADR-0111 §8. Both identity and scope grant ride on the variant;
+    /// the bridge (W1-B) reads `scopes` to enforce `required_scopes` from
+    /// `AbilityPolicy` before registry lookup.
+    SurfaceClient {
+        /// Stable, non-PII instance identity. Surfaces audit emission's
+        /// `actor_instance` field.
+        instance: SurfaceClientId,
+        /// The scope grant this instance carries for this request. Always
+        /// non-empty by [`ScopeSet`] construction. Surfaces audit emission's
+        /// `actor_scopes` field.
+        scopes: ScopeSet,
+    },
 }
 
 /// Per-ability policy (which actors may invoke, which modes, etc.).
@@ -1853,11 +2030,27 @@ mod tests {
         assert_eq!(set.len(), 2);
     }
 
+    /// Test helper: build a non-empty [`ScopeSet`] from string slices.
+    ///
+    /// Panics if construction fails — only the empty-set construction can
+    /// fail in lenient bootstrap mode, and the caller is expected to pass
+    /// at least one scope.
+    fn scope_set(scopes: &[&str]) -> ScopeSet {
+        ScopeSet::new(scopes.iter().map(|s| SurfaceScope::new(*s)))
+            .expect("test scope set must be non-empty")
+    }
+
     #[test]
     fn actor_surface_client_round_trip_preserves_identity() {
-        let actor = Actor::SurfaceClient(SurfaceClientId::new("wp-instance-alpha"));
+        let actor = Actor::SurfaceClient {
+            instance: SurfaceClientId::new("wp-instance-alpha"),
+            scopes: scope_set(&["read.account_overview"]),
+        };
         match &actor {
-            Actor::SurfaceClient(id) => assert_eq!(id.as_str(), "wp-instance-alpha"),
+            Actor::SurfaceClient { instance, scopes } => {
+                assert_eq!(instance.as_str(), "wp-instance-alpha");
+                assert!(scopes.contains(&SurfaceScope::new("read.account_overview")));
+            }
             _ => panic!("expected SurfaceClient variant"),
         }
         // Clone preserves variant + identity.
@@ -1867,7 +2060,10 @@ mod tests {
 
     #[test]
     fn actor_surface_client_serde_round_trip() {
-        let actor = Actor::SurfaceClient(SurfaceClientId::new("wp-instance-alpha"));
+        let actor = Actor::SurfaceClient {
+            instance: SurfaceClientId::new("wp-instance-alpha"),
+            scopes: scope_set(&["read.account_overview", "submit.feedback"]),
+        };
         let encoded = serde_json::to_string(&actor).expect("serializes");
         let decoded: Actor = serde_json::from_str(&encoded).expect("deserializes");
         assert_eq!(actor, decoded);
@@ -1875,8 +2071,14 @@ mod tests {
 
     #[test]
     fn actor_surface_client_distinct_instances_are_not_equal() {
-        let alpha = Actor::SurfaceClient(SurfaceClientId::new("alpha"));
-        let beta = Actor::SurfaceClient(SurfaceClientId::new("beta"));
+        let alpha = Actor::SurfaceClient {
+            instance: SurfaceClientId::new("alpha"),
+            scopes: scope_set(&["read.account_overview"]),
+        };
+        let beta = Actor::SurfaceClient {
+            instance: SurfaceClientId::new("beta"),
+            scopes: scope_set(&["read.account_overview"]),
+        };
         assert_ne!(alpha, beta);
         // ...and neither matches the unit variants.
         assert_ne!(alpha, Actor::User);
@@ -1894,7 +2096,52 @@ mod tests {
         // that the registry's `iter_for` filter and `validate_invocation_policy`
         // rely on.
         let allowed: &[Actor] = &[Actor::User, Actor::Agent];
-        let invoker = Actor::SurfaceClient(SurfaceClientId::new("wp-instance-alpha"));
+        let invoker = Actor::SurfaceClient {
+            instance: SurfaceClientId::new("wp-instance-alpha"),
+            scopes: scope_set(&["read.account_overview"]),
+        };
         assert!(!allowed.contains(&invoker));
+    }
+
+    // -------------------------------------------------------------------
+    // W1-A.1: ScopeSet construction + deserialization invariants
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn scope_set_rejects_empty_construction() {
+        let result = ScopeSet::new(std::iter::empty::<SurfaceScope>());
+        assert!(matches!(result, Err(ScopeSetError::Empty)));
+    }
+
+    #[test]
+    fn scope_set_accepts_non_empty_and_preserves_membership() {
+        let set = ScopeSet::new([SurfaceScope::new("read.account_overview")])
+            .expect("non-empty construction succeeds");
+        assert!(set.contains(&SurfaceScope::new("read.account_overview")));
+        assert!(!set.contains(&SurfaceScope::new("submit.feedback")));
+        assert_eq!(set.len(), 1);
+        assert!(!set.is_empty());
+    }
+
+    #[test]
+    fn scope_set_deserialization_rejects_empty_array() {
+        let err = serde_json::from_str::<ScopeSet>("[]").expect_err("empty must fail");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("at least one scope"),
+            "unexpected error surface: {msg}"
+        );
+    }
+
+    #[test]
+    fn scope_set_deserialization_round_trip_for_non_empty() {
+        let json = "[\"read.account_overview\",\"submit.feedback\"]";
+        let decoded: ScopeSet = serde_json::from_str(json).expect("decodes");
+        assert!(decoded.contains(&SurfaceScope::new("read.account_overview")));
+        assert!(decoded.contains(&SurfaceScope::new("submit.feedback")));
+        // Round-trip back to JSON: BTreeSet ordering is deterministic.
+        let encoded = serde_json::to_string(&decoded).expect("encodes");
+        let redecoded: ScopeSet = serde_json::from_str(&encoded).expect("re-decodes");
+        assert_eq!(decoded, redecoded);
     }
 }

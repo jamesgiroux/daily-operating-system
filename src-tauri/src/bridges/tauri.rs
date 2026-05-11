@@ -85,8 +85,9 @@ pub struct TauriAbilityBridge<'registry> {
     confirmation_store: Arc<TauriConfirmationStore>,
 }
 
-// Note: `Copy` removed because `Actor::SurfaceClient(SurfaceClientId)` carries
-// an owned String (W1-A landing). All call sites already clone or move.
+// Note: `Copy` removed because `Actor::SurfaceClient { instance, scopes }`
+// carries owned String / BTreeSet (W1-A landing). All call sites already
+// clone or move.
 #[derive(Clone)]
 pub struct TauriInvokeContext<'a> {
     pub actor: Actor,
@@ -631,7 +632,7 @@ mod tests {
             },
             // TODO: W1-B+ wiring — SurfaceClient provenance fixture lands
             // with the SurfaceClientBridge plumbing.
-            Actor::SurfaceClient(_) => todo!("W1-B+ wiring for Actor::SurfaceClient"),
+            Actor::SurfaceClient { .. } => todo!("W1-B+ wiring for Actor::SurfaceClient"),
         }
     }
 

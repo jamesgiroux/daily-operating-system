@@ -432,7 +432,7 @@ pub(crate) fn provenance_actor(actor: Actor) -> crate::abilities::provenance::Ac
         // W1-A0 / W1-B (audit-log helper + AbilityPolicy.required_scopes). The
         // stage-1a landing only ships the actor variant; no current invocation
         // path constructs Actor::SurfaceClient.
-        Actor::SurfaceClient(_) => todo!("W1-B+ wiring for Actor::SurfaceClient"),
+        Actor::SurfaceClient { .. } => todo!("W1-B+ wiring for Actor::SurfaceClient"),
     }
 }
 
@@ -470,7 +470,7 @@ fn render_actor_for_context(ctx: &AbilityContext<'_>) -> RenderActor {
         },
         // TODO: W1-B+ wiring — SurfaceClient render actor mapping (per ADR-0108
         // sensitivity rules) lands with the SurfaceClientBridge plumbing.
-        Actor::SurfaceClient(_) => todo!("W1-B+ wiring for Actor::SurfaceClient"),
+        Actor::SurfaceClient { .. } => todo!("W1-B+ wiring for Actor::SurfaceClient"),
     }
 }
 

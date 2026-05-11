@@ -731,7 +731,7 @@ CREATE TABLE accounts (
             },
             // TODO: W1-B+ wiring — SurfaceClient MCP-bridge test fixture lands
             // with the SurfaceClientBridge plumbing.
-            Actor::SurfaceClient(_) => todo!("W1-B+ wiring for Actor::SurfaceClient"),
+            Actor::SurfaceClient { .. } => todo!("W1-B+ wiring for Actor::SurfaceClient"),
         }
     }
 
