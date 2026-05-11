@@ -1,4 +1,4 @@
-//! `emit_ability_inventory` — DOS-546 W1-C.
+//! `emit_ability_inventory` — W1-C.
 //!
 //! Enumerates every `inventory::submit!`-registered [`AbilityDescriptor`],
 //! projects each into an [`AbilitySurfaceInventoryEntry`], and emits the
@@ -45,7 +45,7 @@ fn main() -> ExitCode {
             },
             "--help" | "-h" => {
                 println!(
-                    "emit_ability_inventory — DOS-546 W1-C\n\nUsage: \
+                    "emit_ability_inventory — W1-C\n\nUsage: \
                      emit_ability_inventory [--out PATH]\n\nWrites the canonical \
                      ability-surface inventory JSON to PATH (or stdout)."
                 );

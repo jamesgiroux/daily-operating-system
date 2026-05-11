@@ -23,7 +23,7 @@
 #
 # How to run: ./scripts/check_composition_authorship.sh
 #
-# DOS-546 W1-E.1.
+# DailyOS substrate-owned authorship gate (ADR-0130 §1).
 
 set -euo pipefail
 

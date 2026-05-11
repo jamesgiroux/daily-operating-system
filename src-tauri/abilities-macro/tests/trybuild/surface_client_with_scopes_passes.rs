@@ -1,5 +1,5 @@
 #![allow(dead_code, unused_imports)]
-//! W1-B compile-error gate positive test (ADR-0102 §7.6, DOS-546 W1-B
+//! W1-B compile-error gate positive test (ADR-0102 §7.6W1-B
 //! AC §449 + §1254):
 //!
 //! An ability whose `allowed_actors` includes `SurfaceClient` AND declares

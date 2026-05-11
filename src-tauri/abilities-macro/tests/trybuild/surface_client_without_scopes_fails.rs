@@ -1,5 +1,5 @@
 #![allow(dead_code, unused_imports)]
-//! W1-B compile-error gate negative test (ADR-0102 §7.6, DOS-546 AC line 455):
+//! W1-B compile-error gate negative test (ADR-0102 §7.6):
 //!
 //! An ability whose `allowed_actors` includes `SurfaceClient` must declare
 //! a non-empty `required_scopes = [...]` set or explicitly opt out via

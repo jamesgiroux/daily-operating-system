@@ -1,4 +1,4 @@
-//! Ability surface inventory format (DOS-546 W1-C).
+//! Ability surface inventory format (W1-C).
 //!
 //! Implements the canonical inventory shape from Phase 0 artifact 05
 //! (`.docs/plans/dos-546/phase-0/05-ability-surface-inventory.md`). The

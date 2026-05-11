@@ -14,7 +14,7 @@
 #
 # How to run: ./scripts/check_ability_inventory.sh
 #
-# DOS-546 W1-C.
+# DailyOS ability-surface inventory drift check.
 
 set -euo pipefail
 

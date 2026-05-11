@@ -4,7 +4,7 @@
 //! Each record links to the previous via `prev_hash`, making deletions or
 //! insertions detectable. Records are rotated at 90 days on startup.
 //!
-//! ## Actor attribution (DOS-546 W1-A0)
+//! ## Actor attribution (W1-A0)
 //!
 //! Per ADR-0102 §7.6 and ADR-0111 §8, every audit record optionally carries
 //! actor attribution (`actor_kind`, `actor_instance`, `wp_user_id`,
@@ -34,7 +34,7 @@ const RETENTION_DAYS: i64 = 90;
 
 /// A single audit log record.
 ///
-/// The four `actor_*` fields and `wp_user_id` were added in DOS-546 W1-A0
+/// The four `actor_*` fields and `wp_user_id` were added in W1-A0
 /// (ADR-0102 §7.6 + ADR-0111 §8). They are additive and optional on the wire:
 /// existing v1.4.1 records (and new non-SurfaceClient emissions) serialize
 /// without these keys via `skip_serializing_if`. The
@@ -56,7 +56,7 @@ pub struct AuditRecord {
     /// SHA-256 hex of the previous record's line (null for first record).
     pub prev_hash: Option<String>,
 
-    // --- DOS-546 W1-A0 actor attribution (ADR-0102 §7.6, ADR-0111 §8) ---
+    // --- W1-A0 actor attribution (ADR-0102 §7.6, ADR-0111 §8) ---
     /// Kind tag for the invoking [`Actor`]: `"agent"`, `"user"`, `"admin"`,
     /// `"system"`, or `"surface_client"`. `None` for legacy (pre-W1-A0) or
     /// untagged emissions.
@@ -179,7 +179,7 @@ fn serialize_scopes(scopes: &ScopeSet) -> Vec<String> {
 }
 
 /// Canonical emission helper for actor-attributed audit events
-/// (DOS-546 W1-A0; ADR-0102 §7.6; ADR-0111 §8).
+/// (W1-A0; ADR-0102 §7.6; ADR-0111 §8).
 ///
 /// Every audit emission that runs on behalf of an [`Actor::SurfaceClient`]
 /// MUST route through this helper (or [`AuditLogger::append_with_actor`],
@@ -248,7 +248,7 @@ impl AuditLogger {
             })
     }
 
-    /// Append a record with [`Actor`] attribution per DOS-546 W1-A0.
+    /// Append a record with [`Actor`] attribution per W1-A0.
     ///
     /// This is the canonical write primitive behind [`emit_surface_audit`].
     /// It pattern-matches the actor variant, derives `actor_kind`, and for
@@ -733,7 +733,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // DOS-546 W1-A0 — emit_surface_audit + actor attribution tests
+    // W1-A0 — emit_surface_audit + actor attribution tests
     // -----------------------------------------------------------------
 
     use abilities_runtime::abilities::registry::{ScopeSet, SurfaceClientId, SurfaceScope};

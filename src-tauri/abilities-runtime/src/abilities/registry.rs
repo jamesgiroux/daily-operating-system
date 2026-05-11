@@ -104,7 +104,7 @@ impl std::fmt::Display for SurfaceScope {
 /// Construction / deserialization errors for [`ScopeSet`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ScopeSetError {
-    /// The set was empty. Per ADR-0111 §8 / DOS-546 W1-A edge case, a
+    /// The set was empty. Per ADR-0111 §8 edge case, a
     /// SurfaceClient with no scopes is a misconfiguration, not a paired
     /// surface, and must be rejected at construction.
     Empty,
@@ -167,7 +167,7 @@ static SCOPE_ALLOWLIST: RwLock<Option<BTreeSet<SurfaceScope>>> = RwLock::new(Non
 static SCOPE_ALLOWLIST_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 /// A typed, non-empty set of [`SurfaceScope`] values carried by every
-/// [`Actor::SurfaceClient`] invocation. Per ADR-0111 §8 and DOS-546 W1-A
+/// [`Actor::SurfaceClient`] invocation. Per ADR-0111 §8 W1-A
 /// acceptance criteria.
 ///
 /// Construction enforces two invariants:
@@ -327,7 +327,7 @@ impl<'de> Deserialize<'de> for ScopeSet {
 ///
 /// The first three variants are unit; `SurfaceClient` carries the paired
 /// instance identity AND its scope grant as a struct variant per ADR-0111
-/// §8 and DOS-546 W1-A acceptance criteria. Per-request enforcement uses
+/// §8 and W1-A acceptance criteria. Per-request enforcement uses
 /// `scopes` directly; the bridge does not re-derive scopes from a side
 /// channel.
 ///
@@ -360,7 +360,7 @@ pub enum Actor {
 /// any per-invocation instance data. Used in [`AbilityPolicy::allowed_actors`]
 /// to declare which actor classes may invoke an ability.
 ///
-/// Per ADR-0102 §7.6 (W0-D amended 2026-05-10) and DOS-546 W1-B, the policy
+/// Per ADR-0102 §7.6 (W0-D amended 2026-05-10) W1-B, the policy
 /// slice describes which actor *kinds* an ability admits — not specific
 /// actor instances. [`Actor::SurfaceClient`] is a struct variant carrying
 /// owned [`SurfaceClientId`] and [`ScopeSet`] data, so it cannot itself be
@@ -431,7 +431,7 @@ pub enum McpExposure {
 
 /// Per-ability policy (which actors may invoke, which modes, etc.).
 ///
-/// Per ADR-0102 §7.1 (W0-D amended 2026-05-10) and DOS-546 W1-B, the
+/// Per ADR-0102 §7.1 (W0-D amended 2026-05-10) W1-B, the
 /// schema carries three additional fields beyond the v1.4.1 baseline:
 ///
 /// - `required_scopes`: scope vocabulary a [`Actor::SurfaceClient`] must
@@ -448,7 +448,7 @@ pub enum McpExposure {
 ///
 /// Closed defaults (via [`AbilityPolicy::default`]):
 /// - `allowed_actors: &[ActorKind::User]` — least-privilege actor floor
-///   (DOS-546 W1-B AC §449, ADR-0102 §7.6 W0-D amended 2026-05-10).
+///   (W1-B AC §449, ADR-0102 §7.6 W0-D amended 2026-05-10).
 /// - `required_scopes: &[]`
 /// - `mcp_exposure: McpExposure::None`
 /// - `client_side_executable: false`
@@ -460,7 +460,7 @@ pub enum McpExposure {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AbilityPolicy {
     /// Actor kinds (see [`ActorKind`]) admitted by this ability. Per
-    /// ADR-0102 §7.6 (W0-D amended 2026-05-10) and DOS-546 W1-B, the slice
+    /// ADR-0102 §7.6 (W0-D amended 2026-05-10) W1-B, the slice
     /// stores `ActorKind` (not [`Actor`]) so that [`Actor::SurfaceClient`]
     /// — a struct variant carrying owned per-invocation state — can be
     /// listed alongside the unit variants without breaking `inventory::submit!`'s
@@ -481,7 +481,7 @@ pub struct AbilityPolicy {
 }
 
 impl Default for AbilityPolicy {
-    /// Per ADR-0102 §7.6 (W0-D amended 2026-05-10) and DOS-546 W1-B
+    /// Per ADR-0102 §7.6 (W0-D amended 2026-05-10) W1-B
     /// AC §449: the closed default is `[User]` — the least-privilege
     /// actor floor — not `[]` (closed-to-everyone). The other W1-B
     /// fields default to closed forms (`required_scopes: &[]`,
@@ -733,7 +733,7 @@ impl AbilityRegistry {
             // allowlist that hasn't been initialized yet) accepts any
             // scope at ScopeSet construction; once seeded here, unknown
             // scopes are rejected at the wire boundary. See ADR-0111 §8
-            // / DOS-546 W1-A.1.
+            //
             let union: BTreeSet<SurfaceScope> = by_name
                 .values()
                 .flat_map(|descriptor| descriptor.policy.required_scopes.iter())
@@ -766,7 +766,7 @@ impl AbilityRegistry {
 
     /// Iterate every descriptor in the registry, no actor filter.
     ///
-    /// Used by DOS-546 W1-C's `emit_ability_inventory` binary to project
+    /// Used by the W1-C `emit_ability_inventory` binary to project
     /// the full ability set into the surface-facing inventory artifact.
     /// Tooling-facing only — runtime callers should prefer
     /// [`AbilityRegistry::iter_for`] so the actor gate stays in force.
@@ -2213,7 +2213,7 @@ mod tests {
 
     // -------------------------------------------------------------------
     // W1-A: SurfaceClient actor class — identity / scope newtype tests
-    // ADR-0111 §8 and DOS-546 W1-A acceptance criteria.
+    // ADR-0111 §8 and W1-A acceptance criteria.
     // -------------------------------------------------------------------
 
     #[test]
@@ -2412,13 +2412,13 @@ mod tests {
     // -------------------------------------------------------------------
     // W1-B: AbilityPolicy schema (required_scopes + mcp_exposure +
     // client_side_executable) and McpExposure serde.
-    // ADR-0102 §7.1 + §7.6 (W0-D amended), DOS-546 W1-B AC lines 446-454.
+    // ADR-0102 §7.1 + §7.6 (W0-D amended)AC lines 446-454.
     // -------------------------------------------------------------------
 
     #[test]
     fn ability_policy_default_has_closed_w1b_defaults() {
         let policy = AbilityPolicy::default();
-        // Per DOS-546 W1-B AC §449 and ADR-0102 §7.6 (W0-D amended
+        // Per W1-B AC §449 and ADR-0102 §7.6 (W0-D amended
         // 2026-05-10), the actor floor is `[User]` — least-privilege,
         // not closed-to-everyone.
         assert_eq!(policy.allowed_actors, &[ActorKind::User]);

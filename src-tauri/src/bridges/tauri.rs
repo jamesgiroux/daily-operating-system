@@ -130,7 +130,7 @@ impl<'a> TauriInvokeContext<'a> {
 }
 
 #[cfg(feature = "test-harness")]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct TauriTestInvokeContext {
     pub actor: Actor,
     pub surface: BridgeSurface,

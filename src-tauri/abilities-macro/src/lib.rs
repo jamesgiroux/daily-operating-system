@@ -93,7 +93,7 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
         ));
     }
 
-    // W1-B compile-error gate (ADR-0102 §7.6, DOS-546 AC line 449):
+    // W1-B compile-error gate (ADR-0102 §7.6):
     // an ability whose `allowed_actors` includes `SurfaceClient` must
     // either declare a non-empty `required_scopes` set, or explicitly
     // opt out with `no_scope_required`. The gate fires regardless of
@@ -109,7 +109,7 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
             &item_fn.sig.ident,
             "abilities whose allowed_actors includes SurfaceClient must declare \
              a non-empty required_scopes = [...] or explicitly opt out with \
-             no_scope_required (ADR-0102 §7.6, DOS-546 W1-B)",
+             no_scope_required (ADR-0102 §7.6W1-B)",
         ));
     }
 
@@ -887,7 +887,7 @@ enum ActorArg {
     User,
     Admin,
     System,
-    /// ADR-0111 §8 / DOS-546 W1-A: third-party local surface invoking on
+    /// ADR-0111 §8: third-party local surface invoking on
     /// behalf of a paired user. Carries instance identity + scope grant
     /// at runtime; the macro records membership in `allowed_actors` here
     /// to drive the W1-B compile-error gate.
@@ -897,7 +897,7 @@ enum ActorArg {
 impl ActorArg {
     /// Emit the registry token for this actor's `ActorKind` discriminator.
     ///
-    /// Per ADR-0102 §7.6 (W0-D amended 2026-05-10) and DOS-546 W1-B,
+    /// Per ADR-0102 §7.6 (W0-D amended 2026-05-10) W1-B,
     /// `AbilityPolicy::allowed_actors` is a `&'static [ActorKind]` slice
     /// rather than `&'static [Actor]`. This separation lets `SurfaceClient`
     /// — a struct variant carrying per-invocation owned state — be listed
