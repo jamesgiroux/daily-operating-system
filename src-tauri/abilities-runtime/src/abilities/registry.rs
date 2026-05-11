@@ -3,10 +3,11 @@
 //! Per ADR-0102 §181-258. Type definitions consumed by the `#[ability]`
 //! proc macro (W3-A part 3) for `inventory::submit!` registration.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{OnceLock, RwLock};
 
 use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
@@ -28,22 +29,489 @@ pub enum AbilityCategory {
     Maintenance,
 }
 
-/// Who is invoking. ADR-0102 §250-258.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+/// Stable, non-PII identifier for a paired [`Actor::SurfaceClient`] instance.
+///
+/// Per ADR-0111 §8, every SurfaceClient invocation must be auditable by
+/// instance identity. The identity is opaque to the substrate: WordPress
+/// site GUIDs, Obsidian vault IDs, browser-extension installation IDs, etc.
+/// all flow through this newtype.
+///
+/// W1-A0 audit emission consumes this for `actor_instance`. W1-B
+/// `SurfaceClientBridge` consumes it for per-instance scope grants.
+///
+/// `Display` / `Debug` produce the raw inner string. Callers are expected
+/// not to embed PII in the identifier itself; the type does no scrubbing.
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(transparent)]
+pub struct SurfaceClientId(String);
+
+impl SurfaceClientId {
+    /// Construct a new identifier from an owned string.
+    pub fn new(id: impl Into<String>) -> Self {
+        Self(id.into())
+    }
+
+    /// Borrow the inner string slice.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for SurfaceClientId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+/// A named scope grant a [`Actor::SurfaceClient`] instance carries into
+/// each invocation.
+///
+/// Per ADR-0111 §8, scopes gate which abilities a specific SurfaceClient
+/// instance may invoke. W1-B will extend `AbilityPolicy` with
+/// `required_scopes: Vec<SurfaceScope>`; the `SurfaceClientBridge` will
+/// enforce that every required scope is present in the instance's grant
+/// before registry lookup.
+///
+/// The newtype is intentionally string-backed: the canonical scope
+/// vocabulary (e.g. `read.account_overview`, `read.composition`,
+/// `submit.feedback`, `manage.pairing`) is extensible per ability without a
+/// substrate recompile, while [`ScopeSet`] enforces a runtime-registered
+/// allowlist at deserialization. ADR-0111 §8 names scopes as "the defined
+/// enum"; the substrate models that as an allowlist owned by the runtime
+/// (registered as abilities declare their scopes via `#[ability]` in W1-B).
+#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
+#[serde(transparent)]
+pub struct SurfaceScope(String);
+
+impl SurfaceScope {
+    /// Construct a new scope value from an owned string.
+    pub fn new(scope: impl Into<String>) -> Self {
+        Self(scope.into())
+    }
+
+    /// Borrow the inner string slice.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for SurfaceScope {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+/// Construction / deserialization errors for [`ScopeSet`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ScopeSetError {
+    /// The set was empty. Per ADR-0111 §8 edge case, a
+    /// SurfaceClient with no scopes is a misconfiguration, not a paired
+    /// surface, and must be rejected at construction.
+    Empty,
+    /// One or more scopes are outside the runtime-registered allowlist.
+    /// Carries the offending scope values for audit / error surfacing.
+    UnknownScopes(Vec<SurfaceScope>),
+}
+
+impl std::fmt::Display for ScopeSetError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ScopeSetError::Empty => formatter.write_str(
+                "ScopeSet construction rejected: SurfaceClient requires at least one scope",
+            ),
+            ScopeSetError::UnknownScopes(scopes) => {
+                write!(
+                    formatter,
+                    "ScopeSet construction rejected: unknown scope(s) outside the registered allowlist: {}",
+                    scopes
+                        .iter()
+                        .map(SurfaceScope::as_str)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for ScopeSetError {}
+
+/// Process-global allowlist of known scope values.
+///
+/// State semantics:
+/// - `None` (uninitialized) = lenient bootstrap mode (any scope accepted).
+/// - `Some(set)` (initialized) = strict; only scopes in `set` are accepted at
+///   [`ScopeSet`] construction and deserialization. An explicitly seeded
+///   empty set rejects every scope, which is rare in practice but legal.
+///
+/// Initialization semantics:
+/// - **Production:** one-time, process-lifetime. The first call to
+///   [`ScopeSet::initialize_allowlist`] wins and flips
+///   [`SCOPE_ALLOWLIST_INITIALIZED`]; subsequent calls return `Err` with the
+///   would-be set so the caller can no-op (the W1-B `from_descriptors_checked`
+///   path relies on this for idempotent re-registry within one process).
+/// - **Tests:** [`ScopeSet::set_allowlist_for_tests`] overwrites the lock
+///   unconditionally so each test can install a deterministic per-test
+///   allowlist regardless of registry initialization order.
+///
+/// The container is [`RwLock`] (not [`OnceLock`]) so tests can replace the
+/// allowlist; the `INITIALIZED` atomic preserves the "one-time in production"
+/// guarantee outside the test surface.
+static SCOPE_ALLOWLIST: RwLock<Option<BTreeSet<SurfaceScope>>> = RwLock::new(None);
+
+/// Tracks whether production initialization has occurred. Read by
+/// [`ScopeSet::initialize_allowlist`] to reject double-initialization without
+/// silently overwriting a previously seeded set. Tests bypass this via
+/// [`ScopeSet::set_allowlist_for_tests`], which both writes the lock and
+/// leaves the flag unchanged.
+static SCOPE_ALLOWLIST_INITIALIZED: AtomicBool = AtomicBool::new(false);
+
+/// A typed, non-empty set of [`SurfaceScope`] values carried by every
+/// [`Actor::SurfaceClient`] invocation. Per ADR-0111 §8 W1-A
+/// acceptance criteria.
+///
+/// Construction enforces two invariants:
+///
+/// 1. **Non-empty.** An empty grant is a misconfiguration; see
+///    [`ScopeSetError::Empty`].
+/// 2. **Allowlisted.** If the process-global allowlist has been initialized
+///    (via W1-B `#[ability]` macro registration or `set_allowlist_for_tests`),
+///    every scope must be present in it; otherwise the constructor accepts
+///    any scope (lenient bootstrap mode, intentional for v1.4.2 substrate
+///    staging — W1-B is what populates the allowlist).
+///
+/// Deserialization (via `serde`) routes through [`ScopeSet::new`] so both
+/// invariants apply on the wire boundary as well as the constructor.
+///
+/// The inner storage is a `BTreeSet` for deterministic ordering on
+/// serialization and audit-log emission.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, JsonSchema)]
+pub struct ScopeSet(BTreeSet<SurfaceScope>);
+
+impl ScopeSet {
+    /// Construct a [`ScopeSet`] from any iterator of [`SurfaceScope`].
+    ///
+    /// Returns [`ScopeSetError::Empty`] if the resulting set is empty
+    /// (including the case where the input iterator yielded only duplicates
+    /// that collapsed away — still empty after dedup is still empty, which
+    /// is impossible without an empty input).
+    ///
+    /// Returns [`ScopeSetError::UnknownScopes`] when the global allowlist is
+    /// initialized and any of the scopes are not in it.
+    pub fn new(scopes: impl IntoIterator<Item = SurfaceScope>) -> Result<Self, ScopeSetError> {
+        let set: BTreeSet<SurfaceScope> = scopes.into_iter().collect();
+        if set.is_empty() {
+            return Err(ScopeSetError::Empty);
+        }
+        let guard = SCOPE_ALLOWLIST
+            .read()
+            .expect("SCOPE_ALLOWLIST RwLock poisoned");
+        if let Some(allowed) = guard.as_ref() {
+            let unknown: Vec<SurfaceScope> = set
+                .iter()
+                .filter(|scope| !allowed.contains(*scope))
+                .cloned()
+                .collect();
+            if !unknown.is_empty() {
+                return Err(ScopeSetError::UnknownScopes(unknown));
+            }
+        }
+        drop(guard);
+        Ok(Self(set))
+    }
+
+    /// True if `scope` is present in this set.
+    pub fn contains(&self, scope: &SurfaceScope) -> bool {
+        self.0.contains(scope)
+    }
+
+    /// Iterate the scopes in deterministic (sorted) order.
+    pub fn iter(&self) -> impl Iterator<Item = &SurfaceScope> {
+        self.0.iter()
+    }
+
+    /// Always returns `false` — a [`ScopeSet`] cannot be empty by
+    /// construction. Provided for ergonomic parity with collection APIs.
+    #[allow(clippy::unused_self)]
+    pub fn is_empty(&self) -> bool {
+        false
+    }
+
+    /// Number of scopes in the set. Always >= 1.
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Initialize the global scope allowlist. One-time in production:
+    /// the first call wins and flips [`SCOPE_ALLOWLIST_INITIALIZED`];
+    /// subsequent calls return `Err(set)` carrying the rejected set so the
+    /// caller (typically W1-B's `from_descriptors_checked`) can no-op when
+    /// the substrate is rebuilt within the same process.
+    ///
+    /// W1-B `#[ability]` macro registration calls this once at registry
+    /// boot, after collecting every ability's declared `required_scopes`.
+    /// Tests must use [`Self::set_allowlist_for_tests`] instead — this
+    /// constructor refuses to overwrite a previously seeded allowlist.
+    pub fn initialize_allowlist(
+        scopes: impl IntoIterator<Item = SurfaceScope>,
+    ) -> Result<(), BTreeSet<SurfaceScope>> {
+        let set: BTreeSet<SurfaceScope> = scopes.into_iter().collect();
+        // Use compare_exchange so concurrent first-callers see exactly one
+        // winner. `Acquire`/`Release` pair the flag flip with the lock write.
+        match SCOPE_ALLOWLIST_INITIALIZED.compare_exchange(
+            false,
+            true,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        ) {
+            Ok(_) => {
+                let mut guard = SCOPE_ALLOWLIST
+                    .write()
+                    .expect("SCOPE_ALLOWLIST RwLock poisoned");
+                *guard = Some(set);
+                Ok(())
+            }
+            Err(_) => Err(set),
+        }
+    }
+
+    /// Test-only: unconditionally overwrite the allowlist with `scopes`.
+    /// Tests use this to install a deterministic per-test allowlist that is
+    /// guaranteed to include every scope the test constructs, independent of
+    /// whatever production initialization has happened earlier in the process
+    /// (e.g. an unrelated registry build that seeded an empty union).
+    ///
+    /// Does **not** affect [`SCOPE_ALLOWLIST_INITIALIZED`]; production code
+    /// paths still observe the one-time initialization invariant.
+    #[doc(hidden)]
+    pub fn set_allowlist_for_tests(scopes: impl IntoIterator<Item = SurfaceScope>) {
+        let mut guard = SCOPE_ALLOWLIST
+            .write()
+            .expect("SCOPE_ALLOWLIST RwLock poisoned");
+        *guard = Some(scopes.into_iter().collect());
+    }
+
+    /// Test-only: clear the allowlist, returning to lenient bootstrap mode
+    /// where any scope is accepted. Companion to [`Self::set_allowlist_for_tests`]
+    /// for tests that need to exercise the unseeded path explicitly.
+    #[doc(hidden)]
+    pub fn clear_allowlist_for_tests() {
+        let mut guard = SCOPE_ALLOWLIST
+            .write()
+            .expect("SCOPE_ALLOWLIST RwLock poisoned");
+        *guard = None;
+    }
+}
+
+impl Serialize for ScopeSet {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.0.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for ScopeSet {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let raw = BTreeSet::<SurfaceScope>::deserialize(deserializer)?;
+        ScopeSet::new(raw).map_err(serde::de::Error::custom)
+    }
+}
+
+/// Who is invoking. ADR-0102 §250-258, amended 2026-05-10 (Accepted) to add
+/// [`Actor::SurfaceClient`] as the fourth actor class per ADR-0111 §8.
+///
+/// The first three variants are unit; `SurfaceClient` carries the paired
+/// instance identity AND its scope grant as a struct variant per ADR-0111
+/// §8 and W1-A acceptance criteria. Per-request enforcement uses
+/// `scopes` directly; the bridge does not re-derive scopes from a side
+/// channel.
+///
+/// `Copy` was removed in the W1-A amendment because `SurfaceClient` carries
+/// an owned [`SurfaceClientId`] (`String`) and [`ScopeSet`] (`BTreeSet`).
+/// Callers that previously relied on implicit copy now `.clone()` explicitly
+/// or pass by reference.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 pub enum Actor {
     Agent,
     User,
     Admin,
     System,
+    /// Third-party local surface invoking on behalf of a paired user.
+    /// See ADR-0111 §8. Both identity and scope grant ride on the variant;
+    /// the bridge (W1-B) reads `scopes` to enforce `required_scopes` from
+    /// `AbilityPolicy` before registry lookup.
+    SurfaceClient {
+        /// Stable, non-PII instance identity. Surfaces audit emission's
+        /// `actor_instance` field.
+        instance: SurfaceClientId,
+        /// The scope grant this instance carries for this request. Always
+        /// non-empty by [`ScopeSet`] construction. Surfaces audit emission's
+        /// `actor_scopes` field.
+        scopes: ScopeSet,
+    },
+}
+
+/// Discriminator over [`Actor`] variants — the "kind" of actor, without
+/// any per-invocation instance data. Used in [`AbilityPolicy::allowed_actors`]
+/// to declare which actor classes may invoke an ability.
+///
+/// Per ADR-0102 §7.6 (W0-D amended 2026-05-10) W1-B, the policy
+/// slice describes which actor *kinds* an ability admits — not specific
+/// actor instances. [`Actor::SurfaceClient`] is a struct variant carrying
+/// owned [`SurfaceClientId`] and [`ScopeSet`] data, so it cannot itself be
+/// const-constructed in a `&'static [Actor]` slice. `ActorKind` is the
+/// const-friendly discriminator that closes that gap and keeps descriptor
+/// storage `inventory::submit!`-compatible.
+///
+/// Runtime invocation gates compare the incoming [`Actor`]'s `.kind()`
+/// against the policy slice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+pub enum ActorKind {
+    /// Mirrors [`Actor::Agent`].
+    Agent,
+    /// Mirrors [`Actor::User`].
+    User,
+    /// Mirrors [`Actor::Admin`].
+    Admin,
+    /// Mirrors [`Actor::System`].
+    System,
+    /// Mirrors [`Actor::SurfaceClient`]. Per-invocation instance and scope
+    /// data live on the runtime variant; only the kind appears in the policy.
+    SurfaceClient,
+}
+
+impl Actor {
+    /// Project this [`Actor`] to its [`ActorKind`] discriminator.
+    ///
+    /// Used by registry / bridge invocation gates that check
+    /// `descriptor.policy.allowed_actors.contains(&actor.kind())`.
+    pub const fn kind(&self) -> ActorKind {
+        match self {
+            Actor::Agent => ActorKind::Agent,
+            Actor::User => ActorKind::User,
+            Actor::Admin => ActorKind::Admin,
+            Actor::System => ActorKind::System,
+            Actor::SurfaceClient { .. } => ActorKind::SurfaceClient,
+        }
+    }
+}
+
+/// MCP tool-surface exposure tier per ADR-0102 §7.1 (W0-D amended 2026-05-10).
+///
+/// Governs how an ability appears in MCP introspection (`list_tools` /
+/// `list_abilities`). Independent of [`AbilityPolicy::client_side_executable`]
+/// — the two fields govern different trust boundaries per Phase 0 artifact 05
+/// lines 389-412. An ability may be `Invocable` over MCP while not
+/// client-side executable, or vice versa.
+///
+/// Variants:
+/// - `None`: not enumerated by any MCP bridge.
+/// - `MetadataOnly`: name + description enumerated; invoke schema withheld.
+/// - `Invocable`: full schema enumerated; agent may invoke.
+///
+/// Default per `AbilityPolicy::default()` is `None` — the closed default.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum McpExposure {
+    /// Hidden from every MCP enumeration surface.
+    #[default]
+    None,
+    /// Enumerated with name + description only; invoke schema not exposed.
+    MetadataOnly,
+    /// Enumerated with full schema; agents may invoke.
+    Invocable,
 }
 
 /// Per-ability policy (which actors may invoke, which modes, etc.).
+///
+/// Per ADR-0102 §7.1 (W0-D amended 2026-05-10) W1-B, the
+/// schema carries three additional fields beyond the v1.4.1 baseline:
+///
+/// - `required_scopes`: scope vocabulary a [`Actor::SurfaceClient`] must
+///   present at the bridge boundary (W2-B) before registry lookup. Stored
+///   as `&'static [&'static str]` so descriptors remain `static`-friendly
+///   for `inventory::submit!`. Callers that need typed [`SurfaceScope`]
+///   values should call [`AbilityPolicy::required_scopes_typed`]. This
+///   reconciles AC line 446's informal `Vec<SurfaceClientScope>` with the
+///   substrate's static-descriptor invariant — see W1-B commit for rationale.
+/// - `mcp_exposure`: tri-state MCP enumeration tier (see [`McpExposure`]).
+/// - `client_side_executable`: whether a SurfaceClient may invoke after
+///   policy/scope/actor checks. Independent of `mcp_exposure` per Phase 0
+///   artifact 05 lines 389-412.
+///
+/// Closed defaults (via [`AbilityPolicy::default`]):
+/// - `allowed_actors: &[ActorKind::User]` — least-privilege actor floor
+///   (W1-B AC §449, ADR-0102 §7.6 W0-D amended 2026-05-10).
+/// - `required_scopes: &[]`
+/// - `mcp_exposure: McpExposure::None`
+/// - `client_side_executable: false`
+///
+/// Defaults preserve v1.4.0/v1.4.1 behavior: an ability with no
+/// `SurfaceClient` in `allowed_actors` may keep empty `required_scopes`,
+/// and the macro compile-error gate (W1-B) only fires when
+/// `allowed_actors` includes `SurfaceClient`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AbilityPolicy {
-    pub allowed_actors: &'static [Actor],
+    /// Actor kinds (see [`ActorKind`]) admitted by this ability. Per
+    /// ADR-0102 §7.6 (W0-D amended 2026-05-10) W1-B, the slice
+    /// stores `ActorKind` (not [`Actor`]) so that [`Actor::SurfaceClient`]
+    /// — a struct variant carrying owned per-invocation state — can be
+    /// listed alongside the unit variants without breaking `inventory::submit!`'s
+    /// `static`-only descriptor invariant.
+    pub allowed_actors: &'static [ActorKind],
     pub allowed_modes: &'static [ExecutionMode],
     pub requires_confirmation: bool,
     pub may_publish: bool,
+    /// Scope vocabulary a [`Actor::SurfaceClient`] must carry before this
+    /// ability is reachable. Empty = no scope required (preserves
+    /// pre-v1.4.2 behavior for non-SurfaceClient abilities).
+    pub required_scopes: &'static [&'static str],
+    /// MCP tool-surface enumeration tier. Default `None`.
+    pub mcp_exposure: McpExposure,
+    /// Whether a [`Actor::SurfaceClient`] may invoke after policy/scope/
+    /// actor checks. Default `false`.
+    pub client_side_executable: bool,
+}
+
+impl Default for AbilityPolicy {
+    /// Per ADR-0102 §7.6 (W0-D amended 2026-05-10) W1-B
+    /// AC §449: the closed default is `[User]` — the least-privilege
+    /// actor floor — not `[]` (closed-to-everyone). The other W1-B
+    /// fields default to closed forms (`required_scopes: &[]`,
+    /// `mcp_exposure: McpExposure::None`, `client_side_executable: false`).
+    fn default() -> Self {
+        Self {
+            allowed_actors: &[ActorKind::User],
+            allowed_modes: &[],
+            requires_confirmation: false,
+            may_publish: false,
+            required_scopes: &[],
+            mcp_exposure: McpExposure::None,
+            client_side_executable: false,
+        }
+    }
+}
+
+impl AbilityPolicy {
+    /// Materialize `required_scopes` as typed [`SurfaceScope`] values.
+    ///
+    /// The canonical storage shape is `&'static [&'static str]` so the
+    /// descriptor stays `static`-constructible (required by
+    /// `inventory::submit!`). Bridge/runtime code that needs typed scopes
+    /// for [`ScopeSet`] enforcement (W2-B) calls this helper.
+    pub fn required_scopes_typed(&self) -> Vec<SurfaceScope> {
+        self.required_scopes
+            .iter()
+            .map(|s| SurfaceScope::new(*s))
+            .collect()
+    }
 }
 
 /// Composition entry per descriptor.
@@ -166,7 +634,7 @@ impl<'a> AbilityContext<'a> {
             services: self.services,
             provider: self.provider,
             tracer: self.tracer,
-            actor: self.actor,
+            actor: self.actor.clone(),
             confirmation: self.confirmation,
             entity_context_claim_surface,
         }
@@ -258,6 +726,26 @@ impl AbilityRegistry {
         validate_experimental(&by_name, &mut violations);
 
         if violations.is_empty() {
+            // W1-B: seed the global SurfaceScope allowlist with the union
+            // of every registered ability's required_scopes. Idempotent:
+            // a second registry build (e.g. tests) sees the existing
+            // allowlist and is a no-op. Lenient bootstrap mode (an
+            // allowlist that hasn't been initialized yet) accepts any
+            // scope at ScopeSet construction; once seeded here, unknown
+            // scopes are rejected at the wire boundary. See ADR-0111 §8
+            //
+            let union: BTreeSet<SurfaceScope> = by_name
+                .values()
+                .flat_map(|descriptor| descriptor.policy.required_scopes.iter())
+                .map(|s| SurfaceScope::new(*s))
+                .collect();
+            // OnceLock::set returns Err if already initialized — that's
+            // the intended path on subsequent registry builds within a
+            // single process. We do not surface the result.
+            if ScopeSet::initialize_allowlist(union).is_err() {
+                // Intentional no-op: another registry has already seeded
+                // the global allowlist in this process.
+            }
             Ok(Self { by_name })
         } else {
             Err(violations)
@@ -276,6 +764,16 @@ impl AbilityRegistry {
         }
     }
 
+    /// Iterate every descriptor in the registry, no actor filter.
+    ///
+    /// Used by the W1-C `emit_ability_inventory` binary to project
+    /// the full ability set into the surface-facing inventory artifact.
+    /// Tooling-facing only — runtime callers should prefer
+    /// [`AbilityRegistry::iter_for`] so the actor gate stays in force.
+    pub fn iter_all(&self) -> impl Iterator<Item = &AbilityDescriptor> {
+        self.by_name.values()
+    }
+
     pub fn iter_for(&self, actor: Actor) -> impl Iterator<Item = &AbilityDescriptor> {
         self.by_name.values().filter(move |descriptor| {
             if descriptor.experimental && actor != Actor::System {
@@ -284,7 +782,7 @@ impl AbilityRegistry {
             if actor == Actor::Agent && descriptor.category == AbilityCategory::Maintenance {
                 return false;
             }
-            descriptor.policy.allowed_actors.contains(&actor)
+            descriptor.policy.allowed_actors.contains(&actor.kind())
         })
     }
 
@@ -819,7 +1317,7 @@ fn validate_invocation_policy(
     ctx: &AbilityContext<'_>,
     descriptor: &AbilityDescriptor,
 ) -> Result<(), AbilityError> {
-    if !descriptor.policy.allowed_actors.contains(&ctx.actor) {
+    if !descriptor.policy.allowed_actors.contains(&ctx.actor.kind()) {
         return Err(AbilityError {
             kind: AbilityErrorKind::Capability,
             message: format!(
@@ -1080,6 +1578,9 @@ mod tests {
                 allowed_modes: &[],
                 requires_confirmation: false,
                 may_publish: false,
+                required_scopes: &[],
+                mcp_exposure: McpExposure::None,
+                client_side_executable: false,
             },
             composes: &[],
             mutates: &[],
@@ -1102,7 +1603,7 @@ mod tests {
             schema_version: 1,
             category,
             policy: AbilityPolicy {
-                allowed_actors: &[Actor::Agent, Actor::User, Actor::System],
+                allowed_actors: &[ActorKind::Agent, ActorKind::User, ActorKind::System],
                 allowed_modes: &[
                     ExecutionMode::Live,
                     ExecutionMode::Simulate,
@@ -1110,6 +1611,9 @@ mod tests {
                 ],
                 requires_confirmation: false,
                 may_publish: false,
+                required_scopes: &[],
+                mcp_exposure: McpExposure::None,
+                client_side_executable: false,
             },
             composes: &[],
             mutates: &[],
@@ -1155,7 +1659,7 @@ mod tests {
 
     fn with_actor_policy(
         mut descriptor: AbilityDescriptor,
-        actors: Vec<Actor>,
+        actors: Vec<ActorKind>,
     ) -> AbilityDescriptor {
         descriptor.policy.allowed_actors = static_slice(actors);
         descriptor
@@ -1518,7 +2022,7 @@ mod tests {
             descriptor("agent_maintenance", AbilityCategory::Maintenance),
             with_actor_policy(
                 descriptor("admin_read", AbilityCategory::Read),
-                vec![Actor::Admin],
+                vec![ActorKind::Admin],
             ),
         ]);
 
@@ -1705,5 +2209,306 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(err.kind, AbilityErrorKind::Capability);
+    }
+
+    // -------------------------------------------------------------------
+    // W1-A: SurfaceClient actor class — identity / scope newtype tests
+    // ADR-0111 §8 and W1-A acceptance criteria.
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn surface_client_id_round_trip_preserves_value() {
+        let id = SurfaceClientId::new("wp-instance-alpha");
+        assert_eq!(id.as_str(), "wp-instance-alpha");
+        assert_eq!(format!("{id}"), "wp-instance-alpha");
+        assert_eq!(format!("{id:?}"), "SurfaceClientId(\"wp-instance-alpha\")");
+    }
+
+    #[test]
+    fn surface_client_id_serde_round_trip_is_transparent() {
+        let id = SurfaceClientId::new("wp-instance-alpha");
+        let encoded = serde_json::to_string(&id).expect("serializes");
+        // #[serde(transparent)] means the wire form is the inner string only.
+        assert_eq!(encoded, "\"wp-instance-alpha\"");
+        let decoded: SurfaceClientId = serde_json::from_str(&encoded).expect("deserializes");
+        assert_eq!(decoded, id);
+    }
+
+    #[test]
+    fn surface_client_id_hash_eq_match_inner_string() {
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        set.insert(SurfaceClientId::new("alpha"));
+        set.insert(SurfaceClientId::new("beta"));
+        set.insert(SurfaceClientId::new("alpha")); // dup
+        assert_eq!(set.len(), 2);
+        assert!(set.contains(&SurfaceClientId::new("alpha")));
+        assert!(set.contains(&SurfaceClientId::new("beta")));
+        assert!(!set.contains(&SurfaceClientId::new("gamma")));
+    }
+
+    #[test]
+    fn surface_scope_round_trip_preserves_value() {
+        let scope = SurfaceScope::new("read.account_overview");
+        assert_eq!(scope.as_str(), "read.account_overview");
+        assert_eq!(format!("{scope}"), "read.account_overview");
+    }
+
+    #[test]
+    fn surface_scope_serde_round_trip_is_transparent() {
+        let scope = SurfaceScope::new("write.feedback");
+        let encoded = serde_json::to_string(&scope).expect("serializes");
+        assert_eq!(encoded, "\"write.feedback\"");
+        let decoded: SurfaceScope = serde_json::from_str(&encoded).expect("deserializes");
+        assert_eq!(decoded, scope);
+    }
+
+    #[test]
+    fn surface_scope_hash_eq_match_inner_string() {
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        set.insert(SurfaceScope::new("read.x"));
+        set.insert(SurfaceScope::new("write.y"));
+        set.insert(SurfaceScope::new("read.x")); // dup
+        assert_eq!(set.len(), 2);
+    }
+
+    /// Test helper: build a non-empty [`ScopeSet`] from string slices.
+    ///
+    /// Panics if construction fails — only the empty-set construction can
+    /// fail in lenient bootstrap mode, and the caller is expected to pass
+    /// at least one scope.
+    ///
+    /// Seeds the process-global allowlist with every scope the caller is
+    /// about to construct, so this test helper is safe to call regardless of
+    /// whatever production initialization (e.g. an empty union from a
+    /// scope-less ability registry) has happened earlier in the suite. See
+    /// the doc on [`SCOPE_ALLOWLIST`] for the test-vs-prod split.
+    fn scope_set(scopes: &[&str]) -> ScopeSet {
+        seed_test_allowlist(scopes);
+        ScopeSet::new(scopes.iter().map(|s| SurfaceScope::new(*s)))
+            .expect("test scope set must be non-empty")
+    }
+
+    /// Install a per-test allowlist that includes every scope `scopes` plus
+    /// the canonical W1-A.1 fixture vocabulary (`read.account_overview`,
+    /// `submit.feedback`). Centralizes the bypass so individual tests do not
+    /// have to remember the allowlist seam.
+    fn seed_test_allowlist(scopes: &[&str]) {
+        let mut all: BTreeSet<SurfaceScope> =
+            scopes.iter().map(|s| SurfaceScope::new(*s)).collect();
+        all.insert(SurfaceScope::new("read.account_overview"));
+        all.insert(SurfaceScope::new("submit.feedback"));
+        ScopeSet::set_allowlist_for_tests(all);
+    }
+
+    #[test]
+    fn actor_surface_client_round_trip_preserves_identity() {
+        let actor = Actor::SurfaceClient {
+            instance: SurfaceClientId::new("wp-instance-alpha"),
+            scopes: scope_set(&["read.account_overview"]),
+        };
+        match &actor {
+            Actor::SurfaceClient { instance, scopes } => {
+                assert_eq!(instance.as_str(), "wp-instance-alpha");
+                assert!(scopes.contains(&SurfaceScope::new("read.account_overview")));
+            }
+            _ => panic!("expected SurfaceClient variant"),
+        }
+        // Clone preserves variant + identity.
+        let cloned = actor.clone();
+        assert_eq!(actor, cloned);
+    }
+
+    #[test]
+    fn actor_surface_client_serde_round_trip() {
+        let actor = Actor::SurfaceClient {
+            instance: SurfaceClientId::new("wp-instance-alpha"),
+            scopes: scope_set(&["read.account_overview", "submit.feedback"]),
+        };
+        let encoded = serde_json::to_string(&actor).expect("serializes");
+        let decoded: Actor = serde_json::from_str(&encoded).expect("deserializes");
+        assert_eq!(actor, decoded);
+    }
+
+    #[test]
+    fn actor_surface_client_distinct_instances_are_not_equal() {
+        let alpha = Actor::SurfaceClient {
+            instance: SurfaceClientId::new("alpha"),
+            scopes: scope_set(&["read.account_overview"]),
+        };
+        let beta = Actor::SurfaceClient {
+            instance: SurfaceClientId::new("beta"),
+            scopes: scope_set(&["read.account_overview"]),
+        };
+        assert_ne!(alpha, beta);
+        // ...and neither matches the unit variants.
+        assert_ne!(alpha, Actor::User);
+        assert_ne!(alpha, Actor::Agent);
+        assert_ne!(alpha, Actor::Admin);
+        assert_ne!(alpha, Actor::System);
+    }
+
+    #[test]
+    fn actor_surface_client_not_in_user_agent_allowed_actors() {
+        // W1-A acceptance criterion (negative): an ability marked
+        // `allowed_actors: [User, Agent]` must NOT match a SurfaceClient
+        // invocation. The full registry-boundary rejection (with PolicyError)
+        // is W1-B's bridge work; this guard pins the `.contains` semantics
+        // that the registry's `iter_for` filter and `validate_invocation_policy`
+        // rely on.
+        let allowed: &[Actor] = &[Actor::User, Actor::Agent];
+        let invoker = Actor::SurfaceClient {
+            instance: SurfaceClientId::new("wp-instance-alpha"),
+            scopes: scope_set(&["read.account_overview"]),
+        };
+        assert!(!allowed.contains(&invoker));
+    }
+
+    // -------------------------------------------------------------------
+    // W1-A.1: ScopeSet construction + deserialization invariants
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn scope_set_rejects_empty_construction() {
+        let result = ScopeSet::new(std::iter::empty::<SurfaceScope>());
+        assert!(matches!(result, Err(ScopeSetError::Empty)));
+    }
+
+    #[test]
+    fn scope_set_accepts_non_empty_and_preserves_membership() {
+        seed_test_allowlist(&["read.account_overview"]);
+        let set = ScopeSet::new([SurfaceScope::new("read.account_overview")])
+            .expect("non-empty construction succeeds");
+        assert!(set.contains(&SurfaceScope::new("read.account_overview")));
+        assert!(!set.contains(&SurfaceScope::new("submit.feedback")));
+        assert_eq!(set.len(), 1);
+        assert!(!set.is_empty());
+    }
+
+    #[test]
+    fn scope_set_deserialization_rejects_empty_array() {
+        let err = serde_json::from_str::<ScopeSet>("[]").expect_err("empty must fail");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("at least one scope"),
+            "unexpected error surface: {msg}"
+        );
+    }
+
+    #[test]
+    fn scope_set_deserialization_round_trip_for_non_empty() {
+        seed_test_allowlist(&["read.account_overview", "submit.feedback"]);
+        let json = "[\"read.account_overview\",\"submit.feedback\"]";
+        let decoded: ScopeSet = serde_json::from_str(json).expect("decodes");
+        assert!(decoded.contains(&SurfaceScope::new("read.account_overview")));
+        assert!(decoded.contains(&SurfaceScope::new("submit.feedback")));
+        // Round-trip back to JSON: BTreeSet ordering is deterministic.
+        let encoded = serde_json::to_string(&decoded).expect("encodes");
+        let redecoded: ScopeSet = serde_json::from_str(&encoded).expect("re-decodes");
+        assert_eq!(decoded, redecoded);
+    }
+
+    // -------------------------------------------------------------------
+    // W1-B: AbilityPolicy schema (required_scopes + mcp_exposure +
+    // client_side_executable) and McpExposure serde.
+    // ADR-0102 §7.1 + §7.6 (W0-D amended)AC lines 446-454.
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn ability_policy_default_has_closed_w1b_defaults() {
+        let policy = AbilityPolicy::default();
+        // Per W1-B AC §449 and ADR-0102 §7.6 (W0-D amended
+        // 2026-05-10), the actor floor is `[User]` — least-privilege,
+        // not closed-to-everyone.
+        assert_eq!(policy.allowed_actors, &[ActorKind::User]);
+        assert_eq!(policy.allowed_modes, &[] as &[ExecutionMode]);
+        assert!(!policy.requires_confirmation);
+        assert!(!policy.may_publish);
+        // The three W1-B fields default to the closed forms.
+        assert_eq!(policy.required_scopes, &[] as &[&str]);
+        assert_eq!(policy.mcp_exposure, McpExposure::None);
+        assert!(!policy.client_side_executable);
+    }
+
+    #[test]
+    fn actor_kind_projects_each_variant_correctly() {
+        // Ensure every Actor variant projects to its expected ActorKind.
+        assert_eq!(Actor::Agent.kind(), ActorKind::Agent);
+        assert_eq!(Actor::User.kind(), ActorKind::User);
+        assert_eq!(Actor::Admin.kind(), ActorKind::Admin);
+        assert_eq!(Actor::System.kind(), ActorKind::System);
+        seed_test_allowlist(&["read.account_overview"]);
+        let surface = Actor::SurfaceClient {
+            instance: SurfaceClientId::new("wp-instance-alpha"),
+            scopes: ScopeSet::new([SurfaceScope::new("read.account_overview")])
+                .expect("non-empty scope set"),
+        };
+        assert_eq!(surface.kind(), ActorKind::SurfaceClient);
+    }
+
+    #[test]
+    fn ability_policy_required_scopes_typed_materializes_surface_scopes() {
+        let policy = AbilityPolicy {
+            required_scopes: &["read.account_overview", "submit.feedback"],
+            ..AbilityPolicy::default()
+        };
+        let typed = policy.required_scopes_typed();
+        assert_eq!(typed.len(), 2);
+        assert!(typed.contains(&SurfaceScope::new("read.account_overview")));
+        assert!(typed.contains(&SurfaceScope::new("submit.feedback")));
+    }
+
+    #[test]
+    fn mcp_exposure_default_is_none() {
+        assert_eq!(McpExposure::default(), McpExposure::None);
+    }
+
+    #[test]
+    fn mcp_exposure_serde_round_trip_for_all_variants() {
+        for variant in [
+            McpExposure::None,
+            McpExposure::MetadataOnly,
+            McpExposure::Invocable,
+        ] {
+            let encoded = serde_json::to_string(&variant).expect("serializes");
+            let decoded: McpExposure = serde_json::from_str(&encoded).expect("deserializes");
+            assert_eq!(variant, decoded, "round-trip for {variant:?}");
+        }
+    }
+
+    #[test]
+    fn mcp_exposure_wire_form_is_snake_case() {
+        // ADR-0102 §7.1 wire form: snake_case discriminant for portability.
+        assert_eq!(
+            serde_json::to_string(&McpExposure::None).expect("serializes"),
+            "\"none\""
+        );
+        assert_eq!(
+            serde_json::to_string(&McpExposure::MetadataOnly).expect("serializes"),
+            "\"metadata_only\""
+        );
+        assert_eq!(
+            serde_json::to_string(&McpExposure::Invocable).expect("serializes"),
+            "\"invocable\""
+        );
+    }
+
+    #[test]
+    fn ability_policy_required_scopes_storage_is_static_slice() {
+        // Type-level pin: storage shape is `&'static [&'static str]` so
+        // descriptors remain const-constructible for `inventory::submit!`.
+        // The typed accessor is `required_scopes_typed`. If this ever
+        // changes, every macro-emitted static breaks at compile time.
+        const POLICY: AbilityPolicy = AbilityPolicy {
+            allowed_actors: &[],
+            allowed_modes: &[],
+            requires_confirmation: false,
+            may_publish: false,
+            required_scopes: &["read.account_overview"],
+            mcp_exposure: McpExposure::None,
+            client_side_executable: false,
+        };
+        assert_eq!(POLICY.required_scopes, &["read.account_overview"]);
     }
 }

@@ -93,6 +93,26 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
         ));
     }
 
+    // W1-B compile-error gate (ADR-0102 §7.6):
+    // an ability whose `allowed_actors` includes `SurfaceClient` must
+    // either declare a non-empty `required_scopes` set, or explicitly
+    // opt out with `no_scope_required`. The gate fires regardless of
+    // `client_side_executable` value — actor membership in
+    // `allowed_actors` is the trigger because that is what makes the
+    // ability reachable from a SurfaceClient at all.
+    let exposes_to_surface_client = args
+        .allowed_actors
+        .iter()
+        .any(|actor| matches!(actor, ActorArg::SurfaceClient));
+    if exposes_to_surface_client && args.required_scopes.is_empty() && !args.no_scope_required {
+        return Err(syn::Error::new_spanned(
+            &item_fn.sig.ident,
+            "abilities whose allowed_actors includes SurfaceClient must declare \
+             a non-empty required_scopes = [...] or explicitly opt out with \
+             no_scope_required (ADR-0102 §7.6, W1-B)",
+        ));
+    }
+
     let fn_ident = item_fn.sig.ident.clone();
     let inner_ident = format_ident!("__{}_ability_impl", fn_ident);
     let erased_ident = format_ident!("__{}_erased", fn_ident);
@@ -109,6 +129,7 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
     let composes_ident = format_ident!("__ABILITY_DESCRIPTOR_COMPOSES_{}", static_suffix);
     let mutates_ident = format_ident!("__ABILITY_DESCRIPTOR_MUTATES_{}", static_suffix);
     let signals_ident = format_ident!("__ABILITY_DESCRIPTOR_SIGNALS_{}", static_suffix);
+    let scopes_ident = format_ident!("__ABILITY_DESCRIPTOR_SCOPES_{}", static_suffix);
 
     let mut inner_fn = item_fn.clone();
     inner_fn.sig.ident = inner_ident.clone();
@@ -159,6 +180,14 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
     let mutates_count = mutates_exprs.len();
     let signal_count = signal_exprs.len();
     let signal_coalesce = args.signal_policy.coalesce;
+    let scope_exprs: Vec<_> = args
+        .required_scopes
+        .iter()
+        .map(|scope| quote! { #scope })
+        .collect();
+    let scope_count = scope_exprs.len();
+    let mcp_exposure_expr = args.mcp_exposure.registry_expr();
+    let client_side_executable = args.client_side_executable;
     let experimental_cfg = if experimental {
         quote! { #[cfg(feature = "experimental")] }
     } else {
@@ -297,7 +326,7 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
         }
 
         #experimental_cfg
-        pub static #actors_ident: [crate::abilities::registry::Actor; #actor_count] =
+        pub static #actors_ident: [crate::abilities::registry::ActorKind; #actor_count] =
             [#(#actor_exprs),*];
         #experimental_cfg
         pub static #modes_ident: [crate::services::context::ExecutionMode; #mode_count] =
@@ -311,6 +340,9 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
         #experimental_cfg
         pub static #signals_ident: [&'static str; #signal_count] =
             [#(#signal_exprs),*];
+        #experimental_cfg
+        pub static #scopes_ident: [&'static str; #scope_count] =
+            [#(#scope_exprs),*];
 
         #experimental_cfg
         #[allow(dead_code)]
@@ -325,6 +357,9 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
                     allowed_modes: &#modes_ident,
                     requires_confirmation: #requires_confirmation,
                     may_publish: #may_publish,
+                    required_scopes: &#scopes_ident,
+                    mcp_exposure: #mcp_exposure_expr,
+                    client_side_executable: #client_side_executable,
                 },
                 composes: &#composes_ident,
                 mutates: &#mutates_ident,
@@ -352,6 +387,9 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
                     allowed_modes: &#modes_ident,
                     requires_confirmation: #requires_confirmation,
                     may_publish: #may_publish,
+                    required_scopes: &#scopes_ident,
+                    mcp_exposure: #mcp_exposure_expr,
+                    client_side_executable: #client_side_executable,
                 },
                 composes: &#composes_ident,
                 mutates: &#mutates_ident,
@@ -378,6 +416,9 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
                     allowed_modes: &#modes_ident,
                     requires_confirmation: #requires_confirmation,
                     may_publish: #may_publish,
+                    required_scopes: &#scopes_ident,
+                    mcp_exposure: #mcp_exposure_expr,
+                    client_side_executable: #client_side_executable,
                 },
                 composes: &#composes_ident,
                 mutates: &#mutates_ident,
@@ -695,6 +736,21 @@ struct AbilityArgs {
     experimental: bool,
     registered_at: Option<String>,
     signal_policy: SignalPolicyArg,
+    /// W1-B: scope vocabulary a SurfaceClient instance must carry.
+    /// Defaults to empty (preserves v1.4.0/v1.4.1 semantics for
+    /// non-SurfaceClient abilities; the compile-error gate ensures any
+    /// SurfaceClient-reachable ability declares scopes or opts out).
+    required_scopes: Vec<String>,
+    /// W1-B: MCP enumeration tier per ADR-0102 §7.1 (W0-D amendment).
+    /// Default `McpExposureArg::None`.
+    mcp_exposure: McpExposureArg,
+    /// W1-B: whether a SurfaceClient may invoke after policy/scope/
+    /// actor checks pass. Default `false`.
+    client_side_executable: bool,
+    /// W1-B: explicit opt-out from the SurfaceClient scope-declaration
+    /// gate. Allows `allowed_actors: [SurfaceClient]` with empty
+    /// `required_scopes`. Boolean flag form: `no_scope_required = true`.
+    no_scope_required: bool,
 }
 
 impl Parse for AbilityArgs {
@@ -711,6 +767,10 @@ impl Parse for AbilityArgs {
         let mut experimental = false;
         let mut registered_at = None;
         let mut signal_policy = SignalPolicyArg::default();
+        let mut required_scopes: Vec<String> = Vec::new();
+        let mut mcp_exposure = McpExposureArg::None;
+        let mut client_side_executable = false;
+        let mut no_scope_required = false;
 
         while !input.is_empty() {
             let key: Ident = input.parse()?;
@@ -732,6 +792,12 @@ impl Parse for AbilityArgs {
                 "experimental" => experimental = input.parse::<LitBool>()?.value,
                 "registered_at" => registered_at = Some(input.parse::<LitStr>()?.value()),
                 "signal_policy" => signal_policy = parse_signal_policy(input)?,
+                "required_scopes" => required_scopes = parse_string_array(input)?,
+                "mcp_exposure" => mcp_exposure = parse_mcp_exposure(input)?,
+                "client_side_executable" => {
+                    client_side_executable = input.parse::<LitBool>()?.value;
+                }
+                "no_scope_required" => no_scope_required = input.parse::<LitBool>()?.value,
                 other => {
                     return Err(syn::Error::new(
                         key.span(),
@@ -764,6 +830,10 @@ impl Parse for AbilityArgs {
             experimental,
             registered_at,
             signal_policy,
+            required_scopes,
+            mcp_exposure,
+            client_side_executable,
+            no_scope_required,
         })
     }
 }
@@ -817,15 +887,34 @@ enum ActorArg {
     User,
     Admin,
     System,
+    /// ADR-0111 §8: third-party local surface invoking on
+    /// behalf of a paired user. Carries instance identity + scope grant
+    /// at runtime; the macro records membership in `allowed_actors` here
+    /// to drive the W1-B compile-error gate.
+    SurfaceClient,
 }
 
 impl ActorArg {
+    /// Emit the registry token for this actor's `ActorKind` discriminator.
+    ///
+    /// Per ADR-0102 §7.6 (W0-D amended 2026-05-10) W1-B,
+    /// `AbilityPolicy::allowed_actors` is a `&'static [ActorKind]` slice
+    /// rather than `&'static [Actor]`. This separation lets `SurfaceClient`
+    /// — a struct variant carrying per-invocation owned state — be listed
+    /// in `allowed_actors` declarations without breaking `inventory::submit!`'s
+    /// `static`-only descriptor invariant. The W1-B compile-error gate
+    /// (parse-time, see `ability` attribute handler) still enforces the
+    /// `required_scopes` / `no_scope_required` requirement for any ability
+    /// that admits `SurfaceClient`.
     fn registry_expr(&self) -> proc_macro2::TokenStream {
         match self {
-            Self::Agent => quote! { crate::abilities::registry::Actor::Agent },
-            Self::User => quote! { crate::abilities::registry::Actor::User },
-            Self::Admin => quote! { crate::abilities::registry::Actor::Admin },
-            Self::System => quote! { crate::abilities::registry::Actor::System },
+            Self::Agent => quote! { crate::abilities::registry::ActorKind::Agent },
+            Self::User => quote! { crate::abilities::registry::ActorKind::User },
+            Self::Admin => quote! { crate::abilities::registry::ActorKind::Admin },
+            Self::System => quote! { crate::abilities::registry::ActorKind::System },
+            Self::SurfaceClient => {
+                quote! { crate::abilities::registry::ActorKind::SurfaceClient }
+            }
         }
     }
 }
@@ -841,12 +930,58 @@ fn parse_actor_array(input: ParseStream<'_>) -> syn::Result<Vec<ActorArg>> {
             "User" => Ok(ActorArg::User),
             "Admin" => Ok(ActorArg::Admin),
             "System" => Ok(ActorArg::System),
+            "SurfaceClient" => Ok(ActorArg::SurfaceClient),
             other => Err(syn::Error::new(
                 ident.span(),
                 format!("unknown actor `{other}`"),
             )),
         })
         .collect()
+}
+
+#[derive(Clone, Copy)]
+enum McpExposureArg {
+    None,
+    MetadataOnly,
+    Invocable,
+}
+
+impl McpExposureArg {
+    fn registry_expr(self) -> proc_macro2::TokenStream {
+        match self {
+            Self::None => quote! { crate::abilities::registry::McpExposure::None },
+            Self::MetadataOnly => {
+                quote! { crate::abilities::registry::McpExposure::MetadataOnly }
+            }
+            Self::Invocable => quote! { crate::abilities::registry::McpExposure::Invocable },
+        }
+    }
+}
+
+fn parse_mcp_exposure(input: ParseStream<'_>) -> syn::Result<McpExposureArg> {
+    let ident: Ident = input.parse()?;
+    match ident.to_string().as_str() {
+        "None" => Ok(McpExposureArg::None),
+        "MetadataOnly" => Ok(McpExposureArg::MetadataOnly),
+        "Invocable" => Ok(McpExposureArg::Invocable),
+        other => Err(syn::Error::new(
+            ident.span(),
+            format!("unknown mcp_exposure `{other}` (expected None | MetadataOnly | Invocable)"),
+        )),
+    }
+}
+
+fn parse_string_array(input: ParseStream<'_>) -> syn::Result<Vec<String>> {
+    let content;
+    bracketed!(content in input);
+    let mut values = Vec::new();
+    while !content.is_empty() {
+        values.push(content.parse::<LitStr>()?.value());
+        if content.peek(Token![,]) {
+            content.parse::<Token![,]>()?;
+        }
+    }
+    Ok(values)
 }
 
 enum ExecutionModeArg {

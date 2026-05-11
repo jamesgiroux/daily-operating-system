@@ -63,7 +63,10 @@ pub struct OperationInvocation {
     pub confirmation: Option<ConfirmationToken>,
 }
 
-#[derive(Debug, Clone, Copy)]
+// Note: `Copy` removed because `Actor::SurfaceClient { instance, scopes }`
+// carries owned String / BTreeSet (W1-A landing). All call sites already
+// clone or move.
+#[derive(Debug, Clone)]
 pub struct OperationBridgeContext {
     pub actor: Actor,
     pub surface: BridgeSurface,
@@ -246,7 +249,7 @@ async fn invoke_operation_with_def(
     let input_for_policy = input_json.clone();
     let response = (operation.executor)(OperationInvocation {
         state,
-        actor: bridge_context.actor,
+        actor: bridge_context.actor.clone(),
         surface: bridge_context.surface,
         claim_dismissal_surface: bridge_context.claim_dismissal_surface,
         input_json,

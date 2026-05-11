@@ -2,9 +2,9 @@ use std::future::Future;
 use std::pin::Pin;
 
 use chrono::{TimeZone, Utc};
-use dailyos_lib::abilities::registry::{AbilityPolicy, SignalPolicy};
+use dailyos_lib::abilities::registry::{AbilityPolicy, McpExposure, SignalPolicy};
 use dailyos_lib::abilities::{
-    AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityRegistry, Actor,
+    AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityRegistry, Actor, ActorKind,
 };
 use dailyos_lib::bridges::mcp::McpAbilityBridge;
 use dailyos_lib::bridges::tauri::TauriAbilityBridge;
@@ -43,7 +43,7 @@ CREATE TABLE accounts (
 const SUBJECT_ACCOUNT_ID: &str = "acct-dos412-mcp-ability";
 const TS: &str = "2026-05-06T12:00:00Z";
 
-const USER_AGENT_ACTORS: &[Actor] = &[Actor::User, Actor::Agent];
+const USER_AGENT_ACTORS: &[ActorKind] = &[ActorKind::User, ActorKind::Agent];
 const LIVE_MODES: &[ExecutionMode] = &[ExecutionMode::Live];
 
 type ErasedFuture<'a> =
@@ -698,6 +698,9 @@ fn synthetic_descriptor() -> AbilityDescriptor {
             allowed_modes: LIVE_MODES,
             requires_confirmation: false,
             may_publish: false,
+            required_scopes: &[],
+            mcp_exposure: McpExposure::None,
+            client_side_executable: false,
         },
         composes: &[],
         mutates: &[],

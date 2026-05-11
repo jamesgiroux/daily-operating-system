@@ -79,7 +79,7 @@ pub async fn get_entity_context(
         )
         .await
         .map_err(|error| hard_error("entity context claim read failed", error))?;
-    let claims = filter_claims_for_actor(ctx.actor, claims);
+    let claims = filter_claims_for_actor(ctx.actor.clone(), claims);
     let render_actor = render_actor_for_context(ctx);
     let entries = claims
         .iter()
@@ -393,7 +393,7 @@ fn provenance_config(ctx: &AbilityContext<'_>, schema_version: u32) -> Provenanc
     let mut config = ProvenanceBuilderConfig::new(ABILITY_NAME, ctx.services().clock.now());
     config.ability_version = AbilityVersion::new(1, 0);
     config.ability_schema_version = SchemaVersion(schema_version);
-    config.actor = provenance_actor(ctx.actor);
+    config.actor = provenance_actor(ctx.actor.clone());
     config.mode = AbilityExecutionMode::from(ctx.mode());
     config.category = AbilityCategory::Read;
     config
@@ -428,6 +428,11 @@ pub(crate) fn provenance_actor(actor: Actor) -> crate::abilities::provenance::Ac
         Actor::System => crate::abilities::provenance::Actor::System {
             component: "dailyos".to_string(),
         },
+        // TODO: W1-B+ wiring — SurfaceClient provenance attribution lands in
+        // W1-A0 / W1-B (audit-log helper + AbilityPolicy.required_scopes). The
+        // stage-1a landing only ships the actor variant; no current invocation
+        // path constructs Actor::SurfaceClient.
+        Actor::SurfaceClient { .. } => todo!("W1-B+ wiring for Actor::SurfaceClient"),
     }
 }
 
@@ -452,7 +457,7 @@ fn entry_for_claim(
 }
 
 fn render_actor_for_context(ctx: &AbilityContext<'_>) -> RenderActor {
-    match ctx.actor {
+    match &ctx.actor {
         Actor::User => RenderActor::user(ctx.services().actor, Some(ctx.services().actor)),
         Actor::Agent => RenderActor::agent("agent:get_entity_context"),
         Actor::Admin => RenderActor {
@@ -463,6 +468,9 @@ fn render_actor_for_context(ctx: &AbilityContext<'_>) -> RenderActor {
             actor: "system".to_string(),
             user_id: None,
         },
+        // TODO: W1-B+ wiring — SurfaceClient render actor mapping (per ADR-0108
+        // sensitivity rules) lands with the SurfaceClientBridge plumbing.
+        Actor::SurfaceClient { .. } => todo!("W1-B+ wiring for Actor::SurfaceClient"),
     }
 }
 

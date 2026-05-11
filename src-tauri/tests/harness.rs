@@ -16,9 +16,9 @@ use std::{
 use async_trait::async_trait;
 use base64::Engine;
 use dailyos_lib::abilities::prepare_meeting::{prepare_meeting, prompts, PrepareMeetingInput};
-use dailyos_lib::abilities::registry::{AbilityPolicy, SignalPolicy};
+use dailyos_lib::abilities::registry::{AbilityPolicy, McpExposure, SignalPolicy};
 use dailyos_lib::abilities::{
-    AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityRegistry, Actor,
+    AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityRegistry, Actor, ActorKind,
     NOOP_ABILITY_TRACER,
 };
 use dailyos_lib::intelligence::provider::{
@@ -1969,8 +1969,8 @@ fn invocation_failed_message(result: Result<harness::RunResult, RunError>) -> St
 type ErasedFuture<'a> =
     Pin<Box<dyn Future<Output = Result<serde_json::Value, AbilityError>> + Send + 'a>>;
 
-const SYSTEM_ACTORS: &[Actor] = &[Actor::System];
-const USER_ACTORS: &[Actor] = &[Actor::User];
+const SYSTEM_ACTORS: &[ActorKind] = &[ActorKind::System];
+const USER_ACTORS: &[ActorKind] = &[ActorKind::User];
 const EVALUATE_MODES: &[ExecutionMode] = &[ExecutionMode::Evaluate];
 
 fn enrich_account_intelligence_descriptor() -> AbilityDescriptor {
@@ -1981,7 +1981,7 @@ fn unauthorized_enrich_descriptor() -> AbilityDescriptor {
     enrich_descriptor_with_policy(USER_ACTORS)
 }
 
-fn enrich_descriptor_with_policy(allowed_actors: &'static [Actor]) -> AbilityDescriptor {
+fn enrich_descriptor_with_policy(allowed_actors: &'static [ActorKind]) -> AbilityDescriptor {
     AbilityDescriptor {
         name: "enrich_account_intelligence",
         version: "0.0.1-test",
@@ -1992,6 +1992,9 @@ fn enrich_descriptor_with_policy(allowed_actors: &'static [Actor]) -> AbilityDes
             allowed_modes: EVALUATE_MODES,
             requires_confirmation: false,
             may_publish: false,
+            required_scopes: &[],
+            mcp_exposure: McpExposure::None,
+            client_side_executable: false,
         },
         composes: &[],
         mutates: &[],

@@ -1,0 +1,8 @@
+# Internal/runtime vocabulary that must not leak to model- or user-facing ability descriptions per ADR-0083 product-vocabulary discipline.
+enrichment
+AI enrichment
+intelligence pipeline
+pipeline run
+prompt fingerprint
+claim writer
+trust band scoring

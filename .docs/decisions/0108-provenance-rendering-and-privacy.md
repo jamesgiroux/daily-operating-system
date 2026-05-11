@@ -4,7 +4,7 @@
 **Date:** 2026-04-18  
 **Target:** v1.4.0  
 **Extends:** [ADR-0105](0105-provenance-as-first-class-output.md), [ADR-0107](0107-source-taxonomy-alignment.md)  
-**Related:** [ADR-0094](0094-audit-log-and-enterprise-observability.md), [ADR-0093](0093-prompt-injection-hardening.md), [ADR-0111](0111-surface-independent-ability-invocation.md)
+**Related:** [ADR-0094](0094-audit-log-and-enterprise-observability.md), [ADR-0093](0093-prompt-injection-hardening.md), [ADR-0111](0111-surface-independent-ability-invocation.md), [ADR-0130](0130-surface-independent-composition-contract.md) §2 (block-level `ProvenanceRef` references this ADR's actor-filtered envelope; the ref shape avoids exceeding the rendering-side payload caps this ADR governs)
 
 ## Context
 

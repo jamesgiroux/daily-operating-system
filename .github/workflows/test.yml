@@ -107,6 +107,15 @@ jobs:
       - name: Enforce durable source comments
         run: ./scripts/check_no_ephemeral_issue_refs_in_comments.sh
 
+      - name: Enforce ability description PII + vocabulary lint
+        run: ./scripts/check_ability_descriptions.sh
+
+      - name: Enforce ability surface inventory matches live registry
+        run: ./scripts/check_ability_inventory.sh
+
+      - name: Enforce ADR-0130 substrate-owned composition authorship
+        run: ./scripts/check_composition_authorship.sh
+
       - name: Enforce must_use on DB mutation methods
         run: ./scripts/check_db_mutator_must_use.sh
 

@@ -3,10 +3,10 @@ use dailyos_lib::abilities::provenance::{
     AbilityOutput, CompositionId, FieldAttribution, FieldPath, ProvenanceBuilder,
     ProvenanceBuilderConfig, ProvenanceWarning, SubjectAttribution, SubjectRef,
 };
-use dailyos_lib::abilities::registry::{AbilityPolicy, ComposesEntry, SignalPolicy};
+use dailyos_lib::abilities::registry::{AbilityPolicy, ComposesEntry, McpExposure, SignalPolicy};
 use dailyos_lib::abilities::{
     AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityErrorKind,
-    AbilityRegistry, AbilityResult, Actor,
+    AbilityRegistry, AbilityResult, Actor, ActorKind,
 };
 use dailyos_lib::services::context::ExecutionMode;
 
@@ -42,10 +42,13 @@ fn descriptor(name: &'static str, composes: &'static [ComposesEntry]) -> Ability
         schema_version: 1,
         category: AbilityCategory::Read,
         policy: AbilityPolicy {
-            allowed_actors: &[Actor::System],
+            allowed_actors: &[ActorKind::System],
             allowed_modes: &[ExecutionMode::Evaluate],
             requires_confirmation: false,
             may_publish: false,
+            required_scopes: &[],
+            mcp_exposure: McpExposure::None,
+            client_side_executable: false,
         },
         composes,
         mutates: &[],

@@ -16,6 +16,8 @@ use crate::abilities::{
     validate_schema_closure_for_ability, AbilityCategory, AbilityContext, AbilityDescriptor,
     AbilityError, AbilityRegistry, Actor, ConfirmationProof,
 };
+#[cfg(test)]
+use crate::abilities::ActorKind;
 use crate::db::ActionDb;
 use crate::intelligence::provider::{
     Completion, IntelligenceProvider, ModelName, ModelTier, PromptInput, ProviderError,
@@ -56,6 +58,10 @@ impl BridgeActor {
             Actor::Agent => Self::Agent,
             Actor::Admin => Self::Admin,
             Actor::System => Self::System,
+            // TODO: W1-B+ wiring — BridgeActor gains a SurfaceClient variant
+            // once SurfaceClientBridge is plumbed and the Tauri bridge needs
+            // to round-trip the actor across surface-aware logging paths.
+            Actor::SurfaceClient { .. } => todo!("W1-B+ wiring for Actor::SurfaceClient"),
         }
     }
 }
@@ -422,7 +428,7 @@ pub(crate) fn resolve_pre_dispatch<'a>(
     let descriptor = lookup_descriptor_by_name(registry, ability_name)
         .ok_or(BridgeSurfaceError::AbilityUnavailable)?;
 
-    if !descriptor.policy.allowed_actors.contains(&actor) {
+    if !descriptor.policy.allowed_actors.contains(&actor.kind()) {
         return Err(BridgeSurfaceError::AbilityUnavailable);
     }
 
@@ -1108,7 +1114,7 @@ impl InvocationProvenanceCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::abilities::registry::{AbilityPolicy, SignalPolicy};
+    use crate::abilities::registry::{AbilityPolicy, McpExposure, SignalPolicy};
     use std::pin::Pin;
     use std::sync::{Arc, Mutex};
 
@@ -1135,10 +1141,13 @@ mod tests {
             schema_version: 1,
             category: AbilityCategory::Transform,
             policy: AbilityPolicy {
-                allowed_actors: &[Actor::User],
+                allowed_actors: &[ActorKind::User],
                 allowed_modes: &[ExecutionMode::Live],
                 requires_confirmation: true,
                 may_publish: false,
+                required_scopes: &[],
+                mcp_exposure: McpExposure::None,
+                client_side_executable: false,
             },
             composes: &[],
             mutates: &[],

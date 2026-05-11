@@ -615,18 +615,18 @@ mod tests {
         provenance_for_test, AbilityExecutionMode, Actor as ProvenanceActor, SubjectAttribution,
         SubjectRef,
     };
-    use crate::abilities::registry::{AbilityPolicy, SignalPolicy};
-    use crate::abilities::{AbilityCategory, AbilityContext, AbilityError};
+    use crate::abilities::registry::{AbilityPolicy, McpExposure, SignalPolicy};
+    use crate::abilities::{AbilityCategory, AbilityContext, AbilityError, ActorKind};
     use crate::bridges::tauri::UserAttestationHost;
     use crate::bridges::UserAttestationRequest;
     use crate::db::claims::{ClaimSensitivity, TemporalScope};
     use crate::services::claims::{commit_claim, ClaimProposal, CommittedClaim};
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
 
-    const AGENT_ACTORS: &[Actor] = &[Actor::Agent];
-    const USER_ACTORS: &[Actor] = &[Actor::User];
-    const ADMIN_ACTORS: &[Actor] = &[Actor::Admin];
-    const AGENT_SYSTEM_ACTORS: &[Actor] = &[Actor::Agent, Actor::System];
+    const AGENT_ACTORS: &[ActorKind] = &[ActorKind::Agent];
+    const USER_ACTORS: &[ActorKind] = &[ActorKind::User];
+    const ADMIN_ACTORS: &[ActorKind] = &[ActorKind::Admin];
+    const AGENT_SYSTEM_ACTORS: &[ActorKind] = &[ActorKind::Agent, ActorKind::System];
     const LIVE_MODES: &[ExecutionMode] = &[ExecutionMode::Live];
     const EVALUATE_MODES: &[ExecutionMode] = &[ExecutionMode::Evaluate];
     const MCP_ENTITY_ID: &str = "acct-mcp-dismissed-context";
@@ -710,7 +710,7 @@ CREATE TABLE accounts (
         );
         provenance.invocation_id =
             InvocationId::parse(invocation_id).expect("test invocation id is valid");
-        provenance.actor = provenance_actor_for_test(ctx.actor);
+        provenance.actor = provenance_actor_for_test(ctx.actor.clone());
         provenance.mode = provenance_mode_for_test(ctx.mode());
         serde_json::to_value(provenance).expect("test provenance serializes")
     }
@@ -729,6 +729,9 @@ CREATE TABLE accounts (
             Actor::System => ProvenanceActor::System {
                 component: "fixture-system".to_string(),
             },
+            // TODO: W1-B+ wiring — SurfaceClient MCP-bridge test fixture lands
+            // with the SurfaceClientBridge plumbing.
+            Actor::SurfaceClient { .. } => todo!("W1-B+ wiring for Actor::SurfaceClient"),
         }
     }
 
@@ -743,7 +746,7 @@ CREATE TABLE accounts (
     fn descriptor(
         name: &'static str,
         category: AbilityCategory,
-        actors: &'static [Actor],
+        actors: &'static [ActorKind],
         modes: &'static [ExecutionMode],
     ) -> AbilityDescriptor {
         AbilityDescriptor {
@@ -756,6 +759,9 @@ CREATE TABLE accounts (
                 allowed_modes: modes,
                 requires_confirmation: false,
                 may_publish: false,
+                required_scopes: &[],
+                mcp_exposure: McpExposure::None,
+                client_side_executable: false,
             },
             composes: &[],
             mutates: &[],

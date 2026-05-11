@@ -1,6 +1,7 @@
 //! Ability runtime modules.
 
 pub mod claims;
+pub mod composition;
 pub mod extractors;
 pub mod feedback;
 pub mod get_entity_context;
@@ -26,8 +27,8 @@ pub use provenance::*;
 pub use registry::{
     close_schema_objects, validate_schema_closure, validate_schema_closure_for_ability,
     AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityErrorKind,
-    AbilityPolicy, AbilityRegistry, AbilityResult, Actor, ComposesEntry, ConfirmationProof,
-    SignalPolicy,
+    AbilityPolicy, AbilityRegistry, AbilityResult, Actor, ActorKind, ComposesEntry,
+    ConfirmationProof, SignalPolicy,
 };
 pub use temporal::*;
 pub use threads::ThreadMetadata;
