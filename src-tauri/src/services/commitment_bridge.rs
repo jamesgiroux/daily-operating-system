@@ -261,12 +261,25 @@ pub fn sync_ai_commitments_with_ingestion_sources(
             summary.skipped_tombstoned += 1;
             continue;
         }
+        let legacy_bridge_action_id = resolve_incoming_legacy_bridge_action_for_entity(
+            db,
+            entity_type,
+            entity_id,
+            commitment,
+        )
+        .map_err(|e| e.to_string())?;
         let owner_resolution =
             resolve_owner(db, entity_id, &derived_id, commitment.owner.as_deref())?;
         let source_key = commitment_source_key(&item.source);
-        let source_count =
-            source_count_after_sighting(db, entity_type, entity_id, &derived_id, &source_key)
-                .unwrap_or(1);
+        let source_count = source_count_after_sighting(
+            db,
+            entity_type,
+            entity_id,
+            &derived_id,
+            legacy_bridge_action_id.as_deref(),
+            &source_key,
+        )
+        .unwrap_or(1);
         let trust = compute_commitment_trust(
             entity_id,
             commitment,
@@ -294,6 +307,7 @@ pub fn sync_ai_commitments_with_ingestion_sources(
             &owner_resolution,
             &trust,
             &now,
+            legacy_bridge_action_id.as_deref(),
             &mut summary,
         )?;
     }
@@ -568,6 +582,7 @@ pub fn upsert_commitment_claim(
     owner_resolution: &OwnerResolution,
     trust: &CommitmentTrust,
     now: &str,
+    legacy_bridge_action_id: Option<&str>,
     summary: &mut BridgeSyncSummary,
 ) -> Result<(), String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
@@ -597,7 +612,20 @@ pub fn upsert_commitment_claim(
             action
         }
         None => {
-            if let Some(existing_action_id) = find_existing_open_commitment_by_identity(
+            if let Some(existing_action_id) = legacy_bridge_action_id {
+                let action = db
+                    .get_action_by_id(existing_action_id)
+                    .map_err(|e| e.to_string())?
+                    .ok_or_else(|| {
+                        format!("commitment alias target missing: {existing_action_id}")
+                    })?;
+                if is_terminal_status(&action.status) {
+                    summary.skipped_tombstoned += 1;
+                    return Ok(());
+                }
+                summary.aliased_to_existing += 1;
+                action
+            } else if let Some(existing_action_id) = find_existing_open_commitment_by_identity(
                 db,
                 entity_type,
                 entity_id,
@@ -982,8 +1010,13 @@ fn source_count_after_sighting(
     entity_type: &str,
     entity_id: &str,
     commitment_id: &str,
+    legacy_bridge_action_id: Option<&str>,
     source_key: &str,
 ) -> Result<i64, rusqlite::Error> {
+    if let Some(action_id) = legacy_bridge_action_id {
+        return source_count_after_sighting_for_action(db, action_id, source_key);
+    }
+
     let action_id =
         action_id_for_commitment_source_count(db, entity_type, entity_id, commitment_id)?;
 
@@ -1112,6 +1145,45 @@ fn action_id_by_commitment_id(
              ORDER BY created_at ASC
              LIMIT 1",
             rusqlite::params![commitment_id, KIND_COMMITMENT],
+            |row| row.get::<_, String>(0),
+        )
+        .map(Some)
+        .or_else(|err| match err {
+            rusqlite::Error::QueryReturnedNoRows => Ok(None),
+            other => Err(other),
+        })
+}
+
+fn resolve_incoming_legacy_bridge_action_for_entity(
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+    commitment: &OpenCommitment,
+) -> Result<Option<String>, rusqlite::Error> {
+    let Some(legacy_id) = trimmed_non_empty(commitment.commitment_id.as_deref()) else {
+        return Ok(None);
+    };
+    resolve_legacy_bridge_action_for_entity(db, entity_type, entity_id, legacy_id)
+}
+
+fn resolve_legacy_bridge_action_for_entity(
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+    legacy_id: &str,
+) -> Result<Option<String>, rusqlite::Error> {
+    db.conn_ref()
+        .query_row(
+            "SELECT action_id
+             FROM ai_commitment_bridge
+             WHERE commitment_id = ?1
+               AND entity_type = ?2
+               AND entity_id = ?3
+               AND tombstoned = 0
+               AND action_id IS NOT NULL
+             ORDER BY last_seen_at DESC, first_seen_at DESC
+             LIMIT 1",
+            rusqlite::params![legacy_id, entity_type, entity_id],
             |row| row.get::<_, String>(0),
         )
         .map(Some)
@@ -2786,6 +2858,80 @@ mod tests {
             .expect("action row");
         assert_eq!(action.trust_score, Some(expected.score.value()));
         assert_eq!(action.commitment_source_count, Some(2));
+    }
+
+    #[test]
+    fn non_tombstoned_legacy_bridge_aliases_edited_owner_action_before_identity_fallback() {
+        let db = test_db();
+        make_ctx!(ctx);
+        let title = "Confirm W4-A owner aliasing";
+        let legacy_id = "meeting:abc:1";
+        let derived_commitment_id = derived_id_with(title, Some("2030-06-01"), Some("Old Owner"));
+        let incoming = make_commitment_with_identity(
+            title,
+            Some(legacy_id),
+            Some("2030-06-01"),
+            Some("Old Owner"),
+            Some("meeting"),
+        );
+
+        db.conn_ref()
+            .execute(
+                "INSERT INTO actions
+                 (id, title, priority, status, created_at, updated_at, due_date,
+                  account_id, source_type, source_id, source_label,
+                  action_kind, commitment_id, owner_raw, owner_entity_id,
+                  owner_confidence, owner_source, trust_score, trust_band)
+                 VALUES ('h-legacy-1', ?1, 3, 'unstarted', '2026-01-01',
+                         '2026-01-02', '2030-06-01', 'acct-1', 'commitment',
+                         ?2, 'legacy meeting',
+                         'commitment', ?2, 'New Owner', 'p-new-owner',
+                         0.96, 'user_reassigned', NULL, NULL)",
+                rusqlite::params![title, legacy_id],
+            )
+            .unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO ai_commitment_bridge
+                 (commitment_id, entity_type, entity_id, action_id,
+                  first_seen_at, last_seen_at, tombstoned)
+                 VALUES (?1, 'account', 'acct-1', 'h-legacy-1',
+                         '2026-01-01', '2026-01-02', 0)",
+                rusqlite::params![legacy_id],
+            )
+            .unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO action_commitment_sources
+                 (id, commitment_id, action_id, source_key, source_type, source_id,
+                  source_label, observed_at, trust_band, owner_raw)
+                 VALUES ('legacy-source-h1', ?1, 'h-legacy-1', 'meeting:abc',
+                         'meeting', 'abc', 'legacy meeting',
+                         '2026-01-02', 'unscored', 'Old Owner')",
+                rusqlite::params![legacy_id],
+            )
+            .unwrap();
+
+        let summary = sync_one_with_ingestion_source(&ctx, &db, &incoming, "meeting", "abc");
+
+        assert_eq!(summary.created, 0);
+        assert_eq!(summary.aliased_to_existing, 1);
+        assert_eq!(action_count(&db), 1);
+        assert_eq!(bridge_action_id(&db, legacy_id), "h-legacy-1");
+        assert_eq!(bridge_action_id(&db, &derived_commitment_id), "h-legacy-1");
+        assert_eq!(source_rows(&db, &derived_commitment_id), 1);
+        assert_eq!(source_rows_for_action(&db, "h-legacy-1"), 2);
+
+        let (commitment_id, owner_raw): (String, String) = db
+            .conn_ref()
+            .query_row(
+                "SELECT commitment_id, owner_raw FROM actions WHERE id = 'h-legacy-1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(commitment_id, legacy_id);
+        assert_eq!(owner_raw, "New Owner");
     }
 
     #[test]
