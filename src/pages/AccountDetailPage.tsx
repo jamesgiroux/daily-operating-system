@@ -72,6 +72,7 @@ import {
 import { getAccountReports } from "@/lib/report-config";
 import { buildAccountVitals } from "@/components/account/account-detail-utils";
 import { formatShortDate } from "@/lib/utils";
+import { workCommitmentOwnerPatch } from "@/lib/workCommitmentPatch";
 
 import shared from "@/styles/entity-detail.module.css";
 import pageStyles from "./AccountDetailPage.module.css";
@@ -605,10 +606,9 @@ export default function AccountDetailPage() {
       const doneBusy = work.commitmentDoneInFlight.has(c.id);
       const dismissBusy = work.commitmentDismissInFlight.has(c.id);
       const isEmphasized = idx < 4;
-      // Owner is stashed in action.context as "owner: <name>" by the
-      // commitment_bridge service until DbAction grows its own owner column.
-      const ownerMatch = /^owner:\s*(.+)$/i.exec(c.context ?? "");
-      const ownerValue = ownerMatch?.[1]?.trim() ?? null;
+      const ownerValue = c.ownerRaw ?? null;
+      const ownerIsAmbiguous = c.ownerSource === "ambiguous" || c.ownerSource === "legacy_context_ambiguous";
+      const sourceCount = c.commitmentSourceCount ?? 0;
       return (
         <CommitmentCard
           key={c.id}
@@ -616,17 +616,19 @@ export default function AccountDetailPage() {
           headline={c.title}
           provenance={provenance.length > 0 ? provenance : undefined}
           owner={ownerValue}
+          ownerAmbiguous={ownerIsAmbiguous}
           due={c.dueDate ? formatShortDate(c.dueDate) : null}
           dueDateRaw={c.dueDate ?? null}
+          trustBand={c.trustBand ?? "unscored"}
+          trustScore={c.trustScore ?? null}
+          sourceCount={sourceCount}
           audience={isInternal ? "internal" : "customer"}
           visibility={visibility}
           sharedRef={linearHref && c.linearIdentifier ? { label: c.linearIdentifier, href: linearHref } : undefined}
           stillActiveNote={stillActiveNote}
           onEditHeadline={(title) => work.handleUpdateCommitment(c.id, { title })}
           onEditOwner={(owner) =>
-            work.handleUpdateCommitment(c.id, {
-              context: owner.trim().length > 0 ? `owner: ${owner.trim()}` : "",
-            })
+            work.handleUpdateCommitment(c.id, workCommitmentOwnerPatch(owner))
           }
           onEditDueDate={(dueDate) => work.handleUpdateCommitment(c.id, { dueDate })}
           actions={

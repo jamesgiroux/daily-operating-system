@@ -108,6 +108,14 @@ pub fn extract_email_commitments(
             source_id: Some(email_id.to_string()),
             source_label: Some(subject.to_string()),
             action_kind: crate::action_status::KIND_TASK.to_string(),
+            commitment_id: None,
+            owner_raw: None,
+            owner_entity_id: None,
+            owner_confidence: None,
+            owner_source: None,
+            trust_score: None,
+            trust_band: None,
+            commitment_source_count: None,
             context: Some(format!(
                 "From: {} — {}",
                 from_email, commitment.commitment_type
