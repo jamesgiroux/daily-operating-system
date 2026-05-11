@@ -10,7 +10,8 @@
 //! → bump epoch → run SQL backfills → rekey m1-m8 → run THIS pass → reconcile →
 //! resume).
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use rusqlite::params;
 use serde_json::json;
@@ -1043,6 +1044,12 @@ fn bump_schema_epoch_and_drain_fence(
     db: &ActionDb,
     context: &str,
 ) -> Result<(i64, i64, usize), String> {
+    let (epoch_before, epoch_after) = bump_schema_epoch_for_cutover(db, context)?;
+    let remaining = drain_cutover_fence(context)?;
+    Ok((epoch_before, epoch_after, remaining))
+}
+
+fn bump_schema_epoch_for_cutover(db: &ActionDb, context: &str) -> Result<(i64, i64), String> {
     let epoch_before = read_schema_epoch(db)?;
     let epoch_after = crate::intelligence::write_fence::bump_schema_epoch(db)?;
     log::info!(
@@ -1050,11 +1057,14 @@ fn bump_schema_epoch_and_drain_fence(
         epoch_before,
         epoch_after
     );
+    Ok((epoch_before, epoch_after))
+}
 
+fn drain_cutover_fence(context: &str) -> Result<usize, String> {
     match crate::intelligence::write_fence::drain_with_timeout(DOS7_CUTOVER_DRAIN_TIMEOUT) {
         Ok(remaining) => {
             log::info!("[{context}] drained; in_flight={remaining}");
-            Ok((epoch_before, epoch_after, remaining))
+            Ok(remaining)
         }
         Err(remaining) => Err(format!(
             "{context}: drain timed out with {remaining} in-flight FenceCycle handle(s); aborting before backfill per plan §8"
@@ -1073,6 +1083,13 @@ fn run_structured_claim_backfill_if_pending_with_cutover_fence(
 
     let _ = bump_schema_epoch_and_drain_fence(db, context)?;
     run_structured_claim_backfill_if_pending(ctx, db, context)
+}
+
+#[derive(Debug)]
+enum CutoverStartupPlan {
+    Noop,
+    AlreadyCompleteStructured { epoch_before: i64, epoch_after: i64 },
+    Claimed { epoch_before: i64, epoch_after: i64 },
 }
 
 /// Run the full claims cutover sequence atomically. Returns Err if any
@@ -1101,18 +1118,35 @@ pub fn run_dos7_cutover(
         workspace_root.display()
     );
 
-    let mut report = CutoverReport {
-        completed_at: chrono::Utc::now(),
-        ..Default::default()
-    };
-
     // Step 2: bump schema_epoch.
     let (epoch_before, epoch_after, remaining) =
         bump_schema_epoch_and_drain_fence(db, "DOS-7 cutover")?;
-    report.schema_epoch_before = epoch_before;
-    report.schema_epoch_after = epoch_after;
-    report.drain_in_flight_remaining = remaining;
-    report.drain_timed_out = false;
+    run_dos7_cutover_after_fence(
+        ctx,
+        db,
+        workspace_root,
+        epoch_before,
+        epoch_after,
+        remaining,
+    )
+}
+
+fn run_dos7_cutover_after_fence(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    workspace_root: &Path,
+    epoch_before: i64,
+    epoch_after: i64,
+    drain_in_flight_remaining: usize,
+) -> Result<CutoverReport, String> {
+    let mut report = CutoverReport {
+        completed_at: chrono::Utc::now(),
+        schema_epoch_before: epoch_before,
+        schema_epoch_after: epoch_after,
+        drain_in_flight_remaining,
+        drain_timed_out: false,
+        ..Default::default()
+    };
 
     // Step 4: run pending migrations. Migrations 131+132 (claims SQL
     // backfills) plus any newer registered versions are applied here.
@@ -1258,6 +1292,238 @@ const DOS7_CUTOVER_STARTED_AT_KEY: &str = "dos7_cutover_started_at";
 /// treating it as stale (e.g. crashed mid-cutover) and reclaiming.
 /// 30 minutes covers the worst-case JSON-blob workspace size.
 const DOS7_CUTOVER_STALE_AFTER_SECS: i64 = 30 * 60;
+
+fn prepare_dos7_cutover_startup_plan(db: &ActionDb) -> Result<CutoverStartupPlan, String> {
+    let claims_table_exists: bool = db
+        .conn_ref()
+        .query_row(
+            "SELECT count(*) FROM sqlite_master \
+             WHERE type = 'table' AND name = 'intelligence_claims'",
+            [],
+            |row| row.get::<_, i64>(0).map(|c| c > 0),
+        )
+        .map_err(|e| format!("DOS-7 cutover startup gate: {e}"))?;
+    if !claims_table_exists {
+        return Ok(CutoverStartupPlan::Noop);
+    }
+
+    let now_ts = chrono::Utc::now().timestamp();
+    let conn = db.conn_ref();
+    conn.execute_batch("BEGIN IMMEDIATE")
+        .map_err(|e| format!("DOS-7 cutover claim BEGIN: {e}"))?;
+
+    let claim_decision = (|| -> Result<CutoverClaimDecision, String> {
+        let completed: Option<i64> = conn
+            .query_row(
+                "SELECT value FROM migration_state WHERE key = ?1",
+                [DOS7_CUTOVER_COMPLETED_AT_KEY],
+                |row| row.get(0),
+            )
+            .ok();
+        if completed.is_some() {
+            return Ok(CutoverClaimDecision::AlreadyComplete);
+        }
+
+        let in_flight: Option<i64> = conn
+            .query_row(
+                "SELECT value FROM migration_state WHERE key = ?1",
+                [DOS7_CUTOVER_STARTED_AT_KEY],
+                |row| row.get(0),
+            )
+            .ok();
+        if let Some(started_ts) = in_flight {
+            if now_ts - started_ts < DOS7_CUTOVER_STALE_AFTER_SECS {
+                return Ok(CutoverClaimDecision::InFlightElsewhere { started_ts });
+            }
+            conn.execute(
+                "UPDATE migration_state SET value = ?2 WHERE key = ?1",
+                rusqlite::params![DOS7_CUTOVER_STARTED_AT_KEY, now_ts],
+            )
+            .map_err(|e| format!("DOS-7 cutover reclaim stale marker: {e}"))?;
+            return Ok(CutoverClaimDecision::Claimed);
+        }
+
+        conn.execute(
+            "INSERT INTO migration_state (key, value) VALUES (?1, ?2)",
+            rusqlite::params![DOS7_CUTOVER_STARTED_AT_KEY, now_ts],
+        )
+        .map_err(|e| format!("DOS-7 cutover claim insert: {e}"))?;
+        Ok(CutoverClaimDecision::Claimed)
+    })();
+
+    let claim_decision = match claim_decision {
+        Ok(decision) => {
+            conn.execute_batch("COMMIT")
+                .map_err(|e| format!("DOS-7 cutover claim COMMIT: {e}"))?;
+            decision
+        }
+        Err(e) => {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
+            let _ = conn.execute_batch("ROLLBACK");
+            return Err(e);
+        }
+    };
+
+    match claim_decision {
+        CutoverClaimDecision::AlreadyComplete => {
+            if !has_pending_structural_backfill_rows(db)? {
+                log::debug!(
+                    "[DOS-7 cutover] already completed by a prior process; skipping startup hook"
+                );
+                return Ok(CutoverStartupPlan::Noop);
+            }
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let ext = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+            ctx.check_mutation_allowed().map_err(|e| {
+                format!("DOS-7 cutover already complete startup probe mutation gate: {e}")
+            })?;
+            let (epoch_before, epoch_after) =
+                bump_schema_epoch_for_cutover(db, "DOS-7 cutover already complete startup probe")?;
+            Ok(CutoverStartupPlan::AlreadyCompleteStructured {
+                epoch_before,
+                epoch_after,
+            })
+        }
+        CutoverClaimDecision::InFlightElsewhere { started_ts } => {
+            log::info!(
+                "[DOS-7 cutover] in flight elsewhere since unix={}; this process defers (stale-after={}s)",
+                started_ts, DOS7_CUTOVER_STALE_AFTER_SECS
+            );
+            Ok(CutoverStartupPlan::Noop)
+        }
+        CutoverClaimDecision::Claimed => {
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let ext = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+            ctx.check_mutation_allowed()
+                .map_err(|e| format!("DOS-7 cutover mutation gate: {e}"))?;
+            log::info!("[DOS-7 cutover] claimed by this process; running now");
+            let (epoch_before, epoch_after) = bump_schema_epoch_for_cutover(db, "DOS-7 cutover")?;
+            Ok(CutoverStartupPlan::Claimed {
+                epoch_before,
+                epoch_after,
+            })
+        }
+    }
+}
+
+fn record_dos7_cutover_completion(db: &ActionDb) -> Result<(), String> {
+    db.conn_ref()
+        .execute(
+            "INSERT OR REPLACE INTO migration_state (key, value) VALUES (?1, ?2)",
+            rusqlite::params![
+                DOS7_CUTOVER_COMPLETED_AT_KEY,
+                chrono::Utc::now().timestamp()
+            ],
+        )
+        .map_err(|e| format!("DOS-7 cutover record completion: {e}"))?;
+
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
+    let _ = db.conn_ref().execute(
+        "DELETE FROM migration_state WHERE key = ?1",
+        [DOS7_CUTOVER_STARTED_AT_KEY],
+    );
+
+    Ok(())
+}
+
+pub async fn run_dos7_cutover_if_pending_via_db_service(
+    svc: Arc<crate::db_service::DbService>,
+    workspace_root: PathBuf,
+) -> Result<Option<CutoverReport>, String> {
+    let plan = svc
+        .writer()
+        .call(|conn| {
+            let db = ActionDb::from_conn(conn);
+            Ok(prepare_dos7_cutover_startup_plan(db))
+        })
+        .await
+        .map_err(|e| format!("DOS-7 cutover startup prepare DB write error: {e}"))??;
+
+    match plan {
+        CutoverStartupPlan::Noop => Ok(None),
+        CutoverStartupPlan::AlreadyCompleteStructured {
+            epoch_before,
+            epoch_after,
+        } => {
+            let context = "DOS-7 cutover already complete startup probe";
+            let drain_remaining = tokio::task::spawn_blocking(move || drain_cutover_fence(context))
+                .await
+                .map_err(|e| format!("{context}: drain task join failed: {e}"))??;
+            let report = svc
+                .writer()
+                .call(move |conn| {
+                    let db = ActionDb::from_conn(conn);
+                    let clock = crate::services::context::SystemClock;
+                    let rng = crate::services::context::SystemRng;
+                    let ext = crate::services::context::ExternalClients::default();
+                    let ctx =
+                        crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+                    Ok(run_structured_claim_backfill_if_pending(&ctx, db, context))
+                })
+                .await
+                .map_err(|e| format!("{context}: structured backfill DB write error: {e}"))??;
+            if let Some(report) = report {
+                log::info!(
+                    "[{context}] structured claim backfill after fence: {} rows examined, {} live, {} legacy_unmigrated; schema_epoch {}->{}, drained {}",
+                    report.rows_examined,
+                    report.transitioned_live,
+                    report.transitioned_legacy_unmigrated,
+                    epoch_before,
+                    epoch_after,
+                    drain_remaining,
+                );
+            }
+            log::debug!(
+                "[DOS-7 cutover] already completed by a prior process; skipping startup hook"
+            );
+            Ok(None)
+        }
+        CutoverStartupPlan::Claimed {
+            epoch_before,
+            epoch_after,
+        } => {
+            let context = "DOS-7 cutover";
+            let drain_remaining = tokio::task::spawn_blocking(move || drain_cutover_fence(context))
+                .await
+                .map_err(|e| format!("{context}: drain task join failed: {e}"))??;
+            let report = svc
+                .writer()
+                .call(move |conn| {
+                    let db = ActionDb::from_conn(conn);
+                    let clock = crate::services::context::SystemClock;
+                    let rng = crate::services::context::SystemRng;
+                    let ext = crate::services::context::ExternalClients::default();
+                    let ctx =
+                        crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+                    Ok((|| -> Result<CutoverReport, String> {
+                        let report = run_dos7_cutover_after_fence(
+                            &ctx,
+                            db,
+                            &workspace_root,
+                            epoch_before,
+                            epoch_after,
+                            drain_remaining,
+                        )?;
+                        record_dos7_cutover_completion(db)?;
+                        Ok(report)
+                    })())
+                })
+                .await
+                .map_err(|e| format!("DOS-7 cutover DB write error: {e}"))??;
+            Ok(Some(report))
+        }
+    }
+}
 
 /// Idempotently run the claims cutover (rekey + JSON-blob
 /// backfill + reconcile) on startup.
@@ -1406,27 +1672,7 @@ pub fn run_dos7_cutover_if_pending(
 
     // Record completion. INSERT OR REPLACE so a stale-claim reclaim
     // followed by a successful run still persists the marker.
-    db.conn_ref()
-        .execute(
-            "INSERT OR REPLACE INTO migration_state (key, value) VALUES (?1, ?2)",
-            rusqlite::params![
-                DOS7_CUTOVER_COMPLETED_AT_KEY,
-                chrono::Utc::now().timestamp()
-            ],
-        )
-        .map_err(|e| format!("DOS-7 cutover record completion: {e}"))?;
-
-    // Clear the started marker so the migration_state reflects only
-    // the completed timestamp going forward.
-    #[allow(
-        clippy::let_underscore_must_use,
-        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-    )]
-    // best-effort: completed_at is authoritative; stale started_at is ignored after completion.
-    let _ = db.conn_ref().execute(
-        "DELETE FROM migration_state WHERE key = ?1",
-        [DOS7_CUTOVER_STARTED_AT_KEY],
-    );
+    record_dos7_cutover_completion(db)?;
 
     Ok(Some(report))
 }
@@ -1441,10 +1687,13 @@ enum CutoverClaimDecision {
 #[allow(clippy::needless_borrow)]
 mod tests {
     use super::*;
+    use crate::db::{DbKeyProvider, EncryptionKey, UserIdentity};
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
     use chrono::TimeZone;
     use rusqlite::Connection;
     use std::fs;
+    use std::sync::{mpsc, Arc};
+    use std::time::Duration;
 
     fn fixture_ctx<'a>(
         clock: &'a FixedClock,
@@ -1452,6 +1701,44 @@ mod tests {
         ext: &'a ExternalClients,
     ) -> ServiceContext<'a> {
         ServiceContext::test_live(clock, rng, ext)
+    }
+
+    struct FixtureKeyProvider {
+        key: EncryptionKey,
+    }
+
+    impl FixtureKeyProvider {
+        fn new() -> Self {
+            Self {
+                key: EncryptionKey::from_hex(
+                    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+                ),
+            }
+        }
+    }
+
+    impl DbKeyProvider for FixtureKeyProvider {
+        fn get_or_create_key(
+            &self,
+            _user: &UserIdentity,
+        ) -> crate::db::key_provider::Result<EncryptionKey> {
+            Ok(self.key.clone())
+        }
+
+        fn rotate_key(
+            &self,
+            _user: &UserIdentity,
+        ) -> crate::db::key_provider::Result<EncryptionKey> {
+            Ok(self.key.clone())
+        }
+    }
+
+    struct GlobalDbServiceGuard;
+
+    impl Drop for GlobalDbServiceGuard {
+        fn drop(&mut self) {
+            crate::db_service::uninstall_global();
+        }
     }
 
     fn fresh_conn() -> Connection {
@@ -3210,6 +3497,148 @@ mod tests {
         assert!(
             matches!(canonical_status.as_str(), "live" | "legacy_unmigrated"),
             "pending_backfill row must be terminal after the fence drains, got {canonical_status}"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn already_complete_structured_probe_drain_releases_db_service_writer_lane() {
+        let workspace = tempfile::tempdir().unwrap();
+        let db_dir = tempfile::tempdir().unwrap();
+        let db_path = db_dir
+            .path()
+            .join("already-complete-db-service-fence.sqlite");
+        let provider = Arc::new(FixtureKeyProvider::new());
+        let svc = crate::db_service::DbService::open_at(db_path.clone(), provider.clone())
+            .await
+            .expect("open encrypted DbService");
+        crate::db_service::install_global(svc.clone());
+        let _global_guard = GlobalDbServiceGuard;
+
+        svc.writer()
+            .call(|conn| {
+                conn.execute(
+                    "INSERT OR REPLACE INTO migration_state (key, value)
+                     VALUES ('dos7_cutover_completed_at', 1777777777)",
+                    [],
+                )
+                .unwrap();
+                conn.execute(
+                    "INSERT INTO intelligence_claims (
+                        id, subject_ref, claim_type, field_path, topic_key, text, dedup_key, item_hash,
+                        actor, data_source, observed_at, created_at, provenance_json, metadata_json,
+                        claim_state, surfacing_state, retraction_reason, temporal_scope, sensitivity,
+                        verification_state, canonical_status, non_semantic_mergeable
+                     ) VALUES (
+                        'legacy-completed-marker-db-service-fenced-structured-1',
+                        '{\"kind\":\"account\",\"id\":\"acct-1\"}',
+                        'risk', 'health.risk', NULL, 'Renewal risk is elevated',
+                        'dedup-completed-marker-db-service-fenced-structured',
+                        'hash-completed-marker-db-service-fenced-structured',
+                        'system_backfill', 'legacy_dismissal', '2026-04-01T00:00:00Z',
+                        '2026-04-01T00:00:00Z', '{}', NULL,
+                        'tombstoned', 'active', 'user_removal', 'state', 'internal', 'active',
+                        'pending_backfill', TRUE
+                     )",
+                    [],
+                )
+                .unwrap();
+                Ok(())
+            })
+            .await
+            .expect("seed writer");
+
+        let (captured_tx, captured_rx) = mpsc::channel();
+        let (start_open_tx, start_open_rx) = mpsc::channel();
+        let (open_done_tx, open_done_rx) = mpsc::channel();
+        let worker_provider = provider.clone();
+        let worker_db_path = db_path.clone();
+        let worker = std::thread::spawn(move || -> Result<(), String> {
+            let db = ActionDb::open_resolved_path_for_tests(
+                worker_db_path.clone(),
+                worker_provider.clone(),
+            )
+            .map_err(|e| format!("worker initial ActionDb::open: {e}"))?;
+            let cycle = crate::intelligence::write_fence::FenceCycle::capture(&db)?;
+            captured_tx
+                .send(cycle.captured_epoch())
+                .expect("send captured epoch");
+
+            start_open_rx.recv().expect("wait for queued open signal");
+            let reopened = ActionDb::open_resolved_path_for_tests(worker_db_path, worker_provider)
+                .map_err(|e| format!("worker queued ActionDb::open: {e}"))?;
+            drop(reopened);
+            drop(cycle);
+            open_done_tx.send(()).expect("send open done");
+            Ok(())
+        });
+
+        let initial_epoch = captured_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("worker captured FenceCycle");
+        let probe_svc = svc.clone();
+        let probe_workspace = workspace.path().to_path_buf();
+        let probe = tokio::spawn(async move {
+            run_dos7_cutover_if_pending_via_db_service(probe_svc, probe_workspace).await
+        });
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        loop {
+            let epoch = svc
+                .reader()
+                .call(|conn| {
+                    conn.query_row(
+                        "SELECT value FROM migration_state WHERE key = 'schema_epoch'",
+                        [],
+                        |row| row.get::<_, i64>(0),
+                    )
+                })
+                .await
+                .expect("read epoch");
+            if epoch > initial_epoch {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "timed out waiting for AlreadyComplete probe to bump schema_epoch"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
+        start_open_tx.send(()).expect("signal worker open");
+        open_done_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("worker ActionDb::open should complete while probe drains");
+
+        let probe_result = tokio::time::timeout(Duration::from_secs(3), probe)
+            .await
+            .expect("AlreadyComplete probe should not hang behind DbService writer")
+            .expect("probe task panicked")
+            .expect("probe result");
+        assert!(
+            probe_result.is_none(),
+            "DOS-7 cutover remains already complete; only structured backfill should run"
+        );
+        worker
+            .join()
+            .expect("worker thread panicked")
+            .expect("worker completed");
+
+        let canonical_status = svc
+            .reader()
+            .call(|conn| {
+                conn.query_row(
+                    "SELECT canonical_status
+                     FROM intelligence_claims
+                     WHERE id = 'legacy-completed-marker-db-service-fenced-structured-1'",
+                    [],
+                    |row| row.get::<_, String>(0),
+                )
+            })
+            .await
+            .expect("read final row");
+        assert!(
+            matches!(canonical_status.as_str(), "live" | "legacy_unmigrated"),
+            "pending_backfill row must be terminal after split drain, got {canonical_status}"
         );
     }
 
