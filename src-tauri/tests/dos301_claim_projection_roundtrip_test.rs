@@ -13,7 +13,7 @@ const TYPED_FEEDBACK_SQL: &str =
     include_str!("../src/migrations/135_dos_294_typed_feedback_schema.sql");
 const CLAIM_SURFACE_DISMISSALS_SQL: &str =
     include_str!("../src/migrations/154_claim_surface_dismissals.sql");
-const SEMANTIC_EVIDENCE_SQL: &str = include_str!("../src/migrations/158_semantic_evidence.sql");
+const SEMANTIC_EVIDENCE_SQL: &str = include_str!("../src/migrations/165_semantic_evidence.sql");
 
 const STRUCTURED_CLAIM_CANONICALIZATION_COLUMNS_SQL: &str = r#"
 ALTER TABLE intelligence_claims ADD COLUMN structured_claim_json TEXT;

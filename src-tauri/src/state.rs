@@ -349,7 +349,7 @@ pub struct AppState {
     pub workflow: WorkflowState,
     /// Async database service with read/write separation. Initialized async
     /// in Tauri setup after `AppState::new()`. Use `db_read()` / `db_write()`
-    /// for async code, or `with_db_read()` / `with_db_write()` for sync code.
+    /// for async code, or `with_db()` for sync code.
     ///
     /// `RwLock<Option<>>` instead of `OnceCell` so dev mode can reinitialize
     /// the service to point at `dailyos-dev.db`.
@@ -451,7 +451,6 @@ pub const BASE_EMAIL_SIGNAL_TYPES: &[&str] = &[
     "engagement_warning",
     "escalation",
     "expansion_opportunity",
-    "cadence_anomaly",
     "email_cadence_drop",
     "project_health_warning",
 ];
@@ -1334,23 +1333,12 @@ impl AppState {
             .cloned()
     }
 
-    /// Sync DB read helper.
+    /// Sync DB helper.
     ///
     /// Opens a fresh `ActionDb` connection for the closure. Each call gets its
-    /// own connection -- no shared mutex, no contention with async `db_service`.
-    pub fn with_db_read<T, F>(&self, f: F) -> Result<T, String>
-    where
-        F: FnOnce(&crate::db::ActionDb) -> Result<T, String>,
-    {
-        let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-            .map_err(|e| format!("Database unavailable: {e}"))?;
-        f(&db)
-    }
-
-    /// Sync DB write helper.
-    ///
-    /// Opens a fresh `ActionDb` connection for the closure.
-    pub fn with_db_write<T, F>(&self, f: F) -> Result<T, String>
+    /// own connection -- no shared mutex, no contention with async `db_service`,
+    /// and no read/write distinction (callers must not assume serialization).
+    pub fn with_db<T, F>(&self, f: F) -> Result<T, String>
     where
         F: FnOnce(&crate::db::ActionDb) -> Result<T, String>,
     {

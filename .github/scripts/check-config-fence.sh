@@ -27,9 +27,6 @@ FENCED_PREFIXES=(
   ".claude/git-hooks/"
 )
 
-FENCED_FILES=(
-)
-
 hits=()
 
 while IFS= read -r path; do
@@ -48,14 +45,6 @@ while IFS= read -r path; do
     case "$path" in
       "${pre}"*) hits+=("$path"); continue 2 ;;
     esac
-  done
-
-  # Single-file matches
-  for f in "${FENCED_FILES[@]}"; do
-    if [ "$path" = "$f" ]; then
-      hits+=("$path")
-      continue 2
-    fi
   done
 done
 

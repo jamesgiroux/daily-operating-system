@@ -17,6 +17,8 @@
 import { useState, type ReactNode } from "react";
 import { EditableText } from "@/components/ui/EditableText";
 import { Pill } from "@/components/ui/Pill";
+import { TrustBandIndicator } from "@/components/ui/TrustBandIndicator";
+import type { TrustBandWire } from "@/types";
 import s from "./WorkSurface.module.css";
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -264,8 +266,12 @@ export interface CommitmentCardProps {
   /** e.g. "meeting · Feb 17". Rendered as cite chip after "From:". */
   provenance?: { label: string; href?: string }[];
   owner?: string | null;
+  ownerAmbiguous?: boolean;
   /** Human-readable due string or null. Never flagged red — neutral copy. */
   due?: string | null;
+  trustBand?: TrustBandWire;
+  trustScore?: number | null;
+  sourceCount?: number;
   audience: "customer" | "internal";
   visibility: "private" | "shared";
   /** When visibility === "shared", the external tracker reference (e.g. Linear ID). */
@@ -303,7 +309,11 @@ export function CommitmentCard({
   headline,
   provenance,
   owner,
+  ownerAmbiguous,
   due,
+  trustBand = "unscored",
+  trustScore,
+  sourceCount = 0,
   audience,
   visibility,
   sharedRef,
@@ -354,11 +364,12 @@ export function CommitmentCard({
               value={owner ?? ""}
               onChange={onEditOwner}
               multiline={false}
-              placeholder="Unassigned"
+              placeholder={ownerAmbiguous ? "Ambiguous" : "Unassigned"}
             />
           ) : (
-            (owner ?? "Unassigned")
+            (ownerAmbiguous ? `Ambiguous: ${owner ?? "Unassigned"}` : owner ?? "Unassigned")
           )}
+          {ownerAmbiguous && onEditOwner && <span className={s.ownerAmbiguous}>Ambiguous</span>}
         </span>
         <span aria-hidden>·</span>
         <span>
@@ -389,6 +400,19 @@ export function CommitmentCard({
       </div>
 
       {linearStatus && <div className={s.linearStatusNote}>{linearStatus}</div>}
+
+      <details className={s.aboutCommitment}>
+        <summary className={s.aboutCommitmentSummary}>
+          <span>About this</span>
+          <TrustBandIndicator band={trustBand} className={s.aboutTrustDot} />
+          <span>{sourceCount} source{sourceCount === 1 ? "" : "s"}</span>
+        </summary>
+        <div className={s.aboutCommitmentBody}>
+          <span>Trust: {trustBand.replace(/_/g, " ")}</span>
+          {typeof trustScore === "number" && <span>Score: {Math.round(trustScore * 100)}%</span>}
+          {ownerAmbiguous && <span>Owner needs confirmation</span>}
+        </div>
+      </details>
 
       {stillActiveNote && (
         <div className={s.softNudge}>

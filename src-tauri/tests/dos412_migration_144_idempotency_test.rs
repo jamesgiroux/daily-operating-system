@@ -19,7 +19,7 @@ impl StartingState {
 }
 
 #[test]
-#[ignore = "legacy migration fixture needs a complete post-shadow-trust schema seed"]
+#[ignore = "legacy migration runner fixture needs post-shadow-trust schema refresh"]
 fn migration_144_rebuilds_prior_audit_schemas_to_canonical_shape() {
     for state in [
         StartingState::FreshNoV143,
@@ -48,7 +48,7 @@ fn migration_144_rebuilds_prior_audit_schemas_to_canonical_shape() {
 }
 
 #[test]
-#[ignore = "legacy migration fixture needs a complete post-shadow-trust schema seed"]
+#[ignore = "legacy migration runner fixture needs post-shadow-trust schema refresh"]
 fn migration_144_repairs_partial_prior_action_column_without_index() {
     let conn = Connection::open_in_memory().expect("open in-memory database");
     setup_base_reveal_audit_table(&conn);
@@ -66,7 +66,7 @@ fn migration_144_repairs_partial_prior_action_column_without_index() {
 }
 
 #[test]
-#[ignore = "legacy migration fixture needs a complete post-shadow-trust schema seed"]
+#[ignore = "legacy migration runner fixture needs post-shadow-trust schema refresh"]
 fn retry_after_partial_prior_state_preserves_tokens() {
     let conn = Connection::open_in_memory().expect("open in-memory database");
     setup_base_reveal_audit_table(&conn);
@@ -88,7 +88,7 @@ fn retry_after_partial_prior_state_preserves_tokens() {
 }
 
 #[test]
-#[ignore = "legacy migration fixture needs a complete post-shadow-trust schema seed"]
+#[ignore = "legacy migration runner fixture needs post-shadow-trust schema refresh"]
 fn idempotency_when_already_canonical() {
     let conn = Connection::open_in_memory().expect("open in-memory database");
     setup_base_reveal_audit_table(&conn);

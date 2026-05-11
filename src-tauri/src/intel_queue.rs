@@ -2013,6 +2013,35 @@ fn run_background_enrichment(
         .spawn_claude(&input.workspace, &input.prompt)
         .map_err(|e| format!("Claude Code error: {}", e))?;
 
+    // Extract and persist keywords from the raw AI response so background-tier
+    // enrichment (ProactiveHygiene, CalendarChange) keeps entity keywords
+    // current for transcript routing and entity resolution.
+    if let Some(keywords_json) = crate::intelligence::extract_keywords_from_response(&output.stdout)
+    {
+        if let Ok(db) =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        {
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let ext = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+            if let Err(err) = crate::services::intelligence::persist_entity_keywords(
+                &ctx,
+                &db,
+                &input.entity_type,
+                &input.entity_id,
+                &keywords_json,
+            ) {
+                log::warn!(
+                    "intel_queue: keyword persistence failed for {} {}: {}",
+                    input.entity_type,
+                    input.entity_id,
+                    err
+                );
+            }
+        }
+    }
+
     let inferred_relationships = extract_inferred_relationships(&output.stdout);
     let intel = parse_intelligence_response(
         &output.stdout,
@@ -2558,8 +2587,18 @@ pub fn run_enrichment_post_commit_side_effects(
 
     // Dual-write commitments from Glean enrichment to captured_commitments.
     if input.entity_type == "account" {
-        dual_write_enrichment_commitments(db, &input.entity_id, final_intel);
-        dual_write_enrichment_products(db, &input.entity_id, final_intel);
+        dual_write_enrichment_commitments(
+            db,
+            &state.signals.engine,
+            &input.entity_id,
+            final_intel,
+        );
+        dual_write_enrichment_products(
+            db,
+            &state.signals.engine,
+            &input.entity_id,
+            final_intel,
+        );
     }
 
     // Regenerate person files after intelligence enrichment.
@@ -4316,6 +4355,7 @@ pub(crate) fn invalidate_and_requeue_meeting_preps_with_db(
 /// Uses INSERT OR IGNORE to avoid duplicates.
 fn dual_write_enrichment_commitments(
     db: &crate::db::ActionDb,
+    engine: &crate::signals::propagation::PropagationEngine,
     account_id: &str,
     intel: &IntelligenceJson,
 ) {
@@ -4381,8 +4421,9 @@ fn dual_write_enrichment_commitments(
             "source": "glean_enrichment",
         })
         .to_string();
-        if let Err(e) = crate::signals::bus::emit_signal(
+        if let Err(e) = crate::signals::bus::emit_signal_and_propagate(
             db,
+            engine,
             "account",
             account_id,
             "commitment_captured",
@@ -4400,6 +4441,7 @@ fn dual_write_enrichment_commitments(
 /// the intelligence JSON blob.
 fn dual_write_enrichment_products(
     db: &crate::db::ActionDb,
+    engine: &crate::signals::propagation::PropagationEngine,
     entity_id: &str,
     intel: &IntelligenceJson,
 ) {
@@ -4459,8 +4501,9 @@ fn dual_write_enrichment_products(
             clippy::let_underscore_must_use,
             reason = "intentional best-effort discard; preserves existing non-blocking behavior"
         )]
-        let _ = crate::signals::bus::emit_signal(
+        let _ = crate::signals::bus::emit_signal_and_propagate(
             db,
+            engine,
             "account",
             entity_id,
             "product_data_updated",

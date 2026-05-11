@@ -4,7 +4,7 @@ use super::MigrationError;
 
 const CLAIMS_TABLE: &str = "intelligence_claims";
 
-pub(super) fn migrate_v161(conn: &Connection) -> Result<(), MigrationError> {
+pub(super) fn migrate_v167(conn: &Connection) -> Result<(), MigrationError> {
     if !table_exists(conn, CLAIMS_TABLE)? {
         return Err(format!("required table {CLAIMS_TABLE} is missing"));
     }

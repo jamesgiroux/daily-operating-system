@@ -207,7 +207,7 @@ impl Executor {
             return Ok(0);
         }
 
-        self.state.with_db_write(|db| {
+        self.state.with_db(|db| {
             db.conn_ref()
                 .execute_batch("BEGIN")
                 .map_err(|e| e.to_string())?;

@@ -11,7 +11,7 @@
 -- if no duplicates exist, all statements are no-ops.
 --
 -- Strategy:
---   1. Pick a canonical action per (entity, normalized_title) group:
+--   1. Pick a canonical action per (entity, normalized_title, due, owner) group:
 --      prefer user-accepted rows (status='unstarted' or 'started')
 --      over backlog rows; tie-break by oldest created_at.
 --   2. Rewire any ai_commitment_bridge rows pointing at a non-canonical
@@ -20,7 +20,7 @@
 --
 -- Forward-going dedup is enforced at the application layer in
 -- `services::commitment_bridge::sync_ai_commitments` via
--- `find_existing_open_commitment_by_title`.
+-- `find_existing_open_commitment_by_identity`.
 
 BEGIN;
 
@@ -31,17 +31,31 @@ CREATE TEMP TABLE _dos321_canonical AS
 SELECT
     canonical_id,
     coalesce(account_id, project_id) AS entity_id,
-    norm_title
+    norm_title,
+    due_date_key,
+    owner_key
 FROM (
     SELECT
         a.id AS canonical_id,
         a.account_id,
         a.project_id,
         lower(trim(a.title)) AS norm_title,
+        COALESCE(a.due_date, '') AS due_date_key,
+        CASE
+            WHEN a.context IS NOT NULL AND lower(trim(a.context)) LIKE 'owner:%'
+            THEN trim(substr(trim(a.context), length('owner:') + 1))
+            ELSE ''
+        END AS owner_key,
         ROW_NUMBER() OVER (
             PARTITION BY
                 coalesce(a.account_id, a.project_id),
-                lower(trim(a.title))
+                lower(trim(a.title)),
+                COALESCE(a.due_date, ''),
+                CASE
+                    WHEN a.context IS NOT NULL AND lower(trim(a.context)) LIKE 'owner:%'
+                    THEN trim(substr(trim(a.context), length('owner:') + 1))
+                    ELSE ''
+                END
             ORDER BY
                 CASE a.status
                     WHEN 'started'   THEN 0
@@ -59,7 +73,7 @@ FROM (
 WHERE rn = 1;
 
 -- Index the temp table so the rewire/delete joins are fast.
-CREATE INDEX _dos321_idx ON _dos321_canonical (entity_id, norm_title);
+CREATE INDEX _dos321_idx ON _dos321_canonical (entity_id, norm_title, due_date_key, owner_key);
 
 -- Rewire bridge rows: any bridge row whose action_id is a non-canonical
 -- duplicate gets redirected to the canonical action_id. Bridge rows on
@@ -71,6 +85,12 @@ SET action_id = (
     JOIN _dos321_canonical c
       ON c.entity_id = coalesce(a.account_id, a.project_id)
      AND c.norm_title = lower(trim(a.title))
+     AND c.due_date_key = COALESCE(a.due_date, '')
+     AND c.owner_key = CASE
+            WHEN a.context IS NOT NULL AND lower(trim(a.context)) LIKE 'owner:%'
+            THEN trim(substr(trim(a.context), length('owner:') + 1))
+            ELSE ''
+         END
     WHERE a.id = ai_commitment_bridge.action_id
     LIMIT 1
 )
@@ -80,6 +100,12 @@ WHERE action_id IN (
     JOIN _dos321_canonical c
       ON c.entity_id = coalesce(a.account_id, a.project_id)
      AND c.norm_title = lower(trim(a.title))
+     AND c.due_date_key = COALESCE(a.due_date, '')
+     AND c.owner_key = CASE
+            WHEN a.context IS NOT NULL AND lower(trim(a.context)) LIKE 'owner:%'
+            THEN trim(substr(trim(a.context), length('owner:') + 1))
+            ELSE ''
+         END
     WHERE a.action_kind = 'commitment'
       AND a.id != c.canonical_id
 );
@@ -94,6 +120,12 @@ WHERE id IN (
     JOIN _dos321_canonical c
       ON c.entity_id = coalesce(a.account_id, a.project_id)
      AND c.norm_title = lower(trim(a.title))
+     AND c.due_date_key = COALESCE(a.due_date, '')
+     AND c.owner_key = CASE
+            WHEN a.context IS NOT NULL AND lower(trim(a.context)) LIKE 'owner:%'
+            THEN trim(substr(trim(a.context), length('owner:') + 1))
+            ELSE ''
+         END
     WHERE a.action_kind = 'commitment'
       AND a.status NOT IN ('completed', 'cancelled', 'rejected', 'archived')
       AND a.id != c.canonical_id

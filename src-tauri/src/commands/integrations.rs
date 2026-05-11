@@ -1592,7 +1592,7 @@ pub fn disconnect_smithery(state: State<'_, Arc<AppState>>) -> Result<(), String
         config.clay.smithery_connection_id = None;
     })?;
 
-    let _ = state.with_db_write(|db| {
+    let _ = state.with_db(|db| {
         crate::db::data_lifecycle::purge_source(db, crate::db::data_lifecycle::DataSource::Clay)
             .map_err(|e| e.to_string())
     })?;
@@ -2946,7 +2946,7 @@ pub fn verify_audit_log_integrity(state: State<'_, Arc<AppState>>) -> Result<Str
 /// Get the current context mode (Local or Glean).
 #[tauri::command]
 pub fn get_context_mode(state: State<'_, Arc<AppState>>) -> Result<serde_json::Value, String> {
-    let mode = state.with_db_read(|db| Ok(crate::context_provider::read_context_mode(db)))?;
+    let mode = state.with_db(|db| Ok(crate::context_provider::read_context_mode(db)))?;
 
     serde_json::to_value(&mode).map_err(|e| format!("Serialization error: {}", e))
 }
@@ -2955,9 +2955,9 @@ pub fn get_context_mode(state: State<'_, Arc<AppState>>) -> Result<serde_json::V
 /// In Glean mode, Clay and Gravatar enrichment are automatically disabled.
 ///
 /// Uses the async `db_read` / `db_write` helpers (DbService pool) rather than
-/// the sync `with_db_read` / `with_db_write` helpers, which open a fresh
-/// `ActionDb` connection and can fail key verification under DbService's
-/// held-writer contention (v1.2.1 post-migration-108 regression).
+/// the sync `with_db` helper, which opens a fresh `ActionDb` connection and
+/// can fail key verification under DbService's held-writer contention
+/// (v1.2.1 post-migration-108 regression).
 #[allow(
     clippy::let_underscore_must_use,
     reason = "tauri::command macro emits internal Result glue that discards generated metadata"
@@ -3190,7 +3190,7 @@ pub fn get_glean_auth_status() -> crate::glean::GleanAuthStatus {
 
 /// Disconnect Glean — delete OAuth token from Keychain.
 ///
-/// Uses async `db_write` (DbService pool) rather than sync `with_db_write`
+/// Uses async `db_write` (DbService pool) rather than sync `with_db`
 /// for the same reason as `set_context_mode` — fresh-open path fails key
 /// verification under DbService contention.
 #[allow(
@@ -3290,7 +3290,7 @@ pub async fn dev_explore_glean_tools(
     use std::time::Instant;
 
     let mode = state
-        .with_db_read(|db| Ok(context_provider::read_context_mode(db)))
+        .with_db(|db| Ok(context_provider::read_context_mode(db)))
         .map_err(|e| format!("DB error: {e}"))?;
 
     let endpoint = match &mode {
@@ -3929,7 +3929,7 @@ pub async fn query_ephemeral_account(
 
     // 2. Check if account already exists
     let already_exists: Option<String> =
-        state.with_db_read(|db| Ok(db.get_account_by_name(&name).ok().flatten().map(|a| a.id)))?;
+        state.with_db(|db| Ok(db.get_account_by_name(&name).ok().flatten().map(|a| a.id)))?;
 
     // 3. Build prompt and call Glean
     let prompt = build_ephemeral_query_prompt(&name);
@@ -4110,7 +4110,7 @@ pub async fn discover_accounts_from_glean(
         .map_err(|e| format!("Glean discovery failed: {e}"))?;
 
     // 4. Check each discovered account against existing DB accounts
-    let existing_accounts: Vec<(crate::db::DbAccount, Vec<String>)> = state.with_db_read(|db| {
+    let existing_accounts: Vec<(crate::db::DbAccount, Vec<String>)> = state.with_db(|db| {
         db.get_all_accounts_with_domains(false)
             .map_err(|e| e.to_string())
     })?;
