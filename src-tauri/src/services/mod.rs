@@ -7,6 +7,7 @@ pub mod actions;
 pub mod claims;
 pub mod claims_backfill;
 pub mod commitment_bridge;
+pub mod comparator_thresholds;
 pub mod context;
 pub mod dashboard;
 pub mod derived_state;

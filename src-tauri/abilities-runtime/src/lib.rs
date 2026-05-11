@@ -6,6 +6,7 @@ pub mod intelligence {
     pub mod provider;
 }
 pub mod observability;
+pub mod predicates;
 pub mod sensitivity;
 pub mod services {
     pub mod context;
@@ -14,6 +15,7 @@ pub mod services {
         pub use crate::sensitivity::*;
     }
 }
+pub mod structured_claim;
 pub mod types;
 
 pub use abilities::*;

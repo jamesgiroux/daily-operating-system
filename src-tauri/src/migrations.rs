@@ -17,6 +17,7 @@ use rusqlite::{Connection, Error as SqliteError, ErrorCode};
 
 mod v144_audit_action_token;
 mod v156_semantic_merge_safety;
+mod v157_structured_claim_canonicalization;
 
 type MigrationError = String;
 
@@ -794,6 +795,12 @@ const MIGRATIONS: &[Migration] = &[
     Migration::Fn {
         version: 156,
         apply: v156_semantic_merge_safety::migrate_v156_semantic_merge_safety,
+    },
+    // ADR-0131: structured + embedding claim canonicalization substrate.
+    Migration::Fn {
+        version: 157,
+        apply:
+            v157_structured_claim_canonicalization::migrate_v157_structured_claim_canonicalization,
     },
 ];
 

@@ -13,14 +13,247 @@
 use std::path::Path;
 
 use rusqlite::params;
+use serde_json::json;
 
 use crate::db::ActionDb;
 use crate::intelligence::canonicalization::item_hash;
 use crate::intelligence::io::{read_intelligence_json, IntelligenceJson};
 use crate::services::claims::{
-    canonicalize_semantic_text, compute_dedup_key, item_kind_for_claim_type,
+    compute_dedup_key, item_kind_for_claim_type, normalize_claim_text,
+    structural_field_content_hash,
 };
+use crate::services::comparator_thresholds::PENDING_BACKFILL_MAX_RETRIES;
 use crate::services::context::ServiceContext;
+
+#[derive(Debug, Default, Clone)]
+pub struct StructuredClaimBackfillReport {
+    pub rows_examined: usize,
+    pub transitioned_live: usize,
+    pub transitioned_legacy_unmigrated: usize,
+    pub errors: Vec<String>,
+}
+
+struct StructuralBackfillRow {
+    id: String,
+    claim_type: String,
+    field_path: Option<String>,
+    text: String,
+    verification_state: String,
+    backfill_epoch: i64,
+}
+
+pub fn run_structured_claim_backfill(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+) -> Result<StructuredClaimBackfillReport, String> {
+    ctx.check_mutation_allowed()
+        .map_err(|e| format!("ADR-0131 structural backfill mutation gate: {e}"))?;
+
+    if !column_exists(db, "intelligence_claims", "canonical_status")? {
+        return Ok(StructuredClaimBackfillReport::default());
+    }
+
+    let rows = pending_structural_backfill_rows(db)?;
+    let mut report = StructuredClaimBackfillReport::default();
+
+    for row in rows {
+        report.rows_examined += 1;
+        let result = db.with_transaction(|tx| {
+            if row.backfill_epoch >= PENDING_BACKFILL_MAX_RETRIES {
+                tx.conn_ref()
+                    .execute(
+                        "UPDATE intelligence_claims
+                         SET canonical_status = 'legacy_unmigrated',
+                             non_semantic_mergeable = TRUE,
+                             backfill_epoch = backfill_epoch + 1
+                         WHERE id = ?1 AND canonical_status = 'pending_backfill'",
+                        params![&row.id],
+                    )
+                    .map_err(|e| format!("terminalize pending_backfill {}: {e}", row.id))?;
+                emit_structural_backfill_signal(
+                    tx,
+                    &row.id,
+                    "structural_backfill_changed",
+                    json!({
+                        "claim_id": row.id,
+                        "field_set": [],
+                        "canonical_status": "legacy_unmigrated",
+                    }),
+                )?;
+                emit_structural_backfill_signal(
+                    tx,
+                    &row.id,
+                    "trust_band_downgraded",
+                    json!({
+                        "claim_id": row.id,
+                        "new_band": "use_with_caution",
+                        "reason": "legacy_unmigrated",
+                    }),
+                )?;
+                return Ok("legacy");
+            }
+
+            let predicate_ref =
+                predicate_ref_for_backfill(&row.claim_type, row.field_path.as_deref());
+            let polarity = "affirm";
+            let object_value = json!({
+                "kind": "free_text",
+                "canonical": normalize_claim_text(&row.text),
+            })
+            .to_string();
+            let qualifiers = json!({
+                "time": null,
+                "region": null,
+                "scope": null,
+                "entity": null,
+                "numerics": [],
+                "extras": {},
+            })
+            .to_string();
+            let content_hash = structural_field_content_hash(
+                Some(predicate_ref),
+                Some(polarity),
+                Some(&object_value),
+                Some(&qualifiers),
+                &row.verification_state,
+            );
+
+            tx.conn_ref()
+                .execute(
+                    "UPDATE intelligence_claims
+                     SET predicate_ref = ?1,
+                         polarity = ?2,
+                         object_value = ?3,
+                         qualifiers = ?4,
+                         structural_field_content_hash = ?5,
+                         canonical_status = 'live',
+                         non_semantic_mergeable = FALSE,
+                         backfill_epoch = backfill_epoch + 1
+                     WHERE id = ?6 AND canonical_status = 'pending_backfill'",
+                    params![
+                        predicate_ref,
+                        polarity,
+                        &object_value,
+                        &qualifiers,
+                        &content_hash,
+                        &row.id,
+                    ],
+                )
+                .map_err(|e| format!("mark structured claim live {}: {e}", row.id))?;
+            emit_structural_backfill_signal(
+                tx,
+                &row.id,
+                "structural_backfill_changed",
+                json!({
+                    "claim_id": row.id,
+                    "field_set": ["predicate_ref", "polarity", "object_value", "qualifiers"],
+                    "canonical_status": "live",
+                }),
+            )?;
+            emit_structural_backfill_signal(
+                tx,
+                &row.id,
+                "trust_band_cleared",
+                json!({
+                    "claim_id": row.id,
+                    "new_band": "normal",
+                }),
+            )?;
+            Ok("live")
+        });
+
+        match result {
+            Ok("live") => report.transitioned_live += 1,
+            Ok("legacy") => report.transitioned_legacy_unmigrated += 1,
+            Ok(_) => {}
+            Err(error) => report.errors.push(error),
+        }
+    }
+
+    Ok(report)
+}
+
+fn pending_structural_backfill_rows(db: &ActionDb) -> Result<Vec<StructuralBackfillRow>, String> {
+    let mut stmt = db
+        .conn_ref()
+        .prepare(
+            "SELECT id, claim_type, field_path, text, verification_state, backfill_epoch
+             FROM intelligence_claims
+             WHERE canonical_status = 'pending_backfill'
+             ORDER BY created_at, id",
+        )
+        .map_err(|e| format!("prepare structural claim backfill scan: {e}"))?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(StructuralBackfillRow {
+                id: row.get(0)?,
+                claim_type: row.get(1)?,
+                field_path: row.get(2)?,
+                text: row.get(3)?,
+                verification_state: row.get(4)?,
+                backfill_epoch: row.get(5)?,
+            })
+        })
+        .map_err(|e| format!("query structural claim backfill scan: {e}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("read structural claim backfill row: {e}"))?;
+    Ok(rows)
+}
+
+fn predicate_ref_for_backfill(claim_type: &str, field_path: Option<&str>) -> &'static str {
+    match (claim_type, field_path.unwrap_or_default()) {
+        ("commitment", field) if field.contains("owner") => "commitment.owner",
+        ("commitment", field) if field.contains("due") => "commitment.due",
+        ("commitment", _) => "commitment.captured",
+        ("risk", _) => "risk.status",
+        ("objective", _) => "account.objective_status",
+        ("stakeholder_role", _) => "stakeholder.role",
+        ("topic", _) => "topic.mentioned",
+        (_, field) if field.contains("signature") => "contract.signature_status",
+        (_, field) if field.contains("approval") => "contract.approval_status",
+        _ => "topic.mentioned",
+    }
+}
+
+fn emit_structural_backfill_signal(
+    tx: &ActionDb,
+    claim_id: &str,
+    signal_type: &str,
+    payload: serde_json::Value,
+) -> Result<(), String> {
+    crate::signals::bus::emit_signal_in_active_tx(
+        tx,
+        "claim",
+        claim_id,
+        signal_type,
+        "claims_backfill:structured_claim",
+        &payload,
+    )
+    .map_err(|e| format!("emit {signal_type}: {e}"))?;
+    Ok(())
+}
+
+fn column_exists(db: &ActionDb, table_name: &str, column_name: &str) -> Result<bool, String> {
+    let mut stmt = db
+        .conn_ref()
+        .prepare(&format!("PRAGMA table_info({table_name})"))
+        .map_err(|e| format!("prepare table info for {table_name}: {e}"))?;
+    let mut rows = stmt
+        .query([])
+        .map_err(|e| format!("query table info for {table_name}: {e}"))?;
+    while let Some(row) = rows
+        .next()
+        .map_err(|e| format!("read table info for {table_name}: {e}"))?
+    {
+        let name: String = row
+            .get(1)
+            .map_err(|e| format!("read column name for {table_name}: {e}"))?;
+        if name == column_name {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
 
 /// Result of a single workspace backfill pass.
 #[derive(Debug, Default, Clone)]
@@ -222,7 +455,7 @@ fn runtime_identity_for_rekey(row: &RekeyRow) -> Result<(String, String, String)
                 "subject cannot be canonicalized for dedup_key (likely Multi/Global per ADR-0125): {e}"
             )
         })?;
-    let canonical_text = canonicalize_semantic_text(&row.text);
+    let canonical_text = normalize_claim_text(&row.text);
     let next_hash = item_hash(item_kind_for_claim_type(&row.claim_type), &canonical_text);
     let next_dedup_key = compute_dedup_key(
         &next_hash,
@@ -1116,7 +1349,7 @@ mod tests {
         let subject_value = serde_json::from_str::<serde_json::Value>(subject_ref).unwrap();
         let subject = crate::services::claims::subject_ref_from_json(&subject_value).unwrap();
         let compact_subject_ref = crate::services::claims::canonical_subject_ref(&subject).unwrap();
-        let canonical_text = crate::services::claims::canonicalize_semantic_text(text);
+        let canonical_text = crate::services::claims::normalize_claim_text(text);
         let hash = crate::intelligence::canonicalization::item_hash(
             crate::services::claims::item_kind_for_claim_type(claim_type),
             &canonical_text,
@@ -1214,7 +1447,7 @@ mod tests {
 
     /// L2 cycle-4 fix #1: backfilled m3 email rows store the legacy
     /// `email_dismissals.item_text` verbatim (with whatever whitespace
-    /// anomalies the user typed). Runtime canonicalize_semantic_text
+    /// anomalies the user typed). Runtime normalize_claim_text
     /// trims + collapses whitespace + lowercases. The rekey pass
     /// rewrites `item_hash` to the runtime-canonical hash so PRE-GATE
     /// hash tier matches a runtime commit_claim with the canonical

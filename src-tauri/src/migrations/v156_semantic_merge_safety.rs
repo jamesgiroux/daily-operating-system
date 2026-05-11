@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use rusqlite::{params, Connection};
 use serde_json::{Map, Value};
 
-use crate::services::claims::semantic_high_salience_qualifiers;
+use crate::services::claims::claim_qualifier_labels_for_migration;
 
 use super::MigrationError;
 
@@ -160,7 +160,7 @@ fn recover_qualifiers_from_provenance(
     let mut recovered = HashSet::new();
     let mut all_candidates_confident_empty = !candidates.is_empty();
     for text in candidates {
-        let qualifiers = semantic_high_salience_qualifiers(&text);
+        let qualifiers = claim_qualifier_labels_for_migration(&text);
         if qualifiers.is_empty() {
             all_candidates_confident_empty &=
                 provenance_text_candidate_confidently_preserves_case(&text);

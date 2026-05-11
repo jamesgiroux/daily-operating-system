@@ -43,7 +43,15 @@ use crate::db::claims::{
 };
 use crate::db::{ActionDb, DbError};
 use crate::intelligence::canonicalization::{item_hash, ItemKind};
+use crate::services::comparator_thresholds::{
+    ambiguous_base_interval, COMPARATOR_THRESHOLD_VERSION, HIGH_THRESHOLD, LOW_THRESHOLD,
+};
 use crate::services::context::{ClaimDismissalSurface, ServiceContext};
+use abilities_runtime::predicates::registry::{PredicateRef, PREDICATE_REGISTRY_VERSION};
+use abilities_runtime::structured_claim::{
+    CanonicalStatus, ClaimStatus as StructuredClaimStatus, EntityRef, ObjectValue, Polarity,
+    QualifierSet, StructuredClaim,
+};
 
 pub mod link_map;
 mod link_map_macro;
@@ -709,59 +717,25 @@ fn timestamp_millis_key(value: &str) -> String {
     trimmed.to_string()
 }
 
-/// L2 cycle-1 fix #6: light canonicalization that catches the most
-/// common drift between byte-different claim texts that mean the same
-/// thing — trailing whitespace, internal whitespace runs (tab/space
-/// mixes from different paste sources), and case variation.
-///
-/// Full canonicalization (Unicode NFC, punctuation folding,
-/// stopword normalization, etc.) lands separately. The claims substrate
-/// only needs enough canonicalization to make `same-meaning merge`
-/// (commit_claim's de-dupe-via-corroboration branch) catch the obvious
-/// repeats that legacy data and AI re-runs produce in practice.
-pub(crate) fn canonicalize_semantic_text(text: &str) -> String {
-    let trimmed = text.trim();
-    let collapsed: String = trimmed.split_whitespace().collect::<Vec<_>>().join(" ");
-    collapsed.to_lowercase()
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct SemanticSignature {
-    terms: HashSet<String>,
-    numbers: HashSet<String>,
-    qualifiers: HashSet<String>,
-    status: SemanticAssertionStatus,
-}
-
-const SEMANTIC_QUALIFIERS_METADATA_KEY: &str = "semantic_qualifiers";
 const NON_SEMANTIC_MERGEABLE_METADATA_KEY: &str = "non_semantic_mergeable";
-const LEGACY_SEMANTIC_QUALIFIERS_METADATA_KEY: &str = "dos280_semantic_qualifiers";
 const LEGACY_NON_SEMANTIC_MERGEABLE_METADATA_KEY: &str = "dos280_non_semantic_mergeable";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SemanticAssertionStatus {
-    Pending,
-    Confirmed,
-    Unknown,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SemanticDuplicateAction {
+enum CanonicalDuplicateAction {
     Canonicalize,
     NeedsVerification,
 }
 
-struct SemanticDuplicateMatch {
+struct CanonicalDuplicateMatch {
     claim: IntelligenceClaim,
-    action: SemanticDuplicateAction,
+    action: CanonicalDuplicateAction,
 }
 
-struct SemanticDuplicateLookup<'a> {
+struct CanonicalDuplicateLookup<'a> {
     subject: &'a SubjectRef,
     claim_type: &'a str,
     field_path: Option<&'a str>,
-    canonical_text: &'a str,
-    proposal_qualifiers: &'a HashSet<String>,
+    proposal_input: &'a CanonicalMatchInput,
     proposal_temporal_scope: &'a TemporalScope,
     proposal_sensitivity: &'a ClaimSensitivity,
     now: &'a str,
@@ -772,7 +746,7 @@ struct ContradictionLookup<'a> {
     claim_type: &'a str,
     field_path: Option<&'a str>,
     canonical_text: &'a str,
-    proposal_qualifiers: &'a HashSet<String>,
+    proposal_input: Option<&'a CanonicalMatchInput>,
     proposal_temporal_scope: &'a TemporalScope,
     proposal_sensitivity: &'a ClaimSensitivity,
     now: &'a str,
@@ -789,134 +763,64 @@ struct PreGateTombstoneLookup<'a> {
     now: &'a str,
 }
 
-/// Builds a semantic near-duplicate signature. This is deliberately conservative:
-/// it only compares claims that already share subject, claim_type,
-/// and field family, then requires strong overlap on normalized
-/// domain terms plus compatible assertion status.
-fn compute_semantic_signature(text: &str) -> SemanticSignature {
-    compute_semantic_signature_with_qualifiers(text, None)
+pub(crate) fn normalize_claim_text(text: &str) -> String {
+    normalize_claim_contractions(text)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim()
+        .to_ascii_lowercase()
 }
 
-fn compute_semantic_signature_with_qualifiers(
-    text: &str,
-    qualifiers: Option<&HashSet<String>>,
-) -> SemanticSignature {
-    let qualifiers = qualifiers
-        .cloned()
-        .unwrap_or_else(|| semantic_high_salience_qualifiers(text));
-    let contraction_normalized = normalize_semantic_contractions(text);
-    let mut normalized = String::with_capacity(text.len());
-    for ch in contraction_normalized.chars() {
-        if ch.is_ascii_alphanumeric() {
-            normalized.push(ch.to_ascii_lowercase());
-        } else {
-            normalized.push(' ');
-        }
-    }
-
-    let raw_tokens = normalized.split_whitespace().collect::<Vec<_>>();
-    let mut terms = HashSet::new();
-    let mut numbers = HashSet::new();
-    let mut status = SemanticAssertionStatus::Unknown;
-    let mut negate_window = 0usize;
-    let mut i = 0usize;
-
-    while i < raw_tokens.len() {
-        let mut raw = raw_tokens[i];
-        if raw == "sign" && raw_tokens.get(i + 1) == Some(&"off") {
-            raw = "signoff";
-            i += 1;
-        }
-
-        if raw_tokens
-            .get(i + 1)
-            .is_some_and(|next| is_semantic_negator(next))
-            && is_semantic_contraction_auxiliary_fragment(raw)
-        {
-            i += 1;
-            continue;
-        }
-
-        if is_semantic_negator(raw) {
-            negate_window = 3;
-            i += 1;
-            continue;
-        }
-
-        let negated = negate_window > 0;
-        negate_window = negate_window.saturating_sub(1);
-
-        if raw.chars().all(|ch| ch.is_ascii_digit()) {
-            numbers.insert(raw.to_string());
-            i += 1;
-            continue;
-        }
-
-        if let Some((term, term_status)) = lookup_semantic_term(raw, negated) {
-            terms.insert(term);
-            status = combine_semantic_status(status, term_status);
-        }
-
-        i += 1;
-    }
-
-    SemanticSignature {
-        terms,
-        numbers,
-        qualifiers,
-        status,
-    }
-}
-
-fn normalize_semantic_contractions(text: &str) -> String {
-    let normalized = semantic_wont_contraction_regex().replace_all(text, "will not");
-    let normalized = semantic_shant_contraction_regex().replace_all(&normalized, "shall not");
-    let normalized = semantic_aint_contraction_regex().replace_all(&normalized, "am not");
-    let normalized = semantic_cannot_regex().replace_all(&normalized, "can not");
-    let normalized = semantic_cant_contraction_regex().replace_all(&normalized, "can not");
-    semantic_negative_contraction_regex()
+fn normalize_claim_contractions(text: &str) -> String {
+    let normalized = claim_wont_contraction_regex().replace_all(text, "will not");
+    let normalized = claim_shant_contraction_regex().replace_all(&normalized, "shall not");
+    let normalized = claim_aint_contraction_regex().replace_all(&normalized, "am not");
+    let normalized = claim_cannot_regex().replace_all(&normalized, "can not");
+    let normalized = claim_cant_contraction_regex().replace_all(&normalized, "can not");
+    claim_negative_contraction_regex()
         .replace_all(&normalized, "${1} not")
         .into_owned()
 }
 
-fn semantic_negative_contraction_regex() -> &'static Regex {
+fn claim_negative_contraction_regex() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
         Regex::new("(?i)\\b(\\w+)n['\u{2019}]t\\b")
-            .expect("semantic negative contraction regex must compile")
+            .expect("claim negative contraction regex must compile")
     })
 }
 
-fn semantic_cannot_regex() -> &'static Regex {
+fn claim_cannot_regex() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new("(?i)\\bcannot\\b").expect("cannot regex must compile"))
 }
 
-fn semantic_wont_contraction_regex() -> &'static Regex {
+fn claim_wont_contraction_regex() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new("(?i)\\bwon['\u{2019}]t\\b").expect("won't regex must compile"))
 }
 
-fn semantic_shant_contraction_regex() -> &'static Regex {
+fn claim_shant_contraction_regex() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new("(?i)\\bshan['\u{2019}]t\\b").expect("shan't regex must compile"))
 }
 
-fn semantic_cant_contraction_regex() -> &'static Regex {
+fn claim_cant_contraction_regex() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new("(?i)\\bcan['\u{2019}]t\\b").expect("can't regex must compile"))
 }
 
-fn semantic_aint_contraction_regex() -> &'static Regex {
+fn claim_aint_contraction_regex() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new("(?i)\\bain['\u{2019}]t\\b").expect("ain't regex must compile"))
 }
 
-fn is_semantic_negator(token: &str) -> bool {
+fn is_claim_negator(token: &str) -> bool {
     matches!(token, "not" | "no" | "never" | "without")
 }
 
-fn is_semantic_stopword(token: &str) -> bool {
+fn is_claim_low_salience_token(token: &str) -> bool {
     matches!(
         token,
         "a" | "an"
@@ -961,133 +865,73 @@ fn is_semantic_stopword(token: &str) -> bool {
             | "would"
             | "should"
             | "yet"
+            | "approval"
+            | "approvals"
+            | "approve"
+            | "approves"
+            | "approved"
+            | "approving"
+            | "awaiting"
+            | "blocked"
+            | "blocking"
+            | "blocker"
+            | "outstanding"
+            | "pending"
+            | "stalled"
+            | "unapproved"
+            | "need"
+            | "needed"
+            | "needs"
+            | "confirm"
+            | "confirms"
+            | "confirmed"
+            | "confirming"
+            | "complete"
+            | "completed"
+            | "greenlit"
+            | "secured"
+            | "finance"
+            | "financial"
+            | "cfo"
+            | "phase"
+            | "phases"
+            | "budget"
+            | "budgets"
+            | "funding"
+            | "funds"
     )
 }
 
-fn is_semantic_contraction_auxiliary_fragment(token: &str) -> bool {
-    token
-        .strip_suffix('n')
-        .filter(|stem| !stem.is_empty())
-        .is_some_and(is_semantic_stopword)
+pub(crate) fn claim_qualifier_labels_for_migration(text: &str) -> HashSet<String> {
+    qualifier_labels_from_set(&extract_qualifier_set(text))
 }
 
-fn lookup_semantic_term(token: &str, negated: bool) -> Option<(String, SemanticAssertionStatus)> {
-    if is_semantic_stopword(token) {
-        return None;
+pub(crate) fn claim_numeric_scopes_for_migration(text: &str) -> HashSet<String> {
+    extract_qualifier_set(text)
+        .numerics
+        .into_iter()
+        .map(|numeric| format!("{}:{}", numeric.name, numeric.value))
+        .collect()
+}
+
+fn qualifier_labels_from_set(qualifiers: &QualifierSet) -> HashSet<String> {
+    let mut labels = HashSet::new();
+    if let Some(region) = qualifiers.region.as_ref() {
+        labels.insert(format!("region:{}", region.code));
     }
-
-    let (term, status) = match token {
-        "approval" | "approvals" | "signoff" | "signoffs" => {
-            let status = if negated {
-                SemanticAssertionStatus::Pending
-            } else {
-                SemanticAssertionStatus::Unknown
-            };
-            ("approval", status)
-        }
-        "approve" | "approves" | "approved" | "approving" => (
-            "approval",
-            semantic_status_with_negation(SemanticAssertionStatus::Confirmed, negated),
-        ),
-        "awaiting" | "blocked" | "blocking" | "blocker" | "outstanding" | "pending" | "stalled"
-        | "unapproved" => (
-            "pending",
-            semantic_status_with_negation(SemanticAssertionStatus::Pending, negated),
-        ),
-        "need" | "needed" | "needs" => (
-            "pending",
-            semantic_status_with_negation(SemanticAssertionStatus::Pending, negated),
-        ),
-        "confirm" | "confirms" | "confirmed" | "confirming" | "complete" | "completes"
-        | "completed" | "completing" | "finalise" | "finalised" | "finalises" | "finalising"
-        | "finalize" | "finalized" | "finalizes" | "finalizing" | "greenlight" | "greenlighted"
-        | "greenlighting" | "greenlights" | "greenlit" | "land" | "landed" | "landing"
-        | "lands" | "proceed" | "proceeded" | "proceeding" | "proceeds" | "secure" | "secured"
-        | "secures" | "securing" => (
-            "confirmed",
-            semantic_status_with_negation(SemanticAssertionStatus::Confirmed, negated),
-        ),
-        "budget" | "budgets" | "funding" | "funds" => ("budget", SemanticAssertionStatus::Unknown),
-        "finance" | "financial" | "cfo" => ("finance", SemanticAssertionStatus::Unknown),
-        "phase" | "phases" => ("phase", SemanticAssertionStatus::Unknown),
-        "signing" | "signings" => ("signing", SemanticAssertionStatus::Unknown),
-        "signature" | "signatures" => ("signature", SemanticAssertionStatus::Unknown),
-        _ => {
-            let stemmed = semantic_stem(token);
-            return if stemmed.is_empty() {
-                None
-            } else {
-                Some((stemmed, SemanticAssertionStatus::Unknown))
-            };
-        }
-    };
-
-    Some((term.to_string(), status))
-}
-
-fn semantic_status_with_negation(
-    status: SemanticAssertionStatus,
-    negated: bool,
-) -> SemanticAssertionStatus {
-    if !negated {
-        return status;
+    if let Some(time) = qualifiers.time.as_ref() {
+        labels.insert(format!("time:{}", time.normalized));
     }
-
-    match status {
-        SemanticAssertionStatus::Confirmed => SemanticAssertionStatus::Pending,
-        SemanticAssertionStatus::Pending | SemanticAssertionStatus::Unknown => {
-            SemanticAssertionStatus::Unknown
-        }
+    if let Some(entity) = qualifiers.entity.as_ref() {
+        labels.insert(format!("entity:{}", normalize_embedding_text(&entity.id)));
     }
+    labels
 }
 
-fn semantic_stem(token: &str) -> String {
-    let mut stem = token.to_string();
-    for suffix in ["ing", "ed", "es", "s"] {
-        if stem.len() > suffix.len() + 3 && stem.ends_with(suffix) {
-            stem.truncate(stem.len() - suffix.len());
-            break;
-        }
-    }
-    stem
-}
-
-fn combine_semantic_status(
-    current: SemanticAssertionStatus,
-    next: SemanticAssertionStatus,
-) -> SemanticAssertionStatus {
-    match (current, next) {
-        (SemanticAssertionStatus::Pending, SemanticAssertionStatus::Confirmed)
-        | (SemanticAssertionStatus::Confirmed, SemanticAssertionStatus::Pending) => current,
-        (SemanticAssertionStatus::Unknown, status) => status,
-        (status, SemanticAssertionStatus::Unknown) => status,
-        (status, _) => status,
-    }
-}
-
-fn semantic_status_compatible(
-    left: SemanticAssertionStatus,
-    right: SemanticAssertionStatus,
-) -> bool {
-    matches!(
-        (left, right),
-        (SemanticAssertionStatus::Unknown, _)
-            | (_, SemanticAssertionStatus::Unknown)
-            | (
-                SemanticAssertionStatus::Pending,
-                SemanticAssertionStatus::Pending
-            )
-            | (
-                SemanticAssertionStatus::Confirmed,
-                SemanticAssertionStatus::Confirmed
-            )
-    )
-}
-
-pub(crate) fn semantic_high_salience_qualifiers(text: &str) -> HashSet<String> {
-    let mut qualifiers = HashSet::new();
+fn extract_qualifier_set(text: &str) -> QualifierSet {
+    let mut qualifiers = QualifierSet::default();
     let mut token = String::new();
-    let normalized_text = normalize_semantic_region_aliases(text);
+    let normalized_text = normalize_claim_region_aliases(text);
 
     for ch in normalized_text.chars().chain(std::iter::once(' ')) {
         if ch.is_ascii_alphanumeric() {
@@ -1102,47 +946,72 @@ pub(crate) fn semantic_high_salience_qualifiers(text: &str) -> HashSet<String> {
         let lower = token.to_ascii_lowercase();
         let upper = token.to_ascii_uppercase();
         if matches!(lower.as_str(), "q1" | "q2" | "q3" | "q4") {
-            qualifiers.insert(format!("quarter:{lower}"));
+            qualifiers
+                .time
+                .get_or_insert(abilities_runtime::structured_claim::TemporalQualifier {
+                    normalized: lower,
+                });
         } else if matches!(upper.as_str(), "US" | "UK" | "EU" | "APAC" | "EMEA") && token == upper {
-            qualifiers.insert(format!("region:{upper}"));
+            qualifiers
+                .region
+                .get_or_insert(abilities_runtime::structured_claim::RegionCode { code: upper });
         } else if matches!(lower.parse::<i32>(), Ok(2024..=2030)) {
-            qualifiers.insert(format!("year:{lower}"));
-        } else if is_semantic_named_entity(&token) {
-            qualifiers.insert(format!("entity:{lower}"));
+            qualifiers
+                .time
+                .get_or_insert(abilities_runtime::structured_claim::TemporalQualifier {
+                    normalized: lower,
+                });
+        } else if lower == "phase" {
+            qualifiers
+                .scope
+                .get_or_insert(abilities_runtime::structured_claim::ScopeMarker {
+                    normalized: "phase".to_string(),
+                });
+        } else if lower.chars().all(|ch| ch.is_ascii_digit()) {
+            qualifiers
+                .numerics
+                .push(abilities_runtime::structured_claim::NumericQualifier {
+                    name: "number".to_string(),
+                    value: lower,
+                });
+        } else if let Some(entity) = claim_named_entity_marker(&token) {
+            qualifiers.entity.get_or_insert(entity);
         }
 
         token.clear();
     }
 
+    qualifiers.numerics.sort();
+    qualifiers.numerics.dedup();
     qualifiers
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SemanticRegionAliasSegmentKind {
+enum ClaimRegionAliasSegmentKind {
     Token,
     Separator,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct SemanticRegionAliasSegment {
-    kind: SemanticRegionAliasSegmentKind,
+struct ClaimRegionAliasSegment {
+    kind: ClaimRegionAliasSegmentKind,
     value: String,
 }
 
-fn normalize_semantic_region_aliases(text: &str) -> String {
-    let segments = semantic_region_alias_segments(text);
+fn normalize_claim_region_aliases(text: &str) -> String {
+    let segments = claim_region_alias_segments(text);
     let mut normalized = String::with_capacity(text.len());
     let mut i = 0usize;
 
     while i < segments.len() {
         let segment = &segments[i];
-        if matches!(segment.kind, SemanticRegionAliasSegmentKind::Token) {
-            if let Some(region) = semantic_region_phrase_alias_at(&segments, i) {
+        if matches!(segment.kind, ClaimRegionAliasSegmentKind::Token) {
+            if let Some(region) = claim_region_phrase_alias_at(&segments, i) {
                 normalized.push_str(region);
                 i += 3;
                 continue;
             }
-            if let Some(region) = semantic_region_token_alias(&segment.value) {
+            if let Some(region) = claim_region_token_alias(&segment.value) {
                 normalized.push_str(region);
                 i += 1;
                 continue;
@@ -1156,16 +1025,16 @@ fn normalize_semantic_region_aliases(text: &str) -> String {
     normalized
 }
 
-fn semantic_region_alias_segments(text: &str) -> Vec<SemanticRegionAliasSegment> {
+fn claim_region_alias_segments(text: &str) -> Vec<ClaimRegionAliasSegment> {
     let mut segments = Vec::new();
     let mut current = String::new();
     let mut current_kind = None;
 
     for ch in text.chars() {
         let kind = if ch.is_ascii_alphanumeric() || ch == '.' {
-            SemanticRegionAliasSegmentKind::Token
+            ClaimRegionAliasSegmentKind::Token
         } else {
-            SemanticRegionAliasSegmentKind::Separator
+            ClaimRegionAliasSegmentKind::Separator
         };
 
         if current_kind == Some(kind) {
@@ -1174,7 +1043,7 @@ fn semantic_region_alias_segments(text: &str) -> Vec<SemanticRegionAliasSegment>
         }
 
         if let Some(kind) = current_kind {
-            segments.push(SemanticRegionAliasSegment {
+            segments.push(ClaimRegionAliasSegment {
                 kind,
                 value: std::mem::take(&mut current),
             });
@@ -1184,7 +1053,7 @@ fn semantic_region_alias_segments(text: &str) -> Vec<SemanticRegionAliasSegment>
     }
 
     if let Some(kind) = current_kind {
-        segments.push(SemanticRegionAliasSegment {
+        segments.push(ClaimRegionAliasSegment {
             kind,
             value: current,
         });
@@ -1193,24 +1062,24 @@ fn semantic_region_alias_segments(text: &str) -> Vec<SemanticRegionAliasSegment>
     segments
 }
 
-fn semantic_region_phrase_alias_at(
-    segments: &[SemanticRegionAliasSegment],
+fn claim_region_phrase_alias_at(
+    segments: &[ClaimRegionAliasSegment],
     index: usize,
 ) -> Option<&'static str> {
     let [first, separator, second] = segments.get(index..index + 3)? else {
         return None;
     };
-    if !matches!(first.kind, SemanticRegionAliasSegmentKind::Token)
-        || !matches!(separator.kind, SemanticRegionAliasSegmentKind::Separator)
-        || !matches!(second.kind, SemanticRegionAliasSegmentKind::Token)
+    if !matches!(first.kind, ClaimRegionAliasSegmentKind::Token)
+        || !matches!(separator.kind, ClaimRegionAliasSegmentKind::Separator)
+        || !matches!(second.kind, ClaimRegionAliasSegmentKind::Token)
         || !separator.value.chars().all(char::is_whitespace)
     {
         return None;
     }
 
     match (
-        semantic_region_token_key(&first.value).as_str(),
-        semantic_region_token_key(&second.value).as_str(),
+        claim_region_token_key(&first.value).as_str(),
+        claim_region_token_key(&second.value).as_str(),
     ) {
         ("united", "states") => Some("US"),
         ("united", "kingdom") => Some("UK"),
@@ -1219,8 +1088,8 @@ fn semantic_region_phrase_alias_at(
     }
 }
 
-fn semantic_region_token_alias(token: &str) -> Option<&'static str> {
-    let key = semantic_region_token_key(token);
+fn claim_region_token_alias(token: &str) -> Option<&'static str> {
+    let key = claim_region_token_key(token);
     let has_period = token.contains('.');
     let alnum = token
         .chars()
@@ -1229,7 +1098,7 @@ fn semantic_region_token_alias(token: &str) -> Option<&'static str> {
     let all_upper = !alnum.is_empty() && alnum == alnum.to_ascii_uppercase();
 
     match key.as_str() {
-        "us" if alnum == "US" || semantic_region_dotted_acronym(token, "US") => Some("US"),
+        "us" if alnum == "US" || claim_region_dotted_acronym(token, "US") => Some("US"),
         "usa" if all_upper => Some("US"),
         "uk" if has_period || all_upper => Some("UK"),
         "eu" if has_period || all_upper => Some("EU"),
@@ -1239,7 +1108,7 @@ fn semantic_region_token_alias(token: &str) -> Option<&'static str> {
     }
 }
 
-fn semantic_region_dotted_acronym(token: &str, expected: &str) -> bool {
+fn claim_region_dotted_acronym(token: &str, expected: &str) -> bool {
     if !token.contains('.') {
         return false;
     }
@@ -1265,7 +1134,7 @@ fn semantic_region_dotted_acronym(token: &str, expected: &str) -> bool {
     }
 }
 
-fn semantic_region_token_key(token: &str) -> String {
+fn claim_region_token_key(token: &str) -> String {
     token
         .chars()
         .filter(|ch| ch.is_ascii_alphanumeric())
@@ -1273,56 +1142,58 @@ fn semantic_region_token_key(token: &str) -> String {
         .collect()
 }
 
-fn is_semantic_named_entity(token: &str) -> bool {
+fn claim_named_entity_marker(token: &str) -> Option<EntityRef> {
     if token.len() < 3 || token.chars().any(|ch| ch.is_ascii_digit()) {
-        return false;
+        return None;
     }
 
     let lower = token.to_ascii_lowercase();
-    if is_semantic_low_salience_token(&lower) {
-        return false;
+    if is_claim_low_salience_token(&lower) || is_claim_negator(&lower) {
+        return None;
     }
 
     let mut chars = token.chars();
-    let Some(first) = chars.next() else {
-        return false;
-    };
+    let first = chars.next()?;
     let has_later_upper = chars.clone().any(|ch| ch.is_ascii_uppercase());
     let all_upper = token.chars().all(|ch| ch.is_ascii_uppercase());
     let title_case =
         first.is_ascii_uppercase() && token[1..].chars().all(|ch| ch.is_ascii_lowercase());
 
-    has_later_upper || all_upper || title_case
+    if has_later_upper || all_upper || title_case {
+        Some(EntityRef {
+            kind: "text_entity".to_string(),
+            id: lower,
+        })
+    } else {
+        None
+    }
 }
 
-fn metadata_with_semantic_qualifiers(
-    metadata_json: Option<String>,
-    qualifiers: &HashSet<String>,
-) -> Option<String> {
-    let mut sorted = qualifiers.iter().cloned().collect::<Vec<_>>();
-    sorted.sort();
-    let qualifier_value =
-        serde_json::Value::Array(sorted.into_iter().map(serde_json::Value::String).collect());
-
+pub(crate) fn metadata_with_non_semantic_mergeable(metadata_json: Option<&str>) -> Option<String> {
     let mut root = match metadata_json {
-        Some(raw) => match serde_json::from_str::<serde_json::Value>(&raw) {
+        Some(raw) => match serde_json::from_str::<serde_json::Value>(raw) {
             Ok(serde_json::Value::Object(map)) => map,
-            Ok(_) | Err(_) => return Some(raw),
+            Ok(_) | Err(_) => return Some(raw.to_string()),
         },
         None => serde_json::Map::new(),
     };
-
     root.insert(
-        SEMANTIC_QUALIFIERS_METADATA_KEY.to_string(),
-        qualifier_value,
+        NON_SEMANTIC_MERGEABLE_METADATA_KEY.to_string(),
+        serde_json::Value::Bool(true),
     );
     Some(serde_json::Value::Object(root).to_string())
 }
 
-fn semantic_qualifiers_from_metadata(metadata_json: Option<&str>) -> Option<HashSet<String>> {
-    let metadata = serde_json::from_str::<serde_json::Value>(metadata_json?).ok()?;
-    let metadata = metadata.as_object()?;
-    if [
+fn metadata_marks_non_semantic_mergeable(metadata_json: Option<&str>) -> bool {
+    let Some(metadata) =
+        metadata_json.and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
+    else {
+        return false;
+    };
+    let Some(metadata) = metadata.as_object() else {
+        return false;
+    };
+    [
         NON_SEMANTIC_MERGEABLE_METADATA_KEY,
         LEGACY_NON_SEMANTIC_MERGEABLE_METADATA_KEY,
     ]
@@ -1332,239 +1203,211 @@ fn semantic_qualifiers_from_metadata(metadata_json: Option<&str>) -> Option<Hash
             .get(*key)
             .and_then(serde_json::Value::as_bool)
             .unwrap_or(false)
-    }) {
-        return None;
+    })
+}
+
+fn detect_claim_polarity(text: &str) -> Polarity {
+    let tokens = normalize_claim_contractions(text)
+        .split(|ch: char| !ch.is_ascii_alphanumeric())
+        .map(|token| token.to_ascii_lowercase())
+        .filter(|token| !token.is_empty())
+        .collect::<Vec<_>>();
+
+    if !tokens.iter().any(|token| is_claim_negator(token)) {
+        return Polarity::Affirm;
     }
 
-    let raw_qualifiers = metadata
-        .get(SEMANTIC_QUALIFIERS_METADATA_KEY)
-        .or_else(|| metadata.get(LEGACY_SEMANTIC_QUALIFIERS_METADATA_KEY))?
-        .as_array()?;
-    let mut qualifiers = HashSet::new();
-    for value in raw_qualifiers {
-        let qualifier = value.as_str()?;
-        if !is_semantic_metadata_qualifier(qualifier) {
-            return None;
+    if claim_negated_approval_is_pending(&tokens) {
+        return Polarity::Affirm;
+    }
+
+    Polarity::Negate
+}
+
+fn claim_negated_approval_is_pending(tokens: &[String]) -> bool {
+    if !tokens.iter().any(|token| token == "yet") {
+        return false;
+    }
+
+    tokens.windows(3).any(|window| {
+        window[0] == "not"
+            && matches!(
+                window[1].as_str(),
+                "approved" | "approve" | "approves" | "approving" | "greenlit"
+            )
+    }) || tokens.windows(4).any(|window| {
+        matches!(window[0].as_str(), "has" | "have" | "had")
+            && window[1] == "not"
+            && matches!(
+                window[2].as_str(),
+                "approved" | "approve" | "approves" | "approving" | "greenlit"
+            )
+    })
+}
+
+fn polarity_db(polarity: Polarity) -> &'static str {
+    match polarity {
+        Polarity::Affirm => "affirm",
+        Polarity::Negate => "negate",
+    }
+}
+
+fn structured_status_db(status: &StructuredClaimStatus) -> &'static str {
+    match status {
+        StructuredClaimStatus::Confirmed => "confirmed",
+        StructuredClaimStatus::Pending => "pending",
+        StructuredClaimStatus::Unknown => "unknown",
+    }
+}
+
+fn structural_hash_for_structured(structured: &StructuredClaim) -> Result<String, ClaimError> {
+    let predicate_ref = structured.predicate.registry_id();
+    let polarity = polarity_db(structured.polarity);
+    let object_value = serde_json::to_string(&structured.object)?;
+    let qualifiers = serde_json::to_string(&structured.qualifiers)?;
+    let status = structured_status_db(&structured.status);
+    Ok(structural_field_content_hash(
+        Some(&predicate_ref),
+        Some(polarity),
+        Some(&object_value),
+        Some(&qualifiers),
+        status,
+    ))
+}
+
+#[cfg(test)]
+pub(crate) fn ensure_structured_claim_schema_for_tests(
+    conn: &rusqlite::Connection,
+) -> Result<(), ClaimError> {
+    let columns = [
+        ("structured_claim_json", "TEXT"),
+        ("predicate_ref", "TEXT"),
+        ("polarity", "TEXT"),
+        ("object_value", "JSON"),
+        ("qualifiers", "JSON"),
+        ("structural_canonical_id", "TEXT"),
+        (
+            "canonical_status",
+            "TEXT NOT NULL DEFAULT 'pending_backfill'
+                CHECK (canonical_status IN ('pending_backfill','legacy_unmigrated','live'))",
+        ),
+        ("non_semantic_mergeable", "BOOLEAN NOT NULL DEFAULT TRUE"),
+        ("structural_field_content_hash", "TEXT"),
+        ("backfill_epoch", "INTEGER NOT NULL DEFAULT 0"),
+    ];
+
+    for (name, definition) in columns {
+        if !column_exists_sqlite(conn, "intelligence_claims", name)? {
+            conn.execute(
+                &format!("ALTER TABLE intelligence_claims ADD COLUMN {name} {definition}"),
+                [],
+            )?;
         }
-        qualifiers.insert(qualifier.to_string());
     }
 
-    Some(qualifiers)
+    Ok(())
 }
 
-fn is_semantic_metadata_qualifier(qualifier: &str) -> bool {
-    let Some((kind, value)) = qualifier.split_once(':') else {
-        return false;
+#[cfg(test)]
+fn test_claim_embedding_similarities() -> &'static Mutex<HashMap<(String, String), f32>> {
+    static SIMILARITIES: OnceLock<Mutex<HashMap<(String, String), f32>>> = OnceLock::new();
+    SIMILARITIES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+#[cfg(test)]
+fn test_similarity_key(left: &str, right: &str) -> (String, String) {
+    let left = normalize_embedding_text(left);
+    let right = normalize_embedding_text(right);
+    if left <= right {
+        (left, right)
+    } else {
+        (right, left)
+    }
+}
+
+#[cfg(test)]
+fn register_test_claim_embedding_similarity(left: &str, right: &str, similarity: f32) {
+    test_claim_embedding_similarities()
+        .lock()
+        .insert(test_similarity_key(left, right), similarity);
+}
+
+#[cfg(test)]
+fn test_claim_embedding_similarity(left: &str, right: &str) -> Option<f32> {
+    test_claim_embedding_similarities()
+        .lock()
+        .get(&test_similarity_key(left, right))
+        .copied()
+}
+
+fn normalize_embedding_text(text: &str) -> String {
+    let mut stripped = String::with_capacity(text.len());
+    for ch in text.trim().chars() {
+        if ch.is_ascii_punctuation() {
+            stripped.push(' ');
+        } else {
+            stripped.extend(ch.to_lowercase());
+        }
+    }
+    stripped.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn structured_claim_from_parts(
+    subject_ref: &str,
+    claim_type: &str,
+    field_path: Option<&str>,
+    text: &str,
+    metadata_json: Option<&str>,
+    status: StructuredClaimStatus,
+) -> Result<Option<StructuredClaim>, ClaimError> {
+    if metadata_marks_non_semantic_mergeable(metadata_json) {
+        return Ok(None);
+    }
+    let Some(subject_ref) = entity_ref_from_subject_json(subject_ref) else {
+        return Ok(None);
     };
+    let predicate = predicate_from_structural_column(None, claim_type, field_path);
+    if predicate.is_unresolved() {
+        return Ok(None);
+    }
 
-    !value.is_empty() && matches!(kind, "quarter" | "region" | "year" | "entity")
+    Ok(Some(StructuredClaim {
+        subject_ref,
+        predicate,
+        polarity: detect_claim_polarity(text),
+        object: ObjectValue::FreeText {
+            canonical: normalize_claim_text(text),
+        },
+        qualifiers: extract_qualifier_set(text),
+        status,
+        sentiment: None,
+    }))
 }
 
-fn semantic_claim_qualifiers(claim: &IntelligenceClaim) -> Option<HashSet<String>> {
-    semantic_qualifiers_from_metadata(claim.metadata_json.as_deref())
-}
-
-fn semantic_explicit_synonym_map() -> &'static HashMap<&'static str, &'static [&'static str]> {
-    static MAP: OnceLock<HashMap<&'static str, &'static [&'static str]>> = OnceLock::new();
-    MAP.get_or_init(|| {
-        HashMap::from([
-            ("budget", &["funding"][..]),
-            ("funding", &["budget"][..]),
-            ("contract", &["agreement"][..]),
-            ("agreement", &["contract", "deal"][..]),
-            ("deal", &["agreement"][..]),
-            ("signing", &["signature"][..]),
-            ("signature", &["signing"][..]),
-            ("approval", &["approved", "greenlit"][..]),
-            ("approved", &["approval", "greenlit"][..]),
-            ("greenlit", &["approval", "approved"][..]),
-        ])
-    })
-}
-
-fn semantic_terms_explicit_synonyms(left: &str, right: &str) -> bool {
-    semantic_explicit_synonym_map()
-        .get(left)
-        .is_some_and(|synonyms| synonyms.contains(&right))
-        || semantic_explicit_synonym_map()
-            .get(right)
-            .is_some_and(|synonyms| synonyms.contains(&left))
-}
-
-fn is_semantic_unmatched_low_salience_term(term: &str) -> bool {
-    is_semantic_stopword(term)
-        || is_semantic_negator(term)
-        || matches!(
-            term,
-            "approval" | "pending" | "confirmed" | "finance" | "phase"
-        )
-}
-
-fn semantic_unmatched_terms<'a>(
-    left: &'a HashSet<String>,
-    right: &'a HashSet<String>,
-) -> Vec<&'a str> {
-    left.difference(right)
-        .map(String::as_str)
-        .filter(|term| !is_semantic_unmatched_low_salience_term(term))
-        .collect()
-}
-
-fn semantic_has_unsynonymized_unmatched_terms(
-    left: &SemanticSignature,
-    right: &SemanticSignature,
-) -> bool {
-    let left_unmatched = semantic_unmatched_terms(&left.terms, &right.terms);
-    let right_unmatched = semantic_unmatched_terms(&right.terms, &left.terms);
-
-    left_unmatched.iter().any(|term| {
-        !right_unmatched
-            .iter()
-            .any(|other| semantic_terms_explicit_synonyms(term, other))
-    }) || right_unmatched.iter().any(|term| {
-        !left_unmatched
-            .iter()
-            .any(|other| semantic_terms_explicit_synonyms(term, other))
-    })
-}
-
-fn is_semantic_low_salience_token(token: &str) -> bool {
-    is_semantic_stopword(token)
-        || is_semantic_negator(token)
-        || matches!(
-            token,
-            "approval"
-                | "approvals"
-                | "approve"
-                | "approves"
-                | "approved"
-                | "approving"
-                | "awaiting"
-                | "blocked"
-                | "blocking"
-                | "blocker"
-                | "outstanding"
-                | "pending"
-                | "stalled"
-                | "unapproved"
-                | "need"
-                | "needed"
-                | "needs"
-                | "confirm"
-                | "confirms"
-                | "confirmed"
-                | "confirming"
-                | "complete"
-                | "completes"
-                | "completed"
-                | "completing"
-                | "finalise"
-                | "finalised"
-                | "finalises"
-                | "finalising"
-                | "finalize"
-                | "finalized"
-                | "finalizes"
-                | "finalizing"
-                | "greenlight"
-                | "greenlighted"
-                | "greenlighting"
-                | "greenlights"
-                | "greenlit"
-                | "land"
-                | "landed"
-                | "landing"
-                | "lands"
-                | "proceed"
-                | "proceeded"
-                | "proceeding"
-                | "proceeds"
-                | "secure"
-                | "secured"
-                | "secures"
-                | "securing"
-                | "budget"
-                | "budgets"
-                | "funding"
-                | "funds"
-                | "finance"
-                | "financial"
-                | "cfo"
-                | "phase"
-                | "phases"
-        )
-}
-
-fn semantic_near_duplicate(left: &str, right: &str) -> bool {
-    let left = compute_semantic_signature(left);
-    let right = compute_semantic_signature(right);
-    semantic_signatures_near_duplicate(&left, &right)
-}
-
-fn semantic_near_duplicate_with_qualifiers(
-    left_text: &str,
-    left_qualifiers: &HashSet<String>,
-    right_text: &str,
-    right_qualifiers: &HashSet<String>,
-) -> bool {
-    let left = compute_semantic_signature_with_qualifiers(left_text, Some(left_qualifiers));
-    let right = compute_semantic_signature_with_qualifiers(right_text, Some(right_qualifiers));
-    semantic_signatures_near_duplicate(&left, &right)
-}
-
-fn semantic_claim_near_duplicate(
-    claim: &IntelligenceClaim,
-    canonical_text: &str,
-    proposal_qualifiers: &HashSet<String>,
-) -> bool {
-    let Some(claim_qualifiers) = semantic_claim_qualifiers(claim) else {
-        return false;
+pub(crate) fn structured_claim_json_for_row(
+    subject_ref: &str,
+    claim_type: &str,
+    field_path: Option<&str>,
+    _topic_key: Option<&str>,
+    text: &str,
+    metadata_json: Option<&str>,
+    verification_state: &str,
+) -> Result<Option<String>, ClaimError> {
+    let status = match verification_state {
+        "needs_user_decision" => StructuredClaimStatus::Pending,
+        "contested" => StructuredClaimStatus::Unknown,
+        _ => StructuredClaimStatus::Confirmed,
     };
-    semantic_near_duplicate_with_qualifiers(
-        &claim.text,
-        &claim_qualifiers,
-        canonical_text,
-        proposal_qualifiers,
-    )
-}
-
-fn semantic_signatures_near_duplicate(left: &SemanticSignature, right: &SemanticSignature) -> bool {
-    if matches!(left.status, SemanticAssertionStatus::Unknown)
-        || matches!(right.status, SemanticAssertionStatus::Unknown)
-    {
-        return false;
-    }
-
-    if !semantic_status_compatible(left.status, right.status) {
-        return false;
-    }
-
-    if left.numbers != right.numbers {
-        return false;
-    }
-
-    if left.qualifiers != right.qualifiers {
-        return false;
-    }
-
-    let overlap = left.terms.intersection(&right.terms).count();
-    if overlap < 4 {
-        return false;
-    }
-
-    let union = left.terms.union(&right.terms).count();
-    if union == 0 {
-        return false;
-    }
-
-    if semantic_has_unsynonymized_unmatched_terms(left, right) {
-        return false;
-    }
-
-    let smaller = left.terms.len().min(right.terms.len()).max(1);
-    let jaccard = overlap as f64 / union as f64;
-    let coverage = overlap as f64 / smaller as f64;
-    jaccard >= 0.58 && coverage >= 0.67
+    structured_claim_from_parts(
+        subject_ref,
+        claim_type,
+        field_path,
+        text,
+        metadata_json,
+        status,
+    )?
+    .map(|structured| serde_json::to_string(&structured).map_err(ClaimError::from))
+    .transpose()
 }
 
 fn trust_band_for_score(trust_score: Option<f64>) -> factors::TrustBand {
@@ -1588,7 +1431,759 @@ fn needs_verification_score() -> f64 {
         .min(config.use_with_caution_min)
 }
 
-fn semantic_trust_band_allows_canonicalization(band: factors::TrustBand) -> bool {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CanonicalizationMode {
+    Full,
+    HashFallback,
+}
+
+impl CanonicalizationMode {
+    fn as_db(self) -> &'static str {
+        match self {
+            Self::Full => "full",
+            Self::HashFallback => "hash_fallback",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CandidateFilterReason {
+    QueryPendingBackfill,
+    CandidatePendingBackfill,
+    QueryLegacyUnmigrated,
+    CandidateLegacyUnmigrated,
+    QueryTombstoned,
+    CandidateTombstoned,
+    AccountScope,
+    WorkspaceScope,
+    TierMismatch,
+    DormantOrSurfaced,
+}
+
+impl CandidateFilterReason {
+    fn as_db(&self) -> &'static str {
+        match self {
+            Self::QueryPendingBackfill => "query_pending_backfill",
+            Self::CandidatePendingBackfill => "candidate_pending_backfill",
+            Self::QueryLegacyUnmigrated => "query_legacy_unmigrated",
+            Self::CandidateLegacyUnmigrated => "candidate_legacy_unmigrated",
+            Self::QueryTombstoned => "query_tombstoned",
+            Self::CandidateTombstoned => "candidate_tombstoned",
+            Self::AccountScope => "account_scope",
+            Self::WorkspaceScope => "workspace_scope",
+            Self::TierMismatch => "tier_mismatch",
+            Self::DormantOrSurfaced => "dormant_or_surfaced",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CandidateFilterDecision {
+    Pass,
+    RejectAsDistinct {
+        primary: CandidateFilterReason,
+        secondary: Vec<CandidateFilterReason>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CanonicalDecisionKind {
+    Merge,
+    Fork,
+    ForkAmbiguous,
+    ForkContradiction,
+    ForkFiltered,
+}
+
+impl CanonicalDecisionKind {
+    fn as_db(self) -> &'static str {
+        match self {
+            Self::Merge => "merge",
+            Self::Fork => "fork",
+            Self::ForkAmbiguous => "fork_ambiguous",
+            Self::ForkContradiction => "fork_contradiction",
+            Self::ForkFiltered => "fork_filtered",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThresholdBand {
+    High,
+    Ambiguous,
+    Low,
+}
+
+impl ThresholdBand {
+    fn as_db(self) -> &'static str {
+        match self {
+            Self::High => "high",
+            Self::Ambiguous => "ambiguous",
+            Self::Low => "low",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CanonicalMatchInput {
+    pub claim_id: String,
+    pub account_id: Option<String>,
+    pub workspace_id: Option<String>,
+    pub tier_key: String,
+    pub claim_state: ClaimState,
+    pub surfacing_state: SurfacingState,
+    pub canonical_status: CanonicalStatus,
+    pub non_semantic_mergeable: bool,
+    pub structured: StructuredClaim,
+    pub structural_field_content_hash: Option<String>,
+    pub backfill_epoch: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct CanonicalMatchConfig {
+    pub mode: CanonicalizationMode,
+    pub free_text_similarity: Option<f32>,
+    pub embedding_model_version: String,
+    pub comparator_threshold_version: String,
+}
+
+impl Default for CanonicalMatchConfig {
+    fn default() -> Self {
+        Self {
+            mode: CanonicalizationMode::HashFallback,
+            free_text_similarity: None,
+            embedding_model_version: "nomic-embed-text-v1.5-Q:hash_fallback".to_string(),
+            comparator_threshold_version: COMPARATOR_THRESHOLD_VERSION.to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CanonicalMatchOutcome {
+    pub decision: CanonicalDecisionKind,
+    pub reason: String,
+    pub reason_secondary: Vec<String>,
+    pub threshold_band: Option<ThresholdBand>,
+    pub field_scores: serde_json::Value,
+}
+
+pub fn candidate_filter(
+    query: &CanonicalMatchInput,
+    candidate: &CanonicalMatchInput,
+) -> CandidateFilterDecision {
+    let mut primary = None;
+    let mut secondary = Vec::new();
+    let mut record = |reason: CandidateFilterReason| {
+        if primary.is_none() {
+            primary = Some(reason);
+        } else {
+            secondary.push(reason);
+        }
+    };
+
+    if query.canonical_status == CanonicalStatus::PendingBackfill {
+        record(CandidateFilterReason::QueryPendingBackfill);
+    }
+    if candidate.canonical_status == CanonicalStatus::PendingBackfill {
+        record(CandidateFilterReason::CandidatePendingBackfill);
+    }
+    if query.canonical_status == CanonicalStatus::LegacyUnmigrated || query.non_semantic_mergeable {
+        record(CandidateFilterReason::QueryLegacyUnmigrated);
+    }
+    if candidate.canonical_status == CanonicalStatus::LegacyUnmigrated
+        || candidate.non_semantic_mergeable
+    {
+        record(CandidateFilterReason::CandidateLegacyUnmigrated);
+    }
+
+    if matches!(
+        query.claim_state,
+        ClaimState::Tombstoned | ClaimState::Withdrawn
+    ) {
+        record(CandidateFilterReason::QueryTombstoned);
+    }
+    if matches!(
+        candidate.claim_state,
+        ClaimState::Tombstoned | ClaimState::Withdrawn
+    ) {
+        record(CandidateFilterReason::CandidateTombstoned);
+    }
+
+    if query.account_id != candidate.account_id {
+        record(CandidateFilterReason::AccountScope);
+    }
+    if query.workspace_id != candidate.workspace_id {
+        record(CandidateFilterReason::WorkspaceScope);
+    }
+    if query.tier_key != candidate.tier_key {
+        record(CandidateFilterReason::TierMismatch);
+    }
+    if candidate.surfacing_state == SurfacingState::Dormant
+        || candidate.claim_state == ClaimState::Dormant
+    {
+        record(CandidateFilterReason::DormantOrSurfaced);
+    }
+
+    match primary {
+        Some(primary) => CandidateFilterDecision::RejectAsDistinct { primary, secondary },
+        None => CandidateFilterDecision::Pass,
+    }
+}
+
+const CLAIM_EMBEDDING_CACHE_CAPACITY: usize = 512;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct ClaimEmbeddingCacheKey {
+    normalized_text: String,
+    prefix: &'static str,
+}
+
+#[derive(Debug, Default)]
+struct ClaimEmbeddingCache {
+    values: HashMap<ClaimEmbeddingCacheKey, Vec<f32>>,
+    order: VecDeque<ClaimEmbeddingCacheKey>,
+}
+
+impl ClaimEmbeddingCache {
+    fn get(&mut self, key: &ClaimEmbeddingCacheKey) -> Option<Vec<f32>> {
+        let value = self.values.get(key)?.clone();
+        self.touch(key);
+        Some(value)
+    }
+
+    fn insert(&mut self, key: ClaimEmbeddingCacheKey, value: Vec<f32>) {
+        if self.values.contains_key(&key) {
+            self.values.insert(key.clone(), value);
+            self.touch(&key);
+            return;
+        }
+
+        self.values.insert(key.clone(), value);
+        self.order.push_back(key);
+        while self.values.len() > CLAIM_EMBEDDING_CACHE_CAPACITY {
+            let Some(evicted) = self.order.pop_front() else {
+                break;
+            };
+            if !self.order.contains(&evicted) {
+                self.values.remove(&evicted);
+            }
+        }
+    }
+
+    fn remove_normalized_text(&mut self, normalized_text: &str) {
+        self.values
+            .retain(|key, _| key.normalized_text != normalized_text);
+        self.order
+            .retain(|key| key.normalized_text != normalized_text);
+    }
+
+    fn touch(&mut self, key: &ClaimEmbeddingCacheKey) {
+        self.order.retain(|existing| existing != key);
+        self.order.push_back(key.clone());
+    }
+}
+
+fn claim_embedding_cache() -> &'static Mutex<ClaimEmbeddingCache> {
+    static CACHE: OnceLock<Mutex<ClaimEmbeddingCache>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(ClaimEmbeddingCache::default()))
+}
+
+fn claim_embedding_model() -> &'static Mutex<Option<Arc<crate::embeddings::EmbeddingModel>>> {
+    static MODEL: OnceLock<Mutex<Option<Arc<crate::embeddings::EmbeddingModel>>>> = OnceLock::new();
+    MODEL.get_or_init(|| Mutex::new(None))
+}
+
+pub fn register_claim_embedding_model(model: Arc<crate::embeddings::EmbeddingModel>) {
+    *claim_embedding_model().lock() = Some(model);
+}
+
+pub fn invalidate_claim_embedding_cache_for_text(text: &str) {
+    let normalized_text = normalize_embedding_text(text);
+    claim_embedding_cache()
+        .lock()
+        .remove_normalized_text(&normalized_text);
+}
+
+pub fn canonical_match(
+    query: &CanonicalMatchInput,
+    candidate: &CanonicalMatchInput,
+) -> CanonicalMatchOutcome {
+    let config = canonical_match_config(query, candidate);
+    canonical_match_with_config(query, candidate, &config)
+}
+
+pub fn canonical_match_v2(
+    query: &CanonicalMatchInput,
+    candidate: &CanonicalMatchInput,
+    config: &CanonicalMatchConfig,
+) -> CanonicalMatchOutcome {
+    canonical_match_with_config(query, candidate, config)
+}
+
+fn canonical_match_with_config(
+    query: &CanonicalMatchInput,
+    candidate: &CanonicalMatchInput,
+    config: &CanonicalMatchConfig,
+) -> CanonicalMatchOutcome {
+    if let CandidateFilterDecision::RejectAsDistinct { primary, secondary } =
+        candidate_filter(query, candidate)
+    {
+        return CanonicalMatchOutcome {
+            decision: CanonicalDecisionKind::ForkFiltered,
+            reason: primary.as_db().to_string(),
+            reason_secondary: secondary
+                .iter()
+                .map(CandidateFilterReason::as_db)
+                .map(str::to_string)
+                .collect(),
+            threshold_band: None,
+            field_scores: serde_json::json!({
+                "candidate_filter": "reject",
+                "primary": primary.as_db(),
+            }),
+        };
+    }
+
+    let mut scores = serde_json::Map::new();
+    let mut distinct_reasons = Vec::new();
+    let mut ambiguous_reasons = Vec::new();
+    let mut threshold_band = None;
+
+    compare_bool_field(
+        &mut scores,
+        &mut distinct_reasons,
+        "subject",
+        query.structured.subject_ref == candidate.structured.subject_ref,
+        "subject_distinct",
+    );
+    compare_bool_field(
+        &mut scores,
+        &mut distinct_reasons,
+        "predicate",
+        predicates_match(&query.structured.predicate, &candidate.structured.predicate),
+        "predicate_distinct",
+    );
+    compare_bool_field(
+        &mut scores,
+        &mut distinct_reasons,
+        "polarity",
+        query.structured.polarity == candidate.structured.polarity,
+        "polarity_distinct",
+    );
+    compare_bool_field(
+        &mut scores,
+        &mut distinct_reasons,
+        "qualifiers",
+        query.structured.qualifiers == candidate.structured.qualifiers,
+        "qualifier_mismatch",
+    );
+    compare_bool_field(
+        &mut scores,
+        &mut distinct_reasons,
+        "status",
+        query.structured.status == candidate.structured.status,
+        "status_distinct",
+    );
+
+    match compare_object_values(
+        &query.structured.object,
+        &candidate.structured.object,
+        config,
+    ) {
+        ObjectComparison::Match { score, band } => {
+            scores.insert("object".to_string(), score);
+            threshold_band = threshold_band.or(band);
+        }
+        ObjectComparison::Distinct {
+            score,
+            reason,
+            band,
+        } => {
+            scores.insert("object".to_string(), score);
+            threshold_band = threshold_band.or(band);
+            distinct_reasons.push(reason);
+        }
+        ObjectComparison::Ambiguous {
+            score,
+            reason,
+            band,
+        } => {
+            scores.insert("object".to_string(), score);
+            threshold_band = threshold_band.or(Some(band));
+            ambiguous_reasons.push(reason);
+        }
+    }
+
+    let subject_predicate_scope_match = query.structured.subject_ref
+        == candidate.structured.subject_ref
+        && predicates_match(&query.structured.predicate, &candidate.structured.predicate)
+        && query.structured.polarity == candidate.structured.polarity
+        && query.structured.qualifiers == candidate.structured.qualifiers;
+    let object_distinct = distinct_reasons
+        .iter()
+        .any(|reason| reason == "object_distinct");
+
+    if subject_predicate_scope_match && object_distinct {
+        return CanonicalMatchOutcome {
+            decision: CanonicalDecisionKind::ForkContradiction,
+            reason: "object_distinct".to_string(),
+            reason_secondary: secondary_reasons(&distinct_reasons, "object_distinct"),
+            threshold_band,
+            field_scores: serde_json::Value::Object(scores),
+        };
+    }
+
+    if let Some(reason) = distinct_reasons.first() {
+        return CanonicalMatchOutcome {
+            decision: CanonicalDecisionKind::Fork,
+            reason: reason.clone(),
+            reason_secondary: distinct_reasons.iter().skip(1).cloned().collect(),
+            threshold_band,
+            field_scores: serde_json::Value::Object(scores),
+        };
+    }
+
+    if let Some(reason) = ambiguous_reasons.first() {
+        return CanonicalMatchOutcome {
+            decision: CanonicalDecisionKind::ForkAmbiguous,
+            reason: reason.clone(),
+            reason_secondary: ambiguous_reasons.iter().skip(1).cloned().collect(),
+            threshold_band,
+            field_scores: serde_json::Value::Object(scores),
+        };
+    }
+
+    CanonicalMatchOutcome {
+        decision: CanonicalDecisionKind::Merge,
+        reason: "all_match".to_string(),
+        reason_secondary: Vec::new(),
+        threshold_band,
+        field_scores: serde_json::Value::Object(scores),
+    }
+}
+
+fn canonical_match_config(
+    query: &CanonicalMatchInput,
+    candidate: &CanonicalMatchInput,
+) -> CanonicalMatchConfig {
+    let mut config = CanonicalMatchConfig::default();
+    let (
+        ObjectValue::FreeText {
+            canonical: left_text,
+        },
+        ObjectValue::FreeText {
+            canonical: right_text,
+        },
+    ) = (&query.structured.object, &candidate.structured.object)
+    else {
+        return config;
+    };
+
+    if normalize_embedding_text(left_text) == normalize_embedding_text(right_text) {
+        config.free_text_similarity = Some(1.0);
+        return config;
+    }
+
+    #[cfg(test)]
+    if let Some(similarity) = test_claim_embedding_similarity(left_text, right_text) {
+        config.mode = CanonicalizationMode::Full;
+        config.free_text_similarity = Some(similarity);
+        config.embedding_model_version = "test-embedding-fixture".to_string();
+        return config;
+    }
+
+    let Some(model) = claim_embedding_model().lock().clone() else {
+        return config;
+    };
+    if !model.is_onnx() {
+        return config;
+    }
+
+    match embedding_similarity_with_cache(
+        &model,
+        left_text,
+        right_text,
+        crate::embeddings::DOCUMENT_PREFIX,
+    ) {
+        Ok(similarity) => {
+            config.mode = CanonicalizationMode::Full;
+            config.free_text_similarity = Some(similarity);
+            config.embedding_model_version = "nomic-embed-text-v1.5-Q".to_string();
+        }
+        Err(error) => {
+            log::warn!(
+                "claim canonical embedding comparison fell back to literal equality: {error}"
+            );
+        }
+    }
+    config
+}
+
+fn embedding_similarity_with_cache(
+    model: &crate::embeddings::EmbeddingModel,
+    left_text: &str,
+    right_text: &str,
+    prefix: &'static str,
+) -> Result<f32, String> {
+    let left_key = ClaimEmbeddingCacheKey {
+        normalized_text: normalize_embedding_text(left_text),
+        prefix,
+    };
+    let right_key = ClaimEmbeddingCacheKey {
+        normalized_text: normalize_embedding_text(right_text),
+        prefix,
+    };
+
+    let mut cache = claim_embedding_cache().lock();
+    let mut left_embedding = cache.get(&left_key);
+    let mut right_embedding = cache.get(&right_key);
+
+    let mut missing = Vec::new();
+    if left_embedding.is_none() {
+        missing.push(left_key.clone());
+    }
+    if right_embedding.is_none() && right_key != left_key {
+        missing.push(right_key.clone());
+    }
+
+    if !missing.is_empty() {
+        let texts = missing
+            .iter()
+            .map(|key| format!("{}{}", key.prefix, key.normalized_text))
+            .collect::<Vec<_>>();
+        let embeddings = model.embed_batch(&texts)?;
+        for (key, embedding) in missing.into_iter().zip(embeddings) {
+            cache.insert(key, embedding);
+        }
+        left_embedding = cache.get(&left_key);
+        right_embedding = cache.get(&right_key);
+    }
+
+    let left = left_embedding.ok_or_else(|| "missing left embedding after batch".to_string())?;
+    let right = if right_key == left_key {
+        left.clone()
+    } else {
+        right_embedding.ok_or_else(|| "missing right embedding after batch".to_string())?
+    };
+    Ok(crate::embeddings::cosine_similarity(&left, &right))
+}
+
+fn compare_bool_field(
+    scores: &mut serde_json::Map<String, serde_json::Value>,
+    distinct_reasons: &mut Vec<String>,
+    field: &str,
+    matched: bool,
+    reason: &str,
+) {
+    if matched {
+        scores.insert(field.to_string(), serde_json::json!("match"));
+    } else {
+        scores.insert(field.to_string(), serde_json::json!("distinct"));
+        distinct_reasons.push(reason.to_string());
+    }
+}
+
+fn predicates_match(left: &PredicateRef, right: &PredicateRef) -> bool {
+    !left.is_unresolved() && left == right
+}
+
+enum ObjectComparison {
+    Match {
+        score: serde_json::Value,
+        band: Option<ThresholdBand>,
+    },
+    Distinct {
+        score: serde_json::Value,
+        reason: String,
+        band: Option<ThresholdBand>,
+    },
+    Ambiguous {
+        score: serde_json::Value,
+        reason: String,
+        band: ThresholdBand,
+    },
+}
+
+fn compare_object_values(
+    left: &ObjectValue,
+    right: &ObjectValue,
+    config: &CanonicalMatchConfig,
+) -> ObjectComparison {
+    match (left, right) {
+        (
+            ObjectValue::Resolved {
+                entity_ref: left_ref,
+            },
+            ObjectValue::Resolved {
+                entity_ref: right_ref,
+            },
+        ) => object_literal_result(left_ref == right_ref),
+        (
+            ObjectValue::Literal {
+                literal_kind: left_kind,
+                value: left_value,
+            },
+            ObjectValue::Literal {
+                literal_kind: right_kind,
+                value: right_value,
+            },
+        ) => object_literal_result(left_kind == right_kind && left_value == right_value),
+        (
+            ObjectValue::FreeText {
+                canonical: left_text,
+            },
+            ObjectValue::FreeText {
+                canonical: right_text,
+            },
+        ) => compare_free_text_object(left_text, right_text, config),
+        _ => ObjectComparison::Distinct {
+            score: serde_json::json!("distinct"),
+            reason: "object_distinct".to_string(),
+            band: None,
+        },
+    }
+}
+
+fn object_literal_result(matched: bool) -> ObjectComparison {
+    if matched {
+        ObjectComparison::Match {
+            score: serde_json::json!("match"),
+            band: None,
+        }
+    } else {
+        ObjectComparison::Distinct {
+            score: serde_json::json!("distinct"),
+            reason: "object_distinct".to_string(),
+            band: None,
+        }
+    }
+}
+
+fn compare_free_text_object(
+    left_text: &str,
+    right_text: &str,
+    config: &CanonicalMatchConfig,
+) -> ObjectComparison {
+    if matches!(config.mode, CanonicalizationMode::HashFallback) {
+        return object_literal_result(left_text == right_text);
+    }
+
+    let similarity =
+        config
+            .free_text_similarity
+            .unwrap_or_else(|| if left_text == right_text { 1.0 } else { 0.0 });
+    if similarity >= HIGH_THRESHOLD {
+        ObjectComparison::Match {
+            score: serde_json::json!(similarity),
+            band: Some(ThresholdBand::High),
+        }
+    } else if similarity < LOW_THRESHOLD {
+        ObjectComparison::Distinct {
+            score: serde_json::json!(similarity),
+            reason: "object_distinct".to_string(),
+            band: Some(ThresholdBand::Low),
+        }
+    } else {
+        ObjectComparison::Ambiguous {
+            score: serde_json::json!(similarity),
+            reason: "ambiguous:object".to_string(),
+            band: ThresholdBand::Ambiguous,
+        }
+    }
+}
+
+fn secondary_reasons(reasons: &[String], primary: &str) -> Vec<String> {
+    reasons
+        .iter()
+        .filter(|reason| reason.as_str() != primary)
+        .cloned()
+        .collect()
+}
+
+pub fn structural_field_content_hash(
+    predicate_ref: Option<&str>,
+    polarity: Option<&str>,
+    object_value: Option<&str>,
+    qualifiers: Option<&str>,
+    status: &str,
+) -> String {
+    let mut hasher = Sha256::new();
+    for value in [
+        predicate_ref.unwrap_or(""),
+        polarity.unwrap_or(""),
+        object_value.unwrap_or(""),
+        qualifiers.unwrap_or(""),
+        status,
+    ] {
+        hasher.update((value.len() as u64).to_be_bytes());
+        hasher.update(value.as_bytes());
+    }
+    hex::encode(hasher.finalize())
+}
+
+pub fn claim_revision_hash(input: &CanonicalMatchInput) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(canonical_status_db(&input.canonical_status).as_bytes());
+    hasher.update(b":");
+    hasher.update(
+        input
+            .structural_field_content_hash
+            .as_deref()
+            .unwrap_or("")
+            .as_bytes(),
+    );
+    hasher.update(b":");
+    hasher.update(input.backfill_epoch.to_be_bytes());
+    hex::encode(hasher.finalize())
+}
+
+pub fn compute_idempotency_key(
+    claim_a: &CanonicalMatchInput,
+    claim_b: &CanonicalMatchInput,
+    mode: &str,
+    embedding_model_version: &str,
+    comparator_threshold_version: &str,
+) -> String {
+    let (low, high) = if claim_a.claim_id <= claim_b.claim_id {
+        (claim_a, claim_b)
+    } else {
+        (claim_b, claim_a)
+    };
+    let rev_low = claim_revision_hash(low);
+    let rev_high = claim_revision_hash(high);
+    let mut hasher = Sha256::new();
+    for value in [
+        low.claim_id.as_str(),
+        rev_low.as_str(),
+        high.claim_id.as_str(),
+        rev_high.as_str(),
+        mode,
+        embedding_model_version,
+        comparator_threshold_version,
+    ] {
+        hasher.update((value.len() as u64).to_be_bytes());
+        hasher.update(value.as_bytes());
+    }
+    hex::encode(hasher.finalize())
+}
+
+pub fn ambiguous_pair_resolution_guard(mode: &str) -> Result<(), &'static str> {
+    if mode == "shadow" {
+        Err("ShadowPairResolutionAttempted")
+    } else {
+        Ok(())
+    }
+}
+
+fn canonical_status_db(status: &CanonicalStatus) -> &'static str {
+    match status {
+        CanonicalStatus::PendingBackfill => "pending_backfill",
+        CanonicalStatus::LegacyUnmigrated => "legacy_unmigrated",
+        CanonicalStatus::Live => "live",
+    }
+}
+
+fn trust_band_allows_canonicalization(band: factors::TrustBand) -> bool {
     matches!(
         band,
         factors::TrustBand::LikelyCurrent | factors::TrustBand::UseWithCaution
@@ -1804,7 +2399,7 @@ fn pre_gate_blocking_tombstone_exists(
 
     // Exact text tier — NOCASE so backfilled tombstones with the
     // legacy mixed-case `text` column still match runtime
-    // canonical_text (which is lowercased by canonicalize_semantic_text).
+    // canonical_text (which is lowercased by normalize_claim_text).
     if !lookup.canonical_text.is_empty()
         && hit(
             "text = ?6 COLLATE NOCASE",
@@ -1974,7 +2569,124 @@ fn with_claim_transaction<T>(
     }
 }
 
+struct StructuralPersistenceFields {
+    predicate_ref: Option<String>,
+    polarity: Option<String>,
+    object_value: Option<String>,
+    qualifiers: Option<String>,
+    structured_claim_json: Option<String>,
+    canonical_status: &'static str,
+    non_semantic_mergeable: bool,
+    structural_field_content_hash: Option<String>,
+    backfill_epoch: i64,
+}
+
+fn structural_persistence_fields_for_claim(
+    claim: &IntelligenceClaim,
+    structured_override: Option<&StructuredClaim>,
+) -> Result<StructuralPersistenceFields, ClaimError> {
+    let derived;
+    let structured = if let Some(structured) = structured_override {
+        Some(structured)
+    } else {
+        derived = structured_claim_from_parts(
+            &claim.subject_ref,
+            &claim.claim_type,
+            claim.field_path.as_deref(),
+            &claim.text,
+            claim.metadata_json.as_deref(),
+            structured_status_from_claim(claim),
+        )?;
+        derived.as_ref()
+    };
+
+    let Some(structured) = structured else {
+        return Ok(StructuralPersistenceFields {
+            predicate_ref: None,
+            polarity: None,
+            object_value: None,
+            qualifiers: None,
+            structured_claim_json: None,
+            canonical_status: "legacy_unmigrated",
+            non_semantic_mergeable: true,
+            structural_field_content_hash: None,
+            backfill_epoch: 1,
+        });
+    };
+
+    let predicate_ref = structured.predicate.registry_id();
+    let polarity = polarity_db(structured.polarity).to_string();
+    let object_value = serde_json::to_string(&structured.object)?;
+    let qualifiers = serde_json::to_string(&structured.qualifiers)?;
+    let structural_field_content_hash = structural_hash_for_structured(structured)?;
+
+    Ok(StructuralPersistenceFields {
+        predicate_ref: Some(predicate_ref),
+        polarity: Some(polarity),
+        object_value: Some(object_value),
+        qualifiers: Some(qualifiers),
+        structured_claim_json: Some(serde_json::to_string(structured)?),
+        canonical_status: "live",
+        non_semantic_mergeable: false,
+        structural_field_content_hash: Some(structural_field_content_hash),
+        backfill_epoch: 1,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn canonical_match_input_for_proposal(
+    claim_id: &str,
+    subject_ref: &str,
+    claim_type: &str,
+    field_path: Option<&str>,
+    text: &str,
+    metadata_json: Option<&str>,
+    temporal_scope: &TemporalScope,
+    sensitivity: &ClaimSensitivity,
+) -> Result<Option<CanonicalMatchInput>, ClaimError> {
+    let Some(structured) = structured_claim_from_parts(
+        subject_ref,
+        claim_type,
+        field_path,
+        text,
+        metadata_json,
+        StructuredClaimStatus::Confirmed,
+    )?
+    else {
+        return Ok(None);
+    };
+    let structural_hash = structural_hash_for_structured(&structured)?;
+
+    Ok(Some(CanonicalMatchInput {
+        claim_id: claim_id.to_string(),
+        account_id: account_id_from_subject_json(subject_ref),
+        workspace_id: workspace_id_from_metadata(metadata_json),
+        tier_key: format!(
+            "{}:{}",
+            enum_to_db_sqlite(temporal_scope),
+            enum_to_db_sqlite(sensitivity)
+        ),
+        claim_state: ClaimState::Active,
+        surfacing_state: SurfacingState::Active,
+        canonical_status: CanonicalStatus::Live,
+        non_semantic_mergeable: false,
+        structured,
+        structural_field_content_hash: Some(structural_hash),
+        backfill_epoch: 0,
+    }))
+}
+
 fn insert_claim_row(tx: &ActionDb, claim: &IntelligenceClaim) -> Result<(), ClaimError> {
+    insert_claim_row_with_structured(tx, claim, None)
+}
+
+fn insert_claim_row_with_structured(
+    tx: &ActionDb,
+    claim: &IntelligenceClaim,
+    structured_override: Option<&StructuredClaim>,
+) -> Result<(), ClaimError> {
+    invalidate_claim_embedding_cache_for_text(&claim.text);
+    let structural = structural_persistence_fields_for_claim(claim, structured_override)?;
     tx.conn_ref().execute(
         "INSERT INTO intelligence_claims (
             id, subject_ref, claim_type, field_path, topic_key, text, dedup_key,
@@ -1983,11 +2695,13 @@ fn insert_claim_row(tx: &ActionDb, claim: &IntelligenceClaim) -> Result<(), Clai
             demotion_reason, reactivated_at, retraction_reason, expires_at,
             superseded_by, trust_score, trust_computed_at, trust_version, thread_id,
             temporal_scope, sensitivity, verification_state, verification_reason,
-            needs_user_decision_at
+            needs_user_decision_at, predicate_ref, polarity, object_value, qualifiers,
+            structured_claim_json, canonical_status, non_semantic_mergeable,
+            structural_field_content_hash, backfill_epoch
         ) VALUES (
             ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
             ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29,
-            ?30, ?31, ?32
+            ?30, ?31, ?32, ?33, ?34, ?35, ?36, ?37, ?38, ?39, ?40, ?41
         )",
         params![
             &claim.id,
@@ -2022,6 +2736,15 @@ fn insert_claim_row(tx: &ActionDb, claim: &IntelligenceClaim) -> Result<(), Clai
             enum_to_db(&claim.verification_state)?,
             claim.verification_reason.as_deref(),
             claim.needs_user_decision_at.as_deref(),
+            structural.predicate_ref.as_deref(),
+            structural.polarity.as_deref(),
+            structural.object_value.as_deref(),
+            structural.qualifiers.as_deref(),
+            structural.structured_claim_json.as_deref(),
+            structural.canonical_status,
+            structural.non_semantic_mergeable,
+            structural.structural_field_content_hash.as_deref(),
+            structural.backfill_epoch,
         ],
     )?;
     Ok(())
@@ -2241,6 +2964,513 @@ pub fn load_claim_by_id(
     }
 }
 
+fn record_shadow_canonicalization_for_committed_claim(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    committed: &CommittedClaim,
+) -> Result<(), ClaimError> {
+    let claim_id = match committed {
+        CommittedClaim::Inserted { claim }
+        | CommittedClaim::Reinforced { claim, .. }
+        | CommittedClaim::Tombstoned { claim } => claim.id.as_str(),
+        CommittedClaim::Forked { new_claim_id, .. } => new_claim_id.as_str(),
+    };
+
+    if !canonical_shadow_schema_ready(db.conn_ref())? {
+        return Ok(());
+    }
+
+    let Some(query) = load_canonical_match_input_by_id(db.conn_ref(), claim_id)? else {
+        return Ok(());
+    };
+    let candidates = load_shadow_candidate_inputs(db.conn_ref(), &query)?;
+    if candidates.is_empty() {
+        return Ok(());
+    }
+
+    let evaluated_at = ctx.clock.now();
+    let evaluated_at_s = evaluated_at.to_rfc3339();
+    let next_reconcile_at = (evaluated_at + ambiguous_base_interval()).to_rfc3339();
+
+    with_claim_transaction(db, |tx| {
+        let Some(rechecked_query) =
+            load_canonical_match_input_by_id(tx.conn_ref(), &query.claim_id)?
+        else {
+            return Ok(());
+        };
+
+        for candidate in &candidates {
+            let Some(rechecked_candidate) =
+                load_canonical_match_input_by_id(tx.conn_ref(), &candidate.claim_id)?
+            else {
+                continue;
+            };
+            let outcome = canonical_match(&rechecked_query, &rechecked_candidate);
+            let config = canonical_match_config(&rechecked_query, &rechecked_candidate);
+            insert_canonicalization_decision_in_tx(
+                tx,
+                &rechecked_query,
+                &rechecked_candidate,
+                &outcome,
+                &config,
+                &evaluated_at_s,
+                &next_reconcile_at,
+            )?;
+        }
+
+        Ok(())
+    })?;
+    Ok(())
+}
+
+fn canonical_shadow_schema_ready(conn: &rusqlite::Connection) -> Result<bool, ClaimError> {
+    Ok(table_exists_sqlite(conn, "canonicalization_decisions")?
+        && table_exists_sqlite(conn, "ambiguous_claim_pairs")?
+        && column_exists_sqlite(conn, "intelligence_claims", "canonical_status")?)
+}
+
+fn load_canonical_match_input_by_id(
+    conn: &rusqlite::Connection,
+    claim_id: &str,
+) -> Result<Option<CanonicalMatchInput>, ClaimError> {
+    let sql = format!(
+        "SELECT {CLAIM_COLUMNS}, predicate_ref, polarity, object_value, qualifiers,
+                canonical_status, non_semantic_mergeable, structural_field_content_hash,
+                backfill_epoch
+         FROM intelligence_claims
+         WHERE id = ?1
+         LIMIT 1"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    Ok(stmt
+        .query_row(params![claim_id], canonical_match_input_from_row)
+        .optional()?)
+}
+
+fn load_shadow_candidate_inputs(
+    conn: &rusqlite::Connection,
+    query: &CanonicalMatchInput,
+) -> Result<Vec<CanonicalMatchInput>, ClaimError> {
+    let sql = format!(
+        "SELECT {CLAIM_COLUMNS}, predicate_ref, polarity, object_value, qualifiers,
+                canonical_status, non_semantic_mergeable, structural_field_content_hash,
+                backfill_epoch
+         FROM intelligence_claims
+         WHERE id <> ?1
+           AND claim_type = (
+                SELECT claim_type FROM intelligence_claims WHERE id = ?1
+           )
+           AND coalesce(field_path, '') = coalesce((
+                SELECT field_path FROM intelligence_claims WHERE id = ?1
+           ), '')
+         ORDER BY created_at DESC, id DESC
+         LIMIT 24"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt
+        .query_map(params![&query.claim_id], canonical_match_input_from_row)?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+fn canonical_match_input_from_row(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<CanonicalMatchInput> {
+    let claim = read_claim_row_sqlite(row)?;
+    let predicate_ref_raw: Option<String> = row.get(32)?;
+    let polarity_raw: Option<String> = row.get(33)?;
+    let object_value_raw: Option<String> = row.get(34)?;
+    let qualifiers_raw: Option<String> = row.get(35)?;
+    let canonical_status_raw: String = row.get(36)?;
+    let non_semantic_mergeable: bool = row.get(37)?;
+    let structural_field_content_hash: Option<String> = row.get(38)?;
+    let backfill_epoch: i64 = row.get(39)?;
+
+    let subject_ref = entity_ref_from_subject_json(&claim.subject_ref).unwrap_or(EntityRef {
+        kind: "unknown".to_string(),
+        id: claim.subject_ref.clone(),
+    });
+    let account_id = account_id_from_subject_json(&claim.subject_ref);
+    let workspace_id = workspace_id_from_metadata(claim.metadata_json.as_deref());
+    let tier_key = format!(
+        "{}:{}",
+        enum_to_db_sqlite(&claim.temporal_scope),
+        enum_to_db_sqlite(&claim.sensitivity)
+    );
+    let status = structured_status_from_claim(&claim);
+    let predicate = predicate_from_structural_column(
+        predicate_ref_raw.as_deref(),
+        &claim.claim_type,
+        claim.field_path.as_deref(),
+    );
+    let object = object_value_raw
+        .as_deref()
+        .and_then(|raw| serde_json::from_str::<ObjectValue>(raw).ok())
+        .unwrap_or_else(|| ObjectValue::FreeText {
+            canonical: claim.text.clone(),
+        });
+    let qualifiers = qualifiers_raw
+        .as_deref()
+        .and_then(|raw| serde_json::from_str::<QualifierSet>(raw).ok())
+        .unwrap_or_default();
+
+    Ok(CanonicalMatchInput {
+        claim_id: claim.id,
+        account_id,
+        workspace_id,
+        tier_key,
+        claim_state: claim.claim_state,
+        surfacing_state: claim.surfacing_state,
+        canonical_status: parse_canonical_status(&canonical_status_raw),
+        non_semantic_mergeable,
+        structured: StructuredClaim {
+            subject_ref,
+            predicate,
+            polarity: parse_polarity(polarity_raw.as_deref()),
+            object,
+            qualifiers,
+            status,
+            sentiment: None,
+        },
+        structural_field_content_hash,
+        backfill_epoch,
+    })
+}
+
+fn read_claim_row_sqlite(row: &rusqlite::Row<'_>) -> rusqlite::Result<IntelligenceClaim> {
+    Ok(IntelligenceClaim {
+        id: row.get(0)?,
+        subject_ref: row.get(1)?,
+        claim_type: row.get(2)?,
+        field_path: row.get(3)?,
+        topic_key: row.get(4)?,
+        text: row.get(5)?,
+        dedup_key: row.get(6)?,
+        item_hash: row.get(7)?,
+        actor: row.get(8)?,
+        data_source: row.get(9)?,
+        source_ref: row.get(10)?,
+        source_asof: row.get(11)?,
+        observed_at: row.get(12)?,
+        created_at: row.get(13)?,
+        provenance_json: row.get(14)?,
+        metadata_json: row.get(15)?,
+        claim_state: parse_db_enum_sqlite(row.get(16)?)?,
+        surfacing_state: parse_db_enum_sqlite(row.get(17)?)?,
+        demotion_reason: row.get(18)?,
+        reactivated_at: row.get(19)?,
+        retraction_reason: row.get(20)?,
+        expires_at: row.get(21)?,
+        superseded_by: row.get(22)?,
+        trust_score: row.get(23)?,
+        trust_computed_at: row.get(24)?,
+        trust_version: row.get(25)?,
+        thread_id: row.get(26)?,
+        temporal_scope: parse_db_enum_sqlite(row.get(27)?)?,
+        sensitivity: parse_db_enum_sqlite(row.get(28)?)?,
+        verification_state: parse_db_enum_sqlite(row.get(29)?)?,
+        verification_reason: row.get(30)?,
+        needs_user_decision_at: row.get(31)?,
+    })
+}
+
+fn insert_canonicalization_decision_in_tx(
+    tx: &ActionDb,
+    query: &CanonicalMatchInput,
+    candidate: &CanonicalMatchInput,
+    outcome: &CanonicalMatchOutcome,
+    config: &CanonicalMatchConfig,
+    evaluated_at: &str,
+    next_reconcile_at: &str,
+) -> Result<(), ClaimError> {
+    let (claim_a, claim_b) = if query.claim_id <= candidate.claim_id {
+        (query, candidate)
+    } else {
+        (candidate, query)
+    };
+    let idempotency_key = compute_idempotency_key(
+        claim_a,
+        claim_b,
+        "shadow",
+        &config.embedding_model_version,
+        &config.comparator_threshold_version,
+    );
+    let decision_id = format!("canonicalization_decision_{}", &idempotency_key[..32]);
+    let supersedes_decision_id = latest_decision_for_pair(
+        tx.conn_ref(),
+        &claim_a.claim_id,
+        &claim_b.claim_id,
+        "shadow",
+    )?;
+    let reason_secondary_json = serde_json::to_string(&outcome.reason_secondary)?;
+    let field_scores_json = outcome.field_scores.to_string();
+    let field_provenance_json = serde_json::json!({
+        "mode": "shadow",
+        "phase": "w4-b.phase-a",
+    })
+    .to_string();
+    let claim_a_revision_hash = claim_revision_hash(claim_a);
+    let claim_b_revision_hash = claim_revision_hash(claim_b);
+
+    tx.conn_ref().execute(
+        "INSERT OR IGNORE INTO canonicalization_decisions (
+            decision_id, claim_id_a, claim_id_b, decision, mode, field_scores,
+            reason, reason_secondary, threshold_band, embedding_model_version,
+            comparator_threshold_version, field_provenance, canonicalization_mode,
+            supersedes_decision_id, idempotency_key, claim_a_revision_hash,
+            claim_b_revision_hash, evaluated_at
+         ) VALUES (?1, ?2, ?3, ?4, 'shadow', ?5, ?6, ?7, ?8, ?9, ?10, ?11,
+                   ?12, ?13, ?14, ?15, ?16, ?17)",
+        params![
+            &decision_id,
+            &claim_a.claim_id,
+            &claim_b.claim_id,
+            outcome.decision.as_db(),
+            &field_scores_json,
+            &outcome.reason,
+            &reason_secondary_json,
+            outcome.threshold_band.map(ThresholdBand::as_db),
+            &config.embedding_model_version,
+            &config.comparator_threshold_version,
+            &field_provenance_json,
+            config.mode.as_db(),
+            supersedes_decision_id.as_deref(),
+            &idempotency_key,
+            &claim_a_revision_hash,
+            &claim_b_revision_hash,
+            evaluated_at,
+        ],
+    )?;
+
+    let payload = serde_json::json!({
+        "decision_id": decision_id,
+        "mode": "shadow",
+        "claim_id_a": claim_a.claim_id,
+        "claim_id_b": claim_b.claim_id,
+        "decision": outcome.decision.as_db(),
+    });
+    emit_claim_signal_in_tx(
+        tx,
+        "canonicalization_decision_created",
+        &claim_a.claim_id,
+        payload,
+    )?;
+
+    if outcome.decision == CanonicalDecisionKind::ForkAmbiguous {
+        let pair_id = format!("ambiguous_pair_{}", &idempotency_key[..32]);
+        tx.conn_ref().execute(
+            "INSERT OR IGNORE INTO ambiguous_claim_pairs (
+                pair_id, claim_id_a, claim_id_b, field_scores, decision_id,
+                user_resolution, user_resolved_at, reconcile_attempts,
+                next_reconcile_at, last_schema_version, created_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, NULL, NULL, 0, ?6, ?7, ?8)",
+            params![
+                &pair_id,
+                &claim_a.claim_id,
+                &claim_b.claim_id,
+                &field_scores_json,
+                &decision_id,
+                next_reconcile_at,
+                schema_version_tag(),
+                evaluated_at,
+            ],
+        )?;
+        let payload = serde_json::json!({
+            "pair_id": pair_id,
+            "claim_id_a": claim_a.claim_id,
+            "claim_id_b": claim_b.claim_id,
+        });
+        emit_claim_signal_in_tx(tx, "ambiguous_pair_created", &claim_a.claim_id, payload)?;
+    }
+
+    Ok(())
+}
+
+fn latest_decision_for_pair(
+    conn: &rusqlite::Connection,
+    claim_id_a: &str,
+    claim_id_b: &str,
+    mode: &str,
+) -> Result<Option<String>, ClaimError> {
+    Ok(conn
+        .query_row(
+            "SELECT decision_id
+             FROM canonicalization_decisions
+             WHERE claim_id_a = ?1 AND claim_id_b = ?2 AND mode = ?3
+             ORDER BY evaluated_at DESC
+             LIMIT 1",
+            params![claim_id_a, claim_id_b, mode],
+            |row| row.get(0),
+        )
+        .optional()?)
+}
+
+fn emit_claim_signal_in_tx(
+    tx: &ActionDb,
+    signal_type: &str,
+    claim_id: &str,
+    payload: serde_json::Value,
+) -> Result<(), ClaimError> {
+    crate::signals::bus::emit_signal_in_active_tx(
+        tx,
+        "claim",
+        claim_id,
+        signal_type,
+        "claims:canonical_match_v2",
+        &payload,
+    )
+    .map_err(|error| ClaimError::Transaction(error.to_string()))?;
+    Ok(())
+}
+
+fn schema_version_tag() -> String {
+    format!("{PREDICATE_REGISTRY_VERSION}+{COMPARATOR_THRESHOLD_VERSION}")
+}
+
+fn table_exists_sqlite(conn: &rusqlite::Connection, table_name: &str) -> Result<bool, ClaimError> {
+    Ok(conn.query_row(
+        "SELECT EXISTS(
+            SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1
+        )",
+        [table_name],
+        |row| row.get::<_, i64>(0),
+    )? != 0)
+}
+
+fn column_exists_sqlite(
+    conn: &rusqlite::Connection,
+    table_name: &str,
+    column_name: &str,
+) -> Result<bool, ClaimError> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table_name})"))?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let name: String = row.get(1)?;
+        if name == column_name {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn entity_ref_from_subject_json(subject_ref: &str) -> Option<EntityRef> {
+    let value = serde_json::from_str::<serde_json::Value>(subject_ref).ok()?;
+    let subject = subject_ref_from_json(&value).ok()?;
+    let kind = subject_kind_label(&subject)?;
+    let id = subject_id_for_lookup(&subject)?;
+    Some(EntityRef {
+        kind: kind.to_string(),
+        id: id.to_string(),
+    })
+}
+
+fn account_id_from_subject_json(subject_ref: &str) -> Option<String> {
+    let value = serde_json::from_str::<serde_json::Value>(subject_ref).ok()?;
+    let subject = subject_ref_from_json(&value).ok()?;
+    match subject {
+        SubjectRef::Account { id } => Some(id),
+        _ => None,
+    }
+}
+
+fn workspace_id_from_metadata(metadata_json: Option<&str>) -> Option<String> {
+    let metadata =
+        metadata_json.and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())?;
+    metadata
+        .get("workspace_id")
+        .or_else(|| metadata.get("workspaceId"))
+        .or_else(|| metadata.get("workspace"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn predicate_from_structural_column(
+    raw: Option<&str>,
+    claim_type: &str,
+    field_path: Option<&str>,
+) -> PredicateRef {
+    if let Some(raw) = raw.map(str::trim).filter(|raw| !raw.is_empty()) {
+        if let Ok(predicate) = serde_json::from_str::<PredicateRef>(raw) {
+            return predicate;
+        }
+        return match raw {
+            "account.health_status" => PredicateRef::AccountHealthStatus,
+            "account.renewal_risk" => PredicateRef::AccountRenewalRisk,
+            "account.objective_status" => PredicateRef::AccountObjectiveStatus,
+            "commitment.captured" => PredicateRef::CommitmentCaptured,
+            "commitment.owner" => PredicateRef::CommitmentOwner,
+            "commitment.due" => PredicateRef::CommitmentDue,
+            "contract.approval_status" => PredicateRef::ContractApprovalStatus,
+            "contract.signature_status" => PredicateRef::ContractSignatureStatus,
+            "product.usage_trend" => PredicateRef::ProductUsageTrend,
+            "relationship.champion_status" => PredicateRef::RelationshipChampionStatus,
+            "risk.status" => PredicateRef::RiskStatus,
+            "stakeholder.role" => PredicateRef::StakeholderRole,
+            "topic.mentioned" => PredicateRef::TopicMentioned,
+            other => PredicateRef::Unresolved {
+                text: other.to_string(),
+            },
+        };
+    }
+
+    match (claim_type, field_path.unwrap_or_default()) {
+        ("commitment", field) if field.contains("owner") => PredicateRef::CommitmentOwner,
+        ("commitment", field) if field.contains("due") => PredicateRef::CommitmentDue,
+        ("commitment", _) => PredicateRef::CommitmentCaptured,
+        ("risk", _) => PredicateRef::RiskStatus,
+        ("objective", _) => PredicateRef::AccountObjectiveStatus,
+        ("stakeholder_role", _) => PredicateRef::StakeholderRole,
+        ("topic", _) => PredicateRef::TopicMentioned,
+        (_, field) if field.contains("signature") => PredicateRef::ContractSignatureStatus,
+        (_, field) if field.contains("approval") => PredicateRef::ContractApprovalStatus,
+        _ => PredicateRef::TopicMentioned,
+    }
+}
+
+fn parse_polarity(raw: Option<&str>) -> Polarity {
+    match raw.unwrap_or("affirm").trim().to_ascii_lowercase().as_str() {
+        "negate" | "negative" | "false" | "not" => Polarity::Negate,
+        _ => Polarity::Affirm,
+    }
+}
+
+fn parse_canonical_status(raw: &str) -> CanonicalStatus {
+    match raw {
+        "live" => CanonicalStatus::Live,
+        "legacy_unmigrated" => CanonicalStatus::LegacyUnmigrated,
+        _ => CanonicalStatus::PendingBackfill,
+    }
+}
+
+fn structured_status_from_claim(claim: &IntelligenceClaim) -> StructuredClaimStatus {
+    match claim.verification_state {
+        ClaimVerificationState::Active => StructuredClaimStatus::Confirmed,
+        ClaimVerificationState::NeedsUserDecision => StructuredClaimStatus::Pending,
+        ClaimVerificationState::Contested => StructuredClaimStatus::Unknown,
+    }
+}
+
+fn parse_db_enum_sqlite<T>(value: String) -> rusqlite::Result<T>
+where
+    T: for<'de> Deserialize<'de>,
+{
+    serde_json::from_str(&format!("\"{value}\"")).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(error))
+    })
+}
+
+fn enum_to_db_sqlite<T>(value: &T) -> String
+where
+    T: Serialize,
+{
+    serde_json::to_string(value)
+        .unwrap_or_else(|_| "\"unknown\"".to_string())
+        .trim_matches('"')
+        .to_string()
+}
+
 /// L2 cycle-1 fix #6: load the first ACTIVE claim with this exact dedup_key
 /// that can merge with the proposal's temporal/sensitivity tier. Used by
 /// commit_claim's same-meaning merge branch to detect a re-commit of the same
@@ -2269,13 +3499,14 @@ fn load_active_claim_by_dedup_key(
     Ok(None)
 }
 
-/// Looks up semantic near-duplicates. Exact `dedup_key` equality is
-/// handled first; this scans the same entity + claim family for a tightly
-/// scoped semantic signature match before the contradiction fork path runs.
-fn load_active_semantic_duplicate_claim(
+/// Looks up structured canonical duplicates. Exact `dedup_key` equality is
+/// handled first; this scans the same entity + claim family and lets
+/// `canonical_match` decide from structured fields and embedding-backed object
+/// comparison before the contradiction fork path runs.
+fn load_active_canonical_duplicate_claim(
     conn: &rusqlite::Connection,
-    lookup: SemanticDuplicateLookup<'_>,
-) -> Result<Option<SemanticDuplicateMatch>, ClaimError> {
+    lookup: CanonicalDuplicateLookup<'_>,
+) -> Result<Option<CanonicalDuplicateMatch>, ClaimError> {
     let Some(kind) = subject_kind_label(lookup.subject) else {
         return Ok(None);
     };
@@ -2316,21 +3547,25 @@ fn load_active_semantic_duplicate_claim(
         ) {
             continue;
         }
-        if !semantic_claim_near_duplicate(&claim, lookup.canonical_text, lookup.proposal_qualifiers)
-        {
+        let Some(mut candidate_input) = load_canonical_match_input_by_id(conn, &claim.id)? else {
+            continue;
+        };
+        candidate_input.tier_key = lookup.proposal_input.tier_key.clone();
+        let outcome = canonical_match(lookup.proposal_input, &candidate_input);
+        if outcome.decision != CanonicalDecisionKind::Merge {
             continue;
         }
 
         let trust_band = trust_band_for_score(claim.trust_score);
-        if semantic_trust_band_allows_canonicalization(trust_band) {
-            return Ok(Some(SemanticDuplicateMatch {
+        if trust_band_allows_canonicalization(trust_band) {
+            return Ok(Some(CanonicalDuplicateMatch {
                 claim,
-                action: SemanticDuplicateAction::Canonicalize,
+                action: CanonicalDuplicateAction::Canonicalize,
             }));
         } else {
-            needs_verification_match.get_or_insert(SemanticDuplicateMatch {
+            needs_verification_match.get_or_insert(CanonicalDuplicateMatch {
                 claim,
-                action: SemanticDuplicateAction::NeedsVerification,
+                action: CanonicalDuplicateAction::NeedsVerification,
             });
         }
     }
@@ -2344,7 +3579,7 @@ fn load_active_semantic_duplicate_claim(
 /// Returns the most recently created contradicting claim (one fork
 /// per commit; subsequent contradictions chain off the new claim).
 ///
-/// Skips active claims whose own semantic identity has a policy-compatible
+/// Skips active claims whose own canonical identity has a policy-compatible
 /// tombstone in the table — those are "effectively retracted" by a user
 /// dismissal even though their `claim_state` column hasn't been
 /// transitioned (the claims substrate keeps active rows append-only; tombstones
@@ -2409,9 +3644,17 @@ fn load_active_contradicting_claim(
         ) {
             continue;
         }
-        if semantic_claim_near_duplicate(&claim, lookup.canonical_text, lookup.proposal_qualifiers)
-        {
-            continue;
+        if let Some(proposal_input) = lookup.proposal_input {
+            let Some(mut candidate_input) = load_canonical_match_input_by_id(conn, &claim.id)?
+            else {
+                return Ok(Some(claim));
+            };
+            candidate_input.tier_key = proposal_input.tier_key.clone();
+            if canonical_match(proposal_input, &candidate_input).decision
+                == CanonicalDecisionKind::Merge
+            {
+                continue;
+            }
         }
         return Ok(Some(claim));
     }
@@ -2929,17 +4172,29 @@ pub fn commit_claim(
         .sensitivity
         .clone()
         .unwrap_or_else(|| metadata.default_sensitivity.clone());
-    let semantic_qualifiers = if matches!(kind, ClaimType::UserNote) {
-        HashSet::new()
-    } else {
-        semantic_high_salience_qualifiers(&proposal.text)
-    };
-
     let canonical_text = if matches!(kind, ClaimType::UserNote) {
         proposal.text.clone()
     } else {
-        canonicalize_semantic_text(&proposal.text)
+        normalize_claim_text(&proposal.text)
     };
+    let proposal_structured = structured_claim_from_parts(
+        &subject_ref_compact,
+        &proposal.claim_type,
+        proposal.field_path.as_deref(),
+        &proposal.text,
+        proposal.metadata_json.as_deref(),
+        StructuredClaimStatus::Confirmed,
+    )?;
+    let proposal_input = canonical_match_input_for_proposal(
+        "__proposal__",
+        &subject_ref_compact,
+        &proposal.claim_type,
+        proposal.field_path.as_deref(),
+        &proposal.text,
+        proposal.metadata_json.as_deref(),
+        &effective_temporal_scope,
+        &effective_sensitivity,
+    )?;
     let computed_hash = item_hash(
         item_kind_for_claim_type(&proposal.claim_type),
         &canonical_text,
@@ -2967,15 +4222,12 @@ pub fn commit_claim(
     let lock = commit_lock_for(key);
     let _guard = lock.lock();
 
-    with_claim_transaction(db, |tx| {
+    let committed = with_claim_transaction(db, |tx| {
         let now = ctx.clock.now().to_rfc3339();
-        let claim_metadata_json = metadata_with_semantic_qualifiers(
-            link_map::metadata_with_structured_field(
-                proposal.metadata_json.as_deref(),
-                proposal.field_path.as_deref(),
-                &proposal.text,
-            ),
-            &semantic_qualifiers,
+        let claim_metadata_json = link_map::metadata_with_structured_field(
+            proposal.metadata_json.as_deref(),
+            proposal.field_path.as_deref(),
+            &proposal.text,
         );
         targeted_repair_validate_claim_commit_invocation_budget(ctx, tx, &proposal)?;
         if proposal.tombstone.is_some() && proposal.supersedes.is_some() {
@@ -3078,7 +4330,7 @@ pub fn commit_claim(
                 verification_reason: None,
                 needs_user_decision_at: None,
             };
-            insert_claim_row(tx, &claim)?;
+            insert_claim_row_with_structured(tx, &claim, proposal_structured.as_ref())?;
             project_legacy_state_for_claim(ctx, tx, &claim)?;
             insert_claim_edges(tx, &claim)?;
 
@@ -3133,7 +4385,7 @@ pub fn commit_claim(
         if proposal.tombstone.is_none()
             && !matches!(metadata.commit_policy_class, CommitPolicyClass::Append)
         {
-            let mut semantic_duplicate_needs_verification = false;
+            let mut canonical_duplicate_needs_verification = false;
             if let Some(existing) = load_active_claim_by_dedup_key(
                 tx.conn_ref(),
                 &dedup_key,
@@ -3162,53 +4414,54 @@ pub fn commit_claim(
                 });
             }
 
-            if let Some(semantic_match) = load_active_semantic_duplicate_claim(
-                tx.conn_ref(),
-                SemanticDuplicateLookup {
-                    subject: &subject,
-                    claim_type: &proposal.claim_type,
-                    field_path: proposal.field_path.as_deref(),
-                    canonical_text: &canonical_text,
-                    proposal_qualifiers: &semantic_qualifiers,
-                    proposal_temporal_scope: &effective_temporal_scope,
-                    proposal_sensitivity: &effective_sensitivity,
-                    now: &now,
-                },
-            )? {
-                match semantic_match.action {
-                    SemanticDuplicateAction::Canonicalize => {
-                        let source_mechanism = "semantic_near_duplicate_merge";
-                        let corroboration_id = corroborate_in_tx(
-                            tx,
-                            &semantic_match.claim.id,
-                            &proposal.data_source,
-                            proposal.source_asof.as_deref(),
-                            Some(source_mechanism),
-                            &now,
-                        )?;
-                        insert_semantic_evidence_in_tx(
-                            tx,
-                            &semantic_match.claim.id,
-                            &corroboration_id,
-                            &proposal,
-                            source_mechanism,
-                            &now,
-                        )?;
-                        let mut edge_claim = semantic_match.claim.clone();
-                        edge_claim.metadata_json = link_map::metadata_with_structured_field(
-                            edge_claim.metadata_json.as_deref(),
-                            proposal.field_path.as_deref(),
-                            &proposal.text,
-                        );
-                        insert_claim_edges(tx, &edge_claim)?;
-                        tx.bump_for_subject(&subject)?;
-                        return Ok(CommittedClaim::Reinforced {
-                            claim: semantic_match.claim,
-                            corroboration_id,
-                        });
-                    }
-                    SemanticDuplicateAction::NeedsVerification => {
-                        semantic_duplicate_needs_verification = true;
+            if let Some(proposal_input) = proposal_input.as_ref() {
+                if let Some(canonical_match) = load_active_canonical_duplicate_claim(
+                    tx.conn_ref(),
+                    CanonicalDuplicateLookup {
+                        subject: &subject,
+                        claim_type: &proposal.claim_type,
+                        field_path: proposal.field_path.as_deref(),
+                        proposal_input,
+                        proposal_temporal_scope: &effective_temporal_scope,
+                        proposal_sensitivity: &effective_sensitivity,
+                        now: &now,
+                    },
+                )? {
+                    match canonical_match.action {
+                        CanonicalDuplicateAction::Canonicalize => {
+                            let source_mechanism = "canonical_match_merge";
+                            let corroboration_id = corroborate_in_tx(
+                                tx,
+                                &canonical_match.claim.id,
+                                &proposal.data_source,
+                                proposal.source_asof.as_deref(),
+                                Some(source_mechanism),
+                                &now,
+                            )?;
+                            insert_semantic_evidence_in_tx(
+                                tx,
+                                &canonical_match.claim.id,
+                                &corroboration_id,
+                                &proposal,
+                                source_mechanism,
+                                &now,
+                            )?;
+                            let mut edge_claim = canonical_match.claim.clone();
+                            edge_claim.metadata_json = link_map::metadata_with_structured_field(
+                                edge_claim.metadata_json.as_deref(),
+                                proposal.field_path.as_deref(),
+                                &proposal.text,
+                            );
+                            insert_claim_edges(tx, &edge_claim)?;
+                            tx.bump_for_subject(&subject)?;
+                            return Ok(CommittedClaim::Reinforced {
+                                claim: canonical_match.claim,
+                                corroboration_id,
+                            });
+                        }
+                        CanonicalDuplicateAction::NeedsVerification => {
+                            canonical_duplicate_needs_verification = true;
+                        }
                     }
                 }
             }
@@ -3227,7 +4480,7 @@ pub fn commit_claim(
                     claim_type: &proposal.claim_type,
                     field_path: proposal.field_path.as_deref(),
                     canonical_text: &canonical_text,
-                    proposal_qualifiers: &semantic_qualifiers,
+                    proposal_input: proposal_input.as_ref(),
                     proposal_temporal_scope: &effective_temporal_scope,
                     proposal_sensitivity: &effective_sensitivity,
                     now: &now,
@@ -3271,7 +4524,7 @@ pub fn commit_claim(
                     verification_reason: None,
                     needs_user_decision_at: None,
                 };
-                insert_claim_row(tx, &contradicting)?;
+                insert_claim_row_with_structured(tx, &contradicting, proposal_structured.as_ref())?;
                 project_legacy_state_for_claim(ctx, tx, &contradicting)?;
                 insert_claim_edges(tx, &contradicting)?;
 
@@ -3291,7 +4544,7 @@ pub fn commit_claim(
                     new_claim_id: new_id,
                 });
             }
-            if semantic_duplicate_needs_verification {
+            if canonical_duplicate_needs_verification {
                 let id = proposal
                     .id
                     .clone()
@@ -3329,12 +4582,12 @@ pub fn commit_claim(
                     sensitivity: effective_sensitivity.clone(),
                     verification_state: ClaimVerificationState::Active,
                     verification_reason: Some(
-                        "semantic_duplicate_low_trust_needs_verification".to_string(),
+                        "canonical_duplicate_low_trust_needs_verification".to_string(),
                     ),
                     needs_user_decision_at: None,
                 };
 
-                insert_claim_row(tx, &claim)?;
+                insert_claim_row_with_structured(tx, &claim, proposal_structured.as_ref())?;
                 project_legacy_state_for_claim(ctx, tx, &claim)?;
                 insert_claim_edges(tx, &claim)?;
                 tx.bump_for_subject(&subject)?;
@@ -3392,7 +4645,7 @@ pub fn commit_claim(
             needs_user_decision_at: None,
         };
 
-        insert_claim_row(tx, &claim)?;
+        insert_claim_row_with_structured(tx, &claim, proposal_structured.as_ref())?;
         project_legacy_state_for_claim(ctx, tx, &claim)?;
         if proposal.tombstone.is_some() {
             mark_claim_edges_tombstoned_for_identity(
@@ -3412,7 +4665,10 @@ pub fn commit_claim(
         } else {
             Ok(CommittedClaim::Inserted { claim })
         }
-    })
+    })?;
+
+    record_shadow_canonicalization_for_committed_claim(ctx, db, &committed)?;
+    Ok(committed)
 }
 
 pub fn withdraw_claim(
@@ -6341,6 +7597,282 @@ mod tests {
 
     const TS: &str = "2026-05-02T12:00:00+00:00";
     const SUBJECT: &str = r#"{"kind":"account","id":"acct-1"}"#;
+
+    fn register_canonical_embedding_fixtures() {
+        static REGISTERED: OnceLock<()> = OnceLock::new();
+        REGISTERED.get_or_init(|| {
+            let base = "Phase 2 budget approval is pending with finance";
+            for equivalent in [
+                "Finance has not approved the Phase 2 budget yet",
+                "Phase 2 funding is awaiting finance signoff",
+                "Budget sign-off for Phase 2 remains blocked by Finance",
+                "The phase 2 budget still needs finance approval",
+                "Finance approval for the Phase 2 budget is still outstanding",
+            ] {
+                register_test_claim_embedding_similarity(base, equivalent, 0.91);
+            }
+            register_test_claim_embedding_similarity(
+                "Acme Phase 2 budget approval is pending with finance",
+                "Finance has not approved Acme Phase 2 budget yet",
+                0.91,
+            );
+            register_test_claim_embedding_similarity(
+                "phase 2 deal signing approval is pending with finance",
+                "phase 2 deal signature approval is pending with finance",
+                0.91,
+            );
+        });
+    }
+
+    fn canonical_match_fixture(id: &str) -> CanonicalMatchInput {
+        CanonicalMatchInput {
+            claim_id: id.to_string(),
+            account_id: Some("acct-1".to_string()),
+            workspace_id: Some("workspace-1".to_string()),
+            tier_key: "state:internal".to_string(),
+            claim_state: ClaimState::Active,
+            surfacing_state: SurfacingState::Active,
+            canonical_status: CanonicalStatus::Live,
+            non_semantic_mergeable: false,
+            structured: StructuredClaim {
+                subject_ref: EntityRef {
+                    kind: "account".to_string(),
+                    id: "acct-1".to_string(),
+                },
+                predicate: PredicateRef::RiskStatus,
+                polarity: Polarity::Affirm,
+                object: ObjectValue::FreeText {
+                    canonical: "renewal risk".to_string(),
+                },
+                qualifiers: QualifierSet::default(),
+                status: StructuredClaimStatus::Confirmed,
+                sentiment: None,
+            },
+            structural_field_content_hash: Some(structural_field_content_hash(
+                Some("risk.status"),
+                Some("affirm"),
+                Some(r#"{"kind":"free_text","canonical":"renewal risk"}"#),
+                Some("{}"),
+                "confirmed",
+            )),
+            backfill_epoch: 1,
+        }
+    }
+
+    #[test]
+    fn suite_s_candidate_filter_migration_status_precedes_tombstone_scope_and_tier() {
+        let mut query = canonical_match_fixture("claim-a");
+        query.canonical_status = CanonicalStatus::PendingBackfill;
+        query.claim_state = ClaimState::Tombstoned;
+        query.account_id = Some("acct-a".to_string());
+        query.workspace_id = Some("workspace-a".to_string());
+        query.tier_key = "state:confidential".to_string();
+
+        let candidate = canonical_match_fixture("claim-b");
+        let decision = candidate_filter(&query, &candidate);
+
+        match decision {
+            CandidateFilterDecision::RejectAsDistinct { primary, secondary } => {
+                assert_eq!(primary, CandidateFilterReason::QueryPendingBackfill);
+                assert!(secondary.contains(&CandidateFilterReason::QueryTombstoned));
+                assert!(secondary.contains(&CandidateFilterReason::AccountScope));
+                assert!(secondary.contains(&CandidateFilterReason::WorkspaceScope));
+                assert!(secondary.contains(&CandidateFilterReason::TierMismatch));
+            }
+            CandidateFilterDecision::Pass => panic!("pending_backfill query must fail closed"),
+        }
+    }
+
+    #[test]
+    fn suite_s_legacy_unmigrated_and_pending_rows_never_enter_v2_comparison() {
+        let query = canonical_match_fixture("claim-a");
+        let mut candidate = canonical_match_fixture("claim-b");
+        candidate.canonical_status = CanonicalStatus::LegacyUnmigrated;
+        candidate.non_semantic_mergeable = true;
+        candidate.claim_state = ClaimState::Tombstoned;
+
+        let outcome = canonical_match_v2(&query, &candidate, &CanonicalMatchConfig::default());
+        assert_eq!(outcome.decision, CanonicalDecisionKind::ForkFiltered);
+        assert_eq!(outcome.reason, "candidate_legacy_unmigrated");
+        assert!(outcome
+            .reason_secondary
+            .contains(&"candidate_tombstoned".to_string()));
+    }
+
+    #[test]
+    fn suite_s_shadow_pair_resolution_attempt_is_audit_only_guard() {
+        assert_eq!(
+            ambiguous_pair_resolution_guard("shadow"),
+            Err("ShadowPairResolutionAttempted")
+        );
+        assert_eq!(ambiguous_pair_resolution_guard("live"), Ok(()));
+    }
+
+    #[test]
+    fn suite_s_replay_idempotency_sorts_claims_before_revision_hash_alignment() {
+        let claim_a = canonical_match_fixture("claim-a");
+        let claim_b = canonical_match_fixture("claim-b");
+
+        let ab = compute_idempotency_key(
+            &claim_a,
+            &claim_b,
+            "shadow",
+            "model:v1",
+            COMPARATOR_THRESHOLD_VERSION,
+        );
+        let ba = compute_idempotency_key(
+            &claim_b,
+            &claim_a,
+            "shadow",
+            "model:v1",
+            COMPARATOR_THRESHOLD_VERSION,
+        );
+
+        assert_eq!(ab, ba);
+    }
+
+    #[test]
+    fn suite_s_status_only_re_evaluation_changes_idempotency_key() {
+        let claim_a = canonical_match_fixture("claim-a");
+        let mut pending = canonical_match_fixture("claim-b");
+        pending.structured.status = StructuredClaimStatus::Pending;
+        pending.structural_field_content_hash = Some(structural_field_content_hash(
+            Some("risk.status"),
+            Some("affirm"),
+            Some(r#"{"kind":"free_text","canonical":"renewal risk"}"#),
+            Some("{}"),
+            "pending",
+        ));
+
+        let mut confirmed = pending.clone();
+        confirmed.structured.status = StructuredClaimStatus::Confirmed;
+        confirmed.structural_field_content_hash = Some(structural_field_content_hash(
+            Some("risk.status"),
+            Some("affirm"),
+            Some(r#"{"kind":"free_text","canonical":"renewal risk"}"#),
+            Some("{}"),
+            "confirmed",
+        ));
+
+        let first = compute_idempotency_key(
+            &claim_a,
+            &pending,
+            "shadow",
+            "model:v1",
+            COMPARATOR_THRESHOLD_VERSION,
+        );
+        let second = compute_idempotency_key(
+            &claim_a,
+            &confirmed,
+            "shadow",
+            "model:v1",
+            COMPARATOR_THRESHOLD_VERSION,
+        );
+
+        assert_ne!(first, second);
+    }
+
+    #[test]
+    fn suite_e_qualifier_asymmetry_and_polarity_disagreement_fork() {
+        let query = canonical_match_fixture("claim-a");
+        let mut scoped = canonical_match_fixture("claim-b");
+        scoped.structured.qualifiers.region =
+            Some(abilities_runtime::structured_claim::RegionCode {
+                code: "US".to_string(),
+            });
+
+        let outcome = canonical_match_v2(
+            &query,
+            &scoped,
+            &CanonicalMatchConfig {
+                mode: CanonicalizationMode::Full,
+                free_text_similarity: Some(1.0),
+                ..CanonicalMatchConfig::default()
+            },
+        );
+        assert_eq!(outcome.decision, CanonicalDecisionKind::Fork);
+        assert_eq!(outcome.reason, "qualifier_mismatch");
+
+        let mut negated = canonical_match_fixture("claim-c");
+        negated.structured.polarity = Polarity::Negate;
+        let outcome = canonical_match_v2(
+            &query,
+            &negated,
+            &CanonicalMatchConfig {
+                mode: CanonicalizationMode::Full,
+                free_text_similarity: Some(1.0),
+                ..CanonicalMatchConfig::default()
+            },
+        );
+        assert_eq!(outcome.decision, CanonicalDecisionKind::Fork);
+        assert_eq!(outcome.reason, "polarity_distinct");
+    }
+
+    #[test]
+    fn suite_e_hash_fallback_requires_strict_literal_free_text_equality() {
+        let query = canonical_match_fixture("claim-a");
+        let mut candidate = canonical_match_fixture("claim-b");
+        candidate.structured.object = ObjectValue::FreeText {
+            canonical: "renewal concern".to_string(),
+        };
+
+        let outcome = canonical_match_v2(&query, &candidate, &CanonicalMatchConfig::default());
+        assert_eq!(outcome.decision, CanonicalDecisionKind::ForkContradiction);
+        assert_eq!(outcome.threshold_band, None);
+    }
+
+    #[test]
+    fn suite_e_threshold_band_edges_at_exactly_low_and_high() {
+        let query = canonical_match_fixture("claim-a");
+        let candidate = canonical_match_fixture("claim-b");
+
+        let low_edge = canonical_match_v2(
+            &query,
+            &candidate,
+            &CanonicalMatchConfig {
+                mode: CanonicalizationMode::Full,
+                free_text_similarity: Some(LOW_THRESHOLD),
+                ..CanonicalMatchConfig::default()
+            },
+        );
+        assert_eq!(low_edge.decision, CanonicalDecisionKind::ForkAmbiguous);
+        assert_eq!(low_edge.threshold_band, Some(ThresholdBand::Ambiguous));
+
+        let high_edge = canonical_match_v2(
+            &query,
+            &candidate,
+            &CanonicalMatchConfig {
+                mode: CanonicalizationMode::Full,
+                free_text_similarity: Some(HIGH_THRESHOLD),
+                ..CanonicalMatchConfig::default()
+            },
+        );
+        assert_eq!(high_edge.decision, CanonicalDecisionKind::Merge);
+        assert_eq!(high_edge.threshold_band, Some(ThresholdBand::High));
+    }
+
+    #[test]
+    fn suite_e_contradiction_when_subject_predicate_qualifiers_match_but_object_differs() {
+        let query = canonical_match_fixture("claim-a");
+        let mut candidate = canonical_match_fixture("claim-b");
+        candidate.structured.object = ObjectValue::FreeText {
+            canonical: "renewal healthy".to_string(),
+        };
+
+        let outcome = canonical_match_v2(
+            &query,
+            &candidate,
+            &CanonicalMatchConfig {
+                mode: CanonicalizationMode::Full,
+                free_text_similarity: Some(0.20),
+                ..CanonicalMatchConfig::default()
+            },
+        );
+
+        assert_eq!(outcome.decision, CanonicalDecisionKind::ForkContradiction);
+        assert_eq!(outcome.reason, "object_distinct");
+    }
+
     #[test]
     fn claim_update_allowlist_accepts_lifecycle_trust_and_feedback_columns() {
         let sql = "UPDATE intelligence_claims
@@ -6523,6 +8055,7 @@ mod tests {
         rng: &'a SeedableRng,
         external: &'a ExternalClients,
     ) -> ServiceContext<'a> {
+        register_canonical_embedding_fixtures();
         ServiceContext::test_live(clock, rng, external)
     }
 
@@ -7356,7 +8889,7 @@ mod tests {
         let (clock, rng, external) = ctx_parts();
         let ctx = live_ctx(&clock, &rng, &external);
         let raw_targets = r#"["Person-MixedCase"]"#;
-        let canonical_text = canonicalize_semantic_text(raw_targets);
+        let canonical_text = normalize_claim_text(raw_targets);
         let subject_ref = compact_subject_ref_str(SUBJECT).expect("compact subject");
         let hash = item_hash(item_kind_for_claim_type("risk"), &canonical_text);
         let dedup_key = compute_dedup_key(&hash, &subject_ref, "risk", Some("stakeholders"));
@@ -7792,7 +9325,7 @@ mod tests {
         // Pre-compute the runtime hash for the proposal text and seed a
         // backfill-shaped tombstone with that hash + a different
         // (mechanism-1-style) dedup_key. The PRE-GATE must still block.
-        let canonical = canonicalize_semantic_text("Procurement blocked renewal");
+        let canonical = normalize_claim_text("Procurement blocked renewal");
         let hash = item_hash(ItemKind::Risk, &canonical);
         seed_backfill_shaped_tombstone(&db, &hash, "Procurement blocked renewal");
 
@@ -7840,7 +9373,7 @@ mod tests {
         let db = test_db();
         seed_account(&db);
         // Seed a tombstone for acct-1.
-        let canonical = canonicalize_semantic_text("Procurement blocked renewal");
+        let canonical = normalize_claim_text("Procurement blocked renewal");
         let hash = item_hash(ItemKind::Risk, &canonical);
         seed_backfill_shaped_tombstone(&db, &hash, "Procurement blocked renewal");
 
@@ -7867,7 +9400,7 @@ mod tests {
         let db = test_db();
         seed_account(&db);
         // Seed a 'risk' tombstone.
-        let canonical = canonicalize_semantic_text("Procurement blocked renewal");
+        let canonical = normalize_claim_text("Procurement blocked renewal");
         let hash = item_hash(ItemKind::Risk, &canonical);
         seed_backfill_shaped_tombstone(&db, &hash, "Procurement blocked renewal");
 
@@ -9480,46 +11013,24 @@ mod tests {
         assert_eq!(read_account_claim_version(&db), before + 1);
     }
 
-    /// L2 cycle-1 fix #6: canonicalize_semantic_text lowercases, trims,
-    /// and collapses internal whitespace runs.
     #[test]
-    fn canonicalize_semantic_text_lowercases_trims_collapses_whitespace() {
+    fn normalize_claim_text_lowercases_trims_collapses_whitespace_and_contractions() {
         assert_eq!(
-            canonicalize_semantic_text("  ARR Risk\trenewal "),
+            normalize_claim_text("  ARR Risk\trenewal "),
             "arr risk renewal"
         );
         assert_eq!(
-            canonicalize_semantic_text("Procurement   Blocked\n\nRenewal"),
+            normalize_claim_text("Procurement   Blocked\n\nRenewal"),
             "procurement blocked renewal"
         );
         assert_eq!(
-            canonicalize_semantic_text("already canonical"),
-            "already canonical"
+            normalize_claim_text("Finance won't approve Phase 2 budget"),
+            "finance will not approve phase 2 budget"
         );
     }
 
     #[test]
-    fn semantic_qualifiers_from_metadata_accepts_legacy_sidecar_key() {
-        let metadata = serde_json::json!({
-            LEGACY_SEMANTIC_QUALIFIERS_METADATA_KEY: ["region:US"],
-        })
-        .to_string();
-        let qualifiers =
-            semantic_qualifiers_from_metadata(Some(&metadata)).expect("legacy qualifiers parse");
-
-        assert_eq!(qualifiers.len(), 1);
-        assert!(qualifiers.contains("region:US"));
-
-        let non_mergeable = serde_json::json!({
-            LEGACY_SEMANTIC_QUALIFIERS_METADATA_KEY: ["region:US"],
-            LEGACY_NON_SEMANTIC_MERGEABLE_METADATA_KEY: true,
-        })
-        .to_string();
-        assert!(semantic_qualifiers_from_metadata(Some(&non_mergeable)).is_none());
-    }
-
-    #[test]
-    fn semantic_high_salience_qualifiers_normalizes_region_aliases_before_tokenizing() {
+    fn claim_qualifier_extraction_normalizes_region_aliases_before_tokenizing() {
         for (region_text, expected) in [
             ("U.S.", "region:US"),
             ("U.S", "region:US"),
@@ -9535,14 +11046,14 @@ mod tests {
             ("E.M.E.A.", "region:EMEA"),
         ] {
             let text = format!("{region_text} Phase 2 budget approval is pending with finance");
-            let qualifiers = semantic_high_salience_qualifiers(&text);
+            let qualifiers = claim_qualifier_labels_for_migration(&text);
             assert!(
                 qualifiers.contains(expected),
                 "{region_text} should produce {expected}, got {qualifiers:?}"
             );
         }
 
-        let qualifiers = semantic_high_salience_qualifiers(
+        let qualifiers = claim_qualifier_labels_for_migration(
             "Finance asked us whether Phase 2 budget approval is pending",
         );
         assert!(
@@ -9552,8 +11063,8 @@ mod tests {
     }
 
     #[test]
-    fn semantic_us_region_alias_requires_uppercase_or_dotted_acronym() {
-        let dotted = semantic_high_salience_qualifiers(
+    fn claim_us_region_alias_requires_uppercase_or_dotted_acronym() {
+        let dotted = claim_qualifier_labels_for_migration(
             "U.S Phase 2 budget approval is pending with finance",
         );
         assert!(dotted.contains("region:US"));
@@ -9563,7 +11074,7 @@ mod tests {
             "us",
             "Finance asked us. Phase 2 budget approval is pending",
         ] {
-            let qualifiers = semantic_high_salience_qualifiers(text);
+            let qualifiers = claim_qualifier_labels_for_migration(text);
             assert!(
                 !qualifiers.contains("region:US"),
                 "{text:?} must not produce a US region qualifier: {qualifiers:?}"
@@ -9571,186 +11082,118 @@ mod tests {
         }
     }
 
-    #[test]
-    fn semantic_near_duplicate_is_tightly_scoped() {
-        assert!(semantic_near_duplicate(
-            "Phase 2 budget approval is pending with finance",
-            "Finance has not approved the Phase 2 budget yet"
-        ));
-        assert!(semantic_near_duplicate(
-            "Phase 2 funding is awaiting finance signoff",
-            "Budget sign-off for Phase 2 remains blocked by Finance"
-        ));
-        assert!(
-            !semantic_near_duplicate(
-                "Finance has not approved the Phase 2 budget yet",
-                "Legal has not approved the Phase 2 contract terms yet"
-            ),
-            "shared wording on phase approval must not collapse different owners/objects"
-        );
-        assert!(
-            !semantic_near_duplicate(
-                "phase 2 budget approval is pending with finance",
-                "phase 2 contract approval is pending with finance"
-            ),
-            "shared phase approval wording must not collapse different objects"
-        );
-        assert!(
-            semantic_near_duplicate(
-                "phase 2 deal signing approval is pending with finance",
-                "phase 2 deal signature approval is pending with finance"
-            ),
-            "explicit signing/signature synonyms should still collapse"
-        );
-        assert!(
-            !semantic_near_duplicate(
-                "Phase 2 budget approval is pending with finance",
-                "Finance approved the Phase 2 budget"
-            ),
-            "opposite assertion status must remain separate"
-        );
-        assert!(
-            !semantic_near_duplicate(
-                "Target Example public source_ref claim is allowed.",
-                "Target Example internal source_ref claim is allowed."
-            ),
-            "generic lexical overlap without an explicit assertion status must not collapse"
-        );
-        assert!(
-            !semantic_near_duplicate(
-                "Q3 Phase 2 budget approval is pending with finance",
-                "Phase 2 budget approval is pending with finance"
-            ),
-            "quarter-scoped claims must not collapse into unscoped claims"
-        );
-        assert!(
-            !semantic_near_duplicate(
-                "Phase 2 budget approval is pending with finance",
-                "budget approval is pending with finance"
-            ),
-            "number-scoped claims must not collapse into unscoped claims"
-        );
-        assert!(
-            !semantic_near_duplicate(
-                "US Phase 2 budget approval is pending with finance",
-                "EU Phase 2 budget approval is pending with finance"
-            ),
-            "region variants must not collapse across scopes"
-        );
-        assert!(
-            !semantic_near_duplicate(
-                "Acme Phase 2 budget approval is pending with finance",
-                "Globex Phase 2 budget approval is pending with finance"
-            ),
-            "named-entity variants must not collapse across entities"
-        );
-    }
-
-    #[test]
-    fn semantic_negation_applies_to_all_confirmed_status_terms() {
-        for term in [
-            "approved",
-            "complete",
-            "completed",
-            "greenlit",
-            "secured",
-            "finalized",
-            "confirmed",
-        ] {
-            let text = format!("Phase 2 budget is not {term} with finance");
-            assert_eq!(
-                compute_semantic_signature(&text).status,
-                SemanticAssertionStatus::Pending,
-                "{term} must honor the negation window"
-            );
+    fn canonical_match_text_fixture(
+        subject_id: &str,
+        object_text: &str,
+        qualifiers: QualifierSet,
+    ) -> CanonicalMatchInput {
+        CanonicalMatchInput {
+            claim_id: format!("claim-{subject_id}-{object_text}"),
+            account_id: Some(subject_id.to_string()),
+            workspace_id: None,
+            tier_key: "state:internal".to_string(),
+            claim_state: ClaimState::Active,
+            surfacing_state: SurfacingState::Active,
+            canonical_status: CanonicalStatus::Live,
+            non_semantic_mergeable: false,
+            structured: StructuredClaim {
+                subject_ref: EntityRef {
+                    kind: "Account".to_string(),
+                    id: subject_id.to_string(),
+                },
+                predicate: PredicateRef::RiskStatus,
+                polarity: Polarity::Affirm,
+                object: ObjectValue::FreeText {
+                    canonical: object_text.to_string(),
+                },
+                qualifiers,
+                status: StructuredClaimStatus::Confirmed,
+                sentiment: None,
+            },
+            structural_field_content_hash: None,
+            backfill_epoch: 1,
         }
-
-        assert_eq!(
-            compute_semantic_signature("Approval hasn't landed").status,
-            SemanticAssertionStatus::Pending
-        );
-        assert_eq!(
-            compute_semantic_signature("Approval hasn\u{2019}t landed").status,
-            SemanticAssertionStatus::Pending
-        );
-        assert!(!semantic_near_duplicate(
-            "Phase 2 budget is secured with finance",
-            "Phase 2 budget is not secured with finance"
-        ));
-        assert!(semantic_near_duplicate(
-            "Phase 2 budget approval hasn\u{2019}t landed with finance",
-            "Phase 2 budget approval is pending with finance"
-        ));
     }
 
-    #[test]
-    fn semantic_negative_contractions_expand_generically_before_status_tokenization() {
-        for (negative, positive) in [
-            (
-                "Finance haven't approved Phase 2 budget",
-                "Finance approved Phase 2 budget",
-            ),
-            ("Marketing aren't complete", "Marketing complete"),
-            ("Sales weren't greenlit", "Sales greenlit"),
-            ("Renewal isn't secured", "Renewal secured"),
-            ("Approval ain't landed", "Approval landed"),
-            ("Project cannot proceed", "Project can proceed"),
-            ("Project can't proceed", "Project can proceed"),
-        ] {
-            assert_eq!(
-                compute_semantic_signature(negative).status,
-                SemanticAssertionStatus::Pending,
-                "{negative} must tokenize with a negator"
-            );
-            assert_eq!(
-                compute_semantic_signature(positive).status,
-                SemanticAssertionStatus::Confirmed,
-                "{positive} must remain a positive status assertion"
-            );
-            assert!(
-                !semantic_near_duplicate(positive, negative),
-                "{negative} must not semantically merge with {positive}"
-            );
+    fn full_similarity_config(similarity: f32) -> CanonicalMatchConfig {
+        CanonicalMatchConfig {
+            mode: CanonicalizationMode::Full,
+            free_text_similarity: Some(similarity),
+            embedding_model_version: "test".to_string(),
+            comparator_threshold_version: COMPARATOR_THRESHOLD_VERSION.to_string(),
         }
-
-        assert_eq!(
-            compute_semantic_signature("Sales weren\u{2019}t greenlit").status,
-            SemanticAssertionStatus::Pending,
-            "curly apostrophe negative contractions must tokenize with a negator"
-        );
     }
 
     #[test]
-    fn semantic_irregular_negative_contractions_normalize_before_generic_regex() {
-        assert_eq!(
-            normalize_semantic_contractions("Finance won't approve Phase 2 budget"),
-            "Finance will not approve Phase 2 budget"
+    fn canonical_match_merges_when_subject_predicate_scope_match_and_object_embedding_high() {
+        let left = canonical_match_text_fixture(
+            "acct-1",
+            "phase 2 budget pending",
+            QualifierSet::default(),
         );
-        assert_eq!(
-            normalize_semantic_contractions("Acme Phase 2 project shan't proceed"),
-            "Acme Phase 2 project shall not proceed"
-        );
-        assert_eq!(
-            normalize_semantic_contractions("Finance haven't approved Phase 2 budget"),
-            "Finance have not approved Phase 2 budget"
+        let right = canonical_match_text_fixture(
+            "acct-1",
+            "phase 2 funding awaiting signoff",
+            QualifierSet::default(),
         );
 
-        assert!(semantic_near_duplicate(
-            "Finance won't approve Phase 2 budget",
-            "Finance will not approve Phase 2 budget"
-        ));
-        assert!(semantic_near_duplicate(
-            "Acme Phase 2 project shan't proceed",
-            "Acme Phase 2 project shall not proceed"
-        ));
-        assert_eq!(
-            compute_semantic_signature("Finance won't approve Phase 2 budget").status,
-            SemanticAssertionStatus::Pending
+        let outcome = canonical_match_v2(&left, &right, &full_similarity_config(0.90));
+        assert_eq!(outcome.decision, CanonicalDecisionKind::Merge);
+    }
+
+    #[test]
+    fn canonical_match_forks_when_subject_is_distinct() {
+        let left = canonical_match_text_fixture(
+            "acct-1",
+            "phase 2 budget pending",
+            QualifierSet::default(),
         );
-        assert_eq!(
-            compute_semantic_signature("Finance will not approve Phase 2 budget").status,
-            SemanticAssertionStatus::Pending
+        let mut right = canonical_match_text_fixture(
+            "acct-2",
+            "phase 2 budget pending",
+            QualifierSet::default(),
         );
+        right.account_id = left.account_id.clone();
+
+        let outcome = canonical_match_v2(&left, &right, &full_similarity_config(0.90));
+        assert_eq!(outcome.decision, CanonicalDecisionKind::Fork);
+        assert_eq!(outcome.reason, "subject_distinct");
+    }
+
+    #[test]
+    fn canonical_match_forks_when_regions_differ() {
+        let mut us = QualifierSet::default();
+        us.region = Some(abilities_runtime::structured_claim::RegionCode {
+            code: "US".to_string(),
+        });
+        let mut eu = QualifierSet::default();
+        eu.region = Some(abilities_runtime::structured_claim::RegionCode {
+            code: "EU".to_string(),
+        });
+        let left = canonical_match_text_fixture("acct-1", "phase 2 budget pending", us);
+        let right = canonical_match_text_fixture("acct-1", "phase 2 budget pending", eu);
+
+        let outcome = canonical_match_v2(&left, &right, &full_similarity_config(1.0));
+        assert_eq!(outcome.decision, CanonicalDecisionKind::Fork);
+        assert_eq!(outcome.reason, "qualifier_mismatch");
+    }
+
+    #[test]
+    fn canonical_match_forks_ambiguous_object_fail_closed() {
+        let left = canonical_match_text_fixture(
+            "acct-1",
+            "phase 2 budget pending",
+            QualifierSet::default(),
+        );
+        let right = canonical_match_text_fixture(
+            "acct-1",
+            "phase 2 budget approved",
+            QualifierSet::default(),
+        );
+
+        let outcome = canonical_match_v2(&left, &right, &full_similarity_config(0.70));
+        assert_eq!(outcome.decision, CanonicalDecisionKind::ForkAmbiguous);
+        assert_eq!(outcome.reason, "ambiguous:object");
     }
 
     #[test]
@@ -9770,7 +11213,7 @@ mod tests {
             update_claim_trust(&db, &first_id, TrustScore(0.85), 1, &ctx).unwrap();
 
             let (_, stored_text) = read_subject_ref_and_text(&db, &first_id);
-            assert_eq!(stored_text, canonicalize_semantic_text(&first_text));
+            assert_eq!(stored_text, normalize_claim_text(&first_text));
             assert_eq!(stored_text, first_text.to_ascii_lowercase());
 
             let result = commit_claim(&ctx, &db, proposal(&second_text)).unwrap();
@@ -9869,7 +11312,7 @@ mod tests {
         update_claim_trust(&db, &first_id, TrustScore(0.85), 1, &ctx).unwrap();
 
         let (_, stored_text) = read_subject_ref_and_text(&db, &first_id);
-        assert_eq!(stored_text, canonicalize_semantic_text(first_text));
+        assert_eq!(stored_text, normalize_claim_text(first_text));
         assert_eq!(stored_text, first_text.to_ascii_lowercase());
 
         let same_entity = commit_claim(
@@ -9912,7 +11355,7 @@ mod tests {
         let (clock, rng, external) = ctx_parts();
         let ctx = live_ctx(&clock, &rng, &external);
         let legacy_text =
-            canonicalize_semantic_text("US Phase 2 budget approval is pending with finance");
+            normalize_claim_text("US Phase 2 budget approval is pending with finance");
         insert_fixture_claim(
             &db,
             "legacy-lowercase-us",
@@ -10139,10 +11582,7 @@ mod tests {
         {
             assert_eq!(data_source, &format!("semantic_source_{}", idx + 2));
             assert_eq!(source_asof.as_deref(), Some(TS));
-            assert_eq!(
-                source_mechanism.as_deref(),
-                Some("semantic_near_duplicate_merge")
-            );
+            assert_eq!(source_mechanism.as_deref(), Some("canonical_match_merge"));
             assert_eq!(*count, 1);
         }
 
@@ -10465,7 +11905,7 @@ mod tests {
     }
 
     #[test]
-    fn semantic_duplicate_lookup_skips_backfill_tombstoned_active_with_different_dedup_key() {
+    fn canonical_duplicate_lookup_skips_backfill_tombstoned_active_with_different_dedup_key() {
         let db = test_db();
         seed_account(&db);
         let (clock, rng, external) = ctx_parts();
@@ -10874,7 +12314,7 @@ mod tests {
     }
 
     #[test]
-    fn commit_claim_low_trust_semantic_duplicate_routes_to_needs_verification() {
+    fn commit_claim_low_trust_canonical_duplicate_routes_to_needs_verification() {
         let db = test_db();
         seed_account(&db);
         let (clock, rng, external) = ctx_parts();
@@ -10907,7 +12347,7 @@ mod tests {
         );
         assert_eq!(
             inserted.verification_reason.as_deref(),
-            Some("semantic_duplicate_low_trust_needs_verification")
+            Some("canonical_duplicate_low_trust_needs_verification")
         );
 
         let active = load_claims_active(&db, SUBJECT, Some("risk")).unwrap();
@@ -10925,7 +12365,7 @@ mod tests {
     }
 
     #[test]
-    fn commit_claim_unscored_semantic_duplicate_routes_to_needs_verification() {
+    fn commit_claim_unscored_canonical_duplicate_routes_to_needs_verification() {
         let db = test_db();
         seed_account(&db);
         let (clock, rng, external) = ctx_parts();
@@ -10958,7 +12398,7 @@ mod tests {
         );
         assert_eq!(
             inserted.verification_reason.as_deref(),
-            Some("semantic_duplicate_low_trust_needs_verification")
+            Some("canonical_duplicate_low_trust_needs_verification")
         );
 
         let active = load_claims_active(&db, SUBJECT, Some("risk")).unwrap();
@@ -10973,7 +12413,7 @@ mod tests {
     }
 
     #[test]
-    fn commit_claim_low_trust_semantic_duplicate_still_checks_contradictions() {
+    fn commit_claim_low_trust_canonical_duplicate_still_checks_contradictions() {
         let db = test_db();
         seed_account(&db);
         let (clock, rng, external) = ctx_parts();

@@ -24,6 +24,11 @@ pub enum SignalType {
     ClaimSuperseded,
     ClaimTrustChanged,
     ClaimVerificationStateChanged,
+    StructuralBackfillChanged,
+    CanonicalizationDecisionCreated,
+    AmbiguousPairCreated,
+    TrustBandDowngraded,
+    TrustBandCleared,
     CoAttendance,
     CommitmentCaptured,
     CommitmentReceived,
@@ -137,6 +142,11 @@ impl SignalType {
             "claim_superseded" => Self::ClaimSuperseded,
             "claim_trust_changed" | "ClaimTrustChanged" => Self::ClaimTrustChanged,
             "claim_verification_state_changed" => Self::ClaimVerificationStateChanged,
+            "structural_backfill_changed" => Self::StructuralBackfillChanged,
+            "canonicalization_decision_created" => Self::CanonicalizationDecisionCreated,
+            "ambiguous_pair_created" => Self::AmbiguousPairCreated,
+            "trust_band_downgraded" => Self::TrustBandDowngraded,
+            "trust_band_cleared" => Self::TrustBandCleared,
             "co_attendance" => Self::CoAttendance,
             "commitment_captured" => Self::CommitmentCaptured,
             "commitment_received" => Self::CommitmentReceived,
@@ -247,6 +257,11 @@ impl SignalType {
             Self::ClaimSuperseded => "claim_superseded",
             Self::ClaimTrustChanged => "claim_trust_changed",
             Self::ClaimVerificationStateChanged => "claim_verification_state_changed",
+            Self::StructuralBackfillChanged => "structural_backfill_changed",
+            Self::CanonicalizationDecisionCreated => "canonicalization_decision_created",
+            Self::AmbiguousPairCreated => "ambiguous_pair_created",
+            Self::TrustBandDowngraded => "trust_band_downgraded",
+            Self::TrustBandCleared => "trust_band_cleared",
             Self::CoAttendance => "co_attendance",
             Self::CommitmentCaptured => "commitment_captured",
             Self::CommitmentReceived => "commitment_received",
@@ -343,7 +358,11 @@ impl SignalType {
     pub fn uses_emit_path_coalescing(&self) -> bool {
         matches!(
             self,
-            Self::EntityUpdated | Self::ClaimTrustChanged | Self::AbilityOutputChanged { .. }
+            Self::EntityUpdated
+                | Self::ClaimTrustChanged
+                | Self::TrustBandDowngraded
+                | Self::TrustBandCleared
+                | Self::AbilityOutputChanged { .. }
         )
     }
 }
@@ -367,6 +386,11 @@ pub fn known_signal_type_names() -> &'static [&'static str] {
         "claim_superseded",
         "claim_trust_changed",
         "claim_verification_state_changed",
+        "structural_backfill_changed",
+        "canonicalization_decision_created",
+        "ambiguous_pair_created",
+        "trust_band_downgraded",
+        "trust_band_cleared",
         "co_attendance",
         "commitment_captured",
         "commitment_received",
@@ -588,7 +612,12 @@ pub fn policy_for(signal: &SignalType) -> SignalPolicy {
         | ClaimRetracted
         | ClaimContradiction
         | ClaimFeedbackRecorded
-        | ClaimVerificationStateChanged => durable_claim_policy(signal),
+        | ClaimVerificationStateChanged
+        | StructuralBackfillChanged
+        | CanonicalizationDecisionCreated
+        | AmbiguousPairCreated
+        | TrustBandDowngraded
+        | TrustBandCleared => durable_claim_policy(signal),
         ClaimTrustChanged => coalesced_claim_trust_policy(),
         UserCorrection
         | UserCorrectionSubmitted
