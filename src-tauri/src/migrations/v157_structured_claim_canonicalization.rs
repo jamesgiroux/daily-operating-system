@@ -1,27 +1,8 @@
-use rusqlite::{params, Connection};
-
-use crate::services::claims::{
-    metadata_with_non_semantic_mergeable, structural_field_content_hash,
-    structured_claim_json_for_row,
-};
-use abilities_runtime::structured_claim::{
-    ClaimStatus as StructuredClaimStatus, Polarity, StructuredClaim,
-};
+use rusqlite::Connection;
 
 use super::MigrationError;
 
 const CLAIMS_TABLE: &str = "intelligence_claims";
-
-struct ClaimRow {
-    id: String,
-    subject_ref: String,
-    claim_type: String,
-    field_path: Option<String>,
-    topic_key: Option<String>,
-    text: String,
-    metadata_json: Option<String>,
-    verification_state: String,
-}
 
 pub(super) fn migrate_v157_structured_claim_canonicalization(
     conn: &Connection,
@@ -130,118 +111,7 @@ fn migrate_in_transaction(conn: &Connection) -> Result<(), MigrationError> {
     )
     .map_err(|e| format!("create ADR-0131 canonicalization tables: {e}"))?;
 
-    for row in claim_rows(conn)? {
-        match structured_claim_json_for_row(
-            &row.subject_ref,
-            &row.claim_type,
-            row.field_path.as_deref(),
-            row.topic_key.as_deref(),
-            &row.text,
-            row.metadata_json.as_deref(),
-            &row.verification_state,
-        ) {
-            Ok(Some(structured_claim_json)) => {
-                let structured = serde_json::from_str::<StructuredClaim>(&structured_claim_json)
-                    .map_err(|e| format!("parse structured sidecar for {}: {e}", row.id))?;
-                let predicate_ref = structured.predicate.registry_id();
-                let polarity = match structured.polarity {
-                    Polarity::Affirm => "affirm",
-                    Polarity::Negate => "negate",
-                };
-                let object_value = serde_json::to_string(&structured.object)
-                    .map_err(|e| format!("serialize object_value for {}: {e}", row.id))?;
-                let qualifiers = serde_json::to_string(&structured.qualifiers)
-                    .map_err(|e| format!("serialize qualifiers for {}: {e}", row.id))?;
-                let status = match structured.status {
-                    StructuredClaimStatus::Confirmed => "confirmed",
-                    StructuredClaimStatus::Pending => "pending",
-                    StructuredClaimStatus::Unknown => "unknown",
-                };
-                let content_hash = structural_field_content_hash(
-                    Some(&predicate_ref),
-                    Some(polarity),
-                    Some(&object_value),
-                    Some(&qualifiers),
-                    status,
-                );
-                conn.execute(
-                    "UPDATE intelligence_claims
-                     SET structured_claim_json = ?1,
-                         predicate_ref = ?2,
-                         polarity = ?3,
-                         object_value = ?4,
-                         qualifiers = ?5,
-                         structural_field_content_hash = ?6,
-                         canonical_status = 'live',
-                         non_semantic_mergeable = FALSE,
-                         backfill_epoch = backfill_epoch + 1
-                     WHERE id = ?7",
-                    params![
-                        structured_claim_json,
-                        predicate_ref,
-                        polarity,
-                        object_value,
-                        qualifiers,
-                        content_hash,
-                        row.id
-                    ],
-                )
-                .map_err(|e| format!("backfill structured claim sidecar: {e}"))?;
-            }
-            Ok(None) | Err(_) => {
-                let metadata_json = metadata_with_non_semantic_mergeable(
-                    row.metadata_json.as_deref(),
-                )
-                .ok_or_else(|| "mark unresolved claim non-semantic mergeable".to_string())?;
-                conn.execute(
-                    "UPDATE intelligence_claims
-                     SET metadata_json = ?1,
-                         structured_claim_json = NULL,
-                         predicate_ref = NULL,
-                         polarity = NULL,
-                         object_value = NULL,
-                         qualifiers = NULL,
-                         structural_field_content_hash = NULL,
-                         canonical_status = 'legacy_unmigrated',
-                         non_semantic_mergeable = TRUE,
-                         backfill_epoch = backfill_epoch + 1
-                     WHERE id = ?2",
-                    params![metadata_json, row.id],
-                )
-                .map_err(|e| format!("mark unresolved structured claim fail-closed: {e}"))?;
-            }
-        }
-    }
-
     Ok(())
-}
-
-fn claim_rows(conn: &Connection) -> Result<Vec<ClaimRow>, MigrationError> {
-    let mut stmt = conn
-        .prepare(
-            "SELECT id, subject_ref, claim_type, field_path, topic_key, text,
-                    metadata_json, verification_state
-             FROM intelligence_claims
-             ORDER BY created_at, id",
-        )
-        .map_err(|e| format!("prepare structured claim backfill scan: {e}"))?;
-    let rows = stmt
-        .query_map([], |row| {
-            Ok(ClaimRow {
-                id: row.get(0)?,
-                subject_ref: row.get(1)?,
-                claim_type: row.get(2)?,
-                field_path: row.get(3)?,
-                topic_key: row.get(4)?,
-                text: row.get(5)?,
-                metadata_json: row.get(6)?,
-                verification_state: row.get(7)?,
-            })
-        })
-        .map_err(|e| format!("query structured claim backfill scan: {e}"))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| format!("read structured claim backfill row: {e}"))?;
-    Ok(rows)
 }
 
 fn add_column_if_missing(

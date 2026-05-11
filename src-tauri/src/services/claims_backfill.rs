@@ -20,7 +20,7 @@ use crate::intelligence::canonicalization::item_hash;
 use crate::intelligence::io::{read_intelligence_json, IntelligenceJson};
 use crate::services::claims::{
     compute_dedup_key, item_kind_for_claim_type, normalize_claim_text,
-    structural_field_content_hash,
+    structural_field_content_hash, structured_status_db_for_verification_state,
 };
 use crate::services::comparator_thresholds::PENDING_BACKFILL_MAX_RETRIES;
 use crate::services::context::ServiceContext;
@@ -60,7 +60,8 @@ pub fn run_structured_claim_backfill(
         report.rows_examined += 1;
         let result = db.with_transaction(|tx| {
             if row.backfill_epoch >= PENDING_BACKFILL_MAX_RETRIES {
-                tx.conn_ref()
+                let rows_affected = tx
+                    .conn_ref()
                     .execute(
                         "UPDATE intelligence_claims
                          SET canonical_status = 'legacy_unmigrated',
@@ -70,6 +71,9 @@ pub fn run_structured_claim_backfill(
                         params![&row.id],
                     )
                     .map_err(|e| format!("terminalize pending_backfill {}: {e}", row.id))?;
+                if rows_affected == 0 {
+                    return Ok("unchanged");
+                }
                 emit_structural_backfill_signal(
                     tx,
                     &row.id,
@@ -115,10 +119,11 @@ pub fn run_structured_claim_backfill(
                 Some(polarity),
                 Some(&object_value),
                 Some(&qualifiers),
-                &row.verification_state,
+                structured_status_db_for_verification_state(&row.verification_state),
             );
 
-            tx.conn_ref()
+            let rows_affected = tx
+                .conn_ref()
                 .execute(
                     "UPDATE intelligence_claims
                      SET predicate_ref = ?1,
@@ -140,6 +145,9 @@ pub fn run_structured_claim_backfill(
                     ],
                 )
                 .map_err(|e| format!("mark structured claim live {}: {e}", row.id))?;
+            if rows_affected == 0 {
+                return Ok("unchanged");
+            }
             emit_structural_backfill_signal(
                 tx,
                 &row.id,
