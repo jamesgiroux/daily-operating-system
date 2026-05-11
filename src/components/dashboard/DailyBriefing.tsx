@@ -649,7 +649,7 @@ function AttentionSection({
   // Check the actual items in attentionActions, not the source array — the useMemo
   // may have fallen through to raw actions even when prioritizedActions exists.
   const hasPrioritizedActions = attentionActions.length > 0
-    && attentionActions.every((item) => "action" in item && (item as PrioritizedAction).action?.id);
+    && attentionActions.every((item) => "action" in item && (item).action?.id);
 
   return (
     <section className={s.prioritiesSection}>

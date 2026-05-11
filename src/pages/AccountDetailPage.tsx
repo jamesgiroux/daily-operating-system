@@ -697,7 +697,7 @@ export default function AccountDetailPage() {
     const navigateToReport = (reportType: string) => {
       if (reportType === "risk_briefing" || reportType === "account_health" || reportType === "ebr_qbr") {
         page.navigate({
-          to: `/accounts/$accountId/reports/${reportType}` as "/accounts/$accountId/reports/account_health",
+          to: `/accounts/$accountId/reports/${reportType}`,
           params: { accountId: page.accountId },
         });
       } else {

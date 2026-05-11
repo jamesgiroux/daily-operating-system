@@ -106,7 +106,7 @@ export function Pill(props: PillProps) {
     <span
       className={pillClassName}
       {...dataAttrs}
-      {...(rest as Omit<ComponentPropsWithoutRef<"span">, keyof PillBaseProps>)}
+      {...(rest)}
     >
       {pillContent(dot, children)}
     </span>

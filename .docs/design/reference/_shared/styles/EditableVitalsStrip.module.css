@@ -1,4 +1,4 @@
-@import '../../styles/design-tokens.css';
+@import './design-tokens.css';
 
 .EditableVitalsStrip_inlineInputRoot {
   display: inline-flex;

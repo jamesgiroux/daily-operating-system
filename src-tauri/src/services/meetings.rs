@@ -1,9 +1,10 @@
 // Meetings service — extracted from commands.rs
 // Business logic for meeting intelligence assembly and entity operations.
 
-use chrono::TimeZone;
+use chrono::{DateTime, TimeZone, Utc};
 use rusqlite::OptionalExtension;
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 use std::path::Path;
 use tauri::Emitter;
 
@@ -353,7 +354,7 @@ fn load_prepare_meeting_claims(
                 continue;
             }
             if seen.insert(claim.id.clone()) {
-                claims.push(claim);
+                claims.push(hide_shadow_trust_for_briefing(claim));
             }
         }
     }
@@ -373,12 +374,23 @@ fn load_prepare_meeting_claims(
             continue;
         }
         if seen.insert(claim.id.clone()) {
-            claims.push(claim);
+            claims.push(hide_shadow_trust_for_briefing(claim));
         }
     }
 
     claims.sort_by(|left, right| left.id.cmp(&right.id));
     Ok(claims)
+}
+
+fn hide_shadow_trust_for_briefing(
+    mut claim: crate::db::claims::IntelligenceClaim,
+) -> crate::db::claims::IntelligenceClaim {
+    if claim.trust_version == Some(BRIEFING_TRUST_SHADOW_VERSION) {
+        claim.trust_score = None;
+        claim.trust_computed_at = None;
+        claim.trust_version = None;
+    }
+    claim
 }
 
 fn canonical_claim_subject_ref(claim: &crate::db::claims::IntelligenceClaim) -> Option<String> {
@@ -3646,6 +3658,537 @@ fn emit_briefing_refresh_progress(
     Ok(())
 }
 
+const BRIEFING_TRUST_SHADOW_VERSION: i64 = 1_401_003;
+const SOURCE_RELIABILITY_USER: f64 = 1.0;
+const SOURCE_RELIABILITY_STRUCTURED: f64 = 0.9;
+const SOURCE_RELIABILITY_OBSERVED: f64 = 0.8;
+const SOURCE_RELIABILITY_SYNTHETIC: f64 = 0.6;
+const SOURCE_RELIABILITY_FALLBACK: f64 = 0.5;
+const DEFAULT_CORROBORATION_STRENGTH: f64 = 0.5;
+const DEFAULT_SUBJECT_FIT_CONFIDENCE: f64 = 1.0;
+const DEFAULT_INTERNAL_CONSISTENCY: f64 = 1.0;
+const SECONDS_PER_DAY: f64 = 86_400.0;
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct BriefingTrustShadowSummary {
+    claims_seen: usize,
+    claims_scored: usize,
+    claims_skipped: usize,
+}
+
+#[derive(Debug)]
+struct BriefingTrustShadowPlan {
+    summary: BriefingTrustShadowSummary,
+    scores: Vec<(String, crate::abilities::trust::TrustScore)>,
+}
+
+struct TrustShadowInFlightGuard {
+    state: std::sync::Arc<AppState>,
+    meeting_id: String,
+}
+
+impl Drop for TrustShadowInFlightGuard {
+    fn drop(&mut self) {
+        self.state.finish_trust_shadow_refresh(&self.meeting_id);
+    }
+}
+
+#[derive(Debug)]
+enum BriefingTrustCompileError {
+    MissingSourceType,
+    SubjectRef(String),
+    Database(String),
+    TrustConfig(crate::abilities::trust::TrustConfigError),
+}
+
+impl fmt::Display for BriefingTrustCompileError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MissingSourceType => f.write_str("missing source_type"),
+            Self::SubjectRef(error) => write!(f, "invalid subject_ref: {error}"),
+            Self::Database(error) => write!(f, "database read failed: {error}"),
+            Self::TrustConfig(error) => write!(f, "trust compiler rejected input: {error}"),
+        }
+    }
+}
+
+fn trust_compiler_shadow_enabled(state: &std::sync::Arc<AppState>) -> bool {
+    state
+        .config
+        .read()
+        .as_ref()
+        .map(crate::types::is_trust_compiler_shadow_enabled)
+        .unwrap_or_else(crate::types::default_trust_compiler_shadow_enabled)
+}
+
+async fn run_trust_compiler_shadow_if_enabled(state: &std::sync::Arc<AppState>, meeting_id: &str) {
+    if !trust_compiler_shadow_enabled(state) {
+        return;
+    }
+
+    let result: Result<BriefingTrustShadowSummary, String> = async {
+        let meeting_id_for_read = meeting_id.to_string();
+        let state_for_ctx = state.clone();
+        let plan = state
+            .db_read(move |db| {
+                let ctx = state_for_ctx.live_service_context();
+                compile_trust_shadow_plan_for_briefing_claims(&ctx, db, &meeting_id_for_read)
+            })
+            .await?;
+
+        let summary = plan.summary;
+        if !plan.scores.is_empty() {
+            let scores = plan.scores;
+            let state_for_ctx = state.clone();
+            state
+                .db_write(move |db| {
+                    let ctx = state_for_ctx.live_service_context();
+                    write_trust_shadow_scores(&ctx, db, &scores)
+                })
+                .await?;
+        }
+
+        Ok(summary)
+    }
+    .await;
+
+    match result {
+        Ok(summary) => log::debug!(
+            "refresh_meeting_briefing_full: trust compiler shadow scored {}/{} claims ({} skipped)",
+            summary.claims_scored,
+            summary.claims_seen,
+            summary.claims_skipped
+        ),
+        Err(error) => log::warn!(
+            "refresh_meeting_briefing_full: trust compiler shadow write skipped: {}",
+            error
+        ),
+    }
+}
+
+fn spawn_trust_compiler_shadow_if_enabled(
+    state: &std::sync::Arc<AppState>,
+    meeting_id: &str,
+) -> bool {
+    if !trust_compiler_shadow_enabled(state) {
+        return false;
+    }
+
+    if !state.try_begin_trust_shadow_refresh(meeting_id) {
+        log::debug!(
+            "refresh_meeting_briefing_full: trust compiler shadow already in flight for {}",
+            meeting_id
+        );
+        return false;
+    }
+
+    let state = state.clone();
+    let meeting_id = meeting_id.to_string();
+    let handle = tokio::spawn(async move {
+        let _guard = TrustShadowInFlightGuard {
+            state: state.clone(),
+            meeting_id: meeting_id.clone(),
+        };
+        run_trust_compiler_shadow_if_enabled(&state, &meeting_id).await;
+    });
+    drop(handle);
+    true
+}
+
+fn compile_trust_shadow_for_briefing_claims(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    meeting_id: &str,
+) -> Result<BriefingTrustShadowSummary, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    let plan = compile_trust_shadow_plan_for_briefing_claims(ctx, db, meeting_id)?;
+    write_trust_shadow_scores(ctx, db, &plan.scores)?;
+    Ok(plan.summary)
+}
+
+fn compile_trust_shadow_plan_for_briefing_claims(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    meeting_id: &str,
+) -> Result<BriefingTrustShadowPlan, String> {
+    if !object_exists(db, "intelligence_claims")? {
+        return Ok(BriefingTrustShadowPlan {
+            summary: BriefingTrustShadowSummary::default(),
+            scores: Vec::new(),
+        });
+    }
+
+    let snapshot = load_prepare_meeting_context_snapshot(db, meeting_id)?;
+    let claims_seen = snapshot.claims.len();
+    let mut scores = Vec::new();
+    let mut claims_skipped = 0usize;
+    let now = ctx.clock.now();
+
+    for claim in snapshot.claims {
+        match compile_briefing_claim_trust(db, &claim, now) {
+            Ok(score) => scores.push((claim.id, score)),
+            Err(error) => {
+                claims_skipped += 1;
+                log::warn!(
+                    "refresh_meeting_briefing_full: trust compiler shadow skipped claim {}: {}",
+                    claim.id,
+                    error
+                );
+            }
+        }
+    }
+
+    let claims_scored = scores.len();
+    Ok(BriefingTrustShadowPlan {
+        summary: BriefingTrustShadowSummary {
+            claims_seen,
+            claims_scored,
+            claims_skipped,
+        },
+        scores,
+    })
+}
+
+fn write_trust_shadow_scores(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    scores: &[(String, crate::abilities::trust::TrustScore)],
+) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    if !scores.is_empty() {
+        db.with_transaction(|tx| {
+            for (claim_id, score) in scores {
+                crate::services::claims::shadow_update_claim_trust_shadow_only(
+                    tx,
+                    claim_id,
+                    *score,
+                    BRIEFING_TRUST_SHADOW_VERSION,
+                    ctx,
+                )
+                .map_err(|error| error.to_string())?;
+            }
+            Ok(())
+        })?;
+    }
+
+    Ok(())
+}
+
+fn compile_briefing_claim_trust(
+    db: &ActionDb,
+    claim: &crate::db::claims::IntelligenceClaim,
+    now: DateTime<Utc>,
+) -> Result<crate::abilities::trust::TrustScore, BriefingTrustCompileError> {
+    let source_type =
+        claim_source_type(claim).ok_or(BriefingTrustCompileError::MissingSourceType)?;
+    let factor_inputs = trust_factor_inputs_for_claim(db, claim, &source_type, now)?;
+    let trust_context = crate::abilities::trust::TrustContext {
+        now,
+        renewal_context: None,
+        config: crate::abilities::trust::TrustConfig::default(),
+        factor_inputs,
+        cross_entity: crate::abilities::trust::CrossEntityCoherenceInput {
+            claim_text: claim.text.clone(),
+            target_footprint: crate::abilities::trust::TargetFootprint {
+                subject: trust_subject_ref_from_claim(claim)?,
+                names: Vec::new(),
+                domains: Vec::new(),
+                related_subjects: Vec::new(),
+                allowed_aliases: Vec::new(),
+            },
+            portfolio_footprints: Vec::new(),
+            cross_entity_context_expected: false,
+        },
+        target_surface: crate::abilities::trust::factors::target_surface_for_claim_surface(Some(
+            crate::services::context::ClaimDismissalSurface::Briefing,
+        )),
+    };
+
+    crate::abilities::trust::compile_trust(claim, trust_context)
+        .map(|computation| computation.score)
+        .map_err(BriefingTrustCompileError::TrustConfig)
+}
+
+fn trust_factor_inputs_for_claim(
+    db: &ActionDb,
+    claim: &crate::db::claims::IntelligenceClaim,
+    source_type: &str,
+    now: DateTime<Utc>,
+) -> Result<crate::abilities::trust::TrustFactorInputs, BriefingTrustCompileError> {
+    let corroborators = read_corroborators(db, &claim.id)?;
+    let strengths = corroborators
+        .iter()
+        .map(|corroborator| corroborator.evidence_weight)
+        .collect::<Vec<_>>();
+    let contradiction_count = read_unresolved_contradiction_count(db, &claim.id)?;
+
+    Ok(crate::abilities::trust::TrustFactorInputs {
+        source_reliability: source_reliability_for_type(source_type),
+        source_reliability_corroborators: corroborators,
+        freshness: freshness_context_for_claim(claim, now),
+        corroboration_strength: noisy_or_strength(&strengths),
+        contradiction_count,
+        user_feedback: read_user_feedback_signal(db, &claim.id)?,
+        subject_fit_confidence: DEFAULT_SUBJECT_FIT_CONFIDENCE,
+        internal_consistency: DEFAULT_INTERNAL_CONSISTENCY,
+        source_lifecycle: source_lifecycle_for_claim(claim),
+        read_state_indeterminate: false,
+    })
+}
+
+fn read_corroborators(
+    db: &ActionDb,
+    claim_id: &str,
+) -> Result<Vec<crate::abilities::trust::CorroboratorWeight>, BriefingTrustCompileError> {
+    if !object_exists(db, "claim_corroborations").map_err(BriefingTrustCompileError::Database)? {
+        return Ok(Vec::new());
+    }
+
+    let mut statement = db
+        .conn_ref()
+        .prepare(
+            "SELECT strength
+             FROM claim_corroborations
+             WHERE claim_id = ?1
+             ORDER BY data_source ASC",
+        )
+        .map_err(|error| BriefingTrustCompileError::Database(error.to_string()))?;
+    let rows = statement
+        .query_map(rusqlite::params![claim_id], |row| row.get::<_, f64>(0))
+        .map_err(|error| BriefingTrustCompileError::Database(error.to_string()))?;
+
+    let mut corroborators = Vec::new();
+    for row in rows {
+        let strength =
+            row.map_err(|error| BriefingTrustCompileError::Database(error.to_string()))?;
+        corroborators.push(crate::abilities::trust::CorroboratorWeight {
+            evidence_weight: strength.clamp(0.0, 1.0),
+            confirms: true,
+        });
+    }
+
+    Ok(corroborators)
+}
+
+fn read_unresolved_contradiction_count(
+    db: &ActionDb,
+    claim_id: &str,
+) -> Result<u32, BriefingTrustCompileError> {
+    if !object_exists(db, "claim_contradictions").map_err(BriefingTrustCompileError::Database)? {
+        return Ok(0);
+    }
+
+    let count = db
+        .conn_ref()
+        .query_row(
+            "SELECT COUNT(*)
+             FROM claim_contradictions
+             WHERE (primary_claim_id = ?1 OR contradicting_claim_id = ?1)
+               AND reconciled_at IS NULL",
+            rusqlite::params![claim_id],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|error| BriefingTrustCompileError::Database(error.to_string()))?;
+    Ok(count.clamp(0, u32::MAX as i64) as u32)
+}
+
+fn read_user_feedback_signal(
+    db: &ActionDb,
+    claim_id: &str,
+) -> Result<crate::abilities::trust::UserFeedbackSignal, BriefingTrustCompileError> {
+    if !object_exists(db, "claim_feedback").map_err(BriefingTrustCompileError::Database)? {
+        return Ok(crate::abilities::trust::UserFeedbackSignal::None);
+    }
+
+    let feedback = db
+        .conn_ref()
+        .query_row(
+            "SELECT feedback_type
+             FROM claim_feedback
+             WHERE claim_id = ?1
+             ORDER BY submitted_at DESC
+             LIMIT 1",
+            rusqlite::params![claim_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|error| BriefingTrustCompileError::Database(error.to_string()))?;
+
+    Ok(match feedback.as_deref() {
+        Some("confirm") | Some("confirm_current") => {
+            crate::abilities::trust::UserFeedbackSignal::Confirmed
+        }
+        Some("correct") | Some("needs_nuance") | Some("wrong_source") => {
+            crate::abilities::trust::UserFeedbackSignal::Corrected
+        }
+        Some("reject") | Some("mark_false") | Some("mark_outdated") => {
+            crate::abilities::trust::UserFeedbackSignal::Retracted
+        }
+        Some("wrong_subject") => crate::abilities::trust::UserFeedbackSignal::WrongSubject,
+        _ => crate::abilities::trust::UserFeedbackSignal::None,
+    })
+}
+
+fn source_lifecycle_for_claim(
+    claim: &crate::db::claims::IntelligenceClaim,
+) -> crate::abilities::trust::SourceLifecycleState {
+    match &claim.claim_state {
+        crate::db::claims::ClaimState::Withdrawn | crate::db::claims::ClaimState::Tombstoned => {
+            crate::abilities::trust::SourceLifecycleState::Withdrawn
+        }
+        crate::db::claims::ClaimState::Dormant => {
+            crate::abilities::trust::SourceLifecycleState::Dismissed
+        }
+        crate::db::claims::ClaimState::Active => {
+            if matches!(
+                claim.surfacing_state,
+                crate::db::claims::SurfacingState::Dormant
+            ) {
+                crate::abilities::trust::SourceLifecycleState::Dismissed
+            } else {
+                crate::abilities::trust::SourceLifecycleState::Active
+            }
+        }
+    }
+}
+
+fn freshness_context_for_claim(
+    claim: &crate::db::claims::IntelligenceClaim,
+    now: DateTime<Utc>,
+) -> crate::abilities::trust::FreshnessContext {
+    let timestamp = claim
+        .source_asof
+        .as_deref()
+        .and_then(parse_claim_timestamp)
+        .or_else(|| parse_claim_timestamp(&claim.observed_at))
+        .or_else(|| parse_claim_timestamp(&claim.created_at));
+
+    let Some(timestamp) = timestamp else {
+        return crate::abilities::trust::FreshnessContext {
+            timestamp_known: false,
+            age_days: 0.0,
+        };
+    };
+
+    let age_seconds = (now - timestamp).num_seconds().max(0) as f64;
+    crate::abilities::trust::FreshnessContext {
+        timestamp_known: true,
+        age_days: age_seconds / SECONDS_PER_DAY,
+    }
+}
+
+fn parse_claim_timestamp(value: &str) -> Option<DateTime<Utc>> {
+    DateTime::parse_from_rfc3339(value)
+        .ok()
+        .map(|timestamp| timestamp.with_timezone(&Utc))
+}
+
+fn source_reliability_for_type(source_type: &str) -> f64 {
+    match source_type.trim().to_ascii_lowercase().as_str() {
+        "user" | "user_manual" | "manual" | "user_correction" => SOURCE_RELIABILITY_USER,
+        "glean" | "glean_crm" | "glean_zendesk" | "glean_gong" | "glean_chat" | "salesforce"
+        | "redacted" => SOURCE_RELIABILITY_STRUCTURED,
+        "meeting" | "transcript" | "post_meeting" | "calendar" | "email" | "local_file" => {
+            SOURCE_RELIABILITY_OBSERVED
+        }
+        "pty_synthesis" | "intelligence" | "agent" => SOURCE_RELIABILITY_SYNTHETIC,
+        _ => SOURCE_RELIABILITY_FALLBACK,
+    }
+}
+
+fn noisy_or_strength(strengths: &[f64]) -> f64 {
+    if strengths.is_empty() {
+        return DEFAULT_CORROBORATION_STRENGTH;
+    }
+
+    1.0 - strengths.iter().fold(1.0, |miss_probability, strength| {
+        miss_probability * (1.0 - strength.clamp(0.0, 1.0))
+    })
+}
+
+fn claim_source_type(claim: &crate::db::claims::IntelligenceClaim) -> Option<String> {
+    source_type_from_json(claim.source_ref.as_deref())
+        .or_else(|| source_type_from_json(claim.metadata_json.as_deref()))
+        .or_else(|| source_type_from_json(Some(&claim.provenance_json)))
+        .or_else(|| normalize_source_type(&claim.data_source))
+}
+
+fn source_type_from_json(raw: Option<&str>) -> Option<String> {
+    let value = serde_json::from_str::<serde_json::Value>(raw?).ok()?;
+    source_type_from_value(&value).and_then(normalize_source_type)
+}
+
+fn source_type_from_value(value: &serde_json::Value) -> Option<&str> {
+    value
+        .get("source_type")
+        .or_else(|| value.get("sourceType"))
+        .or_else(|| value.get("source"))
+        .and_then(|value| value.as_str())
+        .or_else(|| {
+            value
+                .get("itemSource")
+                .or_else(|| value.get("item_source"))
+                .and_then(source_type_from_value)
+        })
+}
+
+fn normalize_source_type(source_type: &str) -> Option<String> {
+    let trimmed = source_type.trim();
+    if trimmed.is_empty()
+        || matches!(
+            trimmed.to_ascii_lowercase().as_str(),
+            "unknown" | "none" | "null"
+        )
+    {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+fn trust_subject_ref_from_claim(
+    claim: &crate::db::claims::IntelligenceClaim,
+) -> Result<crate::abilities::provenance::SubjectRef, BriefingTrustCompileError> {
+    let value = serde_json::from_str::<serde_json::Value>(&claim.subject_ref)
+        .map_err(|error| BriefingTrustCompileError::SubjectRef(error.to_string()))?;
+    let subject = crate::services::claims::subject_ref_from_json(&value)
+        .map_err(|error| BriefingTrustCompileError::SubjectRef(error.to_string()))?;
+    Ok(trust_subject_ref_from_subject(subject))
+}
+
+fn trust_subject_ref_from_subject(
+    subject: crate::db::claim_invalidation::SubjectRef,
+) -> crate::abilities::provenance::SubjectRef {
+    match subject {
+        crate::db::claim_invalidation::SubjectRef::Account { id } => {
+            crate::abilities::provenance::SubjectRef::Account(id)
+        }
+        crate::db::claim_invalidation::SubjectRef::Project { id } => {
+            crate::abilities::provenance::SubjectRef::Project(id)
+        }
+        crate::db::claim_invalidation::SubjectRef::Person { id } => {
+            crate::abilities::provenance::SubjectRef::Person(id)
+        }
+        crate::db::claim_invalidation::SubjectRef::Meeting { id } => {
+            crate::abilities::provenance::SubjectRef::Meeting(id)
+        }
+        crate::db::claim_invalidation::SubjectRef::Multi(subjects) => {
+            crate::abilities::provenance::SubjectRef::Multi(
+                subjects
+                    .into_iter()
+                    .map(trust_subject_ref_from_subject)
+                    .collect(),
+            )
+        }
+        crate::db::claim_invalidation::SubjectRef::Global => {
+            crate::abilities::provenance::SubjectRef::Global
+        }
+        crate::db::claim_invalidation::SubjectRef::Email { .. } => {
+            crate::abilities::provenance::SubjectRef::Unknown
+        }
+    }
+}
+
 /// Single-service full briefing refresh for one meeting.
 ///
 /// This is the deterministic manual refresh path:
@@ -4032,6 +4575,8 @@ pub async fn refresh_meeting_briefing_full(
             total: Some(total_entities),
         },
     )?;
+
+    spawn_trust_compiler_shadow_if_enabled(state, &result.meeting_id);
 
     Ok(result)
 }
@@ -4576,8 +5121,12 @@ pub async fn attach_meeting_transcript(
 mod tests {
     use super::persist_classification_entities_scored;
     use super::plan_refresh_completion;
+    use super::refresh_meeting_briefing_full;
     use super::restore_meeting_entity;
-    use super::{load_prepare_meeting_context_snapshot, subject_ref_json};
+    use super::{
+        compile_trust_shadow_for_briefing_claims, load_prepare_meeting_context_snapshot,
+        subject_ref_json, BriefingTrustShadowSummary, BRIEFING_TRUST_SHADOW_VERSION,
+    };
     use crate::db::claims::{ClaimSensitivity, TemporalScope};
     use crate::db::test_utils::test_db;
     use crate::google_api::classify::ResolvedMeetingEntity;
@@ -4585,6 +5134,9 @@ mod tests {
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
     use crate::state::AppState;
     use chrono::TimeZone;
+    use std::path::Path;
+    use std::sync::Arc;
+    use std::time::{Duration as StdDuration, Instant};
 
     fn test_ctx<'a>(
         clock: &'a FixedClock,
@@ -4672,6 +5224,443 @@ mod tests {
                 assert!(!serialized.contains(&canonical_text));
             }
         }
+    }
+
+    #[test]
+    fn trust_compiler_shadow_scores_idempotently_and_preserves_briefing_bytes() {
+        let db = test_db();
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 5, 9, 0, 0).unwrap());
+        let rng = SeedableRng::new(908);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+        let meeting_id = "meeting-trust-shadow";
+        let account_id = "acct-trust-shadow";
+        seed_prepare_meeting(&db, meeting_id, account_id);
+        let subject_ref = subject_ref_json("account", account_id).expect("subject ref");
+        let claim_id = insert_prepare_meeting_claim(
+            &ctx,
+            &db,
+            &subject_ref,
+            "Target Example has an active renewal concern.",
+            meeting_id,
+            ClaimSensitivity::Internal,
+        );
+
+        let before = format!(
+            "{:?}",
+            load_prepare_meeting_context_snapshot(&db, meeting_id).expect("snapshot before")
+        );
+
+        let summary =
+            compile_trust_shadow_for_briefing_claims(&ctx, &db, meeting_id).expect("shadow score");
+        assert_eq!(
+            summary,
+            BriefingTrustShadowSummary {
+                claims_seen: 1,
+                claims_scored: 1,
+                claims_skipped: 0,
+            }
+        );
+        let (score, version) = read_claim_shadow_trust(&db, &claim_id);
+        assert!(
+            score.is_some(),
+            "shadow run should populate shadow_trust_score"
+        );
+        assert_eq!(version, Some(BRIEFING_TRUST_SHADOW_VERSION));
+        assert_eq!(
+            read_claim_trust(&db, &claim_id),
+            (None, None),
+            "shadow run must not populate live trust_score"
+        );
+
+        let after = format!(
+            "{:?}",
+            load_prepare_meeting_context_snapshot(&db, meeting_id).expect("snapshot after")
+        );
+        assert_eq!(
+            before, after,
+            "shadow trust version must be hidden from briefing output"
+        );
+
+        let second =
+            compile_trust_shadow_for_briefing_claims(&ctx, &db, meeting_id).expect("second score");
+        assert_eq!(second.claims_scored, 1);
+        assert_eq!(count_claim_rows(&db, &claim_id), 1);
+    }
+
+    #[test]
+    fn trust_compiler_shadow_transaction_rolls_back_all_scores_on_write_failure() {
+        let db = test_db();
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 5, 9, 0, 0).unwrap());
+        let rng = SeedableRng::new(909);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+        let meeting_id = "meeting-trust-rollback";
+        let account_id = "acct-trust-rollback";
+        seed_prepare_meeting(&db, meeting_id, account_id);
+        let subject_ref = subject_ref_json("account", account_id).expect("subject ref");
+        insert_raw_prepare_meeting_claim(
+            &db,
+            "claim-rollback-one",
+            &subject_ref,
+            "Rollback claim one",
+            "risk.one",
+            "user",
+            meeting_id,
+        );
+        insert_raw_prepare_meeting_claim(
+            &db,
+            "claim-rollback-two",
+            &subject_ref,
+            "Rollback claim two",
+            "risk.two",
+            "user",
+            meeting_id,
+        );
+        db.conn_ref()
+            .execute_batch(
+                "CREATE TRIGGER fail_trust_shadow_second \
+                 BEFORE UPDATE OF shadow_trust_score ON intelligence_claims \
+                 WHEN OLD.id = 'claim-rollback-two' \
+                 BEGIN \
+                   SELECT RAISE(ABORT, 'trust shadow rollback fixture'); \
+                 END;",
+            )
+            .expect("trigger");
+
+        let result = compile_trust_shadow_for_briefing_claims(&ctx, &db, meeting_id);
+        assert!(
+            result
+                .as_ref()
+                .is_err_and(|error| error.contains("trust shadow rollback fixture")),
+            "expected rollback fixture failure, got {result:?}"
+        );
+        assert_eq!(read_claim_trust(&db, "claim-rollback-one"), (None, None));
+        assert_eq!(read_claim_trust(&db, "claim-rollback-two"), (None, None));
+        assert_eq!(
+            read_claim_shadow_trust(&db, "claim-rollback-one"),
+            (None, None)
+        );
+        assert_eq!(
+            read_claim_shadow_trust(&db, "claim-rollback-two"),
+            (None, None)
+        );
+    }
+
+    #[test]
+    fn trust_compiler_shadow_missing_source_type_leaves_trust_unset() {
+        let db = test_db();
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 5, 9, 0, 0).unwrap());
+        let rng = SeedableRng::new(910);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+        let meeting_id = "meeting-trust-missing-source";
+        let account_id = "acct-trust-missing-source";
+        seed_prepare_meeting(&db, meeting_id, account_id);
+        let subject_ref = subject_ref_json("account", account_id).expect("subject ref");
+        insert_raw_prepare_meeting_claim(
+            &db,
+            "claim-missing-source-type",
+            &subject_ref,
+            "Missing source type claim",
+            "risk.missing_source",
+            "",
+            meeting_id,
+        );
+
+        let summary =
+            compile_trust_shadow_for_briefing_claims(&ctx, &db, meeting_id).expect("shadow run");
+        assert_eq!(
+            summary,
+            BriefingTrustShadowSummary {
+                claims_seen: 1,
+                claims_scored: 0,
+                claims_skipped: 1,
+            }
+        );
+        assert_eq!(
+            read_claim_trust(&db, "claim-missing-source-type"),
+            (None, None)
+        );
+        assert_eq!(
+            read_claim_shadow_trust(&db, "claim-missing-source-type"),
+            (None, None)
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn trust_compiler_shadow_benchmark_stays_within_50ms_regression_budget() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let off_meeting_id = "meeting-trust-benchmark-off";
+        let on_meeting_id = "meeting-trust-benchmark-on";
+        let off_state =
+            refresh_benchmark_state(&temp.path().join("shadow-off.db"), false, off_meeting_id, 8)
+                .await;
+        let on_state =
+            refresh_benchmark_state(&temp.path().join("shadow-on.db"), true, on_meeting_id, 8)
+                .await;
+
+        let off_clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 5, 9, 0, 0).unwrap());
+        let off_rng = SeedableRng::new(911);
+        let off_ext = ExternalClients::default();
+        let off_ctx = test_ctx(&off_clock, &off_rng, &off_ext);
+        let baseline_start = Instant::now();
+        refresh_meeting_briefing_full(&off_ctx, &off_state, off_meeting_id, None)
+            .await
+            .expect("flag-off refresh");
+        let baseline = baseline_start.elapsed();
+
+        let on_clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 5, 9, 0, 0).unwrap());
+        let on_rng = SeedableRng::new(912);
+        let on_ext = ExternalClients::default();
+        let on_ctx = test_ctx(&on_clock, &on_rng, &on_ext);
+        let shadow_start = Instant::now();
+        refresh_meeting_briefing_full(&on_ctx, &on_state, on_meeting_id, None)
+            .await
+            .expect("flag-on refresh");
+        let shadow_enabled = shadow_start.elapsed();
+
+        assert!(
+            shadow_enabled.saturating_sub(baseline) <= StdDuration::from_millis(50),
+            "trust shadow regression exceeded 50ms: baseline={baseline:?} shadow_enabled={shadow_enabled:?}"
+        );
+
+        tokio::task::yield_now().await;
+        let writer_probe_start = Instant::now();
+        on_state
+            .db_write(|db| {
+                db.conn_ref()
+                    .query_row("SELECT 1", [], |row| row.get::<_, i64>(0))
+                    .map_err(|error| error.to_string())?;
+                Ok(())
+            })
+            .await
+            .expect("writer availability probe");
+        let writer_probe = writer_probe_start.elapsed();
+        assert!(
+            writer_probe <= StdDuration::from_millis(50),
+            "trust shadow should not occupy the writer after refresh response: writer_probe={writer_probe:?}"
+        );
+
+        wait_for_shadow_scores(&on_state, on_meeting_id, 8).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn trust_compiler_shadow_inflight_guard_coalesces_per_meeting() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let state =
+            refresh_benchmark_state(&temp.path().join("shadow-guard.db"), true, "m-guard", 0).await;
+
+        assert!(state.try_begin_trust_shadow_refresh("m-guard"));
+        assert!(
+            !state.try_begin_trust_shadow_refresh("m-guard"),
+            "same meeting should coalesce while a shadow refresh is in flight"
+        );
+        assert!(
+            state.try_begin_trust_shadow_refresh("m-other"),
+            "different meetings must not block each other"
+        );
+
+        state.finish_trust_shadow_refresh("m-guard");
+        assert!(
+            state.try_begin_trust_shadow_refresh("m-guard"),
+            "meeting should be schedulable again after the in-flight guard clears"
+        );
+        state.finish_trust_shadow_refresh("m-guard");
+        state.finish_trust_shadow_refresh("m-other");
+    }
+
+    async fn refresh_benchmark_state(
+        db_path: &Path,
+        shadow_enabled: bool,
+        meeting_id: &str,
+        claim_count: usize,
+    ) -> Arc<AppState> {
+        let svc = crate::db_service::DbService::open_at_unencrypted(db_path.to_path_buf())
+            .await
+            .expect("open benchmark db service");
+        let state = Arc::new(AppState::test_with_db_service(svc));
+        *state.config.write() = Some(refresh_benchmark_config(shadow_enabled));
+
+        let meeting_id = meeting_id.to_string();
+        state
+            .db_write(move |db| {
+                seed_refresh_benchmark_meeting(db, &meeting_id, claim_count);
+                Ok(())
+            })
+            .await
+            .expect("seed refresh benchmark state");
+
+        state
+    }
+
+    fn refresh_benchmark_config(shadow_enabled: bool) -> crate::types::Config {
+        let mut config: crate::types::Config =
+            serde_json::from_value(serde_json::json!({ "workspacePath": "" }))
+                .expect("benchmark config");
+        config.features.insert(
+            crate::types::FEATURE_TRUST_COMPILER_SHADOW.to_string(),
+            shadow_enabled,
+        );
+        config
+    }
+
+    fn seed_refresh_benchmark_meeting(
+        db: &crate::db::ActionDb,
+        meeting_id: &str,
+        claim_count: usize,
+    ) {
+        db.conn_ref()
+            .execute(
+                "INSERT INTO meetings (id, title, meeting_type, start_time, end_time, attendees, created_at)
+                 VALUES (?1, 'Trust Shadow Benchmark', 'external', '2026-05-10T17:00:00Z',
+                         '2026-05-10T17:30:00Z', '[\"taylor@example.com\"]', '2026-05-05T09:00:00Z')",
+                rusqlite::params![meeting_id],
+            )
+            .expect("seed benchmark meeting");
+        let subject_ref = subject_ref_json("meeting", meeting_id).expect("subject ref");
+        for idx in 0..claim_count {
+            insert_raw_prepare_meeting_claim(
+                db,
+                &format!("{meeting_id}-claim-benchmark-{idx}"),
+                &subject_ref,
+                &format!("Benchmark claim {idx}"),
+                &format!("risk.benchmark.{idx}"),
+                "user",
+                meeting_id,
+            );
+        }
+    }
+
+    async fn wait_for_shadow_scores(state: &Arc<AppState>, meeting_id: &str, expected_count: i64) {
+        let deadline = Instant::now() + StdDuration::from_secs(2);
+        loop {
+            let meeting_id = meeting_id.to_string();
+            let count = state
+                .db_read(move |db| {
+                    db.conn_ref()
+                        .query_row(
+                            "SELECT COUNT(*)
+                             FROM intelligence_claims
+                             WHERE source_ref = ?1
+                               AND shadow_trust_version = ?2
+                               AND shadow_trust_score IS NOT NULL",
+                            rusqlite::params![meeting_id, BRIEFING_TRUST_SHADOW_VERSION],
+                            |row| row.get::<_, i64>(0),
+                        )
+                        .map_err(|error| error.to_string())
+                })
+                .await
+                .expect("read shadow score count");
+
+            if count == expected_count {
+                return;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "timed out waiting for {expected_count} shadow scores, got {count}"
+            );
+            tokio::time::sleep(StdDuration::from_millis(10)).await;
+        }
+    }
+
+    fn seed_prepare_meeting(db: &crate::db::ActionDb, meeting_id: &str, account_id: &str) {
+        db.conn_ref()
+            .execute(
+                "INSERT INTO meetings (id, title, meeting_type, start_time, end_time, attendees, created_at)
+                 VALUES (?1, 'Trust Shadow Prep', 'external', '2026-05-10T17:00:00Z',
+                         '2026-05-10T17:30:00Z', '[\"taylor@example.com\"]', '2026-05-05T09:00:00Z')",
+                rusqlite::params![meeting_id],
+            )
+            .expect("seed meeting");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO entities (id, name, entity_type, updated_at)
+                 VALUES (?1, 'Target Example', 'account', '2026-05-05T09:00:00Z')",
+                rusqlite::params![account_id],
+            )
+            .expect("seed entity");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO meeting_entities (meeting_id, entity_id, entity_type, confidence, is_primary)
+                 VALUES (?1, ?2, 'account', 0.95, 1)",
+                rusqlite::params![meeting_id, account_id],
+            )
+            .expect("seed meeting entity");
+    }
+
+    fn insert_raw_prepare_meeting_claim(
+        db: &crate::db::ActionDb,
+        claim_id: &str,
+        subject_ref: &str,
+        text: &str,
+        field_path: &str,
+        data_source: &str,
+        source_ref: &str,
+    ) {
+        db.conn_ref()
+            .execute(
+                "INSERT INTO intelligence_claims /* dos7-allowed: test fixture seeds an agent-fixture risk claim for trust-shadow integration test */ (
+                    id, subject_ref, claim_type, field_path, text, dedup_key, actor,
+                    data_source, source_ref, source_asof, observed_at, created_at,
+                    provenance_json, metadata_json, claim_state, surfacing_state,
+                    temporal_scope, sensitivity, verification_state
+                 ) VALUES (
+                    ?1, ?2, 'risk', ?3, ?4, ?5, 'agent:fixture',
+                    ?6, ?7, '2026-05-05T09:00:00Z', '2026-05-05T09:00:00Z',
+                    '2026-05-05T09:00:00Z', '{}', NULL, 'active', 'active',
+                    'state', 'internal', 'active'
+                 )",
+                rusqlite::params![
+                    claim_id,
+                    subject_ref,
+                    field_path,
+                    text.to_ascii_lowercase(),
+                    format!("dedup-{claim_id}"),
+                    data_source,
+                    source_ref,
+                ],
+            )
+            .expect("seed raw prepare claim");
+    }
+
+    fn read_claim_trust(db: &crate::db::ActionDb, claim_id: &str) -> (Option<f64>, Option<i64>) {
+        db.conn_ref()
+            .query_row(
+                "SELECT trust_score, trust_version
+                 FROM intelligence_claims
+                 WHERE id = ?1",
+                rusqlite::params![claim_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read claim trust")
+    }
+
+    fn read_claim_shadow_trust(
+        db: &crate::db::ActionDb,
+        claim_id: &str,
+    ) -> (Option<f64>, Option<i64>) {
+        db.conn_ref()
+            .query_row(
+                "SELECT shadow_trust_score, shadow_trust_version
+                 FROM intelligence_claims
+                 WHERE id = ?1",
+                rusqlite::params![claim_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read claim shadow trust")
+    }
+
+    fn count_claim_rows(db: &crate::db::ActionDb, claim_id: &str) -> i64 {
+        db.conn_ref()
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM intelligence_claims
+                 WHERE id = ?1",
+                rusqlite::params![claim_id],
+                |row| row.get(0),
+            )
+            .expect("count claim rows")
     }
 
     fn insert_prepare_meeting_claim(

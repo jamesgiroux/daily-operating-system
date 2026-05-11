@@ -86,7 +86,7 @@ export function InboxTraining({ onNext }: InboxTrainingProps) {
     } catch {
       // silently handle
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, []);
 
   async function handleUseSample() {
@@ -103,7 +103,7 @@ export function InboxTraining({ onNext }: InboxTrainingProps) {
 
     const initial: FileProgress[] = filenames.map((f) => ({
       filename: f,
-      step: "received" as FileStep,
+      step: "received",
     }));
     setFiles(initial);
 
@@ -112,7 +112,7 @@ export function InboxTraining({ onNext }: InboxTrainingProps) {
 
       setFiles((prev) =>
         prev.map((f, idx) =>
-          idx === i ? { ...f, step: "classifying" as FileStep } : f
+          idx === i ? { ...f, step: "classifying" } : f
         )
       );
 
@@ -132,7 +132,7 @@ export function InboxTraining({ onNext }: InboxTrainingProps) {
               idx === i
                 ? {
                     ...f,
-                    step: "classified" as FileStep,
+                    step: "classified",
                     classification: result.classification,
                     destination: result.destination,
                   }
@@ -145,7 +145,7 @@ export function InboxTraining({ onNext }: InboxTrainingProps) {
               idx === i
                 ? {
                     ...f,
-                    step: "enriching" as FileStep,
+                    step: "enriching",
                     needsEnrichment: true,
                   }
                 : f
@@ -156,7 +156,7 @@ export function InboxTraining({ onNext }: InboxTrainingProps) {
           setFiles((prev) =>
             prev.map((f, idx) =>
               idx === i
-                ? { ...f, step: "classified" as FileStep, error: result.message }
+                ? { ...f, step: "classified", error: result.message }
                 : f
             )
           );
@@ -165,7 +165,7 @@ export function InboxTraining({ onNext }: InboxTrainingProps) {
         setFiles((prev) =>
           prev.map((f, idx) =>
             idx === i
-              ? { ...f, step: "classified" as FileStep, error: "Processing failed" }
+              ? { ...f, step: "classified", error: "Processing failed" }
               : f
           )
         );

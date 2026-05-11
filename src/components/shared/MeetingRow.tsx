@@ -47,7 +47,7 @@ export function MeetingRow({
   meeting,
   formatDate = defaultFormatDate,
   formatType = defaultFormatType,
-  typeBadgeStyle = defaultTypeBadgeStyle as (t: string) => React.CSSProperties,
+  typeBadgeStyle = defaultTypeBadgeStyle,
 }: MeetingRowProps) {
   return (
     <div className={styles.row}>

@@ -170,8 +170,8 @@ export function NavigatedSlide({ content, onUpdate }: NavigatedSlideProps) {
             color: "var(--color-text-secondary)",
             marginLeft: 24,
           }}
-          onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.opacity = "0.8")}
-          onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.opacity = "0.5")}
+          onMouseEnter={(e) => ((e.currentTarget).style.opacity = "0.8")}
+          onMouseLeave={(e) => ((e.currentTarget).style.opacity = "0.5")}
         >
           + Add item
         </button>

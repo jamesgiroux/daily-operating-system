@@ -93,6 +93,15 @@ if [ "$HAS_FRONTEND" = true ] && [ "$WIP_MODE" = false ] && [ -f "${CWD}/package
   fi
 fi
 
+# 3a. lint-staged — fast eslint + stylelint on changed files only (DOS-533).
+# Runs even in WIP mode because it's fast (<5s) and only touches staged files.
+# Skip cleanly if lint-staged isn't installed yet (config rolling out gradually).
+if [ "$HAS_FRONTEND" = true ] && [ -f "${CWD}/package.json" ] && [ -x "${CWD}/node_modules/.bin/lint-staged" ]; then
+  if ! pnpm exec lint-staged --concurrent false --no-stash >/dev/null 2>&1; then
+    append_error "❌ lint-staged FAILED — run \`pnpm lint\` to see violations"
+  fi
+fi
+
 # 4. Stub/TODO scan in staged diff (cheap, always runs)
 STUB_PATTERNS='TODO|FIXME|HACK|unimplemented!\(\)|todo!\(\)|Phase 2|// stub|// deferred|// placeholder'
 

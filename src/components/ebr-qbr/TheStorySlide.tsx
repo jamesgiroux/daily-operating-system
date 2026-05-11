@@ -129,8 +129,8 @@ export function TheStorySlide({ content, onUpdate }: TheStorySlideProps) {
               color: "var(--color-text-secondary)",
               marginLeft: 48,
             }}
-            onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.opacity = "0.8")}
-            onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.opacity = "0.5")}
+            onMouseEnter={(e) => ((e.currentTarget).style.opacity = "0.8")}
+            onMouseLeave={(e) => ((e.currentTarget).style.opacity = "0.5")}
           >
             + Add point
           </button>

@@ -101,7 +101,7 @@ describe("MeetingEntityChips — chip X dismissal (DOS-240)", () => {
       name: "Remove Acme Corp",
     });
 
-    fireEvent.click(removeButton!);
+    fireEvent.click(removeButton);
 
     // Wait for the async invoke() call to settle.
     await waitFor(() => {
@@ -152,7 +152,7 @@ describe("MeetingEntityChips — chip X dismissal (DOS-240)", () => {
       name: "Remove Error Co",
     });
 
-    fireEvent.click(removeButton!);
+    fireEvent.click(removeButton);
 
     // Error toast is surfaced — failure is NOT silent.
     await waitFor(() => {

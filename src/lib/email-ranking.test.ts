@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { compareEmailRank } from "./email-ranking";
-import type { Email, EmailPriority } from "@/types";
+import type { Email } from "@/types";
 
 /** Minimal email fixture for ranking tests. */
 function makeEmail(overrides: Partial<Email> & { id: string }): Email {
@@ -8,7 +8,7 @@ function makeEmail(overrides: Partial<Email> & { id: string }): Email {
     sender: "Test Sender",
     senderEmail: "test@example.com",
     subject: "Test Subject",
-    priority: "medium" as EmailPriority,
+    priority: "medium",
     commitments: [],
     questions: [],
     trackedCommitments: [],
