@@ -2702,10 +2702,7 @@ fn split_sql_statements(sql: &str) -> Vec<String> {
 
 fn statement_without_leading_comments(statement: &str) -> &str {
     let mut body = statement.trim_start();
-    loop {
-        let Some(comment_body) = body.strip_prefix("--") else {
-            break;
-        };
+    while let Some(comment_body) = body.strip_prefix("--") {
         let Some(newline_pos) = comment_body.find('\n') else {
             return "";
         };
