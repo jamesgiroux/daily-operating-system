@@ -821,6 +821,8 @@ fn sanitize_id_segment(s: &str) -> String {
 
 use std::time::Duration;
 
+const DOS7_CUTOVER_DRAIN_TIMEOUT: Duration = Duration::from_secs(30);
+
 /// Aggregated report of the full claims cutover orchestration.
 #[derive(Debug, Default, Clone)]
 pub struct CutoverReport {
@@ -1037,6 +1039,42 @@ fn read_schema_epoch(db: &ActionDb) -> Result<i64, String> {
         .map_err(|e| format!("read schema_epoch: {e}"))
 }
 
+fn bump_schema_epoch_and_drain_fence(
+    db: &ActionDb,
+    context: &str,
+) -> Result<(i64, i64, usize), String> {
+    let epoch_before = read_schema_epoch(db)?;
+    let epoch_after = crate::intelligence::write_fence::bump_schema_epoch(db)?;
+    log::info!(
+        "[{context}] schema_epoch: {} -> {}",
+        epoch_before,
+        epoch_after
+    );
+
+    match crate::intelligence::write_fence::drain_with_timeout(DOS7_CUTOVER_DRAIN_TIMEOUT) {
+        Ok(remaining) => {
+            log::info!("[{context}] drained; in_flight={remaining}");
+            Ok((epoch_before, epoch_after, remaining))
+        }
+        Err(remaining) => Err(format!(
+            "{context}: drain timed out with {remaining} in-flight FenceCycle handle(s); aborting before backfill per plan §8"
+        )),
+    }
+}
+
+fn run_structured_claim_backfill_if_pending_with_cutover_fence(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    context: &str,
+) -> Result<Option<StructuredClaimBackfillReport>, String> {
+    if !has_pending_structural_backfill_rows(db)? {
+        return Ok(None);
+    }
+
+    let _ = bump_schema_epoch_and_drain_fence(db, context)?;
+    run_structured_claim_backfill_if_pending(ctx, db, context)
+}
+
 /// Run the full claims cutover sequence atomically. Returns Err if any
 /// step fails so the caller can roll back from the pre-migration backup
 /// (created by the migration runner before any version applies).
@@ -1069,34 +1107,12 @@ pub fn run_dos7_cutover(
     };
 
     // Step 2: bump schema_epoch.
-    let epoch_before = read_schema_epoch(db)?;
-    let epoch_after = crate::intelligence::write_fence::bump_schema_epoch(db)?;
+    let (epoch_before, epoch_after, remaining) =
+        bump_schema_epoch_and_drain_fence(db, "DOS-7 cutover")?;
     report.schema_epoch_before = epoch_before;
     report.schema_epoch_after = epoch_after;
-    log::info!(
-        "[DOS-7 cutover] schema_epoch: {} -> {}",
-        epoch_before,
-        epoch_after
-    );
-
-    // Step 3: drain in-flight FenceCycle handles.
-    match crate::intelligence::write_fence::drain_with_timeout(Duration::from_secs(30)) {
-        Ok(remaining) => {
-            report.drain_in_flight_remaining = remaining;
-            report.drain_timed_out = false;
-        }
-        Err(remaining) => {
-            report.drain_in_flight_remaining = remaining;
-            report.drain_timed_out = true;
-            return Err(format!(
-                "DOS-7 cutover: drain timed out with {remaining} in-flight FenceCycle handle(s); aborting before backfill per plan §8"
-            ));
-        }
-    }
-    log::info!(
-        "[DOS-7 cutover] drained; in_flight={}",
-        report.drain_in_flight_remaining
-    );
+    report.drain_in_flight_remaining = remaining;
+    report.drain_timed_out = false;
 
     // Step 4: run pending migrations. Migrations 131+132 (claims SQL
     // backfills) plus any newer registered versions are applied here.
@@ -1361,7 +1377,7 @@ pub fn run_dos7_cutover_if_pending(
             // In that upgrade path the new canonical_status column defaults
             // existing rows to pending_backfill, so the structured backfill
             // must be driven by pending rows instead of the DOS-7 marker.
-            let _ = run_structured_claim_backfill_if_pending(
+            let _ = run_structured_claim_backfill_if_pending_with_cutover_fence(
                 ctx,
                 db,
                 "DOS-7 cutover already complete startup probe",
@@ -3055,6 +3071,145 @@ mod tests {
         assert!(
             matches!(canonical_status.as_str(), "live" | "legacy_unmigrated"),
             "pending_backfill row must be terminal before startup hook returns, got {canonical_status}"
+        );
+    }
+
+    #[test]
+    fn run_dos7_cutover_if_pending_already_complete_structured_probe_waits_for_fence() {
+        let workspace = tempfile::tempdir().unwrap();
+        let db_dir = tempfile::tempdir().unwrap();
+        let db_path = db_dir.path().join("already-complete-fence.sqlite");
+        let conn = Connection::open(&db_path).unwrap();
+        crate::migrations::run_migrations(&conn).unwrap();
+
+        conn.execute(
+            "INSERT OR REPLACE INTO migration_state (key, value)
+             VALUES ('dos7_cutover_completed_at', 1777777777)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO intelligence_claims (
+                id, subject_ref, claim_type, field_path, topic_key, text, dedup_key, item_hash,
+                actor, data_source, observed_at, created_at, provenance_json, metadata_json,
+                claim_state, surfacing_state, retraction_reason, temporal_scope, sensitivity,
+                verification_state, canonical_status, non_semantic_mergeable
+             ) VALUES (
+                'legacy-completed-marker-fenced-structured-1', '{\"kind\":\"account\",\"id\":\"acct-1\"}',
+                'risk', 'health.risk', NULL, 'Renewal risk is elevated',
+                'dedup-completed-marker-fenced-structured', 'hash-completed-marker-fenced-structured',
+                'system_backfill', 'legacy_dismissal', '2026-04-01T00:00:00Z',
+                '2026-04-01T00:00:00Z', '{}', NULL,
+                'tombstoned', 'active', 'user_removal', 'state', 'internal', 'active',
+                'pending_backfill', TRUE
+             )",
+            [],
+        )
+        .unwrap();
+
+        let db = ActionDb::from_conn(&conn);
+        let held_cycle =
+            crate::intelligence::write_fence::FenceCycle::capture(db).expect("capture fence");
+        let initial_epoch = held_cycle.captured_epoch();
+        let worker_db_path = db_path.clone();
+        let worker_workspace = workspace.path().to_path_buf();
+
+        let handle = std::thread::spawn(move || {
+            let conn = Connection::open(worker_db_path).expect("open worker DB");
+            let db = ActionDb::from_conn(&conn);
+            let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+            let rng = SeedableRng::new(42);
+            let ext = ExternalClients::default();
+            let ctx = fixture_ctx(&clock, &rng, &ext);
+
+            run_dos7_cutover_if_pending(&ctx, db, &worker_workspace)
+        });
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            let current_epoch: i64 = conn
+                .query_row(
+                    "SELECT value FROM migration_state WHERE key = 'schema_epoch'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            let canonical_status: String = conn
+                .query_row(
+                    "SELECT canonical_status
+                     FROM intelligence_claims
+                     WHERE id = 'legacy-completed-marker-fenced-structured-1'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+
+            assert_eq!(
+                canonical_status, "pending_backfill",
+                "AlreadyComplete probe mutated structured rows before bumping and draining the fence"
+            );
+            if current_epoch > initial_epoch {
+                break;
+            }
+            assert!(
+                !handle.is_finished(),
+                "AlreadyComplete probe returned before applying the cutover fence"
+            );
+            assert!(
+                std::time::Instant::now() < deadline,
+                "timed out waiting for AlreadyComplete probe to bump schema_epoch"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+
+        std::thread::sleep(std::time::Duration::from_millis(125));
+        let canonical_status: String = conn
+            .query_row(
+                "SELECT canonical_status
+                 FROM intelligence_claims
+                 WHERE id = 'legacy-completed-marker-fenced-structured-1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            canonical_status, "pending_backfill",
+            "AlreadyComplete probe must not mutate structured rows while a FenceCycle is held"
+        );
+        assert!(
+            !handle.is_finished(),
+            "AlreadyComplete probe should still be draining the held FenceCycle"
+        );
+
+        drop(held_cycle);
+
+        let result = handle.join().expect("worker thread panicked").unwrap();
+        assert!(
+            result.is_none(),
+            "DOS-7 cutover remains already complete; only structured backfill should run"
+        );
+
+        let final_epoch: i64 = conn
+            .query_row(
+                "SELECT value FROM migration_state WHERE key = 'schema_epoch'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(final_epoch, initial_epoch + 1);
+
+        let canonical_status: String = conn
+            .query_row(
+                "SELECT canonical_status
+                 FROM intelligence_claims
+                 WHERE id = 'legacy-completed-marker-fenced-structured-1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            matches!(canonical_status.as_str(), "live" | "legacy_unmigrated"),
+            "pending_backfill row must be terminal after the fence drains, got {canonical_status}"
         );
     }
 
