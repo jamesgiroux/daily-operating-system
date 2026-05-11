@@ -1664,10 +1664,11 @@ pub fn run_dos7_cutover_if_pending(
 
     match claim_decision {
         CutoverClaimDecision::AlreadyComplete => {
-            // v158-v161 can land after a database already completed DOS-7.
-            // In that upgrade path the new canonical_status column defaults
-            // existing rows to pending_backfill, so the structured backfill
-            // must be driven by pending rows instead of the DOS-7 marker.
+            // v158-v161 can land on a database that already completed the
+            // prior claim-substrate cutover. In that upgrade path the new
+            // canonical_status column defaults existing rows to
+            // pending_backfill, so the structured backfill must be driven by
+            // pending rows instead of the prior cutover marker.
             let _ = run_structured_claim_backfill_if_pending_with_cutover_fence(
                 ctx,
                 db,
