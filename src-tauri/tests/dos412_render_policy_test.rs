@@ -248,6 +248,12 @@ fn setup_migration_runner_state(conn: &Connection) {
             data_source TEXT NOT NULL,
             confidence REAL NOT NULL,
             decay_half_life_days REAL NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS intelligence_claims (
+            id TEXT PRIMARY KEY,
+            trust_score REAL,
+            trust_computed_at TEXT,
+            trust_version INTEGER
         );",
     )
     .expect("create migration runner fixture state");

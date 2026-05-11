@@ -83,7 +83,7 @@ export function partitionTrustEvidence<T>(
       trustBand,
       trustFieldPath,
       trustSourceDate: options.getSourceDate?.(item, index) ?? sourceDate,
-    } as TrustAnnotated<T>;
+    };
   });
 
   const current = annotated.filter(
@@ -161,7 +161,7 @@ export function renderedProvenanceFrom(value: unknown): RenderedProvenanceSummar
     return candidate.renderedProvenance;
   }
   if (isRenderedProvenance(candidate)) {
-    return candidate as RenderedProvenanceSummary;
+    return candidate;
   }
   return null;
 }

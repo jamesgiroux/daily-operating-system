@@ -49,7 +49,7 @@ export function useIntelligenceFeedback(
         // Most recent feedback per field wins (rows are DESC by created_at)
         for (const row of rows) {
           if (!state[row.field] && row.feedbackType !== "replaced") {
-            state[row.field] = row.feedbackType as "positive" | "negative";
+            state[row.field] = row.feedbackType;
           }
         }
         setFeedbackState(state);

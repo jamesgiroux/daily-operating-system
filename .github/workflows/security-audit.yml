@@ -1,0 +1,73 @@
+# Dependency vulnerability audit — weekly schedule + path-trigger on
+# lockfile changes. Lives outside the per-PR test workflow so per-PR
+# minutes stay low. CVE coverage stays tight because:
+#   1. Weekly run catches new advisories within 7 days.
+#   2. Path trigger on Cargo.lock / pnpm-lock.yaml catches dep bumps in PR.
+#   3. workflow_dispatch lets us trigger on demand for emergencies.
+name: Security Audit
+
+on:
+  schedule:
+    # Weekly Monday 12:00 UTC.
+    - cron: '0 12 * * 1'
+  pull_request:
+    paths:
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'audit.toml'
+      - '.github/workflows/security-audit.yml'
+  push:
+    branches:
+      - dev
+      - trunk
+    paths:
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'audit.toml'
+  workflow_dispatch:
+
+concurrency:
+  group: security-audit-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  cargo-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      - name: Install cargo-audit
+        run: which cargo-audit || cargo install cargo-audit --locked
+
+      - name: Run Rust dependency audit (high+)
+        working-directory: src-tauri
+        run: cargo audit --file ../audit.toml || cargo audit
+
+  pnpm-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Install dependencies (no postinstall)
+        run: pnpm install --ignore-scripts
+
+      - name: Run frontend dependency audit (high+)
+        run: pnpm audit --audit-level high

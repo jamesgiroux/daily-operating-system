@@ -1,5 +1,5 @@
 use parking_lot::{Mutex, RwLock};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32};
@@ -412,6 +412,8 @@ pub struct AppState {
     pub merged_signal_config: RwLock<MergedSignalConfig>,
     /// Background meeting prep queue for future meetings.
     pub meeting_prep_queue: Arc<crate::meeting_prep_queue::MeetingPrepQueue>,
+    /// Per-meeting in-flight guard for trust compiler shadow refresh tasks.
+    trust_shadow_refresh_inflight: Mutex<HashSet<String>>,
     /// Typed resource permits for concurrent background work.
     pub permits: ResourcePermits,
     ///  all three context-related
@@ -890,6 +892,7 @@ impl AppState {
             active_preset: RwLock::new(active_preset),
             merged_signal_config: RwLock::new(startup_merged_config),
             meeting_prep_queue: Arc::new(crate::meeting_prep_queue::MeetingPrepQueue::new()),
+            trust_shadow_refresh_inflight: Mutex::new(HashSet::new()),
             permits: ResourcePermits::new(),
             context_state: RwLock::new(ContextProviderBundle {
                 context_provider,
@@ -900,7 +903,7 @@ impl AppState {
         }
     }
 
-    #[cfg(feature = "test-harness")]
+    #[cfg(any(test, feature = "test-harness"))]
     #[doc(hidden)]
     pub fn test_with_db_service(db_service: Arc<crate::db_service::DbService>) -> Self {
         let prep_queue = Arc::new(Mutex::new(Vec::new()));
@@ -978,6 +981,7 @@ impl AppState {
             active_preset: RwLock::new(None),
             merged_signal_config: RwLock::new(MergedSignalConfig::default()),
             meeting_prep_queue: Arc::new(crate::meeting_prep_queue::MeetingPrepQueue::new()),
+            trust_shadow_refresh_inflight: Mutex::new(HashSet::new()),
             permits: ResourcePermits::new(),
             context_state: RwLock::new(ContextProviderBundle {
                 context_provider: Arc::new(local_provider),
@@ -993,6 +997,16 @@ impl AppState {
     /// Returns the cached `MergedSignalConfig` — cheap clone, no recomputation.
     pub fn get_merged_signal_config(&self) -> MergedSignalConfig {
         self.merged_signal_config.read().clone()
+    }
+
+    pub(crate) fn try_begin_trust_shadow_refresh(&self, meeting_id: &str) -> bool {
+        self.trust_shadow_refresh_inflight
+            .lock()
+            .insert(meeting_id.to_string())
+    }
+
+    pub(crate) fn finish_trust_shadow_refresh(&self, meeting_id: &str) {
+        self.trust_shadow_refresh_inflight.lock().remove(meeting_id);
     }
 
     pub async fn request_confirmation_attestation(

@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::WorkflowError;
 
+pub const FEATURE_TRUST_COMPILER_SHADOW: &str = "FEATURE_TRUST_COMPILER_SHADOW";
+
 /// Configuration stored in ~/.dailyos/config.json
 ///
 /// Accepts both Daybreak format (`workspacePath`) and DailyOS CLI format
@@ -455,6 +457,18 @@ pub fn is_feature_enabled(config: &Config, feature: &str) -> bool {
     // Fall through to entity-mode-aware defaults
     let defaults = default_features_for_mode(&config.profile, &config.entity_mode);
     defaults.get(feature).copied().unwrap_or(true)
+}
+
+pub fn default_trust_compiler_shadow_enabled() -> bool {
+    cfg!(debug_assertions)
+}
+
+pub fn is_trust_compiler_shadow_enabled(config: &Config) -> bool {
+    config
+        .features
+        .get(FEATURE_TRUST_COMPILER_SHADOW)
+        .copied()
+        .unwrap_or_else(default_trust_compiler_shadow_enabled)
 }
 
 /// Schedule configuration for workflows
@@ -2873,7 +2887,7 @@ pub struct TimelineMeeting {
 }
 
 /// Feature flags for gating incomplete features behind compile/runtime switches.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FeatureFlags {
     /// When false, Book of Business report is hidden from the Me page.
@@ -2882,6 +2896,19 @@ pub struct FeatureFlags {
     /// When false, Glean account discovery and ephemeral lookup are hidden
     /// from the Accounts page. Defaults to false.
     pub glean_discovery_enabled: bool,
+    /// Shadow-mode trust compiler for briefing claims. Defaults on in dev
+    /// builds and off in production unless explicitly set in config.features.
+    pub trust_compiler_shadow_enabled: bool,
+}
+
+impl Default for FeatureFlags {
+    fn default() -> Self {
+        Self {
+            book_of_business_enabled: false,
+            glean_discovery_enabled: false,
+            trust_compiler_shadow_enabled: default_trust_compiler_shadow_enabled(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -3281,6 +3308,7 @@ mod tests {
                 .features
                 .get("glean_discovery_enabled")
                 .unwrap_or(&false),
+            trust_compiler_shadow_enabled: is_trust_compiler_shadow_enabled(config),
         }
     }
 
@@ -3304,6 +3332,10 @@ mod tests {
             flags.glean_discovery_enabled,
             "glean_discovery_enabled should be true when set in config"
         );
+        assert_eq!(
+            flags.trust_compiler_shadow_enabled,
+            default_trust_compiler_shadow_enabled()
+        );
     }
 
     #[test]
@@ -3322,6 +3354,11 @@ mod tests {
             !flags.glean_discovery_enabled,
             "glean_discovery_enabled should default to false"
         );
+        assert_eq!(
+            flags.trust_compiler_shadow_enabled,
+            default_trust_compiler_shadow_enabled(),
+            "FEATURE_TRUST_COMPILER_SHADOW should use dev/prod default"
+        );
     }
 
     #[test]
@@ -3339,6 +3376,24 @@ mod tests {
             !flags.glean_discovery_enabled,
             "un-set flags should remain false"
         );
+        assert_eq!(
+            flags.trust_compiler_shadow_enabled,
+            default_trust_compiler_shadow_enabled()
+        );
+    }
+
+    #[test]
+    fn trust_compiler_shadow_flag_reads_exact_config_key() {
+        let mut config = test_config("customer-success");
+        config
+            .features
+            .insert(FEATURE_TRUST_COMPILER_SHADOW.to_string(), false);
+        assert!(!is_trust_compiler_shadow_enabled(&config));
+
+        config
+            .features
+            .insert(FEATURE_TRUST_COMPILER_SHADOW.to_string(), true);
+        assert!(is_trust_compiler_shadow_enabled(&config));
     }
 
     #[test]

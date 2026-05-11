@@ -198,7 +198,7 @@ export const FloatingNavIsland: React.FC<FloatingNavIslandProps> = ({
 
         <div className={styles.navIslandDivider} aria-hidden="true" />
 
-        {chapters!.map((chapter) => {
+        {chapters.map((chapter) => {
           const isActive = chapter.id === activeChapterId;
           return (
             <button
@@ -277,7 +277,7 @@ export const FloatingNavIsland: React.FC<FloatingNavIslandProps> = ({
         style={{ '--local-pill-top': `${localPillTop}px` } as React.CSSProperties}
         aria-label="Section navigation"
       >
-        {hasChapters && chapters!.map((chapter) => {
+        {hasChapters && chapters.map((chapter) => {
           const isActive = chapter.id === activeChapterId;
           return (
             <button

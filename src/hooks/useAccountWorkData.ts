@@ -19,7 +19,8 @@
  * are emitted by the services::actions layer when action_kind=commitment;
  * this hook doesn't need to emit anything extra.
  */
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import type React from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";

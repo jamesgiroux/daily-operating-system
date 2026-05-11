@@ -317,7 +317,7 @@ function VitalField({
           {editing ? (
             <InlineSelect
               value={value}
-              options={field.options!}
+              options={field.options}
               onCommit={(v) => {
                 commit(v);
                 setEditing(false);

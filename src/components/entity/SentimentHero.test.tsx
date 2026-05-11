@@ -7,7 +7,7 @@ import {
   DEFAULT_SENTIMENT_LABELS,
   type SentimentView,
 } from "@/hooks/useAccountDetail";
-import type { HealthSparklinePoint, SentimentJournalEntry } from "@/types";
+import type { HealthSparklinePoint } from "@/types";
 
 function makeView(overrides: Partial<SentimentView> = {}): SentimentView {
   return {
@@ -19,7 +19,7 @@ function makeView(overrides: Partial<SentimentView> = {}): SentimentView {
         sentiment: "concerning",
         note: "Block editor issues piling up.",
         setAt: new Date(Date.now() - 12 * 24 * 60 * 60 * 1000).toISOString(),
-      } as SentimentJournalEntry,
+      },
     ],
     sparkline: makeSparkline(),
     divergence: null,
@@ -39,7 +39,7 @@ function makeSparkline(): HealthSparklinePoint[] {
         .toISOString()
         .slice(0, 10),
       score: 50 + (day % 30),
-      band: bands[bucket]!,
+      band: bands[bucket],
     });
   }
   return out;
