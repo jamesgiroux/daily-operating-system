@@ -55,16 +55,20 @@ export type CompositionBlockType =
   | "markdown_document"
   | "custom";
 
-/** Composition kind discriminator. The Rust side serializes as a flat
- *  struct rather than the TS-side discriminated union for round-trip
- *  cleanliness; consumers should treat `produces_blocks: false` as
- *  implying `block_types: []`. */
-export interface CompositionKind {
-  produces_blocks: boolean;
-  block_types: CompositionBlockType[];
-}
+/** Composition kind discriminator. Matches the canonical artifact 05
+ *  shape: either `{ produces_blocks: false, block_types: [] }` or
+ *  `{ produces_blocks: true, block_types: [<one or more>] }`. The Rust
+ *  side enforces this discriminated union via bespoke serde; the
+ *  invalid mixed shape (`produces_blocks: false` with non-empty
+ *  `block_types`, or `produces_blocks: true` with empty `block_types`)
+ *  is rejected at deserialization. */
+export type CompositionKind =
+  | { produces_blocks: false; block_types: [] }
+  | { produces_blocks: true; block_types: CompositionBlockType[] };
 
-/** Free-form annotation value. */
+/** Free-form annotation value. Numbers are JSON-native `number` (no
+ *  integer/float distinction); the Rust mirror represents the numeric
+ *  arm as `f64`. */
 export type AnnotationValue = string | number | boolean | null;
 
 /** One inventory entry. Mirrors `AbilitySurfaceInventoryEntry` (Rust). */

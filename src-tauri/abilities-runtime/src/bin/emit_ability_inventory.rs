@@ -20,9 +20,10 @@
 //! ## Exit codes
 //!
 //! - `0`: emitted successfully.
-//! - `2`: registry build failed (one or more
+//! - `1`: registry build failed (one or more
 //!   [`RegistryViolation`](abilities_runtime::abilities::registry::RegistryViolation)).
-//! - `1`: I/O or serialization error.
+//! - `2`: I/O or serialization error (CLI arg parsing, file write,
+//!   stdout write, or JSON serialization).
 
 use std::io::Write;
 use std::process::ExitCode;
@@ -39,7 +40,7 @@ fn main() -> ExitCode {
                 Some(value) => out_path = Some(value),
                 None => {
                     eprintln!("emit_ability_inventory: --out requires a path argument");
-                    return ExitCode::from(1);
+                    return ExitCode::from(2);
                 }
             },
             "--help" | "-h" => {
@@ -52,7 +53,7 @@ fn main() -> ExitCode {
             }
             other => {
                 eprintln!("emit_ability_inventory: unknown argument: {other}");
-                return ExitCode::from(1);
+                return ExitCode::from(2);
             }
         }
     }
@@ -72,7 +73,7 @@ fn main() -> ExitCode {
             for violation in &violations {
                 eprintln!("  - {violation:?}");
             }
-            return ExitCode::from(2);
+            return ExitCode::from(1);
         }
     };
 
@@ -82,7 +83,7 @@ fn main() -> ExitCode {
         Ok(json) => json,
         Err(err) => {
             eprintln!("emit_ability_inventory: serialization failed: {err}");
-            return ExitCode::from(1);
+            return ExitCode::from(2);
         }
     };
 
@@ -90,7 +91,7 @@ fn main() -> ExitCode {
         Some(path) => {
             if let Err(err) = std::fs::write(&path, json.as_bytes()) {
                 eprintln!("emit_ability_inventory: failed to write {path}: {err}");
-                return ExitCode::from(1);
+                return ExitCode::from(2);
             }
         }
         None => {
@@ -98,7 +99,7 @@ fn main() -> ExitCode {
             let mut handle = stdout.lock();
             if let Err(err) = handle.write_all(json.as_bytes()) {
                 eprintln!("emit_ability_inventory: stdout write failed: {err}");
-                return ExitCode::from(1);
+                return ExitCode::from(2);
             }
         }
     }
