@@ -784,6 +784,7 @@ pub struct CutoverReport {
     pub sql_migrations_applied: usize,
     pub rekey_report: RekeyReport,
     pub json_blob_report: DismissedItemBackfillReport,
+    pub structured_claim_backfill_report: StructuredClaimBackfillReport,
     pub reconcile_findings: usize,
     pub source_asof_backfill_summary:
         Option<crate::services::source_asof_backfill::BackfillSummary>,
@@ -1106,6 +1107,27 @@ pub fn run_dos7_cutover(
         ));
     }
     report.rekey_report = rekey_report;
+
+    // Step 5.75: v157 structured-claim canonicalization closure. This
+    // must run after the migration adds canonical_status + structural
+    // columns, and before reconcile/completion so pending_backfill rows
+    // cannot be left as a successful cutover artifact.
+    let structured_report = run_structured_claim_backfill(ctx, db)?;
+    log::info!(
+        "[DOS-7 cutover] structured claim backfill: {} rows examined, {} live, {} legacy_unmigrated, {} error(s)",
+        structured_report.rows_examined,
+        structured_report.transitioned_live,
+        structured_report.transitioned_legacy_unmigrated,
+        structured_report.errors.len(),
+    );
+    if !structured_report.errors.is_empty() {
+        return Err(format!(
+            "DOS-7 cutover: structured claim backfill produced {} error(s); refusing to mark cutover complete until they are resolved. First error: {}",
+            structured_report.errors.len(),
+            structured_report.errors.first().map(String::as_str).unwrap_or("(none)"),
+        ));
+    }
+    report.structured_claim_backfill_report = structured_report;
 
     // Step 6: reconcile pass (D5 stub today; full impl gates on
     // scripts/reconcile_ghost_resurrection.sql findings = 0).
@@ -3124,6 +3146,67 @@ mod tests {
 
         // Reconcile stub clean.
         assert_eq!(report.reconcile_findings, 0);
+    }
+
+    #[test]
+    fn cutover_runs_structured_claim_backfill_for_pending_legacy_rows() {
+        let workspace = tempfile::tempdir().unwrap();
+        let conn = fresh_full_db();
+        let db = ActionDb::from_conn(&conn);
+
+        conn.execute(
+            "INSERT INTO intelligence_claims (
+                id, subject_ref, claim_type, field_path, topic_key, text, dedup_key, item_hash,
+                actor, data_source, observed_at, created_at, provenance_json, metadata_json,
+                claim_state, surfacing_state, retraction_reason, temporal_scope, sensitivity,
+                verification_state, canonical_status, non_semantic_mergeable
+             ) VALUES (
+                'legacy-cutover-structured-1', '{\"kind\":\"account\",\"id\":\"acct-1\"}',
+                'risk', 'health.risk', NULL, 'Renewal risk is elevated',
+                'dedup-cutover-structured', 'hash-cutover-structured',
+                'system_backfill', 'legacy_dismissal', '2026-04-01T00:00:00Z',
+                '2026-04-01T00:00:00Z', '{}', NULL,
+                'tombstoned', 'active', 'user_removal', 'state', 'internal', 'active',
+                'pending_backfill', TRUE
+             )",
+            [],
+        )
+        .unwrap();
+
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+
+        let report = run_dos7_cutover(&ctx, db, workspace.path()).unwrap();
+        assert_eq!(report.structured_claim_backfill_report.rows_examined, 1);
+        assert!(
+            report.structured_claim_backfill_report.errors.is_empty(),
+            "{:?}",
+            report.structured_claim_backfill_report.errors
+        );
+
+        let (canonical_status, non_semantic_mergeable): (String, bool) = conn
+            .query_row(
+                "SELECT canonical_status, non_semantic_mergeable
+                 FROM intelligence_claims
+                 WHERE id = 'legacy-cutover-structured-1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+
+        match canonical_status.as_str() {
+            "live" => assert!(
+                !non_semantic_mergeable,
+                "live structured rows must be mergeable"
+            ),
+            "legacy_unmigrated" => assert!(
+                non_semantic_mergeable,
+                "legacy_unmigrated rows must remain non-semantic merge blocked"
+            ),
+            other => panic!("expected terminal canonical_status, got {other}"),
+        }
     }
 
     #[test]
