@@ -2447,7 +2447,7 @@ mod tests {
         let applied = run_migrations(&conn).expect("fresh v157 migration should succeed");
 
         assert_eq!(applied, MIGRATIONS.len());
-        assert_eq!(current_version(&conn).expect("current version"), 157);
+        assert_eq!(current_version(&conn).expect("current version"), 161);
         verify_no_live_shadow_trust_v157(&conn, "fresh v157 verifier")
             .expect("fresh database should satisfy v157 invariant");
     }
@@ -2487,8 +2487,8 @@ mod tests {
         .expect("seed c5 zero-version shadow row");
 
         let applied = run_migrations(&conn).expect("v157 migration should succeed");
-        assert_eq!(applied, 1, "only v157 should be pending");
-        assert_eq!(current_version(&conn).expect("current version"), 157);
+        assert_eq!(applied, 4, "v157, v158, v159, v161 should be pending after rollback to v156");
+        assert_eq!(current_version(&conn).expect("current version"), 161);
         verify_required_schema(&conn).expect("v157 invariant should pass");
 
         let (live_score, live_at, live_version, shadow_score, shadow_at, shadow_version): (
@@ -2554,8 +2554,8 @@ mod tests {
         .expect("seed v156-recorded live score");
 
         let applied = run_migrations(&conn).expect("v157 migration should succeed");
-        assert_eq!(applied, 1, "only v157 should be pending");
-        assert_eq!(current_version(&conn).expect("current version"), 157);
+        assert_eq!(applied, 4, "v157, v158, v159, v161 should be pending after rollback to v156");
+        assert_eq!(current_version(&conn).expect("current version"), 161);
         verify_required_schema(&conn).expect("v157 invariant should pass");
 
         let (live_score, live_at, live_version, shadow_score, shadow_at, shadow_version): (
@@ -2625,8 +2625,8 @@ mod tests {
         .expect("seed partial v155 shadow row");
 
         let applied = run_migrations(&conn).expect("v156 and v157 migrations should succeed");
-        assert_eq!(applied, 2, "v156 and v157 should be pending");
-        assert_eq!(current_version(&conn).expect("current version"), 157);
+        assert_eq!(applied, 5, "v156, v157, v158, v159, v161 should be pending after rollback to v155");
+        assert_eq!(current_version(&conn).expect("current version"), 161);
         verify_required_schema(&conn).expect("v157 invariant should pass");
 
         let (live_score, live_at, live_version, shadow_score, shadow_at, shadow_version): (
