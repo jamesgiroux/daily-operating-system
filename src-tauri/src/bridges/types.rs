@@ -1111,7 +1111,7 @@ impl InvocationProvenanceCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::abilities::registry::{AbilityPolicy, SignalPolicy};
+    use crate::abilities::registry::{AbilityPolicy, McpExposure, SignalPolicy};
     use std::pin::Pin;
     use std::sync::{Arc, Mutex};
 
@@ -1142,6 +1142,9 @@ mod tests {
                 allowed_modes: &[ExecutionMode::Live],
                 requires_confirmation: true,
                 may_publish: false,
+                required_scopes: &[],
+                mcp_exposure: McpExposure::None,
+                client_side_executable: false,
             },
             composes: &[],
             mutates: &[],

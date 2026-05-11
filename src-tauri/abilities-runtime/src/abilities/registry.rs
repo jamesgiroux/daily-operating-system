@@ -298,13 +298,104 @@ pub enum Actor {
     },
 }
 
+/// MCP tool-surface exposure tier per ADR-0102 §7.1 (W0-D amended 2026-05-10).
+///
+/// Governs how an ability appears in MCP introspection (`list_tools` /
+/// `list_abilities`). Independent of [`AbilityPolicy::client_side_executable`]
+/// — the two fields govern different trust boundaries per Phase 0 artifact 05
+/// lines 389-412. An ability may be `Invocable` over MCP while not
+/// client-side executable, or vice versa.
+///
+/// Variants:
+/// - `None`: not enumerated by any MCP bridge.
+/// - `MetadataOnly`: name + description enumerated; invoke schema withheld.
+/// - `Invocable`: full schema enumerated; agent may invoke.
+///
+/// Default per `AbilityPolicy::default()` is `None` — the closed default.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum McpExposure {
+    /// Hidden from every MCP enumeration surface.
+    #[default]
+    None,
+    /// Enumerated with name + description only; invoke schema not exposed.
+    MetadataOnly,
+    /// Enumerated with full schema; agents may invoke.
+    Invocable,
+}
+
 /// Per-ability policy (which actors may invoke, which modes, etc.).
+///
+/// Per ADR-0102 §7.1 (W0-D amended 2026-05-10) and DOS-546 W1-B, the
+/// schema carries three additional fields beyond the v1.4.1 baseline:
+///
+/// - `required_scopes`: scope vocabulary a [`Actor::SurfaceClient`] must
+///   present at the bridge boundary (W2-B) before registry lookup. Stored
+///   as `&'static [&'static str]` so descriptors remain `static`-friendly
+///   for `inventory::submit!`. Callers that need typed [`SurfaceScope`]
+///   values should call [`AbilityPolicy::required_scopes_typed`]. This
+///   reconciles AC line 446's informal `Vec<SurfaceClientScope>` with the
+///   substrate's static-descriptor invariant — see W1-B commit for rationale.
+/// - `mcp_exposure`: tri-state MCP enumeration tier (see [`McpExposure`]).
+/// - `client_side_executable`: whether a SurfaceClient may invoke after
+///   policy/scope/actor checks. Independent of `mcp_exposure` per Phase 0
+///   artifact 05 lines 389-412.
+///
+/// Closed defaults (via [`AbilityPolicy::default`]):
+/// - `required_scopes: &[]`
+/// - `mcp_exposure: McpExposure::None`
+/// - `client_side_executable: false`
+///
+/// Defaults preserve v1.4.0/v1.4.1 behavior: an ability with no
+/// `SurfaceClient` in `allowed_actors` may keep empty `required_scopes`,
+/// and the macro compile-error gate (W1-B) only fires when
+/// `allowed_actors` includes `SurfaceClient`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AbilityPolicy {
     pub allowed_actors: &'static [Actor],
     pub allowed_modes: &'static [ExecutionMode],
     pub requires_confirmation: bool,
     pub may_publish: bool,
+    /// Scope vocabulary a [`Actor::SurfaceClient`] must carry before this
+    /// ability is reachable. Empty = no scope required (preserves
+    /// pre-v1.4.2 behavior for non-SurfaceClient abilities).
+    pub required_scopes: &'static [&'static str],
+    /// MCP tool-surface enumeration tier. Default `None`.
+    pub mcp_exposure: McpExposure,
+    /// Whether a [`Actor::SurfaceClient`] may invoke after policy/scope/
+    /// actor checks. Default `false`.
+    pub client_side_executable: bool,
+}
+
+impl Default for AbilityPolicy {
+    fn default() -> Self {
+        Self {
+            allowed_actors: &[],
+            allowed_modes: &[],
+            requires_confirmation: false,
+            may_publish: false,
+            required_scopes: &[],
+            mcp_exposure: McpExposure::None,
+            client_side_executable: false,
+        }
+    }
+}
+
+impl AbilityPolicy {
+    /// Materialize `required_scopes` as typed [`SurfaceScope`] values.
+    ///
+    /// The canonical storage shape is `&'static [&'static str]` so the
+    /// descriptor stays `static`-constructible (required by
+    /// `inventory::submit!`). Bridge/runtime code that needs typed scopes
+    /// for [`ScopeSet`] enforcement (W2-B) calls this helper.
+    pub fn required_scopes_typed(&self) -> Vec<SurfaceScope> {
+        self.required_scopes
+            .iter()
+            .map(|s| SurfaceScope::new(*s))
+            .collect()
+    }
 }
 
 /// Composition entry per descriptor.
@@ -519,6 +610,26 @@ impl AbilityRegistry {
         validate_experimental(&by_name, &mut violations);
 
         if violations.is_empty() {
+            // W1-B: seed the global SurfaceScope allowlist with the union
+            // of every registered ability's required_scopes. Idempotent:
+            // a second registry build (e.g. tests) sees the existing
+            // allowlist and is a no-op. Lenient bootstrap mode (an
+            // allowlist that hasn't been initialized yet) accepts any
+            // scope at ScopeSet construction; once seeded here, unknown
+            // scopes are rejected at the wire boundary. See ADR-0111 §8
+            // / DOS-546 W1-A.1.
+            let union: BTreeSet<SurfaceScope> = by_name
+                .values()
+                .flat_map(|descriptor| descriptor.policy.required_scopes.iter())
+                .map(|s| SurfaceScope::new(*s))
+                .collect();
+            // OnceLock::set returns Err if already initialized — that's
+            // the intended path on subsequent registry builds within a
+            // single process. We do not surface the result.
+            if ScopeSet::initialize_allowlist(union).is_err() {
+                // Intentional no-op: another registry has already seeded
+                // the global allowlist in this process.
+            }
             Ok(Self { by_name })
         } else {
             Err(violations)
@@ -1341,6 +1452,9 @@ mod tests {
                 allowed_modes: &[],
                 requires_confirmation: false,
                 may_publish: false,
+                required_scopes: &[],
+                mcp_exposure: McpExposure::None,
+                client_side_executable: false,
             },
             composes: &[],
             mutates: &[],
@@ -1371,6 +1485,9 @@ mod tests {
                 ],
                 requires_confirmation: false,
                 may_publish: false,
+                required_scopes: &[],
+                mcp_exposure: McpExposure::None,
+                client_side_executable: false,
             },
             composes: &[],
             mutates: &[],
@@ -2143,5 +2260,89 @@ mod tests {
         let encoded = serde_json::to_string(&decoded).expect("encodes");
         let redecoded: ScopeSet = serde_json::from_str(&encoded).expect("re-decodes");
         assert_eq!(decoded, redecoded);
+    }
+
+    // -------------------------------------------------------------------
+    // W1-B: AbilityPolicy schema (required_scopes + mcp_exposure +
+    // client_side_executable) and McpExposure serde.
+    // ADR-0102 §7.1 + §7.6 (W0-D amended), DOS-546 W1-B AC lines 446-454.
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn ability_policy_default_has_closed_w1b_defaults() {
+        let policy = AbilityPolicy::default();
+        assert_eq!(policy.allowed_actors, &[] as &[Actor]);
+        assert_eq!(policy.allowed_modes, &[] as &[ExecutionMode]);
+        assert!(!policy.requires_confirmation);
+        assert!(!policy.may_publish);
+        // The three W1-B fields default to the closed forms.
+        assert_eq!(policy.required_scopes, &[] as &[&str]);
+        assert_eq!(policy.mcp_exposure, McpExposure::None);
+        assert!(!policy.client_side_executable);
+    }
+
+    #[test]
+    fn ability_policy_required_scopes_typed_materializes_surface_scopes() {
+        let policy = AbilityPolicy {
+            required_scopes: &["read.account_overview", "submit.feedback"],
+            ..AbilityPolicy::default()
+        };
+        let typed = policy.required_scopes_typed();
+        assert_eq!(typed.len(), 2);
+        assert!(typed.contains(&SurfaceScope::new("read.account_overview")));
+        assert!(typed.contains(&SurfaceScope::new("submit.feedback")));
+    }
+
+    #[test]
+    fn mcp_exposure_default_is_none() {
+        assert_eq!(McpExposure::default(), McpExposure::None);
+    }
+
+    #[test]
+    fn mcp_exposure_serde_round_trip_for_all_variants() {
+        for variant in [
+            McpExposure::None,
+            McpExposure::MetadataOnly,
+            McpExposure::Invocable,
+        ] {
+            let encoded = serde_json::to_string(&variant).expect("serializes");
+            let decoded: McpExposure = serde_json::from_str(&encoded).expect("deserializes");
+            assert_eq!(variant, decoded, "round-trip for {variant:?}");
+        }
+    }
+
+    #[test]
+    fn mcp_exposure_wire_form_is_snake_case() {
+        // ADR-0102 §7.1 wire form: snake_case discriminant for portability.
+        assert_eq!(
+            serde_json::to_string(&McpExposure::None).expect("serializes"),
+            "\"none\""
+        );
+        assert_eq!(
+            serde_json::to_string(&McpExposure::MetadataOnly).expect("serializes"),
+            "\"metadata_only\""
+        );
+        assert_eq!(
+            serde_json::to_string(&McpExposure::Invocable).expect("serializes"),
+            "\"invocable\""
+        );
+    }
+
+    #[test]
+    fn ability_policy_required_scopes_storage_is_static_slice() {
+        // Type-level pin: storage shape is `&'static [&'static str]` so
+        // descriptors remain const-constructible for `inventory::submit!`.
+        // The typed accessor is `required_scopes_typed`. If this ever
+        // changes, every macro-emitted static breaks at compile time.
+        const POLICY: AbilityPolicy = AbilityPolicy {
+            allowed_actors: &[],
+            allowed_modes: &[],
+            requires_confirmation: false,
+            may_publish: false,
+            required_scopes: &["read.account_overview"],
+            mcp_exposure: McpExposure::None,
+            client_side_executable: false,
+        };
+        assert_eq!(POLICY.required_scopes, &["read.account_overview"]);
     }
 }

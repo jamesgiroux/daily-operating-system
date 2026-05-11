@@ -16,7 +16,7 @@ use std::{
 use async_trait::async_trait;
 use base64::Engine;
 use dailyos_lib::abilities::prepare_meeting::{prepare_meeting, prompts, PrepareMeetingInput};
-use dailyos_lib::abilities::registry::{AbilityPolicy, SignalPolicy};
+use dailyos_lib::abilities::registry::{AbilityPolicy, McpExposure, SignalPolicy};
 use dailyos_lib::abilities::{
     AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityRegistry, Actor,
     NOOP_ABILITY_TRACER,
@@ -1992,6 +1992,9 @@ fn enrich_descriptor_with_policy(allowed_actors: &'static [Actor]) -> AbilityDes
             allowed_modes: EVALUATE_MODES,
             requires_confirmation: false,
             may_publish: false,
+            required_scopes: &[],
+            mcp_exposure: McpExposure::None,
+            client_side_executable: false,
         },
         composes: &[],
         mutates: &[],

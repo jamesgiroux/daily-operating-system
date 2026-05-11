@@ -76,7 +76,7 @@ mod mcp_open_schema_runtime {
     use std::future::Future;
     use std::pin::Pin;
 
-    use dailyos_lib::abilities::registry::{AbilityPolicy, SignalPolicy};
+    use dailyos_lib::abilities::registry::{AbilityPolicy, McpExposure, SignalPolicy};
     use dailyos_lib::abilities::{
         AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityRegistry, Actor,
     };
@@ -139,6 +139,9 @@ mod mcp_open_schema_runtime {
                 allowed_modes: LIVE_MODES,
                 requires_confirmation: false,
                 may_publish: false,
+                required_scopes: &[],
+                mcp_exposure: McpExposure::None,
+                client_side_executable: false,
             },
             composes: &[],
             mutates: &[],

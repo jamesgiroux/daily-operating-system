@@ -74,7 +74,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::abilities::registry::{AbilityPolicy, SignalPolicy};
+    use crate::abilities::registry::{AbilityPolicy, McpExposure, SignalPolicy};
     use crate::abilities::SpanHandle;
     use crate::abilities::{
         AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, Actor,
@@ -242,6 +242,9 @@ mod tests {
                 allowed_modes: EVALUATE_MODES,
                 requires_confirmation: false,
                 may_publish: false,
+                required_scopes: &[],
+                mcp_exposure: McpExposure::None,
+                client_side_executable: false,
             },
             composes: &[],
             mutates: &[],

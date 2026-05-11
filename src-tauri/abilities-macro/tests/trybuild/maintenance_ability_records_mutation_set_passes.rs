@@ -99,11 +99,21 @@ mod abilities {
             System,
         }
 
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub enum McpExposure {
+            None,
+            MetadataOnly,
+            Invocable,
+        }
+
         pub struct AbilityPolicy {
             pub allowed_actors: &'static [Actor],
             pub allowed_modes: &'static [ExecutionMode],
             pub requires_confirmation: bool,
             pub may_publish: bool,
+            pub required_scopes: &'static [&'static str],
+            pub mcp_exposure: McpExposure,
+            pub client_side_executable: bool,
         }
 
         pub struct ComposesEntry {

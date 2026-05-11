@@ -1,4 +1,10 @@
 #![allow(dead_code, unused_imports)]
+//! W1-B compile-error gate negative test (ADR-0102 §7.6, DOS-546 AC line 455):
+//!
+//! An ability whose `allowed_actors` includes `SurfaceClient` must declare
+//! a non-empty `required_scopes = [...]` set or explicitly opt out via
+//! `no_scope_required = true`. This fixture sets neither, so the macro
+//! must fail to compile with a named error.
 
 use dailyos_abilities_macro::ability;
 use schemars::JsonSchema;
@@ -22,10 +28,6 @@ mod services {
                 }
             }
         }
-    }
-
-    pub mod accounts {
-        pub fn update_account_field() {}
     }
 }
 
@@ -61,11 +63,6 @@ mod abilities {
         pub struct CompositionId(pub &'static str);
 
         impl CompositionId {
-            pub fn new(value: impl Into<String>) -> Self {
-                let _ = value.into();
-                Self("fixture")
-            }
-
             pub const fn from_static(value: &'static str) -> Self {
                 Self(value)
             }
@@ -91,6 +88,11 @@ mod abilities {
             Maintenance,
         }
 
+        // The mock Actor mirrors the four unit variants the substrate
+        // exposes to fixture code. The real `Actor::SurfaceClient` is a
+        // struct variant constructed at runtime and never literally
+        // referenced in `allowed_actors` slices; the macro's W1-B gate
+        // fires from the *declaration* attribute, before codegen.
         #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         pub enum Actor {
             Agent,
@@ -152,9 +154,9 @@ mod abilities {
             pub output_schema: fn() -> serde_json::Value,
         }
 
-        pub fn close_schema_objects(_schema: &mut serde_json::Value) {}
-
         inventory::collect!(AbilityDescriptor);
+
+        pub fn close_schema_objects(_schema: &mut serde_json::Value) {}
 
         #[derive(Debug, Clone, PartialEq, Eq)]
         pub enum AbilityErrorKind {
@@ -198,24 +200,26 @@ struct FixtureInput;
 #[derive(Serialize, JsonSchema)]
 struct FixtureOutput;
 
+// MUST fail to compile: `SurfaceClient` is in `allowed_actors`,
+// `required_scopes` is unset (empty default), and `no_scope_required`
+// is not declared. The W1-B macro gate must reject this.
 #[ability(
-    name = "publish_records_mutation",
-    category = Publish,
+    name = "surface_client_without_scopes",
+    category = Read,
     version = "0.1.0",
     schema_version = 1,
-    allowed_actors = [User],
+    allowed_actors = [User, SurfaceClient],
     allowed_modes = [Live],
-    requires_confirmation = true,
+    requires_confirmation = false,
     may_publish = false,
     composes = [],
     experimental = false,
-    signal_policy = { emits_on_output_change = ["account_changed"], coalesce = true }
+    signal_policy = { emits_on_output_change = [], coalesce = false }
 )]
-async fn publish_records_mutation(
+async fn surface_client_without_scopes(
     _ctx: &AbilityContext<'_>,
     _input: FixtureInput,
 ) -> AbilityResult<FixtureOutput> {
-    services::accounts::update_account_field();
     Ok(AbilityOutput {
         data: FixtureOutput,
     })

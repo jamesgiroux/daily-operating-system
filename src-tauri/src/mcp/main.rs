@@ -1392,7 +1392,7 @@ mod tests {
 
     use super::*;
     use dailyos_lib::abilities::provenance::{provenance_for_test, SubjectAttribution, SubjectRef};
-    use dailyos_lib::abilities::registry::{AbilityPolicy, SignalPolicy};
+    use dailyos_lib::abilities::registry::{AbilityPolicy, McpExposure, SignalPolicy};
     use dailyos_lib::abilities::{
         AbilityCategory, AbilityContext, AbilityError, AbilityRegistry, Actor,
     };
@@ -1461,6 +1461,9 @@ mod tests {
                 allowed_modes: modes,
                 requires_confirmation: false,
                 may_publish: false,
+                required_scopes: &[],
+                mcp_exposure: McpExposure::None,
+                client_side_executable: false,
             },
             composes: &[],
             mutates: &[],

@@ -484,7 +484,7 @@ mod tests {
         provenance_for_test, AbilityExecutionMode, Actor as ProvenanceActor, InvocationId,
         SubjectAttribution, SubjectRef,
     };
-    use crate::abilities::registry::{AbilityPolicy, SignalPolicy};
+    use crate::abilities::registry::{AbilityPolicy, McpExposure, SignalPolicy};
     use crate::abilities::{
         AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityErrorKind, Actor,
     };
@@ -661,6 +661,9 @@ mod tests {
                 allowed_modes: modes,
                 requires_confirmation: false,
                 may_publish: false,
+                required_scopes: &[],
+                mcp_exposure: McpExposure::None,
+                client_side_executable: false,
             },
             composes: &[],
             mutates: &[],

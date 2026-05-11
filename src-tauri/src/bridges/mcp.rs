@@ -615,7 +615,7 @@ mod tests {
         provenance_for_test, AbilityExecutionMode, Actor as ProvenanceActor, SubjectAttribution,
         SubjectRef,
     };
-    use crate::abilities::registry::{AbilityPolicy, SignalPolicy};
+    use crate::abilities::registry::{AbilityPolicy, McpExposure, SignalPolicy};
     use crate::abilities::{AbilityCategory, AbilityContext, AbilityError};
     use crate::bridges::tauri::UserAttestationHost;
     use crate::bridges::UserAttestationRequest;
@@ -759,6 +759,9 @@ CREATE TABLE accounts (
                 allowed_modes: modes,
                 requires_confirmation: false,
                 may_publish: false,
+                required_scopes: &[],
+                mcp_exposure: McpExposure::None,
+                client_side_executable: false,
             },
             composes: &[],
             mutates: &[],

@@ -2,7 +2,7 @@
 
 use std::{future::Future, path::PathBuf, pin::Pin, sync::Arc};
 
-use crate::abilities::registry::{AbilityPolicy, SignalPolicy};
+use crate::abilities::registry::{AbilityPolicy, McpExposure, SignalPolicy};
 use crate::abilities::{
     AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityRegistry, Actor,
 };
@@ -222,6 +222,9 @@ fn enrich_account_intelligence_descriptor() -> AbilityDescriptor {
             allowed_modes: EVALUATE_MODES,
             requires_confirmation: false,
             may_publish: false,
+            required_scopes: &[],
+            mcp_exposure: McpExposure::None,
+            client_side_executable: false,
         },
         composes: &[],
         mutates: &[],
