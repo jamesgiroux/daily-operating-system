@@ -3973,18 +3973,23 @@ fn claim_surface_shadow_columns(claim_alias: &str) -> String {
         "EXISTS (
              SELECT 1
              FROM ambiguous_claim_pairs pair
+             JOIN canonicalization_decisions decision
+               ON decision.decision_id = pair.decision_id
              WHERE pair.user_resolution IS NULL
+               AND decision.mode = 'live'
                AND (pair.claim_id_a = {claim_alias}.id OR pair.claim_id_b = {claim_alias}.id)
          ) AS unresolved_ambiguous_pair,
          EXISTS (
              SELECT 1
              FROM canonicalization_decisions decision
              WHERE decision.canonicalization_mode = 'hash_fallback'
+               AND decision.mode = 'live'
                AND (decision.claim_id_a = {claim_alias}.id OR decision.claim_id_b = {claim_alias}.id)
                AND NOT EXISTS (
                    SELECT 1
                    FROM canonicalization_decisions newer
                    WHERE newer.supersedes_decision_id = decision.decision_id
+                     AND newer.mode = 'live'
                )
          ) AS hash_fallback_decision"
     )
@@ -4251,6 +4256,16 @@ fn load_shadow_candidate_inputs(
     conn: &rusqlite::Connection,
     query: &CanonicalMatchInput,
 ) -> Result<Vec<CanonicalMatchInput>, ClaimError> {
+    load_shadow_candidate_inputs_with_tombstone_lookup(conn, query, |candidate| {
+        canonical_input_shadowed_by_compatible_tombstone(conn, candidate)
+    })
+}
+
+fn load_shadow_candidate_inputs_with_tombstone_lookup(
+    conn: &rusqlite::Connection,
+    query: &CanonicalMatchInput,
+    mut tombstone_lookup: impl FnMut(&CanonicalMatchInput) -> Result<bool, ClaimError>,
+) -> Result<Vec<CanonicalMatchInput>, ClaimError> {
     let sql = format!(
         "SELECT {CLAIM_COLUMNS}, predicate_ref, polarity, object_value, qualifiers,
                 structural_field_content_hash, backfill_epoch
@@ -4284,11 +4299,10 @@ fn load_shadow_candidate_inputs(
 
         let page_len = page.len();
         for mut candidate in page.drain(..) {
-            candidate.tombstone_shadowed =
-                canonical_input_shadowed_by_compatible_tombstone(conn, &candidate)?;
             if !candidate_scope_tier_prefilter_compatible(query, &candidate) {
                 continue;
             }
+            candidate.tombstone_shadowed = tombstone_lookup(&candidate)?;
             candidates.push(candidate);
         }
 
@@ -4455,6 +4469,7 @@ fn insert_canonicalization_decision_in_tx(
     .to_string();
     let claim_a_revision_hash = claim_revision_hash(claim_a);
     let claim_b_revision_hash = claim_revision_hash(claim_b);
+    let live_decision = mode == CanonicalizationDecisionMode::Live;
 
     let supersedes_hash_fallback = supersedes_decision_id
         .as_deref()
@@ -4510,7 +4525,7 @@ fn insert_canonicalization_decision_in_tx(
             payload,
         )?;
 
-        if config.mode == CanonicalizationMode::HashFallback {
+        if live_decision && config.mode == CanonicalizationMode::HashFallback {
             emit_claim_signal_in_tx(
                 tx,
                 "trust_band_downgraded",
@@ -4524,7 +4539,7 @@ fn insert_canonicalization_decision_in_tx(
                     "reason": "hash_fallback",
                 }),
             )?;
-        } else if supersedes_hash_fallback {
+        } else if live_decision && supersedes_hash_fallback {
             emit_claim_signal_in_tx(
                 tx,
                 "trust_band_cleared",
@@ -4550,7 +4565,7 @@ fn insert_canonicalization_decision_in_tx(
                 resolution,
                 evaluated_at,
             )?;
-            if resolved_rows > 0 {
+            if resolved_rows > 0 && live_decision {
                 emit_claim_signal_in_tx(
                     tx,
                     "trust_band_cleared",
@@ -4595,29 +4610,29 @@ fn insert_canonicalization_decision_in_tx(
                 "claim_id_b": claim_b.claim_id,
             });
             emit_claim_signal_in_tx(tx, "ambiguous_pair_created", &claim_a.claim_id, payload)?;
-            emit_claim_signal_in_tx(
-                tx,
-                "trust_band_downgraded",
-                &claim_a.claim_id,
-                serde_json::json!({
-                    "claim_id": claim_a.claim_id,
-                    "claim_id_a": claim_a.claim_id,
-                    "claim_id_b": claim_b.claim_id,
-                    "decision_id": decision_id,
-                    "pair_id": pair_id,
-                    "new_band": "use_with_caution",
-                    "reason": "unresolved_ambiguous_pair",
-                }),
-            )?;
+            if live_decision {
+                emit_claim_signal_in_tx(
+                    tx,
+                    "trust_band_downgraded",
+                    &claim_a.claim_id,
+                    serde_json::json!({
+                        "claim_id": claim_a.claim_id,
+                        "claim_id_a": claim_a.claim_id,
+                        "claim_id_b": claim_b.claim_id,
+                        "decision_id": decision_id,
+                        "pair_id": pair_id,
+                        "new_band": "use_with_caution",
+                        "reason": "unresolved_ambiguous_pair",
+                    }),
+                )?;
+            }
         }
     }
 
     Ok(())
 }
 
-fn ambiguous_pair_resolution_for_outcome(
-    decision: CanonicalDecisionKind,
-) -> Option<&'static str> {
+fn ambiguous_pair_resolution_for_outcome(decision: CanonicalDecisionKind) -> Option<&'static str> {
     match decision {
         CanonicalDecisionKind::Merge => Some("merged"),
         CanonicalDecisionKind::Fork => Some("forked"),
@@ -9035,6 +9050,7 @@ pub fn withdraw_tombstones_for(
 
 #[cfg(test)]
 mod tests {
+    use std::cell::{Cell, RefCell};
     use std::sync::mpsc;
     use std::time::Duration;
 
@@ -9491,6 +9507,150 @@ mod tests {
     }
 
     #[test]
+    fn l3_finding_3_candidate_enumeration_prefilters_scope_before_tombstone_lookup() {
+        let db = test_db();
+        insert_fixture_claim(
+            &db,
+            "claim-enumeration-scope-query",
+            SUBJECT,
+            "risk",
+            "renewal risk needs scoped review",
+            ClaimState::Active,
+            SurfacingState::Active,
+        );
+        db.conn_ref()
+            .execute(
+                "UPDATE intelligence_claims /* dos7-allowed: scope fixture */
+                 SET metadata_json = json_object('workspace_id', 'workspace-1')
+                 WHERE id = 'claim-enumeration-scope-query'",
+                [],
+            )
+            .unwrap();
+
+        for index in 0..150 {
+            let id = format!("claim-enumeration-cross-account-{index:03}");
+            let subject = format!(r#"{{"kind":"account","id":"acct-cross-{index:03}"}}"#);
+            insert_fixture_claim(
+                &db,
+                &id,
+                &subject,
+                "risk",
+                &format!("cross account risk fixture {index}"),
+                ClaimState::Active,
+                SurfacingState::Active,
+            );
+            db.conn_ref()
+                .execute(
+                    "UPDATE intelligence_claims /* dos7-allowed: scope fixture */
+                     SET metadata_json = json_object('workspace_id', 'workspace-1')
+                     WHERE id = ?1",
+                    params![id],
+                )
+                .unwrap();
+        }
+
+        for index in 0..40 {
+            let id = format!("claim-enumeration-cross-workspace-{index:03}");
+            insert_fixture_claim(
+                &db,
+                &id,
+                SUBJECT,
+                "risk",
+                &format!("cross workspace risk fixture {index}"),
+                ClaimState::Active,
+                SurfacingState::Active,
+            );
+            db.conn_ref()
+                .execute(
+                    "UPDATE intelligence_claims /* dos7-allowed: scope fixture */
+                     SET metadata_json = json_object('workspace_id', 'workspace-2')
+                     WHERE id = ?1",
+                    params![id],
+                )
+                .unwrap();
+        }
+
+        for index in 0..10 {
+            let id = format!("claim-enumeration-cross-tier-{index:03}");
+            insert_fixture_claim(
+                &db,
+                &id,
+                SUBJECT,
+                "risk",
+                &format!("cross tier risk fixture {index}"),
+                ClaimState::Active,
+                SurfacingState::Active,
+            );
+            db.conn_ref()
+                .execute(
+                    "UPDATE intelligence_claims /* dos7-allowed: scope fixture */
+                     SET metadata_json = json_object('workspace_id', 'workspace-1'),
+                         sensitivity = 'confidential'
+                     WHERE id = ?1",
+                    params![id],
+                )
+                .unwrap();
+        }
+
+        for index in 0..3 {
+            let id = format!("claim-enumeration-same-scope-{index:03}");
+            insert_fixture_claim(
+                &db,
+                &id,
+                SUBJECT,
+                "risk",
+                &format!("same scope risk fixture {index}"),
+                ClaimState::Active,
+                SurfacingState::Active,
+            );
+            db.conn_ref()
+                .execute(
+                    "UPDATE intelligence_claims /* dos7-allowed: scope fixture */
+                     SET metadata_json = json_object('workspace_id', 'workspace-1')
+                     WHERE id = ?1",
+                    params![id],
+                )
+                .unwrap();
+        }
+
+        let query =
+            load_canonical_match_input_by_id(db.conn_ref(), "claim-enumeration-scope-query")
+                .unwrap()
+                .unwrap();
+        let tombstone_lookup_count = Cell::new(0);
+        let tombstone_looked_up_ids = RefCell::new(Vec::new());
+
+        let candidates = load_shadow_candidate_inputs_with_tombstone_lookup(
+            db.conn_ref(),
+            &query,
+            |candidate| {
+                tombstone_lookup_count.set(tombstone_lookup_count.get() + 1);
+                tombstone_looked_up_ids
+                    .borrow_mut()
+                    .push(candidate.claim_id.clone());
+                Ok(false)
+            },
+        )
+        .unwrap();
+
+        assert_eq!(candidates.len(), 3);
+        for index in 0..3 {
+            let expected = format!("claim-enumeration-same-scope-{index:03}");
+            assert!(
+                candidates
+                    .iter()
+                    .any(|candidate| candidate.claim_id == expected),
+                "same-scope candidate {expected} must remain eligible"
+            );
+        }
+        assert_eq!(tombstone_lookup_count.get(), 3);
+        assert!(tombstone_looked_up_ids
+            .borrow()
+            .iter()
+            .all(|id| id.starts_with("claim-enumeration-same-scope-")));
+    }
+
+    #[test]
     fn regression_finding_5_runtime_downgrade_transition_signals_fire_once() {
         let db = test_db();
         let hash_query = canonical_match_fixture("claim-signal-hash-a");
@@ -9510,7 +9670,7 @@ mod tests {
                 &hash_candidate,
                 &merge_outcome,
                 &CanonicalMatchConfig::default(),
-                CanonicalizationDecisionMode::Shadow,
+                CanonicalizationDecisionMode::Live,
                 TS,
                 TS,
             )
@@ -9531,7 +9691,7 @@ mod tests {
                     embedding_model_version: "model:recovered".to_string(),
                     comparator_threshold_version: COMPARATOR_THRESHOLD_VERSION.to_string(),
                 },
-                CanonicalizationDecisionMode::Shadow,
+                CanonicalizationDecisionMode::Live,
                 "2026-05-02T12:01:00+00:00",
                 "2026-05-02T12:01:00+00:00",
             )
@@ -9564,7 +9724,7 @@ mod tests {
                     embedding_model_version: "model:ambiguous".to_string(),
                     comparator_threshold_version: COMPARATOR_THRESHOLD_VERSION.to_string(),
                 },
-                CanonicalizationDecisionMode::Shadow,
+                CanonicalizationDecisionMode::Live,
                 "2026-05-02T12:02:00+00:00",
                 "2026-05-02T13:02:00+00:00",
             )
@@ -9574,7 +9734,10 @@ mod tests {
             signal_count(&db, "trust_band_downgraded") - downgraded_before_ambiguous,
             1
         );
-        assert_eq!(signal_count(&db, "trust_band_cleared"), cleared_before_ambiguous);
+        assert_eq!(
+            signal_count(&db, "trust_band_cleared"),
+            cleared_before_ambiguous
+        );
 
         with_claim_transaction(&db, |tx| {
             insert_canonicalization_decision_in_tx(
@@ -9588,7 +9751,7 @@ mod tests {
                     embedding_model_version: "model:resolved".to_string(),
                     comparator_threshold_version: COMPARATOR_THRESHOLD_VERSION.to_string(),
                 },
-                CanonicalizationDecisionMode::Shadow,
+                CanonicalizationDecisionMode::Live,
                 "2026-05-02T12:03:00+00:00",
                 "2026-05-02T13:03:00+00:00",
             )
@@ -9613,15 +9776,15 @@ mod tests {
     }
 
     #[test]
-    fn l3_finding_5_surface_readers_downgrade_shadow_canonicalization_states() {
+    fn l3_finding_5_shadow_mode_does_not_render_or_signal_trust_downgrade() {
         let db = test_db();
         for id in [
             "claim-surface-pending",
             "claim-surface-legacy",
-            "claim-surface-ambiguous",
-            "claim-surface-hash",
-            "claim-surface-other-a",
-            "claim-surface-other-b",
+            "claim-surface-ambiguous-a",
+            "claim-surface-ambiguous-b",
+            "claim-surface-hash-a",
+            "claim-surface-hash-b",
         ] {
             insert_fixture_claim(
                 &db,
@@ -9666,69 +9829,146 @@ mod tests {
                 [],
             )
             .unwrap();
-        db.conn_ref()
-            .execute(
-                "INSERT INTO canonicalization_decisions (
-                    decision_id, claim_id_a, claim_id_b, decision, mode, field_scores,
-                    reason, reason_secondary, embedding_model_version,
-                    comparator_threshold_version, field_provenance,
-                    canonicalization_mode, idempotency_key, claim_a_revision_hash,
-                    claim_b_revision_hash, evaluated_at
-                 ) VALUES (
-                    'decision-surface-ambiguous', 'claim-surface-ambiguous',
-                    'claim-surface-other-a', 'fork_ambiguous', 'shadow', '{}',
-                    'object_ambiguous', '[]', 'model:test', ?1, '{}', 'full',
-                    'surface-ambiguous-key', 'rev-a', 'rev-b', ?2
-                 )",
-                params![COMPARATOR_THRESHOLD_VERSION, TS],
-            )
+
+        let ambiguous_a =
+            load_canonical_match_input_by_id(db.conn_ref(), "claim-surface-ambiguous-a")
+                .unwrap()
+                .unwrap();
+        let ambiguous_b =
+            load_canonical_match_input_by_id(db.conn_ref(), "claim-surface-ambiguous-b")
+                .unwrap()
+                .unwrap();
+        let hash_a = load_canonical_match_input_by_id(db.conn_ref(), "claim-surface-hash-a")
+            .unwrap()
             .unwrap();
-        db.conn_ref()
-            .execute(
-                "INSERT INTO ambiguous_claim_pairs (
-                    pair_id, claim_id_a, claim_id_b, field_scores, decision_id,
-                    next_reconcile_at, last_schema_version, created_at
-                 ) VALUES (
-                    'pair-surface-ambiguous', 'claim-surface-ambiguous',
-                    'claim-surface-other-a', '{}', 'decision-surface-ambiguous',
-                    ?1, ?2, ?1
-                 )",
-                params![TS, schema_version_tag()],
-            )
+        let hash_b = load_canonical_match_input_by_id(db.conn_ref(), "claim-surface-hash-b")
+            .unwrap()
             .unwrap();
-        db.conn_ref()
-            .execute(
-                "INSERT INTO canonicalization_decisions (
-                    decision_id, claim_id_a, claim_id_b, decision, mode, field_scores,
-                    reason, reason_secondary, embedding_model_version,
-                    comparator_threshold_version, field_provenance,
-                    canonicalization_mode, idempotency_key, claim_a_revision_hash,
-                    claim_b_revision_hash, evaluated_at
-                 ) VALUES (
-                    'decision-surface-hash', 'claim-surface-hash',
-                    'claim-surface-other-b', 'merge', 'shadow', '{}', 'all_match',
-                    '[]', 'model:hash', ?1, '{}', 'hash_fallback',
-                    'surface-hash-key', 'rev-c', 'rev-d', ?2
-                 )",
-                params![COMPARATOR_THRESHOLD_VERSION, TS],
+        let merge_outcome = CanonicalMatchOutcome {
+            decision: CanonicalDecisionKind::Merge,
+            reason: "all_match".to_string(),
+            reason_secondary: Vec::new(),
+            threshold_band: None,
+            field_scores: serde_json::json!({}),
+        };
+        let ambiguous_outcome = CanonicalMatchOutcome {
+            decision: CanonicalDecisionKind::ForkAmbiguous,
+            reason: "free_text_ambiguous".to_string(),
+            reason_secondary: Vec::new(),
+            threshold_band: Some(ThresholdBand::Ambiguous),
+            field_scores: serde_json::json!({ "free_text_similarity": 0.72 }),
+        };
+
+        with_claim_transaction(&db, |tx| {
+            insert_canonicalization_decision_in_tx(
+                tx,
+                &hash_a,
+                &hash_b,
+                &merge_outcome,
+                &CanonicalMatchConfig::default(),
+                CanonicalizationDecisionMode::Shadow,
+                TS,
+                TS,
+            )?;
+            insert_canonicalization_decision_in_tx(
+                tx,
+                &ambiguous_a,
+                &ambiguous_b,
+                &ambiguous_outcome,
+                &CanonicalMatchConfig {
+                    mode: CanonicalizationMode::Full,
+                    free_text_similarity: Some(0.72),
+                    embedding_model_version: "model:shadow-ambiguous".to_string(),
+                    comparator_threshold_version: COMPARATOR_THRESHOLD_VERSION.to_string(),
+                },
+                CanonicalizationDecisionMode::Shadow,
+                "2026-05-02T12:01:00+00:00",
+                "2026-05-02T13:01:00+00:00",
             )
-            .unwrap();
+        })
+        .unwrap();
+        assert_eq!(signal_count(&db, "ambiguous_pair_created"), 1);
+        assert_eq!(signal_count(&db, "trust_band_downgraded"), 0);
+
+        {
+            let claims = load_claims_active(&db, SUBJECT, Some("risk")).unwrap();
+            let band_for = |id: &str| {
+                let claim = claims
+                    .iter()
+                    .find(|claim| claim.id == id)
+                    .unwrap_or_else(|| panic!("missing {id}"));
+                trust_band_for_score(claim.trust_score)
+            };
+            assert_eq!(
+                band_for("claim-surface-pending"),
+                factors::TrustBand::UseWithCaution
+            );
+            assert_eq!(
+                band_for("claim-surface-legacy"),
+                factors::TrustBand::UseWithCaution
+            );
+            for id in [
+                "claim-surface-ambiguous-a",
+                "claim-surface-ambiguous-b",
+                "claim-surface-hash-a",
+                "claim-surface-hash-b",
+            ] {
+                assert_eq!(
+                    band_for(id),
+                    factors::TrustBand::LikelyCurrent,
+                    "shadow canonicalization must not downgrade rendered trust for {id}"
+                );
+            }
+        }
+
+        with_claim_transaction(&db, |tx| {
+            insert_canonicalization_decision_in_tx(
+                tx,
+                &hash_a,
+                &hash_b,
+                &merge_outcome,
+                &CanonicalMatchConfig::default(),
+                CanonicalizationDecisionMode::Live,
+                "2026-05-02T12:02:00+00:00",
+                "2026-05-02T12:02:00+00:00",
+            )?;
+            insert_canonicalization_decision_in_tx(
+                tx,
+                &ambiguous_a,
+                &ambiguous_b,
+                &ambiguous_outcome,
+                &CanonicalMatchConfig {
+                    mode: CanonicalizationMode::Full,
+                    free_text_similarity: Some(0.72),
+                    embedding_model_version: "model:live-ambiguous".to_string(),
+                    comparator_threshold_version: COMPARATOR_THRESHOLD_VERSION.to_string(),
+                },
+                CanonicalizationDecisionMode::Live,
+                "2026-05-02T12:03:00+00:00",
+                "2026-05-02T13:03:00+00:00",
+            )
+        })
+        .unwrap();
+        assert_eq!(signal_count(&db, "trust_band_downgraded"), 2);
 
         let claims = load_claims_active(&db, SUBJECT, Some("risk")).unwrap();
-        for id in [
-            "claim-surface-pending",
-            "claim-surface-legacy",
-            "claim-surface-ambiguous",
-            "claim-surface-hash",
-        ] {
+        let band_for = |id: &str| {
             let claim = claims
                 .iter()
                 .find(|claim| claim.id == id)
                 .unwrap_or_else(|| panic!("missing {id}"));
+            trust_band_for_score(claim.trust_score)
+        };
+        for id in [
+            "claim-surface-ambiguous-a",
+            "claim-surface-ambiguous-b",
+            "claim-surface-hash-a",
+            "claim-surface-hash-b",
+        ] {
             assert_eq!(
-                trust_band_for_score(claim.trust_score),
+                band_for(id),
                 factors::TrustBand::UseWithCaution,
-                "{id} must surface as use_with_caution"
+                "live canonicalization must downgrade rendered trust for {id}"
             );
         }
     }
@@ -10981,12 +11221,8 @@ mod tests {
 
         assert_eq!(canonical_status, "live");
         assert_eq!(predicate_ref, "commitment.due");
-        let expected = structural_canonical_id(
-            &predicate_ref,
-            &polarity,
-            &object_value,
-            &qualifiers,
-        );
+        let expected =
+            structural_canonical_id(&predicate_ref, &polarity, &object_value, &qualifiers);
         assert_eq!(
             structural_canonical_id_value.as_deref(),
             Some(expected.as_str()),
