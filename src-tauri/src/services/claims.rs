@@ -1096,8 +1096,7 @@ pub(crate) fn semantic_high_salience_qualifiers(text: &str) -> HashSet<String> {
         let upper = token.to_ascii_uppercase();
         if matches!(lower.as_str(), "q1" | "q2" | "q3" | "q4") {
             qualifiers.insert(format!("quarter:{lower}"));
-        } else if matches!(upper.as_str(), "US" | "UK" | "EU" | "APAC" | "EMEA") && token == upper
-        {
+        } else if matches!(upper.as_str(), "US" | "UK" | "EU" | "APAC" | "EMEA") && token == upper {
             qualifiers.insert(format!("region:{upper}"));
         } else if matches!(lower.parse::<i32>(), Ok(2024..=2030)) {
             qualifiers.insert(format!("year:{lower}"));
@@ -3853,25 +3852,13 @@ fn record_shadow_canonicalization_for_committed_claim(
         .collect::<Vec<_>>();
 
     with_claim_transaction(db, |tx| {
-        let Some(rechecked_query) =
-            load_canonical_match_input_by_id(tx.conn_ref(), &query.claim_id)?
-        else {
-            return Ok(());
-        };
-
         for (candidate, outcome, config) in &evaluations {
-            let Some(rechecked_candidate) =
-                load_canonical_match_input_by_id(tx.conn_ref(), &candidate.claim_id)?
-            else {
-                continue;
-            };
-            insert_canonicalization_decision_in_tx(
+            insert_shadow_canonicalization_decision_if_current_in_tx(
                 tx,
-                &rechecked_query,
-                &rechecked_candidate,
+                &query,
+                candidate,
                 outcome,
                 config,
-                CanonicalizationDecisionMode::Shadow,
                 &evaluated_at_s,
                 &next_reconcile_at,
             )?;
@@ -3880,6 +3867,56 @@ fn record_shadow_canonicalization_for_committed_claim(
         Ok(())
     })?;
     Ok(())
+}
+
+fn insert_shadow_canonicalization_decision_if_current_in_tx(
+    tx: &ActionDb,
+    evaluated_query: &CanonicalMatchInput,
+    evaluated_candidate: &CanonicalMatchInput,
+    outcome: &CanonicalMatchOutcome,
+    config: &CanonicalMatchConfig,
+    evaluated_at: &str,
+    next_reconcile_at: &str,
+) -> Result<(), ClaimError> {
+    let Some(rechecked_query) =
+        load_canonical_match_input_by_id(tx.conn_ref(), &evaluated_query.claim_id)?
+    else {
+        return Ok(());
+    };
+    let Some(rechecked_candidate) =
+        load_canonical_match_input_by_id(tx.conn_ref(), &evaluated_candidate.claim_id)?
+    else {
+        return Ok(());
+    };
+
+    if !canonical_match_audit_state_matches(evaluated_query, &rechecked_query)
+        || !canonical_match_audit_state_matches(evaluated_candidate, &rechecked_candidate)
+    {
+        return Ok(());
+    }
+
+    insert_canonicalization_decision_in_tx(
+        tx,
+        &rechecked_query,
+        &rechecked_candidate,
+        outcome,
+        config,
+        CanonicalizationDecisionMode::Shadow,
+        evaluated_at,
+        next_reconcile_at,
+    )
+}
+
+fn canonical_match_audit_state_matches(
+    evaluated: &CanonicalMatchInput,
+    rechecked: &CanonicalMatchInput,
+) -> bool {
+    evaluated.claim_state == rechecked.claim_state
+        && evaluated.surfacing_state == rechecked.surfacing_state
+        && evaluated.canonical_status == rechecked.canonical_status
+        && evaluated.non_semantic_mergeable == rechecked.non_semantic_mergeable
+        && evaluated.structural_field_content_hash == rechecked.structural_field_content_hash
+        && evaluated.backfill_epoch == rechecked.backfill_epoch
 }
 
 fn canonical_shadow_schema_ready(conn: &rusqlite::Connection) -> Result<bool, ClaimError> {
@@ -8620,6 +8657,109 @@ mod tests {
         );
 
         assert_ne!(first, second);
+    }
+
+    #[test]
+    fn suite_s_shadow_audit_skips_insert_when_candidate_backfill_state_changed_in_tx() {
+        let db = test_db();
+        insert_fixture_claim(
+            &db,
+            "claim-shadow-query",
+            SUBJECT,
+            "risk",
+            "Phase 2 budget approval is pending with finance",
+            ClaimState::Active,
+            SurfacingState::Active,
+        );
+        insert_fixture_claim(
+            &db,
+            "claim-shadow-candidate",
+            SUBJECT,
+            "risk",
+            "Phase 2 funding is awaiting finance signoff",
+            ClaimState::Active,
+            SurfacingState::Active,
+        );
+
+        let query = load_canonical_match_input_by_id(db.conn_ref(), "claim-shadow-query")
+            .unwrap()
+            .unwrap();
+        let live_candidate =
+            load_canonical_match_input_by_id(db.conn_ref(), "claim-shadow-candidate")
+                .unwrap()
+                .unwrap();
+
+        db.conn_ref()
+            .execute(
+                "UPDATE intelligence_claims /* dos7-allowed: test-only stale shadow fixture */
+                 SET canonical_status = 'pending_backfill',
+                     non_semantic_mergeable = TRUE,
+                     structural_field_content_hash = NULL,
+                     backfill_epoch = 0
+                 WHERE id = 'claim-shadow-candidate'",
+                [],
+            )
+            .unwrap();
+        let stale_candidate =
+            load_canonical_match_input_by_id(db.conn_ref(), "claim-shadow-candidate")
+                .unwrap()
+                .unwrap();
+        assert_eq!(
+            stale_candidate.canonical_status,
+            CanonicalStatus::PendingBackfill
+        );
+
+        let config = canonical_match_config(&query, &stale_candidate);
+        let stale_outcome = canonical_match_v2(&query, &stale_candidate, &config);
+        assert_eq!(stale_outcome.decision, CanonicalDecisionKind::ForkFiltered);
+        assert_eq!(stale_outcome.reason, "candidate_pending_backfill");
+
+        db.conn_ref()
+            .execute(
+                "UPDATE intelligence_claims /* dos7-allowed: test-only backfill completion fixture */
+                 SET canonical_status = 'live',
+                     non_semantic_mergeable = FALSE,
+                     structural_field_content_hash = ?1,
+                     backfill_epoch = ?2
+                 WHERE id = 'claim-shadow-candidate'",
+                params![
+                    live_candidate.structural_field_content_hash.as_deref(),
+                    live_candidate.backfill_epoch,
+                ],
+            )
+            .unwrap();
+
+        with_claim_transaction(&db, |tx| {
+            insert_shadow_canonicalization_decision_if_current_in_tx(
+                tx,
+                &query,
+                &stale_candidate,
+                &stale_outcome,
+                &config,
+                TS,
+                TS,
+            )
+        })
+        .unwrap();
+
+        let decision_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(*) FROM canonicalization_decisions",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let ambiguous_count: i64 = db
+            .conn_ref()
+            .query_row("SELECT count(*) FROM ambiguous_claim_pairs", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(decision_count, 0);
+        assert_eq!(ambiguous_count, 0);
+        assert_eq!(signal_count(&db, "canonicalization_decision_created"), 0);
+        assert_eq!(signal_count(&db, "ambiguous_pair_created"), 0);
     }
 
     #[test]

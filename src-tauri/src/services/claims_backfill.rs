@@ -15,12 +15,15 @@ use std::path::Path;
 use rusqlite::params;
 use serde_json::json;
 
+use abilities_runtime::structured_claim::{Polarity, StructuredClaim};
+
 use crate::db::ActionDb;
 use crate::intelligence::canonicalization::item_hash;
 use crate::intelligence::io::{read_intelligence_json, IntelligenceJson};
 use crate::services::claims::{
     compute_dedup_key, item_kind_for_claim_type, normalize_claim_text,
-    structural_field_content_hash, structured_status_db_for_verification_state,
+    structural_field_content_hash, structured_claim_json_for_row,
+    structured_status_db_for_verification_state,
 };
 use crate::services::comparator_thresholds::PENDING_BACKFILL_MAX_RETRIES;
 use crate::services::context::ServiceContext;
@@ -35,11 +38,23 @@ pub struct StructuredClaimBackfillReport {
 
 struct StructuralBackfillRow {
     id: String,
+    subject_ref: String,
     claim_type: String,
     field_path: Option<String>,
+    topic_key: Option<String>,
     text: String,
+    metadata_json: Option<String>,
     verification_state: String,
     backfill_epoch: i64,
+}
+
+struct StructuralBackfillFields {
+    structured_claim_json: String,
+    predicate_ref: String,
+    polarity: &'static str,
+    object_value: String,
+    qualifiers: String,
+    content_hash: String,
 }
 
 pub fn run_structured_claim_backfill(
@@ -97,30 +112,43 @@ pub fn run_structured_claim_backfill(
                 return Ok("legacy");
             }
 
-            let predicate_ref =
-                predicate_ref_for_backfill(&row.claim_type, row.field_path.as_deref());
-            let polarity = "affirm";
-            let object_value = json!({
-                "kind": "free_text",
-                "canonical": normalize_claim_text(&row.text),
-            })
-            .to_string();
-            let qualifiers = json!({
-                "time": null,
-                "region": null,
-                "scope": null,
-                "entity": null,
-                "numerics": [],
-                "extras": {},
-            })
-            .to_string();
-            let content_hash = structural_field_content_hash(
-                Some(predicate_ref),
-                Some(polarity),
-                Some(&object_value),
-                Some(&qualifiers),
-                structured_status_db_for_verification_state(&row.verification_state),
-            );
+            let Some(structural) = structural_backfill_fields(&row)? else {
+                let rows_affected = tx
+                    .conn_ref()
+                    .execute(
+                        "UPDATE intelligence_claims
+                         SET canonical_status = 'legacy_unmigrated',
+                             non_semantic_mergeable = TRUE,
+                             backfill_epoch = backfill_epoch + 1
+                         WHERE id = ?1 AND canonical_status = 'pending_backfill'",
+                        params![&row.id],
+                    )
+                    .map_err(|e| format!("mark structured claim legacy {}: {e}", row.id))?;
+                if rows_affected == 0 {
+                    return Ok("unchanged");
+                }
+                emit_structural_backfill_signal(
+                    tx,
+                    &row.id,
+                    "structural_backfill_changed",
+                    json!({
+                        "claim_id": row.id,
+                        "field_set": [],
+                        "canonical_status": "legacy_unmigrated",
+                    }),
+                )?;
+                emit_structural_backfill_signal(
+                    tx,
+                    &row.id,
+                    "trust_band_downgraded",
+                    json!({
+                        "claim_id": row.id,
+                        "new_band": "use_with_caution",
+                        "reason": "legacy_unmigrated",
+                    }),
+                )?;
+                return Ok("legacy");
+            };
 
             let rows_affected = tx
                 .conn_ref()
@@ -131,16 +159,18 @@ pub fn run_structured_claim_backfill(
                          object_value = ?3,
                          qualifiers = ?4,
                          structural_field_content_hash = ?5,
+                         structured_claim_json = ?6,
                          canonical_status = 'live',
                          non_semantic_mergeable = FALSE,
                          backfill_epoch = backfill_epoch + 1
-                     WHERE id = ?6 AND canonical_status = 'pending_backfill'",
+                     WHERE id = ?7 AND canonical_status = 'pending_backfill'",
                     params![
-                        predicate_ref,
-                        polarity,
-                        &object_value,
-                        &qualifiers,
-                        &content_hash,
+                        &structural.predicate_ref,
+                        structural.polarity,
+                        &structural.object_value,
+                        &structural.qualifiers,
+                        &structural.content_hash,
+                        &structural.structured_claim_json,
                         &row.id,
                     ],
                 )
@@ -181,11 +211,58 @@ pub fn run_structured_claim_backfill(
     Ok(report)
 }
 
+fn structural_backfill_fields(
+    row: &StructuralBackfillRow,
+) -> Result<Option<StructuralBackfillFields>, String> {
+    let Some(structured_claim_json) = structured_claim_json_for_row(
+        &row.subject_ref,
+        &row.claim_type,
+        row.field_path.as_deref(),
+        row.topic_key.as_deref(),
+        &row.text,
+        row.metadata_json.as_deref(),
+        &row.verification_state,
+    )
+    .map_err(|e| format!("extract structured claim {}: {e}", row.id))?
+    else {
+        return Ok(None);
+    };
+
+    let structured = serde_json::from_str::<StructuredClaim>(&structured_claim_json)
+        .map_err(|e| format!("parse structured claim {}: {e}", row.id))?;
+    let predicate_ref = structured.predicate.registry_id();
+    let polarity = match structured.polarity {
+        Polarity::Affirm => "affirm",
+        Polarity::Negate => "negate",
+    };
+    let object_value = serde_json::to_string(&structured.object)
+        .map_err(|e| format!("serialize structured object {}: {e}", row.id))?;
+    let qualifiers = serde_json::to_string(&structured.qualifiers)
+        .map_err(|e| format!("serialize structured qualifiers {}: {e}", row.id))?;
+    let content_hash = structural_field_content_hash(
+        Some(&predicate_ref),
+        Some(polarity),
+        Some(&object_value),
+        Some(&qualifiers),
+        structured_status_db_for_verification_state(&row.verification_state),
+    );
+
+    Ok(Some(StructuralBackfillFields {
+        structured_claim_json,
+        predicate_ref,
+        polarity,
+        object_value,
+        qualifiers,
+        content_hash,
+    }))
+}
+
 fn pending_structural_backfill_rows(db: &ActionDb) -> Result<Vec<StructuralBackfillRow>, String> {
     let mut stmt = db
         .conn_ref()
         .prepare(
-            "SELECT id, claim_type, field_path, text, verification_state, backfill_epoch
+            "SELECT id, subject_ref, claim_type, field_path, topic_key, text, metadata_json,
+                    verification_state, backfill_epoch
              FROM intelligence_claims
              WHERE canonical_status = 'pending_backfill'
              ORDER BY created_at, id",
@@ -195,32 +272,20 @@ fn pending_structural_backfill_rows(db: &ActionDb) -> Result<Vec<StructuralBackf
         .query_map([], |row| {
             Ok(StructuralBackfillRow {
                 id: row.get(0)?,
-                claim_type: row.get(1)?,
-                field_path: row.get(2)?,
-                text: row.get(3)?,
-                verification_state: row.get(4)?,
-                backfill_epoch: row.get(5)?,
+                subject_ref: row.get(1)?,
+                claim_type: row.get(2)?,
+                field_path: row.get(3)?,
+                topic_key: row.get(4)?,
+                text: row.get(5)?,
+                metadata_json: row.get(6)?,
+                verification_state: row.get(7)?,
+                backfill_epoch: row.get(8)?,
             })
         })
         .map_err(|e| format!("query structural claim backfill scan: {e}"))?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("read structural claim backfill row: {e}"))?;
     Ok(rows)
-}
-
-fn predicate_ref_for_backfill(claim_type: &str, field_path: Option<&str>) -> &'static str {
-    match (claim_type, field_path.unwrap_or_default()) {
-        ("commitment", field) if field.contains("owner") => "commitment.owner",
-        ("commitment", field) if field.contains("due") => "commitment.due",
-        ("commitment", _) => "commitment.captured",
-        ("risk", _) => "risk.status",
-        ("objective", _) => "account.objective_status",
-        ("stakeholder_role", _) => "stakeholder.role",
-        ("topic", _) => "topic.mentioned",
-        (_, field) if field.contains("signature") => "contract.signature_status",
-        (_, field) if field.contains("approval") => "contract.approval_status",
-        _ => "topic.mentioned",
-    }
 }
 
 fn emit_structural_backfill_signal(
@@ -2641,6 +2706,119 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         crate::migrations::run_migrations(&conn).unwrap();
         conn
+    }
+
+    #[test]
+    fn structured_backfill_keeps_metadata_marked_non_semantic_rows_legacy_unmigrated() {
+        let conn = fresh_full_db();
+        let db = ActionDb::from_conn(&conn);
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+
+        conn.execute(
+            "INSERT INTO intelligence_claims (
+                id, subject_ref, claim_type, field_path, topic_key, text, dedup_key, item_hash,
+                actor, data_source, observed_at, created_at, provenance_json, metadata_json,
+                claim_state, surfacing_state, retraction_reason, temporal_scope, sensitivity,
+                verification_state, canonical_status, non_semantic_mergeable
+             ) VALUES (
+                'legacy-nonsemantic-1', '{\"kind\":\"account\",\"id\":\"acct-1\"}',
+                'risk', 'health.risk', NULL, 'Legacy non-semantic text', 'dedup-ns', 'hash-ns',
+                'system_backfill', 'legacy_dismissal', '2026-04-01T00:00:00Z',
+                '2026-04-01T00:00:00Z', '{}', '{\"non_semantic_mergeable\":true}',
+                'tombstoned', 'active', 'user_removal', 'state', 'internal', 'active',
+                'pending_backfill', TRUE
+             )",
+            [],
+        )
+        .unwrap();
+
+        let report = run_structured_claim_backfill(&ctx, &db).unwrap();
+        assert_eq!(report.rows_examined, 1);
+        assert_eq!(report.transitioned_live, 0);
+        assert_eq!(report.transitioned_legacy_unmigrated, 1);
+        assert!(report.errors.is_empty(), "{:?}", report.errors);
+
+        let (canonical_status, non_semantic_mergeable, structured_claim_json): (
+            String,
+            bool,
+            Option<String>,
+        ) = conn
+            .query_row(
+                "SELECT canonical_status, non_semantic_mergeable, structured_claim_json
+                 FROM intelligence_claims WHERE id = 'legacy-nonsemantic-1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(canonical_status, "legacy_unmigrated");
+        assert!(non_semantic_mergeable);
+        assert!(structured_claim_json.is_none());
+    }
+
+    #[test]
+    fn structured_backfill_persists_structured_json_only_for_live_rows() {
+        let conn = fresh_full_db();
+        let db = ActionDb::from_conn(&conn);
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+
+        conn.execute(
+            "INSERT INTO intelligence_claims (
+                id, subject_ref, claim_type, field_path, topic_key, text, dedup_key, item_hash,
+                actor, data_source, observed_at, created_at, provenance_json, metadata_json,
+                claim_state, surfacing_state, retraction_reason, temporal_scope, sensitivity,
+                verification_state, canonical_status, non_semantic_mergeable
+             ) VALUES (
+                'legacy-structured-1', '{\"kind\":\"account\",\"id\":\"acct-1\"}',
+                'risk', 'health.risk', NULL, 'Renewal risk is elevated', 'dedup-live', 'hash-live',
+                'system_backfill', 'legacy_dismissal', '2026-04-01T00:00:00Z',
+                '2026-04-01T00:00:00Z', '{}', NULL,
+                'tombstoned', 'active', 'user_removal', 'state', 'internal', 'active',
+                'pending_backfill', TRUE
+             )",
+            [],
+        )
+        .unwrap();
+
+        let report = run_structured_claim_backfill(&ctx, &db).unwrap();
+        assert_eq!(report.rows_examined, 1);
+        assert_eq!(report.transitioned_live, 1);
+        assert_eq!(report.transitioned_legacy_unmigrated, 0);
+        assert!(report.errors.is_empty(), "{:?}", report.errors);
+
+        let (
+            canonical_status,
+            non_semantic_mergeable,
+            structured_claim_json,
+            predicate_ref,
+            content_hash,
+        ): (String, bool, Option<String>, Option<String>, Option<String>) = conn
+            .query_row(
+                "SELECT canonical_status, non_semantic_mergeable, structured_claim_json,
+                        predicate_ref, structural_field_content_hash
+                 FROM intelligence_claims WHERE id = 'legacy-structured-1'",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
+            )
+            .unwrap();
+        assert_eq!(canonical_status, "live");
+        assert!(!non_semantic_mergeable);
+        assert!(structured_claim_json.is_some());
+        assert_eq!(predicate_ref.as_deref(), Some("risk.status"));
+        assert!(content_hash.is_some());
     }
 
     #[test]
