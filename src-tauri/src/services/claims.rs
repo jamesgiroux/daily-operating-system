@@ -2108,6 +2108,7 @@ pub(crate) fn ensure_structured_claim_schema_for_tests(
         ("non_semantic_mergeable", "BOOLEAN NOT NULL DEFAULT TRUE"),
         ("structural_field_content_hash", "TEXT"),
         ("backfill_epoch", "INTEGER NOT NULL DEFAULT 0"),
+        ("backfill_attempts", "INTEGER NOT NULL DEFAULT 0"),
     ];
 
     for (name, definition) in columns {

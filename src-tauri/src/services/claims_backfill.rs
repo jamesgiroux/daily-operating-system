@@ -10,9 +10,14 @@
 //! → bump epoch → run SQL backfills → rekey m1-m8 → run THIS pass → reconcile →
 //! resume).
 
+#[cfg(test)]
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+#[cfg(test)]
+use std::sync::{Mutex, OnceLock};
 
+use chrono::{DateTime, NaiveDateTime, Utc};
 use rusqlite::params;
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -27,8 +32,12 @@ use crate::services::claims::{
     structural_field_content_hash, structured_claim_json_for_row,
     structured_status_db_for_verification_state,
 };
-use crate::services::comparator_thresholds::PENDING_BACKFILL_MAX_RETRIES;
+use crate::services::comparator_thresholds::{
+    pending_backfill_max_age, PENDING_BACKFILL_MAX_AGE_HOURS, PENDING_BACKFILL_MAX_RETRIES,
+};
 use crate::services::context::ServiceContext;
+
+const PENDING_BACKFILL_TERMINALIZED_REASON: &str = "PendingBackfillTerminalized";
 
 #[derive(Debug, Default, Clone)]
 pub struct StructuredClaimBackfillReport {
@@ -47,7 +56,8 @@ struct StructuralBackfillRow {
     text: String,
     metadata_json: Option<String>,
     verification_state: String,
-    backfill_epoch: i64,
+    created_at: String,
+    backfill_attempts: i64,
 }
 
 struct StructuralBackfillFields {
@@ -76,140 +86,20 @@ pub fn run_structured_claim_backfill(
 
     for row in rows {
         report.rows_examined += 1;
-        let result = db.with_transaction(|tx| {
-            if row.backfill_epoch >= PENDING_BACKFILL_MAX_RETRIES {
-                let rows_affected = tx
-                    .conn_ref()
-                    .execute(
-                        "UPDATE intelligence_claims
-                         SET canonical_status = 'legacy_unmigrated',
-                             non_semantic_mergeable = TRUE,
-                             backfill_epoch = backfill_epoch + 1
-                         WHERE id = ?1 AND canonical_status = 'pending_backfill'",
-                        params![&row.id],
-                    )
-                    .map_err(|e| format!("terminalize pending_backfill {}: {e}", row.id))?;
-                if rows_affected == 0 {
-                    return Ok("unchanged");
+        let result = if let Some(cause) =
+            pending_backfill_terminalization_cause(&row, row.backfill_attempts, ctx.clock.now())
+        {
+            db.with_transaction(|tx| {
+                terminalize_pending_backfill(tx, &row, cause, row.backfill_attempts, false)
+            })
+        } else {
+            match structural_backfill_fields(&row) {
+                Ok(structural) => {
+                    db.with_transaction(|tx| mark_structural_backfill_row(tx, &row, structural))
                 }
-                emit_structural_backfill_signal(
-                    tx,
-                    &row.id,
-                    "structural_backfill_changed",
-                    json!({
-                        "claim_id": row.id,
-                        "field_set": [],
-                        "canonical_status": "legacy_unmigrated",
-                    }),
-                )?;
-                emit_structural_backfill_signal(
-                    tx,
-                    &row.id,
-                    "trust_band_downgraded",
-                    json!({
-                        "claim_id": row.id,
-                        "new_band": "use_with_caution",
-                        "reason": "legacy_unmigrated",
-                    }),
-                )?;
-                return Ok("legacy");
+                Err(error) => record_structural_backfill_error(ctx, db, &row, error),
             }
-
-            let Some(structural) = structural_backfill_fields(&row)? else {
-                let rows_affected = tx
-                    .conn_ref()
-                    .execute(
-                        "UPDATE intelligence_claims
-                         SET canonical_status = 'legacy_unmigrated',
-                             non_semantic_mergeable = TRUE,
-                             backfill_epoch = backfill_epoch + 1
-                         WHERE id = ?1 AND canonical_status = 'pending_backfill'",
-                        params![&row.id],
-                    )
-                    .map_err(|e| format!("mark structured claim legacy {}: {e}", row.id))?;
-                if rows_affected == 0 {
-                    return Ok("unchanged");
-                }
-                emit_structural_backfill_signal(
-                    tx,
-                    &row.id,
-                    "structural_backfill_changed",
-                    json!({
-                        "claim_id": row.id,
-                        "field_set": [],
-                        "canonical_status": "legacy_unmigrated",
-                    }),
-                )?;
-                emit_structural_backfill_signal(
-                    tx,
-                    &row.id,
-                    "trust_band_downgraded",
-                    json!({
-                        "claim_id": row.id,
-                        "new_band": "use_with_caution",
-                        "reason": "legacy_unmigrated",
-                    }),
-                )?;
-                return Ok("legacy");
-            };
-
-            let rows_affected = tx
-                .conn_ref()
-                .execute(
-                    "UPDATE intelligence_claims
-                     SET predicate_ref = ?1,
-                         polarity = ?2,
-                         object_value = ?3,
-                         qualifiers = ?4,
-                         structural_canonical_id = ?5,
-                         structural_field_content_hash = ?6,
-                         structured_claim_json = ?7,
-                         canonical_status = 'live',
-                         non_semantic_mergeable = FALSE,
-                         backfill_epoch = backfill_epoch + 1
-                     WHERE id = ?8 AND canonical_status = 'pending_backfill'",
-                    params![
-                        &structural.predicate_ref,
-                        structural.polarity,
-                        &structural.object_value,
-                        &structural.qualifiers,
-                        &structural.structural_canonical_id,
-                        &structural.content_hash,
-                        &structural.structured_claim_json,
-                        &row.id,
-                    ],
-                )
-                .map_err(|e| format!("mark structured claim live {}: {e}", row.id))?;
-            if rows_affected == 0 {
-                return Ok("unchanged");
-            }
-            emit_structural_backfill_signal(
-                tx,
-                &row.id,
-                "structural_backfill_changed",
-                json!({
-                    "claim_id": row.id,
-                    "field_set": [
-                        "predicate_ref",
-                        "polarity",
-                        "object_value",
-                        "qualifiers",
-                        "structural_canonical_id"
-                    ],
-                    "canonical_status": "live",
-                }),
-            )?;
-            emit_structural_backfill_signal(
-                tx,
-                &row.id,
-                "trust_band_cleared",
-                json!({
-                    "claim_id": row.id,
-                    "new_band": "normal",
-                }),
-            )?;
-            Ok("live")
-        });
+        };
 
         match result {
             Ok("live") => report.transitioned_live += 1,
@@ -222,9 +112,293 @@ pub fn run_structured_claim_backfill(
     Ok(report)
 }
 
+fn mark_structural_backfill_row(
+    tx: &ActionDb,
+    row: &StructuralBackfillRow,
+    structural: Option<StructuralBackfillFields>,
+) -> Result<&'static str, String> {
+    let Some(structural) = structural else {
+        let rows_affected = tx
+            .conn_ref()
+            .execute(
+                "UPDATE intelligence_claims
+                 SET canonical_status = 'legacy_unmigrated',
+                     non_semantic_mergeable = TRUE,
+                     backfill_epoch = backfill_epoch + 1
+                 WHERE id = ?1 AND canonical_status = 'pending_backfill'",
+                params![&row.id],
+            )
+            .map_err(|e| format!("mark structured claim legacy {}: {e}", row.id))?;
+        if rows_affected == 0 {
+            return Ok("unchanged");
+        }
+        emit_structural_backfill_signal(
+            tx,
+            &row.id,
+            "structural_backfill_changed",
+            json!({
+                "claim_id": row.id,
+                "field_set": [],
+                "canonical_status": "legacy_unmigrated",
+            }),
+        )?;
+        emit_structural_backfill_signal(
+            tx,
+            &row.id,
+            "trust_band_downgraded",
+            json!({
+                "claim_id": row.id,
+                "new_band": "use_with_caution",
+                "reason": "legacy_unmigrated",
+            }),
+        )?;
+        return Ok("legacy");
+    };
+
+    let rows_affected = tx
+        .conn_ref()
+        .execute(
+            "UPDATE intelligence_claims
+             SET predicate_ref = ?1,
+                 polarity = ?2,
+                 object_value = ?3,
+                 qualifiers = ?4,
+                 structural_canonical_id = ?5,
+                 structural_field_content_hash = ?6,
+                 structured_claim_json = ?7,
+                 canonical_status = 'live',
+                 non_semantic_mergeable = FALSE,
+                 backfill_epoch = backfill_epoch + 1
+             WHERE id = ?8 AND canonical_status = 'pending_backfill'",
+            params![
+                &structural.predicate_ref,
+                structural.polarity,
+                &structural.object_value,
+                &structural.qualifiers,
+                &structural.structural_canonical_id,
+                &structural.content_hash,
+                &structural.structured_claim_json,
+                &row.id,
+            ],
+        )
+        .map_err(|e| format!("mark structured claim live {}: {e}", row.id))?;
+    if rows_affected == 0 {
+        return Ok("unchanged");
+    }
+    emit_structural_backfill_signal(
+        tx,
+        &row.id,
+        "structural_backfill_changed",
+        json!({
+            "claim_id": row.id,
+            "field_set": [
+                "predicate_ref",
+                "polarity",
+                "object_value",
+                "qualifiers",
+                "structural_canonical_id"
+            ],
+            "canonical_status": "live",
+        }),
+    )?;
+    emit_structural_backfill_signal(
+        tx,
+        &row.id,
+        "trust_band_cleared",
+        json!({
+            "claim_id": row.id,
+            "new_band": "normal",
+        }),
+    )?;
+    Ok("live")
+}
+
+fn record_structural_backfill_error(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    row: &StructuralBackfillRow,
+    error: String,
+) -> Result<&'static str, String> {
+    let attempts_after_error = row.backfill_attempts + 1;
+    let terminalization_cause =
+        pending_backfill_terminalization_cause(row, attempts_after_error, ctx.clock.now());
+
+    db.with_transaction(|tx| {
+        if let Some(cause) = terminalization_cause {
+            return terminalize_pending_backfill(tx, row, cause, attempts_after_error, true);
+        }
+
+        let rows_affected = tx
+            .conn_ref()
+            .execute(
+                "UPDATE intelligence_claims
+                 SET backfill_attempts = backfill_attempts + 1
+                 WHERE id = ?1 AND canonical_status = 'pending_backfill'",
+                params![&row.id],
+            )
+            .map_err(|e| format!("record pending_backfill attempt {}: {e}", row.id))?;
+        if rows_affected == 0 {
+            return Ok("unchanged");
+        }
+        Ok("error")
+    })
+    .and_then(|outcome| match outcome {
+        "error" => Err(error),
+        other => Ok(other),
+    })
+}
+
+fn terminalize_pending_backfill(
+    tx: &ActionDb,
+    row: &StructuralBackfillRow,
+    terminalization_cause: &'static str,
+    backfill_attempts_after: i64,
+    increment_attempts: bool,
+) -> Result<&'static str, String> {
+    let sql = if increment_attempts {
+        "UPDATE intelligence_claims
+         SET canonical_status = 'legacy_unmigrated',
+             non_semantic_mergeable = TRUE,
+             backfill_attempts = backfill_attempts + 1,
+             backfill_epoch = backfill_epoch + 1
+         WHERE id = ?1 AND canonical_status = 'pending_backfill'"
+    } else {
+        "UPDATE intelligence_claims
+         SET canonical_status = 'legacy_unmigrated',
+             non_semantic_mergeable = TRUE,
+             backfill_epoch = backfill_epoch + 1
+         WHERE id = ?1 AND canonical_status = 'pending_backfill'"
+    };
+    let rows_affected = tx
+        .conn_ref()
+        .execute(sql, params![&row.id])
+        .map_err(|e| format!("terminalize pending_backfill {}: {e}", row.id))?;
+    if rows_affected == 0 {
+        return Ok("unchanged");
+    }
+
+    emit_structural_backfill_signal(
+        tx,
+        &row.id,
+        "structural_backfill_changed",
+        json!({
+            "claim_id": row.id,
+            "field_set": [],
+            "canonical_status": "legacy_unmigrated",
+            "audit_reason": PENDING_BACKFILL_TERMINALIZED_REASON,
+            "reason": PENDING_BACKFILL_TERMINALIZED_REASON,
+            "terminalization_cause": terminalization_cause,
+            "backfill_attempts": backfill_attempts_after,
+            "max_backfill_attempts": PENDING_BACKFILL_MAX_RETRIES,
+            "max_backfill_age_hours": PENDING_BACKFILL_MAX_AGE_HOURS,
+        }),
+    )?;
+    emit_structural_backfill_signal(
+        tx,
+        &row.id,
+        "trust_band_downgraded",
+        json!({
+            "claim_id": row.id,
+            "new_band": "use_with_caution",
+            "reason": PENDING_BACKFILL_TERMINALIZED_REASON,
+        }),
+    )?;
+    Ok("legacy")
+}
+
+fn pending_backfill_terminalization_cause(
+    row: &StructuralBackfillRow,
+    backfill_attempts: i64,
+    now: DateTime<Utc>,
+) -> Option<&'static str> {
+    if backfill_attempts >= PENDING_BACKFILL_MAX_RETRIES {
+        return Some("max_attempts");
+    }
+
+    let Ok(created_at) = parse_pending_backfill_created_at(&row.created_at) else {
+        return None;
+    };
+    if now.signed_duration_since(created_at) >= pending_backfill_max_age() {
+        return Some("max_age");
+    }
+
+    None
+}
+
+fn parse_pending_backfill_created_at(value: &str) -> Result<DateTime<Utc>, String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err("pending_backfill created_at is empty".to_string());
+    }
+
+    if let Ok(parsed) = DateTime::parse_from_rfc3339(trimmed) {
+        return Ok(parsed.with_timezone(&Utc));
+    }
+
+    for format in ["%Y-%m-%d %H:%M:%S%.f", "%Y-%m-%dT%H:%M:%S%.f"] {
+        if let Ok(parsed) = NaiveDateTime::parse_from_str(trimmed, format) {
+            return Ok(DateTime::<Utc>::from_naive_utc_and_offset(parsed, Utc));
+        }
+    }
+
+    Err(format!(
+        "pending_backfill created_at '{trimmed}' is not a supported timestamp"
+    ))
+}
+
+#[cfg(test)]
+fn forced_structural_backfill_errors() -> &'static Mutex<HashSet<String>> {
+    static FORCED: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    FORCED.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+#[cfg(test)]
+fn structural_backfill_error_forced_for_test(claim_id: &str) -> bool {
+    forced_structural_backfill_errors()
+        .lock()
+        .expect("forced structural backfill errors lock")
+        .contains(claim_id)
+}
+
+#[cfg(test)]
+struct ForcedStructuralBackfillErrorGuard {
+    claim_id: String,
+}
+
+#[cfg(test)]
+impl ForcedStructuralBackfillErrorGuard {
+    fn new(claim_id: &str) -> Self {
+        forced_structural_backfill_errors()
+            .lock()
+            .expect("forced structural backfill errors lock")
+            .insert(claim_id.to_string());
+        Self {
+            claim_id: claim_id.to_string(),
+        }
+    }
+}
+
+#[cfg(test)]
+impl Drop for ForcedStructuralBackfillErrorGuard {
+    fn drop(&mut self) {
+        forced_structural_backfill_errors()
+            .lock()
+            .expect("forced structural backfill errors lock")
+            .remove(&self.claim_id);
+    }
+}
+
 fn structural_backfill_fields(
     row: &StructuralBackfillRow,
 ) -> Result<Option<StructuralBackfillFields>, String> {
+    #[cfg(test)]
+    if structural_backfill_error_forced_for_test(&row.id) {
+        return Err(format!(
+            "forced structured claim extraction error {}",
+            row.id
+        ));
+    }
+
     let Some(structured_claim_json) = structured_claim_json_for_row(
         &row.subject_ref,
         &row.claim_type,
@@ -290,7 +464,7 @@ fn pending_structural_backfill_rows(db: &ActionDb) -> Result<Vec<StructuralBackf
         .conn_ref()
         .prepare(
             "SELECT id, subject_ref, claim_type, field_path, topic_key, text, metadata_json,
-                    verification_state, backfill_epoch
+                    verification_state, created_at, backfill_attempts
              FROM intelligence_claims
              WHERE canonical_status = 'pending_backfill'
              ORDER BY created_at, id",
@@ -307,7 +481,8 @@ fn pending_structural_backfill_rows(db: &ActionDb) -> Result<Vec<StructuralBackf
                 text: row.get(5)?,
                 metadata_json: row.get(6)?,
                 verification_state: row.get(7)?,
-                backfill_epoch: row.get(8)?,
+                created_at: row.get(8)?,
+                backfill_attempts: row.get(9)?,
             })
         })
         .map_err(|e| format!("query structural claim backfill scan: {e}"))?
@@ -3227,8 +3402,8 @@ mod tests {
              ) VALUES (
                 'legacy-structured-1', '{\"kind\":\"account\",\"id\":\"acct-1\"}',
                 'risk', 'health.risk', NULL, 'Renewal risk is elevated', 'dedup-live', 'hash-live',
-                'system_backfill', 'legacy_dismissal', '2026-04-01T00:00:00Z',
-                '2026-04-01T00:00:00Z', '{}', NULL,
+                'system_backfill', 'legacy_dismissal', '2026-05-02T00:00:00Z',
+                '2026-05-02T00:00:00Z', '{}', NULL,
                 'tombstoned', 'active', 'user_removal', 'state', 'internal', 'active',
                 'pending_backfill', TRUE
              )",
@@ -3270,6 +3445,167 @@ mod tests {
         assert!(structured_claim_json.is_some());
         assert_eq!(predicate_ref.as_deref(), Some("risk.status"));
         assert!(content_hash.is_some());
+    }
+
+    #[test]
+    fn suite_s_stuck_extractor_terminalizes_after_max_backfill_attempts() {
+        let conn = fresh_full_db();
+        let db = ActionDb::from_conn(&conn);
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+        let claim_id = "legacy-stuck-extractor-1";
+        let _forced_error = ForcedStructuralBackfillErrorGuard::new(claim_id);
+
+        conn.execute(
+            "INSERT INTO intelligence_claims (
+                id, subject_ref, claim_type, field_path, topic_key, text, dedup_key, item_hash,
+                actor, data_source, observed_at, created_at, provenance_json, metadata_json,
+                claim_state, surfacing_state, retraction_reason, temporal_scope, sensitivity,
+                verification_state, canonical_status, non_semantic_mergeable
+             ) VALUES (
+                'legacy-stuck-extractor-1', '{\"kind\":\"account\",\"id\":\"acct-1\"}',
+                'risk', 'health.risk', NULL, 'Renewal risk is elevated',
+                'dedup-stuck-extractor', 'hash-stuck-extractor',
+                'system_backfill', 'legacy_dismissal', '2026-05-02T00:00:00Z',
+                '2026-05-02T00:00:00Z', '{}', NULL,
+                'tombstoned', 'active', 'user_removal', 'state', 'internal', 'active',
+                'pending_backfill', TRUE
+             )",
+            [],
+        )
+        .unwrap();
+
+        for expected_attempts in 1..PENDING_BACKFILL_MAX_RETRIES {
+            let report = run_structured_claim_backfill(&ctx, &db).unwrap();
+            assert_eq!(report.rows_examined, 1);
+            assert_eq!(report.transitioned_legacy_unmigrated, 0);
+            assert_eq!(report.errors.len(), 1, "{report:?}");
+
+            let (canonical_status, backfill_attempts): (String, i64) = conn
+                .query_row(
+                    "SELECT canonical_status, backfill_attempts
+                     FROM intelligence_claims WHERE id = 'legacy-stuck-extractor-1'",
+                    [],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .unwrap();
+            assert_eq!(canonical_status, "pending_backfill");
+            assert_eq!(backfill_attempts, expected_attempts);
+        }
+
+        let report = run_structured_claim_backfill(&ctx, &db).unwrap();
+        assert_eq!(report.rows_examined, 1);
+        assert_eq!(report.transitioned_legacy_unmigrated, 1);
+        assert!(report.errors.is_empty(), "{report:?}");
+
+        let (canonical_status, non_semantic_mergeable, backfill_attempts): (String, bool, i64) =
+            conn.query_row(
+                "SELECT canonical_status, non_semantic_mergeable, backfill_attempts
+                 FROM intelligence_claims WHERE id = 'legacy-stuck-extractor-1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(canonical_status, "legacy_unmigrated");
+        assert!(non_semantic_mergeable);
+        assert_eq!(backfill_attempts, PENDING_BACKFILL_MAX_RETRIES);
+
+        let payload: String = conn
+            .query_row(
+                "SELECT value FROM signal_events
+                 WHERE entity_id = 'legacy-stuck-extractor-1'
+                   AND signal_type = 'structural_backfill_changed'
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let payload: serde_json::Value = serde_json::from_str(&payload).unwrap();
+        assert_eq!(
+            payload
+                .get("audit_reason")
+                .and_then(serde_json::Value::as_str),
+            Some(PENDING_BACKFILL_TERMINALIZED_REASON)
+        );
+        assert_eq!(
+            payload
+                .get("terminalization_cause")
+                .and_then(serde_json::Value::as_str),
+            Some("max_attempts")
+        );
+    }
+
+    #[test]
+    fn suite_s_pending_backfill_past_max_age_terminalizes_with_audit_reason() {
+        let conn = fresh_full_db();
+        let db = ActionDb::from_conn(&conn);
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+
+        conn.execute(
+            "INSERT INTO intelligence_claims (
+                id, subject_ref, claim_type, field_path, topic_key, text, dedup_key, item_hash,
+                actor, data_source, observed_at, created_at, provenance_json, metadata_json,
+                claim_state, surfacing_state, retraction_reason, temporal_scope, sensitivity,
+                verification_state, canonical_status, non_semantic_mergeable
+             ) VALUES (
+                'legacy-aged-pending-1', '{\"kind\":\"account\",\"id\":\"acct-1\"}',
+                'risk', 'health.risk', NULL, 'Renewal risk is elevated',
+                'dedup-aged-pending', 'hash-aged-pending',
+                'system_backfill', 'legacy_dismissal', '2026-05-01T00:00:00Z',
+                '2026-05-01T00:00:00Z', '{}', NULL,
+                'tombstoned', 'active', 'user_removal', 'state', 'internal', 'active',
+                'pending_backfill', TRUE
+             )",
+            [],
+        )
+        .unwrap();
+
+        let report = run_structured_claim_backfill(&ctx, &db).unwrap();
+        assert_eq!(report.rows_examined, 1);
+        assert_eq!(report.transitioned_legacy_unmigrated, 1);
+        assert!(report.errors.is_empty(), "{report:?}");
+
+        let (canonical_status, backfill_attempts): (String, i64) = conn
+            .query_row(
+                "SELECT canonical_status, backfill_attempts
+                 FROM intelligence_claims WHERE id = 'legacy-aged-pending-1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(canonical_status, "legacy_unmigrated");
+        assert_eq!(backfill_attempts, 0);
+
+        let payload: String = conn
+            .query_row(
+                "SELECT value FROM signal_events
+                 WHERE entity_id = 'legacy-aged-pending-1'
+                   AND signal_type = 'structural_backfill_changed'
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let payload: serde_json::Value = serde_json::from_str(&payload).unwrap();
+        assert_eq!(
+            payload
+                .get("audit_reason")
+                .and_then(serde_json::Value::as_str),
+            Some(PENDING_BACKFILL_TERMINALIZED_REASON)
+        );
+        assert_eq!(
+            payload
+                .get("terminalization_cause")
+                .and_then(serde_json::Value::as_str),
+            Some("max_age")
+        );
     }
 
     #[test]

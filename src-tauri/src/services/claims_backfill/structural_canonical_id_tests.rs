@@ -50,8 +50,8 @@ fn seed_pending_claim(
             verification_state, canonical_status, non_semantic_mergeable
          ) VALUES (
             ?1, ?2, ?3, ?4, NULL, ?5, ?6, ?7,
-            'system_backfill', 'legacy_dismissal', '2026-04-01T00:00:00Z',
-            '2026-04-01T00:00:00Z', '{}', ?8,
+            'system_backfill', 'legacy_dismissal', '2026-05-02T00:00:00Z',
+            '2026-05-02T00:00:00Z', '{}', ?8,
             'tombstoned', 'active', 'user_removal', 'state', 'internal', 'active',
             'pending_backfill', TRUE
          )",
