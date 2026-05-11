@@ -35,7 +35,7 @@ struct LegacyClaimMetadata {
     provenance_json: String,
 }
 
-pub(super) fn migrate_v156_semantic_merge_safety(conn: &Connection) -> Result<(), MigrationError> {
+pub(super) fn migrate_v159_semantic_merge_safety(conn: &Connection) -> Result<(), MigrationError> {
     if !table_exists(conn, CLAIMS_TABLE)? {
         return Err(format!("required table {CLAIMS_TABLE} is missing"));
     }
@@ -383,7 +383,7 @@ mod tests {
             serde_json::json!({}),
         );
 
-        migrate_v156_semantic_merge_safety(&conn).expect("migration succeeds");
+        migrate_v159_semantic_merge_safety(&conn).expect("migration succeeds");
 
         let recoverable = metadata_for(&conn, "recoverable");
         assert_eq!(

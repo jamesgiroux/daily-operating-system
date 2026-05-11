@@ -16,7 +16,7 @@ use chrono::Utc;
 use rusqlite::{Connection, Error as SqliteError, ErrorCode};
 
 mod v144_audit_action_token;
-mod v156_semantic_merge_safety;
+mod v159_semantic_merge_safety;
 mod v161_structured_claim_canonicalization;
 
 type MigrationError = String;
@@ -803,7 +803,17 @@ const MIGRATIONS: &[Migration] = &[
         version: 157,
         apply: migrate_v157_reconcile_claim_shadow_trust_columns,
     },
-    // ADR-0131: structured + embedding claim canonicalization substrate.
+    // ADR-0131: semantic evidence substrate.
+    Migration::Sql {
+        version: 158,
+        sql: include_str!("migrations/158_semantic_evidence.sql"),
+    },
+    // ADR-0131: preserve legacy semantic-merge qualifiers before canonicalization.
+    Migration::Fn {
+        version: 159,
+        apply: migrate_v159_semantic_merge_safety,
+    },
+    // ADR-0131: structured claim canonicalization substrate.
     Migration::Fn {
         version: 161,
         apply: migrate_v161_structured_claim_canonicalization,
@@ -909,13 +919,12 @@ fn apply_migration_146_signal_events_data_source(
     }
 }
 
-fn migrate_v161_structured_claim_canonicalization(
-    conn: &Connection,
-) -> Result<(), MigrationError> {
-    conn.execute_batch(include_str!("migrations/155_semantic_evidence.sql"))
-        .map_err(|e| format!("create claim semantic evidence table: {e}"))?;
-    v156_semantic_merge_safety::migrate_v156_semantic_merge_safety(conn)?;
-    v161_structured_claim_canonicalization::migrate_v161_structured_claim_canonicalization(conn)
+fn migrate_v161_structured_claim_canonicalization(conn: &Connection) -> Result<(), MigrationError> {
+    v161_structured_claim_canonicalization::migrate_v161(conn)
+}
+
+fn migrate_v159_semantic_merge_safety(conn: &Connection) -> Result<(), MigrationError> {
+    v159_semantic_merge_safety::migrate_v159_semantic_merge_safety(conn)
 }
 
 fn verify_required_schema(conn: &Connection) -> Result<(), String> {
