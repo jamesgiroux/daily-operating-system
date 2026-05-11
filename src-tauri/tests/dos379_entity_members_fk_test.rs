@@ -245,7 +245,13 @@ fn setup_v144_migration_state(conn: &Connection) {
             superseded_by TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_signal_events_source
-            ON signal_events(source, signal_type);",
+            ON signal_events(source, signal_type);
+        CREATE TABLE IF NOT EXISTS intelligence_claims (
+            id TEXT PRIMARY KEY,
+            trust_score REAL,
+            trust_computed_at TEXT,
+            trust_version INTEGER
+        );",
     )
     .expect("create v144 migration fixture state");
 }

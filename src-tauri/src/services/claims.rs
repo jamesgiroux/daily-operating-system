@@ -232,6 +232,9 @@ const CLAIM_UPDATE_ALLOWED_COLUMNS: &[&str] = &[
     "trust_score",
     "trust_computed_at",
     "trust_version",
+    "shadow_trust_score",
+    "shadow_trust_computed_at",
+    "shadow_trust_version",
     "thread_id",
     // typed feedback adds derived review state; it is mutable
     // metadata, not assertion identity.
@@ -4343,6 +4346,48 @@ pub fn update_claim_trust(
     Ok(())
 }
 
+pub fn shadow_update_claim_trust_shadow_only(
+    db: &ActionDb,
+    claim_id: &str,
+    trust_score: TrustScore,
+    trust_version: TrustVersion,
+    ctx: &ServiceContext<'_>,
+) -> Result<(), ClaimsError> {
+    ctx.check_mutation_allowed()
+        .map_err(|e| ClaimsError::Mode(e.to_string()))?;
+
+    let exists = db
+        .conn_ref()
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM intelligence_claims WHERE id = ?1)",
+            params![claim_id],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(ClaimsError::Rusqlite)?;
+    if !exists {
+        return Err(ClaimsError::ClaimNotFound(claim_id.to_string()));
+    }
+
+    let shadow_trust_computed_at = ctx.clock.now().to_rfc3339();
+    let shadow_trust_score = trust_score_db_value(trust_score);
+    execute_claims_update(
+        db.conn_ref(),
+        "UPDATE intelligence_claims
+         SET shadow_trust_score = ?1,
+             shadow_trust_computed_at = ?2,
+             shadow_trust_version = ?3
+         WHERE id = ?4",
+        params![
+            shadow_trust_score,
+            &shadow_trust_computed_at,
+            trust_version,
+            claim_id
+        ],
+    )?;
+
+    Ok(())
+}
+
 fn trust_score_db_value(trust_score: TrustScore) -> Option<f64> {
     let value = trust_score.value();
     if value.is_finite() {
@@ -5095,10 +5140,13 @@ mod tests {
                  trust_score = ?1,
                  trust_computed_at = ?2,
                  trust_version = ?3,
-                 verification_state = ?4,
-                 verification_reason = ?5,
-                 needs_user_decision_at = ?6
-             WHERE text = ?7 AND claim_type = ?8";
+                 shadow_trust_score = ?4,
+                 shadow_trust_computed_at = ?5,
+                 shadow_trust_version = ?6,
+                 verification_state = ?7,
+                 verification_reason = ?8,
+                 needs_user_decision_at = ?9
+             WHERE text = ?10 AND claim_type = ?11";
 
         assert_eq!(
             claim_update_columns(sql),
@@ -5108,6 +5156,9 @@ mod tests {
                 "trust_score",
                 "trust_computed_at",
                 "trust_version",
+                "shadow_trust_score",
+                "shadow_trust_computed_at",
+                "shadow_trust_version",
                 "verification_state",
                 "verification_reason",
                 "needs_user_decision_at",
@@ -5533,6 +5584,20 @@ mod tests {
             .expect("read trust columns")
     }
 
+    fn read_shadow_trust_columns(
+        db: &ActionDb,
+        claim_id: &str,
+    ) -> (Option<f64>, Option<String>, Option<i64>) {
+        db.conn_ref()
+            .query_row(
+                "SELECT shadow_trust_score, shadow_trust_computed_at, shadow_trust_version \
+                 FROM intelligence_claims WHERE id = ?1",
+                params![claim_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("read shadow trust columns")
+    }
+
     fn read_non_trust_claim_columns(db: &ActionDb, claim_id: &str) -> Vec<Option<String>> {
         db.conn_ref()
             .query_row(
@@ -5910,6 +5975,99 @@ mod tests {
         update_claim_trust(&db, "claim-identity", TrustScore(0.91), 5, &ctx).unwrap();
 
         assert_eq!(read_subject_ref_and_text(&db, "claim-identity"), before);
+    }
+
+    #[test]
+    fn shadow_update_claim_trust_writes_only_shadow_columns() {
+        let db = test_db();
+        insert_fixture_claim(
+            &db,
+            "claim-shadow-only",
+            SUBJECT,
+            "risk",
+            "Shadow trust stays isolated",
+            ClaimState::Active,
+            SurfacingState::Active,
+        );
+        let fixed_at = Utc.with_ymd_and_hms(2026, 5, 4, 10, 30, 0).unwrap();
+        let clock = FixedClock::new(fixed_at);
+        let rng = SeedableRng::new(24);
+        let external = ExternalClients::default();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        shadow_update_claim_trust_shadow_only(
+            &db,
+            "claim-shadow-only",
+            TrustScore(0.77),
+            1_401_003,
+            &ctx,
+        )
+        .unwrap();
+
+        assert_eq!(
+            read_trust_columns(&db, "claim-shadow-only"),
+            (None, None, None)
+        );
+        assert_eq!(
+            read_shadow_trust_columns(&db, "claim-shadow-only"),
+            (Some(0.77), Some(fixed_at.to_rfc3339()), Some(1_401_003))
+        );
+    }
+
+    #[test]
+    fn shadow_update_claim_trust_preserves_live_trust_columns() {
+        let db = test_db();
+        insert_fixture_claim(
+            &db,
+            "claim-shadow-preserve-live",
+            SUBJECT,
+            "risk",
+            "Shadow trust preserves live trust",
+            ClaimState::Active,
+            SurfacingState::Active,
+        );
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        update_claim_trust(&db, "claim-shadow-preserve-live", TrustScore(0.42), 7, &ctx).unwrap();
+        shadow_update_claim_trust_shadow_only(
+            &db,
+            "claim-shadow-preserve-live",
+            TrustScore(0.84),
+            1_401_003,
+            &ctx,
+        )
+        .unwrap();
+
+        assert_eq!(
+            read_trust_columns(&db, "claim-shadow-preserve-live"),
+            (Some(0.42), Some(TS.to_string()), Some(7))
+        );
+        assert_eq!(
+            read_shadow_trust_columns(&db, "claim-shadow-preserve-live"),
+            (Some(0.84), Some(TS.to_string()), Some(1_401_003))
+        );
+    }
+
+    #[test]
+    fn shadow_update_claim_trust_returns_claim_not_found_for_missing_id() {
+        let db = test_db();
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let err = shadow_update_claim_trust_shadow_only(
+            &db,
+            "missing-shadow-claim",
+            TrustScore(0.5),
+            1_401_003,
+            &ctx,
+        )
+        .expect_err("missing claim must return ClaimNotFound");
+
+        assert!(matches!(
+            err,
+            ClaimsError::ClaimNotFound(claim_id) if claim_id == "missing-shadow-claim"
+        ));
     }
 
     #[test]
