@@ -38,6 +38,40 @@ use crate::intelligence::io::{write_intelligence_json, IntelligenceJson};
 /// phase waits for it to complete before bumping.
 static IN_FLIGHT_CYCLES: AtomicUsize = AtomicUsize::new(0);
 
+/// Process-wide cutover pause depth. While non-zero, new
+/// [`FenceCycle::capture`] attempts fail fast so a worker cannot capture the
+/// post-bump epoch in the window after drain and before cutover backfill
+/// completion.
+static CUTOVER_CAPTURE_PAUSE_DEPTH: AtomicUsize = AtomicUsize::new(0);
+
+/// RAII guard that pauses fresh [`FenceCycle::capture`] attempts until drop.
+#[derive(Debug)]
+pub struct CutoverCapturePauseGuard {
+    active: bool,
+}
+
+impl Drop for CutoverCapturePauseGuard {
+    fn drop(&mut self) {
+        if self.active {
+            CUTOVER_CAPTURE_PAUSE_DEPTH.fetch_sub(1, Ordering::SeqCst);
+            self.active = false;
+        }
+    }
+}
+
+/// Pause fresh fence-cycle captures for a schema cutover. Existing captures
+/// remain registered in [`IN_FLIGHT_CYCLES`] and are drained separately.
+#[must_use = "dropping the guard resumes FenceCycle capture attempts"]
+pub fn pause_cutover_captures() -> CutoverCapturePauseGuard {
+    CUTOVER_CAPTURE_PAUSE_DEPTH.fetch_add(1, Ordering::SeqCst);
+    CutoverCapturePauseGuard { active: true }
+}
+
+/// Snapshot of whether fresh fence-cycle captures are currently paused.
+pub fn cutover_captures_paused() -> bool {
+    CUTOVER_CAPTURE_PAUSE_DEPTH.load(Ordering::SeqCst) > 0
+}
+
 /// Snapshot of the current in-flight cycle count. Used by tests +
 /// migration diagnostics.
 pub fn in_flight_cycle_count() -> usize {
@@ -68,6 +102,17 @@ impl FenceCycle {
     /// `FenceCycle` handle. Workers call this at job pickup; the handle
     /// flows through enrichment until write-back.
     pub fn capture(db: &ActionDb) -> Result<Self, String> {
+        if cutover_captures_paused() {
+            return Err("FenceCycle capture paused for schema cutover; retry after cutover".into());
+        }
+
+        IN_FLIGHT_CYCLES.fetch_add(1, Ordering::SeqCst);
+
+        if cutover_captures_paused() {
+            IN_FLIGHT_CYCLES.fetch_sub(1, Ordering::SeqCst);
+            return Err("FenceCycle capture paused for schema cutover; retry after cutover".into());
+        }
+
         let captured_epoch: i64 = db
             .conn_ref()
             .query_row(
@@ -75,9 +120,10 @@ impl FenceCycle {
                 [],
                 |r| r.get(0),
             )
-            .map_err(|e| format!("schema_epoch capture: {e}"))?;
-        // Register in-flight: migration drain waits for this to drop before bumping.
-        IN_FLIGHT_CYCLES.fetch_add(1, Ordering::SeqCst);
+            .map_err(|e| {
+                IN_FLIGHT_CYCLES.fetch_sub(1, Ordering::SeqCst);
+                format!("schema_epoch capture: {e}")
+            })?;
         Ok(Self { captured_epoch })
     }
 
@@ -281,6 +327,46 @@ mod tests {
             }
             other => panic!("expected EpochAdvanced, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn cutover_pause_rejects_fresh_capture_until_guard_drops() {
+        let _guard = write_fence_test_guard();
+        let db = test_db();
+        let pause = pause_cutover_captures();
+
+        let err = FenceCycle::capture(&db).expect_err("capture should pause");
+        assert!(
+            err.contains("paused"),
+            "pause rejection should be explicit, got {err}"
+        );
+        assert!(
+            cutover_captures_paused(),
+            "pause should remain active while guard is held"
+        );
+
+        drop(pause);
+
+        let cycle = FenceCycle::capture(&db).expect("capture after pause release");
+        assert_eq!(cycle.captured_epoch(), 1);
+    }
+
+    #[test]
+    fn cutover_pause_does_not_leak_in_flight_count() {
+        let _guard = write_fence_test_guard();
+        let db = test_db();
+        let baseline = in_flight_cycle_count();
+        let pause = pause_cutover_captures();
+
+        let err = FenceCycle::capture(&db).expect_err("capture should pause");
+        assert!(err.contains("paused"));
+        assert_eq!(
+            in_flight_cycle_count(),
+            baseline,
+            "paused capture must not register an in-flight cycle"
+        );
+
+        drop(pause);
     }
 
     #[test]

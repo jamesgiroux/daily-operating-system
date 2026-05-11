@@ -9,7 +9,7 @@ use parking_lot::Mutex;
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use chrono::Utc;
 use rusqlite::OptionalExtension;
@@ -212,6 +212,23 @@ impl IntelligenceQueue {
             );
         }
         drained
+    }
+
+    /// Put a dequeued batch back without applying pause/debounce policy.
+    /// Used when a worker loses the race with a process-wide cutover pause
+    /// after dequeue but before it can capture a write fence.
+    pub fn requeue_dequeued_batch(&self, requests: Vec<IntelRequest>) {
+        if requests.is_empty() {
+            return;
+        }
+
+        let mut queue = self.queue.lock();
+        for request in requests.into_iter().rev() {
+            if queue.iter().any(|r| r.entity_id == request.entity_id) {
+                continue;
+            }
+            queue.push_front(request);
+        }
     }
 
     /// Enqueue an enrichment request.
@@ -635,23 +652,27 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
         // ActionDb::open() is the standard processor-loop pattern (see
         // gather_enrichment_input which also opens its own handle); the
         // FenceCycle is a short-lived read against migration_state.
-        let _fence_cycle =
-            match crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())) {
-                Ok(db) => match crate::intelligence::write_fence::FenceCycle::capture(&db) {
-                    Ok(c) => Some(c),
-                    Err(e) => {
-                        log::warn!(
-                            "IntelProcessor: failed to capture schema_epoch for batch ({e}); \
-                         processing without fence — migration must not run during this batch"
-                        );
-                        None
-                    }
-                },
+        let _fence_cycle = match crate::db::ActionDb::open(std::sync::Arc::new(
+            crate::db::LocalKeychain::new(),
+        )) {
+            Ok(db) => match crate::intelligence::write_fence::FenceCycle::capture(&db) {
+                Ok(c) => c,
                 Err(e) => {
-                    log::warn!("IntelProcessor: failed to open db for FenceCycle capture: {e}");
-                    None
+                    log::info!(
+                        "IntelProcessor: FenceCycle capture unavailable for batch ({e}); retrying after cutover"
+                    );
+                    state.intel_queue.requeue_dequeued_batch(batch);
+                    tokio::time::sleep(Duration::from_millis(250)).await;
+                    continue;
                 }
-            };
+            },
+            Err(e) => {
+                log::warn!("IntelProcessor: failed to open db for FenceCycle capture: {e}");
+                state.intel_queue.requeue_dequeued_batch(batch);
+                tokio::time::sleep(Duration::from_millis(250)).await;
+                continue;
+            }
+        };
 
         let entity_names: Vec<&str> = batch.iter().map(|r| r.entity_id.as_str()).collect();
         log::info!(
@@ -5108,6 +5129,29 @@ mod tests {
             assert_eq!(q.enqueue(r), Ok(EnqueueOutcome::Accepted));
         }
         assert_eq!(q.len(), 1);
+    }
+
+    #[test]
+    fn cycle8_requeue_dequeued_batch_bypasses_pause_for_retry() {
+        let q = IntelligenceQueue::new();
+        assert_eq!(
+            q.enqueue(IntelRequest::new(
+                "acc-1".into(),
+                "account".into(),
+                IntelPriority::Manual,
+            )),
+            Ok(EnqueueOutcome::Accepted)
+        );
+        let batch = q.dequeue_batch(1);
+        assert_eq!(batch.len(), 1);
+        q.pause();
+
+        q.requeue_dequeued_batch(batch);
+
+        assert_eq!(q.len(), 1);
+        q.resume();
+        let retried = q.dequeue().expect("request should be queued for retry");
+        assert_eq!(retried.entity_id, "acc-1");
     }
 
     // ───────────────────────────────────────────────────────────────────────

@@ -1040,13 +1040,36 @@ fn read_schema_epoch(db: &ActionDb) -> Result<i64, String> {
         .map_err(|e| format!("read schema_epoch: {e}"))
 }
 
-fn bump_schema_epoch_and_drain_fence(
+#[must_use = "dropping this guard resumes fresh FenceCycle capture attempts"]
+struct ClaimsCutoverPauseGuard {
+    _inner: crate::intelligence::write_fence::CutoverCapturePauseGuard,
+    context: String,
+}
+
+impl ClaimsCutoverPauseGuard {
+    fn new(context: &str) -> Self {
+        log::info!("[{context}] pausing fresh FenceCycle captures");
+        Self {
+            _inner: crate::intelligence::write_fence::pause_cutover_captures(),
+            context: context.to_string(),
+        }
+    }
+}
+
+impl Drop for ClaimsCutoverPauseGuard {
+    fn drop(&mut self) {
+        log::info!("[{}] resumed fresh FenceCycle captures", self.context);
+    }
+}
+
+fn pause_bump_schema_epoch_and_drain_fence(
     db: &ActionDb,
     context: &str,
-) -> Result<(i64, i64, usize), String> {
+) -> Result<(ClaimsCutoverPauseGuard, i64, i64, usize), String> {
+    let pause_guard = ClaimsCutoverPauseGuard::new(context);
     let (epoch_before, epoch_after) = bump_schema_epoch_for_cutover(db, context)?;
     let remaining = drain_cutover_fence(context)?;
-    Ok((epoch_before, epoch_after, remaining))
+    Ok((pause_guard, epoch_before, epoch_after, remaining))
 }
 
 fn bump_schema_epoch_for_cutover(db: &ActionDb, context: &str) -> Result<(i64, i64), String> {
@@ -1081,7 +1104,7 @@ fn run_structured_claim_backfill_if_pending_with_cutover_fence(
         return Ok(None);
     }
 
-    let _ = bump_schema_epoch_and_drain_fence(db, context)?;
+    let (_pause_guard, _, _, _) = pause_bump_schema_epoch_and_drain_fence(db, context)?;
     run_structured_claim_backfill_if_pending(ctx, db, context)
 }
 
@@ -1098,13 +1121,14 @@ enum CutoverStartupPlan {
 ///
 /// Sequence per plan §2 "Migration fence" + §8 "Failure modes":
 ///   1. Pre-flight log
-///   2. Bump schema_epoch (causes in-flight workers to abort on recheck)
-///   3. Drain in-flight FenceCycle handles (30s timeout)
-///   4. Run pending schema/backfill migrations (131 + 132 + any newer)
+///   2. Pause fresh FenceCycle captures process-wide
+///   3. Bump schema_epoch (causes in-flight workers to abort on recheck)
+///   4. Drain in-flight FenceCycle handles (30s timeout)
+///   5. Run pending schema/backfill migrations (131 + 132 + any newer)
 ///      Rekey SQL-backfilled m1-m8 claims via runtime helpers
-///   5. Run JSON-blob (mechanism 9) backfill
-///   6. Reconcile pass (D5 stub today)
-///   7. Resume — no-op; workers re-capture epoch on next pickup
+///   6. Run JSON-blob (mechanism 9) backfill
+///   7. Reconcile pass (D5 stub today)
+///   8. Resume fresh captures by dropping the pause guard
 pub fn run_dos7_cutover(
     ctx: &ServiceContext<'_>,
     db: &ActionDb,
@@ -1119,8 +1143,8 @@ pub fn run_dos7_cutover(
     );
 
     // Step 2: bump schema_epoch.
-    let (epoch_before, epoch_after, remaining) =
-        bump_schema_epoch_and_drain_fence(db, "DOS-7 cutover")?;
+    let (_pause_guard, epoch_before, epoch_after, remaining) =
+        pause_bump_schema_epoch_and_drain_fence(db, "DOS-7 cutover")?;
     run_dos7_cutover_after_fence(
         ctx,
         db,
@@ -1440,6 +1464,7 @@ pub async fn run_dos7_cutover_if_pending_via_db_service(
     svc: Arc<crate::db_service::DbService>,
     workspace_root: PathBuf,
 ) -> Result<Option<CutoverReport>, String> {
+    let _cutover_capture_pause = ClaimsCutoverPauseGuard::new("DOS-7 cutover startup prepare");
     let plan = svc
         .writer()
         .call(|conn| {
@@ -1738,6 +1763,19 @@ mod tests {
     impl Drop for GlobalDbServiceGuard {
         fn drop(&mut self) {
             crate::db_service::uninstall_global();
+        }
+    }
+
+    fn capture_fence_with_retry(db: &ActionDb) -> crate::intelligence::write_fence::FenceCycle {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            match crate::intelligence::write_fence::FenceCycle::capture(db) {
+                Ok(cycle) => return cycle,
+                Err(e) if e.contains("paused") && std::time::Instant::now() < deadline => {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(e) => panic!("capture fence: {e}"),
+            }
         }
     }
 
@@ -3395,8 +3433,7 @@ mod tests {
         .unwrap();
 
         let db = ActionDb::from_conn(&conn);
-        let held_cycle =
-            crate::intelligence::write_fence::FenceCycle::capture(db).expect("capture fence");
+        let held_cycle = capture_fence_with_retry(db);
         let initial_epoch = held_cycle.captured_epoch();
         let worker_db_path = db_path.clone();
         let worker_workspace = workspace.path().to_path_buf();
@@ -3558,7 +3595,7 @@ mod tests {
                 worker_provider.clone(),
             )
             .map_err(|e| format!("worker initial ActionDb::open: {e}"))?;
-            let cycle = crate::intelligence::write_fence::FenceCycle::capture(&db)?;
+            let cycle = capture_fence_with_retry(&db);
             captured_tx
                 .send(cycle.captured_epoch())
                 .expect("send captured epoch");
@@ -3639,6 +3676,101 @@ mod tests {
         assert!(
             matches!(canonical_status.as_str(), "live" | "legacy_unmigrated"),
             "pending_backfill row must be terminal after split drain, got {canonical_status}"
+        );
+    }
+
+    #[test]
+    fn cutover_pause_blocks_fresh_fence_capture_after_drain_until_backfill_completes() {
+        let workspace = tempfile::tempdir().unwrap();
+        let db_dir = tempfile::tempdir().unwrap();
+        let db_path = db_dir.path().join("cutover-pause-fresh-capture.sqlite");
+        let conn = Connection::open(&db_path).unwrap();
+        crate::migrations::run_migrations(&conn).unwrap();
+
+        conn.execute(
+            "INSERT INTO intelligence_claims (
+                id, subject_ref, claim_type, field_path, topic_key, text, dedup_key, item_hash,
+                actor, data_source, observed_at, created_at, provenance_json, metadata_json,
+                claim_state, surfacing_state, retraction_reason, temporal_scope, sensitivity,
+                verification_state, canonical_status, non_semantic_mergeable
+             ) VALUES (
+                'legacy-cutover-pause-structured-1', '{\"kind\":\"account\",\"id\":\"acct-1\"}',
+                'risk', 'health.risk', NULL, 'Renewal risk is elevated',
+                'dedup-cutover-pause-structured', 'hash-cutover-pause-structured',
+                'system_backfill', 'legacy_dismissal', '2026-04-01T00:00:00Z',
+                '2026-04-01T00:00:00Z', '{}', NULL,
+                'tombstoned', 'active', 'user_removal', 'state', 'internal', 'active',
+                'pending_backfill', TRUE
+             )",
+            [],
+        )
+        .unwrap();
+
+        let db = ActionDb::from_conn(&conn);
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+        let write_dir = workspace.path().join("paused-write");
+        fs::create_dir_all(&write_dir).unwrap();
+        let intel = crate::intelligence::io::IntelligenceJson {
+            entity_id: "acct-1".into(),
+            entity_type: "account".into(),
+            ..Default::default()
+        };
+
+        let pause_guard = ClaimsCutoverPauseGuard::new("cycle-8 regression test");
+        let (_epoch_before, _epoch_after) =
+            bump_schema_epoch_for_cutover(db, "cycle-8 regression test").unwrap();
+        assert_eq!(
+            drain_cutover_fence("cycle-8 regression test").unwrap(),
+            0,
+            "test starts with no held FenceCycle handles"
+        );
+
+        let worker_conn = Connection::open(&db_path).unwrap();
+        let worker_db = ActionDb::from_conn(&worker_conn);
+        let capture_err = crate::intelligence::write_fence::FenceCycle::capture(worker_db)
+            .expect_err("fresh worker capture must pause after drain");
+        assert!(
+            capture_err.contains("paused"),
+            "fresh capture should be rejected by cutover pause, got {capture_err}"
+        );
+
+        crate::intelligence::write_fence::post_commit_fenced_write(
+            worker_db,
+            &write_dir,
+            &intel,
+            "cycle-8 paused producer",
+        );
+        assert!(
+            !write_dir.join("intelligence.json").exists(),
+            "post_commit_fenced_write must not write while cutover capture pause is active"
+        );
+
+        let structured_report =
+            run_structured_claim_backfill_if_pending(&ctx, db, "cycle-8 regression test")
+                .unwrap()
+                .expect("structured backfill should run while pause is held");
+        assert_eq!(structured_report.errors.len(), 0);
+        assert!(
+            crate::intelligence::write_fence::cutover_captures_paused(),
+            "capture pause must remain active until backfill completes"
+        );
+
+        drop(pause_guard);
+
+        let resumed_cycle = capture_fence_with_retry(worker_db);
+        crate::intelligence::write_fence::fenced_write_intelligence_json(
+            &resumed_cycle,
+            worker_db,
+            &write_dir,
+            &intel,
+        )
+        .expect("fresh capture and write should resume after guard drop");
+        assert!(
+            write_dir.join("intelligence.json").exists(),
+            "fenced write should resume after cutover pause release"
         );
     }
 
