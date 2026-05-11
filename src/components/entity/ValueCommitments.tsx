@@ -17,6 +17,7 @@ import { IntelligenceCorrection } from "@/components/ui/IntelligenceCorrection";
 import { useEntitySuppressions } from "@/hooks/useEntitySuppressions";
 import { ProvenanceTag } from "@/components/ui/ProvenanceTag";
 import { ClaimTextRenderer } from "@/components/ui/ClaimTextRenderer";
+import { formatShortDate } from "@/lib/utils";
 import css from "./ValueCommitments.module.css";
 
 interface ValueCommitmentsProps {
@@ -26,17 +27,6 @@ interface ValueCommitmentsProps {
 }
 
 /* -- Helpers -------------------------------------------------------------- */
-
-function formatShortDate(dateStr?: string): string {
-  if (!dateStr) return "";
-  try {
-    const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return dateStr;
-    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  } catch {
-    return dateStr;
-  }
-}
 
 function classifyImpact(raw?: string): "revenue" | "cost" | "risk" | "speed" | "default" {
   if (!raw) return "default";

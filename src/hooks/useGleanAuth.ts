@@ -2,24 +2,17 @@ import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import type { GleanAuthStatus } from "@/types";
+import { withTimeout } from "@/lib/async-utils";
 import { useTauriEvent } from "./useTauriEvent";
 
 type GleanAuthPhase = "idle" | "authorizing" | "disconnecting";
 
 // Glean SSO (Okta, Google Workspace) can be slower than direct Google OAuth
 const AUTH_TIMEOUT_MS = 150_000; // Backend listener has 120s timeout; give extra margin
+const AUTH_TIMEOUT_MESSAGE = "Glean authorization timed out after 60s";
 
 interface GleanAuthFailedPayload {
   message: string;
-}
-
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error("Glean authorization timed out after 60s")), timeoutMs);
-    }),
-  ]);
 }
 
 export function useGleanAuth() {
@@ -62,6 +55,7 @@ export function useGleanAuth() {
             endpoint,
           }),
           AUTH_TIMEOUT_MS,
+          AUTH_TIMEOUT_MESSAGE,
         );
         setStatus(result);
         toast.success("Glean account connected");

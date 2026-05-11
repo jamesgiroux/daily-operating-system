@@ -815,7 +815,7 @@ pub fn disconnect_google(
 ) -> Result<(), String> {
     crate::google::disconnect()?;
 
-    let purge_report = state.with_db_write(|db| {
+    let purge_report = state.with_db(|db| {
         crate::db::data_lifecycle::purge_source(db, crate::db::data_lifecycle::DataSource::Google)
             .map_err(|e| e.to_string())
     })?;

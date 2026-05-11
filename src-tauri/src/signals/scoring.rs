@@ -5,7 +5,7 @@
 //! to compute a normalized 0.0–1.0 relevance score for any item.
 
 use crate::db::ActionDb;
-use crate::embeddings::EmbeddingModel;
+use crate::embeddings::{cosine_similarity, EmbeddingModel};
 use crate::signals::decay;
 
 /// Context needed to score a single item.
@@ -193,21 +193,7 @@ fn compute_embedding_similarity(model: &EmbeddingModel, text_a: &str, text_b: &s
         Err(_) => return 0.0,
     };
 
-    cosine_similarity(&vec_a, &vec_b)
-}
-
-/// Cosine similarity between two vectors.
-fn cosine_similarity(a: &[f32], b: &[f32]) -> f64 {
-    if a.len() != b.len() || a.is_empty() {
-        return 0.0;
-    }
-    let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
-    let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
-    let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
-    if norm_a == 0.0 || norm_b == 0.0 {
-        return 0.0;
-    }
-    (dot / (norm_a * norm_b)) as f64
+    cosine_similarity(&vec_a, &vec_b) as f64
 }
 
 /// Resolve an entity ID to a human-readable name (ADR-0083: product vocabulary).

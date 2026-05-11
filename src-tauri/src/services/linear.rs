@@ -36,7 +36,7 @@ pub async fn push_action_to_linear(
 ) -> Result<LinearPushResult, String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     // 1. Read action from DB
-    let action = state.with_db_read(|db| {
+    let action = state.with_db(|db| {
         db.get_action_by_id(action_id)
             .map_err(|e| e.to_string())?
             .ok_or_else(|| format!("Action not found: {}", action_id))
@@ -54,7 +54,7 @@ pub async fn push_action_to_linear(
     }
 
     // 2. Check if already pushed
-    let already_pushed = state.with_db_read(|db| {
+    let already_pushed = state.with_db(|db| {
         let exists: bool = db
             .conn_ref()
             .query_row(
@@ -84,7 +84,7 @@ pub async fn push_action_to_linear(
     let resolved_project_id: Option<String> = if project_id.is_some() {
         project_id.map(|s| s.to_string())
     } else if let Some(ref acct_id) = action.account_id {
-        state.with_db_read(|db| {
+        state.with_db(|db| {
             let pid: Option<String> = db
                 .conn_ref()
                 .query_row(
@@ -131,7 +131,7 @@ pub async fn push_action_to_linear(
     let action_id_owned = action_id.to_string();
     let now_clone = now.clone();
 
-    state.with_db_write(|db| {
+    state.with_db(|db| {
         db.conn_ref()
             .execute(
                 "INSERT INTO action_linear_links (id, action_id, linear_issue_id, linear_identifier, linear_url, pushed_at)
@@ -171,7 +171,7 @@ pub async fn push_action_to_linear(
         .as_deref()
         .is_some_and(|s| s.starts_with("ai") || s == "intelligence");
 
-    state.with_db_write(|db| {
+    state.with_db(|db| {
         if let Err(e) = crate::services::signals::emit_and_propagate(
             ctx,
             db,

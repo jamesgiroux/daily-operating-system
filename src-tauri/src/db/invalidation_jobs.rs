@@ -808,7 +808,7 @@ impl ActionDb {
         &self,
         input: &EnqueueInvalidationJob,
     ) -> Result<Option<InvalidationJob>, DbError> {
-        if targeted_policy_repair_requires_surface_match(input) {
+        if input.job_kind == KIND_TARGETED_REPAIR {
             let Some(coalescing_key) = input.coalescing_key.as_deref() else {
                 return Ok(None);
             };
@@ -1019,11 +1019,6 @@ pub fn claim_recompute_input_hash(
     source_claim_version: i64,
 ) -> String {
     format!("{subject_type}:{subject_id}:claims:{source_claim_version}")
-}
-
-fn targeted_policy_repair_requires_surface_match(input: &EnqueueInvalidationJob) -> bool {
-    input.job_kind == KIND_TARGETED_REPAIR
-        && input.operation == TARGETED_REPAIR_POLICY_REPAIR_OPERATION
 }
 
 pub fn claim_recompute_coalescing_key(
@@ -1305,6 +1300,54 @@ mod tests {
         }
     }
 
+    fn targeted_bounded_corroboration_input(
+        signal_id: &str,
+        subject_id: &str,
+        claim_id: &str,
+        feedback_id: &str,
+        version: i64,
+    ) -> EnqueueInvalidationJob {
+        let subject_type = "account";
+        let ability_id = "targeted_claim_repair";
+        let ability_version = "1";
+        let repair_action = "BoundedCorroboration";
+        let operation = format!("targeted_claim_repair:{repair_action}");
+        let input_scope = format!("targeted_repair:{subject_type}:{subject_id}:{claim_id}:claims");
+        let input_snapshot_hash = format!("{input_scope}:{version}");
+        let coalescing_key = format!(
+            "targeted_claim_repair:{subject_type}:{subject_id}:{claim_id}:{repair_action}:claim:{ability_id}:{ability_version}:{input_scope}"
+        );
+
+        EnqueueInvalidationJob {
+            job_kind: KIND_TARGETED_REPAIR.to_string(),
+            operation,
+            origin_signal_id: Some(signal_id.to_string()),
+            subject_type: subject_type.to_string(),
+            subject_id: subject_id.to_string(),
+            ability_id: ability_id.to_string(),
+            ability_version: ability_version.to_string(),
+            source_claim_version: version,
+            source_asof: None,
+            input_snapshot_hash: Some(input_snapshot_hash),
+            provider_fingerprint: Some("provider:test".to_string()),
+            prompt_fingerprint: Some("prompt:test".to_string()),
+            payload_json: serde_json::json!({
+                "claim_id": claim_id,
+                "feedback_id": feedback_id,
+                "repair_action": repair_action,
+            }),
+            coalescing_key: Some(coalescing_key),
+            chain_id: None,
+            parent_job_id: None,
+            successor_of_job_id: None,
+            depth: 0,
+            chain_ancestry: Vec::new(),
+            max_attempts: 3,
+            priority: 0,
+            raw_signal_count: 1,
+        }
+    }
+
     #[test]
     fn coalescing_mutates_pending_but_creates_running_successor() {
         let db = test_db();
@@ -1524,6 +1567,64 @@ mod tests {
                 .get("feedback_id")
                 .and_then(serde_json::Value::as_str),
             Some("feedback-briefing")
+        );
+        assert_eq!(job.raw_signal_count, 1);
+    }
+
+    #[test]
+    fn pending_cap_rejects_targeted_repair_with_distinct_claim_key() {
+        let db = test_db();
+        let subject_id = "acct-targeted-repair-cap";
+        seed_account(&db, subject_id, 1);
+        let first = db
+            .enqueue_invalidation_job_with_pending_cap(
+                targeted_bounded_corroboration_input(
+                    "sig-repair-1",
+                    subject_id,
+                    "claim-repair-1",
+                    "feedback-repair-1",
+                    1,
+                ),
+                1,
+            )
+            .expect("enqueue first targeted repair");
+
+        let err = db
+            .enqueue_invalidation_job_with_pending_cap(
+                targeted_bounded_corroboration_input(
+                    "sig-repair-2",
+                    subject_id,
+                    "claim-repair-2",
+                    "feedback-repair-2",
+                    1,
+                ),
+                1,
+            )
+            .expect_err("distinct claim repair should reject at cap");
+        assert!(
+            matches!(
+                err,
+                DbError::InvalidArgument(ref message)
+                    if message.contains("invalidation queue pending cap 1 reached")
+            ),
+            "expected visible InvalidArgument cap rejection, got {err}"
+        );
+
+        let job = db
+            .get_invalidation_job(&first.job_id)
+            .expect("read first targeted repair job")
+            .expect("first targeted repair job");
+        let payload: serde_json::Value =
+            serde_json::from_str(&job.payload_json).expect("payload json");
+        assert_eq!(
+            payload.get("claim_id").and_then(serde_json::Value::as_str),
+            Some("claim-repair-1")
+        );
+        assert_eq!(
+            payload
+                .get("feedback_id")
+                .and_then(serde_json::Value::as_str),
+            Some("feedback-repair-1")
         );
         assert_eq!(job.raw_signal_count, 1);
     }
