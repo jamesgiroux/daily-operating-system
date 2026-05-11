@@ -288,6 +288,53 @@ fn pending_structural_backfill_rows(db: &ActionDb) -> Result<Vec<StructuralBackf
     Ok(rows)
 }
 
+fn has_pending_structural_backfill_rows(db: &ActionDb) -> Result<bool, String> {
+    if !column_exists(db, "intelligence_claims", "canonical_status")? {
+        return Ok(false);
+    }
+
+    db.conn_ref()
+        .query_row(
+            "SELECT EXISTS(
+                SELECT 1
+                FROM intelligence_claims
+                WHERE canonical_status = 'pending_backfill'
+                LIMIT 1
+             )",
+            [],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(|e| format!("probe structured claim backfill pending rows: {e}"))
+}
+
+fn run_structured_claim_backfill_if_pending(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    context: &str,
+) -> Result<Option<StructuredClaimBackfillReport>, String> {
+    if !has_pending_structural_backfill_rows(db)? {
+        return Ok(None);
+    }
+
+    let report = run_structured_claim_backfill(ctx, db)?;
+    log::info!(
+        "[DOS-7 cutover] {context}: structured claim backfill: {} rows examined, {} live, {} legacy_unmigrated, {} error(s)",
+        report.rows_examined,
+        report.transitioned_live,
+        report.transitioned_legacy_unmigrated,
+        report.errors.len(),
+    );
+    if !report.errors.is_empty() {
+        return Err(format!(
+            "{context}: structured claim backfill produced {} error(s); refusing to continue until they are resolved. First error: {}",
+            report.errors.len(),
+            report.errors.first().map(String::as_str).unwrap_or("(none)"),
+        ));
+    }
+
+    Ok(Some(report))
+}
+
 fn emit_structural_backfill_signal(
     tx: &ActionDb,
     claim_id: &str,
@@ -1310,6 +1357,15 @@ pub fn run_dos7_cutover_if_pending(
 
     match claim_decision {
         CutoverClaimDecision::AlreadyComplete => {
+            // v157 can land after a database already completed DOS-7.
+            // In that upgrade path the new canonical_status column defaults
+            // existing rows to pending_backfill, so the structured backfill
+            // must be driven by pending rows instead of the DOS-7 marker.
+            let _ = run_structured_claim_backfill_if_pending(
+                ctx,
+                db,
+                "DOS-7 cutover already complete startup probe",
+            )?;
             log::debug!(
                 "[DOS-7 cutover] already completed by a prior process; skipping startup hook"
             );
@@ -2941,6 +2997,64 @@ mod tests {
         assert!(
             second.is_none(),
             "second call must skip — already recorded in migration_state"
+        );
+    }
+
+    #[test]
+    fn run_dos7_cutover_if_pending_backfills_structured_rows_after_completed_marker() {
+        let workspace = tempfile::tempdir().unwrap();
+        let conn = fresh_full_db();
+        let db = ActionDb::from_conn(&conn);
+
+        conn.execute(
+            "INSERT OR REPLACE INTO migration_state (key, value)
+             VALUES ('dos7_cutover_completed_at', 1777777777)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO intelligence_claims (
+                id, subject_ref, claim_type, field_path, topic_key, text, dedup_key, item_hash,
+                actor, data_source, observed_at, created_at, provenance_json, metadata_json,
+                claim_state, surfacing_state, retraction_reason, temporal_scope, sensitivity,
+                verification_state, canonical_status, non_semantic_mergeable
+             ) VALUES (
+                'legacy-completed-marker-structured-1', '{\"kind\":\"account\",\"id\":\"acct-1\"}',
+                'risk', 'health.risk', NULL, 'Renewal risk is elevated',
+                'dedup-completed-marker-structured', 'hash-completed-marker-structured',
+                'system_backfill', 'legacy_dismissal', '2026-04-01T00:00:00Z',
+                '2026-04-01T00:00:00Z', '{}', NULL,
+                'tombstoned', 'active', 'user_removal', 'state', 'internal', 'active',
+                'pending_backfill', TRUE
+             )",
+            [],
+        )
+        .unwrap();
+
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+
+        let result =
+            run_dos7_cutover_if_pending(&ctx, db, workspace.path()).expect("startup probe");
+        assert!(
+            result.is_none(),
+            "DOS-7 cutover remains already complete; only structured backfill should run"
+        );
+
+        let canonical_status: String = conn
+            .query_row(
+                "SELECT canonical_status
+                 FROM intelligence_claims
+                 WHERE id = 'legacy-completed-marker-structured-1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            matches!(canonical_status.as_str(), "live" | "legacy_unmigrated"),
+            "pending_backfill row must be terminal before startup hook returns, got {canonical_status}"
         );
     }
 
