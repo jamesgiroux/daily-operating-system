@@ -291,13 +291,20 @@ pub fn sync_ai_commitments_with_ingestion_sources(
             commitment,
             &incoming_identity,
         )?;
+        let existing_target_action = resolve_existing_commitment_target_action(
+            db,
+            entity_type,
+            entity_id,
+            &derived_id,
+            legacy_bridge_action.as_ref(),
+        )?;
         let (owner_resolution, owner_resolution_provenance) =
             resolve_owner_for_commitment_sighting(
                 db,
                 entity_id,
                 &derived_id,
                 commitment.owner.as_deref(),
-                legacy_bridge_action.as_ref(),
+                existing_target_action.as_ref(),
             )?;
         let source_key = commitment_source_key(&item.source);
         let source_count = source_count_after_sighting(
@@ -629,10 +636,18 @@ pub fn upsert_commitment_claim(
         }
     }
 
-    let bridged_action = get_action_from_bridge_row(db, bridge_row.as_ref())?;
+    let bridged_action = get_verified_action_from_bridge_row(
+        db,
+        bridge_row.as_ref(),
+        entity_type,
+        entity_id,
+        &claim.commitment_id,
+    )?;
     let existing_action = match bridged_action {
         Some(action) => Some(action),
-        None => get_action_by_commitment_id(db, &claim.commitment_id)?,
+        None => {
+            get_action_by_verified_commitment_id(db, entity_type, entity_id, &claim.commitment_id)?
+        }
     };
 
     let mut created_action = false;
@@ -672,7 +687,7 @@ pub fn upsert_commitment_claim(
             } else {
                 summary.created += 1;
                 created_action = true;
-                new_commitment_action(
+                let mut action = new_commitment_action(
                     entity_type,
                     entity_id,
                     commitment,
@@ -680,13 +695,21 @@ pub fn upsert_commitment_claim(
                     owner_resolution,
                     trust,
                     now,
-                )
+                );
+                if commitment_id_owned_by_other_action(db, &claim.commitment_id, &action.id)? {
+                    action.commitment_id = None;
+                }
+                action
             }
         }
     };
 
     let before = action.clone();
+    let omit_action_commitment_id = created_action && action.commitment_id.is_none();
     apply_commitment_claim_to_action(&mut action, commitment, claim, owner_resolution, trust, now);
+    if omit_action_commitment_id {
+        action.commitment_id = None;
+    }
     if action_changed_for_commitment(&before, &action) {
         db.upsert_action(&action).map_err(|e| e.to_string())?;
         if !created_action {
@@ -886,6 +909,41 @@ fn get_action_by_commitment_id(
     }
 }
 
+fn commitment_id_owned_by_other_action(
+    db: &ActionDb,
+    commitment_id: &str,
+    action_id: &str,
+) -> Result<bool, String> {
+    db.conn_ref()
+        .query_row(
+            "SELECT EXISTS(
+                SELECT 1
+                FROM actions
+                WHERE commitment_id = ?1
+                  AND id != ?2
+            )",
+            rusqlite::params![commitment_id, action_id],
+            |row| row.get::<_, i64>(0).map(|value| value != 0),
+        )
+        .map_err(|e| e.to_string())
+}
+
+fn get_action_by_verified_commitment_id(
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+    commitment_id: &str,
+) -> Result<Option<DbAction>, String> {
+    let Some(action) = get_action_by_commitment_id(db, commitment_id)? else {
+        return Ok(None);
+    };
+    if action_matches_claim_identity(entity_type, entity_id, commitment_id, &action) {
+        Ok(Some(action))
+    } else {
+        Ok(None)
+    }
+}
+
 fn get_action_from_bridge_row(
     db: &ActionDb,
     row: Option<&BridgeRow>,
@@ -894,6 +952,82 @@ fn get_action_from_bridge_row(
         return Ok(None);
     };
     db.get_action_by_id(action_id).map_err(|e| e.to_string())
+}
+
+fn get_verified_action_from_bridge_row(
+    db: &ActionDb,
+    row: Option<&BridgeRow>,
+    entity_type: &str,
+    entity_id: &str,
+    commitment_id: &str,
+) -> Result<Option<DbAction>, String> {
+    let Some(action) = get_action_from_bridge_row(db, row)? else {
+        return Ok(None);
+    };
+    if action_matches_claim_identity(entity_type, entity_id, commitment_id, &action) {
+        Ok(Some(action))
+    } else {
+        Ok(None)
+    }
+}
+
+fn resolve_existing_commitment_target_action(
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+    commitment_id: &str,
+    legacy_bridge_action: Option<&DbAction>,
+) -> Result<Option<DbAction>, String> {
+    let bridge_row = read_bridge_row(db, commitment_id).map_err(|e| e.to_string())?;
+    if bridge_row.as_ref().is_some_and(|row| row.tombstoned) {
+        return Ok(None);
+    }
+    if let Some(action) = get_verified_action_from_bridge_row(
+        db,
+        bridge_row.as_ref(),
+        entity_type,
+        entity_id,
+        commitment_id,
+    )? {
+        return Ok(Some(action));
+    }
+    if let Some(action) =
+        get_action_by_verified_commitment_id(db, entity_type, entity_id, commitment_id)?
+    {
+        return Ok(Some(action));
+    }
+    if let Some(action) = legacy_bridge_action {
+        return Ok(Some(action.clone()));
+    }
+    if let Some(action_id) =
+        find_existing_open_commitment_by_identity(db, entity_type, entity_id, commitment_id)
+            .map_err(|e| e.to_string())?
+    {
+        return db
+            .get_action_by_id(&action_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("commitment alias target missing: {action_id}"))
+            .map(Some);
+    }
+    Ok(None)
+}
+
+fn action_matches_claim_identity(
+    entity_type: &str,
+    entity_id: &str,
+    commitment_id: &str,
+    action: &DbAction,
+) -> bool {
+    if !action_belongs_to_entity(entity_type, entity_id, action) {
+        return false;
+    }
+    if action.status.as_str() != BACKLOG || !commitment_id.starts_with("commitment:") {
+        return true;
+    }
+
+    let incoming_identity = commitment_typed_identity(entity_type, entity_id, commitment_id);
+    typed_identity_for_legacy_alias_target(entity_type, entity_id, action)
+        .is_some_and(|target_identity| target_identity == incoming_identity)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1317,17 +1451,19 @@ fn typed_identity_for_legacy_alias_target(
         return None;
     }
 
-    if let Some(commitment_id) = action
-        .commitment_id
-        .as_deref()
-        .and_then(|id| trimmed_non_empty(Some(id)))
-        .filter(|id| id.starts_with("commitment:"))
-    {
-        return Some(commitment_typed_identity(
-            entity_type,
-            entity_id,
-            commitment_id,
-        ));
+    if action.status.as_str() != BACKLOG {
+        if let Some(commitment_id) = action
+            .commitment_id
+            .as_deref()
+            .and_then(|id| trimmed_non_empty(Some(id)))
+            .filter(|id| id.starts_with("commitment:"))
+        {
+            return Some(commitment_typed_identity(
+                entity_type,
+                entity_id,
+                commitment_id,
+            ));
+        }
     }
 
     let context_owner = legacy_owner_from_context(action.context.as_deref());
@@ -1358,9 +1494,9 @@ fn resolve_owner_for_commitment_sighting(
     entity_id: &str,
     commitment_id: &str,
     incoming_owner_raw: Option<&str>,
-    legacy_bridge_action: Option<&DbAction>,
+    target_action: Option<&DbAction>,
 ) -> Result<(OwnerResolution, OwnerResolutionProvenance), String> {
-    if let Some(action) = legacy_bridge_action {
+    if let Some(action) = target_action {
         if action_has_stored_owner_provenance(action) {
             return owner_resolution_from_action(db, action).map(|resolution| {
                 (
@@ -1378,7 +1514,7 @@ fn resolve_owner_for_commitment_sighting(
 fn action_has_stored_owner_provenance(action: &DbAction) -> bool {
     matches!(
         action.owner_source.as_deref(),
-        Some(source) if source != "unassigned"
+        Some("user_reassigned" | "stored_owner")
     )
 }
 
@@ -1855,6 +1991,7 @@ fn touch_bridge_row(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commands::UpdateActionRequest;
     use crate::db::test_utils::test_db;
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
     use chrono::TimeZone;
@@ -2038,6 +2175,33 @@ mod tests {
         }];
         sync_ai_commitments_with_ingestion_sources(ctx, db, "account", "acct-1", &items)
             .expect("sync")
+    }
+
+    fn update_action_request(
+        id: &str,
+        title: Option<&str>,
+        due_date: Option<&str>,
+        owner_raw: Option<&str>,
+    ) -> UpdateActionRequest {
+        UpdateActionRequest {
+            id: id.to_string(),
+            title: title.map(ToString::to_string),
+            due_date: due_date.map(ToString::to_string),
+            clear_due_date: None,
+            context: None,
+            clear_context: None,
+            owner_raw: owner_raw.map(ToString::to_string),
+            clear_owner: None,
+            source_label: None,
+            clear_source_label: None,
+            account_id: None,
+            clear_account: None,
+            project_id: None,
+            clear_project: None,
+            person_id: None,
+            clear_person: None,
+            priority: None,
+        }
     }
 
     #[test]
@@ -3184,6 +3348,114 @@ mod tests {
     }
 
     #[test]
+    fn user_edits_backlog_action_after_creation_then_stale_legacy_alias_does_not_overwrite() {
+        let db = test_db();
+        make_ctx!(ctx);
+        let legacy_id = "meeting:real-update-stale-backlog:1";
+        let original_title = "Send original implementation plan";
+        let original_due = "2030-09-01";
+        let original_owner = "Old Owner";
+        let stale_commitment_id =
+            derived_id_with(original_title, Some(original_due), Some(original_owner));
+
+        db.conn_ref()
+            .execute(
+                "INSERT INTO actions
+                 (id, title, priority, status, created_at, updated_at, due_date,
+                  account_id, source_type, source_id, source_label,
+                  action_kind, commitment_id, owner_raw, owner_confidence,
+                  owner_source, trust_score, trust_band)
+                 VALUES ('real-update-backlog-a1', ?1, 3, 'backlog',
+                         '2026-01-01', '2026-01-02', ?2,
+                         'acct-1', 'commitment', ?3, 'legacy meeting',
+                         'commitment', ?3, ?4, 0.72,
+                         'exact_person_name', NULL, NULL)",
+                rusqlite::params![
+                    original_title,
+                    original_due,
+                    stale_commitment_id,
+                    original_owner
+                ],
+            )
+            .unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO ai_commitment_bridge
+                 (commitment_id, entity_type, entity_id, action_id,
+                  first_seen_at, last_seen_at, tombstoned)
+                 VALUES (?1, 'account', 'acct-1', 'real-update-backlog-a1',
+                         '2026-01-01', '2026-01-02', 0)",
+                rusqlite::params![legacy_id],
+            )
+            .unwrap();
+
+        crate::services::actions::apply_update_action(
+            &ctx,
+            &db,
+            update_action_request(
+                "real-update-backlog-a1",
+                Some("User edited implementation plan"),
+                Some("2030-09-15"),
+                Some("New Owner"),
+            ),
+        )
+        .expect("real update action path");
+
+        let stale_sighting = make_commitment_with_identity(
+            original_title,
+            Some(legacy_id),
+            Some(original_due),
+            Some(original_owner),
+            Some("meeting"),
+        );
+        let summary = sync_one_with_ingestion_source(
+            &ctx,
+            &db,
+            &stale_sighting,
+            "meeting",
+            "real-update-stale-backlog",
+        );
+
+        assert_eq!(summary.created, 1);
+        assert_eq!(summary.aliased_to_existing, 0);
+        assert_eq!(action_count(&db), 2);
+        assert_eq!(bridge_action_id(&db, legacy_id), "real-update-backlog-a1");
+        assert_ne!(
+            bridge_action_id(&db, &stale_commitment_id),
+            "real-update-backlog-a1"
+        );
+
+        let (title, due_date, commitment_id, owner_raw, owner_source): (
+            String,
+            String,
+            String,
+            String,
+            String,
+        ) = db
+            .conn_ref()
+            .query_row(
+                "SELECT title, due_date, commitment_id, owner_raw, owner_source
+                 FROM actions WHERE id = 'real-update-backlog-a1'",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
+            )
+            .unwrap();
+        assert_eq!(title, "User edited implementation plan");
+        assert_eq!(due_date, "2030-09-15");
+        assert_eq!(commitment_id, stale_commitment_id);
+        assert_eq!(owner_raw, "New Owner");
+        assert_eq!(owner_source, "user_reassigned");
+    }
+
+    #[test]
     fn non_tombstoned_legacy_bridge_aliases_edited_owner_action_before_identity_fallback() {
         let db = test_db();
         make_ctx!(ctx);
@@ -3369,6 +3641,129 @@ mod tests {
             "resolved_structural_owner"
         );
         assert_eq!(owner_ref["incomingOwnerRaw"], "Incoming Owner");
+        assert_eq!(owner_ref["resolvedOwnerRaw"], "Structural Owner");
+        assert_eq!(owner_ref["ownerRef"]["kind"], "person");
+        assert_eq!(owner_ref["ownerRef"]["person_id"], "p-structural");
+    }
+
+    #[test]
+    fn direct_sighting_after_legacy_alias_creates_bridge_uses_structural_owner_for_trust() {
+        let db = test_db();
+        make_ctx!(ctx);
+        let title = "Score direct sighting through derived bridge";
+        let due_date = "2030-10-01";
+        let incoming_owner = "Incoming Owner";
+        let legacy_id = "meeting:direct-structural-owner:1";
+        let derived_commitment_id = derived_id_with(title, Some(due_date), Some(incoming_owner));
+
+        db.conn_ref()
+            .execute(
+                "INSERT INTO actions
+                 (id, title, priority, status, created_at, updated_at, due_date,
+                  account_id, source_type, source_id, source_label,
+                  action_kind, commitment_id, owner_raw, owner_entity_id,
+                  owner_confidence, owner_source, trust_score, trust_band)
+                 VALUES ('direct-structural-owner-a1', ?1, 3, 'unstarted',
+                         '2026-01-01', '2026-01-02', ?2,
+                         'acct-1', 'commitment', ?3, 'legacy meeting',
+                         'commitment', ?3, 'Structural Owner', 'p-structural',
+                         0.97, 'user_reassigned', NULL, NULL)",
+                rusqlite::params![title, due_date, legacy_id],
+            )
+            .unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO ai_commitment_bridge
+                 (commitment_id, entity_type, entity_id, action_id,
+                  first_seen_at, last_seen_at, tombstoned)
+                 VALUES (?1, 'account', 'acct-1', 'direct-structural-owner-a1',
+                         '2026-01-01', '2026-01-02', 0)",
+                rusqlite::params![legacy_id],
+            )
+            .unwrap();
+
+        let legacy_sighting = make_commitment_with_identity(
+            title,
+            Some(legacy_id),
+            Some(due_date),
+            Some(incoming_owner),
+            Some("meeting"),
+        );
+        let first_summary = sync_one_with_ingestion_source(
+            &ctx,
+            &db,
+            &legacy_sighting,
+            "meeting",
+            "direct-structural-owner",
+        );
+        assert_eq!(first_summary.created, 0);
+        assert_eq!(first_summary.aliased_to_existing, 1);
+        assert_eq!(
+            bridge_action_id(&db, &derived_commitment_id),
+            "direct-structural-owner-a1"
+        );
+
+        let direct_sighting = make_commitment_with_identity(
+            title,
+            None,
+            Some(due_date),
+            Some(incoming_owner),
+            Some("gong"),
+        );
+        let second_summary =
+            sync_one_with_ingestion_source(&ctx, &db, &direct_sighting, "gong", "call-direct");
+        assert_eq!(second_summary.created, 0);
+        assert_eq!(second_summary.aliased_to_existing, 0);
+
+        let action = db
+            .get_action_by_id("direct-structural-owner-a1")
+            .expect("action query")
+            .expect("action row");
+        let structural_owner =
+            owner_resolution_from_action(&db, &action).expect("structural owner");
+        let expected = compute_commitment_trust(
+            "acct-1",
+            &direct_sighting,
+            &structural_owner,
+            2,
+            ctx.clock.now(),
+        );
+        let incoming_owner_resolution = resolve_owner(
+            &db,
+            "acct-1",
+            &derived_commitment_id,
+            direct_sighting.owner.as_deref(),
+        )
+        .expect("incoming owner resolution");
+        let incoming_expected = compute_commitment_trust(
+            "acct-1",
+            &direct_sighting,
+            &incoming_owner_resolution,
+            2,
+            ctx.clock.now(),
+        );
+        assert_ne!(expected.score.value(), incoming_expected.score.value());
+        assert_eq!(action.trust_score, Some(expected.score.value()));
+
+        let owner_ref_json: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT owner_ref_json
+                 FROM action_commitment_sources
+                 WHERE action_id = 'direct-structural-owner-a1'
+                   AND source_key = 'gong:call-direct'
+                 ORDER BY observed_at DESC
+                 LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let owner_ref: serde_json::Value = serde_json::from_str(&owner_ref_json).unwrap();
+        assert_eq!(
+            owner_ref["ownerResolutionSource"],
+            "resolved_structural_owner"
+        );
+        assert_eq!(owner_ref["incomingOwnerRaw"], incoming_owner);
         assert_eq!(owner_ref["resolvedOwnerRaw"], "Structural Owner");
         assert_eq!(owner_ref["ownerRef"]["kind"], "person");
         assert_eq!(owner_ref["ownerRef"]["person_id"], "p-structural");

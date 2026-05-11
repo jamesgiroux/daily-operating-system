@@ -658,7 +658,7 @@ fn validate_update_action_request(request: &UpdateActionRequest) -> Result<(), S
     Ok(())
 }
 
-fn apply_update_action(
+pub(crate) fn apply_update_action(
     ctx: &ServiceContext<'_>,
     db: &ActionDb,
     request: UpdateActionRequest,
