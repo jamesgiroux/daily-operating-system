@@ -1,5 +1,5 @@
 use parking_lot::{Mutex, RwLock};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32};
@@ -349,7 +349,7 @@ pub struct AppState {
     pub workflow: WorkflowState,
     /// Async database service with read/write separation. Initialized async
     /// in Tauri setup after `AppState::new()`. Use `db_read()` / `db_write()`
-    /// for async code, or `with_db_read()` / `with_db_write()` for sync code.
+    /// for async code, or `with_db()` for sync code.
     ///
     /// `RwLock<Option<>>` instead of `OnceCell` so dev mode can reinitialize
     /// the service to point at `dailyos-dev.db`.
@@ -412,6 +412,8 @@ pub struct AppState {
     pub merged_signal_config: RwLock<MergedSignalConfig>,
     /// Background meeting prep queue for future meetings.
     pub meeting_prep_queue: Arc<crate::meeting_prep_queue::MeetingPrepQueue>,
+    /// Per-meeting in-flight guard for trust compiler shadow refresh tasks.
+    trust_shadow_refresh_inflight: Mutex<HashSet<String>>,
     /// Typed resource permits for concurrent background work.
     pub permits: ResourcePermits,
     ///  all three context-related
@@ -449,7 +451,6 @@ pub const BASE_EMAIL_SIGNAL_TYPES: &[&str] = &[
     "engagement_warning",
     "escalation",
     "expansion_opportunity",
-    "cadence_anomaly",
     "email_cadence_drop",
     "project_health_warning",
 ];
@@ -751,6 +752,7 @@ impl AppState {
         // Initialize context provider (ADR-0095).
         // Read context_mode from DB if available, else default to Local.
         let embedding_model = Arc::new(crate::embeddings::EmbeddingModel::new());
+        crate::services::claims::register_claim_embedding_model(Arc::clone(&embedding_model));
         let workspace_path = config
             .as_ref()
             .map(|c| std::path::PathBuf::from(&c.workspace_path))
@@ -890,6 +892,7 @@ impl AppState {
             active_preset: RwLock::new(active_preset),
             merged_signal_config: RwLock::new(startup_merged_config),
             meeting_prep_queue: Arc::new(crate::meeting_prep_queue::MeetingPrepQueue::new()),
+            trust_shadow_refresh_inflight: Mutex::new(HashSet::new()),
             permits: ResourcePermits::new(),
             context_state: RwLock::new(ContextProviderBundle {
                 context_provider,
@@ -900,11 +903,12 @@ impl AppState {
         }
     }
 
-    #[cfg(feature = "test-harness")]
+    #[cfg(any(test, feature = "test-harness"))]
     #[doc(hidden)]
     pub fn test_with_db_service(db_service: Arc<crate::db_service::DbService>) -> Self {
         let prep_queue = Arc::new(Mutex::new(Vec::new()));
         let embedding_model = Arc::new(crate::embeddings::EmbeddingModel::new());
+        crate::services::claims::register_claim_embedding_model(Arc::clone(&embedding_model));
         let local_provider = crate::context_provider::local::LocalContextProvider::new(
             PathBuf::new(),
             Arc::clone(&embedding_model),
@@ -978,6 +982,7 @@ impl AppState {
             active_preset: RwLock::new(None),
             merged_signal_config: RwLock::new(MergedSignalConfig::default()),
             meeting_prep_queue: Arc::new(crate::meeting_prep_queue::MeetingPrepQueue::new()),
+            trust_shadow_refresh_inflight: Mutex::new(HashSet::new()),
             permits: ResourcePermits::new(),
             context_state: RwLock::new(ContextProviderBundle {
                 context_provider: Arc::new(local_provider),
@@ -993,6 +998,16 @@ impl AppState {
     /// Returns the cached `MergedSignalConfig` — cheap clone, no recomputation.
     pub fn get_merged_signal_config(&self) -> MergedSignalConfig {
         self.merged_signal_config.read().clone()
+    }
+
+    pub(crate) fn try_begin_trust_shadow_refresh(&self, meeting_id: &str) -> bool {
+        self.trust_shadow_refresh_inflight
+            .lock()
+            .insert(meeting_id.to_string())
+    }
+
+    pub(crate) fn finish_trust_shadow_refresh(&self, meeting_id: &str) {
+        self.trust_shadow_refresh_inflight.lock().remove(meeting_id);
     }
 
     pub async fn request_confirmation_attestation(
@@ -1318,23 +1333,12 @@ impl AppState {
             .cloned()
     }
 
-    /// Sync DB read helper.
+    /// Sync DB helper.
     ///
     /// Opens a fresh `ActionDb` connection for the closure. Each call gets its
-    /// own connection -- no shared mutex, no contention with async `db_service`.
-    pub fn with_db_read<T, F>(&self, f: F) -> Result<T, String>
-    where
-        F: FnOnce(&crate::db::ActionDb) -> Result<T, String>,
-    {
-        let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-            .map_err(|e| format!("Database unavailable: {e}"))?;
-        f(&db)
-    }
-
-    /// Sync DB write helper.
-    ///
-    /// Opens a fresh `ActionDb` connection for the closure.
-    pub fn with_db_write<T, F>(&self, f: F) -> Result<T, String>
+    /// own connection -- no shared mutex, no contention with async `db_service`,
+    /// and no read/write distinction (callers must not assume serialization).
+    pub fn with_db<T, F>(&self, f: F) -> Result<T, String>
     where
         F: FnOnce(&crate::db::ActionDb) -> Result<T, String>,
     {

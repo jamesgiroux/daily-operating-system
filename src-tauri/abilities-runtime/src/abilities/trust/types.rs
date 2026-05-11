@@ -4,15 +4,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::abilities::provenance::SubjectRef;
 
-use super::config::TrustConfig;
+use super::config::{TrustConfig, FACTOR_MAX, FACTOR_MIN};
+use super::freshness_decay::RenewalContext;
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize, JsonSchema)]
 #[serde(transparent)]
 pub struct TrustScore(pub f64);
 
 impl TrustScore {
-    pub const MIN: f64 = 0.0;
-    pub const MAX: f64 = 1.0;
+    pub const MIN: f64 = FACTOR_MIN;
+    pub const MAX: f64 = FACTOR_MAX;
 
     pub fn value(self) -> f64 {
         self.0
@@ -68,7 +69,8 @@ pub enum ConfidenceCaveat {
     },
     /// A pre-aggregation gate fired and capped the score below
     /// use_with_caution_min. Equal-weight geometric mean would otherwise dilute
-    /// hard-policy factors (a single 0.0 across 10 factors is only ~0.741),
+    /// hard-policy factors dilute under geometric composition, so blockers
+    /// run as gates instead of weighted contributions.
     /// so blockers run as gates instead of weighted contributions.
     TrustGateTriggered {
         gate: TrustGateKind,
@@ -95,6 +97,8 @@ pub enum TrustGateKind {
 pub struct TrustContext {
     #[schemars(with = "String")]
     pub now: DateTime<Utc>,
+    #[serde(default)]
+    pub renewal_context: Option<RenewalContext>,
     pub config: TrustConfig,
     pub factor_inputs: TrustFactorInputs,
     pub cross_entity: CrossEntityCoherenceInput,
@@ -120,7 +124,7 @@ pub struct TrustFactorInputs {
     pub user_feedback: UserFeedbackSignal,
     pub subject_fit_confidence: f64,
     /// How well the claim's internal sub-statements agree with each other.
-    /// Range: 0.0 to 1.0.
+    /// Range: normalized factor bounds.
     pub internal_consistency: f64,
     pub source_lifecycle: SourceLifecycleState,
     /// True when at least one upstream read (corroborations, contradictions,

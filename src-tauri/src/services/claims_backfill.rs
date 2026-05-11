@@ -10,17 +10,371 @@
 //! → bump epoch → run SQL backfills → rekey m1-m8 → run THIS pass → reconcile →
 //! resume).
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use rusqlite::params;
+use serde_json::json;
+
+use abilities_runtime::structured_claim::{Polarity, StructuredClaim};
 
 use crate::db::ActionDb;
 use crate::intelligence::canonicalization::item_hash;
 use crate::intelligence::io::{read_intelligence_json, IntelligenceJson};
 use crate::services::claims::{
-    canonicalize_for_dos280, compute_dedup_key, item_kind_for_claim_type,
+    compute_dedup_key, item_kind_for_claim_type, normalize_claim_text,
+    structural_field_content_hash, structured_claim_json_for_row,
+    structured_status_db_for_verification_state,
 };
+use crate::services::comparator_thresholds::PENDING_BACKFILL_MAX_RETRIES;
 use crate::services::context::ServiceContext;
+
+#[derive(Debug, Default, Clone)]
+pub struct StructuredClaimBackfillReport {
+    pub rows_examined: usize,
+    pub transitioned_live: usize,
+    pub transitioned_legacy_unmigrated: usize,
+    pub errors: Vec<String>,
+}
+
+struct StructuralBackfillRow {
+    id: String,
+    subject_ref: String,
+    claim_type: String,
+    field_path: Option<String>,
+    topic_key: Option<String>,
+    text: String,
+    metadata_json: Option<String>,
+    verification_state: String,
+    backfill_epoch: i64,
+}
+
+struct StructuralBackfillFields {
+    structured_claim_json: String,
+    predicate_ref: String,
+    polarity: &'static str,
+    object_value: String,
+    qualifiers: String,
+    content_hash: String,
+}
+
+pub fn run_structured_claim_backfill(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+) -> Result<StructuredClaimBackfillReport, String> {
+    ctx.check_mutation_allowed()
+        .map_err(|e| format!("ADR-0131 structural backfill mutation gate: {e}"))?;
+
+    if !column_exists(db, "intelligence_claims", "canonical_status")? {
+        return Ok(StructuredClaimBackfillReport::default());
+    }
+
+    let rows = pending_structural_backfill_rows(db)?;
+    let mut report = StructuredClaimBackfillReport::default();
+
+    for row in rows {
+        report.rows_examined += 1;
+        let result = db.with_transaction(|tx| {
+            if row.backfill_epoch >= PENDING_BACKFILL_MAX_RETRIES {
+                let rows_affected = tx
+                    .conn_ref()
+                    .execute(
+                        "UPDATE intelligence_claims
+                         SET canonical_status = 'legacy_unmigrated',
+                             non_semantic_mergeable = TRUE,
+                             backfill_epoch = backfill_epoch + 1
+                         WHERE id = ?1 AND canonical_status = 'pending_backfill'",
+                        params![&row.id],
+                    )
+                    .map_err(|e| format!("terminalize pending_backfill {}: {e}", row.id))?;
+                if rows_affected == 0 {
+                    return Ok("unchanged");
+                }
+                emit_structural_backfill_signal(
+                    tx,
+                    &row.id,
+                    "structural_backfill_changed",
+                    json!({
+                        "claim_id": row.id,
+                        "field_set": [],
+                        "canonical_status": "legacy_unmigrated",
+                    }),
+                )?;
+                emit_structural_backfill_signal(
+                    tx,
+                    &row.id,
+                    "trust_band_downgraded",
+                    json!({
+                        "claim_id": row.id,
+                        "new_band": "use_with_caution",
+                        "reason": "legacy_unmigrated",
+                    }),
+                )?;
+                return Ok("legacy");
+            }
+
+            let Some(structural) = structural_backfill_fields(&row)? else {
+                let rows_affected = tx
+                    .conn_ref()
+                    .execute(
+                        "UPDATE intelligence_claims
+                         SET canonical_status = 'legacy_unmigrated',
+                             non_semantic_mergeable = TRUE,
+                             backfill_epoch = backfill_epoch + 1
+                         WHERE id = ?1 AND canonical_status = 'pending_backfill'",
+                        params![&row.id],
+                    )
+                    .map_err(|e| format!("mark structured claim legacy {}: {e}", row.id))?;
+                if rows_affected == 0 {
+                    return Ok("unchanged");
+                }
+                emit_structural_backfill_signal(
+                    tx,
+                    &row.id,
+                    "structural_backfill_changed",
+                    json!({
+                        "claim_id": row.id,
+                        "field_set": [],
+                        "canonical_status": "legacy_unmigrated",
+                    }),
+                )?;
+                emit_structural_backfill_signal(
+                    tx,
+                    &row.id,
+                    "trust_band_downgraded",
+                    json!({
+                        "claim_id": row.id,
+                        "new_band": "use_with_caution",
+                        "reason": "legacy_unmigrated",
+                    }),
+                )?;
+                return Ok("legacy");
+            };
+
+            let rows_affected = tx
+                .conn_ref()
+                .execute(
+                    "UPDATE intelligence_claims
+                     SET predicate_ref = ?1,
+                         polarity = ?2,
+                         object_value = ?3,
+                         qualifiers = ?4,
+                         structural_field_content_hash = ?5,
+                         structured_claim_json = ?6,
+                         canonical_status = 'live',
+                         non_semantic_mergeable = FALSE,
+                         backfill_epoch = backfill_epoch + 1
+                     WHERE id = ?7 AND canonical_status = 'pending_backfill'",
+                    params![
+                        &structural.predicate_ref,
+                        structural.polarity,
+                        &structural.object_value,
+                        &structural.qualifiers,
+                        &structural.content_hash,
+                        &structural.structured_claim_json,
+                        &row.id,
+                    ],
+                )
+                .map_err(|e| format!("mark structured claim live {}: {e}", row.id))?;
+            if rows_affected == 0 {
+                return Ok("unchanged");
+            }
+            emit_structural_backfill_signal(
+                tx,
+                &row.id,
+                "structural_backfill_changed",
+                json!({
+                    "claim_id": row.id,
+                    "field_set": ["predicate_ref", "polarity", "object_value", "qualifiers"],
+                    "canonical_status": "live",
+                }),
+            )?;
+            emit_structural_backfill_signal(
+                tx,
+                &row.id,
+                "trust_band_cleared",
+                json!({
+                    "claim_id": row.id,
+                    "new_band": "normal",
+                }),
+            )?;
+            Ok("live")
+        });
+
+        match result {
+            Ok("live") => report.transitioned_live += 1,
+            Ok("legacy") => report.transitioned_legacy_unmigrated += 1,
+            Ok(_) => {}
+            Err(error) => report.errors.push(error),
+        }
+    }
+
+    Ok(report)
+}
+
+fn structural_backfill_fields(
+    row: &StructuralBackfillRow,
+) -> Result<Option<StructuralBackfillFields>, String> {
+    let Some(structured_claim_json) = structured_claim_json_for_row(
+        &row.subject_ref,
+        &row.claim_type,
+        row.field_path.as_deref(),
+        row.topic_key.as_deref(),
+        &row.text,
+        row.metadata_json.as_deref(),
+        &row.verification_state,
+    )
+    .map_err(|e| format!("extract structured claim {}: {e}", row.id))?
+    else {
+        return Ok(None);
+    };
+
+    let structured = serde_json::from_str::<StructuredClaim>(&structured_claim_json)
+        .map_err(|e| format!("parse structured claim {}: {e}", row.id))?;
+    let predicate_ref = structured.predicate.registry_id();
+    let polarity = match structured.polarity {
+        Polarity::Affirm => "affirm",
+        Polarity::Negate => "negate",
+    };
+    let object_value = serde_json::to_string(&structured.object)
+        .map_err(|e| format!("serialize structured object {}: {e}", row.id))?;
+    let qualifiers = serde_json::to_string(&structured.qualifiers)
+        .map_err(|e| format!("serialize structured qualifiers {}: {e}", row.id))?;
+    let content_hash = structural_field_content_hash(
+        Some(&predicate_ref),
+        Some(polarity),
+        Some(&object_value),
+        Some(&qualifiers),
+        structured_status_db_for_verification_state(&row.verification_state),
+    );
+
+    Ok(Some(StructuralBackfillFields {
+        structured_claim_json,
+        predicate_ref,
+        polarity,
+        object_value,
+        qualifiers,
+        content_hash,
+    }))
+}
+
+fn pending_structural_backfill_rows(db: &ActionDb) -> Result<Vec<StructuralBackfillRow>, String> {
+    let mut stmt = db
+        .conn_ref()
+        .prepare(
+            "SELECT id, subject_ref, claim_type, field_path, topic_key, text, metadata_json,
+                    verification_state, backfill_epoch
+             FROM intelligence_claims
+             WHERE canonical_status = 'pending_backfill'
+             ORDER BY created_at, id",
+        )
+        .map_err(|e| format!("prepare structural claim backfill scan: {e}"))?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(StructuralBackfillRow {
+                id: row.get(0)?,
+                subject_ref: row.get(1)?,
+                claim_type: row.get(2)?,
+                field_path: row.get(3)?,
+                topic_key: row.get(4)?,
+                text: row.get(5)?,
+                metadata_json: row.get(6)?,
+                verification_state: row.get(7)?,
+                backfill_epoch: row.get(8)?,
+            })
+        })
+        .map_err(|e| format!("query structural claim backfill scan: {e}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("read structural claim backfill row: {e}"))?;
+    Ok(rows)
+}
+
+fn has_pending_structural_backfill_rows(db: &ActionDb) -> Result<bool, String> {
+    if !column_exists(db, "intelligence_claims", "canonical_status")? {
+        return Ok(false);
+    }
+
+    db.conn_ref()
+        .query_row(
+            "SELECT EXISTS(
+                SELECT 1
+                FROM intelligence_claims
+                WHERE canonical_status = 'pending_backfill'
+                LIMIT 1
+             )",
+            [],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(|e| format!("probe structured claim backfill pending rows: {e}"))
+}
+
+fn run_structured_claim_backfill_if_pending(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    context: &str,
+) -> Result<Option<StructuredClaimBackfillReport>, String> {
+    if !has_pending_structural_backfill_rows(db)? {
+        return Ok(None);
+    }
+
+    let report = run_structured_claim_backfill(ctx, db)?;
+    log::info!(
+        "[DOS-7 cutover] {context}: structured claim backfill: {} rows examined, {} live, {} legacy_unmigrated, {} error(s)",
+        report.rows_examined,
+        report.transitioned_live,
+        report.transitioned_legacy_unmigrated,
+        report.errors.len(),
+    );
+    if !report.errors.is_empty() {
+        return Err(format!(
+            "{context}: structured claim backfill produced {} error(s); refusing to continue until they are resolved. First error: {}",
+            report.errors.len(),
+            report.errors.first().map(String::as_str).unwrap_or("(none)"),
+        ));
+    }
+
+    Ok(Some(report))
+}
+
+fn emit_structural_backfill_signal(
+    tx: &ActionDb,
+    claim_id: &str,
+    signal_type: &str,
+    payload: serde_json::Value,
+) -> Result<(), String> {
+    crate::signals::bus::emit_signal_in_active_tx(
+        tx,
+        "claim",
+        claim_id,
+        signal_type,
+        "claims_backfill:structured_claim",
+        &payload,
+    )
+    .map_err(|e| format!("emit {signal_type}: {e}"))?;
+    Ok(())
+}
+
+fn column_exists(db: &ActionDb, table_name: &str, column_name: &str) -> Result<bool, String> {
+    let mut stmt = db
+        .conn_ref()
+        .prepare(&format!("PRAGMA table_info({table_name})"))
+        .map_err(|e| format!("prepare table info for {table_name}: {e}"))?;
+    let mut rows = stmt
+        .query([])
+        .map_err(|e| format!("query table info for {table_name}: {e}"))?;
+    while let Some(row) = rows
+        .next()
+        .map_err(|e| format!("read table info for {table_name}: {e}"))?
+    {
+        let name: String = row
+            .get(1)
+            .map_err(|e| format!("read column name for {table_name}: {e}"))?;
+        if name == column_name {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
 
 /// Result of a single workspace backfill pass.
 #[derive(Debug, Default, Clone)]
@@ -222,7 +576,7 @@ fn runtime_identity_for_rekey(row: &RekeyRow) -> Result<(String, String, String)
                 "subject cannot be canonicalized for dedup_key (likely Multi/Global per ADR-0125): {e}"
             )
         })?;
-    let canonical_text = canonicalize_for_dos280(&row.text);
+    let canonical_text = normalize_claim_text(&row.text);
     let next_hash = item_hash(item_kind_for_claim_type(&row.claim_type), &canonical_text);
     let next_dedup_key = compute_dedup_key(
         &next_hash,
@@ -468,6 +822,8 @@ fn sanitize_id_segment(s: &str) -> String {
 
 use std::time::Duration;
 
+const DOS7_CUTOVER_DRAIN_TIMEOUT: Duration = Duration::from_secs(30);
+
 /// Aggregated report of the full claims cutover orchestration.
 #[derive(Debug, Default, Clone)]
 pub struct CutoverReport {
@@ -478,6 +834,7 @@ pub struct CutoverReport {
     pub sql_migrations_applied: usize,
     pub rekey_report: RekeyReport,
     pub json_blob_report: DismissedItemBackfillReport,
+    pub structured_claim_backfill_report: StructuredClaimBackfillReport,
     pub reconcile_findings: usize,
     pub source_asof_backfill_summary:
         Option<crate::services::source_asof_backfill::BackfillSummary>,
@@ -683,19 +1040,95 @@ fn read_schema_epoch(db: &ActionDb) -> Result<i64, String> {
         .map_err(|e| format!("read schema_epoch: {e}"))
 }
 
+#[must_use = "dropping this guard resumes fresh FenceCycle capture attempts"]
+struct ClaimsCutoverPauseGuard {
+    _inner: crate::intelligence::write_fence::CutoverCapturePauseGuard,
+    context: String,
+}
+
+impl ClaimsCutoverPauseGuard {
+    fn new(context: &str) -> Self {
+        log::info!("[{context}] pausing fresh FenceCycle captures");
+        Self {
+            _inner: crate::intelligence::write_fence::pause_cutover_captures(),
+            context: context.to_string(),
+        }
+    }
+}
+
+impl Drop for ClaimsCutoverPauseGuard {
+    fn drop(&mut self) {
+        log::info!("[{}] resumed fresh FenceCycle captures", self.context);
+    }
+}
+
+fn pause_bump_schema_epoch_and_drain_fence(
+    db: &ActionDb,
+    context: &str,
+) -> Result<(ClaimsCutoverPauseGuard, i64, i64, usize), String> {
+    let pause_guard = ClaimsCutoverPauseGuard::new(context);
+    let (epoch_before, epoch_after) = bump_schema_epoch_for_cutover(db, context)?;
+    let remaining = drain_cutover_fence(context)?;
+    Ok((pause_guard, epoch_before, epoch_after, remaining))
+}
+
+fn bump_schema_epoch_for_cutover(db: &ActionDb, context: &str) -> Result<(i64, i64), String> {
+    let epoch_before = read_schema_epoch(db)?;
+    let epoch_after = crate::intelligence::write_fence::bump_schema_epoch(db)?;
+    log::info!(
+        "[{context}] schema_epoch: {} -> {}",
+        epoch_before,
+        epoch_after
+    );
+    Ok((epoch_before, epoch_after))
+}
+
+fn drain_cutover_fence(context: &str) -> Result<usize, String> {
+    match crate::intelligence::write_fence::drain_with_timeout(DOS7_CUTOVER_DRAIN_TIMEOUT) {
+        Ok(remaining) => {
+            log::info!("[{context}] drained; in_flight={remaining}");
+            Ok(remaining)
+        }
+        Err(remaining) => Err(format!(
+            "{context}: drain timed out with {remaining} in-flight FenceCycle handle(s); aborting before backfill per plan §8"
+        )),
+    }
+}
+
+fn run_structured_claim_backfill_if_pending_with_cutover_fence(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    context: &str,
+) -> Result<Option<StructuredClaimBackfillReport>, String> {
+    if !has_pending_structural_backfill_rows(db)? {
+        return Ok(None);
+    }
+
+    let (_pause_guard, _, _, _) = pause_bump_schema_epoch_and_drain_fence(db, context)?;
+    run_structured_claim_backfill_if_pending(ctx, db, context)
+}
+
+#[derive(Debug)]
+enum CutoverStartupPlan {
+    Noop,
+    AlreadyCompleteStructured { epoch_before: i64, epoch_after: i64 },
+    Claimed { epoch_before: i64, epoch_after: i64 },
+}
+
 /// Run the full claims cutover sequence atomically. Returns Err if any
 /// step fails so the caller can roll back from the pre-migration backup
 /// (created by the migration runner before any version applies).
 ///
 /// Sequence per plan §2 "Migration fence" + §8 "Failure modes":
 ///   1. Pre-flight log
-///   2. Bump schema_epoch (causes in-flight workers to abort on recheck)
-///   3. Drain in-flight FenceCycle handles (30s timeout)
-///   4. Run pending schema/backfill migrations (131 + 132 + any newer)
+///   2. Pause fresh FenceCycle captures process-wide
+///   3. Bump schema_epoch (causes in-flight workers to abort on recheck)
+///   4. Drain in-flight FenceCycle handles (30s timeout)
+///   5. Run pending schema/backfill migrations (131 + 132 + any newer)
 ///      Rekey SQL-backfilled m1-m8 claims via runtime helpers
-///   5. Run JSON-blob (mechanism 9) backfill
-///   6. Reconcile pass (D5 stub today)
-///   7. Resume — no-op; workers re-capture epoch on next pickup
+///   6. Run JSON-blob (mechanism 9) backfill
+///   7. Reconcile pass (D5 stub today)
+///   8. Resume fresh captures by dropping the pause guard
 pub fn run_dos7_cutover(
     ctx: &ServiceContext<'_>,
     db: &ActionDb,
@@ -709,40 +1142,35 @@ pub fn run_dos7_cutover(
         workspace_root.display()
     );
 
+    // Step 2: bump schema_epoch.
+    let (_pause_guard, epoch_before, epoch_after, remaining) =
+        pause_bump_schema_epoch_and_drain_fence(db, "DOS-7 cutover")?;
+    run_dos7_cutover_after_fence(
+        ctx,
+        db,
+        workspace_root,
+        epoch_before,
+        epoch_after,
+        remaining,
+    )
+}
+
+fn run_dos7_cutover_after_fence(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    workspace_root: &Path,
+    epoch_before: i64,
+    epoch_after: i64,
+    drain_in_flight_remaining: usize,
+) -> Result<CutoverReport, String> {
     let mut report = CutoverReport {
         completed_at: chrono::Utc::now(),
+        schema_epoch_before: epoch_before,
+        schema_epoch_after: epoch_after,
+        drain_in_flight_remaining,
+        drain_timed_out: false,
         ..Default::default()
     };
-
-    // Step 2: bump schema_epoch.
-    let epoch_before = read_schema_epoch(db)?;
-    let epoch_after = crate::intelligence::write_fence::bump_schema_epoch(db)?;
-    report.schema_epoch_before = epoch_before;
-    report.schema_epoch_after = epoch_after;
-    log::info!(
-        "[DOS-7 cutover] schema_epoch: {} -> {}",
-        epoch_before,
-        epoch_after
-    );
-
-    // Step 3: drain in-flight FenceCycle handles.
-    match crate::intelligence::write_fence::drain_with_timeout(Duration::from_secs(30)) {
-        Ok(remaining) => {
-            report.drain_in_flight_remaining = remaining;
-            report.drain_timed_out = false;
-        }
-        Err(remaining) => {
-            report.drain_in_flight_remaining = remaining;
-            report.drain_timed_out = true;
-            return Err(format!(
-                "DOS-7 cutover: drain timed out with {remaining} in-flight FenceCycle handle(s); aborting before backfill per plan §8"
-            ));
-        }
-    }
-    log::info!(
-        "[DOS-7 cutover] drained; in_flight={}",
-        report.drain_in_flight_remaining
-    );
 
     // Step 4: run pending migrations. Migrations 131+132 (claims SQL
     // backfills) plus any newer registered versions are applied here.
@@ -800,6 +1228,27 @@ pub fn run_dos7_cutover(
         ));
     }
     report.rekey_report = rekey_report;
+
+    // Step 5.75: v158-v161 structured-claim canonicalization closure. This
+    // must run after the split migrations add semantic evidence,
+    // canonical_status, and structural columns, and before reconcile/completion
+    // so pending_backfill rows cannot be left as a successful cutover artifact.
+    let structured_report = run_structured_claim_backfill(ctx, db)?;
+    log::info!(
+        "[DOS-7 cutover] structured claim backfill: {} rows examined, {} live, {} legacy_unmigrated, {} error(s)",
+        structured_report.rows_examined,
+        structured_report.transitioned_live,
+        structured_report.transitioned_legacy_unmigrated,
+        structured_report.errors.len(),
+    );
+    if !structured_report.errors.is_empty() {
+        return Err(format!(
+            "DOS-7 cutover: structured claim backfill produced {} error(s); refusing to mark cutover complete until they are resolved. First error: {}",
+            structured_report.errors.len(),
+            structured_report.errors.first().map(String::as_str).unwrap_or("(none)"),
+        ));
+    }
+    report.structured_claim_backfill_report = structured_report;
 
     // Step 6: reconcile pass (D5 stub today; full impl gates on
     // scripts/reconcile_ghost_resurrection.sql findings = 0).
@@ -867,6 +1316,239 @@ const DOS7_CUTOVER_STARTED_AT_KEY: &str = "dos7_cutover_started_at";
 /// treating it as stale (e.g. crashed mid-cutover) and reclaiming.
 /// 30 minutes covers the worst-case JSON-blob workspace size.
 const DOS7_CUTOVER_STALE_AFTER_SECS: i64 = 30 * 60;
+
+fn prepare_dos7_cutover_startup_plan(db: &ActionDb) -> Result<CutoverStartupPlan, String> {
+    let claims_table_exists: bool = db
+        .conn_ref()
+        .query_row(
+            "SELECT count(*) FROM sqlite_master \
+             WHERE type = 'table' AND name = 'intelligence_claims'",
+            [],
+            |row| row.get::<_, i64>(0).map(|c| c > 0),
+        )
+        .map_err(|e| format!("DOS-7 cutover startup gate: {e}"))?;
+    if !claims_table_exists {
+        return Ok(CutoverStartupPlan::Noop);
+    }
+
+    let now_ts = chrono::Utc::now().timestamp();
+    let conn = db.conn_ref();
+    conn.execute_batch("BEGIN IMMEDIATE")
+        .map_err(|e| format!("DOS-7 cutover claim BEGIN: {e}"))?;
+
+    let claim_decision = (|| -> Result<CutoverClaimDecision, String> {
+        let completed: Option<i64> = conn
+            .query_row(
+                "SELECT value FROM migration_state WHERE key = ?1",
+                [DOS7_CUTOVER_COMPLETED_AT_KEY],
+                |row| row.get(0),
+            )
+            .ok();
+        if completed.is_some() {
+            return Ok(CutoverClaimDecision::AlreadyComplete);
+        }
+
+        let in_flight: Option<i64> = conn
+            .query_row(
+                "SELECT value FROM migration_state WHERE key = ?1",
+                [DOS7_CUTOVER_STARTED_AT_KEY],
+                |row| row.get(0),
+            )
+            .ok();
+        if let Some(started_ts) = in_flight {
+            if now_ts - started_ts < DOS7_CUTOVER_STALE_AFTER_SECS {
+                return Ok(CutoverClaimDecision::InFlightElsewhere { started_ts });
+            }
+            conn.execute(
+                "UPDATE migration_state SET value = ?2 WHERE key = ?1",
+                rusqlite::params![DOS7_CUTOVER_STARTED_AT_KEY, now_ts],
+            )
+            .map_err(|e| format!("DOS-7 cutover reclaim stale marker: {e}"))?;
+            return Ok(CutoverClaimDecision::Claimed);
+        }
+
+        conn.execute(
+            "INSERT INTO migration_state (key, value) VALUES (?1, ?2)",
+            rusqlite::params![DOS7_CUTOVER_STARTED_AT_KEY, now_ts],
+        )
+        .map_err(|e| format!("DOS-7 cutover claim insert: {e}"))?;
+        Ok(CutoverClaimDecision::Claimed)
+    })();
+
+    let claim_decision = match claim_decision {
+        Ok(decision) => {
+            conn.execute_batch("COMMIT")
+                .map_err(|e| format!("DOS-7 cutover claim COMMIT: {e}"))?;
+            decision
+        }
+        Err(e) => {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
+            let _ = conn.execute_batch("ROLLBACK");
+            return Err(e);
+        }
+    };
+
+    match claim_decision {
+        CutoverClaimDecision::AlreadyComplete => {
+            if !has_pending_structural_backfill_rows(db)? {
+                log::debug!(
+                    "[DOS-7 cutover] already completed by a prior process; skipping startup hook"
+                );
+                return Ok(CutoverStartupPlan::Noop);
+            }
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let ext = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+            ctx.check_mutation_allowed().map_err(|e| {
+                format!("DOS-7 cutover already complete startup probe mutation gate: {e}")
+            })?;
+            let (epoch_before, epoch_after) =
+                bump_schema_epoch_for_cutover(db, "DOS-7 cutover already complete startup probe")?;
+            Ok(CutoverStartupPlan::AlreadyCompleteStructured {
+                epoch_before,
+                epoch_after,
+            })
+        }
+        CutoverClaimDecision::InFlightElsewhere { started_ts } => {
+            log::info!(
+                "[DOS-7 cutover] in flight elsewhere since unix={}; this process defers (stale-after={}s)",
+                started_ts, DOS7_CUTOVER_STALE_AFTER_SECS
+            );
+            Ok(CutoverStartupPlan::Noop)
+        }
+        CutoverClaimDecision::Claimed => {
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let ext = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+            ctx.check_mutation_allowed()
+                .map_err(|e| format!("DOS-7 cutover mutation gate: {e}"))?;
+            log::info!("[DOS-7 cutover] claimed by this process; running now");
+            let (epoch_before, epoch_after) = bump_schema_epoch_for_cutover(db, "DOS-7 cutover")?;
+            Ok(CutoverStartupPlan::Claimed {
+                epoch_before,
+                epoch_after,
+            })
+        }
+    }
+}
+
+fn record_dos7_cutover_completion(db: &ActionDb) -> Result<(), String> {
+    db.conn_ref()
+        .execute(
+            "INSERT OR REPLACE INTO migration_state (key, value) VALUES (?1, ?2)",
+            rusqlite::params![
+                DOS7_CUTOVER_COMPLETED_AT_KEY,
+                chrono::Utc::now().timestamp()
+            ],
+        )
+        .map_err(|e| format!("DOS-7 cutover record completion: {e}"))?;
+
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
+    let _ = db.conn_ref().execute(
+        "DELETE FROM migration_state WHERE key = ?1",
+        [DOS7_CUTOVER_STARTED_AT_KEY],
+    );
+
+    Ok(())
+}
+
+pub async fn run_dos7_cutover_if_pending_via_db_service(
+    svc: Arc<crate::db_service::DbService>,
+    workspace_root: PathBuf,
+) -> Result<Option<CutoverReport>, String> {
+    let _cutover_capture_pause = ClaimsCutoverPauseGuard::new("DOS-7 cutover startup prepare");
+    let plan = svc
+        .writer()
+        .call(|conn| {
+            let db = ActionDb::from_conn(conn);
+            Ok(prepare_dos7_cutover_startup_plan(db))
+        })
+        .await
+        .map_err(|e| format!("DOS-7 cutover startup prepare DB write error: {e}"))??;
+
+    match plan {
+        CutoverStartupPlan::Noop => Ok(None),
+        CutoverStartupPlan::AlreadyCompleteStructured {
+            epoch_before,
+            epoch_after,
+        } => {
+            let context = "DOS-7 cutover already complete startup probe";
+            let drain_remaining = tokio::task::spawn_blocking(move || drain_cutover_fence(context))
+                .await
+                .map_err(|e| format!("{context}: drain task join failed: {e}"))??;
+            let report = svc
+                .writer()
+                .call(move |conn| {
+                    let db = ActionDb::from_conn(conn);
+                    let clock = crate::services::context::SystemClock;
+                    let rng = crate::services::context::SystemRng;
+                    let ext = crate::services::context::ExternalClients::default();
+                    let ctx =
+                        crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+                    Ok(run_structured_claim_backfill_if_pending(&ctx, db, context))
+                })
+                .await
+                .map_err(|e| format!("{context}: structured backfill DB write error: {e}"))??;
+            if let Some(report) = report {
+                log::info!(
+                    "[{context}] structured claim backfill after fence: {} rows examined, {} live, {} legacy_unmigrated; schema_epoch {}->{}, drained {}",
+                    report.rows_examined,
+                    report.transitioned_live,
+                    report.transitioned_legacy_unmigrated,
+                    epoch_before,
+                    epoch_after,
+                    drain_remaining,
+                );
+            }
+            log::debug!(
+                "[DOS-7 cutover] already completed by a prior process; skipping startup hook"
+            );
+            Ok(None)
+        }
+        CutoverStartupPlan::Claimed {
+            epoch_before,
+            epoch_after,
+        } => {
+            let context = "DOS-7 cutover";
+            let drain_remaining = tokio::task::spawn_blocking(move || drain_cutover_fence(context))
+                .await
+                .map_err(|e| format!("{context}: drain task join failed: {e}"))??;
+            let report = svc
+                .writer()
+                .call(move |conn| {
+                    let db = ActionDb::from_conn(conn);
+                    let clock = crate::services::context::SystemClock;
+                    let rng = crate::services::context::SystemRng;
+                    let ext = crate::services::context::ExternalClients::default();
+                    let ctx =
+                        crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+                    Ok((|| -> Result<CutoverReport, String> {
+                        let report = run_dos7_cutover_after_fence(
+                            &ctx,
+                            db,
+                            &workspace_root,
+                            epoch_before,
+                            epoch_after,
+                            drain_remaining,
+                        )?;
+                        record_dos7_cutover_completion(db)?;
+                        Ok(report)
+                    })())
+                })
+                .await
+                .map_err(|e| format!("DOS-7 cutover DB write error: {e}"))??;
+            Ok(Some(report))
+        }
+    }
+}
 
 /// Idempotently run the claims cutover (rekey + JSON-blob
 /// backfill + reconcile) on startup.
@@ -982,6 +1664,16 @@ pub fn run_dos7_cutover_if_pending(
 
     match claim_decision {
         CutoverClaimDecision::AlreadyComplete => {
+            // v158-v161 can land on a database that already completed the
+            // prior claim-substrate cutover. In that upgrade path the new
+            // canonical_status column defaults existing rows to
+            // pending_backfill, so the structured backfill must be driven by
+            // pending rows instead of the prior cutover marker.
+            let _ = run_structured_claim_backfill_if_pending_with_cutover_fence(
+                ctx,
+                db,
+                "DOS-7 cutover already complete startup probe",
+            )?;
             log::debug!(
                 "[DOS-7 cutover] already completed by a prior process; skipping startup hook"
             );
@@ -1006,27 +1698,7 @@ pub fn run_dos7_cutover_if_pending(
 
     // Record completion. INSERT OR REPLACE so a stale-claim reclaim
     // followed by a successful run still persists the marker.
-    db.conn_ref()
-        .execute(
-            "INSERT OR REPLACE INTO migration_state (key, value) VALUES (?1, ?2)",
-            rusqlite::params![
-                DOS7_CUTOVER_COMPLETED_AT_KEY,
-                chrono::Utc::now().timestamp()
-            ],
-        )
-        .map_err(|e| format!("DOS-7 cutover record completion: {e}"))?;
-
-    // Clear the started marker so the migration_state reflects only
-    // the completed timestamp going forward.
-    #[allow(
-        clippy::let_underscore_must_use,
-        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-    )]
-    // best-effort: completed_at is authoritative; stale started_at is ignored after completion.
-    let _ = db.conn_ref().execute(
-        "DELETE FROM migration_state WHERE key = ?1",
-        [DOS7_CUTOVER_STARTED_AT_KEY],
-    );
+    record_dos7_cutover_completion(db)?;
 
     Ok(Some(report))
 }
@@ -1041,10 +1713,13 @@ enum CutoverClaimDecision {
 #[allow(clippy::needless_borrow)]
 mod tests {
     use super::*;
+    use crate::db::{DbKeyProvider, EncryptionKey, UserIdentity};
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
     use chrono::TimeZone;
     use rusqlite::Connection;
     use std::fs;
+    use std::sync::{mpsc, Arc};
+    use std::time::Duration;
 
     fn fixture_ctx<'a>(
         clock: &'a FixedClock,
@@ -1052,6 +1727,57 @@ mod tests {
         ext: &'a ExternalClients,
     ) -> ServiceContext<'a> {
         ServiceContext::test_live(clock, rng, ext)
+    }
+
+    struct FixtureKeyProvider {
+        key: EncryptionKey,
+    }
+
+    impl FixtureKeyProvider {
+        fn new() -> Self {
+            Self {
+                key: EncryptionKey::from_hex(
+                    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+                ),
+            }
+        }
+    }
+
+    impl DbKeyProvider for FixtureKeyProvider {
+        fn get_or_create_key(
+            &self,
+            _user: &UserIdentity,
+        ) -> crate::db::key_provider::Result<EncryptionKey> {
+            Ok(self.key.clone())
+        }
+
+        fn rotate_key(
+            &self,
+            _user: &UserIdentity,
+        ) -> crate::db::key_provider::Result<EncryptionKey> {
+            Ok(self.key.clone())
+        }
+    }
+
+    struct GlobalDbServiceGuard;
+
+    impl Drop for GlobalDbServiceGuard {
+        fn drop(&mut self) {
+            crate::db_service::uninstall_global();
+        }
+    }
+
+    fn capture_fence_with_retry(db: &ActionDb) -> crate::intelligence::write_fence::FenceCycle {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            match crate::intelligence::write_fence::FenceCycle::capture(db) {
+                Ok(cycle) => return cycle,
+                Err(e) if e.contains("paused") && std::time::Instant::now() < deadline => {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(e) => panic!("capture fence: {e}"),
+            }
+        }
     }
 
     fn fresh_conn() -> Connection {
@@ -1116,7 +1842,7 @@ mod tests {
         let subject_value = serde_json::from_str::<serde_json::Value>(subject_ref).unwrap();
         let subject = crate::services::claims::subject_ref_from_json(&subject_value).unwrap();
         let compact_subject_ref = crate::services::claims::canonical_subject_ref(&subject).unwrap();
-        let canonical_text = crate::services::claims::canonicalize_for_dos280(text);
+        let canonical_text = crate::services::claims::normalize_claim_text(text);
         let hash = crate::intelligence::canonicalization::item_hash(
             crate::services::claims::item_kind_for_claim_type(claim_type),
             &canonical_text,
@@ -1214,7 +1940,7 @@ mod tests {
 
     /// L2 cycle-4 fix #1: backfilled m3 email rows store the legacy
     /// `email_dismissals.item_text` verbatim (with whatever whitespace
-    /// anomalies the user typed). Runtime canonicalize_for_dos280
+    /// anomalies the user typed). Runtime normalize_claim_text
     /// trims + collapses whitespace + lowercases. The rekey pass
     /// rewrites `item_hash` to the runtime-canonical hash so PRE-GATE
     /// hash tier matches a runtime commit_claim with the canonical
@@ -2403,6 +3129,119 @@ mod tests {
     }
 
     #[test]
+    fn structured_backfill_keeps_metadata_marked_non_semantic_rows_legacy_unmigrated() {
+        let conn = fresh_full_db();
+        let db = ActionDb::from_conn(&conn);
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+
+        conn.execute(
+            "INSERT INTO intelligence_claims (
+                id, subject_ref, claim_type, field_path, topic_key, text, dedup_key, item_hash,
+                actor, data_source, observed_at, created_at, provenance_json, metadata_json,
+                claim_state, surfacing_state, retraction_reason, temporal_scope, sensitivity,
+                verification_state, canonical_status, non_semantic_mergeable
+             ) VALUES (
+                'legacy-nonsemantic-1', '{\"kind\":\"account\",\"id\":\"acct-1\"}',
+                'risk', 'health.risk', NULL, 'Legacy non-semantic text', 'dedup-ns', 'hash-ns',
+                'system_backfill', 'legacy_dismissal', '2026-04-01T00:00:00Z',
+                '2026-04-01T00:00:00Z', '{}', '{\"non_semantic_mergeable\":true}',
+                'tombstoned', 'active', 'user_removal', 'state', 'internal', 'active',
+                'pending_backfill', TRUE
+             )",
+            [],
+        )
+        .unwrap();
+
+        let report = run_structured_claim_backfill(&ctx, &db).unwrap();
+        assert_eq!(report.rows_examined, 1);
+        assert_eq!(report.transitioned_live, 0);
+        assert_eq!(report.transitioned_legacy_unmigrated, 1);
+        assert!(report.errors.is_empty(), "{:?}", report.errors);
+
+        let (canonical_status, non_semantic_mergeable, structured_claim_json): (
+            String,
+            bool,
+            Option<String>,
+        ) = conn
+            .query_row(
+                "SELECT canonical_status, non_semantic_mergeable, structured_claim_json
+                 FROM intelligence_claims WHERE id = 'legacy-nonsemantic-1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(canonical_status, "legacy_unmigrated");
+        assert!(non_semantic_mergeable);
+        assert!(structured_claim_json.is_none());
+    }
+
+    #[test]
+    fn structured_backfill_persists_structured_json_only_for_live_rows() {
+        let conn = fresh_full_db();
+        let db = ActionDb::from_conn(&conn);
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+
+        conn.execute(
+            "INSERT INTO intelligence_claims (
+                id, subject_ref, claim_type, field_path, topic_key, text, dedup_key, item_hash,
+                actor, data_source, observed_at, created_at, provenance_json, metadata_json,
+                claim_state, surfacing_state, retraction_reason, temporal_scope, sensitivity,
+                verification_state, canonical_status, non_semantic_mergeable
+             ) VALUES (
+                'legacy-structured-1', '{\"kind\":\"account\",\"id\":\"acct-1\"}',
+                'risk', 'health.risk', NULL, 'Renewal risk is elevated', 'dedup-live', 'hash-live',
+                'system_backfill', 'legacy_dismissal', '2026-04-01T00:00:00Z',
+                '2026-04-01T00:00:00Z', '{}', NULL,
+                'tombstoned', 'active', 'user_removal', 'state', 'internal', 'active',
+                'pending_backfill', TRUE
+             )",
+            [],
+        )
+        .unwrap();
+
+        let report = run_structured_claim_backfill(&ctx, &db).unwrap();
+        assert_eq!(report.rows_examined, 1);
+        assert_eq!(report.transitioned_live, 1);
+        assert_eq!(report.transitioned_legacy_unmigrated, 0);
+        assert!(report.errors.is_empty(), "{:?}", report.errors);
+
+        let (
+            canonical_status,
+            non_semantic_mergeable,
+            structured_claim_json,
+            predicate_ref,
+            content_hash,
+        ): (String, bool, Option<String>, Option<String>, Option<String>) = conn
+            .query_row(
+                "SELECT canonical_status, non_semantic_mergeable, structured_claim_json,
+                        predicate_ref, structural_field_content_hash
+                 FROM intelligence_claims WHERE id = 'legacy-structured-1'",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
+            )
+            .unwrap();
+        assert_eq!(canonical_status, "live");
+        assert!(!non_semantic_mergeable);
+        assert!(structured_claim_json.is_some());
+        assert_eq!(predicate_ref.as_deref(), Some("risk.status"));
+        assert!(content_hash.is_some());
+    }
+
+    #[test]
     fn reconcile_clean_db_returns_zero_findings() {
         let conn = fresh_full_db();
         let db = ActionDb::from_conn(&conn);
@@ -2500,6 +3339,439 @@ mod tests {
         assert!(
             second.is_none(),
             "second call must skip — already recorded in migration_state"
+        );
+    }
+
+    #[test]
+    fn run_dos7_cutover_if_pending_backfills_structured_rows_after_completed_marker() {
+        let workspace = tempfile::tempdir().unwrap();
+        let conn = fresh_full_db();
+        let db = ActionDb::from_conn(&conn);
+
+        conn.execute(
+            "INSERT OR REPLACE INTO migration_state (key, value)
+             VALUES ('dos7_cutover_completed_at', 1777777777)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO intelligence_claims (
+                id, subject_ref, claim_type, field_path, topic_key, text, dedup_key, item_hash,
+                actor, data_source, observed_at, created_at, provenance_json, metadata_json,
+                claim_state, surfacing_state, retraction_reason, temporal_scope, sensitivity,
+                verification_state, canonical_status, non_semantic_mergeable
+             ) VALUES (
+                'legacy-completed-marker-structured-1', '{\"kind\":\"account\",\"id\":\"acct-1\"}',
+                'risk', 'health.risk', NULL, 'Renewal risk is elevated',
+                'dedup-completed-marker-structured', 'hash-completed-marker-structured',
+                'system_backfill', 'legacy_dismissal', '2026-04-01T00:00:00Z',
+                '2026-04-01T00:00:00Z', '{}', NULL,
+                'tombstoned', 'active', 'user_removal', 'state', 'internal', 'active',
+                'pending_backfill', TRUE
+             )",
+            [],
+        )
+        .unwrap();
+
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+
+        let result =
+            run_dos7_cutover_if_pending(&ctx, db, workspace.path()).expect("startup probe");
+        assert!(
+            result.is_none(),
+            "DOS-7 cutover remains already complete; only structured backfill should run"
+        );
+
+        let canonical_status: String = conn
+            .query_row(
+                "SELECT canonical_status
+                 FROM intelligence_claims
+                 WHERE id = 'legacy-completed-marker-structured-1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            matches!(canonical_status.as_str(), "live" | "legacy_unmigrated"),
+            "pending_backfill row must be terminal before startup hook returns, got {canonical_status}"
+        );
+    }
+
+    #[test]
+    fn run_dos7_cutover_if_pending_already_complete_structured_probe_waits_for_fence() {
+        let workspace = tempfile::tempdir().unwrap();
+        let db_dir = tempfile::tempdir().unwrap();
+        let db_path = db_dir.path().join("already-complete-fence.sqlite");
+        let conn = Connection::open(&db_path).unwrap();
+        crate::migrations::run_migrations(&conn).unwrap();
+
+        conn.execute(
+            "INSERT OR REPLACE INTO migration_state (key, value)
+             VALUES ('dos7_cutover_completed_at', 1777777777)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO intelligence_claims (
+                id, subject_ref, claim_type, field_path, topic_key, text, dedup_key, item_hash,
+                actor, data_source, observed_at, created_at, provenance_json, metadata_json,
+                claim_state, surfacing_state, retraction_reason, temporal_scope, sensitivity,
+                verification_state, canonical_status, non_semantic_mergeable
+             ) VALUES (
+                'legacy-completed-marker-fenced-structured-1', '{\"kind\":\"account\",\"id\":\"acct-1\"}',
+                'risk', 'health.risk', NULL, 'Renewal risk is elevated',
+                'dedup-completed-marker-fenced-structured', 'hash-completed-marker-fenced-structured',
+                'system_backfill', 'legacy_dismissal', '2026-04-01T00:00:00Z',
+                '2026-04-01T00:00:00Z', '{}', NULL,
+                'tombstoned', 'active', 'user_removal', 'state', 'internal', 'active',
+                'pending_backfill', TRUE
+             )",
+            [],
+        )
+        .unwrap();
+
+        let db = ActionDb::from_conn(&conn);
+        let held_cycle = capture_fence_with_retry(db);
+        let initial_epoch = held_cycle.captured_epoch();
+        let worker_db_path = db_path.clone();
+        let worker_workspace = workspace.path().to_path_buf();
+
+        let handle = std::thread::spawn(move || {
+            let conn = Connection::open(worker_db_path).expect("open worker DB");
+            let db = ActionDb::from_conn(&conn);
+            let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+            let rng = SeedableRng::new(42);
+            let ext = ExternalClients::default();
+            let ctx = fixture_ctx(&clock, &rng, &ext);
+
+            run_dos7_cutover_if_pending(&ctx, db, &worker_workspace)
+        });
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            let current_epoch: i64 = conn
+                .query_row(
+                    "SELECT value FROM migration_state WHERE key = 'schema_epoch'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            let canonical_status: String = conn
+                .query_row(
+                    "SELECT canonical_status
+                     FROM intelligence_claims
+                     WHERE id = 'legacy-completed-marker-fenced-structured-1'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+
+            assert_eq!(
+                canonical_status, "pending_backfill",
+                "AlreadyComplete probe mutated structured rows before bumping and draining the fence"
+            );
+            if current_epoch > initial_epoch {
+                break;
+            }
+            assert!(
+                !handle.is_finished(),
+                "AlreadyComplete probe returned before applying the cutover fence"
+            );
+            assert!(
+                std::time::Instant::now() < deadline,
+                "timed out waiting for AlreadyComplete probe to bump schema_epoch"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+
+        std::thread::sleep(std::time::Duration::from_millis(125));
+        let canonical_status: String = conn
+            .query_row(
+                "SELECT canonical_status
+                 FROM intelligence_claims
+                 WHERE id = 'legacy-completed-marker-fenced-structured-1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            canonical_status, "pending_backfill",
+            "AlreadyComplete probe must not mutate structured rows while a FenceCycle is held"
+        );
+        assert!(
+            !handle.is_finished(),
+            "AlreadyComplete probe should still be draining the held FenceCycle"
+        );
+
+        drop(held_cycle);
+
+        let result = handle.join().expect("worker thread panicked").unwrap();
+        assert!(
+            result.is_none(),
+            "DOS-7 cutover remains already complete; only structured backfill should run"
+        );
+
+        let final_epoch: i64 = conn
+            .query_row(
+                "SELECT value FROM migration_state WHERE key = 'schema_epoch'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(final_epoch, initial_epoch + 1);
+
+        let canonical_status: String = conn
+            .query_row(
+                "SELECT canonical_status
+                 FROM intelligence_claims
+                 WHERE id = 'legacy-completed-marker-fenced-structured-1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            matches!(canonical_status.as_str(), "live" | "legacy_unmigrated"),
+            "pending_backfill row must be terminal after the fence drains, got {canonical_status}"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn already_complete_structured_probe_drain_releases_db_service_writer_lane() {
+        let workspace = tempfile::tempdir().unwrap();
+        let db_dir = tempfile::tempdir().unwrap();
+        let db_path = db_dir
+            .path()
+            .join("already-complete-db-service-fence.sqlite");
+        let provider = Arc::new(FixtureKeyProvider::new());
+        let svc = crate::db_service::DbService::open_at(db_path.clone(), provider.clone())
+            .await
+            .expect("open encrypted DbService");
+        crate::db_service::install_global(svc.clone());
+        let _global_guard = GlobalDbServiceGuard;
+
+        svc.writer()
+            .call(|conn| {
+                conn.execute(
+                    "INSERT OR REPLACE INTO migration_state (key, value)
+                     VALUES ('dos7_cutover_completed_at', 1777777777)",
+                    [],
+                )
+                .unwrap();
+                conn.execute(
+                    "INSERT INTO intelligence_claims (
+                        id, subject_ref, claim_type, field_path, topic_key, text, dedup_key, item_hash,
+                        actor, data_source, observed_at, created_at, provenance_json, metadata_json,
+                        claim_state, surfacing_state, retraction_reason, temporal_scope, sensitivity,
+                        verification_state, canonical_status, non_semantic_mergeable
+                     ) VALUES (
+                        'legacy-completed-marker-db-service-fenced-structured-1',
+                        '{\"kind\":\"account\",\"id\":\"acct-1\"}',
+                        'risk', 'health.risk', NULL, 'Renewal risk is elevated',
+                        'dedup-completed-marker-db-service-fenced-structured',
+                        'hash-completed-marker-db-service-fenced-structured',
+                        'system_backfill', 'legacy_dismissal', '2026-04-01T00:00:00Z',
+                        '2026-04-01T00:00:00Z', '{}', NULL,
+                        'tombstoned', 'active', 'user_removal', 'state', 'internal', 'active',
+                        'pending_backfill', TRUE
+                     )",
+                    [],
+                )
+                .unwrap();
+                Ok(())
+            })
+            .await
+            .expect("seed writer");
+
+        let (captured_tx, captured_rx) = mpsc::channel();
+        let (start_open_tx, start_open_rx) = mpsc::channel();
+        let (open_done_tx, open_done_rx) = mpsc::channel();
+        let worker_provider = provider.clone();
+        let worker_db_path = db_path.clone();
+        let worker = std::thread::spawn(move || -> Result<(), String> {
+            let db = ActionDb::open_resolved_path_for_tests(
+                worker_db_path.clone(),
+                worker_provider.clone(),
+            )
+            .map_err(|e| format!("worker initial ActionDb::open: {e}"))?;
+            let cycle = capture_fence_with_retry(&db);
+            captured_tx
+                .send(cycle.captured_epoch())
+                .expect("send captured epoch");
+
+            start_open_rx.recv().expect("wait for queued open signal");
+            let reopened = ActionDb::open_resolved_path_for_tests(worker_db_path, worker_provider)
+                .map_err(|e| format!("worker queued ActionDb::open: {e}"))?;
+            drop(reopened);
+            drop(cycle);
+            open_done_tx.send(()).expect("send open done");
+            Ok(())
+        });
+
+        let initial_epoch = captured_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("worker captured FenceCycle");
+        let probe_svc = svc.clone();
+        let probe_workspace = workspace.path().to_path_buf();
+        let probe = tokio::spawn(async move {
+            run_dos7_cutover_if_pending_via_db_service(probe_svc, probe_workspace).await
+        });
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        loop {
+            let epoch = svc
+                .reader()
+                .call(|conn| {
+                    conn.query_row(
+                        "SELECT value FROM migration_state WHERE key = 'schema_epoch'",
+                        [],
+                        |row| row.get::<_, i64>(0),
+                    )
+                })
+                .await
+                .expect("read epoch");
+            if epoch > initial_epoch {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "timed out waiting for AlreadyComplete probe to bump schema_epoch"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+
+        start_open_tx.send(()).expect("signal worker open");
+        open_done_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("worker ActionDb::open should complete while probe drains");
+
+        let probe_result = tokio::time::timeout(Duration::from_secs(3), probe)
+            .await
+            .expect("AlreadyComplete probe should not hang behind DbService writer")
+            .expect("probe task panicked")
+            .expect("probe result");
+        assert!(
+            probe_result.is_none(),
+            "DOS-7 cutover remains already complete; only structured backfill should run"
+        );
+        worker
+            .join()
+            .expect("worker thread panicked")
+            .expect("worker completed");
+
+        let canonical_status = svc
+            .reader()
+            .call(|conn| {
+                conn.query_row(
+                    "SELECT canonical_status
+                     FROM intelligence_claims
+                     WHERE id = 'legacy-completed-marker-db-service-fenced-structured-1'",
+                    [],
+                    |row| row.get::<_, String>(0),
+                )
+            })
+            .await
+            .expect("read final row");
+        assert!(
+            matches!(canonical_status.as_str(), "live" | "legacy_unmigrated"),
+            "pending_backfill row must be terminal after split drain, got {canonical_status}"
+        );
+    }
+
+    #[test]
+    fn cutover_pause_blocks_fresh_fence_capture_after_drain_until_backfill_completes() {
+        let workspace = tempfile::tempdir().unwrap();
+        let db_dir = tempfile::tempdir().unwrap();
+        let db_path = db_dir.path().join("cutover-pause-fresh-capture.sqlite");
+        let conn = Connection::open(&db_path).unwrap();
+        crate::migrations::run_migrations(&conn).unwrap();
+
+        conn.execute(
+            "INSERT INTO intelligence_claims (
+                id, subject_ref, claim_type, field_path, topic_key, text, dedup_key, item_hash,
+                actor, data_source, observed_at, created_at, provenance_json, metadata_json,
+                claim_state, surfacing_state, retraction_reason, temporal_scope, sensitivity,
+                verification_state, canonical_status, non_semantic_mergeable
+             ) VALUES (
+                'legacy-cutover-pause-structured-1', '{\"kind\":\"account\",\"id\":\"acct-1\"}',
+                'risk', 'health.risk', NULL, 'Renewal risk is elevated',
+                'dedup-cutover-pause-structured', 'hash-cutover-pause-structured',
+                'system_backfill', 'legacy_dismissal', '2026-04-01T00:00:00Z',
+                '2026-04-01T00:00:00Z', '{}', NULL,
+                'tombstoned', 'active', 'user_removal', 'state', 'internal', 'active',
+                'pending_backfill', TRUE
+             )",
+            [],
+        )
+        .unwrap();
+
+        let db = ActionDb::from_conn(&conn);
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+        let write_dir = workspace.path().join("paused-write");
+        fs::create_dir_all(&write_dir).unwrap();
+        let intel = crate::intelligence::io::IntelligenceJson {
+            entity_id: "acct-1".into(),
+            entity_type: "account".into(),
+            ..Default::default()
+        };
+
+        let pause_guard = ClaimsCutoverPauseGuard::new("cycle-8 regression test");
+        let (_epoch_before, _epoch_after) =
+            bump_schema_epoch_for_cutover(db, "cycle-8 regression test").unwrap();
+        assert_eq!(
+            drain_cutover_fence("cycle-8 regression test").unwrap(),
+            0,
+            "test starts with no held FenceCycle handles"
+        );
+
+        let worker_conn = Connection::open(&db_path).unwrap();
+        let worker_db = ActionDb::from_conn(&worker_conn);
+        let capture_err = crate::intelligence::write_fence::FenceCycle::capture(worker_db)
+            .expect_err("fresh worker capture must pause after drain");
+        assert!(
+            capture_err.contains("paused"),
+            "fresh capture should be rejected by cutover pause, got {capture_err}"
+        );
+
+        crate::intelligence::write_fence::post_commit_fenced_write(
+            worker_db,
+            &write_dir,
+            &intel,
+            "cycle-8 paused producer",
+        );
+        assert!(
+            !write_dir.join("intelligence.json").exists(),
+            "post_commit_fenced_write must not write while cutover capture pause is active"
+        );
+
+        let structured_report =
+            run_structured_claim_backfill_if_pending(&ctx, db, "cycle-8 regression test")
+                .unwrap()
+                .expect("structured backfill should run while pause is held");
+        assert_eq!(structured_report.errors.len(), 0);
+        assert!(
+            crate::intelligence::write_fence::cutover_captures_paused(),
+            "capture pause must remain active until backfill completes"
+        );
+
+        drop(pause_guard);
+
+        let resumed_cycle = capture_fence_with_retry(worker_db);
+        crate::intelligence::write_fence::fenced_write_intelligence_json(
+            &resumed_cycle,
+            worker_db,
+            &write_dir,
+            &intel,
+        )
+        .expect("fresh capture and write should resume after guard drop");
+        assert!(
+            write_dir.join("intelligence.json").exists(),
+            "fenced write should resume after cutover pause release"
         );
     }
 
@@ -2705,6 +3977,67 @@ mod tests {
 
         // Reconcile stub clean.
         assert_eq!(report.reconcile_findings, 0);
+    }
+
+    #[test]
+    fn cutover_runs_structured_claim_backfill_for_pending_legacy_rows() {
+        let workspace = tempfile::tempdir().unwrap();
+        let conn = fresh_full_db();
+        let db = ActionDb::from_conn(&conn);
+
+        conn.execute(
+            "INSERT INTO intelligence_claims (
+                id, subject_ref, claim_type, field_path, topic_key, text, dedup_key, item_hash,
+                actor, data_source, observed_at, created_at, provenance_json, metadata_json,
+                claim_state, surfacing_state, retraction_reason, temporal_scope, sensitivity,
+                verification_state, canonical_status, non_semantic_mergeable
+             ) VALUES (
+                'legacy-cutover-structured-1', '{\"kind\":\"account\",\"id\":\"acct-1\"}',
+                'risk', 'health.risk', NULL, 'Renewal risk is elevated',
+                'dedup-cutover-structured', 'hash-cutover-structured',
+                'system_backfill', 'legacy_dismissal', '2026-04-01T00:00:00Z',
+                '2026-04-01T00:00:00Z', '{}', NULL,
+                'tombstoned', 'active', 'user_removal', 'state', 'internal', 'active',
+                'pending_backfill', TRUE
+             )",
+            [],
+        )
+        .unwrap();
+
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+
+        let report = run_dos7_cutover(&ctx, db, workspace.path()).unwrap();
+        assert_eq!(report.structured_claim_backfill_report.rows_examined, 1);
+        assert!(
+            report.structured_claim_backfill_report.errors.is_empty(),
+            "{:?}",
+            report.structured_claim_backfill_report.errors
+        );
+
+        let (canonical_status, non_semantic_mergeable): (String, bool) = conn
+            .query_row(
+                "SELECT canonical_status, non_semantic_mergeable
+                 FROM intelligence_claims
+                 WHERE id = 'legacy-cutover-structured-1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+
+        match canonical_status.as_str() {
+            "live" => assert!(
+                !non_semantic_mergeable,
+                "live structured rows must be mergeable"
+            ),
+            "legacy_unmigrated" => assert!(
+                non_semantic_mergeable,
+                "legacy_unmigrated rows must remain non-semantic merge blocked"
+            ),
+            other => panic!("expected terminal canonical_status, got {other}"),
+        }
     }
 
     #[test]

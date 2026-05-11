@@ -19,7 +19,8 @@
  * are emitted by the services::actions layer when action_kind=commitment;
  * this hook doesn't need to emit anything extra.
  */
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import type React from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
@@ -51,7 +52,7 @@ export interface UseAccountWorkDataResult {
   handleArchiveSuggestion: (actionId: string) => Promise<void>;
   handleUpdateCommitment: (
     actionId: string,
-    patch: { title?: string; context?: string; dueDate?: string },
+    patch: { title?: string; ownerRaw?: string; clearOwner?: boolean; dueDate?: string },
   ) => Promise<void>;
   /** Navigate to the Action detail page where the Linear team picker lives. */
   handlePushToLinear: (actionId: string) => void;
@@ -265,7 +266,7 @@ export function useAccountWorkData(
   const handleUpdateCommitment = useCallback(
     async (
       actionId: string,
-      patch: { title?: string; context?: string; dueDate?: string },
+      patch: { title?: string; ownerRaw?: string; clearOwner?: boolean; dueDate?: string },
     ) => {
       try {
         await invoke("update_action", {

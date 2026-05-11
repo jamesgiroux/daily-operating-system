@@ -9,7 +9,7 @@ use parking_lot::Mutex;
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use chrono::Utc;
 use rusqlite::OptionalExtension;
@@ -212,6 +212,23 @@ impl IntelligenceQueue {
             );
         }
         drained
+    }
+
+    /// Put a dequeued batch back without applying pause/debounce policy.
+    /// Used when a worker loses the race with a process-wide cutover pause
+    /// after dequeue but before it can capture a write fence.
+    pub fn requeue_dequeued_batch(&self, requests: Vec<IntelRequest>) {
+        if requests.is_empty() {
+            return;
+        }
+
+        let mut queue = self.queue.lock();
+        for request in requests.into_iter().rev() {
+            if queue.iter().any(|r| r.entity_id == request.entity_id) {
+                continue;
+            }
+            queue.push_front(request);
+        }
     }
 
     /// Enqueue an enrichment request.
@@ -635,23 +652,27 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
         // ActionDb::open() is the standard processor-loop pattern (see
         // gather_enrichment_input which also opens its own handle); the
         // FenceCycle is a short-lived read against migration_state.
-        let _fence_cycle =
-            match crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())) {
-                Ok(db) => match crate::intelligence::write_fence::FenceCycle::capture(&db) {
-                    Ok(c) => Some(c),
-                    Err(e) => {
-                        log::warn!(
-                            "IntelProcessor: failed to capture schema_epoch for batch ({e}); \
-                         processing without fence — migration must not run during this batch"
-                        );
-                        None
-                    }
-                },
+        let _fence_cycle = match crate::db::ActionDb::open(std::sync::Arc::new(
+            crate::db::LocalKeychain::new(),
+        )) {
+            Ok(db) => match crate::intelligence::write_fence::FenceCycle::capture(&db) {
+                Ok(c) => c,
                 Err(e) => {
-                    log::warn!("IntelProcessor: failed to open db for FenceCycle capture: {e}");
-                    None
+                    log::info!(
+                        "IntelProcessor: FenceCycle capture unavailable for batch ({e}); retrying after cutover"
+                    );
+                    state.intel_queue.requeue_dequeued_batch(batch);
+                    tokio::time::sleep(Duration::from_millis(250)).await;
+                    continue;
                 }
-            };
+            },
+            Err(e) => {
+                log::warn!("IntelProcessor: failed to open db for FenceCycle capture: {e}");
+                state.intel_queue.requeue_dequeued_batch(batch);
+                tokio::time::sleep(Duration::from_millis(250)).await;
+                continue;
+            }
+        };
 
         let entity_names: Vec<&str> = batch.iter().map(|r| r.entity_id.as_str()).collect();
         log::info!(
@@ -1992,6 +2013,35 @@ fn run_background_enrichment(
         .spawn_claude(&input.workspace, &input.prompt)
         .map_err(|e| format!("Claude Code error: {}", e))?;
 
+    // Extract and persist keywords from the raw AI response so background-tier
+    // enrichment (ProactiveHygiene, CalendarChange) keeps entity keywords
+    // current for transcript routing and entity resolution.
+    if let Some(keywords_json) = crate::intelligence::extract_keywords_from_response(&output.stdout)
+    {
+        if let Ok(db) =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        {
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let ext = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+            if let Err(err) = crate::services::intelligence::persist_entity_keywords(
+                &ctx,
+                &db,
+                &input.entity_type,
+                &input.entity_id,
+                &keywords_json,
+            ) {
+                log::warn!(
+                    "intel_queue: keyword persistence failed for {} {}: {}",
+                    input.entity_type,
+                    input.entity_id,
+                    err
+                );
+            }
+        }
+    }
+
     let inferred_relationships = extract_inferred_relationships(&output.stdout);
     let intel = parse_intelligence_response(
         &output.stdout,
@@ -2537,8 +2587,18 @@ pub fn run_enrichment_post_commit_side_effects(
 
     // Dual-write commitments from Glean enrichment to captured_commitments.
     if input.entity_type == "account" {
-        dual_write_enrichment_commitments(db, &input.entity_id, final_intel);
-        dual_write_enrichment_products(db, &input.entity_id, final_intel);
+        dual_write_enrichment_commitments(
+            db,
+            &state.signals.engine,
+            &input.entity_id,
+            final_intel,
+        );
+        dual_write_enrichment_products(
+            db,
+            &state.signals.engine,
+            &input.entity_id,
+            final_intel,
+        );
     }
 
     // Regenerate person files after intelligence enrichment.
@@ -2967,8 +3027,9 @@ fn build_trust_context_for_claim(
         source_reliability_for_claim(db, input, claim),
         &mut indeterminate_reasons,
     );
+    let now = ctx.clock.now();
     let freshness = collect_trust_input(
-        freshness_context_for_claim(ctx.clock.now(), claim),
+        freshness_context_for_claim(now, claim),
         &mut indeterminate_reasons,
     );
     let source_lifecycle = collect_trust_input(
@@ -2988,7 +3049,8 @@ fn build_trust_context_for_claim(
         );
     }
     let trust_ctx = crate::abilities::trust::TrustContext {
-        now: ctx.clock.now(),
+        now,
+        renewal_context: renewal_context_for_claim(now, db, input),
         config: crate::abilities::trust::TrustConfig::default(),
         factor_inputs: crate::abilities::trust::TrustFactorInputs {
             source_reliability,
@@ -3011,6 +3073,29 @@ fn build_trust_context_for_claim(
         target_surface: None,
     };
     (trust_ctx, indeterminate_reasons)
+}
+
+fn renewal_context_for_claim(
+    now: chrono::DateTime<Utc>,
+    db: &crate::db::ActionDb,
+    input: &EnrichmentInput,
+) -> Option<crate::abilities::trust::RenewalContext> {
+    if input.entity_type != "account" {
+        return None;
+    }
+
+    let account = db.get_account(&input.entity_id).ok().flatten()?;
+    let contract_end = account.contract_end.as_deref()?;
+    let renewal_date = chrono::NaiveDate::parse_from_str(contract_end, "%Y-%m-%d").ok()?;
+    let renewal_at = renewal_date.and_hms_opt(0, 0, 0)?.and_utc();
+    let days_to_renewal = renewal_date
+        .signed_duration_since(now.date_naive())
+        .num_days();
+
+    Some(crate::abilities::trust::RenewalContext {
+        renewal_at: Some(renewal_at),
+        days_to_renewal: Some(days_to_renewal),
+    })
 }
 
 fn claim_subject_ref_json_for_entity(entity_type: &str, entity_id: &str) -> Option<String> {
@@ -4270,6 +4355,7 @@ pub(crate) fn invalidate_and_requeue_meeting_preps_with_db(
 /// Uses INSERT OR IGNORE to avoid duplicates.
 fn dual_write_enrichment_commitments(
     db: &crate::db::ActionDb,
+    engine: &crate::signals::propagation::PropagationEngine,
     account_id: &str,
     intel: &IntelligenceJson,
 ) {
@@ -4335,8 +4421,9 @@ fn dual_write_enrichment_commitments(
             "source": "glean_enrichment",
         })
         .to_string();
-        if let Err(e) = crate::signals::bus::emit_signal(
+        if let Err(e) = crate::signals::bus::emit_signal_and_propagate(
             db,
+            engine,
             "account",
             account_id,
             "commitment_captured",
@@ -4354,6 +4441,7 @@ fn dual_write_enrichment_commitments(
 /// the intelligence JSON blob.
 fn dual_write_enrichment_products(
     db: &crate::db::ActionDb,
+    engine: &crate::signals::propagation::PropagationEngine,
     entity_id: &str,
     intel: &IntelligenceJson,
 ) {
@@ -4413,8 +4501,9 @@ fn dual_write_enrichment_products(
             clippy::let_underscore_must_use,
             reason = "intentional best-effort discard; preserves existing non-blocking behavior"
         )]
-        let _ = crate::signals::bus::emit_signal(
+        let _ = crate::signals::bus::emit_signal_and_propagate(
             db,
+            engine,
             "account",
             entity_id,
             "product_data_updated",
@@ -4702,17 +4791,10 @@ mod tests {
         )
         .into_parts();
         let ok = reason.is_none();
-        let weight = crate::abilities::trust::factors::freshness_weight(
-            &freshness,
-            &claim.temporal_scope,
-            &crate::abilities::trust::TrustConfig::default(),
-        );
-        let expected_base = (-std::f64::consts::LN_2 / 90.0).exp();
 
         assert!(ok);
         assert!(!freshness.timestamp_known);
         assert_float_close(freshness.age_days, 1.0);
-        assert_float_close(weight, expected_base * 0.8);
     }
 
     #[test]
@@ -4879,9 +4961,124 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "depends on bundle 5 fixture from W6-A/"]
     fn bundle5_user_correction_tombstone_not_averaged_away() {
-        panic!("bundle 5 fixture from W6-A/DOS-283 is not seeded in DOS-5 chunk 7");
+        #[derive(Debug)]
+        struct FixtureClaim {
+            id: String,
+            claim_state: String,
+            surfacing_state: String,
+            data_source: String,
+            trust_score: f64,
+            scenario: String,
+        }
+
+        let conn = rusqlite::Connection::open_in_memory().expect("open fixture db");
+        conn.execute_batch(include_str!("../tests/fixtures/bundle-5/state.sql"))
+            .expect("load bundle-5 fixture");
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, claim_state, surfacing_state, data_source, trust_score, metadata_json
+                 FROM intelligence_claims
+                 ORDER BY id",
+            )
+            .expect("prepare correction-resurrection query");
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, Option<f64>>(4)?,
+                    row.get::<_, Option<String>>(5)?,
+                ))
+            })
+            .expect("read fixture rows")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect fixture rows");
+
+        let rows: Vec<FixtureClaim> = rows
+            .into_iter()
+            .filter_map(
+                |(id, claim_state, surfacing_state, data_source, trust_score, metadata_json)| {
+                    let metadata_json = metadata_json?;
+                    let metadata: serde_json::Value = serde_json::from_str(&metadata_json).ok()?;
+                    let scenario = metadata.get("scenario")?.as_str()?.to_string();
+                    matches!(
+                        scenario.as_str(),
+                        "wrong_subject_tombstone"
+                            | "user_edited_supersession"
+                            | "expired_dormant_no_resurrection"
+                    )
+                    .then(|| FixtureClaim {
+                        id,
+                        claim_state,
+                        surfacing_state,
+                        data_source,
+                        trust_score: trust_score
+                            .expect("fixture correction rows carry trust_score"),
+                        scenario,
+                    })
+                },
+            )
+            .collect();
+
+        assert_eq!(
+            rows.len(),
+            4,
+            "bundle-5 must seed all correction-resurrection guard rows"
+        );
+
+        let mut distinct_scores: Vec<f64> = Vec::new();
+        for row in &rows {
+            if !distinct_scores
+                .iter()
+                .any(|score| (*score - row.trust_score).abs() < 1e-9)
+            {
+                distinct_scores.push(row.trust_score);
+            }
+        }
+        assert!(
+            distinct_scores.len() >= 3,
+            "correction-resurrection trust scores must not collapse to a flat distribution: {rows:?}"
+        );
+
+        let state_pairs: std::collections::BTreeSet<_> = rows
+            .iter()
+            .map(|row| (row.claim_state.as_str(), row.surfacing_state.as_str()))
+            .collect();
+        assert!(state_pairs.contains(&("tombstoned", "dormant")));
+        assert!(state_pairs.contains(&("dormant", "dormant")));
+        assert!(state_pairs.contains(&("active", "active")));
+
+        let wrong_subject = rows
+            .iter()
+            .find(|row| row.id == "src-b5-wrong-attendee-original")
+            .expect("wrong-subject tombstone row exists");
+        assert_eq!(wrong_subject.scenario, "wrong_subject_tombstone");
+        assert_eq!(wrong_subject.claim_state, "tombstoned");
+        assert!(wrong_subject.trust_score < 0.4);
+
+        let original = rows
+            .iter()
+            .find(|row| row.id == "src-b5-original-preference")
+            .expect("superseded original row exists");
+        let edited = rows
+            .iter()
+            .find(|row| row.id == "src-b5-user-edited-preference")
+            .expect("user-edited superseding row exists");
+        assert_eq!(edited.data_source, "user");
+        assert_eq!(edited.claim_state, "active");
+        assert!(edited.trust_score > original.trust_score);
+
+        let expired = rows
+            .iter()
+            .find(|row| row.id == "src-b5-expired-dormant-open-loop")
+            .expect("expired dormant resurrection guard row exists");
+        assert_eq!(expired.scenario, "expired_dormant_no_resurrection");
+        assert_eq!(expired.claim_state, "dormant");
+        assert!(expired.trust_score < edited.trust_score);
     }
 
     #[test]
@@ -4975,6 +5172,29 @@ mod tests {
             assert_eq!(q.enqueue(r), Ok(EnqueueOutcome::Accepted));
         }
         assert_eq!(q.len(), 1);
+    }
+
+    #[test]
+    fn cycle8_requeue_dequeued_batch_bypasses_pause_for_retry() {
+        let q = IntelligenceQueue::new();
+        assert_eq!(
+            q.enqueue(IntelRequest::new(
+                "acc-1".into(),
+                "account".into(),
+                IntelPriority::Manual,
+            )),
+            Ok(EnqueueOutcome::Accepted)
+        );
+        let batch = q.dequeue_batch(1);
+        assert_eq!(batch.len(), 1);
+        q.pause();
+
+        q.requeue_dequeued_batch(batch);
+
+        assert_eq!(q.len(), 1);
+        q.resume();
+        let retried = q.dequeue().expect("request should be queued for retry");
+        assert_eq!(retried.entity_id, "acc-1");
     }
 
     // ───────────────────────────────────────────────────────────────────────

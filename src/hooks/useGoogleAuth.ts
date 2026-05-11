@@ -2,22 +2,16 @@ import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import type { GoogleAuthStatus } from "@/types";
+import { withTimeout } from "@/lib/async-utils";
 import { useTauriEvent } from "./useTauriEvent";
 
 type GoogleAuthPhase = "idle" | "authorizing" | "disconnecting";
 const AUTH_TIMEOUT_MS = 150_000; // 2.5 min — backend has 120s timeout, give it room
+const AUTH_TIMEOUT_MESSAGE =
+  "Authorization timed out. If your firewall blocked the connection, allow DailyOS in System Settings → Network → Firewall, then try again.";
 
 interface GoogleAuthFailedPayload {
   message: string;
-}
-
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error("Authorization timed out. If your firewall blocked the connection, allow DailyOS in System Settings → Network → Firewall, then try again.")), timeoutMs);
-    }),
-  ]);
 }
 
 export function useGoogleAuth() {
@@ -58,6 +52,7 @@ export function useGoogleAuth() {
       const result = await withTimeout(
         invoke<GoogleAuthStatus>("start_google_auth"),
         AUTH_TIMEOUT_MS,
+        AUTH_TIMEOUT_MESSAGE,
       );
       setStatus(result);
       setJustConnected(true);

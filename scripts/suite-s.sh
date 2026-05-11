@@ -16,6 +16,7 @@ OUT=""
 SCOPE=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --) shift ;;
     --out) OUT="$2"; shift 2 ;;
     --scope) SCOPE="$2"; shift 2 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
@@ -24,6 +25,9 @@ done
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
+
+OAUTH_SECRET_SCAN_SCRIPT="$(mktemp "${TMPDIR:-/tmp}/dailyos-oauth-secret-scan.XXXXXX")"
+trap 'rm -f "$OAUTH_SECRET_SCAN_SCRIPT"' EXIT
 
 # Each entry: "label::command"
 CHECKS=(
@@ -34,13 +38,13 @@ CHECKS=(
   "no-live-external-clients::bash src-tauri/scripts/check_no_live_external_clients_in_eval.sh"
   "fixture-anonymization::bash src-tauri/scripts/check_fixture_anonymization.sh"
   "durable-source-comments::./scripts/check_no_ephemeral_issue_refs_in_comments.sh"
-  "oauth-secret-scan::scripts/_oauth_secret_scan.sh"
+  "oauth-secret-scan::bash \"$OAUTH_SECRET_SCAN_SCRIPT\""
   "clippy-deny-warnings::cargo clippy --manifest-path src-tauri/Cargo.toml --workspace --all-features --lib --bins -- -D warnings"
   "cargo-audit::cd src-tauri && cargo audit --file audit.toml"
 )
 
 # Inline OAuth secret scan (matches CI policy step)
-cat > scripts/_oauth_secret_scan.sh <<'INNER'
+cat > "$OAUTH_SECRET_SCAN_SCRIPT" <<'INNER'
 #!/usr/bin/env bash
 set -euo pipefail
 if rg -n "GOCSPX-[A-Za-z0-9_-]+" --glob '!target/**' --glob '!node_modules/**' --glob '!.git/**' --glob '!_archive/**' .; then
@@ -48,7 +52,6 @@ if rg -n "GOCSPX-[A-Za-z0-9_-]+" --glob '!target/**' --glob '!node_modules/**' -
   exit 1
 fi
 INNER
-chmod +x scripts/_oauth_secret_scan.sh
 
 results_json="["
 total=0
@@ -76,8 +79,22 @@ done
 
 results_json+="]"
 
-summary="{\"suite\":\"S\",\"scope\":\"$SCOPE\",\"total\":$total,\"failed\":$failed,\"checks\":$results_json}"
+summary=$(python3 - "$SCOPE" "$total" "$failed" "$results_json" <<'PY'
+import json, sys
+scope, total, failed, checks = sys.argv[1:]
+print(json.dumps({
+    "suite": "S",
+    "scope": scope,
+    "total": int(total),
+    "failed": int(failed),
+    "checks": json.loads(checks),
+}, separators=(",",":")))
+PY
+)
 
+if [[ -n "$OUT" ]]; then
+  mkdir -p "$(dirname "$OUT")"
+fi
 if [[ -n "$OUT" ]]; then
   printf '%s\n' "$summary" > "$OUT"
 else

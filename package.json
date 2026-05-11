@@ -19,9 +19,31 @@
     "test": "vitest run",
     "test:release-gate": "pnpm release-gate -- --mode hermetic",
     "release-gate": "cargo run --manifest-path src-tauri/Cargo.toml --no-default-features --features release-gate --bin release-gate --",
+    "suite:p": "bash scripts/suite-p.sh",
+    "suite:s": "bash scripts/suite-s.sh",
+    "suite:e": "bash scripts/suite-e.sh",
+    "eval:abilities": "node scripts/stage8b-placeholder.mjs abilities_eval",
+    "eval:gbrain": "node scripts/stage8b-placeholder.mjs gbrain_comparison",
+    "evidence:validate": "node scripts/validate-evidence-record.mjs",
+    "evidence:lint": "node scripts/lint-evidence-artifacts.mjs",
+    "evidence:contract-smoke": "node scripts/evidence-contract-smoke.mjs",
+    "evidence:negative-probes": "node scripts/evidence-negative-probes.mjs",
+    "wave8:smoke": "pnpm evidence:validate .docs/evals/examples && pnpm evidence:lint && pnpm evidence:contract-smoke -- --out src-tauri/target/evidence/contract/stage8a-smoke/record.json --run-id stage8a-smoke --scope v1.4.1-W8 && pnpm evidence:validate src-tauri/target/evidence/contract/stage8a-smoke/record.json && pnpm evidence:negative-probes",
     "build:mcp": "bash src-tauri/scripts/build-mcp.sh",
     "build:mcp:stub": "bash src-tauri/scripts/build-mcp.sh --stub",
-    "postinstall": "bash src-tauri/scripts/build-mcp.sh --stub"
+    "postinstall": "bash src-tauri/scripts/build-mcp.sh --stub && bash scripts/install-hooks.sh",
+    "lint": "pnpm lint:eslint && pnpm lint:stylelint",
+    "lint:eslint": "eslint src --max-warnings 9999 --cache --cache-location node_modules/.cache/eslint/",
+    "lint:stylelint": "stylelint \"src/**/*.{css,module.css}\" --cache --cache-location node_modules/.cache/stylelint/",
+    "lint:fix": "eslint src --fix --max-warnings 9999 && stylelint \"src/**/*.{css,module.css}\" --fix"
+  },
+  "lint-staged": {
+    "src/**/*.{ts,tsx}": [
+      "eslint --fix --max-warnings 9999"
+    ],
+    "src/**/*.{css,module.css}": [
+      "stylelint --fix"
+    ]
   },
   "keywords": [],
   "author": "",
@@ -67,9 +89,18 @@
     "@types/react": "^18.3.28",
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^4.7.0",
+    "eslint": "^9.16.0",
+    "eslint-import-resolver-typescript": "^3.7.0",
+    "eslint-plugin-import": "^2.31.0",
+    "eslint-plugin-react": "^7.37.2",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "eslint-plugin-unused-imports": "^4.1.4",
     "jsdom": "^29.1.1",
+    "lint-staged": "^15.2.10",
+    "stylelint": "^16.11.0",
     "tailwindcss": "^4.3.0",
     "typescript": "~5.6.3",
+    "typescript-eslint": "^8.18.0",
     "vite": "^6.4.2",
     "vitest": "^4.1.5"
   }

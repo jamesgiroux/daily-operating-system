@@ -137,6 +137,14 @@ pub fn run() {
     .init();
 
     log::info!("DailyOS starting");
+    {
+        let clock = crate::services::context::SystemClock;
+        let freshness_ctx = crate::abilities::trust::ScoringContext {
+            clock: &clock,
+            renewal_context: None,
+        };
+        crate::abilities::trust::validate_freshness_decay_config(&freshness_ctx);
+    }
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -216,20 +224,35 @@ pub fn run() {
                                 "[DOS-7 cutover] startup hook: workspace_path empty; skipping until configured"
                             );
                         } else {
-                            let cutover_result = init_state
-                                .db_write(move |db| {
-                                    let clock = crate::services::context::SystemClock;
-                                    let rng = crate::services::context::SystemRng;
-                                    let ext = crate::services::context::ExternalClients::default();
-                                    let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
-                                    crate::services::claims_backfill::run_dos7_cutover_if_pending(
-                                        &ctx,
-                                        db,
-                                        &workspace_root,
-                                    )
-                                    .map_err(|e| format!("DOS-7 cutover: {e}"))
-                                })
-                                .await;
+                            let cutover_result = {
+                                let svc = init_state.db_service.read().await.clone();
+                                match svc {
+                                    Some(svc) => {
+                                        crate::services::claims_backfill::run_dos7_cutover_if_pending_via_db_service(
+                                            svc,
+                                            workspace_root,
+                                        )
+                                        .await
+                                        .map_err(|e| format!("DOS-7 cutover: {e}"))
+                                    }
+                                    None => {
+                                        init_state
+                                            .db_write(move |db| {
+                                                let clock = crate::services::context::SystemClock;
+                                                let rng = crate::services::context::SystemRng;
+                                                let ext = crate::services::context::ExternalClients::default();
+                                                let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+                                                crate::services::claims_backfill::run_dos7_cutover_if_pending(
+                                                    &ctx,
+                                                    db,
+                                                    &workspace_root,
+                                                )
+                                                .map_err(|e| format!("DOS-7 cutover: {e}"))
+                                            })
+                                            .await
+                                    }
+                                }
+                            };
                             match cutover_result {
                                 Ok(Some(report)) => {
                                     log::info!(

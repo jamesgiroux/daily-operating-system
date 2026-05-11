@@ -1,9 +1,9 @@
 # Data Model Reference
 
-**Auto-generated:** 2026-05-07 by `.docs/generators/gen-data-model.sh`
+**Auto-generated:** 2026-05-11 by `.docs/generators/gen-data-model.sh`
 
 **Database:** SQLite (SQLCipher-encrypted, WAL mode)
-**Migrations:** 143 files (`001_baseline.sql` through `143_sensitivity_reveal_audit_idempotency.sql`)
+**Migrations:** 153 files (`001_baseline.sql` through `154_claim_surface_dismissals.sql`)
 **DB modules:** `src-tauri/src/db/`
 
 ---
@@ -51,10 +51,12 @@
 | `chat_turns` | `007_chat_interface` | — |
 | `claim_contradictions` | `129_dos_7_claims_schema` | — |
 | `claim_corroborations` | `129_dos_7_claims_schema` | — |
+| `claim_edges` | `148_dos_265_claim_edges` | — |
 | `claim_feedback` | `129_dos_7_claims_schema` | — |
 | `claim_feedback_new` | `135_dos_294_typed_feedback_schema` | — |
 | `claim_projection_status` | `134_dos_301_claim_projection_status` | — |
 | `claim_repair_job` | `129_dos_7_claims_schema` | — |
+| `claim_surface_dismissals` | `154_claim_surface_dismissals` | — |
 | `clay_sync_state` | `016_clay_enrichment` | — |
 | `content_embeddings` | `006_content_embeddings` | — |
 | `content_index` | `001_baseline` | 006_content_embeddings, 009_fix_embeddings_column |
@@ -74,11 +76,14 @@
 | `entity_context_entries` | `051_entity_context_entries` | — |
 | `entity_context_entries_frozen_dos` | `141_user_note_claim_type_backfill` | — |
 | `entity_email_cadence` | `028_entity_email_cadence` | — |
+| `entity_engagement_curve` | `149_dos_215_temporal_primitives` | — |
 | `entity_feedback_events` | `084_feedback_events` | — |
 | `entity_graph_version` | `113_entity_graph_version` | 121_entity_graph_sweep_state |
 | `entity_intelligence` | `001_baseline` | 040_entity_quality, 045_intelligence_report_fields, 047_entity_intel_user_relevance, 054_intelligence_consistency_metadata |
 | `entity_linking_evaluations` | `112_entity_linking_evaluations` | — |
 | `entity_members` | `055_schema_decomposition` | — |
+| `entity_members_migration_` | `145_dos_379_entity_members_entity_fk` | — |
+| `entity_members_new` | `145_dos_379_entity_members_entity_fk` | — |
 | `entity_people` | `001_baseline` | — |
 | `entity_quality` | `040_entity_quality` | — |
 | `entity_quality_new` | `055_schema_decomposition` | — |
@@ -93,6 +98,8 @@
 | `intelligence_claims_new` | `140_dos_287_temporal_scope_closed` | — |
 | `intelligence_feedback` | `062_intelligence_feedback` | — |
 | `intelligence_feedback_new` | `067_feedback_unique_constraint` | — |
+| `invalidation_jobs` | `147_invalidation_jobs` | — |
+| `invalidation_jobs_v` | `153_targeted_repair_invalidation_jobs` | — |
 | `legacy_user_note_migration_audit` | `141_user_note_claim_type_backfill` | — |
 | `lifecycle_changes` | `075_v110_lifecycle_products_provenance` | — |
 | `linear_entity_links` | `041_linear_entity_links` | — |
@@ -121,6 +128,7 @@
 | `person_emails` | `012_person_emails` | — |
 | `person_relationships` | `038_person_relationships` | 059_person_relationships_rationale |
 | `person_relationships_new` | `039_person_relationships_types` | — |
+| `person_role_progression` | `149_dos_215_temporal_primitives` | — |
 | `pipeline_failures` | `064_pipeline_failures` | — |
 | `post_meeting_emails` | `020_signal_propagation` | — |
 | `proactive_insights` | `021_proactive_surfacing` | — |
@@ -142,6 +150,7 @@
 | `suppression_tombstones` | `084_feedback_events` | 127_quarantine_resolved_at |
 | `suppression_tombstones_quarantine` | `125_suppression_remediation` | 127_quarantine_resolved_at |
 | `sync_metadata` | `066_sync_metadata` | — |
+| `temporal_backfill_state` | `150_dos_215_temporal_backfill_state` | — |
 | `thread_metadata` | `138_thread_metadata` | — |
 | `triage_snoozes` | `109_triage_snoozes` | — |
 | `user_context_entries` | `044_user_entity` | 046_user_context_embedding |
@@ -1070,6 +1079,26 @@
 | `reinforcement_count` |   INTEGER NOT NULL DEFAULT 1 |
 | `last_reinforced_at` |    TEXT NOT NULL DEFAULT (datetime('now')) |
 | `created_at` |            TEXT NOT NULL DEFAULT (datetime('now')) |
+
+---
+
+### `claim_edges`
+
+**Created in:** `148_dos_265_claim_edges`
+
+| Column | Definition |
+|--------|-----------|
+| `id` |              TEXT PRIMARY KEY |
+| `from_entity_id` |  TEXT NOT NULL |
+| `to_entity_id` |    TEXT NOT NULL |
+| `edge_type` |       TEXT NOT NULL |
+| `origin_claim_id` | TEXT NOT NULL REFERENCES intelligence_claims(id) |
+| `link_source` |     TEXT NOT NULL CHECK (link_source IN ('frontmatter_map', 'manual', 'extracted')) |
+| `weight` |          REAL NOT NULL DEFAULT 1.0 |
+| `confidence` |      REAL NOT NULL DEFAULT 1.0 |
+| `superseded_by` |   TEXT |
+| `tombstoned_at` |   TEXT |
+| `created_at` |      TEXT NOT NULL |
 
 ---
 

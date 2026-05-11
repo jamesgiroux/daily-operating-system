@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS intelligence_claims (
     subject_ref     TEXT NOT NULL,                     -- JSON: SubjectRef from W3-B
     claim_type      TEXT NOT NULL,                     -- ADR-0125 registry-validated
     field_path      TEXT,                              -- ADR-0113 structural key
-    topic_key       TEXT,                              -- DOS-280 canonicalization (nullable)
+    topic_key       TEXT,                              -- semantic canonicalization (nullable)
     text            TEXT NOT NULL,                     -- canonicalized claim content
     dedup_key       TEXT NOT NULL,                     -- ADR-0113 section 8 + DOS-308 item_hash
     item_hash       TEXT,                              -- shared canonicalization::item_hash

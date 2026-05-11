@@ -90,6 +90,6 @@ export function useRevealObserver(ready: boolean, revision?: unknown) {
       observerRef.current = null;
       observedRef.current = new WeakSet();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [ready, revision]);
 }

@@ -40,6 +40,7 @@ impl std::fmt::Debug for EmbeddingModelInner {
 #[derive(Debug, Clone)]
 pub enum EmbeddingModelStatus {
     Ready { dimension: usize },
+    HashFallback { dimension: usize },
     Unavailable { reason: String },
 }
 
@@ -113,8 +114,10 @@ impl EmbeddingModel {
     pub fn status(&self) -> EmbeddingModelStatus {
         let guard = self.state.lock();
         match &*guard {
-            EmbeddingModelInner::Fastembed { dimension, .. }
-            | EmbeddingModelInner::HashFallback { dimension } => EmbeddingModelStatus::Ready {
+            EmbeddingModelInner::Fastembed { dimension, .. } => EmbeddingModelStatus::Ready {
+                dimension: *dimension,
+            },
+            EmbeddingModelInner::HashFallback { dimension } => EmbeddingModelStatus::HashFallback {
                 dimension: *dimension,
             },
             EmbeddingModelInner::Unavailable { reason } => EmbeddingModelStatus::Unavailable {
@@ -124,7 +127,10 @@ impl EmbeddingModel {
     }
 
     pub fn is_ready(&self) -> bool {
-        matches!(self.status(), EmbeddingModelStatus::Ready { .. })
+        matches!(
+            self.status(),
+            EmbeddingModelStatus::Ready { .. } | EmbeddingModelStatus::HashFallback { .. }
+        )
     }
 
     /// Returns true when the model is running real inference (not hash fallback).

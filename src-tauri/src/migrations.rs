@@ -16,6 +16,8 @@ use chrono::Utc;
 use rusqlite::{Connection, Error as SqliteError, ErrorCode};
 
 mod v144_audit_action_token;
+mod v166_semantic_merge_safety;
+mod v167_structured_claim_canonicalization;
 
 type MigrationError = String;
 
@@ -203,9 +205,9 @@ const MIGRATIONS: &[Migration] = &[
         version: 39,
         sql: include_str!("migrations/039_person_relationships_types.sql"),
     },
-    Migration::Sql {
+    Migration::Fn {
         version: 40,
-        sql: include_str!("migrations/040_entity_quality.sql"),
+        apply: migrate_v40_entity_quality,
     },
     Migration::Sql {
         version: 41,
@@ -223,9 +225,9 @@ const MIGRATIONS: &[Migration] = &[
         version: 44,
         sql: include_str!("migrations/044_user_entity.sql"),
     },
-    Migration::Sql {
+    Migration::Fn {
         version: 45,
-        sql: include_str!("migrations/045_intelligence_report_fields.sql"),
+        apply: migrate_v45_intelligence_report_fields,
     },
     Migration::Sql {
         version: 46,
@@ -259,9 +261,9 @@ const MIGRATIONS: &[Migration] = &[
         version: 53,
         sql: include_str!("migrations/053_app_state_demo.sql"),
     },
-    Migration::Sql {
+    Migration::Fn {
         version: 54,
-        sql: include_str!("migrations/054_intelligence_consistency_metadata.sql"),
+        apply: migrate_v54_intelligence_consistency_metadata,
     },
     Migration::Sql {
         version: 55,
@@ -686,9 +688,9 @@ const MIGRATIONS: &[Migration] = &[
     },
     // Typed feedback schema: rebuild claim_feedback for the closed
     // action set and add claim verification state columns.
-    Migration::Sql {
+    Migration::Fn {
         version: 136,
-        sql: include_str!("migrations/135_dos_294_typed_feedback_schema.sql"),
+        apply: migrate_v136_typed_feedback_schema,
     },
     // Quarantine malformed legacy source timestamps before W4 freshness
     // scoring reads the claim substrate.
@@ -766,9 +768,9 @@ const MIGRATIONS: &[Migration] = &[
         sql: include_str!("migrations/150_dos_215_temporal_backfill_state.sql"),
     },
     // Temporal rows remember revoked-source invalidation for ADR-0109 filtering.
-    Migration::Sql {
+    Migration::Fn {
         version: 151,
-        sql: include_str!("migrations/151_dos_215_temporal_source_invalidation.sql"),
+        apply: migrate_v151_temporal_source_invalidation,
     },
     // Temporal rows are keyed by entity type as well as id to avoid cross-type id collisions.
     Migration::Sql {
@@ -784,8 +786,1155 @@ const MIGRATIONS: &[Migration] = &[
         version: 154,
         sql: include_str!("migrations/154_claim_surface_dismissals.sql"),
     },
+    // Shadow trust compiler output must not overwrite live trust columns.
+    Migration::Fn {
+        version: 155,
+        apply: migrate_v155_claim_shadow_trust_columns,
+    },
+    // Reconcile databases where the original v155 was recorded after schema
+    // edits but before the live shadow trust copy/clear completed.
+    Migration::Fn {
+        version: 156,
+        apply: migrate_v156_reconcile_claim_shadow_trust_columns,
+    },
+    // Reconcile databases that recorded v156 before its c4/c5 shadow trust
+    // repair completed, including c5 rows left with trust_version = 0.
+    Migration::Fn {
+        version: 157,
+        apply: migrate_v157_reconcile_claim_shadow_trust_columns,
+    },
+    // W4-A typed CommitmentClaim identity: actions.commitment_id, structural
+    // owner fields, per-sighting action_commitment_sources, and the
+    // identity-tuple backlog duplicate guard.
+    Migration::Fn {
+        version: 158,
+        apply: migrate_v158_dos_276_commitment_claim_identity,
+    },
+    Migration::Fn {
+        version: 159,
+        apply: backfill_commitment_bridge_derived_aliases,
+    },
+    Migration::Fn {
+        version: 160,
+        apply: migrate_v160_dos_276_commitment_identity_backlog_index,
+    },
+    Migration::Fn {
+        version: 161,
+        apply: migrate_v161_dos_276_commitment_alias_remediation,
+    },
+    Migration::Fn {
+        version: 162,
+        apply: remediate_tombstoned_commitment_bridge_mutable_aliases,
+    },
+    Migration::Fn {
+        version: 163,
+        apply: backfill_commitment_source_keys,
+    },
+    Migration::Fn {
+        version: 164,
+        apply: backfill_commitment_identity_normalized_fields,
+    },
+    // W4-B ADR-0131 semantic evidence substrate (renumbered v158 → v165
+    // after W4-A landed v158-v164 on dev).
+    Migration::Sql {
+        version: 165,
+        sql: include_str!("migrations/165_semantic_evidence.sql"),
+    },
+    // W4-B ADR-0131 preserve legacy semantic-merge qualifiers before
+    // canonicalization (renumbered v159 → v166).
+    Migration::Fn {
+        version: 166,
+        apply: migrate_v166_semantic_merge_safety,
+    },
+    // W4-B ADR-0131 structured claim canonicalization substrate
+    // (renumbered v161 → v167).
+    Migration::Fn {
+        version: 167,
+        apply: migrate_v167_structured_claim_canonicalization,
+    },
 ];
 
+const V155_SHADOW_TRUST_VERSION: i64 = 1_401_003;
+
+#[derive(Clone)]
+struct CommitmentBridgeAliasBackfillRow {
+    legacy_commitment_id: String,
+    derived_commitment_id: String,
+    entity_type: String,
+    entity_id: String,
+    action_id: Option<String>,
+    first_seen_at: String,
+    last_seen_at: String,
+    tombstoned: i32,
+}
+
+struct CommitmentBridgeAliasRemediationRow {
+    legacy_bridge_id: String,
+    tombstoned_action_id: Option<String>,
+    entity_type: String,
+    entity_id: String,
+    source_commitment_id: Option<String>,
+    source_type: Option<String>,
+    source_id: Option<String>,
+    source_label: Option<String>,
+    observed_at: String,
+}
+
+struct CommitmentBridgeMutableAliasRemediation {
+    remediation: CommitmentBridgeAliasRemediationRow,
+    source_derived_commitment_ids: HashSet<String>,
+}
+
+fn backfill_commitment_bridge_derived_aliases(conn: &Connection) -> Result<(), MigrationError> {
+    let rows = collect_commitment_bridge_alias_rows(conn)?;
+    for row in rows {
+        if row.legacy_commitment_id == row.derived_commitment_id {
+            continue;
+        }
+
+        conn.execute(
+            "INSERT INTO ai_commitment_bridge
+             (commitment_id, entity_type, entity_id, action_id,
+              first_seen_at, last_seen_at, tombstoned)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(commitment_id) DO UPDATE SET
+                entity_type = excluded.entity_type,
+                entity_id = excluded.entity_id,
+                action_id = COALESCE(excluded.action_id, ai_commitment_bridge.action_id),
+                last_seen_at = excluded.last_seen_at,
+                tombstoned = CASE
+                    WHEN ai_commitment_bridge.tombstoned != 0 OR excluded.tombstoned != 0
+                    THEN 1
+                    ELSE 0
+                END",
+            rusqlite::params![
+                row.derived_commitment_id,
+                row.entity_type,
+                row.entity_id,
+                row.action_id,
+                row.first_seen_at,
+                row.last_seen_at,
+                row.tombstoned,
+            ],
+        )
+        .map_err(|e| format!("commitment bridge derived alias insert failed: {e}"))?;
+    }
+    Ok(())
+}
+
+fn collect_commitment_bridge_alias_rows(
+    conn: &Connection,
+) -> Result<Vec<CommitmentBridgeAliasBackfillRow>, MigrationError> {
+    let mut rows = Vec::new();
+    let mut source_alias_action_ids = HashSet::new();
+
+    if table_exists(conn, "action_commitment_sources")? {
+        for row in collect_commitment_bridge_source_alias_rows(conn)? {
+            if let Some(action_id) = row.action_id.as_ref() {
+                source_alias_action_ids.insert(action_id.clone());
+            }
+            rows.push(row);
+        }
+    }
+
+    for row in collect_commitment_bridge_action_provenance_alias_rows(conn)? {
+        if let Some(action_id) = row.action_id.as_ref() {
+            source_alias_action_ids.insert(action_id.clone());
+        }
+        rows.push(row);
+    }
+
+    rows.extend(collect_commitment_bridge_action_alias_rows(
+        conn,
+        &source_alias_action_ids,
+    )?);
+    Ok(rows)
+}
+
+fn collect_commitment_bridge_source_alias_rows(
+    conn: &Connection,
+) -> Result<Vec<CommitmentBridgeAliasBackfillRow>, MigrationError> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT
+                b.commitment_id,
+                b.entity_type,
+                b.entity_id,
+                b.action_id,
+                b.first_seen_at,
+                b.last_seen_at,
+                b.tombstoned,
+                acs.commitment_id
+             FROM ai_commitment_bridge b
+             JOIN actions a ON a.id = b.action_id
+             JOIN action_commitment_sources acs ON acs.action_id = b.action_id
+             WHERE a.action_kind = 'commitment'
+               AND b.tombstoned != 0
+               AND acs.commitment_id IS NOT NULL",
+        )
+        .map_err(|e| format!("commitment bridge source alias query failed: {e}"))?;
+
+    let rows = stmt
+        .query_map([], commitment_bridge_alias_row_from_stored_id)
+        .map_err(|e| format!("commitment bridge source alias row map failed: {e}"))?;
+
+    let mut out = Vec::new();
+    for row in rows {
+        let row =
+            row.map_err(|e| format!("commitment bridge source alias row read failed: {e}"))?;
+        if is_derived_commitment_id(&row.derived_commitment_id) {
+            out.push(row);
+        }
+    }
+    Ok(out)
+}
+
+fn collect_commitment_bridge_action_provenance_alias_rows(
+    conn: &Connection,
+) -> Result<Vec<CommitmentBridgeAliasBackfillRow>, MigrationError> {
+    let action_columns = table_columns(conn, "actions")?;
+    let action_commitment_expr = if action_columns.contains("commitment_id") {
+        "a.commitment_id"
+    } else {
+        "NULL"
+    };
+    let source_id_expr = if action_columns.contains("source_id") {
+        "a.source_id"
+    } else {
+        "NULL"
+    };
+    let sql = format!(
+        "SELECT
+            b.commitment_id,
+            b.entity_type,
+            b.entity_id,
+            b.action_id,
+            b.first_seen_at,
+            b.last_seen_at,
+            b.tombstoned,
+            {action_commitment_expr},
+            {source_id_expr}
+         FROM ai_commitment_bridge b
+         JOIN actions a ON a.id = b.action_id
+         WHERE a.action_kind = 'commitment'
+           AND b.tombstoned != 0"
+    );
+    let mut stmt = conn
+        .prepare(&sql)
+        .map_err(|e| format!("commitment bridge provenance alias query failed: {e}"))?;
+
+    let rows = stmt
+        .query_map([], |row| {
+            let legacy_commitment_id: String = row.get(0)?;
+            let entity_type: String = row.get(1)?;
+            let entity_id: String = row.get(2)?;
+            let action_id: Option<String> = row.get(3)?;
+            let first_seen_at: String = row.get(4)?;
+            let last_seen_at: String = row.get(5)?;
+            let tombstoned: i32 = row.get(6)?;
+            let action_commitment_id: Option<String> = row.get(7)?;
+            let source_id: Option<String> = row.get(8)?;
+            Ok((
+                legacy_commitment_id,
+                entity_type,
+                entity_id,
+                action_id,
+                first_seen_at,
+                last_seen_at,
+                tombstoned,
+                action_commitment_id,
+                source_id,
+            ))
+        })
+        .map_err(|e| format!("commitment bridge provenance alias row map failed: {e}"))?;
+
+    let mut out = Vec::new();
+    for row in rows {
+        let (
+            legacy_commitment_id,
+            entity_type,
+            entity_id,
+            action_id,
+            first_seen_at,
+            last_seen_at,
+            tombstoned,
+            action_commitment_id,
+            source_id,
+        ) = row.map_err(|e| format!("commitment bridge provenance alias row read failed: {e}"))?;
+
+        for candidate in [action_commitment_id.as_deref(), source_id.as_deref()]
+            .into_iter()
+            .flatten()
+        {
+            if !is_derived_commitment_id(candidate) {
+                continue;
+            }
+            out.push(CommitmentBridgeAliasBackfillRow {
+                legacy_commitment_id: legacy_commitment_id.clone(),
+                derived_commitment_id: candidate.to_string(),
+                entity_type: entity_type.clone(),
+                entity_id: entity_id.clone(),
+                action_id: action_id.clone(),
+                first_seen_at: first_seen_at.clone(),
+                last_seen_at: last_seen_at.clone(),
+                tombstoned,
+            });
+        }
+    }
+    Ok(out)
+}
+
+fn collect_commitment_bridge_action_alias_rows(
+    conn: &Connection,
+    source_alias_action_ids: &HashSet<String>,
+) -> Result<Vec<CommitmentBridgeAliasBackfillRow>, MigrationError> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT
+                b.commitment_id,
+                b.entity_type,
+                b.entity_id,
+                b.action_id,
+                b.first_seen_at,
+                b.last_seen_at,
+                b.tombstoned,
+                a.title,
+                a.due_date,
+                a.owner_raw,
+                a.context
+             FROM ai_commitment_bridge b
+             JOIN actions a ON a.id = b.action_id
+             WHERE a.action_kind = 'commitment'
+               AND a.title IS NOT NULL",
+        )
+        .map_err(|e| format!("commitment bridge alias query failed: {e}"))?;
+
+    let rows = stmt
+        .query_map([], |row| {
+            let legacy_commitment_id: String = row.get(0)?;
+            let entity_type: String = row.get(1)?;
+            let entity_id: String = row.get(2)?;
+            let action_id: Option<String> = row.get(3)?;
+            let first_seen_at: String = row.get(4)?;
+            let last_seen_at: String = row.get(5)?;
+            let tombstoned: i32 = row.get(6)?;
+            let title: String = row.get(7)?;
+            let due_date: Option<String> = row.get(8)?;
+            let owner_raw: Option<String> = row.get(9)?;
+            let context: Option<String> = row.get(10)?;
+            let context_owner = legacy_owner_from_context(context.as_deref());
+            let owner_for_identity = owner_raw.as_deref().or(context_owner.as_deref());
+            let derived_commitment_id =
+                crate::abilities::extractors::commitment::derive_commitment_id(
+                    &title,
+                    &entity_id,
+                    due_date.as_deref(),
+                    owner_for_identity,
+                );
+            Ok(CommitmentBridgeAliasBackfillRow {
+                legacy_commitment_id,
+                derived_commitment_id,
+                entity_type,
+                entity_id,
+                action_id,
+                first_seen_at,
+                last_seen_at,
+                tombstoned,
+            })
+        })
+        .map_err(|e| format!("commitment bridge alias row map failed: {e}"))?;
+
+    let mut out = Vec::new();
+    for row in rows {
+        let row = row.map_err(|e| format!("commitment bridge alias row read failed: {e}"))?;
+        if row.tombstoned != 0
+            && row
+                .action_id
+                .as_ref()
+                .is_some_and(|action_id| source_alias_action_ids.contains(action_id))
+        {
+            continue;
+        }
+        out.push(row);
+    }
+    Ok(out)
+}
+
+fn commitment_bridge_alias_row_from_stored_id(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<CommitmentBridgeAliasBackfillRow> {
+    Ok(CommitmentBridgeAliasBackfillRow {
+        legacy_commitment_id: row.get(0)?,
+        entity_type: row.get(1)?,
+        entity_id: row.get(2)?,
+        action_id: row.get(3)?,
+        first_seen_at: row.get(4)?,
+        last_seen_at: row.get(5)?,
+        tombstoned: row.get(6)?,
+        derived_commitment_id: row.get(7)?,
+    })
+}
+
+fn remediate_tombstoned_commitment_bridge_mutable_aliases(
+    conn: &Connection,
+) -> Result<(), MigrationError> {
+    ensure_commitment_alias_remediation_table(conn)?;
+
+    for candidate in collect_commitment_bridge_alias_remediation_rows(conn)? {
+        let tombstoned_action_id = candidate.remediation.tombstoned_action_id.clone();
+        remove_tombstoned_mutable_commitment_bridge_aliases(
+            conn,
+            tombstoned_action_id.as_deref(),
+            &candidate.remediation.entity_type,
+            &candidate.remediation.entity_id,
+            &candidate.source_derived_commitment_ids,
+        )?;
+
+        if candidate.source_derived_commitment_ids.is_empty() {
+            insert_commitment_alias_remediation(conn, candidate.remediation)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn collect_commitment_bridge_alias_remediation_rows(
+    conn: &Connection,
+) -> Result<Vec<CommitmentBridgeMutableAliasRemediation>, MigrationError> {
+    if !table_exists(conn, "ai_commitment_bridge")? {
+        return Ok(Vec::new());
+    }
+
+    let has_actions_table = table_exists(conn, "actions")?;
+    let action_columns = if has_actions_table {
+        table_columns(conn, "actions")?
+    } else {
+        HashSet::new()
+    };
+    let has_source_table = table_exists(conn, "action_commitment_sources")?;
+    let source_columns = if has_source_table {
+        table_columns(conn, "action_commitment_sources")?
+    } else {
+        HashSet::new()
+    };
+
+    let action_join = if has_actions_table {
+        "LEFT JOIN actions a ON a.id = b.action_id"
+    } else {
+        ""
+    };
+    let action_kind_filter = if action_columns.contains("action_kind") {
+        "AND (a.id IS NULL OR a.action_kind = 'commitment')"
+    } else {
+        ""
+    };
+    let action_commitment_expr = action_subquery_expr(&action_columns, "commitment_id");
+    let action_source_id_expr = action_subquery_expr(&action_columns, "source_id");
+    let source_commitment_expr =
+        source_subquery_expr(has_source_table, &source_columns, "commitment_id");
+    let source_type_expr = source_subquery_expr(has_source_table, &source_columns, "source_type");
+    let source_id_expr = source_subquery_expr(has_source_table, &source_columns, "source_id");
+    let source_label_expr = source_subquery_expr(has_source_table, &source_columns, "source_label");
+    let observed_at_expr = if has_source_table && source_columns.contains("observed_at") {
+        "COALESCE((
+            SELECT acs.observed_at
+            FROM action_commitment_sources acs
+            WHERE acs.action_id = b.action_id
+            ORDER BY acs.observed_at ASC
+            LIMIT 1
+        ), b.last_seen_at)"
+    } else {
+        "b.last_seen_at"
+    };
+    let sql = format!(
+        "SELECT
+            b.commitment_id,
+            b.entity_type,
+            b.entity_id,
+            b.action_id,
+            {action_commitment_expr},
+            {action_source_id_expr},
+            {source_commitment_expr},
+            {source_type_expr},
+            {source_id_expr},
+            {source_label_expr},
+            {observed_at_expr}
+         FROM ai_commitment_bridge b
+         {action_join}
+         WHERE b.tombstoned != 0
+           {action_kind_filter}"
+    );
+    let mut stmt = conn
+        .prepare(&sql)
+        .map_err(|e| format!("commitment bridge remediation query failed: {e}"))?;
+    let rows = stmt
+        .query_map([], |row| {
+            let legacy_bridge_id: String = row.get(0)?;
+            let entity_type: String = row.get(1)?;
+            let entity_id: String = row.get(2)?;
+            let tombstoned_action_id: Option<String> = row.get(3)?;
+            let action_commitment_id: Option<String> = row.get(4)?;
+            let action_source_id: Option<String> = row.get(5)?;
+            let source_commitment_id: Option<String> = row.get(6)?;
+            let source_type: Option<String> = row.get(7)?;
+            let source_id: Option<String> = row.get(8)?;
+            let source_label: Option<String> = row.get(9)?;
+            let observed_at: String = row.get(10)?;
+
+            Ok(CommitmentBridgeAliasRemediationRow {
+                legacy_bridge_id,
+                tombstoned_action_id,
+                entity_type,
+                entity_id,
+                source_commitment_id,
+                source_type,
+                source_id,
+                source_label,
+                observed_at,
+            })
+            .map(|remediation| (remediation, action_commitment_id, action_source_id))
+        })
+        .map_err(|e| format!("commitment bridge remediation row map failed: {e}"))?;
+
+    let mut out = Vec::new();
+    for row in rows {
+        let (remediation, action_commitment_id, action_source_id) =
+            row.map_err(|e| format!("commitment bridge remediation row read failed: {e}"))?;
+        if is_derived_commitment_id(&remediation.legacy_bridge_id) {
+            continue;
+        }
+        let mut source_derived_commitment_ids = HashSet::new();
+        insert_derived_commitment_id(
+            &mut source_derived_commitment_ids,
+            action_commitment_id.as_deref(),
+        );
+        insert_derived_commitment_id(
+            &mut source_derived_commitment_ids,
+            action_source_id.as_deref(),
+        );
+        insert_derived_commitment_id(
+            &mut source_derived_commitment_ids,
+            remediation.source_commitment_id.as_deref(),
+        );
+        insert_derived_commitment_id(
+            &mut source_derived_commitment_ids,
+            remediation.source_id.as_deref(),
+        );
+        collect_action_commitment_source_derived_ids(
+            conn,
+            remediation.tombstoned_action_id.as_deref(),
+            &source_columns,
+            &mut source_derived_commitment_ids,
+        )?;
+
+        out.push(CommitmentBridgeMutableAliasRemediation {
+            remediation,
+            source_derived_commitment_ids,
+        });
+    }
+    Ok(out)
+}
+
+fn action_subquery_expr(action_columns: &HashSet<String>, column: &str) -> String {
+    if action_columns.contains(column) {
+        format!("a.{column}")
+    } else {
+        "NULL".to_string()
+    }
+}
+
+fn source_subquery_expr(
+    has_source_table: bool,
+    source_columns: &HashSet<String>,
+    column: &str,
+) -> String {
+    if !has_source_table || !source_columns.contains(column) {
+        return "NULL".to_string();
+    }
+    let order_by = if source_columns.contains("observed_at") {
+        "ORDER BY acs.observed_at ASC"
+    } else {
+        ""
+    };
+    format!(
+        "(
+            SELECT acs.{column}
+            FROM action_commitment_sources acs
+            WHERE acs.action_id = b.action_id
+            {order_by}
+            LIMIT 1
+        )"
+    )
+}
+
+fn collect_action_commitment_source_derived_ids(
+    conn: &Connection,
+    action_id: Option<&str>,
+    source_columns: &HashSet<String>,
+    out: &mut HashSet<String>,
+) -> Result<(), MigrationError> {
+    let Some(action_id) = action_id else {
+        return Ok(());
+    };
+    let has_commitment_id = source_columns.contains("commitment_id");
+    let has_source_id = source_columns.contains("source_id");
+    if !has_commitment_id && !has_source_id {
+        return Ok(());
+    }
+
+    let commitment_expr = if has_commitment_id {
+        "commitment_id"
+    } else {
+        "NULL"
+    };
+    let source_id_expr = if has_source_id { "source_id" } else { "NULL" };
+    let sql = format!(
+        "SELECT {commitment_expr}, {source_id_expr}
+         FROM action_commitment_sources
+         WHERE action_id = ?1"
+    );
+    let mut stmt = conn
+        .prepare(&sql)
+        .map_err(|e| format!("commitment source identity query failed: {e}"))?;
+    let rows = stmt
+        .query_map([action_id], |row| {
+            Ok((
+                row.get::<_, Option<String>>(0)?,
+                row.get::<_, Option<String>>(1)?,
+            ))
+        })
+        .map_err(|e| format!("commitment source identity row map failed: {e}"))?;
+    for row in rows {
+        let (commitment_id, source_id) =
+            row.map_err(|e| format!("commitment source identity row read failed: {e}"))?;
+        insert_derived_commitment_id(out, commitment_id.as_deref());
+        insert_derived_commitment_id(out, source_id.as_deref());
+    }
+    Ok(())
+}
+
+fn insert_derived_commitment_id(out: &mut HashSet<String>, value: Option<&str>) {
+    if let Some(value) = value
+        .map(str::trim)
+        .filter(|value| is_derived_commitment_id(value))
+    {
+        out.insert(value.to_string());
+    }
+}
+
+fn remove_tombstoned_mutable_commitment_bridge_aliases(
+    conn: &Connection,
+    action_id: Option<&str>,
+    entity_type: &str,
+    entity_id: &str,
+    preserved_derived_ids: &HashSet<String>,
+) -> Result<(), MigrationError> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT commitment_id
+         FROM ai_commitment_bridge
+         WHERE entity_type = ?1
+           AND entity_id = ?2
+           AND tombstoned != 0
+           AND commitment_id LIKE 'commitment:%'
+           AND (
+               (?3 IS NULL AND action_id IS NULL)
+               OR (?3 IS NOT NULL AND action_id = ?3)
+           )",
+        )
+        .map_err(|e| format!("mutable commitment bridge alias scan failed: {e}"))?;
+    let rows = stmt
+        .query_map(
+            rusqlite::params![entity_type, entity_id, action_id],
+            |row| row.get::<_, String>(0),
+        )
+        .map_err(|e| format!("mutable commitment bridge alias row map failed: {e}"))?;
+
+    let mut stale_ids = Vec::new();
+    for row in rows {
+        let commitment_id =
+            row.map_err(|e| format!("mutable commitment bridge alias row read failed: {e}"))?;
+        if !preserved_derived_ids.contains(&commitment_id) {
+            stale_ids.push(commitment_id);
+        }
+    }
+
+    for commitment_id in stale_ids {
+        conn.execute(
+            "DELETE FROM ai_commitment_bridge WHERE commitment_id = ?1",
+            [commitment_id.as_str()],
+        )
+        .map_err(|e| format!("mutable commitment bridge alias removal failed: {e}"))?;
+    }
+    Ok(())
+}
+
+fn ensure_commitment_alias_remediation_table(conn: &Connection) -> Result<(), MigrationError> {
+    migrate_v161_dos_276_commitment_alias_remediation(conn)
+}
+
+fn insert_commitment_alias_remediation(
+    conn: &Connection,
+    row: CommitmentBridgeAliasRemediationRow,
+) -> Result<(), MigrationError> {
+    let id =
+        commitment_alias_remediation_id(&row.legacy_bridge_id, row.tombstoned_action_id.as_deref());
+    conn.execute(
+        "INSERT OR IGNORE INTO action_commitment_alias_remediation
+         (id, legacy_bridge_id, tombstoned_action_id, entity_type, entity_id,
+          source_commitment_id, source_type, source_id, source_label,
+          observed_at, reason, remediation_status)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
+                 'unrecoverable_tombstoned_legacy_bridge_alias', 'pending')",
+        rusqlite::params![
+            id,
+            row.legacy_bridge_id,
+            row.tombstoned_action_id,
+            row.entity_type,
+            row.entity_id,
+            row.source_commitment_id,
+            row.source_type,
+            row.source_id,
+            row.source_label,
+            row.observed_at,
+        ],
+    )
+    .map_err(|e| format!("commitment alias remediation insert failed: {e}"))?;
+    Ok(())
+}
+
+fn commitment_alias_remediation_id(legacy_bridge_id: &str, action_id: Option<&str>) -> String {
+    let action_id = action_id.unwrap_or("");
+    format!(
+        "legacy:{}:{}:action:{}:{}",
+        legacy_bridge_id.len(),
+        legacy_bridge_id,
+        action_id.len(),
+        action_id
+    )
+}
+
+fn is_derived_commitment_id(value: &str) -> bool {
+    let Some(hex) = value.strip_prefix("commitment:") else {
+        return false;
+    };
+    hex.len() == 64 && hex.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+fn legacy_owner_from_context(context: Option<&str>) -> Option<String> {
+    let value = context?.trim();
+    let prefix_len = value
+        .get(..6)
+        .filter(|prefix| prefix.eq_ignore_ascii_case("owner:"))?
+        .len();
+    let owner = value[prefix_len..].trim();
+    if owner.is_empty() {
+        None
+    } else {
+        Some(owner.to_string())
+    }
+}
+
+fn backfill_commitment_source_keys(conn: &Connection) -> Result<(), MigrationError> {
+    if !table_exists(conn, "action_commitment_sources")? {
+        return Ok(());
+    }
+
+    let columns = table_columns(conn, "action_commitment_sources")?;
+    if !columns.contains("source_key") {
+        conn.execute_batch("ALTER TABLE action_commitment_sources ADD COLUMN source_key TEXT;")
+            .map_err(|e| format!("add action_commitment_sources.source_key: {e}"))?;
+    }
+
+    let source_type_expr = nullable_column_expr(&columns, "source_type");
+    let source_id_expr = nullable_column_expr(&columns, "source_id");
+    let source_label_expr = nullable_column_expr(&columns, "source_label");
+    let action_id_expr = nullable_column_expr(&columns, "action_id");
+    let id_expr = nullable_column_expr(&columns, "id");
+    let sql = format!(
+        "SELECT rowid,
+                {source_type_expr},
+                {source_id_expr},
+                {source_label_expr},
+                {action_id_expr},
+                {id_expr}
+         FROM action_commitment_sources"
+    );
+    let mut stmt = conn
+        .prepare(&sql)
+        .map_err(|e| format!("query action_commitment_sources.source_key rows: {e}"))?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, Option<String>>(3)?,
+                row.get::<_, Option<String>>(4)?,
+                row.get::<_, Option<String>>(5)?,
+            ))
+        })
+        .map_err(|e| format!("map action_commitment_sources.source_key rows: {e}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("read action_commitment_sources.source_key rows: {e}"))?;
+    drop(stmt);
+
+    for (rowid, source_type, source_id, source_label, action_id, id) in rows {
+        let source_key = backfilled_commitment_source_key(
+            source_type.as_deref(),
+            source_id.as_deref(),
+            source_label.as_deref(),
+            action_id.as_deref(),
+            id.as_deref(),
+        );
+        conn.execute(
+            "UPDATE action_commitment_sources SET source_key = ?1 WHERE rowid = ?2",
+            rusqlite::params![source_key, rowid],
+        )
+        .map_err(|e| format!("recompute action_commitment_sources.source_key: {e}"))?;
+    }
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_action_commitment_sources_commitment_key
+             ON action_commitment_sources(commitment_id, source_key);",
+    )
+    .map_err(|e| format!("create action_commitment_sources source_key index: {e}"))?;
+    Ok(())
+}
+
+fn backfilled_commitment_source_key(
+    source_type: Option<&str>,
+    source_id: Option<&str>,
+    source_label: Option<&str>,
+    action_id: Option<&str>,
+    id: Option<&str>,
+) -> String {
+    let source_type = trimmed_non_empty(source_type).unwrap_or("commitment");
+    let source_id = trimmed_non_empty(source_id)
+        .and_then(legacy_commitment_source_id_without_ordinal)
+        .or_else(|| trimmed_non_empty(source_id).map(ToString::to_string))
+        .or_else(|| trimmed_non_empty(source_label).map(ToString::to_string))
+        .or_else(|| trimmed_non_empty(action_id).map(ToString::to_string))
+        .or_else(|| trimmed_non_empty(id).map(ToString::to_string))
+        .unwrap_or_else(|| "unknown".to_string());
+
+    format!(
+        "{}:{}",
+        normalize_commitment_source_key_part(source_type),
+        normalize_commitment_source_key_part(&source_id)
+    )
+}
+
+fn legacy_commitment_source_id_without_ordinal(value: &str) -> Option<String> {
+    let (source_type, source_id, _source_ordinal) = legacy_commitment_source_id_parts(value)?;
+    Some(format!("{source_type}:{source_id}"))
+}
+
+fn legacy_commitment_source_id_parts(value: &str) -> Option<(&str, &str, &str)> {
+    let value = trimmed_non_empty(Some(value))?;
+    let (source_type, rest) = value.split_once(':')?;
+    let (source_id, source_ordinal) = rest.rsplit_once(':')?;
+    Some((
+        trimmed_non_empty(Some(source_type))?,
+        trimmed_non_empty(Some(source_id))?,
+        trimmed_non_empty(Some(source_ordinal))?,
+    ))
+}
+
+fn trimmed_non_empty(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|value| !value.is_empty())
+}
+
+fn normalize_commitment_source_key_part(value: &str) -> String {
+    let normalized = value.split_whitespace().collect::<Vec<_>>().join(" ");
+    let normalized = normalized.trim().to_ascii_lowercase();
+    if normalized.is_empty() {
+        "unknown".to_string()
+    } else {
+        normalized
+    }
+}
+
+fn backfill_commitment_identity_normalized_fields(conn: &Connection) -> Result<(), MigrationError> {
+    if !table_exists(conn, "actions")? {
+        return Ok(());
+    }
+
+    let columns = table_columns(conn, "actions")?;
+    if !columns.contains("normalized_title") {
+        conn.execute_batch("ALTER TABLE actions ADD COLUMN normalized_title TEXT;")
+            .map_err(|e| format!("add actions.normalized_title: {e}"))?;
+    }
+    if !columns.contains("normalized_owner") {
+        conn.execute_batch("ALTER TABLE actions ADD COLUMN normalized_owner TEXT;")
+            .map_err(|e| format!("add actions.normalized_owner: {e}"))?;
+    }
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, title, owner_raw
+             FROM actions
+             WHERE action_kind = 'commitment'",
+        )
+        .map_err(|e| format!("prepare commitment identity normalization backfill: {e}"))?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        })
+        .map_err(|e| format!("query commitment identity rows: {e}"))?;
+
+    let mut updates = Vec::new();
+    for row in rows {
+        let (id, title, owner_raw) =
+            row.map_err(|e| format!("read commitment identity row: {e}"))?;
+        let normalized_title =
+            crate::abilities::extractors::commitment::normalize_commitment_title(&title);
+        let normalized_owner = owner_raw
+            .as_deref()
+            .and_then(crate::abilities::extractors::commitment::normalize_owner_raw);
+        updates.push((id, normalized_title, normalized_owner));
+    }
+    drop(stmt);
+
+    for (id, normalized_title, normalized_owner) in updates {
+        conn.execute(
+            "UPDATE actions
+             SET normalized_title = ?1,
+                 normalized_owner = ?2
+             WHERE id = ?3",
+            rusqlite::params![normalized_title, normalized_owner, id],
+        )
+        .map_err(|e| format!("update normalized commitment identity for action: {e}"))?;
+    }
+
+    collapse_normalized_commitment_identity_duplicates(conn)?;
+
+    conn.execute_batch(
+        "DROP INDEX IF EXISTS idx_actions_backlog_commitment_identity_account_unique;
+         DROP INDEX IF EXISTS idx_actions_backlog_commitment_identity_project_unique;
+
+         CREATE UNIQUE INDEX IF NOT EXISTS idx_actions_backlog_commitment_identity_account_unique
+             ON actions(account_id, normalized_title, COALESCE(due_date, ''), COALESCE(normalized_owner, ''))
+             WHERE action_kind = 'commitment'
+               AND status = 'backlog'
+               AND account_id IS NOT NULL;
+
+         CREATE UNIQUE INDEX IF NOT EXISTS idx_actions_backlog_commitment_identity_project_unique
+             ON actions(project_id, normalized_title, COALESCE(due_date, ''), COALESCE(normalized_owner, ''))
+             WHERE action_kind = 'commitment'
+               AND status = 'backlog'
+               AND project_id IS NOT NULL;",
+    )
+    .map_err(|e| format!("rebuild normalized commitment identity indexes: {e}"))?;
+
+    Ok(())
+}
+
+fn collapse_normalized_commitment_identity_duplicates(
+    conn: &Connection,
+) -> Result<(), MigrationError> {
+    conn.execute_batch(
+        "CREATE TEMP TABLE _dos276_norm_backlog_canonical AS
+         SELECT canonical_id, account_id, title_key, due_date_key, owner_key
+         FROM (
+             SELECT
+                 id AS canonical_id,
+                 account_id,
+                 normalized_title AS title_key,
+                 COALESCE(due_date, '') AS due_date_key,
+                 COALESCE(normalized_owner, '') AS owner_key,
+                 ROW_NUMBER() OVER (
+                     PARTITION BY account_id, normalized_title, COALESCE(due_date, ''), COALESCE(normalized_owner, '')
+                     ORDER BY created_at ASC, id ASC
+                 ) AS rn
+             FROM actions
+             WHERE action_kind = 'commitment'
+               AND status = 'backlog'
+               AND account_id IS NOT NULL
+         )
+         WHERE rn = 1;
+
+         CREATE INDEX _dos276_norm_backlog_canonical_idx
+             ON _dos276_norm_backlog_canonical(account_id, title_key, due_date_key, owner_key);
+
+         UPDATE ai_commitment_bridge
+         SET action_id = (
+             SELECT c.canonical_id
+             FROM actions a
+             JOIN _dos276_norm_backlog_canonical c
+               ON c.account_id = a.account_id
+              AND c.title_key = a.normalized_title
+              AND c.due_date_key = COALESCE(a.due_date, '')
+              AND c.owner_key = COALESCE(a.normalized_owner, '')
+             WHERE a.id = ai_commitment_bridge.action_id
+             LIMIT 1
+         )
+         WHERE action_id IN (
+             SELECT a.id
+             FROM actions a
+             JOIN _dos276_norm_backlog_canonical c
+               ON c.account_id = a.account_id
+              AND c.title_key = a.normalized_title
+              AND c.due_date_key = COALESCE(a.due_date, '')
+              AND c.owner_key = COALESCE(a.normalized_owner, '')
+             WHERE a.action_kind = 'commitment'
+               AND a.status = 'backlog'
+               AND a.id != c.canonical_id
+         );
+
+         UPDATE action_commitment_sources
+         SET action_id = (
+             SELECT c.canonical_id
+             FROM actions a
+             JOIN _dos276_norm_backlog_canonical c
+               ON c.account_id = a.account_id
+              AND c.title_key = a.normalized_title
+              AND c.due_date_key = COALESCE(a.due_date, '')
+              AND c.owner_key = COALESCE(a.normalized_owner, '')
+             WHERE a.id = action_commitment_sources.action_id
+             LIMIT 1
+         )
+         WHERE action_id IN (
+             SELECT a.id
+             FROM actions a
+             JOIN _dos276_norm_backlog_canonical c
+               ON c.account_id = a.account_id
+              AND c.title_key = a.normalized_title
+              AND c.due_date_key = COALESCE(a.due_date, '')
+              AND c.owner_key = COALESCE(a.normalized_owner, '')
+             WHERE a.action_kind = 'commitment'
+               AND a.status = 'backlog'
+               AND a.id != c.canonical_id
+         );
+
+         DELETE FROM actions
+         WHERE id IN (
+             SELECT a.id
+             FROM actions a
+             JOIN _dos276_norm_backlog_canonical c
+               ON c.account_id = a.account_id
+              AND c.title_key = a.normalized_title
+              AND c.due_date_key = COALESCE(a.due_date, '')
+              AND c.owner_key = COALESCE(a.normalized_owner, '')
+             WHERE a.action_kind = 'commitment'
+               AND a.status = 'backlog'
+               AND a.id != c.canonical_id
+         );
+
+         DROP INDEX _dos276_norm_backlog_canonical_idx;
+         DROP TABLE _dos276_norm_backlog_canonical;
+
+         CREATE TEMP TABLE _dos276_norm_backlog_project_canonical AS
+         SELECT canonical_id, project_id, title_key, due_date_key, owner_key
+         FROM (
+             SELECT
+                 id AS canonical_id,
+                 project_id,
+                 normalized_title AS title_key,
+                 COALESCE(due_date, '') AS due_date_key,
+                 COALESCE(normalized_owner, '') AS owner_key,
+                 ROW_NUMBER() OVER (
+                     PARTITION BY project_id, normalized_title, COALESCE(due_date, ''), COALESCE(normalized_owner, '')
+                     ORDER BY created_at ASC, id ASC
+                 ) AS rn
+             FROM actions
+             WHERE action_kind = 'commitment'
+               AND status = 'backlog'
+               AND project_id IS NOT NULL
+         )
+         WHERE rn = 1;
+
+         CREATE INDEX _dos276_norm_backlog_project_canonical_idx
+             ON _dos276_norm_backlog_project_canonical(project_id, title_key, due_date_key, owner_key);
+
+         UPDATE ai_commitment_bridge
+         SET action_id = (
+             SELECT c.canonical_id
+             FROM actions a
+             JOIN _dos276_norm_backlog_project_canonical c
+               ON c.project_id = a.project_id
+              AND c.title_key = a.normalized_title
+              AND c.due_date_key = COALESCE(a.due_date, '')
+              AND c.owner_key = COALESCE(a.normalized_owner, '')
+             WHERE a.id = ai_commitment_bridge.action_id
+             LIMIT 1
+         )
+         WHERE action_id IN (
+             SELECT a.id
+             FROM actions a
+             JOIN _dos276_norm_backlog_project_canonical c
+               ON c.project_id = a.project_id
+              AND c.title_key = a.normalized_title
+              AND c.due_date_key = COALESCE(a.due_date, '')
+              AND c.owner_key = COALESCE(a.normalized_owner, '')
+             WHERE a.action_kind = 'commitment'
+               AND a.status = 'backlog'
+               AND a.id != c.canonical_id
+         );
+
+         UPDATE action_commitment_sources
+         SET action_id = (
+             SELECT c.canonical_id
+             FROM actions a
+             JOIN _dos276_norm_backlog_project_canonical c
+               ON c.project_id = a.project_id
+              AND c.title_key = a.normalized_title
+              AND c.due_date_key = COALESCE(a.due_date, '')
+              AND c.owner_key = COALESCE(a.normalized_owner, '')
+             WHERE a.id = action_commitment_sources.action_id
+             LIMIT 1
+         )
+         WHERE action_id IN (
+             SELECT a.id
+             FROM actions a
+             JOIN _dos276_norm_backlog_project_canonical c
+               ON c.project_id = a.project_id
+              AND c.title_key = a.normalized_title
+              AND c.due_date_key = COALESCE(a.due_date, '')
+              AND c.owner_key = COALESCE(a.normalized_owner, '')
+             WHERE a.action_kind = 'commitment'
+               AND a.status = 'backlog'
+               AND a.id != c.canonical_id
+         );
+
+         DELETE FROM actions
+         WHERE id IN (
+             SELECT a.id
+             FROM actions a
+             JOIN _dos276_norm_backlog_project_canonical c
+               ON c.project_id = a.project_id
+              AND c.title_key = a.normalized_title
+              AND c.due_date_key = COALESCE(a.due_date, '')
+              AND c.owner_key = COALESCE(a.normalized_owner, '')
+             WHERE a.action_kind = 'commitment'
+               AND a.status = 'backlog'
+               AND a.id != c.canonical_id
+         );
+
+         DROP INDEX _dos276_norm_backlog_project_canonical_idx;
+         DROP TABLE _dos276_norm_backlog_project_canonical;",
+    )
+    .map_err(|e| format!("collapse normalized commitment identity duplicates: {e}"))?;
+    Ok(())
+}
+
+fn nullable_column_expr(columns: &HashSet<String>, column: &str) -> &'static str {
+    if columns.contains(column) {
+        match column {
+            "source_type" => "NULLIF(source_type, '')",
+            "source_id" => "NULLIF(source_id, '')",
+            "source_label" => "NULLIF(source_label, '')",
+            "action_id" => "NULLIF(action_id, '')",
+            "id" => "NULLIF(id, '')",
+            _ => "NULL",
+        }
+    } else {
+        "NULL"
+    }
+}
 /// Create the `schema_version` table if it doesn't exist.
 fn ensure_schema_version_table(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(
@@ -839,6 +1988,20 @@ fn table_columns(conn: &Connection, table_name: &str) -> Result<HashSet<String>,
     Ok(out)
 }
 
+fn index_exists(conn: &Connection, index_name: &str) -> Result<bool, String> {
+    conn.query_row(
+        "SELECT EXISTS(
+            SELECT 1
+            FROM sqlite_master
+            WHERE type = 'index' AND name = ?1
+        )",
+        [index_name],
+        |row| row.get::<_, i64>(0),
+    )
+    .map(|v| v != 0)
+    .map_err(|e| format!("Failed to check index '{}': {e}", index_name))
+}
+
 fn apply_migration_146_signal_events_data_source(
     conn: &Connection,
     sql: &'static str,
@@ -883,8 +2046,21 @@ fn apply_migration_146_signal_events_data_source(
     }
 }
 
+fn migrate_v167_structured_claim_canonicalization(conn: &Connection) -> Result<(), MigrationError> {
+    v167_structured_claim_canonicalization::migrate_v167(conn)
+}
+
+fn migrate_v166_semantic_merge_safety(conn: &Connection) -> Result<(), MigrationError> {
+    v166_semantic_merge_safety::migrate_v166_semantic_merge_safety(conn)
+}
+
 fn verify_required_schema(conn: &Connection) -> Result<(), String> {
     let version = current_version(conn)?;
+    verify_no_live_shadow_trust_v157(
+        conn,
+        "Schema integrity check failed: v157 shadow trust invariant",
+    )?;
+
     if version < 55 {
         return Ok(());
     }
@@ -1074,6 +2250,31 @@ fn verify_required_schema(conn: &Connection) -> Result<(), String> {
         if !role_cols.contains("source_invalidated_at") {
             return Err(
                 "Schema integrity check failed: missing column person_role_progression.source_invalidated_at"
+                    .to_string(),
+            );
+        }
+    }
+
+    if version >= 155 {
+        let claim_cols = table_columns(conn, "intelligence_claims")?;
+        for col in [
+            "shadow_trust_score",
+            "shadow_trust_computed_at",
+            "shadow_trust_version",
+        ] {
+            if !claim_cols.contains(col) {
+                return Err(format!(
+                    "Schema integrity check failed: missing column intelligence_claims.{col}"
+                ));
+            }
+        }
+    }
+
+    if version >= 163 && table_exists(conn, "action_commitment_sources")? {
+        let source_cols = table_columns(conn, "action_commitment_sources")?;
+        if !source_cols.contains("source_key") {
+            return Err(
+                "Schema integrity check failed: missing column action_commitment_sources.source_key"
                     .to_string(),
             );
         }
@@ -1291,6 +2492,681 @@ fn is_missing_column_error(e: &SqliteError) -> bool {
         Some(msg) => msg.to_ascii_lowercase().contains("no such column"),
         None => false,
     }
+}
+
+fn non_comment_sql_statements(sql: &str) -> Vec<String> {
+    let uncommented = sql
+        .lines()
+        .filter(|l| !l.trim_start().starts_with("--"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    uncommented
+        .split(';')
+        .map(|s| s.lines().collect::<Vec<_>>().join(" "))
+        .map(|s| s.trim().to_uppercase())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+fn is_single_alter_table_statement(sql: &str) -> bool {
+    let statements = non_comment_sql_statements(sql);
+    statements.len() == 1 && statements[0].starts_with("ALTER TABLE")
+}
+
+fn is_benign_single_alter_conflict(sql: &str, error: &SqliteError) -> bool {
+    is_single_alter_table_statement(sql)
+        && (is_duplicate_column_error(error) || is_missing_column_error(error))
+}
+
+fn add_column_if_missing(
+    conn: &Connection,
+    table_name: &str,
+    column_name: &str,
+    add_column_sql: &str,
+) -> Result<(), String> {
+    let cols = table_columns(conn, table_name)?;
+    if !cols.contains(column_name) {
+        conn.execute(add_column_sql, [])
+            .map_err(|e| format!("add {table_name}.{column_name}: {e}"))?;
+    }
+    Ok(())
+}
+
+fn create_table_if_not_exists(
+    conn: &Connection,
+    table_name: &str,
+    create_table_sql: &str,
+) -> Result<(), String> {
+    if !table_exists(conn, table_name)? {
+        conn.execute_batch(create_table_sql)
+            .map_err(|e| format!("create table {table_name}: {e}"))?;
+    }
+    Ok(())
+}
+
+fn create_index_if_not_exists(
+    conn: &Connection,
+    index_name: &str,
+    create_index_sql: &str,
+) -> Result<(), String> {
+    if !index_exists(conn, index_name)? {
+        conn.execute_batch(create_index_sql)
+            .map_err(|e| format!("create index {index_name}: {e}"))?;
+    }
+    Ok(())
+}
+
+fn migrate_v158_dos_276_commitment_claim_identity(conn: &Connection) -> Result<(), MigrationError> {
+    apply_idempotent_sql_migration(
+        conn,
+        include_str!("migrations/158_dos_276_commitment_claim_identity.sql"),
+        "DOS-276 commitment claim identity",
+    )
+}
+
+fn migrate_v160_dos_276_commitment_identity_backlog_index(
+    conn: &Connection,
+) -> Result<(), MigrationError> {
+    apply_idempotent_sql_migration(
+        conn,
+        include_str!("migrations/160_dos_276_commitment_identity_backlog_index.sql"),
+        "DOS-276 commitment identity backlog index",
+    )
+}
+
+fn migrate_v161_dos_276_commitment_alias_remediation(
+    conn: &Connection,
+) -> Result<(), MigrationError> {
+    apply_idempotent_sql_migration(
+        conn,
+        include_str!("migrations/161_dos_276_commitment_alias_remediation.sql"),
+        "DOS-276 commitment alias remediation",
+    )
+}
+
+fn apply_idempotent_sql_migration(
+    conn: &Connection,
+    sql: &str,
+    label: &str,
+) -> Result<(), MigrationError> {
+    conn.execute_batch("BEGIN;")
+        .map_err(|e| format!("{label}: begin transaction: {e}"))?;
+
+    let result = apply_idempotent_sql_statements(conn, sql, label);
+    match result {
+        Ok(()) => conn
+            .execute_batch("COMMIT;")
+            .map_err(|e| format!("{label}: commit transaction: {e}")),
+        Err(error) => {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort cleanup after migration failure"
+            )]
+            let _ = conn.execute_batch("ROLLBACK;");
+            Err(error)
+        }
+    }
+}
+
+fn apply_idempotent_sql_statements(
+    conn: &Connection,
+    sql: &str,
+    label: &str,
+) -> Result<(), MigrationError> {
+    for statement in split_sql_statements(sql) {
+        let statement_body = statement_without_leading_comments(&statement);
+        let normalized = statement_body.to_ascii_uppercase();
+        if normalized == "BEGIN" || normalized == "COMMIT" {
+            continue;
+        }
+
+        if normalized.starts_with("ALTER TABLE ") && normalized.contains(" ADD COLUMN ") {
+            let (table_name, column_name) = parse_add_column_statement(statement_body)
+                .ok_or_else(|| format!("{label}: unsupported ADD COLUMN statement"))?;
+            add_column_if_missing(conn, table_name, column_name, statement.trim())?;
+        } else if normalized.starts_with("CREATE TABLE IF NOT EXISTS ") {
+            let table_name = parse_create_table_if_not_exists(statement_body)
+                .ok_or_else(|| format!("{label}: unsupported CREATE TABLE statement"))?;
+            create_table_if_not_exists(conn, table_name, statement.trim())?;
+        } else if normalized.starts_with("CREATE INDEX IF NOT EXISTS ")
+            || normalized.starts_with("CREATE UNIQUE INDEX IF NOT EXISTS ")
+        {
+            let index_name = parse_create_index_if_not_exists(statement_body)
+                .ok_or_else(|| format!("{label}: unsupported CREATE INDEX statement"))?;
+            create_index_if_not_exists(conn, index_name, statement.trim())?;
+        } else {
+            conn.execute_batch(statement.trim())
+                .map_err(|e| format!("{label}: {e}"))?;
+        }
+    }
+    Ok(())
+}
+
+fn split_sql_statements(sql: &str) -> Vec<String> {
+    let mut statements = Vec::new();
+    let mut current = String::new();
+    let mut chars = sql.chars().peekable();
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    let mut in_line_comment = false;
+
+    while let Some(ch) = chars.next() {
+        if in_line_comment {
+            current.push(ch);
+            if ch == '\n' {
+                in_line_comment = false;
+            }
+            continue;
+        }
+
+        if !in_single_quote && !in_double_quote && ch == '-' && chars.peek() == Some(&'-') {
+            current.push(ch);
+            current.push(chars.next().expect("peeked comment dash"));
+            in_line_comment = true;
+            continue;
+        }
+
+        if in_single_quote {
+            current.push(ch);
+            if ch == '\'' {
+                if chars.peek() == Some(&'\'') {
+                    current.push(chars.next().expect("peeked escaped quote"));
+                } else {
+                    in_single_quote = false;
+                }
+            }
+            continue;
+        }
+
+        if in_double_quote {
+            current.push(ch);
+            if ch == '"' {
+                in_double_quote = false;
+            }
+            continue;
+        }
+
+        match ch {
+            '\'' => {
+                current.push(ch);
+                in_single_quote = true;
+            }
+            '"' => {
+                current.push(ch);
+                in_double_quote = true;
+            }
+            ';' => {
+                if !current.trim().is_empty() {
+                    statements.push(format!("{};", current.trim()));
+                }
+                current.clear();
+            }
+            _ => current.push(ch),
+        }
+    }
+
+    if !current.trim().is_empty() {
+        statements.push(current.trim().to_string());
+    }
+
+    statements
+}
+
+fn statement_without_leading_comments(statement: &str) -> &str {
+    let mut body = statement.trim_start();
+    while let Some(comment_body) = body.strip_prefix("--") {
+        let Some(newline_pos) = comment_body.find('\n') else {
+            return "";
+        };
+        body = comment_body[newline_pos + 1..].trim_start();
+    }
+    body.trim_end_matches(';').trim()
+}
+
+fn parse_add_column_statement(statement: &str) -> Option<(&str, &str)> {
+    let mut parts = statement.split_whitespace();
+    match (
+        parts.next()?,
+        parts.next()?,
+        parts.next()?,
+        parts.next()?,
+        parts.next()?,
+    ) {
+        ("ALTER", "TABLE", table_name, "ADD", "COLUMN") => Some((table_name, parts.next()?)),
+        _ => None,
+    }
+}
+
+fn parse_create_table_if_not_exists(statement: &str) -> Option<&str> {
+    let mut parts = statement.split_whitespace();
+    match (
+        parts.next()?,
+        parts.next()?,
+        parts.next()?,
+        parts.next()?,
+        parts.next()?,
+    ) {
+        ("CREATE", "TABLE", "IF", "NOT", "EXISTS") => {
+            parts.next().map(|name| name.trim_end_matches('('))
+        }
+        _ => None,
+    }
+}
+
+fn parse_create_index_if_not_exists(statement: &str) -> Option<&str> {
+    let mut parts = statement.split_whitespace();
+    match (parts.next()?, parts.next()?) {
+        ("CREATE", "INDEX") => match (parts.next()?, parts.next()?, parts.next()?) {
+            ("IF", "NOT", "EXISTS") => Some(parts.next()?),
+            _ => None,
+        },
+        ("CREATE", "UNIQUE") => {
+            match (parts.next()?, parts.next()?, parts.next()?, parts.next()?) {
+                ("INDEX", "IF", "NOT", "EXISTS") => Some(parts.next()?),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+fn ensure_claim_shadow_trust_columns(conn: &Connection) -> Result<(), MigrationError> {
+    add_column_if_missing(
+        conn,
+        "intelligence_claims",
+        "shadow_trust_score",
+        "ALTER TABLE intelligence_claims ADD COLUMN shadow_trust_score REAL",
+    )?;
+    add_column_if_missing(
+        conn,
+        "intelligence_claims",
+        "shadow_trust_computed_at",
+        "ALTER TABLE intelligence_claims ADD COLUMN shadow_trust_computed_at TEXT",
+    )?;
+    add_column_if_missing(
+        conn,
+        "intelligence_claims",
+        "shadow_trust_version",
+        "ALTER TABLE intelligence_claims ADD COLUMN shadow_trust_version INTEGER",
+    )?;
+    Ok(())
+}
+
+fn verify_no_live_shadow_trust_scores(conn: &Connection, context: &str) -> Result<(), String> {
+    let remaining_live_rows: i64 = conn
+        .query_row(
+            "SELECT COUNT(*)
+               FROM intelligence_claims
+              WHERE trust_version = ?1
+                AND trust_score IS NOT NULL",
+            [V155_SHADOW_TRUST_VERSION],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("{context}: {e}"))?;
+    if remaining_live_rows > 0 {
+        return Err(format!(
+            "{context} left {remaining_live_rows} live trust_score row(s) for trust_version {V155_SHADOW_TRUST_VERSION}"
+        ));
+    }
+
+    Ok(())
+}
+
+fn verify_no_live_shadow_trust_v157(conn: &Connection, context: &str) -> Result<(), String> {
+    if !table_exists(conn, "intelligence_claims")? {
+        return Ok(());
+    }
+
+    let claim_cols = table_columns(conn, "intelligence_claims")?;
+    for col in [
+        "trust_score",
+        "trust_computed_at",
+        "trust_version",
+        "shadow_trust_version",
+    ] {
+        if !claim_cols.contains(col) {
+            return Ok(());
+        }
+    }
+
+    let violating_rows: i64 = conn
+        .query_row(
+            "SELECT COUNT(*)
+               FROM intelligence_claims
+              WHERE trust_version IN (?1, 0)
+                AND (trust_score IS NOT NULL
+                     OR trust_computed_at IS NOT NULL)",
+            [V155_SHADOW_TRUST_VERSION],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("{context}: {e}"))?;
+    if violating_rows > 0 {
+        return Err(format!(
+            "{context} found {violating_rows} legacy shadow trust row(s) with non-null live trust columns"
+        ));
+    }
+
+    Ok(())
+}
+
+fn migrate_v40_entity_quality(conn: &Connection) -> Result<(), MigrationError> {
+    let db = crate::db::ActionDb::from_conn(conn);
+    db.with_transaction(|tx| {
+        let conn = tx.conn_ref();
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS entity_quality (
+                entity_id TEXT PRIMARY KEY,
+                entity_type TEXT NOT NULL,
+                quality_alpha REAL NOT NULL DEFAULT 1.0,
+                quality_beta REAL NOT NULL DEFAULT 1.0,
+                quality_score REAL NOT NULL DEFAULT 0.5,
+                last_enrichment_at TEXT,
+                correction_count INTEGER NOT NULL DEFAULT 0,
+                coherence_retry_count INTEGER NOT NULL DEFAULT 0,
+                coherence_window_start TEXT,
+                coherence_blocked INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_entity_quality_score ON entity_quality(quality_score);
+            CREATE INDEX IF NOT EXISTS idx_entity_quality_blocked ON entity_quality(coherence_blocked);",
+        )
+        .map_err(|e| format!("create entity_quality substrate: {e}"))?;
+
+        add_column_if_missing(
+            conn,
+            "entity_intelligence",
+            "coherence_score",
+            "ALTER TABLE entity_intelligence ADD COLUMN coherence_score REAL",
+        )?;
+        add_column_if_missing(
+            conn,
+            "entity_intelligence",
+            "coherence_flagged",
+            "ALTER TABLE entity_intelligence ADD COLUMN coherence_flagged INTEGER DEFAULT 0",
+        )?;
+
+        Ok(())
+    })
+}
+
+fn migrate_v45_intelligence_report_fields(conn: &Connection) -> Result<(), MigrationError> {
+    let db = crate::db::ActionDb::from_conn(conn);
+    db.with_transaction(|tx| {
+        let conn = tx.conn_ref();
+        for (column, ddl) in [
+            (
+                "health_score",
+                "ALTER TABLE entity_intelligence ADD COLUMN health_score REAL",
+            ),
+            (
+                "health_trend",
+                "ALTER TABLE entity_intelligence ADD COLUMN health_trend TEXT",
+            ),
+            (
+                "value_delivered",
+                "ALTER TABLE entity_intelligence ADD COLUMN value_delivered TEXT",
+            ),
+            (
+                "success_metrics",
+                "ALTER TABLE entity_intelligence ADD COLUMN success_metrics TEXT",
+            ),
+            (
+                "open_commitments",
+                "ALTER TABLE entity_intelligence ADD COLUMN open_commitments TEXT",
+            ),
+            (
+                "relationship_depth",
+                "ALTER TABLE entity_intelligence ADD COLUMN relationship_depth TEXT",
+            ),
+        ] {
+            add_column_if_missing(conn, "entity_intelligence", column, ddl)?;
+        }
+        Ok(())
+    })
+}
+
+fn migrate_v54_intelligence_consistency_metadata(conn: &Connection) -> Result<(), MigrationError> {
+    let db = crate::db::ActionDb::from_conn(conn);
+    db.with_transaction(|tx| {
+        let conn = tx.conn_ref();
+        for (column, ddl) in [
+            (
+                "consistency_status",
+                "ALTER TABLE entity_intelligence ADD COLUMN consistency_status TEXT",
+            ),
+            (
+                "consistency_findings_json",
+                "ALTER TABLE entity_intelligence ADD COLUMN consistency_findings_json TEXT",
+            ),
+            (
+                "consistency_checked_at",
+                "ALTER TABLE entity_intelligence ADD COLUMN consistency_checked_at TEXT",
+            ),
+        ] {
+            add_column_if_missing(conn, "entity_intelligence", column, ddl)?;
+        }
+        Ok(())
+    })
+}
+
+fn migrate_v136_typed_feedback_schema(conn: &Connection) -> Result<(), MigrationError> {
+    let db = crate::db::ActionDb::from_conn(conn);
+    db.with_transaction(|tx| {
+        let conn = tx.conn_ref();
+        if table_exists(conn, "claim_feedback")? {
+            let feedback_cols = table_columns(conn, "claim_feedback")?;
+            if !feedback_cols.contains("applied_at") {
+                conn.execute_batch(
+                    "DROP TABLE IF EXISTS claim_feedback_new;
+                     CREATE TABLE claim_feedback_new (
+                        id              TEXT PRIMARY KEY,
+                        claim_id        TEXT NOT NULL REFERENCES intelligence_claims(id),
+                        feedback_type   TEXT NOT NULL
+                                          CHECK (feedback_type IN (
+                                              'confirm_current',
+                                              'mark_outdated',
+                                              'mark_false',
+                                              'wrong_subject',
+                                              'wrong_source',
+                                              'cannot_verify',
+                                              'needs_nuance',
+                                              'surface_inappropriate',
+                                              'not_relevant_here'
+                                          )),
+                        actor           TEXT NOT NULL,
+                        actor_id        TEXT,
+                        payload_json    TEXT,
+                        submitted_at    TEXT NOT NULL DEFAULT (datetime('now')),
+                        applied_at      TEXT NULL
+                     );
+                     INSERT INTO claim_feedback_new (
+                        id,
+                        claim_id,
+                        feedback_type,
+                        actor,
+                        actor_id,
+                        payload_json,
+                        submitted_at,
+                        applied_at
+                     )
+                     SELECT
+                        id,
+                        claim_id,
+                        CASE feedback_type
+                            WHEN 'confirm' THEN 'confirm_current'
+                            WHEN 'correct' THEN 'needs_nuance'
+                            WHEN 'reject' THEN 'mark_false'
+                            ELSE feedback_type
+                        END,
+                        actor,
+                        actor_id,
+                        payload_json,
+                        submitted_at,
+                        NULL
+                     FROM claim_feedback;
+                     DROP TABLE claim_feedback;
+                     ALTER TABLE claim_feedback_new RENAME TO claim_feedback;",
+                )
+                .map_err(|e| format!("rebuild typed claim_feedback schema: {e}"))?;
+            }
+        } else if table_exists(conn, "claim_feedback_new")? {
+            conn.execute_batch("ALTER TABLE claim_feedback_new RENAME TO claim_feedback;")
+                .map_err(|e| format!("resume claim_feedback_new rename: {e}"))?;
+        } else {
+            return Err("claim_feedback table is missing".to_string());
+        }
+
+        conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_feedback_claim
+                ON claim_feedback(claim_id);
+             CREATE INDEX IF NOT EXISTS idx_feedback_type
+                ON claim_feedback(feedback_type, submitted_at);",
+        )
+        .map_err(|e| format!("ensure typed claim_feedback indexes: {e}"))?;
+
+        add_column_if_missing(
+            conn,
+            "intelligence_claims",
+            "verification_state",
+            "ALTER TABLE intelligence_claims ADD COLUMN verification_state TEXT NOT NULL DEFAULT 'active'
+                CHECK (verification_state IN ('active', 'contested', 'needs_user_decision'))",
+        )?;
+        add_column_if_missing(
+            conn,
+            "intelligence_claims",
+            "verification_reason",
+            "ALTER TABLE intelligence_claims ADD COLUMN verification_reason TEXT",
+        )?;
+        add_column_if_missing(
+            conn,
+            "intelligence_claims",
+            "needs_user_decision_at",
+            "ALTER TABLE intelligence_claims ADD COLUMN needs_user_decision_at TEXT",
+        )?;
+
+        Ok(())
+    })
+}
+
+fn migrate_v151_temporal_source_invalidation(conn: &Connection) -> Result<(), MigrationError> {
+    let db = crate::db::ActionDb::from_conn(conn);
+    db.with_transaction(|tx| {
+        let conn = tx.conn_ref();
+        add_column_if_missing(
+            conn,
+            "entity_engagement_curve",
+            "source_invalidated_at",
+            "ALTER TABLE entity_engagement_curve ADD COLUMN source_invalidated_at TIMESTAMP NULL",
+        )?;
+        add_column_if_missing(
+            conn,
+            "person_role_progression",
+            "source_invalidated_at",
+            "ALTER TABLE person_role_progression ADD COLUMN source_invalidated_at TIMESTAMP NULL",
+        )?;
+        Ok(())
+    })
+}
+
+fn migrate_v155_claim_shadow_trust_columns(conn: &Connection) -> Result<(), MigrationError> {
+    if !table_exists(conn, "intelligence_claims")? {
+        return Err("intelligence_claims table is missing".to_string());
+    }
+
+    let db = crate::db::ActionDb::from_conn(conn);
+    db.with_transaction(|tx| {
+        let conn = tx.conn_ref();
+        ensure_claim_shadow_trust_columns(conn)?;
+
+        conn.execute(
+            "UPDATE intelligence_claims /* dos7-allowed: shadow-trust isolation migration */
+                SET shadow_trust_score = trust_score,
+                    shadow_trust_computed_at = trust_computed_at,
+                    shadow_trust_version = trust_version,
+                    trust_score = NULL,
+                    trust_computed_at = NULL,
+                    trust_version = NULL
+              WHERE trust_version = ?1
+                AND shadow_trust_version IS NULL",
+            [V155_SHADOW_TRUST_VERSION],
+        )
+        .map_err(|e| format!("copy shadow trust columns: {e}"))?;
+
+        verify_no_live_shadow_trust_scores(conn, "v155 shadow trust migration")?;
+
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_claims_shadow_trust_version
+                ON intelligence_claims(shadow_trust_version)
+                WHERE shadow_trust_version IS NOT NULL",
+            [],
+        )
+        .map_err(|e| format!("create idx_claims_shadow_trust_version: {e}"))?;
+
+        Ok(())
+    })
+}
+
+fn migrate_v156_reconcile_claim_shadow_trust_columns(
+    conn: &Connection,
+) -> Result<(), MigrationError> {
+    if !table_exists(conn, "intelligence_claims")? {
+        return Err("intelligence_claims table is missing".to_string());
+    }
+
+    let db = crate::db::ActionDb::from_conn(conn);
+    db.with_transaction(|tx| {
+        let conn = tx.conn_ref();
+        ensure_claim_shadow_trust_columns(conn)?;
+
+        conn.execute(
+            "UPDATE intelligence_claims /* dos7-allowed: shadow-trust isolation repair for partial-prior-migration rows */
+                SET shadow_trust_score = trust_score,
+                    shadow_trust_computed_at = trust_computed_at,
+                    shadow_trust_version = trust_version,
+                    trust_score = NULL,
+                    trust_computed_at = NULL,
+                    trust_version = 0
+              WHERE trust_version = ?1
+                AND shadow_trust_version IS NULL",
+            [V155_SHADOW_TRUST_VERSION],
+        )
+        .map_err(|e| format!("reconcile shadow trust columns: {e}"))?;
+
+        Ok(())
+    })
+}
+
+fn migrate_v157_reconcile_claim_shadow_trust_columns(
+    conn: &Connection,
+) -> Result<(), MigrationError> {
+    if !table_exists(conn, "intelligence_claims")? {
+        return Err("intelligence_claims table is missing".to_string());
+    }
+
+    let db = crate::db::ActionDb::from_conn(conn);
+    db.with_transaction(|tx| {
+        let conn = tx.conn_ref();
+        ensure_claim_shadow_trust_columns(conn)?;
+
+        conn.execute(
+            "UPDATE intelligence_claims /* dos7-allowed: v157 shadow trust reconciliation with COALESCE preserve */
+                SET shadow_trust_score = COALESCE(shadow_trust_score, trust_score),
+                    shadow_trust_computed_at = COALESCE(shadow_trust_computed_at, trust_computed_at),
+                    shadow_trust_version = COALESCE(shadow_trust_version, NULLIF(trust_version, 0), ?1),
+                    trust_score = NULL,
+                    trust_computed_at = NULL,
+                    trust_version = NULL
+              WHERE trust_version = ?1
+                 OR trust_version = 0",
+            [V155_SHADOW_TRUST_VERSION],
+        )
+        .map_err(|e| format!("reconcile v157 shadow trust columns: {e}"))?;
+
+        verify_no_live_shadow_trust_v157(conn, "v157 shadow trust reconciliation")?;
+
+        Ok(())
+    })
 }
 
 fn probe_actions_table(conn: &Connection) -> Result<bool, String> {
@@ -1599,30 +3475,11 @@ pub(crate) fn run_migrations_with_key(
                         // - "duplicate column name": ADD COLUMN when column already exists
                         // - "no such column": RENAME COLUMN when column was already renamed
                         //
-                        // Detection: check that every non-empty, non-comment statement in
-                        // the migration is an ALTER TABLE. Checking `!contains("BEGIN")`
-                        // is insufficient — multi-statement non-transactional migrations
-                        // (e.g. 023 with CREATE/INSERT/DROP/ALTER) would pass that check,
-                        // silently swallowing real data-copy failures.
-                        let is_single_alter = sql
-                            .split(';')
-                            .map(|s| {
-                                s.lines()
-                                    .filter(|l| !l.trim_start().starts_with("--"))
-                                    .collect::<Vec<_>>()
-                                    .join(" ")
-                            })
-                            .map(|s| s.trim().to_uppercase())
-                            .filter(|s| !s.is_empty())
-                            .all(|s| s.starts_with("ALTER"));
-                        // "duplicate column name" is always safe: can only come from
-                        // ALTER TABLE ADD COLUMN when the column already exists.
-                        // "no such column" is only safe for pure ALTER TABLE migrations
-                        // (PR #11: multi-statement migrations with CREATE/INSERT/DROP
-                        // must not silently swallow this error).
-                        let is_dup_column = is_duplicate_column_error(&e);
-                        let is_benign_alter = is_single_alter && is_missing_column_error(&e);
-                        if is_dup_column || is_benign_alter {
+                        // Multi-statement migrations may have completed only their first
+                        // statements before a crash; swallowing a later duplicate-column
+                        // error can skip required data-copy/cleanup work and still record
+                        // the migration as applied.
+                        if is_benign_single_alter_conflict(sql, &e) {
                             log::warn!(
                                 "Migration v{}: benign schema conflict ({}), continuing",
                                 version,
@@ -1677,11 +3534,69 @@ fn quarantine_gate_blocking_count(conn: &Connection) -> Result<i64, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::ActionDb;
+    use crate::services::claims::{shadow_update_claim_trust_shadow_only, TrustScore};
+    use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
     use rusqlite::Connection;
 
     /// Helper: open an in-memory database with WAL-like settings.
     fn mem_db() -> Connection {
         Connection::open_in_memory().expect("in-memory db")
+    }
+
+    fn reset_migrated_db_to_version_159(conn: &Connection) {
+        run_migrations(conn).expect("seed full schema");
+        conn.execute_batch(
+            "DELETE FROM action_commitment_alias_remediation;
+             DELETE FROM action_commitment_sources;
+             DELETE FROM ai_commitment_bridge;
+             DELETE FROM actions;
+             DELETE FROM schema_version WHERE version > 159;",
+        )
+        .expect("reset to schema version 159");
+        assert_eq!(current_version(conn).expect("version query"), 159);
+    }
+
+    #[test]
+    fn migration_163_recomputes_existing_source_keys_without_llm_ordinals() {
+        let conn = mem_db();
+        conn.execute_batch(
+            "CREATE TABLE action_commitment_sources (
+                id TEXT PRIMARY KEY,
+                commitment_id TEXT NOT NULL,
+                action_id TEXT NOT NULL,
+                source_key TEXT,
+                source_type TEXT,
+                source_id TEXT,
+                source_label TEXT
+             );
+             INSERT INTO action_commitment_sources
+                (id, commitment_id, action_id, source_key, source_type, source_id, source_label)
+             VALUES
+                ('src-1', 'commitment:a', 'action-a', 'commitment:meeting:call-123:1', 'commitment', 'meeting:call-123:1', 'Call'),
+                ('src-2', 'commitment:a', 'action-a', 'commitment:meeting:call-123:3', 'commitment', 'meeting:call-123:3', 'Call');",
+        )
+        .expect("seed inflated source keys");
+
+        backfill_commitment_source_keys(&conn).expect("recompute source keys");
+
+        let distinct_keys: i64 = conn
+            .query_row(
+                "SELECT COUNT(DISTINCT source_key) FROM action_commitment_sources",
+                [],
+                |row| row.get(0),
+            )
+            .expect("distinct source key count");
+        assert_eq!(distinct_keys, 1);
+
+        let source_key: String = conn
+            .query_row(
+                "SELECT source_key FROM action_commitment_sources WHERE id = 'src-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("source key");
+        assert_eq!(source_key, "commitment:meeting:call-123");
     }
 
     #[test]
@@ -1804,6 +3719,1040 @@ mod tests {
             sqlite_failure_with_message(rusqlite::ffi::SQLITE_ERROR, "no such table: accounts");
         assert!(!is_missing_column_error(&corrupt));
         assert!(!is_missing_column_error(&unrelated));
+    }
+
+    #[test]
+    fn commitment_bridge_alias_backfill_preserves_tombstone_state() {
+        let conn = mem_db();
+        conn.execute_batch(
+            "CREATE TABLE actions (
+                id TEXT PRIMARY KEY,
+                title TEXT,
+                due_date TEXT,
+                owner_raw TEXT,
+                context TEXT,
+                account_id TEXT,
+                project_id TEXT,
+                action_kind TEXT
+            );
+            CREATE TABLE ai_commitment_bridge (
+                commitment_id TEXT PRIMARY KEY,
+                entity_type TEXT NOT NULL,
+                entity_id TEXT NOT NULL,
+                action_id TEXT,
+                first_seen_at TEXT NOT NULL,
+                last_seen_at TEXT NOT NULL,
+                tombstoned INTEGER NOT NULL DEFAULT 0
+            );
+            INSERT INTO actions
+                (id, title, due_date, owner_raw, context, account_id, action_kind)
+            VALUES
+                ('active-a1', 'Active old id', NULL, NULL, NULL, 'acct-1', 'commitment'),
+                ('done-a1', 'Dismissed old id', '2026-05-01', NULL, 'owner: Alex Chen', 'acct-1', 'commitment');
+            INSERT INTO ai_commitment_bridge
+                (commitment_id, entity_type, entity_id, action_id, first_seen_at, last_seen_at, tombstoned)
+            VALUES
+                ('legacy:active', 'account', 'acct-1', 'active-a1', '2026-01-01', '2026-01-02', 0),
+                ('legacy:done', 'account', 'acct-1', 'done-a1', '2026-01-01', '2026-01-03', 1);",
+        )
+        .expect("seed pre-156 schema");
+
+        backfill_commitment_bridge_derived_aliases(&conn).expect("backfill aliases");
+
+        let active_derived = crate::abilities::extractors::commitment::derive_commitment_id(
+            "Active old id",
+            "acct-1",
+            None,
+            None,
+        );
+        let done_derived = crate::abilities::extractors::commitment::derive_commitment_id(
+            "Dismissed old id",
+            "acct-1",
+            Some("2026-05-01"),
+            Some("Alex Chen"),
+        );
+
+        let active_tombstoned: i32 = conn
+            .query_row(
+                "SELECT tombstoned FROM ai_commitment_bridge WHERE commitment_id = ?1",
+                [active_derived],
+                |row| row.get(0),
+            )
+            .expect("active alias");
+        assert_eq!(active_tombstoned, 0);
+
+        let (done_action_id, done_tombstoned): (String, i32) = conn
+            .query_row(
+                "SELECT action_id, tombstoned
+                 FROM ai_commitment_bridge
+                 WHERE commitment_id = ?1",
+                [done_derived],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("done alias");
+        assert_eq!(done_action_id, "done-a1");
+        assert_eq!(done_tombstoned, 1);
+    }
+
+    #[test]
+    fn commitment_bridge_alias_backfill_uses_source_sighting_for_tombstoned_edited_title() {
+        let conn = mem_db();
+        let original_derived = crate::abilities::extractors::commitment::derive_commitment_id(
+            "Original customer wording",
+            "acct-1",
+            Some("2026-05-01"),
+            Some("Alex Chen"),
+        );
+        conn.execute_batch(
+            "CREATE TABLE actions (
+                id TEXT PRIMARY KEY,
+                title TEXT,
+                due_date TEXT,
+                owner_raw TEXT,
+                context TEXT,
+                account_id TEXT,
+                project_id TEXT,
+                source_id TEXT,
+                commitment_id TEXT,
+                action_kind TEXT
+            );
+            CREATE TABLE ai_commitment_bridge (
+                commitment_id TEXT PRIMARY KEY,
+                entity_type TEXT NOT NULL,
+                entity_id TEXT NOT NULL,
+                action_id TEXT,
+                first_seen_at TEXT NOT NULL,
+                last_seen_at TEXT NOT NULL,
+                tombstoned INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE TABLE action_commitment_sources (
+                id TEXT PRIMARY KEY,
+                commitment_id TEXT NOT NULL,
+                action_id TEXT NOT NULL,
+                observed_at TEXT NOT NULL
+            );
+            INSERT INTO actions
+                (id, title, due_date, owner_raw, context, account_id, source_id, commitment_id, action_kind)
+            VALUES
+                ('done-a1', 'User edited wording', '2026-05-01', 'Alex Chen', NULL,
+                 'acct-1', 'legacy:done', 'legacy:done', 'commitment');
+            INSERT INTO ai_commitment_bridge
+                (commitment_id, entity_type, entity_id, action_id, first_seen_at, last_seen_at, tombstoned)
+            VALUES
+                ('legacy:done', 'account', 'acct-1', 'done-a1', '2026-01-01', '2026-01-03', 1);",
+        )
+        .expect("seed pre-156 schema");
+        conn.execute(
+            "INSERT INTO action_commitment_sources
+             (id, commitment_id, action_id, observed_at)
+             VALUES ('src-original', ?1, 'done-a1', '2026-01-01')",
+            [original_derived.as_str()],
+        )
+        .expect("seed source sighting");
+
+        backfill_commitment_bridge_derived_aliases(&conn).expect("backfill aliases");
+
+        let (done_action_id, done_tombstoned): (String, i32) = conn
+            .query_row(
+                "SELECT action_id, tombstoned
+                 FROM ai_commitment_bridge
+                 WHERE commitment_id = ?1",
+                [original_derived.as_str()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("source-derived tombstone alias");
+        assert_eq!(done_action_id, "done-a1");
+        assert_eq!(done_tombstoned, 1);
+
+        let edited_derived = crate::abilities::extractors::commitment::derive_commitment_id(
+            "User edited wording",
+            "acct-1",
+            Some("2026-05-01"),
+            Some("Alex Chen"),
+        );
+        let edited_alias_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM ai_commitment_bridge WHERE commitment_id = ?1",
+                [edited_derived],
+                |row| row.get(0),
+            )
+            .expect("edited alias count");
+        assert_eq!(
+            edited_alias_count, 0,
+            "source-backed tombstones should not alias the user-edited title"
+        );
+    }
+
+    #[test]
+    fn migration_162_repairs_c3_mutable_tombstone_alias_from_schema_159() {
+        let conn = mem_db();
+        reset_migrated_db_to_version_159(&conn);
+        let edited_derived = crate::abilities::extractors::commitment::derive_commitment_id(
+            "User edited wording",
+            "acct-1",
+            Some("2026-05-01"),
+            Some("Alex Chen"),
+        );
+        conn.execute_batch(
+            "INSERT INTO accounts (id, name, updated_at)
+             VALUES ('acct-1', 'Acme', '2026-01-01');
+            INSERT INTO actions
+                (id, title, priority, status, created_at, updated_at, due_date,
+                 account_id, source_type, source_id, source_label, action_kind,
+                 commitment_id, owner_raw)
+            VALUES
+                ('done-a1', 'User edited wording', 3, 'completed',
+                 '2026-01-01', '2026-01-02', '2026-05-01',
+                 'acct-1', 'commitment', 'legacy:done', 'Customer call',
+                 'commitment', 'legacy:done', 'Alex Chen');
+            INSERT INTO ai_commitment_bridge
+                (commitment_id, entity_type, entity_id, action_id, first_seen_at, last_seen_at, tombstoned)
+            VALUES
+                ('legacy:done', 'account', 'acct-1', 'done-a1', '2026-01-01', '2026-01-03', 1);",
+        )
+        .expect("seed partial c3 schema");
+        conn.execute(
+            "INSERT INTO ai_commitment_bridge
+             (commitment_id, entity_type, entity_id, action_id, first_seen_at, last_seen_at, tombstoned)
+             VALUES (?1, 'account', 'acct-1', 'done-a1', '2026-01-01', '2026-01-03', 1)",
+            [edited_derived.as_str()],
+        )
+        .expect("seed c3 mutable alias");
+        conn.execute(
+            "INSERT INTO action_commitment_sources
+             (id, commitment_id, action_id, source_type, source_id, source_label, observed_at)
+             VALUES
+                ('src-legacy', 'legacy:done', 'done-a1', 'meeting', 'meeting:abc:1',
+                 'Customer call', '2026-01-01')",
+            [],
+        )
+        .expect("seed legacy source sighting");
+
+        let applied = run_migrations(&conn).expect("apply v160-v164");
+        assert_eq!(applied, 5);
+
+        let edited_alias_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM ai_commitment_bridge WHERE commitment_id = ?1",
+                [edited_derived.as_str()],
+                |row| row.get(0),
+            )
+            .expect("edited alias count");
+        assert_eq!(edited_alias_count, 0, "v162 removes the c3 mutable alias");
+
+        let (legacy_bridge_id, tombstoned_action_id, source_id, status): (
+            String,
+            String,
+            String,
+            String,
+        ) = conn
+            .query_row(
+                "SELECT legacy_bridge_id, tombstoned_action_id, source_id, remediation_status
+                 FROM action_commitment_alias_remediation",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .expect("remediation row");
+        assert_eq!(legacy_bridge_id, "legacy:done");
+        assert_eq!(tombstoned_action_id, "done-a1");
+        assert_eq!(source_id, "meeting:abc:1");
+        assert_eq!(status, "pending");
+
+        remediate_tombstoned_commitment_bridge_mutable_aliases(&conn).expect("v162 rerun");
+        let remediation_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM action_commitment_alias_remediation
+                 WHERE legacy_bridge_id = 'legacy:done'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("remediation count");
+        assert_eq!(remediation_count, 1);
+    }
+
+    #[test]
+    fn migration_162_removes_stale_mutable_alias_after_action_identity_edit() {
+        let conn = mem_db();
+        reset_migrated_db_to_version_159(&conn);
+        let source_derived = crate::abilities::extractors::commitment::derive_commitment_id(
+            "Original sourced wording",
+            "acct-1",
+            Some("2026-05-01"),
+            Some("Alex Chen"),
+        );
+        let stale_mutable_derived = crate::abilities::extractors::commitment::derive_commitment_id(
+            "Mutable c3 wording",
+            "acct-1",
+            Some("2026-05-15"),
+            Some("Alex Chen"),
+        );
+        conn.execute_batch(
+            "INSERT INTO accounts (id, name, updated_at)
+             VALUES ('acct-1', 'Acme', '2026-01-01');
+             INSERT INTO actions
+                (id, title, priority, status, created_at, updated_at, due_date,
+                 account_id, source_type, source_id, source_label, action_kind,
+                 commitment_id, owner_raw)
+             VALUES
+                ('done-a1', 'User edited wording', 3, 'completed',
+                 '2026-01-01', '2026-01-04', '2026-06-01',
+                 'acct-1', 'commitment', 'legacy:done', 'Customer call',
+                 'commitment', 'legacy:done', 'Jamie Lee');
+             INSERT INTO ai_commitment_bridge
+                (commitment_id, entity_type, entity_id, action_id, first_seen_at, last_seen_at, tombstoned)
+             VALUES
+                ('legacy:done', 'account', 'acct-1', 'done-a1', '2026-01-01', '2026-01-03', 1);
+             INSERT INTO action_commitment_sources
+                (id, commitment_id, action_id, source_type, source_id, source_label, observed_at)
+             VALUES
+                ('src-derived', 'placeholder', 'done-a1', 'meeting', 'meeting:abc:1',
+                 'Customer call', '2026-01-01');",
+        )
+        .expect("seed partial c3 schema");
+        conn.execute(
+            "UPDATE action_commitment_sources SET commitment_id = ?1 WHERE id = 'src-derived'",
+            [source_derived.as_str()],
+        )
+        .expect("seed source-derived id");
+        conn.execute(
+            "INSERT INTO ai_commitment_bridge
+             (commitment_id, entity_type, entity_id, action_id, first_seen_at, last_seen_at, tombstoned)
+             VALUES (?1, 'account', 'acct-1', 'done-a1', '2026-01-01', '2026-01-03', 1)",
+            [source_derived.as_str()],
+        )
+        .expect("seed source-derived bridge alias");
+        conn.execute(
+            "INSERT INTO ai_commitment_bridge
+             (commitment_id, entity_type, entity_id, action_id, first_seen_at, last_seen_at, tombstoned)
+             VALUES (?1, 'account', 'acct-1', 'done-a1', '2026-01-01', '2026-01-03', 1)",
+            [stale_mutable_derived.as_str()],
+        )
+        .expect("seed stale mutable alias");
+
+        let applied = run_migrations(&conn).expect("apply v160-v164");
+        assert_eq!(applied, 5);
+
+        let source_alias_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM ai_commitment_bridge WHERE commitment_id = ?1",
+                [source_derived.as_str()],
+                |row| row.get(0),
+            )
+            .expect("source alias count");
+        assert_eq!(
+            source_alias_count, 1,
+            "v162 preserves source-derived aliases"
+        );
+
+        let stale_alias_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM ai_commitment_bridge WHERE commitment_id = ?1",
+                [stale_mutable_derived.as_str()],
+                |row| row.get(0),
+            )
+            .expect("stale alias count");
+        assert_eq!(
+            stale_alias_count, 0,
+            "v162 removes stale mutable aliases even after action fields change"
+        );
+
+        let remediation_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM action_commitment_alias_remediation
+                 WHERE legacy_bridge_id = 'legacy:done'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("remediation count");
+        assert_eq!(
+            remediation_count, 0,
+            "source-derived tombstones do not need manual remediation"
+        );
+    }
+
+    #[test]
+    fn duplicate_column_conflict_is_only_benign_for_single_alter_statement() {
+        let err = sqlite_failure_with_message(
+            rusqlite::ffi::SQLITE_ERROR,
+            "duplicate column name: shadow_trust_score",
+        );
+
+        assert!(is_benign_single_alter_conflict(
+            "-- defensive add\nALTER TABLE intelligence_claims ADD COLUMN shadow_trust_score REAL;",
+            &err
+        ));
+        assert!(
+            is_benign_single_alter_conflict(
+                "-- comment with a semicolon; still not a statement\n\
+                 ALTER TABLE intelligence_claims ADD COLUMN shadow_trust_score REAL;",
+                &err,
+            ),
+            "semicolon-bearing comments must not make a single ALTER look multi-statement"
+        );
+        assert!(
+            !is_benign_single_alter_conflict(
+                "ALTER TABLE intelligence_claims ADD COLUMN shadow_trust_score REAL;
+                 UPDATE intelligence_claims /* dos7-allowed: test fixture exercises multi-statement parser */ SET trust_score = NULL;",
+                &err,
+            ),
+            "multi-statement migrations must not swallow duplicate-column errors"
+        );
+        assert!(
+            !is_benign_single_alter_conflict(
+                "ALTER TABLE intelligence_claims ADD COLUMN shadow_trust_score REAL;
+                 ALTER TABLE intelligence_claims ADD COLUMN shadow_trust_version INTEGER;",
+                &err,
+            ),
+            "multi-ALTER migrations can still skip later required ALTERs"
+        );
+    }
+
+    fn seed_v155_claims_table(conn: &Connection, shadow_columns: &[&str]) {
+        let mut sql = String::from(
+            "CREATE TABLE intelligence_claims (
+                id TEXT PRIMARY KEY,
+                trust_score REAL,
+                trust_computed_at TEXT,
+                trust_version INTEGER",
+        );
+        if shadow_columns.contains(&"shadow_trust_score") {
+            sql.push_str(", shadow_trust_score REAL");
+        }
+        if shadow_columns.contains(&"shadow_trust_computed_at") {
+            sql.push_str(", shadow_trust_computed_at TEXT");
+        }
+        if shadow_columns.contains(&"shadow_trust_version") {
+            sql.push_str(", shadow_trust_version INTEGER");
+        }
+        sql.push_str(");");
+        conn.execute_batch(&sql).expect("seed v155 claims table");
+    }
+
+    #[test]
+    fn migration_155_adds_missing_shadow_columns_and_copies_live_shadow_scores() {
+        let conn = mem_db();
+        seed_v155_claims_table(&conn, &["shadow_trust_score"]);
+        conn.execute(
+            "INSERT INTO intelligence_claims /* dos7-allowed: v155 migration fixture seeds legacy live shadow score */ \
+             (id, trust_score, trust_computed_at, trust_version)
+             VALUES ('claim-v155-copy', 0.42, '2026-05-05T09:00:00Z', ?1)",
+            [V155_SHADOW_TRUST_VERSION],
+        )
+        .expect("seed legacy live score");
+
+        migrate_v155_claim_shadow_trust_columns(&conn).expect("v155 migration");
+
+        let cols = table_columns(&conn, "intelligence_claims").expect("columns");
+        assert!(cols.contains("shadow_trust_score"));
+        assert!(cols.contains("shadow_trust_computed_at"));
+        assert!(cols.contains("shadow_trust_version"));
+
+        let (live_score, live_at, live_version, shadow_score, shadow_at, shadow_version): (
+            Option<f64>,
+            Option<String>,
+            Option<i64>,
+            Option<f64>,
+            Option<String>,
+            Option<i64>,
+        ) = conn
+            .query_row(
+                "SELECT trust_score, trust_computed_at, trust_version,
+                        shadow_trust_score, shadow_trust_computed_at, shadow_trust_version
+                   FROM intelligence_claims
+                  WHERE id = 'claim-v155-copy'",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                    ))
+                },
+            )
+            .expect("read migrated row");
+        assert_eq!((live_score, live_at, live_version), (None, None, None));
+        assert_eq!(shadow_score, Some(0.42));
+        assert_eq!(shadow_at.as_deref(), Some("2026-05-05T09:00:00Z"));
+        assert_eq!(shadow_version, Some(V155_SHADOW_TRUST_VERSION));
+
+        migrate_v155_claim_shadow_trust_columns(&conn).expect("v155 migration rerun");
+        let remaining_live: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM intelligence_claims
+                  WHERE trust_version = ?1 AND trust_score IS NOT NULL",
+                [V155_SHADOW_TRUST_VERSION],
+                |row| row.get(0),
+            )
+            .expect("remaining live count");
+        assert_eq!(remaining_live, 0);
+    }
+
+    #[test]
+    fn migration_155_fails_if_guarded_copy_leaves_live_shadow_scores() {
+        let conn = mem_db();
+        seed_v155_claims_table(
+            &conn,
+            &[
+                "shadow_trust_score",
+                "shadow_trust_computed_at",
+                "shadow_trust_version",
+            ],
+        );
+        conn.execute(
+            "INSERT INTO intelligence_claims /* dos7-allowed: v155 migration fixture seeds inconsistent partial retry row */ \
+             (id, trust_score, trust_computed_at, trust_version,
+              shadow_trust_score, shadow_trust_computed_at, shadow_trust_version)
+             VALUES ('claim-v155-stuck', 0.64, '2026-05-05T09:00:00Z', ?1,
+                     0.50, '2026-05-04T09:00:00Z', ?1)",
+            [V155_SHADOW_TRUST_VERSION],
+        )
+        .expect("seed inconsistent partial row");
+
+        let err = migrate_v155_claim_shadow_trust_columns(&conn)
+            .expect_err("v155 should fail when live shadow scores remain");
+        assert!(
+            err.contains("left 1 live trust_score row"),
+            "error should report uncleared live rows: {err}"
+        );
+    }
+
+    #[test]
+    fn migration_162_remediates_tombstoned_bridge_with_null_action_id() {
+        let conn = mem_db();
+        reset_migrated_db_to_version_159(&conn);
+
+        conn.execute_batch(
+            "INSERT INTO accounts (id, name, updated_at)
+             VALUES ('acct-1', 'Acme', '2026-01-01');
+             INSERT INTO ai_commitment_bridge
+                (commitment_id, entity_type, entity_id, action_id, first_seen_at, last_seen_at, tombstoned)
+             VALUES
+                ('legacy:null-action', 'account', 'acct-1', NULL, '2026-01-01', '2026-01-03', 1);",
+        )
+        .expect("seed null-action tombstone");
+
+        let applied = run_migrations(&conn).expect("apply v160-v164");
+        assert_eq!(applied, 5);
+
+        let (legacy_bridge_id, tombstoned_action_id, status): (String, Option<String>, String) =
+            conn.query_row(
+                "SELECT legacy_bridge_id, tombstoned_action_id, remediation_status
+                 FROM action_commitment_alias_remediation
+                 WHERE legacy_bridge_id = 'legacy:null-action'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("remediation row");
+        assert_eq!(legacy_bridge_id, "legacy:null-action");
+        assert_eq!(tombstoned_action_id, None);
+        assert_eq!(status, "pending");
+    }
+
+    #[test]
+    fn migration_158_canonicalizes_normalized_backlog_duplicates_before_unique_index() {
+        let conn = mem_db();
+        conn.execute_batch(
+            "CREATE TABLE people (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL
+             );
+             CREATE TABLE actions (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                priority INTEGER NOT NULL DEFAULT 3,
+                status TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                due_date TEXT,
+                completed_at TEXT,
+                account_id TEXT,
+                project_id TEXT,
+                source_type TEXT,
+                source_id TEXT,
+                source_label TEXT,
+                context TEXT,
+                waiting_on TEXT,
+                updated_at TEXT NOT NULL,
+                person_id TEXT,
+                action_kind TEXT NOT NULL DEFAULT 'task'
+             );
+             CREATE TABLE ai_commitment_bridge (
+                commitment_id TEXT PRIMARY KEY,
+                entity_type TEXT NOT NULL,
+                entity_id TEXT NOT NULL,
+                action_id TEXT,
+                first_seen_at TEXT NOT NULL,
+                last_seen_at TEXT NOT NULL,
+                tombstoned INTEGER NOT NULL DEFAULT 0
+             );
+             INSERT INTO actions
+                (id, title, priority, status, created_at, updated_at, due_date,
+                 account_id, project_id, source_type, source_id, source_label, action_kind)
+             VALUES
+                ('account-late', 'Phase  2  budget', 3, 'backlog',
+                 '2026-01-02', '2026-01-02', NULL,
+                 'acct-1', NULL, 'meeting', 'meeting:acct:2', 'Budget review', 'commitment'),
+                ('account-early', 'Phase 2 budget', 3, 'backlog',
+                 '2026-01-01', '2026-01-01', NULL,
+                 'acct-1', NULL, 'meeting', 'meeting:acct:1', 'Budget review', 'commitment'),
+                ('project-late', 'Send launch checklist!', 3, 'backlog',
+                 '2026-01-02', '2026-01-02', '2026-02-01',
+                 NULL, 'proj-1', 'meeting', 'meeting:abc:2', 'Kickoff', 'commitment'),
+                ('project-early', 'Send launch checklist', 3, 'backlog',
+                 '2026-01-01', '2026-01-01', '2026-02-01',
+                 NULL, 'proj-1', 'meeting', 'meeting:abc:1', 'Kickoff', 'commitment');
+             INSERT INTO ai_commitment_bridge
+                (commitment_id, entity_type, entity_id, action_id, first_seen_at, last_seen_at, tombstoned)
+             VALUES
+                ('meeting:acct:2', 'account', 'acct-1', 'account-late',
+                 '2026-01-02', '2026-01-02', 0),
+                ('meeting:acct:1', 'account', 'acct-1', 'account-early',
+                 '2026-01-01', '2026-01-01', 0),
+                ('meeting:abc:2', 'project', 'proj-1', 'project-late',
+                 '2026-01-02', '2026-01-02', 0),
+                ('meeting:abc:1', 'project', 'proj-1', 'project-early',
+                 '2026-01-01', '2026-01-01', 0);",
+        )
+        .expect("seed pre-158 project duplicates");
+
+        let migration = MIGRATIONS
+            .iter()
+            .find(|migration| migration.version() == 158)
+            .expect("migration 158 registered");
+        match migration {
+            Migration::Sql { sql, .. } => conn
+                .execute_batch(sql)
+                .expect("migration 158 applies with project duplicates"),
+            Migration::Fn { apply, .. } => {
+                apply(&conn).expect("migration 158 applies with project duplicates")
+            }
+        }
+
+        let account_action_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM actions
+                 WHERE account_id = 'acct-1'
+                   AND action_kind = 'commitment'
+                   AND status = 'backlog'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("account action count");
+        assert_eq!(account_action_count, 1);
+
+        let (account_canonical_id, normalized_title): (String, String) = conn
+            .query_row(
+                "SELECT id, normalized_title FROM actions WHERE account_id = 'acct-1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("canonical account action");
+        assert_eq!(account_canonical_id, "account-early");
+        assert_eq!(normalized_title, "phase 2 budget");
+
+        let action_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM actions
+                 WHERE project_id = 'proj-1'
+                   AND action_kind = 'commitment'
+                   AND status = 'backlog'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("action count");
+        assert_eq!(action_count, 1);
+
+        let canonical_id: String = conn
+            .query_row(
+                "SELECT id FROM actions WHERE project_id = 'proj-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("canonical action");
+        assert_eq!(canonical_id, "project-early");
+
+        let rewired_bridge_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM ai_commitment_bridge
+                 WHERE entity_type = 'project'
+                   AND entity_id = 'proj-1'
+                   AND action_id = 'project-early'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("rewired bridge count");
+        assert_eq!(rewired_bridge_count, 2);
+
+        let source_action_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(DISTINCT action_id)
+                 FROM action_commitment_sources
+                 WHERE commitment_id IN ('meeting:abc:1', 'meeting:abc:2')",
+                [],
+                |row| row.get(0),
+            )
+            .expect("source action count");
+        assert_eq!(source_action_count, 1);
+
+        let project_index_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM sqlite_master
+                 WHERE type = 'index'
+                   AND name = 'idx_actions_backlog_commitment_identity_project_unique'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("project unique index count");
+        assert_eq!(project_index_count, 1);
+    }
+
+    #[test]
+    fn migration_157_fresh_db_applies_cleanly() {
+        let conn = mem_db();
+
+        let applied = run_migrations(&conn).expect("fresh v157 migration should succeed");
+
+        assert_eq!(applied, MIGRATIONS.len());
+        assert_eq!(
+            current_version(&conn).expect("current version"),
+            MIGRATIONS.last().unwrap().version()
+        );
+        verify_no_live_shadow_trust_v157(&conn, "fresh v157 verifier")
+            .expect("fresh database should satisfy v157 invariant");
+    }
+
+    #[test]
+    fn migration_157_clears_v156_trust_version_zero_shadow_rows() {
+        let conn = mem_db();
+        run_migrations(&conn).expect("build current schema");
+        conn.execute("DELETE FROM schema_version WHERE version >= 157", [])
+            .expect("roll recorded version back to v156");
+        assert_eq!(current_version(&conn).expect("current version"), 156);
+
+        conn.execute(
+            "INSERT INTO intelligence_claims /* dos7-allowed: v157 migration fixture seeds c5 trust_version=0 state */ \
+             (id, subject_ref, claim_type, text, dedup_key, actor, data_source, observed_at,
+              provenance_json, trust_score, trust_computed_at, trust_version,
+              shadow_trust_score, shadow_trust_computed_at, shadow_trust_version)
+             VALUES (
+                 'claim-v157-zero-repair',
+                 '{\"kind\":\"account\",\"id\":\"acct-v157-zero\"}',
+                 'summary',
+                 'c5 trust version zero repair',
+                 'claim-v157-zero-repair-dedup',
+                 'system',
+                 'manual',
+                 '2026-05-06T10:00:00Z',
+                 '{}',
+                 0.88,
+                 '2026-05-07T10:00:00Z',
+                 0,
+                 0.51,
+                 '2026-05-06T10:00:00Z',
+                 ?1
+             )",
+            [V155_SHADOW_TRUST_VERSION],
+        )
+        .expect("seed c5 zero-version shadow row");
+
+        let applied = run_migrations(&conn).expect("v157-v167 migrations should succeed");
+        assert_eq!(applied, 11, "v157-v167 should be pending after rollback to v156");
+        assert_eq!(
+            current_version(&conn).expect("current version"),
+            MIGRATIONS.last().unwrap().version()
+        );
+        verify_required_schema(&conn).expect("v157+ invariant should pass");
+
+        let (live_score, live_at, live_version, shadow_score, shadow_at, shadow_version): (
+            Option<f64>,
+            Option<String>,
+            Option<i64>,
+            Option<f64>,
+            Option<String>,
+            Option<i64>,
+        ) = conn
+            .query_row(
+                "SELECT trust_score, trust_computed_at, trust_version,
+                        shadow_trust_score, shadow_trust_computed_at, shadow_trust_version
+                   FROM intelligence_claims
+                  WHERE id = 'claim-v157-zero-repair'",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                    ))
+                },
+            )
+            .expect("read repaired row");
+        assert_eq!((live_score, live_at, live_version), (None, None, None));
+        assert_eq!(shadow_score, Some(0.51));
+        assert_eq!(shadow_at.as_deref(), Some("2026-05-06T10:00:00Z"));
+        assert_eq!(shadow_version, Some(V155_SHADOW_TRUST_VERSION));
+    }
+
+    #[test]
+    fn migration_157_copies_v156_live_shadow_rows_and_clears_live_columns() {
+        let conn = mem_db();
+        run_migrations(&conn).expect("build current schema");
+        conn.execute("DELETE FROM schema_version WHERE version >= 157", [])
+            .expect("roll recorded version back to v156");
+        assert_eq!(current_version(&conn).expect("current version"), 156);
+
+        conn.execute(
+            "INSERT INTO intelligence_claims /* dos7-allowed: v157 migration fixture seeds v156-recorded live shadow score */ \
+             (id, subject_ref, claim_type, text, dedup_key, actor, data_source, observed_at,
+              provenance_json, trust_score, trust_computed_at, trust_version)
+             VALUES (
+                 'claim-v157-live-repair',
+                 '{\"kind\":\"account\",\"id\":\"acct-v157-live\"}',
+                 'summary',
+                 'legacy live shadow trust score',
+                 'claim-v157-live-repair-dedup',
+                 'system',
+                 'manual',
+                 '2026-05-06T10:00:00Z',
+                 '{}',
+                 0.73,
+                 '2026-05-06T10:00:00Z',
+                 ?1
+             )",
+            [V155_SHADOW_TRUST_VERSION],
+        )
+        .expect("seed v156-recorded live score");
+
+        let applied = run_migrations(&conn).expect("v157-v167 migrations should succeed");
+        assert_eq!(applied, 11, "v157-v167 should be pending after rollback to v156");
+        assert_eq!(
+            current_version(&conn).expect("current version"),
+            MIGRATIONS.last().unwrap().version()
+        );
+        verify_required_schema(&conn).expect("v157+ invariant should pass");
+
+        let (live_score, live_at, live_version, shadow_score, shadow_at, shadow_version): (
+            Option<f64>,
+            Option<String>,
+            Option<i64>,
+            Option<f64>,
+            Option<String>,
+            Option<i64>,
+        ) = conn
+            .query_row(
+                "SELECT trust_score, trust_computed_at, trust_version,
+                        shadow_trust_score, shadow_trust_computed_at, shadow_trust_version
+                   FROM intelligence_claims
+                  WHERE id = 'claim-v157-live-repair'",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                    ))
+                },
+            )
+            .expect("read repaired row");
+        assert_eq!((live_score, live_at, live_version), (None, None, None));
+        assert_eq!(shadow_score, Some(0.73));
+        assert_eq!(shadow_at.as_deref(), Some("2026-05-06T10:00:00Z"));
+        assert_eq!(shadow_version, Some(V155_SHADOW_TRUST_VERSION));
+    }
+
+    #[test]
+    fn migration_156_allows_v157_to_repair_partial_v155_shadow_rows() {
+        let conn = mem_db();
+        run_migrations(&conn).expect("build current schema");
+        conn.execute("DELETE FROM schema_version WHERE version >= 156", [])
+            .expect("roll recorded version back to v155");
+        assert_eq!(current_version(&conn).expect("current version"), 155);
+
+        conn.execute(
+            "INSERT INTO intelligence_claims /* dos7-allowed: v157 regression seeds partial c3/c5 shadow state */ \
+             (id, subject_ref, claim_type, text, dedup_key, actor, data_source, observed_at,
+              provenance_json, trust_score, trust_computed_at, trust_version,
+              shadow_trust_score, shadow_trust_computed_at, shadow_trust_version)
+             VALUES (
+                 'claim-v157-partial-v155-repair',
+                 '{\"kind\":\"account\",\"id\":\"acct-v157-partial-v155\"}',
+                 'summary',
+                 'partial v155 shadow trust state',
+                 'claim-v157-partial-v155-repair-dedup',
+                 'system',
+                 'manual',
+                 '2026-05-06T10:00:00Z',
+                 '{}',
+                 0.83,
+                 '2026-05-08T10:00:00Z',
+                 ?1,
+                 0.44,
+                 '2026-05-06T10:00:00Z',
+                 ?1
+             )",
+            [V155_SHADOW_TRUST_VERSION],
+        )
+        .expect("seed partial v155 shadow row");
+
+        let applied = run_migrations(&conn).expect("v156-v167 migrations should succeed");
+        assert_eq!(applied, 12, "v156-v167 should be pending after rollback to v155");
+        assert_eq!(
+            current_version(&conn).expect("current version"),
+            MIGRATIONS.last().unwrap().version()
+        );
+        verify_required_schema(&conn).expect("v157+ invariant should pass");
+
+        let (live_score, live_at, live_version, shadow_score, shadow_at, shadow_version): (
+            Option<f64>,
+            Option<String>,
+            Option<i64>,
+            Option<f64>,
+            Option<String>,
+            Option<i64>,
+        ) = conn
+            .query_row(
+                "SELECT trust_score, trust_computed_at, trust_version,
+                        shadow_trust_score, shadow_trust_computed_at, shadow_trust_version
+                   FROM intelligence_claims
+                  WHERE id = 'claim-v157-partial-v155-repair'",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                    ))
+                },
+            )
+            .expect("read repaired row");
+        assert_eq!((live_score, live_at, live_version), (None, None, None));
+        assert_eq!(shadow_score, Some(0.44));
+        assert_eq!(shadow_at.as_deref(), Some("2026-05-06T10:00:00Z"));
+        assert_eq!(shadow_version, Some(V155_SHADOW_TRUST_VERSION));
+    }
+
+    #[test]
+    fn verify_no_live_shadow_trust_v157_passes_without_shadow_violations() {
+        let conn = mem_db();
+        seed_v155_claims_table(
+            &conn,
+            &[
+                "shadow_trust_score",
+                "shadow_trust_computed_at",
+                "shadow_trust_version",
+            ],
+        );
+        conn.execute(
+            "INSERT INTO intelligence_claims /* dos7-allowed: test fixture seeding shadow-trust schema verifier inputs */
+             (id, trust_score, trust_computed_at, trust_version,
+              shadow_trust_score, shadow_trust_computed_at, shadow_trust_version)
+             VALUES
+             ('claim-live-only', 0.67, '2026-05-08T10:00:00Z', 7, NULL, NULL, NULL),
+             ('claim-shadow-only', NULL, NULL, NULL, 0.71, '2026-05-08T11:00:00Z', ?1)",
+            [V155_SHADOW_TRUST_VERSION],
+        )
+        .expect("seed non-violating trust rows");
+
+        verify_no_live_shadow_trust_v157(&conn, "v157 verifier")
+            .expect("non-violating rows should pass");
+    }
+
+    #[test]
+    fn verify_required_schema_rejects_legacy_live_shadow_trust_without_shadow_version() {
+        let conn = mem_db();
+        run_migrations(&conn).expect("build current schema");
+        conn.execute(
+            "INSERT INTO intelligence_claims /* dos7-allowed: regression seeds legacy live shadow trust score */ \
+             (id, subject_ref, claim_type, text, dedup_key, actor, data_source, observed_at,
+              provenance_json, trust_score, trust_computed_at, trust_version, shadow_trust_version)
+             VALUES (
+                 'claim-shadow-live-legacy-null-shadow-version',
+                 '{\"kind\":\"account\",\"id\":\"acct-shadow-live-legacy\"}',
+                 'summary',
+                 'legacy live shadow trust score without shadow version',
+                 'claim-shadow-live-legacy-null-shadow-version-dedup',
+                 'system',
+                 'manual',
+                 '2026-05-08T10:00:00Z',
+                 '{}',
+                 0.62,
+                 NULL,
+                 ?1,
+                 NULL
+             )",
+            [V155_SHADOW_TRUST_VERSION],
+        )
+        .expect("seed legacy live shadow trust row");
+
+        let err = verify_required_schema(&conn)
+            .expect_err("legacy live shadow trust must fail startup schema verifier");
+        assert!(
+            err.contains("legacy shadow trust row"),
+            "error should report legacy shadow trust violation: {err}"
+        );
+    }
+
+    #[test]
+    fn verify_required_schema_allows_shadow_score_with_production_live_trust_version() {
+        let conn = mem_db();
+        run_migrations(&conn).expect("build current schema");
+        conn.execute(
+            "INSERT INTO intelligence_claims /* dos7-allowed: test fixture seeding production-trust + shadow score combo for verifier */ \
+             (id, subject_ref, claim_type, text, dedup_key, actor, data_source, observed_at,
+              provenance_json, trust_score, trust_computed_at, trust_version)
+             VALUES (
+                 'claim-shadow-live-v7',
+                 '{\"kind\":\"account\",\"id\":\"acct-shadow-live-v7\"}',
+                 'summary',
+                 'production trust can coexist with shadow trust',
+                 'claim-shadow-live-v7-dedup',
+                 'system',
+                 'manual',
+                 '2026-05-08T10:00:00Z',
+                 '{}',
+                 0.62,
+                 '2026-05-08T10:00:00Z',
+                 7
+             )",
+            [],
+        )
+        .expect("seed production-trusted claim");
+
+        let db = ActionDb::from_conn(&conn);
+        let clock = FixedClock::new(
+            chrono::DateTime::parse_from_rfc3339("2026-05-08T11:00:00Z")
+                .expect("fixed shadow trust timestamp")
+                .with_timezone(&Utc),
+        );
+        let rng = SeedableRng::new(157);
+        let external = ExternalClients::default();
+        let ctx = ServiceContext::test_live(&clock, &rng, &external);
+
+        shadow_update_claim_trust_shadow_only(
+            db,
+            "claim-shadow-live-v7",
+            TrustScore(0.74),
+            V155_SHADOW_TRUST_VERSION,
+            &ctx,
+        )
+        .expect("shadow score production-trusted claim");
+
+        verify_required_schema(&conn)
+            .expect("production live trust version may coexist with shadow trust version");
     }
 
     #[test]

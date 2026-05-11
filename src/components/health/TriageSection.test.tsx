@@ -12,7 +12,7 @@
  *     (urgent → soon → stakeholder, newest first within bucket), and
  *     per-card `IntelligenceCorrection` feedback slot.
  */
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { TriageSection, hasTriageContent } from "./TriageSection";
 import type { EntityIntelligence, HealthOutlookSignals } from "@/types";
@@ -351,8 +351,6 @@ describe("TriageSection — DOS-249 cap + ranking + feedback slot", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 // Action wiring — Snooze, Confirm resolved, Still accurate.
 // ─────────────────────────────────────────────────────────────────────────────
-
-import { fireEvent, waitFor } from "@testing-library/react";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),

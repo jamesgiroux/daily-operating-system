@@ -49,7 +49,6 @@ const CALLOUT_SIGNAL_TYPES: &[&str] = &[
     "proactive_action_cluster",
     "proactive_prep_gap",
     "proactive_no_contact",
-    "cadence_anomaly",
     "email_cadence_drop",
     "risk_detected",
     // Manual action creation
@@ -535,7 +534,7 @@ fn build_callout_text_inner(parsed: &Value, signal: &SignalEvent) -> (String, St
             };
             (headline, content.to_string())
         }
-        "cadence_anomaly" | "email_cadence_drop" => {
+        "email_cadence_drop" => {
             // value is the anomaly type string ("gone_quiet" or "activity_spike")
             let anomaly_type = signal.value.as_deref().unwrap_or("unknown");
             match anomaly_type {

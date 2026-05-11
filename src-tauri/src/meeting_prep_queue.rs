@@ -654,6 +654,9 @@ fn generate_mechanical_prep(
     let workspace = {
         let config_guard = state.config_read_or_recover()?;
         let config = config_guard.as_ref().ok_or("No config")?;
+        if config.workspace_path.trim().is_empty() {
+            return Err("No config".to_string());
+        }
         std::path::PathBuf::from(&config.workspace_path)
     };
     let active_preset = state.active_preset.read().clone();
@@ -697,6 +700,9 @@ pub fn meeting_prep_blocking_inputs(
     let workspace = {
         let config_guard = state.config_read_or_recover()?;
         let config = config_guard.as_ref().ok_or("No config")?;
+        if config.workspace_path.trim().is_empty() {
+            return Err("No config".to_string());
+        }
         std::path::PathBuf::from(&config.workspace_path)
     };
     let active_preset = state.active_preset.read().clone();

@@ -22,6 +22,40 @@ LINT-ALLOW: fixture-anonymization (justification: ...)
 
 Use the exception only for synthetic lint tests or documented false positives. It does not make identity map files valid.
 
+## Evaluation Evidence Artifacts
+
+Evaluation evidence roots are governed by the same customer-data rule as
+fixtures. This includes `.docs/perf/`, `.docs/evals/`, comparison packets,
+generated logs, corpus manifests, run summaries, and local caches selected for
+publication.
+
+Public evidence artifacts must not contain customer-specific names, domains,
+emails, account details, identity maps, private fixture payloads, absolute local
+paths, or unreviewed judge transcripts. Public records must use repo-relative
+artifact paths only.
+
+Every committed Evaluation Evidence Record must validate with:
+
+```bash
+pnpm evidence:validate <record-or-directory>
+```
+
+Every committed evidence artifact root must pass:
+
+```bash
+pnpm evidence:lint <artifact-root>
+```
+
+With no arguments, the lint checks committed eval/perf roots, fixture roots, and
+local generated evidence under `src-tauri/target/evidence/` when those roots
+exist.
+
+The default validation command checks the synthetic example record:
+
+```bash
+pnpm wave8:smoke
+```
+
 ## Capture Mode
 
 Capture mode is future local tooling for W5/W6, once real abilities have real replay outputs to capture. It is opt-in, never runs in CI, and must refuse to write identity maps under the repo.

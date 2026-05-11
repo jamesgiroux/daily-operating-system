@@ -1,0 +1,29 @@
+[half_life_days]
+zendesk_escalation = 7
+zendesk_general = 30
+salesforce_field_update = "step_30d_threshold"
+salesforce_opp_notes = 60
+gong_transcript = 30
+gong_sentiment = 21
+email = 14
+slack = 14
+glean_p2 = 21
+glean_wordpress = 21
+glean_org_directory = 21
+glean_documents = 21
+glean_unknown = 21
+linear_issue = 45
+clay_enrichment = 90
+ai = 21
+co_attendance = 21
+local_enrichment = 21
+legacy_unattributed = 21
+user_correction = 365
+renewal_notes_with_imminent_renewal = 400
+renewal_notes_no_renewal_context = 90
+default = 21
+
+[freshness_policy]
+floor = 0.05
+salesforce_field_update_stale_weight = 0.3
+renewal_imminent_window_days = 45

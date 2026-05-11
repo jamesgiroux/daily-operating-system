@@ -59,6 +59,30 @@ pub struct DbAction {
     /// Discriminator between generic tasks and AI-inferred commitments (DOS Work-tab).
     #[serde(default = "default_action_kind")]
     pub action_kind: String,
+    /// Stable typed commitment identity derived from CommitmentClaim.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub commitment_id: Option<String>,
+    /// Raw owner text as emitted or edited, kept separate from freeform context.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner_raw: Option<String>,
+    /// Resolved owner person ID when the owner resolver can match one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner_entity_id: Option<String>,
+    /// Resolver confidence for owner_entity_id / owner_raw.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner_confidence: Option<f64>,
+    /// Resolver source label, including explicit ambiguous states.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner_source: Option<String>,
+    /// Latest computed trust score for this commitment claim.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trust_score: Option<f64>,
+    /// Latest computed trust band for this commitment claim.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trust_band: Option<String>,
+    /// Number of distinct corroborating source keys recorded for this commitment.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub commitment_source_count: Option<i64>,
     pub context: Option<String>,
     pub waiting_on: Option<String>,
     pub updated_at: String,

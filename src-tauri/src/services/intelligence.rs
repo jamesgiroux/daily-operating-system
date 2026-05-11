@@ -934,19 +934,29 @@ pub(crate) fn upsert_assessment_from_enrichment_in_active_transaction(
     // Enrichment write is the source of truth; bridge errors must not fail it.
     if entity_type == "account" {
         if let Some(ref commitments) = intel.open_commitments {
-            match crate::services::commitment_bridge::sync_ai_commitments(
-                ctx,
-                tx,
-                entity_type,
-                entity_id,
-                commitments,
-            ) {
+            let sync_result =
+                crate::services::commitment_bridge::intelligence_commitment_ingestion_items(
+                    entity_type,
+                    entity_id,
+                    commitments,
+                )
+                .and_then(|items| {
+                    crate::services::commitment_bridge::sync_ai_commitments_with_ingestion_sources(
+                        ctx,
+                        tx,
+                        entity_type,
+                        entity_id,
+                        &items,
+                    )
+                });
+            match sync_result {
                 Ok(summary) => log::info!(
-                    "commitment_bridge: {} created, {} updated, {} tombstoned-skip, {} missing-id ({}:{})",
+                    "commitment_bridge: {} created, {} updated, {} tombstoned-skip, {} missing-id, {} malformed-id ({}:{})",
                     summary.created,
                     summary.updated,
                     summary.skipped_tombstoned,
                     summary.skipped_missing_id,
+                    summary.skipped_malformed_id,
                     entity_type,
                     entity_id
                 ),
@@ -1972,6 +1982,14 @@ pub async fn track_recommendation(
                 source_id: Some(entity_id.clone()),
                 source_label: Some("Based on account intelligence".to_string()),
                 action_kind: crate::action_status::KIND_TASK.to_string(),
+                commitment_id: None,
+                owner_raw: None,
+                owner_entity_id: None,
+                owner_confidence: None,
+                owner_source: None,
+                trust_score: None,
+                trust_band: None,
+                commitment_source_count: None,
                 context: Some(rec.rationale.clone()),
                 waiting_on: None,
                 updated_at: now,

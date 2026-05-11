@@ -97,7 +97,7 @@ export function UnifiedTimeline({
       items.push({
         date: formatShortDate(ev.eventDate),
         sortDate: ev.eventDate,
-        type: "event" as TimelineEntryType,
+        type: "event",
         title: `${label}${ev.arrImpact != null && ev.arrImpact !== 0 ? ` ($${(ev.arrImpact / 1000).toFixed(0)}k)` : ""}`,
         subtitle: ev.notes || undefined,
       });
@@ -119,7 +119,7 @@ export function UnifiedTimeline({
       items.push({
         date: formatShortDate(change.createdAt),
         sortDate: change.createdAt,
-        type: "event" as TimelineEntryType,
+        type: "event",
         title: transition,
         subtitle,
       });
@@ -148,7 +148,7 @@ export function UnifiedTimeline({
       items.push({
         date: ms.completedAt ? formatShortDate(ms.completedAt) : "",
         sortDate: ms.completedAt ?? "",
-        type: "value" as TimelineEntryType,
+        type: "value",
         title: `Milestone completed: ${ms.title}`,
         subtitle: `Auto-completed by ${triggerLabel}`,
       });

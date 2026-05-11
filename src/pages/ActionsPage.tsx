@@ -154,7 +154,7 @@ export default function ActionsPage() {
     setPriorityFilter,
     searchQuery,
     setSearchQuery,
-  } = useActions(initialSearch as string | undefined);
+  } = useActions(initialSearch);
   const { suggestedActions, acceptAction, rejectAction } = useSuggestedActions();
 
   const [showCreate, setShowCreate] = useState(false);

@@ -22,6 +22,7 @@ SCOPE=""
 REQUIRE_ATTEST="auto" # auto = derive from scope name; W4+ implied requires attestation
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --) shift ;;
     --out) OUT="$2"; shift 2 ;;
     --scope) SCOPE="$2"; shift 2 ;;
     --require-attest) REQUIRE_ATTEST="$2"; shift 2 ;;
@@ -80,8 +81,23 @@ else
   overall="fail"
 fi
 
-summary="{\"suite\":\"E\",\"scope\":\"$SCOPE\",\"frontend\":\"$frontend_status\",\"attestation\":\"$attest_status\",\"overall\":\"$overall\",\"notes\":\"$notes\"}"
+summary=$(python3 - "$SCOPE" "$frontend_status" "$attest_status" "$overall" "$notes" <<'PY'
+import json, sys
+scope, frontend, attestation, overall, notes = sys.argv[1:]
+print(json.dumps({
+    "suite": "E",
+    "scope": scope,
+    "frontend": frontend,
+    "attestation": attestation,
+    "overall": overall,
+    "notes": notes,
+}, separators=(",",":")))
+PY
+)
 
+if [[ -n "$OUT" ]]; then
+  mkdir -p "$(dirname "$OUT")"
+fi
 if [[ -n "$OUT" ]]; then
   printf '%s\n' "$summary" > "$OUT"
 else

@@ -1,12 +1,13 @@
-# Performance baselines
+# Legacy Performance Baselines
 
-Per-scope criterion bench output, written by `scripts/suite-p.sh` when L3
-runs. Each scope's `scope-{id}.json` captures the integrated state's bench
-numbers; subsequent scopes compare against the most recent prior baseline.
+This directory is the pre-contract Suite P baseline path. New published
+performance evidence belongs under `.docs/perf/` and must follow the Evaluation
+Evidence Contract in `.docs/evals/evaluation-evidence-contract.md`.
 
-A regression beyond 10% on any flow fails L3 / suite-p. Tune the threshold
-via `--threshold N` to `suite-p.sh`.
+`scripts/suite-p.sh` is still the canonical Suite P runner, but DOS-348 owns
+hardening it before its output can be trusted as published evidence.
 
-When no benches are registered in the workspace, the suite seeds an empty
-baseline file rather than failing — first-pass deployment is intentionally
-soft so the surface ships before benches are written.
+Historical empty baselines are scaffolding only. They are not valid published W8
+evidence, and future published Suite P runs must fail on zero real benches,
+failed bench execution, malformed evidence, missing input hashes, customer data,
+or absolute path leakage.

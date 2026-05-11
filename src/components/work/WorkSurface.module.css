@@ -244,11 +244,56 @@
 .commitmentOwnerRow strong {
   font-weight: 600;
 }
+.ownerAmbiguous {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-spice-terracotta);
+  margin-left: 8px;
+}
 .pillRow {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+}
+
+.aboutCommitment {
+  border-top: 1px dashed var(--color-rule-light);
+  border-bottom: 1px dashed var(--color-rule-light);
+  padding: 8px 0;
+}
+
+.aboutCommitmentSummary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.aboutCommitmentSummary::marker {
+  color: var(--color-text-tertiary);
+}
+
+.aboutTrustDot {
+  margin-left: 0;
+}
+
+.aboutCommitmentBody {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding-top: 8px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
 }
 
 .visibilityLink {

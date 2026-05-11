@@ -374,6 +374,14 @@ export interface DbAction {
   sourceLabel?: string;
   /** DOS Work-tab Phase 1: `task` (default) or `commitment` (AI-inferred). */
   actionKind?: string;
+  commitmentId?: string;
+  ownerRaw?: string;
+  ownerEntityId?: string;
+  ownerConfidence?: number;
+  ownerSource?: string;
+  trustScore?: number;
+  trustBand?: TrustBandWire;
+  commitmentSourceCount?: number;
   context?: string;
   waitingOn?: string;
   updatedAt: string;

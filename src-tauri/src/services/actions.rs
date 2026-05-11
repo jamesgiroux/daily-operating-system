@@ -475,6 +475,14 @@ pub async fn create_action(
         source_id: None,
         source_label,
         action_kind,
+        commitment_id: None,
+        owner_raw: None,
+        owner_entity_id: None,
+        owner_confidence: None,
+        owner_source: None,
+        trust_score: None,
+        trust_band: None,
+        commitment_source_count: None,
         context,
         waiting_on: None,
         updated_at: now,
@@ -604,6 +612,57 @@ pub async fn update_action(
     state: &Arc<AppState>,
 ) -> Result<(), String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    validate_update_action_request(&request)?;
+
+    let state_for_ctx = state.clone();
+    state
+        .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
+            apply_update_action(&ctx, db, request)
+        })
+        .await
+}
+
+fn validate_update_action_request(request: &UpdateActionRequest) -> Result<(), String> {
+    crate::util::validate_id_slug(&request.id, "id")?;
+    if let Some(ref p) = request.priority {
+        let pv: i32 = p.parse().map_err(|_| format!("Invalid priority: {p}"))?;
+        if !(0..=4).contains(&pv) {
+            return Err(format!("Priority must be 0-4, got: {pv}"));
+        }
+    }
+    if let Some(ref t) = request.title {
+        crate::util::validate_bounded_string(t, "title", 1, 280)?;
+    }
+    if let Some(ref d) = request.due_date {
+        crate::util::validate_yyyy_mm_dd(d, "due_date")?;
+    }
+    if let Some(ref c) = request.context {
+        crate::util::validate_bounded_string(c, "context", 1, 2000)?;
+    }
+    if let Some(ref owner) = request.owner_raw {
+        crate::util::validate_bounded_string(owner, "owner_raw", 1, 200)?;
+    }
+    if let Some(ref s) = request.source_label {
+        crate::util::validate_bounded_string(s, "source_label", 1, 200)?;
+    }
+    if let Some(ref a) = request.account_id {
+        crate::util::validate_id_slug(a, "account_id")?;
+    }
+    if let Some(ref p) = request.project_id {
+        crate::util::validate_id_slug(p, "project_id")?;
+    }
+    if let Some(ref p) = request.person_id {
+        crate::util::validate_id_slug(p, "person_id")?;
+    }
+    Ok(())
+}
+
+pub(crate) fn apply_update_action(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    request: UpdateActionRequest,
+) -> Result<(), String> {
     let UpdateActionRequest {
         id,
         title,
@@ -611,6 +670,8 @@ pub async fn update_action(
         clear_due_date,
         context,
         clear_context,
+        owner_raw,
+        clear_owner,
         source_label,
         clear_source_label,
         account_id,
@@ -622,85 +683,76 @@ pub async fn update_action(
         priority,
     } = request;
 
-    crate::util::validate_id_slug(&id, "id")?;
-    if let Some(ref p) = priority {
-        let pv: i32 = p.parse().map_err(|_| format!("Invalid priority: {p}"))?;
-        if !(0..=4).contains(&pv) {
-            return Err(format!("Priority must be 0-4, got: {pv}"));
-        }
+    let mut action = db
+        .get_action_by_id(&id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Action not found: {id}"))?;
+
+    if let Some(t) = title {
+        action.title = t;
     }
-    if let Some(ref t) = title {
-        crate::util::validate_bounded_string(t, "title", 1, 280)?;
+    if let Some(p) = priority {
+        action.priority = p.parse::<i32>().unwrap_or(3);
     }
-    if let Some(ref d) = due_date {
-        crate::util::validate_yyyy_mm_dd(d, "due_date")?;
+    if clear_due_date == Some(true) {
+        action.due_date = None;
+    } else if let Some(d) = due_date {
+        action.due_date = Some(d);
     }
-    if let Some(ref c) = context {
-        crate::util::validate_bounded_string(c, "context", 1, 2000)?;
+    if clear_context == Some(true) {
+        action.context = None;
+    } else if let Some(c) = context {
+        action.context = Some(c);
     }
-    if let Some(ref s) = source_label {
-        crate::util::validate_bounded_string(s, "source_label", 1, 200)?;
+    if clear_owner == Some(true) {
+        action.owner_raw = None;
+        action.owner_entity_id = None;
+        action.owner_confidence = None;
+        action.owner_source = Some("user_reassigned".to_string());
+    } else if let Some(owner) = owner_raw {
+        let commitment_id = action
+            .commitment_id
+            .clone()
+            .unwrap_or_else(|| action.id.clone());
+        let account_id_for_resolution = action.account_id.as_deref().unwrap_or("");
+        let resolved = crate::abilities::read::resolve_owner::resolve_owner_with_mode(
+            db,
+            account_id_for_resolution,
+            &commitment_id,
+            Some(&owner),
+            crate::abilities::read::resolve_owner::OwnerResolutionMode::FreshInput,
+        )?;
+        action.owner_raw = Some(owner);
+        action.owner_entity_id = resolved.owner_entity_id;
+        action.owner_confidence = resolved.owner_confidence.or(Some(1.0));
+        action.owner_source = Some("user_reassigned".to_string());
+        action.context = crate::services::commitment_bridge::strip_owner_context_for_action(
+            action.context.as_deref(),
+        );
     }
-    if let Some(ref a) = account_id {
-        crate::util::validate_id_slug(a, "account_id")?;
+    if clear_source_label == Some(true) {
+        action.source_label = None;
+    } else if let Some(s) = source_label {
+        action.source_label = Some(s);
     }
-    if let Some(ref p) = project_id {
-        crate::util::validate_id_slug(p, "project_id")?;
+    if clear_account == Some(true) {
+        action.account_id = None;
+    } else if let Some(a) = account_id {
+        action.account_id = Some(a);
     }
-    if let Some(ref p) = person_id {
-        crate::util::validate_id_slug(p, "person_id")?;
+    if clear_project == Some(true) {
+        action.project_id = None;
+    } else if let Some(p) = project_id {
+        action.project_id = Some(p);
+    }
+    if clear_person == Some(true) {
+        action.person_id = None;
+    } else if let Some(p) = person_id {
+        action.person_id = Some(p);
     }
 
-    let state_for_ctx = state.clone();
-    state
-        .db_write(move |db| {
-            let ctx = state_for_ctx.live_service_context();
-            let mut action = db
-                .get_action_by_id(&id)
-                .map_err(|e| e.to_string())?
-                .ok_or_else(|| format!("Action not found: {id}"))?;
-
-            if let Some(t) = title {
-                action.title = t;
-            }
-            if let Some(p) = priority {
-                action.priority = p.parse::<i32>().unwrap_or(3);
-            }
-            if clear_due_date == Some(true) {
-                action.due_date = None;
-            } else if let Some(d) = due_date {
-                action.due_date = Some(d);
-            }
-            if clear_context == Some(true) {
-                action.context = None;
-            } else if let Some(c) = context {
-                action.context = Some(c);
-            }
-            if clear_source_label == Some(true) {
-                action.source_label = None;
-            } else if let Some(s) = source_label {
-                action.source_label = Some(s);
-            }
-            if clear_account == Some(true) {
-                action.account_id = None;
-            } else if let Some(a) = account_id {
-                action.account_id = Some(a);
-            }
-            if clear_project == Some(true) {
-                action.project_id = None;
-            } else if let Some(p) = project_id {
-                action.project_id = Some(p);
-            }
-            if clear_person == Some(true) {
-                action.person_id = None;
-            } else if let Some(p) = person_id {
-                action.person_id = Some(p);
-            }
-
-            action.updated_at = ctx.clock.now().to_rfc3339();
-            db.upsert_action(&action).map_err(|e| e.to_string())
-        })
-        .await
+    action.updated_at = ctx.clock.now().to_rfc3339();
+    db.upsert_action(&action).map_err(|e| e.to_string())
 }
 
 /// Get full detail for a single action, with resolved relationships.
@@ -891,4 +943,173 @@ pub fn get_aging_action_count(db: &ActionDb) -> Result<i64, String> {
 /// Called after action creation and from the scheduler.
 pub fn scan_and_flag_decisions(db: &ActionDb) -> Result<usize, String> {
     db.scan_and_flag_decisions().map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::test_utils::test_db;
+    use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
+    use chrono::TimeZone;
+
+    macro_rules! make_ctx {
+        ($ctx:ident) => {
+            let clock =
+                FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+            let rng = SeedableRng::new(42);
+            let ext = ExternalClients::default();
+            let $ctx = ServiceContext::test_live(&clock, &rng, &ext);
+        };
+    }
+
+    fn seed_owner_fixture(db: &ActionDb) {
+        db.conn_ref()
+            .execute(
+                "INSERT INTO people (id, email, name, updated_at)
+                 VALUES ('p-alex', 'alex@example.com', 'Alex Chen', '2026-01-01'),
+                        ('p-jamie', 'jamie@example.com', 'Jamie Lee', '2026-01-01')",
+                [],
+            )
+            .unwrap();
+        crate::db::accounts::seed_account_stakeholder_for_tests(
+            db.conn_ref(),
+            "acct-1",
+            "p-alex",
+            "user",
+        )
+        .unwrap();
+        crate::db::accounts::seed_account_stakeholder_for_tests(
+            db.conn_ref(),
+            "acct-1",
+            "p-jamie",
+            "user",
+        )
+        .unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO actions
+                 (id, title, priority, status, created_at, updated_at, account_id,
+                  action_kind, commitment_id, context)
+                 VALUES ('action-1', 'Send deck', 3, 'unstarted', '2026-01-01',
+                         '2026-01-01', 'acct-1', 'commitment', 'commitment:test',
+                         'owner: stale owner')",
+                [],
+            )
+            .unwrap();
+    }
+
+    fn owner_request(owner: Option<&str>, clear_owner: Option<bool>) -> UpdateActionRequest {
+        UpdateActionRequest {
+            id: "action-1".to_string(),
+            title: None,
+            due_date: None,
+            clear_due_date: None,
+            context: None,
+            clear_context: None,
+            owner_raw: owner.map(ToString::to_string),
+            clear_owner,
+            source_label: None,
+            clear_source_label: None,
+            account_id: None,
+            clear_account: None,
+            project_id: None,
+            clear_project: None,
+            person_id: None,
+            clear_person: None,
+            priority: None,
+        }
+    }
+
+    fn owner_state(
+        db: &ActionDb,
+    ) -> (
+        Option<String>,
+        Option<String>,
+        Option<f64>,
+        Option<String>,
+        Option<String>,
+    ) {
+        db.conn_ref()
+            .query_row(
+                "SELECT owner_raw, owner_entity_id, owner_confidence, owner_source, context
+                 FROM actions WHERE id = 'action-1'",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
+            )
+            .unwrap()
+    }
+
+    #[test]
+    fn first_user_reassignment_resolves_new_owner() {
+        let db = test_db();
+        make_ctx!(ctx);
+        seed_owner_fixture(&db);
+
+        apply_update_action(&ctx, &db, owner_request(Some("Alex Chen"), None)).unwrap();
+
+        let (owner_raw, owner_entity_id, owner_confidence, owner_source, context) =
+            owner_state(&db);
+        assert_eq!(owner_raw.as_deref(), Some("Alex Chen"));
+        assert_eq!(owner_entity_id.as_deref(), Some("p-alex"));
+        assert_eq!(owner_confidence, Some(0.96));
+        assert_eq!(owner_source.as_deref(), Some("user_reassigned"));
+        assert_eq!(context, None);
+    }
+
+    #[test]
+    fn second_user_reassignment_resolves_against_new_raw_owner() {
+        let db = test_db();
+        make_ctx!(ctx);
+        seed_owner_fixture(&db);
+
+        apply_update_action(&ctx, &db, owner_request(Some("Alex Chen"), None)).unwrap();
+        apply_update_action(&ctx, &db, owner_request(Some("Jamie Lee"), None)).unwrap();
+
+        let (owner_raw, owner_entity_id, owner_confidence, owner_source, _) = owner_state(&db);
+        assert_eq!(owner_raw.as_deref(), Some("Jamie Lee"));
+        assert_eq!(owner_entity_id.as_deref(), Some("p-jamie"));
+        assert_eq!(owner_confidence, Some(0.96));
+        assert_eq!(owner_source.as_deref(), Some("user_reassigned"));
+    }
+
+    #[test]
+    fn clear_user_reassignment_clears_structural_owner() {
+        let db = test_db();
+        make_ctx!(ctx);
+        seed_owner_fixture(&db);
+
+        apply_update_action(&ctx, &db, owner_request(Some("Alex Chen"), None)).unwrap();
+        apply_update_action(&ctx, &db, owner_request(None, Some(true))).unwrap();
+
+        let (owner_raw, owner_entity_id, owner_confidence, owner_source, _) = owner_state(&db);
+        assert_eq!(owner_raw, None);
+        assert_eq!(owner_entity_id, None);
+        assert_eq!(owner_confidence, None);
+        assert_eq!(owner_source.as_deref(), Some("user_reassigned"));
+    }
+
+    #[test]
+    fn clear_then_user_reassignment_resolves_against_new_raw_owner() {
+        let db = test_db();
+        make_ctx!(ctx);
+        seed_owner_fixture(&db);
+
+        apply_update_action(&ctx, &db, owner_request(Some("Alex Chen"), None)).unwrap();
+        apply_update_action(&ctx, &db, owner_request(None, Some(true))).unwrap();
+        apply_update_action(&ctx, &db, owner_request(Some("Jamie Lee"), None)).unwrap();
+
+        let (owner_raw, owner_entity_id, owner_confidence, owner_source, _) = owner_state(&db);
+        assert_eq!(owner_raw.as_deref(), Some("Jamie Lee"));
+        assert_eq!(owner_entity_id.as_deref(), Some("p-jamie"));
+        assert_eq!(owner_confidence, Some(0.96));
+        assert_eq!(owner_source.as_deref(), Some("user_reassigned"));
+    }
 }

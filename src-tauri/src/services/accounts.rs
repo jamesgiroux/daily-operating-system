@@ -3287,11 +3287,12 @@ pub fn account_to_list_item(
 /// Get top-level accounts list with computed fields.
 pub fn get_accounts_list(db: &ActionDb) -> Result<Vec<AccountListItem>, String> {
     let accounts = db.get_top_level_accounts().map_err(|e| e.to_string())?;
+    let counts = db.get_child_account_counts().map_err(|e| e.to_string())?;
 
     let items: Vec<AccountListItem> = accounts
         .into_iter()
         .map(|a| {
-            let child_count = db.get_child_accounts(&a.id).map(|c| c.len()).unwrap_or(0);
+            let child_count = counts.get(&a.id).copied().unwrap_or(0) as usize;
             account_to_list_item(&a, db, child_count)
         })
         .collect();
@@ -3307,13 +3308,14 @@ pub fn get_child_accounts_list(
     let children = db
         .get_child_accounts(parent_id)
         .map_err(|e| e.to_string())?;
+    let counts = db.get_child_account_counts().map_err(|e| e.to_string())?;
 
     let parent_name = db.get_account(parent_id).ok().flatten().map(|a| a.name);
 
     let items: Vec<AccountListItem> = children
         .into_iter()
         .map(|a| {
-            let grandchild_count = db.get_child_accounts(&a.id).map(|c| c.len()).unwrap_or(0);
+            let grandchild_count = counts.get(&a.id).copied().unwrap_or(0) as usize;
             let mut item = account_to_list_item(&a, db, grandchild_count);
             item.parent_name = parent_name.clone();
             item
