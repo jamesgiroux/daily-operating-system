@@ -311,18 +311,22 @@ fn pending_backfill_terminalization_cause(
     backfill_attempts: i64,
     now: DateTime<Utc>,
 ) -> Option<&'static str> {
-    if backfill_attempts >= PENDING_BACKFILL_MAX_RETRIES {
-        return Some("max_attempts");
+    // ADR-0131 + wave plan §535: terminalization requires BOTH age >= MAX_AGE
+    // AND attempts >= MAX_RETRIES. OR-style termination would either downgrade
+    // a fresh row on transient failure or terminalize an aged row with zero
+    // retries; both violate the substrate contract.
+    if backfill_attempts < PENDING_BACKFILL_MAX_RETRIES {
+        return None;
     }
 
     let Ok(created_at) = parse_pending_backfill_created_at(&row.created_at) else {
         return None;
     };
-    if now.signed_duration_since(created_at) >= pending_backfill_max_age() {
-        return Some("max_age");
+    if now.signed_duration_since(created_at) < pending_backfill_max_age() {
+        return None;
     }
 
-    None
+    Some("max_age_and_attempts")
 }
 
 fn parse_pending_backfill_created_at(value: &str) -> Result<DateTime<Utc>, String> {
@@ -3448,7 +3452,10 @@ mod tests {
     }
 
     #[test]
-    fn suite_s_stuck_extractor_terminalizes_after_max_backfill_attempts() {
+    fn suite_s_stuck_extractor_terminalizes_after_max_age_and_attempts() {
+        // Both gates must fire: row must be aged AND attempts must hit max.
+        // created_at is 48h before the clock and the extractor is forced to
+        // error every run.
         let conn = fresh_full_db();
         let db = ActionDb::from_conn(&conn);
         let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
@@ -3468,8 +3475,8 @@ mod tests {
                 'legacy-stuck-extractor-1', '{\"kind\":\"account\",\"id\":\"acct-1\"}',
                 'risk', 'health.risk', NULL, 'Renewal risk is elevated',
                 'dedup-stuck-extractor', 'hash-stuck-extractor',
-                'system_backfill', 'legacy_dismissal', '2026-05-02T00:00:00Z',
-                '2026-05-02T00:00:00Z', '{}', NULL,
+                'system_backfill', 'legacy_dismissal', '2026-04-30T00:00:00Z',
+                '2026-04-30T00:00:00Z', '{}', NULL,
                 'tombstoned', 'active', 'user_removal', 'state', 'internal', 'active',
                 'pending_backfill', TRUE
              )",
@@ -3534,12 +3541,15 @@ mod tests {
             payload
                 .get("terminalization_cause")
                 .and_then(serde_json::Value::as_str),
-            Some("max_attempts")
+            Some("max_age_and_attempts")
         );
     }
 
     #[test]
-    fn suite_s_pending_backfill_past_max_age_terminalizes_with_audit_reason() {
+    fn suite_s_pending_backfill_aged_with_no_attempts_does_not_terminalize() {
+        // Negative case: row is past max age but has zero failed attempts.
+        // ADR-0131 AND-gate requires retries before downgrading; an old but
+        // never-attempted row must keep getting picked up by future backfills.
         let conn = fresh_full_db();
         let db = ActionDb::from_conn(&conn);
         let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
@@ -3554,9 +3564,9 @@ mod tests {
                 claim_state, surfacing_state, retraction_reason, temporal_scope, sensitivity,
                 verification_state, canonical_status, non_semantic_mergeable
              ) VALUES (
-                'legacy-aged-pending-1', '{\"kind\":\"account\",\"id\":\"acct-1\"}',
+                'legacy-aged-no-attempts', '{\"kind\":\"account\",\"id\":\"acct-1\"}',
                 'risk', 'health.risk', NULL, 'Renewal risk is elevated',
-                'dedup-aged-pending', 'hash-aged-pending',
+                'dedup-aged-no-attempts', 'hash-aged-no-attempts',
                 'system_backfill', 'legacy_dismissal', '2026-05-01T00:00:00Z',
                 '2026-05-01T00:00:00Z', '{}', NULL,
                 'tombstoned', 'active', 'user_removal', 'state', 'internal', 'active',
@@ -3568,44 +3578,75 @@ mod tests {
 
         let report = run_structured_claim_backfill(&ctx, &db).unwrap();
         assert_eq!(report.rows_examined, 1);
-        assert_eq!(report.transitioned_legacy_unmigrated, 1);
-        assert!(report.errors.is_empty(), "{report:?}");
+        assert_eq!(
+            report.transitioned_legacy_unmigrated, 0,
+            "aged row with zero attempts must not terminalize"
+        );
 
-        let (canonical_status, backfill_attempts): (String, i64) = conn
+        let canonical_status: String = conn
             .query_row(
-                "SELECT canonical_status, backfill_attempts
-                 FROM intelligence_claims WHERE id = 'legacy-aged-pending-1'",
-                [],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .unwrap();
-        assert_eq!(canonical_status, "legacy_unmigrated");
-        assert_eq!(backfill_attempts, 0);
-
-        let payload: String = conn
-            .query_row(
-                "SELECT value FROM signal_events
-                 WHERE entity_id = 'legacy-aged-pending-1'
-                   AND signal_type = 'structural_backfill_changed'
-                 ORDER BY created_at DESC, id DESC
-                 LIMIT 1",
+                "SELECT canonical_status
+                 FROM intelligence_claims WHERE id = 'legacy-aged-no-attempts'",
                 [],
                 |row| row.get(0),
             )
             .unwrap();
-        let payload: serde_json::Value = serde_json::from_str(&payload).unwrap();
+        assert_eq!(canonical_status, "pending_backfill");
+    }
+
+    #[test]
+    fn suite_s_pending_backfill_fresh_with_max_attempts_does_not_terminalize() {
+        // Negative case: row has hit max attempts but is fresh (< max age).
+        // ADR-0131 AND-gate must not downgrade a transient-failure row that
+        // hasn't aged past the recovery window yet.
+        let conn = fresh_full_db();
+        let db = ActionDb::from_conn(&conn);
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+        let claim_id = "legacy-fresh-max-attempts";
+        let _forced_error = ForcedStructuralBackfillErrorGuard::new(claim_id);
+
+        // Same day as the clock: age = 0; AND-gate must keep this pending even
+        // after attempts reach the retry cap.
+        conn.execute(
+            "INSERT INTO intelligence_claims (
+                id, subject_ref, claim_type, field_path, topic_key, text, dedup_key, item_hash,
+                actor, data_source, observed_at, created_at, provenance_json, metadata_json,
+                claim_state, surfacing_state, retraction_reason, temporal_scope, sensitivity,
+                verification_state, canonical_status, non_semantic_mergeable,
+                backfill_attempts
+             ) VALUES (
+                'legacy-fresh-max-attempts', '{\"kind\":\"account\",\"id\":\"acct-1\"}',
+                'risk', 'health.risk', NULL, 'Renewal risk is elevated',
+                'dedup-fresh-max-attempts', 'hash-fresh-max-attempts',
+                'system_backfill', 'legacy_dismissal', '2026-05-02T00:00:00Z',
+                '2026-05-02T00:00:00Z', '{}', NULL,
+                'tombstoned', 'active', 'user_removal', 'state', 'internal', 'active',
+                'pending_backfill', TRUE,
+                3
+             )",
+            [],
+        )
+        .unwrap();
+
+        let report = run_structured_claim_backfill(&ctx, &db).unwrap();
+        assert_eq!(report.rows_examined, 1);
         assert_eq!(
-            payload
-                .get("audit_reason")
-                .and_then(serde_json::Value::as_str),
-            Some(PENDING_BACKFILL_TERMINALIZED_REASON)
+            report.transitioned_legacy_unmigrated, 0,
+            "fresh row with max attempts must not terminalize"
         );
-        assert_eq!(
-            payload
-                .get("terminalization_cause")
-                .and_then(serde_json::Value::as_str),
-            Some("max_age")
-        );
+
+        let canonical_status: String = conn
+            .query_row(
+                "SELECT canonical_status
+                 FROM intelligence_claims WHERE id = 'legacy-fresh-max-attempts'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(canonical_status, "pending_backfill");
     }
 
     #[test]
