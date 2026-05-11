@@ -1,0 +1,20 @@
+# Public, CI-safe PII denylist for ability description lint.
+#
+# Purpose: this file is committed to the repo so the lint gate at
+# scripts/check_ability_descriptions.sh has a deterministic PII safety net in
+# CI environments where the local-only .claude/pii-blocklist.txt is absent.
+#
+# Authoring rules:
+#   - Only fictional markers and generic test sentinels live here.
+#   - NEVER add real customer names, real company names, real domains,
+#     or real personal identifiers to this file. Those belong only in the
+#     local-only .claude/pii-blocklist.txt (gitignored).
+#   - One term per line. Lines starting with '#' and blank lines are ignored.
+#   - Matching is case-insensitive, whitespace-tolerant, and word-bounded.
+#
+# Companion files:
+#   - .claude/pii-blocklist.txt (local-only, gitignored, broader real-PII list)
+#   - scripts/ability_description_vocab_blocklist.txt (internal vocabulary)
+
+pii-fixture-marker
+acme-corp-test-fixture

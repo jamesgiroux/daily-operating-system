@@ -6,11 +6,17 @@
 set -euo pipefail
 
 ROOT_DIR="$(git rev-parse --show-toplevel)"
-PII_BLOCKLIST="${ROOT_DIR}/.claude/pii-blocklist.txt"
+# Local-only PII blocklist (gitignored). Present on developer machines, absent
+# in CI. Loaded when available for the broader real-PII coverage.
+PII_BLOCKLIST_LOCAL="${ROOT_DIR}/.claude/pii-blocklist.txt"
+# Committed, CI-safe PII denylist. Always available — provides the deterministic
+# safety net so the lint gate never degrades to vocab-only when the local
+# blocklist is absent.
+PII_BLOCKLIST_COMMITTED="${ROOT_DIR}/scripts/ability_description_pii_denylist.txt"
 VOCAB_BLOCKLIST="${ROOT_DIR}/scripts/ability_description_vocab_blocklist.txt"
 SCAN_PATHS="${ABILITY_DESC_LINT_SCAN_PATHS:-}"
 
-python3 - "$ROOT_DIR" "$PII_BLOCKLIST" "$VOCAB_BLOCKLIST" "$SCAN_PATHS" <<'PY'
+python3 - "$ROOT_DIR" "$PII_BLOCKLIST_LOCAL" "$PII_BLOCKLIST_COMMITTED" "$VOCAB_BLOCKLIST" "$SCAN_PATHS" <<'PY'
 import ast
 import json
 import pathlib
@@ -18,9 +24,10 @@ import re
 import sys
 
 root = pathlib.Path(sys.argv[1]).resolve()
-pii_blocklist = pathlib.Path(sys.argv[2])
-vocab_blocklist = pathlib.Path(sys.argv[3])
-scan_paths_override = sys.argv[4]
+pii_blocklist_local = pathlib.Path(sys.argv[2])
+pii_blocklist_committed = pathlib.Path(sys.argv[3])
+vocab_blocklist = pathlib.Path(sys.argv[4])
+scan_paths_override = sys.argv[5]
 
 
 def die(message):
@@ -79,7 +86,11 @@ def display_term(term):
     return term.replace("\\", "\\\\").replace('"', '\\"')
 
 
-raw_terms = load_terms(pii_blocklist, required=False) + load_terms(vocab_blocklist, required=True)
+raw_terms = (
+    load_terms(pii_blocklist_local, required=False)
+    + load_terms(pii_blocklist_committed, required=True)
+    + load_terms(vocab_blocklist, required=True)
+)
 terms = []
 seen_terms = set()
 for term in raw_terms:
@@ -186,16 +197,18 @@ def scan_json_file(path, path_label):
     except json.JSONDecodeError as error:
         die(f"{path_label}:{error.lineno}: invalid JSON: {error.msg}")
 
-    tools = payload.get("tools", [])
-    if not isinstance(tools, list):
+    # The MCP/inventory artifact at tools/dailyos-abilities.json uses the
+    # `abilities` top-level key (mirrors AbilitySurfaceInventory shape).
+    entries = payload.get("abilities", [])
+    if not isinstance(entries, list):
         return []
 
     line_entries = description_line_index(text)
     findings = []
-    for tool in tools:
-        if not isinstance(tool, dict):
+    for entry in entries:
+        if not isinstance(entry, dict):
             continue
-        description = tool.get("description")
+        description = entry.get("description")
         if not isinstance(description, str):
             continue
         line_number = line_for_description(line_entries, description)
