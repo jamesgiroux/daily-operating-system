@@ -6,7 +6,7 @@
 **Extends:** [ADR-0102](0102-abilities-as-runtime-contract.md)  
 **Depends on:** [ADR-0104](0104-execution-mode-and-mode-aware-services.md)  
 **Required by:** [ADR-0103](0103-maintenance-ability-safety-constraints.md) §8 (audit), [ADR-0102](0102-abilities-as-runtime-contract.md) §10 (trust boundary)  
-**Companions:** [ADR-0106](0106-prompt-fingerprinting-and-provider-interface.md) (prompt fingerprint details), [ADR-0107](0107-source-taxonomy-alignment.md) (`DataSource` taxonomy), [ADR-0108](0108-provenance-rendering-and-privacy.md) (surface rendering and safety)
+**Companions:** [ADR-0106](0106-prompt-fingerprinting-and-provider-interface.md) (prompt fingerprint details), [ADR-0107](0107-source-taxonomy-alignment.md) (`DataSource` taxonomy), [ADR-0108](0108-provenance-rendering-and-privacy.md) (surface rendering and safety), [ADR-0130](0130-surface-independent-composition-contract.md) §2 (block-level `ProvenanceRef` preserves the §8 lives-once invariant by referencing the canonical envelope rather than copying it)
 
 ## Context
 

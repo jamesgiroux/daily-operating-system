@@ -1,10 +1,13 @@
 # ADR-0102: Abilities as the Runtime Contract
 
-**Status:** Proposed  
+**Status:** Accepted  
 **Date:** 2026-04-18  
+**Amended:** 2026-05-10 — extended `AbilityPolicy.allowed_actors` to include `SurfaceClient` (defined in [ADR-0111](0111-surface-independent-ability-invocation.md) §8); added §7.6 specifying SurfaceClient policy and introspection semantics. Per the formal L0 panel on [DOS-546](https://linear.app/a8c/issue/DOS-546).
+**Amended (later same day):** 2026-05-10 — extended `AbilityPolicy` schema with `required_scopes: Vec<SurfaceClientScope>` and `mcp_exposure: bool` as first-class fields per the formal L0 Cycle 2 unanimous finding. Two-level SurfaceClient enforcement is now substrate-enforceable from the canonical policy, not just prose in §7.6. Default policy expanded: `required_scopes = vec![]`, `mcp_exposure = false`.
+**Amended (later same day):** 2026-05-10 — promoted `mcp_exposure` from `bool` to tri-state `McpExposure { None | MetadataOnly | Invocable }` enum per Phase 0 artifact 05 lines 383-412; retained `client_side_executable: bool` as an orthogonal separate field for the WordPress 7.0 client-side `executeAbility()` JS path. The two fields govern different trust boundaries — `mcp_exposure` controls the network-facing MCP tool surface (discovery + invocation), `client_side_executable` controls whether a trusted in-product SurfaceClient may invoke the ability after WordPress capability + runtime scope + actor checks pass. The fields are independent; either may be true while the other is false. Default policy is `mcp_exposure = McpExposure::None` + `client_side_executable = false`, opt-in per ability. This cycle-3 reversal of the cycle-2 collapse was made after re-reading artifact 05's explicit warning against the symmetric `client_side_exposure` framing.  
 **Target:** v1.4.0  
 **Extends:** [ADR-0101](0101-service-boundary-enforcement.md), [ADR-0091](0091-intelligence-provider-abstraction.md), [ADR-0082](0082-entity-generic-prep-pipeline.md)  
-**Related:** [ADR-0080](0080-signal-intelligence-architecture.md), [ADR-0097](0097-account-health-scoring-architecture.md), [ADR-0098](0098-data-governance-source-aware-lifecycle.md), [ADR-0100](0100-glean-first-intelligence-architecture.md)
+**Related:** [ADR-0080](0080-signal-intelligence-architecture.md), [ADR-0097](0097-account-health-scoring-architecture.md), [ADR-0098](0098-data-governance-source-aware-lifecycle.md), [ADR-0100](0100-glean-first-intelligence-architecture.md), [ADR-0111](0111-surface-independent-ability-invocation.md), [ADR-0129](0129-composable-surfaces-wordpress-studio-as-primary-surface.md), [ADR-0130](0130-surface-independent-composition-contract.md) §2 (block-level `ProvenanceRef` preserves the ADR-0105 §8 lives-once invariant and avoids payload-cap blowups when ability outputs are composed into surface-rendered blocks)
 
 ## Context
 
@@ -210,11 +213,40 @@ The `AbilityPolicy` schema is canonical across all ADRs:
 
 ```rust
 pub struct AbilityPolicy {
-    pub allowed_actors: Vec<Actor>,       // Who can invoke: User | Agent | System
-    pub allowed_modes: Vec<ExecutionMode>, // Which modes permit invocation (default: all three)
-    pub requires_confirmation: bool,       // Whether invocation requires a ConfirmationToken
-    pub may_publish: bool,                 // Whether Maintenance may invoke Publish (default false)
+    pub allowed_actors: Vec<Actor>,             // Who can invoke: User | Agent | SurfaceClient | System (see §7.6)
+    pub allowed_modes: Vec<ExecutionMode>,      // Which modes permit invocation (default: all three)
+    pub requires_confirmation: bool,            // Whether invocation requires a ConfirmationToken
+    pub may_publish: bool,                      // Whether Maintenance may invoke Publish (default false)
+    pub required_scopes: Vec<SurfaceClientScope>, // SurfaceClient scopes required to invoke (per ADR-0111 §8). Empty means: callable by any
+                                                  // SurfaceClient permitted by allowed_actors with no specific scope check. Non-empty means:
+                                                  // all listed scopes must be granted to the calling SurfaceClient instance. Ignored when the
+                                                  // invoking actor is not SurfaceClient. (Added 2026-05-10 per L0 Cycle 2.)
+    pub mcp_exposure: McpExposure,              // Tri-state exposure tier for MCP — both the Rust runtime's MCP server AND any
+                                                  // SurfaceClient-mediated MCP server (e.g., WordPress MCP Adapter per ADR-0129).
+                                                  // Default McpExposure::None. Opt-in per ability. (Added 2026-05-10 per L0 Cycle 2;
+                                                  // promoted from bool to tri-state later the same day per L0 Cycle 3 + artifact 05.)
+    pub client_side_executable: bool,           // Whether a trusted in-product SurfaceClient (e.g., a WordPress 7.0 block invoking
+                                                  // `executeAbility()`) may invoke this ability after WordPress capability + runtime
+                                                  // scope + actor checks pass. Orthogonal to mcp_exposure: either field may be true
+                                                  // while the other is false. Default false. Opt-in per ability. (Added 2026-05-10
+                                                  // per L0 Cycle 3 + Phase 0 artifact 05 lines 383-412.)
 }
+
+pub enum McpExposure {
+    None,                                       // Ability not surfaced via MCP at all. Filtered from MCP discovery, introspection,
+                                                  // and invocation. The safest default.
+    MetadataOnly,                               // Ability appears in MCP discovery with name + description ONLY (no input/output
+                                                  // schema, no blast-radius hints) and is not invocable via MCP. A client receives
+                                                  // "tool exists but cannot be called by this client" semantics. Full schema is
+                                                  // reserved for `Invocable`. Used when a host model should know the capability
+                                                  // exists for planning but routing/invocation happens elsewhere.
+    Invocable,                                  // Ability fully exposed via MCP, including name + description + input/output schema
+                                                  // + invocation.
+}
+
+pub struct SurfaceClientScope(pub String);      // Scope identifier — e.g., "read.account_overview", "submit.feedback",
+                                                  // "manage.pairing". Per-instance scope grants are validated against this at invocation
+                                                  // time. The scope namespace is owned by the SurfaceClient class definition (ADR-0111 §8).
 ```
 
 ADR-0103 §6 uses these exact field names. There is no `actor_policy` shorthand — the macro attribute names match the struct fields one-to-one.
@@ -249,13 +281,42 @@ The registry is a single source of truth for:
 
 #### 7.4 Actor-Filtered Introspection
 
-Registry enumeration is actor-scoped. An MCP client enumerating available tools sees only abilities whose `AbilityPolicy.allowed_actors` includes `Agent`. It does not see maintenance abilities, admin-only abilities, or internal composition helpers. Introspection does not leak ability names, input schemas, or blast radius to callers that are not authorized to invoke.
+Registry enumeration is actor-scoped. An MCP client enumerating available tools sees only abilities whose `AbilityPolicy.allowed_actors` includes `Agent` AND whose `mcp_exposure` is `McpExposure::MetadataOnly` or `McpExposure::Invocable`; abilities with `mcp_exposure: None` are filtered. `MetadataOnly` abilities are enumerated with name + description only — the input/output schema and any blast-radius hints are withheld until promotion to `Invocable`; their invocation handler is not registered with the MCP server. `Invocable` abilities are enumerated with full schema and an invocation handler. Introspection does not leak ability names, input schemas, or blast radius to callers that are not authorized to invoke.
 
-The Tauri bridge, invoked by the first-party app, sees the full registry subject to `User` and `System` filtering. Background workers see the `System` filter.
+The Tauri bridge, invoked by the first-party app, sees the full registry subject to `User` and `System` filtering; the `mcp_exposure` and `client_side_executable` fields do not gate the first-party Tauri bridge because that bridge is the in-process path for the desktop app, not an MCP-mediated or SurfaceClient-mediated surface. Background workers see the `System` filter.
 
 #### 7.5 Surfaces Do Not Bypass the Registry
 
 Surfaces (Tauri commands, MCP handlers, background workers) invoke abilities through the registry or through typed imports as described in §7.2. They do not construct `AbilityContext` directly and do not call ability functions outside these two paths. Phase 4 enforces this by module visibility.
+
+#### 7.6 SurfaceClient Policy and Introspection (Amendment, 2026-05-10)
+
+[ADR-0111](0111-surface-independent-ability-invocation.md) §8 introduces `SurfaceClient` as a fourth canonical actor class for third-party local surfaces (WordPress, Obsidian, future browser extensions / PWA / mobile). The `AbilityPolicy.allowed_actors` field accepts `SurfaceClient` as a valid value alongside `User`, `Agent`, and `System`.
+
+**Multi-level enforcement.** Unlike `User`/`Agent`/`System` — where the actor *class* is the unit of policy enforcement — `SurfaceClient` enforces at multiple levels. All checks are against canonical fields on `AbilityPolicy` (per §7.1, extended 2026-05-10 cycle 2, refined later the same day to promote `mcp_exposure` to the `McpExposure` tri-state and add the orthogonal `client_side_executable` field). Invocation is permitted only if ALL applicable checks pass:
+
+1. The ability's `allowed_actors` includes `SurfaceClient`.
+2. For every `SurfaceClientScope` in the ability's `required_scopes`, the invoking SurfaceClient instance's scope grants (per ADR-0111 §8) include that scope. If `required_scopes` is empty, this check is a no-op.
+3. If the invocation arrives via an MCP-mediated path (the Rust runtime's MCP server OR a SurfaceClient-mediated MCP server per [ADR-0129](0129-composable-surfaces-wordpress-studio-as-primary-surface.md) §4), the ability's `mcp_exposure` is `McpExposure::Invocable`. If `mcp_exposure` is `McpExposure::None`, MCP-mediated discovery AND invocation are rejected at the registry boundary. If `mcp_exposure` is `McpExposure::MetadataOnly`, MCP-mediated discovery enumerates name + description only (no input/output schema), and MCP-mediated invocation is rejected at the registry boundary. The tier check happens regardless of `allowed_actors`.
+4. If the invocation arrives via a client-side SurfaceClient JS path (e.g., a WordPress 7.0 block invoking `executeAbility()`), the ability's `client_side_executable` is `true`. If `client_side_executable` is `false`, the SurfaceClient bridge rejects the invocation before registry lookup regardless of `allowed_actors`, `required_scopes`, or `mcp_exposure`. This check is orthogonal to the MCP-mediated tier check — the two fields govern different trust boundaries (per Phase 0 artifact 05 lines 383-412).
+
+Each check rejects from the substrate (the registry or the SurfaceClient bridge) before the ability body runs. The enforcement is **substrate-enforceable**, not prose-only: a SurfaceClient instance granted only `read.account_overview` cannot invoke an ability whose `required_scopes` includes `submit.feedback`; an MCP client cannot invoke an ability whose `mcp_exposure` is `None` or `MetadataOnly` even if its `allowed_actors` permits the caller's actor class; a WordPress block's `executeAbility()` call cannot reach an ability whose `client_side_executable` is `false` even if it is fully `Invocable` via MCP.
+
+**Introspection rules extended.** §7.4 actor-filtered introspection extends as follows for `SurfaceClient` callers:
+
+- A SurfaceClient enumerating available abilities via an MCP-mediated path sees only abilities whose policy: (a) permits `SurfaceClient` in `allowed_actors`, (b) has every `required_scopes` entry covered by the instance's granted scopes, AND (c) has `mcp_exposure` of `MetadataOnly` or `Invocable`. Abilities with `mcp_exposure: None` are not enumerated. Abilities with `mcp_exposure: MetadataOnly` are enumerated with name + description only (no input/output schema); the invocation handler is not registered.
+- A SurfaceClient enumerating available abilities via a client-side JS path (e.g., WordPress 7.0 `executeAbility()` enumeration) sees only abilities whose policy: (a) permits `SurfaceClient` in `allowed_actors`, (b) has every `required_scopes` entry covered by the instance's granted scopes, AND (d) has `client_side_executable: true`. Abilities with `client_side_executable: false` are not exposed to the client-side enumeration path even when fully `Invocable` via MCP.
+- Abilities failing the applicable filter ((a)/(b)/(c) for MCP-mediated paths; (a)/(b)/(d) for client-side JS paths) are not enumerated regardless of caller permission.
+- Per-ability metadata fields (name, description, schema, annotations, category) are model-facing AND browser-facing API surface for SurfaceClient consumers. Description copy is reviewed with the same care as user-facing UI (per [ADR-0083](0083-product-vocabulary.md) discipline).
+- A SurfaceClient does NOT see ability names, schemas, or blast radius for abilities outside its scope grants, for `mcp_exposure: None` abilities on MCP-mediated paths, or for `client_side_executable: false` abilities on client-side JS paths. Unauthorized introspection is closed.
+
+**Default policy.** Abilities default to `allowed_actors = [User]`, `required_scopes = vec![]`, `mcp_exposure = McpExposure::None`, `client_side_executable = false`. `SurfaceClient` exposure is opt-in per ability — the macro attribute must declare `allowed_actors` including `SurfaceClient`, plus `required_scopes` AND `mcp_exposure` AND `client_side_executable` explicitly (or `no_scope_required` in place of an empty `required_scopes` when the absence is intentional; see §7.1 macro). Most existing abilities do NOT need to be exposed to SurfaceClient instances; ability authors must consciously opt each one in. The two exposure fields govern different trust boundaries (MCP tool surface vs. client-side JS invocation) per Phase 0 artifact 05 lines 383-412 — either may be opted in while the other remains closed.
+
+**Compile-error gate (substrate, not code-review discipline).** The `#[ability]` proc-macro emits a compile-time error if `allowed_actors` includes `SurfaceClient` AND `required_scopes` is empty AND the `no_scope_required` opt-out is absent. The gate fires on `allowed_actors` membership regardless of `client_side_executable` value, because actor membership is what makes the ability reachable from a SurfaceClient at all. This makes empty-scope SurfaceClient abilities a build-time failure, not a runtime gap or a reviewer-trust convention — drift is structurally impossible.
+
+The spike at [DOS-546](https://linear.app/a8c/issue/DOS-546) validates this gating empirically for the WordPress SurfaceClient instance.
+
+**Audit attribution.** Every substrate operation invoked by a SurfaceClient is logged with the SurfaceClient instance identity (per ADR-0111 §8). Reads and writes both. This makes "which surface invoked this" forensically answerable.
 
 ### 8. Versioning
 
