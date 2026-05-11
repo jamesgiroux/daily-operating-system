@@ -4073,6 +4073,7 @@ fn read_claim_row_sqlite(row: &rusqlite::Row<'_>) -> rusqlite::Result<Intelligen
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn insert_canonicalization_decision_in_tx(
     tx: &ActionDb,
     query: &CanonicalMatchInput,
