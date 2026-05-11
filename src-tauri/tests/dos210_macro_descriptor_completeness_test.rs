@@ -5,7 +5,7 @@ use dailyos_lib::abilities::provenance::{
     SubjectRef,
 };
 use dailyos_lib::abilities::{
-    AbilityCategory, AbilityContext, AbilityRegistry, AbilityResult, Actor,
+    AbilityCategory, AbilityContext, AbilityRegistry, AbilityResult, Actor, ActorKind,
 };
 use dailyos_lib::services::context::ExecutionMode;
 use schemars::JsonSchema;
@@ -115,7 +115,7 @@ fn macro_emitted_descriptor_carries_full_policy_into_inventory() {
     assert_eq!(descriptor.category, AbilityCategory::Publish);
     assert_eq!(
         descriptor.policy.allowed_actors,
-        &[Actor::User, Actor::System]
+        &[ActorKind::User, ActorKind::System]
     );
     assert_eq!(
         descriptor.policy.allowed_modes,

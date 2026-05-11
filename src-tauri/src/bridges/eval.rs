@@ -77,14 +77,14 @@ mod tests {
     use crate::abilities::registry::{AbilityPolicy, McpExposure, SignalPolicy};
     use crate::abilities::SpanHandle;
     use crate::abilities::{
-        AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, Actor,
+        AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, ActorKind,
     };
     use crate::intelligence::provider::{
         Completion, ModelName, ModelTier, PromptInput, ProviderError, ProviderKind, ReplayProvider,
     };
     use crate::services::context::{FixedClock, SeedableRng};
 
-    const SYSTEM_ACTORS: &[Actor] = &[Actor::System];
+    const SYSTEM_ACTORS: &[ActorKind] = &[ActorKind::System];
     const EVALUATE_MODES: &[ExecutionMode] = &[ExecutionMode::Evaluate];
     static ERASED_INVOCATION_COUNT: AtomicUsize = AtomicUsize::new(0);
 

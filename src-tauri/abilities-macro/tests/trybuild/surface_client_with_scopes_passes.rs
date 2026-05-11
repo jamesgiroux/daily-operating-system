@@ -1,4 +1,14 @@
 #![allow(dead_code, unused_imports)]
+//! W1-B compile-error gate positive test (ADR-0102 §7.6, DOS-546 W1-B
+//! AC §449 + §1254):
+//!
+//! An ability whose `allowed_actors` includes `SurfaceClient` AND declares
+//! a non-empty `required_scopes = [...]` set must compile cleanly. This
+//! is the legitimate W1-D account-overview shape: the SurfaceClient may
+//! invoke the ability, gated by the named scope grant.
+//!
+//! See `surface_client_without_scopes_fails.rs` for the matching negative
+//! case (SurfaceClient + empty scopes + no opt-out → compile error).
 
 use dailyos_abilities_macro::ability;
 use schemars::JsonSchema;
@@ -22,10 +32,6 @@ mod services {
                 }
             }
         }
-    }
-
-    pub mod accounts {
-        pub fn update_account_field() {}
     }
 }
 
@@ -61,11 +67,6 @@ mod abilities {
         pub struct CompositionId(pub &'static str);
 
         impl CompositionId {
-            pub fn new(value: impl Into<String>) -> Self {
-                let _ = value.into();
-                Self("fixture")
-            }
-
             pub const fn from_static(value: &'static str) -> Self {
                 Self(value)
             }
@@ -161,9 +162,9 @@ mod abilities {
             pub output_schema: fn() -> serde_json::Value,
         }
 
-        pub fn close_schema_objects(_schema: &mut serde_json::Value) {}
-
         inventory::collect!(AbilityDescriptor);
+
+        pub fn close_schema_objects(_schema: &mut serde_json::Value) {}
 
         #[derive(Debug, Clone, PartialEq, Eq)]
         pub enum AbilityErrorKind {
@@ -207,24 +208,29 @@ struct FixtureInput;
 #[derive(Serialize, JsonSchema)]
 struct FixtureOutput;
 
+// MUST compile cleanly: `SurfaceClient` is in `allowed_actors`,
+// `required_scopes` is non-empty (the legitimate W1-D account-overview
+// shape). The W1-B macro gate must NOT fire here.
 #[ability(
-    name = "publish_records_mutation",
-    category = Publish,
+    name = "surface_client_with_scopes",
+    category = Read,
     version = "0.1.0",
     schema_version = 1,
-    allowed_actors = [User],
+    allowed_actors = [User, SurfaceClient],
     allowed_modes = [Live],
-    requires_confirmation = true,
+    requires_confirmation = false,
     may_publish = false,
+    required_scopes = ["read.account_overview"],
+    mcp_exposure = None,
+    client_side_executable = true,
     composes = [],
     experimental = false,
-    signal_policy = { emits_on_output_change = ["account_changed"], coalesce = true }
+    signal_policy = { emits_on_output_change = [], coalesce = false }
 )]
-async fn publish_records_mutation(
+async fn surface_client_with_scopes(
     _ctx: &AbilityContext<'_>,
     _input: FixtureInput,
 ) -> AbilityResult<FixtureOutput> {
-    services::accounts::update_account_field();
     Ok(AbilityOutput {
         data: FixtureOutput,
     })

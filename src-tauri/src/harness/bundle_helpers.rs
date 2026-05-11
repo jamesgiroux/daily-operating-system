@@ -4,7 +4,7 @@ use std::{future::Future, path::PathBuf, pin::Pin, sync::Arc};
 
 use crate::abilities::registry::{AbilityPolicy, McpExposure, SignalPolicy};
 use crate::abilities::{
-    AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityRegistry, Actor,
+    AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityRegistry, ActorKind,
 };
 use crate::db::ActionDb;
 use crate::services::context::ExecutionMode;
@@ -15,7 +15,7 @@ use super::{load_fixture, run_fixture, EvalFixture, RunError, RunResult, RunnerD
 type ErasedFuture<'a> =
     Pin<Box<dyn Future<Output = Result<serde_json::Value, AbilityError>> + Send + 'a>>;
 
-const SYSTEM_ACTORS: &[Actor] = &[Actor::System];
+const SYSTEM_ACTORS: &[ActorKind] = &[ActorKind::System];
 const EVALUATE_MODES: &[ExecutionMode] = &[ExecutionMode::Evaluate];
 
 pub fn bundle_fixture_path(bundle: u32) -> PathBuf {

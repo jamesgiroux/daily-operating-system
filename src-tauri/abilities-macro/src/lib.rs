@@ -326,7 +326,7 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
         }
 
         #experimental_cfg
-        pub static #actors_ident: [crate::abilities::registry::Actor; #actor_count] =
+        pub static #actors_ident: [crate::abilities::registry::ActorKind; #actor_count] =
             [#(#actor_exprs),*];
         #experimental_cfg
         pub static #modes_ident: [crate::services::context::ExecutionMode; #mode_count] =
@@ -895,25 +895,25 @@ enum ActorArg {
 }
 
 impl ActorArg {
+    /// Emit the registry token for this actor's `ActorKind` discriminator.
+    ///
+    /// Per ADR-0102 §7.6 (W0-D amended 2026-05-10) and DOS-546 W1-B,
+    /// `AbilityPolicy::allowed_actors` is a `&'static [ActorKind]` slice
+    /// rather than `&'static [Actor]`. This separation lets `SurfaceClient`
+    /// — a struct variant carrying per-invocation owned state — be listed
+    /// in `allowed_actors` declarations without breaking `inventory::submit!`'s
+    /// `static`-only descriptor invariant. The W1-B compile-error gate
+    /// (parse-time, see `ability` attribute handler) still enforces the
+    /// `required_scopes` / `no_scope_required` requirement for any ability
+    /// that admits `SurfaceClient`.
     fn registry_expr(&self) -> proc_macro2::TokenStream {
         match self {
-            Self::Agent => quote! { crate::abilities::registry::Actor::Agent },
-            Self::User => quote! { crate::abilities::registry::Actor::User },
-            Self::Admin => quote! { crate::abilities::registry::Actor::Admin },
-            Self::System => quote! { crate::abilities::registry::Actor::System },
-            // SurfaceClient is a struct variant with per-invocation
-            // identity + scopes; declaring it in `allowed_actors` at the
-            // policy level is a type error because the policy slice is
-            // `&[Actor]` and SurfaceClient cannot be const-constructed.
-            // The macro reports membership via the compile-error gate
-            // above; we never reach codegen for this variant.
+            Self::Agent => quote! { crate::abilities::registry::ActorKind::Agent },
+            Self::User => quote! { crate::abilities::registry::ActorKind::User },
+            Self::Admin => quote! { crate::abilities::registry::ActorKind::Admin },
+            Self::System => quote! { crate::abilities::registry::ActorKind::System },
             Self::SurfaceClient => {
-                quote! { compile_error!(
-                    "Actor::SurfaceClient cannot appear directly in AbilityPolicy::allowed_actors \
-                     (it is a per-invocation struct variant). Use a SurfaceClient-aware bridge \
-                     instead; the W1-B macro gate enforces required_scopes / no_scope_required \
-                     at the declaration site."
-                ) }
+                quote! { crate::abilities::registry::ActorKind::SurfaceClient }
             }
         }
     }

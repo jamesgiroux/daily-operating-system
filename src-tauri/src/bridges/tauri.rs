@@ -486,7 +486,7 @@ mod tests {
     };
     use crate::abilities::registry::{AbilityPolicy, McpExposure, SignalPolicy};
     use crate::abilities::{
-        AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityErrorKind, Actor,
+        AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityErrorKind, Actor, ActorKind,
     };
     use crate::bridges::types::{BridgeRejectReason, PRE_DISPATCH_RESOLUTION_ORDER};
     use crate::bridges::{confirmation_args_hash, AttestationDecision};
@@ -495,10 +495,10 @@ mod tests {
         ProviderKind,
     };
 
-    const USER_ACTORS: &[Actor] = &[Actor::User];
-    const AGENT_ACTORS: &[Actor] = &[Actor::Agent];
-    const ADMIN_ACTORS: &[Actor] = &[Actor::Admin];
-    const USER_SYSTEM_ACTORS: &[Actor] = &[Actor::User, Actor::System];
+    const USER_ACTORS: &[ActorKind] = &[ActorKind::User];
+    const AGENT_ACTORS: &[ActorKind] = &[ActorKind::Agent];
+    const ADMIN_ACTORS: &[ActorKind] = &[ActorKind::Admin];
+    const USER_SYSTEM_ACTORS: &[ActorKind] = &[ActorKind::User, ActorKind::System];
     const LIVE_MODES: &[ExecutionMode] = &[ExecutionMode::Live];
     const EVALUATE_MODES: &[ExecutionMode] = &[ExecutionMode::Evaluate];
 
@@ -647,7 +647,7 @@ mod tests {
     fn descriptor(
         name: &'static str,
         category: AbilityCategory,
-        actors: &'static [Actor],
+        actors: &'static [ActorKind],
         modes: &'static [ExecutionMode],
         invoke_erased: for<'a> fn(&'a AbilityContext<'a>, serde_json::Value) -> ErasedFuture<'a>,
     ) -> AbilityDescriptor {

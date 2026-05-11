@@ -78,14 +78,14 @@ mod mcp_open_schema_runtime {
 
     use dailyos_lib::abilities::registry::{AbilityPolicy, McpExposure, SignalPolicy};
     use dailyos_lib::abilities::{
-        AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityRegistry, Actor,
+        AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityRegistry, Actor, ActorKind,
     };
     use dailyos_lib::bridges::mcp::McpAbilityBridge;
     use dailyos_lib::bridges::McpSessionId;
     use dailyos_lib::services::context::ExecutionMode;
     use serde_json::json;
 
-    const AGENT_ACTORS: &[Actor] = &[Actor::Agent];
+    const AGENT_ACTORS: &[ActorKind] = &[ActorKind::Agent];
     const LIVE_MODES: &[ExecutionMode] = &[ExecutionMode::Live];
 
     type ErasedFuture<'a> =

@@ -93,10 +93,10 @@ mod tests {
     use super::*;
     use crate::abilities::registry::{AbilityPolicy, McpExposure, SignalPolicy};
     use crate::abilities::{
-        AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, Actor,
+        AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, ActorKind,
     };
 
-    const SYSTEM_ACTORS: &[Actor] = &[Actor::System];
+    const SYSTEM_ACTORS: &[ActorKind] = &[ActorKind::System];
     const LIVE_MODES: &[ExecutionMode] = &[ExecutionMode::Live];
 
     type ErasedFuture<'a> =

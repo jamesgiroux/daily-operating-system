@@ -100,6 +100,15 @@ mod abilities {
         }
 
         #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub enum ActorKind {
+            Agent,
+            User,
+            Admin,
+            System,
+            SurfaceClient,
+        }
+
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         pub enum McpExposure {
             None,
             MetadataOnly,
@@ -107,7 +116,7 @@ mod abilities {
         }
 
         pub struct AbilityPolicy {
-            pub allowed_actors: &'static [Actor],
+            pub allowed_actors: &'static [ActorKind],
             pub allowed_modes: &'static [ExecutionMode],
             pub requires_confirmation: bool,
             pub may_publish: bool,

@@ -16,6 +16,8 @@ use crate::abilities::{
     validate_schema_closure_for_ability, AbilityCategory, AbilityContext, AbilityDescriptor,
     AbilityError, AbilityRegistry, Actor, ConfirmationProof,
 };
+#[cfg(test)]
+use crate::abilities::ActorKind;
 use crate::db::ActionDb;
 use crate::intelligence::provider::{
     Completion, IntelligenceProvider, ModelName, ModelTier, PromptInput, ProviderError,
@@ -425,7 +427,7 @@ pub(crate) fn resolve_pre_dispatch<'a>(
     let descriptor = lookup_descriptor_by_name(registry, ability_name)
         .ok_or(BridgeSurfaceError::AbilityUnavailable)?;
 
-    if !descriptor.policy.allowed_actors.contains(&actor) {
+    if !descriptor.policy.allowed_actors.contains(&actor.kind()) {
         return Err(BridgeSurfaceError::AbilityUnavailable);
     }
 
@@ -1138,7 +1140,7 @@ mod tests {
             schema_version: 1,
             category: AbilityCategory::Transform,
             policy: AbilityPolicy {
-                allowed_actors: &[Actor::User],
+                allowed_actors: &[ActorKind::User],
                 allowed_modes: &[ExecutionMode::Live],
                 requires_confirmation: true,
                 may_publish: false,

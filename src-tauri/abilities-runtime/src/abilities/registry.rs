@@ -298,6 +298,51 @@ pub enum Actor {
     },
 }
 
+/// Discriminator over [`Actor`] variants — the "kind" of actor, without
+/// any per-invocation instance data. Used in [`AbilityPolicy::allowed_actors`]
+/// to declare which actor classes may invoke an ability.
+///
+/// Per ADR-0102 §7.6 (W0-D amended 2026-05-10) and DOS-546 W1-B, the policy
+/// slice describes which actor *kinds* an ability admits — not specific
+/// actor instances. [`Actor::SurfaceClient`] is a struct variant carrying
+/// owned [`SurfaceClientId`] and [`ScopeSet`] data, so it cannot itself be
+/// const-constructed in a `&'static [Actor]` slice. `ActorKind` is the
+/// const-friendly discriminator that closes that gap and keeps descriptor
+/// storage `inventory::submit!`-compatible.
+///
+/// Runtime invocation gates compare the incoming [`Actor`]'s `.kind()`
+/// against the policy slice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+pub enum ActorKind {
+    /// Mirrors [`Actor::Agent`].
+    Agent,
+    /// Mirrors [`Actor::User`].
+    User,
+    /// Mirrors [`Actor::Admin`].
+    Admin,
+    /// Mirrors [`Actor::System`].
+    System,
+    /// Mirrors [`Actor::SurfaceClient`]. Per-invocation instance and scope
+    /// data live on the runtime variant; only the kind appears in the policy.
+    SurfaceClient,
+}
+
+impl Actor {
+    /// Project this [`Actor`] to its [`ActorKind`] discriminator.
+    ///
+    /// Used by registry / bridge invocation gates that check
+    /// `descriptor.policy.allowed_actors.contains(&actor.kind())`.
+    pub const fn kind(&self) -> ActorKind {
+        match self {
+            Actor::Agent => ActorKind::Agent,
+            Actor::User => ActorKind::User,
+            Actor::Admin => ActorKind::Admin,
+            Actor::System => ActorKind::System,
+            Actor::SurfaceClient { .. } => ActorKind::SurfaceClient,
+        }
+    }
+}
+
 /// MCP tool-surface exposure tier per ADR-0102 §7.1 (W0-D amended 2026-05-10).
 ///
 /// Governs how an ability appears in MCP introspection (`list_tools` /
@@ -344,6 +389,8 @@ pub enum McpExposure {
 ///   artifact 05 lines 389-412.
 ///
 /// Closed defaults (via [`AbilityPolicy::default`]):
+/// - `allowed_actors: &[ActorKind::User]` — least-privilege actor floor
+///   (DOS-546 W1-B AC §449, ADR-0102 §7.6 W0-D amended 2026-05-10).
 /// - `required_scopes: &[]`
 /// - `mcp_exposure: McpExposure::None`
 /// - `client_side_executable: false`
@@ -354,7 +401,13 @@ pub enum McpExposure {
 /// `allowed_actors` includes `SurfaceClient`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AbilityPolicy {
-    pub allowed_actors: &'static [Actor],
+    /// Actor kinds (see [`ActorKind`]) admitted by this ability. Per
+    /// ADR-0102 §7.6 (W0-D amended 2026-05-10) and DOS-546 W1-B, the slice
+    /// stores `ActorKind` (not [`Actor`]) so that [`Actor::SurfaceClient`]
+    /// — a struct variant carrying owned per-invocation state — can be
+    /// listed alongside the unit variants without breaking `inventory::submit!`'s
+    /// `static`-only descriptor invariant.
+    pub allowed_actors: &'static [ActorKind],
     pub allowed_modes: &'static [ExecutionMode],
     pub requires_confirmation: bool,
     pub may_publish: bool,
@@ -370,9 +423,14 @@ pub struct AbilityPolicy {
 }
 
 impl Default for AbilityPolicy {
+    /// Per ADR-0102 §7.6 (W0-D amended 2026-05-10) and DOS-546 W1-B
+    /// AC §449: the closed default is `[User]` — the least-privilege
+    /// actor floor — not `[]` (closed-to-everyone). The other W1-B
+    /// fields default to closed forms (`required_scopes: &[]`,
+    /// `mcp_exposure: McpExposure::None`, `client_side_executable: false`).
     fn default() -> Self {
         Self {
-            allowed_actors: &[],
+            allowed_actors: &[ActorKind::User],
             allowed_modes: &[],
             requires_confirmation: false,
             may_publish: false,
@@ -656,7 +714,7 @@ impl AbilityRegistry {
             if actor == Actor::Agent && descriptor.category == AbilityCategory::Maintenance {
                 return false;
             }
-            descriptor.policy.allowed_actors.contains(&actor)
+            descriptor.policy.allowed_actors.contains(&actor.kind())
         })
     }
 
@@ -1191,7 +1249,7 @@ fn validate_invocation_policy(
     ctx: &AbilityContext<'_>,
     descriptor: &AbilityDescriptor,
 ) -> Result<(), AbilityError> {
-    if !descriptor.policy.allowed_actors.contains(&ctx.actor) {
+    if !descriptor.policy.allowed_actors.contains(&ctx.actor.kind()) {
         return Err(AbilityError {
             kind: AbilityErrorKind::Capability,
             message: format!(
@@ -1477,7 +1535,7 @@ mod tests {
             schema_version: 1,
             category,
             policy: AbilityPolicy {
-                allowed_actors: &[Actor::Agent, Actor::User, Actor::System],
+                allowed_actors: &[ActorKind::Agent, ActorKind::User, ActorKind::System],
                 allowed_modes: &[
                     ExecutionMode::Live,
                     ExecutionMode::Simulate,
@@ -1533,7 +1591,7 @@ mod tests {
 
     fn with_actor_policy(
         mut descriptor: AbilityDescriptor,
-        actors: Vec<Actor>,
+        actors: Vec<ActorKind>,
     ) -> AbilityDescriptor {
         descriptor.policy.allowed_actors = static_slice(actors);
         descriptor
@@ -1896,7 +1954,7 @@ mod tests {
             descriptor("agent_maintenance", AbilityCategory::Maintenance),
             with_actor_policy(
                 descriptor("admin_read", AbilityCategory::Read),
-                vec![Actor::Admin],
+                vec![ActorKind::Admin],
             ),
         ]);
 
@@ -2271,7 +2329,10 @@ mod tests {
     #[test]
     fn ability_policy_default_has_closed_w1b_defaults() {
         let policy = AbilityPolicy::default();
-        assert_eq!(policy.allowed_actors, &[] as &[Actor]);
+        // Per DOS-546 W1-B AC §449 and ADR-0102 §7.6 (W0-D amended
+        // 2026-05-10), the actor floor is `[User]` — least-privilege,
+        // not closed-to-everyone.
+        assert_eq!(policy.allowed_actors, &[ActorKind::User]);
         assert_eq!(policy.allowed_modes, &[] as &[ExecutionMode]);
         assert!(!policy.requires_confirmation);
         assert!(!policy.may_publish);
@@ -2279,6 +2340,21 @@ mod tests {
         assert_eq!(policy.required_scopes, &[] as &[&str]);
         assert_eq!(policy.mcp_exposure, McpExposure::None);
         assert!(!policy.client_side_executable);
+    }
+
+    #[test]
+    fn actor_kind_projects_each_variant_correctly() {
+        // Ensure every Actor variant projects to its expected ActorKind.
+        assert_eq!(Actor::Agent.kind(), ActorKind::Agent);
+        assert_eq!(Actor::User.kind(), ActorKind::User);
+        assert_eq!(Actor::Admin.kind(), ActorKind::Admin);
+        assert_eq!(Actor::System.kind(), ActorKind::System);
+        let surface = Actor::SurfaceClient {
+            instance: SurfaceClientId::new("wp-instance-alpha"),
+            scopes: ScopeSet::new([SurfaceScope::new("read.account_overview")])
+                .expect("non-empty scope set"),
+        };
+        assert_eq!(surface.kind(), ActorKind::SurfaceClient);
     }
 
     #[test]

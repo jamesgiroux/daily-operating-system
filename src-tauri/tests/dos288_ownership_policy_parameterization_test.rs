@@ -9,12 +9,12 @@ use dailyos_lib::abilities::provenance::{
 };
 use dailyos_lib::abilities::registry::{AbilityPolicy, McpExposure, SignalPolicy};
 use dailyos_lib::abilities::{
-    AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, Actor,
+    AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, ActorKind,
 };
 use dailyos_lib::services::context::ExecutionMode;
 use serde_json::{json, Value};
 
-const USER_ACTORS: &[Actor] = &[Actor::User];
+const USER_ACTORS: &[ActorKind] = &[ActorKind::User];
 const LIVE_MODES: &[ExecutionMode] = &[ExecutionMode::Live];
 
 type ErasedFuture<'a> =

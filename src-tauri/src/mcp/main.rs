@@ -1394,14 +1394,14 @@ mod tests {
     use dailyos_lib::abilities::provenance::{provenance_for_test, SubjectAttribution, SubjectRef};
     use dailyos_lib::abilities::registry::{AbilityPolicy, McpExposure, SignalPolicy};
     use dailyos_lib::abilities::{
-        AbilityCategory, AbilityContext, AbilityError, AbilityRegistry, Actor,
+        AbilityCategory, AbilityContext, AbilityError, AbilityRegistry, Actor, ActorKind,
     };
     use dailyos_lib::bridges::tauri::UserAttestationHost;
     use dailyos_lib::bridges::UserAttestationRequest;
     use dailyos_lib::services::context::ExecutionMode;
 
-    const AGENT_ACTORS: &[Actor] = &[Actor::Agent];
-    const USER_ACTORS: &[Actor] = &[Actor::User];
+    const AGENT_ACTORS: &[ActorKind] = &[ActorKind::Agent];
+    const USER_ACTORS: &[ActorKind] = &[ActorKind::User];
     const LIVE_MODES: &[ExecutionMode] = &[ExecutionMode::Live];
 
     type ErasedFuture<'a> =
@@ -1448,7 +1448,7 @@ mod tests {
     fn descriptor(
         name: &'static str,
         category: AbilityCategory,
-        actors: &'static [Actor],
+        actors: &'static [ActorKind],
         modes: &'static [ExecutionMode],
     ) -> AbilityDescriptor {
         AbilityDescriptor {
