@@ -3546,17 +3546,23 @@ mod tests {
     }
 
     #[test]
-    fn suite_s_pending_backfill_aged_with_no_attempts_does_not_terminalize() {
-        // Negative case: row is past max age but has zero failed attempts.
-        // ADR-0131 AND-gate requires retries before downgrading; an old but
-        // never-attempted row must keep getting picked up by future backfills.
+    fn suite_s_pending_backfill_aged_below_max_attempts_does_not_terminalize() {
+        // Negative case: row is past max age but extractor failures have not
+        // yet hit the retry cap. ADR-0131 AND-gate requires BOTH conditions;
+        // an aged row with attempts < MAX_RETRIES must keep getting retried,
+        // never terminalized on age alone.
         let conn = fresh_full_db();
         let db = ActionDb::from_conn(&conn);
         let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
         let rng = SeedableRng::new(42);
         let ext = ExternalClients::default();
         let ctx = fixture_ctx(&clock, &rng, &ext);
+        let claim_id = "legacy-aged-below-max-attempts";
+        let _forced_error = ForcedStructuralBackfillErrorGuard::new(claim_id);
 
+        // 48h before the clock: aged past MAX_AGE. Extractor will error so
+        // the row would terminalize on OR-style termination — proving the
+        // AND-gate holds when attempts haven't yet reached MAX_RETRIES.
         conn.execute(
             "INSERT INTO intelligence_claims (
                 id, subject_ref, claim_type, field_path, topic_key, text, dedup_key, item_hash,
@@ -3564,11 +3570,11 @@ mod tests {
                 claim_state, surfacing_state, retraction_reason, temporal_scope, sensitivity,
                 verification_state, canonical_status, non_semantic_mergeable
              ) VALUES (
-                'legacy-aged-no-attempts', '{\"kind\":\"account\",\"id\":\"acct-1\"}',
+                'legacy-aged-below-max-attempts', '{\"kind\":\"account\",\"id\":\"acct-1\"}',
                 'risk', 'health.risk', NULL, 'Renewal risk is elevated',
-                'dedup-aged-no-attempts', 'hash-aged-no-attempts',
-                'system_backfill', 'legacy_dismissal', '2026-05-01T00:00:00Z',
-                '2026-05-01T00:00:00Z', '{}', NULL,
+                'dedup-aged-below-max-attempts', 'hash-aged-below-max-attempts',
+                'system_backfill', 'legacy_dismissal', '2026-04-30T00:00:00Z',
+                '2026-04-30T00:00:00Z', '{}', NULL,
                 'tombstoned', 'active', 'user_removal', 'state', 'internal', 'active',
                 'pending_backfill', TRUE
              )",
@@ -3580,18 +3586,20 @@ mod tests {
         assert_eq!(report.rows_examined, 1);
         assert_eq!(
             report.transitioned_legacy_unmigrated, 0,
-            "aged row with zero attempts must not terminalize"
+            "aged row with attempts < MAX_RETRIES must not terminalize"
         );
+        assert_eq!(report.errors.len(), 1, "{report:?}");
 
-        let canonical_status: String = conn
+        let (canonical_status, backfill_attempts): (String, i64) = conn
             .query_row(
-                "SELECT canonical_status
-                 FROM intelligence_claims WHERE id = 'legacy-aged-no-attempts'",
+                "SELECT canonical_status, backfill_attempts
+                 FROM intelligence_claims WHERE id = 'legacy-aged-below-max-attempts'",
                 [],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .unwrap();
         assert_eq!(canonical_status, "pending_backfill");
+        assert_eq!(backfill_attempts, 1);
     }
 
     #[test]
