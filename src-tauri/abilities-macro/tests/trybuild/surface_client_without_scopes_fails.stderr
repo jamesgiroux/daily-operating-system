@@ -1,4 +1,4 @@
-error: abilities whose allowed_actors includes SurfaceClient must declare a non-empty required_scopes = [...] or explicitly opt out with no_scope_required (ADR-0102 §7.6, DOS-546 W1-B)
+error: abilities whose allowed_actors includes SurfaceClient must declare a non-empty required_scopes = [...] or explicitly opt out with no_scope_required (ADR-0102 §7.6, W1-B)
    --> tests/trybuild/surface_client_without_scopes_fails.rs:228:10
     |
 228 | async fn surface_client_without_scopes(

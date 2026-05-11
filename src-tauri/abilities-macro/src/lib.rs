@@ -109,7 +109,7 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
             &item_fn.sig.ident,
             "abilities whose allowed_actors includes SurfaceClient must declare \
              a non-empty required_scopes = [...] or explicitly opt out with \
-             no_scope_required (ADR-0102 §7.6W1-B)",
+             no_scope_required (ADR-0102 §7.6, W1-B)",
         ));
     }
 
