@@ -1,6 +1,7 @@
 //! Ability runtime modules.
 
 pub mod claims;
+pub mod composition;
 pub mod feedback;
 pub mod get_entity_context;
 pub mod prepare_meeting;
