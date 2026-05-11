@@ -3975,6 +3975,7 @@ mod dos258_reclassify_tests {
 /// writer file) so it satisfies the stakeholder-signal lint while keeping
 /// test scaffolds in their own modules.
 #[cfg(test)]
+#[must_use = "test fixture seed returns Result; propagate or assert"]
 pub(crate) fn seed_account_stakeholder_for_tests(
     conn: &rusqlite::Connection,
     account_id: &str,
