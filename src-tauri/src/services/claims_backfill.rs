@@ -1229,7 +1229,7 @@ fn run_dos7_cutover_after_fence(
     }
     report.rekey_report = rekey_report;
 
-    // Step 5.75: v157 structured-claim canonicalization closure. This
+    // Step 5.75: v161 structured-claim canonicalization closure. This
     // must run after the migration adds canonical_status + structural
     // columns, and before reconcile/completion so pending_backfill rows
     // cannot be left as a successful cutover artifact.
@@ -1664,7 +1664,7 @@ pub fn run_dos7_cutover_if_pending(
 
     match claim_decision {
         CutoverClaimDecision::AlreadyComplete => {
-            // v157 can land after a database already completed DOS-7.
+            // v161 can land after a database already completed DOS-7.
             // In that upgrade path the new canonical_status column defaults
             // existing rows to pending_backfill, so the structured backfill
             // must be driven by pending rows instead of the DOS-7 marker.

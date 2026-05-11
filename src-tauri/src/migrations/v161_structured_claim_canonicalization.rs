@@ -4,7 +4,7 @@ use super::MigrationError;
 
 const CLAIMS_TABLE: &str = "intelligence_claims";
 
-pub(super) fn migrate_v157_structured_claim_canonicalization(
+pub(super) fn migrate_v161_structured_claim_canonicalization(
     conn: &Connection,
 ) -> Result<(), MigrationError> {
     if !table_exists(conn, CLAIMS_TABLE)? {
