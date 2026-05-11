@@ -1899,6 +1899,8 @@ CREATE TABLE accounts (
         .expect("seed account");
         conn.execute_batch(CLAIMS_SCHEMA_SQL)
             .expect("apply claims schema");
+        crate::services::claims::ensure_structured_claim_schema_for_tests(&conn)
+            .expect("apply structured claim schema");
         conn.execute_batch(TYPED_FEEDBACK_SQL)
             .expect("apply typed feedback schema");
         conn.execute_batch(PROJECTION_STATUS_SQL)

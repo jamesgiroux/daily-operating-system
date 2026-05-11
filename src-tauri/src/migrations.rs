@@ -16,6 +16,8 @@ use chrono::Utc;
 use rusqlite::{Connection, Error as SqliteError, ErrorCode};
 
 mod v144_audit_action_token;
+mod v166_semantic_merge_safety;
+mod v167_structured_claim_canonicalization;
 
 type MigrationError = String;
 
@@ -801,52 +803,54 @@ const MIGRATIONS: &[Migration] = &[
         version: 157,
         apply: migrate_v157_reconcile_claim_shadow_trust_columns,
     },
-    // Typed CommitmentClaim identity: actions.commitment_id, structural owner
-    // fields, per-sighting action_commitment_sources, and the identity-tuple
-    // backlog duplicate guard.
+    // W4-A typed CommitmentClaim identity: actions.commitment_id, structural
+    // owner fields, per-sighting action_commitment_sources, and the
+    // identity-tuple backlog duplicate guard.
     Migration::Fn {
         version: 158,
         apply: migrate_v158_dos_276_commitment_claim_identity,
     },
-    // Map pre-158 bridge ids to typed derived commitment ids so tombstones and
-    // accepted-row bridge lookups survive the identity transition.
     Migration::Fn {
         version: 159,
         apply: backfill_commitment_bridge_derived_aliases,
     },
-    // Replace the title-only backlog commitment guard with an identity-tuple
-    // guard so same-title commitments with different due dates or owners can
-    // coexist.
     Migration::Fn {
         version: 160,
         apply: migrate_v160_dos_276_commitment_identity_backlog_index,
     },
-    // Manual-review quarantine for tombstoned legacy commitment bridge rows
-    // whose original derived identity cannot be reconstructed from immutable
-    // source/provenance data.
     Migration::Fn {
         version: 161,
         apply: migrate_v161_dos_276_commitment_alias_remediation,
     },
-    // Forward repair for databases that already recorded the c3 v156 body:
-    // remove mutable-field aliases invented for tombstoned legacy bridges and
-    // quarantine the legacy row for manual review.
     Migration::Fn {
         version: 162,
         apply: remediate_tombstoned_commitment_bridge_mutable_aliases,
     },
-    // Stable source keys are source_type:source_id, separating append-only
-    // sightings from corroborating sources for commitment trust and UI counts.
     Migration::Fn {
         version: 163,
         apply: backfill_commitment_source_keys,
     },
-    // Normalize commitment identity columns with the runtime derive rules and
-    // rebuild the backlog identity indexes for databases that already applied
-    // the earlier expression-based v158/v160 migrations.
     Migration::Fn {
         version: 164,
         apply: backfill_commitment_identity_normalized_fields,
+    },
+    // W4-B ADR-0131 semantic evidence substrate (renumbered v158 → v165
+    // after W4-A landed v158-v164 on dev).
+    Migration::Sql {
+        version: 165,
+        sql: include_str!("migrations/165_semantic_evidence.sql"),
+    },
+    // W4-B ADR-0131 preserve legacy semantic-merge qualifiers before
+    // canonicalization (renumbered v159 → v166).
+    Migration::Fn {
+        version: 166,
+        apply: migrate_v166_semantic_merge_safety,
+    },
+    // W4-B ADR-0131 structured claim canonicalization substrate
+    // (renumbered v161 → v167).
+    Migration::Fn {
+        version: 167,
+        apply: migrate_v167_structured_claim_canonicalization,
     },
 ];
 
@@ -2040,6 +2044,14 @@ fn apply_migration_146_signal_events_data_source(
             Err("signal_events has neither source nor data_source column".to_string())
         }
     }
+}
+
+fn migrate_v167_structured_claim_canonicalization(conn: &Connection) -> Result<(), MigrationError> {
+    v167_structured_claim_canonicalization::migrate_v167(conn)
+}
+
+fn migrate_v166_semantic_merge_safety(conn: &Connection) -> Result<(), MigrationError> {
+    v166_semantic_merge_safety::migrate_v166_semantic_merge_safety(conn)
 }
 
 fn verify_required_schema(conn: &Connection) -> Result<(), String> {
@@ -4449,8 +4461,8 @@ mod tests {
         )
         .expect("seed c5 zero-version shadow row");
 
-        let applied = run_migrations(&conn).expect("v157-v164 migrations should succeed");
-        assert_eq!(applied, 8, "v157-v164 should be pending");
+        let applied = run_migrations(&conn).expect("v157-v167 migrations should succeed");
+        assert_eq!(applied, 11, "v157-v167 should be pending after rollback to v156");
         assert_eq!(
             current_version(&conn).expect("current version"),
             MIGRATIONS.last().unwrap().version()
@@ -4519,8 +4531,8 @@ mod tests {
         )
         .expect("seed v156-recorded live score");
 
-        let applied = run_migrations(&conn).expect("v157-v164 migrations should succeed");
-        assert_eq!(applied, 8, "v157-v164 should be pending");
+        let applied = run_migrations(&conn).expect("v157-v167 migrations should succeed");
+        assert_eq!(applied, 11, "v157-v167 should be pending after rollback to v156");
         assert_eq!(
             current_version(&conn).expect("current version"),
             MIGRATIONS.last().unwrap().version()
@@ -4593,8 +4605,8 @@ mod tests {
         )
         .expect("seed partial v155 shadow row");
 
-        let applied = run_migrations(&conn).expect("v156-v164 migrations should succeed");
-        assert_eq!(applied, 9, "v156-v164 should be pending");
+        let applied = run_migrations(&conn).expect("v156-v167 migrations should succeed");
+        assert_eq!(applied, 12, "v156-v167 should be pending after rollback to v155");
         assert_eq!(
             current_version(&conn).expect("current version"),
             MIGRATIONS.last().unwrap().version()

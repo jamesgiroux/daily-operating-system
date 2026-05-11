@@ -21,6 +21,11 @@
 
 use serde::{Deserialize, Serialize};
 
+pub use crate::predicates::registry::PredicateRef;
+pub use crate::structured_claim::{
+    CanonicalStatus, ClaimStatus as StructuredClaimStatus, EntityRef, LiteralKind, ObjectValue,
+    Polarity, QualifierSet, Sentiment as ClaimSentiment, StructuredClaim,
+};
 use crate::types::{ClaimSensitivity, TemporalScope};
 
 /// Actor classes permitted to write a given claim type. The

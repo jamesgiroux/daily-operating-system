@@ -752,6 +752,7 @@ impl AppState {
         // Initialize context provider (ADR-0095).
         // Read context_mode from DB if available, else default to Local.
         let embedding_model = Arc::new(crate::embeddings::EmbeddingModel::new());
+        crate::services::claims::register_claim_embedding_model(Arc::clone(&embedding_model));
         let workspace_path = config
             .as_ref()
             .map(|c| std::path::PathBuf::from(&c.workspace_path))
@@ -907,6 +908,7 @@ impl AppState {
     pub fn test_with_db_service(db_service: Arc<crate::db_service::DbService>) -> Self {
         let prep_queue = Arc::new(Mutex::new(Vec::new()));
         let embedding_model = Arc::new(crate::embeddings::EmbeddingModel::new());
+        crate::services::claims::register_claim_embedding_model(Arc::clone(&embedding_model));
         let local_provider = crate::context_provider::local::LocalContextProvider::new(
             PathBuf::new(),
             Arc::clone(&embedding_model),

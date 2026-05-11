@@ -1337,6 +1337,7 @@ async fn main() -> anyhow::Result<()> {
     // stdout is redirected to stderr during init to prevent native library
     // output (ONNX Runtime, fastembed) from corrupting the MCP JSON-RPC stream.
     let embedding_model = Arc::new(EmbeddingModel::new());
+    dailyos_lib::services::claims::register_claim_embedding_model(Arc::clone(&embedding_model));
     with_stdout_suppressed(|| {
         let models_dir = dirs::home_dir()
             .unwrap_or_default()

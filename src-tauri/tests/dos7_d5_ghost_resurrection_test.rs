@@ -621,7 +621,7 @@ fn five_run_simulation_paraphrase_can_also_be_dismissed_independently() {
     assert_eq!(
         visible_active_risk_text_count_for(&conn, "acct-1", DISTINCT_PARAPHRASED_RISK),
         1,
-        "distinct paraphrases still bypass PRE-GATE until DOS-280 canonicalization lands"
+        "distinct paraphrases still bypass PRE-GATE until semantic canonicalization lands"
     );
 }
 
