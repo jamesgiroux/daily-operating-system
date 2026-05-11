@@ -804,9 +804,9 @@ const MIGRATIONS: &[Migration] = &[
     // Typed CommitmentClaim identity: actions.commitment_id, structural owner
     // fields, per-sighting action_commitment_sources, and the identity-tuple
     // backlog duplicate guard.
-    Migration::Sql {
+    Migration::Fn {
         version: 158,
-        sql: include_str!("migrations/158_dos_276_commitment_claim_identity.sql"),
+        apply: migrate_v158_dos_276_commitment_claim_identity,
     },
     // Map pre-158 bridge ids to typed derived commitment ids so tombstones and
     // accepted-row bridge lookups survive the identity transition.
@@ -817,16 +817,16 @@ const MIGRATIONS: &[Migration] = &[
     // Replace the title-only backlog commitment guard with an identity-tuple
     // guard so same-title commitments with different due dates or owners can
     // coexist.
-    Migration::Sql {
+    Migration::Fn {
         version: 160,
-        sql: include_str!("migrations/160_dos_276_commitment_identity_backlog_index.sql"),
+        apply: migrate_v160_dos_276_commitment_identity_backlog_index,
     },
     // Manual-review quarantine for tombstoned legacy commitment bridge rows
     // whose original derived identity cannot be reconstructed from immutable
     // source/provenance data.
-    Migration::Sql {
+    Migration::Fn {
         version: 161,
-        sql: include_str!("migrations/161_dos_276_commitment_alias_remediation.sql"),
+        apply: migrate_v161_dos_276_commitment_alias_remediation,
     },
     // Forward repair for databases that already recorded the c3 v156 body:
     // remove mutable-field aliases invented for tombstoned legacy bridges and
@@ -1466,10 +1466,7 @@ fn remove_tombstoned_mutable_commitment_bridge_aliases(
 }
 
 fn ensure_commitment_alias_remediation_table(conn: &Connection) -> Result<(), MigrationError> {
-    conn.execute_batch(include_str!(
-        "migrations/161_dos_276_commitment_alias_remediation.sql"
-    ))
-    .map_err(|e| format!("commitment alias remediation schema failed: {e}"))
+    migrate_v161_dos_276_commitment_alias_remediation(conn)
 }
 
 fn insert_commitment_alias_remediation(
@@ -1985,6 +1982,20 @@ fn table_columns(conn: &Connection, table_name: &str) -> Result<HashSet<String>,
         out.insert(col.map_err(|e| format!("Failed reading column metadata: {e}"))?);
     }
     Ok(out)
+}
+
+fn index_exists(conn: &Connection, index_name: &str) -> Result<bool, String> {
+    conn.query_row(
+        "SELECT EXISTS(
+            SELECT 1
+            FROM sqlite_master
+            WHERE type = 'index' AND name = ?1
+        )",
+        [index_name],
+        |row| row.get::<_, i64>(0),
+    )
+    .map(|v| v != 0)
+    .map_err(|e| format!("Failed to check index '{}': {e}", index_name))
 }
 
 fn apply_migration_146_signal_events_data_source(
@@ -2507,6 +2518,247 @@ fn add_column_if_missing(
             .map_err(|e| format!("add {table_name}.{column_name}: {e}"))?;
     }
     Ok(())
+}
+
+fn create_table_if_not_exists(
+    conn: &Connection,
+    table_name: &str,
+    create_table_sql: &str,
+) -> Result<(), String> {
+    if !table_exists(conn, table_name)? {
+        conn.execute_batch(create_table_sql)
+            .map_err(|e| format!("create table {table_name}: {e}"))?;
+    }
+    Ok(())
+}
+
+fn create_index_if_not_exists(
+    conn: &Connection,
+    index_name: &str,
+    create_index_sql: &str,
+) -> Result<(), String> {
+    if !index_exists(conn, index_name)? {
+        conn.execute_batch(create_index_sql)
+            .map_err(|e| format!("create index {index_name}: {e}"))?;
+    }
+    Ok(())
+}
+
+fn migrate_v158_dos_276_commitment_claim_identity(conn: &Connection) -> Result<(), MigrationError> {
+    apply_idempotent_sql_migration(
+        conn,
+        include_str!("migrations/158_dos_276_commitment_claim_identity.sql"),
+        "DOS-276 commitment claim identity",
+    )
+}
+
+fn migrate_v160_dos_276_commitment_identity_backlog_index(
+    conn: &Connection,
+) -> Result<(), MigrationError> {
+    apply_idempotent_sql_migration(
+        conn,
+        include_str!("migrations/160_dos_276_commitment_identity_backlog_index.sql"),
+        "DOS-276 commitment identity backlog index",
+    )
+}
+
+fn migrate_v161_dos_276_commitment_alias_remediation(
+    conn: &Connection,
+) -> Result<(), MigrationError> {
+    apply_idempotent_sql_migration(
+        conn,
+        include_str!("migrations/161_dos_276_commitment_alias_remediation.sql"),
+        "DOS-276 commitment alias remediation",
+    )
+}
+
+fn apply_idempotent_sql_migration(
+    conn: &Connection,
+    sql: &str,
+    label: &str,
+) -> Result<(), MigrationError> {
+    conn.execute_batch("BEGIN;")
+        .map_err(|e| format!("{label}: begin transaction: {e}"))?;
+
+    let result = apply_idempotent_sql_statements(conn, sql, label);
+    match result {
+        Ok(()) => conn
+            .execute_batch("COMMIT;")
+            .map_err(|e| format!("{label}: commit transaction: {e}")),
+        Err(error) => {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort cleanup after migration failure"
+            )]
+            let _ = conn.execute_batch("ROLLBACK;");
+            Err(error)
+        }
+    }
+}
+
+fn apply_idempotent_sql_statements(
+    conn: &Connection,
+    sql: &str,
+    label: &str,
+) -> Result<(), MigrationError> {
+    for statement in split_sql_statements(sql) {
+        let statement_body = statement_without_leading_comments(&statement);
+        let normalized = statement_body.to_ascii_uppercase();
+        if normalized == "BEGIN" || normalized == "COMMIT" {
+            continue;
+        }
+
+        if normalized.starts_with("ALTER TABLE ") && normalized.contains(" ADD COLUMN ") {
+            let (table_name, column_name) = parse_add_column_statement(statement_body)
+                .ok_or_else(|| format!("{label}: unsupported ADD COLUMN statement"))?;
+            add_column_if_missing(conn, table_name, column_name, statement.trim())?;
+        } else if normalized.starts_with("CREATE TABLE IF NOT EXISTS ") {
+            let table_name = parse_create_table_if_not_exists(statement_body)
+                .ok_or_else(|| format!("{label}: unsupported CREATE TABLE statement"))?;
+            create_table_if_not_exists(conn, table_name, statement.trim())?;
+        } else if normalized.starts_with("CREATE INDEX IF NOT EXISTS ")
+            || normalized.starts_with("CREATE UNIQUE INDEX IF NOT EXISTS ")
+        {
+            let index_name = parse_create_index_if_not_exists(statement_body)
+                .ok_or_else(|| format!("{label}: unsupported CREATE INDEX statement"))?;
+            create_index_if_not_exists(conn, index_name, statement.trim())?;
+        } else {
+            conn.execute_batch(statement.trim())
+                .map_err(|e| format!("{label}: {e}"))?;
+        }
+    }
+    Ok(())
+}
+
+fn split_sql_statements(sql: &str) -> Vec<String> {
+    let mut statements = Vec::new();
+    let mut current = String::new();
+    let mut chars = sql.chars().peekable();
+    let mut in_single_quote = false;
+    let mut in_double_quote = false;
+    let mut in_line_comment = false;
+
+    while let Some(ch) = chars.next() {
+        if in_line_comment {
+            current.push(ch);
+            if ch == '\n' {
+                in_line_comment = false;
+            }
+            continue;
+        }
+
+        if !in_single_quote && !in_double_quote && ch == '-' && chars.peek() == Some(&'-') {
+            current.push(ch);
+            current.push(chars.next().expect("peeked comment dash"));
+            in_line_comment = true;
+            continue;
+        }
+
+        if in_single_quote {
+            current.push(ch);
+            if ch == '\'' {
+                if chars.peek() == Some(&'\'') {
+                    current.push(chars.next().expect("peeked escaped quote"));
+                } else {
+                    in_single_quote = false;
+                }
+            }
+            continue;
+        }
+
+        if in_double_quote {
+            current.push(ch);
+            if ch == '"' {
+                in_double_quote = false;
+            }
+            continue;
+        }
+
+        match ch {
+            '\'' => {
+                current.push(ch);
+                in_single_quote = true;
+            }
+            '"' => {
+                current.push(ch);
+                in_double_quote = true;
+            }
+            ';' => {
+                if !current.trim().is_empty() {
+                    statements.push(format!("{};", current.trim()));
+                }
+                current.clear();
+            }
+            _ => current.push(ch),
+        }
+    }
+
+    if !current.trim().is_empty() {
+        statements.push(current.trim().to_string());
+    }
+
+    statements
+}
+
+fn statement_without_leading_comments(statement: &str) -> &str {
+    let mut body = statement.trim_start();
+    loop {
+        let Some(comment_body) = body.strip_prefix("--") else {
+            break;
+        };
+        let Some(newline_pos) = comment_body.find('\n') else {
+            return "";
+        };
+        body = comment_body[newline_pos + 1..].trim_start();
+    }
+    body.trim_end_matches(';').trim()
+}
+
+fn parse_add_column_statement(statement: &str) -> Option<(&str, &str)> {
+    let mut parts = statement.split_whitespace();
+    match (
+        parts.next()?,
+        parts.next()?,
+        parts.next()?,
+        parts.next()?,
+        parts.next()?,
+    ) {
+        ("ALTER", "TABLE", table_name, "ADD", "COLUMN") => Some((table_name, parts.next()?)),
+        _ => None,
+    }
+}
+
+fn parse_create_table_if_not_exists(statement: &str) -> Option<&str> {
+    let mut parts = statement.split_whitespace();
+    match (
+        parts.next()?,
+        parts.next()?,
+        parts.next()?,
+        parts.next()?,
+        parts.next()?,
+    ) {
+        ("CREATE", "TABLE", "IF", "NOT", "EXISTS") => {
+            parts.next().map(|name| name.trim_end_matches('('))
+        }
+        _ => None,
+    }
+}
+
+fn parse_create_index_if_not_exists(statement: &str) -> Option<&str> {
+    let mut parts = statement.split_whitespace();
+    match (parts.next()?, parts.next()?) {
+        ("CREATE", "INDEX") => match (parts.next()?, parts.next()?, parts.next()?) {
+            ("IF", "NOT", "EXISTS") => Some(parts.next()?),
+            _ => None,
+        },
+        ("CREATE", "UNIQUE") => {
+            match (parts.next()?, parts.next()?, parts.next()?, parts.next()?) {
+                ("INDEX", "IF", "NOT", "EXISTS") => Some(parts.next()?),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
 }
 
 fn ensure_claim_shadow_trust_columns(conn: &Connection) -> Result<(), MigrationError> {
@@ -4060,8 +4312,14 @@ mod tests {
             .iter()
             .find(|migration| migration.version() == 158)
             .expect("migration 158 registered");
-        conn.execute_batch(migration.sql().expect("migration 158 should be SQL"))
-            .expect("migration 158 applies with project duplicates");
+        match migration {
+            Migration::Sql { sql, .. } => conn
+                .execute_batch(sql)
+                .expect("migration 158 applies with project duplicates"),
+            Migration::Fn { apply, .. } => {
+                apply(&conn).expect("migration 158 applies with project duplicates")
+            }
+        }
 
         let account_action_count: i64 = conn
             .query_row(
