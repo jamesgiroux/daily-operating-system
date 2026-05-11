@@ -4,9 +4,31 @@
 //! (Tauri React, WordPress via SurfaceClient, MCP head, CLI head). Surfaces
 //! render compositions; they do not author them.
 //!
+//! ## Substrate-owned authorship
+//!
+//! Per ADR-0130 §1, ONLY abilities (substrate code) construct compositions.
+//! Surface code, command handlers, hooks, and tests outside `abilities/*`
+//! MUST NOT construct `Composition` directly. The constructor visibility
+//! ([`Composition::new`]) is `pub(crate)` so Rust enforces this at the
+//! module boundary; a defense-in-depth grep lint at
+//! `scripts/check_composition_authorship.sh` scans non-abilities call sites
+//! and fails CI on direct construction.
+//!
+//! ## Provenance lives once
+//!
 //! Canonical provenance lives exactly once on `AbilityOutput<Composition>`
 //! per ADR-0102 §6 + ADR-0105 §8 "lives-once" invariant. Blocks carry a
 //! compact [`ProvenanceRef`] into that canonical envelope, not a copy.
+//!
+//! ## Payload shape trade-off
+//!
+//! [`Block::attributes`] is `serde_json::Value`, not the typed `BlockPayload`
+//! enum ADR-0130 §2 names. This narrows the substrate type to the most
+//! general shape that works for both today's AC (free-form attributes keyed
+//! by `block_type`) and a future typed-payload migration. The W3 ability
+//! contracts and renderers are the load-bearing typings for payload schemas;
+//! the substrate-side shape stays general so per-block-type schema evolution
+//! does not churn this file.
 //!
 //! See:
 //! - ADR-0130 §2 (Composition primitives) and §3.1 (Custom block fallback).
@@ -130,6 +152,97 @@ impl ClaimRef {
             claim_version: Some(version),
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// CompositionKind / EntityRef / AbilityRef / RenderHints (ADR-0130 §2)
+// ---------------------------------------------------------------------------
+
+/// Canonical composition kinds per ADR-0130 §2. Extension point via
+/// [`CompositionKind::Custom`] for surface-registered kinds.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CompositionKind {
+    Briefing,
+    EntityPage,
+    PrepPack,
+    Report,
+    Callout,
+    Custom { type_id: String },
+}
+
+impl CompositionKind {
+    pub fn type_id(&self) -> &str {
+        match self {
+            Self::Briefing => "briefing",
+            Self::EntityPage => "entity_page",
+            Self::PrepPack => "prep_pack",
+            Self::Report => "report",
+            Self::Callout => "callout",
+            Self::Custom { type_id } => type_id.as_str(),
+        }
+    }
+}
+
+/// Reference to the entity a composition is about, if any. Newtype over the
+/// canonical claim-substrate entity identifier; v1.4.2 ships as a transparent
+/// `String` to defer entity-namespace work to claim-substrate plumbing.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(transparent)]
+pub struct EntityRef(pub String);
+
+impl EntityRef {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// Reference to the ability that produced a composition. Mirrors
+/// `Provenance.ability_name` on the canonical envelope; ships as a
+/// transparent `String` newtype so name-shape changes ripple through one
+/// place.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(transparent)]
+pub struct AbilityRef(pub String);
+
+impl AbilityRef {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// Surface-neutral render density hint. Renderers map this onto native
+/// spacing tokens; the substrate stays unaware of surface-specific layout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Density {
+    Compact,
+    #[default]
+    Comfortable,
+    Spacious,
+}
+
+/// Surface-neutral render hints per ADR-0130 §2. Renderers MAY honor these;
+/// the contract is "hints," not directives. Future fields land here as
+/// optional with defaults so existing serialized compositions keep working.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+pub struct RenderHints {
+    #[serde(default)]
+    pub emphasis: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub density: Option<Density>,
 }
 
 // ---------------------------------------------------------------------------
@@ -274,24 +387,31 @@ pub enum SectionLayout {
     Inline,
 }
 
-/// A section groups blocks under an optional editorial heading.
+/// A section groups blocks under an optional editorial label and carries
+/// section-level salience per ADR-0130 §2.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Section {
     pub id: SectionId,
+    /// Optional editorial heading. Matches ADR-0130 §2 `Section.label`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
+    pub label: Option<String>,
     pub blocks: Vec<Block>,
     #[serde(default)]
     pub layout: SectionLayout,
+    /// Section-level salience per ADR-0130 §2. Renderers MAY use this to
+    /// reorder or trim sections under surface budget constraints.
+    #[serde(default)]
+    pub salience: Salience,
 }
 
 impl Section {
     pub fn new(id: SectionId, blocks: Vec<Block>) -> Self {
         Self {
             id,
-            title: None,
+            label: None,
             blocks,
             layout: SectionLayout::default(),
+            salience: Salience::default(),
         }
     }
 }
@@ -314,6 +434,10 @@ pub struct Block {
     pub provenance: ProvenanceRef,
     #[serde(default)]
     pub salience: Salience,
+    /// Surface-neutral render hints per ADR-0130 §2. Optional in serialized
+    /// form so existing compositions keep deserializing.
+    #[serde(default)]
+    pub render_hints: RenderHints,
 }
 
 impl Block {
@@ -354,6 +478,7 @@ impl Block {
             claim_refs,
             provenance,
             salience: Salience::default(),
+            render_hints: RenderHints::default(),
         })
     }
 
@@ -399,22 +524,67 @@ impl Block {
 /// Produced ONLY by abilities (ADR-0130 §1, substrate-owned authorship).
 /// Surfaces never construct compositions; they receive them through the
 /// normal ability-invocation path and render them.
+///
+/// Shape mirrors ADR-0130 §2:
+/// - `id` — composition document identifier.
+/// - `kind` — canonical [`CompositionKind`].
+/// - `subject` — optional [`EntityRef`]; for entity-scoped compositions.
+/// - `sections` — typed block tree.
+/// - `salience` — top-level relevance weight; renderers MAY use this when
+///   ranking compositions across multiple feeds.
+/// - `generated_at` / `generated_by` — ability authorship attribution,
+///   mirroring `Provenance.produced_at` / `Provenance.ability_name` on the
+///   wrapper envelope.
+/// - `metadata` — schema + monotonic [`CompositionVersion`] watermark per
+///   Phase 0 artifact 02.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Composition {
     pub id: CompositionDocId,
+    pub kind: CompositionKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subject: Option<EntityRef>,
     pub sections: Vec<Section>,
+    #[serde(default)]
+    pub salience: Salience,
+    #[schemars(with = "String")]
+    pub generated_at: DateTime<Utc>,
+    pub generated_by: AbilityRef,
     pub metadata: CompositionMetadata,
 }
 
 impl Composition {
-    pub fn new(
+    /// Construct a [`Composition`].
+    ///
+    /// **Visibility is `pub(crate)` by design** per ADR-0130 §1
+    /// "substrate-owned authorship." Only code inside the `abilities-runtime`
+    /// crate (substrate, ability implementations, ability-runtime tests) may
+    /// construct a composition. Surfaces, command handlers, hooks, and other
+    /// consumer crates receive `Composition` through the normal
+    /// ability-invocation path and render it; they never author it.
+    ///
+    /// A grep-based defense-in-depth lint at
+    /// `scripts/check_composition_authorship.sh` scans non-abilities
+    /// call sites for `Composition::new` / `Composition {` and fails CI on
+    /// drift; the Rust visibility is the primary gate.
+    #[allow(clippy::too_many_arguments, dead_code)]
+    pub(crate) fn new(
         id: CompositionDocId,
+        kind: CompositionKind,
+        subject: Option<EntityRef>,
         sections: Vec<Section>,
+        salience: Salience,
+        generated_at: DateTime<Utc>,
+        generated_by: AbilityRef,
         metadata: CompositionMetadata,
     ) -> Self {
         Self {
             id,
+            kind,
+            subject,
             sections,
+            salience,
+            generated_at,
+            generated_by,
             metadata,
         }
     }
@@ -842,23 +1012,29 @@ mod tests {
             claim_refs: vec![ClaimRef::new("claim-1")],
             provenance: sample_provenance_ref(),
             salience: Salience::default(),
+            render_hints: RenderHints::default(),
         }
+    }
+
+    fn sample_generated_at() -> DateTime<Utc> {
+        chrono::TimeZone::with_ymd_and_hms(&chrono::Utc, 2026, 5, 11, 0, 0, 0).unwrap()
     }
 
     fn sample_composition() -> Composition {
         Composition::new(
             CompositionDocId::new("comp-1"),
+            CompositionKind::EntityPage,
+            Some(EntityRef::new("account:acme")),
             vec![Section::new(
                 SectionId::new("sec-1"),
                 vec![sample_block("blk-1")],
             )],
+            Salience::default(),
+            sample_generated_at(),
+            AbilityRef::new("test.ability"),
             CompositionMetadata {
                 schema_version: SchemaVersion(1),
-                generated_at: chrono::TimeZone::with_ymd_and_hms(
-                    &chrono::Utc,
-                    2026, 5, 11, 0, 0, 0,
-                )
-                .unwrap(),
+                generated_at: sample_generated_at(),
                 composition_version: CompositionVersion::new(1),
                 generated_by: "test.ability".to_string(),
             },
@@ -903,28 +1079,81 @@ mod tests {
         assert_eq!(err, BlockBuildError::NilInvocationId);
     }
 
-    #[test]
-    fn block_construction_validates_field_path_when_envelope_provided() {
-        // Validation surface is wired but exercising it requires building a
-        // full Provenance envelope with field_attributions. We assert the
-        // unresolved-path error shape directly via validate_against using a
-        // minimal stub envelope built from runtime types.
-        let pref = ProvenanceRef::new(
-            InvocationId(uuid::Uuid::from_u128(1)),
-            FieldPath::new("/never_attributed").unwrap(),
+    /// Build a minimal but real Provenance envelope with a single field
+    /// attribution at `/sections/0/blocks/0`. Used by the block-validation
+    /// tests to exercise the OK and rejection paths against an actual
+    /// envelope rather than the deferred (None) path.
+    fn fixture_envelope_with_attribution() -> Provenance {
+        use crate::abilities::provenance::{
+            FieldAttribution, SubjectAttribution, SubjectRef,
+        };
+
+        let subject = SubjectAttribution::direct_confident(SubjectRef::Account(
+            "acct-1".into(),
+        ));
+        let mut attributions = BTreeMap::new();
+        attributions.insert(
+            FieldPath::new("/sections/0/blocks/0").unwrap(),
+            FieldAttribution::constant(subject.clone()),
         );
 
-        // Construct a block with deferred validation (envelope None).
+        let mut envelope = crate::abilities::provenance::envelope::provenance_for_test(
+            "fixture",
+            sample_generated_at(),
+            subject,
+            Vec::new(),
+            Vec::new(),
+            attributions,
+            None,
+            Vec::new(),
+        );
+        // Pin the invocation_id to match sample_provenance_ref so resolution
+        // succeeds on the OK path.
+        envelope.invocation_id =
+            InvocationId(uuid::Uuid::from_u128(0x1234_5678_90ab_cdef_1122_3344_5566_7788));
+        envelope
+    }
+
+    #[test]
+    fn block_construction_validates_field_path_when_envelope_provided() {
+        let envelope = fixture_envelope_with_attribution();
+        let pref = sample_provenance_ref();
+
         let block = Block::new(
             BlockId::new("b"),
             BlockType::AccountOverview,
             json!({}),
             vec![],
             pref,
-            None,
+            Some(&envelope),
         )
-        .expect("deferred construction succeeds");
+        .expect("OK path: field_path resolves into envelope.field_attributions");
         assert_eq!(block.block_type.type_id(), "account_overview");
+    }
+
+    #[test]
+    fn block_construction_rejects_field_path_outside_envelope() {
+        let envelope = fixture_envelope_with_attribution();
+        let bad_ref = ProvenanceRef::new(
+            envelope.invocation_id,
+            FieldPath::new("/never_attributed").unwrap(),
+        );
+
+        let err = Block::new(
+            BlockId::new("b"),
+            BlockType::AccountOverview,
+            json!({}),
+            vec![],
+            bad_ref,
+            Some(&envelope),
+        )
+        .expect_err("unresolved field_path must reject");
+        match err {
+            BlockBuildError::UnresolvedFieldPath { field_path } => {
+                assert_eq!(field_path, "/never_attributed");
+            }
+            other => panic!("expected UnresolvedFieldPath, got {other:?}"),
+        }
     }
 
     #[test]
@@ -942,6 +1171,7 @@ mod tests {
             claim_refs: vec![ClaimRef::new("c-1")],
             provenance: sample_provenance_ref(),
             salience: Salience::default(),
+            render_hints: RenderHints::default(),
         };
 
         let unknown_schema = UnknownBlockSchema {
@@ -999,6 +1229,7 @@ mod tests {
             claim_refs: vec![ClaimRef::new("c-1")],
             provenance: sample_provenance_ref(),
             salience: Salience::default(),
+            render_hints: RenderHints::default(),
         };
 
         let unknown_schema = UnknownBlockSchema {
@@ -1036,6 +1267,75 @@ mod tests {
         let v3 = v2.bump();
         assert!(v1 < v2);
         assert!(v2 < v3);
+    }
+
+    #[test]
+    fn composition_widened_fields_roundtrip() {
+        let original = sample_composition();
+        let json = serde_json::to_string(&original).expect("serialize widened composition");
+        // Verbatim ADR-0130 §2 fields must appear at the top level.
+        assert!(json.contains("\"kind\""));
+        assert!(json.contains("\"subject\""));
+        assert!(json.contains("\"salience\""));
+        assert!(json.contains("\"generated_at\""));
+        assert!(json.contains("\"generated_by\""));
+        let decoded: Composition = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(original, decoded);
+        assert_eq!(decoded.kind.type_id(), "entity_page");
+        assert_eq!(decoded.subject.as_ref().map(|s| s.as_str()), Some("account:acme"));
+        assert_eq!(decoded.generated_by.as_str(), "test.ability");
+    }
+
+    #[test]
+    fn section_label_and_salience_roundtrip() {
+        let mut section = Section::new(SectionId::new("sec-2"), vec![sample_block("blk-2")]);
+        section.label = Some("Strategic Risks".to_string());
+        section.salience = Salience {
+            weight: 0.9,
+            band: SalienceBand::Critical,
+            reason: "high-priority cluster".to_string(),
+        };
+
+        let json = serde_json::to_string(&section).expect("serialize");
+        assert!(json.contains("\"label\""));
+        assert!(json.contains("\"salience\""));
+        let decoded: Section = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(decoded.label.as_deref(), Some("Strategic Risks"));
+        assert_eq!(decoded.salience.band, SalienceBand::Critical);
+    }
+
+    #[test]
+    fn block_render_hints_default_and_roundtrip() {
+        let block = sample_block("blk-3");
+        // Default render_hints: emphasis=false, density=None.
+        assert!(!block.render_hints.emphasis);
+        assert_eq!(block.render_hints.density, None);
+
+        let json = serde_json::to_string(&block).expect("serialize");
+        let decoded: Block = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(decoded.render_hints, RenderHints::default());
+
+        // Non-default emphasis + density round-trips.
+        let mut emphasized = block.clone();
+        emphasized.render_hints = RenderHints {
+            emphasis: true,
+            density: Some(Density::Compact),
+        };
+        let json2 = serde_json::to_string(&emphasized).expect("serialize");
+        let decoded2: Block = serde_json::from_str(&json2).expect("deserialize");
+        assert!(decoded2.render_hints.emphasis);
+        assert_eq!(decoded2.render_hints.density, Some(Density::Compact));
+    }
+
+    #[test]
+    fn composition_kind_custom_carries_type_id() {
+        let custom = CompositionKind::Custom {
+            type_id: "research_brief".to_string(),
+        };
+        assert_eq!(custom.type_id(), "research_brief");
+        let json = serde_json::to_string(&custom).expect("serialize");
+        let decoded: CompositionKind = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(decoded, custom);
     }
 
     #[test]
