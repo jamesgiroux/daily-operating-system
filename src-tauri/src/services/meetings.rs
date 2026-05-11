@@ -5600,7 +5600,7 @@ mod tests {
     ) {
         db.conn_ref()
             .execute(
-                "INSERT INTO intelligence_claims (
+                "INSERT INTO intelligence_claims /* dos7-allowed: test fixture seeds an agent-fixture risk claim for trust-shadow integration test */ (
                     id, subject_ref, claim_type, field_path, text, dedup_key, actor,
                     data_source, source_ref, source_asof, observed_at, created_at,
                     provenance_json, metadata_json, claim_state, surfacing_state,

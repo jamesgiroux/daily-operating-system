@@ -9,7 +9,7 @@ ALTER TABLE intelligence_claims ADD COLUMN shadow_trust_score REAL;
 ALTER TABLE intelligence_claims ADD COLUMN shadow_trust_computed_at TEXT;
 ALTER TABLE intelligence_claims ADD COLUMN shadow_trust_version INTEGER;
 
-UPDATE intelligence_claims
+UPDATE intelligence_claims /* dos7-allowed: one-shot shadow trust isolation migration; live columns preserved into shadow columns then cleared for the shadow-compiler version */
    SET shadow_trust_score = trust_score,
        shadow_trust_computed_at = trust_computed_at,
        shadow_trust_version = trust_version,

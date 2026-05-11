@@ -1680,7 +1680,7 @@ fn migrate_v155_claim_shadow_trust_columns(conn: &Connection) -> Result<(), Migr
         ensure_claim_shadow_trust_columns(conn)?;
 
         conn.execute(
-            "UPDATE intelligence_claims
+            "UPDATE intelligence_claims /* dos7-allowed: shadow-trust isolation migration */
                 SET shadow_trust_score = trust_score,
                     shadow_trust_computed_at = trust_computed_at,
                     shadow_trust_version = trust_version,
@@ -1720,7 +1720,7 @@ fn migrate_v156_reconcile_claim_shadow_trust_columns(
         ensure_claim_shadow_trust_columns(conn)?;
 
         conn.execute(
-            "UPDATE intelligence_claims
+            "UPDATE intelligence_claims /* dos7-allowed: shadow-trust isolation repair for partial-prior-migration rows */
                 SET shadow_trust_score = trust_score,
                     shadow_trust_computed_at = trust_computed_at,
                     shadow_trust_version = trust_version,
@@ -1750,7 +1750,7 @@ fn migrate_v157_reconcile_claim_shadow_trust_columns(
         ensure_claim_shadow_trust_columns(conn)?;
 
         conn.execute(
-            "UPDATE intelligence_claims
+            "UPDATE intelligence_claims /* dos7-allowed: v157 shadow trust reconciliation with COALESCE preserve */
                 SET shadow_trust_score = COALESCE(shadow_trust_score, trust_score),
                     shadow_trust_computed_at = COALESCE(shadow_trust_computed_at, trust_computed_at),
                     shadow_trust_version = COALESCE(shadow_trust_version, NULLIF(trust_version, 0), ?1),
@@ -2288,7 +2288,7 @@ mod tests {
         assert!(
             !is_benign_single_alter_conflict(
                 "ALTER TABLE intelligence_claims ADD COLUMN shadow_trust_score REAL;
-                 UPDATE intelligence_claims SET trust_score = NULL;",
+                 UPDATE intelligence_claims /* dos7-allowed: test fixture exercises multi-statement parser */ SET trust_score = NULL;",
                 &err,
             ),
             "multi-statement migrations must not swallow duplicate-column errors"
@@ -2648,7 +2648,7 @@ mod tests {
             ],
         );
         conn.execute(
-            "INSERT INTO intelligence_claims
+            "INSERT INTO intelligence_claims /* dos7-allowed: test fixture seeding shadow-trust schema verifier inputs */
              (id, trust_score, trust_computed_at, trust_version,
               shadow_trust_score, shadow_trust_computed_at, shadow_trust_version)
              VALUES
@@ -2702,7 +2702,7 @@ mod tests {
         let conn = mem_db();
         run_migrations(&conn).expect("build current schema");
         conn.execute(
-            "INSERT INTO intelligence_claims \
+            "INSERT INTO intelligence_claims /* dos7-allowed: test fixture seeding production-trust + shadow score combo for verifier */ \
              (id, subject_ref, claim_type, text, dedup_key, actor, data_source, observed_at,
               provenance_json, trust_score, trust_computed_at, trust_version)
              VALUES (
