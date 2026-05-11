@@ -1,4 +1,4 @@
--- DOS-276 W4-A cycle-3: replace the title-only backlog commitment guard.
+-- Replace the title-only backlog commitment guard with typed identity tuple.
 --
 -- The old partial unique index keyed backlog commitments by (title, account_id)
 -- only. That collapsed real same-title commitments when due date or owner

@@ -1,4 +1,4 @@
--- DOS-276 W4-A cycle-4: tombstoned legacy commitment alias remediation.
+-- Tombstoned legacy commitment alias remediation.
 --
 -- If migration 156 cannot reconstruct a tombstoned legacy bridge row's typed
 -- CommitmentClaim identity from immutable source/provenance data, it must not

@@ -1,4 +1,4 @@
--- DOS-276 W4-A: typed CommitmentClaim identity and structural owner fields.
+-- Typed CommitmentClaim identity and structural owner fields.
 --
 -- Existing Work-tab commitment rows used ai_commitment_bridge.commitment_id
 -- plus actions.context = 'owner: ...'. This migration moves commitment

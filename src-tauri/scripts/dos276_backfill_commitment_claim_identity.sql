@@ -1,4 +1,4 @@
--- DOS-276 one-shot backfill/verification script.
+-- One-shot CommitmentClaim identity backfill/verification script.
 --
 -- Intended for databases that already have migration 155 applied. The runtime
 -- derives new typed commitment ids in Rust; this script handles the SQL-only

@@ -786,7 +786,7 @@ const MIGRATIONS: &[Migration] = &[
     },
     // Typed CommitmentClaim identity: actions.commitment_id, structural owner
     // fields, per-sighting action_commitment_sources, and the identity-tuple
-    // backlog duplicate guard for DOS-276 W4-A.
+    // backlog duplicate guard.
     Migration::Sql {
         version: 155,
         sql: include_str!("migrations/155_dos_276_commitment_claim_identity.sql"),
