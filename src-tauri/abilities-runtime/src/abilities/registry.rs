@@ -6,7 +6,8 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{OnceLock, RwLock};
 
 use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
@@ -135,13 +136,35 @@ impl std::fmt::Display for ScopeSetError {
 
 impl std::error::Error for ScopeSetError {}
 
-/// Process-global allowlist of known scope values. Empty (uninitialized) =
-/// lenient bootstrap mode (any scope accepted); once populated, unknown
-/// scopes are rejected at [`ScopeSet`] construction and deserialization.
+/// Process-global allowlist of known scope values.
 ///
-/// W1-B populates this from `#[ability]` macro `required_scopes` declarations
-/// at registry boot. Tests may seed it via [`ScopeSet::set_allowlist_for_tests`].
-static SCOPE_ALLOWLIST: OnceLock<BTreeSet<SurfaceScope>> = OnceLock::new();
+/// State semantics:
+/// - `None` (uninitialized) = lenient bootstrap mode (any scope accepted).
+/// - `Some(set)` (initialized) = strict; only scopes in `set` are accepted at
+///   [`ScopeSet`] construction and deserialization. An explicitly seeded
+///   empty set rejects every scope, which is rare in practice but legal.
+///
+/// Initialization semantics:
+/// - **Production:** one-time, process-lifetime. The first call to
+///   [`ScopeSet::initialize_allowlist`] wins and flips
+///   [`SCOPE_ALLOWLIST_INITIALIZED`]; subsequent calls return `Err` with the
+///   would-be set so the caller can no-op (the W1-B `from_descriptors_checked`
+///   path relies on this for idempotent re-registry within one process).
+/// - **Tests:** [`ScopeSet::set_allowlist_for_tests`] overwrites the lock
+///   unconditionally so each test can install a deterministic per-test
+///   allowlist regardless of registry initialization order.
+///
+/// The container is [`RwLock`] (not [`OnceLock`]) so tests can replace the
+/// allowlist; the `INITIALIZED` atomic preserves the "one-time in production"
+/// guarantee outside the test surface.
+static SCOPE_ALLOWLIST: RwLock<Option<BTreeSet<SurfaceScope>>> = RwLock::new(None);
+
+/// Tracks whether production initialization has occurred. Read by
+/// [`ScopeSet::initialize_allowlist`] to reject double-initialization without
+/// silently overwriting a previously seeded set. Tests bypass this via
+/// [`ScopeSet::set_allowlist_for_tests`], which both writes the lock and
+/// leaves the flag unchanged.
+static SCOPE_ALLOWLIST_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 /// A typed, non-empty set of [`SurfaceScope`] values carried by every
 /// [`Actor::SurfaceClient`] invocation. Per ADR-0111 §8 and DOS-546 W1-A
@@ -180,7 +203,10 @@ impl ScopeSet {
         if set.is_empty() {
             return Err(ScopeSetError::Empty);
         }
-        if let Some(allowed) = SCOPE_ALLOWLIST.get() {
+        let guard = SCOPE_ALLOWLIST
+            .read()
+            .expect("SCOPE_ALLOWLIST RwLock poisoned");
+        if let Some(allowed) = guard.as_ref() {
             let unknown: Vec<SurfaceScope> = set
                 .iter()
                 .filter(|scope| !allowed.contains(*scope))
@@ -190,6 +216,7 @@ impl ScopeSet {
                 return Err(ScopeSetError::UnknownScopes(unknown));
             }
         }
+        drop(guard);
         Ok(Self(set))
     }
 
@@ -215,33 +242,64 @@ impl ScopeSet {
         self.0.len()
     }
 
-    /// Initialize the global scope allowlist. Idempotent: only the first
-    /// call wins (returns `Err` with the rejected set on subsequent calls).
+    /// Initialize the global scope allowlist. One-time in production:
+    /// the first call wins and flips [`SCOPE_ALLOWLIST_INITIALIZED`];
+    /// subsequent calls return `Err(set)` carrying the rejected set so the
+    /// caller (typically W1-B's `from_descriptors_checked`) can no-op when
+    /// the substrate is rebuilt within the same process.
     ///
     /// W1-B `#[ability]` macro registration calls this once at registry
     /// boot, after collecting every ability's declared `required_scopes`.
+    /// Tests must use [`Self::set_allowlist_for_tests`] instead — this
+    /// constructor refuses to overwrite a previously seeded allowlist.
     pub fn initialize_allowlist(
         scopes: impl IntoIterator<Item = SurfaceScope>,
     ) -> Result<(), BTreeSet<SurfaceScope>> {
         let set: BTreeSet<SurfaceScope> = scopes.into_iter().collect();
-        SCOPE_ALLOWLIST.set(set)
+        // Use compare_exchange so concurrent first-callers see exactly one
+        // winner. `Acquire`/`Release` pair the flag flip with the lock write.
+        match SCOPE_ALLOWLIST_INITIALIZED.compare_exchange(
+            false,
+            true,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        ) {
+            Ok(_) => {
+                let mut guard = SCOPE_ALLOWLIST
+                    .write()
+                    .expect("SCOPE_ALLOWLIST RwLock poisoned");
+                *guard = Some(set);
+                Ok(())
+            }
+            Err(_) => Err(set),
+        }
     }
 
-    /// Test-only: install (or replace, for non-`OnceLock` test setups) the
-    /// allowlist. Production code path is [`Self::initialize_allowlist`].
+    /// Test-only: unconditionally overwrite the allowlist with `scopes`.
+    /// Tests use this to install a deterministic per-test allowlist that is
+    /// guaranteed to include every scope the test constructs, independent of
+    /// whatever production initialization has happened earlier in the process
+    /// (e.g. an unrelated registry build that seeded an empty union).
     ///
-    /// Because the underlying `OnceLock` cannot be reset, this is a
-    /// no-op on subsequent calls within a single process — tests should
-    /// pick a stable allowlist and seed it once before the suite runs, or
-    /// use distinct scope values per test.
+    /// Does **not** affect [`SCOPE_ALLOWLIST_INITIALIZED`]; production code
+    /// paths still observe the one-time initialization invariant.
     #[doc(hidden)]
     pub fn set_allowlist_for_tests(scopes: impl IntoIterator<Item = SurfaceScope>) {
-        // `OnceLock::set` returns `Err` once the cell is initialized; tests
-        // are expected to seed at most once per process and tolerate
-        // subsequent calls as a no-op.
-        if SCOPE_ALLOWLIST.set(scopes.into_iter().collect()).is_err() {
-            // Already initialized — intentional no-op for repeat test seeds.
-        }
+        let mut guard = SCOPE_ALLOWLIST
+            .write()
+            .expect("SCOPE_ALLOWLIST RwLock poisoned");
+        *guard = Some(scopes.into_iter().collect());
+    }
+
+    /// Test-only: clear the allowlist, returning to lenient bootstrap mode
+    /// where any scope is accepted. Companion to [`Self::set_allowlist_for_tests`]
+    /// for tests that need to exercise the unseeded path explicitly.
+    #[doc(hidden)]
+    pub fn clear_allowlist_for_tests() {
+        let mut guard = SCOPE_ALLOWLIST
+            .write()
+            .expect("SCOPE_ALLOWLIST RwLock poisoned");
+        *guard = None;
     }
 }
 
@@ -2220,9 +2278,28 @@ mod tests {
     /// Panics if construction fails — only the empty-set construction can
     /// fail in lenient bootstrap mode, and the caller is expected to pass
     /// at least one scope.
+    ///
+    /// Seeds the process-global allowlist with every scope the caller is
+    /// about to construct, so this test helper is safe to call regardless of
+    /// whatever production initialization (e.g. an empty union from a
+    /// scope-less ability registry) has happened earlier in the suite. See
+    /// the doc on [`SCOPE_ALLOWLIST`] for the test-vs-prod split.
     fn scope_set(scopes: &[&str]) -> ScopeSet {
+        seed_test_allowlist(scopes);
         ScopeSet::new(scopes.iter().map(|s| SurfaceScope::new(*s)))
             .expect("test scope set must be non-empty")
+    }
+
+    /// Install a per-test allowlist that includes every scope `scopes` plus
+    /// the canonical W1-A.1 fixture vocabulary (`read.account_overview`,
+    /// `submit.feedback`). Centralizes the bypass so individual tests do not
+    /// have to remember the allowlist seam.
+    fn seed_test_allowlist(scopes: &[&str]) {
+        let mut all: BTreeSet<SurfaceScope> =
+            scopes.iter().map(|s| SurfaceScope::new(*s)).collect();
+        all.insert(SurfaceScope::new("read.account_overview"));
+        all.insert(SurfaceScope::new("submit.feedback"));
+        ScopeSet::set_allowlist_for_tests(all);
     }
 
     #[test]
@@ -2300,6 +2377,7 @@ mod tests {
 
     #[test]
     fn scope_set_accepts_non_empty_and_preserves_membership() {
+        seed_test_allowlist(&["read.account_overview"]);
         let set = ScopeSet::new([SurfaceScope::new("read.account_overview")])
             .expect("non-empty construction succeeds");
         assert!(set.contains(&SurfaceScope::new("read.account_overview")));
@@ -2320,6 +2398,7 @@ mod tests {
 
     #[test]
     fn scope_set_deserialization_round_trip_for_non_empty() {
+        seed_test_allowlist(&["read.account_overview", "submit.feedback"]);
         let json = "[\"read.account_overview\",\"submit.feedback\"]";
         let decoded: ScopeSet = serde_json::from_str(json).expect("decodes");
         assert!(decoded.contains(&SurfaceScope::new("read.account_overview")));
@@ -2359,6 +2438,7 @@ mod tests {
         assert_eq!(Actor::User.kind(), ActorKind::User);
         assert_eq!(Actor::Admin.kind(), ActorKind::Admin);
         assert_eq!(Actor::System.kind(), ActorKind::System);
+        seed_test_allowlist(&["read.account_overview"]);
         let surface = Actor::SurfaceClient {
             instance: SurfaceClientId::new("wp-instance-alpha"),
             scopes: ScopeSet::new([SurfaceScope::new("read.account_overview")])
