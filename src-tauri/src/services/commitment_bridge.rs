@@ -9,7 +9,7 @@
 
 use crate::abilities::extractors::commitment::{
     derive_commitment_id, normalize_commitment_title as normalize_commitment_identity_title,
-    CommitmentClaim, CommitmentTrust, OwnerRef,
+    CommitmentClaim, CommitmentTrust, OwnerRef, COMMITMENT_CLAIM_TYPE,
 };
 use crate::abilities::feedback::ClaimVerificationState;
 use crate::abilities::provenance::SubjectRef;
@@ -42,6 +42,28 @@ pub struct BridgeSyncSummary {
     /// derived identity match (alias). No new action row was created;
     /// the bridge row was inserted pointing at the existing action.
     pub aliased_to_existing: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CommitmentTypedIdentity {
+    subject_ref: String,
+    claim_type: &'static str,
+    content_hash: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OwnerResolutionProvenance {
+    IncomingLlmOwner,
+    ResolvedStructuralOwner,
+}
+
+impl OwnerResolutionProvenance {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::IncomingLlmOwner => "incoming_llm_owner",
+            Self::ResolvedStructuralOwner => "resolved_structural_owner",
+        }
+    }
 }
 
 /// Normalize a commitment title with the same title rule used by
@@ -261,22 +283,31 @@ pub fn sync_ai_commitments_with_ingestion_sources(
             summary.skipped_tombstoned += 1;
             continue;
         }
-        let legacy_bridge_action_id = resolve_incoming_legacy_bridge_action_for_entity(
+        let incoming_identity = commitment_typed_identity(entity_type, entity_id, &derived_id);
+        let legacy_bridge_action = resolve_incoming_legacy_bridge_action_for_entity(
             db,
             entity_type,
             entity_id,
             commitment,
-        )
-        .map_err(|e| e.to_string())?;
-        let owner_resolution =
-            resolve_owner(db, entity_id, &derived_id, commitment.owner.as_deref())?;
+            &incoming_identity,
+        )?;
+        let (owner_resolution, owner_resolution_provenance) =
+            resolve_owner_for_commitment_sighting(
+                db,
+                entity_id,
+                &derived_id,
+                commitment.owner.as_deref(),
+                legacy_bridge_action.as_ref(),
+            )?;
         let source_key = commitment_source_key(&item.source);
         let source_count = source_count_after_sighting(
             db,
             entity_type,
             entity_id,
             &derived_id,
-            legacy_bridge_action_id.as_deref(),
+            legacy_bridge_action
+                .as_ref()
+                .map(|action| action.id.as_str()),
             &source_key,
         )
         .unwrap_or(1);
@@ -305,9 +336,10 @@ pub fn sync_ai_commitments_with_ingestion_sources(
             &item.source,
             &claim,
             &owner_resolution,
+            owner_resolution_provenance,
             &trust,
             &now,
-            legacy_bridge_action_id.as_deref(),
+            legacy_bridge_action.as_ref(),
             &mut summary,
         )?;
     }
@@ -580,9 +612,10 @@ pub fn upsert_commitment_claim(
     ingestion_source: &CommitmentIngestionSource,
     claim: &CommitmentClaim,
     owner_resolution: &OwnerResolution,
+    owner_resolution_provenance: OwnerResolutionProvenance,
     trust: &CommitmentTrust,
     now: &str,
-    legacy_bridge_action_id: Option<&str>,
+    legacy_bridge_action: Option<&DbAction>,
     summary: &mut BridgeSyncSummary,
 ) -> Result<(), String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
@@ -612,13 +645,8 @@ pub fn upsert_commitment_claim(
             action
         }
         None => {
-            if let Some(existing_action_id) = legacy_bridge_action_id {
-                let action = db
-                    .get_action_by_id(existing_action_id)
-                    .map_err(|e| e.to_string())?
-                    .ok_or_else(|| {
-                        format!("commitment alias target missing: {existing_action_id}")
-                    })?;
+            if let Some(action) = legacy_bridge_action {
+                let action = action.clone();
                 if is_terminal_status(&action.status) {
                     summary.skipped_tombstoned += 1;
                     return Ok(());
@@ -685,6 +713,7 @@ pub fn upsert_commitment_claim(
         commitment,
         ingestion_source,
         owner_resolution,
+        owner_resolution_provenance,
         trust,
         now,
     )?;
@@ -875,6 +904,7 @@ fn insert_commitment_source(
     commitment: &OpenCommitment,
     ingestion_source: &CommitmentIngestionSource,
     owner_resolution: &OwnerResolution,
+    owner_resolution_provenance: OwnerResolutionProvenance,
     trust: &CommitmentTrust,
     now: &str,
 ) -> Result<(), String> {
@@ -892,7 +922,11 @@ fn insert_commitment_source(
         .and_then(|s| s.reference.as_deref())
         .or(commitment.source.as_deref())
         .or(action.source_label.as_deref());
-    let owner_ref_json = serde_json::to_string(&owner_resolution.owner_ref).ok();
+    let owner_ref_json = owner_ref_json(
+        owner_resolution,
+        owner_resolution_provenance,
+        commitment.owner.as_deref(),
+    );
     let source_key = commitment_source_key(ingestion_source);
 
     db.conn_ref()
@@ -914,7 +948,10 @@ fn insert_commitment_source(
                 source_confidence,
                 trust.score.value(),
                 trust_band_label(trust.band),
-                owner_resolution.owner_raw.as_deref(),
+                commitment
+                    .owner
+                    .as_deref()
+                    .or(owner_resolution.owner_raw.as_deref()),
                 owner_ref_json.as_deref(),
             ],
         )
@@ -948,6 +985,21 @@ fn source_commitment_id_for_action(
     Err(format!(
         "commitment action {action_id} missing commitment_id"
     ))
+}
+
+fn owner_ref_json(
+    owner_resolution: &OwnerResolution,
+    owner_resolution_provenance: OwnerResolutionProvenance,
+    incoming_owner_raw: Option<&str>,
+) -> Option<String> {
+    serde_json::to_string(&serde_json::json!({
+        "ownerRef": &owner_resolution.owner_ref,
+        "ownerResolutionSource": owner_resolution_provenance.as_str(),
+        "incomingOwnerRaw": incoming_owner_raw,
+        "resolvedOwnerRaw": owner_resolution.owner_raw.as_deref(),
+        "resolvedOwnerSource": owner_resolution.owner_source.as_str(),
+    }))
+    .ok()
 }
 
 fn bridge_alias_belongs_to_action(
@@ -1159,11 +1211,32 @@ fn resolve_incoming_legacy_bridge_action_for_entity(
     entity_type: &str,
     entity_id: &str,
     commitment: &OpenCommitment,
-) -> Result<Option<String>, rusqlite::Error> {
+    incoming_identity: &CommitmentTypedIdentity,
+) -> Result<Option<DbAction>, String> {
     let Some(legacy_id) = trimmed_non_empty(commitment.commitment_id.as_deref()) else {
         return Ok(None);
     };
-    resolve_legacy_bridge_action_for_entity(db, entity_type, entity_id, legacy_id)
+    let Some(action_id) =
+        resolve_legacy_bridge_action_for_entity(db, entity_type, entity_id, legacy_id)
+            .map_err(|e| e.to_string())?
+    else {
+        return Ok(None);
+    };
+    let action = db
+        .get_action_by_id(&action_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("commitment alias target missing: {action_id}"))?;
+
+    if legacy_bridge_action_matches_incoming_identity(
+        entity_type,
+        entity_id,
+        incoming_identity,
+        &action,
+    ) {
+        Ok(Some(action))
+    } else {
+        Ok(None)
+    }
 }
 
 fn resolve_legacy_bridge_action_for_entity(
@@ -1191,6 +1264,180 @@ fn resolve_legacy_bridge_action_for_entity(
             rusqlite::Error::QueryReturnedNoRows => Ok(None),
             other => Err(other),
         })
+}
+
+fn commitment_typed_identity(
+    entity_type: &str,
+    entity_id: &str,
+    content_hash: &str,
+) -> CommitmentTypedIdentity {
+    CommitmentTypedIdentity {
+        subject_ref: commitment_subject_ref(entity_type, entity_id),
+        claim_type: COMMITMENT_CLAIM_TYPE,
+        content_hash: content_hash.to_string(),
+    }
+}
+
+fn commitment_subject_ref(entity_type: &str, entity_id: &str) -> String {
+    serde_json::json!({ "kind": entity_type, "id": entity_id }).to_string()
+}
+
+fn legacy_bridge_action_matches_incoming_identity(
+    entity_type: &str,
+    entity_id: &str,
+    incoming_identity: &CommitmentTypedIdentity,
+    action: &DbAction,
+) -> bool {
+    if !action_belongs_to_entity(entity_type, entity_id, action) {
+        return false;
+    }
+    let has_stored_typed_identity = action
+        .commitment_id
+        .as_deref()
+        .and_then(|id| trimmed_non_empty(Some(id)))
+        .is_some_and(|id| id.starts_with("commitment:"));
+    if !has_stored_typed_identity && action.status.as_str() != BACKLOG {
+        return true;
+    }
+
+    let Some(target_identity) =
+        typed_identity_for_legacy_alias_target(entity_type, entity_id, action)
+    else {
+        return false;
+    };
+    target_identity == *incoming_identity
+}
+
+fn typed_identity_for_legacy_alias_target(
+    entity_type: &str,
+    entity_id: &str,
+    action: &DbAction,
+) -> Option<CommitmentTypedIdentity> {
+    if !action_belongs_to_entity(entity_type, entity_id, action) {
+        return None;
+    }
+
+    if let Some(commitment_id) = action
+        .commitment_id
+        .as_deref()
+        .and_then(|id| trimmed_non_empty(Some(id)))
+        .filter(|id| id.starts_with("commitment:"))
+    {
+        return Some(commitment_typed_identity(
+            entity_type,
+            entity_id,
+            commitment_id,
+        ));
+    }
+
+    let context_owner = legacy_owner_from_context(action.context.as_deref());
+    let owner_for_identity = action.owner_raw.as_deref().or(context_owner.as_deref());
+    let content_hash = derive_commitment_id(
+        &action.title,
+        entity_id,
+        action.due_date.as_deref(),
+        owner_for_identity,
+    );
+    Some(commitment_typed_identity(
+        entity_type,
+        entity_id,
+        &content_hash,
+    ))
+}
+
+fn action_belongs_to_entity(entity_type: &str, entity_id: &str, action: &DbAction) -> bool {
+    match entity_type {
+        "account" => action.account_id.as_deref() == Some(entity_id),
+        "project" => action.project_id.as_deref() == Some(entity_id),
+        _ => false,
+    }
+}
+
+fn resolve_owner_for_commitment_sighting(
+    db: &ActionDb,
+    entity_id: &str,
+    commitment_id: &str,
+    incoming_owner_raw: Option<&str>,
+    legacy_bridge_action: Option<&DbAction>,
+) -> Result<(OwnerResolution, OwnerResolutionProvenance), String> {
+    if let Some(action) = legacy_bridge_action {
+        if action_has_stored_owner_provenance(action) {
+            return owner_resolution_from_action(db, action).map(|resolution| {
+                (
+                    resolution,
+                    OwnerResolutionProvenance::ResolvedStructuralOwner,
+                )
+            });
+        }
+    }
+
+    resolve_owner(db, entity_id, commitment_id, incoming_owner_raw)
+        .map(|resolution| (resolution, OwnerResolutionProvenance::IncomingLlmOwner))
+}
+
+fn action_has_stored_owner_provenance(action: &DbAction) -> bool {
+    matches!(
+        action.owner_source.as_deref(),
+        Some(source) if source != "unassigned"
+    )
+}
+
+fn owner_resolution_from_action(
+    db: &ActionDb,
+    action: &DbAction,
+) -> Result<OwnerResolution, String> {
+    let owner_source = action
+        .owner_source
+        .clone()
+        .unwrap_or_else(|| "stored_owner".to_string());
+    let owner_ref = if let Some(person_id) = action.owner_entity_id.as_deref() {
+        OwnerRef::Person {
+            person_id: person_id.to_string(),
+            display_name: person_display_name(db, person_id)?
+                .or_else(|| action.owner_raw.clone())
+                .unwrap_or_else(|| person_id.to_string()),
+            confidence: action.owner_confidence.unwrap_or(1.0),
+            source: owner_source.clone(),
+        }
+    } else if owner_source == "team_label" {
+        OwnerRef::Team {
+            label: action.owner_raw.clone().unwrap_or_default(),
+            confidence: action.owner_confidence.unwrap_or(0.7),
+            source: owner_source.clone(),
+        }
+    } else if let Some(raw) = action.owner_raw.as_deref() {
+        OwnerRef::Ambiguous {
+            raw: raw.to_string(),
+            reason: "stored structural owner on legacy alias target".to_string(),
+            candidates: Vec::new(),
+        }
+    } else {
+        OwnerRef::Unassigned
+    };
+
+    Ok(OwnerResolution {
+        owner_ref,
+        owner_raw: action.owner_raw.clone(),
+        owner_entity_id: action.owner_entity_id.clone(),
+        owner_confidence: action.owner_confidence,
+        owner_source,
+    })
+}
+
+fn person_display_name(db: &ActionDb, person_id: &str) -> Result<Option<String>, String> {
+    db.conn_ref()
+        .query_row(
+            "SELECT name FROM people WHERE id = ?1",
+            rusqlite::params![person_id],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .map(Some)
+        .or_else(|err| match err {
+            rusqlite::Error::QueryReturnedNoRows => Ok(None),
+            other => Err(other),
+        })
+        .map_err(|e| e.to_string())
+        .map(|name| name.flatten())
 }
 
 fn commitment_source_key(ingestion_source: &CommitmentIngestionSource) -> String {
@@ -2861,6 +3108,82 @@ mod tests {
     }
 
     #[test]
+    fn non_tombstoned_legacy_bridge_to_user_edited_backlog_forks_instead_of_overwriting() {
+        let db = test_db();
+        make_ctx!(ctx);
+        let legacy_id = "meeting:stale-backlog:1";
+        let incoming = make_commitment_with_identity(
+            "Send stale renewal deck",
+            Some(legacy_id),
+            Some("2030-07-01"),
+            Some("Old Owner"),
+            Some("meeting"),
+        );
+        let incoming_commitment_id = derived_id_with(
+            "Send stale renewal deck",
+            Some("2030-07-01"),
+            Some("Old Owner"),
+        );
+        let corrected_commitment_id = derived_id_with(
+            "Send corrected renewal deck",
+            Some("2030-07-15"),
+            Some("New Owner"),
+        );
+
+        db.conn_ref()
+            .execute(
+                "INSERT INTO actions
+                 (id, title, priority, status, created_at, updated_at, due_date,
+                  account_id, source_type, source_id, source_label,
+                  action_kind, commitment_id, owner_raw, owner_entity_id,
+                  owner_confidence, owner_source, trust_score, trust_band)
+                 VALUES ('stale-backlog-a1', 'Send corrected renewal deck', 3,
+                         'backlog', '2026-01-01', '2026-01-02', '2030-07-15',
+                         'acct-1', 'commitment', ?1, 'legacy meeting',
+                         'commitment', ?1, 'New Owner', 'p-new-owner',
+                         0.99, 'user_reassigned', NULL, NULL)",
+                rusqlite::params![corrected_commitment_id],
+            )
+            .unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO ai_commitment_bridge
+                 (commitment_id, entity_type, entity_id, action_id,
+                  first_seen_at, last_seen_at, tombstoned)
+                 VALUES (?1, 'account', 'acct-1', 'stale-backlog-a1',
+                         '2026-01-01', '2026-01-02', 0)",
+                rusqlite::params![legacy_id],
+            )
+            .unwrap();
+
+        let summary =
+            sync_one_with_ingestion_source(&ctx, &db, &incoming, "meeting", "stale-backlog");
+
+        assert_eq!(summary.created, 1);
+        assert_eq!(summary.aliased_to_existing, 0);
+        assert_eq!(action_count(&db), 2);
+        assert_eq!(bridge_action_id(&db, legacy_id), "stale-backlog-a1");
+        assert_ne!(
+            bridge_action_id(&db, &incoming_commitment_id),
+            "stale-backlog-a1"
+        );
+
+        let (title, due_date, commitment_id, owner_raw): (String, String, String, String) = db
+            .conn_ref()
+            .query_row(
+                "SELECT title, due_date, commitment_id, owner_raw
+                 FROM actions WHERE id = 'stale-backlog-a1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(title, "Send corrected renewal deck");
+        assert_eq!(due_date, "2030-07-15");
+        assert_eq!(commitment_id, corrected_commitment_id);
+        assert_eq!(owner_raw, "New Owner");
+    }
+
+    #[test]
     fn non_tombstoned_legacy_bridge_aliases_edited_owner_action_before_identity_fallback() {
         let db = test_db();
         make_ctx!(ctx);
@@ -2932,6 +3255,123 @@ mod tests {
             .unwrap();
         assert_eq!(commitment_id, legacy_id);
         assert_eq!(owner_raw, "New Owner");
+
+        let structural_owner = owner_resolution_from_action(
+            &db,
+            &db.get_action_by_id("h-legacy-1")
+                .expect("action query")
+                .expect("action row"),
+        )
+        .expect("structural owner");
+        let expected =
+            compute_commitment_trust("acct-1", &incoming, &structural_owner, 1, ctx.clock.now());
+        let action = db
+            .get_action_by_id("h-legacy-1")
+            .expect("action query")
+            .expect("action row");
+        assert_eq!(action.trust_score, Some(expected.score.value()));
+
+        let owner_ref_json: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT owner_ref_json
+                 FROM action_commitment_sources
+                 WHERE action_id = 'h-legacy-1'
+                   AND owner_ref_json IS NOT NULL
+                 ORDER BY observed_at DESC
+                 LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let owner_ref: serde_json::Value = serde_json::from_str(&owner_ref_json).unwrap();
+        assert_eq!(
+            owner_ref["ownerResolutionSource"],
+            "resolved_structural_owner"
+        );
+        assert_eq!(owner_ref["incomingOwnerRaw"], "Old Owner");
+        assert_eq!(owner_ref["resolvedOwnerRaw"], "New Owner");
+        assert_eq!(owner_ref["ownerRef"]["kind"], "person");
+        assert_eq!(owner_ref["ownerRef"]["person_id"], "p-new-owner");
+    }
+
+    #[test]
+    fn legacy_alias_with_user_reassigned_owner_scores_against_structural_owner() {
+        let db = test_db();
+        make_ctx!(ctx);
+        let title = "Score structural owner on legacy alias";
+        let legacy_id = "meeting:owner-trust:1";
+        let incoming = make_commitment_with_identity(
+            title,
+            Some(legacy_id),
+            Some("2030-08-01"),
+            Some("Incoming Owner"),
+            Some("meeting"),
+        );
+
+        db.conn_ref()
+            .execute(
+                "INSERT INTO actions
+                 (id, title, priority, status, created_at, updated_at, due_date,
+                  account_id, source_type, source_id, source_label,
+                  action_kind, commitment_id, owner_raw, owner_entity_id,
+                  owner_confidence, owner_source, trust_score, trust_band)
+                 VALUES ('structural-owner-a1', ?1, 3, 'unstarted',
+                         '2026-01-01', '2026-01-02', '2030-08-01',
+                         'acct-1', 'commitment', ?2, 'legacy meeting',
+                         'commitment', ?2, 'Structural Owner', 'p-structural',
+                         0.97, 'user_reassigned', NULL, NULL)",
+                rusqlite::params![title, legacy_id],
+            )
+            .unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO ai_commitment_bridge
+                 (commitment_id, entity_type, entity_id, action_id,
+                  first_seen_at, last_seen_at, tombstoned)
+                 VALUES (?1, 'account', 'acct-1', 'structural-owner-a1',
+                         '2026-01-01', '2026-01-02', 0)",
+                rusqlite::params![legacy_id],
+            )
+            .unwrap();
+
+        let summary =
+            sync_one_with_ingestion_source(&ctx, &db, &incoming, "meeting", "owner-trust");
+
+        assert_eq!(summary.created, 0);
+        assert_eq!(summary.aliased_to_existing, 1);
+
+        let action = db
+            .get_action_by_id("structural-owner-a1")
+            .expect("action query")
+            .expect("action row");
+        let structural_owner =
+            owner_resolution_from_action(&db, &action).expect("structural owner");
+        let expected =
+            compute_commitment_trust("acct-1", &incoming, &structural_owner, 1, ctx.clock.now());
+        assert_eq!(action.trust_score, Some(expected.score.value()));
+
+        let owner_ref_json: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT owner_ref_json
+                 FROM action_commitment_sources
+                 WHERE action_id = 'structural-owner-a1'
+                 ORDER BY observed_at DESC
+                 LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let owner_ref: serde_json::Value = serde_json::from_str(&owner_ref_json).unwrap();
+        assert_eq!(
+            owner_ref["ownerResolutionSource"],
+            "resolved_structural_owner"
+        );
+        assert_eq!(owner_ref["incomingOwnerRaw"], "Incoming Owner");
+        assert_eq!(owner_ref["resolvedOwnerRaw"], "Structural Owner");
+        assert_eq!(owner_ref["ownerRef"]["kind"], "person");
+        assert_eq!(owner_ref["ownerRef"]["person_id"], "p-structural");
     }
 
     #[test]
