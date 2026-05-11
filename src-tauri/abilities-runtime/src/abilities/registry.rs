@@ -28,13 +28,97 @@ pub enum AbilityCategory {
     Maintenance,
 }
 
-/// Who is invoking. ADR-0102 §250-258.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+/// Stable, non-PII identifier for a paired [`Actor::SurfaceClient`] instance.
+///
+/// Per ADR-0111 §8, every SurfaceClient invocation must be auditable by
+/// instance identity. The identity is opaque to the substrate: WordPress
+/// site GUIDs, Obsidian vault IDs, browser-extension installation IDs, etc.
+/// all flow through this newtype.
+///
+/// W1-A0 audit emission consumes this for `actor_instance`. W1-B
+/// `SurfaceClientBridge` consumes it for per-instance scope grants.
+///
+/// `Display` / `Debug` produce the raw inner string. Callers are expected
+/// not to embed PII in the identifier itself; the type does no scrubbing.
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(transparent)]
+pub struct SurfaceClientId(String);
+
+impl SurfaceClientId {
+    /// Construct a new identifier from an owned string.
+    pub fn new(id: impl Into<String>) -> Self {
+        Self(id.into())
+    }
+
+    /// Borrow the inner string slice.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for SurfaceClientId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+/// A named scope grant a [`Actor::SurfaceClient`] instance carries into
+/// each invocation.
+///
+/// Per ADR-0111 §8, scopes gate which abilities a specific SurfaceClient
+/// instance may invoke. W1-B will extend `AbilityPolicy` with
+/// `required_scopes: Vec<SurfaceScope>`; the `SurfaceClientBridge` will
+/// enforce that every required scope is present in the instance's grant
+/// before registry lookup.
+///
+/// The newtype is intentionally string-backed for stage-1a: the canonical
+/// scope vocabulary (e.g. `read.account_overview`, `write.feedback`) is
+/// agreed at the contract layer in W1-B and validated there. The substrate
+/// type holds the wire shape.
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(transparent)]
+pub struct SurfaceScope(String);
+
+impl SurfaceScope {
+    /// Construct a new scope value from an owned string.
+    pub fn new(scope: impl Into<String>) -> Self {
+        Self(scope.into())
+    }
+
+    /// Borrow the inner string slice.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for SurfaceScope {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+/// Who is invoking. ADR-0102 §250-258, amended 2026-05-10 (Accepted) to add
+/// [`Actor::SurfaceClient`] as the fourth actor class per ADR-0111 §8.
+///
+/// The first three variants are unit; `SurfaceClient` carries the paired
+/// instance identity. Per-instance scope grants ride alongside the actor
+/// through `SurfaceClientBridge` request context in W1-B; this stage-1a
+/// landing ships the identity-only shape so downstream wave plans can
+/// compile against the variant.
+///
+/// `Copy` was removed in this amendment because `SurfaceClient` carries an
+/// owned `SurfaceClientId(String)`. Callers that previously relied on
+/// implicit copy now `.clone()` explicitly or pass by reference.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 pub enum Actor {
     Agent,
     User,
     Admin,
     System,
+    /// Third-party local surface invoking on behalf of a paired user.
+    /// See ADR-0111 §8. Per-instance scope grants are attached at the
+    /// bridge in W1-B; the variant currently carries identity only.
+    SurfaceClient(SurfaceClientId),
 }
 
 /// Per-ability policy (which actors may invoke, which modes, etc.).
@@ -166,7 +250,7 @@ impl<'a> AbilityContext<'a> {
             services: self.services,
             provider: self.provider,
             tracer: self.tracer,
-            actor: self.actor,
+            actor: self.actor.clone(),
             confirmation: self.confirmation,
             entity_context_claim_surface,
         }
@@ -1705,5 +1789,112 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(err.kind, AbilityErrorKind::Capability);
+    }
+
+    // -------------------------------------------------------------------
+    // W1-A: SurfaceClient actor class — identity / scope newtype tests
+    // ADR-0111 §8 and DOS-546 W1-A acceptance criteria.
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn surface_client_id_round_trip_preserves_value() {
+        let id = SurfaceClientId::new("wp-instance-alpha");
+        assert_eq!(id.as_str(), "wp-instance-alpha");
+        assert_eq!(format!("{id}"), "wp-instance-alpha");
+        assert_eq!(format!("{id:?}"), "SurfaceClientId(\"wp-instance-alpha\")");
+    }
+
+    #[test]
+    fn surface_client_id_serde_round_trip_is_transparent() {
+        let id = SurfaceClientId::new("wp-instance-alpha");
+        let encoded = serde_json::to_string(&id).expect("serializes");
+        // #[serde(transparent)] means the wire form is the inner string only.
+        assert_eq!(encoded, "\"wp-instance-alpha\"");
+        let decoded: SurfaceClientId = serde_json::from_str(&encoded).expect("deserializes");
+        assert_eq!(decoded, id);
+    }
+
+    #[test]
+    fn surface_client_id_hash_eq_match_inner_string() {
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        set.insert(SurfaceClientId::new("alpha"));
+        set.insert(SurfaceClientId::new("beta"));
+        set.insert(SurfaceClientId::new("alpha")); // dup
+        assert_eq!(set.len(), 2);
+        assert!(set.contains(&SurfaceClientId::new("alpha")));
+        assert!(set.contains(&SurfaceClientId::new("beta")));
+        assert!(!set.contains(&SurfaceClientId::new("gamma")));
+    }
+
+    #[test]
+    fn surface_scope_round_trip_preserves_value() {
+        let scope = SurfaceScope::new("read.account_overview");
+        assert_eq!(scope.as_str(), "read.account_overview");
+        assert_eq!(format!("{scope}"), "read.account_overview");
+    }
+
+    #[test]
+    fn surface_scope_serde_round_trip_is_transparent() {
+        let scope = SurfaceScope::new("write.feedback");
+        let encoded = serde_json::to_string(&scope).expect("serializes");
+        assert_eq!(encoded, "\"write.feedback\"");
+        let decoded: SurfaceScope = serde_json::from_str(&encoded).expect("deserializes");
+        assert_eq!(decoded, scope);
+    }
+
+    #[test]
+    fn surface_scope_hash_eq_match_inner_string() {
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        set.insert(SurfaceScope::new("read.x"));
+        set.insert(SurfaceScope::new("write.y"));
+        set.insert(SurfaceScope::new("read.x")); // dup
+        assert_eq!(set.len(), 2);
+    }
+
+    #[test]
+    fn actor_surface_client_round_trip_preserves_identity() {
+        let actor = Actor::SurfaceClient(SurfaceClientId::new("wp-instance-alpha"));
+        match &actor {
+            Actor::SurfaceClient(id) => assert_eq!(id.as_str(), "wp-instance-alpha"),
+            _ => panic!("expected SurfaceClient variant"),
+        }
+        // Clone preserves variant + identity.
+        let cloned = actor.clone();
+        assert_eq!(actor, cloned);
+    }
+
+    #[test]
+    fn actor_surface_client_serde_round_trip() {
+        let actor = Actor::SurfaceClient(SurfaceClientId::new("wp-instance-alpha"));
+        let encoded = serde_json::to_string(&actor).expect("serializes");
+        let decoded: Actor = serde_json::from_str(&encoded).expect("deserializes");
+        assert_eq!(actor, decoded);
+    }
+
+    #[test]
+    fn actor_surface_client_distinct_instances_are_not_equal() {
+        let alpha = Actor::SurfaceClient(SurfaceClientId::new("alpha"));
+        let beta = Actor::SurfaceClient(SurfaceClientId::new("beta"));
+        assert_ne!(alpha, beta);
+        // ...and neither matches the unit variants.
+        assert_ne!(alpha, Actor::User);
+        assert_ne!(alpha, Actor::Agent);
+        assert_ne!(alpha, Actor::Admin);
+        assert_ne!(alpha, Actor::System);
+    }
+
+    #[test]
+    fn actor_surface_client_not_in_user_agent_allowed_actors() {
+        // W1-A acceptance criterion (negative): an ability marked
+        // `allowed_actors: [User, Agent]` must NOT match a SurfaceClient
+        // invocation. The full registry-boundary rejection (with PolicyError)
+        // is W1-B's bridge work; this guard pins the `.contains` semantics
+        // that the registry's `iter_for` filter and `validate_invocation_policy`
+        // rely on.
+        let allowed: &[Actor] = &[Actor::User, Actor::Agent];
+        let invoker = Actor::SurfaceClient(SurfaceClientId::new("wp-instance-alpha"));
+        assert!(!allowed.contains(&invoker));
     }
 }

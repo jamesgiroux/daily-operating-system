@@ -338,7 +338,7 @@ fn provenance_config(
     let mut config = ProvenanceBuilderConfig::new(ability_name, ctx.services().clock.now());
     config.ability_version = AbilityVersion::new(1, 0);
     config.ability_schema_version = SchemaVersion(SCHEMA_VERSION);
-    config.actor = crate::abilities::get_entity_context::provenance_actor(ctx.actor);
+    config.actor = crate::abilities::get_entity_context::provenance_actor(ctx.actor.clone());
     config.mode = AbilityExecutionMode::from(ctx.mode());
     config.category = AbilityCategory::Maintenance;
     config

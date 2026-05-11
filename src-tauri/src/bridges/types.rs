@@ -56,6 +56,10 @@ impl BridgeActor {
             Actor::Agent => Self::Agent,
             Actor::Admin => Self::Admin,
             Actor::System => Self::System,
+            // TODO: W1-B+ wiring — BridgeActor gains a SurfaceClient variant
+            // once SurfaceClientBridge is plumbed and the Tauri bridge needs
+            // to round-trip the actor across surface-aware logging paths.
+            Actor::SurfaceClient(_) => todo!("W1-B+ wiring for Actor::SurfaceClient"),
         }
     }
 }

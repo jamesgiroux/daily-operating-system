@@ -1549,7 +1549,7 @@ fn config_for(
     let mut config = ProvenanceBuilderConfig::new(ability_name, ctx.services().clock.now());
     config.ability_version = AbilityVersion::new(0, 1);
     config.ability_schema_version = schema_version;
-    config.actor = provenance_actor(ctx.actor);
+    config.actor = provenance_actor(ctx.actor.clone());
     config.mode = AbilityExecutionMode::from(ctx.mode());
     config.category = category;
     config
@@ -1569,6 +1569,11 @@ fn provenance_actor(actor: RegistryActor) -> crate::abilities::provenance::Actor
         RegistryActor::System => crate::abilities::provenance::Actor::System {
             component: "ability-runtime".into(),
         },
+        // TODO: W1-B+ wiring — SurfaceClient provenance attribution for
+        // prepare_meeting lands once SurfaceClientBridge is plumbed.
+        RegistryActor::SurfaceClient(_) => {
+            todo!("W1-B+ wiring for Actor::SurfaceClient")
+        }
     }
 }
 

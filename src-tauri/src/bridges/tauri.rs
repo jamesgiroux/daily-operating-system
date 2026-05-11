@@ -85,7 +85,9 @@ pub struct TauriAbilityBridge<'registry> {
     confirmation_store: Arc<TauriConfirmationStore>,
 }
 
-#[derive(Clone, Copy)]
+// Note: `Copy` removed because `Actor::SurfaceClient(SurfaceClientId)` carries
+// an owned String (W1-A landing). All call sites already clone or move.
+#[derive(Clone)]
 pub struct TauriInvokeContext<'a> {
     pub actor: Actor,
     pub surface: BridgeSurface,
@@ -608,7 +610,7 @@ mod tests {
         );
         provenance.invocation_id = InvocationId::parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
             .expect("test invocation id is valid");
-        provenance.actor = provenance_actor_for_test(ctx.actor);
+        provenance.actor = provenance_actor_for_test(ctx.actor.clone());
         provenance.mode = provenance_mode_for_test(ctx.mode());
         serde_json::to_value(provenance).expect("test provenance serializes")
     }
@@ -627,6 +629,9 @@ mod tests {
             Actor::System => ProvenanceActor::System {
                 component: "fixture-system".to_string(),
             },
+            // TODO: W1-B+ wiring — SurfaceClient provenance fixture lands
+            // with the SurfaceClientBridge plumbing.
+            Actor::SurfaceClient(_) => todo!("W1-B+ wiring for Actor::SurfaceClient"),
         }
     }
 

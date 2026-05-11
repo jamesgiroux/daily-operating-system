@@ -710,7 +710,7 @@ CREATE TABLE accounts (
         );
         provenance.invocation_id =
             InvocationId::parse(invocation_id).expect("test invocation id is valid");
-        provenance.actor = provenance_actor_for_test(ctx.actor);
+        provenance.actor = provenance_actor_for_test(ctx.actor.clone());
         provenance.mode = provenance_mode_for_test(ctx.mode());
         serde_json::to_value(provenance).expect("test provenance serializes")
     }
@@ -729,6 +729,9 @@ CREATE TABLE accounts (
             Actor::System => ProvenanceActor::System {
                 component: "fixture-system".to_string(),
             },
+            // TODO: W1-B+ wiring — SurfaceClient MCP-bridge test fixture lands
+            // with the SurfaceClientBridge plumbing.
+            Actor::SurfaceClient(_) => todo!("W1-B+ wiring for Actor::SurfaceClient"),
         }
     }
 
