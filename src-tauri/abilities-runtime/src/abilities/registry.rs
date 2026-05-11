@@ -706,6 +706,16 @@ impl AbilityRegistry {
         }
     }
 
+    /// Iterate every descriptor in the registry, no actor filter.
+    ///
+    /// Used by DOS-546 W1-C's `emit_ability_inventory` binary to project
+    /// the full ability set into the surface-facing inventory artifact.
+    /// Tooling-facing only — runtime callers should prefer
+    /// [`AbilityRegistry::iter_for`] so the actor gate stays in force.
+    pub fn iter_all(&self) -> impl Iterator<Item = &AbilityDescriptor> {
+        self.by_name.values()
+    }
+
     pub fn iter_for(&self, actor: Actor) -> impl Iterator<Item = &AbilityDescriptor> {
         self.by_name.values().filter(move |descriptor| {
             if descriptor.experimental && actor != Actor::System {
