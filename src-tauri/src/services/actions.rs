@@ -971,14 +971,20 @@ mod tests {
                 [],
             )
             .unwrap();
-        db.conn_ref()
-            .execute(
-                "INSERT INTO account_stakeholders (account_id, person_id, data_source)
-                 VALUES ('acct-1', 'p-alex', 'user'),
-                        ('acct-1', 'p-jamie', 'user')",
-                [],
-            )
-            .unwrap();
+        crate::db::accounts::seed_account_stakeholder_for_tests(
+            db.conn_ref(),
+            "acct-1",
+            "p-alex",
+            "user",
+        )
+        .unwrap();
+        crate::db::accounts::seed_account_stakeholder_for_tests(
+            db.conn_ref(),
+            "acct-1",
+            "p-jamie",
+            "user",
+        )
+        .unwrap();
         db.conn_ref()
             .execute(
                 "INSERT INTO actions

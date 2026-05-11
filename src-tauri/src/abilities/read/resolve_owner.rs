@@ -449,12 +449,13 @@ mod tests {
     fn resolves_exact_account_stakeholder() {
         let db = test_db();
         insert_person(&db, "p-alex", "alex@example.com", "Alex Chen");
-        db.conn_ref()
-            .execute(
-                "INSERT INTO account_stakeholders (account_id, person_id, data_source) VALUES ('acct-1', 'p-alex', 'user')",
-                [],
-            )
-            .unwrap();
+        crate::db::accounts::seed_account_stakeholder_for_tests(
+            db.conn_ref(),
+            "acct-1",
+            "p-alex",
+            "user",
+        )
+        .unwrap();
 
         let resolved = resolve_owner(&db, "acct-1", "commitment:test", Some("Alex Chen")).unwrap();
         assert_eq!(resolved.owner_entity_id.as_deref(), Some("p-alex"));

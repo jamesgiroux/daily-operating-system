@@ -3969,3 +3969,21 @@ mod dos258_reclassify_tests {
         let _ = params![0]; // silence unused import if no params! used above
     }
 }
+
+/// Test-only helper: seed an `account_stakeholders` row from test fixtures
+/// in non-allowlisted modules. Lives here (in `db/accounts.rs`, an allowlisted
+/// writer file) so it satisfies the stakeholder-signal lint while keeping
+/// test scaffolds in their own modules.
+#[cfg(test)]
+pub(crate) fn seed_account_stakeholder_for_tests(
+    conn: &rusqlite::Connection,
+    account_id: &str,
+    person_id: &str,
+    data_source: &str,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO account_stakeholders (account_id, person_id, data_source) VALUES (?1, ?2, ?3)",
+        rusqlite::params![account_id, person_id, data_source],
+    )?;
+    Ok(())
+}
