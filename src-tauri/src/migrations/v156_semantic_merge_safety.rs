@@ -30,6 +30,7 @@ const ORIGINAL_TEXT_KEYS: &[&str] = &[
 
 struct LegacyClaimMetadata {
     id: String,
+    text: String,
     metadata_json: Option<String>,
     provenance_json: String,
 }
@@ -57,8 +58,11 @@ pub(super) fn migrate_v156_semantic_merge_safety(conn: &Connection) -> Result<()
 fn migrate_in_transaction(conn: &Connection) -> Result<(), MigrationError> {
     let rows = legacy_claim_rows(conn)?;
     for row in rows {
-        let Some(metadata_json) =
-            migrated_metadata_json(row.metadata_json.as_deref(), &row.provenance_json)?
+        let Some(metadata_json) = migrated_metadata_json(
+            row.metadata_json.as_deref(),
+            &row.provenance_json,
+            &row.text,
+        )?
         else {
             continue;
         };
@@ -77,7 +81,7 @@ fn migrate_in_transaction(conn: &Connection) -> Result<(), MigrationError> {
 fn legacy_claim_rows(conn: &Connection) -> Result<Vec<LegacyClaimMetadata>, MigrationError> {
     let mut stmt = conn
         .prepare(
-            "SELECT id, metadata_json, provenance_json
+            "SELECT id, text, metadata_json, provenance_json
              FROM intelligence_claims
              WHERE claim_state = 'active'
                AND surfacing_state = 'active'",
@@ -87,8 +91,9 @@ fn legacy_claim_rows(conn: &Connection) -> Result<Vec<LegacyClaimMetadata>, Migr
         .query_map([], |row| {
             Ok(LegacyClaimMetadata {
                 id: row.get(0)?,
-                metadata_json: row.get(1)?,
-                provenance_json: row.get(2)?,
+                text: row.get(1)?,
+                metadata_json: row.get(2)?,
+                provenance_json: row.get(3)?,
             })
         })
         .map_err(|e| format!("query legacy claim scan: {e}"))?
@@ -100,6 +105,7 @@ fn legacy_claim_rows(conn: &Connection) -> Result<Vec<LegacyClaimMetadata>, Migr
 fn migrated_metadata_json(
     metadata_json: Option<&str>,
     provenance_json: &str,
+    canonical_text: &str,
 ) -> Result<Option<String>, MigrationError> {
     let mut metadata = match metadata_json {
         Some(raw) => match serde_json::from_str::<Value>(raw) {
@@ -125,7 +131,7 @@ fn migrated_metadata_json(
         return Ok(None);
     }
 
-    if let Some(qualifiers) = recover_qualifiers_from_provenance(provenance_json) {
+    if let Some(qualifiers) = recover_qualifiers_from_provenance(provenance_json, canonical_text) {
         metadata.insert(
             SEMANTIC_QUALIFIERS_METADATA_KEY.to_string(),
             sorted_qualifier_value(&qualifiers),
@@ -140,10 +146,16 @@ fn migrated_metadata_json(
     Ok(Some(Value::Object(metadata).to_string()))
 }
 
-fn recover_qualifiers_from_provenance(provenance_json: &str) -> Option<HashSet<String>> {
+fn recover_qualifiers_from_provenance(
+    provenance_json: &str,
+    canonical_text: &str,
+) -> Option<HashSet<String>> {
     let provenance = serde_json::from_str::<Value>(provenance_json).ok()?;
     let mut candidates = Vec::new();
     collect_original_text_candidates(&provenance, &mut candidates);
+    if !candidate_numeric_scopes_match_canonical(&candidates, canonical_text) {
+        return None;
+    }
 
     let mut recovered = HashSet::new();
     let mut all_candidates_confident_empty = !candidates.is_empty();
@@ -164,6 +176,30 @@ fn recover_qualifiers_from_provenance(provenance_json: &str) -> Option<HashSet<S
     } else {
         None
     }
+}
+
+fn candidate_numeric_scopes_match_canonical(candidates: &[String], canonical_text: &str) -> bool {
+    let canonical_numeric_scopes = semantic_numeric_scopes(canonical_text);
+    candidates
+        .iter()
+        .all(|candidate| semantic_numeric_scopes(candidate) == canonical_numeric_scopes)
+}
+
+fn semantic_numeric_scopes(text: &str) -> HashSet<String> {
+    let mut normalized = String::with_capacity(text.len());
+    for ch in text.chars() {
+        if ch.is_ascii_alphanumeric() {
+            normalized.push(ch.to_ascii_lowercase());
+        } else {
+            normalized.push(' ');
+        }
+    }
+
+    normalized
+        .split_whitespace()
+        .filter(|token| token.chars().all(|ch| ch.is_ascii_digit()))
+        .map(ToString::to_string)
+        .collect()
 }
 
 fn provenance_text_candidate_confidently_preserves_case(text: &str) -> bool {
@@ -231,6 +267,7 @@ mod tests {
         conn.execute_batch(
             "CREATE TABLE intelligence_claims (
                 id TEXT PRIMARY KEY,
+                text TEXT NOT NULL,
                 metadata_json TEXT,
                 provenance_json TEXT NOT NULL,
                 claim_state TEXT NOT NULL,
@@ -238,102 +275,113 @@ mod tests {
             );",
         )
         .expect("create minimal claims table");
-        conn.execute(
-            "INSERT INTO intelligence_claims
-             (id, metadata_json, provenance_json, claim_state, surfacing_state)
-             VALUES (?1, NULL, ?2, 'active', 'active')",
-            params![
-                "recoverable",
-                serde_json::json!({
-                    "source": {
-                        "original_text": "US Phase 2 budget approval is pending with finance"
+        seed_active_claim(
+            &conn,
+            "recoverable",
+            "US Phase 2 budget approval is pending with finance",
+            None,
+            serde_json::json!({
+                "source": {
+                    "original_text": "US Phase 2 budget approval is pending with finance"
+                }
+            }),
+        );
+        seed_active_claim(
+            &conn,
+            "nested-scoped",
+            "US Phase 2 budget approval is pending with finance",
+            None,
+            serde_json::json!({
+                "events": [
+                    {
+                        "parent": {
+                            "text": "Phase 2 budget approval is pending with finance"
+                        }
+                    },
+                    {
+                        "child": {
+                            "original_text": "US Phase 2 budget approval is pending with finance"
+                        }
                     }
-                })
-                .to_string(),
-            ],
-        )
-        .expect("seed recoverable claim");
-        conn.execute(
-            "INSERT INTO intelligence_claims
-             (id, metadata_json, provenance_json, claim_state, surfacing_state)
-             VALUES (?1, NULL, ?2, 'active', 'active')",
-            params![
-                "nested-scoped",
-                serde_json::json!({
-                    "events": [
-                        {
-                            "parent": {
-                                "text": "Phase 2 budget approval is pending with finance"
-                            }
-                        },
-                        {
-                            "child": {
-                                "original_text": "US Phase 2 budget approval is pending with finance"
-                            }
+                ]
+            }),
+        );
+        seed_active_claim(
+            &conn,
+            "ambiguous-empty",
+            "Phase 2 budget approval is pending with finance",
+            None,
+            serde_json::json!({
+                "events": [
+                    {
+                        "parent": {
+                            "text": "Phase 2 budget approval is pending with finance"
                         }
-                    ]
-                })
-                .to_string(),
-            ],
-        )
-        .expect("seed nested scoped claim");
-        conn.execute(
-            "INSERT INTO intelligence_claims
-             (id, metadata_json, provenance_json, claim_state, surfacing_state)
-             VALUES (?1, NULL, ?2, 'active', 'active')",
-            params![
-                "ambiguous-empty",
-                serde_json::json!({
-                    "events": [
-                        {
-                            "parent": {
-                                "text": "Phase 2 budget approval is pending with finance"
-                            }
-                        },
-                        {
-                            "child": {
-                                "original_text": "phase 2 budget approval is pending with finance"
-                            }
+                    },
+                    {
+                        "child": {
+                            "original_text": "phase 2 budget approval is pending with finance"
                         }
-                    ]
-                })
-                .to_string(),
-            ],
-        )
-        .expect("seed ambiguous empty claim");
-        conn.execute(
-            "INSERT INTO intelligence_claims
-             (id, metadata_json, provenance_json, claim_state, surfacing_state)
-             VALUES ('unknown', NULL, '{}', 'active', 'active')",
-            [],
-        )
-        .expect("seed unknown claim");
-        conn.execute(
-            "INSERT INTO intelligence_claims
-             (id, metadata_json, provenance_json, claim_state, surfacing_state)
-             VALUES (?1, ?2, '{}', 'active', 'active')",
-            params![
-                "known",
-                serde_json::json!({
-                    SEMANTIC_QUALIFIERS_METADATA_KEY: []
-                })
-                .to_string(),
-            ],
-        )
-        .expect("seed already-known claim");
-        conn.execute(
-            "INSERT INTO intelligence_claims
-             (id, metadata_json, provenance_json, claim_state, surfacing_state)
-             VALUES (?1, ?2, '{}', 'active', 'active')",
-            params![
-                "legacy-known",
-                serde_json::json!({
-                    LEGACY_SEMANTIC_QUALIFIERS_METADATA_KEY: ["region:US"]
-                })
-                .to_string(),
-            ],
-        )
-        .expect("seed legacy-known claim");
+                    }
+                ]
+            }),
+        );
+        seed_active_claim(
+            &conn,
+            "mixed-numeric-empty",
+            "Budget approval is pending with finance",
+            None,
+            serde_json::json!({
+                "events": [
+                    {
+                        "parent": {
+                            "text": "Phase 2 budget approval is pending with finance"
+                        }
+                    },
+                    {
+                        "child": {
+                            "original_text": "Budget approval is pending with finance"
+                        }
+                    }
+                ]
+            }),
+        );
+        seed_active_claim(
+            &conn,
+            "canonical-numeric-mismatch",
+            "Phase 2 budget approval is pending with finance",
+            None,
+            serde_json::json!({
+                "source": {
+                    "original_text": "Budget approval is pending with finance"
+                }
+            }),
+        );
+        seed_active_claim(
+            &conn,
+            "unknown",
+            "Unknown claim",
+            None,
+            serde_json::json!({}),
+        );
+        seed_active_claim(
+            &conn,
+            "known",
+            "Known claim",
+            Some(serde_json::json!({
+                SEMANTIC_QUALIFIERS_METADATA_KEY: []
+            })),
+            serde_json::json!({}),
+        );
+        seed_active_claim(
+            &conn,
+            "legacy-known",
+            "Legacy known claim",
+            Some(serde_json::json!({
+                LEGACY_SEMANTIC_QUALIFIERS_METADATA_KEY: ["region:US"]
+            })),
+            serde_json::json!({}),
+        );
 
         migrate_v156_semantic_merge_safety(&conn).expect("migration succeeds");
 
@@ -361,6 +409,24 @@ mod tests {
             Value::Bool(true)
         );
 
+        let mixed_numeric_empty = metadata_for(&conn, "mixed-numeric-empty");
+        assert_eq!(
+            mixed_numeric_empty[NON_SEMANTIC_MERGEABLE_METADATA_KEY],
+            Value::Bool(true)
+        );
+        assert!(mixed_numeric_empty
+            .get(SEMANTIC_QUALIFIERS_METADATA_KEY)
+            .is_none());
+
+        let canonical_numeric_mismatch = metadata_for(&conn, "canonical-numeric-mismatch");
+        assert_eq!(
+            canonical_numeric_mismatch[NON_SEMANTIC_MERGEABLE_METADATA_KEY],
+            Value::Bool(true)
+        );
+        assert!(canonical_numeric_mismatch
+            .get(SEMANTIC_QUALIFIERS_METADATA_KEY)
+            .is_none());
+
         let unknown = metadata_for(&conn, "unknown");
         assert_eq!(
             unknown[NON_SEMANTIC_MERGEABLE_METADATA_KEY],
@@ -383,6 +449,23 @@ mod tests {
         assert!(legacy_known
             .get(NON_SEMANTIC_MERGEABLE_METADATA_KEY)
             .is_none());
+    }
+
+    fn seed_active_claim(
+        conn: &Connection,
+        id: &str,
+        text: &str,
+        metadata: Option<Value>,
+        provenance: Value,
+    ) {
+        let metadata_json = metadata.map(|value| value.to_string());
+        conn.execute(
+            "INSERT INTO intelligence_claims
+             (id, text, metadata_json, provenance_json, claim_state, surfacing_state)
+             VALUES (?1, ?2, ?3, ?4, 'active', 'active')",
+            params![id, text, metadata_json, provenance.to_string()],
+        )
+        .expect("seed active claim");
     }
 
     fn metadata_for(conn: &Connection, id: &str) -> Value {
