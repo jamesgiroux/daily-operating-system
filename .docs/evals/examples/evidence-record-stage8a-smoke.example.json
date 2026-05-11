@@ -1,0 +1,82 @@
+{
+  "schema_version": "evaluation_evidence_record_v1",
+  "suite": "custom",
+  "lane": "DOS-503",
+  "mode": "smoke",
+  "scope": "v1.4.1-W8",
+  "run_id": "example-stage8a-contract-smoke-20260509T000000Z",
+  "commit": "0000000000000000000000000000000000000000",
+  "branch": "example",
+  "dirty": false,
+  "command": "node scripts/evidence-contract-smoke.mjs --out src-tauri/target/evidence/contract/example-stage8a-contract-smoke-20260509T000000Z/record.json --run-id example-stage8a-contract-smoke-20260509T000000Z",
+  "started_at": "2026-05-09T00:00:00.000Z",
+  "finished_at": "2026-05-09T00:00:01.000Z",
+  "environment": {
+    "os": "darwin",
+    "arch": "arm64",
+    "node_version": "v22.0.0",
+    "pnpm_version": "10.0.0",
+    "runner_version": "stage8a_contract_smoke_v1"
+  },
+  "input_hashes": {
+    "evaluation_evidence_schema": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "base_smoke_example_record": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "stage8a_smoke_example_record": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+    "contract_smoke_emitter": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+  },
+  "metric_definitions": [
+    {
+      "namespace": "surface_safety",
+      "name": "contract_schema_validation",
+      "description": "Evidence record contains the required Evaluation Evidence Contract fields, enums, and privacy-safe artifact paths.",
+      "unit": "boolean",
+      "higher_is_better": true
+    }
+  ],
+  "metrics": [
+    {
+      "namespace": "surface_safety",
+      "name": "contract_schema_validation",
+      "value": true,
+      "unit": "boolean",
+      "status": "pass"
+    }
+  ],
+  "thresholds": {
+    "contract_schema_validation": {
+      "operator": "eq",
+      "value": true
+    }
+  },
+  "result": "pass",
+  "artifact_paths": [
+    {
+      "path": "src-tauri/target/evidence/contract/example-stage8a-contract-smoke-20260509T000000Z/record.json",
+      "kind": "evidence-record",
+      "privacy_class": "public",
+      "publishable": true,
+      "redaction_status": "synthetic"
+    }
+  ],
+  "privacy_class": "public",
+  "publishable": true,
+  "dataset_source": "synthetic-contract-smoke",
+  "dataset_license": "DailyOS synthetic example",
+  "dataset_hash": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+  "redaction_status": "synthetic",
+  "notes": "Synthetic Stage 8a smoke record for the Evaluation Evidence Contract; no customer data or private fixture payloads are used.",
+  "extensions": {
+    "contract_validation": {
+      "validator": "scripts/evidence-contract-smoke.mjs",
+      "required_fields_checked": 26,
+      "enum_sets_checked": 7,
+      "input_paths": [
+        ".docs/evals/evidence-record.schema.json",
+        ".docs/evals/examples/evidence-record-smoke.example.json",
+        ".docs/evals/examples/evidence-record-stage8a-smoke.example.json",
+        "scripts/evidence-contract-smoke.mjs"
+      ],
+      "errors": []
+    }
+  }
+}

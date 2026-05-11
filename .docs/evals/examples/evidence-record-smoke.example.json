@@ -1,0 +1,64 @@
+{
+  "schema_version": "evaluation_evidence_record_v1",
+  "suite": "custom",
+  "lane": "contract-smoke",
+  "mode": "smoke",
+  "scope": "v1.4.1-W8",
+  "run_id": "example-evidence-20260509T000000Z",
+  "commit": "0000000000000000000000000000000000000000",
+  "branch": "example",
+  "dirty": false,
+  "command": "pnpm evidence:validate .docs/evals/examples/evidence-record-smoke.example.json",
+  "started_at": "2026-05-09T00:00:00Z",
+  "finished_at": "2026-05-09T00:00:01Z",
+  "environment": {
+    "os": "darwin",
+    "arch": "arm64",
+    "runner_version": "evaluation_evidence_contract_v1"
+  },
+  "input_hashes": {
+    "schema": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "metric_definitions": [
+    {
+      "namespace": "surface_safety",
+      "name": "schema_validation",
+      "description": "Example record validates against the Evaluation Evidence Contract",
+      "unit": "boolean",
+      "higher_is_better": true
+    }
+  ],
+  "metrics": [
+    {
+      "namespace": "surface_safety",
+      "name": "schema_validation",
+      "value": true,
+      "unit": "boolean",
+      "status": "pass"
+    }
+  ],
+  "thresholds": {
+    "schema_validation": {
+      "operator": "eq",
+      "value": true
+    }
+  },
+  "result": "pass",
+  "artifact_paths": [
+    {
+      "path": ".docs/evals/examples/evidence-record-smoke.example.json",
+      "kind": "example-record",
+      "sha256": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "privacy_class": "public",
+      "publishable": true,
+      "redaction_status": "synthetic"
+    }
+  ],
+  "privacy_class": "public",
+  "publishable": true,
+  "dataset_source": "synthetic-example",
+  "dataset_license": "DailyOS synthetic example",
+  "dataset_hash": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+  "redaction_status": "synthetic",
+  "notes": "Synthetic example used to validate the contract shape."
+}

@@ -17,6 +17,7 @@ SCOPE=""
 THRESHOLD="10"
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --) shift ;;
     --out) OUT="$2"; shift 2 ;;
     --scope) SCOPE="$2"; shift 2 ;;
     --threshold) THRESHOLD="$2"; shift 2 ;;
@@ -53,7 +54,15 @@ cd ..
 if [[ $bench_exit -eq 255 ]]; then
   # No benches yet — seed empty baseline, succeed. Future scopes populate.
   echo '{"benchmarks":[],"note":"no-benches-compiled"}' > "$CURRENT_BASELINE"
-  summary="{\"suite\":\"P\",\"scope\":\"$SCOPE\",\"status\":\"seeded-empty\",\"baseline\":\"$CURRENT_BASELINE\",\"prior\":null,\"regressions\":[]}"
+  summary=$(python3 - "$SCOPE" "$CURRENT_BASELINE" <<'PY'
+import json, sys
+scope, baseline = sys.argv[1:]
+print(json.dumps({"suite":"P","scope":scope,"status":"seeded-empty","baseline":baseline,"prior":None,"regressions":[]}, separators=(",",":")))
+PY
+)
+  if [[ -n "$OUT" ]]; then
+    mkdir -p "$(dirname "$OUT")"
+  fi
   [[ -n "$OUT" ]] && printf '%s\n' "$summary" > "$OUT" || printf '%s\n' "$summary"
   exit 0
 fi
@@ -96,8 +105,23 @@ PY
   fi
 fi
 
-summary="{\"suite\":\"P\",\"scope\":\"$SCOPE\",\"status\":\"$status\",\"baseline\":\"$CURRENT_BASELINE\",\"prior\":${PRIOR_BASELINE:+\"$PRIOR_BASELINE\"}${PRIOR_BASELINE:-null},\"regressions\":$regressions}"
+summary=$(python3 - "$SCOPE" "$status" "$CURRENT_BASELINE" "${PRIOR_BASELINE:-}" "$regressions" <<'PY'
+import json, sys
+scope, status, baseline, prior, regressions = sys.argv[1:]
+print(json.dumps({
+    "suite": "P",
+    "scope": scope,
+    "status": status,
+    "baseline": baseline,
+    "prior": prior or None,
+    "regressions": json.loads(regressions),
+}, separators=(",",":")))
+PY
+)
 
+if [[ -n "$OUT" ]]; then
+  mkdir -p "$(dirname "$OUT")"
+fi
 [[ -n "$OUT" ]] && printf '%s\n' "$summary" > "$OUT" || printf '%s\n' "$summary"
 
 [[ "$status" == "regression" ]] && exit 1 || exit 0
