@@ -1,0 +1,894 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Project D-spine &middot; DailyOS Reference</title>
+
+  <!-- Fonts FIRST so the rest of the cascade has them -->
+  <link rel="stylesheet" href="../_shared/fonts.css">
+  <link rel="stylesheet" href="../_shared/styles/design-tokens.css">
+
+  <!-- Chrome modules — injected by chrome.js from body data attributes -->
+  <link rel="stylesheet" href="../_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../_shared/styles/FolioBar.module.css">
+  <link rel="stylesheet" href="../_shared/styles/FloatingNavIsland.module.css">
+  <link rel="stylesheet" href="../_shared/styles/MagazinePageLayout.module.css">
+
+  <!-- Existing project-detail surface modules (mirrors project.html canonical) -->
+  <link rel="stylesheet" href="../_shared/styles/entity-detail.module.css">
+  <link rel="stylesheet" href="../_shared/styles/ProjectDetailEditorial.module.css">
+  <link rel="stylesheet" href="../_shared/styles/ProjectHero.module.css">
+  <link rel="stylesheet" href="../_shared/styles/EntityHeroBase.module.css">
+  <link rel="stylesheet" href="../_shared/styles/IntelligenceQualityBadge.module.css">
+  <link rel="stylesheet" href="../_shared/styles/EditableText.module.css">
+  <link rel="stylesheet" href="../_shared/styles/VitalsStrip.module.css">
+  <link rel="stylesheet" href="../_shared/styles/ChapterHeading.module.css">
+  <link rel="stylesheet" href="../_shared/styles/StakeholderGallery.module.css">
+  <link rel="stylesheet" href="../_shared/styles/EngagementSelector.module.css">
+  <link rel="stylesheet" href="../_shared/styles/TeamRoleSelector.module.css">
+  <link rel="stylesheet" href="../_shared/styles/Pill.module.css">
+  <link rel="stylesheet" href="../_shared/styles/EntityChip.module.css">
+
+  <!-- New patterns + primitive added for v1.4.2 project d-spine (0.6.0) -->
+  <link rel="stylesheet" href="../_shared/styles/Callout.module.css">
+  <link rel="stylesheet" href="../_shared/styles/MeterCluster.module.css">
+  <link rel="stylesheet" href="../_shared/styles/PhaseTimeline.module.css">
+  <link rel="stylesheet" href="../_shared/styles/StateOfPlayQuad.module.css">
+  <link rel="stylesheet" href="../_shared/styles/SuccessOutcome.module.css">
+  <link rel="stylesheet" href="../_shared/styles/DecisionLog.module.css">
+  <link rel="stylesheet" href="../_shared/styles/ActivityLedger.module.css">
+  <link rel="stylesheet" href="../_shared/styles/ReferenceGrid.module.css">
+  <link rel="stylesheet" href="../_shared/styles/AboutThisDossier.module.css">
+
+  <link rel="stylesheet" href="../_shared/styles/ui-button.css">
+  <link rel="stylesheet" href="../_shared/styles/tailwind-shims.css">
+
+  <!-- Reference-only chrome (chrome toggle, baseline reset) -->
+  <link rel="stylesheet" href="../_shared/chrome.css">
+  <link rel="stylesheet" href="../_shared/inspector.css">
+
+  <style>
+    /* Surface-local glue: editorial lead sentence, chapter freshness line,
+       and reference-only finis fallback. Everything else uses canonical DS
+       module classes. */
+
+    .pdspine-lead {
+      padding: var(--space-md) 0 var(--space-xl);
+    }
+    .pdspine-lead-eyebrow {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--color-text-tertiary);
+      margin-bottom: var(--space-md);
+    }
+    .pdspine-lead-sentence {
+      font-family: var(--font-serif);
+      font-size: 38px;
+      font-weight: 400;
+      line-height: 1.2;
+      letter-spacing: -0.015em;
+      color: var(--color-text-primary);
+      max-width: 880px;
+      margin: 0;
+      text-wrap: pretty;
+    }
+    .pdspine-sharp {
+      background: linear-gradient(to top,
+        var(--color-spice-terracotta-15) 0%,
+        var(--color-spice-terracotta-15) 38%,
+        transparent 38%);
+      padding: 0 2px;
+    }
+
+    /* Freshness line under chapter headings (mono small text + sep + alert) */
+    .pdspine-freshness {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--color-text-tertiary);
+      letter-spacing: 0.02em;
+      margin: var(--space-xs) 0 var(--space-lg);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .pdspine-freshness .pdspine-sep { opacity: 0.4; }
+    .pdspine-freshness .pdspine-alert { color: var(--color-spice-terracotta); }
+    .pdspine-freshness .pdspine-stale { color: var(--color-spice-saffron); }
+
+    /* Variant: freshness sits BELOW the thing it annotates (meter strip)
+       rather than above. Tightens top margin and pushes a touch of breathing
+       room below before the next chapter rule. */
+    .pdspine-freshness--below-meters {
+      margin-top: calc(-1 * var(--space-md));
+      margin-bottom: var(--space-2xl);
+    }
+
+    /* Outcome + commercial wrap */
+    .pdspine-outcome-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-lg);
+    }
+
+    .finis-marker {
+      text-align: center;
+      padding: 72px 0 24px;
+    }
+    .finis-marker-marks {
+      display: flex;
+      justify-content: center;
+      gap: 0.4em;
+      color: var(--color-spice-turmeric);
+    }
+  </style>
+</head>
+<body
+  data-folio-label="Project D-spine"
+  data-tint="olive"
+  data-active-page="projects"
+  data-folio-crumbs="Reference > Surfaces > Project D-spine"
+  data-nav-base="."
+  data-entity-mode="project"
+  data-folio-actions="refresh,reports,tools"
+  data-folio-refresh-title="Refresh project"
+  data-chapters="headline:alignleft:Mission|lead:alignleft:Lead|health:activity:Health|plan:calendar:Plan|stand:eye:Stand|moved:activity:Moved|outcome:alignleft:Outcome|the-room:users:Team|decisions:alignleft:Decisions">
+
+<!-- MagazinePageLayout shell — mirrors src/components/layout/MagazinePageLayout.tsx.
+     Folio bar, atmosphere, and floating nav are injected by chrome.js. -->
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+
+  <!-- ═════════════════════════════════════════════════════════════════════
+       Chapter 1: The Mission — canonical ProjectHero + VitalsStrip
+       (Verbatim structure from project.html. Variation D's vitals row and
+       tab nav were dropped per design decision 2026-05-10; the canonical
+       ProjectHero + VitalsStrip pattern remains.)
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="headline" class="entity-detail_chapterSection">
+    <div class="ProjectHero_hero EntityHeroBase_hero">
+      <div class="ProjectHero_heroDate EntityHeroBase_heroDate">
+        <span class="IntelligenceQualityBadge_root" title="Beta — 51 days in">
+          <span class="IntelligenceQualityBadge_dot IntelligenceQualityBadge_mutedDot"></span>
+        </span>
+      </div>
+
+      <h1 class="ProjectHero_name EntityHeroBase_heroTitle">
+        <span class="EditableText_editable" title="Click to edit" data-editable-text="">Q2 Launch Program</span>
+      </h1>
+
+    </div>
+
+    <div>
+      <div class="VitalsStrip_strip">
+        <div class="VitalsStrip_items">
+          <span class="VitalsStrip_item">
+            <span class="VitalsStrip_fieldStack">
+              <span class="VitalsStrip_vitalText" data-highlight="olive">Beta &middot; 51d in</span>
+            </span>
+          </span>
+          <span class="VitalsStrip_item">
+            <span class="VitalsStrip_separatorDot"></span>
+            <span class="VitalsStrip_fieldStack">
+              <span class="VitalsStrip_vitalText">GA Jul 15 &middot; 12w out</span>
+            </span>
+          </span>
+          <span class="VitalsStrip_item">
+            <span class="VitalsStrip_separatorDot"></span>
+            <span class="VitalsStrip_fieldStack">
+              <span class="VitalsStrip_vitalText">2 design partners</span>
+            </span>
+          </span>
+          <span class="VitalsStrip_item">
+            <span class="VitalsStrip_separatorDot"></span>
+            <span class="VitalsStrip_fieldStack">
+              <span class="VitalsStrip_vitalText">7 workstreams</span>
+            </span>
+          </span>
+          <span class="VitalsStrip_item">
+            <span class="VitalsStrip_separatorDot"></span>
+            <span class="VitalsStrip_fieldStack">
+              <span class="VitalsStrip_vitalText">23 contributors</span>
+            </span>
+          </span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═════════════════════════════════════════════════════════════════════
+       Chapter 2: The Lead — single-sentence editorial headline
+       Pattern: Lead (proposed). Surface-local CSS: .pdspine-lead*.
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="lead" class="entity-detail_chapterSection">
+    <section class="pdspine-lead"
+             data-ds-tier="pattern" data-ds-name="Lead" data-ds-spec="patterns/Lead.md" data-ds-state="proposed">
+      <p class="pdspine-lead-sentence">
+        Beta is shipping on cadence with the integration partner, but
+        <span class="pdspine-sharp">the second partner's residency response is the gate for week 16</span>
+        — every other workstream is downstream of it.
+      </p>
+    </section>
+  </section>
+
+  <!-- ═════════════════════════════════════════════════════════════════════
+       Health strip — MeterCluster
+       Pattern: MeterCluster (proposed, v1.4.2 / 0.6.0). No chapter heading;
+       it flows full-width under the lead. Freshness footnote sits underneath as
+       quiet attribution.
+       ════════════════════════════════════════════════════════════════════ -->
+  <section id="health" class="entity-detail_chapterSection">
+    <section class="meter-cluster"
+             data-ds-tier="pattern" data-ds-name="MeterCluster" data-ds-spec="patterns/MeterCluster.md" data-ds-state="proposed"
+             data-meters="4">
+      <div class="meter">
+        <div class="meter-axis-label">Momentum</div>
+        <div class="meter-value" data-tone="sage">Strong</div>
+        <div class="meter-bar"><div class="meter-fill" data-tone="sage" style="width: 78%;"></div></div>
+        <div class="meter-trend" data-direction="up">from steady &middot; 2 wks</div>
+      </div>
+      <div class="meter">
+        <div class="meter-axis-label">Confidence in date</div>
+        <div class="meter-value" data-tone="saffron">Wavering</div>
+        <div class="meter-bar"><div class="meter-fill" data-tone="saffron" style="width: 52%;"></div></div>
+        <div class="meter-trend" data-direction="down">from confident &middot; since Mon</div>
+      </div>
+      <div class="meter">
+        <div class="meter-axis-label">Open risks</div>
+        <div class="meter-value" data-tone="terracotta">3 active</div>
+        <div class="meter-bar"><div class="meter-fill" data-tone="terracotta" style="width: 38%;"></div></div>
+        <div class="meter-trend" data-direction="down">+1 this week</div>
+      </div>
+      <div class="meter">
+        <div class="meter-axis-label">Partner engagement</div>
+        <div class="meter-value" data-tone="larkspur">Heated</div>
+        <div class="meter-bar"><div class="meter-fill" data-tone="larkspur" style="width: 84%;"></div></div>
+        <div class="meter-trend" data-direction="up">11 touches/wk</div>
+      </div>
+    </section>
+
+    <div class="pdspine-freshness pdspine-freshness--below-meters">
+      Updated this morning
+      <span class="pdspine-sep">&middot;</span>
+      4 axes &middot; trends since last week
+    </div>
+  </section>
+
+  <!-- ═════════════════════════════════════════════════════════════════════
+       Chapter 4: The Plan — PhaseTimeline
+       Pattern: PhaseTimeline (proposed, v1.4.2 / 0.6.0).
+       ════════════════════════════════════════════════════════════════════ -->
+  <div id="plan" class="entity-detail_marginLabelSection">
+    <div class="entity-detail_marginLabel">The<br/>Plan</div>
+    <div class="entity-detail_marginContent">
+      <section>
+      <div class="ChapterHeading_heading">
+        <hr class="ChapterHeading_rule" />
+        <div class="ChapterHeading_titleRow">
+          <h2 class="ChapterHeading_title">The plan, at a glance</h2>
+        </div>
+      </div>
+      <div class="pdspine-freshness">
+        Mar 4 &rarr; Jul 15
+        <span class="pdspine-sep">&middot;</span>
+        4 phases &middot; 7 milestones
+        <span class="pdspine-sep">&middot;</span>
+        <span class="pdspine-alert">1 milestone slipping</span>
+      </div>
+
+      <section class="phase-timeline"
+               data-ds-tier="pattern" data-ds-name="PhaseTimeline" data-ds-spec="patterns/PhaseTimeline.md" data-ds-state="proposed">
+        <div class="phase-timeline-legend">
+          <span><span class="phase-timeline-swatch" data-phase="discover" aria-hidden="true"></span>Discovery</span>
+          <span><span class="phase-timeline-swatch" data-phase="build" aria-hidden="true"></span>Build</span>
+          <span><span class="phase-timeline-swatch" data-phase="beta" aria-hidden="true"></span>Beta</span>
+          <span><span class="phase-timeline-swatch" data-phase="launch" aria-hidden="true"></span>Launch / GA</span>
+          <span><span class="phase-timeline-swatch" data-phase="warn" aria-hidden="true"></span>At risk</span>
+        </div>
+
+        <div class="phase-timeline-ticks" data-tick-count="8" aria-hidden="true">
+          <span>Mar</span><span data-quarter-end="true">Q1 &rarr;</span>
+          <span>Apr</span><span>May</span><span>Jun</span>
+          <span data-quarter-end="true">Q2 &rarr;</span><span>Jul</span><span>Aug</span>
+        </div>
+
+        <div class="phase-timeline-track">
+          <div class="phase-timeline-bar" data-phase="discover" data-state="past" style="left:0%; width:12.5%;">
+            <span class="phase-timeline-bar-title">Discovery</span>
+            <span class="phase-timeline-bar-meta">Mar 4 &ndash; Mar 18</span>
+          </div>
+          <div class="phase-timeline-bar" data-phase="build" data-state="past" style="left:12.5%; width:25%;">
+            <span class="phase-timeline-bar-title">Build</span>
+            <span class="phase-timeline-bar-meta">Mar 19 &ndash; Apr 22 &middot; Closed</span>
+          </div>
+          <div class="phase-timeline-bar" data-phase="beta" style="left:37.5%; width:30%;">
+            <span class="phase-timeline-bar-title">Beta &middot; 2 partners</span>
+            <span class="phase-timeline-bar-meta">Apr 23 &ndash; Jun 30</span>
+          </div>
+          <div class="phase-timeline-bar" data-phase="launch" data-state="future" style="left:67.5%; width:20%;">
+            <span class="phase-timeline-bar-title">GA prep + launch</span>
+            <span class="phase-timeline-bar-meta">Jul 1 &ndash; Jul 22</span>
+          </div>
+
+          <div class="phase-timeline-milestone" data-state="done" style="left: 6.25%;" aria-label="Kickoff, Mar 4"></div>
+          <div class="phase-timeline-milestone-label" style="left: 6.25%;">Kickoff &middot; Mar 4</div>
+
+          <div class="phase-timeline-milestone" data-state="done" style="left: 12.5%;" aria-label="Architecture sign-off"></div>
+          <div class="phase-timeline-milestone-label" style="left: 12.5%;">Arch sign-off</div>
+
+          <div class="phase-timeline-milestone" data-state="done" style="left: 37.5%;" aria-label="Beta start"></div>
+          <div class="phase-timeline-milestone-label" style="left: 37.5%;">Beta start</div>
+
+          <div class="phase-timeline-milestone" data-state="next" style="left: 44%;" aria-label="Residency clearance, slipping"></div>
+          <div class="phase-timeline-milestone-label" style="left: 44%;">Residency &middot; slipping</div>
+
+          <div class="phase-timeline-milestone" style="left: 56%;" aria-label="Joint case study"></div>
+          <div class="phase-timeline-milestone-label" style="left: 56%;">Joint case study</div>
+
+          <div class="phase-timeline-milestone" style="left: 67.5%;" aria-label="GA prep gate"></div>
+          <div class="phase-timeline-milestone-label" style="left: 67.5%;">GA prep gate</div>
+
+          <div class="phase-timeline-milestone" style="left: 80%;" aria-label="GA, Jul 15"></div>
+          <div class="phase-timeline-milestone-label" style="left: 80%;">GA &middot; Jul 15</div>
+
+          <div class="phase-timeline-now" data-label="NOW &middot; WK 14" style="left: 44%;" aria-hidden="true"></div>
+        </div>
+      </section>
+    </section>
+    </div>
+  </div>
+
+  <!-- ═════════════════════════════════════════════════════════════════════
+       Chapter 5: Where it stands today — StateOfPlayQuad
+       Pattern: StateOfPlayQuad (proposed, v1.4.2 / 0.6.0).
+       ════════════════════════════════════════════════════════════════════ -->
+  <div id="stand" class="entity-detail_marginLabelSection">
+    <div class="entity-detail_marginLabel">Where it<br/>Stands</div>
+    <div class="entity-detail_marginContent">
+    <section>
+      <div class="ChapterHeading_heading">
+        <hr class="ChapterHeading_rule" />
+        <div class="ChapterHeading_titleRow">
+          <h2 class="ChapterHeading_title">Where it stands today</h2>
+        </div>
+      </div>
+      <div class="pdspine-freshness">
+        Synthesized from this week's 6 standups &middot; 4 customer touchpoints
+        <span class="pdspine-sep">&middot;</span>
+        Updated Apr 23
+      </div>
+
+      <div class="state-of-play-quad"
+           data-ds-tier="pattern" data-ds-name="StateOfPlayQuad" data-ds-spec="patterns/StateOfPlayQuad.md" data-ds-state="proposed">
+        <div class="state-of-play-quad-cell">
+          <div class="state-of-play-quad-label">What's working</div>
+          <p class="state-of-play-quad-body">
+            The integration partner's engineering is two weeks ahead. Their
+            platform team approved our auth model on first review and the
+            beta cohort is running 18 active sessions a day.
+          </p>
+        </div>
+        <div class="state-of-play-quad-cell">
+          <div class="state-of-play-quad-label">What's not</div>
+          <p class="state-of-play-quad-body">
+            The second partner's residency requirement was unspecified at
+            kickoff and is now a hard gate for their pilot. We owe them a
+            remediation plan by Friday — drafted but not reviewed by legal.
+          </p>
+        </div>
+        <div class="state-of-play-quad-cell">
+          <div class="state-of-play-quad-label">What's unclear</div>
+          <p class="state-of-play-quad-body">
+            GTM positioning. Sales wants to lead with the integration
+            partner; product marketing wants to lead with "agent of action."
+            Decision pending the May 2 PMM review.
+          </p>
+        </div>
+        <div class="state-of-play-quad-cell">
+          <div class="state-of-play-quad-label">What we need</div>
+          <p class="state-of-play-quad-body">
+            Legal to clear the residency response by Apr 26. PMM to commit
+            to a positioning track by May 2. Otherwise the GA date moves.
+          </p>
+        </div>
+      </div>
+    </section>
+    </div>
+  </div>
+
+  <!-- ═════════════════════════════════════════════════════════════════════
+       Chapter: What's moved this week — ActivityLedger
+       Pattern: ActivityLedger (proposed, v1.4.2 / 0.6.0). Editorial weekly
+       digest of synthesized activity. Distinct from TimelineEntry (audit log)
+       and ActivityLogSection (settings security log).
+       ════════════════════════════════════════════════════════════════════ -->
+  <div id="moved" class="entity-detail_marginLabelSection">
+    <div class="entity-detail_marginLabel">What's<br/>Moved</div>
+    <div class="entity-detail_marginContent">
+    <section>
+      <div class="ChapterHeading_heading">
+        <hr class="ChapterHeading_rule" />
+        <div class="ChapterHeading_titleRow">
+          <h2 class="ChapterHeading_title">What's moved this week</h2>
+        </div>
+      </div>
+      <div class="activity-ledger-filters">
+        14 events touching the project &middot; across 3 organizations
+        <span class="activity-ledger-meta-sep">&middot;</span>
+        Filter by <a href="#">type</a> &middot; <a href="#">person</a> &middot; <a href="#">account</a>
+      </div>
+
+      <ol class="activity-ledger"
+          data-ds-tier="pattern" data-ds-name="ActivityLedger" data-ds-spec="patterns/ActivityLedger.md" data-ds-state="proposed">
+
+        <li class="activity-ledger-row">
+          <span class="activity-ledger-when">Today &middot; 9:14a</span>
+          <span class="activity-ledger-dot" data-kind="action" aria-hidden="true"></span>
+          <div class="activity-ledger-body">
+            <p>
+              <strong>Residency remediation draft</strong> sent to legal —
+              owed to <a href="person.html" class="EntityChip_chip EntityChip_chip-person">Marco Devine</a> by Friday.
+            </p>
+            <div class="activity-ledger-meta">
+              <span>S. Wu</span>
+              <span class="activity-ledger-meta-sep">&middot;</span>
+              <a href="#" class="EntityChip_chip">Action #41</a>
+            </div>
+          </div>
+        </li>
+
+        <li class="activity-ledger-row">
+          <span class="activity-ledger-when">Yesterday &middot; 4:30p</span>
+          <span class="activity-ledger-dot" data-kind="meeting" aria-hidden="true"></span>
+          <div class="activity-ledger-body">
+            <p>
+              <strong>Partner design review</strong> — auth flow approved on first
+              pass. Priya asked about audit log retention; we owe her the
+              retention policy doc.
+            </p>
+            <div class="activity-ledger-meta">
+              <span>P. Raman &middot; S. Wu &middot; J. Park</span>
+              <span class="activity-ledger-meta-sep">&middot;</span>
+              <span>47 min</span>
+            </div>
+          </div>
+        </li>
+
+        <li class="activity-ledger-row">
+          <span class="activity-ledger-when">Yesterday &middot; 11:02a</span>
+          <span class="activity-ledger-dot" data-kind="decision" aria-hidden="true"></span>
+          <div class="activity-ledger-body">
+            <p>
+              <strong>Decision logged:</strong> ship the second partner pilot in
+              EU-West, not US-East. <em>Forced by their residency requirement;
+              adds 2 weeks to provisioning.</em>
+            </p>
+            <div class="activity-ledger-meta">
+              <span>Decided by M. Devine in Slack</span>
+            </div>
+          </div>
+        </li>
+
+        <li class="activity-ledger-row">
+          <span class="activity-ledger-when">Mon &middot; 3:18p</span>
+          <span class="activity-ledger-dot" data-kind="email" aria-hidden="true"></span>
+          <div class="activity-ledger-body">
+            <p>
+              <strong>Marco raised the residency gap</strong> — first explicit
+              mention. He's framing it as a hard gate for the pilot, not a
+              nice-to-have.
+            </p>
+            <div class="activity-ledger-meta">
+              <span>From M. Devine &rarr; J. Park</span>
+              <span class="activity-ledger-meta-sep">&middot;</span>
+              <span>4 thread replies</span>
+            </div>
+          </div>
+        </li>
+
+        <li class="activity-ledger-row">
+          <span class="activity-ledger-when">Mon &middot; 10:30a</span>
+          <span class="activity-ledger-dot" data-kind="meeting" aria-hidden="true"></span>
+          <div class="activity-ledger-body">
+            <p>
+              <strong>Steering &middot; Wed standup</strong> — confidence in date
+              moved from "confident" to "wavering" pending the partner's response.
+            </p>
+            <div class="activity-ledger-meta">
+              <span>J. Park &middot; S. Wu &middot; L. Kang</span>
+              <span class="activity-ledger-meta-sep">&middot;</span>
+              <span>30 min</span>
+            </div>
+          </div>
+        </li>
+
+        <li class="activity-ledger-row">
+          <span class="activity-ledger-when">Fri &middot; 5:02p</span>
+          <span class="activity-ledger-dot" data-kind="event" aria-hidden="true"></span>
+          <div class="activity-ledger-body">
+            <p>
+              <strong>Beta sessions hit 18/day</strong> across both partner
+              tenants — first week the cohort cleared the "healthy beta" threshold.
+            </p>
+            <div class="activity-ledger-meta">
+              <span>Auto-captured &middot; Pipeline metrics</span>
+            </div>
+          </div>
+        </li>
+
+      </ol>
+    </section>
+    </div>
+  </div>
+
+  <!-- ═════════════════════════════════════════════════════════════════════
+       Chapter 6: What success looks like — SuccessOutcome + ReferenceGrid
+       Patterns: SuccessOutcome (proposed, composes Callout primitive),
+                 ReferenceGrid (4-col grid using CommercialShape row conventions).
+       ════════════════════════════════════════════════════════════════════ -->
+  <div id="outcome" class="entity-detail_marginLabelSection">
+    <div class="entity-detail_marginLabel">Success</div>
+    <div class="entity-detail_marginContent">
+    <section>
+      <div class="ChapterHeading_heading">
+        <hr class="ChapterHeading_rule" />
+        <div class="ChapterHeading_titleRow">
+          <h2 class="ChapterHeading_title">What success looks like</h2>
+        </div>
+      </div>
+      <div class="pdspine-freshness">
+        Defined Mar 4 at kickoff
+        <span class="pdspine-sep">&middot;</span>
+        Edited twice
+        <span class="pdspine-sep">&middot;</span>
+        Last revised Apr 8
+      </div>
+
+      <div class="pdspine-outcome-wrap">
+        <!-- SuccessOutcome composes the Callout primitive. data-entity="project"
+             resolves the underlying success tone to the project entity color
+             (olive) instead of the generic sage. -->
+        <aside class="callout success-outcome"
+               data-ds-tier="pattern" data-ds-name="SuccessOutcome" data-ds-spec="patterns/SuccessOutcome.md" data-ds-state="proposed"
+               data-tone="success" data-entity="project"
+               data-border="full" data-density="expanded" data-shape="rounded">
+          <div class="callout-label">By GA &middot; Jul 15 — and 90 days after</div>
+          <div class="callout-body">
+            <p>
+              Two design-partner tenants live and billable by July 15. Three
+              pipeline logos shipped within 90 days. A jointly-authored case
+              study and featured partner-marketplace listing — so the
+              integration sells itself.
+            </p>
+          </div>
+          <div class="callout-footer">Defined Mar 4 at kickoff &middot; Last revised Apr 8 by J. Park</div>
+        </aside>
+
+        <!-- CommercialShape consumer shape: freshness outside the grid wrapper,
+             then grid-only ReferenceGrid markup. -->
+        <div class="pdspine-freshness">
+          Updated Apr 18
+          <span class="pdspine-sep">&middot;</span>
+          <span class="pdspine-stale">Second partner MSA pending residency response</span>
+        </div>
+
+        <div data-ds-tier="pattern" data-ds-name="ReferenceGrid" data-ds-spec="patterns/ReferenceGrid.md" data-ds-state="integrated">
+          <div class="ReferenceGrid_grid" data-columns="4">
+            <div class="ReferenceGrid_row">
+              <span class="ReferenceGrid_label">Type</span>
+              <span class="ReferenceGrid_value">Customer co-build</span>
+            </div>
+            <div class="ReferenceGrid_row">
+              <span class="ReferenceGrid_label">Design partners</span>
+              <span class="ReferenceGrid_value">2 named partners</span>
+            </div>
+            <div class="ReferenceGrid_row">
+              <span class="ReferenceGrid_label">Committed ARR</span>
+              <span class="ReferenceGrid_value ReferenceGrid_valueAccent">$640K signed &middot; $1.4M projected</span>
+            </div>
+            <div class="ReferenceGrid_row">
+              <span class="ReferenceGrid_label">Pilot terms</span>
+              <span class="ReferenceGrid_value">90 days &middot; convert or extend</span>
+            </div>
+            <div class="ReferenceGrid_row">
+              <span class="ReferenceGrid_label">GA date</span>
+              <span class="ReferenceGrid_value">Jul 15, 2026</span>
+            </div>
+            <div class="ReferenceGrid_row">
+              <span class="ReferenceGrid_label">Pricing model</span>
+              <span class="ReferenceGrid_value">Usage &middot; per agent call</span>
+            </div>
+            <div class="ReferenceGrid_row">
+              <span class="ReferenceGrid_label">Second MSA</span>
+              <span class="ReferenceGrid_value">Pending residency clearance</span>
+            </div>
+            <div class="ReferenceGrid_row">
+              <span class="ReferenceGrid_label">Steering cadence</span>
+              <span class="ReferenceGrid_value">Weekly &middot; Wed 10:00</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+    </div>
+  </div>
+
+  <!-- ═════════════════════════════════════════════════════════════════════
+       Chapter 7: The Team — StakeholderGallery
+       Pattern: StakeholderGallery (integrated). Lifted verbatim from
+       account.html's "The Room" — same component, project-shaped roles
+       (Owner / Project Manager / Sponsor / Stakeholder / Tech Lead) and
+       project-shaped depth labels (Owner / Cross-team Access / Coverage).
+       ════════════════════════════════════════════════════════════════════ -->
+  <div id="the-room" class="entity-detail_marginLabelSection">
+    <div class="entity-detail_marginLabel">The<br/>Team</div>
+    <div class="entity-detail_marginContent">
+    <section id="the-room" class="StakeholderGallery_section"
+             data-ds-tier="pattern" data-ds-name="StakeholderGallery" data-ds-spec="patterns/StakeholderGallery.md" data-ds-state="integrated">
+      <div class="ChapterHeading_heading">
+        <hr class="ChapterHeading_rule" />
+        <div class="ChapterHeading_titleRow">
+          <h2 class="ChapterHeading_title">The Team</h2>
+        </div>
+        <p class="ChapterHeading_epigraph">Four stakeholders shape this project across owner, sponsor, and execution roles.</p>
+      </div>
+
+      <div class="StakeholderGallery_grid">
+
+        <div class="StakeholderGallery_card">
+          <button type="button" class="StakeholderGallery_cardRemoveButton" title="Remove from project"></button>
+          <div class="StakeholderGallery_cardHeader">
+            <div class="StakeholderGallery_avatarRingLinked">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="var(--color-paper-linen)"/><text x="12" y="16" text-anchor="middle" font-family="var(--font-sans)" font-size="10" font-weight="500" fill="var(--color-text-tertiary)">J</text></svg>
+            </div>
+            <a href="person.html" class="StakeholderGallery_nameLink">James Park</a>
+            <svg class="StakeholderGallery_linkIcon" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-label="Linked to James Park"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><path d="M8 12h8"/></svg>
+            <div class="EngagementSelector_root">
+              <button type="button" class="EngagementSelector_badge" data-engagement="strong_advocate">Strong Advocate</button>
+            </div>
+          </div>
+          <p class="StakeholderGallery_titleLine">TPM &middot; Internal</p>
+          <div class="StakeholderGallery_roleBadges">
+            <span class="StakeholderGallery_roleBadge" data-source="user">Owner</span>
+            <span class="StakeholderGallery_roleBadge" data-source="user">Decision Maker</span>
+            <div class="StakeholderGallery_addRoleWrapper">
+              <button type="button" class="StakeholderGallery_addRoleBtn">+</button>
+            </div>
+          </div>
+          <p class="StakeholderGallery_assessment">Accountable end-to-end. Calm, allergic to status theater. Treat written updates like the source of truth — verbal addenda get lost.</p>
+          <div class="StakeholderGallery_lastSeen">6 meetings &middot; Last seen Today</div>
+        </div>
+
+        <div class="StakeholderGallery_card">
+          <button type="button" class="StakeholderGallery_cardRemoveButton" title="Remove from project"></button>
+          <div class="StakeholderGallery_cardHeader">
+            <div class="StakeholderGallery_avatarRingLinked">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="var(--color-paper-linen)"/><text x="12" y="16" text-anchor="middle" font-family="var(--font-sans)" font-size="10" font-weight="500" fill="var(--color-text-tertiary)">P</text></svg>
+            </div>
+            <a href="person.html" class="StakeholderGallery_nameLink">Priya Raman</a>
+            <svg class="StakeholderGallery_linkIcon" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-label="Linked to Priya Raman"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><path d="M8 12h8"/></svg>
+            <div class="EngagementSelector_root">
+              <button type="button" class="EngagementSelector_badge" data-engagement="engaged">Engaged</button>
+            </div>
+          </div>
+          <p class="StakeholderGallery_titleLine">Director, Platform &middot; Partner</p>
+          <div class="StakeholderGallery_roleBadges">
+            <span class="StakeholderGallery_roleBadge" data-source="user">Sponsor</span>
+            <span class="StakeholderGallery_roleBadge" data-source="user">Decision Maker</span>
+          </div>
+          <p class="StakeholderGallery_assessment">Champions the integration internally. Wants joint GA; won't accept a soft launch. Replied within an hour on the last 4 threads.</p>
+          <div class="StakeholderGallery_lastSeen">4 meetings &middot; Last seen Yesterday</div>
+        </div>
+
+        <div class="StakeholderGallery_card">
+          <button type="button" class="StakeholderGallery_cardRemoveButton" title="Remove from project"></button>
+          <div class="StakeholderGallery_cardHeader">
+            <div class="StakeholderGallery_avatarRingLinked">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="var(--color-paper-linen)"/><text x="12" y="16" text-anchor="middle" font-family="var(--font-sans)" font-size="10" font-weight="500" fill="var(--color-text-tertiary)">M</text></svg>
+            </div>
+            <a href="person.html" class="StakeholderGallery_nameLink">Marco Devine</a>
+            <svg class="StakeholderGallery_linkIcon" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-label="Linked to Marco Devine"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><path d="M8 12h8"/></svg>
+            <div class="EngagementSelector_root">
+              <button type="button" class="EngagementSelector_badge" data-engagement="cooling">Cooling</button>
+            </div>
+          </div>
+          <p class="StakeholderGallery_titleLine">VP Architecture &middot; Second partner</p>
+          <div class="StakeholderGallery_roleBadges">
+            <span class="StakeholderGallery_roleBadge" data-source="user">Pilot Owner</span>
+            <span class="StakeholderGallery_roleBadge" data-source="intelligence">Stakeholder</span>
+          </div>
+          <p class="StakeholderGallery_assessment">Raised the residency concern on Monday. Pragmatic but won't move pilot to production without a written remediation — the person to satisfy this week.</p>
+          <div class="StakeholderGallery_lastSeen">3 meetings &middot; Last seen Apr 21</div>
+        </div>
+
+        <div class="StakeholderGallery_card">
+          <button type="button" class="StakeholderGallery_cardRemoveButton" title="Remove from project"></button>
+          <div class="StakeholderGallery_cardHeader">
+            <div class="StakeholderGallery_avatarRingLinked">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="var(--color-paper-linen)"/><text x="12" y="16" text-anchor="middle" font-family="var(--font-sans)" font-size="10" font-weight="500" fill="var(--color-text-tertiary)">A</text></svg>
+            </div>
+            <a href="person.html" class="StakeholderGallery_nameLink">Aoife Murphy</a>
+            <svg class="StakeholderGallery_linkIcon" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-label="Linked to Aoife Murphy"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><path d="M8 12h8"/></svg>
+            <div class="EngagementSelector_root">
+              <button type="button" class="EngagementSelector_badge" data-engagement="neutral">Neutral</button>
+            </div>
+          </div>
+          <p class="StakeholderGallery_titleLine">Staff Eng, Integrations &middot; Internal</p>
+          <div class="StakeholderGallery_roleBadges">
+            <span class="StakeholderGallery_roleBadge" data-source="intelligence">Tech Lead</span>
+          </div>
+          <p class="StakeholderGallery_pendingAssessment">No verified assessment yet. In every engineering thread but we haven't characterized the working relationship. <a href="#">Draft one →</a></p>
+          <div class="StakeholderGallery_lastSeen">5 meetings &middot; Last seen Apr 22</div>
+        </div>
+
+      </div>
+
+      <button type="button" class="StakeholderGallery_addTrigger">
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+        Add Stakeholder
+      </button>
+
+      <div class="StakeholderGallery_coverageStrip">
+        <span class="StakeholderGallery_coverageNumbers">4 of 4</span>
+        <span class="StakeholderGallery_coverageLabel">stakeholders with defined roles</span>
+      </div>
+
+      <div class="StakeholderGallery_relationshipDepthSection">
+        <div class="StakeholderGallery_depthStrip">
+          <div class="StakeholderGallery_depthCell">
+            <div class="StakeholderGallery_depthCellLabel">Owner</div>
+            <div class="StakeholderGallery_depthCellValue StakeholderGallery_depthBadgeSage">named</div>
+          </div>
+          <div class="StakeholderGallery_depthCell">
+            <div class="StakeholderGallery_depthCellLabel">Cross-team Access</div>
+            <div class="StakeholderGallery_depthCellValue StakeholderGallery_depthBadgeSage">strong</div>
+          </div>
+          <div class="StakeholderGallery_depthCell">
+            <div class="StakeholderGallery_depthCellLabel">Coverage</div>
+            <div class="StakeholderGallery_depthCellValue StakeholderGallery_depthBadgeTurmeric">balanced</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="StakeholderGallery_teamChipsSection">
+        <div class="StakeholderGallery_teamHeader">
+          <span class="StakeholderGallery_teamLabel">Your Team</span>
+        </div>
+        <div class="StakeholderGallery_teamChips">
+          <div class="StakeholderGallery_teamChipEditable">
+            <a href="person.html" class="StakeholderGallery_teamChipNameLink">Sam Chen</a>
+            <button type="button" class="TeamRoleSelector_badge">PM</button>
+            <button type="button" class="StakeholderGallery_teamChipRemove" title="Remove from team">&times;</button>
+          </div>
+          <div class="StakeholderGallery_teamChipEditable">
+            <a href="person.html" class="StakeholderGallery_teamChipNameLink">Liu Kang</a>
+            <button type="button" class="TeamRoleSelector_badge">Eng</button>
+            <button type="button" class="StakeholderGallery_teamChipRemove" title="Remove from team">&times;</button>
+          </div>
+          <button type="button" class="StakeholderGallery_teamAddTrigger">
+            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+            Add
+          </button>
+        </div>
+      </div>
+    </section>
+    </div>
+  </div>
+
+  <!-- ═════════════════════════════════════════════════════════════════════
+       Chapter 8: Decisions on record — DecisionLog
+       Pattern: DecisionLog (proposed, v1.4.2 / 0.6.0).
+       ════════════════════════════════════════════════════════════════════ -->
+  <div id="decisions" class="entity-detail_marginLabelSection">
+    <div class="entity-detail_marginLabel">Decisions</div>
+    <div class="entity-detail_marginContent">
+    <section>
+      <div class="ChapterHeading_heading">
+        <hr class="ChapterHeading_rule" />
+        <div class="ChapterHeading_titleRow">
+          <h2 class="ChapterHeading_title">Decisions on record</h2>
+        </div>
+      </div>
+      <div class="pdspine-freshness">
+        9 logged
+        <span class="pdspine-sep">&middot;</span>
+        1 reversed
+        <span class="pdspine-sep">&middot;</span>
+        Last decision Apr 19
+      </div>
+
+      <ol class="decision-log"
+          data-ds-tier="pattern" data-ds-name="DecisionLog" data-ds-spec="patterns/DecisionLog.md" data-ds-state="proposed">
+        <li class="decision-row">
+          <span class="decision-when">Apr 19</span>
+          <p class="decision-text">
+            Ship the second partner's pilot in EU-West, not US-East.
+            <em>Forced by their residency requirement; adds 2 weeks to provisioning
+            but unblocks contract.</em>
+          </p>
+          <span class="decision-source">D. Mitchell &middot; Slack</span>
+        </li>
+        <li class="decision-row">
+          <span class="decision-when">Apr 11</span>
+          <p class="decision-text">
+            Treat both design partners as joint with shared roadmap visibility.
+            <em>Trade-off: more meetings, but no parallel work tracks.</em>
+          </p>
+          <span class="decision-source">Steering &middot; Notion</span>
+        </li>
+        <li class="decision-row">
+          <span class="decision-when">Apr 2</span>
+          <p class="decision-text">
+            Use the integration partner's OAuth flow as primary auth — not
+            our own. <em>Reverses Mar 18 decision. Their security team won't
+            federate to a third-party IdP for the pilot.</em>
+          </p>
+          <span class="decision-source">S. Wu &middot; email thread</span>
+        </li>
+        <li class="decision-row" data-state="reversed">
+          <span class="decision-when">Mar 18</span>
+          <p class="decision-text">
+            Ship our own auth flow.
+            <em>Reversed Apr 2 — kept here so the why is preserved.</em>
+          </p>
+          <span class="decision-source">Architecture review</span>
+        </li>
+        <li class="decision-row">
+          <span class="decision-when">Mar 4</span>
+          <p class="decision-text">
+            GA target Jul 15.
+            <em>Picked to land before the partner's Q3 board review and before
+            the August quiet period.</em>
+          </p>
+          <span class="decision-source">Kickoff</span>
+        </li>
+      </ol>
+    </section>
+    </div>
+  </div>
+
+  <!-- ═════════════════════════════════════════════════════════════════════
+       About this dossier — narrative variant of AboutThisDossier
+       Pattern: AboutThisDossier (integrated, narrative variant added 2026-05-10).
+       ════════════════════════════════════════════════════════════════════ -->
+  <div class="entity-detail_marginLabelSection">
+    <div class="entity-detail_marginLabel">About</div>
+    <div class="entity-detail_marginContent">
+      <section class="AboutThisDossier_section"
+               data-ds-tier="pattern" data-ds-name="AboutThisDossier" data-ds-spec="patterns/AboutThisDossier.md" data-ds-state="integrated"
+               data-mode="narrative">
+        <div class="AboutThisDossier_eyebrow">About this dossier</div>
+        <p class="AboutThisDossier_body">
+          Assembled from 32 signals across project standups, design partner
+          calls, Slack threads and the steering Notion. Assessments for
+          <strong>Sara Wu</strong> and one partner engineer are flagged
+          for verification — both have been in the work for 6+ weeks but we
+          haven't characterized the relationship.
+          <a href="#" class="AboutThisDossier_bodyAction">Verify or dismiss →</a>
+        </p>
+      </section>
+    </div>
+  </div>
+
+  <!-- Finis marker (verbatim from project.html) -->
+  <div>
+    <div class="finis-marker">
+      <div class="finis-marker-marks">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+      </div>
+    </div>
+  </div>
+
+</main>
+</div>
+
+<script src="../_shared/chrome.js"></script>
+<script src="../_shared/inspector.js"></script>
+</body>
+</html>

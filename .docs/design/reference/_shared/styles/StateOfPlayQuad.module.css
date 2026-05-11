@@ -1,0 +1,55 @@
+/* =============================================================================
+   StateOfPlayQuad — pattern
+   Spec: .docs/design/patterns/StateOfPlayQuad.md
+   data-ds-name="StateOfPlayQuad"
+
+   4-quadrant narrative status grid. Each quadrant is a single prose paragraph
+   with a mono uppercase label. Canonical four labels for project status:
+   "What's working" / "What's not" / "What's unclear" / "What we need".
+
+   Sibling to StateOfPlay (binary working/struggling state list). NOT
+   FindingsTriad (which is contractually fixed at 3 cells per its spec).
+   ============================================================================= */
+
+.state-of-play-quad {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2xl);
+  margin-top: var(--space-lg);
+}
+
+.state-of-play-quad-cell {
+  display: flex;
+  flex-direction: column;
+}
+
+.state-of-play-quad-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-sm);
+}
+
+.state-of-play-quad-body {
+  font-family: var(--font-serif);
+  font-size: 17px;
+  line-height: 1.55;
+  color: var(--color-text-primary);
+  font-weight: 400;
+  max-width: 480px;
+  margin: 0;
+}
+
+.state-of-play-quad-body em {
+  font-style: italic;
+  color: var(--color-text-secondary);
+}
+
+/* Empty state — when the quadrant has no content yet (e.g. first sync) */
+
+.state-of-play-quad-cell[data-empty="true"] .state-of-play-quad-body {
+  color: var(--color-text-tertiary);
+  font-style: italic;
+}

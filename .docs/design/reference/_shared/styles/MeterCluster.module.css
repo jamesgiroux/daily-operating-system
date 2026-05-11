@@ -1,0 +1,90 @@
+/* =============================================================================
+   MeterCluster — pattern
+   Spec: .docs/design/patterns/MeterCluster.md
+   data-ds-name="MeterCluster"
+
+   Horizontal cluster of single-metric meter readouts, each with axis label,
+   tone-coded value, fill bar, and trend text. Used mid-page for narrative
+   health indicators (momentum / confidence / risks / engagement).
+
+   Note: per the v1.4.2 design decision, trend arrows have been DROPPED —
+   text suffices ("from steady · 2 wks", "+1 this week").
+   ============================================================================= */
+
+.meter-cluster {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-2xl);
+  padding: var(--space-lg) 0;
+  border-top: 1px solid var(--color-rule-heavy);
+  border-bottom: 1px solid var(--color-rule-heavy);
+  margin-top: var(--space-lg);
+  margin-bottom: var(--space-2xl);
+}
+
+.meter-cluster[data-meters="2"] { grid-template-columns: repeat(2, 1fr); }
+.meter-cluster[data-meters="3"] { grid-template-columns: repeat(3, 1fr); }
+.meter-cluster[data-meters="4"] { grid-template-columns: repeat(4, 1fr); }
+
+/* ── Single meter ──────────────────────────────────────────────────────── */
+
+.meter {
+  display: flex;
+  flex-direction: column;
+}
+
+.meter-axis-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-tertiary);
+  margin-bottom: 8px;
+}
+
+.meter-value {
+  font-family: var(--font-serif);
+  font-size: 28px;
+  font-weight: 400;
+  color: var(--color-text-primary);
+  letter-spacing: -0.01em;
+  line-height: 1;
+}
+
+.meter-value[data-tone="sage"]       { color: var(--color-garden-rosemary); }
+.meter-value[data-tone="saffron"]    { color: var(--color-spice-saffron); }
+.meter-value[data-tone="terracotta"] { color: var(--color-spice-terracotta); }
+.meter-value[data-tone="larkspur"]   { color: var(--color-garden-larkspur); }
+
+.meter-bar {
+  height: 4px;
+  background: var(--color-desk-charcoal-4);
+  border-radius: 2px;
+  margin-top: 10px;
+  margin-bottom: 8px;
+  position: relative;
+}
+
+.meter-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  background: var(--color-garden-rosemary);
+  border-radius: 2px;
+}
+
+.meter-fill[data-tone="sage"]       { background: var(--color-garden-sage); }
+.meter-fill[data-tone="saffron"]    { background: var(--color-spice-saffron); }
+.meter-fill[data-tone="terracotta"] { background: var(--color-spice-terracotta); }
+.meter-fill[data-tone="larkspur"]   { background: var(--color-garden-larkspur); }
+
+.meter-trend {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+}
+
+.meter-trend[data-direction="up"]   { color: var(--color-garden-rosemary); }
+.meter-trend[data-direction="down"] { color: var(--color-spice-terracotta); }

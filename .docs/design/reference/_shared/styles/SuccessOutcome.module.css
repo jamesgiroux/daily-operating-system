@@ -1,0 +1,102 @@
+/* =============================================================================
+   SuccessOutcome — pattern
+   Spec: .docs/design/patterns/SuccessOutcome.md
+   data-ds-name="SuccessOutcome"
+
+   Composes the Callout primitive with editorial-prose body, optional entity
+   tint override, and an outcome-statement composition (timeframe label /
+   serif body / signoff footer).
+
+   Apply BOTH `.callout` and `.success-outcome` classes on the root element.
+   This file overrides Callout's defaults where SuccessOutcome's editorial
+   intent diverges (serif body, larger body type, entity tint).
+   ============================================================================= */
+
+.success-outcome {
+  /* Callout's default success tone resolves to sage. Entity-tinted variants
+     below override the background to the entity color. */
+}
+
+/* ── Body — editorial prose (override Callout's default sans body) ─────── */
+
+.success-outcome .callout-body {
+  font-family: var(--font-serif);
+  font-size: 22px;
+  font-weight: 400;
+  line-height: 1.4;
+  letter-spacing: -0.005em;
+  color: var(--color-text-primary);
+  max-width: 720px;
+  text-wrap: pretty;
+}
+
+.success-outcome .callout-body p {
+  font-family: var(--font-serif);
+  font-size: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+  margin: 0;
+}
+
+.success-outcome .callout-body p + p {
+  margin-top: var(--space-md);
+}
+
+/* ── Label — slightly heavier than Callout's default kicker ────────────── */
+
+.success-outcome .callout-label {
+  font-weight: 500;
+  letter-spacing: 0.12em;
+}
+
+/* ── Footer — explicit signoff styling ─────────────────────────────────── */
+
+.success-outcome .callout-footer {
+  margin-top: var(--space-md);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+}
+
+/* ── Entity tint overrides ─────────────────────────────────────────────── */
+/* When SuccessOutcome renders on an entity surface, override the underlying
+   Callout success tone to the entity's color so the outcome statement reads
+   as part of the entity's identity instead of as a generic success badge. */
+
+.success-outcome[data-entity="project"] {
+  background: var(--color-project-10);
+  border-color: var(--color-garden-olive-12, var(--color-project-10));
+}
+.success-outcome[data-entity="project"] .callout-label {
+  color: var(--color-garden-olive);
+}
+
+.success-outcome[data-entity="account"] {
+  background: var(--color-account-10);
+  border-color: var(--color-account-12);
+}
+.success-outcome[data-entity="account"] .callout-label {
+  color: var(--color-spice-turmeric);
+}
+
+.success-outcome[data-entity="person"] {
+  background: var(--color-person-10);
+  border-color: var(--color-person-12);
+}
+.success-outcome[data-entity="person"] .callout-label {
+  color: var(--color-garden-larkspur);
+}
+
+.success-outcome[data-entity="self"] {
+  background: var(--color-self-10);
+  border-color: var(--color-self-10);
+}
+.success-outcome[data-entity="self"] .callout-label {
+  color: var(--color-garden-eucalyptus);
+}
+
+.success-outcome[data-entity="none"] {
+  /* Fall through to Callout's default success tone (sage). */
+}

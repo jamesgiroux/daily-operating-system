@@ -1,0 +1,238 @@
+/* =============================================================================
+   Callout — primitive
+   Spec: .docs/design/primitives/Callout.md
+   data-ds-name="Callout"
+
+   The visual chrome for any tinted, bounded surface that frames label + body
+   + optional footer + optional actions. Composed by patterns in the callout
+   family (ReceiptCallout, SuccessOutcome, StaleReportBanner, etc.).
+
+   Tone vocabulary is semantic (success / caution / warning / info / neutral)
+   plus trust-band aliases (trust-band-current = success,
+   trust-band-caution = caution, trust-band-verification = warning).
+   ============================================================================= */
+
+.callout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  background: var(--color-desk-charcoal-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: var(--space-lg);
+  color: var(--color-text-primary);
+}
+
+/* ── Tone — semantic + trust-band aliases ──────────────────────────────── */
+
+.callout[data-tone="success"],
+.callout[data-tone="trust-band-current"] {
+  background: var(--color-trust-likely-current-12, var(--color-garden-sage-12));
+  border-color: var(--color-trust-likely-current-12, var(--color-garden-sage-12));
+}
+.callout[data-tone="success"] .callout-label,
+.callout[data-tone="trust-band-current"] .callout-label {
+  color: var(--color-garden-rosemary);
+}
+
+.callout[data-tone="caution"],
+.callout[data-tone="trust-band-caution"] {
+  background: var(--color-trust-use-with-caution-12, var(--color-spice-saffron-12));
+  border-color: var(--color-trust-use-with-caution-12, var(--color-spice-saffron-12));
+}
+.callout[data-tone="caution"] .callout-label,
+.callout[data-tone="trust-band-caution"] .callout-label {
+  color: #8a6f1a;
+}
+
+.callout[data-tone="warning"],
+.callout[data-tone="trust-band-verification"] {
+  background: var(--color-trust-needs-verification-12, var(--color-spice-terracotta-12));
+  border-color: var(--color-trust-needs-verification-12, var(--color-spice-terracotta-12));
+}
+.callout[data-tone="warning"] .callout-label,
+.callout[data-tone="trust-band-verification"] .callout-label {
+  color: var(--color-spice-chili);
+}
+
+.callout[data-tone="info"] {
+  background: var(--color-garden-larkspur-12);
+  border-color: var(--color-garden-larkspur-12);
+}
+.callout[data-tone="info"] .callout-label {
+  color: #3a4d6b;
+}
+
+.callout[data-tone="neutral"] {
+  background: var(--color-desk-charcoal-4);
+  border-color: var(--color-rule-light);
+}
+.callout[data-tone="neutral"] .callout-label {
+  color: var(--color-text-tertiary);
+}
+
+/* ── Border treatment ──────────────────────────────────────────────────── */
+
+.callout[data-border="full"] {
+  border-style: solid;
+  border-width: 1px;
+}
+
+.callout[data-border="left-accent"] {
+  border-width: 0 0 0 3px;
+  border-style: solid;
+  border-radius: 0;
+  background: var(--color-paper-warm-white);
+}
+.callout[data-border="left-accent"][data-tone="success"]                { border-left-color: var(--color-garden-sage); }
+.callout[data-border="left-accent"][data-tone="caution"]                { border-left-color: var(--color-spice-saffron); }
+.callout[data-border="left-accent"][data-tone="warning"]                { border-left-color: var(--color-spice-terracotta); }
+.callout[data-border="left-accent"][data-tone="info"]                   { border-left-color: var(--color-garden-larkspur); }
+.callout[data-border="left-accent"][data-tone="neutral"]                { border-left-color: var(--color-text-tertiary); }
+.callout[data-border="left-accent"][data-tone="trust-band-current"]      { border-left-color: var(--color-trust-likely-current); }
+.callout[data-border="left-accent"][data-tone="trust-band-caution"]      { border-left-color: var(--color-trust-use-with-caution); }
+.callout[data-border="left-accent"][data-tone="trust-band-verification"] { border-left-color: var(--color-trust-needs-verification); }
+
+.callout[data-border="gradient-bg"] {
+  border: none;
+}
+.callout[data-border="gradient-bg"][data-tone="success"] {
+  background: linear-gradient(180deg,
+    var(--color-garden-sage-12) 0%,
+    transparent 100%);
+}
+.callout[data-border="gradient-bg"][data-tone="caution"] {
+  background: linear-gradient(180deg,
+    var(--color-spice-saffron-12) 0%,
+    transparent 100%);
+}
+.callout[data-border="gradient-bg"][data-tone="warning"] {
+  background: linear-gradient(180deg,
+    var(--color-spice-terracotta-12) 0%,
+    transparent 100%);
+}
+.callout[data-border="gradient-bg"][data-tone="info"] {
+  background: linear-gradient(180deg,
+    var(--color-garden-larkspur-12) 0%,
+    transparent 100%);
+}
+.callout[data-border="gradient-bg"][data-tone="neutral"] {
+  background: linear-gradient(180deg,
+    var(--color-desk-charcoal-4) 0%,
+    transparent 100%);
+}
+
+.callout[data-border="none"] {
+  border: none;
+}
+
+/* ── Density ───────────────────────────────────────────────────────────── */
+
+.callout[data-density="compact"] {
+  padding: var(--space-sm) var(--space-md);
+  gap: var(--space-xs);
+}
+
+.callout[data-density="default"] {
+  padding: var(--space-lg);
+  gap: var(--space-md);
+}
+
+.callout[data-density="expanded"] {
+  padding: var(--space-xl);
+  gap: var(--space-md);
+}
+
+/* ── Shape ─────────────────────────────────────────────────────────────── */
+
+.callout[data-shape="rounded"]  { border-radius: var(--radius-sm); }
+.callout[data-shape="angular"]  { border-radius: 0; }
+.callout[data-shape="pill"] {
+  border-radius: 999px;
+  padding-left: var(--space-md);
+  padding-right: var(--space-md);
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-sm);
+}
+.callout[data-shape="pill"] .callout-label,
+.callout[data-shape="pill"] .callout-body,
+.callout[data-shape="pill"] .callout-footer {
+  display: inline;
+  margin: 0;
+}
+
+/* ── Slots ─────────────────────────────────────────────────────────────── */
+
+.callout-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin: 0;
+  color: var(--color-text-tertiary);
+}
+
+.callout-body {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.callout-body p {
+  margin: 0;
+}
+
+.callout-body p + p {
+  margin-top: var(--space-sm);
+}
+
+.callout-footer {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  margin: 0;
+}
+
+.callout-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  align-self: flex-end;
+  margin-top: var(--space-xs);
+}
+
+/* ── Dismiss affordance ────────────────────────────────────────────────── */
+
+.callout[data-dismissible="true"] {
+  position: relative;
+  padding-right: calc(var(--space-lg) + 24px);
+}
+
+.callout-dismiss {
+  position: absolute;
+  top: var(--space-md);
+  right: var(--space-md);
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-tertiary);
+  border-radius: var(--radius-sm);
+  transition: background-color var(--transition-fast),
+              color var(--transition-fast);
+}
+
+.callout-dismiss:hover {
+  background: var(--color-rule-light);
+  color: var(--color-text-secondary);
+}

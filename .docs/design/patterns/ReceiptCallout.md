@@ -52,6 +52,7 @@ Subtle background tint (`--color-paper-warm-white`), border per band color, mono
 ## Composition contract
 
 Composes:
+- `Callout` (primitive — provides the visual chrome: tinted background, border treatment, density, slot conventions). ReceiptCallout uses `tone="trust-band-current | trust-band-caution | trust-band-verification"`, `border="left-accent"`, `density="expanded"`. Migration to compose Callout is a follow-up maintenance pass; ReceiptCallout's existing CSS continues to work in v1.4.2.
 - `ClaimRow` (the parent it expands from)
 - `ResolverConfidenceBadge` (Wave 2 primitive — not yet specified; deferred from Audit 04)
 - `ConsistencyFindingBanner` (Wave 2 pattern)

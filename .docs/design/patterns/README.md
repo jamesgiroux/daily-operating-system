@@ -79,6 +79,20 @@ A pattern knows about a domain concept (a claim, a trust state, a briefing, a me
 | [`CommitmentRow`](./CommitmentRow.md) | integrated | Captured commitment with YOURS / THEIRS tag | `PostMeetingIntelligence` local class family |
 | [`RoleTransitionRow`](./RoleTransitionRow.md) | integrated | Person role transition (before-status → after-status pill chain) | `PostMeetingIntelligence` local class family |
 
+### Wave 5 (v1.4.2 entity-detail d-spine, 0.6.0)
+
+| Name | Status | Job (one line) | Consumers |
+|---|---|---|---|
+| [`SuccessOutcome`](./SuccessOutcome.md) | proposed | Editorial outcome statement (composes `Callout`, entity-tinted) | ProjectDetail, AccountDetail, reports |
+| [`MeterCluster`](./MeterCluster.md) | proposed | Mid-page narrative health meters (axis label + tone value + fill bar + trend) | ProjectDetail, AccountDetail |
+| [`PhaseTimeline`](./PhaseTimeline.md) | proposed | Horizontal project timeline (phases + milestones + now-line + month ticks) | ProjectDetail, reports |
+| [`StateOfPlayQuad`](./StateOfPlayQuad.md) | proposed | 4-quadrant narrative status grid (working / not / unclear / need) | ProjectDetail, AccountDetail |
+| [`DecisionLog`](./DecisionLog.md) | proposed | Ordered list of project-level decisions on record (when + serif text + source) | ProjectDetail, AccountDetail, reports |
+| [`ActivityLedger`](./ActivityLedger.md) | proposed | Editorial weekly digest of "what's moved" rows (timestamp + tone-coded dot + bold-prose body + meta-with-chips) | ProjectDetail, AccountDetail, PersonDetail, reports |
+| [`StakeholderGallery`](./StakeholderGallery.md) | integrated | Cast of stakeholders for an entity (cards + chips + depth-strip variants) | AccountDetail, ProjectDetail, PersonDetail |
+| [`ReferenceGrid`](./ReferenceGrid.md) | integrated | Dense key-value reference grid (Commercial shape, Technical footprint) | AccountDetail, ProjectDetail, reports |
+| [`AboutThisDossier`](./AboutThisDossier.md) | integrated | Editorial dossier metadata footer (multi-card + narrative variants) | ProjectDetail, AccountDetail, PersonDetail, reports |
+
 ## Conventions
 
 - **Named after the job, not the surface.** `TrustBand`, not `BriefingTrustBand`. If a pattern is unique to one surface, it's probably surface-internal and doesn't need promotion yet.

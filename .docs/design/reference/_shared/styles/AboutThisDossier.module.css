@@ -39,3 +39,56 @@
   color: var(--color-text-secondary);
   max-width: 620px;
 }
+
+/* ── Narrative variant ────────────────────────────────────────────────────────
+   Single italic-serif paragraph mode for editorial dossier metadata. Used when
+   the about-this-dossier content is a single short narrative ("Assembled from
+   32 signals across project standups…") rather than the multi-card breakdown.
+   Activate by setting data-mode="narrative" on the section root.
+   ============================================================================ */
+
+.AboutThisDossier_section[data-mode="narrative"] {
+  padding: var(--space-lg);
+  background: var(--color-desk-charcoal-4);
+  border-radius: var(--radius-sm);
+  margin-top: var(--space-4xl);
+}
+
+.AboutThisDossier_section[data-mode="narrative"] .AboutThisDossier_eyebrow {
+  margin-bottom: 10px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+}
+
+.AboutThisDossier_body {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-weight: 300;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  max-width: 620px;
+  margin: 0;
+}
+
+.AboutThisDossier_body strong {
+  font-weight: 500;
+  color: var(--color-text-primary);
+  font-style: normal;
+}
+
+.AboutThisDossier_bodyAction {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-garden-olive);
+  border-bottom: 1px dotted var(--color-garden-olive);
+  text-decoration: none;
+  margin-left: var(--space-xs);
+}
+
+.AboutThisDossier_bodyAction:hover {
+  color: var(--color-garden-rosemary);
+  border-bottom-color: var(--color-garden-rosemary);
+}

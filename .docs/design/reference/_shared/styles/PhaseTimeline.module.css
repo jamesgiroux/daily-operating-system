@@ -1,0 +1,218 @@
+/* =============================================================================
+   PhaseTimeline — pattern
+   Spec: .docs/design/patterns/PhaseTimeline.md
+   data-ds-name="PhaseTimeline"
+
+   Horizontal project timeline rendered as month-tick legend + colored phase
+   bars + diamond milestone markers + a vertical "now" line. Tied to project
+   phase semantics (discovery / build / beta / launch). Surfaces:
+   ProjectDetail (overview chapter).
+   ============================================================================= */
+
+.phase-timeline {
+  margin: var(--space-md) 0 var(--space-2xl);
+  position: relative;
+}
+
+/* ── Legend ────────────────────────────────────────────────────────────── */
+
+.phase-timeline-legend {
+  display: flex;
+  gap: var(--space-lg);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-md);
+  flex-wrap: wrap;
+}
+
+.phase-timeline-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  vertical-align: -1px;
+  margin-right: 7px;
+}
+
+.phase-timeline-swatch[data-phase="discover"] {
+  background: var(--color-paper-linen);
+  border: 1px solid var(--color-rule-heavy);
+}
+.phase-timeline-swatch[data-phase="build"]    { background: var(--color-garden-olive); }
+.phase-timeline-swatch[data-phase="beta"]     { background: var(--color-spice-turmeric); }
+.phase-timeline-swatch[data-phase="launch"]   { background: var(--color-garden-rosemary); }
+.phase-timeline-swatch[data-phase="warn"]     { background: var(--color-spice-terracotta); }
+
+/* ── Month ticks ───────────────────────────────────────────────────────── */
+
+.phase-timeline-ticks {
+  position: relative;
+  height: 18px;
+  display: grid;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.06em;
+}
+
+.phase-timeline-ticks[data-tick-count="6"]  { grid-template-columns: repeat(6, 1fr); }
+.phase-timeline-ticks[data-tick-count="8"]  { grid-template-columns: repeat(8, 1fr); }
+.phase-timeline-ticks[data-tick-count="12"] { grid-template-columns: repeat(12, 1fr); }
+
+.phase-timeline-ticks span {
+  text-align: left;
+  padding-left: 4px;
+}
+
+.phase-timeline-ticks span[data-quarter-end="true"] {
+  color: var(--color-text-tertiary);
+  opacity: 0.5;
+}
+
+/* ── Bars track ────────────────────────────────────────────────────────── */
+
+.phase-timeline-track {
+  position: relative;
+  height: 90px;
+  background: repeating-linear-gradient(
+    to right,
+    transparent 0,
+    transparent calc(12.5% - 1px),
+    rgba(30, 37, 48, 0.05) calc(12.5% - 1px),
+    rgba(30, 37, 48, 0.05) 12.5%
+  );
+  border-top: 1px solid var(--color-rule-light);
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+/* ── Phase bar ─────────────────────────────────────────────────────────── */
+
+.phase-timeline-bar {
+  position: absolute;
+  top: 14px;
+  height: 62px;
+  border-radius: 2px;
+  padding: 8px 12px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform var(--transition-normal),
+              box-shadow var(--transition-normal);
+}
+
+.phase-timeline-bar:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.phase-timeline-bar[data-phase="discover"] {
+  background: var(--color-paper-linen);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-rule-heavy);
+}
+.phase-timeline-bar[data-phase="build"]  { background: var(--color-garden-olive);     color: #fff; }
+.phase-timeline-bar[data-phase="beta"]   { background: var(--color-spice-turmeric);   color: var(--color-desk-charcoal); }
+.phase-timeline-bar[data-phase="launch"] { background: var(--color-garden-rosemary);  color: #fff; }
+.phase-timeline-bar[data-phase="warn"]   { background: var(--color-spice-terracotta); color: #fff; }
+
+.phase-timeline-bar[data-state="past"]   { opacity: 0.55; }
+.phase-timeline-bar[data-state="future"] { opacity: 0.85; }
+
+.phase-timeline-bar-title {
+  font-family: var(--font-serif);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  line-height: 1.2;
+}
+
+.phase-timeline-bar-meta {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  opacity: 0.75;
+  text-transform: uppercase;
+}
+
+/* ── Now line ──────────────────────────────────────────────────────────── */
+
+.phase-timeline-now {
+  position: absolute;
+  top: -10px;
+  bottom: -10px;
+  width: 2px;
+  background: var(--color-spice-terracotta);
+  z-index: 4;
+}
+
+.phase-timeline-now::before {
+  content: attr(data-label);
+  position: absolute;
+  top: -22px;
+  left: -28px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--color-spice-terracotta);
+  white-space: nowrap;
+  background: var(--color-paper-cream);
+  padding: 0 4px;
+}
+
+.phase-timeline-now::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-spice-terracotta);
+}
+
+/* ── Milestones ────────────────────────────────────────────────────────── */
+
+.phase-timeline-milestone {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  background: var(--color-paper-cream);
+  border: 1.5px solid var(--color-desk-charcoal);
+  transform: translate(-50%, -50%) rotate(45deg);
+  z-index: 3;
+}
+
+.phase-timeline-milestone[data-state="done"] {
+  background: var(--color-desk-charcoal);
+}
+
+.phase-timeline-milestone[data-state="next"] {
+  background: var(--color-spice-terracotta);
+  border-color: var(--color-spice-terracotta);
+}
+
+.phase-timeline-milestone-label {
+  position: absolute;
+  bottom: -28px;
+  transform: translateX(-50%);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  white-space: nowrap;
+  z-index: 3;
+}

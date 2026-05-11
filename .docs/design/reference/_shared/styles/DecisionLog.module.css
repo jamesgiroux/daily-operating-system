@@ -1,0 +1,73 @@
+/* =============================================================================
+   DecisionLog — pattern
+   Spec: .docs/design/patterns/DecisionLog.md
+   data-ds-name="DecisionLog"
+
+   Ordered list of project-level decisions on record: when (mono date) +
+   serif decision text with em-emphasized reasoning + mono source attribution.
+
+   Distinct from CommitmentRow (confirmed meeting commitments) and
+   FindingsTriad (meeting-derived findings). DecisionLog is project-level
+   decision RECORDS with provenance.
+   ============================================================================= */
+
+.decision-log {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.decision-row {
+  display: grid;
+  grid-template-columns: 80px 1fr auto;
+  gap: var(--space-md);
+  padding: var(--space-md) 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  align-items: baseline;
+}
+
+.decision-row:last-child {
+  border-bottom: none;
+}
+
+.decision-when {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+}
+
+.decision-text {
+  font-family: var(--font-serif);
+  font-size: 15.5px;
+  line-height: 1.5;
+  color: var(--color-text-primary);
+  max-width: 640px;
+  margin: 0;
+}
+
+.decision-text em {
+  font-style: italic;
+  color: var(--color-text-secondary);
+}
+
+.decision-source {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
+
+/* Reversed-decision marker — for entries that were superseded by a later
+   decision and kept on record so the reasoning is preserved. */
+
+.decision-row[data-state="reversed"] .decision-text {
+  color: var(--color-text-secondary);
+}
+
+.decision-row[data-state="reversed"] .decision-when::before {
+  content: '↺ ';
+  color: var(--color-text-tertiary);
+}

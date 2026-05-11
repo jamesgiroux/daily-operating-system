@@ -55,6 +55,12 @@ A primitive is *not* a primitive if it knows about claims, trust, briefings, or 
 |---|---|---|---|
 | [`MeetingStatusPill`](./MeetingStatusPill.md) | integrated | Meeting temporal state (`upcoming` / `in-progress` / `past` / `cancelled`) | `src/components/meeting/MeetingStatusPill.tsx` |
 
+### Wave 5 (v1.4.2 entity-detail d-spine, 0.6.0)
+
+| Name | Status | Job (one line) | Source |
+|---|---|---|---|
+| [`Callout`](./Callout.md) | proposed | Tinted bounded surface that frames label + body ± footer ± actions; semantic tone vocabulary (success/caution/warning/info/neutral + trust-band-* aliases); 4 border treatments, 3 densities, 3 shapes, dismissible | `.docs/design/reference/_shared/styles/Callout.module.css`; composed by `ReceiptCallout`, `SuccessOutcome`, future `StaleReportBanner`/`ConsistencyFindingBanner`/etc. |
+
 ## Conventions
 
 - **Names are short and generic.** `Button`, not `BaseButton` or `PrimaryActionButton`.

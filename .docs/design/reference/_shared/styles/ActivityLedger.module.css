@@ -1,0 +1,128 @@
+/* =============================================================================
+   ActivityLedger — pattern
+   Spec: .docs/design/patterns/ActivityLedger.md
+   data-ds-name="ActivityLedger"
+
+   Editorial weekly digest: synthesized "what's moved" rows with precise
+   timestamp + tone-coded type dot + bold-prose body (with inline entity chips)
+   + meta line carrying attribution and entity references.
+
+   Distinct from:
+   - TimelineEntry — chronological audit log (record-keeping intent)
+   - ActivityLogSection — settings audit log (security/anomaly/config domain)
+   - DecisionLog — durable project decision records (no week-scoped synthesis)
+   ============================================================================= */
+
+.activity-ledger {
+  list-style: none;
+  padding: 0;
+  margin: var(--space-md) 0 0;
+  border-top: 1px solid var(--color-rule-light);
+}
+
+.activity-ledger-row {
+  display: grid;
+  grid-template-columns: 100px 22px 1fr;
+  gap: 0;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  align-items: baseline;
+}
+
+.activity-ledger-row:last-child {
+  border-bottom: none;
+}
+
+/* ── Timestamp column ──────────────────────────────────────────────────── */
+
+.activity-ledger-when {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  padding-top: 2px;
+}
+
+/* ── Type dot ──────────────────────────────────────────────────────────── */
+
+.activity-ledger-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-top: 8px;
+  align-self: flex-start;
+  background: var(--color-text-tertiary);
+}
+
+.activity-ledger-dot[data-kind="meeting"]  { background: var(--color-spice-turmeric); }
+.activity-ledger-dot[data-kind="decision"] { background: var(--color-garden-rosemary); }
+.activity-ledger-dot[data-kind="email"]    { background: var(--color-garden-larkspur); }
+.activity-ledger-dot[data-kind="action"]   { background: var(--color-spice-terracotta); }
+.activity-ledger-dot[data-kind="event"]    { background: var(--color-garden-olive); }
+.activity-ledger-dot[data-kind="capture"]  { background: var(--color-garden-sage); }
+
+/* ── Body cell ─────────────────────────────────────────────────────────── */
+
+.activity-ledger-body {
+  min-width: 0;
+}
+
+.activity-ledger-body p {
+  font-family: var(--font-serif);
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--color-text-primary);
+  margin: 0;
+  max-width: 720px;
+  letter-spacing: -0.005em;
+}
+
+.activity-ledger-body p strong {
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.activity-ledger-body p em {
+  font-style: italic;
+  color: var(--color-text-secondary);
+}
+
+/* ── Meta line (attribution + entity chips) ────────────────────────────── */
+
+.activity-ledger-meta {
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.activity-ledger-meta .activity-ledger-meta-sep {
+  opacity: 0.4;
+}
+
+/* ── Filter bar (optional, mono-uppercase chip row above the list) ─────── */
+
+.activity-ledger-filters {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.02em;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: var(--space-xs);
+  margin-bottom: var(--space-xs);
+}
+
+.activity-ledger-filters a {
+  color: var(--color-garden-olive);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--color-garden-olive);
+}
