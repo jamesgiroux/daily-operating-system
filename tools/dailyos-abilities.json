@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "abilities": [
+    {
+      "name": "detect_role_change",
+      "description": "",
+      "category": "maintenance",
+      "annotations": {},
+      "wp_permission": "none",
+      "allowed_actors": [
+        "runtime"
+      ],
+      "required_scopes": [],
+      "mcp_exposure": "none",
+      "client_side_executable": false,
+      "idempotency_class": "side_effect",
+      "composition_kind": {
+        "produces_blocks": false,
+        "block_types": []
+      }
+    },
+    {
+      "name": "get_entity_context",
+      "description": "",
+      "category": "read",
+      "annotations": {},
+      "wp_permission": "none",
+      "allowed_actors": [
+        "user",
+        "runtime"
+      ],
+      "required_scopes": [],
+      "mcp_exposure": "none",
+      "client_side_executable": false,
+      "idempotency_class": "idempotent",
+      "composition_kind": {
+        "produces_blocks": false,
+        "block_types": []
+      }
+    },
+    {
+      "name": "prepare_meeting",
+      "description": "",
+      "category": "transform",
+      "annotations": {},
+      "wp_permission": "none",
+      "allowed_actors": [
+        "user",
+        "runtime"
+      ],
+      "required_scopes": [],
+      "mcp_exposure": "none",
+      "client_side_executable": false,
+      "idempotency_class": "idempotent",
+      "composition_kind": {
+        "produces_blocks": false,
+        "block_types": []
+      }
+    },
+    {
+      "name": "refresh_engagement_curve",
+      "description": "",
+      "category": "maintenance",
+      "annotations": {},
+      "wp_permission": "none",
+      "allowed_actors": [
+        "runtime"
+      ],
+      "required_scopes": [],
+      "mcp_exposure": "none",
+      "client_side_executable": false,
+      "idempotency_class": "side_effect",
+      "composition_kind": {
+        "produces_blocks": false,
+        "block_types": []
+      }
+    }
+  ]
+}

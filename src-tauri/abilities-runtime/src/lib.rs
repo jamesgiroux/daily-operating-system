@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 pub mod abilities;
+pub mod inventory;
 pub mod intelligence {
     pub mod prompt_fingerprint;
     pub mod provider;
