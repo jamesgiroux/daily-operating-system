@@ -264,7 +264,9 @@ pub fn sync_ai_commitments_with_ingestion_sources(
         let owner_resolution =
             resolve_owner(db, entity_id, &derived_id, commitment.owner.as_deref())?;
         let source_key = commitment_source_key(&item.source);
-        let source_count = source_count_after_sighting(db, &derived_id, &source_key).unwrap_or(1);
+        let source_count =
+            source_count_after_sighting(db, entity_type, entity_id, &derived_id, &source_key)
+                .unwrap_or(1);
         let trust = compute_commitment_trust(
             entity_id,
             commitment,
@@ -651,6 +653,7 @@ pub fn upsert_commitment_claim(
     insert_commitment_source(
         db,
         &action,
+        &claim.commitment_id,
         commitment,
         ingestion_source,
         owner_resolution,
@@ -836,19 +839,23 @@ fn get_action_from_bridge_row(
     db.get_action_by_id(action_id).map_err(|e| e.to_string())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn insert_commitment_source(
     db: &ActionDb,
     action: &DbAction,
+    claim_commitment_id: &str,
     commitment: &OpenCommitment,
     ingestion_source: &CommitmentIngestionSource,
     owner_resolution: &OwnerResolution,
     trust: &CommitmentTrust,
     now: &str,
 ) -> Result<(), String> {
-    let commitment_id = action
-        .commitment_id
-        .as_deref()
-        .ok_or_else(|| format!("commitment action {} missing commitment_id", action.id))?;
+    let commitment_id = source_commitment_id_for_action(
+        db,
+        &action.id,
+        claim_commitment_id,
+        action.commitment_id.as_deref(),
+    )?;
     let source_confidence = commitment.item_source.as_ref().map(|s| s.confidence);
     let source_type = ingestion_source.source_type();
     let source_label = commitment
@@ -887,33 +894,231 @@ fn insert_commitment_source(
     Ok(())
 }
 
-fn source_count_for_commitment(db: &ActionDb, commitment_id: &str) -> Result<i64, rusqlite::Error> {
+fn source_commitment_id_for_action(
+    db: &ActionDb,
+    action_id: &str,
+    claim_commitment_id: &str,
+    action_commitment_id: Option<&str>,
+) -> Result<String, String> {
+    if !claim_commitment_id.trim().is_empty()
+        && bridge_alias_belongs_to_action(db, claim_commitment_id, action_id)
+            .map_err(|e| e.to_string())?
+    {
+        return Ok(claim_commitment_id.to_string());
+    }
+
+    if let Some(commitment_id) =
+        primary_bridge_alias_for_action(db, action_id).map_err(|e| e.to_string())?
+    {
+        return Ok(commitment_id);
+    }
+
+    if let Some(commitment_id) = action_commitment_id.filter(|id| !id.trim().is_empty()) {
+        return Ok(commitment_id.to_string());
+    }
+
+    Err(format!(
+        "commitment action {action_id} missing commitment_id"
+    ))
+}
+
+fn bridge_alias_belongs_to_action(
+    db: &ActionDb,
+    commitment_id: &str,
+    action_id: &str,
+) -> Result<bool, rusqlite::Error> {
+    db.conn_ref().query_row(
+        "SELECT EXISTS(
+            SELECT 1
+            FROM ai_commitment_bridge
+            WHERE commitment_id = ?1
+              AND action_id = ?2
+              AND tombstoned = 0
+        )",
+        rusqlite::params![commitment_id, action_id],
+        |row| row.get::<_, i64>(0).map(|value| value != 0),
+    )
+}
+
+fn primary_bridge_alias_for_action(
+    db: &ActionDb,
+    action_id: &str,
+) -> Result<Option<String>, rusqlite::Error> {
+    db.conn_ref()
+        .query_row(
+            "SELECT commitment_id
+             FROM ai_commitment_bridge
+             WHERE action_id = ?1
+               AND tombstoned = 0
+             ORDER BY last_seen_at DESC, first_seen_at DESC, commitment_id ASC
+             LIMIT 1",
+            rusqlite::params![action_id],
+            |row| row.get::<_, String>(0),
+        )
+        .map(Some)
+        .or_else(|err| match err {
+            rusqlite::Error::QueryReturnedNoRows => Ok(None),
+            other => Err(other),
+        })
+}
+
+fn source_count_for_action(db: &ActionDb, action_id: &str) -> Result<i64, rusqlite::Error> {
     db.conn_ref().query_row(
         "SELECT COUNT(DISTINCT source_key)
          FROM action_commitment_sources
-         WHERE commitment_id = ?1",
-        rusqlite::params![commitment_id],
+         WHERE action_id = ?1
+            OR commitment_id IN (
+                SELECT commitment_id
+                FROM ai_commitment_bridge
+                WHERE action_id = ?1
+            )",
+        rusqlite::params![action_id],
         |row| row.get(0),
     )
 }
 
 fn source_count_after_sighting(
     db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
     commitment_id: &str,
     source_key: &str,
 ) -> Result<i64, rusqlite::Error> {
-    let existing = source_count_for_commitment(db, commitment_id)?;
+    let action_id =
+        action_id_for_commitment_source_count(db, entity_type, entity_id, commitment_id)?;
+
+    if let Some(action_id) = action_id {
+        return source_count_after_sighting_for_action(db, &action_id, source_key);
+    }
+
+    let existing = source_count_for_commitment_aliases(db, commitment_id)?;
     let already_seen = db.conn_ref().query_row(
         "SELECT EXISTS(
             SELECT 1
-            FROM action_commitment_sources
-            WHERE commitment_id = ?1
+            FROM action_commitment_sources acs
+            WHERE (acs.commitment_id = ?1
+                   OR acs.commitment_id IN (
+                       SELECT peer.commitment_id
+                       FROM ai_commitment_bridge source
+                       JOIN ai_commitment_bridge peer
+                         ON peer.action_id = source.action_id
+                       WHERE source.commitment_id = ?1
+                         AND source.action_id IS NOT NULL
+                   ))
               AND source_key = ?2
         )",
         rusqlite::params![commitment_id, source_key],
         |row| row.get::<_, i64>(0).map(|value| value != 0),
     )?;
     Ok(existing + if already_seen { 0 } else { 1 })
+}
+
+fn source_count_after_sighting_for_action(
+    db: &ActionDb,
+    action_id: &str,
+    source_key: &str,
+) -> Result<i64, rusqlite::Error> {
+    let existing = source_count_for_action(db, action_id)?;
+    let already_seen = db.conn_ref().query_row(
+        "SELECT EXISTS(
+            SELECT 1
+            FROM action_commitment_sources
+            WHERE (action_id = ?1
+                   OR commitment_id IN (
+                       SELECT commitment_id
+                       FROM ai_commitment_bridge
+                       WHERE action_id = ?1
+                   ))
+              AND source_key = ?2
+        )",
+        rusqlite::params![action_id, source_key],
+        |row| row.get::<_, i64>(0).map(|value| value != 0),
+    )?;
+    Ok(existing + if already_seen { 0 } else { 1 })
+}
+
+fn source_count_for_commitment_aliases(
+    db: &ActionDb,
+    commitment_id: &str,
+) -> Result<i64, rusqlite::Error> {
+    db.conn_ref().query_row(
+        "SELECT COUNT(DISTINCT acs.source_key)
+         FROM action_commitment_sources acs
+         WHERE acs.commitment_id = ?1
+            OR acs.commitment_id IN (
+                SELECT peer.commitment_id
+                FROM ai_commitment_bridge source
+                JOIN ai_commitment_bridge peer
+                  ON peer.action_id = source.action_id
+                WHERE source.commitment_id = ?1
+                  AND source.action_id IS NOT NULL
+            )",
+        rusqlite::params![commitment_id],
+        |row| row.get(0),
+    )
+}
+
+fn action_id_for_commitment_source_count(
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+    commitment_id: &str,
+) -> Result<Option<String>, rusqlite::Error> {
+    if let Some(action_id) = bridge_action_id_for_commitment(db, commitment_id)? {
+        return Ok(Some(action_id));
+    }
+
+    if let Some(action_id) = action_id_by_commitment_id(db, commitment_id)? {
+        return Ok(Some(action_id));
+    }
+
+    find_existing_open_commitment_by_identity(db, entity_type, entity_id, commitment_id)
+}
+
+fn bridge_action_id_for_commitment(
+    db: &ActionDb,
+    commitment_id: &str,
+) -> Result<Option<String>, rusqlite::Error> {
+    db.conn_ref()
+        .query_row(
+            "SELECT action_id
+             FROM ai_commitment_bridge
+             WHERE commitment_id = ?1
+               AND tombstoned = 0
+               AND action_id IS NOT NULL
+             ORDER BY last_seen_at DESC, first_seen_at DESC
+             LIMIT 1",
+            rusqlite::params![commitment_id],
+            |row| row.get::<_, String>(0),
+        )
+        .map(Some)
+        .or_else(|err| match err {
+            rusqlite::Error::QueryReturnedNoRows => Ok(None),
+            other => Err(other),
+        })
+}
+
+fn action_id_by_commitment_id(
+    db: &ActionDb,
+    commitment_id: &str,
+) -> Result<Option<String>, rusqlite::Error> {
+    db.conn_ref()
+        .query_row(
+            "SELECT id
+             FROM actions
+             WHERE commitment_id = ?1
+               AND action_kind = ?2
+               AND status NOT IN ('completed', 'cancelled', 'rejected', 'archived')
+             ORDER BY created_at ASC
+             LIMIT 1",
+            rusqlite::params![commitment_id, KIND_COMMITMENT],
+            |row| row.get::<_, String>(0),
+        )
+        .map(Some)
+        .or_else(|err| match err {
+            rusqlite::Error::QueryReturnedNoRows => Ok(None),
+            other => Err(other),
+        })
 }
 
 fn commitment_source_key(ingestion_source: &CommitmentIngestionSource) -> String {
@@ -1461,6 +1666,30 @@ mod tests {
                  FROM action_commitment_sources
                  WHERE commitment_id = ?1",
                 rusqlite::params![commitment_id],
+                |row| row.get(0),
+            )
+            .unwrap()
+    }
+
+    fn source_rows_for_action(db: &ActionDb, action_id: &str) -> i64 {
+        db.conn_ref()
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM action_commitment_sources
+                 WHERE action_id = ?1",
+                rusqlite::params![action_id],
+                |row| row.get(0),
+            )
+            .unwrap()
+    }
+
+    fn distinct_source_keys_for_action(db: &ActionDb, action_id: &str) -> i64 {
+        db.conn_ref()
+            .query_row(
+                "SELECT COUNT(DISTINCT source_key)
+                 FROM action_commitment_sources
+                 WHERE action_id = ?1",
+                rusqlite::params![action_id],
                 |row| row.get(0),
             )
             .unwrap()
@@ -2477,7 +2706,86 @@ mod tests {
         assert!(trust_band.is_some());
 
         assert_eq!(bridge_action_id(&db, &derived_commitment_id), "accepted-a1");
-        assert_eq!(source_rows(&db, "legacy-accepted-id"), 1);
+        assert_eq!(source_rows(&db, &derived_commitment_id), 1);
+        assert_eq!(source_rows_for_action(&db, "accepted-a1"), 1);
+    }
+
+    #[test]
+    fn accepted_legacy_alias_counts_new_derived_sighting_by_action() {
+        let db = test_db();
+        make_ctx!(ctx);
+        let title = "Accepted legacy alias corroboration";
+        let derived_commitment_id = derived_id_with(title, Some("2030-04-05"), Some("Alex Chen"));
+        let incoming = make_commitment_with_due_owner(title, Some("2030-04-05"), Some("Alex Chen"));
+
+        db.conn_ref()
+            .execute(
+                "INSERT INTO actions
+                 (id, title, priority, status, created_at, updated_at, due_date,
+                  account_id, source_type, source_id, source_label,
+                  action_kind, commitment_id, owner_raw, owner_entity_id,
+                  owner_confidence, owner_source, trust_score, trust_band)
+                 VALUES ('legacy-accepted-a2', ?1, 3, 'unstarted', '2026-01-01',
+                         '2026-01-02', '2030-04-05', 'acct-1', 'commitment',
+                         'legacy-accepted-id-2', 'legacy meeting',
+                         'commitment', 'legacy-accepted-id-2', 'Alex Chen', 'p-alex',
+                         0.96, 'exact_person_name', NULL, NULL)",
+                rusqlite::params![title],
+            )
+            .unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO ai_commitment_bridge
+                 (commitment_id, entity_type, entity_id, action_id,
+                  first_seen_at, last_seen_at, tombstoned)
+                 VALUES ('legacy-accepted-id-2', 'account', 'acct-1',
+                         'legacy-accepted-a2', '2026-01-01', '2026-01-02', 0)",
+                [],
+            )
+            .unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO action_commitment_sources
+                 (id, commitment_id, action_id, source_key, source_type, source_id,
+                  source_label, observed_at, trust_band, owner_raw)
+                 VALUES ('legacy-source-a2', 'legacy-accepted-id-2',
+                         'legacy-accepted-a2', 'meeting:legacy-call',
+                         'meeting', 'legacy-call', 'legacy meeting',
+                         '2026-01-02', 'unscored', 'Alex Chen')",
+                [],
+            )
+            .unwrap();
+
+        let summary = sync_one_with_ingestion_source(&ctx, &db, &incoming, "gong", "call-789");
+
+        assert_eq!(summary.created, 0);
+        assert_eq!(summary.aliased_to_existing, 1);
+        assert_eq!(
+            bridge_action_id(&db, &derived_commitment_id),
+            "legacy-accepted-a2"
+        );
+        assert_eq!(source_rows_for_action(&db, "legacy-accepted-a2"), 2);
+        assert_eq!(
+            distinct_source_keys_for_action(&db, "legacy-accepted-a2"),
+            2
+        );
+        assert_eq!(source_rows(&db, &derived_commitment_id), 1);
+
+        let owner_resolution = resolve_owner(
+            &db,
+            "acct-1",
+            &derived_commitment_id,
+            incoming.owner.as_deref(),
+        )
+        .expect("owner resolution");
+        let expected =
+            compute_commitment_trust("acct-1", &incoming, &owner_resolution, 2, ctx.clock.now());
+        let action = db
+            .get_action_by_id("legacy-accepted-a2")
+            .expect("action query")
+            .expect("action row");
+        assert_eq!(action.trust_score, Some(expected.score.value()));
+        assert_eq!(action.commitment_source_count, Some(2));
     }
 
     #[test]
@@ -2571,7 +2879,8 @@ mod tests {
         assert_eq!(context, "owner: still user context");
         assert!(trust_score.is_some());
         assert!(trust_band.is_some());
-        assert_eq!(source_rows(&db, "user-stable-id"), 1);
+        assert_eq!(source_rows(&db, &derived_commitment_id), 2);
+        assert_eq!(source_rows_for_action(&db, &action_id), 2);
     }
 
     #[test]

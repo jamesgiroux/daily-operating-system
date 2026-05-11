@@ -146,7 +146,12 @@ impl ActionDb {
                     actions.trust_score, actions.trust_band,
                     (SELECT COUNT(DISTINCT acs.source_key)
                      FROM action_commitment_sources acs
-                     WHERE acs.commitment_id = actions.commitment_id)
+                     WHERE acs.action_id = actions.id
+                        OR acs.commitment_id IN (
+                            SELECT b.commitment_id
+                            FROM ai_commitment_bridge b
+                            WHERE b.action_id = actions.id
+                        ))
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              LEFT JOIN action_linear_links all_links ON actions.id = all_links.action_id
@@ -389,7 +394,12 @@ impl ActionDb {
                     actions.trust_score, actions.trust_band,
                     (SELECT COUNT(DISTINCT acs.source_key)
                      FROM action_commitment_sources acs
-                     WHERE acs.commitment_id = actions.commitment_id)
+                     WHERE acs.action_id = actions.id
+                        OR acs.commitment_id IN (
+                            SELECT b.commitment_id
+                            FROM ai_commitment_bridge b
+                            WHERE b.action_id = actions.id
+                        ))
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              LEFT JOIN action_linear_links all_links ON actions.id = all_links.action_id
