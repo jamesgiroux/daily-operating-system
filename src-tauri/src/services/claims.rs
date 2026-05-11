@@ -1539,7 +1539,7 @@ fn semantic_signatures_near_duplicate(left: &SemanticSignature, right: &Semantic
         return false;
     }
 
-    if !left.numbers.is_empty() && !right.numbers.is_empty() && left.numbers != right.numbers {
+    if left.numbers != right.numbers {
         return false;
     }
 
@@ -9625,6 +9625,13 @@ mod tests {
         );
         assert!(
             !semantic_near_duplicate(
+                "Phase 2 budget approval is pending with finance",
+                "budget approval is pending with finance"
+            ),
+            "number-scoped claims must not collapse into unscoped claims"
+        );
+        assert!(
+            !semantic_near_duplicate(
                 "US Phase 2 budget approval is pending with finance",
                 "EU Phase 2 budget approval is pending with finance"
             ),
@@ -10220,6 +10227,53 @@ mod tests {
             CommittedClaim::Reinforced { claim, .. } => {
                 panic!(
                     "contract approval incorrectly canonicalized into {}",
+                    claim.id
+                )
+            }
+            CommittedClaim::Tombstoned { .. } => panic!("unexpected tombstone"),
+        }
+
+        let active = load_claims_active(&db, SUBJECT, Some("risk")).unwrap();
+        assert_eq!(active.len(), 2);
+    }
+
+    #[test]
+    fn commit_claim_phase_number_scope_does_not_auto_canonicalize() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let first_id = inserted_claim_id(
+            commit_claim(
+                &ctx,
+                &db,
+                proposal("Phase 2 budget approval is pending with finance"),
+            )
+            .unwrap(),
+        );
+        update_claim_trust(&db, &first_id, TrustScore(0.85), 1, &ctx).unwrap();
+
+        let result = commit_claim(
+            &ctx,
+            &db,
+            proposal("budget approval is pending with finance"),
+        )
+        .unwrap();
+
+        match result {
+            CommittedClaim::Inserted { claim } => assert_ne!(claim.id, first_id),
+            CommittedClaim::Forked {
+                primary_claim,
+                new_claim_id,
+                ..
+            } => {
+                assert_eq!(primary_claim.id, first_id);
+                assert_ne!(new_claim_id, first_id);
+            }
+            CommittedClaim::Reinforced { claim, .. } => {
+                panic!(
+                    "unscoped budget claim incorrectly canonicalized into {}",
                     claim.id
                 )
             }

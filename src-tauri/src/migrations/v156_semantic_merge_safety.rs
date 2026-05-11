@@ -145,14 +145,29 @@ fn recover_qualifiers_from_provenance(provenance_json: &str) -> Option<HashSet<S
     let mut candidates = Vec::new();
     collect_original_text_candidates(&provenance, &mut candidates);
 
-    candidates.into_iter().find_map(|text| {
+    let mut recovered = HashSet::new();
+    let mut all_candidates_confident_empty = !candidates.is_empty();
+    for text in candidates {
         let qualifiers = semantic_high_salience_qualifiers(&text);
-        if !qualifiers.is_empty() || text.chars().any(|ch| ch.is_ascii_uppercase()) {
-            Some(qualifiers)
+        if qualifiers.is_empty() {
+            all_candidates_confident_empty &=
+                provenance_text_candidate_confidently_preserves_case(&text);
         } else {
-            None
+            recovered.extend(qualifiers);
         }
-    })
+    }
+
+    if !recovered.is_empty() {
+        Some(recovered)
+    } else if all_candidates_confident_empty {
+        Some(HashSet::new())
+    } else {
+        None
+    }
+}
+
+fn provenance_text_candidate_confidently_preserves_case(text: &str) -> bool {
+    text.chars().any(|ch| ch.is_ascii_uppercase())
 }
 
 fn collect_original_text_candidates(value: &Value, candidates: &mut Vec<String>) {
@@ -241,6 +256,54 @@ mod tests {
         conn.execute(
             "INSERT INTO intelligence_claims
              (id, metadata_json, provenance_json, claim_state, surfacing_state)
+             VALUES (?1, NULL, ?2, 'active', 'active')",
+            params![
+                "nested-scoped",
+                serde_json::json!({
+                    "events": [
+                        {
+                            "parent": {
+                                "text": "Phase 2 budget approval is pending with finance"
+                            }
+                        },
+                        {
+                            "child": {
+                                "original_text": "US Phase 2 budget approval is pending with finance"
+                            }
+                        }
+                    ]
+                })
+                .to_string(),
+            ],
+        )
+        .expect("seed nested scoped claim");
+        conn.execute(
+            "INSERT INTO intelligence_claims
+             (id, metadata_json, provenance_json, claim_state, surfacing_state)
+             VALUES (?1, NULL, ?2, 'active', 'active')",
+            params![
+                "ambiguous-empty",
+                serde_json::json!({
+                    "events": [
+                        {
+                            "parent": {
+                                "text": "Phase 2 budget approval is pending with finance"
+                            }
+                        },
+                        {
+                            "child": {
+                                "original_text": "phase 2 budget approval is pending with finance"
+                            }
+                        }
+                    ]
+                })
+                .to_string(),
+            ],
+        )
+        .expect("seed ambiguous empty claim");
+        conn.execute(
+            "INSERT INTO intelligence_claims
+             (id, metadata_json, provenance_json, claim_state, surfacing_state)
              VALUES ('unknown', NULL, '{}', 'active', 'active')",
             [],
         )
@@ -282,6 +345,21 @@ mod tests {
         assert!(recoverable
             .get(NON_SEMANTIC_MERGEABLE_METADATA_KEY)
             .is_none());
+
+        let nested_scoped = metadata_for(&conn, "nested-scoped");
+        assert_eq!(
+            nested_scoped[SEMANTIC_QUALIFIERS_METADATA_KEY],
+            serde_json::json!(["region:US"])
+        );
+        assert!(nested_scoped
+            .get(NON_SEMANTIC_MERGEABLE_METADATA_KEY)
+            .is_none());
+
+        let ambiguous_empty = metadata_for(&conn, "ambiguous-empty");
+        assert_eq!(
+            ambiguous_empty[NON_SEMANTIC_MERGEABLE_METADATA_KEY],
+            Value::Bool(true)
+        );
 
         let unknown = metadata_for(&conn, "unknown");
         assert_eq!(
