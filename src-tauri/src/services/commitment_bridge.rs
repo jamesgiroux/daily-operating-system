@@ -14,7 +14,7 @@ use crate::abilities::extractors::commitment::{
 use crate::abilities::feedback::ClaimVerificationState;
 use crate::abilities::provenance::SubjectRef;
 use crate::abilities::read::resolve_owner::{
-    resolution_to_columns, resolve_owner, OwnerResolution,
+    resolution_to_columns, resolve_owner_with_mode, OwnerResolution, OwnerResolutionMode,
 };
 use crate::abilities::trust::{
     compile_trust, CrossEntityCoherenceInput, FreshnessContext, SourceLifecycleState, SurfaceClass,
@@ -301,6 +301,7 @@ pub fn sync_ai_commitments_with_ingestion_sources(
         let (owner_resolution, owner_resolution_provenance) =
             resolve_owner_for_commitment_sighting(
                 db,
+                entity_type,
                 entity_id,
                 &derived_id,
                 commitment.owner.as_deref(),
@@ -1491,13 +1492,16 @@ fn action_belongs_to_entity(entity_type: &str, entity_id: &str, action: &DbActio
 
 fn resolve_owner_for_commitment_sighting(
     db: &ActionDb,
+    entity_type: &str,
     entity_id: &str,
     commitment_id: &str,
     incoming_owner_raw: Option<&str>,
     target_action: Option<&DbAction>,
 ) -> Result<(OwnerResolution, OwnerResolutionProvenance), String> {
     if let Some(action) = target_action {
-        if action_has_stored_owner_provenance(action) {
+        if action_has_stored_owner_provenance(action)
+            && action_matches_claim_identity(entity_type, entity_id, commitment_id, action)
+        {
             return owner_resolution_from_action(db, action).map(|resolution| {
                 (
                     resolution,
@@ -1507,8 +1511,59 @@ fn resolve_owner_for_commitment_sighting(
         }
     }
 
-    resolve_owner(db, entity_id, commitment_id, incoming_owner_raw)
+    if let Some(resolution) =
+        identity_verified_user_reassigned_owner(db, entity_type, entity_id, commitment_id)?
+    {
+        return Ok((
+            resolution,
+            OwnerResolutionProvenance::ResolvedStructuralOwner,
+        ));
+    }
+
+    resolve_owner_with_mode(
+        db,
+        entity_id,
+        commitment_id,
+        incoming_owner_raw,
+        OwnerResolutionMode::FreshInput,
+    )
         .map(|resolution| (resolution, OwnerResolutionProvenance::IncomingLlmOwner))
+}
+
+fn identity_verified_user_reassigned_owner(
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+    commitment_id: &str,
+) -> Result<Option<OwnerResolution>, String> {
+    let mut stmt = db
+        .conn_ref()
+        .prepare(
+            "SELECT id
+             FROM actions
+             WHERE commitment_id = ?1
+               AND owner_source = 'user_reassigned'
+             ORDER BY updated_at DESC",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(rusqlite::params![commitment_id], |row| {
+            row.get::<_, String>(0)
+        })
+        .map_err(|e| e.to_string())?;
+
+    for row in rows {
+        let action_id = row.map_err(|e| e.to_string())?;
+        let action = db
+            .get_action_by_id(&action_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("commitment owner action missing: {action_id}"))?;
+        if action_matches_claim_identity(entity_type, entity_id, commitment_id, &action) {
+            return owner_resolution_from_action(db, &action).map(Some);
+        }
+    }
+
+    Ok(None)
 }
 
 fn action_has_stored_owner_provenance(action: &DbAction) -> bool {
@@ -1991,6 +2046,7 @@ fn touch_bridge_row(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::abilities::read::resolve_owner::resolve_owner;
     use crate::commands::UpdateActionRequest;
     use crate::db::test_utils::test_db;
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
@@ -3453,6 +3509,138 @@ mod tests {
         assert_eq!(commitment_id, stale_commitment_id);
         assert_eq!(owner_raw, "New Owner");
         assert_eq!(owner_source, "user_reassigned");
+    }
+
+    #[test]
+    fn stale_legacy_alias_rejected_for_identity_mismatch_does_not_leak_owner_to_new_fork() {
+        let db = test_db();
+        make_ctx!(ctx);
+        let original_title = "Prepare original pricing summary";
+        let original_due = "2031-02-01";
+        let incoming_owner = "Incoming LLM Owner";
+        let reassigned_owner = "Jamie Lee";
+        let stale_commitment_id =
+            derived_id_with(original_title, Some(original_due), Some(incoming_owner));
+
+        db.conn_ref()
+            .execute(
+                "INSERT INTO people (id, email, name, updated_at)
+                 VALUES ('p-jamie', 'jamie@example.com', ?1, '2026-01-01')",
+                rusqlite::params![reassigned_owner],
+            )
+            .unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO actions
+                 (id, title, priority, status, created_at, updated_at, due_date,
+                  account_id, source_type, source_id, source_label,
+                  action_kind, commitment_id, owner_raw, owner_confidence,
+                  owner_source, trust_score, trust_band)
+                 VALUES ('stale-owner-leak-a1', ?1, 3, 'backlog',
+                         '2026-01-01', '2026-01-02', ?2,
+                         'acct-1', 'commitment', ?3, 'legacy meeting',
+                         'commitment', ?3, ?4, 0.72,
+                         'exact_person_name', NULL, NULL)",
+                rusqlite::params![
+                    original_title,
+                    original_due,
+                    stale_commitment_id,
+                    incoming_owner
+                ],
+            )
+            .unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO ai_commitment_bridge
+                 (commitment_id, entity_type, entity_id, action_id,
+                  first_seen_at, last_seen_at, tombstoned)
+                 VALUES (?1, 'account', 'acct-1', 'stale-owner-leak-a1',
+                         '2026-01-01', '2026-01-02', 0)",
+                rusqlite::params![stale_commitment_id],
+            )
+            .unwrap();
+
+        crate::services::actions::apply_update_action(
+            &ctx,
+            &db,
+            update_action_request(
+                "stale-owner-leak-a1",
+                Some("User edited pricing summary"),
+                Some("2031-02-15"),
+                Some(reassigned_owner),
+            ),
+        )
+        .expect("real update action path");
+
+        let stale_sighting = make_commitment_with_identity(
+            original_title,
+            Some(&stale_commitment_id),
+            Some(original_due),
+            Some(incoming_owner),
+            Some("meeting"),
+        );
+        let summary = sync_one_with_ingestion_source(
+            &ctx,
+            &db,
+            &stale_sighting,
+            "meeting",
+            "owner-leak",
+        );
+
+        assert_eq!(summary.created, 1);
+        assert_eq!(summary.aliased_to_existing, 0);
+        assert_eq!(action_count(&db), 2);
+
+        let fork_action_id = bridge_action_id(&db, &stale_commitment_id);
+        assert_ne!(fork_action_id, "stale-owner-leak-a1");
+
+        let (owner_raw, trust_score): (String, f64) = db
+            .conn_ref()
+            .query_row(
+                "SELECT owner_raw, trust_score
+                 FROM actions
+                 WHERE id = ?1",
+                rusqlite::params![fork_action_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(owner_raw, incoming_owner);
+        assert_ne!(owner_raw, reassigned_owner);
+
+        let incoming_owner_resolution = resolve_owner_with_mode(
+            &db,
+            "acct-1",
+            &stale_commitment_id,
+            Some(incoming_owner),
+            OwnerResolutionMode::FreshInput,
+        )
+        .expect("incoming owner resolution");
+        let incoming_expected = compute_commitment_trust(
+            "acct-1",
+            &stale_sighting,
+            &incoming_owner_resolution,
+            1,
+            ctx.clock.now(),
+        );
+        let rejected_action = db
+            .get_action_by_id("stale-owner-leak-a1")
+            .expect("action query")
+            .expect("action row");
+        let structural_owner =
+            owner_resolution_from_action(&db, &rejected_action).expect("structural owner");
+        let structural_expected = compute_commitment_trust(
+            "acct-1",
+            &stale_sighting,
+            &structural_owner,
+            1,
+            ctx.clock.now(),
+        );
+        assert_ne!(
+            incoming_expected.score.value(),
+            structural_expected.score.value()
+        );
+        assert_eq!(trust_score, incoming_expected.score.value());
+        assert_ne!(trust_score, structural_expected.score.value());
     }
 
     #[test]
