@@ -852,6 +852,12 @@ const MIGRATIONS: &[Migration] = &[
         version: 167,
         apply: migrate_v167_structured_claim_canonicalization,
     },
+    // Separate pending-backfill retry accounting from backfill_epoch, which is
+    // part of the claim revision hash and must not double as an attempt count.
+    Migration::Sql {
+        version: 168,
+        sql: include_str!("migrations/168_pending_backfill_attempts.sql"),
+    },
 ];
 
 const V155_SHADOW_TRUST_VERSION: i64 = 1_401_003;
@@ -4461,8 +4467,11 @@ mod tests {
         )
         .expect("seed c5 zero-version shadow row");
 
-        let applied = run_migrations(&conn).expect("v157-v167 migrations should succeed");
-        assert_eq!(applied, 11, "v157-v167 should be pending after rollback to v156");
+        let applied = run_migrations(&conn).expect("v157-v168 migrations should succeed");
+        assert_eq!(
+            applied, 12,
+            "v157-v168 should be pending after rollback to v156"
+        );
         assert_eq!(
             current_version(&conn).expect("current version"),
             MIGRATIONS.last().unwrap().version()
@@ -4531,8 +4540,11 @@ mod tests {
         )
         .expect("seed v156-recorded live score");
 
-        let applied = run_migrations(&conn).expect("v157-v167 migrations should succeed");
-        assert_eq!(applied, 11, "v157-v167 should be pending after rollback to v156");
+        let applied = run_migrations(&conn).expect("v157-v168 migrations should succeed");
+        assert_eq!(
+            applied, 12,
+            "v157-v168 should be pending after rollback to v156"
+        );
         assert_eq!(
             current_version(&conn).expect("current version"),
             MIGRATIONS.last().unwrap().version()
@@ -4605,8 +4617,11 @@ mod tests {
         )
         .expect("seed partial v155 shadow row");
 
-        let applied = run_migrations(&conn).expect("v156-v167 migrations should succeed");
-        assert_eq!(applied, 12, "v156-v167 should be pending after rollback to v155");
+        let applied = run_migrations(&conn).expect("v156-v168 migrations should succeed");
+        assert_eq!(
+            applied, 13,
+            "v156-v168 should be pending after rollback to v155"
+        );
         assert_eq!(
             current_version(&conn).expect("current version"),
             MIGRATIONS.last().unwrap().version()
