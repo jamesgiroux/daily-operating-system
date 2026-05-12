@@ -158,6 +158,8 @@ pub struct SurfaceRuntimeConfig {
     pub signature_global_nonce_records: usize,
     #[serde(default = "default_surface_runtime_signed_request_max_body_bytes")]
     pub signed_request_max_body_bytes: u64,
+    #[serde(default)]
+    pub surface_client_rate_limits: SurfaceClientRateLimitConfig,
 }
 
 impl Default for SurfaceRuntimeConfig {
@@ -187,8 +189,75 @@ impl Default for SurfaceRuntimeConfig {
             signature_global_nonce_records: default_surface_runtime_signature_global_nonce_records(
             ),
             signed_request_max_body_bytes: default_surface_runtime_signed_request_max_body_bytes(),
+            surface_client_rate_limits: SurfaceClientRateLimitConfig::default(),
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SurfaceClientRateLimitConfig {
+    #[serde(default = "default_surface_client_instance_rate_limits")]
+    pub surface_client: SurfaceClientRequestRateLimitConfig,
+    #[serde(default = "default_surface_client_wp_user_rate_limits")]
+    pub wp_user: SurfaceClientRequestRateLimitConfig,
+    #[serde(default = "default_surface_client_wp_site_rate_limits")]
+    pub wp_site: SurfaceClientRequestRateLimitConfig,
+    #[serde(default = "default_surface_client_ability_rate_limits")]
+    pub ability: SurfaceClientAbilityRateLimitConfig,
+    #[serde(default = "default_surface_client_scope_rate_limits")]
+    pub scope: SurfaceClientRequestRateLimitConfig,
+    #[serde(default = "default_surface_client_early_retry_tighten_window_seconds")]
+    pub early_retry_tighten_window_seconds: u64,
+}
+
+impl Default for SurfaceClientRateLimitConfig {
+    fn default() -> Self {
+        Self {
+            surface_client: default_surface_client_instance_rate_limits(),
+            wp_user: default_surface_client_wp_user_rate_limits(),
+            wp_site: default_surface_client_wp_site_rate_limits(),
+            ability: default_surface_client_ability_rate_limits(),
+            scope: default_surface_client_scope_rate_limits(),
+            early_retry_tighten_window_seconds:
+                default_surface_client_early_retry_tighten_window_seconds(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SurfaceClientRequestRateLimitConfig {
+    #[serde(default = "default_surface_rate_limit_budget")]
+    pub read: SurfaceClientRateLimitBudgetConfig,
+    #[serde(default = "default_surface_rate_limit_budget")]
+    pub write: SurfaceClientRateLimitBudgetConfig,
+    #[serde(default = "default_surface_rate_limit_budget")]
+    pub admin: SurfaceClientRateLimitBudgetConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SurfaceClientAbilityRateLimitConfig {
+    #[serde(default = "default_surface_rate_limit_budget")]
+    pub cheap_read: SurfaceClientRateLimitBudgetConfig,
+    #[serde(default = "default_surface_rate_limit_budget")]
+    pub standard_read_composition: SurfaceClientRateLimitBudgetConfig,
+    #[serde(default = "default_surface_rate_limit_budget")]
+    pub heavy_transform: SurfaceClientRateLimitBudgetConfig,
+    #[serde(default = "default_surface_rate_limit_budget")]
+    pub feedback_write: SurfaceClientRateLimitBudgetConfig,
+    #[serde(default = "default_surface_rate_limit_budget")]
+    pub admin_ability: SurfaceClientRateLimitBudgetConfig,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SurfaceClientRateLimitBudgetConfig {
+    #[serde(default = "default_surface_rate_limit_budget_requests_per_minute")]
+    pub requests_per_minute: u32,
+    #[serde(default = "default_surface_rate_limit_budget_burst_per_second")]
+    pub burst_per_second: u32,
 }
 
 /// Profile-specific configuration (CSM users)
@@ -465,6 +534,77 @@ fn default_surface_runtime_signature_global_nonce_records() -> usize {
 
 fn default_surface_runtime_signed_request_max_body_bytes() -> u64 {
     256 * 1024
+}
+
+const fn surface_budget(
+    requests_per_minute: u32,
+    burst_per_second: u32,
+) -> SurfaceClientRateLimitBudgetConfig {
+    SurfaceClientRateLimitBudgetConfig {
+        requests_per_minute,
+        burst_per_second,
+    }
+}
+
+fn default_surface_client_instance_rate_limits() -> SurfaceClientRequestRateLimitConfig {
+    SurfaceClientRequestRateLimitConfig {
+        read: surface_budget(300, 20),
+        write: surface_budget(30, 2),
+        admin: surface_budget(6, 1),
+    }
+}
+
+fn default_surface_client_wp_user_rate_limits() -> SurfaceClientRequestRateLimitConfig {
+    SurfaceClientRequestRateLimitConfig {
+        read: surface_budget(120, 8),
+        write: surface_budget(12, 1),
+        admin: surface_budget(3, 1),
+    }
+}
+
+fn default_surface_client_wp_site_rate_limits() -> SurfaceClientRequestRateLimitConfig {
+    SurfaceClientRequestRateLimitConfig {
+        read: surface_budget(600, 40),
+        write: surface_budget(60, 4),
+        admin: surface_budget(12, 2),
+    }
+}
+
+fn default_surface_client_ability_rate_limits() -> SurfaceClientAbilityRateLimitConfig {
+    SurfaceClientAbilityRateLimitConfig {
+        cheap_read: surface_budget(120, 10),
+        standard_read_composition: surface_budget(60, 5),
+        heavy_transform: surface_budget(12, 2),
+        feedback_write: surface_budget(6, 1),
+        admin_ability: surface_budget(3, 1),
+    }
+}
+
+fn default_surface_client_scope_rate_limits() -> SurfaceClientRequestRateLimitConfig {
+    SurfaceClientRequestRateLimitConfig {
+        read: surface_budget(240, 16),
+        write: surface_budget(24, 2),
+        admin: surface_budget(6, 1),
+    }
+}
+
+fn default_surface_client_early_retry_tighten_window_seconds() -> u64 {
+    5 * 60
+}
+
+fn default_surface_rate_limit_budget() -> SurfaceClientRateLimitBudgetConfig {
+    surface_budget(
+        default_surface_rate_limit_budget_requests_per_minute(),
+        default_surface_rate_limit_budget_burst_per_second(),
+    )
+}
+
+fn default_surface_rate_limit_budget_requests_per_minute() -> u32 {
+    60
+}
+
+fn default_surface_rate_limit_budget_burst_per_second() -> u32 {
+    1
 }
 
 impl Config {

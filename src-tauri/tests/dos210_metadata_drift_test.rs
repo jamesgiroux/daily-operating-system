@@ -1,7 +1,8 @@
 use dailyos_lib::abilities::provenance::CompositionId;
 use dailyos_lib::abilities::registry::{AbilityPolicy, McpExposure, SignalPolicy};
 use dailyos_lib::abilities::{
-    AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityRegistry, Actor, ActorKind,
+    AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityRegistry, Actor,
+    ActorKind,
 };
 use dailyos_lib::services::context::ExecutionMode;
 
@@ -35,6 +36,7 @@ fn clean_read_descriptor() -> AbilityDescriptor {
             required_scopes: &[],
             mcp_exposure: McpExposure::None,
             client_side_executable: false,
+            rate_limit: None,
         },
         composes: &[],
         mutates: &[],

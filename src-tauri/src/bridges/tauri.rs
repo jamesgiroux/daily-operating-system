@@ -417,6 +417,7 @@ fn service_actor_label(actor: BridgeActor) -> &'static str {
         BridgeActor::Agent => "agent:mcp",
         BridgeActor::Admin => "admin",
         BridgeActor::System => "system",
+        BridgeActor::SurfaceClient => "surface_client",
     }
 }
 
@@ -486,7 +487,8 @@ mod tests {
     };
     use crate::abilities::registry::{AbilityPolicy, McpExposure, SignalPolicy};
     use crate::abilities::{
-        AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityErrorKind, Actor, ActorKind,
+        AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityErrorKind, Actor,
+        ActorKind,
     };
     use crate::bridges::types::{BridgeRejectReason, PRE_DISPATCH_RESOLUTION_ORDER};
     use crate::bridges::{confirmation_args_hash, AttestationDecision};
@@ -664,6 +666,7 @@ mod tests {
                 required_scopes: &[],
                 mcp_exposure: McpExposure::None,
                 client_side_executable: false,
+                rate_limit: None,
             },
             composes: &[],
             mutates: &[],

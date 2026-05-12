@@ -188,6 +188,10 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
     let scope_count = scope_exprs.len();
     let mcp_exposure_expr = args.mcp_exposure.registry_expr();
     let client_side_executable = args.client_side_executable;
+    let rate_limit_expr = args
+        .rate_limit
+        .map(|limit| limit.registry_expr())
+        .unwrap_or_else(|| quote! { None });
     let experimental_cfg = if experimental {
         quote! { #[cfg(feature = "experimental")] }
     } else {
@@ -360,6 +364,7 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
                     required_scopes: &#scopes_ident,
                     mcp_exposure: #mcp_exposure_expr,
                     client_side_executable: #client_side_executable,
+                    rate_limit: #rate_limit_expr,
                 },
                 composes: &#composes_ident,
                 mutates: &#mutates_ident,
@@ -390,6 +395,7 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
                     required_scopes: &#scopes_ident,
                     mcp_exposure: #mcp_exposure_expr,
                     client_side_executable: #client_side_executable,
+                    rate_limit: #rate_limit_expr,
                 },
                 composes: &#composes_ident,
                 mutates: &#mutates_ident,
@@ -419,6 +425,7 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
                     required_scopes: &#scopes_ident,
                     mcp_exposure: #mcp_exposure_expr,
                     client_side_executable: #client_side_executable,
+                    rate_limit: #rate_limit_expr,
                 },
                 composes: &#composes_ident,
                 mutates: &#mutates_ident,
@@ -751,6 +758,8 @@ struct AbilityArgs {
     /// gate. Allows `allowed_actors: [SurfaceClient]` with empty
     /// `required_scopes`. Boolean flag form: `no_scope_required = true`.
     no_scope_required: bool,
+    /// W2-D: optional lower-only rate-limit override.
+    rate_limit: Option<AbilityRateLimitArg>,
 }
 
 impl Parse for AbilityArgs {
@@ -771,6 +780,7 @@ impl Parse for AbilityArgs {
         let mut mcp_exposure = McpExposureArg::None;
         let mut client_side_executable = false;
         let mut no_scope_required = false;
+        let mut rate_limit = None;
 
         while !input.is_empty() {
             let key: Ident = input.parse()?;
@@ -798,6 +808,7 @@ impl Parse for AbilityArgs {
                     client_side_executable = input.parse::<LitBool>()?.value;
                 }
                 "no_scope_required" => no_scope_required = input.parse::<LitBool>()?.value,
+                "rate_limit" => rate_limit = Some(parse_rate_limit(input)?),
                 other => {
                     return Err(syn::Error::new(
                         key.span(),
@@ -834,6 +845,7 @@ impl Parse for AbilityArgs {
             mcp_exposure,
             client_side_executable,
             no_scope_required,
+            rate_limit,
         })
     }
 }
@@ -969,6 +981,61 @@ fn parse_mcp_exposure(input: ParseStream<'_>) -> syn::Result<McpExposureArg> {
             format!("unknown mcp_exposure `{other}` (expected None | MetadataOnly | Invocable)"),
         )),
     }
+}
+
+#[derive(Clone, Copy)]
+struct AbilityRateLimitArg {
+    requests_per_minute: u32,
+    burst_per_second: u32,
+}
+
+impl AbilityRateLimitArg {
+    fn registry_expr(self) -> proc_macro2::TokenStream {
+        let requests_per_minute = self.requests_per_minute;
+        let burst_per_second = self.burst_per_second;
+        quote! {
+            Some(crate::abilities::registry::AbilityRateLimit {
+                requests_per_minute: #requests_per_minute,
+                burst_per_second: #burst_per_second,
+            })
+        }
+    }
+}
+
+fn parse_rate_limit(input: ParseStream<'_>) -> syn::Result<AbilityRateLimitArg> {
+    let content;
+    braced!(content in input);
+    let mut requests_per_minute = None;
+    let mut burst_per_second = None;
+
+    while !content.is_empty() {
+        let key: Ident = content.parse()?;
+        content.parse::<Token![=]>()?;
+        match key.to_string().as_str() {
+            "requests_per_minute" => {
+                requests_per_minute = Some(content.parse::<LitInt>()?.base10_parse::<u32>()?);
+            }
+            "burst_per_second" => {
+                burst_per_second = Some(content.parse::<LitInt>()?.base10_parse::<u32>()?);
+            }
+            other => {
+                return Err(syn::Error::new(
+                    key.span(),
+                    format!("unknown rate_limit field `{other}`"),
+                ));
+            }
+        }
+        if content.peek(Token![,]) {
+            content.parse::<Token![,]>()?;
+        }
+    }
+
+    Ok(AbilityRateLimitArg {
+        requests_per_minute: requests_per_minute
+            .ok_or_else(|| content.error("missing rate_limit.requests_per_minute"))?,
+        burst_per_second: burst_per_second
+            .ok_or_else(|| content.error("missing rate_limit.burst_per_second"))?,
+    })
 }
 
 fn parse_string_array(input: ParseStream<'_>) -> syn::Result<Vec<String>> {

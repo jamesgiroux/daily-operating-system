@@ -4,7 +4,7 @@ use base64::Engine as _;
 use chrono::{DateTime, Duration, SecondsFormat, Utc};
 use http::StatusCode;
 use rand::Rng;
-use ring::hkdf;
+use ring::{hkdf, hmac};
 use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -161,8 +161,10 @@ pub struct ValidatedSurfaceSession {
     pub surface_client_id: String,
     pub session_id: String,
     pub actor: Actor,
-    pub wp_user_id: u64,
-    pub wp_user_hash: String,
+    pub wp_user_id: Option<u64>,
+    pub wp_user_hash: Option<String>,
+    pub wp_site_id: String,
+    pub wp_site_id_hash: String,
     pub site_binding_digest: String,
     pub site_nonce: String,
     pub scope_digest: String,
@@ -794,8 +796,14 @@ pub fn validate_signed_session(
             instance: SurfaceClientId::new(row.surface_client_id.clone()),
             scopes: scope_set,
         },
-        wp_user_id: input.wp_user_id,
-        wp_user_hash: input.wp_user_hash,
+        wp_user_id: Some(input.wp_user_id),
+        wp_user_hash: Some(input.wp_user_hash),
+        wp_site_id: input.site_claims.wp_site_id.clone(),
+        wp_site_id_hash: private_audit_hash(
+            "wp_site_id",
+            &row.site_nonce,
+            &input.site_claims.wp_site_id,
+        ),
         site_binding_digest: row.site_binding_digest,
         site_nonce: row.site_nonce,
         scope_digest: row.scope_digest,
@@ -1880,6 +1888,19 @@ fn stable_hash(domain: &str, value: &str) -> String {
     hasher.update(b"\n");
     hasher.update(value.as_bytes());
     hex::encode(hasher.finalize())
+}
+
+fn private_audit_hash(domain: &str, secret: &str, value: &str) -> String {
+    let key = hmac::Key::new(hmac::HMAC_SHA256, secret.as_bytes());
+    let mut context = hmac::Context::with_key(&key);
+    context.update(b"DAILYOS-SURFACE-AUDIT-HASH-V1\n");
+    context.update(domain.as_bytes());
+    context.update(b"\n");
+    context.update(value.as_bytes());
+    format!(
+        "hmac-sha256:{}",
+        hex::encode(&context.sign().as_ref()[..16])
+    )
 }
 
 fn display_hash(value: String) -> String {

@@ -429,10 +429,42 @@ pub enum McpExposure {
     Invocable,
 }
 
+/// Per-ability rate limit override for SurfaceClient bridge invocation.
+///
+/// The override is lower-only: bridge/runtime defaults remain the ceiling,
+/// and ability policy may only tighten them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+pub struct AbilityRateLimit {
+    pub requests_per_minute: u32,
+    pub burst_per_second: u32,
+}
+
+impl AbilityRateLimit {
+    pub const fn new(requests_per_minute: u32, burst_per_second: u32) -> Self {
+        Self {
+            requests_per_minute,
+            burst_per_second,
+        }
+    }
+
+    pub fn lowered_by(self, override_limit: Self) -> Self {
+        Self {
+            requests_per_minute: self
+                .requests_per_minute
+                .min(override_limit.requests_per_minute),
+            burst_per_second: self.burst_per_second.min(override_limit.burst_per_second),
+        }
+    }
+
+    pub fn effective_lower_only(default_limit: Self, override_limit: Option<Self>) -> Self {
+        override_limit.map_or(default_limit, |limit| default_limit.lowered_by(limit))
+    }
+}
+
 /// Per-ability policy (which actors may invoke, which modes, etc.).
 ///
 /// Per ADR-0102 §7.1 (W0-D amended 2026-05-10) W1-B, the
-/// schema carries three additional fields beyond the v1.4.1 baseline:
+/// schema carries four additional fields beyond the v1.4.1 baseline:
 ///
 /// - `required_scopes`: scope vocabulary a [`Actor::SurfaceClient`] must
 ///   present at the bridge boundary (W2-B) before registry lookup. Stored
@@ -445,6 +477,7 @@ pub enum McpExposure {
 /// - `client_side_executable`: whether a SurfaceClient may invoke after
 ///   policy/scope/actor checks. Independent of `mcp_exposure` per Phase 0
 ///   artifact 05 lines 389-412.
+/// - `rate_limit`: optional lower-only per-ability limiter override for W2-D.
 ///
 /// Closed defaults (via [`AbilityPolicy::default`]):
 /// - `allowed_actors: &[ActorKind::User]` — least-privilege actor floor
@@ -452,6 +485,7 @@ pub enum McpExposure {
 /// - `required_scopes: &[]`
 /// - `mcp_exposure: McpExposure::None`
 /// - `client_side_executable: false`
+/// - `rate_limit: None`
 ///
 /// Defaults preserve v1.4.0/v1.4.1 behavior: an ability with no
 /// `SurfaceClient` in `allowed_actors` may keep empty `required_scopes`,
@@ -478,6 +512,8 @@ pub struct AbilityPolicy {
     /// Whether a [`Actor::SurfaceClient`] may invoke after policy/scope/
     /// actor checks. Default `false`.
     pub client_side_executable: bool,
+    /// Optional lower-only rate-limit override for this ability.
+    pub rate_limit: Option<AbilityRateLimit>,
 }
 
 impl Default for AbilityPolicy {
@@ -485,7 +521,8 @@ impl Default for AbilityPolicy {
     /// AC §449: the closed default is `[User]` — the least-privilege
     /// actor floor — not `[]` (closed-to-everyone). The other W1-B
     /// fields default to closed forms (`required_scopes: &[]`,
-    /// `mcp_exposure: McpExposure::None`, `client_side_executable: false`).
+    /// `mcp_exposure: McpExposure::None`, `client_side_executable: false`,
+    /// `rate_limit: None`).
     fn default() -> Self {
         Self {
             allowed_actors: &[ActorKind::User],
@@ -495,6 +532,7 @@ impl Default for AbilityPolicy {
             required_scopes: &[],
             mcp_exposure: McpExposure::None,
             client_side_executable: false,
+            rate_limit: None,
         }
     }
 }
@@ -511,6 +549,11 @@ impl AbilityPolicy {
             .iter()
             .map(|s| SurfaceScope::new(*s))
             .collect()
+    }
+
+    /// Apply this policy's optional lower-only rate-limit override.
+    pub fn effective_rate_limit(&self, default_limit: AbilityRateLimit) -> AbilityRateLimit {
+        AbilityRateLimit::effective_lower_only(default_limit, self.rate_limit)
     }
 }
 
@@ -1583,6 +1626,7 @@ mod tests {
                 required_scopes: &[],
                 mcp_exposure: McpExposure::None,
                 client_side_executable: false,
+                rate_limit: None,
             },
             composes: &[],
             mutates: &[],
@@ -1616,6 +1660,7 @@ mod tests {
                 required_scopes: &[],
                 mcp_exposure: McpExposure::None,
                 client_side_executable: false,
+                rate_limit: None,
             },
             composes: &[],
             mutates: &[],
@@ -2431,6 +2476,7 @@ mod tests {
         assert_eq!(policy.required_scopes, &[] as &[&str]);
         assert_eq!(policy.mcp_exposure, McpExposure::None);
         assert!(!policy.client_side_executable);
+        assert_eq!(policy.rate_limit, None);
     }
 
     #[test]
@@ -2459,6 +2505,37 @@ mod tests {
         assert_eq!(typed.len(), 2);
         assert!(typed.contains(&SurfaceScope::new("read.account_overview")));
         assert!(typed.contains(&SurfaceScope::new("submit.feedback")));
+    }
+
+    #[test]
+    fn ability_policy_effective_rate_limit_defaults_to_runtime_limit() {
+        let policy = AbilityPolicy::default();
+        let runtime_limit = AbilityRateLimit::new(120, 10);
+
+        assert_eq!(policy.effective_rate_limit(runtime_limit), runtime_limit);
+    }
+
+    #[test]
+    fn ability_policy_effective_rate_limit_is_lower_only() {
+        let runtime_limit = AbilityRateLimit::new(120, 10);
+
+        let looser_policy = AbilityPolicy {
+            rate_limit: Some(AbilityRateLimit::new(240, 20)),
+            ..AbilityPolicy::default()
+        };
+        assert_eq!(
+            looser_policy.effective_rate_limit(runtime_limit),
+            runtime_limit
+        );
+
+        let tighter_policy = AbilityPolicy {
+            rate_limit: Some(AbilityRateLimit::new(60, 20)),
+            ..AbilityPolicy::default()
+        };
+        assert_eq!(
+            tighter_policy.effective_rate_limit(runtime_limit),
+            AbilityRateLimit::new(60, 10)
+        );
     }
 
     #[test]
@@ -2510,6 +2587,7 @@ mod tests {
             required_scopes: &["read.account_overview"],
             mcp_exposure: McpExposure::None,
             client_side_executable: false,
+            rate_limit: None,
         };
         assert_eq!(POLICY.required_scopes, &["read.account_overview"]);
     }

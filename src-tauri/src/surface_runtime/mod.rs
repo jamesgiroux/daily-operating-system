@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use chrono::Utc;
-use http::header::{self, HeaderMap, HeaderValue};
+use http::header::{self, HeaderMap, HeaderName, HeaderValue};
 use http::{Method, Request, Response, StatusCode, Uri};
 use http_body_util::{BodyExt, Full, LengthLimitError, Limited};
 use hyper::body::Incoming;
@@ -23,6 +23,18 @@ use tokio::sync::watch;
 use tokio::task::{AbortHandle, JoinHandle, JoinSet};
 use uuid::Uuid;
 
+use crate::abilities::NOOP_ABILITY_TRACER;
+use crate::bridges::surface_client::{
+    SurfaceClientAbilityClassLimits, SurfaceClientBridge, SurfaceClientBridgeConfig,
+    SurfaceClientBridgeError, SurfaceClientRateLimitAxis, SurfaceClientRateLimitBudget,
+    SurfaceClientRequestClassLimits,
+};
+use crate::bridges::types::{
+    invoke_registry_json_for_actor, provider_from_context_snapshot, surface_error, BridgeActor,
+    BridgeSurface, RequestScopedInvocation,
+};
+use crate::bridges::BridgeSurfaceError;
+use crate::services::context::ClaimDismissalSurface;
 use crate::services::surface_pairing::{
     self, PairingCodeFailureInput, PairingHandshakeCapacityInput, PairingHandshakeInput,
     PairingHandshakeRequest, SignedSessionValidationInput, SignedSiteClaimsInput,
@@ -50,6 +62,7 @@ pub struct SurfaceEndpointConfig {
     pub pairing_attempts: PairingAttemptConfig,
     pub(crate) signed_transport: hmac::SignedTransportConfig,
     pub(crate) signed_request_max_body_bytes: usize,
+    pub(crate) surface_client_bridge: SurfaceClientBridgeConfig,
 }
 
 impl Default for SurfaceEndpointConfig {
@@ -65,6 +78,7 @@ impl Default for SurfaceEndpointConfig {
             },
             signed_transport: hmac::SignedTransportConfig::default(),
             signed_request_max_body_bytes: DEFAULT_SIGNED_REQUEST_MAX_BODY_BYTES,
+            surface_client_bridge: SurfaceClientBridgeConfig::default(),
         }
     }
 }
@@ -267,6 +281,11 @@ impl SurfaceEndpointState {
                         paired_site_origins: Arc::clone(&self.paired_site_origins),
                         signed_transport: self.signed_transport.clone(),
                         signed_request_max_body_bytes: config.signed_request_max_body_bytes,
+                        surface_client_bridge: SurfaceClientBridge::new(
+                            config.surface_client_bridge.clone(),
+                        ),
+                        #[cfg(test)]
+                        ability_registry_override: None,
                         app_state: app_state.clone(),
                     });
                     let endpoint_state = Arc::clone(&self);
@@ -458,6 +477,53 @@ impl From<&crate::types::SurfaceRuntimeConfig> for SurfaceEndpointConfig {
                 config.signed_request_max_body_bytes.max(1),
             )
             .unwrap_or(DEFAULT_SIGNED_REQUEST_MAX_BODY_BYTES),
+            surface_client_bridge: SurfaceClientBridgeConfig::from(
+                &config.surface_client_rate_limits,
+            ),
+        }
+    }
+}
+
+impl From<&crate::types::SurfaceClientRateLimitConfig> for SurfaceClientBridgeConfig {
+    fn from(config: &crate::types::SurfaceClientRateLimitConfig) -> Self {
+        Self {
+            surface_client: SurfaceClientRequestClassLimits::from(&config.surface_client),
+            wp_user: SurfaceClientRequestClassLimits::from(&config.wp_user),
+            wp_site: SurfaceClientRequestClassLimits::from(&config.wp_site),
+            ability: SurfaceClientAbilityClassLimits {
+                cheap_read: SurfaceClientRateLimitBudget::from(&config.ability.cheap_read),
+                standard_read_composition: SurfaceClientRateLimitBudget::from(
+                    &config.ability.standard_read_composition,
+                ),
+                heavy_transform: SurfaceClientRateLimitBudget::from(
+                    &config.ability.heavy_transform,
+                ),
+                feedback_write: SurfaceClientRateLimitBudget::from(&config.ability.feedback_write),
+                admin_ability: SurfaceClientRateLimitBudget::from(&config.ability.admin_ability),
+            },
+            scope: SurfaceClientRequestClassLimits::from(&config.scope),
+            early_retry_tighten_window: Duration::from_secs(
+                config.early_retry_tighten_window_seconds.max(1),
+            ),
+        }
+    }
+}
+
+impl From<&crate::types::SurfaceClientRequestRateLimitConfig> for SurfaceClientRequestClassLimits {
+    fn from(config: &crate::types::SurfaceClientRequestRateLimitConfig) -> Self {
+        Self {
+            read: SurfaceClientRateLimitBudget::from(&config.read),
+            write: SurfaceClientRateLimitBudget::from(&config.write),
+            admin: SurfaceClientRateLimitBudget::from(&config.admin),
+        }
+    }
+}
+
+impl From<&crate::types::SurfaceClientRateLimitBudgetConfig> for SurfaceClientRateLimitBudget {
+    fn from(config: &crate::types::SurfaceClientRateLimitBudgetConfig) -> Self {
+        Self {
+            requests_per_minute: config.requests_per_minute.max(1),
+            burst_per_second: config.burst_per_second.max(1),
         }
     }
 }
@@ -471,6 +537,9 @@ struct EndpointRuntime {
     paired_site_origins: Arc<RwLock<HashSet<String>>>,
     signed_transport: hmac::SignedTransportState,
     signed_request_max_body_bytes: usize,
+    surface_client_bridge: SurfaceClientBridge,
+    #[cfg(test)]
+    ability_registry_override: Option<Arc<crate::abilities::AbilityRegistry>>,
     app_state: Option<Arc<AppState>>,
 }
 
@@ -536,7 +605,7 @@ async fn handle_hyper_request(
     let rate_decision = runtime.loopback_bucket.lock().try_acquire(Instant::now());
     if let Err(retry_after) = rate_decision {
         return Ok(error_response(
-            SurfaceHttpError::rate_limited(retry_after).with_request_id(request_id),
+            SurfaceHttpError::loopback_rate_limited(retry_after).with_request_id(request_id),
         ));
     }
 
@@ -701,7 +770,7 @@ async fn signed_transport_response(
         return error_response(SurfaceHttpError::route_not_found().with_request_id(request_id));
     }
 
-    signed_route_response(&request, validated, request_id)
+    signed_route_response(&request, &runtime, validated, request_id).await
 }
 
 fn is_supported_signed_route(method: &Method, path: &str) -> bool {
@@ -1052,8 +1121,9 @@ async fn compensate_failed_session_registration(
     }
 }
 
-fn signed_route_response(
+async fn signed_route_response(
     request: &SurfaceHttpRequest,
+    runtime: &EndpointRuntime,
     validated: ValidatedSurfaceSession,
     request_id: String,
 ) -> Response<ResponseBody> {
@@ -1087,7 +1157,145 @@ fn signed_route_response(
                 ),
             }
         }
+        (Method::POST, "/v1/surface/invoke") => {
+            let invoke = match serde_json::from_slice::<SurfaceInvokeRequest>(&request.body) {
+                Ok(invoke) if is_safe_ability_name(&invoke.ability) => invoke,
+                Ok(_) | Err(_) => {
+                    return error_response(
+                        SurfaceHttpError::bad_request("surface_invoke_invalid")
+                            .with_request_id(request_id),
+                    );
+                }
+            };
+            #[cfg(test)]
+            let registry_override = runtime.ability_registry_override.clone();
+            #[cfg(test)]
+            let registry = if let Some(registry) = registry_override.as_deref() {
+                registry
+            } else {
+                match crate::abilities::AbilityRegistry::global_checked() {
+                    Ok(registry) => registry,
+                    Err(_) => {
+                        return error_response(
+                            SurfaceHttpError::runtime_unavailable().with_request_id(request_id),
+                        );
+                    }
+                }
+            };
+            #[cfg(not(test))]
+            let registry = match crate::abilities::AbilityRegistry::global_checked() {
+                Ok(registry) => registry,
+                Err(_) => {
+                    return error_response(
+                        SurfaceHttpError::runtime_unavailable().with_request_id(request_id),
+                    );
+                }
+            };
+            match runtime.surface_client_bridge.authorize(
+                registry,
+                &validated,
+                &invoke.ability,
+                &request_id,
+            ) {
+                Ok(authorization) => {
+                    if let Some(app_state) = runtime.app_state.as_ref() {
+                        for event in authorization.audit_events {
+                            emit_pairing_audit_event(app_state, &event);
+                        }
+                    }
+                    let Some(app_state) = runtime.app_state.as_ref() else {
+                        return error_response(
+                            SurfaceHttpError::runtime_unavailable().with_request_id(request_id),
+                        );
+                    };
+                    let snapshot = app_state.context_snapshot();
+                    let provider = provider_from_context_snapshot(&snapshot);
+                    let services = app_state
+                        .live_service_context()
+                        .with_actor("surface_client");
+                    match invoke_registry_json_for_actor(
+                        registry,
+                        &services,
+                        provider,
+                        &NOOP_ABILITY_TRACER,
+                        RequestScopedInvocation {
+                            registry_actor: validated.actor.clone(),
+                            response_actor: BridgeActor::SurfaceClient,
+                            surface: BridgeSurface::SurfaceClient,
+                            claim_dismissal_surface: ClaimDismissalSurface::LogStructured,
+                        },
+                        &authorization.canonical_ability_name,
+                        invoke.input,
+                    )
+                    .await
+                    {
+                        Ok(ability) => json_response(
+                            StatusCode::OK,
+                            json!({
+                                "ok": true,
+                                "request_id": request_id,
+                                "ability": ability,
+                            }),
+                        ),
+                        Err(error) => error_response(
+                            bridge_surface_error(surface_error(error)).with_request_id(request_id),
+                        ),
+                    }
+                }
+                Err(SurfaceClientBridgeError::RateLimited(rejection)) => {
+                    let rejection = *rejection;
+                    if let Some(app_state) = runtime.app_state.as_ref() {
+                        emit_pairing_audit_event(app_state, &rejection.audit_event);
+                    }
+                    error_response(
+                        SurfaceHttpError::rate_limited(rejection.axis, rejection.retry_after)
+                            .with_request_id(request_id),
+                    )
+                }
+                Err(error) => {
+                    error_response(surface_bridge_error(error).with_request_id(request_id))
+                }
+            }
+        }
         _ => error_response(SurfaceHttpError::runtime_unavailable().with_request_id(request_id)),
+    }
+}
+
+#[derive(Deserialize)]
+struct SurfaceInvokeRequest {
+    ability: String,
+    #[allow(dead_code)]
+    #[serde(default)]
+    input: serde_json::Value,
+}
+
+fn is_safe_ability_name(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b':'))
+}
+
+fn surface_bridge_error(error: SurfaceClientBridgeError) -> SurfaceHttpError {
+    if let Some(_surface_error) = error.as_surface_error() {
+        return SurfaceHttpError::auth_missing()
+            .with_message("The requested DailyOS surface ability is not available.")
+            .with_remediation("Use an ability exposed to this paired surface.");
+    }
+    SurfaceHttpError::runtime_unavailable()
+}
+
+fn bridge_surface_error(error: BridgeSurfaceError) -> SurfaceHttpError {
+    match error {
+        BridgeSurfaceError::Validation(_) => {
+            SurfaceHttpError::bad_request("surface_invoke_invalid")
+        }
+        BridgeSurfaceError::AbilityUnavailable | BridgeSurfaceError::Ownership(_) => {
+            SurfaceHttpError::auth_missing()
+                .with_message("The requested DailyOS surface ability is not available.")
+                .with_remediation("Use an ability exposed to this paired surface.")
+        }
     }
 }
 
@@ -1220,6 +1428,7 @@ struct SurfaceHttpError {
     request_id: Option<String>,
     remediation: String,
     retry_after_ms: Option<u64>,
+    rate_limit_axis: Option<SurfaceClientRateLimitAxis>,
 }
 
 impl SurfaceHttpError {
@@ -1326,7 +1535,7 @@ impl SurfaceHttpError {
         )
     }
 
-    fn rate_limited(retry_after: Duration) -> Self {
+    fn loopback_rate_limited(retry_after: Duration) -> Self {
         let retry_after_ms = retry_after.as_millis().try_into().unwrap_or(u64::MAX);
         Self::new(
             StatusCode::TOO_MANY_REQUESTS,
@@ -1335,6 +1544,18 @@ impl SurfaceHttpError {
             "Wait before retrying the request.",
         )
         .with_retry_after_ms(retry_after_ms)
+    }
+
+    fn rate_limited(axis: SurfaceClientRateLimitAxis, retry_after: Duration) -> Self {
+        let retry_after_ms = retry_after.as_millis().try_into().unwrap_or(u64::MAX);
+        Self::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            "rate_limited",
+            "The DailyOS runtime is receiving too many surface requests.",
+            "Wait before retrying the request.",
+        )
+        .with_retry_after_ms(retry_after_ms)
+        .with_rate_limit_axis(axis)
     }
 
     fn rate_limited_without_retry() -> Self {
@@ -1378,6 +1599,7 @@ impl SurfaceHttpError {
             request_id: None,
             remediation: remediation.into(),
             retry_after_ms: None,
+            rate_limit_axis: None,
         }
     }
 
@@ -1405,6 +1627,11 @@ impl SurfaceHttpError {
         self.retry_after_ms = Some(retry_after_ms);
         self
     }
+
+    fn with_rate_limit_axis(mut self, axis: SurfaceClientRateLimitAxis) -> Self {
+        self.rate_limit_axis = Some(axis);
+        self
+    }
 }
 
 fn error_response(error: SurfaceHttpError) -> Response<ResponseBody> {
@@ -1421,8 +1648,26 @@ fn error_response(error: SurfaceHttpError) -> Response<ResponseBody> {
     if let Some(retry_after_ms) = error.retry_after_ms {
         body["error"]["retry_after_ms"] = json!(retry_after_ms);
     }
+    if let Some(axis) = error.rate_limit_axis {
+        body["error"]["axis"] = json!(axis.as_str());
+    }
 
-    json_response(error.status, body)
+    let mut response = json_response(error.status, body);
+    if let Some(retry_after_ms) = error.retry_after_ms {
+        let retry_after_seconds = retry_after_ms.div_ceil(1_000).max(1);
+        let header_value = HeaderValue::from_str(&retry_after_seconds.to_string())
+            .unwrap_or_else(|_| HeaderValue::from_static("1"));
+        response
+            .headers_mut()
+            .insert(header::RETRY_AFTER, header_value);
+    }
+    if let Some(axis) = error.rate_limit_axis {
+        response.headers_mut().insert(
+            HeaderName::from_static("x-ratelimit-exhausted-axis"),
+            HeaderValue::from_static(axis.as_str()),
+        );
+    }
+    response
 }
 
 fn json_response(status: StatusCode, value: serde_json::Value) -> Response<ResponseBody> {
@@ -1635,7 +1880,73 @@ impl PairingAttemptDecision {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::abilities::registry::{
+        AbilityContext, AbilityDescriptor, AbilityPolicy, McpExposure, ScopeSet, SignalPolicy,
+        SurfaceClientId, SurfaceScope,
+    };
+    use crate::abilities::{AbilityCategory, AbilityError, Actor, ActorKind};
+    use std::future::Future;
     use std::io::{Read, Write};
+    use std::pin::Pin;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static SURFACE_ROUTE_DISPATCH_COUNT: AtomicUsize = AtomicUsize::new(0);
+    static SURFACE_ROUTE_LIMIT_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+    type ErasedFuture<'a> =
+        Pin<Box<dyn Future<Output = Result<serde_json::Value, AbilityError>> + Send + 'a>>;
+
+    fn surface_route_dispatch_erased<'a>(
+        ctx: &'a AbilityContext<'a>,
+        input: serde_json::Value,
+    ) -> ErasedFuture<'a> {
+        SURFACE_ROUTE_DISPATCH_COUNT.fetch_add(1, Ordering::SeqCst);
+        surface_route_output(ctx, input, "surface_route_test")
+    }
+
+    fn surface_route_limit_erased<'a>(
+        ctx: &'a AbilityContext<'a>,
+        input: serde_json::Value,
+    ) -> ErasedFuture<'a> {
+        SURFACE_ROUTE_LIMIT_COUNT.fetch_add(1, Ordering::SeqCst);
+        surface_route_output(ctx, input, "surface_route_limited_test")
+    }
+
+    fn surface_route_output<'a>(
+        ctx: &'a AbilityContext<'a>,
+        input: serde_json::Value,
+        ability_name: &'static str,
+    ) -> ErasedFuture<'a> {
+        Box::pin(async move {
+            Ok(json!({
+                "data": {
+                    "input": input,
+                    "actor": format!("{:?}", ctx.actor),
+                    "mode": ctx.mode().as_str(),
+                },
+                "provenance": {
+                    "invocation_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                    "ability_name": ability_name,
+                    "ability_version": { "major": 1, "minor": 0 },
+                    "ability_schema_version": 1,
+                    "actor": format!("{:?}", ctx.actor),
+                    "mode": ctx.mode().as_str(),
+                    "warnings": []
+                },
+                "diagnostics": { "warnings": [] }
+            }))
+        })
+    }
+
+    fn surface_route_schema() -> serde_json::Value {
+        json!({
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "value": { "type": "number" }
+            }
+        })
+    }
 
     fn runtime_for_tests(port: u16) -> Arc<EndpointRuntime> {
         Arc::new(EndpointRuntime {
@@ -1655,8 +1966,130 @@ mod tests {
             paired_site_origins: Arc::new(RwLock::new(HashSet::new())),
             signed_transport: hmac::SignedTransportState::default(),
             signed_request_max_body_bytes: DEFAULT_SIGNED_REQUEST_MAX_BODY_BYTES,
+            surface_client_bridge: SurfaceClientBridge::new(SurfaceClientBridgeConfig::default()),
+            ability_registry_override: None,
             app_state: None,
         })
+    }
+
+    fn surface_route_descriptor(
+        name: &'static str,
+        invoke_erased: for<'a> fn(&'a AbilityContext<'a>, serde_json::Value) -> ErasedFuture<'a>,
+    ) -> AbilityDescriptor {
+        AbilityDescriptor {
+            name,
+            version: "1.0.0",
+            schema_version: 1,
+            category: AbilityCategory::Read,
+            policy: AbilityPolicy {
+                allowed_actors: &[ActorKind::SurfaceClient],
+                allowed_modes: &[crate::services::context::ExecutionMode::Live],
+                requires_confirmation: false,
+                may_publish: false,
+                required_scopes: &["read.account_overview"],
+                mcp_exposure: McpExposure::None,
+                client_side_executable: true,
+                rate_limit: None,
+            },
+            composes: &[],
+            mutates: &[],
+            experimental: false,
+            registered_at: None,
+            signal_policy: SignalPolicy::default(),
+            invoke_erased,
+            input_schema: surface_route_schema,
+            output_schema: surface_route_schema,
+        }
+    }
+
+    fn runtime_for_surface_route_tests(
+        registry: Arc<crate::abilities::AbilityRegistry>,
+        bridge_config: SurfaceClientBridgeConfig,
+    ) -> Arc<EndpointRuntime> {
+        Arc::new(EndpointRuntime {
+            startup_id: Uuid::new_v4(),
+            bound_port: 49152,
+            runtime_anchor_id: "test_runtime_anchor".to_string(),
+            loopback_bucket: Mutex::new(TokenBucket::new(TokenBucketConfig {
+                capacity: 100,
+                refill_per_second: 100.0,
+            })),
+            pairing_attempts: Arc::new(Mutex::new(PairingAttemptLimiter {
+                config: PairingAttemptConfig {
+                    max_failed_attempts_per_code: 5,
+                },
+                attempts_by_code: HashMap::new(),
+            })),
+            paired_site_origins: Arc::new(RwLock::new(HashSet::new())),
+            signed_transport: hmac::SignedTransportState::default(),
+            signed_request_max_body_bytes: DEFAULT_SIGNED_REQUEST_MAX_BODY_BYTES,
+            surface_client_bridge: SurfaceClientBridge::new(bridge_config),
+            ability_registry_override: Some(registry),
+            app_state: Some(Arc::new(AppState::new())),
+        })
+    }
+
+    fn surface_route_dispatch_registry() -> Arc<crate::abilities::AbilityRegistry> {
+        SURFACE_ROUTE_DISPATCH_COUNT.store(0, Ordering::SeqCst);
+        Arc::new(
+            crate::abilities::AbilityRegistry::from_descriptors_unchecked_for_runtime_validation_tests(
+                vec![surface_route_descriptor(
+                    "surface_route_test",
+                    surface_route_dispatch_erased,
+                )],
+            ),
+        )
+    }
+
+    fn surface_route_limit_registry() -> Arc<crate::abilities::AbilityRegistry> {
+        SURFACE_ROUTE_LIMIT_COUNT.store(0, Ordering::SeqCst);
+        Arc::new(
+            crate::abilities::AbilityRegistry::from_descriptors_unchecked_for_runtime_validation_tests(
+                vec![surface_route_descriptor(
+                    "surface_route_limited_test",
+                    surface_route_limit_erased,
+                )],
+            ),
+        )
+    }
+
+    fn validated_surface_session_for_tests() -> ValidatedSurfaceSession {
+        let scopes = ScopeSet::new([SurfaceScope::new("read.account_overview")])
+            .expect("test scope grant is non-empty");
+        ValidatedSurfaceSession {
+            surface_client_id: "surface_client_test".to_string(),
+            session_id: "sess_test_1234567890".to_string(),
+            actor: Actor::SurfaceClient {
+                instance: SurfaceClientId::new("surface_client_test"),
+                scopes,
+            },
+            wp_user_id: Some(42),
+            wp_user_hash: Some("wp_user_hash_test".to_string()),
+            wp_site_id: hmac::TEST_WP_SITE_ID.to_string(),
+            wp_site_id_hash: "wp_site_hash_test".to_string(),
+            site_binding_digest: hmac::TEST_SITE_BINDING_DIGEST.to_string(),
+            site_nonce: hmac::TEST_SITE_NONCE.to_string(),
+            scope_digest: "scope_digest_test".to_string(),
+            granted_scopes: vec!["read.account_overview".to_string()],
+        }
+    }
+
+    fn signed_route_for_tests(
+        request: &SurfaceHttpRequest,
+        runtime: &EndpointRuntime,
+        validated: ValidatedSurfaceSession,
+        request_id: &str,
+    ) -> Response<ResponseBody> {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(signed_route_response(
+                request,
+                runtime,
+                validated,
+                request_id.to_string(),
+            ))
     }
 
     fn dispatch_for_tests(
@@ -2202,6 +2635,7 @@ mod tests {
             signature_max_active_sessions: 128,
             signature_global_nonce_records: 65_536,
             signed_request_max_body_bytes: 256 * 1024,
+            surface_client_rate_limits: crate::types::SurfaceClientRateLimitConfig::default(),
         };
         let endpoint_config = SurfaceEndpointConfig::from(&config);
         assert_eq!(endpoint_config.max_bind_attempts, DEFAULT_MAX_BIND_ATTEMPTS);
@@ -2273,6 +2707,134 @@ mod tests {
             assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
             assert_eq!(body_json(response)["error"]["code"], "runtime_unavailable");
         }
+    }
+
+    #[test]
+    fn surface_invoke_route_dispatches_after_bridge_authorization() {
+        let registry = surface_route_dispatch_registry();
+        let runtime =
+            runtime_for_surface_route_tests(registry, SurfaceClientBridgeConfig::default());
+        let request = request_for_tests(
+            Method::POST,
+            "/v1/surface/invoke",
+            Bytes::from_static(br#"{"ability":"surface_route_test","input":{"value":217}}"#),
+        );
+
+        let response = signed_route_for_tests(
+            &request,
+            &runtime,
+            validated_surface_session_for_tests(),
+            "req_surface_invoke",
+        );
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(SURFACE_ROUTE_DISPATCH_COUNT.load(Ordering::SeqCst), 1);
+        let body = body_json(response);
+        assert_eq!(body["ok"], true);
+        assert_eq!(body["request_id"], "req_surface_invoke");
+        assert_eq!(body["ability"]["data"]["input"]["value"], 217);
+        assert_eq!(
+            body["ability"]["rendered_provenance"]["surface"],
+            "surface_client"
+        );
+        assert!(body["ability"].get("diagnostics").is_none());
+    }
+
+    #[test]
+    fn surface_invoke_rate_limit_denial_skips_ability_body_for_each_axis() {
+        for expected_axis in [
+            SurfaceClientRateLimitAxis::SurfaceClient,
+            SurfaceClientRateLimitAxis::WpSite,
+            SurfaceClientRateLimitAxis::WpUser,
+            SurfaceClientRateLimitAxis::Scope,
+            SurfaceClientRateLimitAxis::Ability,
+        ] {
+            let registry = surface_route_limit_registry();
+            let mut bridge_config = SurfaceClientBridgeConfig::default();
+            let one_per_second = SurfaceClientRateLimitBudget {
+                requests_per_minute: 60,
+                burst_per_second: 1,
+            };
+            match expected_axis {
+                SurfaceClientRateLimitAxis::SurfaceClient => {
+                    bridge_config.surface_client.read = one_per_second;
+                }
+                SurfaceClientRateLimitAxis::WpSite => {
+                    bridge_config.wp_site.read = one_per_second;
+                }
+                SurfaceClientRateLimitAxis::WpUser => {
+                    bridge_config.wp_user.read = one_per_second;
+                }
+                SurfaceClientRateLimitAxis::Scope => {
+                    bridge_config.scope.read = one_per_second;
+                }
+                SurfaceClientRateLimitAxis::Ability => {
+                    bridge_config.ability.cheap_read = one_per_second;
+                }
+            }
+            let runtime = runtime_for_surface_route_tests(registry, bridge_config);
+            let body = Bytes::from_static(
+                br#"{"ability":"surface_route_limited_test","input":{"value":217}}"#,
+            );
+            let first = request_for_tests(Method::POST, "/v1/surface/invoke", body.clone());
+            let first_response = signed_route_for_tests(
+                &first,
+                &runtime,
+                validated_surface_session_for_tests(),
+                &format!("req_surface_first_{}", expected_axis.as_str()),
+            );
+            assert_eq!(first_response.status(), StatusCode::OK);
+            assert_eq!(SURFACE_ROUTE_LIMIT_COUNT.load(Ordering::SeqCst), 1);
+
+            let second = request_for_tests(Method::POST, "/v1/surface/invoke", body);
+            let second_response = signed_route_for_tests(
+                &second,
+                &runtime,
+                validated_surface_session_for_tests(),
+                &format!("req_surface_second_{}", expected_axis.as_str()),
+            );
+
+            assert_eq!(second_response.status(), StatusCode::TOO_MANY_REQUESTS);
+            assert_eq!(SURFACE_ROUTE_LIMIT_COUNT.load(Ordering::SeqCst), 1);
+            assert_eq!(second_response.headers()[header::RETRY_AFTER], "1");
+            assert_eq!(
+                second_response.headers()[HeaderName::from_static("x-ratelimit-exhausted-axis")],
+                expected_axis.as_str()
+            );
+            let body = body_json(second_response);
+            assert_eq!(body["error"]["code"], "rate_limited");
+            assert_eq!(body["error"]["axis"], expected_axis.as_str());
+            assert_eq!(
+                body["error"]["request_id"],
+                format!("req_surface_second_{}", expected_axis.as_str())
+            );
+            assert!(body["error"].get("rendered_provenance").is_none());
+        }
+    }
+
+    #[tokio::test]
+    async fn rate_limit_response_uses_nested_envelope_and_axis_headers() {
+        let response = error_response(
+            SurfaceHttpError::rate_limited(
+                SurfaceClientRateLimitAxis::WpUser,
+                Duration::from_millis(1_200),
+            )
+            .with_request_id("req_rate_limited".to_string()),
+        );
+
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(response.headers()[header::RETRY_AFTER], "2");
+        assert_eq!(
+            response.headers()[HeaderName::from_static("x-ratelimit-exhausted-axis")],
+            "wp_user"
+        );
+
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(body["error"]["code"], "rate_limited");
+        assert_eq!(body["error"]["axis"], "wp_user");
+        assert_eq!(body["error"]["retry_after_ms"], 1_200);
+        assert_eq!(body["error"]["request_id"], "req_rate_limited");
     }
 
     #[tokio::test]

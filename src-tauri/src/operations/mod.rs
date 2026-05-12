@@ -234,7 +234,10 @@ pub async fn invoke_operation_for_surface(
 fn is_remote_bound_surface(surface: BridgeSurface) -> bool {
     match surface {
         BridgeSurface::McpTool | BridgeSurface::McpToolDetail => true,
-        BridgeSurface::TauriApp | BridgeSurface::Worker | BridgeSurface::Eval => false,
+        BridgeSurface::TauriApp
+        | BridgeSurface::Worker
+        | BridgeSurface::Eval
+        | BridgeSurface::SurfaceClient => false,
     }
 }
 
@@ -529,6 +532,7 @@ mod tests {
                         BridgeSurface::McpToolDetail => ClaimDismissalSurface::McpToolDetail,
                         BridgeSurface::Worker => ClaimDismissalSurface::Worker,
                         BridgeSurface::Eval => ClaimDismissalSurface::Eval,
+                        BridgeSurface::SurfaceClient => ClaimDismissalSurface::LogStructured,
                     },
                 ),
             )
