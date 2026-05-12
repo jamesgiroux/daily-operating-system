@@ -22,6 +22,19 @@ const PROJECTION_STATUS_SQL: &str =
     include_str!("../src/migrations/134_dos_301_claim_projection_status.sql");
 const TYPED_FEEDBACK_SQL: &str =
     include_str!("../src/migrations/135_dos_294_typed_feedback_schema.sql");
+const STRUCTURED_CLAIM_CANONICALIZATION_COLUMNS_SQL: &str = r#"
+ALTER TABLE intelligence_claims ADD COLUMN structured_claim_json TEXT;
+ALTER TABLE intelligence_claims ADD COLUMN predicate_ref TEXT;
+ALTER TABLE intelligence_claims ADD COLUMN polarity TEXT;
+ALTER TABLE intelligence_claims ADD COLUMN object_value JSON;
+ALTER TABLE intelligence_claims ADD COLUMN qualifiers JSON;
+ALTER TABLE intelligence_claims ADD COLUMN structural_canonical_id TEXT;
+ALTER TABLE intelligence_claims ADD COLUMN canonical_status TEXT NOT NULL DEFAULT 'pending_backfill'
+    CHECK (canonical_status IN ('pending_backfill','legacy_unmigrated','live'));
+ALTER TABLE intelligence_claims ADD COLUMN non_semantic_mergeable BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE intelligence_claims ADD COLUMN structural_field_content_hash TEXT;
+ALTER TABLE intelligence_claims ADD COLUMN backfill_epoch INTEGER NOT NULL DEFAULT 0;
+"#;
 const MINIMAL_ENTITY_SCHEMA_SQL: &str = r#"
 CREATE TABLE people (
     id TEXT PRIMARY KEY,
@@ -65,6 +78,8 @@ fn fresh_claims_conn() -> Connection {
         .expect("apply projection status schema");
     conn.execute_batch(TYPED_FEEDBACK_SQL)
         .expect("apply typed feedback schema");
+    conn.execute_batch(STRUCTURED_CLAIM_CANONICALIZATION_COLUMNS_SQL)
+        .expect("apply structured claim canonicalization columns");
     conn
 }
 

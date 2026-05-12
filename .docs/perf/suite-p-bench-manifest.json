@@ -1,0 +1,49 @@
+{
+  "manifest_version": "suite_p_bench_manifest_v1",
+  "lane": "DOS-348",
+  "suite": "suite_p",
+  "dataset_source": "DailyOS synthetic Criterion hot-path benchmarks",
+  "dataset_license": "DailyOS synthetic/public",
+  "benches": [
+    {
+      "id": "mutation_gate_mode_check",
+      "namespace": "performance_regression",
+      "source_path": "src-tauri/abilities-runtime/src/services/context.rs",
+      "source_symbol": "ServiceContext::check_mutation_allowed",
+      "description": "Measures a small batch of service mutation-gate checks across allowed Live and blocked Evaluate contexts."
+    },
+    {
+      "id": "fenced_write_intelligence_json",
+      "namespace": "performance_regression",
+      "source_path": "src-tauri/src/intelligence/write_fence.rs",
+      "source_symbol": "fenced_write_intelligence_json",
+      "description": "Measures schema-epoch recheck plus the fenced intelligence.json write path on synthetic data."
+    },
+    {
+      "id": "context_mode_atomic_local_snapshot",
+      "namespace": "performance_regression",
+      "source_path": "src-tauri/src/state.rs",
+      "source_symbol": "AppState::set_context_mode_atomic + AppState::context_snapshot",
+      "description": "Measures the provider/context hot-swap and coherent snapshot path used by runtime provider routing."
+    }
+  ],
+  "thresholds": {
+    "bench_count": {
+      "operator": "eq",
+      "value": 3
+    },
+    "missing_bench_count": {
+      "operator": "eq",
+      "value": 0
+    },
+    "extra_bench_count": {
+      "operator": "eq",
+      "value": 0
+    },
+    "regression_count": {
+      "operator": "eq",
+      "value": 0
+    }
+  },
+  "notes": "Synthetic hot-path benchmarks only; no customer data, private corpus, or live external calls are used."
+}

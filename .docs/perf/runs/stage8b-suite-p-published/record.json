@@ -1,0 +1,265 @@
+{
+  "schema_version": "evaluation_evidence_record_v1",
+  "suite": "suite_p",
+  "lane": "DOS-348",
+  "mode": "published",
+  "scope": "v1.4.1-W8",
+  "run_id": "stage8b-suite-p-published",
+  "commit": "001fa7ba7d4c558d8ff1fdc31004e7fc715efc89",
+  "branch": "codex/wave8b-eval-harness",
+  "dirty": true,
+  "command": "pnpm suite:p -- --mode published --scope v1.4.1-W8 --run-id stage8b-suite-p-published --out .docs/perf/runs/stage8b-suite-p-published/record.json --baseline .docs/perf/baselines/scope-v1.4.1-W8-seed.json",
+  "started_at": "2026-05-12T16:35:46Z",
+  "finished_at": "2026-05-12T16:44:40Z",
+  "environment": {
+    "os": "Darwin 25.4.0",
+    "arch": "arm64",
+    "node": "v24.12.0",
+    "rustc": "rustc 1.95.0 (59807616e 2026-04-14)",
+    "cargo": "cargo 1.95.0 (f2d3ce0bd 2026-03-21)",
+    "runner": "scripts/suite-p.sh"
+  },
+  "input_hashes": {
+    "schema": "sha256:f83ae06b4eda04bd638c6a98bd8127d526cd01997527a89b41e5dad8662f6127",
+    "bench_manifest": "sha256:33677f6f8f0c0cc441d14313ab748897902bbbb3005446cb71bb7ae6ac9f8bab",
+    "bench_config": "sha256:6ce1a4c6c6281f35fbaa20f00e5b6dde0b2027b706ada9496c9773adfbe5b550",
+    "baseline": "sha256:f44d1be9846b6d75a2f98ffc192ed2b3ff65d72ac82d262e5a6d4de611334f1b",
+    "prior_baseline": "sha256:593687d555fa2538a7ce5eb54e919564531bb8e2cd94d33e4d6d75331fc10f9f"
+  },
+  "metric_definitions": [
+    {
+      "namespace": "performance_regression",
+      "name": "bench_count",
+      "description": "Number of Criterion benchmarks with collected estimate data.",
+      "unit": "count",
+      "higher_is_better": true
+    },
+    {
+      "namespace": "performance_regression",
+      "name": "missing_bench_count",
+      "description": "Number of manifest-declared Criterion benchmarks missing from the current published run.",
+      "unit": "count",
+      "higher_is_better": false
+    },
+    {
+      "namespace": "performance_regression",
+      "name": "extra_bench_count",
+      "description": "Number of Criterion benchmark estimates not declared in the Suite P manifest.",
+      "unit": "count",
+      "higher_is_better": false
+    },
+    {
+      "namespace": "performance_regression",
+      "name": "regression_count",
+      "description": "Number of benchmarks regressing more than 10% against the bound baseline when available.",
+      "unit": "count",
+      "higher_is_better": false
+    },
+    {
+      "namespace": "performance_regression",
+      "name": "current_invalid_numeric_bench_count",
+      "description": "Number of manifest-declared current benchmarks missing a positive numeric mean estimate.",
+      "unit": "count",
+      "higher_is_better": false
+    },
+    {
+      "namespace": "performance_regression",
+      "name": "prior_missing_bench_count",
+      "description": "Number of manifest-declared Criterion benchmarks missing from the comparator baseline.",
+      "unit": "count",
+      "higher_is_better": false
+    },
+    {
+      "namespace": "performance_regression",
+      "name": "prior_extra_bench_count",
+      "description": "Number of comparator baseline benchmark estimates not declared in the Suite P manifest.",
+      "unit": "count",
+      "higher_is_better": false
+    },
+    {
+      "namespace": "performance_regression",
+      "name": "prior_invalid_numeric_bench_count",
+      "description": "Number of manifest-declared comparator benchmarks missing a positive numeric mean estimate.",
+      "unit": "count",
+      "higher_is_better": false
+    },
+    {
+      "namespace": "performance_regression",
+      "name": "criterion_mean_ns_context_mode_atomic_local_snapshot",
+      "description": "Criterion mean point estimate for context_mode_atomic_local_snapshot.",
+      "unit": "ns",
+      "higher_is_better": false
+    },
+    {
+      "namespace": "performance_regression",
+      "name": "criterion_mean_ns_fenced_write_intelligence_json",
+      "description": "Criterion mean point estimate for fenced_write_intelligence_json.",
+      "unit": "ns",
+      "higher_is_better": false
+    },
+    {
+      "namespace": "performance_regression",
+      "name": "criterion_mean_ns_mutation_gate_mode_check",
+      "description": "Criterion mean point estimate for mutation_gate_mode_check.",
+      "unit": "ns",
+      "higher_is_better": false
+    }
+  ],
+  "metrics": [
+    {
+      "namespace": "performance_regression",
+      "name": "bench_count",
+      "value": 3,
+      "unit": "count",
+      "status": "pass"
+    },
+    {
+      "namespace": "performance_regression",
+      "name": "missing_bench_count",
+      "value": 0,
+      "unit": "count",
+      "status": "pass"
+    },
+    {
+      "namespace": "performance_regression",
+      "name": "extra_bench_count",
+      "value": 0,
+      "unit": "count",
+      "status": "pass"
+    },
+    {
+      "namespace": "performance_regression",
+      "name": "regression_count",
+      "value": 0,
+      "unit": "count",
+      "status": "pass"
+    },
+    {
+      "namespace": "performance_regression",
+      "name": "current_invalid_numeric_bench_count",
+      "value": 0,
+      "unit": "count",
+      "status": "pass"
+    },
+    {
+      "namespace": "performance_regression",
+      "name": "prior_missing_bench_count",
+      "value": 0,
+      "unit": "count",
+      "status": "pass"
+    },
+    {
+      "namespace": "performance_regression",
+      "name": "prior_extra_bench_count",
+      "value": 0,
+      "unit": "count",
+      "status": "pass"
+    },
+    {
+      "namespace": "performance_regression",
+      "name": "prior_invalid_numeric_bench_count",
+      "value": 0,
+      "unit": "count",
+      "status": "pass"
+    },
+    {
+      "namespace": "performance_regression",
+      "name": "criterion_mean_ns_context_mode_atomic_local_snapshot",
+      "value": 54.42713772680893,
+      "unit": "ns",
+      "status": "info"
+    },
+    {
+      "namespace": "performance_regression",
+      "name": "criterion_mean_ns_fenced_write_intelligence_json",
+      "value": 169312.81021588275,
+      "unit": "ns",
+      "status": "info"
+    },
+    {
+      "namespace": "performance_regression",
+      "name": "criterion_mean_ns_mutation_gate_mode_check",
+      "value": 48.87079117948785,
+      "unit": "ns",
+      "status": "info"
+    }
+  ],
+  "thresholds": {
+    "requires_baseline": true,
+    "bench_count": {
+      "operator": "eq",
+      "value": 3
+    },
+    "missing_bench_count": {
+      "operator": "eq",
+      "value": 0
+    },
+    "extra_bench_count": {
+      "operator": "eq",
+      "value": 0
+    },
+    "regression_count": {
+      "operator": "eq",
+      "value": 0
+    },
+    "current_invalid_numeric_bench_count": {
+      "operator": "eq",
+      "value": 0
+    },
+    "prior_missing_bench_count": {
+      "operator": "eq",
+      "value": 0
+    },
+    "prior_extra_bench_count": {
+      "operator": "eq",
+      "value": 0
+    },
+    "prior_invalid_numeric_bench_count": {
+      "operator": "eq",
+      "value": 0
+    }
+  },
+  "result": "pass",
+  "artifact_paths": [
+    {
+      "path": ".docs/perf/runs/stage8b-suite-p-published/bench-summary.json",
+      "kind": "suite-p-summary",
+      "sha256": "sha256:ddcff9f945bdebe0c8953cf9fec87d232fd7765b11e1d05f38a363e794354863",
+      "privacy_class": "public",
+      "publishable": true,
+      "redaction_status": "synthetic"
+    },
+    {
+      "path": ".docs/perf/suite-p-bench-manifest.json",
+      "kind": "suite-p-bench-manifest",
+      "sha256": "sha256:33677f6f8f0c0cc441d14313ab748897902bbbb3005446cb71bb7ae6ac9f8bab",
+      "privacy_class": "public",
+      "publishable": true,
+      "redaction_status": "synthetic"
+    },
+    {
+      "path": ".docs/perf/baselines/scope-v1.4.1-W8.json",
+      "kind": "suite-p-baseline",
+      "sha256": "sha256:f44d1be9846b6d75a2f98ffc192ed2b3ff65d72ac82d262e5a6d4de611334f1b",
+      "privacy_class": "public",
+      "publishable": true,
+      "redaction_status": "synthetic"
+    }
+  ],
+  "privacy_class": "public",
+  "publishable": true,
+  "dataset_source": "DailyOS synthetic Criterion hot-path benchmarks",
+  "dataset_license": "DailyOS synthetic/public",
+  "dataset_hash": "sha256:33677f6f8f0c0cc441d14313ab748897902bbbb3005446cb71bb7ae6ac9f8bab",
+  "redaction_status": "synthetic",
+  "notes": "Published Suite P Criterion evidence for synthetic v1.4.x hot-path benchmarks.",
+  "extensions": {
+    "evidence_counts": {
+      "bench_count": 3
+    },
+    "baseline_binding": {
+      "baseline_hash": "sha256:f44d1be9846b6d75a2f98ffc192ed2b3ff65d72ac82d262e5a6d4de611334f1b",
+      "prior_baseline_hash": "sha256:593687d555fa2538a7ce5eb54e919564531bb8e2cd94d33e4d6d75331fc10f9f"
+    }
+  }
+}

@@ -1,0 +1,73 @@
+{
+  "schema_version": "abilities_smoke_manifest_v1",
+  "corpus_id": "abilities-smoke",
+  "corpus_version": "2026-05-11.1",
+  "description": "Synthetic smoke corpus for DOS-261 abilities and retrieval evidence.",
+  "privacy_class": "public",
+  "redaction_status": "synthetic",
+  "dataset_source": "DailyOS synthetic procedural abilities smoke corpus",
+  "dataset_license": "DailyOS synthetic fixture text; no external data",
+  "evaluation_asof": "2026-05-11T00:00:00Z",
+  "temporal": {
+    "current_window_days": 45,
+    "caution_window_days": 120
+  },
+  "sealed_gold": {
+    "boundary": "Gold expectations are stored in gold.json and consumed only after runner output is produced.",
+    "public": false,
+    "path": ".docs/evals/corpora/abilities-smoke/gold.json",
+    "fixture_level_results_in_evidence_record": false
+  },
+  "documents": [
+    {
+      "id": "source-alpha-health-note",
+      "subject_id": "synthetic-account-alpha",
+      "title": "Synthetic Account Alpha health note",
+      "source_kind": "synthetic_note",
+      "source_asof": "2026-05-07",
+      "public_summary": "Synthetic Account Alpha has a renewal on 2026-06-30, and its admin sponsor missed two planning sessions.",
+      "tags": ["account_alpha", "renewal", "risk", "sponsor"],
+      "facts": ["alpha_renewal_due", "alpha_sponsor_absent"]
+    },
+    {
+      "id": "source-alpha-support-note",
+      "subject_id": "synthetic-account-alpha",
+      "title": "Synthetic Account Alpha support note",
+      "source_kind": "synthetic_note",
+      "source_asof": "2026-05-06",
+      "public_summary": "A synthetic SSO setup blocker remains open for Account Alpha and is assigned to the platform queue.",
+      "tags": ["account_alpha", "risk", "sso", "blocker"],
+      "facts": ["alpha_sso_blocker_open", "alpha_platform_queue_owner"]
+    },
+    {
+      "id": "source-beta-expansion-note",
+      "subject_id": "synthetic-account-beta",
+      "title": "Synthetic Account Beta expansion note",
+      "source_kind": "synthetic_note",
+      "source_asof": "2026-02-15",
+      "public_summary": "Synthetic Account Beta completed an expansion workshop and requested a follow-up plan for subsidiary.com.",
+      "tags": ["account_beta", "expansion", "workshop", "follow_up"],
+      "facts": ["beta_workshop_completed", "beta_follow_up_requested"]
+    }
+  ],
+  "fixtures": [
+    {
+      "id": "fixture-alpha-renewal-risk",
+      "ability": "account_context_retrieval",
+      "subject_id": "synthetic-account-alpha",
+      "query": "Find current risk context for Synthetic Account Alpha renewal planning.",
+      "query_terms": ["account_alpha", "renewal", "risk", "sso"],
+      "top_k": 2,
+      "gold_ref": "fixture-alpha-renewal-risk"
+    },
+    {
+      "id": "fixture-beta-expansion-follow-up",
+      "ability": "account_context_retrieval",
+      "subject_id": "synthetic-account-beta",
+      "query": "Find expansion follow-up context for Synthetic Account Beta.",
+      "query_terms": ["account_beta", "expansion", "workshop", "follow_up"],
+      "top_k": 1,
+      "gold_ref": "fixture-beta-expansion-follow-up"
+    }
+  ]
+}

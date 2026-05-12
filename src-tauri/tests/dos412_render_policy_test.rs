@@ -240,6 +240,33 @@ fn setup_migration_runner_state(conn: &Connection) {
             id TEXT PRIMARY KEY,
             source TEXT
         );
+        CREATE TABLE IF NOT EXISTS people (
+            id TEXT PRIMARY KEY,
+            name TEXT
+        );
+        CREATE TABLE IF NOT EXISTS actions (
+            id TEXT PRIMARY KEY,
+            title TEXT,
+            due_date TEXT,
+            context TEXT,
+            account_id TEXT,
+            project_id TEXT,
+            status TEXT,
+            created_at TEXT,
+            source_type TEXT,
+            source_id TEXT,
+            source_label TEXT,
+            action_kind TEXT NOT NULL DEFAULT 'task'
+        );
+        CREATE TABLE IF NOT EXISTS ai_commitment_bridge (
+            commitment_id TEXT PRIMARY KEY,
+            entity_type TEXT NOT NULL,
+            entity_id TEXT NOT NULL,
+            action_id TEXT,
+            first_seen_at TEXT NOT NULL,
+            last_seen_at TEXT NOT NULL,
+            tombstoned INTEGER NOT NULL DEFAULT 0
+        );
         CREATE TABLE IF NOT EXISTS signal_events (
             id TEXT PRIMARY KEY,
             entity_type TEXT NOT NULL,
@@ -251,6 +278,11 @@ fn setup_migration_runner_state(conn: &Connection) {
         );
         CREATE TABLE IF NOT EXISTS intelligence_claims (
             id TEXT PRIMARY KEY,
+            text TEXT NOT NULL DEFAULT '',
+            metadata_json TEXT,
+            provenance_json TEXT NOT NULL DEFAULT '{}',
+            claim_state TEXT NOT NULL DEFAULT 'active',
+            surfacing_state TEXT NOT NULL DEFAULT 'active',
             trust_score REAL,
             trust_computed_at TEXT,
             trust_version INTEGER

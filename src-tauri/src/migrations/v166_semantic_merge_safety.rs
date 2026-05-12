@@ -67,7 +67,7 @@ fn migrate_in_transaction(conn: &Connection) -> Result<(), MigrationError> {
             continue;
         };
         conn.execute(
-            "UPDATE intelligence_claims
+            "UPDATE intelligence_claims -- dos7-allowed: ADR-0131 semantic qualifier migration annotates legacy metadata
              SET metadata_json = ?1
              WHERE id = ?2",
             params![metadata_json, row.id],
@@ -460,7 +460,7 @@ mod tests {
     ) {
         let metadata_json = metadata.map(|value| value.to_string());
         conn.execute(
-            "INSERT INTO intelligence_claims
+            "INSERT INTO intelligence_claims -- dos7-allowed: ADR-0131 migration unit test seeds legacy claim rows
              (id, text, metadata_json, provenance_json, claim_state, surfacing_state)
              VALUES (?1, ?2, ?3, ?4, 'active', 'active')",
             params![id, text, metadata_json, provenance.to_string()],

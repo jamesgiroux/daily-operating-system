@@ -43,7 +43,7 @@ fn seed_pending_claim(
     let dedup_key = format!("dedup-{id}");
     let item_hash = format!("hash-{id}");
     conn.execute(
-        "INSERT INTO intelligence_claims (
+        "INSERT INTO intelligence_claims /* dos7-allowed: ADR-0131 structural backfill fixture seeds pending rows */ (
             id, subject_ref, claim_type, field_path, topic_key, text, dedup_key, item_hash,
             actor, data_source, observed_at, created_at, provenance_json, metadata_json,
             claim_state, surfacing_state, retraction_reason, temporal_scope, sensitivity,

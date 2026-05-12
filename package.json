@@ -22,7 +22,7 @@
     "suite:p": "bash scripts/suite-p.sh",
     "suite:s": "bash scripts/suite-s.sh",
     "suite:e": "bash scripts/suite-e.sh",
-    "eval:abilities": "node scripts/stage8b-placeholder.mjs abilities_eval",
+    "eval:abilities": "node scripts/eval-abilities.mjs",
     "eval:gbrain": "node scripts/stage8b-placeholder.mjs gbrain_comparison",
     "evidence:validate": "node scripts/validate-evidence-record.mjs",
     "evidence:lint": "node scripts/lint-evidence-artifacts.mjs",

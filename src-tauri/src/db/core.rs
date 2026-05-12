@@ -41,6 +41,39 @@ pub struct ActionDb {
     pub(crate) conn: Connection,
 }
 
+#[cfg(test)]
+struct FixtureDbKeyProvider {
+    key: EncryptionKey,
+}
+
+#[cfg(test)]
+impl FixtureDbKeyProvider {
+    fn new() -> Self {
+        Self {
+            key: EncryptionKey::from_hex(
+                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            ),
+        }
+    }
+}
+
+#[cfg(test)]
+impl DbKeyProvider for FixtureDbKeyProvider {
+    fn get_or_create_key(
+        &self,
+        _user: &UserIdentity,
+    ) -> crate::db::key_provider::Result<EncryptionKey> {
+        Ok(self.key.clone())
+    }
+
+    fn rotate_key(
+        &self,
+        _user: &UserIdentity,
+    ) -> crate::db::key_provider::Result<EncryptionKey> {
+        Ok(self.key.clone())
+    }
+}
+
 impl ActionDb {
     /// Borrow the underlying connection for ad-hoc queries.
     pub fn conn_ref(&self) -> &Connection {
@@ -258,6 +291,13 @@ impl ActionDb {
         Self::open_resolved_path(path, key_provider)
     }
 
+    #[cfg(test)]
+    pub(crate) fn open_resolved_path_with_fixture_provider_for_tests(
+        path: PathBuf,
+    ) -> Result<Self, DbError> {
+        Self::open_resolved_path(path, Arc::new(FixtureDbKeyProvider::new()))
+    }
+
     /// Open a database at an explicit path. Useful for testing.
     pub(crate) fn open_at(
         path: PathBuf,
@@ -328,7 +368,7 @@ impl ActionDb {
         Ok(Self { conn })
     }
 
-    #[cfg(any(test, feature = "test-harness"))]
+    #[cfg(any(test, feature = "test-harness", feature = "bench-harness"))]
     #[doc(hidden)]
     pub fn from_connection_for_tests(conn: Connection) -> Self {
         Self { conn }

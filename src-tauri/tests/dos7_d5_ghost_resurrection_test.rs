@@ -202,6 +202,18 @@ CREATE TABLE IF NOT EXISTS claim_projection_status (
 CREATE INDEX IF NOT EXISTS idx_claim_projection_status_failed
     ON claim_projection_status(projection_target, status)
     WHERE status = 'failed';
+
+ALTER TABLE intelligence_claims ADD COLUMN structured_claim_json TEXT;
+ALTER TABLE intelligence_claims ADD COLUMN predicate_ref TEXT;
+ALTER TABLE intelligence_claims ADD COLUMN polarity TEXT;
+ALTER TABLE intelligence_claims ADD COLUMN object_value JSON;
+ALTER TABLE intelligence_claims ADD COLUMN qualifiers JSON;
+ALTER TABLE intelligence_claims ADD COLUMN structural_canonical_id TEXT;
+ALTER TABLE intelligence_claims ADD COLUMN canonical_status TEXT NOT NULL DEFAULT 'pending_backfill'
+    CHECK (canonical_status IN ('pending_backfill','legacy_unmigrated','live'));
+ALTER TABLE intelligence_claims ADD COLUMN non_semantic_mergeable BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE intelligence_claims ADD COLUMN structural_field_content_hash TEXT;
+ALTER TABLE intelligence_claims ADD COLUMN backfill_epoch INTEGER NOT NULL DEFAULT 0;
 "#;
 
 // The live invalidation migration does not create a `claim_invalidation` table; it adds
