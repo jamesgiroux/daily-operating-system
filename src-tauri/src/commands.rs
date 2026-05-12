@@ -39,6 +39,7 @@ mod planning_reports;
 mod projects_data;
 mod sensitivity;
 mod success_plans;
+mod surface_runtime;
 mod workspace;
 
 pub use abilities::*;
@@ -52,6 +53,7 @@ pub use planning_reports::*;
 pub use projects_data::*;
 pub use sensitivity::*;
 pub use success_plans::*;
+pub use surface_runtime::*;
 pub use workspace::*;
 
 pub(crate) use app_support::{

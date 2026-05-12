@@ -107,6 +107,7 @@ pub mod self_healing;
 pub mod services;
 pub mod signals;
 pub mod state;
+pub mod surface_runtime;
 mod task_supervisor;
 pub mod types;
 pub mod util;
@@ -316,6 +317,12 @@ pub fn run() {
             // Manage the state
             app.manage(state.clone());
             app.manage(crate::services::ServiceLayer::new(state.clone()));
+
+            let surface_endpoint_state = state.clone();
+            task_supervisor::spawn_supervised("SurfaceRuntimeEndpoint", move || {
+                let s = surface_endpoint_state.clone();
+                async move { crate::surface_runtime::run_supervised_http_endpoint(s).await }
+            });
 
             // Defer startup workspace sync/indexing so app setup stays responsive.
             let startup_state = state.clone();
@@ -661,6 +668,7 @@ pub fn run() {
             // sensitivity reveal audit
             commands::reveal_sensitive_claim_text,
             // Core
+            commands::get_surface_runtime_pairing_status,
             commands::get_config,
             commands::reload_configuration,
             commands::get_dashboard_data,

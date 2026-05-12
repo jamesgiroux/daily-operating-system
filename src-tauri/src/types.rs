@@ -122,6 +122,36 @@ pub struct Config {
     /// Applied as CSS zoom on the document root for global text scaling.
     #[serde(default = "default_text_scale_percent")]
     pub text_scale_percent: u32,
+    /// Loopback runtime endpoint settings for paired local surfaces.
+    #[serde(default)]
+    pub surface_runtime: SurfaceRuntimeConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SurfaceRuntimeConfig {
+    #[serde(default = "default_surface_runtime_max_bind_attempts")]
+    pub max_bind_attempts: u16,
+    #[serde(default = "default_surface_runtime_loopback_requests_per_minute")]
+    pub unauthenticated_loopback_requests_per_minute: u32,
+    #[serde(default = "default_surface_runtime_loopback_burst_per_second")]
+    pub unauthenticated_loopback_burst_per_second: u32,
+    #[serde(default = "default_surface_runtime_pairing_code_max_failed_attempts")]
+    pub pairing_code_max_failed_attempts: u32,
+}
+
+impl Default for SurfaceRuntimeConfig {
+    fn default() -> Self {
+        Self {
+            max_bind_attempts: default_surface_runtime_max_bind_attempts(),
+            unauthenticated_loopback_requests_per_minute:
+                default_surface_runtime_loopback_requests_per_minute(),
+            unauthenticated_loopback_burst_per_second:
+                default_surface_runtime_loopback_burst_per_second(),
+            pairing_code_max_failed_attempts:
+                default_surface_runtime_pairing_code_max_failed_attempts(),
+        }
+    }
 }
 
 /// Profile-specific configuration (CSM users)
@@ -342,6 +372,22 @@ fn default_email_enrichment_timeout_seconds() -> u32 {
 
 fn default_text_scale_percent() -> u32 {
     100
+}
+
+fn default_surface_runtime_max_bind_attempts() -> u16 {
+    10
+}
+
+fn default_surface_runtime_loopback_requests_per_minute() -> u32 {
+    60
+}
+
+fn default_surface_runtime_loopback_burst_per_second() -> u32 {
+    10
+}
+
+fn default_surface_runtime_pairing_code_max_failed_attempts() -> u32 {
+    5
 }
 
 impl Config {
@@ -2956,6 +3002,7 @@ mod tests {
             email_enrichment_timeout_seconds: 90,
             notifications: NotificationConfig::default(),
             text_scale_percent: 100,
+            surface_runtime: SurfaceRuntimeConfig::default(),
         }
     }
 
@@ -3019,6 +3066,29 @@ mod tests {
         let config: Config = serde_json::from_str(json).unwrap();
         assert!(config.features.is_empty());
         assert!(is_feature_enabled(&config, "emailTriage"));
+    }
+
+    #[test]
+    fn test_surface_runtime_defaults_when_absent() {
+        let json = r#"{
+            "workspacePath": "/tmp/test",
+            "profile": "customer-success"
+        }"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert_eq!(config.surface_runtime.max_bind_attempts, 10);
+        assert_eq!(
+            config
+                .surface_runtime
+                .unauthenticated_loopback_requests_per_minute,
+            60
+        );
+        assert_eq!(
+            config
+                .surface_runtime
+                .unauthenticated_loopback_burst_per_second,
+            10
+        );
+        assert_eq!(config.surface_runtime.pairing_code_max_failed_attempts, 5);
     }
 
     #[test]
