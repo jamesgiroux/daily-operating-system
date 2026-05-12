@@ -2363,6 +2363,8 @@ pub struct CanonicalMatchInput {
     pub field_path: Option<String>,
     pub text: String,
     pub item_hash: Option<String>,
+    pub canonical_subject_kind: String,
+    pub canonical_subject_id: String,
     pub account_id: Option<String>,
     pub workspace_id: Option<String>,
     pub tier_key: String,
@@ -2457,7 +2459,9 @@ pub fn candidate_filter(
         record(CandidateFilterReason::CandidateTombstoned);
     }
 
-    if query.account_id != candidate.account_id {
+    if query.canonical_subject_kind != candidate.canonical_subject_kind
+        || query.canonical_subject_id != candidate.canonical_subject_id
+    {
         record(CandidateFilterReason::AccountScope);
     }
     if query.workspace_id != candidate.workspace_id {
@@ -2765,6 +2769,13 @@ fn canonical_match_config(
     candidate: &CanonicalMatchInput,
 ) -> CanonicalMatchConfig {
     let mut config = CanonicalMatchConfig::default();
+    if !matches!(
+        candidate_filter(query, candidate),
+        CandidateFilterDecision::Pass
+    ) {
+        return config;
+    }
+
     let (
         ObjectValue::FreeText {
             canonical: left_text,
@@ -2817,6 +2828,45 @@ fn canonical_match_config(
         }
     }
     config
+}
+
+fn comparison_requires_embedding(
+    query: &CanonicalMatchInput,
+    candidate: &CanonicalMatchInput,
+    outcome: &CanonicalMatchOutcome,
+) -> bool {
+    if outcome.decision == CanonicalDecisionKind::ForkFiltered {
+        return false;
+    }
+
+    let (
+        ObjectValue::FreeText {
+            canonical: left_text,
+        },
+        ObjectValue::FreeText {
+            canonical: right_text,
+        },
+    ) = (&query.structured.object, &candidate.structured.object)
+    else {
+        return false;
+    };
+
+    normalize_embedding_text(left_text) != normalize_embedding_text(right_text)
+}
+
+fn decision_record_config(
+    query: &CanonicalMatchInput,
+    candidate: &CanonicalMatchInput,
+    outcome: &CanonicalMatchOutcome,
+    config: &CanonicalMatchConfig,
+) -> CanonicalMatchConfig {
+    if matches!(config.mode, CanonicalizationMode::HashFallback)
+        && !comparison_requires_embedding(query, candidate, outcome)
+    {
+        return CanonicalMatchConfig::default();
+    }
+
+    config.clone()
 }
 
 fn embedding_similarity_with_cache(
@@ -3180,6 +3230,46 @@ fn subject_id_for_lookup(subject: &SubjectRef) -> Option<&str> {
         | SubjectRef::Project { id }
         | SubjectRef::Email { id } => Some(id.as_str()),
         SubjectRef::Multi(_) | SubjectRef::Global => None,
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CanonicalSubjectScope {
+    kind: String,
+    id: String,
+}
+
+fn canonical_subject_scope(subject: &SubjectRef) -> Result<CanonicalSubjectScope, ClaimError> {
+    let kind = subject_kind_label(subject).ok_or_else(|| {
+        ClaimError::SubjectRef(
+            "canonicalization scope requires a single concrete subject kind".to_string(),
+        )
+    })?;
+    let id = subject_id_for_lookup(subject).ok_or_else(|| {
+        ClaimError::SubjectRef(
+            "canonicalization scope requires a single concrete subject id".to_string(),
+        )
+    })?;
+    Ok(CanonicalSubjectScope {
+        kind: kind.to_ascii_lowercase(),
+        id: id.to_string(),
+    })
+}
+
+fn canonical_subject_scope_from_json(
+    subject_ref: &str,
+) -> Result<CanonicalSubjectScope, ClaimError> {
+    let value = serde_json::from_str::<serde_json::Value>(subject_ref)
+        .map_err(|e| ClaimError::SubjectRef(format!("not JSON: {e}")))?;
+    let subject = subject_ref_from_json(&value)?;
+    canonical_subject_scope(&subject)
+}
+
+fn account_id_from_subject_scope(scope: &CanonicalSubjectScope) -> Option<String> {
+    if scope.kind == "account" {
+        Some(scope.id.clone())
+    } else {
+        None
     }
 }
 
@@ -3719,13 +3809,17 @@ fn canonical_match_input_for_proposal(
     let structural_hash = structural_hash_for_structured(&structured)?;
     let item_hash_value = item_hash(item_kind_for_claim_type(claim_type), text);
 
+    let subject_scope = canonical_subject_scope_from_json(subject_ref)?;
+
     Ok(Some(CanonicalMatchInput {
         claim_id: claim_id.to_string(),
         claim_type: claim_type.to_string(),
         field_path: field_path.map(str::to_string),
         text: text.to_string(),
         item_hash: Some(item_hash_value),
-        account_id: account_id_from_subject_json(subject_ref),
+        canonical_subject_kind: subject_scope.kind.clone(),
+        canonical_subject_id: subject_scope.id.clone(),
+        account_id: account_id_from_subject_scope(&subject_scope),
         workspace_id: workspace_id_from_metadata(metadata_json),
         tier_key: format!(
             "{}:{}",
@@ -4279,10 +4373,19 @@ fn load_shadow_candidate_inputs_with_tombstone_lookup(
     query: &CanonicalMatchInput,
     mut tombstone_lookup: impl FnMut(&CanonicalMatchInput) -> Result<bool, ClaimError>,
 ) -> Result<Vec<CanonicalMatchInput>, ClaimError> {
-    let account_scope_sql = "CASE
-        WHEN json_valid(subject_ref) = 1
-         AND lower(json_extract(subject_ref, '$.kind')) = 'account'
-        THEN json_extract(subject_ref, '$.id')
+    let canonical_subject_kind_sql = "CASE
+        WHEN json_valid(subject_ref) = 1 THEN lower(coalesce(
+            json_extract(subject_ref, '$.kind'),
+            json_extract(subject_ref, '$.type'),
+            json_extract(subject_ref, '$.entity_type')
+        ))
+        ELSE NULL
+    END";
+    let canonical_subject_id_sql = "CASE
+        WHEN json_valid(subject_ref) = 1 THEN coalesce(
+            json_extract(subject_ref, '$.id'),
+            json_extract(subject_ref, '$.entity_id')
+        )
         ELSE NULL
     END";
     let workspace_scope_sql = "CASE
@@ -4317,11 +4420,12 @@ fn load_shadow_candidate_inputs_with_tombstone_lookup(
          WHERE id <> ?1
            AND claim_type = ?2
            AND coalesce(field_path, '') = coalesce(?3, '')
-           AND (({account_scope_sql}) = ?4 OR (({account_scope_sql}) IS NULL AND ?4 IS NULL))
-           AND (({workspace_scope_sql}) = ?5 OR (({workspace_scope_sql}) IS NULL AND ?5 IS NULL))
-           AND (temporal_scope || ':' || sensitivity) = ?6
+           AND ({canonical_subject_kind_sql}) = ?4
+           AND ({canonical_subject_id_sql}) = ?5
+           AND (({workspace_scope_sql}) = ?6 OR (({workspace_scope_sql}) IS NULL AND ?6 IS NULL))
+           AND (temporal_scope || ':' || sensitivity) = ?7
          ORDER BY created_at DESC, id DESC
-         LIMIT ?7 OFFSET ?8"
+         LIMIT ?8 OFFSET ?9"
     );
     let mut offset = 0_i64;
     let mut candidates = Vec::new();
@@ -4334,7 +4438,8 @@ fn load_shadow_candidate_inputs_with_tombstone_lookup(
                     &query.claim_id,
                     &query.claim_type,
                     query.field_path.as_deref(),
-                    query.account_id.as_deref(),
+                    &query.canonical_subject_kind,
+                    &query.canonical_subject_id,
                     query.workspace_id.as_deref(),
                     &query.tier_key,
                     SHADOW_CANDIDATE_PAGE_SIZE,
@@ -4369,7 +4474,8 @@ fn candidate_scope_tier_prefilter_compatible(
     query: &CanonicalMatchInput,
     candidate: &CanonicalMatchInput,
 ) -> bool {
-    query.account_id == candidate.account_id
+    query.canonical_subject_kind == candidate.canonical_subject_kind
+        && query.canonical_subject_id == candidate.canonical_subject_id
         && query.workspace_id == candidate.workspace_id
         && query.tier_key == candidate.tier_key
 }
@@ -4418,7 +4524,10 @@ fn canonical_match_input_from_row(
         kind: "unknown".to_string(),
         id: claim.subject_ref.clone(),
     });
-    let account_id = account_id_from_subject_json(&claim.subject_ref);
+    let subject_scope = canonical_subject_scope_from_json(&claim.subject_ref).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::new(error))
+    })?;
+    let account_id = account_id_from_subject_scope(&subject_scope);
     let workspace_id = workspace_id_from_metadata(claim.metadata_json.as_deref());
     let tier_key = format!(
         "{}:{}",
@@ -4448,6 +4557,8 @@ fn canonical_match_input_from_row(
         field_path: claim.field_path.clone(),
         text: claim.text.clone(),
         item_hash: claim.item_hash.clone(),
+        canonical_subject_kind: subject_scope.kind,
+        canonical_subject_id: subject_scope.id,
         account_id,
         workspace_id,
         tier_key,
@@ -4521,6 +4632,7 @@ fn insert_canonicalization_decision_in_tx(
     evaluated_at: &str,
     next_reconcile_at: &str,
 ) -> Result<(), ClaimError> {
+    let record_config = decision_record_config(query, candidate, outcome, config);
     let (claim_a, claim_b) = if query.claim_id <= candidate.claim_id {
         (query, candidate)
     } else {
@@ -4530,8 +4642,8 @@ fn insert_canonicalization_decision_in_tx(
         claim_a,
         claim_b,
         mode,
-        &config.embedding_model_version,
-        &config.comparator_threshold_version,
+        &record_config.embedding_model_version,
+        &record_config.comparator_threshold_version,
     );
     let decision_id = format!("canonicalization_decision_{}", &idempotency_key[..32]);
     let supersedes_decision_id = latest_decision_for_pair(
@@ -4578,10 +4690,10 @@ fn insert_canonicalization_decision_in_tx(
             &outcome.reason,
             &reason_secondary_json,
             outcome.threshold_band.map(ThresholdBand::as_db),
-            &config.embedding_model_version,
-            &config.comparator_threshold_version,
+            &record_config.embedding_model_version,
+            &record_config.comparator_threshold_version,
             &field_provenance_json,
-            config.mode.as_db(),
+            record_config.mode.as_db(),
             supersedes_decision_id.as_deref(),
             &idempotency_key,
             &claim_a_revision_hash,
@@ -4605,7 +4717,7 @@ fn insert_canonicalization_decision_in_tx(
             payload,
         )?;
 
-        if live_decision && config.mode == CanonicalizationMode::HashFallback {
+        if live_decision && record_config.mode == CanonicalizationMode::HashFallback {
             emit_claim_pair_signal_in_tx(
                 tx,
                 "trust_band_downgraded",
@@ -4930,15 +5042,6 @@ fn entity_ref_from_subject_json(subject_ref: &str) -> Option<EntityRef> {
         kind: kind.to_string(),
         id: id.to_string(),
     })
-}
-
-fn account_id_from_subject_json(subject_ref: &str) -> Option<String> {
-    let value = serde_json::from_str::<serde_json::Value>(subject_ref).ok()?;
-    let subject = subject_ref_from_json(&value).ok()?;
-    match subject {
-        SubjectRef::Account { id } => Some(id),
-        _ => None,
-    }
 }
 
 fn workspace_id_from_metadata(metadata_json: Option<&str>) -> Option<String> {
@@ -9273,6 +9376,8 @@ mod tests {
             field_path: Some("health.risk".to_string()),
             text: "renewal risk".to_string(),
             item_hash: Some(item_hash(ItemKind::Risk, "renewal risk")),
+            canonical_subject_kind: "account".to_string(),
+            canonical_subject_id: "acct-1".to_string(),
             account_id: Some("acct-1".to_string()),
             workspace_id: Some("workspace-1".to_string()),
             tier_key: "state:internal".to_string(),
@@ -9311,6 +9416,7 @@ mod tests {
         let mut query = canonical_match_fixture("claim-a");
         query.canonical_status = CanonicalStatus::PendingBackfill;
         query.claim_state = ClaimState::Tombstoned;
+        query.canonical_subject_id = "acct-a".to_string();
         query.account_id = Some("acct-a".to_string());
         query.workspace_id = Some("workspace-a".to_string());
         query.tier_key = "state:confidential".to_string();
@@ -9683,35 +9789,20 @@ mod tests {
     }
 
     #[test]
-    fn l3_finding_3_candidate_enumeration_sql_scope_prefilter_decodes_only_eligible_rows() {
+    fn l3_finding_3_candidate_enumeration_sql_scope_prefilter_decodes_only_same_subject_rows() {
         let db = test_db();
-        insert_fixture_claim(
-            &db,
-            "claim-enumeration-scope-query",
-            SUBJECT,
-            "risk",
-            "renewal risk needs scoped review",
-            ClaimState::Active,
-            SurfacingState::Active,
-        );
-        db.conn_ref()
-            .execute(
-                "UPDATE intelligence_claims /* dos7-allowed: scope fixture */
-                 SET metadata_json = json_object('workspace_id', 'workspace-1')
-                 WHERE id = 'claim-enumeration-scope-query'",
-                [],
-            )
-            .unwrap();
+        let subject_kinds = ["person", "project", "meeting"];
 
-        for index in 0..150 {
-            let id = format!("claim-enumeration-cross-account-{index:03}");
-            let subject = format!(r#"{{"kind":"account","id":"acct-cross-{index:03}"}}"#);
+        for kind in subject_kinds {
+            let target_subject_id = format!("{kind}-target");
+            let query_id = format!("claim-enumeration-{kind}-query");
+            let subject = format!(r#"{{"kind":"{kind}","id":"{target_subject_id}"}}"#);
             insert_fixture_claim(
                 &db,
-                &id,
+                &query_id,
                 &subject,
                 "risk",
-                &format!("cross account risk fixture {index}"),
+                &format!("{kind} renewal risk needs scoped review"),
                 ClaimState::Active,
                 SurfacingState::Active,
             );
@@ -9720,120 +9811,127 @@ mod tests {
                     "UPDATE intelligence_claims /* dos7-allowed: scope fixture */
                      SET metadata_json = json_object('workspace_id', 'workspace-1')
                      WHERE id = ?1",
-                    params![id],
+                    params![query_id],
                 )
                 .unwrap();
+
+            for index in 0..5 {
+                let id = format!("claim-enumeration-{kind}-same-scope-{index:03}");
+                insert_fixture_claim(
+                    &db,
+                    &id,
+                    &subject,
+                    "risk",
+                    &format!("same subject {kind} risk fixture {index}"),
+                    ClaimState::Active,
+                    SurfacingState::Active,
+                );
+                db.conn_ref()
+                    .execute(
+                        "UPDATE intelligence_claims /* dos7-allowed: scope fixture */
+                         SET metadata_json = json_object('workspace_id', 'workspace-1')
+                         WHERE id = ?1",
+                        params![id],
+                    )
+                    .unwrap();
+            }
         }
 
-        for index in 0..40 {
-            let id = format!("claim-enumeration-cross-workspace-{index:03}");
-            insert_fixture_claim(
-                &db,
-                &id,
-                SUBJECT,
-                "risk",
-                &format!("cross workspace risk fixture {index}"),
-                ClaimState::Active,
-                SurfacingState::Active,
-            );
-            db.conn_ref()
-                .execute(
-                    "UPDATE intelligence_claims /* dos7-allowed: scope fixture */
-                     SET metadata_json = json_object('workspace_id', 'workspace-2')
-                     WHERE id = ?1",
-                    params![id],
-                )
-                .unwrap();
+        for kind in subject_kinds {
+            for index in 0..75 {
+                let subject_id = format!("{kind}-cross-{index:03}");
+                let id = format!("claim-enumeration-{kind}-cross-subject-{index:03}");
+                let subject = format!(r#"{{"kind":"{kind}","id":"{subject_id}"}}"#);
+                insert_fixture_claim(
+                    &db,
+                    &id,
+                    &subject,
+                    "risk",
+                    &format!("cross subject {kind} risk fixture {index}"),
+                    ClaimState::Active,
+                    SurfacingState::Active,
+                );
+                db.conn_ref()
+                    .execute(
+                        "UPDATE intelligence_claims /* dos7-allowed: scope fixture */
+                         SET metadata_json = json_object('workspace_id', 'workspace-1')
+                         WHERE id = ?1",
+                        params![id],
+                    )
+                    .unwrap();
+            }
         }
 
-        for index in 0..10 {
-            let id = format!("claim-enumeration-cross-tier-{index:03}");
-            insert_fixture_claim(
-                &db,
-                &id,
-                SUBJECT,
-                "risk",
-                &format!("cross tier risk fixture {index}"),
-                ClaimState::Active,
-                SurfacingState::Active,
-            );
-            db.conn_ref()
-                .execute(
-                    "UPDATE intelligence_claims /* dos7-allowed: scope fixture */
-                     SET metadata_json = json_object('workspace_id', 'workspace-1'),
-                         sensitivity = 'confidential'
-                     WHERE id = ?1",
-                    params![id],
-                )
-                .unwrap();
-        }
+        let seeded_subject_rows: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(*)
+                 FROM intelligence_claims
+                 WHERE id LIKE 'claim-enumeration-%'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            seeded_subject_rows >= 200,
+            "multi-subject regression must keep a 200+ row cross-subject population"
+        );
 
-        for index in 0..5 {
-            let id = format!("claim-enumeration-same-scope-{index:03}");
-            insert_fixture_claim(
-                &db,
-                &id,
-                SUBJECT,
-                "risk",
-                &format!("same scope risk fixture {index}"),
-                ClaimState::Active,
-                SurfacingState::Active,
-            );
-            db.conn_ref()
-                .execute(
-                    "UPDATE intelligence_claims /* dos7-allowed: scope fixture */
-                     SET metadata_json = json_object('workspace_id', 'workspace-1')
-                     WHERE id = ?1",
-                    params![id],
-                )
-                .unwrap();
-        }
-
-        let query =
-            load_canonical_match_input_by_id(db.conn_ref(), "claim-enumeration-scope-query")
+        for kind in subject_kinds {
+            let query_id = format!("claim-enumeration-{kind}-query");
+            let query = load_canonical_match_input_by_id(db.conn_ref(), &query_id)
                 .unwrap()
                 .unwrap();
-        let tombstone_lookup_count = Cell::new(0);
-        let tombstone_looked_up_ids = RefCell::new(Vec::new());
+            assert_eq!(query.canonical_subject_kind, kind);
+            assert_eq!(query.canonical_subject_id, format!("{kind}-target"));
 
-        begin_canonical_match_input_decode_capture();
-        let candidates = load_shadow_candidate_inputs_with_tombstone_lookup(
-            db.conn_ref(),
-            &query,
-            |candidate| {
-                tombstone_lookup_count.set(tombstone_lookup_count.get() + 1);
-                tombstone_looked_up_ids
-                    .borrow_mut()
-                    .push(candidate.claim_id.clone());
-                Ok(false)
-            },
-        )
-        .unwrap();
-        let decoded_ids = take_canonical_match_input_decode_capture();
+            let tombstone_lookup_count = Cell::new(0);
+            let tombstone_looked_up_ids = RefCell::new(Vec::new());
 
-        assert_eq!(candidates.len(), 5);
-        assert_eq!(
-            decoded_ids.len(),
-            5,
-            "SQL scope predicates must prevent cross-scope row materialization"
-        );
-        assert!(decoded_ids
-            .iter()
-            .all(|id| id.starts_with("claim-enumeration-same-scope-")));
-        for index in 0..5 {
-            let expected = format!("claim-enumeration-same-scope-{index:03}");
-            assert!(
-                candidates
-                    .iter()
-                    .any(|candidate| candidate.claim_id == expected),
-                "same-scope candidate {expected} must remain eligible"
+            begin_canonical_match_input_decode_capture();
+            let candidates = load_shadow_candidate_inputs_with_tombstone_lookup(
+                db.conn_ref(),
+                &query,
+                |candidate| {
+                    tombstone_lookup_count.set(tombstone_lookup_count.get() + 1);
+                    tombstone_looked_up_ids
+                        .borrow_mut()
+                        .push(candidate.claim_id.clone());
+                    Ok(false)
+                },
+            )
+            .unwrap();
+            let decoded_ids = take_canonical_match_input_decode_capture();
+            let expected_prefix = format!("claim-enumeration-{kind}-same-scope-");
+
+            assert_eq!(
+                candidates.len(),
+                5,
+                "{kind} query must only see same-subject rows"
             );
+            assert_eq!(
+                decoded_ids.len(),
+                5,
+                "SQL subject predicates must prevent cross-subject row materialization for {kind}"
+            );
+            assert!(decoded_ids
+                .iter()
+                .all(|id| id.starts_with(&expected_prefix)));
+            for index in 0..5 {
+                let expected = format!("{expected_prefix}{index:03}");
+                assert!(
+                    candidates
+                        .iter()
+                        .any(|candidate| candidate.claim_id == expected),
+                    "same-subject {kind} candidate {expected} must remain eligible"
+                );
+            }
+            assert_eq!(tombstone_lookup_count.get(), 5);
+            assert!(tombstone_looked_up_ids
+                .borrow()
+                .iter()
+                .all(|id| id.starts_with(&expected_prefix)));
         }
-        assert_eq!(tombstone_lookup_count.get(), 5);
-        assert!(tombstone_looked_up_ids
-            .borrow()
-            .iter()
-            .all(|id| id.starts_with("claim-enumeration-same-scope-")));
     }
 
     #[test]
@@ -10062,6 +10160,112 @@ mod tests {
     }
 
     #[test]
+    fn l3_finding_5c_filter_only_live_decisions_do_not_hash_fallback_or_enqueue_recompute() {
+        let db = test_db();
+        let query_id = "claim-filter-mode-query";
+        insert_fixture_claim(
+            &db,
+            query_id,
+            SUBJECT,
+            "risk",
+            "filter mode query with unique embedding text",
+            ClaimState::Active,
+            SurfacingState::Active,
+        );
+        let query = load_canonical_match_input_by_id(db.conn_ref(), query_id)
+            .unwrap()
+            .unwrap();
+
+        let cases = [
+            (
+                "tombstoned",
+                ClaimState::Tombstoned,
+                SurfacingState::Dormant,
+                None,
+            ),
+            (
+                "pending",
+                ClaimState::Active,
+                SurfacingState::Active,
+                Some("pending_backfill"),
+            ),
+            (
+                "legacy",
+                ClaimState::Active,
+                SurfacingState::Active,
+                Some("legacy_unmigrated"),
+            ),
+            (
+                "dormant",
+                ClaimState::Dormant,
+                SurfacingState::Dormant,
+                None,
+            ),
+        ];
+
+        for (label, claim_state, surfacing_state, canonical_status) in cases {
+            let candidate_id = format!("claim-filter-mode-candidate-{label}");
+            insert_fixture_claim(
+                &db,
+                &candidate_id,
+                SUBJECT,
+                "risk",
+                &format!("filter mode candidate {label} with unique embedding text"),
+                claim_state,
+                surfacing_state,
+            );
+            if let Some(status) = canonical_status {
+                db.conn_ref()
+                    .execute(
+                        "UPDATE intelligence_claims /* dos7-allowed: migration state fixture */
+                         SET canonical_status = ?1,
+                             non_semantic_mergeable = TRUE,
+                             structural_field_content_hash = NULL,
+                             backfill_epoch = 0
+                         WHERE id = ?2",
+                        params![status, candidate_id],
+                    )
+                    .unwrap();
+            }
+
+            let candidate = load_canonical_match_input_by_id(db.conn_ref(), &candidate_id)
+                .unwrap()
+                .unwrap();
+            let config = canonical_match_config(&query, &candidate);
+            assert_ne!(
+                config.mode,
+                CanonicalizationMode::HashFallback,
+                "filter-only {label} rejection must not select hash fallback"
+            );
+            let outcome = canonical_match_v2(&query, &candidate, &config);
+            assert_eq!(outcome.decision, CanonicalDecisionKind::ForkFiltered);
+
+            with_claim_transaction(&db, |tx| {
+                insert_canonicalization_decision_in_tx(
+                    tx,
+                    &query,
+                    &candidate,
+                    &outcome,
+                    &config,
+                    CanonicalizationDecisionMode::Live,
+                    TS,
+                    TS,
+                )
+            })
+            .unwrap();
+        }
+
+        let modes = canonicalization_modes(&db);
+        assert_eq!(modes.len(), 4);
+        assert!(modes.iter().all(|mode| mode != "hash_fallback"));
+        assert_eq!(signal_count(&db, "trust_band_downgraded"), 0);
+        assert!(
+            claim_recompute_subjects(&db).is_empty(),
+            "filter-only deterministic live decisions must not enqueue claim recompute jobs"
+        );
+    }
+
+    #[test]
     fn regression_finding_5_runtime_downgrade_transition_signals_fire_per_affected_claim() {
         let db = test_db();
         for id in [
@@ -10081,7 +10285,17 @@ mod tests {
             );
         }
         let hash_query = canonical_match_fixture("claim-signal-hash-a");
-        let hash_candidate = canonical_match_fixture("claim-signal-hash-b");
+        let mut hash_candidate = canonical_match_fixture("claim-signal-hash-b");
+        hash_candidate.structured.object = ObjectValue::FreeText {
+            canonical: "renewal risk requires embedding comparison".to_string(),
+        };
+        let hash_outcome = CanonicalMatchOutcome {
+            decision: CanonicalDecisionKind::ForkContradiction,
+            reason: "object_distinct".to_string(),
+            reason_secondary: Vec::new(),
+            threshold_band: None,
+            field_scores: serde_json::json!({}),
+        };
         let merge_outcome = CanonicalMatchOutcome {
             decision: CanonicalDecisionKind::Merge,
             reason: "all_match".to_string(),
@@ -10095,7 +10309,7 @@ mod tests {
                 tx,
                 &hash_query,
                 &hash_candidate,
-                &merge_outcome,
+                &hash_outcome,
                 &hash_fallback_canonical_match_config(),
                 CanonicalizationDecisionMode::Live,
                 TS,
@@ -13967,6 +14181,8 @@ mod tests {
             field_path: Some("health.risk".to_string()),
             text: object_text.to_string(),
             item_hash: Some(item_hash(ItemKind::Risk, object_text)),
+            canonical_subject_kind: "account".to_string(),
+            canonical_subject_id: subject_id.to_string(),
             account_id: Some(subject_id.to_string()),
             workspace_id: None,
             tier_key: "state:internal".to_string(),
@@ -14032,6 +14248,8 @@ mod tests {
             "phase 2 budget pending",
             QualifierSet::default(),
         );
+        right.canonical_subject_kind = left.canonical_subject_kind.clone();
+        right.canonical_subject_id = left.canonical_subject_id.clone();
         right.account_id = left.account_id.clone();
 
         let outcome = canonical_match_v2(&left, &right, &full_similarity_config(0.90));
