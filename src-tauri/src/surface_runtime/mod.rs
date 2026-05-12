@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
+use chrono::Utc;
 use http::header::{self, HeaderMap, HeaderValue};
 use http::{Method, Request, Response, StatusCode, Uri};
 use http_body_util::{BodyExt, Full, LengthLimitError, Limited};
@@ -24,12 +25,15 @@ use uuid::Uuid;
 
 use crate::state::AppState;
 
+mod hmac;
+
 pub const SURFACE_ENDPOINT_VERSION: &str = "v1";
 const DEFAULT_MAX_BIND_ATTEMPTS: u16 = 10;
 const DEFAULT_LOOPBACK_REQUESTS_PER_MINUTE: u32 = 60;
 const DEFAULT_LOOPBACK_BURST_PER_SECOND: u32 = 10;
 const DEFAULT_PAIRING_CODE_FAILED_ATTEMPTS: u32 = 5;
 const MAX_HANDSHAKE_BODY_BYTES: usize = 4 * 1024;
+const DEFAULT_SIGNED_REQUEST_MAX_BODY_BYTES: usize = 256 * 1024;
 
 type ResponseBody = Full<Bytes>;
 
@@ -38,6 +42,8 @@ pub struct SurfaceEndpointConfig {
     pub max_bind_attempts: u16,
     pub loopback_abuse: TokenBucketConfig,
     pub pairing_attempts: PairingAttemptConfig,
+    pub(crate) signed_transport: hmac::SignedTransportConfig,
+    pub(crate) signed_request_max_body_bytes: usize,
 }
 
 impl Default for SurfaceEndpointConfig {
@@ -51,6 +57,8 @@ impl Default for SurfaceEndpointConfig {
             pairing_attempts: PairingAttemptConfig {
                 max_failed_attempts_per_code: DEFAULT_PAIRING_CODE_FAILED_ATTEMPTS,
             },
+            signed_transport: hmac::SignedTransportConfig::default(),
+            signed_request_max_body_bytes: DEFAULT_SIGNED_REQUEST_MAX_BODY_BYTES,
         }
     }
 }
@@ -121,6 +129,7 @@ pub struct SurfaceEndpointState {
     inner: Mutex<EndpointInner>,
     paired_site_origin: Arc<RwLock<Option<String>>>,
     pairing_attempts: Arc<Mutex<PairingAttemptLimiter>>,
+    signed_transport: hmac::SignedTransportState,
 }
 
 #[derive(Default)]
@@ -188,6 +197,8 @@ impl SurfaceEndpointState {
             attempts.config = config.pairing_attempts;
             attempts.attempts_by_code.clear();
         }
+        self.signed_transport
+            .configure(config.signed_transport.clone());
         *self.paired_site_origin.write() = None;
 
         let max_attempts = config.max_bind_attempts.clamp(1, DEFAULT_MAX_BIND_ATTEMPTS);
@@ -215,6 +226,8 @@ impl SurfaceEndpointState {
                         loopback_bucket: Mutex::new(TokenBucket::new(config.loopback_abuse)),
                         pairing_attempts: Arc::clone(&self.pairing_attempts),
                         paired_site_origin: Arc::clone(&self.paired_site_origin),
+                        signed_transport: self.signed_transport.clone(),
+                        signed_request_max_body_bytes: config.signed_request_max_body_bytes,
                     });
                     let endpoint_state = Arc::clone(&self);
                     let join = tokio::spawn(async move {
@@ -298,6 +311,7 @@ impl SurfaceEndpointState {
     fn clear_pairing_state(&self) {
         self.pairing_attempts.lock().attempts_by_code.clear();
         *self.paired_site_origin.write() = None;
+        self.signed_transport.clear_runtime_state();
     }
 
     fn mark_failed(&self, message: String) {
@@ -373,6 +387,26 @@ impl From<&crate::types::SurfaceRuntimeConfig> for SurfaceEndpointConfig {
             pairing_attempts: PairingAttemptConfig {
                 max_failed_attempts_per_code: config.pairing_code_max_failed_attempts,
             },
+            signed_transport: hmac::SignedTransportConfig {
+                parseable_session_bucket: hmac::SignedTokenBucketConfig {
+                    capacity: config.signed_session_burst_per_second.max(1),
+                    refill_per_second: f64::from(config.signed_session_requests_per_minute.max(1))
+                        / 60.0,
+                },
+                stale_window: Duration::from_secs(config.signature_stale_window_seconds.max(1)),
+                future_skew: Duration::from_secs(config.signature_future_skew_seconds),
+                cleanup_slack: Duration::from_secs(config.signature_nonce_cleanup_slack_seconds),
+                pending_nonce_ttl: Duration::from_secs(
+                    config.signature_nonce_pending_ttl_seconds.max(1),
+                ),
+                nonce_records_per_session: config.signature_nonce_records_per_session.max(1),
+                max_active_sessions: config.signature_max_active_sessions.max(1),
+                global_nonce_records: config.signature_global_nonce_records.max(1),
+            },
+            signed_request_max_body_bytes: usize::try_from(
+                config.signed_request_max_body_bytes.max(1),
+            )
+            .unwrap_or(DEFAULT_SIGNED_REQUEST_MAX_BODY_BYTES),
         }
     }
 }
@@ -382,6 +416,8 @@ struct EndpointRuntime {
     loopback_bucket: Mutex<TokenBucket>,
     pairing_attempts: Arc<Mutex<PairingAttemptLimiter>>,
     paired_site_origin: Arc<RwLock<Option<String>>>,
+    signed_transport: hmac::SignedTransportState,
+    signed_request_max_body_bytes: usize,
 }
 
 async fn run_listener(
@@ -453,8 +489,16 @@ async fn handle_hyper_request(
 
     let method = request.method().clone();
     let uri = request.uri().clone();
-    let body = if method == Method::POST && uri.path() == "/v1/pairing/handshake" {
-        match collect_limited_body(request.into_body(), MAX_HANDSHAKE_BODY_BYTES).await {
+    let headers = request.headers().clone();
+    let body_limit = if method == Method::POST && uri.path() == "/v1/pairing/handshake" {
+        Some(MAX_HANDSHAKE_BODY_BYTES)
+    } else if is_signed_route_candidate(uri.path()) {
+        Some(runtime.signed_request_max_body_bytes)
+    } else {
+        None
+    };
+    let body = if let Some(max_body_bytes) = body_limit {
+        match collect_limited_body(request.into_body(), max_body_bytes).await {
             Ok(body) => body,
             Err(error) => {
                 return Ok(error_response(error.with_request_id(request_id)));
@@ -465,7 +509,12 @@ async fn handle_hyper_request(
     };
 
     Ok(dispatch_surface_request(
-        SurfaceHttpRequest { method, uri, body },
+        SurfaceHttpRequest {
+            method,
+            uri,
+            headers,
+            body,
+        },
         runtime,
         request_id,
     ))
@@ -490,6 +539,7 @@ where
 struct SurfaceHttpRequest {
     method: Method,
     uri: Uri,
+    headers: HeaderMap,
     body: Bytes,
 }
 
@@ -499,20 +549,82 @@ fn dispatch_surface_request(
     request_id: String,
 ) -> Response<ResponseBody> {
     let path = request.uri.path().to_string();
-    match (request.method, path.as_str()) {
-        (Method::GET, "/v1/surface/health") => health_response(request_id),
-        (Method::POST, "/v1/pairing/handshake") => {
+    match (&request.method, path.as_str()) {
+        (&Method::GET, "/v1/surface/health") => health_response(request_id),
+        (&Method::POST, "/v1/pairing/handshake") => {
             pairing_handshake_skeleton_response(request.body, runtime, request_id)
         }
-        (Method::GET, "/v1/pairing/status")
-        | (Method::POST, "/v1/surface/invoke")
-        | (Method::POST, "/v1/surface/feedback")
-        | (Method::GET, "/v1/surface/abilities")
-        | (Method::GET, "/v1/surface/keyring") => {
-            error_response(SurfaceHttpError::auth_missing().with_request_id(request_id))
+        _ if is_signed_route_candidate(path.as_str()) => {
+            let route_supported = is_supported_signed_route(&request.method, path.as_str());
+            signed_transport_skeleton_response(request, runtime, request_id, route_supported)
         }
         _ => error_response(SurfaceHttpError::route_not_found().with_request_id(request_id)),
     }
+}
+
+fn signed_transport_skeleton_response(
+    request: SurfaceHttpRequest,
+    runtime: Arc<EndpointRuntime>,
+    request_id: String,
+    route_supported: bool,
+) -> Response<ResponseBody> {
+    if let Err(error) = runtime.signed_transport.verify(hmac::SignedRequest {
+        headers: &request.headers,
+        method: &request.method,
+        uri: &request.uri,
+        body: &request.body,
+        now: Utc::now(),
+        instant: Instant::now(),
+    }) {
+        log_signing_failure(&request, &request_id, &error);
+        return error_response(
+            SurfaceHttpError::from_signed_transport(error).with_request_id(request_id),
+        );
+    }
+
+    if route_supported {
+        error_response(SurfaceHttpError::runtime_unavailable().with_request_id(request_id))
+    } else {
+        error_response(SurfaceHttpError::route_not_found().with_request_id(request_id))
+    }
+}
+
+fn is_supported_signed_route(method: &Method, path: &str) -> bool {
+    matches!(
+        (method, path),
+        (&Method::GET, "/v1/pairing/status")
+            | (&Method::POST, "/v1/surface/invoke")
+            | (&Method::POST, "/v1/surface/feedback")
+            | (&Method::GET, "/v1/surface/abilities")
+            | (&Method::GET, "/v1/surface/keyring")
+    )
+}
+
+fn is_signed_route_candidate(path: &str) -> bool {
+    (path.starts_with("/v1/surface/") && path != "/v1/surface/health")
+        || (path.starts_with("/v1/pairing/") && path != "/v1/pairing/handshake")
+}
+
+fn log_signing_failure(
+    request: &SurfaceHttpRequest,
+    request_id: &str,
+    error: &hmac::SignedTransportError,
+) {
+    let path_query = request
+        .uri
+        .path_and_query()
+        .map(|path_query| path_query.as_str())
+        .unwrap_or_else(|| request.uri.path());
+    log::warn!(
+        "dailyos.wp_bridge.signing failure code={} request_id={} session_id_hash={} surface_client_hash={} method={} path_hash={} reason={}",
+        error.code(),
+        request_id,
+        error.session_id_hash.as_deref().unwrap_or("absent"),
+        error.surface_client_id_hash.as_deref().unwrap_or("absent"),
+        request.method,
+        hmac::hash_prefix(path_query),
+        error.reason
+    );
 }
 
 fn pairing_handshake_skeleton_response(
@@ -585,6 +697,24 @@ impl SurfaceHttpError {
             "auth_missing",
             "The request is missing DailyOS surface authentication.",
             "Pair the surface with DailyOS and retry with signed credentials.",
+        )
+    }
+
+    fn from_signed_transport(error: hmac::SignedTransportError) -> Self {
+        let remediation = match error.kind {
+            hmac::SignedTransportErrorKind::NonceReplay => {
+                "Generate a fresh signed request and retry."
+            }
+            hmac::SignedTransportErrorKind::TransportAbuseLimited => {
+                "Wait before retrying the signed request."
+            }
+            _ => "Refresh the paired DailyOS session and retry.",
+        };
+        Self::new(
+            error.status(),
+            error.code(),
+            "DailyOS request signing failed.",
+            remediation,
         )
     }
 
@@ -920,15 +1050,104 @@ mod tests {
                 attempts_by_code: HashMap::new(),
             })),
             paired_site_origin: Arc::new(RwLock::new(None)),
+            signed_transport: hmac::SignedTransportState::default(),
+            signed_request_max_body_bytes: DEFAULT_SIGNED_REQUEST_MAX_BODY_BYTES,
         })
     }
 
     fn request_for_tests(method: Method, path: &str, body: Bytes) -> SurfaceHttpRequest {
+        request_with_headers_for_tests(method, path, HeaderMap::new(), body)
+    }
+
+    fn request_with_headers_for_tests(
+        method: Method,
+        path: &str,
+        headers: HeaderMap,
+        body: Bytes,
+    ) -> SurfaceHttpRequest {
         SurfaceHttpRequest {
             method,
             uri: path.parse::<Uri>().unwrap(),
+            headers,
             body,
         }
+    }
+
+    fn test_master_key() -> [u8; 32] {
+        [
+            0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d,
+            0x1e, 0x1f, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x2b,
+            0x2c, 0x2d, 0x2e, 0x2f,
+        ]
+    }
+
+    fn register_signed_session(runtime: &Arc<EndpointRuntime>) {
+        runtime
+            .signed_transport
+            .register_session(hmac::SignedSurfaceSession::new_active(
+                "sess_test_1234567890",
+                "surface_client_test",
+                "bearer_token_test",
+                test_master_key(),
+            ))
+            .unwrap();
+    }
+
+    fn signed_headers_for_tests(
+        method: &Method,
+        path: &str,
+        body: &[u8],
+        nonce: &str,
+    ) -> HeaderMap {
+        let timestamp = Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+        signed_headers_with_timestamp_for_tests(method, path, body, nonce, &timestamp)
+    }
+
+    fn signed_headers_with_timestamp_for_tests(
+        method: &Method,
+        path: &str,
+        body: &[u8],
+        nonce: &str,
+        timestamp: &str,
+    ) -> HeaderMap {
+        let uri = path.parse::<Uri>().unwrap();
+        let signature = hmac::sign_request_for_tests(
+            test_master_key(),
+            "sess_test_1234567890",
+            method,
+            &uri,
+            "application/json",
+            body,
+            nonce,
+            timestamp,
+        );
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::AUTHORIZATION,
+            HeaderValue::from_static("Bearer bearer_token_test"),
+        );
+        headers.insert(
+            "x-dailyos-surfaceclient",
+            HeaderValue::from_static("surface_client_test"),
+        );
+        headers.insert(
+            "x-dailyos-key-id",
+            HeaderValue::from_static("sess_test_1234567890"),
+        );
+        headers.insert(
+            "x-dailyos-signature",
+            HeaderValue::from_str(&format!("v1={signature}")).unwrap(),
+        );
+        headers.insert(
+            "x-dailyos-timestamp",
+            HeaderValue::from_str(timestamp).unwrap(),
+        );
+        headers.insert("x-dailyos-nonce", HeaderValue::from_str(nonce).unwrap());
+        headers.insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/json"),
+        );
+        headers
     }
 
     #[test]
@@ -994,11 +1213,124 @@ mod tests {
             );
             assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
             let body = body_json(response);
-            assert_eq!(body["error"]["code"], "auth_missing");
+            assert_eq!(body["error"]["code"], "token_invalid");
             assert_eq!(body["error"]["request_id"], "req_test");
             assert!(body.get("error").unwrap().get("message").is_some());
             assert!(body.get("error").unwrap().get("remediation").is_some());
         }
+    }
+
+    #[test]
+    fn signed_route_candidates_include_canonicalization_drift_paths() {
+        for path in [
+            "/v1/pairing/status/",
+            "/v1/surface/invoke/",
+            "/v1/surface/feedback/",
+            "/v1/surface/abilities/",
+            "/v1/surface/keyring/",
+            "/v1/surface/unknown",
+        ] {
+            assert!(is_signed_route_candidate(path), "candidate missed {path}");
+        }
+
+        assert!(!is_signed_route_candidate("/v1/surface/health"));
+        assert!(!is_signed_route_candidate("/v1/pairing/handshake"));
+    }
+
+    #[test]
+    fn valid_signed_request_reaches_protected_route_stub() {
+        let runtime = runtime_for_tests(49152);
+        register_signed_session(&runtime);
+        let method = Method::POST;
+        let path = "/v1/surface/invoke?ability=briefing.daily";
+        let body = Bytes::from_static(br#"{"depth":"standard"}"#);
+        let headers =
+            signed_headers_for_tests(&method, path, &body, "0123456789abcdef0123456789abcdef");
+
+        let response = dispatch_surface_request(
+            request_with_headers_for_tests(method, path, headers, body),
+            runtime,
+            "req_signed".to_string(),
+        );
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        let body = body_json(response);
+        assert_eq!(body["error"]["code"], "runtime_unavailable");
+        assert_eq!(body["error"]["request_id"], "req_signed");
+    }
+
+    #[test]
+    fn valid_signed_unknown_surface_route_returns_not_found_after_hmac() {
+        let runtime = runtime_for_tests(49152);
+        register_signed_session(&runtime);
+        let method = Method::POST;
+        let path = "/v1/surface/invoke/?ability=briefing.daily";
+        let body = Bytes::from_static(br#"{"depth":"standard"}"#);
+        let headers =
+            signed_headers_for_tests(&method, path, &body, "1123456789abcdef0123456789abcdef");
+
+        let response = dispatch_surface_request(
+            request_with_headers_for_tests(method, path, headers, body),
+            runtime,
+            "req_unknown_signed".to_string(),
+        );
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let body = body_json(response);
+        assert_eq!(body["error"]["code"], "route_not_found");
+        assert_eq!(body["error"]["request_id"], "req_unknown_signed");
+    }
+
+    #[test]
+    fn tampered_protected_path_rejects_at_signing_before_route_not_found() {
+        let runtime = runtime_for_tests(49152);
+        register_signed_session(&runtime);
+        let method = Method::POST;
+        let signed_path = "/v1/surface/invoke?ability=briefing.daily";
+        let sent_path = "/v1/surface/invoke/?ability=briefing.daily";
+        let body = Bytes::from_static(br#"{"depth":"standard"}"#);
+        let headers = signed_headers_for_tests(
+            &method,
+            signed_path,
+            &body,
+            "2123456789abcdef0123456789abcdef",
+        );
+
+        let response = dispatch_surface_request(
+            request_with_headers_for_tests(method, sent_path, headers, body),
+            runtime,
+            "req_tampered_path".to_string(),
+        );
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let body = body_json(response);
+        assert_eq!(body["error"]["code"], "signature_invalid");
+        assert_eq!(body["error"]["message"], "DailyOS request signing failed.");
+        assert_eq!(body["error"]["request_id"], "req_tampered_path");
+    }
+
+    #[test]
+    fn invalid_signed_request_stops_before_protected_route_stub() {
+        let runtime = runtime_for_tests(49152);
+        register_signed_session(&runtime);
+        let method = Method::POST;
+        let path = "/v1/surface/invoke?ability=briefing.daily";
+        let signed_body = br#"{"depth":"standard"}"#;
+        let sent_body = Bytes::from_static(br#"{"depth":"deep"}"#);
+        let headers = signed_headers_for_tests(
+            &method,
+            path,
+            signed_body,
+            "1123456789abcdef0123456789abcdef",
+        );
+
+        let response = dispatch_surface_request(
+            request_with_headers_for_tests(method, path, headers, sent_body),
+            runtime,
+            "req_bad_sig".to_string(),
+        );
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let body = body_json(response);
+        assert_eq!(body["error"]["code"], "signature_invalid");
+        assert_eq!(body["error"]["message"], "DailyOS request signing failed.");
+        assert_eq!(body["error"]["request_id"], "req_bad_sig");
     }
 
     #[test]
@@ -1103,11 +1435,48 @@ mod tests {
             unauthenticated_loopback_requests_per_minute: 30,
             unauthenticated_loopback_burst_per_second: 0,
             pairing_code_max_failed_attempts: 5,
+            signed_session_requests_per_minute: 120,
+            signed_session_burst_per_second: 10,
+            signature_stale_window_seconds: 30,
+            signature_future_skew_seconds: 5,
+            signature_nonce_cleanup_slack_seconds: 5,
+            signature_nonce_pending_ttl_seconds: 5,
+            signature_nonce_records_per_session: 4096,
+            signature_max_active_sessions: 128,
+            signature_global_nonce_records: 65_536,
+            signed_request_max_body_bytes: 256 * 1024,
         };
         let endpoint_config = SurfaceEndpointConfig::from(&config);
         assert_eq!(endpoint_config.max_bind_attempts, DEFAULT_MAX_BIND_ATTEMPTS);
         assert_eq!(endpoint_config.loopback_abuse.capacity, 1);
         assert_eq!(endpoint_config.loopback_abuse.refill_per_second, 0.5);
+        assert_eq!(
+            endpoint_config
+                .signed_transport
+                .parseable_session_bucket
+                .capacity,
+            10
+        );
+        assert_eq!(
+            endpoint_config
+                .signed_transport
+                .parseable_session_bucket
+                .refill_per_second,
+            2.0
+        );
+        assert_eq!(
+            endpoint_config.signed_transport.stale_window,
+            Duration::from_secs(30)
+        );
+        assert_eq!(
+            endpoint_config.signed_transport.future_skew,
+            Duration::from_secs(5)
+        );
+        assert_eq!(
+            endpoint_config.signed_transport.nonce_records_per_session,
+            4096
+        );
+        assert_eq!(endpoint_config.signed_request_max_body_bytes, 256 * 1024);
     }
 
     #[test]

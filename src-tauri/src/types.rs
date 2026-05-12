@@ -138,6 +138,26 @@ pub struct SurfaceRuntimeConfig {
     pub unauthenticated_loopback_burst_per_second: u32,
     #[serde(default = "default_surface_runtime_pairing_code_max_failed_attempts")]
     pub pairing_code_max_failed_attempts: u32,
+    #[serde(default = "default_surface_runtime_signed_session_requests_per_minute")]
+    pub signed_session_requests_per_minute: u32,
+    #[serde(default = "default_surface_runtime_signed_session_burst_per_second")]
+    pub signed_session_burst_per_second: u32,
+    #[serde(default = "default_surface_runtime_signature_stale_window_seconds")]
+    pub signature_stale_window_seconds: u64,
+    #[serde(default = "default_surface_runtime_signature_future_skew_seconds")]
+    pub signature_future_skew_seconds: u64,
+    #[serde(default = "default_surface_runtime_signature_nonce_cleanup_slack_seconds")]
+    pub signature_nonce_cleanup_slack_seconds: u64,
+    #[serde(default = "default_surface_runtime_signature_nonce_pending_ttl_seconds")]
+    pub signature_nonce_pending_ttl_seconds: u64,
+    #[serde(default = "default_surface_runtime_signature_nonce_records_per_session")]
+    pub signature_nonce_records_per_session: usize,
+    #[serde(default = "default_surface_runtime_signature_max_active_sessions")]
+    pub signature_max_active_sessions: usize,
+    #[serde(default = "default_surface_runtime_signature_global_nonce_records")]
+    pub signature_global_nonce_records: usize,
+    #[serde(default = "default_surface_runtime_signed_request_max_body_bytes")]
+    pub signed_request_max_body_bytes: u64,
 }
 
 impl Default for SurfaceRuntimeConfig {
@@ -150,6 +170,23 @@ impl Default for SurfaceRuntimeConfig {
                 default_surface_runtime_loopback_burst_per_second(),
             pairing_code_max_failed_attempts:
                 default_surface_runtime_pairing_code_max_failed_attempts(),
+            signed_session_requests_per_minute:
+                default_surface_runtime_signed_session_requests_per_minute(),
+            signed_session_burst_per_second:
+                default_surface_runtime_signed_session_burst_per_second(),
+            signature_stale_window_seconds: default_surface_runtime_signature_stale_window_seconds(
+            ),
+            signature_future_skew_seconds: default_surface_runtime_signature_future_skew_seconds(),
+            signature_nonce_cleanup_slack_seconds:
+                default_surface_runtime_signature_nonce_cleanup_slack_seconds(),
+            signature_nonce_pending_ttl_seconds:
+                default_surface_runtime_signature_nonce_pending_ttl_seconds(),
+            signature_nonce_records_per_session:
+                default_surface_runtime_signature_nonce_records_per_session(),
+            signature_max_active_sessions: default_surface_runtime_signature_max_active_sessions(),
+            signature_global_nonce_records: default_surface_runtime_signature_global_nonce_records(
+            ),
+            signed_request_max_body_bytes: default_surface_runtime_signed_request_max_body_bytes(),
         }
     }
 }
@@ -388,6 +425,46 @@ fn default_surface_runtime_loopback_burst_per_second() -> u32 {
 
 fn default_surface_runtime_pairing_code_max_failed_attempts() -> u32 {
     5
+}
+
+fn default_surface_runtime_signed_session_requests_per_minute() -> u32 {
+    120
+}
+
+fn default_surface_runtime_signed_session_burst_per_second() -> u32 {
+    10
+}
+
+fn default_surface_runtime_signature_stale_window_seconds() -> u64 {
+    30
+}
+
+fn default_surface_runtime_signature_future_skew_seconds() -> u64 {
+    5
+}
+
+fn default_surface_runtime_signature_nonce_cleanup_slack_seconds() -> u64 {
+    5
+}
+
+fn default_surface_runtime_signature_nonce_pending_ttl_seconds() -> u64 {
+    5
+}
+
+fn default_surface_runtime_signature_nonce_records_per_session() -> usize {
+    4096
+}
+
+fn default_surface_runtime_signature_max_active_sessions() -> usize {
+    128
+}
+
+fn default_surface_runtime_signature_global_nonce_records() -> usize {
+    65_536
+}
+
+fn default_surface_runtime_signed_request_max_body_bytes() -> u64 {
+    256 * 1024
 }
 
 impl Config {
@@ -3089,6 +3166,34 @@ mod tests {
             10
         );
         assert_eq!(config.surface_runtime.pairing_code_max_failed_attempts, 5);
+        assert_eq!(
+            config.surface_runtime.signed_session_requests_per_minute,
+            120
+        );
+        assert_eq!(config.surface_runtime.signed_session_burst_per_second, 10);
+        assert_eq!(config.surface_runtime.signature_stale_window_seconds, 30);
+        assert_eq!(config.surface_runtime.signature_future_skew_seconds, 5);
+        assert_eq!(
+            config.surface_runtime.signature_nonce_cleanup_slack_seconds,
+            5
+        );
+        assert_eq!(
+            config.surface_runtime.signature_nonce_pending_ttl_seconds,
+            5
+        );
+        assert_eq!(
+            config.surface_runtime.signature_nonce_records_per_session,
+            4096
+        );
+        assert_eq!(config.surface_runtime.signature_max_active_sessions, 128);
+        assert_eq!(
+            config.surface_runtime.signature_global_nonce_records,
+            65_536
+        );
+        assert_eq!(
+            config.surface_runtime.signed_request_max_body_bytes,
+            256 * 1024
+        );
     }
 
     #[test]
