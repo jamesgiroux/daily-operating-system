@@ -27,6 +27,59 @@ ALTER TABLE intelligence_claims ADD COLUMN canonical_status TEXT NOT NULL DEFAUL
 ALTER TABLE intelligence_claims ADD COLUMN non_semantic_mergeable BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE intelligence_claims ADD COLUMN structural_field_content_hash TEXT;
 ALTER TABLE intelligence_claims ADD COLUMN backfill_epoch INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE intelligence_claims ADD COLUMN backfill_attempts INTEGER NOT NULL DEFAULT 0;
+"#;
+
+// Mirror of v167_structured_claim_canonicalization tables that
+// claim_surface_shadow_columns joins against. Without these tables present,
+// the LEFT JOIN-style EXISTS subqueries in load_claims_where fail at prepare.
+const CANONICALIZATION_DECISIONS_SCHEMA_SQL: &str = r#"
+CREATE TABLE IF NOT EXISTS canonicalization_decisions (
+    decision_id TEXT PRIMARY KEY,
+    claim_id_a TEXT NOT NULL,
+    claim_id_b TEXT NOT NULL,
+    decision TEXT NOT NULL
+        CHECK (decision IN ('merge','fork','fork_ambiguous','fork_contradiction','fork_filtered')),
+    mode TEXT NOT NULL CHECK (mode IN ('shadow','live')),
+    is_authoritative BOOLEAN NOT NULL GENERATED ALWAYS AS (mode = 'live') STORED,
+    field_scores JSONB NOT NULL,
+    reason TEXT NOT NULL,
+    reason_secondary JSONB,
+    threshold_band TEXT CHECK (
+        threshold_band IS NULL OR threshold_band IN ('high','ambiguous','low')
+    ),
+    embedding_model_version TEXT,
+    comparator_threshold_version TEXT,
+    field_provenance JSONB NOT NULL,
+    canonicalization_mode TEXT NOT NULL CHECK (
+        canonicalization_mode IN ('full','hash_fallback','deterministic')
+    ),
+    supersedes_decision_id TEXT REFERENCES canonicalization_decisions(decision_id),
+    idempotency_key TEXT NOT NULL UNIQUE,
+    claim_a_revision_hash TEXT NOT NULL,
+    claim_b_revision_hash TEXT NOT NULL,
+    evaluated_at TIMESTAMP NOT NULL,
+    FOREIGN KEY (claim_id_a) REFERENCES intelligence_claims(id),
+    FOREIGN KEY (claim_id_b) REFERENCES intelligence_claims(id)
+);
+CREATE TABLE IF NOT EXISTS ambiguous_claim_pairs (
+    pair_id TEXT PRIMARY KEY,
+    claim_id_a TEXT NOT NULL,
+    claim_id_b TEXT NOT NULL,
+    field_scores JSONB NOT NULL,
+    decision_id TEXT NOT NULL REFERENCES canonicalization_decisions(decision_id),
+    user_resolution TEXT CHECK (
+        user_resolution IS NULL
+        OR user_resolution IN ('merged','forked','contradicted','needs_user_decision')
+    ),
+    user_resolved_at TIMESTAMP,
+    reconcile_attempts INT NOT NULL DEFAULT 0,
+    next_reconcile_at TIMESTAMP,
+    last_schema_version TEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL,
+    FOREIGN KEY (claim_id_a) REFERENCES intelligence_claims(id),
+    FOREIGN KEY (claim_id_b) REFERENCES intelligence_claims(id)
+);
 "#;
 
 const LEGACY_READER_SCHEMA_SQL: &str = r#"
@@ -118,6 +171,8 @@ fn fresh_db() -> Connection {
         .expect("apply semantic evidence schema");
     conn.execute_batch(STRUCTURED_CLAIM_CANONICALIZATION_COLUMNS_SQL)
         .expect("apply structured claim canonicalization columns");
+    conn.execute_batch(CANONICALIZATION_DECISIONS_SCHEMA_SQL)
+        .expect("apply canonicalization decisions schema");
     conn
 }
 
