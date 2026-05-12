@@ -4,48 +4,60 @@
   "expected_decision": "fork",
   "source": "synthetic",
   "claim_a": {
-    "text": "Contract approval is awaiting legal review.",
-    "sensitivity": "internal",
-    "subject_ref": { "kind": "account", "id": "account_epsilon" },
-    "predicate": "contract_approval_status",
+    "claim_type": "engagement",
+    "field_path": "usage.trend",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "declining"
+    },
     "polarity": "affirm",
-    "object": { "kind": "literal", "literal_kind": "enum", "value": "awaiting_legal_review" },
+    "predicate": "product_usage_trend",
     "qualifiers": {
-      "time": null,
+      "entity": null,
+      "extras": {},
+      "numerics": [],
       "region": null,
       "scope": null,
-      "entity": null,
-      "numerics": [],
-      "extras": {}
+      "time": null
     },
-    "status": "confirmed",
+    "sensitivity": "internal",
     "sentiment": "neutral",
-    "claim_type": "risk",
-    "field_path": "approval.status",
-    "workspace_id": "workspace_alpha",
-    "tier_key": "state:internal"
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "account_1",
+      "kind": "account"
+    },
+    "text": "Weekly active users have dropped 18 percent over the last quarter.",
+    "workspace_id": "workspace_alpha"
   },
   "claim_b": {
-    "text": "Contract approval is awaiting legal review.",
-    "sensitivity": "confidential",
-    "subject_ref": { "kind": "account", "id": "account_epsilon" },
-    "predicate": "contract_approval_status",
+    "claim_type": "engagement",
+    "field_path": "usage.trend",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "declining"
+    },
     "polarity": "affirm",
-    "object": { "kind": "literal", "literal_kind": "enum", "value": "awaiting_legal_review" },
+    "predicate": "product_usage_trend",
     "qualifiers": {
-      "time": null,
+      "entity": null,
+      "extras": {},
+      "numerics": [],
       "region": null,
       "scope": null,
-      "entity": null,
-      "numerics": [],
-      "extras": {}
+      "time": null
     },
-    "status": "confirmed",
+    "sensitivity": "internal",
     "sentiment": "neutral",
-    "claim_type": "risk",
-    "field_path": "approval.status",
-    "workspace_id": "workspace_alpha",
-    "tier_key": "state:confidential"
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "account_1001",
+      "kind": "account"
+    },
+    "text": "Weekly active users have dropped 18 percent over the last quarter.",
+    "workspace_id": "workspace_alpha"
   },
-  "rationale": "Same claim shape must not merge across trust/sensitivity tiers."
+  "rationale": "Same text and predicate but distinct subjects — must not merge."
 }

@@ -4,46 +4,64 @@
   "expected_decision": "fork",
   "source": "synthetic",
   "claim_a": {
-    "text": "The renewal risk is elevated.",
-    "sensitivity": "internal",
-    "subject_ref": { "kind": "account", "id": "account_gamma" },
-    "predicate": "account_renewal_risk",
-    "polarity": "affirm",
-    "object": { "kind": "literal", "literal_kind": "enum", "value": "elevated" },
-    "qualifiers": {
-      "time": null,
-      "region": null,
-      "scope": null,
-      "entity": null,
-      "numerics": [],
-      "extras": {}
-    },
-    "status": "confirmed",
-    "sentiment": "negative",
     "claim_type": "risk",
-    "field_path": "renewal.risk",
+    "field_path": "approval.status",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "pending_finance_approval"
+    },
+    "polarity": "affirm",
+    "predicate": "contract_approval_status",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": {
+        "normalized": "phase_1"
+      },
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "account_0",
+      "kind": "account"
+    },
+    "text": "Phase 2 budget approval is pending with finance.",
     "workspace_id": "workspace_alpha"
   },
   "claim_b": {
-    "text": "The renewal risk is elevated.",
-    "sensitivity": "internal",
-    "subject_ref": { "kind": "account", "id": "account_delta" },
-    "predicate": "account_renewal_risk",
-    "polarity": "affirm",
-    "object": { "kind": "literal", "literal_kind": "enum", "value": "elevated" },
-    "qualifiers": {
-      "time": null,
-      "region": null,
-      "scope": null,
-      "entity": null,
-      "numerics": [],
-      "extras": {}
-    },
-    "status": "confirmed",
-    "sentiment": "negative",
     "claim_type": "risk",
-    "field_path": "renewal.risk",
+    "field_path": "approval.status",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "approved"
+    },
+    "polarity": "affirm",
+    "predicate": "contract_approval_status",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": {
+        "normalized": "phase_1"
+      },
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "account_0",
+      "kind": "account"
+    },
+    "text": "The MSA is awaiting legal sign-off.",
     "workspace_id": "workspace_alpha"
   },
-  "rationale": "Lexically identical claims must not merge across account subjects."
+  "rationale": "Same subject and predicate but the object value differs — must not merge."
 }

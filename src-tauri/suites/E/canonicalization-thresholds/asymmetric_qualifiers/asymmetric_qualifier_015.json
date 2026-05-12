@@ -1,0 +1,65 @@
+{
+  "pair_id": "asymmetric_qualifier_015",
+  "bucket": "asymmetric_qualifiers",
+  "expected_decision": "fork",
+  "source": "synthetic",
+  "claim_a": {
+    "claim_type": "risk",
+    "field_path": "renewal.risk",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "low"
+    },
+    "polarity": "affirm",
+    "predicate": "account_renewal_risk",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "account_14",
+      "kind": "account"
+    },
+    "text": "Renewal probability looks weak this cycle.",
+    "workspace_id": "workspace_alpha"
+  },
+  "claim_b": {
+    "claim_type": "risk",
+    "field_path": "renewal.risk",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "low"
+    },
+    "polarity": "affirm",
+    "predicate": "account_renewal_risk",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": {
+        "normalized": "phase_3"
+      },
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "account_14",
+      "kind": "account"
+    },
+    "text": "Renewal probability looks weak this cycle.",
+    "workspace_id": "workspace_alpha"
+  },
+  "rationale": "One side carries an additional qualifier — must fork rather than merge."
+}

@@ -1,0 +1,63 @@
+{
+  "pair_id": "positive_paraphrase_100",
+  "bucket": "positive_paraphrases",
+  "expected_decision": "merge",
+  "source": "synthetic",
+  "claim_a": {
+    "claim_type": "stakeholder_role",
+    "field_path": "role.classification",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "blocker"
+    },
+    "polarity": "affirm",
+    "predicate": "stakeholder_role",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "account_99",
+      "kind": "account"
+    },
+    "text": "He has been the primary blocker on the procurement path.",
+    "workspace_id": "workspace_alpha"
+  },
+  "claim_b": {
+    "claim_type": "stakeholder_role",
+    "field_path": "role.classification",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "blocker"
+    },
+    "polarity": "affirm",
+    "predicate": "stakeholder_role",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "account_99",
+      "kind": "account"
+    },
+    "text": "Procurement has stalled because of his pushback.",
+    "workspace_id": "workspace_alpha"
+  },
+  "rationale": "Same subject, predicate, polarity, object, qualifiers, and status; text varies only by paraphrase."
+}

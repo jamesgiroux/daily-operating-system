@@ -1,0 +1,65 @@
+{
+  "pair_id": "low_trust_duplicate_007",
+  "bucket": "low_trust_duplicates",
+  "expected_decision": "ambiguous",
+  "source": "synthetic",
+  "claim_a": {
+    "claim_type": "risk",
+    "field_path": "approval.status",
+    "non_semantic_mergeable": true,
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "approved"
+    },
+    "polarity": "affirm",
+    "predicate": "contract_approval_status",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "account_6",
+      "kind": "account"
+    },
+    "text": "Phase 2 budget approval is pending with finance.",
+    "workspace_id": "workspace_alpha"
+  },
+  "claim_b": {
+    "claim_type": "risk",
+    "field_path": "approval.status",
+    "non_semantic_mergeable": true,
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "approved"
+    },
+    "polarity": "affirm",
+    "predicate": "contract_approval_status",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "account_6",
+      "kind": "account"
+    },
+    "text": "Phase 2 budget approval is pending with finance.",
+    "workspace_id": "workspace_alpha"
+  },
+  "rationale": "Structurally identical claims with weak corroboration — route to needs_verification, not auto-merge."
+}

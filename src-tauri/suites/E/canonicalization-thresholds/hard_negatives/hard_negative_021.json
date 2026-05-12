@@ -1,0 +1,67 @@
+{
+  "pair_id": "hard_negative_021",
+  "bucket": "hard_negatives",
+  "expected_decision": "fork",
+  "source": "synthetic",
+  "claim_a": {
+    "claim_type": "risk",
+    "field_path": "renewal.risk",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "high"
+    },
+    "polarity": "affirm",
+    "predicate": "account_renewal_risk",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": {
+        "normalized": "phase_3"
+      },
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "account_20",
+      "kind": "account"
+    },
+    "text": "Renewal probability looks weak this cycle.",
+    "workspace_id": "workspace_alpha"
+  },
+  "claim_b": {
+    "claim_type": "risk",
+    "field_path": "renewal.risk",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "medium"
+    },
+    "polarity": "affirm",
+    "predicate": "account_renewal_risk",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": {
+        "normalized": "phase_3"
+      },
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "account_20",
+      "kind": "account"
+    },
+    "text": "We expect a clean renewal in Q3.",
+    "workspace_id": "workspace_alpha"
+  },
+  "rationale": "Same subject and predicate but the object value differs — must not merge."
+}

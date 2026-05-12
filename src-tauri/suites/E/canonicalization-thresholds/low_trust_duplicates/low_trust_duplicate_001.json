@@ -1,51 +1,69 @@
 {
   "pair_id": "low_trust_duplicate_001",
   "bucket": "low_trust_duplicates",
-  "expected_decision": "fork",
+  "expected_decision": "ambiguous",
   "source": "synthetic",
   "claim_a": {
-    "text": "The stakeholder role is champion.",
-    "sensitivity": "internal",
-    "subject_ref": { "kind": "account", "id": "account_kappa" },
-    "predicate": "stakeholder_role",
-    "polarity": "affirm",
-    "object": { "kind": "literal", "literal_kind": "enum", "value": "champion" },
-    "qualifiers": {
-      "time": null,
-      "region": null,
-      "scope": null,
-      "entity": { "kind": "person", "id": "person_alpha" },
-      "numerics": [],
-      "extras": {}
+    "claim_type": "risk",
+    "field_path": "approval.status",
+    "non_semantic_mergeable": true,
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "pending_finance_approval"
     },
+    "polarity": "affirm",
+    "predicate": "contract_approval_status",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": {
+        "normalized": "phase_1"
+      },
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
     "status": "confirmed",
-    "sentiment": "positive",
-    "claim_type": "stakeholder",
-    "field_path": "stakeholder.role",
+    "subject_ref": {
+      "id": "account_0",
+      "kind": "account"
+    },
+    "text": "Phase 2 budget approval is pending with finance.",
     "workspace_id": "workspace_alpha"
   },
   "claim_b": {
-    "text": "The stakeholder role is champion.",
-    "sensitivity": "internal",
-    "subject_ref": { "kind": "account", "id": "account_kappa" },
-    "predicate": "stakeholder_role",
-    "polarity": "affirm",
-    "object": { "kind": "literal", "literal_kind": "enum", "value": "champion" },
-    "qualifiers": {
-      "time": null,
-      "region": null,
-      "scope": null,
-      "entity": { "kind": "person", "id": "person_alpha" },
-      "numerics": [],
-      "extras": {}
+    "claim_type": "risk",
+    "field_path": "approval.status",
+    "non_semantic_mergeable": true,
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "pending_finance_approval"
     },
+    "polarity": "affirm",
+    "predicate": "contract_approval_status",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": {
+        "normalized": "phase_1"
+      },
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
     "status": "confirmed",
-    "sentiment": "positive",
-    "claim_type": "stakeholder",
-    "field_path": "stakeholder.role",
-    "workspace_id": "workspace_alpha",
-    "claim_state": "tombstoned",
-    "tombstone_shadowed": true
+    "subject_ref": {
+      "id": "account_0",
+      "kind": "account"
+    },
+    "text": "Phase 2 budget approval is pending with finance.",
+    "workspace_id": "workspace_alpha"
   },
-  "rationale": "Duplicate text and structure must not bypass tombstone protections."
+  "rationale": "Structurally identical claims with weak corroboration — route to needs_verification, not auto-merge."
 }

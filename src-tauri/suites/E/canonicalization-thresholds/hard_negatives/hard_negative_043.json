@@ -1,0 +1,63 @@
+{
+  "pair_id": "hard_negative_043",
+  "bucket": "hard_negatives",
+  "expected_decision": "fork",
+  "source": "synthetic",
+  "claim_a": {
+    "claim_type": "risk",
+    "field_path": "approval.status",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "pending_finance_approval"
+    },
+    "polarity": "affirm",
+    "predicate": "contract_approval_status",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "account_42",
+      "kind": "account"
+    },
+    "text": "Phase 2 budget approval is pending with finance.",
+    "workspace_id": "workspace_alpha"
+  },
+  "claim_b": {
+    "claim_type": "engagement",
+    "field_path": "usage.trend",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "declining"
+    },
+    "polarity": "affirm",
+    "predicate": "product_usage_trend",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "account_42",
+      "kind": "account"
+    },
+    "text": "Weekly active users have dropped 18 percent over the last quarter.",
+    "workspace_id": "workspace_alpha"
+  },
+  "rationale": "Subjects align but predicates differ — must not merge."
+}

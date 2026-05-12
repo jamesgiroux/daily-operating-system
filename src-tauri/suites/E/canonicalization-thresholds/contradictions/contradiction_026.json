@@ -1,0 +1,67 @@
+{
+  "pair_id": "contradiction_026",
+  "bucket": "contradictions",
+  "expected_decision": "contradict",
+  "source": "synthetic",
+  "claim_a": {
+    "claim_type": "engagement",
+    "field_path": "usage.trend",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "declining"
+    },
+    "polarity": "affirm",
+    "predicate": "product_usage_trend",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": {
+        "normalized": "phase_2"
+      },
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "account_25",
+      "kind": "account"
+    },
+    "text": "Usage is trending up this quarter.",
+    "workspace_id": "workspace_alpha"
+  },
+  "claim_b": {
+    "claim_type": "engagement",
+    "field_path": "usage.trend",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "declining"
+    },
+    "polarity": "negate",
+    "predicate": "product_usage_trend",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": {
+        "normalized": "phase_2"
+      },
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "account_25",
+      "kind": "account"
+    },
+    "text": "Usage is not trending up this quarter.",
+    "workspace_id": "workspace_alpha"
+  },
+  "rationale": "Same subject, predicate, qualifiers, and object — opposite polarity."
+}

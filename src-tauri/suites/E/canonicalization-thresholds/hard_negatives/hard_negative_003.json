@@ -1,0 +1,63 @@
+{
+  "pair_id": "hard_negative_003",
+  "bucket": "hard_negatives",
+  "expected_decision": "fork",
+  "source": "synthetic",
+  "claim_a": {
+    "claim_type": "risk",
+    "field_path": "renewal.risk",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "high"
+    },
+    "polarity": "affirm",
+    "predicate": "account_renewal_risk",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "account_2",
+      "kind": "account"
+    },
+    "text": "Renewal probability looks weak this cycle.",
+    "workspace_id": "workspace_alpha"
+  },
+  "claim_b": {
+    "claim_type": "stakeholder_role",
+    "field_path": "role.classification",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "champion"
+    },
+    "polarity": "affirm",
+    "predicate": "stakeholder_role",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "account_2",
+      "kind": "account"
+    },
+    "text": "She is acting as the executive champion for the rollout.",
+    "workspace_id": "workspace_alpha"
+  },
+  "rationale": "Subjects align but predicates differ — must not merge."
+}

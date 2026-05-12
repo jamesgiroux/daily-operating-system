@@ -1,0 +1,63 @@
+{
+  "pair_id": "contradiction_047",
+  "bucket": "contradictions",
+  "expected_decision": "contradict",
+  "source": "synthetic",
+  "claim_a": {
+    "claim_type": "risk",
+    "field_path": "risk.status",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "closed"
+    },
+    "polarity": "affirm",
+    "predicate": "risk_status",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "account_46",
+      "kind": "account"
+    },
+    "text": "The compliance risk is mitigated.",
+    "workspace_id": "workspace_alpha"
+  },
+  "claim_b": {
+    "claim_type": "risk",
+    "field_path": "risk.status",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "closed"
+    },
+    "polarity": "negate",
+    "predicate": "risk_status",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "account_46",
+      "kind": "account"
+    },
+    "text": "The compliance risk is not mitigated.",
+    "workspace_id": "workspace_alpha"
+  },
+  "rationale": "Same subject, predicate, qualifiers, and object — opposite polarity."
+}

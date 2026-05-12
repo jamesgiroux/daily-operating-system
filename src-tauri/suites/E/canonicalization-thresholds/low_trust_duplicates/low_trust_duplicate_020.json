@@ -1,0 +1,65 @@
+{
+  "pair_id": "low_trust_duplicate_020",
+  "bucket": "low_trust_duplicates",
+  "expected_decision": "ambiguous",
+  "source": "synthetic",
+  "claim_a": {
+    "claim_type": "engagement",
+    "field_path": "usage.trend",
+    "non_semantic_mergeable": true,
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "seasonal_spike"
+    },
+    "polarity": "affirm",
+    "predicate": "product_usage_trend",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "account_19",
+      "kind": "account"
+    },
+    "text": "Weekly active users have dropped 18 percent over the last quarter.",
+    "workspace_id": "workspace_alpha"
+  },
+  "claim_b": {
+    "claim_type": "engagement",
+    "field_path": "usage.trend",
+    "non_semantic_mergeable": true,
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "seasonal_spike"
+    },
+    "polarity": "affirm",
+    "predicate": "product_usage_trend",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "account_19",
+      "kind": "account"
+    },
+    "text": "Weekly active users have dropped 18 percent over the last quarter.",
+    "workspace_id": "workspace_alpha"
+  },
+  "rationale": "Structurally identical claims with weak corroboration — route to needs_verification, not auto-merge."
+}

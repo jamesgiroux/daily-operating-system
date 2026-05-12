@@ -1,0 +1,67 @@
+{
+  "pair_id": "positive_paraphrase_101",
+  "bucket": "positive_paraphrases",
+  "expected_decision": "merge",
+  "source": "synthetic",
+  "claim_a": {
+    "claim_type": "risk",
+    "field_path": "risk.status",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "open"
+    },
+    "polarity": "affirm",
+    "predicate": "risk_status",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": {
+        "normalized": "phase_2"
+      },
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "account_100",
+      "kind": "account"
+    },
+    "text": "The compliance gap has been closed.",
+    "workspace_id": "workspace_alpha"
+  },
+  "claim_b": {
+    "claim_type": "risk",
+    "field_path": "risk.status",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "open"
+    },
+    "polarity": "affirm",
+    "predicate": "risk_status",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": {
+        "normalized": "phase_2"
+      },
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "account_100",
+      "kind": "account"
+    },
+    "text": "Compliance no longer flags this account.",
+    "workspace_id": "workspace_alpha"
+  },
+  "rationale": "Same subject, predicate, polarity, object, qualifiers, and status; text varies only by paraphrase."
+}

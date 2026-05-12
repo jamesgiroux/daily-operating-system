@@ -4,46 +4,60 @@
   "expected_decision": "contradict",
   "source": "synthetic",
   "claim_a": {
-    "text": "The account health risk is low.",
-    "sensitivity": "internal",
-    "subject_ref": { "kind": "account", "id": "account_eta" },
-    "predicate": "risk_status",
+    "claim_type": "engagement",
+    "field_path": "usage.trend",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "declining"
+    },
     "polarity": "affirm",
-    "object": { "kind": "literal", "literal_kind": "enum", "value": "low" },
+    "predicate": "product_usage_trend",
     "qualifiers": {
-      "time": null,
+      "entity": null,
+      "extras": {},
+      "numerics": [],
       "region": null,
       "scope": null,
-      "entity": null,
-      "numerics": [],
-      "extras": {}
+      "time": null
     },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
     "status": "confirmed",
-    "sentiment": "positive",
-    "claim_type": "risk",
-    "field_path": "health.risk",
+    "subject_ref": {
+      "id": "account_1",
+      "kind": "account"
+    },
+    "text": "Usage is trending up this quarter.",
     "workspace_id": "workspace_alpha"
   },
   "claim_b": {
-    "text": "The account health risk is high.",
-    "sensitivity": "internal",
-    "subject_ref": { "kind": "account", "id": "account_eta" },
-    "predicate": "risk_status",
-    "polarity": "affirm",
-    "object": { "kind": "literal", "literal_kind": "enum", "value": "high" },
+    "claim_type": "engagement",
+    "field_path": "usage.trend",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "declining"
+    },
+    "polarity": "negate",
+    "predicate": "product_usage_trend",
     "qualifiers": {
-      "time": null,
+      "entity": null,
+      "extras": {},
+      "numerics": [],
       "region": null,
       "scope": null,
-      "entity": null,
-      "numerics": [],
-      "extras": {}
+      "time": null
     },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
     "status": "confirmed",
-    "sentiment": "negative",
-    "claim_type": "risk",
-    "field_path": "health.risk",
+    "subject_ref": {
+      "id": "account_1",
+      "kind": "account"
+    },
+    "text": "Usage is not trending up this quarter.",
     "workspace_id": "workspace_alpha"
   },
-  "rationale": "Same claim scope with opposing object values should be classified as contradiction."
+  "rationale": "Same subject, predicate, qualifiers, and object — opposite polarity."
 }

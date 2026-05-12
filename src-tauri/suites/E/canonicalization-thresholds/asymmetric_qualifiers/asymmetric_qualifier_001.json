@@ -4,46 +4,66 @@
   "expected_decision": "fork",
   "source": "synthetic",
   "claim_a": {
-    "text": "Product usage is increasing in the US region.",
-    "sensitivity": "internal",
-    "subject_ref": { "kind": "account", "id": "account_theta" },
-    "predicate": "product_usage_trend",
-    "polarity": "affirm",
-    "object": { "kind": "literal", "literal_kind": "enum", "value": "increasing" },
-    "qualifiers": {
-      "time": null,
-      "region": { "code": "US" },
-      "scope": null,
-      "entity": null,
-      "numerics": [],
-      "extras": {}
+    "claim_type": "risk",
+    "field_path": "approval.status",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "pending_finance_approval"
     },
+    "polarity": "affirm",
+    "predicate": "contract_approval_status",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": {
+        "normalized": "phase_1"
+      },
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
     "status": "confirmed",
-    "sentiment": "positive",
-    "claim_type": "usage",
-    "field_path": "usage.trend",
+    "subject_ref": {
+      "id": "account_0",
+      "kind": "account"
+    },
+    "text": "Phase 2 budget approval is pending with finance.",
     "workspace_id": "workspace_alpha"
   },
   "claim_b": {
-    "text": "Product usage is increasing.",
-    "sensitivity": "internal",
-    "subject_ref": { "kind": "account", "id": "account_theta" },
-    "predicate": "product_usage_trend",
-    "polarity": "affirm",
-    "object": { "kind": "literal", "literal_kind": "enum", "value": "increasing" },
-    "qualifiers": {
-      "time": null,
-      "region": null,
-      "scope": null,
-      "entity": null,
-      "numerics": [],
-      "extras": {}
+    "claim_type": "risk",
+    "field_path": "approval.status",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "pending_finance_approval"
     },
+    "polarity": "affirm",
+    "predicate": "contract_approval_status",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": {
+        "normalized": "phase_1"
+      },
+      "time": {
+        "normalized": "2026-Q1"
+      }
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
     "status": "confirmed",
-    "sentiment": "positive",
-    "claim_type": "usage",
-    "field_path": "usage.trend",
+    "subject_ref": {
+      "id": "account_0",
+      "kind": "account"
+    },
+    "text": "Phase 2 budget approval is pending with finance.",
     "workspace_id": "workspace_alpha"
   },
-  "rationale": "One-sided region qualifier must fail closed rather than collapse scoped and unscoped claims."
+  "rationale": "One side carries an additional qualifier — must fork rather than merge."
 }

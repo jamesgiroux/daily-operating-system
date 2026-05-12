@@ -1,51 +1,65 @@
 {
   "pair_id": "low_trust_duplicate_002",
   "bucket": "low_trust_duplicates",
-  "expected_decision": "fork",
+  "expected_decision": "ambiguous",
   "source": "synthetic",
   "claim_a": {
-    "text": "The account objective is expansion readiness.",
-    "sensitivity": "internal",
-    "subject_ref": { "kind": "account", "id": "account_lambda" },
-    "predicate": "account_objective_status",
+    "claim_type": "engagement",
+    "field_path": "usage.trend",
+    "non_semantic_mergeable": true,
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "declining"
+    },
     "polarity": "affirm",
-    "object": { "kind": "literal", "literal_kind": "enum", "value": "expansion_readiness" },
+    "predicate": "product_usage_trend",
     "qualifiers": {
-      "time": null,
+      "entity": null,
+      "extras": {},
+      "numerics": [],
       "region": null,
       "scope": null,
-      "entity": null,
-      "numerics": [],
-      "extras": {}
+      "time": null
     },
-    "status": "confirmed",
+    "sensitivity": "internal",
     "sentiment": "neutral",
-    "claim_type": "objective",
-    "field_path": "objective.status",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "account_1",
+      "kind": "account"
+    },
+    "text": "Weekly active users have dropped 18 percent over the last quarter.",
     "workspace_id": "workspace_alpha"
   },
   "claim_b": {
-    "text": "The account objective is expansion readiness.",
-    "sensitivity": "internal",
-    "subject_ref": { "kind": "account", "id": "account_lambda" },
-    "predicate": "account_objective_status",
+    "claim_type": "engagement",
+    "field_path": "usage.trend",
+    "non_semantic_mergeable": true,
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "declining"
+    },
     "polarity": "affirm",
-    "object": { "kind": "literal", "literal_kind": "enum", "value": "expansion_readiness" },
+    "predicate": "product_usage_trend",
     "qualifiers": {
-      "time": null,
+      "entity": null,
+      "extras": {},
+      "numerics": [],
       "region": null,
       "scope": null,
-      "entity": null,
-      "numerics": [],
-      "extras": {}
+      "time": null
     },
-    "status": "confirmed",
+    "sensitivity": "internal",
     "sentiment": "neutral",
-    "claim_type": "objective",
-    "field_path": "objective.status",
-    "workspace_id": "workspace_alpha",
-    "canonical_status": "legacy_unmigrated",
-    "non_semantic_mergeable": true
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "account_1",
+      "kind": "account"
+    },
+    "text": "Weekly active users have dropped 18 percent over the last quarter.",
+    "workspace_id": "workspace_alpha"
   },
-  "rationale": "Legacy-unmigrated rows must not enter the v2 merge path even when the text is identical."
+  "rationale": "Structurally identical claims with weak corroboration — route to needs_verification, not auto-merge."
 }

@@ -1,0 +1,65 @@
+{
+  "pair_id": "asymmetric_qualifier_014",
+  "bucket": "asymmetric_qualifiers",
+  "expected_decision": "fork",
+  "source": "synthetic",
+  "claim_a": {
+    "claim_type": "engagement",
+    "field_path": "usage.trend",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "rising"
+    },
+    "polarity": "affirm",
+    "predicate": "product_usage_trend",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "account_13",
+      "kind": "account"
+    },
+    "text": "Weekly active users have dropped 18 percent over the last quarter.",
+    "workspace_id": "workspace_alpha"
+  },
+  "claim_b": {
+    "claim_type": "engagement",
+    "field_path": "usage.trend",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "rising"
+    },
+    "polarity": "affirm",
+    "predicate": "product_usage_trend",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": {
+        "code": "EU"
+      },
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "account_13",
+      "kind": "account"
+    },
+    "text": "Weekly active users have dropped 18 percent over the last quarter.",
+    "workspace_id": "workspace_alpha"
+  },
+  "rationale": "One side carries an additional qualifier — must fork rather than merge."
+}

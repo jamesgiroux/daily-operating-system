@@ -4,46 +4,62 @@
   "expected_decision": "fork",
   "source": "synthetic",
   "claim_a": {
-    "text": "Executive sponsorship is active for Q3.",
-    "sensitivity": "internal",
-    "subject_ref": { "kind": "account", "id": "account_iota" },
-    "predicate": "relationship_champion_status",
+    "claim_type": "engagement",
+    "field_path": "usage.trend",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "declining"
+    },
     "polarity": "affirm",
-    "object": { "kind": "literal", "literal_kind": "enum", "value": "active" },
+    "predicate": "product_usage_trend",
     "qualifiers": {
-      "time": { "normalized": "2026-Q3" },
+      "entity": null,
+      "extras": {},
+      "numerics": [],
       "region": null,
       "scope": null,
-      "entity": null,
-      "numerics": [],
-      "extras": {}
+      "time": null
     },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
     "status": "confirmed",
-    "sentiment": "positive",
-    "claim_type": "relationship",
-    "field_path": "relationship.champion",
+    "subject_ref": {
+      "id": "account_1",
+      "kind": "account"
+    },
+    "text": "Weekly active users have dropped 18 percent over the last quarter.",
     "workspace_id": "workspace_alpha"
   },
   "claim_b": {
-    "text": "Executive sponsorship is active.",
-    "sensitivity": "internal",
-    "subject_ref": { "kind": "account", "id": "account_iota" },
-    "predicate": "relationship_champion_status",
-    "polarity": "affirm",
-    "object": { "kind": "literal", "literal_kind": "enum", "value": "active" },
-    "qualifiers": {
-      "time": null,
-      "region": null,
-      "scope": null,
-      "entity": null,
-      "numerics": [],
-      "extras": {}
+    "claim_type": "engagement",
+    "field_path": "usage.trend",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "declining"
     },
+    "polarity": "affirm",
+    "predicate": "product_usage_trend",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": {
+        "code": "EU"
+      },
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
     "status": "confirmed",
-    "sentiment": "positive",
-    "claim_type": "relationship",
-    "field_path": "relationship.champion",
-    "workspace_id": "workspace_beta"
+    "subject_ref": {
+      "id": "account_1",
+      "kind": "account"
+    },
+    "text": "Weekly active users have dropped 18 percent over the last quarter.",
+    "workspace_id": "workspace_alpha"
   },
-  "rationale": "One-sided temporal qualifier plus workspace mismatch must stay forked."
+  "rationale": "One side carries an additional qualifier — must fork rather than merge."
 }

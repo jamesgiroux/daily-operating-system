@@ -1,0 +1,65 @@
+{
+  "pair_id": "asymmetric_qualifier_047",
+  "bucket": "asymmetric_qualifiers",
+  "expected_decision": "fork",
+  "source": "synthetic",
+  "claim_a": {
+    "claim_type": "risk",
+    "field_path": "risk.status",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "closed"
+    },
+    "polarity": "affirm",
+    "predicate": "risk_status",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "account_46",
+      "kind": "account"
+    },
+    "text": "Migration risk is still open and unresolved.",
+    "workspace_id": "workspace_alpha"
+  },
+  "claim_b": {
+    "claim_type": "risk",
+    "field_path": "risk.status",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "closed"
+    },
+    "polarity": "affirm",
+    "predicate": "risk_status",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": {
+        "normalized": "phase_3"
+      },
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "account_46",
+      "kind": "account"
+    },
+    "text": "Migration risk is still open and unresolved.",
+    "workspace_id": "workspace_alpha"
+  },
+  "rationale": "One side carries an additional qualifier — must fork rather than merge."
+}
