@@ -2830,15 +2830,10 @@ fn canonical_match_config(
     config
 }
 
-fn comparison_requires_embedding(
+fn free_text_embedding_comparison_needed(
     query: &CanonicalMatchInput,
     candidate: &CanonicalMatchInput,
-    outcome: &CanonicalMatchOutcome,
 ) -> bool {
-    if outcome.decision == CanonicalDecisionKind::ForkFiltered {
-        return false;
-    }
-
     let (
         ObjectValue::FreeText {
             canonical: left_text,
@@ -2854,6 +2849,18 @@ fn comparison_requires_embedding(
     normalize_embedding_text(left_text) != normalize_embedding_text(right_text)
 }
 
+fn canonical_decision_depends_on_free_text_similarity(outcome: &CanonicalMatchOutcome) -> bool {
+    matches!(
+        outcome.decision,
+        CanonicalDecisionKind::Fork
+            | CanonicalDecisionKind::ForkContradiction
+            | CanonicalDecisionKind::ForkAmbiguous
+    ) && matches!(
+        outcome.reason.as_str(),
+        "object_distinct" | "ambiguous:object"
+    )
+}
+
 fn decision_record_config(
     query: &CanonicalMatchInput,
     candidate: &CanonicalMatchInput,
@@ -2861,7 +2868,8 @@ fn decision_record_config(
     config: &CanonicalMatchConfig,
 ) -> CanonicalMatchConfig {
     if matches!(config.mode, CanonicalizationMode::HashFallback)
-        && !comparison_requires_embedding(query, candidate, outcome)
+        && !(free_text_embedding_comparison_needed(query, candidate)
+            && canonical_decision_depends_on_free_text_similarity(outcome))
     {
         return CanonicalMatchConfig::default();
     }
@@ -4373,7 +4381,7 @@ fn load_shadow_candidate_inputs_with_tombstone_lookup(
     query: &CanonicalMatchInput,
     mut tombstone_lookup: impl FnMut(&CanonicalMatchInput) -> Result<bool, ClaimError>,
 ) -> Result<Vec<CanonicalMatchInput>, ClaimError> {
-    let canonical_subject_kind_sql = "CASE
+    let subject_kind_raw_sql = "CASE
         WHEN json_valid(subject_ref) = 1 THEN lower(coalesce(
             json_extract(subject_ref, '$.kind'),
             json_extract(subject_ref, '$.type'),
@@ -4381,6 +4389,16 @@ fn load_shadow_candidate_inputs_with_tombstone_lookup(
         ))
         ELSE NULL
     END";
+    let canonical_subject_kind_sql = format!(
+        "CASE
+            WHEN ({subject_kind_raw_sql}) IN ('account', 'accounts') THEN 'account'
+            WHEN ({subject_kind_raw_sql}) IN ('meeting', 'meetings') THEN 'meeting'
+            WHEN ({subject_kind_raw_sql}) IN ('person', 'people') THEN 'person'
+            WHEN ({subject_kind_raw_sql}) IN ('project', 'projects') THEN 'project'
+            WHEN ({subject_kind_raw_sql}) IN ('email', 'emails') THEN 'email'
+            ELSE ({subject_kind_raw_sql})
+        END"
+    );
     let canonical_subject_id_sql = "CASE
         WHEN json_valid(subject_ref) = 1 THEN coalesce(
             json_extract(subject_ref, '$.id'),
@@ -9935,6 +9953,73 @@ mod tests {
     }
 
     #[test]
+    fn l3_finding_3_subject_kind_aliases_remain_in_shadow_enumeration() {
+        let db = test_db();
+        let cases = [
+            ("account", "account", "accounts"),
+            ("person", "person", "people"),
+            ("project", "project", "projects"),
+            ("meeting", "meeting", "meetings"),
+            ("email", "email", "emails"),
+        ];
+
+        for (canonical_kind, singular_kind, plural_kind) in cases {
+            let subject_id = format!("{canonical_kind}-alias-target");
+            let query_id = format!("claim-alias-{canonical_kind}-query");
+            let query_subject = format!(r#"{{"kind":"{singular_kind}","id":"{subject_id}"}}"#);
+            insert_fixture_claim(
+                &db,
+                &query_id,
+                &query_subject,
+                "risk",
+                &format!("{canonical_kind} alias query risk"),
+                ClaimState::Active,
+                SurfacingState::Active,
+            );
+
+            for (label, candidate_kind) in [("singular", singular_kind), ("plural", plural_kind)] {
+                let candidate_id = format!("claim-alias-{canonical_kind}-{label}");
+                let candidate_subject =
+                    format!(r#"{{"kind":"{candidate_kind}","id":"{subject_id}"}}"#);
+                insert_fixture_claim(
+                    &db,
+                    &candidate_id,
+                    &candidate_subject,
+                    "risk",
+                    &format!("{canonical_kind} alias {label} risk"),
+                    ClaimState::Active,
+                    SurfacingState::Active,
+                );
+            }
+
+            let query = load_canonical_match_input_by_id(db.conn_ref(), &query_id)
+                .unwrap()
+                .unwrap();
+            assert_eq!(query.canonical_subject_kind, canonical_kind);
+
+            let candidates =
+                load_shadow_candidate_inputs_with_tombstone_lookup(db.conn_ref(), &query, |_| {
+                    Ok(false)
+                })
+                .unwrap();
+            let mut candidate_ids = candidates
+                .into_iter()
+                .map(|candidate| candidate.claim_id)
+                .collect::<Vec<_>>();
+            candidate_ids.sort();
+
+            assert_eq!(
+                candidate_ids,
+                vec![
+                    format!("claim-alias-{canonical_kind}-plural"),
+                    format!("claim-alias-{canonical_kind}-singular"),
+                ],
+                "{canonical_kind} query must enumerate singular and plural subject_ref aliases"
+            );
+        }
+    }
+
+    #[test]
     fn l3_finding_5a_deterministic_canonicalization_does_not_hash_downgrade_live_surfaces() {
         let db = test_db();
         let pairs = [
@@ -10057,10 +10142,99 @@ mod tests {
     }
 
     #[test]
+    fn l3_finding_5_qualifier_mismatch_with_hash_config_records_deterministic_mode() {
+        let db = test_db();
+        let query_id = "claim-hash-qualifier-query";
+        let candidate_id = "claim-hash-qualifier-candidate";
+        insert_fixture_claim(
+            &db,
+            query_id,
+            SUBJECT,
+            "risk",
+            "renewal risk remains open for executive review",
+            ClaimState::Active,
+            SurfacingState::Active,
+        );
+        insert_fixture_claim(
+            &db,
+            candidate_id,
+            SUBJECT,
+            "risk",
+            "implementation timeline pressure remains visible",
+            ClaimState::Active,
+            SurfacingState::Active,
+        );
+
+        let mut regional_qualifier = QualifierSet::default();
+        regional_qualifier.region = Some(abilities_runtime::structured_claim::RegionCode {
+            code: "EU".to_string(),
+        });
+        db.conn_ref()
+            .execute(
+                "UPDATE intelligence_claims /* dos7-allowed: qualifier mismatch fixture */
+                 SET qualifiers = ?1
+                 WHERE id = ?2",
+                params![
+                    serde_json::to_string(&regional_qualifier).unwrap(),
+                    candidate_id
+                ],
+            )
+            .unwrap();
+
+        let query = load_canonical_match_input_by_id(db.conn_ref(), query_id)
+            .unwrap()
+            .unwrap();
+        let candidate = load_canonical_match_input_by_id(db.conn_ref(), candidate_id)
+            .unwrap()
+            .unwrap();
+        let config = canonical_match_config(&query, &candidate);
+        assert_eq!(config.mode, CanonicalizationMode::HashFallback);
+
+        let outcome = canonical_match_v2(&query, &candidate, &config);
+        assert_eq!(outcome.decision, CanonicalDecisionKind::Fork);
+        assert_eq!(outcome.reason, "qualifier_mismatch");
+
+        with_claim_transaction(&db, |tx| {
+            insert_canonicalization_decision_in_tx(
+                tx,
+                &query,
+                &candidate,
+                &outcome,
+                &config,
+                CanonicalizationDecisionMode::Live,
+                TS,
+                TS,
+            )
+        })
+        .unwrap();
+
+        let recorded: (String, String) = db
+            .conn_ref()
+            .query_row(
+                "SELECT canonicalization_mode, embedding_model_version
+                 FROM canonicalization_decisions
+                 WHERE claim_id_a = ?1 OR claim_id_b = ?1",
+                params![query_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(recorded.0, "full");
+        assert_eq!(
+            recorded.1,
+            CLAIM_EMBEDDING_DETERMINISTIC_MODEL_VERSION.to_string()
+        );
+        assert_eq!(signal_count(&db, "trust_band_downgraded"), 0);
+        assert!(
+            claim_recompute_subjects(&db).is_empty(),
+            "deterministic qualifier mismatch must not enqueue recompute via hash downgrade"
+        );
+    }
+
+    #[test]
     fn l3_finding_5b_pair_signals_enqueue_recompute_for_each_claim_subject() {
-        let merge_outcome = CanonicalMatchOutcome {
-            decision: CanonicalDecisionKind::Merge,
-            reason: "all_match".to_string(),
+        let hash_outcome = CanonicalMatchOutcome {
+            decision: CanonicalDecisionKind::ForkContradiction,
+            reason: "object_distinct".to_string(),
             reason_secondary: Vec::new(),
             threshold_band: None,
             field_scores: serde_json::json!({}),
@@ -10080,7 +10254,7 @@ mod tests {
                 tx,
                 &hash_a,
                 &hash_b,
-                &merge_outcome,
+                &hash_outcome,
                 &hash_fallback_canonical_match_config(),
                 CanonicalizationDecisionMode::Live,
                 TS,
@@ -10485,9 +10659,9 @@ mod tests {
         let hash_b = load_canonical_match_input_by_id(db.conn_ref(), "claim-surface-hash-b")
             .unwrap()
             .unwrap();
-        let merge_outcome = CanonicalMatchOutcome {
-            decision: CanonicalDecisionKind::Merge,
-            reason: "all_match".to_string(),
+        let hash_outcome = CanonicalMatchOutcome {
+            decision: CanonicalDecisionKind::ForkContradiction,
+            reason: "object_distinct".to_string(),
             reason_secondary: Vec::new(),
             threshold_band: None,
             field_scores: serde_json::json!({}),
@@ -10505,7 +10679,7 @@ mod tests {
                 tx,
                 &hash_a,
                 &hash_b,
-                &merge_outcome,
+                &hash_outcome,
                 &hash_fallback_canonical_match_config(),
                 CanonicalizationDecisionMode::Shadow,
                 TS,
@@ -10567,7 +10741,7 @@ mod tests {
                 tx,
                 &hash_a,
                 &hash_b,
-                &merge_outcome,
+                &hash_outcome,
                 &hash_fallback_canonical_match_config(),
                 CanonicalizationDecisionMode::Live,
                 "2026-05-02T12:02:00+00:00",
