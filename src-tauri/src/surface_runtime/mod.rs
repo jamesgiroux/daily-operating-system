@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
 use std::error::Error;
 use std::net::{Ipv4Addr, SocketAddr};
@@ -23,6 +23,12 @@ use tokio::sync::watch;
 use tokio::task::{AbortHandle, JoinHandle, JoinSet};
 use uuid::Uuid;
 
+use crate::services::surface_pairing::{
+    self, PairingCodeFailureInput, PairingHandshakeCapacityInput, PairingHandshakeInput,
+    PairingHandshakeRequest, SignedSessionValidationInput, SignedSiteClaimsInput,
+    SignedTransportFailureInput, SurfacePairingAuditEvent, SurfacePairingError,
+    ValidatedSurfaceSession,
+};
 use crate::state::AppState;
 
 mod hmac;
@@ -111,6 +117,13 @@ pub struct SurfaceEndpointPairingStatus {
     pub endpoint_version: &'static str,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RuntimePairingContext {
+    pub startup_id: Uuid,
+    pub bound_port: u16,
+    pub runtime_anchor_id: String,
+}
+
 #[derive(Debug)]
 pub struct SurfaceEndpointStartError {
     message: String,
@@ -127,7 +140,7 @@ impl std::error::Error for SurfaceEndpointStartError {}
 #[derive(Default)]
 pub struct SurfaceEndpointState {
     inner: Mutex<EndpointInner>,
-    paired_site_origin: Arc<RwLock<Option<String>>>,
+    paired_site_origins: Arc<RwLock<HashSet<String>>>,
     pairing_attempts: Arc<Mutex<PairingAttemptLimiter>>,
     signed_transport: hmac::SignedTransportState,
 }
@@ -142,6 +155,7 @@ struct EndpointInner {
 struct RunningEndpoint {
     startup_id: Uuid,
     bound_port: u16,
+    runtime_anchor_id: String,
     shutdown: watch::Sender<bool>,
     abort: AbortHandle,
 }
@@ -173,18 +187,32 @@ impl SurfaceEndpointState {
         }
     }
 
+    pub fn runtime_pairing_context(&self) -> Result<RuntimePairingContext, String> {
+        let inner = self.inner.lock();
+        let running = inner
+            .running
+            .as_ref()
+            .ok_or_else(|| "Surface runtime endpoint is not running.".to_string())?;
+        Ok(RuntimePairingContext {
+            startup_id: running.startup_id,
+            bound_port: running.bound_port,
+            runtime_anchor_id: running.runtime_anchor_id.clone(),
+        })
+    }
+
     #[cfg(test)]
     pub async fn start(
         self: Arc<Self>,
         config: SurfaceEndpointConfig,
     ) -> Result<SurfaceEndpointSnapshot, SurfaceEndpointStartError> {
-        let (snapshot, _listener) = self.start_listener(config).await?;
+        let (snapshot, _listener) = self.start_listener(config, None).await?;
         Ok(snapshot)
     }
 
     async fn start_listener(
         self: Arc<Self>,
         config: SurfaceEndpointConfig,
+        app_state: Option<Arc<AppState>>,
     ) -> Result<(SurfaceEndpointSnapshot, JoinHandle<()>), SurfaceEndpointStartError> {
         self.stop();
         {
@@ -199,7 +227,16 @@ impl SurfaceEndpointState {
         }
         self.signed_transport
             .configure(config.signed_transport.clone());
-        *self.paired_site_origin.write() = None;
+        self.paired_site_origins.write().clear();
+        let runtime_anchor_id = if app_state.is_some() {
+            crate::db::key_provider::get_or_create_surface_runtime_anchor_id().map_err(|error| {
+                let message = format!("surface endpoint runtime anchor unavailable: {error}");
+                self.mark_failed(message.clone());
+                SurfaceEndpointStartError::new(message)
+            })?
+        } else {
+            "test_runtime_anchor".to_string()
+        };
 
         let max_attempts = config.max_bind_attempts.clamp(1, DEFAULT_MAX_BIND_ATTEMPTS);
         let mut last_error = None;
@@ -222,12 +259,15 @@ impl SurfaceEndpointState {
                     let startup_id = Uuid::new_v4();
                     let (shutdown, shutdown_rx) = watch::channel(false);
                     let runtime = Arc::new(EndpointRuntime {
+                        startup_id,
                         bound_port,
+                        runtime_anchor_id: runtime_anchor_id.clone(),
                         loopback_bucket: Mutex::new(TokenBucket::new(config.loopback_abuse)),
                         pairing_attempts: Arc::clone(&self.pairing_attempts),
-                        paired_site_origin: Arc::clone(&self.paired_site_origin),
+                        paired_site_origins: Arc::clone(&self.paired_site_origins),
                         signed_transport: self.signed_transport.clone(),
                         signed_request_max_body_bytes: config.signed_request_max_body_bytes,
+                        app_state: app_state.clone(),
                     });
                     let endpoint_state = Arc::clone(&self);
                     let join = tokio::spawn(async move {
@@ -243,6 +283,7 @@ impl SurfaceEndpointState {
                         inner.running = Some(RunningEndpoint {
                             startup_id,
                             bound_port,
+                            runtime_anchor_id: runtime_anchor_id.clone(),
                             shutdown,
                             abort,
                         });
@@ -265,8 +306,9 @@ impl SurfaceEndpointState {
     pub async fn run_until_stopped(
         self: Arc<Self>,
         config: SurfaceEndpointConfig,
+        app_state: Arc<AppState>,
     ) -> Result<(), SurfaceEndpointStartError> {
-        let (snapshot, listener) = self.clone().start_listener(config).await?;
+        let (snapshot, listener) = self.clone().start_listener(config, Some(app_state)).await?;
         let startup_id = snapshot.startup_id.unwrap_or_else(Uuid::new_v4);
         match listener.await {
             Ok(()) => {
@@ -305,12 +347,21 @@ impl SurfaceEndpointState {
     }
 
     pub fn set_paired_site_url_for_origin_guard(&self, site_url: Option<&str>) {
-        *self.paired_site_origin.write() = site_url.and_then(normalize_origin);
+        let mut origins = self.paired_site_origins.write();
+        origins.clear();
+        if let Some(origin) = site_url.and_then(normalize_origin) {
+            origins.insert(origin);
+        }
+    }
+
+    pub fn forget_surface_client_sessions(&self, surface_client_id: &str) {
+        self.signed_transport
+            .remove_sessions_for_surface_client(surface_client_id);
     }
 
     fn clear_pairing_state(&self) {
         self.pairing_attempts.lock().attempts_by_code.clear();
-        *self.paired_site_origin.write() = None;
+        self.paired_site_origins.write().clear();
         self.signed_transport.clear_runtime_state();
     }
 
@@ -366,7 +417,7 @@ pub async fn run_supervised_http_endpoint(state: Arc<AppState>) {
     if let Err(error) = state
         .surface_runtime_endpoint
         .clone()
-        .run_until_stopped(config)
+        .run_until_stopped(config, state.clone())
         .await
     {
         log::warn!("Surface runtime endpoint unavailable: {error}");
@@ -412,12 +463,15 @@ impl From<&crate::types::SurfaceRuntimeConfig> for SurfaceEndpointConfig {
 }
 
 struct EndpointRuntime {
+    startup_id: Uuid,
     bound_port: u16,
+    runtime_anchor_id: String,
     loopback_bucket: Mutex<TokenBucket>,
     pairing_attempts: Arc<Mutex<PairingAttemptLimiter>>,
-    paired_site_origin: Arc<RwLock<Option<String>>>,
+    paired_site_origins: Arc<RwLock<HashSet<String>>>,
     signed_transport: hmac::SignedTransportState,
     signed_request_max_body_bytes: usize,
+    app_state: Option<Arc<AppState>>,
 }
 
 async fn run_listener(
@@ -471,11 +525,10 @@ async fn handle_hyper_request(
     runtime: Arc<EndpointRuntime>,
 ) -> Result<Response<ResponseBody>, Infallible> {
     let request_id = request_id_from_headers(request.headers());
-    let transport_check = validate_transport_headers(
-        request.headers(),
-        runtime.bound_port,
-        runtime.paired_site_origin.read().as_deref(),
-    );
+    let transport_check = {
+        let origins = runtime.paired_site_origins.read();
+        validate_transport_headers(request.headers(), runtime.bound_port, &origins)
+    };
     if let Err(error) = transport_check {
         return Ok(error_response(error.with_request_id(request_id)));
     }
@@ -517,7 +570,8 @@ async fn handle_hyper_request(
         },
         runtime,
         request_id,
-    ))
+    )
+    .await)
 }
 
 async fn collect_limited_body<B>(body: B, max_bytes: usize) -> Result<Bytes, SurfaceHttpError>
@@ -543,7 +597,7 @@ struct SurfaceHttpRequest {
     body: Bytes,
 }
 
-fn dispatch_surface_request(
+async fn dispatch_surface_request(
     request: SurfaceHttpRequest,
     runtime: Arc<EndpointRuntime>,
     request_id: String,
@@ -552,23 +606,23 @@ fn dispatch_surface_request(
     match (&request.method, path.as_str()) {
         (&Method::GET, "/v1/surface/health") => health_response(request_id),
         (&Method::POST, "/v1/pairing/handshake") => {
-            pairing_handshake_skeleton_response(request.body, runtime, request_id)
+            pairing_handshake_response(request.body, runtime, request_id).await
         }
         _ if is_signed_route_candidate(path.as_str()) => {
             let route_supported = is_supported_signed_route(&request.method, path.as_str());
-            signed_transport_skeleton_response(request, runtime, request_id, route_supported)
+            signed_transport_response(request, runtime, request_id, route_supported).await
         }
         _ => error_response(SurfaceHttpError::route_not_found().with_request_id(request_id)),
     }
 }
 
-fn signed_transport_skeleton_response(
+async fn signed_transport_response(
     request: SurfaceHttpRequest,
     runtime: Arc<EndpointRuntime>,
     request_id: String,
     route_supported: bool,
 ) -> Response<ResponseBody> {
-    if let Err(error) = runtime.signed_transport.verify(hmac::SignedRequest {
+    let verified = match runtime.signed_transport.verify(hmac::SignedRequest {
         headers: &request.headers,
         method: &request.method,
         uri: &request.uri,
@@ -576,17 +630,78 @@ fn signed_transport_skeleton_response(
         now: Utc::now(),
         instant: Instant::now(),
     }) {
-        log_signing_failure(&request, &request_id, &error);
-        return error_response(
-            SurfaceHttpError::from_signed_transport(error).with_request_id(request_id),
-        );
+        Ok(verified) => verified,
+        Err(error) => {
+            log_signing_failure(&request, &request_id, &error);
+            record_signed_transport_failure(&runtime, &request, &error).await;
+            return error_response(
+                SurfaceHttpError::from_signed_transport(error).with_request_id(request_id),
+            );
+        }
+    };
+
+    let Some(app_state) = runtime.app_state.as_ref().cloned() else {
+        return error_response(SurfaceHttpError::runtime_unavailable().with_request_id(request_id));
+    };
+
+    let validation_input = SignedSessionValidationInput {
+        session_id: verified.session_id.clone(),
+        surface_client_id: verified.surface_client_id.clone(),
+        runtime_anchor_id: runtime.runtime_anchor_id.clone(),
+        site_claims: SignedSiteClaimsInput {
+            wp_site_id: verified.wp_site_id.clone(),
+            home_url: verified.home_url.clone(),
+            site_url: verified.site_url.clone(),
+            wp_install_uuid: verified.wp_install_uuid.clone(),
+            plugin_instance_uuid: verified.plugin_instance_uuid.clone(),
+            multisite_blog_id: verified.multisite_blog_id.clone(),
+        },
+        site_nonce: verified.site_nonce.clone(),
+        wp_user_id: verified.wp_user_id,
+        wp_user_hash: verified.wp_user_hash.clone(),
+        now: Utc::now(),
+    };
+    let validated = match app_state
+        .db_write(move |db| {
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let external = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &external);
+            Ok(surface_pairing::validate_signed_session(
+                &ctx,
+                db,
+                validation_input,
+            ))
+        })
+        .await
+    {
+        Ok(Ok(validated)) => validated,
+        Ok(Err(error)) => {
+            for event in validation_rejection_events(&verified, &error) {
+                emit_pairing_audit_event(&app_state, &event);
+            }
+            evict_cached_session_after_validation_error(
+                &runtime.signed_transport,
+                &verified.surface_client_id,
+                &error,
+            );
+            return error_response(
+                SurfaceHttpError::from_pairing_error(error).with_request_id(request_id),
+            );
+        }
+        Err(error) => {
+            return error_response(
+                SurfaceHttpError::from_pairing_error(SurfacePairingError::Write(error))
+                    .with_request_id(request_id),
+            );
+        }
+    };
+
+    if !route_supported {
+        return error_response(SurfaceHttpError::route_not_found().with_request_id(request_id));
     }
 
-    if route_supported {
-        error_response(SurfaceHttpError::runtime_unavailable().with_request_id(request_id))
-    } else {
-        error_response(SurfaceHttpError::route_not_found().with_request_id(request_id))
-    }
+    signed_route_response(&request, validated, request_id)
 }
 
 fn is_supported_signed_route(method: &Method, path: &str) -> bool {
@@ -627,28 +742,463 @@ fn log_signing_failure(
     );
 }
 
-fn pairing_handshake_skeleton_response(
+async fn pairing_handshake_response(
     body: Bytes,
     runtime: Arc<EndpointRuntime>,
     request_id: String,
 ) -> Response<ResponseBody> {
-    if let Some(pairing_code) = pairing_code_from_body(&body) {
-        if runtime
-            .pairing_attempts
-            .lock()
-            .record_failed_attempt(&pairing_code)
-            .is_limited()
-        {
+    let Some(app_state) = runtime.app_state.as_ref().cloned() else {
+        return error_response(SurfaceHttpError::runtime_unavailable().with_request_id(request_id));
+    };
+
+    let request = match serde_json::from_slice::<PairingHandshakeRequest>(&body) {
+        Ok(request) => request,
+        Err(_error) => {
+            if let Some(pairing_code) = pairing_code_from_body(&body) {
+                let max_failed_attempts = runtime
+                    .pairing_attempts
+                    .lock()
+                    .config
+                    .max_failed_attempts_per_code;
+                let input = PairingCodeFailureInput {
+                    endpoint_startup_id: runtime.startup_id.to_string(),
+                    bound_port: runtime.bound_port,
+                    pairing_code,
+                    max_failed_attempts,
+                    now: Utc::now(),
+                };
+                if let Some(error) = match app_state
+                    .db_write(move |db| {
+                        let clock = crate::services::context::SystemClock;
+                        let rng = crate::services::context::SystemRng;
+                        let external = crate::services::context::ExternalClients::default();
+                        let ctx = crate::services::context::ServiceContext::new_live(
+                            &clock, &rng, &external,
+                        );
+                        surface_pairing::record_pairing_code_failure_with_audit(&ctx, db, input)
+                            .map_err(|error| error.to_string())
+                    })
+                    .await
+                {
+                    Ok(outcome) => {
+                        emit_pairing_audit_event(&app_state, &outcome.audit);
+                        outcome.error
+                    }
+                    Err(error) => {
+                        return error_response(
+                            SurfaceHttpError::from_pairing_error(SurfacePairingError::Write(error))
+                                .with_request_id(request_id),
+                        );
+                    }
+                } {
+                    if matches!(error, SurfacePairingError::PairingCodeLimited) {
+                        return error_response(
+                            SurfaceHttpError::from_pairing_error(error).with_request_id(request_id),
+                        );
+                    }
+                }
+            }
             return error_response(
-                SurfaceHttpError::rate_limited_without_retry()
-                    .with_message("Too many failed pairing attempts.")
-                    .with_remediation("Generate a fresh pairing string in DailyOS and retry.")
+                SurfaceHttpError::bad_request("handshake_body_invalid")
+                    .with_safe_message("The pairing handshake payload is invalid.")
                     .with_request_id(request_id),
             );
         }
+    };
+
+    let max_failed_attempts = runtime
+        .pairing_attempts
+        .lock()
+        .config
+        .max_failed_attempts_per_code;
+    let failure_audit_input = PairingCodeFailureInput {
+        endpoint_startup_id: runtime.startup_id.to_string(),
+        bound_port: runtime.bound_port,
+        pairing_code: request.pairing_code.clone(),
+        max_failed_attempts,
+        now: Utc::now(),
+    };
+    let capacity_input = PairingHandshakeCapacityInput {
+        runtime_anchor_id: runtime.runtime_anchor_id.clone(),
+        request: request.clone(),
+    };
+    let replaceable_surface_client_ids = match app_state
+        .db_write(move |db| {
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let external = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &external);
+            Ok(
+                surface_pairing::replaceable_surface_client_ids_for_handshake(
+                    &ctx,
+                    db,
+                    capacity_input,
+                ),
+            )
+        })
+        .await
+    {
+        Ok(Ok(ids)) => Some(ids),
+        Ok(Err(SurfacePairingError::BadRequest(_))) => None,
+        Ok(Err(error)) => {
+            return error_response(
+                SurfaceHttpError::from_pairing_error(error).with_request_id(request_id),
+            );
+        }
+        Err(error) => {
+            return error_response(
+                SurfaceHttpError::from_pairing_error(SurfacePairingError::Write(error))
+                    .with_request_id(request_id),
+            );
+        }
+    };
+    let capacity_reservation =
+        if let Some(surface_client_ids) = replaceable_surface_client_ids.as_ref() {
+            match runtime
+                .signed_transport
+                .reserve_session_capacity_after_removing_surface_clients(surface_client_ids)
+            {
+                Ok(reservation) => Some(reservation),
+                Err(error) => {
+                    return error_response(
+                        SurfaceHttpError::from_signed_transport(error).with_request_id(request_id),
+                    );
+                }
+            }
+        } else {
+            None
+        };
+    let input = PairingHandshakeInput {
+        runtime_anchor_id: runtime.runtime_anchor_id.clone(),
+        endpoint_startup_id: runtime.startup_id.to_string(),
+        bound_port: runtime.bound_port,
+        endpoint_version: SURFACE_ENDPOINT_VERSION,
+        max_failed_attempts,
+        now: Utc::now(),
+        request,
+    };
+    let outcome = match app_state
+        .db_write(move |db| {
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let external = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &external);
+            Ok(surface_pairing::complete_handshake(&ctx, db, input))
+        })
+        .await
+    {
+        Ok(Ok(outcome)) => outcome,
+        Ok(Err(error)) => {
+            let audit = surface_pairing::pairing_code_failure_audit_event(
+                &failure_audit_input,
+                Some(&error),
+            );
+            emit_pairing_audit_event(&app_state, &audit);
+            return error_response(
+                SurfaceHttpError::from_pairing_error(error).with_request_id(request_id),
+            );
+        }
+        Err(error) => {
+            return error_response(
+                SurfaceHttpError::from_pairing_error(SurfacePairingError::Write(error))
+                    .with_request_id(request_id),
+            );
+        }
+    };
+
+    let session = hmac::SignedSurfaceSession::new_active(
+        outcome.session.session_id.clone(),
+        outcome.session.surface_client_id.clone(),
+        &outcome.session.bearer_token,
+        outcome.session.hmac_master_key,
+    );
+    let registration_result = match capacity_reservation {
+        Some(reservation) => reservation
+            .register_after_removing_surface_clients(&outcome.revoked_surface_client_ids, session),
+        None => register_session_after_revocations(
+            &runtime.signed_transport,
+            &outcome.revoked_surface_client_ids,
+            session,
+        ),
+    };
+    if let Err(error) = registration_result {
+        compensate_failed_session_registration(
+            &app_state,
+            outcome.session.surface_client_id.clone(),
+            Utc::now(),
+        )
+        .await;
+        return error_response(
+            SurfaceHttpError::from_signed_transport(error).with_request_id(request_id),
+        );
     }
 
-    error_response(SurfaceHttpError::runtime_unavailable().with_request_id(request_id))
+    if let Some(origin) = normalize_origin(&outcome.paired_origin) {
+        runtime.paired_site_origins.write().insert(origin);
+    }
+    if let Some(event) = outcome.revocation_audit.as_ref() {
+        emit_pairing_audit_event(&app_state, event);
+    }
+    emit_pairing_audit_event(&app_state, &outcome.audit);
+    json_response(
+        StatusCode::OK,
+        json!({
+            "ok": true,
+            "request_id": request_id,
+            "pairing": outcome.response,
+        }),
+    )
+}
+
+async fn record_signed_transport_failure(
+    runtime: &EndpointRuntime,
+    request: &SurfaceHttpRequest,
+    error: &hmac::SignedTransportError,
+) {
+    let Some(app_state) = runtime.app_state.as_ref().cloned() else {
+        return;
+    };
+    let Some(session_id) = runtime
+        .signed_transport
+        .active_session_id_from_headers_for_failure(&request.headers)
+    else {
+        return;
+    };
+    let surface_client_id = safe_header_value(&request.headers, "x-dailyos-surfaceclient").ok();
+    let direct_event =
+        signed_transport_failure_event(&session_id, surface_client_id.as_deref(), error.code());
+    let presented_surface_client_id = surface_client_id.clone();
+    let input = SignedTransportFailureInput {
+        session_id,
+        surface_client_id,
+        failure_code: error.code().to_string(),
+        now: Utc::now(),
+    };
+    let events = match app_state
+        .db_write(move |db| {
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let external = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &external);
+            Ok(surface_pairing::record_signed_transport_failure(
+                &ctx, db, input,
+            ))
+        })
+        .await
+    {
+        Ok(Ok(events)) => events,
+        Ok(Err(error)) => {
+            log::warn!(
+                "surface signing failure audit unavailable: {}",
+                error.code()
+            );
+            return;
+        }
+        Err(error) => {
+            log::warn!("surface signing failure audit write failed: {error}");
+            return;
+        }
+    };
+    if let Some(event) = direct_event {
+        emit_pairing_audit_event(&app_state, &event);
+    }
+    for event in events {
+        if event.event_kind == "pairing_revoked" {
+            if let Some(surface_client_id) = event
+                .detail
+                .get("surface_client_id")
+                .and_then(serde_json::Value::as_str)
+                .or(presented_surface_client_id.as_deref())
+            {
+                runtime
+                    .signed_transport
+                    .remove_sessions_for_surface_client(surface_client_id);
+            }
+        }
+        emit_pairing_audit_event(&app_state, &event);
+    }
+}
+
+async fn compensate_failed_session_registration(
+    app_state: &AppState,
+    surface_client_id: String,
+    now: chrono::DateTime<Utc>,
+) {
+    let input = surface_pairing::RevokePairingInput {
+        surface_client_id,
+        reason: "session_registration_failed".to_string(),
+        now,
+    };
+    match app_state
+        .db_write(move |db| {
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let external = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &external);
+            Ok(surface_pairing::revoke_pairing(&ctx, db, input))
+        })
+        .await
+    {
+        Ok(Ok(event)) => emit_pairing_audit_event(app_state, &event),
+        Ok(Err(error)) => {
+            log::warn!(
+                "surface pairing compensation failed after session registration error: {}",
+                error.code()
+            );
+        }
+        Err(error) => {
+            log::warn!("surface pairing compensation write failed: {error}");
+        }
+    }
+}
+
+fn signed_route_response(
+    request: &SurfaceHttpRequest,
+    validated: ValidatedSurfaceSession,
+    request_id: String,
+) -> Response<ResponseBody> {
+    match (request.method.clone(), request.uri.path()) {
+        (Method::GET, "/v1/pairing/status") => json_response(
+            StatusCode::OK,
+            json!({
+                "ok": true,
+                "request_id": request_id,
+                "endpoint_version": SURFACE_ENDPOINT_VERSION,
+                "surface_client_id": validated.surface_client_id,
+                "scope_digest": validated.scope_digest,
+                "site_binding_digest": validated.site_binding_digest,
+            }),
+        ),
+        (Method::GET, "/v1/surface/abilities") => {
+            match surface_pairing::authorized_ability_projection(&validated.granted_scopes) {
+                Ok(projection) => json_response(
+                    StatusCode::OK,
+                    json!({
+                        "ok": true,
+                        "request_id": request_id,
+                        "endpoint_version": SURFACE_ENDPOINT_VERSION,
+                        "surface_client_id": validated.surface_client_id,
+                        "scope_digest": validated.scope_digest,
+                        "ability_projection": projection,
+                    }),
+                ),
+                Err(error) => error_response(
+                    SurfaceHttpError::from_pairing_error(error).with_request_id(request_id),
+                ),
+            }
+        }
+        _ => error_response(SurfaceHttpError::runtime_unavailable().with_request_id(request_id)),
+    }
+}
+
+fn register_session_after_revocations(
+    signed_transport: &hmac::SignedTransportState,
+    revoked_surface_client_ids: &[String],
+    session: hmac::SignedSurfaceSession,
+) -> Result<(), hmac::SignedTransportError> {
+    for surface_client_id in revoked_surface_client_ids {
+        signed_transport.remove_sessions_for_surface_client(surface_client_id);
+    }
+    signed_transport.register_session(session)
+}
+
+fn evict_cached_session_after_validation_error(
+    signed_transport: &hmac::SignedTransportState,
+    surface_client_id: &str,
+    error: &SurfacePairingError,
+) {
+    if validation_error_invalidates_cached_session(error) {
+        signed_transport.remove_sessions_for_surface_client(surface_client_id);
+    }
+}
+
+fn validation_error_invalidates_cached_session(error: &SurfacePairingError) -> bool {
+    matches!(
+        error,
+        SurfacePairingError::UnknownRuntimeAnchor
+            | SurfacePairingError::SessionInvalid
+            | SurfacePairingError::SessionExpired
+            | SurfacePairingError::PairingSuspended
+            | SurfacePairingError::PairingRevoked
+            | SurfacePairingError::PairingExpired
+            | SurfacePairingError::RestoredStalePairing
+            | SurfacePairingError::SiteBindingMismatch
+            | SurfacePairingError::WpUserMismatch
+            | SurfacePairingError::ScopeDenied
+    )
+}
+
+fn validation_rejection_events(
+    verified: &hmac::VerifiedSignedRequest,
+    error: &SurfacePairingError,
+) -> Vec<SurfacePairingAuditEvent> {
+    let mut event_kinds: Vec<&'static str> = match error {
+        SurfacePairingError::UnknownRuntimeAnchor => {
+            vec!["pairing.reinstall.runtime_anchor_missing"]
+        }
+        SurfacePairingError::RestoredStalePairing => {
+            vec!["pairing.restore.stale_epoch_detected"]
+        }
+        SurfacePairingError::PairingRevoked => {
+            vec!["pairing.restore.revoked_proof_presented"]
+        }
+        SurfacePairingError::PairingExpired | SurfacePairingError::SessionExpired => {
+            vec!["pairing.restore.expired_proof_presented"]
+        }
+        SurfacePairingError::SiteBindingMismatch | SurfacePairingError::WpUserMismatch => {
+            vec!["pairing.site_binding.mismatch_detected"]
+        }
+        _ => Vec::new(),
+    };
+    if matches!(error, SurfacePairingError::SiteBindingMismatch) {
+        event_kinds.push("pairing.exfiltration.off_host_binding_failure");
+    }
+
+    event_kinds
+        .into_iter()
+        .map(|event_kind| SurfacePairingAuditEvent {
+            event_kind,
+            category: "security",
+            actor: abilities_runtime::abilities::registry::Actor::System,
+            wp_user_id: None,
+            wp_user_hash: None,
+            detail: json!({
+                "surface_client_id": verified.surface_client_id,
+                "session_id_hash": hmac::hash_prefix(&verified.session_id),
+                "presented_site_binding_digest": verified.site_binding_digest,
+                "presented_site_nonce_hash": hmac::hash_prefix(&verified.site_nonce),
+                "reason": error.code(),
+                "decision": "rejected"
+            }),
+        })
+        .collect()
+}
+
+fn signed_transport_failure_event(
+    verified_session_id: &str,
+    surface_client_id: Option<&str>,
+    failure_code: &str,
+) -> Option<SurfacePairingAuditEvent> {
+    (failure_code == "nonce_replay").then(|| SurfacePairingAuditEvent {
+        event_kind: "pairing.exfiltration.nonce_replay",
+        category: "security",
+        actor: abilities_runtime::abilities::registry::Actor::System,
+        wp_user_id: None,
+        wp_user_hash: None,
+        detail: json!({
+            "surface_client_id": surface_client_id,
+            "session_id_hash": hmac::hash_prefix(verified_session_id),
+            "reason": failure_code,
+            "decision": "rejected"
+        }),
+    })
+}
+
+fn emit_pairing_audit_event(app_state: &AppState, event: &SurfacePairingAuditEvent) {
+    let mut audit = app_state.audit_log.lock();
+    if let Err(error) = surface_pairing::emit_pairing_audit(&mut audit, event) {
+        log::warn!("surface pairing audit write failed: {error}");
+    }
 }
 
 fn health_response(request_id: String) -> Response<ResponseBody> {
@@ -714,6 +1264,37 @@ impl SurfaceHttpError {
             error.status(),
             error.code(),
             "DailyOS request signing failed.",
+            remediation,
+        )
+    }
+
+    fn from_pairing_error(error: SurfacePairingError) -> Self {
+        let remediation = match error {
+            SurfacePairingError::PairingCodeExpired
+            | SurfacePairingError::PairingCodeConsumed
+            | SurfacePairingError::PairingCodeInvalid
+            | SurfacePairingError::PairingCodeLimited => {
+                "Generate a fresh pairing string in DailyOS and retry."
+            }
+            SurfacePairingError::SiteBindingMismatch => {
+                "Review the paired site identity in DailyOS and pair the site again."
+            }
+            SurfacePairingError::PairingSuspended
+            | SurfacePairingError::PairingRevoked
+            | SurfacePairingError::PairingExpired
+            | SurfacePairingError::SessionExpired
+            | SurfacePairingError::SessionThrottled
+            | SurfacePairingError::WpUserMismatch
+            | SurfacePairingError::RestoredStalePairing => {
+                "Pair the surface with DailyOS again before retrying."
+            }
+            SurfacePairingError::Write(_) => "Retry after restarting DailyOS.",
+            _ => "Refresh the paired DailyOS session and retry.",
+        };
+        Self::new(
+            error.status(),
+            error.code(),
+            error.safe_message(),
             remediation,
         )
     }
@@ -865,10 +1446,10 @@ fn json_response(status: StatusCode, value: serde_json::Value) -> Response<Respo
 fn validate_transport_headers(
     headers: &HeaderMap,
     bound_port: u16,
-    paired_site_origin: Option<&str>,
+    paired_site_origins: &HashSet<String>,
 ) -> Result<(), SurfaceHttpError> {
     validate_host(headers, bound_port)?;
-    validate_origin(headers, paired_site_origin)?;
+    validate_origin(headers, paired_site_origins)?;
     Ok(())
 }
 
@@ -893,7 +1474,7 @@ fn validate_host(headers: &HeaderMap, bound_port: u16) -> Result<(), SurfaceHttp
 
 fn validate_origin(
     headers: &HeaderMap,
-    paired_site_origin: Option<&str>,
+    paired_site_origins: &HashSet<String>,
 ) -> Result<(), SurfaceHttpError> {
     let mut origin_values = headers.get_all(header::ORIGIN).iter();
     let Some(origin) = origin_values.next() else {
@@ -913,10 +1494,30 @@ fn validate_origin(
         return Err(SurfaceHttpError::browser_origin_forbidden());
     }
 
-    match (normalize_origin(origin), paired_site_origin) {
-        (Some(origin), Some(allowed)) if origin == allowed => Ok(()),
+    match normalize_origin(origin) {
+        Some(origin) if paired_site_origins.contains(&origin) => Ok(()),
         _ => Err(SurfaceHttpError::browser_origin_forbidden()),
     }
+}
+
+fn safe_header_value(headers: &HeaderMap, name: &'static str) -> Result<String, ()> {
+    let mut values = headers.get_all(name).iter();
+    let Some(value) = values.next() else {
+        return Err(());
+    };
+    if values.next().is_some() {
+        return Err(());
+    }
+    let value = value.to_str().map_err(|_| ())?.trim();
+    if value.is_empty()
+        || value.len() > 160
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b':'))
+    {
+        return Err(());
+    }
+    Ok(value.to_string())
 }
 
 fn normalize_origin(value: &str) -> Option<String> {
@@ -1038,7 +1639,9 @@ mod tests {
 
     fn runtime_for_tests(port: u16) -> Arc<EndpointRuntime> {
         Arc::new(EndpointRuntime {
+            startup_id: Uuid::new_v4(),
             bound_port: port,
+            runtime_anchor_id: "test_runtime_anchor".to_string(),
             loopback_bucket: Mutex::new(TokenBucket::new(TokenBucketConfig {
                 capacity: 100,
                 refill_per_second: 100.0,
@@ -1049,10 +1652,23 @@ mod tests {
                 },
                 attempts_by_code: HashMap::new(),
             })),
-            paired_site_origin: Arc::new(RwLock::new(None)),
+            paired_site_origins: Arc::new(RwLock::new(HashSet::new())),
             signed_transport: hmac::SignedTransportState::default(),
             signed_request_max_body_bytes: DEFAULT_SIGNED_REQUEST_MAX_BODY_BYTES,
+            app_state: None,
         })
+    }
+
+    fn dispatch_for_tests(
+        request: SurfaceHttpRequest,
+        runtime: Arc<EndpointRuntime>,
+        request_id: String,
+    ) -> Response<ResponseBody> {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(dispatch_surface_request(request, runtime, request_id))
     }
 
     fn request_for_tests(method: Method, path: &str, body: Bytes) -> SurfaceHttpRequest {
@@ -1093,6 +1709,96 @@ mod tests {
             .unwrap();
     }
 
+    fn alternate_master_key() -> [u8; 32] {
+        [
+            0x90, 0x91, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97, 0x98, 0x99, 0x9a, 0x9b, 0x9c, 0x9d,
+            0x9e, 0x9f, 0xa0, 0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7, 0xa8, 0xa9, 0xaa, 0xab,
+            0xac, 0xad, 0xae, 0xaf,
+        ]
+    }
+
+    #[test]
+    fn replacement_registration_frees_revoked_sessions_before_capacity_check() {
+        let runtime = runtime_for_tests(4411);
+        runtime
+            .signed_transport
+            .configure(hmac::SignedTransportConfig {
+                max_active_sessions: 1,
+                ..hmac::SignedTransportConfig::default()
+            });
+        register_signed_session(&runtime);
+
+        assert_eq!(
+            runtime
+                .signed_transport
+                .register_session(hmac::SignedSurfaceSession::new_active(
+                    "sess_replacement",
+                    "surface_replacement",
+                    "bearer_replacement",
+                    alternate_master_key(),
+                ))
+                .unwrap_err()
+                .kind,
+            hmac::SignedTransportErrorKind::TransportAbuseLimited
+        );
+
+        register_session_after_revocations(
+            &runtime.signed_transport,
+            &["surface_client_test".to_string()],
+            hmac::SignedSurfaceSession::new_active(
+                "sess_replacement",
+                "surface_replacement",
+                "bearer_replacement",
+                alternate_master_key(),
+            ),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn terminal_validation_errors_evict_cached_transport_sessions() {
+        let runtime = runtime_for_tests(4411);
+        runtime
+            .signed_transport
+            .configure(hmac::SignedTransportConfig {
+                max_active_sessions: 1,
+                ..hmac::SignedTransportConfig::default()
+            });
+        register_signed_session(&runtime);
+
+        evict_cached_session_after_validation_error(
+            &runtime.signed_transport,
+            "surface_client_test",
+            &SurfacePairingError::SessionExpired,
+        );
+
+        runtime.signed_transport.ensure_session_capacity().unwrap();
+        register_signed_session(&runtime);
+        evict_cached_session_after_validation_error(
+            &runtime.signed_transport,
+            "surface_client_test",
+            &SurfacePairingError::SessionThrottled,
+        );
+
+        assert_eq!(
+            runtime
+                .signed_transport
+                .ensure_session_capacity()
+                .unwrap_err()
+                .kind,
+            hmac::SignedTransportErrorKind::TransportAbuseLimited
+        );
+        assert!(validation_error_invalidates_cached_session(
+            &SurfacePairingError::SiteBindingMismatch
+        ));
+        assert!(validation_error_invalidates_cached_session(
+            &SurfacePairingError::ScopeDenied
+        ));
+        assert!(!validation_error_invalidates_cached_session(
+            &SurfacePairingError::Write("temporary db failure".into())
+        ));
+    }
+
     fn signed_headers_for_tests(
         method: &Method,
         path: &str,
@@ -1114,12 +1820,25 @@ mod tests {
         let signature = hmac::sign_request_for_tests(
             test_master_key(),
             "sess_test_1234567890",
-            method,
-            &uri,
-            "application/json",
-            body,
-            nonce,
-            timestamp,
+            hmac::CanonicalRequest {
+                method,
+                uri: &uri,
+                content_type: "application/json",
+                body,
+                identity: hmac::CanonicalIdentity {
+                    site_binding_digest: hmac::TEST_SITE_BINDING_DIGEST,
+                    site_nonce: hmac::TEST_SITE_NONCE,
+                    wp_user_id: hmac::TEST_WP_USER_ID,
+                    wp_site_id: hmac::TEST_WP_SITE_ID,
+                    home_url: hmac::TEST_HOME_URL,
+                    site_url: hmac::TEST_SITE_URL,
+                    wp_install_uuid: hmac::TEST_WP_INSTALL_UUID,
+                    plugin_instance_uuid: hmac::TEST_PLUGIN_INSTANCE_UUID,
+                    multisite_blog_id: "",
+                },
+                nonce,
+                timestamp,
+            },
         );
         let mut headers = HeaderMap::new();
         headers.insert(
@@ -1143,6 +1862,38 @@ mod tests {
             HeaderValue::from_str(timestamp).unwrap(),
         );
         headers.insert("x-dailyos-nonce", HeaderValue::from_str(nonce).unwrap());
+        headers.insert(
+            hmac::HEADER_SITE_BINDING_DIGEST,
+            HeaderValue::from_static(hmac::TEST_SITE_BINDING_DIGEST),
+        );
+        headers.insert(
+            hmac::HEADER_SITE_NONCE,
+            HeaderValue::from_static(hmac::TEST_SITE_NONCE),
+        );
+        headers.insert(
+            hmac::HEADER_WP_USER_ID,
+            HeaderValue::from_static(hmac::TEST_WP_USER_ID),
+        );
+        headers.insert(
+            hmac::HEADER_WP_SITE_ID,
+            HeaderValue::from_static(hmac::TEST_WP_SITE_ID),
+        );
+        headers.insert(
+            hmac::HEADER_HOME_URL,
+            HeaderValue::from_static(hmac::TEST_HOME_URL),
+        );
+        headers.insert(
+            hmac::HEADER_SITE_URL,
+            HeaderValue::from_static(hmac::TEST_SITE_URL),
+        );
+        headers.insert(
+            hmac::HEADER_WP_INSTALL_UUID,
+            HeaderValue::from_static(hmac::TEST_WP_INSTALL_UUID),
+        );
+        headers.insert(
+            hmac::HEADER_PLUGIN_INSTANCE_UUID,
+            HeaderValue::from_static(hmac::TEST_PLUGIN_INSTANCE_UUID),
+        );
         headers.insert(
             header::CONTENT_TYPE,
             HeaderValue::from_static("application/json"),
@@ -1176,25 +1927,31 @@ mod tests {
 
     #[test]
     fn origin_guard_is_php_curl_primary_positive_allowlist() {
+        let no_origins = HashSet::new();
         let headers = HeaderMap::new();
-        assert!(validate_origin(&headers, None).is_ok());
+        assert!(validate_origin(&headers, &no_origins).is_ok());
 
         let mut headers = HeaderMap::new();
         headers.insert(header::ORIGIN, HeaderValue::from_static(""));
-        assert!(validate_origin(&headers, None).is_ok());
+        assert!(validate_origin(&headers, &no_origins).is_ok());
 
         let mut headers = HeaderMap::new();
         headers.insert(header::ORIGIN, HeaderValue::from_static("null"));
-        assert!(validate_origin(&headers, None).is_err());
+        assert!(validate_origin(&headers, &no_origins).is_err());
 
         let mut headers = HeaderMap::new();
         headers.insert(
             header::ORIGIN,
             HeaderValue::from_static("https://subsidiary.com"),
         );
-        assert!(validate_origin(&headers, None).is_err());
-        assert!(validate_origin(&headers, Some("https://subsidiary.com")).is_ok());
-        assert!(validate_origin(&headers, Some("https://parent.com")).is_err());
+        assert!(validate_origin(&headers, &no_origins).is_err());
+        let mut allowed_origins = HashSet::new();
+        allowed_origins.insert("https://subsidiary.com".to_string());
+        allowed_origins.insert("https://partner.com".to_string());
+        assert!(validate_origin(&headers, &allowed_origins).is_ok());
+        assert!(
+            validate_origin(&headers, &HashSet::from(["https://parent.com".to_string()])).is_err()
+        );
     }
 
     #[test]
@@ -1206,7 +1963,7 @@ mod tests {
             (Method::GET, "/v1/surface/abilities"),
             (Method::GET, "/v1/surface/keyring"),
         ] {
-            let response = dispatch_surface_request(
+            let response = dispatch_for_tests(
                 request_for_tests(method, path, Bytes::new()),
                 runtime_for_tests(49152),
                 "req_test".to_string(),
@@ -1247,7 +2004,7 @@ mod tests {
         let headers =
             signed_headers_for_tests(&method, path, &body, "0123456789abcdef0123456789abcdef");
 
-        let response = dispatch_surface_request(
+        let response = dispatch_for_tests(
             request_with_headers_for_tests(method, path, headers, body),
             runtime,
             "req_signed".to_string(),
@@ -1259,7 +2016,7 @@ mod tests {
     }
 
     #[test]
-    fn valid_signed_unknown_surface_route_returns_not_found_after_hmac() {
+    fn valid_signed_unknown_surface_route_requires_session_gate_in_test_runtime() {
         let runtime = runtime_for_tests(49152);
         register_signed_session(&runtime);
         let method = Method::POST;
@@ -1268,14 +2025,14 @@ mod tests {
         let headers =
             signed_headers_for_tests(&method, path, &body, "1123456789abcdef0123456789abcdef");
 
-        let response = dispatch_surface_request(
+        let response = dispatch_for_tests(
             request_with_headers_for_tests(method, path, headers, body),
             runtime,
             "req_unknown_signed".to_string(),
         );
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
         let body = body_json(response);
-        assert_eq!(body["error"]["code"], "route_not_found");
+        assert_eq!(body["error"]["code"], "runtime_unavailable");
         assert_eq!(body["error"]["request_id"], "req_unknown_signed");
     }
 
@@ -1294,7 +2051,7 @@ mod tests {
             "2123456789abcdef0123456789abcdef",
         );
 
-        let response = dispatch_surface_request(
+        let response = dispatch_for_tests(
             request_with_headers_for_tests(method, sent_path, headers, body),
             runtime,
             "req_tampered_path".to_string(),
@@ -1321,7 +2078,7 @@ mod tests {
             "1123456789abcdef0123456789abcdef",
         );
 
-        let response = dispatch_surface_request(
+        let response = dispatch_for_tests(
             request_with_headers_for_tests(method, path, headers, sent_body),
             runtime,
             "req_bad_sig".to_string(),
@@ -1335,7 +2092,7 @@ mod tests {
 
     #[test]
     fn health_response_is_low_information() {
-        let response = dispatch_surface_request(
+        let response = dispatch_for_tests(
             request_for_tests(Method::GET, "/v1/surface/health", Bytes::new()),
             runtime_for_tests(49152),
             "req_health".to_string(),
@@ -1383,11 +2140,11 @@ mod tests {
             header::ORIGIN,
             HeaderValue::from_static("https://subsidiary.com"),
         );
-        assert!(validate_origin(&headers, endpoint.paired_site_origin.read().as_deref()).is_ok());
+        assert!(validate_origin(&headers, &endpoint.paired_site_origins.read()).is_ok());
 
         endpoint.stop();
 
-        assert!(validate_origin(&headers, endpoint.paired_site_origin.read().as_deref()).is_err());
+        assert!(validate_origin(&headers, &endpoint.paired_site_origins.read()).is_err());
     }
 
     #[test]
@@ -1504,11 +2261,11 @@ mod tests {
     }
 
     #[test]
-    fn handshake_skeleton_uses_pairing_attempt_bucket() {
+    fn handshake_without_app_state_does_not_claim_pairing_attempt_authority() {
         let runtime = runtime_for_tests(49152);
         let body = Bytes::from_static(br#"{"pairing_code":"123-456"}"#);
-        for attempt in 0..5 {
-            let response = dispatch_surface_request(
+        for attempt in 0..6 {
+            let response = dispatch_for_tests(
                 request_for_tests(Method::POST, "/v1/pairing/handshake", body.clone()),
                 Arc::clone(&runtime),
                 format!("req_{attempt}"),
@@ -1516,13 +2273,6 @@ mod tests {
             assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
             assert_eq!(body_json(response)["error"]["code"], "runtime_unavailable");
         }
-        let response = dispatch_surface_request(
-            request_for_tests(Method::POST, "/v1/pairing/handshake", body),
-            runtime,
-            "req_limited".to_string(),
-        );
-        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
-        assert_eq!(body_json(response)["error"]["code"], "rate_limited");
     }
 
     #[tokio::test]

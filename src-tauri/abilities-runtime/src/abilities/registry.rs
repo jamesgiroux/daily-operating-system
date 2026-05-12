@@ -79,7 +79,9 @@ impl std::fmt::Display for SurfaceClientId {
 /// allowlist at deserialization. ADR-0111 §8 names scopes as "the defined
 /// enum"; the substrate models that as an allowlist owned by the runtime
 /// (registered as abilities declare their scopes via `#[ability]` in W1-B).
-#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
+#[derive(
+    Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
 #[serde(transparent)]
 pub struct SurfaceScope(String);
 
@@ -415,9 +417,7 @@ impl Actor {
 /// - `Invocable`: full schema enumerated; agent may invoke.
 ///
 /// Default per `AbilityPolicy::default()` is `None` — the closed default.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize, JsonSchema,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum McpExposure {
     /// Hidden from every MCP enumeration surface.
@@ -734,11 +734,13 @@ impl AbilityRegistry {
             // scope at ScopeSet construction; once seeded here, unknown
             // scopes are rejected at the wire boundary. See ADR-0111 §8
             //
-            let union: BTreeSet<SurfaceScope> = by_name
+            let mut union: BTreeSet<SurfaceScope> = by_name
                 .values()
                 .flat_map(|descriptor| descriptor.policy.required_scopes.iter())
                 .map(|s| SurfaceScope::new(*s))
                 .collect();
+            union.insert(SurfaceScope::new("read.account_overview"));
+            union.insert(SurfaceScope::new("submit.feedback"));
             // OnceLock::set returns Err if already initialized — that's
             // the intended path on subsequent registry builds within a
             // single process. We do not surface the result.

@@ -7,12 +7,12 @@ use chrono::{DateTime, Utc};
 use http::header::{self, HeaderMap};
 use http::{Method, StatusCode, Uri};
 use parking_lot::{Mutex, RwLock};
-use ring::{digest, hkdf, hmac};
+use ring::{digest, hmac};
 use subtle::ConstantTimeEq;
+use uuid::Uuid;
 use zeroize::Zeroize;
 
 pub(super) const DAILYOS_HMAC_DOMAIN: &str = "DAILYOS-WP-BRIDGE-HMAC-V1";
-const HKDF_INFO: &[u8] = b"dailyos-wp-bridge-v1";
 const NONCE_HASH_DOMAIN: &[u8] = b"DAILYOS-WP-BRIDGE-NONCE-V1\n";
 const SIGNATURE_PREFIX: &str = "v1=";
 const SIGNATURE_BYTES: usize = 32;
@@ -24,6 +24,32 @@ const HEADER_KEY_ID: &str = "x-dailyos-key-id";
 const HEADER_SIGNATURE: &str = "x-dailyos-signature";
 const HEADER_TIMESTAMP: &str = "x-dailyos-timestamp";
 const HEADER_NONCE: &str = "x-dailyos-nonce";
+pub(super) const HEADER_SITE_BINDING_DIGEST: &str = "x-dailyos-site-binding-digest";
+pub(super) const HEADER_SITE_NONCE: &str = "x-dailyos-site-nonce";
+pub(super) const HEADER_WP_USER_ID: &str = "x-dailyos-wp-user-id";
+pub(super) const HEADER_WP_SITE_ID: &str = "x-dailyos-wp-site-id";
+pub(super) const HEADER_HOME_URL: &str = "x-dailyos-home-url";
+pub(super) const HEADER_SITE_URL: &str = "x-dailyos-site-url";
+pub(super) const HEADER_WP_INSTALL_UUID: &str = "x-dailyos-wp-install-uuid";
+pub(super) const HEADER_PLUGIN_INSTANCE_UUID: &str = "x-dailyos-plugin-instance-uuid";
+pub(super) const HEADER_MULTISITE_BLOG_ID: &str = "x-dailyos-multisite-blog-id";
+#[cfg(test)]
+pub(super) const TEST_SITE_BINDING_DIGEST: &str =
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+#[cfg(test)]
+pub(super) const TEST_SITE_NONCE: &str = "siteNonceForSignedTest";
+#[cfg(test)]
+pub(super) const TEST_WP_USER_ID: &str = "42";
+#[cfg(test)]
+pub(super) const TEST_WP_SITE_ID: &str = "site_1";
+#[cfg(test)]
+pub(super) const TEST_HOME_URL: &str = "https://subsidiary.com";
+#[cfg(test)]
+pub(super) const TEST_SITE_URL: &str = "https://subsidiary.com/wp";
+#[cfg(test)]
+pub(super) const TEST_WP_INSTALL_UUID: &str = "install_1";
+#[cfg(test)]
+pub(super) const TEST_PLUGIN_INSTANCE_UUID: &str = "plugin_1";
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct SignedTransportConfig {
@@ -75,6 +101,7 @@ pub(super) struct SignedTransportState {
 struct SignedTransportInner {
     config: RwLock<SignedTransportConfig>,
     sessions: RwLock<HashMap<String, SignedSurfaceSession>>,
+    session_reservations: Mutex<HashSet<String>>,
     nonce_store: Mutex<NonceReplayStore>,
     session_buckets: Mutex<SessionAbuseBuckets>,
 }
@@ -85,6 +112,7 @@ impl Default for SignedTransportState {
             inner: Arc::new(SignedTransportInner {
                 config: RwLock::new(SignedTransportConfig::default()),
                 sessions: RwLock::new(HashMap::new()),
+                session_reservations: Mutex::new(HashSet::new()),
                 nonce_store: Mutex::new(NonceReplayStore::default()),
                 session_buckets: Mutex::new(SessionAbuseBuckets::default()),
             }),
@@ -99,6 +127,7 @@ impl SignedTransportState {
 
     pub(super) fn clear_runtime_state(&self) {
         self.inner.sessions.write().clear();
+        self.inner.session_reservations.lock().clear();
         self.inner.nonce_store.lock().records.clear();
         self.inner.session_buckets.lock().buckets.clear();
     }
@@ -109,8 +138,9 @@ impl SignedTransportState {
     ) -> Result<(), SignedTransportError> {
         let config = self.inner.config.read().clone();
         let mut sessions = self.inner.sessions.write();
+        let reservations = self.inner.session_reservations.lock();
         if !sessions.contains_key(&session.session_id)
-            && sessions.len() >= config.max_active_sessions.max(1)
+            && sessions.len() + reservations.len() >= config.max_active_sessions.max(1)
         {
             return Err(SignedTransportError::transport_abuse_limited(
                 "active_session_cap",
@@ -120,9 +150,135 @@ impl SignedTransportState {
         Ok(())
     }
 
+    pub(super) fn remove_sessions_for_surface_client(&self, surface_client_id: &str) {
+        let removed_session_ids: Vec<String> = {
+            let mut sessions = self.inner.sessions.write();
+            let removed: Vec<String> = sessions
+                .iter()
+                .filter(|(_session_id, session)| session.surface_client_id == surface_client_id)
+                .map(|(session_id, _session)| session_id.clone())
+                .collect();
+            for session_id in &removed {
+                sessions.remove(session_id);
+            }
+            removed
+        };
+        if removed_session_ids.is_empty() {
+            return;
+        }
+        self.inner
+            .nonce_store
+            .lock()
+            .remove_sessions(&removed_session_ids);
+        self.inner
+            .session_buckets
+            .lock()
+            .remove_sessions(&removed_session_ids);
+    }
+
+    pub(super) fn ensure_session_capacity(&self) -> Result<(), SignedTransportError> {
+        self.ensure_session_capacity_after_removing_surface_clients(&[])
+    }
+
+    pub(super) fn ensure_session_capacity_after_removing_surface_clients(
+        &self,
+        surface_client_ids: &[String],
+    ) -> Result<(), SignedTransportError> {
+        let config = self.inner.config.read().clone();
+        let excluded: HashSet<&str> = surface_client_ids.iter().map(String::as_str).collect();
+        let sessions = self.inner.sessions.read();
+        let reservations = self.inner.session_reservations.lock();
+        let retained_sessions = sessions
+            .values()
+            .filter(|session| !excluded.contains(session.surface_client_id.as_str()))
+            .count();
+        if retained_sessions + reservations.len() >= config.max_active_sessions.max(1) {
+            return Err(SignedTransportError::transport_abuse_limited(
+                "active_session_cap",
+            ));
+        }
+        Ok(())
+    }
+
+    pub(super) fn reserve_session_capacity_after_removing_surface_clients(
+        &self,
+        surface_client_ids: &[String],
+    ) -> Result<SignedSessionCapacityReservation, SignedTransportError> {
+        let config = self.inner.config.read().clone();
+        let excluded: HashSet<&str> = surface_client_ids.iter().map(String::as_str).collect();
+        let sessions = self.inner.sessions.read();
+        let mut reservations = self.inner.session_reservations.lock();
+        let retained_sessions = sessions
+            .values()
+            .filter(|session| !excluded.contains(session.surface_client_id.as_str()))
+            .count();
+        if retained_sessions + reservations.len() >= config.max_active_sessions.max(1) {
+            return Err(SignedTransportError::transport_abuse_limited(
+                "active_session_cap",
+            ));
+        }
+        let reservation_id = format!("hmac_session_reservation_{}", Uuid::new_v4().simple());
+        reservations.insert(reservation_id.clone());
+        Ok(SignedSessionCapacityReservation {
+            state: self.clone(),
+            reservation_id,
+            active: true,
+        })
+    }
+
+    fn register_reserved_session_after_removing_surface_clients(
+        &self,
+        reservation_id: &str,
+        surface_client_ids: &[String],
+        session: SignedSurfaceSession,
+    ) -> Result<(), SignedTransportError> {
+        let removed_session_ids: Vec<String> = {
+            let mut sessions = self.inner.sessions.write();
+            let mut reservations = self.inner.session_reservations.lock();
+            if !reservations.remove(reservation_id) {
+                return Err(SignedTransportError::transport_abuse_limited(
+                    "active_session_cap",
+                ));
+            }
+            let excluded: HashSet<&str> = surface_client_ids.iter().map(String::as_str).collect();
+            let removed: Vec<String> = sessions
+                .iter()
+                .filter(|(_session_id, cached)| {
+                    excluded.contains(cached.surface_client_id.as_str())
+                })
+                .map(|(session_id, _session)| session_id.clone())
+                .collect();
+            for session_id in &removed {
+                sessions.remove(session_id);
+            }
+            sessions.insert(session.session_id.clone(), session);
+            removed
+        };
+        if removed_session_ids.is_empty() {
+            return Ok(());
+        }
+        self.inner
+            .nonce_store
+            .lock()
+            .remove_sessions(&removed_session_ids);
+        self.inner
+            .session_buckets
+            .lock()
+            .remove_sessions(&removed_session_ids);
+        Ok(())
+    }
+
+    fn release_session_capacity_reservation(&self, reservation_id: &str) {
+        self.inner
+            .session_reservations
+            .lock()
+            .remove(reservation_id);
+    }
+
     #[cfg(test)]
     pub(super) fn clear_sessions(&self) {
         self.inner.sessions.write().clear();
+        self.inner.session_reservations.lock().clear();
         self.inner.nonce_store.lock().records.clear();
         self.inner.session_buckets.lock().buckets.clear();
     }
@@ -195,10 +351,39 @@ impl SignedTransportState {
             );
         }
 
+        let wp_user_id = headers.wp_user_id.parse::<u64>().map_err(|_| {
+            SignedTransportError::signature_invalid("wp_user_id_malformed")
+                .with_session_id(headers.key_id)
+                .with_surface_client_id(headers.surface_client_id)
+        })?;
+        let wp_user_hash = crate::services::surface_pairing::wp_user_hash(
+            &session.master_key.0,
+            headers.site_binding_digest,
+            wp_user_id,
+        );
+
         Ok(VerifiedSignedRequest {
             session_id: headers.key_id.to_string(),
             surface_client_id: headers.surface_client_id.to_string(),
+            site_binding_digest: headers.site_binding_digest.to_string(),
+            site_nonce: headers.site_nonce.to_string(),
+            wp_user_id,
+            wp_user_hash,
+            wp_site_id: headers.wp_site_id.to_string(),
+            home_url: headers.home_url.to_string(),
+            site_url: headers.site_url.to_string(),
+            wp_install_uuid: headers.wp_install_uuid.to_string(),
+            plugin_instance_uuid: headers.plugin_instance_uuid.to_string(),
+            multisite_blog_id: (!headers.multisite_blog_id.is_empty())
+                .then(|| headers.multisite_blog_id.to_string()),
         })
+    }
+
+    pub(super) fn active_session_id_from_headers_for_failure(
+        &self,
+        headers: &HeaderMap,
+    ) -> Option<String> {
+        parseable_active_session_id(headers, &self.inner.sessions.read())
     }
 
     fn apply_parseable_session_bucket(
@@ -258,20 +443,64 @@ impl SignedTransportState {
     }
 }
 
+pub(super) struct SignedSessionCapacityReservation {
+    state: SignedTransportState,
+    reservation_id: String,
+    active: bool,
+}
+
+impl SignedSessionCapacityReservation {
+    pub(super) fn register_after_removing_surface_clients(
+        mut self,
+        surface_client_ids: &[String],
+        session: SignedSurfaceSession,
+    ) -> Result<(), SignedTransportError> {
+        let result = self
+            .state
+            .register_reserved_session_after_removing_surface_clients(
+                &self.reservation_id,
+                surface_client_ids,
+                session,
+            );
+        self.active = false;
+        result
+    }
+}
+
+impl Drop for SignedSessionCapacityReservation {
+    fn drop(&mut self) {
+        if self.active {
+            self.state
+                .release_session_capacity_reservation(&self.reservation_id);
+        }
+    }
+}
+
 fn canonicalize_signed_request(
     request: &SignedRequest<'_>,
     headers: &ParsedSigningHeaders<'_>,
 ) -> Result<Vec<u8>, SignedTransportError> {
     reject_unsupported_content_encoding(request.headers)?;
     let content_type = content_type_for_canonical_request(request.headers)?;
-    canonical_request_bytes(
-        request.method,
-        request.uri,
-        &content_type,
-        request.body,
-        headers.nonce,
-        headers.timestamp_raw,
-    )
+    canonical_request_bytes(CanonicalRequest {
+        method: request.method,
+        uri: request.uri,
+        content_type: &content_type,
+        body: request.body,
+        identity: CanonicalIdentity {
+            site_binding_digest: headers.site_binding_digest,
+            site_nonce: headers.site_nonce,
+            wp_user_id: headers.wp_user_id,
+            wp_site_id: headers.wp_site_id,
+            home_url: headers.home_url,
+            site_url: headers.site_url,
+            wp_install_uuid: headers.wp_install_uuid,
+            plugin_instance_uuid: headers.plugin_instance_uuid,
+            multisite_blog_id: headers.multisite_blog_id,
+        },
+        nonce: headers.nonce,
+        timestamp: headers.timestamp_raw,
+    })
 }
 
 pub(super) struct SignedRequest<'a> {
@@ -287,6 +516,16 @@ pub(super) struct SignedRequest<'a> {
 pub(super) struct VerifiedSignedRequest {
     pub session_id: String,
     pub surface_client_id: String,
+    pub site_binding_digest: String,
+    pub site_nonce: String,
+    pub wp_user_id: u64,
+    pub wp_user_hash: String,
+    pub wp_site_id: String,
+    pub home_url: String,
+    pub site_url: String,
+    pub wp_install_uuid: String,
+    pub plugin_instance_uuid: String,
+    pub multisite_blog_id: Option<String>,
 }
 
 #[derive(Clone)]
@@ -395,6 +634,15 @@ struct ParsedSigningHeaders<'a> {
     timestamp_raw: &'a str,
     timestamp: DateTime<Utc>,
     nonce: &'a str,
+    site_binding_digest: &'a str,
+    site_nonce: &'a str,
+    wp_user_id: &'a str,
+    wp_site_id: &'a str,
+    home_url: &'a str,
+    site_url: &'a str,
+    wp_install_uuid: &'a str,
+    plugin_instance_uuid: &'a str,
+    multisite_blog_id: &'a str,
 }
 
 impl<'a> ParsedSigningHeaders<'a> {
@@ -406,6 +654,26 @@ impl<'a> ParsedSigningHeaders<'a> {
         let timestamp_raw = required_single_header(headers, HEADER_TIMESTAMP)?;
         let timestamp = parse_timestamp(timestamp_raw)?;
         let nonce = parse_nonce(required_single_header(headers, HEADER_NONCE)?)?;
+        let site_binding_digest = parse_site_binding_digest(required_single_header(
+            headers,
+            HEADER_SITE_BINDING_DIGEST,
+        )?)?;
+        let site_nonce = parse_site_nonce(required_single_header(headers, HEADER_SITE_NONCE)?)?;
+        let wp_user_id = parse_wp_user_id(required_single_header(headers, HEADER_WP_USER_ID)?)?;
+        let wp_site_id =
+            parse_claim_identifier(required_single_header(headers, HEADER_WP_SITE_ID)?)?;
+        let home_url = parse_site_url_claim(required_single_header(headers, HEADER_HOME_URL)?)?;
+        let site_url = parse_site_url_claim(required_single_header(headers, HEADER_SITE_URL)?)?;
+        let wp_install_uuid =
+            parse_claim_identifier(required_single_header(headers, HEADER_WP_INSTALL_UUID)?)?;
+        let plugin_instance_uuid = parse_claim_identifier(required_single_header(
+            headers,
+            HEADER_PLUGIN_INSTANCE_UUID,
+        )?)?;
+        let multisite_blog_id = optional_single_header(headers, HEADER_MULTISITE_BLOG_ID)?
+            .map(parse_claim_identifier)
+            .transpose()?
+            .unwrap_or("");
 
         Ok(Self {
             bearer_token,
@@ -415,6 +683,15 @@ impl<'a> ParsedSigningHeaders<'a> {
             timestamp_raw,
             timestamp,
             nonce,
+            site_binding_digest,
+            site_nonce,
+            wp_user_id,
+            wp_site_id,
+            home_url,
+            site_url,
+            wp_install_uuid,
+            plugin_instance_uuid,
+            multisite_blog_id,
         })
     }
 }
@@ -525,70 +802,106 @@ pub(super) enum SignedTransportErrorKind {
     TransportAbuseLimited,
 }
 
+#[derive(Clone, Copy)]
+pub(super) struct CanonicalIdentity<'a> {
+    pub site_binding_digest: &'a str,
+    pub site_nonce: &'a str,
+    pub wp_user_id: &'a str,
+    pub wp_site_id: &'a str,
+    pub home_url: &'a str,
+    pub site_url: &'a str,
+    pub wp_install_uuid: &'a str,
+    pub plugin_instance_uuid: &'a str,
+    pub multisite_blog_id: &'a str,
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct CanonicalRequest<'a> {
+    pub method: &'a Method,
+    pub uri: &'a Uri,
+    pub content_type: &'a str,
+    pub body: &'a [u8],
+    pub identity: CanonicalIdentity<'a>,
+    pub nonce: &'a str,
+    pub timestamp: &'a str,
+}
+
 pub(super) fn canonical_request_bytes(
-    method: &Method,
-    uri: &Uri,
-    content_type: &str,
-    body: &[u8],
-    nonce: &str,
-    timestamp: &str,
+    request: CanonicalRequest<'_>,
 ) -> Result<Vec<u8>, SignedTransportError> {
-    if !method.as_str().bytes().all(|byte| byte.is_ascii()) {
+    if !request.method.as_str().bytes().all(|byte| byte.is_ascii()) {
         return Err(SignedTransportError::canonicalization_mismatch(
             "method_non_ascii",
         ));
     }
-    let method = method.as_str().to_ascii_uppercase();
-    let path_query = uri
+    let method = request.method.as_str().to_ascii_uppercase();
+    let path_query = request
+        .uri
         .path_and_query()
         .map(|path_query| path_query.as_str())
-        .unwrap_or_else(|| uri.path());
+        .unwrap_or_else(|| request.uri.path());
 
     let mut bytes = Vec::new();
     bytes.extend_from_slice(DAILYOS_HMAC_DOMAIN.as_bytes());
     bytes.push(b'\n');
     append_canonical_field(&mut bytes, "method", method.as_bytes());
     append_canonical_field(&mut bytes, "path_query", path_query.as_bytes());
-    append_canonical_field(&mut bytes, "content_type", content_type.as_bytes());
-    append_canonical_field(&mut bytes, "body", body);
-    append_canonical_field(&mut bytes, "nonce", nonce.as_bytes());
-    append_canonical_field(&mut bytes, "timestamp", timestamp.as_bytes());
+    append_canonical_field(&mut bytes, "content_type", request.content_type.as_bytes());
+    append_canonical_field(&mut bytes, "body", request.body);
+    append_canonical_field(
+        &mut bytes,
+        "site_binding_digest",
+        request.identity.site_binding_digest.as_bytes(),
+    );
+    append_canonical_field(
+        &mut bytes,
+        "site_nonce",
+        request.identity.site_nonce.as_bytes(),
+    );
+    append_canonical_field(
+        &mut bytes,
+        "wp_user_id",
+        request.identity.wp_user_id.as_bytes(),
+    );
+    append_canonical_field(
+        &mut bytes,
+        "wp_site_id",
+        request.identity.wp_site_id.as_bytes(),
+    );
+    append_canonical_field(&mut bytes, "home_url", request.identity.home_url.as_bytes());
+    append_canonical_field(&mut bytes, "site_url", request.identity.site_url.as_bytes());
+    append_canonical_field(
+        &mut bytes,
+        "wp_install_uuid",
+        request.identity.wp_install_uuid.as_bytes(),
+    );
+    append_canonical_field(
+        &mut bytes,
+        "plugin_instance_uuid",
+        request.identity.plugin_instance_uuid.as_bytes(),
+    );
+    append_canonical_field(
+        &mut bytes,
+        "multisite_blog_id",
+        request.identity.multisite_blog_id.as_bytes(),
+    );
+    append_canonical_field(&mut bytes, "nonce", request.nonce.as_bytes());
+    append_canonical_field(&mut bytes, "timestamp", request.timestamp.as_bytes());
     Ok(bytes)
 }
 
 pub(super) fn derive_session_key(master_key: [u8; 32], session_id: &str) -> [u8; 32] {
-    struct SessionKeyLen;
-    impl hkdf::KeyType for SessionKeyLen {
-        fn len(&self) -> usize {
-            SIGNATURE_BYTES
-        }
-    }
-
-    let salt = hkdf::Salt::new(hkdf::HKDF_SHA256, session_id.as_bytes());
-    let prk = salt.extract(master_key.as_slice());
-    let okm = prk
-        .expand(&[HKDF_INFO], SessionKeyLen)
-        .expect("fixed HKDF output length is valid");
-    let mut key = [0_u8; SIGNATURE_BYTES];
-    okm.fill(&mut key)
-        .expect("fixed HKDF output buffer has the advertised length");
-    key
+    crate::services::surface_pairing::derive_session_hmac_key(master_key, session_id)
 }
 
 #[cfg(test)]
 pub(super) fn sign_request_for_tests(
     master_key: [u8; 32],
     session_id: &str,
-    method: &Method,
-    uri: &Uri,
-    content_type: &str,
-    body: &[u8],
-    nonce: &str,
-    timestamp: &str,
+    request: CanonicalRequest<'_>,
 ) -> String {
     let key = derive_session_key(master_key, session_id);
-    let canonical =
-        canonical_request_bytes(method, uri, content_type, body, nonce, timestamp).unwrap();
+    let canonical = canonical_request_bytes(request).unwrap();
     let signature = hmac::sign(&hmac::Key::new(hmac::HMAC_SHA256, &key), &canonical);
     hex::encode(signature.as_ref())
 }
@@ -680,6 +993,23 @@ fn required_single_header<'a>(
         .map_err(|_| SignedTransportError::signature_invalid("header_non_utf8"))
 }
 
+fn optional_single_header<'a>(
+    headers: &'a HeaderMap,
+    name: &'static str,
+) -> Result<Option<&'a str>, SignedTransportError> {
+    let mut values = headers.get_all(name).iter();
+    let Some(value) = values.next() else {
+        return Ok(None);
+    };
+    if values.next().is_some() {
+        return Err(SignedTransportError::signature_invalid("header_multiple"));
+    }
+    value
+        .to_str()
+        .map(Some)
+        .map_err(|_| SignedTransportError::signature_invalid("header_non_utf8"))
+}
+
 fn parse_signature_header(value: &str) -> Result<[u8; SIGNATURE_BYTES], SignedTransportError> {
     let Some(hex_signature) = value.strip_prefix(SIGNATURE_PREFIX) else {
         return Err(SignedTransportError::signature_invalid(
@@ -745,6 +1075,74 @@ fn parse_nonce(value: &str) -> Result<&str, SignedTransportError> {
         return Err(SignedTransportError::signature_invalid("nonce_malformed"));
     }
     Ok(value)
+}
+
+fn parse_site_binding_digest(value: &str) -> Result<&str, SignedTransportError> {
+    if value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+    {
+        Ok(value)
+    } else {
+        Err(SignedTransportError::signature_invalid(
+            "site_binding_digest_malformed",
+        ))
+    }
+}
+
+fn parse_site_nonce(value: &str) -> Result<&str, SignedTransportError> {
+    if value.len() >= 22
+        && value.len() <= 128
+        && !value.contains('=')
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+    {
+        Ok(value)
+    } else {
+        Err(SignedTransportError::signature_invalid(
+            "site_nonce_malformed",
+        ))
+    }
+}
+
+fn parse_wp_user_id(value: &str) -> Result<&str, SignedTransportError> {
+    if !value.is_empty() && value.len() <= 20 && value.bytes().all(|byte| byte.is_ascii_digit()) {
+        Ok(value)
+    } else {
+        Err(SignedTransportError::signature_invalid(
+            "wp_user_id_malformed",
+        ))
+    }
+}
+
+fn parse_claim_identifier(value: &str) -> Result<&str, SignedTransportError> {
+    if !value.is_empty()
+        && value.len() <= 160
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b':' | b'.'))
+    {
+        Ok(value)
+    } else {
+        Err(SignedTransportError::signature_invalid(
+            "site_claim_identifier_malformed",
+        ))
+    }
+}
+
+fn parse_site_url_claim(value: &str) -> Result<&str, SignedTransportError> {
+    if value.len() <= 512
+        && (value.starts_with("http://") || value.starts_with("https://"))
+        && value.bytes().all(|byte| matches!(byte, 0x21..=0x7e))
+    {
+        Ok(value)
+    } else {
+        Err(SignedTransportError::signature_invalid(
+            "site_url_claim_malformed",
+        ))
+    }
 }
 
 fn is_lowercase_hex_nonce(value: &str) -> bool {
@@ -848,6 +1246,12 @@ impl SessionAbuseBuckets {
             .or_insert_with(|| SignedTokenBucket::new(config))
             .try_acquire(now)
     }
+
+    fn remove_sessions(&mut self, session_ids: &[String]) {
+        for session_id in session_ids {
+            self.buckets.remove(session_id);
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -935,6 +1339,12 @@ impl NonceReplayStore {
             record.state = NonceState::Consumed;
             record.expires_at = now + config.nonce_replay_ttl();
         }
+    }
+
+    fn remove_sessions(&mut self, session_ids: &[String]) {
+        let removed: HashSet<&str> = session_ids.iter().map(String::as_str).collect();
+        self.records
+            .retain(|key, _| !removed.contains(key.session_id.as_str()));
     }
 
     fn prune_expired(&mut self, now: Instant) {
@@ -1055,6 +1465,39 @@ mod tests {
         Utc.with_ymd_and_hms(2026, 5, 10, 17, 20, 32).unwrap()
     }
 
+    fn test_identity() -> CanonicalIdentity<'static> {
+        CanonicalIdentity {
+            site_binding_digest: TEST_SITE_BINDING_DIGEST,
+            site_nonce: TEST_SITE_NONCE,
+            wp_user_id: TEST_WP_USER_ID,
+            wp_site_id: TEST_WP_SITE_ID,
+            home_url: TEST_HOME_URL,
+            site_url: TEST_SITE_URL,
+            wp_install_uuid: TEST_WP_INSTALL_UUID,
+            plugin_instance_uuid: TEST_PLUGIN_INSTANCE_UUID,
+            multisite_blog_id: "",
+        }
+    }
+
+    fn test_canonical_request<'a>(
+        method: &'a Method,
+        uri: &'a Uri,
+        content_type: &'a str,
+        body: &'a [u8],
+        nonce: &'a str,
+        timestamp: &'a str,
+    ) -> CanonicalRequest<'a> {
+        CanonicalRequest {
+            method,
+            uri,
+            content_type,
+            body,
+            identity: test_identity(),
+            nonce,
+            timestamp,
+        }
+    }
+
     fn state_with_session() -> SignedTransportState {
         let state = SignedTransportState::default();
         state
@@ -1072,12 +1515,7 @@ mod tests {
         let signature = sign_request_for_tests(
             master_key(),
             SESSION_ID,
-            method,
-            uri,
-            "application/json",
-            body,
-            nonce,
-            TIMESTAMP,
+            test_canonical_request(method, uri, "application/json", body, nonce, TIMESTAMP),
         );
         headers_with_signature(&format!("v1={signature}"), nonce, TIMESTAMP)
     }
@@ -1096,6 +1534,23 @@ mod tests {
         headers.insert(HEADER_SIGNATURE, HeaderValue::from_str(signature).unwrap());
         headers.insert(HEADER_TIMESTAMP, HeaderValue::from_str(timestamp).unwrap());
         headers.insert(HEADER_NONCE, HeaderValue::from_str(nonce).unwrap());
+        headers.insert(
+            HEADER_SITE_BINDING_DIGEST,
+            HeaderValue::from_static(TEST_SITE_BINDING_DIGEST),
+        );
+        headers.insert(HEADER_SITE_NONCE, HeaderValue::from_static(TEST_SITE_NONCE));
+        headers.insert(HEADER_WP_USER_ID, HeaderValue::from_static(TEST_WP_USER_ID));
+        headers.insert(HEADER_WP_SITE_ID, HeaderValue::from_static(TEST_WP_SITE_ID));
+        headers.insert(HEADER_HOME_URL, HeaderValue::from_static(TEST_HOME_URL));
+        headers.insert(HEADER_SITE_URL, HeaderValue::from_static(TEST_SITE_URL));
+        headers.insert(
+            HEADER_WP_INSTALL_UUID,
+            HeaderValue::from_static(TEST_WP_INSTALL_UUID),
+        );
+        headers.insert(
+            HEADER_PLUGIN_INSTANCE_UUID,
+            HeaderValue::from_static(TEST_PLUGIN_INSTANCE_UUID),
+        );
         headers.insert(
             header::CONTENT_TYPE,
             HeaderValue::from_static("application/json"),
@@ -1126,9 +1581,15 @@ mod tests {
         let uri = "/v1/surface/invoke?ability=briefing.daily&ability=briefing.daily"
             .parse::<Uri>()
             .unwrap();
-        let canonical =
-            canonical_request_bytes(&method, &uri, "application/json", BODY, NONCE, TIMESTAMP)
-                .unwrap();
+        let canonical = canonical_request_bytes(test_canonical_request(
+            &method,
+            &uri,
+            "application/json",
+            BODY,
+            NONCE,
+            TIMESTAMP,
+        ))
+        .unwrap();
         let expected = concat!(
             "DAILYOS-WP-BRIDGE-HMAC-V1\n",
             "method:4\n",
@@ -1139,16 +1600,30 @@ mod tests {
             "application/json\n",
             "body:20\n",
             "{\"depth\":\"standard\"}\n",
+            "site_binding_digest:64\n",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+            "site_nonce:22\n",
+            "siteNonceForSignedTest\n",
+            "wp_user_id:2\n",
+            "42\n",
+            "wp_site_id:6\n",
+            "site_1\n",
+            "home_url:22\n",
+            "https://subsidiary.com\n",
+            "site_url:25\n",
+            "https://subsidiary.com/wp\n",
+            "wp_install_uuid:9\n",
+            "install_1\n",
+            "plugin_instance_uuid:8\n",
+            "plugin_1\n",
+            "multisite_blog_id:0\n",
+            "\n",
             "nonce:32\n",
             "0123456789abcdef0123456789abcdef\n",
             "timestamp:20\n",
             "2026-05-10T17:20:31Z\n",
         );
         assert_eq!(canonical, expected.as_bytes());
-        assert_eq!(
-            hex::encode(&canonical),
-            "4441494c594f532d57502d4252494447452d484d41432d56310a6d6574686f643a340a504f53540a706174685f71756572793a36340a2f76312f737572666163652f696e766f6b653f6162696c6974793d6272696566696e672e6461696c79266162696c6974793d6272696566696e672e6461696c790a636f6e74656e745f747970653a31360a6170706c69636174696f6e2f6a736f6e0a626f64793a32300a7b226465707468223a227374616e64617264227d0a6e6f6e63653a33320a30313233343536373839616263646566303132333435363738396162636465660a74696d657374616d703a32300a323032362d30352d31305431373a32303a33315a0a"
-        );
         assert_eq!(
             hex::encode(derive_session_key(master_key(), SESSION_ID)),
             "0351c2c90ac640592fc5c96a9054a37c70da407a9942f525361743fcad0cbf0f"
@@ -1157,14 +1632,10 @@ mod tests {
             sign_request_for_tests(
                 master_key(),
                 SESSION_ID,
-                &method,
-                &uri,
-                "application/json",
-                BODY,
-                NONCE,
-                TIMESTAMP,
-            ),
-            "6d1929abb9b0300a1de1878fa68cd30327df80c84f5f0e436fe130046507ed5c"
+                test_canonical_request(&method, &uri, "application/json", BODY, NONCE, TIMESTAMP),
+            )
+            .len(),
+            SIGNATURE_HEX_BYTES
         );
     }
 
@@ -1172,7 +1643,10 @@ mod tests {
     fn canonical_request_preserves_empty_body_and_duplicate_query_order() {
         let method = Method::GET;
         let uri = "/v1/surface/abilities?a=1&a=2".parse::<Uri>().unwrap();
-        let canonical = canonical_request_bytes(&method, &uri, "", b"", NONCE, TIMESTAMP).unwrap();
+        let canonical = canonical_request_bytes(test_canonical_request(
+            &method, &uri, "", b"", NONCE, TIMESTAMP,
+        ))
+        .unwrap();
         let rendered = String::from_utf8(canonical).unwrap();
         assert!(rendered.contains("path_query:29\n/v1/surface/abilities?a=1&a=2\n"));
         assert!(rendered.contains("content_type:0\n\n"));
@@ -1190,6 +1664,15 @@ mod tests {
         let verified = verify(&state, &method, &uri, &headers, BODY).unwrap();
         assert_eq!(verified.session_id, SESSION_ID);
         assert_eq!(verified.surface_client_id, SURFACE_CLIENT_ID);
+        assert_eq!(verified.wp_user_id, 42);
+        assert_eq!(
+            verified.wp_user_hash,
+            crate::services::surface_pairing::wp_user_hash(
+                &master_key(),
+                TEST_SITE_BINDING_DIGEST,
+                42
+            )
+        );
     }
 
     #[test]
@@ -1221,12 +1704,7 @@ mod tests {
         let signature = sign_request_for_tests(
             alternate_master_key(),
             SESSION_ID,
-            &method,
-            &uri,
-            "application/json",
-            BODY,
-            NONCE,
-            TIMESTAMP,
+            test_canonical_request(&method, &uri, "application/json", BODY, NONCE, TIMESTAMP),
         );
         let headers = headers_with_signature(&format!("v1={signature}"), NONCE, TIMESTAMP);
 
@@ -1286,6 +1764,50 @@ mod tests {
     }
 
     #[test]
+    fn tampered_site_and_user_identity_headers_reject_signature() {
+        let method = Method::POST;
+        let uri = "/v1/surface/invoke".parse::<Uri>().unwrap();
+
+        let state = state_with_session();
+        let mut site_headers = signed_headers(&method, &uri, BODY, NONCE);
+        site_headers.insert(
+            HEADER_SITE_BINDING_DIGEST,
+            HeaderValue::from_static(
+                "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            ),
+        );
+        let error = verify(&state, &method, &uri, &site_headers, BODY).unwrap_err();
+        assert_eq!(error.kind, SignedTransportErrorKind::SignatureInvalid);
+
+        let state = state_with_session();
+        let mut current_claim_headers =
+            signed_headers(&method, &uri, BODY, "0123456789abcdef0123456789abcdee");
+        current_claim_headers.insert(
+            HEADER_SITE_URL,
+            HeaderValue::from_static("https://clone.subsidiary.com/wp"),
+        );
+        let error = verify(&state, &method, &uri, &current_claim_headers, BODY).unwrap_err();
+        assert_eq!(error.kind, SignedTransportErrorKind::SignatureInvalid);
+
+        let state = state_with_session();
+        let mut nonce_headers =
+            signed_headers(&method, &uri, BODY, "1123456789abcdef0123456789abcdef");
+        nonce_headers.insert(
+            HEADER_SITE_NONCE,
+            HeaderValue::from_static("differentSiteNonceValue"),
+        );
+        let error = verify(&state, &method, &uri, &nonce_headers, BODY).unwrap_err();
+        assert_eq!(error.kind, SignedTransportErrorKind::SignatureInvalid);
+
+        let state = state_with_session();
+        let mut user_headers =
+            signed_headers(&method, &uri, BODY, "2123456789abcdef0123456789abcdef");
+        user_headers.insert(HEADER_WP_USER_ID, HeaderValue::from_static("7"));
+        let error = verify(&state, &method, &uri, &user_headers, BODY).unwrap_err();
+        assert_eq!(error.kind, SignedTransportErrorKind::SignatureInvalid);
+    }
+
+    #[test]
     fn timestamp_thresholds_are_config_driven() {
         let state = state_with_session();
         state.configure(SignedTransportConfig {
@@ -1300,12 +1822,7 @@ mod tests {
         let stale_signature = sign_request_for_tests(
             master_key(),
             SESSION_ID,
-            &method,
-            &uri,
-            "application/json",
-            BODY,
-            NONCE,
-            stale,
+            test_canonical_request(&method, &uri, "application/json", BODY, NONCE, stale),
         );
         let stale_headers = headers_with_signature(&format!("v1={stale_signature}"), NONCE, stale);
         let stale_error = verify(&state, &method, &uri, &stale_headers, BODY).unwrap_err();
@@ -1315,12 +1832,14 @@ mod tests {
         let future_signature = sign_request_for_tests(
             master_key(),
             SESSION_ID,
-            &method,
-            &uri,
-            "application/json",
-            BODY,
-            "1123456789abcdef0123456789abcdef",
-            future,
+            test_canonical_request(
+                &method,
+                &uri,
+                "application/json",
+                BODY,
+                "1123456789abcdef0123456789abcdef",
+                future,
+            ),
         );
         let future_headers = headers_with_signature(
             &format!("v1={future_signature}"),
@@ -1353,12 +1872,14 @@ mod tests {
         let corrected_signature = sign_request_for_tests(
             master_key(),
             SESSION_ID,
-            &method,
-            &uri,
-            "application/json",
-            BODY,
-            "1123456789abcdef0123456789abcdef",
-            TIMESTAMP,
+            test_canonical_request(
+                &method,
+                &uri,
+                "application/json",
+                BODY,
+                "1123456789abcdef0123456789abcdef",
+                TIMESTAMP,
+            ),
         );
         let corrected_headers = headers_with_signature(
             &format!("v1={corrected_signature}"),
@@ -1536,5 +2057,117 @@ mod tests {
             SignedTransportErrorKind::CanonicalizationMismatch
         );
         assert_eq!(error.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn removed_surface_client_sessions_release_active_capacity() {
+        let state = SignedTransportState::default();
+        state.configure(SignedTransportConfig {
+            max_active_sessions: 1,
+            ..SignedTransportConfig::default()
+        });
+        state
+            .register_session(SignedSurfaceSession::new_active(
+                "sess_one",
+                "surface_one",
+                "bearer_one",
+                master_key(),
+            ))
+            .unwrap();
+        assert_eq!(
+            state.ensure_session_capacity().unwrap_err().kind,
+            SignedTransportErrorKind::TransportAbuseLimited
+        );
+
+        state.remove_sessions_for_surface_client("surface_one");
+
+        state.ensure_session_capacity().unwrap();
+        state
+            .register_session(SignedSurfaceSession::new_active(
+                "sess_two",
+                "surface_two",
+                "bearer_two",
+                alternate_master_key(),
+            ))
+            .unwrap();
+    }
+
+    #[test]
+    fn replacement_capacity_preflight_excludes_revoked_surface_clients() {
+        let state = SignedTransportState::default();
+        state.configure(SignedTransportConfig {
+            max_active_sessions: 1,
+            ..SignedTransportConfig::default()
+        });
+        state
+            .register_session(SignedSurfaceSession::new_active(
+                "sess_one",
+                "surface_one",
+                "bearer_one",
+                master_key(),
+            ))
+            .unwrap();
+
+        state
+            .ensure_session_capacity_after_removing_surface_clients(&["surface_one".to_string()])
+            .unwrap();
+        assert_eq!(
+            state
+                .ensure_session_capacity_after_removing_surface_clients(
+                    &["surface_two".to_string()]
+                )
+                .unwrap_err()
+                .kind,
+            SignedTransportErrorKind::TransportAbuseLimited
+        );
+    }
+
+    #[test]
+    fn capacity_reservation_prevents_interleaving_session_from_burning_pairing_code() {
+        let state = SignedTransportState::default();
+        state.configure(SignedTransportConfig {
+            max_active_sessions: 1,
+            ..SignedTransportConfig::default()
+        });
+        state
+            .register_session(SignedSurfaceSession::new_active(
+                "sess_one",
+                "surface_one",
+                "bearer_one",
+                master_key(),
+            ))
+            .unwrap();
+
+        let reservation = state
+            .reserve_session_capacity_after_removing_surface_clients(&["surface_one".to_string()])
+            .unwrap();
+        assert_eq!(
+            state
+                .register_session(SignedSurfaceSession::new_active(
+                    "sess_interleaved",
+                    "surface_interleaved",
+                    "bearer_interleaved",
+                    alternate_master_key(),
+                ))
+                .unwrap_err()
+                .kind,
+            SignedTransportErrorKind::TransportAbuseLimited
+        );
+
+        reservation
+            .register_after_removing_surface_clients(
+                &["surface_one".to_string()],
+                SignedSurfaceSession::new_active(
+                    "sess_replacement",
+                    "surface_replacement",
+                    "bearer_replacement",
+                    alternate_master_key(),
+                ),
+            )
+            .unwrap();
+        assert_eq!(
+            state.ensure_session_capacity().unwrap_err().kind,
+            SignedTransportErrorKind::TransportAbuseLimited
+        );
     }
 }

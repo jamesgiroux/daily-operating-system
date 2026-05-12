@@ -7,6 +7,7 @@
 
 use rand::Rng;
 use rusqlite::Connection;
+use sha2::Digest;
 use std::fmt;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -22,6 +23,7 @@ use super::encryption;
 
 const KEYCHAIN_SERVICE: &str = "com.dailyos.desktop.db";
 const KEYCHAIN_ACCOUNT: &str = "sqlcipher-key";
+const SURFACE_RUNTIME_ANCHOR_ACCOUNT: &str = "surface-runtime-anchor";
 const KEYCHAIN_ROTATION_ACCOUNT_PREFIX: &str = "sqlcipher-key.rotation";
 const KEYCHAIN_ROTATION_IN_PROGRESS_ACCOUNT: &str = "sqlcipher-key.rotation_in_progress";
 const KEYCHAIN_ROTATION_IN_PROGRESS_VALUE: &str =
@@ -829,6 +831,41 @@ pub(crate) fn key_to_rekey_pragma(key: &EncryptionKey) -> SqlCipherPragma {
     SqlCipherPragma::new(format!("PRAGMA rekey = \"x'{}'\"", key.as_hex()))
 }
 
+/// Runtime keychain anchor for paired local surfaces.
+///
+/// W2-C treats the macOS Keychain entry as the runtime authority anchor. The
+/// anchor id is a digest of the keychain-only secret; callers use the id in DB
+/// rows and audit records, never the secret itself.
+pub(crate) fn get_or_create_surface_runtime_anchor_id() -> Result<String> {
+    get_or_create_surface_runtime_anchor_id_with(
+        || read_keychain_account(SURFACE_RUNTIME_ANCHOR_ACCOUNT),
+        |key| upsert_keychain_account(SURFACE_RUNTIME_ANCHOR_ACCOUNT, key),
+    )
+}
+
+fn get_or_create_surface_runtime_anchor_id_with(
+    read_key: impl FnOnce() -> std::result::Result<EncryptionKey, KeychainReadError>,
+    upsert_key: impl FnOnce(&EncryptionKey) -> Result<()>,
+) -> Result<String> {
+    let key = match read_key() {
+        Ok(key) => key,
+        Err(KeychainReadError::NotFound(_)) => {
+            let key = generate_key();
+            upsert_key(&key)?;
+            key
+        }
+        Err(error) => return Err(error.to_string()),
+    };
+    Ok(surface_runtime_anchor_id_from_key(&key))
+}
+
+fn surface_runtime_anchor_id_from_key(key: &EncryptionKey) -> String {
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(b"DAILYOS-SURFACE-RUNTIME-ANCHOR-V1\n");
+    hasher.update(key.as_hex().as_bytes());
+    hex::encode(hasher.finalize())
+}
+
 fn generate_key() -> EncryptionKey {
     let mut bytes = [0u8; 32];
     rand::rng().fill_bytes(&mut bytes);
@@ -891,6 +928,20 @@ fn parse_security_blob_attribute(line: &str, prefix: &str) -> Option<String> {
     Some(value.trim_matches('"').to_string())
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum KeychainReadError {
+    NotFound(String),
+    Failed(String),
+}
+
+impl fmt::Display for KeychainReadError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NotFound(error) | Self::Failed(error) => f.write_str(error),
+        }
+    }
+}
+
 /// Read the encryption key from macOS Keychain via the `security` CLI.
 ///
 /// Using the `security` binary instead of the `keyring` crate avoids the
@@ -898,6 +949,10 @@ fn parse_security_blob_attribute(line: &str, prefix: &str) -> Option<String> {
 /// system binary, so macOS doesn't re-prompt when the app binary changes
 /// on every recompile.
 fn get_key_from_keychain_account(account: &str) -> Result<EncryptionKey> {
+    read_keychain_account(account).map_err(|error| error.to_string())
+}
+
+fn read_keychain_account(account: &str) -> std::result::Result<EncryptionKey, KeychainReadError> {
     let output = std::process::Command::new("security")
         .args([
             "find-generic-password",
@@ -908,18 +963,34 @@ fn get_key_from_keychain_account(account: &str) -> Result<EncryptionKey> {
             "-w", // output password only
         ])
         .output()
-        .map_err(|e| format!("Failed to run security CLI: {e}"))?;
+        .map_err(|e| KeychainReadError::Failed(format!("Failed to run security CLI: {e}")))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Keychain read failed: {}", stderr.trim()));
+        let detail = format!("Keychain read failed: {}", stderr.trim());
+        if is_keychain_item_not_found(&stderr) {
+            return Err(KeychainReadError::NotFound(detail));
+        }
+        return Err(KeychainReadError::Failed(detail));
     }
 
-    let key = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let key = String::from_utf8(output.stdout)
+        .map_err(|e| KeychainReadError::Failed(format!("Keychain returned non-UTF-8 key: {e}")))?
+        .trim()
+        .to_string();
     if key.is_empty() {
-        return Err("Keychain returned empty key".to_string());
+        return Err(KeychainReadError::Failed(
+            "Keychain returned empty key".to_string(),
+        ));
     }
     Ok(EncryptionKey::from_hex(key))
+}
+
+fn is_keychain_item_not_found(stderr: &str) -> bool {
+    let stderr = stderr.to_ascii_lowercase();
+    stderr.contains("could not be found")
+        || stderr.contains("item not found")
+        || stderr.contains("-25300")
 }
 
 fn stage_key_in_keychain(keychain: &dyn KeychainBackend, key: &EncryptionKey) -> Result<String> {
@@ -1084,6 +1155,89 @@ mod tests {
 
     fn fixed_key(hex: &str) -> EncryptionKey {
         EncryptionKey::from_hex(hex.to_string())
+    }
+
+    #[test]
+    fn surface_runtime_anchor_reuses_existing_keychain_anchor() {
+        let existing =
+            fixed_key("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
+        let upsert_called = AtomicBool::new(false);
+
+        let anchor_id = get_or_create_surface_runtime_anchor_id_with(
+            || Ok(existing.clone()),
+            |_| {
+                upsert_called.store(true, Ordering::Release);
+                Ok(())
+            },
+        )
+        .expect("existing anchor id is returned");
+
+        assert_eq!(anchor_id, surface_runtime_anchor_id_from_key(&existing));
+        assert!(!upsert_called.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn surface_runtime_anchor_creates_keychain_anchor_only_when_missing() {
+        let stored_anchor = Mutex::new(None);
+
+        let anchor_id = get_or_create_surface_runtime_anchor_id_with(
+            || {
+                Err(KeychainReadError::NotFound(
+                    "Keychain read failed: The specified item could not be found in the keychain."
+                        .to_string(),
+                ))
+            },
+            |key| {
+                *stored_anchor.lock() = Some(key.clone());
+                Ok(())
+            },
+        )
+        .expect("missing anchor is created");
+
+        let stored_anchor = stored_anchor
+            .lock()
+            .clone()
+            .expect("generated anchor was stored");
+        assert_eq!(
+            anchor_id,
+            surface_runtime_anchor_id_from_key(&stored_anchor)
+        );
+    }
+
+    #[test]
+    fn surface_runtime_anchor_fails_closed_on_keychain_read_failures() {
+        for error in [
+            "Failed to run security CLI: No such file or directory",
+            "Keychain read failed: User interaction is not allowed.",
+            "Keychain returned non-UTF-8 key: invalid utf-8 sequence",
+            "Keychain returned empty key",
+        ] {
+            let upsert_called = AtomicBool::new(false);
+
+            let observed = get_or_create_surface_runtime_anchor_id_with(
+                || Err(KeychainReadError::Failed(error.to_string())),
+                |_| {
+                    upsert_called.store(true, Ordering::Release);
+                    Ok(())
+                },
+            )
+            .expect_err("non-missing keychain failures do not rotate the anchor");
+
+            assert_eq!(observed, error);
+            assert!(!upsert_called.load(Ordering::Acquire));
+        }
+    }
+
+    #[test]
+    fn keychain_not_found_classifier_matches_security_cli_absence_errors() {
+        assert!(is_keychain_item_not_found(
+            "security: SecKeychainSearchCopyNext: The specified item could not be found in the keychain."
+        ));
+        assert!(is_keychain_item_not_found("security: item not found"));
+        assert!(is_keychain_item_not_found("security: error -25300"));
+        assert!(!is_keychain_item_not_found(
+            "security: SecKeychainItemCopyContent: User interaction is not allowed."
+        ));
     }
 
     fn create_encrypted_test_database(db_path: &Path, key: &EncryptionKey) {

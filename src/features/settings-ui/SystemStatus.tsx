@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useCallback, useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getVersion } from "@tauri-apps/api/app";
@@ -283,6 +283,216 @@ interface BackgroundPauseStatusView {
 
 interface BackgroundDiagnostics {
   backgroundPause: BackgroundPauseStatusView;
+}
+
+interface SurfaceRuntimePairingStatus {
+  availability: string;
+  boundPort?: number | null;
+  endpointVersion?: string | null;
+}
+
+interface SurfaceRuntimePairingString {
+  pairingString: string;
+  expiresAt: string;
+}
+
+interface SurfaceClientPairing {
+  surfaceClientId: string;
+  surfaceClientDisplayId: string;
+  siteBindingDigest: string;
+  scopeDigest: string;
+  lifecycleState: string;
+  createdAt: string;
+  lastUsedAt?: string | null;
+  expiresAt?: string | null;
+  revokedAt?: string | null;
+}
+
+function formatPairingState(value: string): string {
+  return value
+    .split(/[_-]/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function pairingMayBeRevoked(value: string): boolean {
+  return value === "active" || value === "suspended";
+}
+
+export function SurfaceRuntimeSection() {
+  const [status, setStatus] = useState<SurfaceRuntimePairingStatus | null>(null);
+  const [pairings, setPairings] = useState<SurfaceClientPairing[]>([]);
+  const [pairingString, setPairingString] = useState<string | null>(null);
+  const [pairingStringExpiresAt, setPairingStringExpiresAt] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [revokingId, setRevokingId] = useState<string | null>(null);
+
+  const loadRuntime = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [nextStatus, nextPairings] = await Promise.all([
+        invoke<SurfaceRuntimePairingStatus>("get_surface_runtime_pairing_status"),
+        invoke<SurfaceClientPairing[]>("list_surface_client_pairings"),
+      ]);
+      setStatus(nextStatus);
+      setPairings(nextPairings);
+      return true;
+    } catch (err) {
+      setPairingString(null);
+      setPairingStringExpiresAt(null);
+      console.error("Surface runtime settings load failed:", err);
+      toast.error(typeof err === "string" ? err : "Failed to load surface runtime");
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadRuntime();
+  }, [loadRuntime]);
+
+  async function handleCreatePairingString() {
+    setCreating(true);
+    try {
+      const created = await invoke<SurfaceRuntimePairingString>("create_surface_runtime_pairing_string");
+      const refreshed = await loadRuntime();
+      if (refreshed) {
+        setPairingString(created.pairingString);
+        setPairingStringExpiresAt(created.expiresAt);
+        toast.success("Pairing string created");
+      }
+    } catch (err) {
+      setPairingString(null);
+      setPairingStringExpiresAt(null);
+      toast.error(typeof err === "string" ? err : "Failed to create pairing string");
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function handleRevoke(pairing: SurfaceClientPairing) {
+    if (!pairingMayBeRevoked(pairing.lifecycleState)) return;
+    setRevokingId(pairing.surfaceClientId);
+    try {
+      await invoke("revoke_surface_client_pairing", {
+        surfaceClientId: pairing.surfaceClientId,
+      });
+      setPairingString(null);
+      setPairingStringExpiresAt(null);
+      const refreshed = await loadRuntime();
+      if (refreshed) {
+        toast.success("Pairing revoked");
+      }
+    } catch (err) {
+      setPairingString(null);
+      setPairingStringExpiresAt(null);
+      toast.error(typeof err === "string" ? err : "Failed to revoke pairing");
+    } finally {
+      setRevokingId(null);
+    }
+  }
+
+  const endpoint =
+    status?.boundPort && status.endpointVersion
+      ? `Port ${status.boundPort} · ${status.endpointVersion}`
+      : status?.boundPort
+        ? `Port ${status.boundPort}`
+        : status?.endpointVersion ?? "No endpoint";
+
+  return (
+    <div>
+      <SettingsSectionLabel>Surface Runtime</SettingsSectionLabel>
+      <p className={formRowStyles.descriptionLead}>
+        Manage local client pairings for runtime surfaces.
+      </p>
+
+      <div className={formRowStyles.settingRow}>
+        <div>
+          <span className={formRowStyles.fieldLabel}>
+            {loading ? "Checking runtime" : formatPairingState(status?.availability ?? "unavailable")}
+          </span>
+          <p className={formRowStyles.descriptionSmallTop2}>
+            {loading ? "Loading endpoint details..." : endpoint}
+          </p>
+        </div>
+        <SettingsButton
+          tone="ghost"
+          onClick={handleCreatePairingString}
+          disabled={loading || creating}
+        >
+          {creating ? "Creating..." : "Create Pairing String"}
+        </SettingsButton>
+      </div>
+
+      {pairingString && (
+        <div className={formRowStyles.settingRow}>
+          <div>
+            <span className={formRowStyles.fieldLabel}>Pairing String</span>
+            <p className={formRowStyles.descriptionSmallTop2}>
+              Share this with the local surface client while it is valid.
+            </p>
+            {pairingStringExpiresAt && (
+              <p className={formRowStyles.descriptionTinyTop2}>
+                Expires {formatTime(pairingStringExpiresAt)}
+              </p>
+            )}
+          </div>
+          <code
+            style={{
+              maxWidth: 360,
+              overflowWrap: "anywhere",
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              color: "var(--color-text-secondary)",
+            }}
+          >
+            {pairingString}
+          </code>
+        </div>
+      )}
+
+      <div style={{ display: "flex", flexDirection: "column" }}>
+        {pairings.length === 0 ? (
+          <p className={formRowStyles.descriptionFlush}>
+            No paired surface clients yet.
+          </p>
+        ) : (
+          pairings.map((pairing) => {
+            const canRevoke = pairingMayBeRevoked(pairing.lifecycleState);
+            return (
+              <div key={pairing.surfaceClientId} className={formRowStyles.settingRow}>
+                <div>
+                  <span className={formRowStyles.fieldLabel}>
+                    {pairing.surfaceClientDisplayId}
+                  </span>
+                  <p className={formRowStyles.descriptionSmallTop2}>
+                    {formatPairingState(pairing.lifecycleState)} · Created {formatTime(pairing.createdAt)}
+                    {pairing.lastUsedAt ? ` · Used ${formatTime(pairing.lastUsedAt)}` : ""}
+                  </p>
+                  <p className={formRowStyles.descriptionTinyTop2}>
+                    Site {pairing.siteBindingDigest} · Scope {pairing.scopeDigest}
+                    {pairing.expiresAt ? ` · Expires ${formatTime(pairing.expiresAt)}` : ""}
+                    {pairing.revokedAt ? ` · Revoked ${formatTime(pairing.revokedAt)}` : ""}
+                  </p>
+                </div>
+                <SettingsButton
+                  tone="danger"
+                  compact
+                  onClick={() => handleRevoke(pairing)}
+                  disabled={!canRevoke || revokingId === pairing.surfaceClientId}
+                >
+                  {revokingId === pairing.surfaceClientId ? "Revoking..." : "Revoke"}
+                </SettingsButton>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
 }
 
 const dailyBudgetTiers = [
@@ -1258,6 +1468,10 @@ export default function SystemStatus() {
       <SettingsRule className={formRowStyles.thinRuleSpacious} />
 
       <SecuritySection />
+
+      <SettingsRule className={formRowStyles.thinRuleSpacious} />
+
+      <SurfaceRuntimeSection />
 
       <SettingsRule className={formRowStyles.thinRuleSpacious} />
 

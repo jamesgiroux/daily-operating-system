@@ -669,6 +669,9 @@ pub fn run() {
             commands::reveal_sensitive_claim_text,
             // Core
             commands::get_surface_runtime_pairing_status,
+            commands::list_surface_client_pairings,
+            commands::create_surface_runtime_pairing_string,
+            commands::revoke_surface_client_pairing,
             commands::get_config,
             commands::reload_configuration,
             commands::get_dashboard_data,

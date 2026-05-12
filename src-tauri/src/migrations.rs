@@ -858,6 +858,11 @@ const MIGRATIONS: &[Migration] = &[
         version: 168,
         sql: include_str!("migrations/168_pending_backfill_attempts.sql"),
     },
+    // W2-C DOS-559 SurfaceClient pairing/session/revocation authority.
+    Migration::Sql {
+        version: 169,
+        sql: include_str!("migrations/169_dos_559_surface_client_pairings.sql"),
+    },
 ];
 
 const V155_SHADOW_TRUST_VERSION: i64 = 1_401_003;
@@ -4480,10 +4485,10 @@ mod tests {
         )
         .expect("seed c5 zero-version shadow row");
 
-        let applied = run_migrations(&conn).expect("v157-v168 migrations should succeed");
+        let applied = run_migrations(&conn).expect("v157-v169 migrations should succeed");
         assert_eq!(
-            applied, 12,
-            "v157-v168 should be pending after rollback to v156"
+            applied, 13,
+            "v157-v169 should be pending after rollback to v156"
         );
         assert_eq!(
             current_version(&conn).expect("current version"),
@@ -4553,10 +4558,10 @@ mod tests {
         )
         .expect("seed v156-recorded live score");
 
-        let applied = run_migrations(&conn).expect("v157-v168 migrations should succeed");
+        let applied = run_migrations(&conn).expect("v157-v169 migrations should succeed");
         assert_eq!(
-            applied, 12,
-            "v157-v168 should be pending after rollback to v156"
+            applied, 13,
+            "v157-v169 should be pending after rollback to v156"
         );
         assert_eq!(
             current_version(&conn).expect("current version"),
@@ -4630,10 +4635,10 @@ mod tests {
         )
         .expect("seed partial v155 shadow row");
 
-        let applied = run_migrations(&conn).expect("v156-v168 migrations should succeed");
+        let applied = run_migrations(&conn).expect("v156-v169 migrations should succeed");
         assert_eq!(
-            applied, 13,
-            "v156-v168 should be pending after rollback to v155"
+            applied, 14,
+            "v156-v169 should be pending after rollback to v155"
         );
         assert_eq!(
             current_version(&conn).expect("current version"),
