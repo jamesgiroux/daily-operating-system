@@ -1,0 +1,51 @@
+{
+  "pair_id": "hard_negative_002",
+  "bucket": "hard_negatives",
+  "expected_decision": "fork",
+  "source": "synthetic",
+  "claim_a": {
+    "text": "Contract approval is awaiting legal review.",
+    "sensitivity": "internal",
+    "subject_ref": { "kind": "account", "id": "account_epsilon" },
+    "predicate": "contract_approval_status",
+    "polarity": "affirm",
+    "object": { "kind": "literal", "literal_kind": "enum", "value": "awaiting_legal_review" },
+    "qualifiers": {
+      "time": null,
+      "region": null,
+      "scope": null,
+      "entity": null,
+      "numerics": [],
+      "extras": {}
+    },
+    "status": "confirmed",
+    "sentiment": "neutral",
+    "claim_type": "risk",
+    "field_path": "approval.status",
+    "workspace_id": "workspace_alpha",
+    "tier_key": "state:internal"
+  },
+  "claim_b": {
+    "text": "Contract approval is awaiting legal review.",
+    "sensitivity": "confidential",
+    "subject_ref": { "kind": "account", "id": "account_epsilon" },
+    "predicate": "contract_approval_status",
+    "polarity": "affirm",
+    "object": { "kind": "literal", "literal_kind": "enum", "value": "awaiting_legal_review" },
+    "qualifiers": {
+      "time": null,
+      "region": null,
+      "scope": null,
+      "entity": null,
+      "numerics": [],
+      "extras": {}
+    },
+    "status": "confirmed",
+    "sentiment": "neutral",
+    "claim_type": "risk",
+    "field_path": "approval.status",
+    "workspace_id": "workspace_alpha",
+    "tier_key": "state:confidential"
+  },
+  "rationale": "Same claim shape must not merge across trust/sensitivity tiers."
+}

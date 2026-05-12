@@ -1,0 +1,49 @@
+{
+  "pair_id": "asymmetric_qualifier_002",
+  "bucket": "asymmetric_qualifiers",
+  "expected_decision": "fork",
+  "source": "synthetic",
+  "claim_a": {
+    "text": "Executive sponsorship is active for Q3.",
+    "sensitivity": "internal",
+    "subject_ref": { "kind": "account", "id": "account_iota" },
+    "predicate": "relationship_champion_status",
+    "polarity": "affirm",
+    "object": { "kind": "literal", "literal_kind": "enum", "value": "active" },
+    "qualifiers": {
+      "time": { "normalized": "2026-Q3" },
+      "region": null,
+      "scope": null,
+      "entity": null,
+      "numerics": [],
+      "extras": {}
+    },
+    "status": "confirmed",
+    "sentiment": "positive",
+    "claim_type": "relationship",
+    "field_path": "relationship.champion",
+    "workspace_id": "workspace_alpha"
+  },
+  "claim_b": {
+    "text": "Executive sponsorship is active.",
+    "sensitivity": "internal",
+    "subject_ref": { "kind": "account", "id": "account_iota" },
+    "predicate": "relationship_champion_status",
+    "polarity": "affirm",
+    "object": { "kind": "literal", "literal_kind": "enum", "value": "active" },
+    "qualifiers": {
+      "time": null,
+      "region": null,
+      "scope": null,
+      "entity": null,
+      "numerics": [],
+      "extras": {}
+    },
+    "status": "confirmed",
+    "sentiment": "positive",
+    "claim_type": "relationship",
+    "field_path": "relationship.champion",
+    "workspace_id": "workspace_beta"
+  },
+  "rationale": "One-sided temporal qualifier plus workspace mismatch must stay forked."
+}

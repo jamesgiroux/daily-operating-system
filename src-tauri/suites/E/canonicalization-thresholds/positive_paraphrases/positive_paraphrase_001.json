@@ -1,0 +1,49 @@
+{
+  "pair_id": "positive_paraphrase_001",
+  "bucket": "positive_paraphrases",
+  "expected_decision": "merge",
+  "source": "synthetic",
+  "claim_a": {
+    "text": "Phase 2 budget approval is pending with finance.",
+    "sensitivity": "internal",
+    "subject_ref": { "kind": "account", "id": "account_alpha" },
+    "predicate": "contract_approval_status",
+    "polarity": "affirm",
+    "object": { "kind": "literal", "literal_kind": "enum", "value": "pending_finance_approval" },
+    "qualifiers": {
+      "time": null,
+      "region": null,
+      "scope": { "normalized": "phase_2" },
+      "entity": null,
+      "numerics": [],
+      "extras": {}
+    },
+    "status": "confirmed",
+    "sentiment": "neutral",
+    "claim_type": "risk",
+    "field_path": "approval.status",
+    "workspace_id": "workspace_alpha"
+  },
+  "claim_b": {
+    "text": "Finance still needs to approve the Phase 2 budget.",
+    "sensitivity": "internal",
+    "subject_ref": { "kind": "account", "id": "account_alpha" },
+    "predicate": "contract_approval_status",
+    "polarity": "affirm",
+    "object": { "kind": "literal", "literal_kind": "enum", "value": "pending_finance_approval" },
+    "qualifiers": {
+      "time": null,
+      "region": null,
+      "scope": { "normalized": "phase_2" },
+      "entity": null,
+      "numerics": [],
+      "extras": {}
+    },
+    "status": "confirmed",
+    "sentiment": "neutral",
+    "claim_type": "risk",
+    "field_path": "approval.status",
+    "workspace_id": "workspace_alpha"
+  },
+  "rationale": "Same subject, predicate, polarity, object, scope, and status; text differs only by paraphrase."
+}

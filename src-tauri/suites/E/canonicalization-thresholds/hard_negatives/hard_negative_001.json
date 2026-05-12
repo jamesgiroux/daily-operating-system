@@ -1,0 +1,49 @@
+{
+  "pair_id": "hard_negative_001",
+  "bucket": "hard_negatives",
+  "expected_decision": "fork",
+  "source": "synthetic",
+  "claim_a": {
+    "text": "The renewal risk is elevated.",
+    "sensitivity": "internal",
+    "subject_ref": { "kind": "account", "id": "account_gamma" },
+    "predicate": "account_renewal_risk",
+    "polarity": "affirm",
+    "object": { "kind": "literal", "literal_kind": "enum", "value": "elevated" },
+    "qualifiers": {
+      "time": null,
+      "region": null,
+      "scope": null,
+      "entity": null,
+      "numerics": [],
+      "extras": {}
+    },
+    "status": "confirmed",
+    "sentiment": "negative",
+    "claim_type": "risk",
+    "field_path": "renewal.risk",
+    "workspace_id": "workspace_alpha"
+  },
+  "claim_b": {
+    "text": "The renewal risk is elevated.",
+    "sensitivity": "internal",
+    "subject_ref": { "kind": "account", "id": "account_delta" },
+    "predicate": "account_renewal_risk",
+    "polarity": "affirm",
+    "object": { "kind": "literal", "literal_kind": "enum", "value": "elevated" },
+    "qualifiers": {
+      "time": null,
+      "region": null,
+      "scope": null,
+      "entity": null,
+      "numerics": [],
+      "extras": {}
+    },
+    "status": "confirmed",
+    "sentiment": "negative",
+    "claim_type": "risk",
+    "field_path": "renewal.risk",
+    "workspace_id": "workspace_alpha"
+  },
+  "rationale": "Lexically identical claims must not merge across account subjects."
+}

@@ -1,0 +1,49 @@
+{
+  "pair_id": "positive_paraphrase_002",
+  "bucket": "positive_paraphrases",
+  "expected_decision": "merge",
+  "source": "synthetic",
+  "claim_a": {
+    "text": "The follow-up is due by 2026-06-01.",
+    "sensitivity": "internal",
+    "subject_ref": { "kind": "account", "id": "account_beta" },
+    "predicate": "commitment_due",
+    "polarity": "affirm",
+    "object": { "kind": "literal", "literal_kind": "date", "value": "2026-06-01" },
+    "qualifiers": {
+      "time": { "normalized": "2026-06-01" },
+      "region": null,
+      "scope": null,
+      "entity": null,
+      "numerics": [],
+      "extras": {}
+    },
+    "status": "confirmed",
+    "sentiment": "neutral",
+    "claim_type": "commitment",
+    "field_path": "commitment.due",
+    "workspace_id": "workspace_alpha"
+  },
+  "claim_b": {
+    "text": "The next-step deadline is June 1 2026.",
+    "sensitivity": "internal",
+    "subject_ref": { "kind": "account", "id": "account_beta" },
+    "predicate": "commitment_due",
+    "polarity": "affirm",
+    "object": { "kind": "literal", "literal_kind": "date", "value": "2026-06-01" },
+    "qualifiers": {
+      "time": { "normalized": "2026-06-01" },
+      "region": null,
+      "scope": null,
+      "entity": null,
+      "numerics": [],
+      "extras": {}
+    },
+    "status": "confirmed",
+    "sentiment": "neutral",
+    "claim_type": "commitment",
+    "field_path": "commitment.due",
+    "workspace_id": "workspace_alpha"
+  },
+  "rationale": "Same structured due-date claim represented with different lexical wording."
+}

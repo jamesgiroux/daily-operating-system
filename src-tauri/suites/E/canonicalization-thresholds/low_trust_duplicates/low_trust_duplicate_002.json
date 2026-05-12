@@ -1,0 +1,51 @@
+{
+  "pair_id": "low_trust_duplicate_002",
+  "bucket": "low_trust_duplicates",
+  "expected_decision": "fork",
+  "source": "synthetic",
+  "claim_a": {
+    "text": "The account objective is expansion readiness.",
+    "sensitivity": "internal",
+    "subject_ref": { "kind": "account", "id": "account_lambda" },
+    "predicate": "account_objective_status",
+    "polarity": "affirm",
+    "object": { "kind": "literal", "literal_kind": "enum", "value": "expansion_readiness" },
+    "qualifiers": {
+      "time": null,
+      "region": null,
+      "scope": null,
+      "entity": null,
+      "numerics": [],
+      "extras": {}
+    },
+    "status": "confirmed",
+    "sentiment": "neutral",
+    "claim_type": "objective",
+    "field_path": "objective.status",
+    "workspace_id": "workspace_alpha"
+  },
+  "claim_b": {
+    "text": "The account objective is expansion readiness.",
+    "sensitivity": "internal",
+    "subject_ref": { "kind": "account", "id": "account_lambda" },
+    "predicate": "account_objective_status",
+    "polarity": "affirm",
+    "object": { "kind": "literal", "literal_kind": "enum", "value": "expansion_readiness" },
+    "qualifiers": {
+      "time": null,
+      "region": null,
+      "scope": null,
+      "entity": null,
+      "numerics": [],
+      "extras": {}
+    },
+    "status": "confirmed",
+    "sentiment": "neutral",
+    "claim_type": "objective",
+    "field_path": "objective.status",
+    "workspace_id": "workspace_alpha",
+    "canonical_status": "legacy_unmigrated",
+    "non_semantic_mergeable": true
+  },
+  "rationale": "Legacy-unmigrated rows must not enter the v2 merge path even when the text is identical."
+}

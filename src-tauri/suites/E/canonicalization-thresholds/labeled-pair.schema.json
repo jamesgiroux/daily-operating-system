@@ -1,0 +1,175 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dailyos://suites/E/canonicalization-thresholds/labeled-pair.schema.json",
+  "title": "ADR-0131 canonicalization parity labeled pair",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "pair_id",
+    "bucket",
+    "expected_decision",
+    "source",
+    "claim_a",
+    "claim_b",
+    "rationale"
+  ],
+  "properties": {
+    "pair_id": { "type": "string", "minLength": 1 },
+    "bucket": {
+      "type": "string",
+      "enum": [
+        "positive_paraphrases",
+        "hard_negatives",
+        "contradictions",
+        "asymmetric_qualifiers",
+        "low_trust_duplicates"
+      ]
+    },
+    "expected_decision": {
+      "type": "string",
+      "enum": ["merge", "fork", "contradict", "ambiguous"]
+    },
+    "source": {
+      "type": "string",
+      "enum": ["production", "synthetic"]
+    },
+    "claim_a": { "$ref": "#/$defs/corpus_claim" },
+    "claim_b": { "$ref": "#/$defs/corpus_claim" },
+    "rationale": { "type": "string" }
+  },
+  "$defs": {
+    "entity_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": { "type": "string", "minLength": 1 },
+        "id": { "type": "string", "minLength": 1 }
+      }
+    },
+    "object_value": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "canonical"],
+          "properties": {
+            "kind": { "const": "free_text" },
+            "canonical": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "literal_kind", "value"],
+          "properties": {
+            "kind": { "const": "literal" },
+            "literal_kind": {
+              "type": "string",
+              "enum": ["number", "text", "date", "money", "percentage", "enum"]
+            },
+            "value": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "entity_ref"],
+          "properties": {
+            "kind": { "const": "resolved" },
+            "entity_ref": { "$ref": "#/$defs/entity_ref" }
+          }
+        }
+      ]
+    },
+    "qualifiers": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "time": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["normalized"],
+          "properties": { "normalized": { "type": "string" } }
+        },
+        "region": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["code"],
+          "properties": { "code": { "type": "string" } }
+        },
+        "scope": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["normalized"],
+          "properties": { "normalized": { "type": "string" } }
+        },
+        "entity": { "oneOf": [{ "$ref": "#/$defs/entity_ref" }, { "type": "null" }] },
+        "numerics": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "value"],
+            "properties": {
+              "name": { "type": "string" },
+              "value": { "type": "string" }
+            }
+          }
+        },
+        "extras": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
+    "corpus_claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text",
+        "sensitivity",
+        "subject_ref",
+        "predicate",
+        "polarity",
+        "object",
+        "qualifiers",
+        "status",
+        "sentiment"
+      ],
+      "properties": {
+        "text": { "type": "string", "minLength": 1 },
+        "sensitivity": {
+          "type": "string",
+          "enum": ["public", "internal", "confidential", "user_only"]
+        },
+        "subject_ref": { "$ref": "#/$defs/entity_ref" },
+        "predicate": { "type": "string", "minLength": 1 },
+        "polarity": { "type": "string", "enum": ["affirm", "negate"] },
+        "object": { "$ref": "#/$defs/object_value" },
+        "qualifiers": { "$ref": "#/$defs/qualifiers" },
+        "status": { "type": "string", "enum": ["confirmed", "pending", "unknown"] },
+        "sentiment": {
+          "type": ["string", "null"],
+          "enum": ["positive", "neutral", "negative", null]
+        },
+        "claim_type": { "type": "string" },
+        "field_path": { "type": ["string", "null"] },
+        "account_id": { "type": ["string", "null"] },
+        "workspace_id": { "type": ["string", "null"] },
+        "tier_key": { "type": "string" },
+        "claim_state": {
+          "type": "string",
+          "enum": ["active", "dormant", "tombstoned", "withdrawn"]
+        },
+        "surfacing_state": { "type": "string", "enum": ["active", "dormant"] },
+        "canonical_status": {
+          "type": "string",
+          "enum": ["pending_backfill", "legacy_unmigrated", "live"]
+        },
+        "non_semantic_mergeable": { "type": "boolean" },
+        "tombstone_shadowed": { "type": "boolean" }
+      }
+    }
+  }
+}

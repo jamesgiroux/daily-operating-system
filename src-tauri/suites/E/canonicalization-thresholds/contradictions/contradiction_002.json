@@ -1,0 +1,49 @@
+{
+  "pair_id": "contradiction_002",
+  "bucket": "contradictions",
+  "expected_decision": "contradict",
+  "source": "synthetic",
+  "claim_a": {
+    "text": "The account health risk is low.",
+    "sensitivity": "internal",
+    "subject_ref": { "kind": "account", "id": "account_eta" },
+    "predicate": "risk_status",
+    "polarity": "affirm",
+    "object": { "kind": "literal", "literal_kind": "enum", "value": "low" },
+    "qualifiers": {
+      "time": null,
+      "region": null,
+      "scope": null,
+      "entity": null,
+      "numerics": [],
+      "extras": {}
+    },
+    "status": "confirmed",
+    "sentiment": "positive",
+    "claim_type": "risk",
+    "field_path": "health.risk",
+    "workspace_id": "workspace_alpha"
+  },
+  "claim_b": {
+    "text": "The account health risk is high.",
+    "sensitivity": "internal",
+    "subject_ref": { "kind": "account", "id": "account_eta" },
+    "predicate": "risk_status",
+    "polarity": "affirm",
+    "object": { "kind": "literal", "literal_kind": "enum", "value": "high" },
+    "qualifiers": {
+      "time": null,
+      "region": null,
+      "scope": null,
+      "entity": null,
+      "numerics": [],
+      "extras": {}
+    },
+    "status": "confirmed",
+    "sentiment": "negative",
+    "claim_type": "risk",
+    "field_path": "health.risk",
+    "workspace_id": "workspace_alpha"
+  },
+  "rationale": "Same claim scope with opposing object values should be classified as contradiction."
+}

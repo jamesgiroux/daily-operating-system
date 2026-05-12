@@ -1,0 +1,49 @@
+{
+  "pair_id": "contradiction_001",
+  "bucket": "contradictions",
+  "expected_decision": "contradict",
+  "source": "synthetic",
+  "claim_a": {
+    "text": "Contract approval is approved.",
+    "sensitivity": "internal",
+    "subject_ref": { "kind": "account", "id": "account_zeta" },
+    "predicate": "contract_approval_status",
+    "polarity": "affirm",
+    "object": { "kind": "literal", "literal_kind": "enum", "value": "approved" },
+    "qualifiers": {
+      "time": null,
+      "region": null,
+      "scope": null,
+      "entity": null,
+      "numerics": [],
+      "extras": {}
+    },
+    "status": "confirmed",
+    "sentiment": "positive",
+    "claim_type": "risk",
+    "field_path": "approval.status",
+    "workspace_id": "workspace_alpha"
+  },
+  "claim_b": {
+    "text": "Contract approval is blocked.",
+    "sensitivity": "internal",
+    "subject_ref": { "kind": "account", "id": "account_zeta" },
+    "predicate": "contract_approval_status",
+    "polarity": "affirm",
+    "object": { "kind": "literal", "literal_kind": "enum", "value": "blocked" },
+    "qualifiers": {
+      "time": null,
+      "region": null,
+      "scope": null,
+      "entity": null,
+      "numerics": [],
+      "extras": {}
+    },
+    "status": "confirmed",
+    "sentiment": "negative",
+    "claim_type": "risk",
+    "field_path": "approval.status",
+    "workspace_id": "workspace_alpha"
+  },
+  "rationale": "Same subject and predicate with distinct structured approval values should route to contradiction."
+}

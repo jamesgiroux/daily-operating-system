@@ -1,0 +1,51 @@
+{
+  "pair_id": "low_trust_duplicate_001",
+  "bucket": "low_trust_duplicates",
+  "expected_decision": "fork",
+  "source": "synthetic",
+  "claim_a": {
+    "text": "The stakeholder role is champion.",
+    "sensitivity": "internal",
+    "subject_ref": { "kind": "account", "id": "account_kappa" },
+    "predicate": "stakeholder_role",
+    "polarity": "affirm",
+    "object": { "kind": "literal", "literal_kind": "enum", "value": "champion" },
+    "qualifiers": {
+      "time": null,
+      "region": null,
+      "scope": null,
+      "entity": { "kind": "person", "id": "person_alpha" },
+      "numerics": [],
+      "extras": {}
+    },
+    "status": "confirmed",
+    "sentiment": "positive",
+    "claim_type": "stakeholder",
+    "field_path": "stakeholder.role",
+    "workspace_id": "workspace_alpha"
+  },
+  "claim_b": {
+    "text": "The stakeholder role is champion.",
+    "sensitivity": "internal",
+    "subject_ref": { "kind": "account", "id": "account_kappa" },
+    "predicate": "stakeholder_role",
+    "polarity": "affirm",
+    "object": { "kind": "literal", "literal_kind": "enum", "value": "champion" },
+    "qualifiers": {
+      "time": null,
+      "region": null,
+      "scope": null,
+      "entity": { "kind": "person", "id": "person_alpha" },
+      "numerics": [],
+      "extras": {}
+    },
+    "status": "confirmed",
+    "sentiment": "positive",
+    "claim_type": "stakeholder",
+    "field_path": "stakeholder.role",
+    "workspace_id": "workspace_alpha",
+    "claim_state": "tombstoned",
+    "tombstone_shadowed": true
+  },
+  "rationale": "Duplicate text and structure must not bypass tombstone protections."
+}

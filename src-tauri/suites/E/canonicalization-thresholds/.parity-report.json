@@ -1,0 +1,510 @@
+{
+  "schema_version": "canonicalization-parity-report:v1",
+  "corpus_dir": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds",
+  "canonicalization_mode": "shadow",
+  "comparator_threshold_version": "adr-0131-thresholds:v1",
+  "pair_count": 10,
+  "bucket_counts": {
+    "asymmetric_qualifiers": 2,
+    "contradictions": 2,
+    "hard_negatives": 2,
+    "low_trust_duplicates": 2,
+    "positive_paraphrases": 2
+  },
+  "metrics": {
+    "ambiguous_rate_per_bucket": {
+      "label": "Ambiguous-rate per bucket",
+      "numerator": 0,
+      "denominator": 10,
+      "value": 0.0,
+      "target": "<= 0.05 per label bucket",
+      "per_bucket": {
+        "asymmetric_qualifiers": {
+          "numerator": 0,
+          "denominator": 2,
+          "value": 0.0
+        },
+        "contradictions": {
+          "numerator": 0,
+          "denominator": 2,
+          "value": 0.0
+        },
+        "hard_negatives": {
+          "numerator": 0,
+          "denominator": 2,
+          "value": 0.0
+        },
+        "low_trust_duplicates": {
+          "numerator": 0,
+          "denominator": 2,
+          "value": 0.0
+        },
+        "positive_paraphrases": {
+          "numerator": 0,
+          "denominator": 2,
+          "value": 0.0
+        }
+      }
+    },
+    "contradiction_detection": {
+      "label": "Contradiction detection",
+      "numerator": 2,
+      "denominator": 2,
+      "value": 1.0,
+      "target": ">= 0.97 on should_contradict corpus"
+    },
+    "cross_account_merge_rate": {
+      "label": "Cross-account merge rate",
+      "numerator": 0,
+      "denominator": 1,
+      "value": 0.0,
+      "target": "= 0"
+    },
+    "cross_tier_merge_rate": {
+      "label": "Cross-tier merge rate",
+      "numerator": 0,
+      "denominator": 1,
+      "value": 0.0,
+      "target": "= 0"
+    },
+    "cross_workspace_merge_rate": {
+      "label": "Cross-workspace merge rate",
+      "numerator": 0,
+      "denominator": 1,
+      "value": 0.0,
+      "target": "= 0"
+    },
+    "false_merge_rate": {
+      "label": "False-merge rate",
+      "numerator": 0,
+      "denominator": 10,
+      "value": 0.0,
+      "target": "<= 0.005; false merges are double-weighted at gate review"
+    },
+    "legacy_unmigrated_merge_rate": {
+      "label": "Legacy-unmigrated merge rate",
+      "numerator": 0,
+      "denominator": 1,
+      "value": 0.0,
+      "target": "= 0"
+    },
+    "tombstone_bypass_rate": {
+      "label": "Tombstone-bypass rate",
+      "numerator": 0,
+      "denominator": 1,
+      "value": 0.0,
+      "target": "= 0"
+    },
+    "true_fork_recall": {
+      "label": "True-fork recall",
+      "numerator": 6,
+      "denominator": 6,
+      "value": 1.0,
+      "target": ">= 0.95 on should_fork corpus"
+    },
+    "true_merge_precision": {
+      "label": "True-merge precision",
+      "numerator": 2,
+      "denominator": 2,
+      "value": 1.0,
+      "target": ">= 0.98 on should_merge corpus"
+    },
+    "true_merge_recall": {
+      "label": "True-merge recall",
+      "numerator": 2,
+      "denominator": 2,
+      "value": 1.0,
+      "target": ">= 0.95 on should_merge corpus"
+    }
+  },
+  "divergence_counts": {
+    "v1_fork_v2_contradict": 2,
+    "v1_fork_v2_fork": 5,
+    "v1_fork_v2_merge": 1,
+    "v1_merge_v2_fork": 1,
+    "v1_merge_v2_merge": 1
+  },
+  "buckets": {
+    "asymmetric_qualifiers": {
+      "total": 2,
+      "target_share": "10%",
+      "expected_decisions": {
+        "fork": 2
+      },
+      "v1_decisions": {
+        "fork": 2
+      },
+      "v2_decisions": {
+        "fork": 2
+      },
+      "divergences": {
+        "v1_fork_v2_fork": 2
+      },
+      "expected_mismatches": 0
+    },
+    "contradictions": {
+      "total": 2,
+      "target_share": "15%",
+      "expected_decisions": {
+        "contradict": 2
+      },
+      "v1_decisions": {
+        "fork": 2
+      },
+      "v2_decisions": {
+        "contradict": 2
+      },
+      "divergences": {
+        "v1_fork_v2_contradict": 2
+      },
+      "expected_mismatches": 0
+    },
+    "hard_negatives": {
+      "total": 2,
+      "target_share": "30%",
+      "expected_decisions": {
+        "fork": 2
+      },
+      "v1_decisions": {
+        "fork": 1,
+        "merge": 1
+      },
+      "v2_decisions": {
+        "fork": 2
+      },
+      "divergences": {
+        "v1_fork_v2_fork": 1,
+        "v1_merge_v2_fork": 1
+      },
+      "expected_mismatches": 0
+    },
+    "low_trust_duplicates": {
+      "total": 2,
+      "target_share": "5%",
+      "expected_decisions": {
+        "fork": 2
+      },
+      "v1_decisions": {
+        "fork": 2
+      },
+      "v2_decisions": {
+        "fork": 2
+      },
+      "divergences": {
+        "v1_fork_v2_fork": 2
+      },
+      "expected_mismatches": 0
+    },
+    "positive_paraphrases": {
+      "total": 2,
+      "target_share": "40%",
+      "expected_decisions": {
+        "merge": 2
+      },
+      "v1_decisions": {
+        "fork": 1,
+        "merge": 1
+      },
+      "v2_decisions": {
+        "merge": 2
+      },
+      "divergences": {
+        "v1_fork_v2_merge": 1,
+        "v1_merge_v2_merge": 1
+      },
+      "expected_mismatches": 0
+    }
+  },
+  "pairs": [
+    {
+      "pair_id": "positive_paraphrase_001",
+      "bucket": "positive_paraphrases",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/positive_paraphrases/positive_paraphrase_001.json",
+      "expected_decision": "merge",
+      "v1_decision": "merge",
+      "v2_decision": "merge",
+      "matches_expected": true,
+      "matches_v1": true,
+      "divergence_key": "v1_merge_v2_merge",
+      "v2_reason": "all_match",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "object": "match",
+        "polarity": "match",
+        "predicate": "match",
+        "qualifiers": "match",
+        "status": "match",
+        "subject": "match"
+      },
+      "tombstone_scoped": false,
+      "cross_tier": false,
+      "cross_account": false,
+      "cross_workspace": false,
+      "legacy_unmigrated": false,
+      "rationale": "Same subject, predicate, polarity, object, scope, and status; text differs only by paraphrase."
+    },
+    {
+      "pair_id": "positive_paraphrase_002",
+      "bucket": "positive_paraphrases",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/positive_paraphrases/positive_paraphrase_002.json",
+      "expected_decision": "merge",
+      "v1_decision": "fork",
+      "v2_decision": "merge",
+      "matches_expected": true,
+      "matches_v1": false,
+      "divergence_key": "v1_fork_v2_merge",
+      "v2_reason": "all_match",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "object": "match",
+        "polarity": "match",
+        "predicate": "match",
+        "qualifiers": "match",
+        "status": "match",
+        "subject": "match"
+      },
+      "tombstone_scoped": false,
+      "cross_tier": false,
+      "cross_account": false,
+      "cross_workspace": false,
+      "legacy_unmigrated": false,
+      "rationale": "Same structured due-date claim represented with different lexical wording."
+    },
+    {
+      "pair_id": "hard_negative_001",
+      "bucket": "hard_negatives",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/hard_negatives/hard_negative_001.json",
+      "expected_decision": "fork",
+      "v1_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "matches_v1": true,
+      "divergence_key": "v1_fork_v2_fork",
+      "v2_reason": "account_scope",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "account_scope"
+      },
+      "tombstone_scoped": false,
+      "cross_tier": false,
+      "cross_account": true,
+      "cross_workspace": false,
+      "legacy_unmigrated": false,
+      "rationale": "Lexically identical claims must not merge across account subjects."
+    },
+    {
+      "pair_id": "hard_negative_002",
+      "bucket": "hard_negatives",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/hard_negatives/hard_negative_002.json",
+      "expected_decision": "fork",
+      "v1_decision": "merge",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "matches_v1": false,
+      "divergence_key": "v1_merge_v2_fork",
+      "v2_reason": "tier_mismatch",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "tier_mismatch"
+      },
+      "tombstone_scoped": false,
+      "cross_tier": true,
+      "cross_account": false,
+      "cross_workspace": false,
+      "legacy_unmigrated": false,
+      "rationale": "Same claim shape must not merge across trust/sensitivity tiers."
+    },
+    {
+      "pair_id": "contradiction_001",
+      "bucket": "contradictions",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/contradictions/contradiction_001.json",
+      "expected_decision": "contradict",
+      "v1_decision": "fork",
+      "v2_decision": "contradict",
+      "matches_expected": true,
+      "matches_v1": false,
+      "divergence_key": "v1_fork_v2_contradict",
+      "v2_reason": "object_distinct",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "object": "distinct",
+        "polarity": "match",
+        "predicate": "match",
+        "qualifiers": "match",
+        "status": "match",
+        "subject": "match"
+      },
+      "tombstone_scoped": false,
+      "cross_tier": false,
+      "cross_account": false,
+      "cross_workspace": false,
+      "legacy_unmigrated": false,
+      "rationale": "Same subject and predicate with distinct structured approval values should route to contradiction."
+    },
+    {
+      "pair_id": "contradiction_002",
+      "bucket": "contradictions",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/contradictions/contradiction_002.json",
+      "expected_decision": "contradict",
+      "v1_decision": "fork",
+      "v2_decision": "contradict",
+      "matches_expected": true,
+      "matches_v1": false,
+      "divergence_key": "v1_fork_v2_contradict",
+      "v2_reason": "object_distinct",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "object": "distinct",
+        "polarity": "match",
+        "predicate": "match",
+        "qualifiers": "match",
+        "status": "match",
+        "subject": "match"
+      },
+      "tombstone_scoped": false,
+      "cross_tier": false,
+      "cross_account": false,
+      "cross_workspace": false,
+      "legacy_unmigrated": false,
+      "rationale": "Same claim scope with opposing object values should be classified as contradiction."
+    },
+    {
+      "pair_id": "asymmetric_qualifier_001",
+      "bucket": "asymmetric_qualifiers",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/asymmetric_qualifiers/asymmetric_qualifier_001.json",
+      "expected_decision": "fork",
+      "v1_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "matches_v1": true,
+      "divergence_key": "v1_fork_v2_fork",
+      "v2_reason": "qualifier_mismatch",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "object": "match",
+        "polarity": "match",
+        "predicate": "match",
+        "qualifiers": "distinct",
+        "status": "match",
+        "subject": "match"
+      },
+      "tombstone_scoped": false,
+      "cross_tier": false,
+      "cross_account": false,
+      "cross_workspace": false,
+      "legacy_unmigrated": false,
+      "rationale": "One-sided region qualifier must fail closed rather than collapse scoped and unscoped claims."
+    },
+    {
+      "pair_id": "asymmetric_qualifier_002",
+      "bucket": "asymmetric_qualifiers",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/asymmetric_qualifiers/asymmetric_qualifier_002.json",
+      "expected_decision": "fork",
+      "v1_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "matches_v1": true,
+      "divergence_key": "v1_fork_v2_fork",
+      "v2_reason": "workspace_scope",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "workspace_scope"
+      },
+      "tombstone_scoped": false,
+      "cross_tier": false,
+      "cross_account": false,
+      "cross_workspace": true,
+      "legacy_unmigrated": false,
+      "rationale": "One-sided temporal qualifier plus workspace mismatch must stay forked."
+    },
+    {
+      "pair_id": "low_trust_duplicate_001",
+      "bucket": "low_trust_duplicates",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/low_trust_duplicates/low_trust_duplicate_001.json",
+      "expected_decision": "fork",
+      "v1_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "matches_v1": true,
+      "divergence_key": "v1_fork_v2_fork",
+      "v2_reason": "candidate_tombstoned",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "candidate_tombstoned"
+      },
+      "tombstone_scoped": true,
+      "cross_tier": false,
+      "cross_account": false,
+      "cross_workspace": false,
+      "legacy_unmigrated": false,
+      "rationale": "Duplicate text and structure must not bypass tombstone protections."
+    },
+    {
+      "pair_id": "low_trust_duplicate_002",
+      "bucket": "low_trust_duplicates",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/low_trust_duplicates/low_trust_duplicate_002.json",
+      "expected_decision": "fork",
+      "v1_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "matches_v1": true,
+      "divergence_key": "v1_fork_v2_fork",
+      "v2_reason": "candidate_legacy_unmigrated",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "candidate_legacy_unmigrated"
+      },
+      "tombstone_scoped": false,
+      "cross_tier": false,
+      "cross_account": false,
+      "cross_workspace": false,
+      "legacy_unmigrated": true,
+      "rationale": "Legacy-unmigrated rows must not enter the v2 merge path even when the text is identical."
+    }
+  ]
+}

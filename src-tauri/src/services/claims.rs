@@ -53,6 +53,7 @@ use abilities_runtime::structured_claim::{
     QualifierSet, StructuredClaim,
 };
 
+pub mod canonicalization_parity;
 pub mod link_map;
 mod link_map_macro;
 

@@ -1,0 +1,49 @@
+{
+  "pair_id": "asymmetric_qualifier_001",
+  "bucket": "asymmetric_qualifiers",
+  "expected_decision": "fork",
+  "source": "synthetic",
+  "claim_a": {
+    "text": "Product usage is increasing in the US region.",
+    "sensitivity": "internal",
+    "subject_ref": { "kind": "account", "id": "account_theta" },
+    "predicate": "product_usage_trend",
+    "polarity": "affirm",
+    "object": { "kind": "literal", "literal_kind": "enum", "value": "increasing" },
+    "qualifiers": {
+      "time": null,
+      "region": { "code": "US" },
+      "scope": null,
+      "entity": null,
+      "numerics": [],
+      "extras": {}
+    },
+    "status": "confirmed",
+    "sentiment": "positive",
+    "claim_type": "usage",
+    "field_path": "usage.trend",
+    "workspace_id": "workspace_alpha"
+  },
+  "claim_b": {
+    "text": "Product usage is increasing.",
+    "sensitivity": "internal",
+    "subject_ref": { "kind": "account", "id": "account_theta" },
+    "predicate": "product_usage_trend",
+    "polarity": "affirm",
+    "object": { "kind": "literal", "literal_kind": "enum", "value": "increasing" },
+    "qualifiers": {
+      "time": null,
+      "region": null,
+      "scope": null,
+      "entity": null,
+      "numerics": [],
+      "extras": {}
+    },
+    "status": "confirmed",
+    "sentiment": "positive",
+    "claim_type": "usage",
+    "field_path": "usage.trend",
+    "workspace_id": "workspace_alpha"
+  },
+  "rationale": "One-sided region qualifier must fail closed rather than collapse scoped and unscoped claims."
+}
