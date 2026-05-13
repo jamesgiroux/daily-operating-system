@@ -5,14 +5,14 @@
   "source": "synthetic",
   "claim_a": {
     "claim_type": "risk",
-    "field_path": "risk.status",
+    "field_path": "renewal.risk",
     "object": {
       "kind": "literal",
       "literal_kind": "enum",
-      "value": "escalated"
+      "value": "high"
     },
     "polarity": "affirm",
-    "predicate": "risk_status",
+    "predicate": "account_renewal_risk",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -25,22 +25,22 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_184",
-      "kind": "account"
+      "id": "email_037",
+      "kind": "email"
     },
-    "text": "Migration risk is still open and unresolved.",
+    "text": "Renewal risk is elevated due to leadership changes.",
     "workspace_id": "workspace_alpha"
   },
   "claim_b": {
     "claim_type": "risk",
-    "field_path": "risk.status",
+    "field_path": "renewal.risk",
     "object": {
       "kind": "literal",
       "literal_kind": "enum",
-      "value": "escalated"
+      "value": "high"
     },
     "polarity": "affirm",
-    "predicate": "risk_status",
+    "predicate": "account_renewal_risk",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -53,10 +53,10 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_184",
-      "kind": "account"
+      "id": "email_037",
+      "kind": "email"
     },
-    "text": "The migration risk remains open.",
+    "text": "Leadership churn has raised our renewal risk.",
     "workspace_id": "workspace_alpha"
   },
   "rationale": "Same subject, predicate, polarity, object, qualifiers, and status; text varies only by paraphrase."

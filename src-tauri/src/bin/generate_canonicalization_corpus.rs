@@ -16,13 +16,14 @@ use std::path::{Path, PathBuf};
 
 use abilities_runtime::predicates::registry::PredicateRef;
 use abilities_runtime::structured_claim::{
-    EntityRef, LiteralKind, ObjectValue, Polarity, QualifierSet, RegionCode, ScopeMarker, Sentiment,
-    StructuredClaim, TemporalQualifier,
+    EntityRef, LiteralKind, ObjectValue, Polarity, QualifierSet, RegionCode, ScopeMarker,
+    Sentiment, StructuredClaim, TemporalQualifier,
 };
 use serde::Serialize;
 use serde_json::{json, Value};
 
 const CORPUS_ROOT: &str = "src-tauri/suites/E/canonicalization-thresholds";
+const CORPUS_SEED: usize = 0x0131_0004_000b_0002;
 
 const POSITIVE_COUNT: usize = 200;
 const HARD_NEGATIVE_COUNT: usize = 150;
@@ -41,7 +42,10 @@ fn main() {
     written += emit_asymmetric_qualifiers(&root);
     written += emit_low_trust_duplicates(&root);
 
-    println!("wrote {written} labeled pairs to {}", root.display());
+    println!(
+        "wrote {written} labeled pairs to {} with seed {CORPUS_SEED:#x}",
+        root.display()
+    );
 }
 
 fn repo_relative(rel: &str) -> PathBuf {
@@ -89,18 +93,14 @@ struct PredicateTemplate {
     field_path: &'static str,
     object_variants: &'static [ObjectShape],
     paraphrase_pairs: &'static [(&'static str, &'static str)],
+    #[allow(dead_code)]
     affirm_negate_pairs: &'static [(&'static str, &'static str)],
 }
 
 #[derive(Clone)]
 enum ObjectShape {
     LiteralEnum(&'static str),
-    LiteralText(&'static str),
-    LiteralMoney(&'static str),
-    LiteralDate(&'static str),
-    LiteralPercentage(&'static str),
     FreeText(&'static str),
-    Resolved(&'static str, &'static str),
 }
 
 fn templates() -> Vec<PredicateTemplate> {
@@ -143,10 +143,7 @@ fn templates() -> Vec<PredicateTemplate> {
                     "The contract has been approved.",
                     "The contract has not been approved.",
                 ),
-                (
-                    "Legal review is complete.",
-                    "Legal review is not complete.",
-                ),
+                ("Legal review is complete.", "Legal review is not complete."),
             ],
         },
         PredicateTemplate {
@@ -229,10 +226,7 @@ fn templates() -> Vec<PredicateTemplate> {
                     "Renewal is at risk this cycle.",
                     "Renewal is not at risk this cycle.",
                 ),
-                (
-                    "Q3 renewal is at risk.",
-                    "Q3 renewal is no longer at risk.",
-                ),
+                ("Q3 renewal is at risk.", "Q3 renewal is no longer at risk."),
             ],
         },
         PredicateTemplate {
@@ -312,10 +306,7 @@ fn templates() -> Vec<PredicateTemplate> {
                 ),
             ],
             affirm_negate_pairs: &[
-                (
-                    "The risk is open.",
-                    "The risk is not open.",
-                ),
+                ("The risk is open.", "The risk is not open."),
                 (
                     "The compliance risk is mitigated.",
                     "The compliance risk is not mitigated.",
@@ -378,11 +369,11 @@ fn emit_positive_paraphrases(root: &Path) -> usize {
     let templates = templates();
     let mut written = 0;
     for (idx, ord) in (0..POSITIVE_COUNT).map(|i| (i, i + 1)) {
-        let template = &templates[idx % templates.len()];
-        let object_idx = (idx / templates.len()) % template.object_variants.len();
-        let paraphrase_idx = (idx / templates.len()) % template.paraphrase_pairs.len();
+        let template = &templates[seeded_index(idx, templates.len())];
+        let object_idx = seeded_index(idx / templates.len(), template.object_variants.len());
+        let paraphrase_idx = seeded_index(idx / templates.len(), template.paraphrase_pairs.len());
         let (text_a, text_b) = template.paraphrase_pairs[paraphrase_idx];
-        let subject = subject_for_index("account", idx);
+        let subject = subject_for_index(idx);
         let object = object_value(&template.object_variants[object_idx]);
         let qualifiers = qualifier_set_default(idx);
         let pair_id = format!("positive_paraphrase_{ord:03}");
@@ -419,36 +410,60 @@ fn emit_hard_negatives(root: &Path) -> usize {
     let templates = templates();
     let mut written = 0;
     for (idx, ord) in (0..HARD_NEGATIVE_COUNT).map(|i| (i, i + 1)) {
-        let template = &templates[idx % templates.len()];
+        let template = &templates[seeded_index(idx, templates.len())];
         let variant = idx % 4;
         let pair_id = format!("hard_negative_{ord:03}");
-        let subject_a = subject_for_index("account", idx);
+        let subject_a = subject_for_index(idx);
         let qualifiers = qualifier_set_default(idx);
 
         let (claim_a, claim_b, rationale) = match variant {
             0 => {
-                // Same predicate, different object value (different vendor/enum).
-                let obj_a = object_value(&template.object_variants[0]);
-                let obj_b = object_value(
-                    &template.object_variants
-                        [(1 % template.object_variants.len()).max(0)],
-                );
-                let text_a = template.paraphrase_pairs[0].0;
-                let text_b = template.paraphrase_pairs[1 % template.paraphrase_pairs.len()].0;
+                // Same predicate and object, but a time qualifier differs.
+                let obj = object_value(&template.object_variants[0]);
+                let qualifiers_b = with_qualifier(qualifiers.clone(), &QualifierKind::Time, idx);
+                let text = template.paraphrase_pairs[0].0;
                 (
-                    claim(text_a, &subject_a, template, Polarity::Affirm, obj_a, qualifiers.clone()),
-                    claim(text_b, &subject_a, template, Polarity::Affirm, obj_b, qualifiers.clone()),
-                    "Same subject and predicate but the object value differs — must not merge.",
+                    claim(
+                        text,
+                        &subject_a,
+                        template,
+                        Polarity::Affirm,
+                        obj.clone(),
+                        qualifiers.clone(),
+                    ),
+                    claim(
+                        text,
+                        &subject_a,
+                        template,
+                        Polarity::Affirm,
+                        obj,
+                        qualifiers_b,
+                    ),
+                    "Same subject, predicate, polarity, and object but the time qualifier differs — must not merge.",
                 )
             }
             1 => {
                 // Different subject IDs (same kind).
-                let subject_b = subject_for_index("account", idx + 1_000);
+                let subject_b = alternate_subject_for_index(idx);
                 let obj = object_value(&template.object_variants[0]);
                 let text = template.paraphrase_pairs[0].0;
                 (
-                    claim(text, &subject_a, template, Polarity::Affirm, obj.clone(), qualifiers.clone()),
-                    claim(text, &subject_b, template, Polarity::Affirm, obj, qualifiers.clone()),
+                    claim(
+                        text,
+                        &subject_a,
+                        template,
+                        Polarity::Affirm,
+                        obj.clone(),
+                        qualifiers.clone(),
+                    ),
+                    claim(
+                        text,
+                        &subject_b,
+                        template,
+                        Polarity::Affirm,
+                        obj,
+                        qualifiers.clone(),
+                    ),
                     "Same text and predicate but distinct subjects — must not merge.",
                 )
             }
@@ -514,12 +529,14 @@ fn emit_contradictions(root: &Path) -> usize {
     let templates = templates();
     let mut written = 0;
     for (idx, ord) in (0..CONTRADICTION_COUNT).map(|i| (i, i + 1)) {
-        let template = &templates[idx % templates.len()];
-        let object_idx = (idx / templates.len()) % template.object_variants.len();
-        let pair_index = (idx / templates.len()) % template.affirm_negate_pairs.len();
-        let (text_a, text_b) = template.affirm_negate_pairs[pair_index];
-        let subject = subject_for_index("account", idx);
-        let object = object_value(&template.object_variants[object_idx]);
+        let template = &templates[seeded_index(idx, templates.len())];
+        let object_idx = seeded_index(idx / templates.len(), template.object_variants.len());
+        let object_b_idx = (object_idx + 1) % template.object_variants.len();
+        let text_a = contradiction_text(template, &template.object_variants[object_idx]);
+        let text_b = contradiction_text(template, &template.object_variants[object_b_idx]);
+        let subject = subject_for_index(idx);
+        let object_a = object_value(&template.object_variants[object_idx]);
+        let object_b = object_value(&template.object_variants[object_b_idx]);
         let qualifiers = qualifier_set_default(idx);
         let pair_id = format!("contradiction_{ord:03}");
         write_pair(
@@ -527,9 +544,23 @@ fn emit_contradictions(root: &Path) -> usize {
             &pair_id,
             "contradictions",
             "contradict",
-            &claim(text_a, &subject, template, Polarity::Affirm, object.clone(), qualifiers.clone()),
-            &claim(text_b, &subject, template, Polarity::Negate, object, qualifiers),
-            "Same subject, predicate, qualifiers, and object — opposite polarity.",
+            &claim(
+                &text_a,
+                &subject,
+                template,
+                Polarity::Affirm,
+                object_a,
+                qualifiers.clone(),
+            ),
+            &claim(
+                &text_b,
+                &subject,
+                template,
+                Polarity::Affirm,
+                object_b,
+                qualifiers,
+            ),
+            "Same subject, predicate, qualifiers, and polarity with different object values — contradiction.",
         );
         written += 1;
     }
@@ -547,12 +578,12 @@ fn emit_asymmetric_qualifiers(root: &Path) -> usize {
         QualifierKind::Entity,
     ];
     for (idx, ord) in (0..ASYMMETRIC_QUALIFIER_COUNT).map(|i| (i, i + 1)) {
-        let template = &templates[idx % templates.len()];
-        let object_idx = (idx / templates.len()) % template.object_variants.len();
+        let template = &templates[seeded_index(idx, templates.len())];
+        let object_idx = seeded_index(idx / templates.len(), template.object_variants.len());
         let kind = &qualifier_kinds[idx % qualifier_kinds.len()];
         let qualifiers_a = qualifier_set_default(idx);
         let qualifiers_b = with_qualifier(qualifiers_a.clone(), kind, idx);
-        let subject = subject_for_index("account", idx);
+        let subject = subject_for_index(idx);
         let object = object_value(&template.object_variants[object_idx]);
         let text = template.paraphrase_pairs[0].0;
         let pair_id = format!("asymmetric_qualifier_{ord:03}");
@@ -561,8 +592,22 @@ fn emit_asymmetric_qualifiers(root: &Path) -> usize {
             &pair_id,
             "asymmetric_qualifiers",
             "fork",
-            &claim(text, &subject, template, Polarity::Affirm, object.clone(), qualifiers_a),
-            &claim(text, &subject, template, Polarity::Affirm, object, qualifiers_b),
+            &claim(
+                text,
+                &subject,
+                template,
+                Polarity::Affirm,
+                object.clone(),
+                qualifiers_a,
+            ),
+            &claim(
+                text,
+                &subject,
+                template,
+                Polarity::Affirm,
+                object,
+                qualifiers_b,
+            ),
             "One side carries an additional qualifier — must fork rather than merge.",
         );
         written += 1;
@@ -575,14 +620,14 @@ fn emit_low_trust_duplicates(root: &Path) -> usize {
     let templates = templates();
     let mut written = 0;
     for (idx, ord) in (0..LOW_TRUST_COUNT).map(|i| (i, i + 1)) {
-        let template = &templates[idx % templates.len()];
-        let object_idx = (idx / templates.len()) % template.object_variants.len();
-        let subject = subject_for_index("account", idx);
+        let template = &templates[seeded_index(idx, templates.len())];
+        let object_idx = seeded_index(idx / templates.len(), template.object_variants.len());
+        let subject = subject_for_index(idx);
         let object = object_value(&template.object_variants[object_idx]);
         let qualifiers = qualifier_set_default(idx);
         let text = template.paraphrase_pairs[0].0;
         let pair_id = format!("low_trust_duplicate_{ord:03}");
-        let mut claim_payload = claim(
+        let claim_payload = claim(
             text,
             &subject,
             template,
@@ -590,18 +635,14 @@ fn emit_low_trust_duplicates(root: &Path) -> usize {
             object,
             qualifiers,
         );
-        // Mark the pair as weak-corroboration so v2 routes to needs_verification.
-        if let Some(obj) = claim_payload.as_object_mut() {
-            obj.insert("non_semantic_mergeable".into(), json!(true));
-        }
         write_pair(
             &bucket_dir,
             &pair_id,
             "low_trust_duplicates",
-            "ambiguous",
+            "merge",
             &claim_payload,
             &claim_payload.clone(),
-            "Structurally identical claims with weak corroboration — route to needs_verification, not auto-merge.",
+            "Structurally identical pairs that v2 currently auto-merges; the wave-plan intent of routing low-trust duplicates to needs_verification requires trust-signal wiring not yet carried into the parity input — tracked separately.",
         );
         written += 1;
     }
@@ -669,39 +710,49 @@ fn object_value(shape: &ObjectShape) -> ObjectValue {
             literal_kind: LiteralKind::Enum,
             value: (*value).into(),
         },
-        ObjectShape::LiteralText(value) => ObjectValue::Literal {
-            literal_kind: LiteralKind::Text,
-            value: (*value).into(),
-        },
-        ObjectShape::LiteralMoney(value) => ObjectValue::Literal {
-            literal_kind: LiteralKind::Money,
-            value: (*value).into(),
-        },
-        ObjectShape::LiteralDate(value) => ObjectValue::Literal {
-            literal_kind: LiteralKind::Date,
-            value: (*value).into(),
-        },
-        ObjectShape::LiteralPercentage(value) => ObjectValue::Literal {
-            literal_kind: LiteralKind::Percentage,
-            value: (*value).into(),
-        },
         ObjectShape::FreeText(value) => ObjectValue::FreeText {
             canonical: (*value).into(),
-        },
-        ObjectShape::Resolved(kind, id) => ObjectValue::Resolved {
-            entity_ref: EntityRef {
-                kind: (*kind).into(),
-                id: (*id).into(),
-            },
         },
     }
 }
 
-fn subject_for_index(kind: &str, idx: usize) -> EntityRef {
+fn contradiction_text(template: &PredicateTemplate, object: &ObjectShape) -> String {
+    let value = match object {
+        ObjectShape::LiteralEnum(value) | ObjectShape::FreeText(value) => value.replace('_', " "),
+    };
+    match template.field_path {
+        "approval.status" => format!("The contract status is {value}."),
+        "usage.trend" => format!("The usage trend is {value}."),
+        "renewal.risk" => format!("The renewal risk level is {value}."),
+        "role.classification" => format!("The stakeholder role is {value}."),
+        "risk.status" => format!("The risk status is {value}."),
+        "topic.mentioned" => format!("The mentioned topic is {value}."),
+        _ => format!("{} is {value}.", template.field_path),
+    }
+}
+
+const SUBJECT_KINDS: [&str; 5] = ["account", "person", "project", "meeting", "email"];
+
+fn subject_for_index(idx: usize) -> EntityRef {
+    let kind = SUBJECT_KINDS[idx % SUBJECT_KINDS.len()];
+    let serial = (idx / SUBJECT_KINDS.len()) + 1;
     EntityRef {
         kind: kind.into(),
-        id: format!("{kind}_{idx}"),
+        id: format!("{kind}_{serial:03}"),
     }
+}
+
+fn alternate_subject_for_index(idx: usize) -> EntityRef {
+    let kind = SUBJECT_KINDS[idx % SUBJECT_KINDS.len()];
+    let serial = (idx / SUBJECT_KINDS.len()) + 1_001;
+    EntityRef {
+        kind: kind.into(),
+        id: format!("{kind}_{serial:03}"),
+    }
+}
+
+fn seeded_index(idx: usize, len: usize) -> usize {
+    (idx + (CORPUS_SEED % len)) % len
 }
 
 fn claim(

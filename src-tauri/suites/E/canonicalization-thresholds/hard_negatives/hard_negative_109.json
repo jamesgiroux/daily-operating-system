@@ -5,14 +5,14 @@
   "source": "synthetic",
   "claim_a": {
     "claim_type": "risk",
-    "field_path": "approval.status",
+    "field_path": "risk.status",
     "object": {
       "kind": "literal",
       "literal_kind": "enum",
-      "value": "pending_finance_approval"
+      "value": "open"
     },
     "polarity": "affirm",
-    "predicate": "contract_approval_status",
+    "predicate": "risk_status",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -25,39 +25,41 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_108",
-      "kind": "account"
+      "id": "meeting_022",
+      "kind": "meeting"
     },
-    "text": "Phase 2 budget approval is pending with finance.",
+    "text": "Migration risk is still open and unresolved.",
     "workspace_id": "workspace_alpha"
   },
   "claim_b": {
     "claim_type": "risk",
-    "field_path": "approval.status",
+    "field_path": "risk.status",
     "object": {
       "kind": "literal",
       "literal_kind": "enum",
-      "value": "approved"
+      "value": "open"
     },
     "polarity": "affirm",
-    "predicate": "contract_approval_status",
+    "predicate": "risk_status",
     "qualifiers": {
       "entity": null,
       "extras": {},
       "numerics": [],
       "region": null,
       "scope": null,
-      "time": null
+      "time": {
+        "normalized": "2026-Q1"
+      }
     },
     "sensitivity": "internal",
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_108",
-      "kind": "account"
+      "id": "meeting_022",
+      "kind": "meeting"
     },
-    "text": "The MSA is awaiting legal sign-off.",
+    "text": "Migration risk is still open and unresolved.",
     "workspace_id": "workspace_alpha"
   },
-  "rationale": "Same subject and predicate but the object value differs — must not merge."
+  "rationale": "Same subject, predicate, polarity, and object but the time qualifier differs — must not merge."
 }

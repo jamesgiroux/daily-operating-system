@@ -5,14 +5,14 @@
   "source": "synthetic",
   "claim_a": {
     "claim_type": "risk",
-    "field_path": "approval.status",
+    "field_path": "risk.status",
     "object": {
       "kind": "literal",
       "literal_kind": "enum",
-      "value": "pending_finance_approval"
+      "value": "open"
     },
     "polarity": "affirm",
-    "predicate": "contract_approval_status",
+    "predicate": "risk_status",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -27,10 +27,10 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_30",
+      "id": "account_007",
       "kind": "account"
     },
-    "text": "Phase 2 budget approval is pending with finance.",
+    "text": "Migration risk is still open and unresolved.",
     "workspace_id": "workspace_alpha"
   },
   "claim_b": {
@@ -57,7 +57,7 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_30",
+      "id": "account_007",
       "kind": "account"
     },
     "text": "Weekly active users have dropped 18 percent over the last quarter.",

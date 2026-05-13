@@ -4,15 +4,15 @@
   "expected_decision": "fork",
   "source": "synthetic",
   "claim_a": {
-    "claim_type": "stakeholder_role",
-    "field_path": "role.classification",
+    "claim_type": "engagement",
+    "field_path": "usage.trend",
     "object": {
       "kind": "literal",
       "literal_kind": "enum",
-      "value": "champion"
+      "value": "declining"
     },
     "polarity": "affirm",
-    "predicate": "stakeholder_role",
+    "predicate": "product_usage_trend",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -25,22 +25,22 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_129",
-      "kind": "account"
+      "id": "email_026",
+      "kind": "email"
     },
-    "text": "She is acting as the executive champion for the rollout.",
+    "text": "Weekly active users have dropped 18 percent over the last quarter.",
     "workspace_id": "workspace_alpha"
   },
   "claim_b": {
-    "claim_type": "stakeholder_role",
-    "field_path": "role.classification",
+    "claim_type": "engagement",
+    "field_path": "usage.trend",
     "object": {
       "kind": "literal",
       "literal_kind": "enum",
-      "value": "champion"
+      "value": "declining"
     },
     "polarity": "affirm",
-    "predicate": "stakeholder_role",
+    "predicate": "product_usage_trend",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -53,10 +53,10 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_1129",
-      "kind": "account"
+      "id": "email_1026",
+      "kind": "email"
     },
-    "text": "She is acting as the executive champion for the rollout.",
+    "text": "Weekly active users have dropped 18 percent over the last quarter.",
     "workspace_id": "workspace_alpha"
   },
   "rationale": "Same text and predicate but distinct subjects — must not merge."

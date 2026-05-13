@@ -5,14 +5,14 @@
   "source": "synthetic",
   "claim_a": {
     "claim_type": "risk",
-    "field_path": "renewal.risk",
+    "field_path": "approval.status",
     "object": {
       "kind": "literal",
       "literal_kind": "enum",
-      "value": "at_risk"
+      "value": "pending_finance_approval"
     },
     "polarity": "affirm",
-    "predicate": "account_renewal_risk",
+    "predicate": "contract_approval_status",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -27,22 +27,22 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_20",
+      "id": "account_005",
       "kind": "account"
     },
-    "text": "The renewal conversation is back on track.",
+    "text": "Phase 2 budget approval is pending with finance.",
     "workspace_id": "workspace_alpha"
   },
   "claim_b": {
     "claim_type": "risk",
-    "field_path": "renewal.risk",
+    "field_path": "approval.status",
     "object": {
       "kind": "literal",
       "literal_kind": "enum",
-      "value": "at_risk"
+      "value": "pending_finance_approval"
     },
     "polarity": "affirm",
-    "predicate": "account_renewal_risk",
+    "predicate": "contract_approval_status",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -57,10 +57,10 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_20",
+      "id": "account_005",
       "kind": "account"
     },
-    "text": "Renewal momentum has recovered.",
+    "text": "Finance still needs to approve the Phase 2 budget.",
     "workspace_id": "workspace_alpha"
   },
   "rationale": "Same subject, predicate, polarity, object, qualifiers, and status; text varies only by paraphrase."

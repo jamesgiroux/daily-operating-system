@@ -4,15 +4,14 @@
   "expected_decision": "contradict",
   "source": "synthetic",
   "claim_a": {
-    "claim_type": "engagement",
-    "field_path": "usage.trend",
+    "claim_type": "engagement_topic",
+    "field_path": "topic.mentioned",
     "object": {
-      "kind": "literal",
-      "literal_kind": "enum",
-      "value": "seasonal_spike"
+      "canonical": "competitive_displacement",
+      "kind": "free_text"
     },
     "polarity": "affirm",
-    "predicate": "product_usage_trend",
+    "predicate": "topic_mentioned",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -25,22 +24,21 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_19",
-      "kind": "account"
+      "id": "email_004",
+      "kind": "email"
     },
-    "text": "Adoption stalled after the May rollout.",
+    "text": "The mentioned topic is competitive displacement.",
     "workspace_id": "workspace_alpha"
   },
   "claim_b": {
-    "claim_type": "engagement",
-    "field_path": "usage.trend",
+    "claim_type": "engagement_topic",
+    "field_path": "topic.mentioned",
     "object": {
-      "kind": "literal",
-      "literal_kind": "enum",
-      "value": "seasonal_spike"
+      "canonical": "pricing_negotiation",
+      "kind": "free_text"
     },
-    "polarity": "negate",
-    "predicate": "product_usage_trend",
+    "polarity": "affirm",
+    "predicate": "topic_mentioned",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -53,11 +51,11 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_19",
-      "kind": "account"
+      "id": "email_004",
+      "kind": "email"
     },
-    "text": "Adoption did not stall after the May rollout.",
+    "text": "The mentioned topic is pricing negotiation.",
     "workspace_id": "workspace_alpha"
   },
-  "rationale": "Same subject, predicate, qualifiers, and object — opposite polarity."
+  "rationale": "Same subject, predicate, qualifiers, and polarity with different object values — contradiction."
 }

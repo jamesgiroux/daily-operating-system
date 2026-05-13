@@ -4,15 +4,15 @@
   "expected_decision": "fork",
   "source": "synthetic",
   "claim_a": {
-    "claim_type": "stakeholder_role",
-    "field_path": "role.classification",
+    "claim_type": "engagement",
+    "field_path": "usage.trend",
     "object": {
       "kind": "literal",
       "literal_kind": "enum",
-      "value": "influencer"
+      "value": "flat"
     },
     "polarity": "affirm",
-    "predicate": "stakeholder_role",
+    "predicate": "product_usage_trend",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -25,22 +25,22 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_21",
-      "kind": "account"
+      "id": "person_005",
+      "kind": "person"
     },
-    "text": "She is acting as the executive champion for the rollout.",
+    "text": "Weekly active users have dropped 18 percent over the last quarter.",
     "workspace_id": "workspace_alpha"
   },
   "claim_b": {
-    "claim_type": "stakeholder_role",
-    "field_path": "role.classification",
+    "claim_type": "engagement",
+    "field_path": "usage.trend",
     "object": {
       "kind": "literal",
       "literal_kind": "enum",
-      "value": "influencer"
+      "value": "flat"
     },
     "polarity": "affirm",
-    "predicate": "stakeholder_role",
+    "predicate": "product_usage_trend",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -55,10 +55,10 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_21",
-      "kind": "account"
+      "id": "person_005",
+      "kind": "person"
     },
-    "text": "She is acting as the executive champion for the rollout.",
+    "text": "Weekly active users have dropped 18 percent over the last quarter.",
     "workspace_id": "workspace_alpha"
   },
   "rationale": "One side carries an additional qualifier — must fork rather than merge."

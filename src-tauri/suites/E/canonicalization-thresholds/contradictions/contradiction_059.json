@@ -5,14 +5,14 @@
   "source": "synthetic",
   "claim_a": {
     "claim_type": "risk",
-    "field_path": "risk.status",
+    "field_path": "renewal.risk",
     "object": {
       "kind": "literal",
       "literal_kind": "enum",
-      "value": "mitigated"
+      "value": "at_risk"
     },
     "polarity": "affirm",
-    "predicate": "risk_status",
+    "predicate": "account_renewal_risk",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -25,22 +25,22 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_58",
-      "kind": "account"
+      "id": "meeting_012",
+      "kind": "meeting"
     },
-    "text": "The compliance risk is mitigated.",
+    "text": "The renewal risk level is at risk.",
     "workspace_id": "workspace_alpha"
   },
   "claim_b": {
     "claim_type": "risk",
-    "field_path": "risk.status",
+    "field_path": "renewal.risk",
     "object": {
       "kind": "literal",
       "literal_kind": "enum",
-      "value": "mitigated"
+      "value": "high"
     },
-    "polarity": "negate",
-    "predicate": "risk_status",
+    "polarity": "affirm",
+    "predicate": "account_renewal_risk",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -53,11 +53,11 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_58",
-      "kind": "account"
+      "id": "meeting_012",
+      "kind": "meeting"
     },
-    "text": "The compliance risk is not mitigated.",
+    "text": "The renewal risk level is high.",
     "workspace_id": "workspace_alpha"
   },
-  "rationale": "Same subject, predicate, qualifiers, and object — opposite polarity."
+  "rationale": "Same subject, predicate, qualifiers, and polarity with different object values — contradiction."
 }

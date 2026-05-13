@@ -4,14 +4,15 @@
   "expected_decision": "fork",
   "source": "synthetic",
   "claim_a": {
-    "claim_type": "engagement_topic",
-    "field_path": "topic.mentioned",
+    "claim_type": "stakeholder_role",
+    "field_path": "role.classification",
     "object": {
-      "canonical": "competitive_displacement",
-      "kind": "free_text"
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "champion"
     },
     "polarity": "affirm",
-    "predicate": "topic_mentioned",
+    "predicate": "stakeholder_role",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -24,21 +25,22 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_149",
-      "kind": "account"
+      "id": "email_030",
+      "kind": "email"
     },
-    "text": "The team raised competitive displacement risk on the call.",
+    "text": "She is acting as the executive champion for the rollout.",
     "workspace_id": "workspace_alpha"
   },
   "claim_b": {
-    "claim_type": "engagement_topic",
-    "field_path": "topic.mentioned",
+    "claim_type": "stakeholder_role",
+    "field_path": "role.classification",
     "object": {
-      "canonical": "competitive_displacement",
-      "kind": "free_text"
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "champion"
     },
     "polarity": "affirm",
-    "predicate": "topic_mentioned",
+    "predicate": "stakeholder_role",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -51,10 +53,10 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_1149",
-      "kind": "account"
+      "id": "email_1030",
+      "kind": "email"
     },
-    "text": "The team raised competitive displacement risk on the call.",
+    "text": "She is acting as the executive champion for the rollout.",
     "workspace_id": "workspace_alpha"
   },
   "rationale": "Same text and predicate but distinct subjects — must not merge."

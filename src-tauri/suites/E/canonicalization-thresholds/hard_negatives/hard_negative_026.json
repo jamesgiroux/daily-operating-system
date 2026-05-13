@@ -4,15 +4,14 @@
   "expected_decision": "fork",
   "source": "synthetic",
   "claim_a": {
-    "claim_type": "engagement",
-    "field_path": "usage.trend",
+    "claim_type": "engagement_topic",
+    "field_path": "topic.mentioned",
     "object": {
-      "kind": "literal",
-      "literal_kind": "enum",
-      "value": "declining"
+      "canonical": "competitive_displacement",
+      "kind": "free_text"
     },
     "polarity": "affirm",
-    "predicate": "product_usage_trend",
+    "predicate": "topic_mentioned",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -27,22 +26,21 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_25",
+      "id": "account_006",
       "kind": "account"
     },
-    "text": "Weekly active users have dropped 18 percent over the last quarter.",
+    "text": "The team raised competitive displacement risk on the call.",
     "workspace_id": "workspace_alpha"
   },
   "claim_b": {
-    "claim_type": "engagement",
-    "field_path": "usage.trend",
+    "claim_type": "engagement_topic",
+    "field_path": "topic.mentioned",
     "object": {
-      "kind": "literal",
-      "literal_kind": "enum",
-      "value": "declining"
+      "canonical": "competitive_displacement",
+      "kind": "free_text"
     },
     "polarity": "affirm",
-    "predicate": "product_usage_trend",
+    "predicate": "topic_mentioned",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -57,10 +55,10 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_1025",
+      "id": "account_1006",
       "kind": "account"
     },
-    "text": "Weekly active users have dropped 18 percent over the last quarter.",
+    "text": "The team raised competitive displacement risk on the call.",
     "workspace_id": "workspace_alpha"
   },
   "rationale": "Same text and predicate but distinct subjects — must not merge."

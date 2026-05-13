@@ -4,14 +4,15 @@
   "expected_decision": "contradict",
   "source": "synthetic",
   "claim_a": {
-    "claim_type": "engagement_topic",
-    "field_path": "topic.mentioned",
+    "claim_type": "stakeholder_role",
+    "field_path": "role.classification",
     "object": {
-      "canonical": "security_audit",
-      "kind": "free_text"
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "blocker"
     },
     "polarity": "affirm",
-    "predicate": "topic_mentioned",
+    "predicate": "stakeholder_role",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -24,21 +25,22 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_59",
-      "kind": "account"
+      "id": "email_012",
+      "kind": "email"
     },
-    "text": "Competitive displacement came up.",
+    "text": "The stakeholder role is blocker.",
     "workspace_id": "workspace_alpha"
   },
   "claim_b": {
-    "claim_type": "engagement_topic",
-    "field_path": "topic.mentioned",
+    "claim_type": "stakeholder_role",
+    "field_path": "role.classification",
     "object": {
-      "canonical": "security_audit",
-      "kind": "free_text"
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "decision_maker"
     },
-    "polarity": "negate",
-    "predicate": "topic_mentioned",
+    "polarity": "affirm",
+    "predicate": "stakeholder_role",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -51,11 +53,11 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_59",
-      "kind": "account"
+      "id": "email_012",
+      "kind": "email"
     },
-    "text": "Competitive displacement did not come up.",
+    "text": "The stakeholder role is decision maker.",
     "workspace_id": "workspace_alpha"
   },
-  "rationale": "Same subject, predicate, qualifiers, and object — opposite polarity."
+  "rationale": "Same subject, predicate, qualifiers, and polarity with different object values — contradiction."
 }

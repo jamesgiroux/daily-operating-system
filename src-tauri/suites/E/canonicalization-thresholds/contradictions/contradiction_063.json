@@ -5,14 +5,14 @@
   "source": "synthetic",
   "claim_a": {
     "claim_type": "risk",
-    "field_path": "renewal.risk",
+    "field_path": "approval.status",
     "object": {
       "kind": "literal",
       "literal_kind": "enum",
-      "value": "low"
+      "value": "blocked_legal"
     },
     "polarity": "affirm",
-    "predicate": "account_renewal_risk",
+    "predicate": "contract_approval_status",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -25,22 +25,22 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_62",
-      "kind": "account"
+      "id": "project_013",
+      "kind": "project"
     },
-    "text": "Renewal is at risk this cycle.",
+    "text": "The contract status is blocked legal.",
     "workspace_id": "workspace_alpha"
   },
   "claim_b": {
     "claim_type": "risk",
-    "field_path": "renewal.risk",
+    "field_path": "approval.status",
     "object": {
       "kind": "literal",
       "literal_kind": "enum",
-      "value": "low"
+      "value": "pending_security_review"
     },
-    "polarity": "negate",
-    "predicate": "account_renewal_risk",
+    "polarity": "affirm",
+    "predicate": "contract_approval_status",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -53,11 +53,11 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_62",
-      "kind": "account"
+      "id": "project_013",
+      "kind": "project"
     },
-    "text": "Renewal is not at risk this cycle.",
+    "text": "The contract status is pending security review.",
     "workspace_id": "workspace_alpha"
   },
-  "rationale": "Same subject, predicate, qualifiers, and object — opposite polarity."
+  "rationale": "Same subject, predicate, qualifiers, and polarity with different object values — contradiction."
 }

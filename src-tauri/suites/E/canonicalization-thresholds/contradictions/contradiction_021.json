@@ -5,14 +5,14 @@
   "source": "synthetic",
   "claim_a": {
     "claim_type": "risk",
-    "field_path": "renewal.risk",
+    "field_path": "approval.status",
     "object": {
       "kind": "literal",
       "literal_kind": "enum",
-      "value": "at_risk"
+      "value": "pending_finance_approval"
     },
     "polarity": "affirm",
-    "predicate": "account_renewal_risk",
+    "predicate": "contract_approval_status",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -27,22 +27,22 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_20",
+      "id": "account_005",
       "kind": "account"
     },
-    "text": "Q3 renewal is at risk.",
+    "text": "The contract status is pending finance approval.",
     "workspace_id": "workspace_alpha"
   },
   "claim_b": {
     "claim_type": "risk",
-    "field_path": "renewal.risk",
+    "field_path": "approval.status",
     "object": {
       "kind": "literal",
       "literal_kind": "enum",
-      "value": "at_risk"
+      "value": "approved"
     },
-    "polarity": "negate",
-    "predicate": "account_renewal_risk",
+    "polarity": "affirm",
+    "predicate": "contract_approval_status",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -57,11 +57,11 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_20",
+      "id": "account_005",
       "kind": "account"
     },
-    "text": "Q3 renewal is no longer at risk.",
+    "text": "The contract status is approved.",
     "workspace_id": "workspace_alpha"
   },
-  "rationale": "Same subject, predicate, qualifiers, and object — opposite polarity."
+  "rationale": "Same subject, predicate, qualifiers, and polarity with different object values — contradiction."
 }

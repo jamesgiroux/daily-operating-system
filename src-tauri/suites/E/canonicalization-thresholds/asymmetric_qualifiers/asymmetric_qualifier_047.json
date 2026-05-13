@@ -5,14 +5,14 @@
   "source": "synthetic",
   "claim_a": {
     "claim_type": "risk",
-    "field_path": "risk.status",
+    "field_path": "renewal.risk",
     "object": {
       "kind": "literal",
       "literal_kind": "enum",
-      "value": "closed"
+      "value": "medium"
     },
     "polarity": "affirm",
-    "predicate": "risk_status",
+    "predicate": "account_renewal_risk",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -25,22 +25,22 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_46",
-      "kind": "account"
+      "id": "person_010",
+      "kind": "person"
     },
-    "text": "Migration risk is still open and unresolved.",
+    "text": "Renewal probability looks weak this cycle.",
     "workspace_id": "workspace_alpha"
   },
   "claim_b": {
     "claim_type": "risk",
-    "field_path": "risk.status",
+    "field_path": "renewal.risk",
     "object": {
       "kind": "literal",
       "literal_kind": "enum",
-      "value": "closed"
+      "value": "medium"
     },
     "polarity": "affirm",
-    "predicate": "risk_status",
+    "predicate": "account_renewal_risk",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -55,10 +55,10 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_46",
-      "kind": "account"
+      "id": "person_010",
+      "kind": "person"
     },
-    "text": "Migration risk is still open and unresolved.",
+    "text": "Renewal probability looks weak this cycle.",
     "workspace_id": "workspace_alpha"
   },
   "rationale": "One side carries an additional qualifier — must fork rather than merge."

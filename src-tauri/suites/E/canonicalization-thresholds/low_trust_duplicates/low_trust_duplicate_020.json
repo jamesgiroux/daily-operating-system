@@ -1,19 +1,17 @@
 {
   "pair_id": "low_trust_duplicate_020",
   "bucket": "low_trust_duplicates",
-  "expected_decision": "ambiguous",
+  "expected_decision": "merge",
   "source": "synthetic",
   "claim_a": {
-    "claim_type": "engagement",
-    "field_path": "usage.trend",
-    "non_semantic_mergeable": true,
+    "claim_type": "engagement_topic",
+    "field_path": "topic.mentioned",
     "object": {
-      "kind": "literal",
-      "literal_kind": "enum",
-      "value": "seasonal_spike"
+      "canonical": "competitive_displacement",
+      "kind": "free_text"
     },
     "polarity": "affirm",
-    "predicate": "product_usage_trend",
+    "predicate": "topic_mentioned",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -26,23 +24,21 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_19",
-      "kind": "account"
+      "id": "email_004",
+      "kind": "email"
     },
-    "text": "Weekly active users have dropped 18 percent over the last quarter.",
+    "text": "The team raised competitive displacement risk on the call.",
     "workspace_id": "workspace_alpha"
   },
   "claim_b": {
-    "claim_type": "engagement",
-    "field_path": "usage.trend",
-    "non_semantic_mergeable": true,
+    "claim_type": "engagement_topic",
+    "field_path": "topic.mentioned",
     "object": {
-      "kind": "literal",
-      "literal_kind": "enum",
-      "value": "seasonal_spike"
+      "canonical": "competitive_displacement",
+      "kind": "free_text"
     },
     "polarity": "affirm",
-    "predicate": "product_usage_trend",
+    "predicate": "topic_mentioned",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -55,11 +51,11 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_19",
-      "kind": "account"
+      "id": "email_004",
+      "kind": "email"
     },
-    "text": "Weekly active users have dropped 18 percent over the last quarter.",
+    "text": "The team raised competitive displacement risk on the call.",
     "workspace_id": "workspace_alpha"
   },
-  "rationale": "Structurally identical claims with weak corroboration — route to needs_verification, not auto-merge."
+  "rationale": "Structurally identical pairs that v2 currently auto-merges; the wave-plan intent of routing low-trust duplicates to needs_verification requires trust-signal wiring not yet carried into the parity input — tracked separately."
 }

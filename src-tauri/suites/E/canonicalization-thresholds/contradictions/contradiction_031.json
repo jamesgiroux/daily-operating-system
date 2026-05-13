@@ -5,14 +5,14 @@
   "source": "synthetic",
   "claim_a": {
     "claim_type": "risk",
-    "field_path": "approval.status",
+    "field_path": "risk.status",
     "object": {
       "kind": "literal",
       "literal_kind": "enum",
-      "value": "pending_finance_approval"
+      "value": "closed"
     },
     "polarity": "affirm",
-    "predicate": "contract_approval_status",
+    "predicate": "risk_status",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -27,22 +27,22 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_30",
+      "id": "account_007",
       "kind": "account"
     },
-    "text": "Legal review is complete.",
+    "text": "The risk status is closed.",
     "workspace_id": "workspace_alpha"
   },
   "claim_b": {
     "claim_type": "risk",
-    "field_path": "approval.status",
+    "field_path": "risk.status",
     "object": {
       "kind": "literal",
       "literal_kind": "enum",
-      "value": "pending_finance_approval"
+      "value": "open"
     },
-    "polarity": "negate",
-    "predicate": "contract_approval_status",
+    "polarity": "affirm",
+    "predicate": "risk_status",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -57,11 +57,11 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_30",
+      "id": "account_007",
       "kind": "account"
     },
-    "text": "Legal review is not complete.",
+    "text": "The risk status is open.",
     "workspace_id": "workspace_alpha"
   },
-  "rationale": "Same subject, predicate, qualifiers, and object — opposite polarity."
+  "rationale": "Same subject, predicate, qualifiers, and polarity with different object values — contradiction."
 }

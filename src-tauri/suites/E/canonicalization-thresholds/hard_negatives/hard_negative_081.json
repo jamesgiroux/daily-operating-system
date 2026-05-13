@@ -5,14 +5,14 @@
   "source": "synthetic",
   "claim_a": {
     "claim_type": "risk",
-    "field_path": "renewal.risk",
+    "field_path": "approval.status",
     "object": {
       "kind": "literal",
       "literal_kind": "enum",
-      "value": "high"
+      "value": "pending_finance_approval"
     },
     "polarity": "affirm",
-    "predicate": "account_renewal_risk",
+    "predicate": "contract_approval_status",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -27,22 +27,22 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_80",
+      "id": "account_017",
       "kind": "account"
     },
-    "text": "Renewal probability looks weak this cycle.",
+    "text": "Phase 2 budget approval is pending with finance.",
     "workspace_id": "workspace_alpha"
   },
   "claim_b": {
     "claim_type": "risk",
-    "field_path": "renewal.risk",
+    "field_path": "approval.status",
     "object": {
       "kind": "literal",
       "literal_kind": "enum",
-      "value": "medium"
+      "value": "pending_finance_approval"
     },
     "polarity": "affirm",
-    "predicate": "account_renewal_risk",
+    "predicate": "contract_approval_status",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -51,17 +51,19 @@
       "scope": {
         "normalized": "phase_3"
       },
-      "time": null
+      "time": {
+        "normalized": "2026-Q1"
+      }
     },
     "sensitivity": "internal",
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_80",
+      "id": "account_017",
       "kind": "account"
     },
-    "text": "We expect a clean renewal in Q3.",
+    "text": "Phase 2 budget approval is pending with finance.",
     "workspace_id": "workspace_alpha"
   },
-  "rationale": "Same subject and predicate but the object value differs — must not merge."
+  "rationale": "Same subject, predicate, polarity, and object but the time qualifier differs — must not merge."
 }

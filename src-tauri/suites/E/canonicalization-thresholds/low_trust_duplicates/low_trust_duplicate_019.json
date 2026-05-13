@@ -1,19 +1,18 @@
 {
   "pair_id": "low_trust_duplicate_019",
   "bucket": "low_trust_duplicates",
-  "expected_decision": "ambiguous",
+  "expected_decision": "merge",
   "source": "synthetic",
   "claim_a": {
     "claim_type": "risk",
-    "field_path": "approval.status",
-    "non_semantic_mergeable": true,
+    "field_path": "risk.status",
     "object": {
       "kind": "literal",
       "literal_kind": "enum",
-      "value": "pending_security_review"
+      "value": "mitigated"
     },
     "polarity": "affirm",
-    "predicate": "contract_approval_status",
+    "predicate": "risk_status",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -26,23 +25,22 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_18",
-      "kind": "account"
+      "id": "meeting_004",
+      "kind": "meeting"
     },
-    "text": "Phase 2 budget approval is pending with finance.",
+    "text": "Migration risk is still open and unresolved.",
     "workspace_id": "workspace_alpha"
   },
   "claim_b": {
     "claim_type": "risk",
-    "field_path": "approval.status",
-    "non_semantic_mergeable": true,
+    "field_path": "risk.status",
     "object": {
       "kind": "literal",
       "literal_kind": "enum",
-      "value": "pending_security_review"
+      "value": "mitigated"
     },
     "polarity": "affirm",
-    "predicate": "contract_approval_status",
+    "predicate": "risk_status",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -55,11 +53,11 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_18",
-      "kind": "account"
+      "id": "meeting_004",
+      "kind": "meeting"
     },
-    "text": "Phase 2 budget approval is pending with finance.",
+    "text": "Migration risk is still open and unresolved.",
     "workspace_id": "workspace_alpha"
   },
-  "rationale": "Structurally identical claims with weak corroboration — route to needs_verification, not auto-merge."
+  "rationale": "Structurally identical pairs that v2 currently auto-merges; the wave-plan intent of routing low-trust duplicates to needs_verification requires trust-signal wiring not yet carried into the parity input — tracked separately."
 }

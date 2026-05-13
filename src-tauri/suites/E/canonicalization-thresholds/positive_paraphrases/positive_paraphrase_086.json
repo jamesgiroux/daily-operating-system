@@ -4,15 +4,14 @@
   "expected_decision": "merge",
   "source": "synthetic",
   "claim_a": {
-    "claim_type": "engagement",
-    "field_path": "usage.trend",
+    "claim_type": "engagement_topic",
+    "field_path": "topic.mentioned",
     "object": {
-      "kind": "literal",
-      "literal_kind": "enum",
-      "value": "rising"
+      "canonical": "pricing_negotiation",
+      "kind": "free_text"
     },
     "polarity": "affirm",
-    "predicate": "product_usage_trend",
+    "predicate": "topic_mentioned",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -27,22 +26,21 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_85",
+      "id": "account_018",
       "kind": "account"
     },
-    "text": "Daily logins have dwindled to a handful.",
+    "text": "Pricing came up multiple times during the QBR.",
     "workspace_id": "workspace_alpha"
   },
   "claim_b": {
-    "claim_type": "engagement",
-    "field_path": "usage.trend",
+    "claim_type": "engagement_topic",
+    "field_path": "topic.mentioned",
     "object": {
-      "kind": "literal",
-      "literal_kind": "enum",
-      "value": "rising"
+      "canonical": "pricing_negotiation",
+      "kind": "free_text"
     },
     "polarity": "affirm",
-    "predicate": "product_usage_trend",
+    "predicate": "topic_mentioned",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -57,10 +55,10 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_85",
+      "id": "account_018",
       "kind": "account"
     },
-    "text": "Only a handful of users log in each day now.",
+    "text": "Multiple pricing references showed up in the QBR.",
     "workspace_id": "workspace_alpha"
   },
   "rationale": "Same subject, predicate, polarity, object, qualifiers, and status; text varies only by paraphrase."

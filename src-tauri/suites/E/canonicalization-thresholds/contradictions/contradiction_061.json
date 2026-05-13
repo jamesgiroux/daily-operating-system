@@ -5,14 +5,14 @@
   "source": "synthetic",
   "claim_a": {
     "claim_type": "risk",
-    "field_path": "approval.status",
+    "field_path": "risk.status",
     "object": {
       "kind": "literal",
       "literal_kind": "enum",
-      "value": "pending_finance_approval"
+      "value": "open"
     },
     "polarity": "affirm",
-    "predicate": "contract_approval_status",
+    "predicate": "risk_status",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -27,22 +27,22 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_60",
+      "id": "account_013",
       "kind": "account"
     },
-    "text": "The contract has been approved.",
+    "text": "The risk status is open.",
     "workspace_id": "workspace_alpha"
   },
   "claim_b": {
     "claim_type": "risk",
-    "field_path": "approval.status",
+    "field_path": "risk.status",
     "object": {
       "kind": "literal",
       "literal_kind": "enum",
-      "value": "pending_finance_approval"
+      "value": "mitigated"
     },
-    "polarity": "negate",
-    "predicate": "contract_approval_status",
+    "polarity": "affirm",
+    "predicate": "risk_status",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -57,11 +57,11 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_60",
+      "id": "account_013",
       "kind": "account"
     },
-    "text": "The contract has not been approved.",
+    "text": "The risk status is mitigated.",
     "workspace_id": "workspace_alpha"
   },
-  "rationale": "Same subject, predicate, qualifiers, and object — opposite polarity."
+  "rationale": "Same subject, predicate, qualifiers, and polarity with different object values — contradiction."
 }

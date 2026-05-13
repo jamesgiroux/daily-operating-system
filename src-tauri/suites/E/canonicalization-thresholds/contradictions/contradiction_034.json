@@ -4,15 +4,15 @@
   "expected_decision": "contradict",
   "source": "synthetic",
   "claim_a": {
-    "claim_type": "stakeholder_role",
-    "field_path": "role.classification",
+    "claim_type": "engagement",
+    "field_path": "usage.trend",
     "object": {
       "kind": "literal",
       "literal_kind": "enum",
-      "value": "champion"
+      "value": "seasonal_spike"
     },
     "polarity": "affirm",
-    "predicate": "stakeholder_role",
+    "predicate": "product_usage_trend",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -25,22 +25,22 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_33",
-      "kind": "account"
+      "id": "meeting_007",
+      "kind": "meeting"
     },
-    "text": "She is the decision maker on procurement.",
+    "text": "The usage trend is seasonal spike.",
     "workspace_id": "workspace_alpha"
   },
   "claim_b": {
-    "claim_type": "stakeholder_role",
-    "field_path": "role.classification",
+    "claim_type": "engagement",
+    "field_path": "usage.trend",
     "object": {
       "kind": "literal",
       "literal_kind": "enum",
-      "value": "champion"
+      "value": "declining"
     },
-    "polarity": "negate",
-    "predicate": "stakeholder_role",
+    "polarity": "affirm",
+    "predicate": "product_usage_trend",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -53,11 +53,11 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_33",
-      "kind": "account"
+      "id": "meeting_007",
+      "kind": "meeting"
     },
-    "text": "She is not the decision maker on procurement.",
+    "text": "The usage trend is declining.",
     "workspace_id": "workspace_alpha"
   },
-  "rationale": "Same subject, predicate, qualifiers, and object — opposite polarity."
+  "rationale": "Same subject, predicate, qualifiers, and polarity with different object values — contradiction."
 }

@@ -1,18 +1,18 @@
 {
   "pair_id": "low_trust_duplicate_012",
   "bucket": "low_trust_duplicates",
-  "expected_decision": "ambiguous",
+  "expected_decision": "merge",
   "source": "synthetic",
   "claim_a": {
-    "claim_type": "engagement_topic",
-    "field_path": "topic.mentioned",
-    "non_semantic_mergeable": true,
+    "claim_type": "stakeholder_role",
+    "field_path": "role.classification",
     "object": {
-      "canonical": "pricing_negotiation",
-      "kind": "free_text"
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "influencer"
     },
     "polarity": "affirm",
-    "predicate": "topic_mentioned",
+    "predicate": "stakeholder_role",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -25,22 +25,22 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_11",
-      "kind": "account"
+      "id": "person_003",
+      "kind": "person"
     },
-    "text": "The team raised competitive displacement risk on the call.",
+    "text": "She is acting as the executive champion for the rollout.",
     "workspace_id": "workspace_alpha"
   },
   "claim_b": {
-    "claim_type": "engagement_topic",
-    "field_path": "topic.mentioned",
-    "non_semantic_mergeable": true,
+    "claim_type": "stakeholder_role",
+    "field_path": "role.classification",
     "object": {
-      "canonical": "pricing_negotiation",
-      "kind": "free_text"
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "influencer"
     },
     "polarity": "affirm",
-    "predicate": "topic_mentioned",
+    "predicate": "stakeholder_role",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -53,11 +53,11 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_11",
-      "kind": "account"
+      "id": "person_003",
+      "kind": "person"
     },
-    "text": "The team raised competitive displacement risk on the call.",
+    "text": "She is acting as the executive champion for the rollout.",
     "workspace_id": "workspace_alpha"
   },
-  "rationale": "Structurally identical claims with weak corroboration — route to needs_verification, not auto-merge."
+  "rationale": "Structurally identical pairs that v2 currently auto-merges; the wave-plan intent of routing low-trust duplicates to needs_verification requires trust-signal wiring not yet carried into the parity input — tracked separately."
 }

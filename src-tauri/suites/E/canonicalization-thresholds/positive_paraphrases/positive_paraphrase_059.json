@@ -5,14 +5,14 @@
   "source": "synthetic",
   "claim_a": {
     "claim_type": "risk",
-    "field_path": "risk.status",
+    "field_path": "renewal.risk",
     "object": {
       "kind": "literal",
       "literal_kind": "enum",
-      "value": "mitigated"
+      "value": "at_risk"
     },
     "polarity": "affirm",
-    "predicate": "risk_status",
+    "predicate": "account_renewal_risk",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -25,22 +25,22 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_58",
-      "kind": "account"
+      "id": "meeting_012",
+      "kind": "meeting"
     },
-    "text": "Performance regressions are tracked as open.",
+    "text": "We expect a clean renewal in Q3.",
     "workspace_id": "workspace_alpha"
   },
   "claim_b": {
     "claim_type": "risk",
-    "field_path": "risk.status",
+    "field_path": "renewal.risk",
     "object": {
       "kind": "literal",
       "literal_kind": "enum",
-      "value": "mitigated"
+      "value": "at_risk"
     },
     "polarity": "affirm",
-    "predicate": "risk_status",
+    "predicate": "account_renewal_risk",
     "qualifiers": {
       "entity": null,
       "extras": {},
@@ -53,10 +53,10 @@
     "sentiment": "neutral",
     "status": "confirmed",
     "subject_ref": {
-      "id": "account_58",
-      "kind": "account"
+      "id": "meeting_012",
+      "kind": "meeting"
     },
-    "text": "Open status on the performance regression issue.",
+    "text": "Q3 renewal should land without trouble.",
     "workspace_id": "workspace_alpha"
   },
   "rationale": "Same subject, predicate, polarity, object, qualifiers, and status; text varies only by paraphrase."
