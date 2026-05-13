@@ -12,6 +12,9 @@ namespace DailyOS;
 use DailyOS\Admin\DailyOS_Pairing_Page;
 use DailyOS\Admin\DailyOS_Settings_Page;
 use DailyOS\CLI\DailyOS_CLI;
+use DailyOS\Transport\DailyOS_Credential_Store;
+use DailyOS\Mcp\DailyOS_Mcp_Roles;
+use DailyOS\Mcp\DailyOS_Mcp_Server;
 
 /**
  * Coordinates WordPress hooks for the DailyOS SurfaceClient shell.
@@ -56,6 +59,8 @@ final class DailyOS_Plugin {
 		}
 
 		$this->initialized = true;
+
+		$this->register_transport();
 
 		add_action( 'init', [ $this, 'register_abilities' ], 10 );
 		add_action( 'init', [ $this, 'register_blocks' ], 11 );
@@ -126,6 +131,13 @@ final class DailyOS_Plugin {
 	}
 
 	/**
+	 * Register transport-layer hooks.
+	 */
+	public function register_transport(): void {
+		( new DailyOS_Credential_Store() )->register_session_key_filter_safeguard();
+	}
+
+	/**
 	 * Register REST routes in later waves.
 	 */
 	public function register_rest_routes(): void {}
@@ -136,7 +148,16 @@ final class DailyOS_Plugin {
 	public function register_save_hooks(): void {}
 
 	/**
-	 * Register MCP server configuration in later waves.
+	 * Register MCP server configuration.
 	 */
-	public function register_mcp_server_config(): void {}
+	public function register_mcp_server_config(): void {
+		DailyOS_Mcp_Roles::register();
+
+		$registry = new DailyOS_Ability_Registry();
+		$resolver = static function (): array {
+			return apply_filters( 'dailyos_surfaceclient_resolved_scopes', [] );
+		};
+
+		DailyOS_Mcp_Server::bootstrap( $registry, $resolver );
+	}
 }

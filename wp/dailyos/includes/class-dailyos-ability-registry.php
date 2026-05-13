@@ -100,6 +100,15 @@ final class DailyOS_Ability_Registry {
 	}
 
 	/**
+	 * Normalize an inventory name into a DailyOS ability slug suffix.
+	 *
+	 * @param string $name Inventory ability name.
+	 */
+	public function normalize_name( string $name ): string {
+		return $this->normalize_ability_name( $name );
+	}
+
+	/**
 	 * Build WP Abilities API registration arguments.
 	 *
 	 * @param array<string, mixed> $ability Ability descriptor.
