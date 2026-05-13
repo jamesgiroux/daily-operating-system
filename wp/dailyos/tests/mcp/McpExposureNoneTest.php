@@ -196,6 +196,7 @@ final class DailyOS_McpExposureNoneTest extends TestCase {
 		$this->assertSame(
 			[
 				'mcp_exposure_path'  => DailyOS_Mcp_Audit::EXPOSURE_INVOCABLE,
+				'actor_instance'     => '',
 				'wp_user_id'         => 42,
 				'ability_name'       => 'dailyos/account-overview',
 				'scope_check_result' => 'allowed',

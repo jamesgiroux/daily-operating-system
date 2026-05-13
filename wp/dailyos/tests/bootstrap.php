@@ -45,6 +45,9 @@ namespace {
 	$GLOBALS['dailyos_test_current_user_can']     = true;
 	$GLOBALS['dailyos_test_check_admin_referer']  = 1;
 	$GLOBALS['dailyos_test_force_wp_create_user_error'] = false;
+	$GLOBALS['dailyos_test_next_uuid']            = 1;
+	$GLOBALS['dailyos_test_current_blog_id']      = 1;
+	$GLOBALS['dailyos_test_is_multisite']         = false;
 
 	if ( ! defined( 'DAY_IN_SECONDS' ) ) {
 		define( 'DAY_IN_SECONDS', 86400 );
@@ -106,7 +109,10 @@ namespace {
 		$GLOBALS['dailyos_test_current_user_id']      = 0;
 		$GLOBALS['dailyos_test_current_user_can']     = true;
 		$GLOBALS['dailyos_test_check_admin_referer']  = 1;
-	$GLOBALS['dailyos_test_force_wp_create_user_error'] = false;
+		$GLOBALS['dailyos_test_force_wp_create_user_error'] = false;
+		$GLOBALS['dailyos_test_next_uuid']            = 1;
+		$GLOBALS['dailyos_test_current_blog_id']      = 1;
+		$GLOBALS['dailyos_test_is_multisite']         = false;
 	}
 
 	$GLOBALS['wpdb'] = new class() {
@@ -568,6 +574,39 @@ namespace {
 	if ( ! function_exists( 'get_site_url' ) ) {
 		function get_site_url(): string {
 			return 'http://example.test';
+		}
+	}
+
+	if ( ! function_exists( 'home_url' ) ) {
+		function home_url(): string {
+			return 'https://example.test';
+		}
+	}
+
+	if ( ! function_exists( 'site_url' ) ) {
+		function site_url(): string {
+			return 'https://example.test';
+		}
+	}
+
+	if ( ! function_exists( 'get_current_blog_id' ) ) {
+		function get_current_blog_id(): int {
+			return (int) ( $GLOBALS['dailyos_test_current_blog_id'] ?? 1 );
+		}
+	}
+
+	if ( ! function_exists( 'is_multisite' ) ) {
+		function is_multisite(): bool {
+			return (bool) ( $GLOBALS['dailyos_test_is_multisite'] ?? false );
+		}
+	}
+
+	if ( ! function_exists( 'wp_generate_uuid4' ) ) {
+		function wp_generate_uuid4(): string {
+			$next = (int) ( $GLOBALS['dailyos_test_next_uuid'] ?? 1 );
+			$GLOBALS['dailyos_test_next_uuid'] = $next + 1;
+
+			return sprintf( '00000000-0000-4000-8000-%012d', $next );
 		}
 	}
 

@@ -197,6 +197,33 @@ final class DailyOS_McpPermissionTest extends TestCase {
 	}
 
 	/**
+	 * Empty resolved scopes hide all DailyOS tools at list time.
+	 */
+	public function test_tools_list_hides_all_tools_when_scopes_are_empty(): void {
+		$this->assertSame( [], $this->enumerated_tools_for_scopes( [] ) );
+	}
+
+	/**
+	 * A matching resolved scope exposes only the matching DailyOS tool at list time.
+	 */
+	public function test_tools_list_exposes_only_matching_scope(): void {
+		$this->assertSame(
+			[ 'dailyos-account-overview' ],
+			$this->enumerated_tools_for_scopes( [ 'read.account_overview' ] )
+		);
+	}
+
+	/**
+	 * All resolved scopes expose all invocable DailyOS tools at list time.
+	 */
+	public function test_tools_list_exposes_all_tools_when_all_scopes_match(): void {
+		$this->assertSame(
+			[ 'dailyos-account-overview', 'dailyos-transform-summary' ],
+			$this->enumerated_tools_for_scopes( [ 'read.account_overview', 'transform.summary' ] )
+		);
+	}
+
+	/**
 	 * Create a permission checker with one ability fixture.
 	 *
 	 * @param string   $mcp_exposure MCP exposure value.
@@ -217,6 +244,53 @@ final class DailyOS_McpPermissionTest extends TestCase {
 		);
 
 		return new DailyOS_Mcp_Permission( $registry, $scope_resolver );
+	}
+
+	/**
+	 * Return enumerated MCP tools for a resolved scope set.
+	 *
+	 * @param array<int, string> $scopes Resolved scopes.
+	 * @return array<int, string>
+	 */
+	private function enumerated_tools_for_scopes( array $scopes ): array {
+		$registry = new DailyOS_Ability_Registry(
+			$this->create_inventory_file(
+				[
+					[
+						'name'            => 'account-overview',
+						'category'        => 'Read',
+						'description'     => 'Account overview.',
+						'mcp_exposure'    => DailyOS_Mcp_Audit::EXPOSURE_INVOCABLE,
+						'required_scopes' => [ 'read.account_overview' ],
+					],
+					[
+						'name'            => 'transform-summary',
+						'category'        => 'Transform',
+						'description'     => 'Transform summary.',
+						'mcp_exposure'    => DailyOS_Mcp_Audit::EXPOSURE_INVOCABLE,
+						'required_scopes' => [ 'transform.summary' ],
+					],
+				]
+			)
+		);
+
+		DailyOS_Mcp_Roles::ensure_user();
+
+		$substrate_user_id = (int) get_option( DailyOS_Mcp_Roles::USER_ID_OPTION );
+
+		$GLOBALS['dailyos_test_user_can_callback'] = static function ( int $user_id, string $capability ) use ( $substrate_user_id ): bool {
+			return $substrate_user_id === $user_id && 'dailyos_invoke_mcp_ability' === $capability;
+		};
+
+		DailyOS_Mcp_Server::bootstrap(
+			$registry,
+			static function () use ( $scopes ): array {
+				return $scopes;
+			}
+		);
+		do_action( 'mcp_adapter_init', McpAdapter::instance() );
+
+		return $GLOBALS['dailyos_test_mcp_server_calls'][0]['enumerated_tools'] ?? [];
 	}
 
 	/**

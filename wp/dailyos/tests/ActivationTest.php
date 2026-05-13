@@ -51,6 +51,7 @@ final class DailyOS_ActivationTest extends TestCase {
 		$this->assertSame( 'needs_pairing', get_option( DailyOS_Activation::PAIRING_STATUS_OPTION ) );
 		$this->assertGreaterThan( 0, (int) get_option( DailyOS_Mcp_Roles::USER_ID_OPTION ) );
 		$this->assertNotFalse( get_user_by( 'login', DailyOS_Mcp_Roles::USERNAME ) );
+		$this->assertNotSame( '', get_option( DailyOS_Activation::PLUGIN_INSTANCE_UUID_OPTION, '' ) );
 	}
 
 	/**
@@ -128,6 +129,31 @@ final class DailyOS_ActivationTest extends TestCase {
 	}
 
 	/**
+	 * Activation-created plugin instance UUID is stable across reactivation.
+	 */
+	public function test_activation_creates_plugin_instance_uuid_idempotently(): void {
+		DailyOS_Activation::activate();
+
+		$first = get_option( DailyOS_Activation::PLUGIN_INSTANCE_UUID_OPTION );
+
+		DailyOS_Activation::deactivate();
+		DailyOS_Activation::activate();
+
+		$this->assertSame( $first, get_option( DailyOS_Activation::PLUGIN_INSTANCE_UUID_OPTION ) );
+	}
+
+	/**
+	 * Plugin init registers a callback for the scheduled nonce sweep hook.
+	 */
+	public function test_plugin_init_registers_nonce_sweep_callback(): void {
+		$this->reset_plugin_init_state();
+
+		DailyOS_Plugin::instance()->init();
+
+		$this->assertNotFalse( has_action( 'dailyos_nonce_sweep' ) );
+	}
+
+	/**
 	 * Malformed markers never match prior pairing.
 	 *
 	 * @dataProvider malformed_marker_provider
@@ -194,7 +220,13 @@ final class DailyOS_ActivationTest extends TestCase {
 		return [
 			'marker_version'      => 1,
 			'runtime_instance_id' => 'runtime-123',
+			'runtime_url'         => 'http://127.0.0.1:54321',
 			'site_nonce_hash'     => str_repeat( 'a', 64 ),
+			'site_nonce_full'     => 'siteNonceAlpha123',
+			'site_binding_digest' => str_repeat( 'b', 64 ),
+			'wp_site_id'          => 'install-1:1',
+			'wp_install_uuid'     => 'install-1',
+			'plugin_instance_uuid' => 'plugin-1',
 			'projection_version'  => '2026.05.13',
 			'instance_id'         => 'runtime-123',
 			'session_id'          => 'session-123',
@@ -203,5 +235,14 @@ final class DailyOS_ActivationTest extends TestCase {
 			'paired_at_gmt'       => '2026-05-13 00:00:00',
 			'last_use_gmt'        => '2026-05-13 00:00:00',
 		];
+	}
+
+	/**
+	 * Reset the plugin singleton initialization flag for hook-registration tests.
+	 */
+	private function reset_plugin_init_state(): void {
+		$property = new \ReflectionProperty( DailyOS_Plugin::class, 'initialized' );
+		$property->setAccessible( true );
+		$property->setValue( DailyOS_Plugin::instance(), false );
 	}
 }

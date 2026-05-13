@@ -85,7 +85,7 @@ final class DailyOS_Mcp_Server {
 		}
 
 		if ( function_exists( 'add_filter' ) ) {
-			add_filter( 'mcp_adapter_tools_list', [ $server, 'filter_non_dailyos_tools' ], 10, 2 );
+			add_filter( 'mcp_adapter_tools_list', [ $server, 'filter_tools_list' ], 10, 2 );
 			add_filter( 'mcp_adapter_pre_tool_call', [ $server, 'prepare_tool_call' ], 10, 4 );
 		}
 
@@ -208,22 +208,40 @@ final class DailyOS_Mcp_Server {
 	}
 
 	/**
-	 * Remove DailyOS tools from non-DailyOS MCP server listings.
+	 * Filter MCP tools before list responses are exposed.
 	 *
 	 * @param array<int, mixed> $tools Tool DTOs.
 	 * @param object            $server MCP server instance.
 	 * @return array<int, mixed>
 	 */
-	public function filter_non_dailyos_tools( array $tools, object $server ): array {
-		if ( $this->is_dailyos_server( $server ) ) {
-			return $tools;
+	public function filter_tools_list( array $tools, object $server ): array {
+		if ( ! $this->is_dailyos_server( $server ) ) {
+			return array_values(
+				array_filter(
+					$tools,
+					function ( mixed $tool ): bool {
+						return ! $this->is_dailyos_tool( $tool );
+					}
+				)
+			);
 		}
+
+		$this->switch_to_substrate_user();
 
 		return array_values(
 			array_filter(
 				$tools,
 				function ( mixed $tool ): bool {
-					return ! $this->is_dailyos_tool( $tool );
+					$ability_name = $this->ability_name_from_tool( $tool );
+
+					if ( null === $ability_name ) {
+						return true;
+					}
+
+					$wp_user_id = function_exists( 'get_current_user_id' ) ? get_current_user_id() : 0;
+					$result     = $this->permission->check( $ability_name, $wp_user_id, $this->resolved_scopes() );
+
+					return $result['allowed'];
 				}
 			)
 		);
@@ -260,6 +278,7 @@ final class DailyOS_Mcp_Server {
 		DailyOS_Mcp_Audit::emit(
 			[
 				'mcp_exposure_path'  => $exposure_path,
+				'actor_instance'     => $this->actor_instance(),
 				'wp_user_id'         => $wp_user_id,
 				'ability_name'       => $ability_name,
 				'scope_check_result' => $scope_check_result,
@@ -463,6 +482,46 @@ final class DailyOS_Mcp_Server {
 		return str_starts_with( $name, 'dailyos/' )
 			|| str_starts_with( $name, 'dailyos-' )
 			|| str_starts_with( $name, 'dailyos_' );
+	}
+
+	/**
+	 * Convert a DailyOS MCP tool DTO to its full ability name.
+	 *
+	 * @param mixed $tool Tool DTO.
+	 */
+	private function ability_name_from_tool( mixed $tool ): ?string {
+		if ( ! is_object( $tool ) || ! method_exists( $tool, 'getName' ) ) {
+			return null;
+		}
+
+		$name = (string) $tool->getName();
+
+		if ( str_starts_with( $name, 'dailyos/' ) ) {
+			return $name;
+		}
+
+		if ( str_starts_with( $name, 'dailyos-' ) ) {
+			return 'dailyos/' . substr( $name, strlen( 'dailyos-' ) );
+		}
+
+		if ( str_starts_with( $name, 'dailyos_' ) ) {
+			return 'dailyos/' . substr( $name, strlen( 'dailyos_' ) );
+		}
+
+		return null;
+	}
+
+	/**
+	 * Return the audit actor instance from the pairing marker.
+	 */
+	private function actor_instance(): string {
+		$marker = ( new DailyOS_Credential_Store() )->get_marker();
+
+		if ( null === $marker || empty( $marker['plugin_instance_uuid'] ) ) {
+			return '';
+		}
+
+		return (string) $marker['plugin_instance_uuid'];
 	}
 
 	/**

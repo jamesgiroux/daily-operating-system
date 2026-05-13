@@ -143,6 +143,10 @@ final class DailyOS_Ability_Registry {
 				$client    = new DailyOS_Runtime_Client( new DailyOS_Credential_Store(), new DailyOS_Hmac_Signer() );
 				$result    = $client->invoke_ability( $ability_name, $payload, $scope_set );
 
+				if ( function_exists( 'is_wp_error' ) && is_wp_error( $result ) ) {
+					return $result;
+				}
+
 				if ( self::is_runtime_unreachable_result( $result ) ) {
 					return new \WP_Error(
 						'dailyos_runtime_unreachable',
@@ -206,9 +210,13 @@ final class DailyOS_Ability_Registry {
 	/**
 	 * Determine whether a runtime client response means the runtime cannot be reached.
 	 *
-	 * @param array<string, mixed> $result Runtime response.
+	 * @param mixed $result Runtime response.
 	 */
-	private static function is_runtime_unreachable_result( array $result ): bool {
+	private static function is_runtime_unreachable_result( mixed $result ): bool {
+		if ( ! is_array( $result ) ) {
+			return false;
+		}
+
 		if ( true === ( $result['ok'] ?? false ) ) {
 			return false;
 		}

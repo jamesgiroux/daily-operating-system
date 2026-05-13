@@ -23,6 +23,7 @@ final class DailyOS_Mcp_Audit {
 	 */
 	private const REQUIRED_KEYS = [
 		'mcp_exposure_path',
+		'actor_instance',
 		'wp_user_id',
 		'ability_name',
 		'scope_check_result',
