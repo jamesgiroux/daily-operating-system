@@ -106,12 +106,15 @@ final class DailyOS_HmacSignerTest extends TestCase {
 	}
 
 	/**
-	 * Current timestamp is Unix seconds encoded as ASCII decimal digits.
+	 * Current timestamp is RFC3339-Z (matches the Rust verifier's parse_timestamp gate).
 	 */
 	public function test_current_timestamp_matches_expected_format(): void {
 		$timestamp = ( new DailyOS_Hmac_Signer() )->current_timestamp();
 
-		$this->assertMatchesRegularExpression( '/^\d+$/', $timestamp );
+		$this->assertMatchesRegularExpression(
+			'/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/',
+			$timestamp
+		);
 	}
 
 	/**
@@ -139,7 +142,7 @@ final class DailyOS_HmacSignerTest extends TestCase {
 			'{"depth":"standard"}',
 			$identity,
 			'deadbeefcafebabedeadbeefcafebabe',
-			'1731500000'
+			'2024-11-13T12:13:20Z'
 		);
 		$changed   = $signer->sign_request(
 			$key,
@@ -149,7 +152,7 @@ final class DailyOS_HmacSignerTest extends TestCase {
 			'{"depth":"standare"}',
 			$identity,
 			'deadbeefcafebabedeadbeefcafebabe',
-			'1731500000'
+			'2024-11-13T12:13:20Z'
 		);
 
 		$this->assertNotSame( $signature, $changed );

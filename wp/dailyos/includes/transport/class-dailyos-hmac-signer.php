@@ -122,12 +122,17 @@ final class DailyOS_Hmac_Signer {
 	}
 
 	/**
-	 * Return the current Unix timestamp as ASCII decimal seconds.
+	 * Return the current UTC timestamp in RFC3339-Z form ("Y-m-d\TH:i:s\Z").
+	 *
+	 * The Rust verifier in src-tauri/src/surface_runtime/hmac.rs::parse_timestamp requires
+	 * a trailing 'Z' plus a valid RFC3339 parse before HMAC compare, so the signer must
+	 * emit RFC3339-Z on the wire. Canonical bytes treat the timestamp as an opaque string
+	 * regardless of format.
 	 *
 	 * @return string Timestamp.
 	 */
 	public function current_timestamp(): string {
-		return (string) time();
+		return gmdate( 'Y-m-d\TH:i:s\Z', time() );
 	}
 
 	/**
