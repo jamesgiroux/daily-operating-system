@@ -736,11 +736,45 @@ struct SemanticDuplicateMatch {
     v2_snapshot: V2EvaluationSnapshot,
 }
 
+#[derive(Clone)]
 struct V2EvaluationSnapshot {
     proposal_input: CanonicalMatchInput,
     candidate_input: CanonicalMatchInput,
     outcome: CanonicalMatchOutcome,
     config: CanonicalMatchConfig,
+}
+
+fn insert_live_canonicalization_decisions_for_snapshots(
+    ctx: &ServiceContext<'_>,
+    tx: &ActionDb,
+    snapshots: Vec<V2EvaluationSnapshot>,
+    new_claim_id: &str,
+    skip_candidate_id: Option<&str>,
+    now: &str,
+) -> Result<(), ClaimError> {
+    let mut seen_candidate_ids = HashSet::new();
+    for mut snapshot in snapshots {
+        if skip_candidate_id == Some(snapshot.candidate_input.claim_id.as_str()) {
+            continue;
+        }
+        if !seen_candidate_ids.insert(snapshot.candidate_input.claim_id.clone()) {
+            continue;
+        }
+        snapshot.proposal_input.claim_id = new_claim_id.to_string();
+        insert_canonicalization_decision_in_tx(
+            ctx,
+            tx,
+            &snapshot.proposal_input,
+            &snapshot.candidate_input,
+            &snapshot.outcome,
+            &snapshot.config,
+            CanonicalizationDecisionMode::Live,
+            now,
+            now,
+        )?;
+    }
+
+    Ok(())
 }
 
 struct SemanticDuplicateLookup<'a> {
@@ -4441,15 +4475,15 @@ fn load_active_claim_by_dedup_key(
 fn load_active_semantic_duplicate_claim(
     tx: &ActionDb,
     lookup: SemanticDuplicateLookup<'_>,
-) -> Result<Option<SemanticDuplicateMatch>, ClaimError> {
+) -> Result<(Option<SemanticDuplicateMatch>, Vec<V2EvaluationSnapshot>), ClaimError> {
     let Some(kind) = subject_kind_label(lookup.subject) else {
-        return Ok(None);
+        return Ok((None, Vec::new()));
     };
     let Some(id) = subject_id_for_lookup(lookup.subject) else {
-        return Ok(None);
+        return Ok((None, Vec::new()));
     };
     let Some(proposal_structured) = lookup.proposal_structured else {
-        return Ok(None);
+        return Ok((None, Vec::new()));
     };
 
     let sql = format!(
@@ -4467,6 +4501,7 @@ fn load_active_semantic_duplicate_claim(
     drop(stmt);
 
     let mut needs_verification_match = None;
+    let mut all_evaluations = Vec::new();
 
     for mut candidate_input in candidates {
         let Some(claim) = load_claim_by_id(tx.conn_ref(), &candidate_input.claim_id)? else {
@@ -4494,7 +4529,14 @@ fn load_active_semantic_duplicate_claim(
         )?;
         let config = canonical_match_config(&proposal_input, &candidate_input);
         let outcome = canonical_match_v2(&proposal_input, &candidate_input, &config);
-        if outcome.decision != CanonicalDecisionKind::Merge {
+        let v2_snapshot = V2EvaluationSnapshot {
+            proposal_input,
+            candidate_input,
+            outcome,
+            config,
+        };
+        all_evaluations.push(v2_snapshot.clone());
+        if v2_snapshot.outcome.decision != CanonicalDecisionKind::Merge {
             continue;
         }
 
@@ -4504,12 +4546,6 @@ fn load_active_semantic_duplicate_claim(
         } else {
             SemanticDuplicateAction::NeedsVerification
         };
-        let v2_snapshot = V2EvaluationSnapshot {
-            proposal_input,
-            candidate_input,
-            outcome,
-            config,
-        };
         let duplicate_match = SemanticDuplicateMatch {
             claim,
             action,
@@ -4517,7 +4553,7 @@ fn load_active_semantic_duplicate_claim(
         };
 
         if action == SemanticDuplicateAction::Canonicalize {
-            return Ok(Some(duplicate_match));
+            return Ok((Some(duplicate_match), all_evaluations));
         }
 
         if needs_verification_match.is_none() {
@@ -4525,7 +4561,7 @@ fn load_active_semantic_duplicate_claim(
         }
     }
 
-    Ok(needs_verification_match)
+    Ok((needs_verification_match, all_evaluations))
 }
 
 /// L2 cycle-1 fix #6: load any ACTIVE claim that contradicts the
@@ -4545,7 +4581,13 @@ fn load_active_semantic_duplicate_claim(
 fn load_active_contradicting_claim(
     conn: &rusqlite::Connection,
     lookup: ContradictionLookup<'_>,
-) -> Result<Option<(IntelligenceClaim, V2EvaluationSnapshot)>, ClaimError> {
+) -> Result<
+    (
+        Option<(IntelligenceClaim, V2EvaluationSnapshot)>,
+        Vec<V2EvaluationSnapshot>,
+    ),
+    ClaimError,
+> {
     // L2 cycle-12 fix #1: match the active subject by kind+id via
     // json_extract instead of exact subject_ref string equality.
     // Two byte-different but semantically-identical subject_refs
@@ -4555,13 +4597,13 @@ fn load_active_contradicting_claim(
     // claim. json_valid guards malformed historical rows from
     // tripping json_extract mid-query (cycle-7 hazard).
     let Some(kind) = subject_kind_label(lookup.subject) else {
-        return Ok(None);
+        return Ok((None, Vec::new()));
     };
     let Some(id) = subject_id_for_lookup(lookup.subject) else {
-        return Ok(None);
+        return Ok((None, Vec::new()));
     };
     let Some(proposal_structured) = lookup.proposal_structured else {
-        return Ok(None);
+        return Ok((None, Vec::new()));
     };
     let sql = format!(
         "SELECT {CLAIM_COLUMNS}, predicate_ref, polarity, object_value, qualifiers,
@@ -4582,6 +4624,9 @@ fn load_active_contradicting_claim(
         )?
         .collect::<Result<Vec<_>, _>>()?;
     drop(stmt);
+
+    let mut contradiction_match = None;
+    let mut other_evaluations = Vec::new();
 
     for mut candidate_input in candidates {
         let Some(claim) = load_claim_by_id(conn, &candidate_input.claim_id)? else {
@@ -4609,22 +4654,21 @@ fn load_active_contradicting_claim(
         )?;
         let config = canonical_match_config(&proposal_input, &candidate_input);
         let outcome = canonical_match_v2(&proposal_input, &candidate_input, &config);
-        match outcome.decision {
-            CanonicalDecisionKind::Merge | CanonicalDecisionKind::ForkFiltered => continue,
-            CanonicalDecisionKind::ForkContradiction => {
-                let v2_snapshot = V2EvaluationSnapshot {
-                    proposal_input,
-                    candidate_input,
-                    outcome,
-                    config,
-                };
-                return Ok(Some((claim, v2_snapshot)));
+        let v2_snapshot = V2EvaluationSnapshot {
+            proposal_input,
+            candidate_input,
+            outcome,
+            config,
+        };
+        match v2_snapshot.outcome.decision {
+            CanonicalDecisionKind::ForkContradiction if contradiction_match.is_none() => {
+                contradiction_match = Some((claim, v2_snapshot));
             }
-            CanonicalDecisionKind::Fork | CanonicalDecisionKind::ForkAmbiguous => continue,
+            _ => other_evaluations.push(v2_snapshot),
         }
     }
 
-    Ok(None)
+    Ok((contradiction_match, other_evaluations))
 }
 
 /// L2 cycle-1 fix #6: in-transaction corroboration helper. Same body
@@ -5347,6 +5391,8 @@ pub fn commit_claim(
             return Err(ClaimError::TombstonedPreGate);
         }
 
+        let mut canonicalization_evaluations = Vec::new();
+
         // L2 cycle-1 fix #6: same-meaning merge. If an active claim
         // already exists with this dedup_key (same subject + claim_type
         // + field + canonical text + hash), route the new evidence
@@ -5385,7 +5431,7 @@ pub fn commit_claim(
                 });
             }
 
-            if let Some(semantic_match) = load_active_semantic_duplicate_claim(
+            let (semantic_match, semantic_evaluations) = load_active_semantic_duplicate_claim(
                 tx,
                 SemanticDuplicateLookup {
                     subject: &subject,
@@ -5399,7 +5445,9 @@ pub fn commit_claim(
                     proposal_sensitivity: &effective_sensitivity,
                     now: &now,
                 },
-            )? {
+            )?;
+            canonicalization_evaluations.extend(semantic_evaluations);
+            if let Some(semantic_match) = semantic_match {
                 match semantic_match.action {
                     SemanticDuplicateAction::Canonicalize => {
                         let source_mechanism = "canonical_match_v2_merge";
@@ -5446,7 +5494,7 @@ pub fn commit_claim(
             // new claim AND a claim_contradictions edge, then return
             // Forked. Both claims remain active until the user (or a
             // reconciliation pass) resolves the fork.
-            if let Some((primary, mut v2_snapshot)) = load_active_contradicting_claim(
+            let (contradiction_match, contradiction_evaluations) = load_active_contradicting_claim(
                 tx.conn_ref(),
                 ContradictionLookup {
                     subject: &subject,
@@ -5460,7 +5508,9 @@ pub fn commit_claim(
                     proposal_sensitivity: &effective_sensitivity,
                     now: &now,
                 },
-            )? {
+            )?;
+            canonicalization_evaluations.extend(contradiction_evaluations);
+            if let Some((primary, mut v2_snapshot)) = contradiction_match {
                 let new_id = proposal
                     .id
                     .clone()
@@ -5500,6 +5550,7 @@ pub fn commit_claim(
                     needs_user_decision_at: None,
                 };
                 insert_claim_row_with_structured(tx, &contradicting, proposal_structured.as_ref())?;
+                let matched_candidate_id = v2_snapshot.candidate_input.claim_id.clone();
                 v2_snapshot.proposal_input.claim_id = new_id.clone();
                 insert_canonicalization_decision_in_tx(
                     ctx,
@@ -5510,6 +5561,14 @@ pub fn commit_claim(
                     &v2_snapshot.config,
                     CanonicalizationDecisionMode::Live,
                     &now,
+                    &now,
+                )?;
+                insert_live_canonicalization_decisions_for_snapshots(
+                    ctx,
+                    tx,
+                    canonicalization_evaluations,
+                    &new_id,
+                    Some(&matched_candidate_id),
                     &now,
                 )?;
                 project_legacy_state_for_claim(ctx, tx, &contradicting)?;
@@ -5575,6 +5634,7 @@ pub fn commit_claim(
                 };
 
                 insert_claim_row_with_structured(tx, &claim, proposal_structured.as_ref())?;
+                let matched_candidate_id = v2_snapshot.candidate_input.claim_id.clone();
                 v2_snapshot.proposal_input.claim_id = claim.id.clone();
                 insert_canonicalization_decision_in_tx(
                     ctx,
@@ -5585,6 +5645,14 @@ pub fn commit_claim(
                     &v2_snapshot.config,
                     CanonicalizationDecisionMode::Live,
                     &now,
+                    &now,
+                )?;
+                insert_live_canonicalization_decisions_for_snapshots(
+                    ctx,
+                    tx,
+                    canonicalization_evaluations,
+                    &claim.id,
+                    Some(&matched_candidate_id),
                     &now,
                 )?;
                 project_legacy_state_for_claim(ctx, tx, &claim)?;
@@ -5645,6 +5713,16 @@ pub fn commit_claim(
         };
 
         insert_claim_row_with_structured(tx, &claim, proposal_structured.as_ref())?;
+        if proposal.tombstone.is_none() {
+            insert_live_canonicalization_decisions_for_snapshots(
+                ctx,
+                tx,
+                canonicalization_evaluations,
+                &claim.id,
+                None,
+                &now,
+            )?;
+        }
         project_legacy_state_for_claim(ctx, tx, &claim)?;
         if proposal.tombstone.is_some() {
             mark_claim_edges_tombstoned_for_identity(
@@ -14917,6 +14995,50 @@ mod tests {
 
         let active = load_claims_active(&db, SUBJECT, Some("risk")).unwrap();
         assert_eq!(active.len(), 2);
+    }
+
+    #[test]
+    fn commit_claim_plain_fork_writes_live_canonicalization_decision() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let candidate_id =
+            inserted_claim_id(commit_claim(&ctx, &db, proposal("Renewal secured")).unwrap());
+        let candidate_status: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT canonical_status FROM intelligence_claims WHERE id = ?1",
+                params![&candidate_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(candidate_status, "live");
+
+        let result = commit_claim(&ctx, &db, proposal("Renewal isn't secured")).unwrap();
+        let inserted = match result {
+            CommittedClaim::Inserted { claim } => claim,
+            other => panic!("plain fork should insert a separate claim, got {other:?}"),
+        };
+        assert_ne!(inserted.id, candidate_id);
+
+        let active = load_claims_active(&db, SUBJECT, Some("risk")).unwrap();
+        assert_eq!(active.len(), 2);
+        assert_eq!(claim_contradiction_count(&db), 0);
+
+        let live_decisions = live_canonicalization_decisions(&db);
+        assert_eq!(live_decisions.len(), 1);
+        assert!(matches!(
+            live_decisions[0].2.as_str(),
+            "fork" | "fork_ambiguous" | "fork_filtered" | "fork_contradiction"
+        ));
+        assert!(decision_pair_matches(
+            &live_decisions[0],
+            &candidate_id,
+            &inserted.id
+        ));
+        assert_ne!(live_decisions[0].0, live_decisions[0].1);
     }
 
     #[test]
