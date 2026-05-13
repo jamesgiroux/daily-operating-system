@@ -165,11 +165,11 @@ final class DailyOS_Activation {
 		// Tightening the well-formedness gate raises the cost of trivial forgery
 		// without claiming the marker proves runtime ownership. Runtime-state
 		// attestation remains load-bearing at first signed request.
-		if ( ! self::is_uuid_like( (string) $marker['runtime_instance_id'] ) ) {
+		if ( ! self::is_runtime_id_like( (string) $marker['runtime_instance_id'] ) ) {
 			return false;
 		}
 
-		if ( ! self::is_uuid_like( (string) $marker['instance_id'] ) ) {
+		if ( ! self::is_runtime_id_like( (string) $marker['instance_id'] ) ) {
 			return false;
 		}
 
@@ -185,16 +185,33 @@ final class DailyOS_Activation {
 			return false;
 		}
 
+		// projection_version is L0-listed but the W2 runtime does not yet emit it
+		// (tracked separately as a substrate follow-up). Validate the shape only
+		// when present so legitimate paired-reactivation does not quarantine.
+		if (
+			isset( $marker['projection_version'] )
+			&& '' !== (string) $marker['projection_version']
+			&& ! self::is_well_formed_projection_version( (string) $marker['projection_version'] )
+		) {
+			return false;
+		}
+
 		return true;
 	}
 
 	/**
-	 * Accept canonical RFC 4122 UUID forms (mixed case, hyphenated).
+	 * Accept either canonical RFC 4122 UUID form or the substrate's
+	 * `sc_<32 hex>` surface-client-id shape (used as runtime_instance_id
+	 * fallback when the runtime does not emit a separate runtime_instance_id).
 	 *
-	 * @param string $value Candidate UUID string.
+	 * @param string $value Candidate runtime/instance id.
 	 */
-	private static function is_uuid_like( string $value ): bool {
-		return 1 === preg_match( '/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/', $value );
+	private static function is_runtime_id_like( string $value ): bool {
+		if ( 1 === preg_match( '/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/', $value ) ) {
+			return true;
+		}
+
+		return 1 === preg_match( '/^sc_[0-9a-fA-F]{32}$/', $value );
 	}
 
 	/**
@@ -224,15 +241,31 @@ final class DailyOS_Activation {
 	}
 
 	/**
+	 * Accept calendar-version style `YYYY.MM.DD` or semver-style `vN.N.N`
+	 * for projection_version when the runtime emits it.
+	 *
+	 * @param string $value Candidate projection-version string.
+	 */
+	private static function is_well_formed_projection_version( string $value ): bool {
+		if ( 1 === preg_match( '/^\d{4}\.\d{2}\.\d{2}$/', $value ) ) {
+			return true;
+		}
+
+		return 1 === preg_match( '/^v\d+(?:\.\d+){0,2}$/', $value );
+	}
+
+	/**
 	 * Return the unified marker fields that must be present and non-empty.
 	 *
 	 * @return array<int, string>
 	 */
 	private static function required_marker_fields(): array {
+		// projection_version is L0-listed but the W2 runtime does not yet emit it
+		// (substrate-side follow-up tracked separately). Optional with a shape
+		// gate in is_valid_marker(); promoted to required once the runtime emits.
 		return [
 			'runtime_instance_id',
 			'site_nonce_hash',
-			'projection_version',
 			'instance_id',
 			'session_id',
 			'endpoint_version',

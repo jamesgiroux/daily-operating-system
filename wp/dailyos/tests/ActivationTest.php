@@ -134,6 +134,26 @@ final class DailyOS_ActivationTest extends TestCase {
 	}
 
 	/**
+	 * Real-runtime marker shape (substrate emits sc_<hex> as runtime_instance_id
+	 * and does not yet emit projection_version) passes prior-pair validation
+	 * so legitimate paired reactivation proceeds.
+	 */
+	public function test_activation_accepts_real_runtime_marker_shape(): void {
+		$marker = $this->valid_marker();
+		// Substrate format: `format!("sc_{}", Uuid::new_v4().simple())` → sc_ + 32 hex chars.
+		$marker['runtime_instance_id'] = 'sc_a1b2c3d4e5f60718293a4b5c6d7e8f90';
+		$marker['instance_id']         = 'sc_a1b2c3d4e5f60718293a4b5c6d7e8f90';
+		unset( $marker['projection_version'] );
+
+		update_option( 'dailyos_projection_cache', 'present', false );
+		update_option( DailyOS_Activation::PAIRING_MARKER_OPTION, $marker, false );
+
+		DailyOS_Activation::activate();
+
+		$this->assertGreaterThan( 0, (int) get_option( DailyOS_Mcp_Roles::USER_ID_OPTION ) );
+	}
+
+	/**
 	 * Dirty namespace with a mismatching marker refuses activation.
 	 */
 	public function test_activation_branch_dirty_namespace_with_mismatching_marker_refuses(): void {
