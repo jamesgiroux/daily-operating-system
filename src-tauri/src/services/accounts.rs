@@ -1609,15 +1609,8 @@ pub fn build_account_detail_result(
         .ok_or_else(|| format!("Account not found: {}", account_id))?;
 
     // Read narrative fields from DB columns (promoted from dashboard.json).
-    let overview: Option<crate::accounts::CompanyOverview> = account
-        .company_overview
-        .as_ref()
-        .and_then(|json| serde_json::from_str(json).ok());
-    let programs: Vec<crate::accounts::StrategicProgram> = account
-        .strategic_programs
-        .as_ref()
-        .and_then(|json| serde_json::from_str(json).ok())
-        .unwrap_or_default();
+    let overview = account.company_overview_parsed();
+    let programs = account.strategic_programs_parsed();
     let notes = account.notes.clone();
     // Intelligence from DB only — no filesystem fallback.
     let mut intelligence = db.get_entity_intelligence(&account_id).ok().flatten();
