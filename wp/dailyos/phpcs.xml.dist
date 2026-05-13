@@ -13,7 +13,19 @@
 
 	<config name="testVersion" value="8.1-"/>
 
-	<rule ref="WordPress"/>
+	<rule ref="WordPress">
+		<!-- Modern PHP 8.1+; short array syntax is the project convention. -->
+		<exclude name="Generic.Arrays.DisallowShortArraySyntax"/>
+		<exclude name="Universal.Arrays.DisallowShortArraySyntax"/>
+	</rule>
 	<rule ref="WordPress-Docs"/>
-	<rule ref="WordPress-Extra"/>
+	<rule ref="WordPress-Extra">
+		<exclude name="Generic.Arrays.DisallowShortArraySyntax"/>
+		<exclude name="Universal.Arrays.DisallowShortArraySyntax"/>
+	</rule>
+
+	<!-- Test bootstrap stubs core WordPress functions for unit tests; docblocks not required. -->
+	<rule ref="Squiz.Commenting.FunctionComment.Missing">
+		<exclude-pattern>tests/bootstrap.php</exclude-pattern>
+	</rule>
 </ruleset>

@@ -100,6 +100,8 @@ final class DailyOS_Activation {
 
 	/**
 	 * Check whether a marker belongs to the recorded prior pairing.
+	 *
+	 * @param mixed $marker Prior pairing marker.
 	 */
 	private static function marker_matches_prior_pair( mixed $marker ): bool {
 		if ( ! self::is_valid_marker( $marker ) ) {
@@ -117,6 +119,8 @@ final class DailyOS_Activation {
 
 	/**
 	 * Validate the prior-pairing marker shape.
+	 *
+	 * @param mixed $marker Prior pairing marker.
 	 */
 	private static function is_valid_marker( mixed $marker ): bool {
 		return is_array( $marker )
@@ -140,9 +144,15 @@ final class DailyOS_Activation {
 
 	/**
 	 * Refuse activation through WordPress's standard fatal surface.
+	 *
+	 * @param string $message Activation failure message.
+	 * @param string $code Activation failure code.
 	 */
 	private static function refuse_activation( string $message, string $code ): void {
-		wp_die( new \WP_Error( $code, $message ) );
+		$error = new \WP_Error( $code, esc_html( $message ) );
+
+		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- WP_Error message is escaped before wp_die().
+		wp_die( $error );
 	}
 
 	/**

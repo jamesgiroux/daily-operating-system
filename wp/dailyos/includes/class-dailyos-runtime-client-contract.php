@@ -12,7 +12,7 @@ namespace DailyOS;
 /**
  * Documents the W3-B PHP-to-runtime transport boundary.
  *
- * wp_remote_post body MUST be a string, not an array — see W3-0 spike
+ * The wp_remote_post body MUST be a string, not an array — see W3-0 spike
  * byte-exactness test caveats.
  */
 final class DailyOS_Runtime_Client_Contract {

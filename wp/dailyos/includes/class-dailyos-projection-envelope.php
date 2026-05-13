@@ -17,13 +17,41 @@ namespace DailyOS;
  * dailyos_projection_version. This object only preserves that envelope.
  */
 final class DailyOS_Projection_Envelope {
+	/**
+	 * DailyOS canonical projection ID.
+	 *
+	 * @var string
+	 */
 	private string $dailyos_canonical_id;
+
+	/**
+	 * DailyOS row signature.
+	 *
+	 * @var string
+	 */
 	private string $dailyos_signature;
+
+	/**
+	 * DailyOS source runtime identifier.
+	 *
+	 * @var string
+	 */
 	private string $dailyos_source_runtime;
+
+	/**
+	 * DailyOS projection version.
+	 *
+	 * @var string
+	 */
 	private string $dailyos_projection_version;
 
 	/**
 	 * Constructor.
+	 *
+	 * @param string $dailyos_canonical_id DailyOS canonical projection ID.
+	 * @param string $dailyos_signature DailyOS row signature.
+	 * @param string $dailyos_source_runtime DailyOS source runtime identifier.
+	 * @param string $dailyos_projection_version DailyOS projection version.
 	 */
 	public function __construct(
 		string $dailyos_canonical_id,

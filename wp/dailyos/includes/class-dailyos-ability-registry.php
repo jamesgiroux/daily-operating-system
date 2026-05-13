@@ -24,6 +24,8 @@ final class DailyOS_Ability_Registry {
 
 	/**
 	 * Constructor.
+	 *
+	 * @param string|null $inventory_path Absolute path to the ability inventory.
 	 */
 	public function __construct( ?string $inventory_path = null ) {
 		$this->inventory_path = $inventory_path ?? DAILYOS_PLUGIN_DIR . 'tools/dailyos-abilities.json';
@@ -129,6 +131,8 @@ final class DailyOS_Ability_Registry {
 
 	/**
 	 * Preserve the MCP enum separately from browser-side execution eligibility.
+	 *
+	 * @param mixed $value MCP exposure value.
 	 */
 	private function normalize_mcp_exposure( mixed $value ): string {
 		$allowed = [ 'None', 'MetadataOnly', 'Invocable' ];
@@ -142,6 +146,8 @@ final class DailyOS_Ability_Registry {
 
 	/**
 	 * Normalize an inventory name into a DailyOS ability slug suffix.
+	 *
+	 * @param string $name Inventory ability name.
 	 */
 	private function normalize_ability_name( string $name ): string {
 		$normalized = strtolower( preg_replace( '/[^a-zA-Z0-9_-]+/', '-', $name ) ?? '' );

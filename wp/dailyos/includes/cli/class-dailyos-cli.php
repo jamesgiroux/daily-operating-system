@@ -88,6 +88,7 @@ final class DailyOS_CLI {
 	 * Return whether a flag was provided.
 	 *
 	 * @param array<string, string|int> $assoc_args Associative arguments.
+	 * @param string                    $name Flag name.
 	 */
 	private static function flag_is_set( array $assoc_args, string $name ): bool {
 		return array_key_exists( $name, $assoc_args ) && false !== $assoc_args[ $name ];

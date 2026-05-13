@@ -13,7 +13,7 @@ use PHPUnit\Framework\TestCase;
 /**
  * Smoke coverage for plugin bootstrap.
  */
-final class DailyOS_Activation_Test extends TestCase {
+final class DailyOS_ActivationTest extends TestCase {
 	/**
 	 * Singleton returns the same instance.
 	 */

@@ -65,6 +65,7 @@ final class DailyOS_Namespace_Store {
 	/**
 	 * Return option names with the given prefix.
 	 *
+	 * @param string $prefix Option name prefix.
 	 * @return array<int, string>
 	 */
 	private function get_option_names_like( string $prefix ): array {
@@ -82,6 +83,7 @@ final class DailyOS_Namespace_Store {
 	/**
 	 * Return post meta keys with the given prefix.
 	 *
+	 * @param string $prefix Post meta key prefix.
 	 * @return array<int, string>
 	 */
 	private function get_post_meta_keys_like( string $prefix ): array {
