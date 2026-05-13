@@ -52,7 +52,7 @@ pub async fn generate_report(
             );
         }
 
-        // DOS-107: one ActionDb open per spawn_blocking; threaded through phases.
+        // Single ActionDb open per spawn_blocking; threaded through gather, user-context, and write.
         let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
             .map_err(|e| format!("DB open failed: {e}"))?;
 
@@ -194,7 +194,7 @@ fn generate_swot_report(
     app_handle: Option<&AppHandle>,
 ) -> Result<ReportRow, String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
-    // DOS-107: one ActionDb open, reused for gather + write.
+    // Single ActionDb open, reused for gather + write.
     let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
         .map_err(|e| format!("DB open failed: {e}"))?;
 
@@ -249,7 +249,7 @@ fn generate_book_of_business(
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     use crate::reports::book_of_business::*;
 
-    // DOS-107: one ActionDb open, reused across gather, user-context, and write.
+    // Single ActionDb open, reused across gather, user-context, and write.
     let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
         .map_err(|e| format!("DB open failed: {e}"))?;
 

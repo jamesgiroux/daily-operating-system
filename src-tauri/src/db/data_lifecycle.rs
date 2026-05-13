@@ -1237,7 +1237,7 @@ mod tests {
 }
 
 // =============================================================================
-// One-time init backfills and migrations (DOS-94 — moved from db/core.rs)
+// One-time init backfills and migrations
 //
 // These ActionDb methods run during startup paths in `db::core` and convert
 // legacy state to current schema invariants. Visibility is `pub(super)` so

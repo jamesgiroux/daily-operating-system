@@ -106,7 +106,7 @@ pub struct StrategicProgram {
 }
 
 // =============================================================================
-// Typed JSON accessors for DbAccount blob fields (DOS-21)
+// Typed JSON accessors for DbAccount blob fields
 //
 // DbAccount stores company_overview/strategic_programs/keywords/metadata as
 // Option<String> JSON. Callers historically inlined the same parse-and-swallow
