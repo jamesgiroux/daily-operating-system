@@ -27,6 +27,7 @@ import {
   FilterTabs,
 } from "@/components/entity/EntityListShell";
 import shellStyles from "@/components/entity/EntityListShell.module.css";
+import s from "./PeoplePage.module.css";
 import { EditorialPageHeader } from "@/components/editorial/EditorialPageHeader";
 import { EntityRow } from "@/components/entity/EntityRow";
 import { EmptyState } from "@/components/editorial/EmptyState";
@@ -244,19 +245,7 @@ export default function PeoplePage() {
   const folioAddButton = useMemo(() => (
     <button
       onClick={() => setShowAddForm(true)}
-      style={{
-        fontFamily: "var(--font-mono)",
-        fontSize: 11,
-        fontWeight: 600,
-        letterSpacing: "0.06em",
-        textTransform: "uppercase" as const,
-        color: "var(--color-garden-larkspur)",
-        background: "none",
-        border: "1px solid var(--color-garden-larkspur)",
-        borderRadius: 4,
-        padding: "2px 10px",
-        cursor: "pointer",
-      }}
+      className={s.folioAddButton}
     >
       + Add
     </button>
@@ -337,16 +326,7 @@ export default function PeoplePage() {
 
       {/* Add person form */}
       {!isArchived && showAddForm && (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-            padding: "12px 0",
-            borderBottom: "1px solid var(--color-rule-heavy)",
-            marginBottom: 8,
-          }}
-        >
+        <div className={s.addForm}>
           <input
             type="email"
             autoFocus
@@ -356,7 +336,7 @@ export default function PeoplePage() {
             onKeyDown={(e) => {
               if (e.key === "Escape") { setShowAddForm(false); setNewEmail(""); setNewName(""); }
             }}
-            style={{ flex: 1, fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)", background: "none", border: "none", borderBottom: "1px solid var(--color-rule-light)", padding: "4px 0", outline: "none" }}
+            className={s.addFormInput}
           />
           <input
             type="text"
@@ -367,23 +347,18 @@ export default function PeoplePage() {
               if (e.key === "Enter") handleCreatePerson();
               if (e.key === "Escape") { setShowAddForm(false); setNewEmail(""); setNewName(""); }
             }}
-            style={{ flex: 1, fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)", background: "none", border: "none", borderBottom: "1px solid var(--color-rule-light)", padding: "4px 0", outline: "none" }}
+            className={s.addFormInput}
           />
           <button
             onClick={handleCreatePerson}
             disabled={creating || !newEmail.trim() || !newName.trim()}
-            style={{
-              fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600,
-              color: (!newEmail.trim() || !newName.trim()) ? "var(--color-text-tertiary)" : "var(--color-garden-larkspur)",
-              background: "none", border: "1px solid", borderColor: (!newEmail.trim() || !newName.trim()) ? "var(--color-rule-heavy)" : "var(--color-garden-larkspur)",
-              borderRadius: 4, padding: "3px 12px", cursor: (!newEmail.trim() || !newName.trim()) ? "default" : "pointer",
-            }}
+            className={s.addFormCreate}
           >
             {creating ? "Creating..." : "Create"}
           </button>
           <button
             onClick={() => { setShowAddForm(false); setNewEmail(""); setNewName(""); }}
-            style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+            className={s.addFormCancel}
           >
             Cancel
           </button>
@@ -392,24 +367,13 @@ export default function PeoplePage() {
 
       {/* Hygiene banner: unnamed filter */}
       {!isArchived && activeHygieneFilter === "unnamed" && (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            borderLeft: "3px solid var(--color-spice-turmeric)",
-            background: "var(--color-spice-turmeric-6)",
-            borderRadius: 8,
-            padding: "10px 16px",
-            marginBottom: 16,
-          }}
-        >
-          <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--color-text-secondary)" }}>
+        <div className={`${s.banner} ${s.bannerStandalone}`}>
+          <span className={s.bannerText}>
             Showing people with likely placeholder names.
           </span>
           <button
             onClick={() => navigate({ to: "/people", search: (prev: Record<string, unknown>) => ({ ...prev, hygiene: undefined }) })}
-            style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-spice-turmeric)", background: "none", border: "none", cursor: "pointer" }}
+            className={s.bannerAction}
           >
             Clear
           </button>
@@ -418,19 +382,9 @@ export default function PeoplePage() {
 
       {/* Duplicate detection banner */}
       {duplicates.length > 0 && !isArchived && (
-        <div style={{ marginBottom: 16 }}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              borderLeft: "3px solid var(--color-spice-turmeric)",
-              background: "var(--color-spice-turmeric-6)",
-              borderRadius: 8,
-              padding: "10px 16px",
-            }}
-          >
-            <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--color-text-secondary)" }}>
+        <div className={s.duplicatesContainer}>
+          <div className={s.banner}>
+            <span className={s.bannerText}>
               {duplicates.length} potential duplicate{duplicates.length !== 1 ? "s" : ""} detected
             </span>
             <button
@@ -445,47 +399,36 @@ export default function PeoplePage() {
                   }),
                 });
               }}
-              style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-spice-turmeric)", background: "none", border: "none", cursor: "pointer" }}
+              className={s.bannerAction}
             >
               {showDuplicates ? "Hide" : "Review"}
             </button>
           </div>
 
           {showDuplicates && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+            <div className={s.duplicatesList}>
               {duplicates.map((d, i) => (
-                <div
-                  key={i}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    padding: "8px 12px",
-                    borderBottom: "1px solid var(--color-rule-light)",
-                    fontFamily: "var(--font-sans)",
-                    fontSize: 13,
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <Link to="/people/$personId" params={{ personId: d.person1Id }} style={{ color: "var(--color-garden-larkspur)", textDecoration: "none" }}>
+                <div key={i} className={s.duplicateRow}>
+                  <div className={s.duplicateNames}>
+                    <Link to="/people/$personId" params={{ personId: d.person1Id }} className={s.duplicateLink}>
                       {d.person1Name}
                     </Link>
-                    <span style={{ color: "var(--color-text-tertiary)" }}>{"\u2194"}</span>
-                    <Link to="/people/$personId" params={{ personId: d.person2Id }} style={{ color: "var(--color-garden-larkspur)", textDecoration: "none" }}>
+                    <span className={s.duplicateSeparator}>{"\u2194"}</span>
+                    <Link to="/people/$personId" params={{ personId: d.person2Id }} className={s.duplicateLink}>
                       {d.person2Name}
                     </Link>
-                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)" }}>
+                    <span className={s.duplicateConfidence}>
                       ({Math.round(d.confidence * 100)}%)
                     </span>
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)" }}>
+                  <div className={s.duplicateActions}>
+                    <span className={s.duplicateReason}>
                       {d.reason}
                     </span>
                     {d.confidence >= 0.6 ? (
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
-                          <button style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-spice-turmeric)", background: "none", border: "none", cursor: "pointer" }}>
+                          <button className={s.bannerAction}>
                             Merge
                           </button>
                         </AlertDialogTrigger>
@@ -519,7 +462,7 @@ export default function PeoplePage() {
                     ) : (
                       <button
                         onClick={() => navigate({ to: "/people/$personId", params: { personId: d.person1Id } })}
-                        style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)", background: "none", border: "none", cursor: "pointer" }}
+                        className={s.duplicateReviewButton}
                       >
                         Review
                       </button>
@@ -541,7 +484,7 @@ export default function PeoplePage() {
               message={getPersonalityCopy("people-archived-empty", personality).message ?? ""}
             />
           ) : (
-            <div style={{ display: "flex", flexDirection: "column" }}>
+            <div className={s.personList}>
               {filteredArchived.map((person, i) => (
                 <ArchivedPersonRow key={person.id} person={person} showBorder={i < filteredArchived.length - 1} />
               ))}
@@ -554,7 +497,7 @@ export default function PeoplePage() {
           />
         ) : groupedPeople ? (
           /* Grouped view: external → internal → unknown */
-          <div style={{ display: "flex", flexDirection: "column" }}>
+          <div className={s.personList}>
             {PEOPLE_SECTIONS.map(({ type, title }) => {
               const sectionPeople = groupedPeople[type] ?? [];
               if (sectionPeople.length === 0) return null;
@@ -570,7 +513,7 @@ export default function PeoplePage() {
           </div>
         ) : (
           /* Flat view: single relationship tab selected */
-          <div style={{ display: "flex", flexDirection: "column" }}>
+          <div className={s.personList}>
             {sorted.map((person, i) => (
               <PersonRow key={person.id} person={person} showRelationship={false} showBorder={i < sorted.length - 1} />
             ))}
@@ -605,16 +548,7 @@ function PersonRow({
 }) {
   const nameSuffix = showRelationship && person.relationship !== "unknown" ? (
     <span
-      style={{
-        fontFamily: "var(--font-mono)",
-        fontSize: 10,
-        fontWeight: 600,
-        letterSpacing: "0.06em",
-        textTransform: "uppercase",
-        color: person.relationship === "external"
-          ? "var(--color-garden-larkspur)"
-          : "var(--color-text-tertiary)",
-      }}
+      className={`${s.relationshipBadge} ${person.relationship === "external" ? s.relationshipBadgeExternal : ""}`}
     >
       {person.relationship}
     </span>
@@ -631,17 +565,10 @@ function PersonRow({
   const ringColor = relationshipRingColor[person.relationship] ?? "var(--color-paper-linen)";
 
   const avatar = (
-    <div style={{
-      width: 32,
-      height: 32,
-      borderRadius: "50%",
-      border: `2px solid ${ringColor}`,
-      flexShrink: 0,
-      marginTop: 2,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-    }}>
+    <div
+      className={s.avatarRing}
+      style={{ "--avatar-ring-color": ringColor } as React.CSSProperties}
+    >
       <Avatar name={person.name} personId={person.id} photoUrl={person.photoUrl ?? undefined} size={26} />
     </div>
   );
@@ -678,7 +605,7 @@ function ArchivedPersonRow({ person, showBorder }: { person: PersonListItem; sho
       subtitle={subtitle || undefined}
     >
       {person.relationship !== "unknown" && (
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)" }}>
+        <span className={s.archivedRelationshipLabel}>
           {person.relationship}
         </span>
       )}
