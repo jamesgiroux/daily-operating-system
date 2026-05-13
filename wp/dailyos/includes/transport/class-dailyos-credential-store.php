@@ -63,13 +63,20 @@ final class DailyOS_Credential_Store {
 	 * @return void
 	 */
 	public function save_marker( array $marker ): void {
+		$runtime_instance_id = isset( $marker['runtime_instance_id'] ) ? (string) $marker['runtime_instance_id'] : '';
+		$instance_id         = isset( $marker['instance_id'] ) ? (string) $marker['instance_id'] : $runtime_instance_id;
+
 		$normalized_marker = [
-			'instance_id'      => isset( $marker['instance_id'] ) ? (string) $marker['instance_id'] : '',
-			'session_id'       => isset( $marker['session_id'] ) ? (string) $marker['session_id'] : '',
-			'granted_scopes'   => $this->normalize_scopes( $marker['granted_scopes'] ?? [] ),
-			'endpoint_version' => isset( $marker['endpoint_version'] ) ? (string) $marker['endpoint_version'] : '',
-			'paired_at_gmt'    => isset( $marker['paired_at_gmt'] ) ? (string) $marker['paired_at_gmt'] : '',
-			'last_use_gmt'     => isset( $marker['last_use_gmt'] ) ? (string) $marker['last_use_gmt'] : '',
+			'marker_version'      => 1,
+			'runtime_instance_id' => $runtime_instance_id,
+			'site_nonce_hash'     => isset( $marker['site_nonce_hash'] ) ? (string) $marker['site_nonce_hash'] : '',
+			'projection_version'  => isset( $marker['projection_version'] ) ? (string) $marker['projection_version'] : '',
+			'instance_id'         => $instance_id,
+			'session_id'          => isset( $marker['session_id'] ) ? (string) $marker['session_id'] : '',
+			'granted_scopes'      => $this->normalize_scopes( $marker['granted_scopes'] ?? [] ),
+			'endpoint_version'    => isset( $marker['endpoint_version'] ) ? (string) $marker['endpoint_version'] : '',
+			'paired_at_gmt'       => isset( $marker['paired_at_gmt'] ) ? (string) $marker['paired_at_gmt'] : '',
+			'last_use_gmt'        => isset( $marker['last_use_gmt'] ) ? (string) $marker['last_use_gmt'] : '',
 		];
 
 		update_option( self::PAIRING_MARKER_OPTION, $normalized_marker, false );

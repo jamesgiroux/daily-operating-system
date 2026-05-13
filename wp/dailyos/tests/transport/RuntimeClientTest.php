@@ -91,4 +91,33 @@ final class DailyOS_RuntimeClientTest extends TestCase {
 		$this->assertArrayNotHasKey( 'http_request_args', $GLOBALS['dailyos_test_filters'] );
 		$this->assertArrayNotHasKey( 'http_request_args', $GLOBALS['dailyos_test_actions'] );
 	}
+
+	/**
+	 * Pairing handshake preserves unified marker fields from the runtime.
+	 */
+	public function test_handshake_response_preserves_unified_marker_fields(): void {
+		$GLOBALS['dailyos_test_remote_post_response'] = [
+			'response' => [
+				'code' => 200,
+			],
+			'body'     => wp_json_encode(
+				[
+					'runtime_instance_id' => 'runtime-123',
+					'site_nonce_hash'     => str_repeat( 'a', 64 ),
+					'projection_version'  => '2026.05.13',
+					'session_id'          => 'session-123',
+					'granted_scopes'      => [ 'read.account_overview' ],
+					'endpoint_version'    => 'v1',
+				]
+			),
+		];
+
+		$client = new DailyOS_Runtime_Client( new DailyOS_Credential_Store(), new DailyOS_Hmac_Signer() );
+		$result = $client->handshake( 'pair-code', [ 'site_url' => 'http://example.test' ] );
+
+		$this->assertTrue( $result['ok'] );
+		$this->assertSame( 'runtime-123', $result['runtime_instance_id'] );
+		$this->assertSame( str_repeat( 'a', 64 ), $result['site_nonce_hash'] );
+		$this->assertSame( '2026.05.13', $result['projection_version'] );
+	}
 }

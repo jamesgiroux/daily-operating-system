@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace DailyOS;
 
+use DailyOS\Mcp\DailyOS_Mcp_Roles;
 use DailyOS\Services\DailyOS_Namespace_Store;
 
 /**
@@ -17,7 +18,6 @@ use DailyOS\Services\DailyOS_Namespace_Store;
 final class DailyOS_Activation {
 	public const PAIRING_STATUS_OPTION = 'dailyos_pairing_status';
 	public const PAIRING_MARKER_OPTION = 'dailyos_pairing_marker';
-	public const PAIRING_RECORD_OPTION = 'dailyos_pairing_record';
 	public const REPAIR_MESSAGE        =
 		'DailyOS detected pre-existing dailyos_* data without a valid pairing marker. ' .
 		'Run: wp dailyos repair-namespace to inspect.';
@@ -36,18 +36,18 @@ final class DailyOS_Activation {
 
 		if ( ! $namespace_used && ! $marker_present ) {
 			update_option( self::PAIRING_STATUS_OPTION, 'needs_pairing', false );
-			self::schedule_nonce_sweep();
+			self::complete_activation();
 			return;
 		}
 
 		if ( ! $namespace_used && $marker_present ) {
 			update_option( self::PAIRING_STATUS_OPTION, 'needs_pairing', false );
-			self::schedule_nonce_sweep();
+			self::complete_activation();
 			return;
 		}
 
 		if ( $namespace_used && $marker_present && self::marker_matches_prior_pair( $marker ) ) {
-			self::schedule_nonce_sweep();
+			self::complete_activation();
 			return;
 		}
 
@@ -70,8 +70,12 @@ final class DailyOS_Activation {
 	 * Delete all DailyOS-owned WordPress state.
 	 */
 	public static function uninstall(): void {
+		DailyOS_Mcp_Roles::delete_user();
+
 		$store = new DailyOS_Namespace_Store();
 		$store->delete_reserved_namespace_data();
+
+		DailyOS_Mcp_Roles::revoke();
 	}
 
 	/**
@@ -82,6 +86,10 @@ final class DailyOS_Activation {
 	private static function namespace_is_dirty( array $report ): bool {
 		foreach ( $report['options'] ?? [] as $option_name ) {
 			if ( self::PAIRING_MARKER_OPTION === $option_name ) {
+				continue;
+			}
+
+			if ( DailyOS_Mcp_Roles::USER_ID_OPTION === $option_name && self::has_recoverable_substrate_user() ) {
 				continue;
 			}
 
@@ -108,13 +116,11 @@ final class DailyOS_Activation {
 			return false;
 		}
 
-		$record = get_option( self::PAIRING_RECORD_OPTION, [] );
-
-		if ( ! is_array( $record ) || empty( $record['runtime_instance_id'] ) ) {
+		if ( empty( $marker['instance_id'] ) ) {
 			return false;
 		}
 
-		return hash_equals( (string) $record['runtime_instance_id'], (string) $marker['runtime_instance_id'] );
+		return hash_equals( (string) $marker['instance_id'], (string) $marker['runtime_instance_id'] );
 	}
 
 	/**
@@ -123,9 +129,66 @@ final class DailyOS_Activation {
 	 * @param mixed $marker Prior pairing marker.
 	 */
 	private static function is_valid_marker( mixed $marker ): bool {
-		return is_array( $marker )
-			&& 1 === (int) ( $marker['marker_version'] ?? 0 )
-			&& isset( $marker['runtime_instance_id'], $marker['site_nonce_hash'], $marker['projection_version'] );
+		if ( ! is_array( $marker ) || 1 !== (int) ( $marker['marker_version'] ?? 0 ) ) {
+			return false;
+		}
+
+		foreach ( self::required_marker_fields() as $field ) {
+			if ( empty( $marker[ $field ] ) || ! is_scalar( $marker[ $field ] ) ) {
+				return false;
+			}
+		}
+
+		return isset( $marker['granted_scopes'] ) && is_array( $marker['granted_scopes'] );
+	}
+
+	/**
+	 * Return the unified marker fields that must be present and non-empty.
+	 *
+	 * @return array<int, string>
+	 */
+	private static function required_marker_fields(): array {
+		return [
+			'runtime_instance_id',
+			'site_nonce_hash',
+			'projection_version',
+			'instance_id',
+			'session_id',
+			'endpoint_version',
+			'paired_at_gmt',
+			'last_use_gmt',
+		];
+	}
+
+	/**
+	 * Finish successful activation side effects.
+	 */
+	private static function complete_activation(): void {
+		DailyOS_Mcp_Roles::ensure_user();
+		self::schedule_nonce_sweep();
+	}
+
+	/**
+	 * Determine whether the substrate user option points to the expected role.
+	 */
+	private static function has_recoverable_substrate_user(): bool {
+		if ( ! function_exists( 'get_user_by' ) ) {
+			return false;
+		}
+
+		$user_id = (int) get_option( DailyOS_Mcp_Roles::USER_ID_OPTION, 0 );
+
+		if ( 0 >= $user_id ) {
+			return false;
+		}
+
+		$user = get_user_by( 'id', $user_id );
+
+		if ( ! is_object( $user ) || ! isset( $user->roles ) || ! is_array( $user->roles ) ) {
+			return false;
+		}
+
+		return in_array( DailyOS_Mcp_Roles::ROLE_SLUG, array_map( 'strval', $user->roles ), true );
 	}
 
 	/**

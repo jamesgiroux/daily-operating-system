@@ -43,11 +43,12 @@ final class DailyOS_Mcp_Permission {
 	/**
 	 * Check whether a WordPress user may invoke an ability through MCP.
 	 *
-	 * @param string $ability_full_name Full ability name, such as dailyos/account-overview.
-	 * @param int    $wp_user_id WordPress user ID.
+	 * @param string                  $ability_full_name Full ability name, such as dailyos/account-overview.
+	 * @param int                     $wp_user_id WordPress user ID.
+	 * @param array<int, string>|null $resolved_scopes Resolved SurfaceClient scopes.
 	 * @return array{allowed: bool, wp_cap_ok: bool, scope_ok: bool, missing_scopes: array<int, string>, mcp_exposure: string}
 	 */
-	public function check( string $ability_full_name, int $wp_user_id ): array {
+	public function check( string $ability_full_name, int $wp_user_id, ?array $resolved_scopes = null ): array {
 		$wp_cap_ok = false;
 
 		if ( function_exists( 'user_can' ) ) {
@@ -68,7 +69,7 @@ final class DailyOS_Mcp_Permission {
 		}
 
 		$required_scopes = $this->normalize_scope_list( $ability['required_scopes'] ?? [] );
-		$resolved_scopes = $this->normalize_scope_list( ( $this->scope_resolver )() );
+		$resolved_scopes = $this->normalize_scope_list( $resolved_scopes ?? ( $this->scope_resolver )() );
 		$scope_lookup    = array_fill_keys( $resolved_scopes, true );
 		$missing_scopes  = [];
 

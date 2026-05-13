@@ -46,7 +46,7 @@ final class DailyOS_Runtime_Client {
 	 *
 	 * @param string               $pairing_code Pairing code from the runtime.
 	 * @param array<string, mixed> $wp_context WordPress context.
-	 * @return array{ok: bool, instance_id: ?string, session_id: ?string, scopes: array<int, string>, endpoint_version: ?string, error: ?array<string, mixed>} Handshake envelope.
+	 * @return array{ok: bool, runtime_instance_id: ?string, site_nonce_hash: ?string, projection_version: ?string, instance_id: ?string, session_id: ?string, scopes: array<int, string>, endpoint_version: ?string, error: ?array<string, mixed>} Handshake envelope.
 	 */
 	public function handshake( string $pairing_code, array $wp_context ): array {
 		$body_bytes = $this->encode_json(
@@ -260,23 +260,27 @@ final class DailyOS_Runtime_Client {
 	 * Normalize the pairing handshake response shape.
 	 *
 	 * @param array<string, mixed> $response Raw response.
-	 * @return array{ok: bool, instance_id: ?string, session_id: ?string, scopes: array<int, string>, endpoint_version: ?string, error: ?array<string, mixed>} Handshake envelope.
+	 * @return array{ok: bool, runtime_instance_id: ?string, site_nonce_hash: ?string, projection_version: ?string, instance_id: ?string, session_id: ?string, scopes: array<int, string>, endpoint_version: ?string, error: ?array<string, mixed>} Handshake envelope.
 	 */
 	private function normalize_handshake_response( array $response ): array {
 		$error  = isset( $response['error'] ) && is_array( $response['error'] ) ? $response['error'] : null;
 		$ok     = true === ( $response['ok'] ?? false ) || (
 			null === $error
-			&& isset( $response['instance_id'], $response['session_id'] )
+			&& isset( $response['session_id'] )
+			&& ( isset( $response['runtime_instance_id'] ) || isset( $response['instance_id'] ) )
 		);
 		$scopes = $response['scopes'] ?? $response['granted_scopes'] ?? [];
 
 		return [
-			'ok'               => $ok,
-			'instance_id'      => isset( $response['instance_id'] ) ? (string) $response['instance_id'] : null,
-			'session_id'       => isset( $response['session_id'] ) ? (string) $response['session_id'] : null,
-			'scopes'           => is_array( $scopes ) ? array_values( array_map( 'strval', $scopes ) ) : [],
-			'endpoint_version' => isset( $response['endpoint_version'] ) ? (string) $response['endpoint_version'] : null,
-			'error'            => $error,
+			'ok'                  => $ok,
+			'runtime_instance_id' => isset( $response['runtime_instance_id'] ) ? (string) $response['runtime_instance_id'] : null,
+			'site_nonce_hash'     => isset( $response['site_nonce_hash'] ) ? (string) $response['site_nonce_hash'] : null,
+			'projection_version'  => isset( $response['projection_version'] ) ? (string) $response['projection_version'] : null,
+			'instance_id'         => isset( $response['instance_id'] ) ? (string) $response['instance_id'] : null,
+			'session_id'          => isset( $response['session_id'] ) ? (string) $response['session_id'] : null,
+			'scopes'              => is_array( $scopes ) ? array_values( array_map( 'strval', $scopes ) ) : [],
+			'endpoint_version'    => isset( $response['endpoint_version'] ) ? (string) $response['endpoint_version'] : null,
+			'error'               => $error,
 		];
 	}
 
@@ -285,16 +289,19 @@ final class DailyOS_Runtime_Client {
 	 *
 	 * @param string $code Error code.
 	 * @param string $message Error message.
-	 * @return array{ok: bool, instance_id: ?string, session_id: ?string, scopes: array<int, string>, endpoint_version: ?string, error: array<string, string>} Error envelope.
+	 * @return array{ok: bool, runtime_instance_id: ?string, site_nonce_hash: ?string, projection_version: ?string, instance_id: ?string, session_id: ?string, scopes: array<int, string>, endpoint_version: ?string, error: array<string, string>} Error envelope.
 	 */
 	private function handshake_error_envelope( string $code, string $message ): array {
 		return [
-			'ok'               => false,
-			'instance_id'      => null,
-			'session_id'       => null,
-			'scopes'           => [],
-			'endpoint_version' => null,
-			'error'            => [
+			'ok'                  => false,
+			'runtime_instance_id' => null,
+			'site_nonce_hash'     => null,
+			'projection_version'  => null,
+			'instance_id'         => null,
+			'session_id'          => null,
+			'scopes'              => [],
+			'endpoint_version'    => null,
+			'error'               => [
 				'code'    => $code,
 				'message' => $message,
 			],

@@ -126,6 +126,64 @@ final class DailyOS_McpExposureNoneTest extends TestCase {
 	}
 
 	/**
+	 * Generic MCP server listings filter DailyOS tools even when invocable abilities exist.
+	 */
+	public function test_generic_mcp_server_enumerates_zero_dailyos_tools(): void {
+		$registry = new DailyOS_Ability_Registry(
+			$this->create_inventory_file(
+				[
+					[
+						'name'         => 'account-overview',
+						'category'     => 'Read',
+						'mcp_exposure' => 'Invocable',
+					],
+				]
+			)
+		);
+
+		DailyOS_Mcp_Server::bootstrap(
+			$registry,
+			static function (): array {
+				return [];
+			}
+		);
+
+		McpAdapter::instance()->create_server(
+			'generic-server',
+			'wp/v2',
+			'/mcp',
+			'Generic MCP',
+			'Generic WordPress MCP server',
+			'0.1.0',
+			[ \WP\MCP\Transport\HttpTransport::class ],
+			null,
+			null,
+			[ 'dailyos/account-overview' ],
+			[],
+			[],
+			static function (): bool {
+				return true;
+			}
+		);
+
+		$server_calls = $GLOBALS['dailyos_test_mcp_server_calls'];
+		$generic_call = end( $server_calls );
+
+		$this->assertSame( [], $generic_call['enumerated_tools'] );
+		$this->assertSame(
+			[],
+			array_values(
+				array_filter(
+					$generic_call['enumerated_tools'],
+					static function ( string $tool_name ): bool {
+						return str_starts_with( $tool_name, 'dailyos-' ) || str_starts_with( $tool_name, 'dailyos/' );
+					}
+				)
+			)
+		);
+	}
+
+	/**
 	 * Public invocation logger emits an MCP audit event.
 	 */
 	public function test_public_log_invocation_emits_audit_event(): void {

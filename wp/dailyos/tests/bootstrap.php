@@ -21,7 +21,12 @@ namespace {
 	$GLOBALS['dailyos_test_current_actions']      = [];
 	$GLOBALS['dailyos_test_filters']              = [];
 	$GLOBALS['dailyos_test_roles']                = [];
+	$GLOBALS['dailyos_test_users']                = [];
+	$GLOBALS['dailyos_test_next_user_id']         = 1;
+	$GLOBALS['dailyos_test_deleted_users']        = [];
 	$GLOBALS['dailyos_test_options']              = [];
+	$GLOBALS['dailyos_test_post_meta_keys']       = [];
+	$GLOBALS['dailyos_test_tables']               = [];
 	$GLOBALS['dailyos_test_audit_events']         = [];
 	$GLOBALS['dailyos_test_error_log']            = [];
 	$GLOBALS['dailyos_test_mcp_server_calls']     = [];
@@ -48,10 +53,12 @@ namespace {
 		$wp_error_stub = new class( '', '' ) {
 			private string $code;
 			private string $message;
+			private mixed $data;
 
-			public function __construct( string $code = '', string $message = '' ) {
+			public function __construct( string $code = '', string $message = '', mixed $data = null ) {
 				$this->code    = $code;
 				$this->message = $message;
+				$this->data    = $data;
 			}
 
 			public function get_error_code(): string {
@@ -60,6 +67,10 @@ namespace {
 
 			public function get_error_message(): string {
 				return $this->message;
+			}
+
+			public function get_error_data(): mixed {
+				return $this->data;
 			}
 		};
 		class_alias( get_class( $wp_error_stub ), 'WP_Error' );
@@ -71,7 +82,12 @@ namespace {
 		$GLOBALS['dailyos_test_current_actions']      = [];
 		$GLOBALS['dailyos_test_filters']              = [];
 		$GLOBALS['dailyos_test_roles']                = [];
+		$GLOBALS['dailyos_test_users']                = [];
+		$GLOBALS['dailyos_test_next_user_id']         = 1;
+		$GLOBALS['dailyos_test_deleted_users']        = [];
 		$GLOBALS['dailyos_test_options']              = [];
+		$GLOBALS['dailyos_test_post_meta_keys']       = [];
+		$GLOBALS['dailyos_test_tables']               = [];
 		$GLOBALS['dailyos_test_audit_events']         = [];
 		$GLOBALS['dailyos_test_error_log']            = [];
 		$GLOBALS['dailyos_test_mcp_server_calls']     = [];
@@ -90,6 +106,101 @@ namespace {
 		$GLOBALS['dailyos_test_current_user_can']     = true;
 		$GLOBALS['dailyos_test_check_admin_referer']  = 1;
 	}
+
+	$GLOBALS['wpdb'] = new class() {
+		public string $options = 'wp_options';
+		public string $postmeta = 'wp_postmeta';
+		public string $prefix = 'wp_';
+
+		public function esc_like( string $text ): string {
+			return addcslashes( $text, '_%\\' );
+		}
+
+		public function prepare( string $query, mixed ...$args ): string {
+			foreach ( $args as $arg ) {
+				$query = preg_replace( '/%s/', "'" . (string) $arg . "'", $query, 1 ) ?? $query;
+			}
+
+			return $query;
+		}
+
+		/**
+		 * @return array<int, string>
+		 */
+		public function get_col( string $sql ): array {
+			if ( str_contains( $sql, $this->options ) ) {
+				if ( str_contains( $sql, 'transient' ) ) {
+					return array_values(
+						array_filter(
+							array_keys( $GLOBALS['dailyos_test_options'] ),
+							static function ( string $option_name ): bool {
+								return str_starts_with( $option_name, '_transient_dailyos_' )
+									|| str_starts_with( $option_name, '_transient_timeout_dailyos_' );
+							}
+						)
+					);
+				}
+
+				return array_values(
+					array_filter(
+						array_keys( $GLOBALS['dailyos_test_options'] ),
+						static function ( string $option_name ): bool {
+							return str_starts_with( $option_name, 'dailyos_' );
+						}
+					)
+				);
+			}
+
+			if ( str_contains( $sql, $this->postmeta ) ) {
+				return array_values(
+					array_filter(
+						$GLOBALS['dailyos_test_post_meta_keys'],
+						static function ( string $meta_key ): bool {
+							return str_starts_with( $meta_key, '_dailyos_' );
+						}
+					)
+				);
+			}
+
+			return [];
+		}
+
+		public function get_var( string $sql ): ?string {
+			foreach ( $GLOBALS['dailyos_test_tables'] as $table ) {
+				if ( str_contains( $sql, (string) $table ) ) {
+					return (string) $table;
+				}
+			}
+
+			return null;
+		}
+
+		public function query( string $sql ): int|false {
+			if ( str_contains( $sql, $this->options ) && str_contains( $sql, '_transient_dailyos_' ) ) {
+				foreach ( array_keys( $GLOBALS['dailyos_test_options'] ) as $option_name ) {
+					if (
+						str_starts_with( $option_name, '_transient_dailyos_' )
+						|| str_starts_with( $option_name, '_transient_timeout_dailyos_' )
+					) {
+						unset( $GLOBALS['dailyos_test_options'][ $option_name ] );
+					}
+				}
+			}
+
+			if ( str_contains( $sql, $this->postmeta ) ) {
+				$GLOBALS['dailyos_test_post_meta_keys'] = array_values(
+					array_filter(
+						$GLOBALS['dailyos_test_post_meta_keys'],
+						static function ( string $meta_key ): bool {
+							return ! str_starts_with( $meta_key, '_dailyos_' );
+						}
+					)
+				);
+			}
+
+			return 1;
+		}
+	};
 
 	if ( ! function_exists( 'plugin_dir_path' ) ) {
 		function plugin_dir_path( string $file ): string {
@@ -258,6 +369,86 @@ namespace {
 		}
 	}
 
+	if ( ! function_exists( 'wp_generate_password' ) ) {
+		function wp_generate_password( int $length = 12, bool $special_chars = true, bool $extra_special_chars = false ): string {
+			unset( $special_chars, $extra_special_chars );
+			return str_repeat( 'p', $length );
+		}
+	}
+
+	if ( ! function_exists( 'get_user_by' ) ) {
+		function get_user_by( string $field, int|string $value ): object|false {
+			foreach ( $GLOBALS['dailyos_test_users'] as $user ) {
+				if ( 'id' === $field && (int) $user->ID === (int) $value ) {
+					return $user;
+				}
+
+				if ( 'login' === $field && $user->user_login === (string) $value ) {
+					return $user;
+				}
+			}
+
+			return false;
+		}
+	}
+
+	if ( ! function_exists( 'wp_create_user' ) ) {
+		function wp_create_user( string $username, string $password, string $email = '' ): int|\WP_Error {
+			unset( $password );
+
+			if ( false !== get_user_by( 'login', $username ) ) {
+				return new \WP_Error( 'existing_user_login', 'User already exists.' );
+			}
+
+			$user_id = (int) $GLOBALS['dailyos_test_next_user_id']++;
+			$user    = new class( $user_id, $username, $email ) {
+				public int $ID;
+				public string $user_login;
+				public string $user_email;
+				public array $roles = [];
+
+				public function __construct( int $user_id, string $username, string $email ) {
+					$this->ID         = $user_id;
+					$this->user_login = $username;
+					$this->user_email = $email;
+				}
+
+				public function set_role( string $role ): void {
+					$this->roles = [ $role ];
+				}
+
+				public function add_role( string $role ): void {
+					if ( ! in_array( $role, $this->roles, true ) ) {
+						$this->roles[] = $role;
+					}
+				}
+			};
+
+			$GLOBALS['dailyos_test_users'][ $user_id ] = $user;
+
+			return $user_id;
+		}
+	}
+
+	if ( ! function_exists( 'wp_delete_user' ) ) {
+		function wp_delete_user( int $user_id, ?int $reassign = null ): bool {
+			unset( $reassign );
+			$GLOBALS['dailyos_test_deleted_users'][] = $user_id;
+			unset( $GLOBALS['dailyos_test_users'][ $user_id ] );
+
+			return true;
+		}
+	}
+
+	if ( ! function_exists( 'wp_set_current_user' ) ) {
+		function wp_set_current_user( int $user_id, string $name = '' ): object|false {
+			unset( $name );
+			$GLOBALS['dailyos_test_current_user_id'] = $user_id;
+
+			return get_user_by( 'id', $user_id );
+		}
+	}
+
 	if ( ! function_exists( 'add_cap' ) ) {
 		function add_cap( object $role, string $capability, bool $grant = true ): void {
 			if ( method_exists( $role, 'add_cap' ) ) {
@@ -272,6 +463,18 @@ namespace {
 
 			if ( is_callable( $callback ) ) {
 				return (bool) $callback( $user_id, $capability );
+			}
+
+			$user = get_user_by( 'id', $user_id );
+
+			if ( false !== $user && isset( $user->roles ) && is_array( $user->roles ) ) {
+				foreach ( $user->roles as $role_name ) {
+					$role = get_role( (string) $role_name );
+
+					if ( null !== $role && ! empty( $role->capabilities[ $capability ] ) ) {
+						return true;
+					}
+				}
 			}
 
 			return false;
@@ -581,6 +784,47 @@ namespace WP\MCP\Core {
 				array $prompts = [],
 				?callable $transport_permission_callback = null
 			): self {
+				$server = new class( $server_id, $server_route_namespace ) {
+					private string $server_id;
+					private string $server_route_namespace;
+
+					public function __construct( string $server_id, string $server_route_namespace ) {
+						$this->server_id              = $server_id;
+						$this->server_route_namespace = $server_route_namespace;
+					}
+
+					public function get_server_id(): string {
+						return $this->server_id;
+					}
+
+					public function get_server_route_namespace(): string {
+						return $this->server_route_namespace;
+					}
+				};
+				$tool_dtos = array_map(
+					static function ( mixed $tool ): object {
+						if ( is_object( $tool ) && method_exists( $tool, 'get_protocol_dto' ) ) {
+							return $tool->get_protocol_dto();
+						}
+
+						$name = is_string( $tool ) ? str_replace( '/', '-', $tool ) : 'unknown-tool';
+
+						return new class( $name ) {
+							private string $name;
+
+							public function __construct( string $name ) {
+								$this->name = $name;
+							}
+
+							public function getName(): string {
+								return $this->name;
+							}
+						};
+					},
+					$tools
+				);
+				$enumerated_tools = \apply_filters( 'mcp_adapter_tools_list', $tool_dtos, $server );
+
 				$GLOBALS['dailyos_test_mcp_server_calls'][] = [
 					'server_id'                     => $server_id,
 					'namespace'                     => $server_route_namespace,
@@ -592,6 +836,12 @@ namespace WP\MCP\Core {
 					'error_handler'                 => $error_handler,
 					'observability_handler'         => $observability_handler,
 					'tools'                         => $tools,
+					'enumerated_tools'              => array_map(
+						static function ( object $tool ): string {
+							return method_exists( $tool, 'getName' ) ? $tool->getName() : '';
+						},
+						is_array( $enumerated_tools ) ? $enumerated_tools : []
+					),
 					'resources'                     => $resources,
 					'prompts'                       => $prompts,
 					'transport_permission_callback' => $transport_permission_callback,

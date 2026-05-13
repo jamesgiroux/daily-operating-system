@@ -76,16 +76,25 @@ final class DailyOS_Pairing_Page {
 		$result           = $runtime_client->handshake( $pairing_code, $wp_context );
 
 		if ( true === ( $result['ok'] ?? false ) ) {
-			$now_gmt = gmdate( 'Y-m-d H:i:s', time() );
+			$now_gmt             = gmdate( 'Y-m-d H:i:s', time() );
+			$runtime_instance_id = isset( $result['runtime_instance_id'] ) && null !== $result['runtime_instance_id']
+				? (string) $result['runtime_instance_id']
+				: (string) ( $result['instance_id'] ?? '' );
+			$instance_id         = isset( $result['instance_id'] ) && null !== $result['instance_id']
+				? (string) $result['instance_id']
+				: $runtime_instance_id;
 
 			$credential_store->save_marker(
 				[
-					'instance_id'      => $result['instance_id'] ?? '',
-					'session_id'       => $result['session_id'] ?? '',
-					'granted_scopes'   => $result['scopes'] ?? [],
-					'endpoint_version' => $result['endpoint_version'] ?? '',
-					'paired_at_gmt'    => $now_gmt,
-					'last_use_gmt'     => $now_gmt,
+					'runtime_instance_id' => $runtime_instance_id,
+					'site_nonce_hash'     => $result['site_nonce_hash'] ?? '',
+					'projection_version'  => $result['projection_version'] ?? '',
+					'instance_id'         => $instance_id,
+					'session_id'          => $result['session_id'] ?? '',
+					'granted_scopes'      => $result['scopes'] ?? [],
+					'endpoint_version'    => $result['endpoint_version'] ?? '',
+					'paired_at_gmt'       => $now_gmt,
+					'last_use_gmt'        => $now_gmt,
 				]
 			);
 

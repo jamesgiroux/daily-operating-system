@@ -102,6 +102,7 @@ final class DailyOS_Settings_Page {
 
 		echo '<table class="widefat striped"><tbody>';
 		self::render_row( __( 'Instance ID', 'dailyos' ), (string) ( $marker['instance_id'] ?? '' ) );
+		self::render_row( __( 'Site nonce hash', 'dailyos' ), self::format_site_nonce_hash( (string) ( $marker['site_nonce_hash'] ?? '' ) ) );
 		self::render_row( __( 'Granted scopes', 'dailyos' ), $granted_scopes );
 		self::render_row( __( 'Endpoint version', 'dailyos' ), (string) ( $marker['endpoint_version'] ?? '' ) );
 		self::render_row( __( 'Last use', 'dailyos' ), self::format_last_use( (string) ( $marker['last_use_gmt'] ?? '' ) ) );
@@ -132,6 +133,24 @@ final class DailyOS_Settings_Page {
 		echo '<th scope="row">' . esc_html( $label ) . '</th>';
 		echo '<td>' . esc_html( $value ) . '</td>';
 		echo '</tr>';
+	}
+
+	/**
+	 * Format the non-secret site nonce hash for display.
+	 *
+	 * @param string $site_nonce_hash Stored site nonce hash.
+	 * @return string Display hash.
+	 */
+	private static function format_site_nonce_hash( string $site_nonce_hash ): string {
+		if ( '' === $site_nonce_hash ) {
+			return '';
+		}
+
+		if ( 12 >= strlen( $site_nonce_hash ) ) {
+			return $site_nonce_hash;
+		}
+
+		return substr( $site_nonce_hash, 0, 12 ) . '…';
 	}
 
 	/**

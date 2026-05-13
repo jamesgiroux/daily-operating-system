@@ -10,7 +10,10 @@ declare(strict_types=1);
 use DailyOS\DailyOS_Ability_Registry;
 use DailyOS\Mcp\DailyOS_Mcp_Audit;
 use DailyOS\Mcp\DailyOS_Mcp_Permission;
+use DailyOS\Mcp\DailyOS_Mcp_Roles;
+use DailyOS\Mcp\DailyOS_Mcp_Server;
 use PHPUnit\Framework\TestCase;
+use WP\MCP\Core\McpAdapter;
 
 /**
  * Verifies MCP invocation requires both WordPress caps and resolved scopes.
@@ -133,6 +136,64 @@ final class DailyOS_McpPermissionTest extends TestCase {
 		$result     = $permission->check( 'dailyos/not-found', 42 );
 
 		$this->assertFalse( $result['allowed'] );
+	}
+
+	/**
+	 * Wired MCP tool permission rejects capability-only, scope-only, and allows both.
+	 */
+	public function test_registered_tool_permission_uses_capability_and_scope(): void {
+		$registry = new DailyOS_Ability_Registry(
+			$this->create_inventory_file(
+				[
+					[
+						'name'            => 'account-overview',
+						'category'        => 'Read',
+						'description'     => 'Account overview.',
+						'mcp_exposure'    => DailyOS_Mcp_Audit::EXPOSURE_INVOCABLE,
+						'required_scopes' => [ 'read.account_overview' ],
+						'input_schema'    => [ 'type' => 'object' ],
+						'output_schema'   => [ 'type' => 'object' ],
+					],
+				]
+			)
+		);
+		$scopes   = [ 'read.account_overview' ];
+
+		DailyOS_Mcp_Roles::ensure_user();
+		DailyOS_Mcp_Server::bootstrap(
+			$registry,
+			static function () use ( &$scopes ): array {
+				return $scopes;
+			}
+		);
+		do_action( 'mcp_adapter_init', McpAdapter::instance() );
+
+		$tool = $GLOBALS['dailyos_test_mcp_server_calls'][0]['tools'][0] ?? null;
+
+		$this->assertIsObject( $tool );
+		$this->assertTrue( method_exists( $tool, 'check_permission' ) );
+
+		$substrate_user_id = (int) get_option( DailyOS_Mcp_Roles::USER_ID_OPTION );
+
+		$GLOBALS['dailyos_test_user_can_callback'] = static function ( int $user_id, string $capability ) use ( $substrate_user_id ): bool {
+			return $substrate_user_id === $user_id && 'dailyos_invoke_mcp_ability' === $capability;
+		};
+		$scopes                                    = [];
+
+		$this->assertTrue( is_wp_error( $tool->check_permission( [] ) ) );
+
+		$GLOBALS['dailyos_test_user_can_callback'] = static function (): bool {
+			return false;
+		};
+		$scopes                                    = [ 'read.account_overview' ];
+
+		$this->assertTrue( is_wp_error( $tool->check_permission( [] ) ) );
+
+		$GLOBALS['dailyos_test_user_can_callback'] = static function ( int $user_id, string $capability ) use ( $substrate_user_id ): bool {
+			return $substrate_user_id === $user_id && 'dailyos_invoke_mcp_ability' === $capability;
+		};
+
+		$this->assertTrue( $tool->check_permission( [] ) );
 	}
 
 	/**

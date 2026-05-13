@@ -9,6 +9,10 @@ declare(strict_types=1);
 
 namespace DailyOS;
 
+use DailyOS\Transport\DailyOS_Credential_Store;
+use DailyOS\Transport\DailyOS_Hmac_Signer;
+use DailyOS\Transport\DailyOS_Runtime_Client;
+
 /**
  * Registers inventory-backed abilities without hardcoded ability names.
  */
@@ -79,9 +83,10 @@ final class DailyOS_Ability_Registry {
 				continue;
 			}
 
-			$result = wp_register_ability(
-				'dailyos/' . $this->normalize_ability_name( (string) $ability['name'] ),
-				$this->build_registration_args( $ability )
+			$ability_name = 'dailyos/' . $this->normalize_ability_name( (string) $ability['name'] );
+			$result       = wp_register_ability(
+				$ability_name,
+				$this->build_registration_args( $ability, $ability_name )
 			);
 
 			if ( ! function_exists( 'is_wp_error' ) || ! is_wp_error( $result ) ) {
@@ -112,9 +117,10 @@ final class DailyOS_Ability_Registry {
 	 * Build WP Abilities API registration arguments.
 	 *
 	 * @param array<string, mixed> $ability Ability descriptor.
+	 * @param string               $ability_name Full DailyOS ability name.
 	 * @return array<string, mixed>
 	 */
-	private function build_registration_args( array $ability ): array {
+	private function build_registration_args( array $ability, string $ability_name ): array {
 		$mcp_exposure           = $this->normalize_mcp_exposure( $ability['mcp_exposure'] ?? 'None' );
 		$client_side_executable = isset( $ability['client_side_executable'] )
 			? (bool) $ability['client_side_executable']
@@ -129,11 +135,22 @@ final class DailyOS_Ability_Registry {
 			'allowed_actors'         => $ability['allowed_actors'] ?? [],
 			'mcp_exposure'           => $mcp_exposure,
 			'client_side_executable' => $client_side_executable,
-			'execute_callback'       => static function () {
-				return new \WP_Error(
-					'dailyos_runtime_client_unavailable',
-					__( 'DailyOS runtime invocation is not available in this scaffold.', 'dailyos' )
+			'execute_callback'       => static function ( mixed $payload = [] ) use ( $ability_name ) {
+				$scope_set = self::normalize_scope_list(
+					apply_filters( 'dailyos_surfaceclient_resolved_scopes', [] )
 				);
+				$payload   = is_array( $payload ) ? $payload : [ 'input' => $payload ];
+				$client    = new DailyOS_Runtime_Client( new DailyOS_Credential_Store(), new DailyOS_Hmac_Signer() );
+				$result    = $client->invoke_ability( $ability_name, $payload, $scope_set );
+
+				if ( self::is_runtime_unreachable_result( $result ) ) {
+					return new \WP_Error(
+						'dailyos_runtime_unreachable',
+						__( 'DailyOS runtime is unreachable. Confirm this site is paired, restart the DailyOS runtime if needed, and retry.', 'dailyos' )
+					);
+				}
+
+				return $result;
 			},
 		];
 	}
@@ -162,6 +179,53 @@ final class DailyOS_Ability_Registry {
 		$normalized = strtolower( preg_replace( '/[^a-zA-Z0-9_-]+/', '-', $name ) ?? '' );
 
 		return trim( $normalized, '-' );
+	}
+
+	/**
+	 * Keep only unique string scopes.
+	 *
+	 * @param mixed $scope_set Scope candidate.
+	 * @return array<int, string>
+	 */
+	private static function normalize_scope_list( mixed $scope_set ): array {
+		if ( ! is_array( $scope_set ) ) {
+			return [];
+		}
+
+		$normalized = [];
+
+		foreach ( $scope_set as $scope ) {
+			if ( is_string( $scope ) && '' !== $scope ) {
+				$normalized[] = $scope;
+			}
+		}
+
+		return array_values( array_unique( $normalized ) );
+	}
+
+	/**
+	 * Determine whether a runtime client response means the runtime cannot be reached.
+	 *
+	 * @param array<string, mixed> $result Runtime response.
+	 */
+	private static function is_runtime_unreachable_result( array $result ): bool {
+		if ( true === ( $result['ok'] ?? false ) ) {
+			return false;
+		}
+
+		$error = isset( $result['error'] ) && is_array( $result['error'] ) ? $result['error'] : [];
+		$code  = isset( $error['code'] ) ? (string) $error['code'] : '';
+
+		return in_array(
+			$code,
+			[
+				'missing_session_key',
+				'runtime_request_failed',
+				'runtime_invalid_json',
+				'runtime_http_error',
+			],
+			true
+		);
 	}
 
 	/**
