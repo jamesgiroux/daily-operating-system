@@ -1248,6 +1248,7 @@ use rusqlite::Connection;
 
 impl ActionDb {
     /// Re-key meeting IDs to canonical event IDs and update dependent references.
+    #[must_use = "check that meeting identity backfill succeeded before relying on canonical meeting IDs"]
     pub(super) fn backfill_meeting_identity(conn: &Connection) -> Result<(), DbError> {
         let rows: Vec<(String, String)> = {
             let mut stmt = conn.prepare(
@@ -1358,6 +1359,7 @@ impl ActionDb {
         Ok(())
     }
 
+    #[must_use = "check that meeting user-layer backfill succeeded before relying on populated agenda/notes columns"]
     pub(super) fn backfill_meeting_user_layer(conn: &Connection) -> Result<(), DbError> {
         let rows: Vec<(String, String, Option<String>, Option<String>)> = {
             let mut stmt = conn.prepare(
@@ -1421,6 +1423,7 @@ impl ActionDb {
 
     /// Auto-dismiss stakeholder suggestions for internal team members.
     /// Cleans up suggestions that were created before the internal filter was added.
+    #[must_use = "check that internal stakeholder suggestion cleanup succeeded before assuming the queue is filtered"]
     pub(super) fn dismiss_internal_stakeholder_suggestions(conn: &Connection) -> Result<(), DbError> {
         let dismissed = conn.execute(
             "UPDATE stakeholder_suggestions SET status = 'dismissed', resolved_at = datetime('now')
@@ -1449,6 +1452,7 @@ impl ActionDb {
     /// Backfill engagement/assessment columns on `account_stakeholders` from
     /// the legacy `entity_assessment.stakeholder_insights_json` blob.
     /// Runs once at startup — only touches rows where `engagement IS NULL`.
+    #[must_use = "check that stakeholder column backfill succeeded before relying on engagement/assessment values"]
     pub(super) fn backfill_stakeholder_columns(conn: &Connection) -> Result<(), DbError> {
         // Step 1: Find all account_stakeholders rows missing engagement.
         let rows: Vec<(String, String)> = {
@@ -1561,6 +1565,7 @@ impl ActionDb {
     }
 
     /// Mark a one-time init task as completed.
+    #[must_use = "check that init-task mark succeeded before assuming the guarded backfill will not re-run on next startup"]
     pub(super) fn mark_init_task_completed(conn: &Connection, task_name: &str) -> Result<(), DbError> {
         conn.execute(
             "INSERT OR IGNORE INTO init_tasks (task_name) VALUES (?1)",
@@ -1572,6 +1577,7 @@ impl ActionDb {
     /// Guarded backfill: Account domains from meeting attendees (Path 2b entity resolution).
     ///
     /// Runs exactly once. Subsequent calls are guarded by init_tasks table.
+    #[must_use = "check that the guarded domain backfill succeeded before relying on account_domains for entity resolution"]
     pub(super) fn run_guarded_init_backfill_account_domains(&self) -> Result<(), DbError> {
         // v3: purge ALL domains (v1 and v2 both stored contaminated data),
         // then re-backfill with domain-base matching (only stores a domain
