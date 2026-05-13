@@ -1,0 +1,8 @@
+{
+  "schema_version": "1.0",
+  "abilities": [],
+  "field_documentation": {
+    "mcp_exposure": "Enum: None | MetadataOnly | Invocable. Independent of client_side_executable.",
+    "client_side_executable": "Boolean. Independent of mcp_exposure. Governs WP 7.0 client-side executeAbility path."
+  }
+}

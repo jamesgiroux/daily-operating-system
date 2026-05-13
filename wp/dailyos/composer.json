@@ -1,0 +1,30 @@
+{
+  "name": "dailyos/dailyos-wordpress",
+  "description": "DailyOS SurfaceClient plugin for WordPress.",
+  "type": "wordpress-plugin",
+  "license": "GPL-2.0-or-later",
+  "repositories": [
+    {
+      "type": "composer",
+      "url": "https://wp-packages.org"
+    }
+  ],
+  "require": {
+    "php": ">=8.1",
+    "wordpress/mcp-adapter": "^0.5.0"
+  },
+  "require-dev": {
+    "squizlabs/php_codesniffer": "^3.10",
+    "wp-coding-standards/wpcs": "^3.1",
+    "phpstan/phpstan": "^1.11",
+    "phpunit/phpunit": "^10.5"
+  },
+  "autoload": {
+    "psr-4": {
+      "DailyOS\\": "includes/"
+    },
+    "classmap": [
+      "includes/"
+    ]
+  }
+}
