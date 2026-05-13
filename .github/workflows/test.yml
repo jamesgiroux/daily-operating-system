@@ -107,6 +107,9 @@ jobs:
       - name: Enforce durable source comments
         run: ./scripts/check_no_ephemeral_issue_refs_in_comments.sh
 
+      - name: Enforce legacy semantic helper cutover
+        run: ./scripts/check_no_legacy_semantic_helpers.sh
+
       - name: Enforce ability description PII + vocabulary lint
         run: ./scripts/check_ability_descriptions.sh
 

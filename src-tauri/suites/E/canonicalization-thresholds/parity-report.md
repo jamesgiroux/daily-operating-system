@@ -1,6 +1,6 @@
 # Canonicalization Parity Report
 
-- Schema: `canonicalization-parity-report:v1`
+- Schema: `canonicalization-parity-report:v2`
 - Mode: `shadow`
 - Comparator thresholds: `adr-0131-thresholds:v1`
 - Corpus: `/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds`
@@ -32,30 +32,39 @@
 | `cross_workspace_merge_rate` | 0.0000 | 0 | 0 | = 0 |
 | `legacy_unmigrated_merge_rate` | 0.0000 | 0 | 0 | = 0 |
 
-## Divergence Counts
-
-| Divergence | Pairs |
-|---|---:|
-| `v1_fork_v2_contradict` | 75 |
-| `v1_fork_v2_fork` | 200 |
-| `v1_fork_v2_merge` | 215 |
-| `v1_merge_v2_merge` | 10 |
-
-## Per-Bucket Divergence
+## Per-Bucket Expected vs V2
 
 ### `asymmetric_qualifiers` (50, target 10%)
-- `v1_fork_v2_fork`: 50
+- Expected mismatches: 0
+- Expected decisions:
+  - `fork`: 50
+- V2 decisions:
+  - `fork`: 50
 
 ### `contradictions` (75, target 15%)
-- `v1_fork_v2_contradict`: 75
+- Expected mismatches: 0
+- Expected decisions:
+  - `contradict`: 75
+- V2 decisions:
+  - `contradict`: 75
 
 ### `hard_negatives` (150, target 30%)
-- `v1_fork_v2_fork`: 150
+- Expected mismatches: 0
+- Expected decisions:
+  - `fork`: 150
+- V2 decisions:
+  - `fork`: 150
 
 ### `low_trust_duplicates` (25, target 5%)
-- `v1_fork_v2_merge`: 21
-- `v1_merge_v2_merge`: 4
+- Expected mismatches: 0
+- Expected decisions:
+  - `merge`: 25
+- V2 decisions:
+  - `merge`: 25
 
 ### `positive_paraphrases` (200, target 40%)
-- `v1_fork_v2_merge`: 194
-- `v1_merge_v2_merge`: 6
+- Expected mismatches: 0
+- Expected decisions:
+  - `merge`: 200
+- V2 decisions:
+  - `merge`: 200

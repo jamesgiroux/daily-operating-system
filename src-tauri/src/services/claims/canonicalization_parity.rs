@@ -2,10 +2,10 @@
 //!
 //! The runner is read-only against claim state: it loads labeled pair files,
 //! evaluates the v2 comparator through the same shadow-mode path used by
-//! Phase A, compares that result to the legacy lexical fallback, and writes
+//! Phase A, compares that result to expected corpus labels, and writes
 //! report artifacts next to the corpus.
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -21,14 +21,14 @@ use crate::db::claims::{ClaimSensitivity, ClaimState, SurfacingState};
 use crate::services::comparator_thresholds::COMPARATOR_THRESHOLD_VERSION;
 
 use super::{
-    canonical_match_config, canonical_match_v2, semantic_near_duplicate_with_qualifiers,
-    CanonicalDecisionKind, CanonicalMatchInput, CanonicalizationMode, ThresholdBand,
+    canonical_match_config, canonical_match_v2, CanonicalDecisionKind, CanonicalMatchInput,
+    CanonicalizationMode, ThresholdBand,
 };
 
 pub const PARITY_REPORT_MARKDOWN: &str = "parity-report.md";
 pub const PARITY_REPORT_JSON: &str = ".parity-report.json";
 
-const REPORT_SCHEMA_VERSION: &str = "canonicalization-parity-report:v1";
+const REPORT_SCHEMA_VERSION: &str = "canonicalization-parity-report:v2";
 const SHADOW_MODE_LABEL: &str = "shadow";
 
 pub const GATE_METRIC_KEYS: [&str; 11] = [
@@ -174,7 +174,6 @@ pub struct ParityReport {
     pub pair_count: usize,
     pub bucket_counts: BTreeMap<String, usize>,
     pub metrics: BTreeMap<String, GateMetric>,
-    pub divergence_counts: BTreeMap<String, usize>,
     pub buckets: BTreeMap<String, BucketBreakdown>,
     pub pairs: Vec<PairEvaluation>,
 }
@@ -202,9 +201,7 @@ pub struct BucketBreakdown {
     pub total: usize,
     pub target_share: String,
     pub expected_decisions: BTreeMap<String, usize>,
-    pub v1_decisions: BTreeMap<String, usize>,
     pub v2_decisions: BTreeMap<String, usize>,
-    pub divergences: BTreeMap<String, usize>,
     pub expected_mismatches: usize,
 }
 
@@ -215,11 +212,8 @@ pub struct PairEvaluation {
     pub source: String,
     pub source_path: String,
     pub expected_decision: DecisionLabel,
-    pub v1_decision: DecisionLabel,
     pub v2_decision: DecisionLabel,
     pub matches_expected: bool,
-    pub matches_v1: bool,
-    pub divergence_key: String,
     pub v2_reason: String,
     pub v2_reason_secondary: Vec<String>,
     pub v2_threshold_band: Option<String>,
@@ -270,7 +264,6 @@ pub fn build_parity_report(corpus_dir: impl AsRef<Path>) -> Result<ParityReport,
 
     let metrics = compute_metrics(&evaluations);
     let mut bucket_counts = BTreeMap::new();
-    let mut divergence_counts = BTreeMap::new();
     let mut buckets = BTreeMap::new();
 
     for bucket in CorpusBucket::ALL {
@@ -286,19 +279,13 @@ pub fn build_parity_report(corpus_dir: impl AsRef<Path>) -> Result<ParityReport,
 
     for evaluation in &evaluations {
         *bucket_counts.entry(evaluation.bucket.clone()).or_insert(0) += 1;
-        *divergence_counts
-            .entry(evaluation.divergence_key.clone())
-            .or_insert(0) += 1;
-
         let bucket = buckets.entry(evaluation.bucket.clone()).or_default();
         bucket.total += 1;
         increment(
             &mut bucket.expected_decisions,
             evaluation.expected_decision.as_str(),
         );
-        increment(&mut bucket.v1_decisions, evaluation.v1_decision.as_str());
         increment(&mut bucket.v2_decisions, evaluation.v2_decision.as_str());
-        increment(&mut bucket.divergences, &evaluation.divergence_key);
         if !evaluation.matches_expected {
             bucket.expected_mismatches += 1;
         }
@@ -312,7 +299,6 @@ pub fn build_parity_report(corpus_dir: impl AsRef<Path>) -> Result<ParityReport,
         pair_count: evaluations.len(),
         bucket_counts,
         metrics,
-        divergence_counts,
         buckets,
         pairs: evaluations,
     })
@@ -373,20 +359,14 @@ fn evaluate_pair(pair: CanonicalizationPair, path: &Path) -> PairEvaluation {
     let config = canonical_match_config(&input_a, &input_b);
     let outcome = canonical_match_v2(&input_a, &input_b, &config);
     let v2_decision = DecisionLabel::from_v2(outcome.decision);
-    let v1_decision = legacy_decision(&pair.claim_a, &pair.claim_b);
-    let divergence_key = format!("v1_{}_v2_{}", v1_decision.as_str(), v2_decision.as_str());
-
     PairEvaluation {
         pair_id: pair.pair_id,
         bucket: pair.bucket.as_str().to_string(),
         source: source_label(pair.source).to_string(),
         source_path: path.display().to_string(),
         expected_decision: pair.expected_decision,
-        v1_decision,
         v2_decision,
         matches_expected: v2_decision == pair.expected_decision,
-        matches_v1: v2_decision == v1_decision,
-        divergence_key,
         v2_reason: outcome.reason,
         v2_reason_secondary: outcome.reason_secondary,
         v2_threshold_band: outcome.threshold_band.map(threshold_band_label),
@@ -442,44 +422,6 @@ fn match_input(pair_id: &str, side: &str, claim: &CorpusClaim) -> CanonicalMatch
         structural_field_content_hash: None,
         backfill_epoch: 1,
     }
-}
-
-fn legacy_decision(left: &CorpusClaim, right: &CorpusClaim) -> DecisionLabel {
-    let left_qualifiers = qualifier_labels(&left.qualifiers);
-    let right_qualifiers = qualifier_labels(&right.qualifiers);
-    if semantic_near_duplicate_with_qualifiers(
-        &left.text,
-        &left_qualifiers,
-        &right.text,
-        &right_qualifiers,
-    ) {
-        DecisionLabel::Merge
-    } else {
-        DecisionLabel::Fork
-    }
-}
-
-fn qualifier_labels(qualifiers: &QualifierSet) -> HashSet<String> {
-    let mut labels = HashSet::new();
-    if let Some(time) = &qualifiers.time {
-        labels.insert(format!("time:{}", time.normalized));
-    }
-    if let Some(region) = &qualifiers.region {
-        labels.insert(format!("region:{}", region.code));
-    }
-    if let Some(scope) = &qualifiers.scope {
-        labels.insert(format!("scope:{}", scope.normalized));
-    }
-    if let Some(entity) = &qualifiers.entity {
-        labels.insert(format!("entity:{}:{}", entity.kind, entity.id));
-    }
-    for numeric in &qualifiers.numerics {
-        labels.insert(format!("numeric:{}={}", numeric.name, numeric.value));
-    }
-    for (key, value) in &qualifiers.extras {
-        labels.insert(format!("extra:{key}={value}"));
-    }
-    labels
 }
 
 fn compute_metrics(evaluations: &[PairEvaluation]) -> BTreeMap<String, GateMetric> {
@@ -790,15 +732,7 @@ fn render_markdown(report: &ParityReport) -> String {
         }
     }
     writeln!(markdown).unwrap();
-    writeln!(markdown, "## Divergence Counts").unwrap();
-    writeln!(markdown).unwrap();
-    writeln!(markdown, "| Divergence | Pairs |").unwrap();
-    writeln!(markdown, "|---|---:|").unwrap();
-    for (key, count) in &report.divergence_counts {
-        writeln!(markdown, "| `{key}` | {count} |").unwrap();
-    }
-    writeln!(markdown).unwrap();
-    writeln!(markdown, "## Per-Bucket Divergence").unwrap();
+    writeln!(markdown, "## Per-Bucket Expected vs V2").unwrap();
     writeln!(markdown).unwrap();
     for (bucket, breakdown) in &report.buckets {
         writeln!(
@@ -807,12 +741,19 @@ fn render_markdown(report: &ParityReport) -> String {
             breakdown.total, breakdown.target_share
         )
         .unwrap();
-        if breakdown.divergences.is_empty() {
-            writeln!(markdown, "- No pairs.").unwrap();
-        } else {
-            for (divergence, count) in &breakdown.divergences {
-                writeln!(markdown, "- `{divergence}`: {count}").unwrap();
-            }
+        writeln!(
+            markdown,
+            "- Expected mismatches: {}",
+            breakdown.expected_mismatches
+        )
+        .unwrap();
+        writeln!(markdown, "- Expected decisions:").unwrap();
+        for (decision, count) in &breakdown.expected_decisions {
+            writeln!(markdown, "  - `{decision}`: {count}").unwrap();
+        }
+        writeln!(markdown, "- V2 decisions:").unwrap();
+        for (decision, count) in &breakdown.v2_decisions {
+            writeln!(markdown, "  - `{decision}`: {count}").unwrap();
         }
         writeln!(markdown).unwrap();
     }
@@ -832,6 +773,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[ignore = "regenerates on-disk canonicalization parity report artifacts"]
     fn stub_corpus_generates_well_formed_parity_report() {
         let report = generate_default_parity_report_files()
             .expect("stub canonicalization parity corpus should generate reports");

@@ -18,6 +18,7 @@ use rusqlite::{Connection, Error as SqliteError, ErrorCode};
 mod v144_audit_action_token;
 mod v166_semantic_merge_safety;
 mod v167_structured_claim_canonicalization;
+mod v170_canonicalization_cutover;
 
 type MigrationError = String;
 
@@ -862,6 +863,14 @@ const MIGRATIONS: &[Migration] = &[
     Migration::Sql {
         version: 169,
         sql: include_str!("migrations/169_dos_559_surface_client_pairings.sql"),
+    },
+    // ADR-0131 Phase C cutover: v2 (structured + embedding) canonicalization
+    // becomes authoritative. Enforces pending_backfill_count = 0 precondition
+    // (§7) and records the embedding/threshold versions in effect at cutover
+    // for auditability (§6).
+    Migration::Fn {
+        version: 170,
+        apply: migrate_v170_canonicalization_cutover,
     },
 ];
 
@@ -2059,6 +2068,10 @@ fn apply_migration_146_signal_events_data_source(
 
 fn migrate_v167_structured_claim_canonicalization(conn: &Connection) -> Result<(), MigrationError> {
     v167_structured_claim_canonicalization::migrate_v167(conn)
+}
+
+fn migrate_v170_canonicalization_cutover(conn: &Connection) -> Result<(), MigrationError> {
+    v170_canonicalization_cutover::migrate_v170(conn)
 }
 
 fn migrate_v166_semantic_merge_safety(conn: &Connection) -> Result<(), MigrationError> {
