@@ -4,6 +4,7 @@
  * Marks the end of an editorial briefing. "When you've read it, you're briefed."
  */
 import { BrandMark } from '../ui/BrandMark';
+import s from './FinisMarker.module.css';
 
 interface FinisMarkerProps {
   enrichedAt?: string;
@@ -11,29 +12,14 @@ interface FinisMarkerProps {
 
 export function FinisMarker({ enrichedAt }: FinisMarkerProps) {
   return (
-    <div style={{ textAlign: "center", padding: "72px 0 24px" }}>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "center",
-          gap: "0.4em",
-          color: "var(--color-spice-turmeric)",
-        }}
-      >
+    <div className={s.root}>
+      <div className={s.marks}>
         <BrandMark size={18} />
         <BrandMark size={18} />
         <BrandMark size={18} />
       </div>
       {enrichedAt && (
-        <div
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 10,
-            color: "var(--color-text-tertiary)",
-            letterSpacing: "0.06em",
-            marginTop: 16,
-          }}
-        >
+        <div className={s.timestamp}>
           Last updated: {enrichedAt}
         </div>
       )}
