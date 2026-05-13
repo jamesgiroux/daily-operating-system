@@ -218,22 +218,22 @@ final class DailyOS_ActivationTest extends TestCase {
 	 */
 	private static function static_valid_marker(): array {
 		return [
-			'marker_version'      => 1,
-			'runtime_instance_id' => 'runtime-123',
-			'runtime_url'         => 'http://127.0.0.1:54321',
-			'site_nonce_hash'     => str_repeat( 'a', 64 ),
-			'site_nonce_full'     => 'siteNonceAlpha123',
-			'site_binding_digest' => str_repeat( 'b', 64 ),
-			'wp_site_id'          => 'install-1:1',
-			'wp_install_uuid'     => 'install-1',
+			'marker_version'       => 1,
+			'runtime_instance_id'  => 'runtime-123',
+			'runtime_url'          => 'http://127.0.0.1:54321',
+			'site_nonce_hash'      => str_repeat( 'a', 64 ),
+			'site_nonce_full'      => 'siteNonceAlpha123',
+			'site_binding_digest'  => str_repeat( 'b', 64 ),
+			'wp_site_id'           => 'install-1:1',
+			'wp_install_uuid'      => 'install-1',
 			'plugin_instance_uuid' => 'plugin-1',
-			'projection_version'  => '2026.05.13',
-			'instance_id'         => 'runtime-123',
-			'session_id'          => 'session-123',
-			'granted_scopes'      => [ 'read.account_overview' ],
-			'endpoint_version'    => 'v1',
-			'paired_at_gmt'       => '2026-05-13 00:00:00',
-			'last_use_gmt'        => '2026-05-13 00:00:00',
+			'projection_version'   => '2026.05.13',
+			'instance_id'          => 'runtime-123',
+			'session_id'           => 'session-123',
+			'granted_scopes'       => [ 'read.account_overview' ],
+			'endpoint_version'     => 'v1',
+			'paired_at_gmt'        => '2026-05-13 00:00:00',
+			'last_use_gmt'         => '2026-05-13 00:00:00',
 		];
 	}
 

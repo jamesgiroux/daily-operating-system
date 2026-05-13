@@ -75,9 +75,9 @@ final class DailyOS_Pairing_Page {
 			'plugin_instance_uuid' => $plugin_instance_uuid,
 			'multisite_blog_id'    => self::multisite_blog_id(),
 		];
-		$credential_store = new DailyOS_Credential_Store();
-		$runtime_client   = new DailyOS_Runtime_Client( $credential_store, new DailyOS_Hmac_Signer() );
-		$result           = $runtime_client->handshake( $pairing_code, $wp_context );
+		$credential_store     = new DailyOS_Credential_Store();
+		$runtime_client       = new DailyOS_Runtime_Client( $credential_store, new DailyOS_Hmac_Signer() );
+		$result               = $runtime_client->handshake( $pairing_code, $wp_context );
 
 		if ( true === ( $result['ok'] ?? false ) ) {
 			$now_gmt             = gmdate( 'Y-m-d H:i:s', time() );
@@ -90,22 +90,22 @@ final class DailyOS_Pairing_Page {
 
 			$credential_store->save_marker(
 				[
-					'runtime_instance_id' => $runtime_instance_id,
-					'surface_client_id'   => $result['surface_client_id'] ?? $runtime_instance_id,
-					'runtime_url'         => $result['runtime_url'] ?? '',
-					'site_nonce_hash'     => $result['site_nonce_hash'] ?? '',
-					'site_nonce_full'     => $result['site_nonce_full'] ?? '',
-					'site_binding_digest' => $result['site_binding_digest'] ?? '',
-					'wp_site_id'          => $result['wp_site_id'] ?? $wp_site_id,
-					'wp_install_uuid'     => $result['wp_install_uuid'] ?? $wp_install_uuid,
+					'runtime_instance_id'  => $runtime_instance_id,
+					'surface_client_id'    => $result['surface_client_id'] ?? $runtime_instance_id,
+					'runtime_url'          => $result['runtime_url'] ?? '',
+					'site_nonce_hash'      => $result['site_nonce_hash'] ?? '',
+					'site_nonce_full'      => $result['site_nonce_full'] ?? '',
+					'site_binding_digest'  => $result['site_binding_digest'] ?? '',
+					'wp_site_id'           => $result['wp_site_id'] ?? $wp_site_id,
+					'wp_install_uuid'      => $result['wp_install_uuid'] ?? $wp_install_uuid,
 					'plugin_instance_uuid' => $result['plugin_instance_uuid'] ?? $plugin_instance_uuid,
-					'projection_version'  => $result['projection_version'] ?? '',
-					'instance_id'         => $instance_id,
-					'session_id'          => $result['session_id'] ?? '',
-					'granted_scopes'      => $result['scopes'] ?? [],
-					'endpoint_version'    => $result['endpoint_version'] ?? '',
-					'paired_at_gmt'       => $now_gmt,
-					'last_use_gmt'        => $now_gmt,
+					'projection_version'   => $result['projection_version'] ?? '',
+					'instance_id'          => $instance_id,
+					'session_id'           => $result['session_id'] ?? '',
+					'granted_scopes'       => $result['scopes'] ?? [],
+					'endpoint_version'     => $result['endpoint_version'] ?? '',
+					'paired_at_gmt'        => $now_gmt,
+					'last_use_gmt'         => $now_gmt,
 				]
 			);
 

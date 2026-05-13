@@ -116,6 +116,8 @@ final class DailyOS_RuntimeClientTest extends TestCase {
 	 * Runtime URL filters reject non-loopback hosts and fall back to the marker.
 	 *
 	 * @dataProvider invalid_runtime_url_provider
+	 *
+	 * @param string $runtime_url Runtime URL override candidate.
 	 */
 	public function test_runtime_url_filter_rejects_non_loopback_override( string $runtime_url ): void {
 		$this->save_marker();

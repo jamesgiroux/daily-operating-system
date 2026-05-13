@@ -182,22 +182,22 @@ final class DailyOS_Runtime_Client {
 		$session_id = $credential->session_id();
 		$url        = $this->runtime_url( $runtime_base_url, $path );
 		$headers    = [
-			'Content-Type'                    => self::CONTENT_TYPE,
-			'Accept'                          => self::CONTENT_TYPE,
-			'Authorization'                   => 'Bearer ' . $bearer,
-			'X-DailyOS-SurfaceClient'         => $this->surface_client_id( $marker ),
-			'X-DailyOS-Key-Id'                => $session_id,
-			'X-DailyOS-Signature'             => $signature,
-			'X-DailyOS-Timestamp'             => $timestamp,
-			'X-DailyOS-Nonce'                 => $nonce,
-			'X-DailyOS-Site-Binding-Digest'   => $identity['site_binding_digest'],
-			'X-DailyOS-Site-Nonce'            => $identity['site_nonce'],
-			'X-DailyOS-WP-User-Id'            => $identity['wp_user_id'],
-			'X-DailyOS-WP-Site-Id'            => $identity['wp_site_id'],
-			'X-DailyOS-Home-Url'              => $identity['home_url'],
-			'X-DailyOS-Site-Url'              => $identity['site_url'],
-			'X-DailyOS-WP-Install-UUID'       => $identity['wp_install_uuid'],
-			'X-DailyOS-Plugin-Instance-UUID'  => $identity['plugin_instance_uuid'],
+			'Content-Type'                   => self::CONTENT_TYPE,
+			'Accept'                         => self::CONTENT_TYPE,
+			'Authorization'                  => 'Bearer ' . $bearer,
+			'X-DailyOS-SurfaceClient'        => $this->surface_client_id( $marker ),
+			'X-DailyOS-Key-Id'               => $session_id,
+			'X-DailyOS-Signature'            => $signature,
+			'X-DailyOS-Timestamp'            => $timestamp,
+			'X-DailyOS-Nonce'                => $nonce,
+			'X-DailyOS-Site-Binding-Digest'  => $identity['site_binding_digest'],
+			'X-DailyOS-Site-Nonce'           => $identity['site_nonce'],
+			'X-DailyOS-WP-User-Id'           => $identity['wp_user_id'],
+			'X-DailyOS-WP-Site-Id'           => $identity['wp_site_id'],
+			'X-DailyOS-Home-Url'             => $identity['home_url'],
+			'X-DailyOS-Site-Url'             => $identity['site_url'],
+			'X-DailyOS-WP-Install-UUID'      => $identity['wp_install_uuid'],
+			'X-DailyOS-Plugin-Instance-UUID' => $identity['plugin_instance_uuid'],
 		];
 
 		if ( '' !== $identity['multisite_blog_id'] ) {
@@ -310,11 +310,11 @@ final class DailyOS_Runtime_Client {
 	 * @return array<string, mixed> Handshake envelope.
 	 */
 	private function normalize_handshake_response( array $response, string $fallback_runtime_url, array $wp_context ): array {
-		$payload = isset( $response['pairing'] ) && is_array( $response['pairing'] )
+		$payload         = isset( $response['pairing'] ) && is_array( $response['pairing'] )
 			? $response['pairing']
 			: $response;
-		$error  = isset( $response['error'] ) && is_array( $response['error'] ) ? $response['error'] : null;
-		$ok     = true === ( $response['ok'] ?? false ) || (
+		$error           = isset( $response['error'] ) && is_array( $response['error'] ) ? $response['error'] : null;
+		$ok              = true === ( $response['ok'] ?? false ) || (
 			null === $error
 			&& $this->has_field( $payload, 'session_id', 'sessionId' )
 			&& (
@@ -323,29 +323,29 @@ final class DailyOS_Runtime_Client {
 				|| $this->has_field( $payload, 'surface_client_id', 'surfaceClientId' )
 			)
 		);
-		$scopes = $payload['scopes'] ?? $payload['granted_scopes'] ?? $payload['grantedScopes'] ?? [];
+		$scopes          = $payload['scopes'] ?? $payload['granted_scopes'] ?? $payload['grantedScopes'] ?? [];
 		$site_nonce_full = $this->string_field( $payload, 'site_nonce', 'siteNonce' );
 		$runtime_url     = $this->runtime_url_from_handshake_payload( $payload ) ?? $fallback_runtime_url;
 
 		return [
-			'ok'                  => $ok,
-			'runtime_instance_id' => $this->string_field( $payload, 'runtime_instance_id', 'runtimeInstanceId' )
+			'ok'                   => $ok,
+			'runtime_instance_id'  => $this->string_field( $payload, 'runtime_instance_id', 'runtimeInstanceId' )
 				?? $this->string_field( $payload, 'surface_client_id', 'surfaceClientId' ),
-			'surface_client_id'   => $this->string_field( $payload, 'surface_client_id', 'surfaceClientId' ),
-			'runtime_url'         => $runtime_url,
-			'site_nonce_hash'     => $this->string_field( $payload, 'site_nonce_hash', 'siteNonceHash' )
+			'surface_client_id'    => $this->string_field( $payload, 'surface_client_id', 'surfaceClientId' ),
+			'runtime_url'          => $runtime_url,
+			'site_nonce_hash'      => $this->string_field( $payload, 'site_nonce_hash', 'siteNonceHash' )
 				?? ( null === $site_nonce_full ? null : hash( 'sha256', $site_nonce_full ) ),
-			'site_nonce_full'     => $site_nonce_full,
-			'site_binding_digest' => $this->string_field( $payload, 'site_binding_digest', 'siteBindingDigest' ),
-			'wp_site_id'          => isset( $wp_context['wp_site_id'] ) ? (string) $wp_context['wp_site_id'] : null,
-			'wp_install_uuid'     => isset( $wp_context['wp_install_uuid'] ) ? (string) $wp_context['wp_install_uuid'] : null,
+			'site_nonce_full'      => $site_nonce_full,
+			'site_binding_digest'  => $this->string_field( $payload, 'site_binding_digest', 'siteBindingDigest' ),
+			'wp_site_id'           => isset( $wp_context['wp_site_id'] ) ? (string) $wp_context['wp_site_id'] : null,
+			'wp_install_uuid'      => isset( $wp_context['wp_install_uuid'] ) ? (string) $wp_context['wp_install_uuid'] : null,
 			'plugin_instance_uuid' => isset( $wp_context['plugin_instance_uuid'] ) ? (string) $wp_context['plugin_instance_uuid'] : null,
-			'projection_version'  => $this->string_field( $payload, 'projection_version', 'projectionVersion' ),
-			'instance_id'         => $this->string_field( $payload, 'instance_id', 'instanceId' ),
-			'session_id'          => $this->string_field( $payload, 'session_id', 'sessionId' ),
-			'scopes'              => is_array( $scopes ) ? array_values( array_map( 'strval', $scopes ) ) : [],
-			'endpoint_version'    => $this->string_field( $payload, 'endpoint_version', 'endpointVersion' ),
-			'error'               => $error,
+			'projection_version'   => $this->string_field( $payload, 'projection_version', 'projectionVersion' ),
+			'instance_id'          => $this->string_field( $payload, 'instance_id', 'instanceId' ),
+			'session_id'           => $this->string_field( $payload, 'session_id', 'sessionId' ),
+			'scopes'               => is_array( $scopes ) ? array_values( array_map( 'strval', $scopes ) ) : [],
+			'endpoint_version'     => $this->string_field( $payload, 'endpoint_version', 'endpointVersion' ),
+			'error'                => $error,
 		];
 	}
 
@@ -358,22 +358,22 @@ final class DailyOS_Runtime_Client {
 	 */
 	private function handshake_error_envelope( string $code, string $message ): array {
 		return [
-			'ok'                  => false,
-			'runtime_instance_id' => null,
-			'surface_client_id'   => null,
-			'runtime_url'         => null,
-			'site_nonce_hash'     => null,
-			'site_nonce_full'     => null,
-			'site_binding_digest' => null,
-			'wp_site_id'          => null,
-			'wp_install_uuid'     => null,
+			'ok'                   => false,
+			'runtime_instance_id'  => null,
+			'surface_client_id'    => null,
+			'runtime_url'          => null,
+			'site_nonce_hash'      => null,
+			'site_nonce_full'      => null,
+			'site_binding_digest'  => null,
+			'wp_site_id'           => null,
+			'wp_install_uuid'      => null,
 			'plugin_instance_uuid' => null,
-			'projection_version'  => null,
-			'instance_id'         => null,
-			'session_id'          => null,
-			'scopes'              => [],
-			'endpoint_version'    => null,
-			'error'               => [
+			'projection_version'   => null,
+			'instance_id'          => null,
+			'session_id'           => null,
+			'scopes'               => [],
+			'endpoint_version'     => null,
+			'error'                => [
 				'code'    => $code,
 				'message' => $message,
 			],
@@ -431,7 +431,7 @@ final class DailyOS_Runtime_Client {
 			return $marker_url;
 		}
 
-		$filtered_url = apply_filters( 'dailyos_wp_bridge_runtime_url', $marker_url );
+		$filtered_url = apply_filters( 'dailyos_wp_bridge_runtime_url', $marker_url ?? '' );
 
 		if ( is_string( $filtered_url ) && '' !== trim( $filtered_url ) ) {
 			$normalized_filtered_url = self::normalize_loopback_runtime_url( $filtered_url );
@@ -452,7 +452,7 @@ final class DailyOS_Runtime_Client {
 	 * @param string $pairing_code Pairing code or DailyOS pairing URL.
 	 */
 	private function runtime_base_url_for_pairing( string $pairing_code ): ?string {
-		$query = parse_url( $pairing_code, PHP_URL_QUERY );
+		$query = wp_parse_url( $pairing_code, PHP_URL_QUERY );
 
 		if ( ! is_string( $query ) ) {
 			return null;
@@ -475,8 +475,8 @@ final class DailyOS_Runtime_Client {
 	 */
 	private function canonical_identity( array $marker ): ?array {
 		$site_binding_digest  = isset( $marker['site_binding_digest'] ) ? (string) $marker['site_binding_digest'] : '';
-		$site_nonce          = isset( $marker['site_nonce_full'] ) ? (string) $marker['site_nonce_full'] : '';
-		$wp_install_uuid     = isset( $marker['wp_install_uuid'] ) ? (string) $marker['wp_install_uuid'] : '';
+		$site_nonce           = isset( $marker['site_nonce_full'] ) ? (string) $marker['site_nonce_full'] : '';
+		$wp_install_uuid      = isset( $marker['wp_install_uuid'] ) ? (string) $marker['wp_install_uuid'] : '';
 		$plugin_instance_uuid = isset( $marker['plugin_instance_uuid'] ) ? (string) $marker['plugin_instance_uuid'] : '';
 
 		if ( '' === $site_binding_digest || '' === $site_nonce || '' === $wp_install_uuid || '' === $plugin_instance_uuid ) {
@@ -484,15 +484,15 @@ final class DailyOS_Runtime_Client {
 		}
 
 		return [
-			'site_binding_digest' => $site_binding_digest,
-			'site_nonce'          => $site_nonce,
-			'wp_user_id'          => function_exists( 'get_current_user_id' ) ? (string) get_current_user_id() : '0',
-			'wp_site_id'          => $this->wp_site_id( $marker, $wp_install_uuid ),
-			'home_url'            => function_exists( 'home_url' ) ? home_url() : '',
-			'site_url'            => function_exists( 'site_url' ) ? site_url() : '',
-			'wp_install_uuid'     => $wp_install_uuid,
+			'site_binding_digest'  => $site_binding_digest,
+			'site_nonce'           => $site_nonce,
+			'wp_user_id'           => function_exists( 'get_current_user_id' ) ? (string) get_current_user_id() : '0',
+			'wp_site_id'           => $this->wp_site_id( $marker, $wp_install_uuid ),
+			'home_url'             => function_exists( 'home_url' ) ? home_url() : '',
+			'site_url'             => function_exists( 'site_url' ) ? site_url() : '',
+			'wp_install_uuid'      => $wp_install_uuid,
 			'plugin_instance_uuid' => $plugin_instance_uuid,
-			'multisite_blog_id'   => $this->multisite_blog_id(),
+			'multisite_blog_id'    => $this->multisite_blog_id(),
 		];
 	}
 
@@ -576,16 +576,16 @@ final class DailyOS_Runtime_Client {
 	 * @param string $runtime_url Runtime URL candidate.
 	 */
 	private static function normalize_loopback_runtime_url( string $runtime_url ): ?string {
-		$parts = parse_url( trim( $runtime_url ) );
+		$parts = wp_parse_url( trim( $runtime_url ) );
 
 		if ( ! is_array( $parts ) ) {
 			return null;
 		}
 
-		$scheme   = isset( $parts['scheme'] ) ? strtolower( (string) $parts['scheme'] ) : '';
-		$host     = isset( $parts['host'] ) ? strtolower( (string) $parts['host'] ) : '';
-		$port     = isset( $parts['port'] ) ? (int) $parts['port'] : 0;
-		$path     = isset( $parts['path'] ) ? (string) $parts['path'] : '';
+		$scheme    = isset( $parts['scheme'] ) ? strtolower( (string) $parts['scheme'] ) : '';
+		$host      = isset( $parts['host'] ) ? strtolower( (string) $parts['host'] ) : '';
+		$port      = isset( $parts['port'] ) ? (int) $parts['port'] : 0;
+		$path      = isset( $parts['path'] ) ? (string) $parts['path'] : '';
 		$has_extra = isset( $parts['query'] ) || isset( $parts['fragment'] ) || ( '' !== $path && '/' !== $path );
 
 		if ( 'http' !== $scheme || '127.0.0.1' !== $host || 1 > $port || 65535 < $port || $has_extra ) {
@@ -599,7 +599,7 @@ final class DailyOS_Runtime_Client {
 	 * Return whether any candidate field exists in an array.
 	 *
 	 * @param array<string, mixed> $payload Payload.
-	 * @param string              ...$keys Candidate keys.
+	 * @param string               ...$keys Candidate keys.
 	 */
 	private function has_field( array $payload, string ...$keys ): bool {
 		foreach ( $keys as $key ) {
@@ -615,7 +615,7 @@ final class DailyOS_Runtime_Client {
 	 * Return the first scalar string field from an array.
 	 *
 	 * @param array<string, mixed> $payload Payload.
-	 * @param string              ...$keys Candidate keys.
+	 * @param string               ...$keys Candidate keys.
 	 */
 	private function string_field( array $payload, string ...$keys ): ?string {
 		foreach ( $keys as $key ) {

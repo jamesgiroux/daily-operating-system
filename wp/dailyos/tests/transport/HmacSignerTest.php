@@ -23,7 +23,8 @@ final class DailyOS_HmacSignerTest extends TestCase {
 	 * @param array<string, mixed> $vector Canonical vector.
 	 */
 	public function test_canonical_vectors_match_runtime_fixture( array $vector ): void {
-		$signer     = new DailyOS_Hmac_Signer();
+		$signer = new DailyOS_Hmac_Signer();
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Fixture stores raw request bytes as base64.
 		$body_bytes = base64_decode( (string) $vector['body_b64'], true );
 		$key_bytes  = hex2bin( (string) $vector['session_key_hex'] );
 
@@ -50,6 +51,7 @@ final class DailyOS_HmacSignerTest extends TestCase {
 			(string) $vector['timestamp']
 		);
 
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Assertion compares raw canonical bytes through fixture-safe base64.
 		$this->assertSame( (string) $vector['expected_canonical_bytes_b64'], base64_encode( $canonical_bytes ) );
 		$this->assertStringStartsWith( 'v1=', $signature );
 		$this->assertSame( (string) $vector['expected_signature_hex'], substr( $signature, 3 ) );

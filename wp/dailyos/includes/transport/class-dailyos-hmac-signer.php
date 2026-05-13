@@ -31,13 +31,13 @@ final class DailyOS_Hmac_Signer {
 	/**
 	 * Build the length-prefixed canonical request bytes.
 	 *
-	 * @param string $method HTTP method.
-	 * @param string $path_query Request path and query string exactly as sent.
-	 * @param string $content_type Content-Type header value.
-	 * @param string $body_bytes Exact request body bytes.
+	 * @param string                $method HTTP method.
+	 * @param string                $path_query Request path and query string exactly as sent.
+	 * @param string                $content_type Content-Type header value.
+	 * @param string                $body_bytes Exact request body bytes.
 	 * @param array<string, string> $identity Canonical identity fields.
-	 * @param string $nonce X-DailyOS-Nonce header value.
-	 * @param string $timestamp X-DailyOS-Timestamp header value.
+	 * @param string                $nonce X-DailyOS-Nonce header value.
+	 * @param string                $timestamp X-DailyOS-Timestamp header value.
 	 * @return string Canonical request bytes.
 	 */
 	public function canonical_bytes(
@@ -79,14 +79,14 @@ final class DailyOS_Hmac_Signer {
 	/**
 	 * Sign a request and return the transport signature header value.
 	 *
-	 * @param DailyOS_Hmac_Key $key Per-session HMAC key.
-	 * @param string           $method HTTP method.
-	 * @param string           $path_query Request path and query string exactly as sent.
-	 * @param string           $content_type Content-Type header value.
-	 * @param string           $body_bytes Exact request body bytes.
+	 * @param DailyOS_Hmac_Key      $key Per-session HMAC key.
+	 * @param string                $method HTTP method.
+	 * @param string                $path_query Request path and query string exactly as sent.
+	 * @param string                $content_type Content-Type header value.
+	 * @param string                $body_bytes Exact request body bytes.
 	 * @param array<string, string> $identity Canonical identity fields.
-	 * @param string           $nonce X-DailyOS-Nonce header value.
-	 * @param string           $timestamp X-DailyOS-Timestamp header value.
+	 * @param string                $nonce X-DailyOS-Nonce header value.
+	 * @param string                $timestamp X-DailyOS-Timestamp header value.
 	 * @return string Header value in v1=<lowercase-hex> form.
 	 */
 	public function sign_request(

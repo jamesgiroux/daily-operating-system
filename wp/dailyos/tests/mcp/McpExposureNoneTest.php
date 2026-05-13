@@ -11,6 +11,7 @@ use DailyOS\DailyOS_Ability_Registry;
 use DailyOS\Mcp\DailyOS_Mcp_Audit;
 use DailyOS\Mcp\DailyOS_Mcp_Permission;
 use DailyOS\Mcp\DailyOS_Mcp_Server;
+use DailyOS\Transport\DailyOS_Credential_Store;
 use PHPUnit\Framework\TestCase;
 use WP\MCP\Core\McpAdapter;
 
@@ -190,13 +191,20 @@ final class DailyOS_McpExposureNoneTest extends TestCase {
 		$registry = new DailyOS_Ability_Registry( $this->create_inventory_file( [] ) );
 		$server   = $this->create_server( $registry );
 
+		( new DailyOS_Credential_Store() )->save_marker(
+			[
+				'runtime_instance_id'  => 'runtime-123',
+				'plugin_instance_uuid' => 'plugin-1',
+			]
+		);
+
 		$server->public_log_invocation( 'dailyos/account-overview', 42, DailyOS_Mcp_Audit::EXPOSURE_INVOCABLE, 'allowed' );
 
 		$this->assertCount( 1, $GLOBALS['dailyos_test_audit_events'] );
 		$this->assertSame(
 			[
 				'mcp_exposure_path'  => DailyOS_Mcp_Audit::EXPOSURE_INVOCABLE,
-				'actor_instance'     => '',
+				'actor_instance'     => 'plugin-1',
 				'wp_user_id'         => 42,
 				'ability_name'       => 'dailyos/account-overview',
 				'scope_check_result' => 'allowed',

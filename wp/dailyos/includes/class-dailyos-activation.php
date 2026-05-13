@@ -16,11 +16,11 @@ use DailyOS\Services\DailyOS_Namespace_Store;
  * Activation, deactivation, and uninstall behavior.
  */
 final class DailyOS_Activation {
-	public const PAIRING_STATUS_OPTION = 'dailyos_pairing_status';
-	public const PAIRING_MARKER_OPTION = 'dailyos_pairing_marker';
+	public const PAIRING_STATUS_OPTION       = 'dailyos_pairing_status';
+	public const PAIRING_MARKER_OPTION       = 'dailyos_pairing_marker';
 	public const PLUGIN_INSTANCE_UUID_OPTION = 'dailyos_plugin_instance_uuid';
 	public const WP_INSTALL_UUID_OPTION      = 'dailyos_wp_install_uuid';
-	public const REPAIR_MESSAGE        =
+	public const REPAIR_MESSAGE              =
 		'DailyOS detected pre-existing dailyos_* data without a valid pairing marker. ' .
 		'Run: wp dailyos repair-namespace to inspect.';
 
