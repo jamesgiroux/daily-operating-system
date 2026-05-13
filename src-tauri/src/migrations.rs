@@ -858,7 +858,7 @@ const MIGRATIONS: &[Migration] = &[
         version: 168,
         sql: include_str!("migrations/168_pending_backfill_attempts.sql"),
     },
-    // W2-C DOS-559 SurfaceClient pairing/session/revocation authority.
+    // SurfaceClient pairing/session/revocation authority.
     Migration::Sql {
         version: 169,
         sql: include_str!("migrations/169_dos_559_surface_client_pairings.sql"),
