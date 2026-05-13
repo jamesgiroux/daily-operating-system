@@ -18,6 +18,8 @@ use DailyOS\Services\DailyOS_Namespace_Store;
 final class DailyOS_Activation {
 	public const PAIRING_STATUS_OPTION = 'dailyos_pairing_status';
 	public const PAIRING_MARKER_OPTION = 'dailyos_pairing_marker';
+	public const PLUGIN_INSTANCE_UUID_OPTION = 'dailyos_plugin_instance_uuid';
+	public const WP_INSTALL_UUID_OPTION      = 'dailyos_wp_install_uuid';
 	public const REPAIR_MESSAGE        =
 		'DailyOS detected pre-existing dailyos_* data without a valid pairing marker. ' .
 		'Run: wp dailyos repair-namespace to inspect.';
@@ -86,6 +88,10 @@ final class DailyOS_Activation {
 	private static function namespace_is_dirty( array $report ): bool {
 		foreach ( $report['options'] ?? [] as $option_name ) {
 			if ( self::PAIRING_MARKER_OPTION === $option_name ) {
+				continue;
+			}
+
+			if ( in_array( $option_name, self::recoverable_identity_options(), true ) ) {
 				continue;
 			}
 
@@ -161,6 +167,18 @@ final class DailyOS_Activation {
 	}
 
 	/**
+	 * Return plugin-owned identity options that are safe to keep across reactivation.
+	 *
+	 * @return array<int, string>
+	 */
+	private static function recoverable_identity_options(): array {
+		return [
+			self::PLUGIN_INSTANCE_UUID_OPTION,
+			self::WP_INSTALL_UUID_OPTION,
+		];
+	}
+
+	/**
 	 * Finish successful activation side effects.
 	 *
 	 * Fails closed if the dedicated substrate WordPress user cannot be created or
@@ -168,6 +186,8 @@ final class DailyOS_Activation {
 	 * must surface at activation rather than silently masking later request denials.
 	 */
 	private static function complete_activation(): void {
+		self::ensure_identity_options();
+
 		$substrate_user_id = DailyOS_Mcp_Roles::ensure_user();
 
 		if ( 0 === $substrate_user_id ) {
@@ -178,6 +198,49 @@ final class DailyOS_Activation {
 		}
 
 		self::schedule_nonce_sweep();
+	}
+
+	/**
+	 * Return this plugin install's stable instance UUID, creating it if absent.
+	 */
+	public static function plugin_instance_uuid(): string {
+		return self::ensure_uuid_option( self::PLUGIN_INSTANCE_UUID_OPTION );
+	}
+
+	/**
+	 * Return this WordPress install's stable DailyOS UUID, creating it if absent.
+	 */
+	public static function wp_install_uuid(): string {
+		return self::ensure_uuid_option( self::WP_INSTALL_UUID_OPTION );
+	}
+
+	/**
+	 * Ensure stable identity UUID options exist.
+	 */
+	private static function ensure_identity_options(): void {
+		self::plugin_instance_uuid();
+		self::wp_install_uuid();
+	}
+
+	/**
+	 * Create an option UUID once and preserve it across reactivation.
+	 *
+	 * @param string $option Option name.
+	 */
+	private static function ensure_uuid_option( string $option ): string {
+		$current = get_option( $option, '' );
+
+		if ( is_string( $current ) && '' !== $current ) {
+			return $current;
+		}
+
+		$uuid = function_exists( 'wp_generate_uuid4' )
+			? wp_generate_uuid4()
+			: sprintf( '%04x%04x-%04x-4%03x-8%03x-%04x%04x%04x', random_int( 0, 0xffff ), random_int( 0, 0xffff ), random_int( 0, 0xffff ), random_int( 0, 0xfff ), random_int( 0, 0xfff ), random_int( 0, 0xffff ), random_int( 0, 0xffff ), random_int( 0, 0xffff ) );
+
+		update_option( $option, $uuid, false );
+
+		return $uuid;
 	}
 
 	/**

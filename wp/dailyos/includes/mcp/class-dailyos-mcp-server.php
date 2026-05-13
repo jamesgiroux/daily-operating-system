@@ -259,7 +259,6 @@ final class DailyOS_Mcp_Server {
 	public function public_log_invocation( string $ability_name, int $wp_user_id, string $exposure_path, string $scope_check_result ): void {
 		DailyOS_Mcp_Audit::emit(
 			[
-				'mcp_server_name'    => self::SERVER_NAME,
 				'mcp_exposure_path'  => $exposure_path,
 				'wp_user_id'         => $wp_user_id,
 				'ability_name'       => $ability_name,

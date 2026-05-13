@@ -69,6 +69,8 @@ final class DailyOS_Plugin {
 		add_action( 'admin_menu', [ $this, 'register_admin_pages' ], 10 );
 		add_action( 'rest_api_init', [ $this, 'register_rest_routes' ], 10 );
 
+		add_action( 'dailyos_nonce_sweep', [ $this, 'sweep_presence_nonces' ] );
+
 		if ( defined( 'WP_CLI' ) && WP_CLI ) {
 			DailyOS_CLI::register();
 		}
@@ -146,6 +148,13 @@ final class DailyOS_Plugin {
 	 * Register save hooks in later waves.
 	 */
 	public function register_save_hooks(): void {}
+
+	/**
+	 * Handle the scheduled nonce sweep hook.
+	 *
+	 * Full nonce-sweep implementation lands in W4-E presence nonce lifecycle.
+	 */
+	public function sweep_presence_nonces(): void {}
 
 	/**
 	 * Register MCP server configuration.

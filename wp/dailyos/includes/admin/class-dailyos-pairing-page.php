@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace DailyOS\Admin;
 
+use DailyOS\DailyOS_Activation;
 use DailyOS\Transport\DailyOS_Credential_Store;
 use DailyOS\Transport\DailyOS_Hmac_Signer;
 use DailyOS\Transport\DailyOS_Runtime_Client;
@@ -62,14 +63,17 @@ final class DailyOS_Pairing_Page {
 			return;
 		}
 
-		$current_user     = wp_get_current_user();
-		$current_user_log = is_object( $current_user ) && isset( $current_user->user_login )
-			? (string) $current_user->user_login
-			: '';
-		$wp_context       = [
-			'site_url'         => get_site_url(),
-			'admin_user_id'    => get_current_user_id(),
-			'admin_user_login' => $current_user_log,
+		$wp_install_uuid      = DailyOS_Activation::wp_install_uuid();
+		$plugin_instance_uuid = DailyOS_Activation::plugin_instance_uuid();
+		$wp_site_id           = self::wp_site_id( $wp_install_uuid );
+		$wp_context           = [
+			'wp_user_id'           => get_current_user_id(),
+			'wp_site_id'           => $wp_site_id,
+			'home_url'             => home_url(),
+			'site_url'             => site_url(),
+			'wp_install_uuid'      => $wp_install_uuid,
+			'plugin_instance_uuid' => $plugin_instance_uuid,
+			'multisite_blog_id'    => self::multisite_blog_id(),
 		];
 		$credential_store = new DailyOS_Credential_Store();
 		$runtime_client   = new DailyOS_Runtime_Client( $credential_store, new DailyOS_Hmac_Signer() );
@@ -87,7 +91,14 @@ final class DailyOS_Pairing_Page {
 			$credential_store->save_marker(
 				[
 					'runtime_instance_id' => $runtime_instance_id,
+					'surface_client_id'   => $result['surface_client_id'] ?? $runtime_instance_id,
+					'runtime_url'         => $result['runtime_url'] ?? '',
 					'site_nonce_hash'     => $result['site_nonce_hash'] ?? '',
+					'site_nonce_full'     => $result['site_nonce_full'] ?? '',
+					'site_binding_digest' => $result['site_binding_digest'] ?? '',
+					'wp_site_id'          => $result['wp_site_id'] ?? $wp_site_id,
+					'wp_install_uuid'     => $result['wp_install_uuid'] ?? $wp_install_uuid,
+					'plugin_instance_uuid' => $result['plugin_instance_uuid'] ?? $plugin_instance_uuid,
 					'projection_version'  => $result['projection_version'] ?? '',
 					'instance_id'         => $instance_id,
 					'session_id'          => $result['session_id'] ?? '',
@@ -170,5 +181,32 @@ final class DailyOS_Pairing_Page {
 			DailyOS_Credential_Store::ERROR_CONCURRENT_ADMIN_PAIRING => __( 'Another administrator completed a pairing attempt first. Refresh this page before retrying.', 'dailyos' ),
 			default => __( 'DailyOS pairing failed. Generate a new code and retry.', 'dailyos' ),
 		};
+	}
+
+	/**
+	 * Build the stable WordPress site identifier used by the runtime.
+	 *
+	 * @param string $wp_install_uuid Stable DailyOS install UUID.
+	 */
+	private static function wp_site_id( string $wp_install_uuid ): string {
+		return $wp_install_uuid . ':' . self::current_blog_id();
+	}
+
+	/**
+	 * Return the current blog ID as a string.
+	 */
+	private static function current_blog_id(): string {
+		return function_exists( 'get_current_blog_id' ) ? (string) get_current_blog_id() : '1';
+	}
+
+	/**
+	 * Return the multisite blog ID claim when applicable.
+	 */
+	private static function multisite_blog_id(): string {
+		if ( function_exists( 'is_multisite' ) && is_multisite() ) {
+			return self::current_blog_id();
+		}
+
+		return '';
 	}
 }

@@ -16,6 +16,17 @@ use InvalidArgumentException;
  */
 final class DailyOS_Hmac_Signer {
 	private const DOMAIN_SEPARATOR = 'DAILYOS-WP-BRIDGE-HMAC-V1';
+	private const IDENTITY_FIELDS  = [
+		'site_binding_digest',
+		'site_nonce',
+		'wp_user_id',
+		'wp_site_id',
+		'home_url',
+		'site_url',
+		'wp_install_uuid',
+		'plugin_instance_uuid',
+		'multisite_blog_id',
+	];
 
 	/**
 	 * Build the length-prefixed canonical request bytes.
@@ -24,15 +35,17 @@ final class DailyOS_Hmac_Signer {
 	 * @param string $path_query Request path and query string exactly as sent.
 	 * @param string $content_type Content-Type header value.
 	 * @param string $body_bytes Exact request body bytes.
+	 * @param array<string, string> $identity Canonical identity fields.
 	 * @param string $nonce X-DailyOS-Nonce header value.
 	 * @param string $timestamp X-DailyOS-Timestamp header value.
 	 * @return string Canonical request bytes.
 	 */
-	public function canonical_request(
+	public function canonical_bytes(
 		string $method,
 		string $path_query,
 		string $content_type,
 		string $body_bytes,
+		array $identity,
 		string $nonce,
 		string $timestamp
 	): string {
@@ -42,14 +55,23 @@ final class DailyOS_Hmac_Signer {
 		$this->assert_utf8( 'method', $normalized_method );
 		$this->assert_utf8( 'path_query', $path_query );
 		$this->assert_utf8( 'content_type', $normalized_content_type );
+		$this->assert_ascii( 'method', $normalized_method );
 		$this->assert_utf8( 'nonce', $nonce );
 		$this->assert_utf8( 'timestamp', $timestamp );
 
-		return self::DOMAIN_SEPARATOR . "\n"
+		$canonical_bytes = self::DOMAIN_SEPARATOR . "\n"
 			. $this->canonical_field( 'method', $normalized_method )
 			. $this->canonical_field( 'path_query', $path_query )
 			. $this->canonical_field( 'content_type', $normalized_content_type )
-			. $this->canonical_field( 'body', $body_bytes )
+			. $this->canonical_field( 'body', $body_bytes );
+
+		foreach ( self::IDENTITY_FIELDS as $field ) {
+			$value = isset( $identity[ $field ] ) ? (string) $identity[ $field ] : '';
+			$this->assert_utf8( $field, $value );
+			$canonical_bytes .= $this->canonical_field( $field, $value );
+		}
+
+		return $canonical_bytes
 			. $this->canonical_field( 'nonce', $nonce )
 			. $this->canonical_field( 'timestamp', $timestamp );
 	}
@@ -62,6 +84,7 @@ final class DailyOS_Hmac_Signer {
 	 * @param string           $path_query Request path and query string exactly as sent.
 	 * @param string           $content_type Content-Type header value.
 	 * @param string           $body_bytes Exact request body bytes.
+	 * @param array<string, string> $identity Canonical identity fields.
 	 * @param string           $nonce X-DailyOS-Nonce header value.
 	 * @param string           $timestamp X-DailyOS-Timestamp header value.
 	 * @return string Header value in v1=<lowercase-hex> form.
@@ -72,14 +95,16 @@ final class DailyOS_Hmac_Signer {
 		string $path_query,
 		string $content_type,
 		string $body_bytes,
+		array $identity,
 		string $nonce,
 		string $timestamp
 	): string {
-		$canonical_bytes = $this->canonical_request(
+		$canonical_bytes = $this->canonical_bytes(
 			$method,
 			$path_query,
 			$content_type,
 			$body_bytes,
+			$identity,
 			$nonce,
 			$timestamp
 		);
@@ -97,12 +122,12 @@ final class DailyOS_Hmac_Signer {
 	}
 
 	/**
-	 * Return the current UTC timestamp in RFC3339 form with a trailing Z.
+	 * Return the current Unix timestamp as ASCII decimal seconds.
 	 *
 	 * @return string Timestamp.
 	 */
 	public function current_timestamp(): string {
-		return gmdate( 'Y-m-d\TH:i:s\Z', time() );
+		return (string) time();
 	}
 
 	/**
@@ -127,6 +152,20 @@ final class DailyOS_Hmac_Signer {
 	private function assert_utf8( string $label, string $value ): void {
 		if ( 1 !== preg_match( '//u', $value ) ) {
 			throw new InvalidArgumentException( 'DailyOS canonical field is not valid UTF-8: ' . esc_html( $label ) );
+		}
+	}
+
+	/**
+	 * Assert that an ASCII-only canonical field has no non-ASCII bytes.
+	 *
+	 * @param string $label Field label.
+	 * @param string $value Field value.
+	 *
+	 * @throws InvalidArgumentException When the field is not ASCII.
+	 */
+	private function assert_ascii( string $label, string $value ): void {
+		if ( 1 !== preg_match( '/^[\x00-\x7F]*$/', $value ) ) {
+			throw new InvalidArgumentException( 'DailyOS canonical field is not ASCII: ' . esc_html( $label ) );
 		}
 	}
 }

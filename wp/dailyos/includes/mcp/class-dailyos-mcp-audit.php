@@ -22,7 +22,6 @@ final class DailyOS_Mcp_Audit {
 	 * @var array<int, string>
 	 */
 	private const REQUIRED_KEYS = [
-		'mcp_server_name',
 		'mcp_exposure_path',
 		'wp_user_id',
 		'ability_name',

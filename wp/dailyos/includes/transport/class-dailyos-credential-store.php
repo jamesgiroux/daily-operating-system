@@ -66,10 +66,21 @@ final class DailyOS_Credential_Store {
 		$runtime_instance_id = isset( $marker['runtime_instance_id'] ) ? (string) $marker['runtime_instance_id'] : '';
 		$instance_id         = isset( $marker['instance_id'] ) ? (string) $marker['instance_id'] : $runtime_instance_id;
 
+		$site_nonce_full = isset( $marker['site_nonce_full'] )
+			? (string) $marker['site_nonce_full']
+			: (string) ( $marker['site_nonce'] ?? '' );
+
 		$normalized_marker = [
 			'marker_version'      => 1,
 			'runtime_instance_id' => $runtime_instance_id,
+			'surface_client_id'   => isset( $marker['surface_client_id'] ) ? (string) $marker['surface_client_id'] : $runtime_instance_id,
+			'runtime_url'         => isset( $marker['runtime_url'] ) ? (string) $marker['runtime_url'] : '',
 			'site_nonce_hash'     => isset( $marker['site_nonce_hash'] ) ? (string) $marker['site_nonce_hash'] : '',
+			'site_nonce_full'     => $site_nonce_full,
+			'site_binding_digest' => isset( $marker['site_binding_digest'] ) ? (string) $marker['site_binding_digest'] : '',
+			'wp_site_id'          => isset( $marker['wp_site_id'] ) ? (string) $marker['wp_site_id'] : '',
+			'wp_install_uuid'     => isset( $marker['wp_install_uuid'] ) ? (string) $marker['wp_install_uuid'] : '',
+			'plugin_instance_uuid' => isset( $marker['plugin_instance_uuid'] ) ? (string) $marker['plugin_instance_uuid'] : '',
 			'projection_version'  => isset( $marker['projection_version'] ) ? (string) $marker['projection_version'] : '',
 			'instance_id'         => $instance_id,
 			'session_id'          => isset( $marker['session_id'] ) ? (string) $marker['session_id'] : '',

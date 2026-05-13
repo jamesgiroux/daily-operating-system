@@ -195,7 +195,6 @@ final class DailyOS_McpExposureNoneTest extends TestCase {
 		$this->assertCount( 1, $GLOBALS['dailyos_test_audit_events'] );
 		$this->assertSame(
 			[
-				'mcp_server_name'    => 'DailyOS Substrate',
 				'mcp_exposure_path'  => DailyOS_Mcp_Audit::EXPOSURE_INVOCABLE,
 				'wp_user_id'         => 42,
 				'ability_name'       => 'dailyos/account-overview',
