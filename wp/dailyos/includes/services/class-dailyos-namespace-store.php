@@ -28,6 +28,9 @@ final class DailyOS_Namespace_Store {
 			'post_meta'  => $this->get_post_meta_keys_like( '_dailyos_' ),
 			'transients' => $this->get_dailyos_transient_option_names(),
 			'tables'     => $this->get_dailyos_table_names(),
+			'post_types' => $this->get_dailyos_post_types(),
+			'user_meta'  => $this->get_user_meta_keys_like( 'dailyos_' ),
+			'roles'      => $this->get_dailyos_role_slugs(),
 		];
 	}
 
@@ -115,6 +118,70 @@ final class DailyOS_Namespace_Store {
 		);
 
 		return array_map( 'strval', $wpdb->get_col( $sql ) );
+	}
+
+	/**
+	 * Return distinct post_type values in wp_posts that match the DailyOS prefix.
+	 *
+	 * @return array<int, string>
+	 */
+	private function get_dailyos_post_types(): array {
+		global $wpdb;
+
+		$like = $wpdb->esc_like( 'dailyos_' ) . '%';
+		$sql  = $wpdb->prepare(
+			"SELECT DISTINCT post_type FROM {$wpdb->posts} WHERE post_type LIKE %s",
+			$like
+		);
+
+		return array_map( 'strval', $wpdb->get_col( $sql ) );
+	}
+
+	/**
+	 * Return distinct user_meta keys matching the given prefix.
+	 *
+	 * @param string $prefix Meta key prefix.
+	 * @return array<int, string>
+	 */
+	private function get_user_meta_keys_like( string $prefix ): array {
+		global $wpdb;
+
+		$like = $wpdb->esc_like( $prefix ) . '%';
+		$sql  = $wpdb->prepare(
+			"SELECT DISTINCT meta_key FROM {$wpdb->usermeta} WHERE meta_key LIKE %s",
+			$like
+		);
+
+		return array_map( 'strval', $wpdb->get_col( $sql ) );
+	}
+
+	/**
+	 * Return DailyOS-prefixed role slugs currently registered with WP.
+	 *
+	 * @return array<int, string>
+	 */
+	private function get_dailyos_role_slugs(): array {
+		if ( ! function_exists( 'wp_roles' ) ) {
+			return [];
+		}
+
+		$roles = wp_roles();
+
+		if ( ! is_object( $roles ) || ! isset( $roles->role_names ) || ! is_array( $roles->role_names ) ) {
+			return [];
+		}
+
+		$matches = [];
+
+		foreach ( $roles->role_names as $slug => $_name ) {
+			if ( is_string( $slug ) && 0 === strncmp( $slug, 'dailyos_', 8 ) ) {
+				$matches[] = $slug;
+			}
+		}
+
+		sort( $matches );
+
+		return $matches;
 	}
 
 	/**

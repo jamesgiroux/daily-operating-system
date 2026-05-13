@@ -98,11 +98,47 @@ final class DailyOS_ActivationTest extends TestCase {
 	}
 
 	/**
+	 * Pre-existing dailyos_-prefixed post type without a marker refuses activation.
+	 */
+	public function test_activation_refuses_with_pre_existing_dailyos_post_type(): void {
+		$GLOBALS['dailyos_test_post_types'] = [ 'dailyos_briefing' ];
+
+		$this->expectException( \RuntimeException::class );
+		$this->expectExceptionMessage( 'DailyOS detected pre-existing dailyos_* data' );
+
+		DailyOS_Activation::activate();
+	}
+
+	/**
+	 * Pre-existing dailyos_-prefixed user_meta without a marker refuses activation.
+	 */
+	public function test_activation_refuses_with_pre_existing_dailyos_user_meta(): void {
+		$GLOBALS['dailyos_test_user_meta_keys'] = [ 'dailyos_attribution' ];
+
+		$this->expectException( \RuntimeException::class );
+		$this->expectExceptionMessage( 'DailyOS detected pre-existing dailyos_* data' );
+
+		DailyOS_Activation::activate();
+	}
+
+	/**
+	 * Pre-existing non-substrate dailyos_-prefixed role refuses activation.
+	 */
+	public function test_activation_refuses_with_pre_existing_foreign_dailyos_role(): void {
+		add_role( 'dailyos_intruder', 'DailyOS Intruder', [ 'read' => true ] );
+
+		$this->expectException( \RuntimeException::class );
+		$this->expectExceptionMessage( 'DailyOS detected pre-existing dailyos_* data' );
+
+		DailyOS_Activation::activate();
+	}
+
+	/**
 	 * Dirty namespace with a mismatching marker refuses activation.
 	 */
 	public function test_activation_branch_dirty_namespace_with_mismatching_marker_refuses(): void {
 		$marker                        = $this->valid_marker();
-		$marker['runtime_instance_id'] = 'runtime-mismatch';
+		$marker['runtime_instance_id'] = '00000000-0000-4000-8000-000000000999';
 
 		update_option( 'dailyos_projection_cache', 'present', false );
 		update_option( DailyOS_Activation::PAIRING_MARKER_OPTION, $marker, false );
@@ -177,7 +213,7 @@ final class DailyOS_ActivationTest extends TestCase {
 		$missing_required               = $valid;
 		$mismatching_runtime_instance   = $valid;
 		$missing_required['session_id'] = '';
-		$mismatching_runtime_instance['runtime_instance_id'] = 'runtime-mismatch';
+		$mismatching_runtime_instance['runtime_instance_id'] = '00000000-0000-4000-8000-000000000999';
 
 		return [
 			'not-array'                    => [ 'not-a-marker' ],
@@ -219,7 +255,7 @@ final class DailyOS_ActivationTest extends TestCase {
 	private static function static_valid_marker(): array {
 		return [
 			'marker_version'       => 1,
-			'runtime_instance_id'  => 'runtime-123',
+			'runtime_instance_id'  => '00000000-0000-4000-8000-000000000301',
 			'runtime_url'          => 'http://127.0.0.1:54321',
 			'site_nonce_hash'      => str_repeat( 'a', 64 ),
 			'site_nonce_full'      => 'siteNonceAlpha123',
@@ -228,7 +264,7 @@ final class DailyOS_ActivationTest extends TestCase {
 			'wp_install_uuid'      => 'install-1',
 			'plugin_instance_uuid' => 'plugin-1',
 			'projection_version'   => '2026.05.13',
-			'instance_id'          => 'runtime-123',
+			'instance_id'          => '00000000-0000-4000-8000-000000000301',
 			'session_id'           => 'session-123',
 			'granted_scopes'       => [ 'read.account_overview' ],
 			'endpoint_version'     => 'v1',

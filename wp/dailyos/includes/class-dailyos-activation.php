@@ -109,7 +109,19 @@ final class DailyOS_Activation {
 			return true;
 		}
 
-		return ! empty( $report['post_meta'] ) || ! empty( $report['transients'] ) || ! empty( $report['tables'] );
+		foreach ( $report['roles'] ?? [] as $role_slug ) {
+			if ( DailyOS_Mcp_Roles::ROLE_SLUG === $role_slug && self::has_recoverable_substrate_user() ) {
+				continue;
+			}
+
+			return true;
+		}
+
+		return ! empty( $report['post_meta'] )
+			|| ! empty( $report['transients'] )
+			|| ! empty( $report['tables'] )
+			|| ! empty( $report['post_types'] )
+			|| ! empty( $report['user_meta'] );
 	}
 
 	/**
@@ -145,7 +157,70 @@ final class DailyOS_Activation {
 			}
 		}
 
-		return isset( $marker['granted_scopes'] ) && is_array( $marker['granted_scopes'] );
+		if ( ! isset( $marker['granted_scopes'] ) || ! is_array( $marker['granted_scopes'] ) ) {
+			return false;
+		}
+
+		// Per L0 V4: the marker is a namespace-vacancy heuristic, not authoritative.
+		// Tightening the well-formedness gate raises the cost of trivial forgery
+		// without claiming the marker proves runtime ownership. Runtime-state
+		// attestation remains load-bearing at first signed request.
+		if ( ! self::is_uuid_like( (string) $marker['runtime_instance_id'] ) ) {
+			return false;
+		}
+
+		if ( ! self::is_uuid_like( (string) $marker['instance_id'] ) ) {
+			return false;
+		}
+
+		if ( ! self::is_well_formed_gmt( (string) $marker['paired_at_gmt'] ) ) {
+			return false;
+		}
+
+		if ( ! self::is_well_formed_gmt( (string) $marker['last_use_gmt'] ) ) {
+			return false;
+		}
+
+		if ( ! self::is_well_formed_endpoint_version( (string) $marker['endpoint_version'] ) ) {
+			return false;
+		}
+
+		return true;
+	}
+
+	/**
+	 * Accept canonical RFC 4122 UUID forms (mixed case, hyphenated).
+	 *
+	 * @param string $value Candidate UUID string.
+	 */
+	private static function is_uuid_like( string $value ): bool {
+		return 1 === preg_match( '/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/', $value );
+	}
+
+	/**
+	 * Accept ISO-8601 UTC timestamps either as RFC3339-Z or `Y-m-d H:i:s` GMT.
+	 *
+	 * @param string $value Candidate timestamp string.
+	 */
+	private static function is_well_formed_gmt( string $value ): bool {
+		if ( 1 === preg_match( '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/', $value ) ) {
+			return false !== strtotime( $value );
+		}
+
+		if ( 1 === preg_match( '/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $value ) ) {
+			return false !== strtotime( $value . ' UTC' );
+		}
+
+		return false;
+	}
+
+	/**
+	 * Endpoint versions follow the `v<N>` shape produced by the runtime pairing handshake.
+	 *
+	 * @param string $value Candidate endpoint-version string.
+	 */
+	private static function is_well_formed_endpoint_version( string $value ): bool {
+		return 1 === preg_match( '/^v\d+$/', $value );
 	}
 
 	/**

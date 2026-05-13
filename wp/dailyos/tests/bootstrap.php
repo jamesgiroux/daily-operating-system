@@ -26,6 +26,8 @@ namespace {
 	$GLOBALS['dailyos_test_deleted_users']        = [];
 	$GLOBALS['dailyos_test_options']              = [];
 	$GLOBALS['dailyos_test_post_meta_keys']       = [];
+	$GLOBALS['dailyos_test_user_meta_keys']       = [];
+	$GLOBALS['dailyos_test_post_types']           = [];
 	$GLOBALS['dailyos_test_tables']               = [];
 	$GLOBALS['dailyos_test_audit_events']         = [];
 	$GLOBALS['dailyos_test_error_log']            = [];
@@ -91,6 +93,8 @@ namespace {
 		$GLOBALS['dailyos_test_deleted_users']        = [];
 		$GLOBALS['dailyos_test_options']              = [];
 		$GLOBALS['dailyos_test_post_meta_keys']       = [];
+		$GLOBALS['dailyos_test_user_meta_keys']       = [];
+		$GLOBALS['dailyos_test_post_types']           = [];
 		$GLOBALS['dailyos_test_tables']               = [];
 		$GLOBALS['dailyos_test_audit_events']         = [];
 		$GLOBALS['dailyos_test_error_log']            = [];
@@ -118,6 +122,8 @@ namespace {
 	$GLOBALS['wpdb'] = new class() {
 		public string $options = 'wp_options';
 		public string $postmeta = 'wp_postmeta';
+		public string $posts = 'wp_posts';
+		public string $usermeta = 'wp_usermeta';
 		public string $prefix = 'wp_';
 
 		public function esc_like( string $text ): string {
@@ -165,6 +171,28 @@ namespace {
 						$GLOBALS['dailyos_test_post_meta_keys'],
 						static function ( string $meta_key ): bool {
 							return str_starts_with( $meta_key, '_dailyos_' );
+						}
+					)
+				);
+			}
+
+			if ( str_contains( $sql, $this->usermeta ) ) {
+				return array_values(
+					array_filter(
+						$GLOBALS['dailyos_test_user_meta_keys'] ?? [],
+						static function ( string $meta_key ): bool {
+							return str_starts_with( $meta_key, 'dailyos_' );
+						}
+					)
+				);
+			}
+
+			if ( str_contains( $sql, $this->posts ) ) {
+				return array_values(
+					array_filter(
+						$GLOBALS['dailyos_test_post_types'] ?? [],
+						static function ( string $post_type ): bool {
+							return str_starts_with( $post_type, 'dailyos_' );
 						}
 					)
 				);
@@ -374,6 +402,28 @@ namespace {
 	if ( ! function_exists( 'remove_role' ) ) {
 		function remove_role( string $role ): void {
 			unset( $GLOBALS['dailyos_test_roles'][ $role ] );
+		}
+	}
+
+	if ( ! function_exists( 'wp_roles' ) ) {
+		function wp_roles(): object {
+			return new class() {
+				/**
+				 * Slug → display name pairs, sourced from the test role registry.
+				 *
+				 * @var array<string, string>
+				 */
+				public array $role_names;
+
+				public function __construct() {
+					$this->role_names = [];
+
+					foreach ( $GLOBALS['dailyos_test_roles'] ?? [] as $slug => $role ) {
+						$display              = is_object( $role ) && isset( $role->name ) ? (string) $role->name : (string) $slug;
+						$this->role_names[ $slug ] = $display;
+					}
+				}
+			};
 		}
 	}
 
