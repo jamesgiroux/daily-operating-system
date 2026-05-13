@@ -1,0 +1,63 @@
+{
+  "pair_id": "cross_tier_002",
+  "bucket": "cross_tier",
+  "expected_decision": "fork",
+  "source": "synthetic",
+  "claim_a": {
+    "claim_type": "engagement_topic",
+    "field_path": "topic.mentioned",
+    "object": {
+      "canonical": "support_quality",
+      "kind": "free_text"
+    },
+    "polarity": "affirm",
+    "predicate": "topic_mentioned",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "confidential",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "person_001",
+      "kind": "person"
+    },
+    "text": "The team raised competitive displacement risk on the call.",
+    "tier_key": "state:confidential",
+    "workspace_id": "workspace_alpha"
+  },
+  "claim_b": {
+    "claim_type": "engagement_topic",
+    "field_path": "topic.mentioned",
+    "object": {
+      "canonical": "support_quality",
+      "kind": "free_text"
+    },
+    "polarity": "affirm",
+    "predicate": "topic_mentioned",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "person_001",
+      "kind": "person"
+    },
+    "text": "The team raised competitive displacement risk on the call.",
+    "tier_key": "state:internal",
+    "workspace_id": "workspace_alpha"
+  },
+  "rationale": "Sensitivity tiers differ in a non-compatible direction and must be filtered before v2 comparison."
+}

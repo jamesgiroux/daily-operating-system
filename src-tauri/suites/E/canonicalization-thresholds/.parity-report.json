@@ -3,19 +3,23 @@
   "corpus_dir": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds",
   "canonicalization_mode": "shadow",
   "comparator_threshold_version": "adr-0131-thresholds:v1",
-  "pair_count": 500,
+  "pair_count": 540,
   "bucket_counts": {
     "asymmetric_qualifiers": 50,
     "contradictions": 75,
+    "cross_tier": 10,
+    "cross_workspace": 10,
     "hard_negatives": 150,
+    "legacy_unmigrated": 10,
     "low_trust_duplicates": 25,
-    "positive_paraphrases": 200
+    "positive_paraphrases": 200,
+    "tombstone_shadowed": 10
   },
   "metrics": {
     "ambiguous_rate_per_bucket": {
       "label": "Ambiguous-rate per bucket",
       "numerator": 0,
-      "denominator": 500,
+      "denominator": 540,
       "value": 0.0,
       "target": "<= 0.05 per label bucket",
       "per_bucket": {
@@ -29,9 +33,24 @@
           "denominator": 75,
           "value": 0.0
         },
+        "cross_tier": {
+          "numerator": 0,
+          "denominator": 10,
+          "value": 0.0
+        },
+        "cross_workspace": {
+          "numerator": 0,
+          "denominator": 10,
+          "value": 0.0
+        },
         "hard_negatives": {
           "numerator": 0,
           "denominator": 150,
+          "value": 0.0
+        },
+        "legacy_unmigrated": {
+          "numerator": 0,
+          "denominator": 10,
           "value": 0.0
         },
         "low_trust_duplicates": {
@@ -42,6 +61,11 @@
         "positive_paraphrases": {
           "numerator": 0,
           "denominator": 200,
+          "value": 0.0
+        },
+        "tombstone_shadowed": {
+          "numerator": 0,
+          "denominator": 10,
           "value": 0.0
         }
       }
@@ -63,42 +87,42 @@
     "cross_tier_merge_rate": {
       "label": "Cross-tier merge rate",
       "numerator": 0,
-      "denominator": 0,
+      "denominator": 10,
       "value": 0.0,
       "target": "= 0"
     },
     "cross_workspace_merge_rate": {
       "label": "Cross-workspace merge rate",
       "numerator": 0,
-      "denominator": 0,
+      "denominator": 10,
       "value": 0.0,
       "target": "= 0"
     },
     "false_merge_rate": {
       "label": "False-merge rate",
       "numerator": 0,
-      "denominator": 500,
+      "denominator": 540,
       "value": 0.0,
       "target": "<= 0.005; false merges are double-weighted at gate review"
     },
     "legacy_unmigrated_merge_rate": {
       "label": "Legacy-unmigrated merge rate",
       "numerator": 0,
-      "denominator": 0,
+      "denominator": 10,
       "value": 0.0,
       "target": "= 0"
     },
     "tombstone_bypass_rate": {
       "label": "Tombstone-bypass rate",
       "numerator": 0,
-      "denominator": 0,
+      "denominator": 10,
       "value": 0.0,
       "target": "= 0"
     },
     "true_fork_recall": {
       "label": "True-fork recall",
-      "numerator": 200,
-      "denominator": 200,
+      "numerator": 240,
+      "denominator": 240,
       "value": 1.0,
       "target": ">= 0.95 on should_fork corpus"
     },
@@ -120,7 +144,7 @@
   "buckets": {
     "asymmetric_qualifiers": {
       "total": 50,
-      "target_share": "10%",
+      "target_share": "9.26%",
       "expected_decisions": {
         "fork": 50
       },
@@ -131,18 +155,40 @@
     },
     "contradictions": {
       "total": 75,
-      "target_share": "15%",
+      "target_share": "13.89%",
       "expected_decisions": {
         "contradict": 75
       },
       "v2_decisions": {
         "contradict": 75
+      },
+      "expected_mismatches": 0
+    },
+    "cross_tier": {
+      "total": 10,
+      "target_share": "1.85%",
+      "expected_decisions": {
+        "fork": 10
+      },
+      "v2_decisions": {
+        "fork": 10
+      },
+      "expected_mismatches": 0
+    },
+    "cross_workspace": {
+      "total": 10,
+      "target_share": "1.85%",
+      "expected_decisions": {
+        "fork": 10
+      },
+      "v2_decisions": {
+        "fork": 10
       },
       "expected_mismatches": 0
     },
     "hard_negatives": {
       "total": 150,
-      "target_share": "30%",
+      "target_share": "27.78%",
       "expected_decisions": {
         "fork": 150
       },
@@ -151,9 +197,20 @@
       },
       "expected_mismatches": 0
     },
+    "legacy_unmigrated": {
+      "total": 10,
+      "target_share": "1.85%",
+      "expected_decisions": {
+        "fork": 10
+      },
+      "v2_decisions": {
+        "fork": 10
+      },
+      "expected_mismatches": 0
+    },
     "low_trust_duplicates": {
       "total": 25,
-      "target_share": "5%",
+      "target_share": "4.63%",
       "expected_decisions": {
         "merge": 25
       },
@@ -164,12 +221,23 @@
     },
     "positive_paraphrases": {
       "total": 200,
-      "target_share": "40%",
+      "target_share": "37.04%",
       "expected_decisions": {
         "merge": 200
       },
       "v2_decisions": {
         "merge": 200
+      },
+      "expected_mismatches": 0
+    },
+    "tombstone_shadowed": {
+      "total": 10,
+      "target_share": "1.85%",
+      "expected_decisions": {
+        "fork": 10
+      },
+      "v2_decisions": {
+        "fork": 10
       },
       "expected_mismatches": 0
     }
@@ -14096,6 +14164,966 @@
       "cross_workspace": false,
       "legacy_unmigrated": false,
       "rationale": "Structurally identical pairs that v2 currently auto-merges; the wave-plan intent of routing low-trust duplicates to needs_verification requires trust-signal wiring not yet carried into the parity input — tracked separately."
+    },
+    {
+      "pair_id": "tombstone_shadowed_001",
+      "bucket": "tombstone_shadowed",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/tombstone_shadowed/tombstone_shadowed_001.json",
+      "expected_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "v2_reason": "candidate_tombstoned",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "candidate_tombstoned"
+      },
+      "tombstone_scoped": true,
+      "cross_tier": false,
+      "cross_account": false,
+      "cross_workspace": false,
+      "legacy_unmigrated": false,
+      "rationale": "Candidate is shadowed by a compatible tombstone and must be filtered before v2 comparison."
+    },
+    {
+      "pair_id": "tombstone_shadowed_002",
+      "bucket": "tombstone_shadowed",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/tombstone_shadowed/tombstone_shadowed_002.json",
+      "expected_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "v2_reason": "candidate_tombstoned",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "candidate_tombstoned"
+      },
+      "tombstone_scoped": true,
+      "cross_tier": false,
+      "cross_account": false,
+      "cross_workspace": false,
+      "legacy_unmigrated": false,
+      "rationale": "Candidate is shadowed by a compatible tombstone and must be filtered before v2 comparison."
+    },
+    {
+      "pair_id": "tombstone_shadowed_003",
+      "bucket": "tombstone_shadowed",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/tombstone_shadowed/tombstone_shadowed_003.json",
+      "expected_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "v2_reason": "candidate_tombstoned",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "candidate_tombstoned"
+      },
+      "tombstone_scoped": true,
+      "cross_tier": false,
+      "cross_account": false,
+      "cross_workspace": false,
+      "legacy_unmigrated": false,
+      "rationale": "Candidate is shadowed by a compatible tombstone and must be filtered before v2 comparison."
+    },
+    {
+      "pair_id": "tombstone_shadowed_004",
+      "bucket": "tombstone_shadowed",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/tombstone_shadowed/tombstone_shadowed_004.json",
+      "expected_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "v2_reason": "candidate_tombstoned",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "candidate_tombstoned"
+      },
+      "tombstone_scoped": true,
+      "cross_tier": false,
+      "cross_account": false,
+      "cross_workspace": false,
+      "legacy_unmigrated": false,
+      "rationale": "Candidate is shadowed by a compatible tombstone and must be filtered before v2 comparison."
+    },
+    {
+      "pair_id": "tombstone_shadowed_005",
+      "bucket": "tombstone_shadowed",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/tombstone_shadowed/tombstone_shadowed_005.json",
+      "expected_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "v2_reason": "candidate_tombstoned",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "candidate_tombstoned"
+      },
+      "tombstone_scoped": true,
+      "cross_tier": false,
+      "cross_account": false,
+      "cross_workspace": false,
+      "legacy_unmigrated": false,
+      "rationale": "Candidate is shadowed by a compatible tombstone and must be filtered before v2 comparison."
+    },
+    {
+      "pair_id": "tombstone_shadowed_006",
+      "bucket": "tombstone_shadowed",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/tombstone_shadowed/tombstone_shadowed_006.json",
+      "expected_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "v2_reason": "candidate_tombstoned",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "candidate_tombstoned"
+      },
+      "tombstone_scoped": true,
+      "cross_tier": false,
+      "cross_account": false,
+      "cross_workspace": false,
+      "legacy_unmigrated": false,
+      "rationale": "Candidate is shadowed by a compatible tombstone and must be filtered before v2 comparison."
+    },
+    {
+      "pair_id": "tombstone_shadowed_007",
+      "bucket": "tombstone_shadowed",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/tombstone_shadowed/tombstone_shadowed_007.json",
+      "expected_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "v2_reason": "candidate_tombstoned",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "candidate_tombstoned"
+      },
+      "tombstone_scoped": true,
+      "cross_tier": false,
+      "cross_account": false,
+      "cross_workspace": false,
+      "legacy_unmigrated": false,
+      "rationale": "Candidate is shadowed by a compatible tombstone and must be filtered before v2 comparison."
+    },
+    {
+      "pair_id": "tombstone_shadowed_008",
+      "bucket": "tombstone_shadowed",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/tombstone_shadowed/tombstone_shadowed_008.json",
+      "expected_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "v2_reason": "candidate_tombstoned",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "candidate_tombstoned"
+      },
+      "tombstone_scoped": true,
+      "cross_tier": false,
+      "cross_account": false,
+      "cross_workspace": false,
+      "legacy_unmigrated": false,
+      "rationale": "Candidate is shadowed by a compatible tombstone and must be filtered before v2 comparison."
+    },
+    {
+      "pair_id": "tombstone_shadowed_009",
+      "bucket": "tombstone_shadowed",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/tombstone_shadowed/tombstone_shadowed_009.json",
+      "expected_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "v2_reason": "candidate_tombstoned",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "candidate_tombstoned"
+      },
+      "tombstone_scoped": true,
+      "cross_tier": false,
+      "cross_account": false,
+      "cross_workspace": false,
+      "legacy_unmigrated": false,
+      "rationale": "Candidate is shadowed by a compatible tombstone and must be filtered before v2 comparison."
+    },
+    {
+      "pair_id": "tombstone_shadowed_010",
+      "bucket": "tombstone_shadowed",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/tombstone_shadowed/tombstone_shadowed_010.json",
+      "expected_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "v2_reason": "candidate_tombstoned",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "candidate_tombstoned"
+      },
+      "tombstone_scoped": true,
+      "cross_tier": false,
+      "cross_account": false,
+      "cross_workspace": false,
+      "legacy_unmigrated": false,
+      "rationale": "Candidate is shadowed by a compatible tombstone and must be filtered before v2 comparison."
+    },
+    {
+      "pair_id": "cross_tier_001",
+      "bucket": "cross_tier",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/cross_tier/cross_tier_001.json",
+      "expected_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "v2_reason": "tier_mismatch",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "tier_mismatch"
+      },
+      "tombstone_scoped": false,
+      "cross_tier": true,
+      "cross_account": false,
+      "cross_workspace": false,
+      "legacy_unmigrated": false,
+      "rationale": "Sensitivity tiers differ in a non-compatible direction and must be filtered before v2 comparison."
+    },
+    {
+      "pair_id": "cross_tier_002",
+      "bucket": "cross_tier",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/cross_tier/cross_tier_002.json",
+      "expected_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "v2_reason": "tier_mismatch",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "tier_mismatch"
+      },
+      "tombstone_scoped": false,
+      "cross_tier": true,
+      "cross_account": false,
+      "cross_workspace": false,
+      "legacy_unmigrated": false,
+      "rationale": "Sensitivity tiers differ in a non-compatible direction and must be filtered before v2 comparison."
+    },
+    {
+      "pair_id": "cross_tier_003",
+      "bucket": "cross_tier",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/cross_tier/cross_tier_003.json",
+      "expected_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "v2_reason": "tier_mismatch",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "tier_mismatch"
+      },
+      "tombstone_scoped": false,
+      "cross_tier": true,
+      "cross_account": false,
+      "cross_workspace": false,
+      "legacy_unmigrated": false,
+      "rationale": "Sensitivity tiers differ in a non-compatible direction and must be filtered before v2 comparison."
+    },
+    {
+      "pair_id": "cross_tier_004",
+      "bucket": "cross_tier",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/cross_tier/cross_tier_004.json",
+      "expected_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "v2_reason": "tier_mismatch",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "tier_mismatch"
+      },
+      "tombstone_scoped": false,
+      "cross_tier": true,
+      "cross_account": false,
+      "cross_workspace": false,
+      "legacy_unmigrated": false,
+      "rationale": "Sensitivity tiers differ in a non-compatible direction and must be filtered before v2 comparison."
+    },
+    {
+      "pair_id": "cross_tier_005",
+      "bucket": "cross_tier",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/cross_tier/cross_tier_005.json",
+      "expected_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "v2_reason": "tier_mismatch",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "tier_mismatch"
+      },
+      "tombstone_scoped": false,
+      "cross_tier": true,
+      "cross_account": false,
+      "cross_workspace": false,
+      "legacy_unmigrated": false,
+      "rationale": "Sensitivity tiers differ in a non-compatible direction and must be filtered before v2 comparison."
+    },
+    {
+      "pair_id": "cross_tier_006",
+      "bucket": "cross_tier",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/cross_tier/cross_tier_006.json",
+      "expected_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "v2_reason": "tier_mismatch",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "tier_mismatch"
+      },
+      "tombstone_scoped": false,
+      "cross_tier": true,
+      "cross_account": false,
+      "cross_workspace": false,
+      "legacy_unmigrated": false,
+      "rationale": "Sensitivity tiers differ in a non-compatible direction and must be filtered before v2 comparison."
+    },
+    {
+      "pair_id": "cross_tier_007",
+      "bucket": "cross_tier",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/cross_tier/cross_tier_007.json",
+      "expected_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "v2_reason": "tier_mismatch",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "tier_mismatch"
+      },
+      "tombstone_scoped": false,
+      "cross_tier": true,
+      "cross_account": false,
+      "cross_workspace": false,
+      "legacy_unmigrated": false,
+      "rationale": "Sensitivity tiers differ in a non-compatible direction and must be filtered before v2 comparison."
+    },
+    {
+      "pair_id": "cross_tier_008",
+      "bucket": "cross_tier",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/cross_tier/cross_tier_008.json",
+      "expected_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "v2_reason": "tier_mismatch",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "tier_mismatch"
+      },
+      "tombstone_scoped": false,
+      "cross_tier": true,
+      "cross_account": false,
+      "cross_workspace": false,
+      "legacy_unmigrated": false,
+      "rationale": "Sensitivity tiers differ in a non-compatible direction and must be filtered before v2 comparison."
+    },
+    {
+      "pair_id": "cross_tier_009",
+      "bucket": "cross_tier",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/cross_tier/cross_tier_009.json",
+      "expected_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "v2_reason": "tier_mismatch",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "tier_mismatch"
+      },
+      "tombstone_scoped": false,
+      "cross_tier": true,
+      "cross_account": false,
+      "cross_workspace": false,
+      "legacy_unmigrated": false,
+      "rationale": "Sensitivity tiers differ in a non-compatible direction and must be filtered before v2 comparison."
+    },
+    {
+      "pair_id": "cross_tier_010",
+      "bucket": "cross_tier",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/cross_tier/cross_tier_010.json",
+      "expected_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "v2_reason": "tier_mismatch",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "tier_mismatch"
+      },
+      "tombstone_scoped": false,
+      "cross_tier": true,
+      "cross_account": false,
+      "cross_workspace": false,
+      "legacy_unmigrated": false,
+      "rationale": "Sensitivity tiers differ in a non-compatible direction and must be filtered before v2 comparison."
+    },
+    {
+      "pair_id": "cross_workspace_001",
+      "bucket": "cross_workspace",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/cross_workspace/cross_workspace_001.json",
+      "expected_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "v2_reason": "workspace_scope",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "workspace_scope"
+      },
+      "tombstone_scoped": false,
+      "cross_tier": false,
+      "cross_account": false,
+      "cross_workspace": true,
+      "legacy_unmigrated": false,
+      "rationale": "Workspace scope differs and must be filtered before v2 comparison."
+    },
+    {
+      "pair_id": "cross_workspace_002",
+      "bucket": "cross_workspace",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/cross_workspace/cross_workspace_002.json",
+      "expected_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "v2_reason": "workspace_scope",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "workspace_scope"
+      },
+      "tombstone_scoped": false,
+      "cross_tier": false,
+      "cross_account": false,
+      "cross_workspace": true,
+      "legacy_unmigrated": false,
+      "rationale": "Workspace scope differs and must be filtered before v2 comparison."
+    },
+    {
+      "pair_id": "cross_workspace_003",
+      "bucket": "cross_workspace",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/cross_workspace/cross_workspace_003.json",
+      "expected_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "v2_reason": "workspace_scope",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "workspace_scope"
+      },
+      "tombstone_scoped": false,
+      "cross_tier": false,
+      "cross_account": false,
+      "cross_workspace": true,
+      "legacy_unmigrated": false,
+      "rationale": "Workspace scope differs and must be filtered before v2 comparison."
+    },
+    {
+      "pair_id": "cross_workspace_004",
+      "bucket": "cross_workspace",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/cross_workspace/cross_workspace_004.json",
+      "expected_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "v2_reason": "workspace_scope",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "workspace_scope"
+      },
+      "tombstone_scoped": false,
+      "cross_tier": false,
+      "cross_account": false,
+      "cross_workspace": true,
+      "legacy_unmigrated": false,
+      "rationale": "Workspace scope differs and must be filtered before v2 comparison."
+    },
+    {
+      "pair_id": "cross_workspace_005",
+      "bucket": "cross_workspace",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/cross_workspace/cross_workspace_005.json",
+      "expected_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "v2_reason": "workspace_scope",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "workspace_scope"
+      },
+      "tombstone_scoped": false,
+      "cross_tier": false,
+      "cross_account": false,
+      "cross_workspace": true,
+      "legacy_unmigrated": false,
+      "rationale": "Workspace scope differs and must be filtered before v2 comparison."
+    },
+    {
+      "pair_id": "cross_workspace_006",
+      "bucket": "cross_workspace",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/cross_workspace/cross_workspace_006.json",
+      "expected_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "v2_reason": "workspace_scope",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "workspace_scope"
+      },
+      "tombstone_scoped": false,
+      "cross_tier": false,
+      "cross_account": false,
+      "cross_workspace": true,
+      "legacy_unmigrated": false,
+      "rationale": "Workspace scope differs and must be filtered before v2 comparison."
+    },
+    {
+      "pair_id": "cross_workspace_007",
+      "bucket": "cross_workspace",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/cross_workspace/cross_workspace_007.json",
+      "expected_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "v2_reason": "workspace_scope",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "workspace_scope"
+      },
+      "tombstone_scoped": false,
+      "cross_tier": false,
+      "cross_account": false,
+      "cross_workspace": true,
+      "legacy_unmigrated": false,
+      "rationale": "Workspace scope differs and must be filtered before v2 comparison."
+    },
+    {
+      "pair_id": "cross_workspace_008",
+      "bucket": "cross_workspace",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/cross_workspace/cross_workspace_008.json",
+      "expected_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "v2_reason": "workspace_scope",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "workspace_scope"
+      },
+      "tombstone_scoped": false,
+      "cross_tier": false,
+      "cross_account": false,
+      "cross_workspace": true,
+      "legacy_unmigrated": false,
+      "rationale": "Workspace scope differs and must be filtered before v2 comparison."
+    },
+    {
+      "pair_id": "cross_workspace_009",
+      "bucket": "cross_workspace",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/cross_workspace/cross_workspace_009.json",
+      "expected_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "v2_reason": "workspace_scope",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "workspace_scope"
+      },
+      "tombstone_scoped": false,
+      "cross_tier": false,
+      "cross_account": false,
+      "cross_workspace": true,
+      "legacy_unmigrated": false,
+      "rationale": "Workspace scope differs and must be filtered before v2 comparison."
+    },
+    {
+      "pair_id": "cross_workspace_010",
+      "bucket": "cross_workspace",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/cross_workspace/cross_workspace_010.json",
+      "expected_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "v2_reason": "workspace_scope",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "workspace_scope"
+      },
+      "tombstone_scoped": false,
+      "cross_tier": false,
+      "cross_account": false,
+      "cross_workspace": true,
+      "legacy_unmigrated": false,
+      "rationale": "Workspace scope differs and must be filtered before v2 comparison."
+    },
+    {
+      "pair_id": "legacy_unmigrated_001",
+      "bucket": "legacy_unmigrated",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/legacy_unmigrated/legacy_unmigrated_001.json",
+      "expected_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "v2_reason": "candidate_legacy_unmigrated",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "candidate_legacy_unmigrated"
+      },
+      "tombstone_scoped": false,
+      "cross_tier": false,
+      "cross_account": false,
+      "cross_workspace": false,
+      "legacy_unmigrated": true,
+      "rationale": "Candidate is legacy_unmigrated and must be filtered before v2 comparison."
+    },
+    {
+      "pair_id": "legacy_unmigrated_002",
+      "bucket": "legacy_unmigrated",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/legacy_unmigrated/legacy_unmigrated_002.json",
+      "expected_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "v2_reason": "candidate_legacy_unmigrated",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "candidate_legacy_unmigrated"
+      },
+      "tombstone_scoped": false,
+      "cross_tier": false,
+      "cross_account": false,
+      "cross_workspace": false,
+      "legacy_unmigrated": true,
+      "rationale": "Candidate is legacy_unmigrated and must be filtered before v2 comparison."
+    },
+    {
+      "pair_id": "legacy_unmigrated_003",
+      "bucket": "legacy_unmigrated",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/legacy_unmigrated/legacy_unmigrated_003.json",
+      "expected_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "v2_reason": "candidate_legacy_unmigrated",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "candidate_legacy_unmigrated"
+      },
+      "tombstone_scoped": false,
+      "cross_tier": false,
+      "cross_account": false,
+      "cross_workspace": false,
+      "legacy_unmigrated": true,
+      "rationale": "Candidate is legacy_unmigrated and must be filtered before v2 comparison."
+    },
+    {
+      "pair_id": "legacy_unmigrated_004",
+      "bucket": "legacy_unmigrated",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/legacy_unmigrated/legacy_unmigrated_004.json",
+      "expected_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "v2_reason": "candidate_legacy_unmigrated",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "candidate_legacy_unmigrated"
+      },
+      "tombstone_scoped": false,
+      "cross_tier": false,
+      "cross_account": false,
+      "cross_workspace": false,
+      "legacy_unmigrated": true,
+      "rationale": "Candidate is legacy_unmigrated and must be filtered before v2 comparison."
+    },
+    {
+      "pair_id": "legacy_unmigrated_005",
+      "bucket": "legacy_unmigrated",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/legacy_unmigrated/legacy_unmigrated_005.json",
+      "expected_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "v2_reason": "candidate_legacy_unmigrated",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "candidate_legacy_unmigrated"
+      },
+      "tombstone_scoped": false,
+      "cross_tier": false,
+      "cross_account": false,
+      "cross_workspace": false,
+      "legacy_unmigrated": true,
+      "rationale": "Candidate is legacy_unmigrated and must be filtered before v2 comparison."
+    },
+    {
+      "pair_id": "legacy_unmigrated_006",
+      "bucket": "legacy_unmigrated",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/legacy_unmigrated/legacy_unmigrated_006.json",
+      "expected_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "v2_reason": "candidate_legacy_unmigrated",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "candidate_legacy_unmigrated"
+      },
+      "tombstone_scoped": false,
+      "cross_tier": false,
+      "cross_account": false,
+      "cross_workspace": false,
+      "legacy_unmigrated": true,
+      "rationale": "Candidate is legacy_unmigrated and must be filtered before v2 comparison."
+    },
+    {
+      "pair_id": "legacy_unmigrated_007",
+      "bucket": "legacy_unmigrated",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/legacy_unmigrated/legacy_unmigrated_007.json",
+      "expected_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "v2_reason": "candidate_legacy_unmigrated",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "candidate_legacy_unmigrated"
+      },
+      "tombstone_scoped": false,
+      "cross_tier": false,
+      "cross_account": false,
+      "cross_workspace": false,
+      "legacy_unmigrated": true,
+      "rationale": "Candidate is legacy_unmigrated and must be filtered before v2 comparison."
+    },
+    {
+      "pair_id": "legacy_unmigrated_008",
+      "bucket": "legacy_unmigrated",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/legacy_unmigrated/legacy_unmigrated_008.json",
+      "expected_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "v2_reason": "candidate_legacy_unmigrated",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "candidate_legacy_unmigrated"
+      },
+      "tombstone_scoped": false,
+      "cross_tier": false,
+      "cross_account": false,
+      "cross_workspace": false,
+      "legacy_unmigrated": true,
+      "rationale": "Candidate is legacy_unmigrated and must be filtered before v2 comparison."
+    },
+    {
+      "pair_id": "legacy_unmigrated_009",
+      "bucket": "legacy_unmigrated",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/legacy_unmigrated/legacy_unmigrated_009.json",
+      "expected_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "v2_reason": "candidate_legacy_unmigrated",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "candidate_legacy_unmigrated"
+      },
+      "tombstone_scoped": false,
+      "cross_tier": false,
+      "cross_account": false,
+      "cross_workspace": false,
+      "legacy_unmigrated": true,
+      "rationale": "Candidate is legacy_unmigrated and must be filtered before v2 comparison."
+    },
+    {
+      "pair_id": "legacy_unmigrated_010",
+      "bucket": "legacy_unmigrated",
+      "source": "synthetic",
+      "source_path": "/private/tmp/dailyos-w4-b2/src-tauri/suites/E/canonicalization-thresholds/legacy_unmigrated/legacy_unmigrated_010.json",
+      "expected_decision": "fork",
+      "v2_decision": "fork",
+      "matches_expected": true,
+      "v2_reason": "candidate_legacy_unmigrated",
+      "v2_reason_secondary": [],
+      "v2_threshold_band": null,
+      "v2_canonicalization_mode": "deterministic",
+      "v2_embedding_model_version": "no-embedding-needed:deterministic",
+      "v2_field_scores": {
+        "candidate_filter": "reject",
+        "primary": "candidate_legacy_unmigrated"
+      },
+      "tombstone_scoped": false,
+      "cross_tier": false,
+      "cross_account": false,
+      "cross_workspace": false,
+      "legacy_unmigrated": true,
+      "rationale": "Candidate is legacy_unmigrated and must be filtered before v2 comparison."
     }
   ]
 }

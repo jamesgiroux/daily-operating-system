@@ -1,8 +1,10 @@
 //! Generator for the ADR-0131 Phase B calibration corpus.
 //!
-//! Emits 500 labeled-pair JSON files across the 5 buckets at the wave-plan
+//! Emits 540 labeled-pair JSON files across the 9 buckets at the wave-plan
 //! composition: positive_paraphrases (200), hard_negatives (150),
-//! contradictions (75), asymmetric_qualifiers (50), low_trust_duplicates (25).
+//! contradictions (75), asymmetric_qualifiers (50), low_trust_duplicates (25),
+//! tombstone_shadowed (10), cross_tier (10), cross_workspace (10),
+//! legacy_unmigrated (10).
 //!
 //! Pairs are constructed synthetically — there is no production drain at this
 //! stage of the project. Construction is adversarial: each pair is designed
@@ -30,6 +32,10 @@ const HARD_NEGATIVE_COUNT: usize = 150;
 const CONTRADICTION_COUNT: usize = 75;
 const ASYMMETRIC_QUALIFIER_COUNT: usize = 50;
 const LOW_TRUST_COUNT: usize = 25;
+const TOMBSTONE_SHADOWED_COUNT: usize = 10;
+const CROSS_TIER_COUNT: usize = 10;
+const CROSS_WORKSPACE_COUNT: usize = 10;
+const LEGACY_UNMIGRATED_COUNT: usize = 10;
 
 fn main() {
     let root = repo_relative(CORPUS_ROOT);
@@ -41,6 +47,10 @@ fn main() {
     written += emit_contradictions(&root);
     written += emit_asymmetric_qualifiers(&root);
     written += emit_low_trust_duplicates(&root);
+    written += emit_tombstone_shadowed(&root);
+    written += emit_cross_tier(&root);
+    written += emit_cross_workspace(&root);
+    written += emit_legacy_unmigrated(&root);
 
     println!(
         "wrote {written} labeled pairs to {} with seed {CORPUS_SEED:#x}",
@@ -67,6 +77,10 @@ fn purge_generated_pairs(root: &Path) {
         "contradictions",
         "asymmetric_qualifiers",
         "low_trust_duplicates",
+        "tombstone_shadowed",
+        "cross_tier",
+        "cross_workspace",
+        "legacy_unmigrated",
     ] {
         let dir = root.join(bucket);
         if !dir.exists() {
@@ -647,6 +661,122 @@ fn emit_low_trust_duplicates(root: &Path) -> usize {
         written += 1;
     }
     written
+}
+
+fn emit_tombstone_shadowed(root: &Path) -> usize {
+    let bucket_dir = root.join("tombstone_shadowed");
+    let templates = templates();
+    let mut written = 0;
+    for (idx, ord) in (0..TOMBSTONE_SHADOWED_COUNT).map(|i| (i, i + 1)) {
+        let (claim_a, mut claim_b) = mergeable_claim_pair(idx, &templates);
+        insert_claim_field(&mut claim_b, "tombstone_shadowed", json!(true));
+        let pair_id = format!("tombstone_shadowed_{ord:03}");
+        write_pair(
+            &bucket_dir,
+            &pair_id,
+            "tombstone_shadowed",
+            "fork",
+            &claim_a,
+            &claim_b,
+            "Candidate is shadowed by a compatible tombstone and must be filtered before v2 comparison.",
+        );
+        written += 1;
+    }
+    written
+}
+
+fn emit_cross_tier(root: &Path) -> usize {
+    let bucket_dir = root.join("cross_tier");
+    let templates = templates();
+    let mut written = 0;
+    for (idx, ord) in (0..CROSS_TIER_COUNT).map(|i| (i, i + 1)) {
+        let (mut claim_a, mut claim_b) = mergeable_claim_pair(idx, &templates);
+        insert_claim_field(&mut claim_a, "sensitivity", json!("confidential"));
+        insert_claim_field(&mut claim_a, "tier_key", json!("state:confidential"));
+        insert_claim_field(&mut claim_b, "sensitivity", json!("internal"));
+        insert_claim_field(&mut claim_b, "tier_key", json!("state:internal"));
+        let pair_id = format!("cross_tier_{ord:03}");
+        write_pair(
+            &bucket_dir,
+            &pair_id,
+            "cross_tier",
+            "fork",
+            &claim_a,
+            &claim_b,
+            "Sensitivity tiers differ in a non-compatible direction and must be filtered before v2 comparison.",
+        );
+        written += 1;
+    }
+    written
+}
+
+fn emit_cross_workspace(root: &Path) -> usize {
+    let bucket_dir = root.join("cross_workspace");
+    let templates = templates();
+    let mut written = 0;
+    for (idx, ord) in (0..CROSS_WORKSPACE_COUNT).map(|i| (i, i + 1)) {
+        let (claim_a, mut claim_b) = mergeable_claim_pair(idx, &templates);
+        insert_claim_field(&mut claim_b, "workspace_id", json!("workspace_beta"));
+        let pair_id = format!("cross_workspace_{ord:03}");
+        write_pair(
+            &bucket_dir,
+            &pair_id,
+            "cross_workspace",
+            "fork",
+            &claim_a,
+            &claim_b,
+            "Workspace scope differs and must be filtered before v2 comparison.",
+        );
+        written += 1;
+    }
+    written
+}
+
+fn emit_legacy_unmigrated(root: &Path) -> usize {
+    let bucket_dir = root.join("legacy_unmigrated");
+    let templates = templates();
+    let mut written = 0;
+    for (idx, ord) in (0..LEGACY_UNMIGRATED_COUNT).map(|i| (i, i + 1)) {
+        let (claim_a, mut claim_b) = mergeable_claim_pair(idx, &templates);
+        insert_claim_field(&mut claim_b, "canonical_status", json!("legacy_unmigrated"));
+        let pair_id = format!("legacy_unmigrated_{ord:03}");
+        write_pair(
+            &bucket_dir,
+            &pair_id,
+            "legacy_unmigrated",
+            "fork",
+            &claim_a,
+            &claim_b,
+            "Candidate is legacy_unmigrated and must be filtered before v2 comparison.",
+        );
+        written += 1;
+    }
+    written
+}
+
+fn mergeable_claim_pair(idx: usize, templates: &[PredicateTemplate]) -> (Value, Value) {
+    let template = &templates[seeded_index(idx, templates.len())];
+    let object_idx = seeded_index(idx / templates.len(), template.object_variants.len());
+    let subject = subject_for_index(idx);
+    let object = object_value(&template.object_variants[object_idx]);
+    let qualifiers = qualifier_set_default(idx);
+    let text = template.paraphrase_pairs[0].0;
+    let claim_payload = claim(
+        text,
+        &subject,
+        template,
+        Polarity::Affirm,
+        object,
+        qualifiers,
+    );
+    (claim_payload.clone(), claim_payload)
+}
+
+fn insert_claim_field(claim: &mut Value, key: &str, value: Value) {
+    claim
+        .as_object_mut()
+        .expect("claim is object")
+        .insert(key.into(), value);
 }
 
 // ---------------------------------------------------------------------------

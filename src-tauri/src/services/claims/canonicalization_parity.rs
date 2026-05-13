@@ -53,15 +53,23 @@ pub enum CorpusBucket {
     Contradictions,
     AsymmetricQualifiers,
     LowTrustDuplicates,
+    TombstoneShadowed,
+    CrossTier,
+    CrossWorkspace,
+    LegacyUnmigrated,
 }
 
 impl CorpusBucket {
-    const ALL: [CorpusBucket; 5] = [
+    const ALL: [CorpusBucket; 9] = [
         CorpusBucket::PositiveParaphrases,
         CorpusBucket::HardNegatives,
         CorpusBucket::Contradictions,
         CorpusBucket::AsymmetricQualifiers,
         CorpusBucket::LowTrustDuplicates,
+        CorpusBucket::TombstoneShadowed,
+        CorpusBucket::CrossTier,
+        CorpusBucket::CrossWorkspace,
+        CorpusBucket::LegacyUnmigrated,
     ];
 
     fn as_str(self) -> &'static str {
@@ -71,16 +79,24 @@ impl CorpusBucket {
             Self::Contradictions => "contradictions",
             Self::AsymmetricQualifiers => "asymmetric_qualifiers",
             Self::LowTrustDuplicates => "low_trust_duplicates",
+            Self::TombstoneShadowed => "tombstone_shadowed",
+            Self::CrossTier => "cross_tier",
+            Self::CrossWorkspace => "cross_workspace",
+            Self::LegacyUnmigrated => "legacy_unmigrated",
         }
     }
 
     fn target_share(self) -> &'static str {
         match self {
-            Self::PositiveParaphrases => "40%",
-            Self::HardNegatives => "30%",
-            Self::Contradictions => "15%",
-            Self::AsymmetricQualifiers => "10%",
-            Self::LowTrustDuplicates => "5%",
+            Self::PositiveParaphrases => "37.04%",
+            Self::HardNegatives => "27.78%",
+            Self::Contradictions => "13.89%",
+            Self::AsymmetricQualifiers => "9.26%",
+            Self::LowTrustDuplicates => "4.63%",
+            Self::TombstoneShadowed => "1.85%",
+            Self::CrossTier => "1.85%",
+            Self::CrossWorkspace => "1.85%",
+            Self::LegacyUnmigrated => "1.85%",
         }
     }
 }

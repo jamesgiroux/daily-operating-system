@@ -1,0 +1,69 @@
+{
+  "pair_id": "cross_tier_006",
+  "bucket": "cross_tier",
+  "expected_decision": "fork",
+  "source": "synthetic",
+  "claim_a": {
+    "claim_type": "stakeholder_role",
+    "field_path": "role.classification",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "decision_maker"
+    },
+    "polarity": "affirm",
+    "predicate": "stakeholder_role",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": {
+        "normalized": "phase_3"
+      },
+      "time": null
+    },
+    "sensitivity": "confidential",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "account_002",
+      "kind": "account"
+    },
+    "text": "She is acting as the executive champion for the rollout.",
+    "tier_key": "state:confidential",
+    "workspace_id": "workspace_alpha"
+  },
+  "claim_b": {
+    "claim_type": "stakeholder_role",
+    "field_path": "role.classification",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "decision_maker"
+    },
+    "polarity": "affirm",
+    "predicate": "stakeholder_role",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": {
+        "normalized": "phase_3"
+      },
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "account_002",
+      "kind": "account"
+    },
+    "text": "She is acting as the executive champion for the rollout.",
+    "tier_key": "state:internal",
+    "workspace_id": "workspace_alpha"
+  },
+  "rationale": "Sensitivity tiers differ in a non-compatible direction and must be filtered before v2 comparison."
+}
