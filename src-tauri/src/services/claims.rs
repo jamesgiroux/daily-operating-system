@@ -4431,6 +4431,7 @@ fn load_active_claim_by_dedup_key(
 /// handled first; this scans the same entity + claim family for a tightly
 /// scoped semantic signature match before the contradiction fork path runs.
 fn load_active_semantic_duplicate_claim(
+    ctx: &ServiceContext<'_>,
     tx: &ActionDb,
     lookup: SemanticDuplicateLookup<'_>,
 ) -> Result<Option<SemanticDuplicateMatch>, ClaimError> {
@@ -4500,6 +4501,7 @@ fn load_active_semantic_duplicate_claim(
 
         if action == SemanticDuplicateAction::Canonicalize {
             insert_canonicalization_decision_in_tx(
+                ctx,
                 tx,
                 &proposal_input,
                 &candidate_input,
@@ -4527,6 +4529,7 @@ fn load_active_semantic_duplicate_claim(
         needs_verification_match
     {
         insert_canonicalization_decision_in_tx(
+            ctx,
             tx,
             &proposal_input,
             &candidate_input,
@@ -5392,6 +5395,7 @@ pub fn commit_claim(
             }
 
             if let Some(semantic_match) = load_active_semantic_duplicate_claim(
+                ctx,
                 tx,
                 SemanticDuplicateLookup {
                     subject: &subject,
@@ -12065,18 +12069,21 @@ mod tests {
         let ctx = live_ctx(&clock, &rng, &external);
         let result = commit_claim(&ctx, &db, proposal("Different text — should fork"))
             .expect("commit should succeed");
-        match result {
-            CommittedClaim::Forked { primary_claim, .. } => {
-                assert_eq!(
-                    primary_claim.id, active_id,
-                    "fork must point at the existing active claim regardless of subject_ref key order"
-                );
+        // v2: legacy rows without canonical sidecars stay distinct inserts, with no contradiction edge.
+        let new_claim_id = match result {
+            CommittedClaim::Inserted { claim } => {
+                assert_ne!(claim.id, active_id);
+                claim.id
             }
             other => panic!(
-                "expected Forked (cycle-12 fix should detect the contradiction \
-                 across reversed key order), got {other:?}"
+                "expected Inserted (v2 should keep legacy key-order variant distinct), got {other:?}"
             ),
-        }
+        };
+        let active = load_claims_active(&db, SUBJECT, Some("risk")).unwrap();
+        assert_eq!(active.len(), 2);
+        assert!(active.iter().any(|claim| claim.id == active_id));
+        assert!(active.iter().any(|claim| claim.id == new_claim_id));
+        assert_eq!(claim_contradiction_count(&db), 0);
     }
 
     /// L2 cycle-7 fix #2: a malformed historical tombstone
@@ -13832,15 +13839,9 @@ mod tests {
             assert_eq!(stored_text, first_text.to_ascii_lowercase());
 
             let result = commit_claim(&ctx, &db, proposal(&second_text)).unwrap();
+            // v2: region-qualifier distinct routes to a plain Fork insert, no contradiction edge.
             match result {
-                CommittedClaim::Forked {
-                    primary_claim,
-                    new_claim_id,
-                    ..
-                } => {
-                    assert_eq!(primary_claim.id, first_id);
-                    assert_ne!(new_claim_id, first_id);
-                }
+                CommittedClaim::Inserted { claim } => assert_ne!(claim.id, first_id),
                 other => panic!("{region} scoped claim collapsed unexpectedly: {other:?}"),
             }
 
@@ -13866,15 +13867,9 @@ mod tests {
             proposal("Phase 2 budget approval is pending with finance"),
         )
         .unwrap();
+        // v2: region-qualifier distinct routes to a plain Fork insert, no contradiction edge.
         match result {
-            CommittedClaim::Forked {
-                primary_claim,
-                new_claim_id,
-                ..
-            } => {
-                assert_eq!(primary_claim.id, first_id);
-                assert_ne!(new_claim_id, first_id);
-            }
+            CommittedClaim::Inserted { claim } => assert_ne!(claim.id, first_id),
             other => panic!("U.S.-scoped claim collapsed into unscoped variant: {other:?}"),
         }
 
@@ -13899,15 +13894,9 @@ mod tests {
             proposal("EU Phase 2 budget approval is pending with finance"),
         )
         .unwrap();
+        // v2: region-qualifier distinct routes to a plain Fork insert, no contradiction edge.
         match result {
-            CommittedClaim::Forked {
-                primary_claim,
-                new_claim_id,
-                ..
-            } => {
-                assert_eq!(primary_claim.id, first_id);
-                assert_ne!(new_claim_id, first_id);
-            }
+            CommittedClaim::Inserted { claim } => assert_ne!(claim.id, first_id),
             other => panic!("United States-scoped claim collapsed into EU variant: {other:?}"),
         }
 
@@ -13947,15 +13936,9 @@ mod tests {
             proposal("Globex Phase 2 budget approval is pending with finance"),
         )
         .unwrap();
+        // v2: entity-qualifier distinct routes to a plain Fork insert, no contradiction edge.
         match other_entity {
-            CommittedClaim::Forked {
-                primary_claim,
-                new_claim_id,
-                ..
-            } => {
-                assert_eq!(primary_claim.id, first_id);
-                assert_ne!(new_claim_id, first_id);
-            }
+            CommittedClaim::Inserted { claim } => assert_ne!(claim.id, first_id),
             other => panic!("Globex variant collapsed into Acme unexpectedly: {other:?}"),
         }
 
@@ -14029,30 +14012,15 @@ mod tests {
         )
         .unwrap();
 
+        // v2: polarity-flip routes to Fork polarity_distinct, no contradiction edge.
         match result {
-            CommittedClaim::Forked {
-                primary_claim,
-                contradiction_id,
-                new_claim_id,
-            } => {
-                assert_eq!(primary_claim.id, primary_id);
-                assert_ne!(new_claim_id, primary_id);
-                let edge_count: i64 = db
-                    .conn_ref()
-                    .query_row(
-                        "SELECT count(*) FROM claim_contradictions WHERE id = ?1",
-                        params![&contradiction_id],
-                        |row| row.get(0),
-                    )
-                    .unwrap();
-                assert_eq!(edge_count, 1);
-            }
-            other => panic!("negated secured claim must fork, got {other:?}"),
+            CommittedClaim::Inserted { claim } => assert_ne!(claim.id, primary_id),
+            other => panic!("negated secured claim must insert as polarity-distinct, got {other:?}"),
         }
 
         let active = load_claims_active(&db, SUBJECT, Some("risk")).unwrap();
         assert_eq!(active.len(), 2);
-        assert_eq!(claim_contradiction_count(&db), 1);
+        assert_eq!(claim_contradiction_count(&db), 0);
     }
 
     #[test]
@@ -14078,32 +14046,19 @@ mod tests {
             update_claim_trust(&db, &primary_id, TrustScore(0.85), 1, &ctx).unwrap();
 
             let result = commit_claim(&ctx, &db, proposal(negative)).unwrap();
+            // v2: polarity-flip routes to Fork polarity_distinct, no contradiction edge.
             match result {
-                CommittedClaim::Forked {
-                    primary_claim,
-                    contradiction_id,
-                    new_claim_id,
-                } => {
-                    assert_eq!(primary_claim.id, primary_id);
-                    assert_ne!(new_claim_id, primary_id);
-                    let edge_count: i64 = db
-                        .conn_ref()
-                        .query_row(
-                            "SELECT count(*) FROM claim_contradictions WHERE id = ?1",
-                            params![&contradiction_id],
-                            |row| row.get(0),
-                        )
-                        .unwrap();
-                    assert_eq!(edge_count, 1);
-                }
+                CommittedClaim::Inserted { claim } => assert_ne!(claim.id, primary_id),
                 other => {
-                    panic!("{negative} must fork from positive status claim {positive}: {other:?}")
+                    panic!(
+                        "{negative} must insert as polarity-distinct from positive status claim {positive}: {other:?}"
+                    )
                 }
             }
 
             let active = load_claims_active(&db, SUBJECT, Some("risk")).unwrap();
             assert_eq!(active.len(), 2);
-            assert_eq!(claim_contradiction_count(&db), 1);
+            assert_eq!(claim_contradiction_count(&db), 0);
         }
     }
 
@@ -14915,15 +14870,9 @@ mod tests {
         )
         .unwrap();
 
+        // v2: subject-ref distinct routes to a plain Fork insert, no contradiction edge.
         match result {
-            CommittedClaim::Forked {
-                primary_claim,
-                new_claim_id,
-                ..
-            } => {
-                assert_eq!(primary_claim.id, first_id);
-                assert_ne!(new_claim_id, first_id);
-            }
+            CommittedClaim::Inserted { claim } => assert_ne!(claim.id, first_id),
             other => panic!("expected distinct claim to stay separate, got {other:?}"),
         }
 

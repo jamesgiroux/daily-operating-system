@@ -692,7 +692,7 @@ fn qualifier_set_default(idx: usize) -> QualifierSet {
     // Most pairs have an empty qualifier set so the bucket-specific logic can
     // introduce divergence cleanly. A few cycle scope so positives carry a
     // realistic structural fingerprint.
-    if idx % 5 == 0 {
+    if idx.is_multiple_of(5) {
         QualifierSet {
             scope: Some(ScopeMarker {
                 normalized: format!("phase_{}", (idx % 3) + 1),

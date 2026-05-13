@@ -4476,7 +4476,8 @@ mod tests {
             "INSERT INTO intelligence_claims /* dos7-allowed: v157 migration fixture seeds c5 trust_version=0 state */ \
              (id, subject_ref, claim_type, text, dedup_key, actor, data_source, observed_at,
               provenance_json, trust_score, trust_computed_at, trust_version,
-              shadow_trust_score, shadow_trust_computed_at, shadow_trust_version)
+              shadow_trust_score, shadow_trust_computed_at, shadow_trust_version,
+              canonical_status)
              VALUES (
                  'claim-v157-zero-repair',
                  '{\"kind\":\"account\",\"id\":\"acct-v157-zero\"}',
@@ -4492,7 +4493,8 @@ mod tests {
                  0,
                  0.51,
                  '2026-05-06T10:00:00Z',
-                 ?1
+                 ?1,
+                 'live'
              )",
             [V155_SHADOW_TRUST_VERSION],
         )
@@ -4552,7 +4554,7 @@ mod tests {
         conn.execute(
             "INSERT INTO intelligence_claims /* dos7-allowed: v157 migration fixture seeds v156-recorded live shadow score */ \
              (id, subject_ref, claim_type, text, dedup_key, actor, data_source, observed_at,
-              provenance_json, trust_score, trust_computed_at, trust_version)
+              provenance_json, trust_score, trust_computed_at, trust_version, canonical_status)
              VALUES (
                  'claim-v157-live-repair',
                  '{\"kind\":\"account\",\"id\":\"acct-v157-live\"}',
@@ -4565,7 +4567,8 @@ mod tests {
                  '{}',
                  0.73,
                  '2026-05-06T10:00:00Z',
-                 ?1
+                 ?1,
+                 'live'
              )",
             [V155_SHADOW_TRUST_VERSION],
         )
@@ -4626,7 +4629,8 @@ mod tests {
             "INSERT INTO intelligence_claims /* dos7-allowed: v157 regression seeds partial c3/c5 shadow state */ \
              (id, subject_ref, claim_type, text, dedup_key, actor, data_source, observed_at,
               provenance_json, trust_score, trust_computed_at, trust_version,
-              shadow_trust_score, shadow_trust_computed_at, shadow_trust_version)
+              shadow_trust_score, shadow_trust_computed_at, shadow_trust_version,
+              canonical_status)
              VALUES (
                  'claim-v157-partial-v155-repair',
                  '{\"kind\":\"account\",\"id\":\"acct-v157-partial-v155\"}',
@@ -4642,7 +4646,8 @@ mod tests {
                  ?1,
                  0.44,
                  '2026-05-06T10:00:00Z',
-                 ?1
+                 ?1,
+                 'live'
              )",
             [V155_SHADOW_TRUST_VERSION],
         )
