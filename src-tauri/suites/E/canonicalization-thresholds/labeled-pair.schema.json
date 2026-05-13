@@ -22,7 +22,11 @@
         "hard_negatives",
         "contradictions",
         "asymmetric_qualifiers",
-        "low_trust_duplicates"
+        "low_trust_duplicates",
+        "tombstone_shadowed",
+        "cross_tier",
+        "cross_workspace",
+        "legacy_unmigrated"
       ]
     },
     "expected_decision": {
