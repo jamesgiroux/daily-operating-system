@@ -18,6 +18,7 @@ use rusqlite::{Connection, Error as SqliteError, ErrorCode};
 mod v144_audit_action_token;
 mod v166_semantic_merge_safety;
 mod v167_structured_claim_canonicalization;
+mod v170_canonicalization_cutover;
 
 type MigrationError = String;
 
@@ -862,6 +863,14 @@ const MIGRATIONS: &[Migration] = &[
     Migration::Sql {
         version: 169,
         sql: include_str!("migrations/169_dos_559_surface_client_pairings.sql"),
+    },
+    // ADR-0131 Phase C cutover: v2 (structured + embedding) canonicalization
+    // becomes authoritative. Enforces pending_backfill_count = 0 precondition
+    // (§7) and records the embedding/threshold versions in effect at cutover
+    // for auditability (§6).
+    Migration::Fn {
+        version: 170,
+        apply: migrate_v170_canonicalization_cutover,
     },
 ];
 
@@ -2059,6 +2068,10 @@ fn apply_migration_146_signal_events_data_source(
 
 fn migrate_v167_structured_claim_canonicalization(conn: &Connection) -> Result<(), MigrationError> {
     v167_structured_claim_canonicalization::migrate_v167(conn)
+}
+
+fn migrate_v170_canonicalization_cutover(conn: &Connection) -> Result<(), MigrationError> {
+    v170_canonicalization_cutover::migrate_v170(conn)
 }
 
 fn migrate_v166_semantic_merge_safety(conn: &Connection) -> Result<(), MigrationError> {
@@ -4463,7 +4476,8 @@ mod tests {
             "INSERT INTO intelligence_claims /* dos7-allowed: v157 migration fixture seeds c5 trust_version=0 state */ \
              (id, subject_ref, claim_type, text, dedup_key, actor, data_source, observed_at,
               provenance_json, trust_score, trust_computed_at, trust_version,
-              shadow_trust_score, shadow_trust_computed_at, shadow_trust_version)
+              shadow_trust_score, shadow_trust_computed_at, shadow_trust_version,
+              canonical_status)
              VALUES (
                  'claim-v157-zero-repair',
                  '{\"kind\":\"account\",\"id\":\"acct-v157-zero\"}',
@@ -4479,16 +4493,17 @@ mod tests {
                  0,
                  0.51,
                  '2026-05-06T10:00:00Z',
-                 ?1
+                 ?1,
+                 'live'
              )",
             [V155_SHADOW_TRUST_VERSION],
         )
         .expect("seed c5 zero-version shadow row");
 
-        let applied = run_migrations(&conn).expect("v157-v169 migrations should succeed");
+        let applied = run_migrations(&conn).expect("v157-v170 migrations should succeed");
         assert_eq!(
-            applied, 13,
-            "v157-v169 should be pending after rollback to v156"
+            applied, 14,
+            "v157-v170 should be pending after rollback to v156"
         );
         assert_eq!(
             current_version(&conn).expect("current version"),
@@ -4539,7 +4554,7 @@ mod tests {
         conn.execute(
             "INSERT INTO intelligence_claims /* dos7-allowed: v157 migration fixture seeds v156-recorded live shadow score */ \
              (id, subject_ref, claim_type, text, dedup_key, actor, data_source, observed_at,
-              provenance_json, trust_score, trust_computed_at, trust_version)
+              provenance_json, trust_score, trust_computed_at, trust_version, canonical_status)
              VALUES (
                  'claim-v157-live-repair',
                  '{\"kind\":\"account\",\"id\":\"acct-v157-live\"}',
@@ -4552,16 +4567,17 @@ mod tests {
                  '{}',
                  0.73,
                  '2026-05-06T10:00:00Z',
-                 ?1
+                 ?1,
+                 'live'
              )",
             [V155_SHADOW_TRUST_VERSION],
         )
         .expect("seed v156-recorded live score");
 
-        let applied = run_migrations(&conn).expect("v157-v169 migrations should succeed");
+        let applied = run_migrations(&conn).expect("v157-v170 migrations should succeed");
         assert_eq!(
-            applied, 13,
-            "v157-v169 should be pending after rollback to v156"
+            applied, 14,
+            "v157-v170 should be pending after rollback to v156"
         );
         assert_eq!(
             current_version(&conn).expect("current version"),
@@ -4613,7 +4629,8 @@ mod tests {
             "INSERT INTO intelligence_claims /* dos7-allowed: v157 regression seeds partial c3/c5 shadow state */ \
              (id, subject_ref, claim_type, text, dedup_key, actor, data_source, observed_at,
               provenance_json, trust_score, trust_computed_at, trust_version,
-              shadow_trust_score, shadow_trust_computed_at, shadow_trust_version)
+              shadow_trust_score, shadow_trust_computed_at, shadow_trust_version,
+              canonical_status)
              VALUES (
                  'claim-v157-partial-v155-repair',
                  '{\"kind\":\"account\",\"id\":\"acct-v157-partial-v155\"}',
@@ -4629,16 +4646,17 @@ mod tests {
                  ?1,
                  0.44,
                  '2026-05-06T10:00:00Z',
-                 ?1
+                 ?1,
+                 'live'
              )",
             [V155_SHADOW_TRUST_VERSION],
         )
         .expect("seed partial v155 shadow row");
 
-        let applied = run_migrations(&conn).expect("v156-v169 migrations should succeed");
+        let applied = run_migrations(&conn).expect("v156-v170 migrations should succeed");
         assert_eq!(
-            applied, 14,
-            "v156-v169 should be pending after rollback to v155"
+            applied, 15,
+            "v156-v170 should be pending after rollback to v155"
         );
         assert_eq!(
             current_version(&conn).expect("current version"),

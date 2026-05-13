@@ -1,0 +1,65 @@
+{
+  "pair_id": "cross_tier_005",
+  "bucket": "cross_tier",
+  "expected_decision": "fork",
+  "source": "synthetic",
+  "claim_a": {
+    "claim_type": "risk",
+    "field_path": "renewal.risk",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "low"
+    },
+    "polarity": "affirm",
+    "predicate": "account_renewal_risk",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "confidential",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "email_001",
+      "kind": "email"
+    },
+    "text": "Renewal probability looks weak this cycle.",
+    "tier_key": "state:confidential",
+    "workspace_id": "workspace_alpha"
+  },
+  "claim_b": {
+    "claim_type": "risk",
+    "field_path": "renewal.risk",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "low"
+    },
+    "polarity": "affirm",
+    "predicate": "account_renewal_risk",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "email_001",
+      "kind": "email"
+    },
+    "text": "Renewal probability looks weak this cycle.",
+    "tier_key": "state:internal",
+    "workspace_id": "workspace_alpha"
+  },
+  "rationale": "Sensitivity tiers differ in a non-compatible direction and must be filtered before v2 comparison."
+}
