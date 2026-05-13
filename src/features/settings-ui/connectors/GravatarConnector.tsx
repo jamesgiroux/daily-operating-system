@@ -8,7 +8,7 @@ import {
   SettingsSectionLabel,
   SettingsStatusDot,
   formRowStyles,
-} from "@/components/settings/FormRow";
+} from "@/features/settings-ui/FormRow";
 
 export default function GravatarConnection() {
   const [status, setStatus] = useState<GravatarStatus | null>(null);

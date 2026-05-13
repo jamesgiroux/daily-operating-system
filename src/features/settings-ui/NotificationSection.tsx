@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { FormRow, SettingsSectionLabel } from "@/components/settings/FormRow";
+import { FormRow, SettingsSectionLabel } from "@/features/settings-ui/FormRow";
 import { Switch } from "@/components/ui/Switch";
 import s from "./NotificationSection.module.css";
 

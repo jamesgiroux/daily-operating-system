@@ -14,7 +14,7 @@ import {
   SettingsSectionLabel,
   SettingsStatusDot,
   formRowStyles,
-} from "@/components/settings/FormRow";
+} from "@/features/settings-ui/FormRow";
 import ds from "./DiagnosticsSection.module.css";
 
 // ═══════════════════════════════════════════════════════════════════════════

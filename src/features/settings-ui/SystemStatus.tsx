@@ -12,7 +12,7 @@ import {
   SettingsRule,
   SettingsSectionLabel,
   formRowStyles,
-} from "@/components/settings/FormRow";
+} from "@/features/settings-ui/FormRow";
 import { Segmented } from "@/components/ui/Segmented";
 import { useConnectivity } from "@/hooks/useConnectivity";
 import type {
