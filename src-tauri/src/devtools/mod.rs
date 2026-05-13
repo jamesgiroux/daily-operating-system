@@ -5,6 +5,9 @@
 //! errors immediately). The cost is two string comparisons — negligible.
 //! Note: Config fields like `text_scale_percent`  use serde defaults
 //! and don't require mock data seeds — they auto-default in all scenarios.
+//! SurfaceClient pairing tables are not seeded: dev/test pairings must be
+//! minted through the runtime pairing command so authority material is never
+//! represented as static fixture data.
 
 use std::path::Path;
 

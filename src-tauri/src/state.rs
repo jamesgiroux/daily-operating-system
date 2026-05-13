@@ -425,6 +425,8 @@ pub struct AppState {
     context_state: RwLock<ContextProviderBundle>,
     /// Shared app handle for service-layer Tauri event emission.
     app_handle: RwLock<Option<tauri::AppHandle>>,
+    /// Runtime-owned loopback endpoint state for paired local surfaces.
+    pub surface_runtime_endpoint: Arc<crate::surface_runtime::SurfaceEndpointState>,
 }
 
 /// Base signal keywords applicable to any role (generic, role-neutral).
@@ -900,6 +902,9 @@ impl AppState {
                 glean_intelligence_provider,
             }),
             app_handle: RwLock::new(None),
+            surface_runtime_endpoint: Arc::new(
+                crate::surface_runtime::SurfaceEndpointState::default(),
+            ),
         }
     }
 
@@ -990,6 +995,9 @@ impl AppState {
                 glean_intelligence_provider: None,
             }),
             app_handle: RwLock::new(None),
+            surface_runtime_endpoint: Arc::new(
+                crate::surface_runtime::SurfaceEndpointState::default(),
+            ),
         }
     }
 
@@ -1806,6 +1814,7 @@ pub fn create_or_update_config(
                 email_enrichment_timeout_seconds: 90,
                 notifications: crate::types::NotificationConfig::default(),
                 text_scale_percent: 100,
+                surface_runtime: crate::types::SurfaceRuntimeConfig::default(),
             }
         }
     };

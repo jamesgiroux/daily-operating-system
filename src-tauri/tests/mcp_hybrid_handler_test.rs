@@ -78,7 +78,8 @@ mod mcp_open_schema_runtime {
 
     use dailyos_lib::abilities::registry::{AbilityPolicy, McpExposure, SignalPolicy};
     use dailyos_lib::abilities::{
-        AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityRegistry, Actor, ActorKind,
+        AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityRegistry, Actor,
+        ActorKind,
     };
     use dailyos_lib::bridges::mcp::McpAbilityBridge;
     use dailyos_lib::bridges::McpSessionId;
@@ -142,6 +143,7 @@ mod mcp_open_schema_runtime {
                 required_scopes: &[],
                 mcp_exposure: McpExposure::None,
                 client_side_executable: false,
+                rate_limit: None,
             },
             composes: &[],
             mutates: &[],

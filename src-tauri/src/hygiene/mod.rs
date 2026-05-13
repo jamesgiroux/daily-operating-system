@@ -516,6 +516,7 @@ pub(crate) mod tests_common {
             email_enrichment_timeout_seconds: 90,
             notifications: crate::types::NotificationConfig::default(),
             text_scale_percent: 100,
+            surface_runtime: crate::types::SurfaceRuntimeConfig::default(),
         }
     }
 }

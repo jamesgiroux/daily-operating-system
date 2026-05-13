@@ -18,8 +18,8 @@ use base64::Engine;
 use dailyos_lib::abilities::prepare_meeting::{prepare_meeting, prompts, PrepareMeetingInput};
 use dailyos_lib::abilities::registry::{AbilityPolicy, McpExposure, SignalPolicy};
 use dailyos_lib::abilities::{
-    AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityRegistry, Actor, ActorKind,
-    NOOP_ABILITY_TRACER,
+    AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityRegistry, Actor,
+    ActorKind, NOOP_ABILITY_TRACER,
 };
 use dailyos_lib::intelligence::provider::{
     canonical_prompt_hash, CanonicalPromptRequest, Completion, FingerprintMetadata,
@@ -1995,6 +1995,7 @@ fn enrich_descriptor_with_policy(allowed_actors: &'static [ActorKind]) -> Abilit
             required_scopes: &[],
             mcp_exposure: McpExposure::None,
             client_side_executable: false,
+            rate_limit: None,
         },
         composes: &[],
         mutates: &[],

@@ -2,6 +2,7 @@
 
 pub mod eval;
 pub mod mcp;
+pub mod surface_client;
 pub mod tauri;
 pub mod types;
 pub mod worker;

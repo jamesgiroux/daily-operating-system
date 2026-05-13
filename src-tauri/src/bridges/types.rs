@@ -12,12 +12,12 @@ use crate::abilities::provenance::{
     RenderedProvenance as RuntimeRenderedProvenance, Surface as ProvenanceSurface,
 };
 use crate::abilities::tracer::{AbilityTracer, SpanHandle};
+#[cfg(test)]
+use crate::abilities::ActorKind;
 use crate::abilities::{
     validate_schema_closure_for_ability, AbilityCategory, AbilityContext, AbilityDescriptor,
     AbilityError, AbilityRegistry, Actor, ConfirmationProof,
 };
-#[cfg(test)]
-use crate::abilities::ActorKind;
 use crate::db::ActionDb;
 use crate::intelligence::provider::{
     Completion, IntelligenceProvider, ModelName, ModelTier, PromptInput, ProviderError,
@@ -40,6 +40,7 @@ pub enum BridgeActor {
     Agent,
     Admin,
     System,
+    SurfaceClient,
 }
 
 impl BridgeActor {
@@ -49,6 +50,9 @@ impl BridgeActor {
             Self::Agent => Actor::Agent,
             Self::Admin => Actor::Admin,
             Self::System => Actor::System,
+            Self::SurfaceClient => {
+                panic!("BridgeActor::SurfaceClient requires request-scoped Actor::SurfaceClient")
+            }
         }
     }
 
@@ -58,10 +62,7 @@ impl BridgeActor {
             Actor::Agent => Self::Agent,
             Actor::Admin => Self::Admin,
             Actor::System => Self::System,
-            // TODO: W1-B+ wiring — BridgeActor gains a SurfaceClient variant
-            // once SurfaceClientBridge is plumbed and the Tauri bridge needs
-            // to round-trip the actor across surface-aware logging paths.
-            Actor::SurfaceClient { .. } => todo!("W1-B+ wiring for Actor::SurfaceClient"),
+            Actor::SurfaceClient { .. } => Self::SurfaceClient,
         }
     }
 }
@@ -74,6 +75,7 @@ pub enum BridgeSurface {
     McpToolDetail,
     Worker,
     Eval,
+    SurfaceClient,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -225,7 +227,7 @@ impl Serialize for AbilityResponseJson {
     {
         let include_diagnostics = !matches!(
             self.rendered_provenance.surface,
-            BridgeSurface::McpTool | BridgeSurface::McpToolDetail
+            BridgeSurface::McpTool | BridgeSurface::McpToolDetail | BridgeSurface::SurfaceClient
         );
         let mut state = serializer.serialize_struct(
             "AbilityResponseJson",
@@ -355,6 +357,85 @@ pub(crate) async fn invoke_registry_json<'a>(
     )
 }
 
+pub(crate) struct RequestScopedInvocation {
+    pub registry_actor: Actor,
+    pub response_actor: BridgeActor,
+    pub surface: BridgeSurface,
+    pub claim_dismissal_surface: ClaimDismissalSurface,
+}
+
+pub(crate) async fn invoke_registry_json_for_actor<'a>(
+    registry: &AbilityRegistry,
+    services: &'a ServiceContext<'a>,
+    provider: &'a dyn IntelligenceProvider,
+    tracer: &'a dyn AbilityTracer,
+    invocation: RequestScopedInvocation,
+    ability_name: &str,
+    input_json: serde_json::Value,
+) -> Result<AbilityResponseJson, AbilityInvokeError> {
+    let RequestScopedInvocation {
+        registry_actor,
+        response_actor,
+        surface,
+        claim_dismissal_surface,
+    } = invocation;
+    let descriptor = resolve_pre_dispatch(
+        registry,
+        ability_name,
+        registry_actor.clone(),
+        services.mode,
+        surface,
+    )?;
+    let ability_version = descriptor.version.to_string();
+    let schema_version = descriptor.schema_version;
+    let canonical_ability_name = descriptor.name.to_string();
+    let input_schema = (descriptor.input_schema)();
+
+    reject_reserved_input_fields(&input_json)?;
+    validate_input_json_against_schema(&input_schema, &input_json)
+        .map_err(|_| BridgeSurfaceError::AbilityUnavailable)?;
+
+    let invocation = InvocationContext {
+        actor: response_actor,
+        mode: services.mode,
+        surface,
+        claim_dismissal_surface,
+        dry_run: false,
+        confirmation: None,
+        confirmation_store: None,
+    };
+    let args_hash = confirmation_args_hash(&input_json);
+    verify_confirmation_token(
+        descriptor,
+        &invocation,
+        &canonical_ability_name,
+        &args_hash,
+        tracer,
+        services.clock.now(),
+    )?;
+
+    let ability_context = AbilityContext::new(
+        services,
+        provider,
+        tracer,
+        registry_actor,
+        None,
+        claim_dismissal_surface,
+    );
+    let output_json = registry
+        .invoke_by_name_json(&ability_context, ability_name, input_json)
+        .await?;
+
+    ability_response_from_output_json(
+        canonical_ability_name,
+        ability_version,
+        schema_version,
+        response_actor,
+        surface,
+        output_json,
+    )
+}
+
 pub(crate) fn claim_dismissal_surface_for_non_tauri_bridge(
     surface: BridgeSurface,
 ) -> Option<ClaimDismissalSurface> {
@@ -364,6 +445,7 @@ pub(crate) fn claim_dismissal_surface_for_non_tauri_bridge(
         BridgeSurface::McpToolDetail => Some(ClaimDismissalSurface::McpToolDetail),
         BridgeSurface::Worker => Some(ClaimDismissalSurface::Worker),
         BridgeSurface::Eval => Some(ClaimDismissalSurface::Eval),
+        BridgeSurface::SurfaceClient => Some(ClaimDismissalSurface::LogStructured),
     }
 }
 
@@ -608,6 +690,7 @@ fn bridge_actor_label(actor: BridgeActor) -> &'static str {
         BridgeActor::Agent => "agent",
         BridgeActor::Admin => "admin",
         BridgeActor::System => "system",
+        BridgeActor::SurfaceClient => "surface_client",
     }
 }
 
@@ -619,13 +702,9 @@ fn lookup_descriptor_by_name<'a>(
     registry: &'a AbilityRegistry,
     ability_name: &str,
 ) -> Option<&'a AbilityDescriptor> {
-    [Actor::User, Actor::Agent, Actor::Admin, Actor::System]
-        .into_iter()
-        .find_map(|actor| {
-            registry
-                .iter_for(actor)
-                .find(|descriptor| descriptor.name == ability_name)
-        })
+    registry
+        .iter_all()
+        .find(|descriptor| descriptor.name == ability_name)
 }
 
 fn maintenance_blocked_for_surface(descriptor: &AbilityDescriptor, surface: BridgeSurface) -> bool {
@@ -702,6 +781,7 @@ fn provenance_surface_for_bridge(surface: BridgeSurface) -> Option<ProvenanceSur
         BridgeSurface::TauriApp => Some(ProvenanceSurface::TauriApp),
         BridgeSurface::McpTool => Some(ProvenanceSurface::McpTool),
         BridgeSurface::McpToolDetail => Some(ProvenanceSurface::McpToolDetail),
+        BridgeSurface::SurfaceClient => Some(ProvenanceSurface::LogStructured),
         BridgeSurface::Worker | BridgeSurface::Eval => None,
     }
 }
@@ -720,6 +800,9 @@ fn provenance_actor_for_bridge(actor: BridgeActor) -> ProvenanceActor {
         BridgeActor::System => ProvenanceActor::System {
             component: "dailyos".to_string(),
         },
+        BridgeActor::SurfaceClient => ProvenanceActor::External {
+            source: "surface_client".to_string(),
+        },
     }
 }
 
@@ -732,7 +815,10 @@ fn render_ability_data(
         BridgeSurface::McpTool | BridgeSurface::McpToolDetail => {
             render_mcp_ability_data_with_authoritative_claims(data, provenance)
         }
-        BridgeSurface::TauriApp | BridgeSurface::Worker | BridgeSurface::Eval => data,
+        BridgeSurface::TauriApp
+        | BridgeSurface::Worker
+        | BridgeSurface::Eval
+        | BridgeSurface::SurfaceClient => data,
     }
 }
 
@@ -754,7 +840,7 @@ fn render_mcp_ability_data_with_authoritative_claims(
 
 fn render_diagnostics(surface: BridgeSurface, diagnostics: serde_json::Value) -> serde_json::Value {
     match surface {
-        BridgeSurface::McpTool | BridgeSurface::McpToolDetail => {
+        BridgeSurface::McpTool | BridgeSurface::McpToolDetail | BridgeSurface::SurfaceClient => {
             serde_json::json!({ "warnings": [] })
         }
         BridgeSurface::TauriApp | BridgeSurface::Worker | BridgeSurface::Eval => diagnostics,
@@ -1148,6 +1234,7 @@ mod tests {
                 required_scopes: &[],
                 mcp_exposure: McpExposure::None,
                 client_side_executable: false,
+                rate_limit: None,
             },
             composes: &[],
             mutates: &[],

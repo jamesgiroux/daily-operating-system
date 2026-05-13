@@ -245,6 +245,7 @@ mod tests {
                 required_scopes: &[],
                 mcp_exposure: McpExposure::None,
                 client_side_executable: false,
+                rate_limit: None,
             },
             composes: &[],
             mutates: &[],

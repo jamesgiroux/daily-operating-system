@@ -43,9 +43,7 @@ use serde::de::{self, MapAccess, Visitor};
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::abilities::registry::{
-    AbilityCategory, AbilityDescriptor, ActorKind, McpExposure,
-};
+use crate::abilities::registry::{AbilityCategory, AbilityDescriptor, ActorKind, McpExposure};
 
 /// Actor classes admitted at a surface-facing inventory boundary.
 ///
@@ -282,8 +280,8 @@ impl<'de> Deserialize<'de> for CompositionKind {
                         }
                     }
                 }
-                let produces_blocks = produces_blocks
-                    .ok_or_else(|| de::Error::missing_field("produces_blocks"))?;
+                let produces_blocks =
+                    produces_blocks.ok_or_else(|| de::Error::missing_field("produces_blocks"))?;
                 let block_types =
                     block_types.ok_or_else(|| de::Error::missing_field("block_types"))?;
                 match (produces_blocks, block_types.is_empty()) {
@@ -516,6 +514,7 @@ mod tests {
                 required_scopes: &["claims:read", "accounts:read"],
                 mcp_exposure: McpExposure::Invocable,
                 client_side_executable: true,
+                rate_limit: None,
             },
             composes: &[],
             mutates: &[],
@@ -658,6 +657,7 @@ mod tests {
                 required_scopes: &[],
                 mcp_exposure: McpExposure::Invocable,
                 client_side_executable: false,
+                rate_limit: None,
             },
             composes: &[],
             mutates: &[],
@@ -688,6 +688,7 @@ mod tests {
             required_scopes: &[],
             mcp_exposure: McpExposure::MetadataOnly,
             client_side_executable: false,
+            rate_limit: None,
         };
         let entry = AbilitySurfaceInventoryEntry::from_descriptor(&descriptor);
         assert_eq!(entry.allowed_actors, vec![AbilityActor::Runtime]);
@@ -696,8 +697,7 @@ mod tests {
     #[test]
     fn composition_kind_rejects_invalid_shapes() {
         // produces_blocks=false with non-empty block_types is rejected.
-        let bad =
-            r#"{"produces_blocks": false, "block_types": ["account_overview"]}"#;
+        let bad = r#"{"produces_blocks": false, "block_types": ["account_overview"]}"#;
         assert!(serde_json::from_str::<CompositionKind>(bad).is_err());
 
         // produces_blocks=true with empty block_types is rejected.
@@ -709,8 +709,7 @@ mod tests {
         let parsed: CompositionKind = serde_json::from_str(none_json).unwrap();
         assert_eq!(parsed, CompositionKind::NotComposition);
 
-        let comp_json =
-            r#"{"produces_blocks":true,"block_types":["health_snapshot"]}"#;
+        let comp_json = r#"{"produces_blocks":true,"block_types":["health_snapshot"]}"#;
         let parsed: CompositionKind = serde_json::from_str(comp_json).unwrap();
         assert_eq!(
             parsed,

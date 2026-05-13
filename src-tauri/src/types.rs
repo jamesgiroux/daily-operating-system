@@ -122,6 +122,142 @@ pub struct Config {
     /// Applied as CSS zoom on the document root for global text scaling.
     #[serde(default = "default_text_scale_percent")]
     pub text_scale_percent: u32,
+    /// Loopback runtime endpoint settings for paired local surfaces.
+    #[serde(default)]
+    pub surface_runtime: SurfaceRuntimeConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SurfaceRuntimeConfig {
+    #[serde(default = "default_surface_runtime_max_bind_attempts")]
+    pub max_bind_attempts: u16,
+    #[serde(default = "default_surface_runtime_loopback_requests_per_minute")]
+    pub unauthenticated_loopback_requests_per_minute: u32,
+    #[serde(default = "default_surface_runtime_loopback_burst_per_second")]
+    pub unauthenticated_loopback_burst_per_second: u32,
+    #[serde(default = "default_surface_runtime_pairing_code_max_failed_attempts")]
+    pub pairing_code_max_failed_attempts: u32,
+    #[serde(default = "default_surface_runtime_signed_session_requests_per_minute")]
+    pub signed_session_requests_per_minute: u32,
+    #[serde(default = "default_surface_runtime_signed_session_burst_per_second")]
+    pub signed_session_burst_per_second: u32,
+    #[serde(default = "default_surface_runtime_signature_stale_window_seconds")]
+    pub signature_stale_window_seconds: u64,
+    #[serde(default = "default_surface_runtime_signature_future_skew_seconds")]
+    pub signature_future_skew_seconds: u64,
+    #[serde(default = "default_surface_runtime_signature_nonce_cleanup_slack_seconds")]
+    pub signature_nonce_cleanup_slack_seconds: u64,
+    #[serde(default = "default_surface_runtime_signature_nonce_pending_ttl_seconds")]
+    pub signature_nonce_pending_ttl_seconds: u64,
+    #[serde(default = "default_surface_runtime_signature_nonce_records_per_session")]
+    pub signature_nonce_records_per_session: usize,
+    #[serde(default = "default_surface_runtime_signature_max_active_sessions")]
+    pub signature_max_active_sessions: usize,
+    #[serde(default = "default_surface_runtime_signature_global_nonce_records")]
+    pub signature_global_nonce_records: usize,
+    #[serde(default = "default_surface_runtime_signed_request_max_body_bytes")]
+    pub signed_request_max_body_bytes: u64,
+    #[serde(default)]
+    pub surface_client_rate_limits: SurfaceClientRateLimitConfig,
+}
+
+impl Default for SurfaceRuntimeConfig {
+    fn default() -> Self {
+        Self {
+            max_bind_attempts: default_surface_runtime_max_bind_attempts(),
+            unauthenticated_loopback_requests_per_minute:
+                default_surface_runtime_loopback_requests_per_minute(),
+            unauthenticated_loopback_burst_per_second:
+                default_surface_runtime_loopback_burst_per_second(),
+            pairing_code_max_failed_attempts:
+                default_surface_runtime_pairing_code_max_failed_attempts(),
+            signed_session_requests_per_minute:
+                default_surface_runtime_signed_session_requests_per_minute(),
+            signed_session_burst_per_second:
+                default_surface_runtime_signed_session_burst_per_second(),
+            signature_stale_window_seconds: default_surface_runtime_signature_stale_window_seconds(
+            ),
+            signature_future_skew_seconds: default_surface_runtime_signature_future_skew_seconds(),
+            signature_nonce_cleanup_slack_seconds:
+                default_surface_runtime_signature_nonce_cleanup_slack_seconds(),
+            signature_nonce_pending_ttl_seconds:
+                default_surface_runtime_signature_nonce_pending_ttl_seconds(),
+            signature_nonce_records_per_session:
+                default_surface_runtime_signature_nonce_records_per_session(),
+            signature_max_active_sessions: default_surface_runtime_signature_max_active_sessions(),
+            signature_global_nonce_records: default_surface_runtime_signature_global_nonce_records(
+            ),
+            signed_request_max_body_bytes: default_surface_runtime_signed_request_max_body_bytes(),
+            surface_client_rate_limits: SurfaceClientRateLimitConfig::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SurfaceClientRateLimitConfig {
+    #[serde(default = "default_surface_client_instance_rate_limits")]
+    pub surface_client: SurfaceClientRequestRateLimitConfig,
+    #[serde(default = "default_surface_client_wp_user_rate_limits")]
+    pub wp_user: SurfaceClientRequestRateLimitConfig,
+    #[serde(default = "default_surface_client_wp_site_rate_limits")]
+    pub wp_site: SurfaceClientRequestRateLimitConfig,
+    #[serde(default = "default_surface_client_ability_rate_limits")]
+    pub ability: SurfaceClientAbilityRateLimitConfig,
+    #[serde(default = "default_surface_client_scope_rate_limits")]
+    pub scope: SurfaceClientRequestRateLimitConfig,
+    #[serde(default = "default_surface_client_early_retry_tighten_window_seconds")]
+    pub early_retry_tighten_window_seconds: u64,
+}
+
+impl Default for SurfaceClientRateLimitConfig {
+    fn default() -> Self {
+        Self {
+            surface_client: default_surface_client_instance_rate_limits(),
+            wp_user: default_surface_client_wp_user_rate_limits(),
+            wp_site: default_surface_client_wp_site_rate_limits(),
+            ability: default_surface_client_ability_rate_limits(),
+            scope: default_surface_client_scope_rate_limits(),
+            early_retry_tighten_window_seconds:
+                default_surface_client_early_retry_tighten_window_seconds(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SurfaceClientRequestRateLimitConfig {
+    #[serde(default = "default_surface_rate_limit_budget")]
+    pub read: SurfaceClientRateLimitBudgetConfig,
+    #[serde(default = "default_surface_rate_limit_budget")]
+    pub write: SurfaceClientRateLimitBudgetConfig,
+    #[serde(default = "default_surface_rate_limit_budget")]
+    pub admin: SurfaceClientRateLimitBudgetConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SurfaceClientAbilityRateLimitConfig {
+    #[serde(default = "default_surface_rate_limit_budget")]
+    pub cheap_read: SurfaceClientRateLimitBudgetConfig,
+    #[serde(default = "default_surface_rate_limit_budget")]
+    pub standard_read_composition: SurfaceClientRateLimitBudgetConfig,
+    #[serde(default = "default_surface_rate_limit_budget")]
+    pub heavy_transform: SurfaceClientRateLimitBudgetConfig,
+    #[serde(default = "default_surface_rate_limit_budget")]
+    pub feedback_write: SurfaceClientRateLimitBudgetConfig,
+    #[serde(default = "default_surface_rate_limit_budget")]
+    pub admin_ability: SurfaceClientRateLimitBudgetConfig,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SurfaceClientRateLimitBudgetConfig {
+    #[serde(default = "default_surface_rate_limit_budget_requests_per_minute")]
+    pub requests_per_minute: u32,
+    #[serde(default = "default_surface_rate_limit_budget_burst_per_second")]
+    pub burst_per_second: u32,
 }
 
 /// Profile-specific configuration (CSM users)
@@ -342,6 +478,133 @@ fn default_email_enrichment_timeout_seconds() -> u32 {
 
 fn default_text_scale_percent() -> u32 {
     100
+}
+
+fn default_surface_runtime_max_bind_attempts() -> u16 {
+    10
+}
+
+fn default_surface_runtime_loopback_requests_per_minute() -> u32 {
+    60
+}
+
+fn default_surface_runtime_loopback_burst_per_second() -> u32 {
+    10
+}
+
+fn default_surface_runtime_pairing_code_max_failed_attempts() -> u32 {
+    5
+}
+
+fn default_surface_runtime_signed_session_requests_per_minute() -> u32 {
+    120
+}
+
+fn default_surface_runtime_signed_session_burst_per_second() -> u32 {
+    10
+}
+
+fn default_surface_runtime_signature_stale_window_seconds() -> u64 {
+    30
+}
+
+fn default_surface_runtime_signature_future_skew_seconds() -> u64 {
+    5
+}
+
+fn default_surface_runtime_signature_nonce_cleanup_slack_seconds() -> u64 {
+    5
+}
+
+fn default_surface_runtime_signature_nonce_pending_ttl_seconds() -> u64 {
+    5
+}
+
+fn default_surface_runtime_signature_nonce_records_per_session() -> usize {
+    4096
+}
+
+fn default_surface_runtime_signature_max_active_sessions() -> usize {
+    128
+}
+
+fn default_surface_runtime_signature_global_nonce_records() -> usize {
+    65_536
+}
+
+fn default_surface_runtime_signed_request_max_body_bytes() -> u64 {
+    256 * 1024
+}
+
+const fn surface_budget(
+    requests_per_minute: u32,
+    burst_per_second: u32,
+) -> SurfaceClientRateLimitBudgetConfig {
+    SurfaceClientRateLimitBudgetConfig {
+        requests_per_minute,
+        burst_per_second,
+    }
+}
+
+fn default_surface_client_instance_rate_limits() -> SurfaceClientRequestRateLimitConfig {
+    SurfaceClientRequestRateLimitConfig {
+        read: surface_budget(300, 20),
+        write: surface_budget(30, 2),
+        admin: surface_budget(6, 1),
+    }
+}
+
+fn default_surface_client_wp_user_rate_limits() -> SurfaceClientRequestRateLimitConfig {
+    SurfaceClientRequestRateLimitConfig {
+        read: surface_budget(120, 8),
+        write: surface_budget(12, 1),
+        admin: surface_budget(3, 1),
+    }
+}
+
+fn default_surface_client_wp_site_rate_limits() -> SurfaceClientRequestRateLimitConfig {
+    SurfaceClientRequestRateLimitConfig {
+        read: surface_budget(600, 40),
+        write: surface_budget(60, 4),
+        admin: surface_budget(12, 2),
+    }
+}
+
+fn default_surface_client_ability_rate_limits() -> SurfaceClientAbilityRateLimitConfig {
+    SurfaceClientAbilityRateLimitConfig {
+        cheap_read: surface_budget(120, 10),
+        standard_read_composition: surface_budget(60, 5),
+        heavy_transform: surface_budget(12, 2),
+        feedback_write: surface_budget(6, 1),
+        admin_ability: surface_budget(3, 1),
+    }
+}
+
+fn default_surface_client_scope_rate_limits() -> SurfaceClientRequestRateLimitConfig {
+    SurfaceClientRequestRateLimitConfig {
+        read: surface_budget(240, 16),
+        write: surface_budget(24, 2),
+        admin: surface_budget(6, 1),
+    }
+}
+
+fn default_surface_client_early_retry_tighten_window_seconds() -> u64 {
+    5 * 60
+}
+
+fn default_surface_rate_limit_budget() -> SurfaceClientRateLimitBudgetConfig {
+    surface_budget(
+        default_surface_rate_limit_budget_requests_per_minute(),
+        default_surface_rate_limit_budget_burst_per_second(),
+    )
+}
+
+fn default_surface_rate_limit_budget_requests_per_minute() -> u32 {
+    60
+}
+
+fn default_surface_rate_limit_budget_burst_per_second() -> u32 {
+    1
 }
 
 impl Config {
@@ -2956,6 +3219,7 @@ mod tests {
             email_enrichment_timeout_seconds: 90,
             notifications: NotificationConfig::default(),
             text_scale_percent: 100,
+            surface_runtime: SurfaceRuntimeConfig::default(),
         }
     }
 
@@ -3019,6 +3283,57 @@ mod tests {
         let config: Config = serde_json::from_str(json).unwrap();
         assert!(config.features.is_empty());
         assert!(is_feature_enabled(&config, "emailTriage"));
+    }
+
+    #[test]
+    fn test_surface_runtime_defaults_when_absent() {
+        let json = r#"{
+            "workspacePath": "/tmp/test",
+            "profile": "customer-success"
+        }"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert_eq!(config.surface_runtime.max_bind_attempts, 10);
+        assert_eq!(
+            config
+                .surface_runtime
+                .unauthenticated_loopback_requests_per_minute,
+            60
+        );
+        assert_eq!(
+            config
+                .surface_runtime
+                .unauthenticated_loopback_burst_per_second,
+            10
+        );
+        assert_eq!(config.surface_runtime.pairing_code_max_failed_attempts, 5);
+        assert_eq!(
+            config.surface_runtime.signed_session_requests_per_minute,
+            120
+        );
+        assert_eq!(config.surface_runtime.signed_session_burst_per_second, 10);
+        assert_eq!(config.surface_runtime.signature_stale_window_seconds, 30);
+        assert_eq!(config.surface_runtime.signature_future_skew_seconds, 5);
+        assert_eq!(
+            config.surface_runtime.signature_nonce_cleanup_slack_seconds,
+            5
+        );
+        assert_eq!(
+            config.surface_runtime.signature_nonce_pending_ttl_seconds,
+            5
+        );
+        assert_eq!(
+            config.surface_runtime.signature_nonce_records_per_session,
+            4096
+        );
+        assert_eq!(config.surface_runtime.signature_max_active_sessions, 128);
+        assert_eq!(
+            config.surface_runtime.signature_global_nonce_records,
+            65_536
+        );
+        assert_eq!(
+            config.surface_runtime.signed_request_max_body_bytes,
+            256 * 1024
+        );
     }
 
     #[test]

@@ -7,17 +7,17 @@
 //! ## Actor attribution (W1-A0)
 //!
 //! Per ADR-0102 §7.6 and ADR-0111 §8, every audit record optionally carries
-//! actor attribution (`actor_kind`, `actor_instance`, `wp_user_id`,
+//! actor attribution (`actor_kind`, `actor_instance`, `wp_user_hash`,
 //! `actor_scopes`). For [`abilities_runtime::Actor::SurfaceClient`] invocations,
 //! these fields are MANDATORY and emission MUST route through the canonical
 //! helper [`emit_surface_audit`] (or [`AuditLogger::append_with_actor`]) so
-//! the SurfaceClient invariant — `actor_instance` populated AND `wp_user_id`
-//! populated — is enforced at the wire boundary.
+//! the SurfaceClient invariant — `actor_instance` populated AND WP user
+//! context present at the emission boundary — is enforced at the wire boundary.
 //!
 //! The storage format is append-only JSONL, not a relational table; the AC's
-//! `(wp_user_id, created_at)` "index" is realised as the `wp_user_id` field
-//! being directly extractable from each record line for forensic grep / jq
-//! queries (W6-A documents the full forensic-query exercise).
+//! `(wp_user_hash, created_at)` "index" is realised as the `wp_user_hash`
+//! field being directly extractable from each record line for forensic grep /
+//! jq queries (W6-A documents the full forensic-query exercise).
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
@@ -34,10 +34,11 @@ const RETENTION_DAYS: i64 = 90;
 
 /// A single audit log record.
 ///
-/// The four `actor_*` fields and `wp_user_id` were added in W1-A0
-/// (ADR-0102 §7.6 + ADR-0111 §8). They are additive and optional on the wire:
-/// existing v1.4.1 records (and new non-SurfaceClient emissions) serialize
-/// without these keys via `skip_serializing_if`. The
+/// The `actor_*` fields were added in W1-A0 (ADR-0102 §7.6 + ADR-0111 §8).
+/// W2-C replaces serialized raw `wp_user_id` with `wp_user_hash` while still
+/// accepting old local JSONL rows on read. The fields are additive and optional
+/// on the wire: existing v1.4.1 records (and new non-SurfaceClient emissions)
+/// serialize without these keys via `skip_serializing_if`. The
 /// [`AuditLogger::append_with_actor`] / [`emit_surface_audit`] write path
 /// populates them; [`AuditLogger::append`] preserves pre-W1-A0 semantics
 /// (`actor_kind: None`).
@@ -66,12 +67,18 @@ pub struct AuditRecord {
     /// `None` for every other actor variant and for untagged emissions.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub actor_instance: Option<SurfaceClientId>,
-    /// WordPress user id for a `SurfaceClient` invocation. MUST be
-    /// `Some(_)` whenever `actor_kind == Some("surface_client")`. `None`
-    /// otherwise.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Legacy W1-A0 raw WordPress user id field. Deserialized for backward
+    /// compatibility with existing local audit logs but never serialized by
+    /// new W2+ emissions because SurfaceClient audit rows must not carry raw
+    /// WP identity.
+    #[serde(default, skip_serializing)]
     pub wp_user_id: Option<u64>,
-    /// Scope grant the SurfaceClient invocation carried, serialised as a
+    /// Privacy-safe keyed/hash representation of the WordPress user id for a
+    /// `SurfaceClient` invocation. MUST be populated whenever
+    /// `actor_kind == Some("surface_client")`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wp_user_hash: Option<String>,
+    /// Privacy-safe hashes of the SurfaceClient scope grant, serialized as a
     /// deterministic (sorted) list. `None` for non-SurfaceClient emissions.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub actor_scopes: Option<Vec<String>>,
@@ -94,6 +101,10 @@ pub enum AuditError {
     /// extraction and emission. Surfaced as a runtime contract error rather
     /// than swallowed.
     SurfaceClientMissingWpUserId,
+    /// The caller passed `Actor::SurfaceClient { .. }` without supplying a
+    /// privacy-safe `wp_user_hash`. The audit helper intentionally refuses to
+    /// derive one from serialized actor fields because WP ids are low entropy.
+    SurfaceClientMissingWpUserHash,
     /// The serialise / append path failed (disk full, permission denied,
     /// JSON encoding error). Carries the underlying message for logging.
     Write(String),
@@ -105,6 +116,10 @@ impl std::fmt::Display for AuditError {
             AuditError::SurfaceClientMissingWpUserId => f.write_str(
                 "emit_surface_audit contract violation: Actor::SurfaceClient \
                  requires AuditFields.wp_user_id to be Some(_)",
+            ),
+            AuditError::SurfaceClientMissingWpUserHash => f.write_str(
+                "emit_surface_audit contract violation: Actor::SurfaceClient \
+                 requires AuditFields.wp_user_hash to be Some(_)",
             ),
             AuditError::Write(msg) => write!(f, "audit log write failed: {msg}"),
         }
@@ -134,6 +149,12 @@ pub struct AuditFields {
     /// WordPress user id from the SurfaceClient request context. REQUIRED
     /// for `Actor::SurfaceClient`; ignored for other actors (set to `None`).
     pub wp_user_id: Option<u64>,
+    /// Privacy-safe hash for the SurfaceClient WP user id. Surface pairing
+    /// computes this with non-audited high-entropy session material before
+    /// calling the audit helper. Required for `Actor::SurfaceClient` so the
+    /// audit boundary cannot derive a brute-forceable fallback from serialized
+    /// actor fields plus a low-entropy WP id.
+    pub wp_user_hash: Option<String>,
 }
 
 impl AuditFields {
@@ -145,6 +166,7 @@ impl AuditFields {
             category: category.into(),
             detail,
             wp_user_id: None,
+            wp_user_hash: None,
         }
     }
 
@@ -154,6 +176,13 @@ impl AuditFields {
     #[must_use]
     pub fn with_wp_user_id(mut self, wp_user_id: u64) -> Self {
         self.wp_user_id = Some(wp_user_id);
+        self
+    }
+
+    /// Attach a privacy-safe SurfaceClient WP user hash.
+    #[must_use]
+    pub fn with_wp_user_hash(mut self, wp_user_hash: impl Into<String>) -> Self {
+        self.wp_user_hash = Some(wp_user_hash.into());
         self
     }
 }
@@ -171,11 +200,19 @@ fn actor_kind_tag(actor: &Actor) -> &'static str {
     }
 }
 
-/// Render a [`ScopeSet`] as a deterministic, sorted `Vec<String>` for audit
-/// emission. [`ScopeSet::iter`] yields in sorted order by construction; we
-/// preserve it to keep forensic grep across log lines deterministic.
+/// Render a [`ScopeSet`] as deterministic scope hashes for audit emission.
+/// [`ScopeSet::iter`] yields in sorted order by construction; hashing keeps
+/// raw grant names out of the JSONL boundary while preserving correlation.
 fn serialize_scopes(scopes: &ScopeSet) -> Vec<String> {
-    scopes.iter().map(|s| s.to_string()).collect()
+    scopes
+        .iter()
+        .map(|scope| {
+            let mut hasher = Sha256::new();
+            hasher.update(b"DAILYOS-SURFACE-SCOPE-AUDIT-V1\n");
+            hasher.update(scope.as_str().as_bytes());
+            hex::encode(hasher.finalize())
+        })
+        .collect()
 }
 
 /// Canonical emission helper for actor-attributed audit events
@@ -187,11 +224,11 @@ fn serialize_scopes(scopes: &ScopeSet) -> Vec<String> {
 ///
 /// 1. Tags the record with `actor_kind` derived from the variant.
 /// 2. For `Actor::SurfaceClient`, populates `actor_instance` and
-///    `actor_scopes` from the variant's payload and REQUIRES
-///    `fields.wp_user_id` to be `Some(_)`. A missing `wp_user_id` returns
-///    [`AuditError::SurfaceClientMissingWpUserId`] without writing the
-///    record — a paired SurfaceClient invocation without a WP user id
-///    means request-context propagation broke somewhere upstream.
+///    `actor_scopes` from the variant's payload and REQUIRES both
+///    `fields.wp_user_id` and `fields.wp_user_hash` to be `Some(_)`. Missing
+///    values return a contract error without writing the record — a paired
+///    SurfaceClient invocation without WP user context means request-context
+///    propagation broke somewhere upstream.
 /// 3. For every other actor variant, `actor_instance`, `wp_user_id`, and
 ///    `actor_scopes` are written as `None`. `wp_user_id` on `AuditFields`
 ///    is ignored when the actor is not a SurfaceClient.
@@ -245,6 +282,9 @@ impl AuditLogger {
                 AuditError::SurfaceClientMissingWpUserId => {
                     "internal: append() emitted SurfaceClient contract error".to_string()
                 }
+                AuditError::SurfaceClientMissingWpUserHash => {
+                    "internal: append() emitted SurfaceClient hash contract error".to_string()
+                }
             })
     }
 
@@ -253,9 +293,9 @@ impl AuditLogger {
     /// This is the canonical write primitive behind [`emit_surface_audit`].
     /// It pattern-matches the actor variant, derives `actor_kind`, and for
     /// `Actor::SurfaceClient { instance, scopes }` requires
-    /// `fields.wp_user_id` to be `Some(_)` (returns
-    /// [`AuditError::SurfaceClientMissingWpUserId`] without writing
-    /// otherwise). For non-SurfaceClient actors, `wp_user_id` /
+    /// `fields.wp_user_id` and `fields.wp_user_hash` to be `Some(_)`
+    /// (returns a contract error without writing otherwise). For
+    /// non-SurfaceClient actors, `wp_user_id` /
     /// `actor_instance` / `actor_scopes` are written as `None` regardless of
     /// whether `fields.wp_user_id` was supplied — only SurfaceClient
     /// invocations carry WP identity.
@@ -266,14 +306,17 @@ impl AuditLogger {
         fields: AuditFields,
     ) -> Result<(), AuditError> {
         let kind = actor_kind_tag(actor);
-        let (actor_instance, wp_user_id, actor_scopes) = match actor {
+        let (actor_instance, wp_user_hash, actor_scopes) = match actor {
             Actor::SurfaceClient { instance, scopes } => {
-                let wp_user_id = fields
+                fields
                     .wp_user_id
                     .ok_or(AuditError::SurfaceClientMissingWpUserId)?;
+                let wp_user_hash = fields
+                    .wp_user_hash
+                    .ok_or(AuditError::SurfaceClientMissingWpUserHash)?;
                 (
                     Some(instance.clone()),
-                    Some(wp_user_id),
+                    Some(wp_user_hash),
                     Some(serialize_scopes(scopes)),
                 )
             }
@@ -290,7 +333,7 @@ impl AuditLogger {
             fields.detail,
             Some(kind.to_string()),
             actor_instance,
-            wp_user_id,
+            wp_user_hash,
             actor_scopes,
         )
     }
@@ -307,7 +350,7 @@ impl AuditLogger {
         detail: serde_json::Value,
         actor_kind: Option<String>,
         actor_instance: Option<SurfaceClientId>,
-        wp_user_id: Option<u64>,
+        wp_user_hash: Option<String>,
         actor_scopes: Option<Vec<String>>,
     ) -> Result<(), AuditError> {
         let record = AuditRecord {
@@ -319,7 +362,8 @@ impl AuditLogger {
             prev_hash: self.last_hash.clone(),
             actor_kind,
             actor_instance,
-            wp_user_id,
+            wp_user_id: None,
+            wp_user_hash,
             actor_scopes,
         };
 
@@ -614,6 +658,7 @@ mod tests {
                 actor_kind: None,
                 actor_instance: None,
                 wp_user_id: None,
+                wp_user_hash: None,
                 actor_scopes: None,
             };
             let line = serde_json::to_string(&record).unwrap();
@@ -746,15 +791,22 @@ mod tests {
         ScopeSet::new([SurfaceScope::new(scope)]).expect("non-empty scope set")
     }
 
+    fn test_wp_user_hash() -> String {
+        "a".repeat(64)
+    }
+
     #[test]
     fn emit_surface_audit_with_wp_user_id_writes_record() {
         let (_dir, mut logger) = temp_logger();
+        let scopes = scope_set("read.composition");
+        let expected_scope_hashes = serialize_scopes(&scopes);
         let actor = Actor::SurfaceClient {
             instance: SurfaceClientId::new("studio-instance-a"),
-            scopes: scope_set("read.composition"),
+            scopes,
         };
         let fields = AuditFields::new("data_access", serde_json::json!({"page": "compose"}))
-            .with_wp_user_id(42);
+            .with_wp_user_id(42)
+            .with_wp_user_hash(test_wp_user_hash());
 
         emit_surface_audit(&mut logger, "composition_view", &actor, fields)
             .expect("emit OK for SurfaceClient + wp_user_id");
@@ -768,11 +820,18 @@ mod tests {
             r.actor_instance.as_ref().map(|id| id.to_string()),
             Some("studio-instance-a".to_string())
         );
-        assert_eq!(r.wp_user_id, Some(42));
+        assert!(r.wp_user_id.is_none());
+        assert!(r
+            .wp_user_hash
+            .as_deref()
+            .is_some_and(|value| value.len() == 64));
         assert_eq!(
             r.actor_scopes.as_deref(),
-            Some(&["read.composition".to_string()][..])
+            Some(expected_scope_hashes.as_slice())
         );
+        let raw = fs::read_to_string(logger.path()).expect("read audit log");
+        assert!(!raw.contains("\"wp_user_id\""));
+        assert!(!raw.contains("read.composition"));
     }
 
     #[test]
@@ -782,13 +841,31 @@ mod tests {
             instance: SurfaceClientId::new("studio-instance-b"),
             scopes: scope_set("submit.feedback"),
         };
-        let fields = AuditFields::new("security", serde_json::json!({}));
+        let fields = AuditFields::new("security", serde_json::json!({}))
+            .with_wp_user_hash(test_wp_user_hash());
 
         let err = emit_surface_audit(&mut logger, "feedback_applied", &actor, fields)
             .expect_err("contract violation should reject");
         assert_eq!(err, AuditError::SurfaceClientMissingWpUserId);
 
         // The contract violation must NOT have written a record.
+        let records = read_records(logger.path(), 10, None);
+        assert!(records.is_empty(), "no record should be written on reject");
+    }
+
+    #[test]
+    fn emit_surface_audit_rejects_surface_client_without_wp_user_hash() {
+        let (_dir, mut logger) = temp_logger();
+        let actor = Actor::SurfaceClient {
+            instance: SurfaceClientId::new("studio-instance-h"),
+            scopes: scope_set("submit.feedback"),
+        };
+        let fields = AuditFields::new("security", serde_json::json!({})).with_wp_user_id(42);
+
+        let err = emit_surface_audit(&mut logger, "feedback_applied", &actor, fields)
+            .expect_err("contract violation should reject");
+        assert_eq!(err, AuditError::SurfaceClientMissingWpUserHash);
+
         let records = read_records(logger.path(), 10, None);
         assert!(records.is_empty(), "no record should be written on reject");
     }
@@ -808,6 +885,7 @@ mod tests {
         // Non-SurfaceClient: every SurfaceClient-only field stays None.
         assert!(r.actor_instance.is_none());
         assert!(r.wp_user_id.is_none());
+        assert!(r.wp_user_hash.is_none());
         assert!(r.actor_scopes.is_none());
     }
 
@@ -826,24 +904,28 @@ mod tests {
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].actor_kind.as_deref(), Some("agent"));
         assert!(records[0].wp_user_id.is_none());
+        assert!(records[0].wp_user_hash.is_none());
     }
 
     #[test]
     fn audit_record_round_trips_actor_fields_through_jsonl() {
         let (_dir, mut logger) = temp_logger();
+        let scopes = ScopeSet::new([
+            SurfaceScope::new("read.account_overview"),
+            SurfaceScope::new("submit.feedback"),
+        ])
+        .expect("non-empty scope set");
+        let expected_scope_hashes = serialize_scopes(&scopes);
         let actor = Actor::SurfaceClient {
             instance: SurfaceClientId::new("studio-instance-c"),
-            scopes: ScopeSet::new([
-                SurfaceScope::new("read.account_overview"),
-                SurfaceScope::new("submit.feedback"),
-            ])
-            .expect("non-empty scope set"),
+            scopes,
         };
         let fields = AuditFields::new(
             "data_access",
             serde_json::json!({"surface": "account_overview"}),
         )
-        .with_wp_user_id(99);
+        .with_wp_user_id(99)
+        .with_wp_user_hash(test_wp_user_hash());
 
         emit_surface_audit(&mut logger, "account_view", &actor, fields).unwrap();
 
@@ -858,16 +940,17 @@ mod tests {
             parsed.actor_instance.as_ref().map(|id| id.to_string()),
             Some("studio-instance-c".to_string())
         );
-        assert_eq!(parsed.wp_user_id, Some(99));
-        // ScopeSet iterates in sorted order — serialised list preserves it.
+        assert!(parsed.wp_user_id.is_none());
+        assert!(parsed
+            .wp_user_hash
+            .as_deref()
+            .is_some_and(|value| value.len() == 64));
+        assert!(!line.contains("\"wp_user_id\""));
+        assert!(!line.contains("read.account_overview"));
+        assert!(!line.contains("submit.feedback"));
         assert_eq!(
             parsed.actor_scopes.as_deref(),
-            Some(
-                &[
-                    "read.account_overview".to_string(),
-                    "submit.feedback".to_string(),
-                ][..]
-            )
+            Some(expected_scope_hashes.as_slice())
         );
 
         // Hash chain still verifies with the new fields present.

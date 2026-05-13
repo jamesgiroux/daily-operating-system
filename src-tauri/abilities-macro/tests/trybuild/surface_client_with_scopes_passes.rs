@@ -116,6 +116,12 @@ mod abilities {
             Invocable,
         }
 
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub struct AbilityRateLimit {
+            pub requests_per_minute: u32,
+            pub burst_per_second: u32,
+        }
+
         pub struct AbilityPolicy {
             pub allowed_actors: &'static [ActorKind],
             pub allowed_modes: &'static [ExecutionMode],
@@ -124,6 +130,7 @@ mod abilities {
             pub required_scopes: &'static [&'static str],
             pub mcp_exposure: McpExposure,
             pub client_side_executable: bool,
+            pub rate_limit: Option<AbilityRateLimit>,
         }
 
         pub struct ComposesEntry {
@@ -223,6 +230,7 @@ struct FixtureOutput;
     required_scopes = ["read.account_overview"],
     mcp_exposure = None,
     client_side_executable = true,
+    rate_limit = { requests_per_minute = 60, burst_per_second = 5 },
     composes = [],
     experimental = false,
     signal_policy = { emits_on_output_change = [], coalesce = false }
