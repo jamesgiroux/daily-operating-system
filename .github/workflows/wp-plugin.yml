@@ -58,6 +58,10 @@ jobs:
       - name: Composer audit (CVE scan)
         run: composer audit --locked
 
+      - name: Install ripgrep (required by grep-gates)
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+        working-directory: .
+
       - name: Grep gates (secret-persistence + L0 invariants)
         run: bash scripts/run-grep-gates.sh
 
