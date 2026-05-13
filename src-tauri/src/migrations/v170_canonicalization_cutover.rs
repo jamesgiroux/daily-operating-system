@@ -135,7 +135,8 @@ mod tests {
     fn precondition_blocks_when_pending_backfill_present() {
         let conn = open_with_claims_table();
         conn.execute(
-            "INSERT INTO intelligence_claims (id, canonical_status) VALUES (?1, 'pending_backfill')",
+            "INSERT INTO intelligence_claims /* dos7-allowed: v169 precondition test seeds pending_backfill state to verify cutover gate fires */ \
+             (id, canonical_status) VALUES (?1, 'pending_backfill')",
             ["claim-pending-1"],
         )
         .expect("insert pending_backfill fixture");
