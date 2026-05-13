@@ -16,7 +16,14 @@ use DailyOS\Transport\DailyOS_Credential_Store;
  */
 final class DailyOS_Settings_Page {
 	/**
-	 * Register the DailyOS settings submenu.
+	 * Action name used by the revoke-pairing admin-post handler.
+	 *
+	 * @var string
+	 */
+	public const REVOKE_ACTION = 'dailyos_revoke_pairing';
+
+	/**
+	 * Register the DailyOS settings submenu and revoke-action handler.
 	 */
 	public static function register(): void {
 		add_submenu_page(
@@ -27,6 +34,32 @@ final class DailyOS_Settings_Page {
 			'dailyos-settings',
 			[ self::class, 'render' ]
 		);
+
+		add_action( 'admin_post_' . self::REVOKE_ACTION, [ self::class, 'handle_revoke' ] );
+	}
+
+	/**
+	 * Process the revoke-pairing form submission.
+	 *
+	 * @return void
+	 */
+	public static function handle_revoke(): void {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'Insufficient permissions to revoke DailyOS pairing.', 'dailyos' ) );
+		}
+
+		check_admin_referer( self::REVOKE_ACTION );
+
+		( new DailyOS_Credential_Store() )->clear();
+
+		wp_safe_redirect(
+			add_query_arg(
+				'dailyos_revoked',
+				'1',
+				admin_url( 'admin.php?page=dailyos-settings' )
+			)
+		);
+		exit;
 	}
 
 	/**
@@ -44,6 +77,14 @@ final class DailyOS_Settings_Page {
 
 		echo '<div class="wrap">';
 		echo '<h1>' . esc_html__( 'DailyOS Settings', 'dailyos' ) . '</h1>';
+
+		// Display-only flag set by handle_revoke() after a nonce-verified admin-post action.
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		if ( isset( $_GET['dailyos_revoked'] ) && '1' === sanitize_text_field( wp_unslash( $_GET['dailyos_revoked'] ) ) ) {
+			echo '<div class="notice notice-success is-dismissible"><p>'
+				. esc_html__( 'DailyOS pairing revoked.', 'dailyos' )
+				. '</p></div>';
+		}
 
 		if ( null === $marker ) {
 			echo '<p>' . esc_html__( 'Not paired', 'dailyos' ) . '</p>';
@@ -65,6 +106,17 @@ final class DailyOS_Settings_Page {
 		self::render_row( __( 'Endpoint version', 'dailyos' ), (string) ( $marker['endpoint_version'] ?? '' ) );
 		self::render_row( __( 'Last use', 'dailyos' ), self::format_last_use( (string) ( $marker['last_use_gmt'] ?? '' ) ) );
 		echo '</tbody></table>';
+
+		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
+		wp_nonce_field( self::REVOKE_ACTION );
+		echo '<input type="hidden" name="action" value="' . esc_attr( self::REVOKE_ACTION ) . '">';
+		echo '<p class="submit">';
+		echo '<button type="submit" class="button button-secondary">'
+			. esc_html__( 'Revoke pairing', 'dailyos' )
+			. '</button>';
+		echo '</p>';
+		echo '</form>';
+
 		echo '</div>';
 	}
 
