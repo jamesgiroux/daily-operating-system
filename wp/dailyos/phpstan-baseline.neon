@@ -1,0 +1,56 @@
+parameters:
+	ignoreErrors:
+		-
+			message: "#^Call to function is_wp_error\\(\\) with WP_Ability\\|null will always evaluate to false\\.$#"
+			count: 1
+			path: includes/class-dailyos-ability-registry.php
+
+		-
+			message: "#^Constant DAILYOS_PLUGIN_DIR not found\\.$#"
+			count: 1
+			path: includes/class-dailyos-ability-registry.php
+
+		-
+			message: "#^is_wp_error\\(WP_Ability\\|null\\) will always evaluate to false\\.$#"
+			count: 1
+			path: includes/class-dailyos-ability-registry.php
+
+		-
+			message: "#^Property WP_User\\:\\:\\$roles \\(array\\<string\\>\\) in isset\\(\\) is not nullable\\.$#"
+			count: 1
+			path: includes/class-dailyos-activation.php
+
+		-
+			message: "#^Constant DAILYOS_PLUGIN_DIR not found\\.$#"
+			count: 1
+			path: includes/class-dailyos-plugin.php
+
+		-
+			message: "#^Call to static method line\\(\\) on an unknown class WP_CLI\\.$#"
+			count: 5
+			path: includes/cli/class-dailyos-cli.php
+
+		-
+			message: "#^Call to static method success\\(\\) on an unknown class WP_CLI\\.$#"
+			count: 2
+			path: includes/cli/class-dailyos-cli.php
+
+		-
+			message: "#^Property WP_Role\\:\\:\\$capabilities \\(array\\<bool\\>\\) in isset\\(\\) is not nullable\\.$#"
+			count: 1
+			path: includes/mcp/class-dailyos-mcp-roles.php
+
+		-
+			message: "#^Property WP_Roles\\:\\:\\$role_names \\(array\\<string\\>\\) in isset\\(\\) is not nullable\\.$#"
+			count: 1
+			path: includes/services/class-dailyos-namespace-store.php
+
+		-
+			message: "#^Property DailyOS\\\\Transport\\\\DailyOS_Hmac_Key\\:\\:\\$redacted is never read, only written\\.$#"
+			count: 1
+			path: includes/transport/class-dailyos-hmac-key.php
+
+		-
+			message: "#^Property DailyOS\\\\Transport\\\\DailyOS_Session_Credential\\:\\:\\$redacted is never read, only written\\.$#"
+			count: 1
+			path: includes/transport/class-dailyos-session-credential.php
