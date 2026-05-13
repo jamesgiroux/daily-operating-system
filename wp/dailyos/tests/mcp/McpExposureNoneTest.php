@@ -8,6 +8,7 @@
 declare(strict_types=1);
 
 use DailyOS\DailyOS_Ability_Registry;
+use DailyOS\Mcp\DailyOS_Mcp_Audit;
 use DailyOS\Mcp\DailyOS_Mcp_Permission;
 use DailyOS\Mcp\DailyOS_Mcp_Server;
 use PHPUnit\Framework\TestCase;
@@ -121,6 +122,28 @@ final class DailyOS_McpExposureNoneTest extends TestCase {
 					}
 				)
 			)
+		);
+	}
+
+	/**
+	 * Public invocation logger emits an MCP audit event.
+	 */
+	public function test_public_log_invocation_emits_audit_event(): void {
+		$registry = new DailyOS_Ability_Registry( $this->create_inventory_file( [] ) );
+		$server   = $this->create_server( $registry );
+
+		$server->public_log_invocation( 'dailyos/account-overview', 42, DailyOS_Mcp_Audit::EXPOSURE_INVOCABLE, 'allowed' );
+
+		$this->assertCount( 1, $GLOBALS['dailyos_test_audit_events'] );
+		$this->assertSame(
+			[
+				'mcp_server_name'    => 'DailyOS Substrate',
+				'mcp_exposure_path'  => DailyOS_Mcp_Audit::EXPOSURE_INVOCABLE,
+				'wp_user_id'         => 42,
+				'ability_name'       => 'dailyos/account-overview',
+				'scope_check_result' => 'allowed',
+			],
+			$GLOBALS['dailyos_test_audit_events'][0]
 		);
 	}
 
