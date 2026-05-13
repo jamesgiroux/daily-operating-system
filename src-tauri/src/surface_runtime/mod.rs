@@ -33,6 +33,7 @@ use crate::bridges::types::{
     invoke_registry_json_for_actor, provider_from_context_snapshot, surface_error, BridgeActor,
     BridgeSurface, RequestScopedInvocation,
 };
+use abilities_runtime::abilities::registry::{Actor, ScopeSet, SurfaceClientId};
 use crate::bridges::BridgeSurfaceError;
 use crate::services::context::ClaimDismissalSurface;
 use crate::services::surface_pairing::{
@@ -730,23 +731,36 @@ async fn signed_transport_response(
         wp_user_hash: verified.wp_user_hash.clone(),
         now: Utc::now(),
     };
+    let audit_session_id = verified.session_id.clone();
+    let audit_surface_client_id = verified.surface_client_id.clone();
     let validated = match app_state
         .db_write(move |db| {
             let clock = crate::services::context::SystemClock;
             let rng = crate::services::context::SystemRng;
             let external = crate::services::context::ExternalClients::default();
             let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &external);
-            Ok(surface_pairing::validate_signed_session(
-                &ctx,
-                db,
-                validation_input,
-            ))
+            let result = surface_pairing::validate_signed_session(&ctx, db, validation_input);
+            // On error, recover scopes from the pairing record for audit attribution.
+            // Best-effort: returns None if the row is already gone or scopes_json
+            // is corrupted, in which case the audit emission falls back to
+            // `Actor::System`.
+            let scopes_for_audit = match &result {
+                Err(_) => surface_pairing::load_session_scope_set_for_audit(
+                    db,
+                    &audit_session_id,
+                    &audit_surface_client_id,
+                ),
+                Ok(_) => None,
+            };
+            Ok((result, scopes_for_audit))
         })
         .await
     {
-        Ok(Ok(validated)) => validated,
-        Ok(Err(error)) => {
-            for event in validation_rejection_events(&verified, &error) {
+        Ok((Ok(validated), _)) => validated,
+        Ok((Err(error), scopes_for_audit)) => {
+            for event in
+                validation_rejection_events(&verified, &error, scopes_for_audit.as_ref())
+            {
                 emit_pairing_audit_event(&app_state, &event);
             }
             evict_cached_session_after_validation_error(
@@ -1339,6 +1353,7 @@ fn validation_error_invalidates_cached_session(error: &SurfacePairingError) -> b
 fn validation_rejection_events(
     verified: &hmac::VerifiedSignedRequest,
     error: &SurfacePairingError,
+    scopes_for_audit: Option<&ScopeSet>,
 ) -> Vec<SurfacePairingAuditEvent> {
     let mut event_kinds: Vec<&'static str> = match error {
         SurfacePairingError::UnknownRuntimeAnchor => {
@@ -1362,14 +1377,33 @@ fn validation_rejection_events(
         event_kinds.push("pairing.exfiltration.off_host_binding_failure");
     }
 
+    // Attribute the rejected attempt to the claimed SurfaceClient identity when
+    // we can recover its granted scope set; the runtime is rejecting the
+    // request but the requester's identity was HMAC-verified upstream and
+    // belongs on the audit row for forensic traceability. Fall back to
+    // `Actor::System` if the pairing record is gone (extremely rare — the
+    // session_id reached HMAC verification, so a paired row almost certainly
+    // existed at request time).
+    let (actor, wp_user_id, wp_user_hash) = match scopes_for_audit {
+        Some(scopes) => (
+            Actor::SurfaceClient {
+                instance: SurfaceClientId::new(verified.surface_client_id.clone()),
+                scopes: scopes.clone(),
+            },
+            Some(verified.wp_user_id),
+            Some(verified.wp_user_hash.clone()),
+        ),
+        None => (Actor::System, None, None),
+    };
+
     event_kinds
         .into_iter()
         .map(|event_kind| SurfacePairingAuditEvent {
             event_kind,
             category: "security",
-            actor: abilities_runtime::abilities::registry::Actor::System,
-            wp_user_id: None,
-            wp_user_hash: None,
+            actor: actor.clone(),
+            wp_user_id,
+            wp_user_hash: wp_user_hash.clone(),
             detail: json!({
                 "surface_client_id": verified.surface_client_id,
                 "session_id_hash": hmac::hash_prefix(&verified.session_id),
@@ -2970,5 +3004,91 @@ mod tests {
         let bytes =
             runtime.block_on(async { response.into_body().collect().await.unwrap().to_bytes() });
         serde_json::from_slice(&bytes).unwrap()
+    }
+
+    fn verified_request_for_test() -> hmac::VerifiedSignedRequest {
+        hmac::VerifiedSignedRequest {
+            session_id: "sess_test_attribution".into(),
+            surface_client_id: "surface_client_test_attribution".into(),
+            site_binding_digest: "presented_digest_test".into(),
+            site_nonce: "presented_nonce_test".into(),
+            wp_user_id: 4242,
+            wp_user_hash: "wp_user_hash_attribution".into(),
+            wp_site_id: "wp_site_test".into(),
+            home_url: "https://test.local".into(),
+            site_url: "https://test.local".into(),
+            wp_install_uuid: "install-uuid-test".into(),
+            plugin_instance_uuid: "plugin-uuid-test".into(),
+            multisite_blog_id: None,
+        }
+    }
+
+    #[test]
+    fn validation_rejection_events_attribute_surface_client_when_scopes_recovered() {
+        let verified = verified_request_for_test();
+        let scopes = ScopeSet::new([SurfaceScope::new("read.account_overview")])
+            .expect("non-empty scope set");
+        let events = validation_rejection_events(
+            &verified,
+            &SurfacePairingError::SiteBindingMismatch,
+            Some(&scopes),
+        );
+
+        assert!(
+            !events.is_empty(),
+            "SiteBindingMismatch should emit at least one event"
+        );
+        for event in &events {
+            match &event.actor {
+                Actor::SurfaceClient { instance, scopes: actor_scopes } => {
+                    assert_eq!(
+                        instance.as_str(),
+                        verified.surface_client_id.as_str(),
+                        "actor_instance preserves verified surface_client_id"
+                    );
+                    let actor_strs: Vec<String> = actor_scopes
+                        .iter()
+                        .map(|s| s.as_str().to_string())
+                        .collect();
+                    let expected_strs: Vec<String> =
+                        scopes.iter().map(|s| s.as_str().to_string()).collect();
+                    assert_eq!(
+                        actor_strs, expected_strs,
+                        "actor scopes match the recovered pairing scopes"
+                    );
+                }
+                other => panic!("expected Actor::SurfaceClient, got {:?}", other),
+            }
+            assert_eq!(
+                event.wp_user_id,
+                Some(verified.wp_user_id),
+                "wp_user_id preserved from VerifiedSignedRequest"
+            );
+            assert_eq!(
+                event.wp_user_hash.as_deref(),
+                Some(verified.wp_user_hash.as_str()),
+                "wp_user_hash preserved from VerifiedSignedRequest"
+            );
+        }
+    }
+
+    #[test]
+    fn validation_rejection_events_fall_back_to_system_when_scopes_unavailable() {
+        let verified = verified_request_for_test();
+        let events = validation_rejection_events(
+            &verified,
+            &SurfacePairingError::UnknownRuntimeAnchor,
+            None,
+        );
+
+        assert!(!events.is_empty(), "expected at least one event");
+        for event in &events {
+            assert!(
+                matches!(event.actor, Actor::System),
+                "fallback to Actor::System when scopes unrecoverable"
+            );
+            assert!(event.wp_user_id.is_none(), "no wp_user_id without attribution");
+            assert!(event.wp_user_hash.is_none(), "no wp_user_hash without attribution");
+        }
     }
 }

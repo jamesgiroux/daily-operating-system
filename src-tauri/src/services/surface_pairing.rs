@@ -811,6 +811,25 @@ pub fn validate_signed_session(
     })
 }
 
+/// Look up the scope set granted to a paired surface_client for audit attribution.
+///
+/// Used by transport-layer rejection paths that have an HMAC-verified request
+/// but where `validate_signed_session` failed before producing a
+/// `ValidatedSurfaceSession`. Returns `None` on any error (pairing row gone,
+/// scopes_json corrupted, etc.) — callers fall back to `Actor::System`
+/// attribution in that case.
+pub fn load_session_scope_set_for_audit(
+    db: &ActionDb,
+    session_id: &str,
+    surface_client_id: &str,
+) -> Option<ScopeSet> {
+    let row = load_session_pairing(db, session_id, surface_client_id)
+        .ok()
+        .flatten()?;
+    let scopes = scopes_from_json(&row.scopes_json).ok()?;
+    scope_set_from_strings(&scopes).ok()
+}
+
 pub fn list_pairings(
     db: &ActionDb,
 ) -> Result<Vec<SurfaceClientPairingSummary>, SurfacePairingError> {
