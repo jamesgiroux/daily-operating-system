@@ -41,7 +41,10 @@ CREATE TABLE intelligence_claims (
     sensitivity TEXT NOT NULL,
     verification_state TEXT NOT NULL,
     verification_reason TEXT,
-    needs_user_decision_at TEXT
+    needs_user_decision_at TEXT,
+    canonical_status TEXT NOT NULL DEFAULT 'live'
+        CHECK (canonical_status IN ('pending_backfill','legacy_unmigrated','live')),
+    non_semantic_mergeable BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 CREATE TABLE sensitivity_reveal_audit (

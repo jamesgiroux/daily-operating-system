@@ -903,7 +903,7 @@ impl AppState {
         }
     }
 
-    #[cfg(any(test, feature = "test-harness"))]
+    #[cfg(any(test, feature = "test-harness", feature = "bench-harness"))]
     #[doc(hidden)]
     pub fn test_with_db_service(db_service: Arc<crate::db_service::DbService>) -> Self {
         let prep_queue = Arc::new(Mutex::new(Vec::new()));

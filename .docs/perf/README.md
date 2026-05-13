@@ -18,8 +18,9 @@ Published mode is release evidence. It must fail when there are zero real
 benches, bench execution fails, a required baseline is missing, the evidence
 record is malformed, input hashes are missing, or privacy/publication rules fail.
 
-The existing `scripts/suite-p.sh` is the canonical runner, but DOS-348 owns
-hardening it before its output can be trusted as published evidence.
+`scripts/suite-p.sh` is the canonical runner. Published runs bind the manifest,
+bench config, current baseline, and comparator baseline hashes, and compare every
+manifest bench before updating the current baseline artifact.
 
 ## Stage 8a Checks
 

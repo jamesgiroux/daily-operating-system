@@ -601,6 +601,54 @@ for (const parity of [
       );
     },
   },
+  {
+    name: "eval:abilities pnpm separator parity honors scope/run-id/out",
+    command: [
+      "eval:abilities",
+      "--",
+      "--mode",
+      "smoke",
+      "--scope",
+      "v1.4.1-W8",
+      "--run-id",
+      "negative-probes-abilities-smoke-parity",
+      "--out",
+      "src-tauri/target/evidence/abilities_eval/negative-probes/abilities-smoke-parity.json",
+    ],
+    expectStatus: "pass",
+    verify() {
+      const file = path.join(
+        repoRoot,
+        "src-tauri/target/evidence/abilities_eval/negative-probes/abilities-smoke-parity.json",
+      );
+      if (!fs.existsSync(file)) {
+        return false;
+      }
+      const record = JSON.parse(fs.readFileSync(file, "utf8"));
+      return (
+        record.suite === "abilities_eval" &&
+        record.scope === "v1.4.1-W8" &&
+        record.run_id === "negative-probes-abilities-smoke-parity" &&
+        record.result === "pass"
+      );
+    },
+  },
+  {
+    name: "suite:p published mode fails without comparator baseline",
+    command: [
+      "suite:p",
+      "--",
+      "--mode",
+      "published",
+      "--scope",
+      "v1.4.1-W8",
+      "--run-id",
+      "negative-probes-suite-p-missing-baseline",
+      "--baseline",
+      ".docs/perf/baselines/negative-probes-missing-baseline.json",
+    ],
+    expectStatus: "fail",
+  },
 ]) {
   parity.prepare?.();
   const result = run("pnpm", parity.command);

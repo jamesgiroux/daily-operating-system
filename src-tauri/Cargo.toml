@@ -104,6 +104,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 anyhow = { version = "1", optional = true }
 
 [dev-dependencies]
+criterion = "0.8.2"
 filetime = "0.2.27"
 tauri = { version = "2", features = ["test"] }
 tracing-test = "0.2"
@@ -115,6 +116,7 @@ harness-hermetic = ["abilities-runtime/harness-hermetic"]
 # Enables public helpers used only by integration tests. This must stay out of
 # default/release builds; src/lib.rs also rejects release builds with it enabled.
 test-harness = []
+bench-harness = []
 release-gate = []
 mcp = ["dep:anyhow"]
 load-test = ["test-harness"]
@@ -122,6 +124,7 @@ load-test = ["test-harness"]
 [[bin]]
 name = "dailyos"
 path = "src/main.rs"
+bench = false
 
 [[bin]]
 name = "dailyos-mcp"
@@ -146,6 +149,11 @@ path = "src/bin/repair_entity_linking.rs"
 name = "release-gate"
 path = "src/bin/release_gate.rs"
 required-features = ["release-gate"]
+
+[[bench]]
+name = "suite_p_baseline"
+harness = false
+required-features = ["bench-harness"]
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"

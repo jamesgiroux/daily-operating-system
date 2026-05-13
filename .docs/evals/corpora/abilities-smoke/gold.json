@@ -1,0 +1,15 @@
+{
+  "schema_version": "abilities_smoke_gold_v1",
+  "corpus_id": "abilities-smoke",
+  "corpus_version": "2026-05-11.1",
+  "fixtures": {
+    "fixture-alpha-renewal-risk": {
+      "expected_source_ids": ["source-alpha-health-note", "source-alpha-support-note"],
+      "required_fact_ids": ["alpha_sponsor_absent", "alpha_sso_blocker_open"]
+    },
+    "fixture-beta-expansion-follow-up": {
+      "expected_source_ids": ["source-beta-expansion-note"],
+      "required_fact_ids": ["beta_workshop_completed", "beta_follow_up_requested"]
+    }
+  }
+}

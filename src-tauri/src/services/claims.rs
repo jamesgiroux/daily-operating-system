@@ -4083,31 +4083,38 @@ impl ClaimSurfaceTrustDowngradeInputs {
     }
 }
 
-fn claim_surface_shadow_columns(claim_alias: &str) -> String {
-    format!(
-        "EXISTS (
-             SELECT 1
-             FROM ambiguous_claim_pairs pair
-             JOIN canonicalization_decisions decision
-               ON decision.decision_id = pair.decision_id
-             WHERE pair.user_resolution IS NULL
-               AND decision.mode = 'live'
-               AND (pair.claim_id_a = {claim_alias}.id OR pair.claim_id_b = {claim_alias}.id)
-         ) AS unresolved_ambiguous_pair,
-         EXISTS (
-             SELECT 1
-             FROM canonicalization_decisions decision
-             WHERE decision.canonicalization_mode = 'hash_fallback'
-               AND decision.mode = 'live'
-               AND (decision.claim_id_a = {claim_alias}.id OR decision.claim_id_b = {claim_alias}.id)
-               AND NOT EXISTS (
-                   SELECT 1
-                   FROM canonicalization_decisions newer
-                   WHERE newer.supersedes_decision_id = decision.decision_id
-                     AND newer.mode = 'live'
-               )
-         ) AS hash_fallback_decision"
-    )
+fn claim_surface_shadow_columns(
+    conn: &rusqlite::Connection,
+    claim_alias: &str,
+) -> Result<String, ClaimError> {
+    if !canonical_shadow_schema_ready(conn)? {
+        return Ok("0 AS unresolved_ambiguous_pair, 0 AS hash_fallback_decision".to_string());
+    }
+
+    Ok(format!(
+            "EXISTS (
+                 SELECT 1
+                 FROM ambiguous_claim_pairs pair
+                 JOIN canonicalization_decisions decision
+                   ON decision.decision_id = pair.decision_id
+                 WHERE pair.user_resolution IS NULL
+                   AND decision.mode = 'live'
+                   AND (pair.claim_id_a = {claim_alias}.id OR pair.claim_id_b = {claim_alias}.id)
+             ) AS unresolved_ambiguous_pair,
+             EXISTS (
+                 SELECT 1
+                 FROM canonicalization_decisions decision
+                 WHERE decision.canonicalization_mode = 'hash_fallback'
+                   AND decision.mode = 'live'
+                   AND (decision.claim_id_a = {claim_alias}.id OR decision.claim_id_b = {claim_alias}.id)
+                   AND NOT EXISTS (
+                       SELECT 1
+                       FROM canonicalization_decisions newer
+                       WHERE newer.supersedes_decision_id = decision.decision_id
+                         AND newer.mode = 'live'
+                   )
+             ) AS hash_fallback_decision"
+        ))
 }
 
 fn read_claim_row(row: &rusqlite::Row<'_>) -> Result<IntelligenceClaim, ClaimError> {
@@ -4217,7 +4224,7 @@ pub fn load_claim_by_id(
     conn: &rusqlite::Connection,
     claim_id: &str,
 ) -> Result<Option<IntelligenceClaim>, ClaimError> {
-    let surface_columns = claim_surface_shadow_columns("claim");
+    let surface_columns = claim_surface_shadow_columns(conn, "claim")?;
     let sql = format!(
         "SELECT {CLAIM_COLUMNS}, {surface_columns}
          FROM intelligence_claims claim
@@ -4260,6 +4267,10 @@ fn record_shadow_canonicalization_for_committed_claim(
     let evaluated_at = ctx.clock.now();
     let evaluated_at_s = evaluated_at.to_rfc3339();
     let next_reconcile_at = (evaluated_at + ambiguous_base_interval()).to_rfc3339();
+    let timing = CanonicalizationAuditTiming {
+        evaluated_at: &evaluated_at_s,
+        next_reconcile_at: &next_reconcile_at,
+    };
     let evaluations = candidates
         .into_iter()
         .map(|candidate| {
@@ -4272,13 +4283,7 @@ fn record_shadow_canonicalization_for_committed_claim(
     with_claim_transaction(db, |tx| {
         for (candidate, outcome, config) in &evaluations {
             insert_shadow_canonicalization_decision_if_current_in_tx(
-                tx,
-                &query,
-                candidate,
-                outcome,
-                config,
-                &evaluated_at_s,
-                &next_reconcile_at,
+                ctx, tx, &query, candidate, outcome, config, timing,
             )?;
         }
 
@@ -4287,14 +4292,20 @@ fn record_shadow_canonicalization_for_committed_claim(
     Ok(())
 }
 
+#[derive(Clone, Copy)]
+struct CanonicalizationAuditTiming<'a> {
+    evaluated_at: &'a str,
+    next_reconcile_at: &'a str,
+}
+
 fn insert_shadow_canonicalization_decision_if_current_in_tx(
+    ctx: &ServiceContext<'_>,
     tx: &ActionDb,
     evaluated_query: &CanonicalMatchInput,
     evaluated_candidate: &CanonicalMatchInput,
     outcome: &CanonicalMatchOutcome,
     config: &CanonicalMatchConfig,
-    evaluated_at: &str,
-    next_reconcile_at: &str,
+    timing: CanonicalizationAuditTiming<'_>,
 ) -> Result<(), ClaimError> {
     let Some(rechecked_query) =
         load_canonical_match_input_by_id(tx.conn_ref(), &evaluated_query.claim_id)?
@@ -4314,14 +4325,15 @@ fn insert_shadow_canonicalization_decision_if_current_in_tx(
     }
 
     insert_canonicalization_decision_in_tx(
+        ctx,
         tx,
         &rechecked_query,
         &rechecked_candidate,
         outcome,
         config,
         CanonicalizationDecisionMode::Shadow,
-        evaluated_at,
-        next_reconcile_at,
+        timing.evaluated_at,
+        timing.next_reconcile_at,
     )
 }
 
@@ -4641,6 +4653,7 @@ fn read_claim_row_sqlite(row: &rusqlite::Row<'_>) -> rusqlite::Result<Intelligen
 
 #[allow(clippy::too_many_arguments)]
 fn insert_canonicalization_decision_in_tx(
+    ctx: &ServiceContext<'_>,
     tx: &ActionDb,
     query: &CanonicalMatchInput,
     candidate: &CanonicalMatchInput,
@@ -4729,6 +4742,7 @@ fn insert_canonicalization_decision_in_tx(
             "decision": outcome.decision.as_db(),
         });
         emit_claim_signal_in_tx(
+            ctx,
             tx,
             "canonicalization_decision_created",
             &claim_a.claim_id,
@@ -4737,6 +4751,7 @@ fn insert_canonicalization_decision_in_tx(
 
         if live_decision && record_config.mode == CanonicalizationMode::HashFallback {
             emit_claim_pair_signal_in_tx(
+                ctx,
                 tx,
                 "trust_band_downgraded",
                 &claim_a.claim_id,
@@ -4755,6 +4770,7 @@ fn insert_canonicalization_decision_in_tx(
             )?;
         } else if live_decision && supersedes_hash_fallback {
             emit_claim_pair_signal_in_tx(
+                ctx,
                 tx,
                 "trust_band_cleared",
                 &claim_a.claim_id,
@@ -4785,6 +4801,7 @@ fn insert_canonicalization_decision_in_tx(
             )?;
             if resolved_rows > 0 && live_decision {
                 emit_claim_pair_signal_in_tx(
+                    ctx,
                     tx,
                     "trust_band_cleared",
                     &claim_a.claim_id,
@@ -4827,6 +4844,7 @@ fn insert_canonicalization_decision_in_tx(
         )?;
         if pair_rows > 0 {
             emit_claim_pair_signal_in_tx(
+                ctx,
                 tx,
                 "ambiguous_pair_created",
                 &claim_a.claim_id,
@@ -4843,6 +4861,7 @@ fn insert_canonicalization_decision_in_tx(
             )?;
             if live_decision {
                 emit_claim_pair_signal_in_tx(
+                    ctx,
                     tx,
                     "trust_band_downgraded",
                     &claim_a.claim_id,
@@ -4933,24 +4952,27 @@ fn latest_decision_for_pair(
 }
 
 fn emit_claim_signal_in_tx(
+    ctx: &ServiceContext<'_>,
     tx: &ActionDb,
     signal_type: &str,
     claim_id: &str,
     payload: serde_json::Value,
 ) -> Result<(), ClaimError> {
-    emit_claim_signal_in_tx_inner(tx, signal_type, claim_id, payload, false)
+    emit_claim_signal_in_tx_inner(ctx, tx, signal_type, claim_id, payload, false)
 }
 
 fn emit_claim_signal_and_enqueue_in_tx(
+    ctx: &ServiceContext<'_>,
     tx: &ActionDb,
     signal_type: &str,
     claim_id: &str,
     payload: serde_json::Value,
 ) -> Result<(), ClaimError> {
-    emit_claim_signal_in_tx_inner(tx, signal_type, claim_id, payload, true)
+    emit_claim_signal_in_tx_inner(ctx, tx, signal_type, claim_id, payload, true)
 }
 
 fn emit_claim_pair_signal_in_tx(
+    ctx: &ServiceContext<'_>,
     tx: &ActionDb,
     signal_type: &str,
     claim_id_a: &str,
@@ -4961,32 +4983,34 @@ fn emit_claim_pair_signal_in_tx(
     for claim_id in [claim_id_a, claim_id_b] {
         let payload = payload_for_claim(claim_id);
         if enqueue_recompute {
-            emit_claim_signal_and_enqueue_in_tx(tx, signal_type, claim_id, payload)?;
+            emit_claim_signal_and_enqueue_in_tx(ctx, tx, signal_type, claim_id, payload)?;
         } else {
-            emit_claim_signal_in_tx(tx, signal_type, claim_id, payload)?;
+            emit_claim_signal_in_tx(ctx, tx, signal_type, claim_id, payload)?;
         }
     }
     Ok(())
 }
 
 fn emit_claim_signal_in_tx_inner(
+    ctx: &ServiceContext<'_>,
     tx: &ActionDb,
     signal_type: &str,
     claim_id: &str,
     payload: serde_json::Value,
     enqueue_recompute: bool,
 ) -> Result<(), ClaimError> {
-    let outcome = crate::signals::bus::emit_signal_in_active_tx(
+    let signal_id = crate::services::signals::emit_in_transaction(
+        ctx,
         tx,
         "claim",
         claim_id,
         signal_type,
         "claims:canonical_match_v2",
-        &payload,
+        payload,
     )
     .map_err(|error| ClaimError::Transaction(error.to_string()))?;
     if enqueue_recompute {
-        enqueue_signal_claim_recompute_for_claim_in_tx(tx, &outcome.id, claim_id)?;
+        enqueue_signal_claim_recompute_for_claim_in_tx(tx, &signal_id, claim_id)?;
     }
     Ok(())
 }
@@ -5464,7 +5488,7 @@ fn load_claims_where(
     let Some(id) = subject_id_for_lookup(&subject) else {
         return Ok(Vec::new());
     };
-    let surface_columns = claim_surface_shadow_columns("current_claim");
+    let surface_columns = claim_surface_shadow_columns(db.conn_ref(), "current_claim")?;
     let sql = format!(
         "SELECT {CLAIM_COLUMNS}, {surface_columns}
          FROM intelligence_claims current_claim
@@ -8785,7 +8809,7 @@ pub fn load_claims_active_by_source_ref(
     db: &ActionDb,
     source_ref: &str,
 ) -> Result<Vec<IntelligenceClaim>, ClaimError> {
-    let surface_columns = claim_surface_shadow_columns("current_claim");
+    let surface_columns = claim_surface_shadow_columns(db.conn_ref(), "current_claim")?;
     let sql = if claim_semantic_evidence_table_exists(db.conn_ref())? {
         format!(
             "SELECT {CLAIM_COLUMNS}, {surface_columns}
@@ -9546,6 +9570,8 @@ mod tests {
     #[test]
     fn suite_s_shadow_audit_skips_insert_when_candidate_backfill_state_changed_in_tx() {
         let db = test_db();
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
         insert_fixture_claim(
             &db,
             "claim-shadow-query",
@@ -9580,7 +9606,8 @@ mod tests {
                      non_semantic_mergeable = TRUE,
                      structural_field_content_hash = NULL,
                      backfill_epoch = 0
-                 WHERE id = 'claim-shadow-candidate'",
+                 WHERE id = 'claim-shadow-candidate'
+                 -- dos7-allowed: test-only stale shadow fixture",
                 [],
             )
             .unwrap();
@@ -9600,12 +9627,14 @@ mod tests {
 
         db.conn_ref()
             .execute(
-                "UPDATE intelligence_claims /* dos7-allowed: test-only backfill completion fixture */
+                "UPDATE intelligence_claims
+                 -- dos7-allowed: test-only backfill completion fixture
                  SET canonical_status = 'live',
                      non_semantic_mergeable = FALSE,
                      structural_field_content_hash = ?1,
                      backfill_epoch = ?2
-                 WHERE id = 'claim-shadow-candidate'",
+                 WHERE id = 'claim-shadow-candidate'
+                 -- dos7-allowed: test-only backfill completion fixture",
                 params![
                     live_candidate.structural_field_content_hash.as_deref(),
                     live_candidate.backfill_epoch,
@@ -9615,13 +9644,16 @@ mod tests {
 
         with_claim_transaction(&db, |tx| {
             insert_shadow_canonicalization_decision_if_current_in_tx(
+                &ctx,
                 tx,
                 &query,
                 &stale_candidate,
                 &stale_outcome,
                 &config,
-                TS,
-                TS,
+                CanonicalizationAuditTiming {
+                    evaluated_at: TS,
+                    next_reconcile_at: TS,
+                },
             )
         })
         .unwrap();
@@ -9689,7 +9721,8 @@ mod tests {
             .unwrap();
         db.conn_ref()
             .execute(
-                "UPDATE intelligence_claims /* dos7-allowed: structural shadow regression fixture */
+                "UPDATE intelligence_claims
+                 -- dos7-allowed: structural shadow regression fixture
                  SET structural_field_content_hash = ?1
                  WHERE id = 'claim-shadow-query'",
                 params![tombstone_structural_hash],
@@ -9745,7 +9778,8 @@ mod tests {
             );
             db.conn_ref()
                 .execute(
-                    "UPDATE intelligence_claims /* dos7-allowed: ordering fixture */
+                    "UPDATE intelligence_claims
+                     -- dos7-allowed: ordering fixture
                      SET created_at = ?1
                      WHERE id = ?2",
                     params![format!("2026-05-03T12:{index:02}:00+00:00"), id],
@@ -9764,7 +9798,8 @@ mod tests {
         );
         db.conn_ref()
             .execute(
-                "UPDATE intelligence_claims /* dos7-allowed: ordering fixture */
+                "UPDATE intelligence_claims
+                 -- dos7-allowed: ordering fixture
                  SET created_at = '2026-04-01T00:00:00+00:00'
                  WHERE id = 'claim-enumeration-older-eligible'",
                 [],
@@ -9826,7 +9861,8 @@ mod tests {
             );
             db.conn_ref()
                 .execute(
-                    "UPDATE intelligence_claims /* dos7-allowed: scope fixture */
+                    "UPDATE intelligence_claims
+                     -- dos7-allowed: scope fixture
                      SET metadata_json = json_object('workspace_id', 'workspace-1')
                      WHERE id = ?1",
                     params![query_id],
@@ -9846,7 +9882,8 @@ mod tests {
                 );
                 db.conn_ref()
                     .execute(
-                        "UPDATE intelligence_claims /* dos7-allowed: scope fixture */
+                        "UPDATE intelligence_claims
+                         -- dos7-allowed: scope fixture
                          SET metadata_json = json_object('workspace_id', 'workspace-1')
                          WHERE id = ?1",
                         params![id],
@@ -9871,7 +9908,8 @@ mod tests {
                 );
                 db.conn_ref()
                     .execute(
-                        "UPDATE intelligence_claims /* dos7-allowed: scope fixture */
+                        "UPDATE intelligence_claims
+                         -- dos7-allowed: scope fixture
                          SET metadata_json = json_object('workspace_id', 'workspace-1')
                          WHERE id = ?1",
                         params![id],
@@ -10022,6 +10060,8 @@ mod tests {
     #[test]
     fn l3_finding_5a_deterministic_canonicalization_does_not_hash_downgrade_live_surfaces() {
         let db = test_db();
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
         let pairs = [
             (
                 "claim-deterministic-text-a",
@@ -10067,7 +10107,8 @@ mod tests {
                 );
                 db.conn_ref()
                     .execute(
-                        "UPDATE intelligence_claims /* dos7-allowed: deterministic trust fixture */
+                        "UPDATE intelligence_claims
+                         -- dos7-allowed: deterministic trust fixture
                          SET trust_score = 0.93,
                              trust_computed_at = ?1,
                              trust_version = 1,
@@ -10080,7 +10121,8 @@ mod tests {
                     let object_json = serde_json::to_string(object).unwrap();
                     db.conn_ref()
                         .execute(
-                            "UPDATE intelligence_claims /* dos7-allowed: deterministic object fixture */
+                            "UPDATE intelligence_claims
+                             -- dos7-allowed: deterministic object fixture
                              SET object_value = ?1
                              WHERE id = ?2",
                             params![object_json, claim_id],
@@ -10107,6 +10149,7 @@ mod tests {
 
             with_claim_transaction(&db, |tx| {
                 insert_canonicalization_decision_in_tx(
+                    &ctx,
                     tx,
                     &input_a,
                     &input_b,
@@ -10144,6 +10187,8 @@ mod tests {
     #[test]
     fn l3_finding_5_qualifier_mismatch_with_hash_config_records_deterministic_mode() {
         let db = test_db();
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
         let query_id = "claim-hash-qualifier-query";
         let candidate_id = "claim-hash-qualifier-candidate";
         insert_fixture_claim(
@@ -10171,7 +10216,8 @@ mod tests {
         });
         db.conn_ref()
             .execute(
-                "UPDATE intelligence_claims /* dos7-allowed: qualifier mismatch fixture */
+                "UPDATE intelligence_claims
+                 -- dos7-allowed: qualifier mismatch fixture
                  SET qualifiers = ?1
                  WHERE id = ?2",
                 params![
@@ -10196,6 +10242,7 @@ mod tests {
 
         with_claim_transaction(&db, |tx| {
             insert_canonicalization_decision_in_tx(
+                &ctx,
                 tx,
                 &query,
                 &candidate,
@@ -10239,6 +10286,8 @@ mod tests {
             threshold_band: None,
             field_scores: serde_json::json!({}),
         };
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
 
         let hash_db = test_db();
         insert_person_fixture_claim(&hash_db, "claim-signal-person-a", "person-a");
@@ -10251,6 +10300,7 @@ mod tests {
             .unwrap();
         with_claim_transaction(&hash_db, |tx| {
             insert_canonicalization_decision_in_tx(
+                &ctx,
                 tx,
                 &hash_a,
                 &hash_b,
@@ -10301,6 +10351,7 @@ mod tests {
         };
         with_claim_transaction(&ambiguous_db, |tx| {
             insert_canonicalization_decision_in_tx(
+                &ctx,
                 tx,
                 &ambiguous_a,
                 &ambiguous_b,
@@ -10336,6 +10387,8 @@ mod tests {
     #[test]
     fn l3_finding_5c_filter_only_live_decisions_do_not_hash_fallback_or_enqueue_recompute() {
         let db = test_db();
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
         let query_id = "claim-filter-mode-query";
         insert_fixture_claim(
             &db,
@@ -10391,7 +10444,8 @@ mod tests {
             if let Some(status) = canonical_status {
                 db.conn_ref()
                     .execute(
-                        "UPDATE intelligence_claims /* dos7-allowed: migration state fixture */
+                        "UPDATE intelligence_claims
+                         -- dos7-allowed: migration state fixture
                          SET canonical_status = ?1,
                              non_semantic_mergeable = TRUE,
                              structural_field_content_hash = NULL,
@@ -10416,6 +10470,7 @@ mod tests {
 
             with_claim_transaction(&db, |tx| {
                 insert_canonicalization_decision_in_tx(
+                    &ctx,
                     tx,
                     &query,
                     &candidate,
@@ -10442,6 +10497,8 @@ mod tests {
     #[test]
     fn regression_finding_5_runtime_downgrade_transition_signals_fire_per_affected_claim() {
         let db = test_db();
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
         for id in [
             "claim-signal-hash-a",
             "claim-signal-hash-b",
@@ -10480,6 +10537,7 @@ mod tests {
 
         with_claim_transaction(&db, |tx| {
             insert_canonicalization_decision_in_tx(
+                &ctx,
                 tx,
                 &hash_query,
                 &hash_candidate,
@@ -10496,6 +10554,7 @@ mod tests {
 
         with_claim_transaction(&db, |tx| {
             insert_canonicalization_decision_in_tx(
+                &ctx,
                 tx,
                 &hash_query,
                 &hash_candidate,
@@ -10529,6 +10588,7 @@ mod tests {
 
         with_claim_transaction(&db, |tx| {
             insert_canonicalization_decision_in_tx(
+                &ctx,
                 tx,
                 &ambiguous_query,
                 &ambiguous_candidate,
@@ -10556,6 +10616,7 @@ mod tests {
 
         with_claim_transaction(&db, |tx| {
             insert_canonicalization_decision_in_tx(
+                &ctx,
                 tx,
                 &ambiguous_query,
                 &ambiguous_candidate,
@@ -10593,6 +10654,8 @@ mod tests {
     #[test]
     fn l3_finding_5_shadow_mode_does_not_render_or_signal_trust_downgrade() {
         let db = test_db();
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
         for id in [
             "claim-surface-pending",
             "claim-surface-legacy",
@@ -10612,7 +10675,8 @@ mod tests {
             );
             db.conn_ref()
                 .execute(
-                    "UPDATE intelligence_claims /* dos7-allowed: surface trust fixture */
+                    "UPDATE intelligence_claims
+                     -- dos7-allowed: surface trust fixture
                      SET trust_score = 0.93,
                          trust_computed_at = ?1,
                          trust_version = 1
@@ -10624,7 +10688,8 @@ mod tests {
 
         db.conn_ref()
             .execute(
-                "UPDATE intelligence_claims /* dos7-allowed: migration state fixture */
+                "UPDATE intelligence_claims
+                 -- dos7-allowed: migration state fixture
                  SET canonical_status = 'pending_backfill',
                      non_semantic_mergeable = TRUE,
                      structural_field_content_hash = NULL,
@@ -10635,7 +10700,8 @@ mod tests {
             .unwrap();
         db.conn_ref()
             .execute(
-                "UPDATE intelligence_claims /* dos7-allowed: migration state fixture */
+                "UPDATE intelligence_claims
+                 -- dos7-allowed: migration state fixture
                  SET canonical_status = 'legacy_unmigrated',
                      non_semantic_mergeable = TRUE,
                      structural_field_content_hash = NULL,
@@ -10676,6 +10742,7 @@ mod tests {
 
         with_claim_transaction(&db, |tx| {
             insert_canonicalization_decision_in_tx(
+                &ctx,
                 tx,
                 &hash_a,
                 &hash_b,
@@ -10686,6 +10753,7 @@ mod tests {
                 TS,
             )?;
             insert_canonicalization_decision_in_tx(
+                &ctx,
                 tx,
                 &ambiguous_a,
                 &ambiguous_b,
@@ -10738,6 +10806,7 @@ mod tests {
 
         with_claim_transaction(&db, |tx| {
             insert_canonicalization_decision_in_tx(
+                &ctx,
                 tx,
                 &hash_a,
                 &hash_b,
@@ -10748,6 +10817,7 @@ mod tests {
                 "2026-05-02T12:02:00+00:00",
             )?;
             insert_canonicalization_decision_in_tx(
+                &ctx,
                 tx,
                 &ambiguous_a,
                 &ambiguous_b,
@@ -10952,7 +11022,8 @@ mod tests {
         let sql = "UPDATE intelligence_claims /* dos7-allowed: parser regression fixture */
              SET claim_state = 'dormant',
                  subject_ref = ?1
-             WHERE id = ?2";
+             WHERE id = ?2
+             -- dos7-allowed: parser regression fixture";
 
         let err = check_claim_update_allowlist(sql).expect_err("subject_ref must be rejected");
         assert!(matches!(
@@ -10967,7 +11038,8 @@ mod tests {
              SET [created_at] = ?1,
                  `text` = ?2,
                  \"source_asof\" = ?3
-             WHERE id = ?4";
+             WHERE id = ?4
+             -- dos7-allowed: parser regression fixture";
 
         let err =
             check_claim_update_allowlist(sql).expect_err("quoted immutable columns must reject");
@@ -11033,7 +11105,8 @@ mod tests {
             db.conn_ref(),
             "UPDATE intelligence_claims /* dos7-allowed: parser regression fixture */
              SET subject_ref = ?999
-             WHERE id = ?1",
+             WHERE id = ?1
+             -- dos7-allowed: parser regression fixture",
             params!["would-hit-sqlite-bind-error"],
         )
         .expect_err("immutable column must reject before SQLite execution");

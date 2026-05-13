@@ -2608,6 +2608,7 @@ fn apply_idempotent_sql_migration(
                 clippy::let_underscore_must_use,
                 reason = "intentional best-effort cleanup after migration failure"
             )]
+            // best-effort: preserve the original migration error if rollback itself fails.
             let _ = conn.execute_batch("ROLLBACK;");
             Err(error)
         }
@@ -3934,8 +3935,12 @@ mod tests {
         )
         .expect("seed legacy source sighting");
 
-        let applied = run_migrations(&conn).expect("apply v160-v164");
-        assert_eq!(applied, 5);
+        let applied = run_migrations(&conn).expect("apply v160+");
+        let expected = MIGRATIONS.iter().filter(|m| m.version() >= 160).count();
+        assert_eq!(
+            applied, expected,
+            "v160+ should be pending after rollback to v159"
+        );
 
         let edited_alias_count: i64 = conn
             .query_row(
@@ -4035,8 +4040,12 @@ mod tests {
         )
         .expect("seed stale mutable alias");
 
-        let applied = run_migrations(&conn).expect("apply v160-v164");
-        assert_eq!(applied, 5);
+        let applied = run_migrations(&conn).expect("apply v160+");
+        let expected = MIGRATIONS.iter().filter(|m| m.version() >= 160).count();
+        assert_eq!(
+            applied, expected,
+            "v160+ should be pending after rollback to v159"
+        );
 
         let source_alias_count: i64 = conn
             .query_row(
@@ -4240,8 +4249,12 @@ mod tests {
         )
         .expect("seed null-action tombstone");
 
-        let applied = run_migrations(&conn).expect("apply v160-v164");
-        assert_eq!(applied, 5);
+        let applied = run_migrations(&conn).expect("apply v160+");
+        let expected = MIGRATIONS.iter().filter(|m| m.version() >= 160).count();
+        assert_eq!(
+            applied, expected,
+            "v160+ should be pending after rollback to v159"
+        );
 
         let (legacy_bridge_id, tombstoned_action_id, status): (String, Option<String>, String) =
             conn.query_row(

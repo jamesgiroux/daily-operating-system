@@ -30,6 +30,8 @@ use rusqlite::Connection;
 use tokio::sync::oneshot;
 
 use crate::db::key_provider::{rekey_database_standalone, DbKeyProvider, EncryptionKey};
+#[cfg(test)]
+use crate::db::key_provider::UserIdentity;
 use crate::db::DbError;
 
 /// Number of read connections in the pool.
@@ -284,6 +286,39 @@ pub struct DbService {
     read_idx: AtomicUsize,
 }
 
+#[cfg(test)]
+struct FixtureDbServiceKeyProvider {
+    key: EncryptionKey,
+}
+
+#[cfg(test)]
+impl FixtureDbServiceKeyProvider {
+    fn new() -> Self {
+        Self {
+            key: EncryptionKey::from_hex(
+                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+            ),
+        }
+    }
+}
+
+#[cfg(test)]
+impl DbKeyProvider for FixtureDbServiceKeyProvider {
+    fn get_or_create_key(
+        &self,
+        _user: &UserIdentity,
+    ) -> crate::db::key_provider::Result<EncryptionKey> {
+        Ok(self.key.clone())
+    }
+
+    fn rotate_key(
+        &self,
+        _user: &UserIdentity,
+    ) -> crate::db::key_provider::Result<EncryptionKey> {
+        Ok(self.key.clone())
+    }
+}
+
 impl DbService {
     /// Open a DbService at the standard path.
     pub async fn open(key_provider: Arc<dyn DbKeyProvider>) -> Result<Arc<Self>, DbError> {
@@ -334,15 +369,22 @@ impl DbService {
         }))
     }
 
+    #[cfg(test)]
+    pub async fn open_at_with_fixture_provider_for_tests(
+        path: PathBuf,
+    ) -> Result<Arc<Self>, DbError> {
+        Self::open_at(path, Arc::new(FixtureDbServiceKeyProvider::new())).await
+    }
+
     /// Unencrypted variant used by test harnesses that need `AppState`
     /// without touching the user's encrypted DailyOS database or Keychain.
-    #[cfg(feature = "test-harness")]
+    #[cfg(any(feature = "test-harness", feature = "bench-harness"))]
     #[doc(hidden)]
     pub async fn open_at_unencrypted_for_tests(path: PathBuf) -> Result<Arc<Self>, DbError> {
         Self::open_at_unencrypted_test_impl(path).await
     }
 
-    #[cfg(any(test, feature = "test-harness"))]
+    #[cfg(any(test, feature = "test-harness", feature = "bench-harness"))]
     async fn open_at_unencrypted_test_impl(path: PathBuf) -> Result<Arc<Self>, DbError> {
         if let Some(parent) = path.parent() {
             if !parent.exists() {

@@ -4,9 +4,18 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn main() {
+    emit_suite_p_bench_cfg();
     emit_build_git_sha();
     validate_operations_contract();
     tauri_build::build()
+}
+
+fn emit_suite_p_bench_cfg() {
+    println!("cargo:rerun-if-env-changed=DAILYOS_SUITE_P_BENCH_BUILD");
+    println!("cargo:rustc-check-cfg=cfg(dailyos_suite_p_bench_build)");
+    if env::var_os("DAILYOS_SUITE_P_BENCH_BUILD").is_some() {
+        println!("cargo:rustc-cfg=dailyos_suite_p_bench_build");
+    }
 }
 
 fn emit_build_git_sha() {

@@ -90,13 +90,12 @@ pub fn run_structured_claim_backfill(
             pending_backfill_terminalization_cause(&row, row.backfill_attempts, ctx.clock.now())
         {
             db.with_transaction(|tx| {
-                terminalize_pending_backfill(tx, &row, cause, row.backfill_attempts, false)
+                terminalize_pending_backfill(ctx, tx, &row, cause, row.backfill_attempts, false)
             })
         } else {
             match structural_backfill_fields(&row) {
-                Ok(structural) => {
-                    db.with_transaction(|tx| mark_structural_backfill_row(tx, &row, structural))
-                }
+                Ok(structural) => db
+                    .with_transaction(|tx| mark_structural_backfill_row(ctx, tx, &row, structural)),
                 Err(error) => record_structural_backfill_error(ctx, db, &row, error),
             }
         };
@@ -113,6 +112,7 @@ pub fn run_structured_claim_backfill(
 }
 
 fn mark_structural_backfill_row(
+    ctx: &ServiceContext<'_>,
     tx: &ActionDb,
     row: &StructuralBackfillRow,
     structural: Option<StructuralBackfillFields>,
@@ -122,6 +122,7 @@ fn mark_structural_backfill_row(
             .conn_ref()
             .execute(
                 "UPDATE intelligence_claims
+                 -- dos7-allowed: ADR-0131 structural backfill terminalizes rows that cannot be safely canonicalized
                  SET canonical_status = 'legacy_unmigrated',
                      non_semantic_mergeable = TRUE,
                      backfill_epoch = backfill_epoch + 1
@@ -133,6 +134,7 @@ fn mark_structural_backfill_row(
             return Ok("unchanged");
         }
         emit_structural_backfill_signal(
+            ctx,
             tx,
             &row.id,
             "structural_backfill_changed",
@@ -143,6 +145,7 @@ fn mark_structural_backfill_row(
             }),
         )?;
         emit_structural_backfill_signal(
+            ctx,
             tx,
             &row.id,
             "trust_band_downgraded",
@@ -159,6 +162,7 @@ fn mark_structural_backfill_row(
         .conn_ref()
         .execute(
             "UPDATE intelligence_claims
+             -- dos7-allowed: ADR-0131 structural backfill populates canonical fields during cutover
              SET predicate_ref = ?1,
                  polarity = ?2,
                  object_value = ?3,
@@ -186,6 +190,7 @@ fn mark_structural_backfill_row(
         return Ok("unchanged");
     }
     emit_structural_backfill_signal(
+        ctx,
         tx,
         &row.id,
         "structural_backfill_changed",
@@ -202,6 +207,7 @@ fn mark_structural_backfill_row(
         }),
     )?;
     emit_structural_backfill_signal(
+        ctx,
         tx,
         &row.id,
         "trust_band_cleared",
@@ -225,13 +231,14 @@ fn record_structural_backfill_error(
 
     db.with_transaction(|tx| {
         if let Some(cause) = terminalization_cause {
-            return terminalize_pending_backfill(tx, row, cause, attempts_after_error, true);
+            return terminalize_pending_backfill(ctx, tx, row, cause, attempts_after_error, true);
         }
 
         let rows_affected = tx
             .conn_ref()
             .execute(
                 "UPDATE intelligence_claims
+                 -- dos7-allowed: ADR-0131 structural backfill records bounded retry attempts
                  SET backfill_attempts = backfill_attempts + 1
                  WHERE id = ?1 AND canonical_status = 'pending_backfill'",
                 params![&row.id],
@@ -249,6 +256,7 @@ fn record_structural_backfill_error(
 }
 
 fn terminalize_pending_backfill(
+    ctx: &ServiceContext<'_>,
     tx: &ActionDb,
     row: &StructuralBackfillRow,
     terminalization_cause: &'static str,
@@ -257,6 +265,7 @@ fn terminalize_pending_backfill(
 ) -> Result<&'static str, String> {
     let sql = if increment_attempts {
         "UPDATE intelligence_claims
+         -- dos7-allowed: ADR-0131 structural backfill terminalizes rows after retry exhaustion
          SET canonical_status = 'legacy_unmigrated',
              non_semantic_mergeable = TRUE,
              backfill_attempts = backfill_attempts + 1,
@@ -264,6 +273,7 @@ fn terminalize_pending_backfill(
          WHERE id = ?1 AND canonical_status = 'pending_backfill'"
     } else {
         "UPDATE intelligence_claims
+         -- dos7-allowed: ADR-0131 structural backfill terminalizes stale rows
          SET canonical_status = 'legacy_unmigrated',
              non_semantic_mergeable = TRUE,
              backfill_epoch = backfill_epoch + 1
@@ -278,6 +288,7 @@ fn terminalize_pending_backfill(
     }
 
     emit_structural_backfill_signal(
+        ctx,
         tx,
         &row.id,
         "structural_backfill_changed",
@@ -294,6 +305,7 @@ fn terminalize_pending_backfill(
         }),
     )?;
     emit_structural_backfill_signal(
+        ctx,
         tx,
         &row.id,
         "trust_band_downgraded",
@@ -543,19 +555,22 @@ fn run_structured_claim_backfill_if_pending(
 }
 
 fn emit_structural_backfill_signal(
+    ctx: &ServiceContext<'_>,
     tx: &ActionDb,
     claim_id: &str,
     signal_type: &str,
     payload: serde_json::Value,
 ) -> Result<(), String> {
-    crate::signals::bus::emit_signal_in_active_tx(
+    crate::services::signals::emit_in_transaction(
+        ctx,
         tx,
         "claim",
         claim_id,
         signal_type,
         "claims_backfill:structured_claim",
-        &payload,
+        payload,
     )
+    .map(|_| ())
     .map_err(|e| format!("emit {signal_type}: {e}"))?;
     Ok(())
 }
@@ -1592,6 +1607,7 @@ fn prepare_dos7_cutover_startup_plan(db: &ActionDb) -> Result<CutoverStartupPlan
                 clippy::let_underscore_must_use,
                 reason = "intentional best-effort discard; preserves existing non-blocking behavior"
             )]
+            // best-effort: preserve the original cutover claim error if rollback itself fails.
             let _ = conn.execute_batch("ROLLBACK");
             return Err(e);
         }
@@ -1658,6 +1674,7 @@ fn record_dos7_cutover_completion(db: &ActionDb) -> Result<(), String> {
         clippy::let_underscore_must_use,
         reason = "intentional best-effort discard; preserves existing non-blocking behavior"
     )]
+    // best-effort: completion is recorded; stale in-flight cleanup should not fail startup.
     let _ = db.conn_ref().execute(
         "DELETE FROM migration_state WHERE key = ?1",
         [DOS7_CUTOVER_STARTED_AT_KEY],
@@ -1923,12 +1940,11 @@ mod structural_canonical_id_tests;
 #[allow(clippy::needless_borrow)]
 mod tests {
     use super::*;
-    use crate::db::{DbKeyProvider, EncryptionKey, UserIdentity};
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
     use chrono::TimeZone;
     use rusqlite::Connection;
     use std::fs;
-    use std::sync::{mpsc, Arc};
+    use std::sync::mpsc;
     use std::time::Duration;
 
     fn fixture_ctx<'a>(
@@ -1937,36 +1953,6 @@ mod tests {
         ext: &'a ExternalClients,
     ) -> ServiceContext<'a> {
         ServiceContext::test_live(clock, rng, ext)
-    }
-
-    struct FixtureKeyProvider {
-        key: EncryptionKey,
-    }
-
-    impl FixtureKeyProvider {
-        fn new() -> Self {
-            Self {
-                key: EncryptionKey::from_hex(
-                    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
-                ),
-            }
-        }
-    }
-
-    impl DbKeyProvider for FixtureKeyProvider {
-        fn get_or_create_key(
-            &self,
-            _user: &UserIdentity,
-        ) -> crate::db::key_provider::Result<EncryptionKey> {
-            Ok(self.key.clone())
-        }
-
-        fn rotate_key(
-            &self,
-            _user: &UserIdentity,
-        ) -> crate::db::key_provider::Result<EncryptionKey> {
-            Ok(self.key.clone())
-        }
     }
 
     struct GlobalDbServiceGuard;
@@ -3961,10 +3947,10 @@ mod tests {
         let db_path = db_dir
             .path()
             .join("already-complete-db-service-fence.sqlite");
-        let provider = Arc::new(FixtureKeyProvider::new());
-        let svc = crate::db_service::DbService::open_at(db_path.clone(), provider.clone())
-            .await
-            .expect("open encrypted DbService");
+        let svc =
+            crate::db_service::DbService::open_at_with_fixture_provider_for_tests(db_path.clone())
+                .await
+                .expect("open test DbService");
         crate::db_service::install_global(svc.clone());
         let _global_guard = GlobalDbServiceGuard;
 
@@ -4004,12 +3990,10 @@ mod tests {
         let (captured_tx, captured_rx) = mpsc::channel();
         let (start_open_tx, start_open_rx) = mpsc::channel();
         let (open_done_tx, open_done_rx) = mpsc::channel();
-        let worker_provider = provider.clone();
         let worker_db_path = db_path.clone();
         let worker = std::thread::spawn(move || -> Result<(), String> {
-            let db = ActionDb::open_resolved_path_for_tests(
+            let db = ActionDb::open_resolved_path_with_fixture_provider_for_tests(
                 worker_db_path.clone(),
-                worker_provider.clone(),
             )
             .map_err(|e| format!("worker initial ActionDb::open: {e}"))?;
             let cycle = capture_fence_with_retry(&db);
@@ -4018,8 +4002,9 @@ mod tests {
                 .expect("send captured epoch");
 
             start_open_rx.recv().expect("wait for queued open signal");
-            let reopened = ActionDb::open_resolved_path_for_tests(worker_db_path, worker_provider)
-                .map_err(|e| format!("worker queued ActionDb::open: {e}"))?;
+            let reopened =
+                ActionDb::open_resolved_path_with_fixture_provider_for_tests(worker_db_path)
+                    .map_err(|e| format!("worker queued ActionDb::open: {e}"))?;
             drop(reopened);
             drop(cycle);
             open_done_tx.send(()).expect("send open done");
