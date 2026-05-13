@@ -52,11 +52,11 @@ pub async fn generate_report(
             );
         }
 
-        let mut input = {
-            let db =
-                crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-                    .map_err(|e| format!("DB open failed: {e}"))?;
+        // DOS-107: one ActionDb open per spawn_blocking; threaded through phases.
+        let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            .map_err(|e| format!("DB open failed: {e}"))?;
 
+        let mut input = {
             let config_guard = state.config.read();
             let config = config_guard.as_ref().ok_or("Config not initialized")?;
             let workspace = std::path::Path::new(&config.workspace_path);
@@ -119,18 +119,14 @@ pub async fn generate_report(
         };
 
         // Phase 1.5: Inject relevant user context into prompt.
-        if let Ok(db_ctx) =
-            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-        {
-            crate::reports::prompts::append_user_context(
-                &mut input.prompt,
-                &db_ctx,
-                Some(state.embedding_model.as_ref()),
-                &input.entity_name,
-            );
-        }
+        crate::reports::prompts::append_user_context(
+            &mut input.prompt,
+            &db,
+            Some(state.embedding_model.as_ref()),
+            &input.entity_name,
+        );
 
-        // Step 2: Run PTY (no DB lock held)
+        // Step 2: Run PTY (DB connection idle but kept open; SQLite holds no lock between queries).
         let stdout = run_report_generation(&input)?;
 
         // Parse report-type-specific response
@@ -165,10 +161,7 @@ pub async fn generate_report(
             _ => return Err(format!("Unknown report type: {}", report_type_str)),
         };
 
-        // Phase 3: Write to DB
-        let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-            .map_err(|e| format!("DB open failed: {e}"))?;
-
+        // Phase 3: Write to DB (reusing the same connection).
         let report_id = upsert_report(
             &db,
             &input.entity_id,
@@ -201,10 +194,11 @@ fn generate_swot_report(
     app_handle: Option<&AppHandle>,
 ) -> Result<ReportRow, String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
-    let gathered = {
-        let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-            .map_err(|e| format!("DB open failed: {e}"))?;
+    // DOS-107: one ActionDb open, reused for gather + write.
+    let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        .map_err(|e| format!("DB open failed: {e}"))?;
 
+    let gathered = {
         let config_guard = state.config.read();
         let config = config_guard.as_ref().ok_or("Config not initialized")?;
         let workspace = std::path::Path::new(&config.workspace_path);
@@ -225,9 +219,6 @@ fn generate_swot_report(
     let content = crate::reports::swot::run_parallel_swot_generation(&gathered, app_handle)?;
     let content_json =
         serde_json::to_string(&content).map_err(|e| format!("Failed to serialize SWOT: {}", e))?;
-
-    let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-        .map_err(|e| format!("DB open failed: {e}"))?;
 
     let report_id = upsert_report(
         &db,
@@ -258,11 +249,12 @@ fn generate_book_of_business(
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     use crate::reports::book_of_business::*;
 
-    // Phase 1: Gather data under brief DB lock
-    let mut gather = {
-        let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-            .map_err(|e| format!("DB open failed: {e}"))?;
+    // DOS-107: one ActionDb open, reused across gather, user-context, and write.
+    let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        .map_err(|e| format!("DB open failed: {e}"))?;
 
+    // Phase 1: Gather data
+    let mut gather = {
         let config_guard = state.config.read();
         let config = config_guard.as_ref().ok_or("Config not initialized")?;
         let workspace = std::path::Path::new(&config.workspace_path);
@@ -278,15 +270,12 @@ fn generate_book_of_business(
         )?
     };
 
-    // Phase 1.5: Pre-compute user context block (semantic search).
-    // Fresh DB connection so the Phase 1 lock is already released.
-    if let Ok(db_ctx) =
-        crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+    // Phase 1.5: Pre-compute user context block (semantic search) on the same connection.
     {
         let mut ctx_buf = String::new();
         crate::reports::prompts::append_user_context(
             &mut ctx_buf,
-            &db_ctx,
+            &db,
             Some(state.embedding_model.as_ref()),
             "Book of Business",
         );
@@ -367,9 +356,6 @@ fn generate_book_of_business(
         &gather.user_entity_id,
         &content_json,
     );
-
-    let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-        .map_err(|e| format!("DB open failed: {e}"))?;
 
     let report_id = upsert_report(
         &db,
