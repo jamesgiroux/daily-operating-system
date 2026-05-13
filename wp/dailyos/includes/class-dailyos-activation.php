@@ -162,9 +162,21 @@ final class DailyOS_Activation {
 
 	/**
 	 * Finish successful activation side effects.
+	 *
+	 * Fails closed if the dedicated substrate WordPress user cannot be created or
+	 * recovered: every MCP request runs as `dailyos_substrate`, so a missing user
+	 * must surface at activation rather than silently masking later request denials.
 	 */
 	private static function complete_activation(): void {
-		DailyOS_Mcp_Roles::ensure_user();
+		$substrate_user_id = DailyOS_Mcp_Roles::ensure_user();
+
+		if ( 0 === $substrate_user_id ) {
+			self::refuse_activation(
+				'DailyOS could not create or recover the dailyos_substrate WordPress user required by the MCP server. Check user-creation permissions and reactivate.',
+				'dailyos_substrate_user_missing'
+			);
+		}
+
 		self::schedule_nonce_sweep();
 	}
 

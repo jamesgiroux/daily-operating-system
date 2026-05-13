@@ -113,6 +113,21 @@ final class DailyOS_ActivationTest extends TestCase {
 	}
 
 	/**
+	 * Activation fails closed when the dailyos_substrate user cannot be created.
+	 *
+	 * Every MCP request runs as `dailyos_substrate`; activation must surface
+	 * user-creation failures rather than silently masking later denials.
+	 */
+	public function test_activation_refuses_when_substrate_user_creation_fails(): void {
+		$GLOBALS['dailyos_test_force_wp_create_user_error'] = true;
+
+		$this->expectException( \RuntimeException::class );
+		$this->expectExceptionMessage( 'DailyOS could not create or recover the dailyos_substrate' );
+
+		DailyOS_Activation::activate();
+	}
+
+	/**
 	 * Malformed markers never match prior pairing.
 	 *
 	 * @dataProvider malformed_marker_provider

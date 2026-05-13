@@ -44,6 +44,7 @@ namespace {
 	$GLOBALS['dailyos_test_current_user_id']      = 0;
 	$GLOBALS['dailyos_test_current_user_can']     = true;
 	$GLOBALS['dailyos_test_check_admin_referer']  = 1;
+	$GLOBALS['dailyos_test_force_wp_create_user_error'] = false;
 
 	if ( ! defined( 'DAY_IN_SECONDS' ) ) {
 		define( 'DAY_IN_SECONDS', 86400 );
@@ -105,6 +106,7 @@ namespace {
 		$GLOBALS['dailyos_test_current_user_id']      = 0;
 		$GLOBALS['dailyos_test_current_user_can']     = true;
 		$GLOBALS['dailyos_test_check_admin_referer']  = 1;
+	$GLOBALS['dailyos_test_force_wp_create_user_error'] = false;
 	}
 
 	$GLOBALS['wpdb'] = new class() {
@@ -395,6 +397,10 @@ namespace {
 	if ( ! function_exists( 'wp_create_user' ) ) {
 		function wp_create_user( string $username, string $password, string $email = '' ): int|\WP_Error {
 			unset( $password );
+
+			if ( ! empty( $GLOBALS['dailyos_test_force_wp_create_user_error'] ) ) {
+				return new \WP_Error( 'dailyos_test_forced_create_error', 'Forced test error.' );
+			}
 
 			if ( false !== get_user_by( 'login', $username ) ) {
 				return new \WP_Error( 'existing_user_login', 'User already exists.' );
