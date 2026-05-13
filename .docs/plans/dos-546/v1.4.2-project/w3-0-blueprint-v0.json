@@ -1,0 +1,104 @@
+{
+  "$schema": "https://playground.wordpress.net/blueprint-schema.json",
+  "meta": {
+    "title": "DailyOS Studio Bundle W3-0 Blueprint v0",
+    "description": "Installs the DailyOS plugin and DailyOS Magazine theme into a WordPress Studio site. WordPress is pinned to 6.9.4, the latest 6.9.x release listed by WordPress.org on 2026-05-13; E agent must confirm Studio point-version support before V5.",
+    "author": "dailyos",
+    "categories": [
+      "dailyos",
+      "wordpress-studio",
+      "development"
+    ]
+  },
+  "landingPage": "/wp-admin/admin.php?page=dailyos-pairing",
+  "preferredVersions": {
+    "php": "8.4",
+    "wp": "6.9.4"
+  },
+  "features": {
+    "networking": true
+  },
+  "extraLibraries": [
+    "wp-cli"
+  ],
+  "steps": [
+    {
+      "step": "installPlugin",
+      "pluginData": {
+        "resource": "vfs",
+        "path": "resources/dailyos.zip"
+      },
+      "ifAlreadyInstalled": "overwrite",
+      "options": {
+        "targetFolderName": "dailyos"
+      },
+      "progress": {
+        "weight": 20,
+        "caption": "Install DailyOS plugin"
+      }
+    },
+    {
+      "step": "installTheme",
+      "themeData": {
+        "resource": "vfs",
+        "path": "resources/dailyos-magazine.zip"
+      },
+      "ifAlreadyInstalled": "overwrite",
+      "options": {
+        "targetFolderName": "dailyos-magazine",
+        "importStarterContent": false
+      },
+      "progress": {
+        "weight": 15,
+        "caption": "Install DailyOS Magazine theme"
+      }
+    },
+    {
+      "step": "activatePlugin",
+      "pluginName": "DailyOS",
+      "pluginPath": "dailyos/dailyos.php",
+      "progress": {
+        "weight": 10,
+        "caption": "Activate DailyOS plugin"
+      }
+    },
+    {
+      "step": "activateTheme",
+      "themeFolderName": "dailyos-magazine",
+      "progress": {
+        "weight": 10,
+        "caption": "Activate DailyOS Magazine theme"
+      }
+    },
+    {
+      "step": "setSiteOptions",
+      "options": {
+        "dailyos_pairing_endpoint_url": "http://127.0.0.1:PORT",
+        "dailyos_pairing_status": "unpaired",
+        "dailyos_pair_runtime_admin_notice_pending": "1",
+        "dailyos_blueprint_source": "w3-0-blueprint-v0",
+        "dailyos_blueprint_requires_runtime_pairing": "1"
+      },
+      "progress": {
+        "weight": 10,
+        "caption": "Set DailyOS defaults"
+      }
+    },
+    {
+      "step": "wp-cli",
+      "command": "wp dailyos status --format=json",
+      "progress": {
+        "weight": 15,
+        "caption": "Validate DailyOS plugin status"
+      }
+    },
+    {
+      "step": "wp-cli",
+      "command": "wp eval 'update_option(\"dailyos_admin_notice_pair_runtime_once\", array(\"message\" => \"Pair the DailyOS runtime from DailyOS > Pairing to enable live briefings.\", \"type\" => \"info\", \"dismissible\" => true, \"once\" => true, \"created_by\" => \"w3-0-blueprint-v0\"), false);'",
+      "progress": {
+        "weight": 20,
+        "caption": "Add DailyOS runtime pairing notice"
+      }
+    }
+  ]
+}
