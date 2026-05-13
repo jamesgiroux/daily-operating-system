@@ -62,7 +62,10 @@ final class DailyOS_Plugin {
 
 		$this->register_transport();
 
-		add_action( 'init', [ $this, 'register_abilities' ], 10 );
+		// WP 6.9+ requires ability registration on the dedicated abilities-API hook.
+		// Calling wp_register_ability() outside this action triggers a _doing_it_wrong
+		// notice and skips the registration entirely.
+		add_action( 'wp_abilities_api_init', [ $this, 'register_abilities' ], 10 );
 		add_action( 'init', [ $this, 'register_blocks' ], 11 );
 		add_action( 'init', [ $this, 'register_mcp_server_config' ], 12 );
 		add_action( 'init', [ $this, 'register_save_hooks' ], 13 );

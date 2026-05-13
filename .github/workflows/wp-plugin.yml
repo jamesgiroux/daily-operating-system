@@ -113,14 +113,15 @@ jobs:
         uses: WordPress/plugin-check-action@v1
         with:
           build-dir: wp/dailyos
-          # PHPCS-based checks already run in the lint-and-static job; this
-          # focuses on directory-policy checks not covered by WPCS.
+          # DailyOS is not a WordPress.org-directory plugin, so the
+          # `plugin_repo` category (readme.txt format, trademarks, file_type)
+          # is intentionally excluded. PHPCS-based checks already run in the
+          # lint-and-static job. This focuses Plugin Check on real runtime
+          # behaviour: perf and a11y category checks executed against the
+          # plugin loaded in a WP 6.9+ environment.
+          categories: |
+            performance
+            accessibility
           exclude-checks: |
             late_escaping
             i18n_usage
-          checks: |
-            file_type
-            performance
-            accessibility
-            plugin_review_phpcs
-            trademarks
