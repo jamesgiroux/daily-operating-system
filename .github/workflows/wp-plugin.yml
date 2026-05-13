@@ -56,7 +56,7 @@ jobs:
         run: ./vendor/bin/phpstan analyze --no-progress --memory-limit=1G --error-format=github
 
       - name: Composer audit (CVE scan)
-        run: composer audit --no-dev=false
+        run: composer audit --locked
 
       - name: Grep gates (secret-persistence + L0 invariants)
         run: bash scripts/run-grep-gates.sh
