@@ -8358,10 +8358,11 @@ fn targeted_repair_insert_replacement_claim(
         }
     };
 
-    if matches!(
+    let original_was_tombstoned = matches!(
         original.claim_state,
         ClaimState::Tombstoned | ClaimState::Withdrawn
-    ) {
+    );
+    if original_was_tombstoned {
         execute_claims_update(
             tx.conn_ref(),
             "UPDATE intelligence_claims
@@ -8382,6 +8383,45 @@ fn targeted_repair_insert_replacement_claim(
             params![&original.id, demotion_reason, &replacement_id],
         )?;
     }
+
+    // Bump the original claim's version + emit a version_events row so
+    // clients holding the pre-repair watermark observe the lifecycle
+    // mutation (demoted/tombstoned, superseded_by set). Without this,
+    // direct UPDATEs of `claim_state` / `surfacing_state` /
+    // `superseded_by` mutate the claim silently and stale CAS checks
+    // against the original still appear valid. Mirrors the supersession
+    // pattern in `commit_claim` — secondary `mutation_attempts` row
+    // pairs the secondary `version_events` row so the outbox-integrity
+    // join holds (§15 outbox atomicity).
+    let actor_kind = VersionActorKind::from_service_actor(&feedback.actor);
+    let (original_previous, original_current) =
+        bump_existing_claim_version_tx(tx, &original.id)?;
+    let original_event_kind = if original_was_tombstoned {
+        VersionEventKind::ClaimTombstoned
+    } else {
+        VersionEventKind::ClaimSuperseded
+    };
+    let original_event_reason = format!("superseded_by_{}", &replacement_id);
+    let original_cursor = SignalCursor::new();
+    let original_attempt =
+        insert_committed_secondary_attempt(tx, &original_cursor, &original.id, now)?;
+    insert_version_event(
+        tx,
+        VersionEventInsert {
+            cursor: &original_cursor,
+            event_kind: original_event_kind,
+            claim_id: Some(&original.id),
+            composition_id: None,
+            previous_version: Some(original_previous),
+            current_version: original_current,
+            reason: Some(&original_event_reason),
+            scope_redacted: false,
+            correction_event_log_id: None,
+            mutation_id: Some(&original_attempt.mutation_id),
+            created_at: now,
+            actor_kind,
+        },
+    )?;
     tx.conn_ref().execute(
         "INSERT INTO claim_contradictions
          (id, primary_claim_id, contradicting_claim_id, branch_kind, detected_at,
@@ -14225,6 +14265,151 @@ mod tests {
         let err = commit_claim(&ctx, &db, proposal(text))
             .expect_err("original subject/text must remain tombstone-gated");
         assert!(matches!(err, ClaimError::TombstonedPreGate));
+    }
+
+    /// `targeted_repair_insert_replacement_claim` mutates the original
+    /// claim's lifecycle (claim_state/surfacing_state/superseded_by) via a
+    /// direct UPDATE. Without a paired version bump + `version_events`
+    /// emit, clients holding the pre-repair watermark would not observe
+    /// the supersession, and stale CAS checks against the original would
+    /// still appear valid. This test pins the contract: BOTH the
+    /// replacement claim AND the original claim emit `version_events`
+    /// rows atomically with the targeted-repair Tx (§15 outbox atomicity,
+    /// mirroring the cycle-3 supersession pattern in `commit_claim`).
+    #[test]
+    fn targeted_repair_replacement_bumps_original_version_and_emits_version_event() {
+        let db = test_db();
+        seed_account(&db);
+        db.conn_ref()
+            .execute(
+                "INSERT INTO accounts (id, name, updated_at) VALUES (?1, ?2, ?3)",
+                params!["acct-tr-version", "TR Version Account", TS],
+            )
+            .expect("seed corrected account");
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let text = "renewal risk asserted on the wrong subject";
+        let source_claim_id = inserted_claim_id(commit_claim(&ctx, &db, proposal(text)).unwrap());
+
+        // Drive WrongSubject → SubjectFitRepair → replacement path.
+        // record_claim_feedback bumps the version itself (lifecycle change
+        // for WrongSubject = tombstone). The subsequent repair must then
+        // bump again so the lifecycle mutation it performs (setting
+        // surfacing_state=dormant + superseded_by) is observable to
+        // clients holding the post-feedback watermark.
+        let mut input = feedback_input(&source_claim_id, FeedbackAction::WrongSubject);
+        input.payload_json = Some(
+            serde_json::json!({
+                "corrected_subject": {
+                    "kind": "account",
+                    "id": "acct-tr-version"
+                }
+            })
+            .to_string(),
+        );
+        record_claim_feedback(&ctx, &db, input).unwrap();
+
+        // Snapshot version just before the repair runs.
+        let original_version_before: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT claim_version FROM intelligence_claims WHERE id = ?1",
+                params![&source_claim_id],
+                |row| row.get(0),
+            )
+            .expect("pre-repair version");
+        assert!(
+            original_version_before >= 1,
+            "post-feedback bumped version sits at v>=1"
+        );
+
+        let outcome = targeted_repair_process_next_job(
+            &ctx,
+            &db,
+            "repair-worker-version-event-pin",
+        )
+        .expect("process subject-fit repair");
+        assert!(matches!(
+            outcome,
+            TargetedRepairProcessOutcome::Completed {
+                repair_jobs_processed: 1,
+                claims_changed: 2,
+                ..
+            }
+        ));
+
+        // Original claim row mutated by the repair UPDATE: claim_state +
+        // superseded_by were rewritten without a CAS contract. The
+        // version_events emission must reflect the lifecycle mutation.
+        let original_version_after: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT claim_version FROM intelligence_claims WHERE id = ?1",
+                params![&source_claim_id],
+                |row| row.get(0),
+            )
+            .expect("post-repair version");
+        assert!(
+            original_version_after > original_version_before,
+            "original claim version must bump after targeted-repair replacement: \
+             before={original_version_before} after={original_version_after}"
+        );
+
+        // Substrate witness: a version_events row exists for the original
+        // claim with a supersession-class event_kind, bumped versions, and
+        // a paired mutation_attempts row (outbox atomicity).
+        let (event_kind, previous_version, current_version, mutation_id): (
+            String,
+            Option<i64>,
+            i64,
+            Option<String>,
+        ) = db
+            .conn_ref()
+            .query_row(
+                "SELECT event_kind, previous_version, current_version, mutation_id
+                 FROM version_events
+                 WHERE claim_id = ?1
+                   AND event_kind IN ('claim.superseded', 'claim.tombstoned')
+                 ORDER BY event_seq DESC LIMIT 1",
+                params![&source_claim_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .expect("supersession version_events row present");
+        assert!(
+            event_kind == "claim.superseded" || event_kind == "claim.tombstoned",
+            "event_kind must be a supersession-class kind: {event_kind}"
+        );
+        assert_eq!(previous_version, Some(original_version_before));
+        assert_eq!(current_version, original_version_after);
+
+        // Outbox atomicity: paired mutation_attempts row, status=committed.
+        let attempt_status: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT status FROM mutation_attempts WHERE mutation_id = ?1",
+                params![mutation_id.expect("mutation_id present")],
+                |row| row.get(0),
+            )
+            .expect("paired mutation_attempts row");
+        assert_eq!(attempt_status, "committed");
+
+        // The replacement claim also emits its own version_events row
+        // (from the commit_claim call inside targeted_repair_insert_replacement_claim).
+        let replacement_event_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM version_events
+                 WHERE claim_id <> ?1
+                   AND event_kind IN ('claim.updated', 'claim.superseded')",
+                params![&source_claim_id],
+                |row| row.get(0),
+            )
+            .expect("replacement event count");
+        assert!(
+            replacement_event_count >= 1,
+            "replacement claim must emit its own version_events row"
+        );
     }
 
     #[test]

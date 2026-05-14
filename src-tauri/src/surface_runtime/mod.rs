@@ -1333,14 +1333,29 @@ async fn surface_event_log_response(
             // route through the same projection pipeline so that out-of-scope
             // requesters receive a redacted envelope — never raw composition
             // identifiers, version trajectory, mutation_id, or actor_kind.
+            //
+            // Terminal-event cursor durability (§7): when the target row is
+            // missing AND the event is a terminal kind (mutation_aborted,
+            // claim.write_rejected), the cursor must still resolve to a
+            // redacted envelope. A 423-loser handed this cursor would
+            // otherwise hit 404 forever if the holder aborted before
+            // creating its `intelligence_claims` row. Non-terminal kinds
+            // against a missing row remain 404 (the claim was deleted; the
+            // event is non-recoverable).
+            let is_terminal_kind = matches!(
+                row.event_kind.as_str(),
+                "mutation_aborted" | "claim.write_rejected" | "composition.write_rejected"
+            );
             let correction = match (row.claim_id.as_deref(), row.composition_id.as_deref()) {
                 (Some(claim_id), _) => match project_claim_for_scope(db, claim_id, &actor) {
                     Some(correction) => correction,
+                    None if is_terminal_kind => CorrectionPayload::out_of_scope(),
                     None => return Ok(None),
                 },
                 (None, Some(composition_id)) => {
                     match project_composition_for_scope(db, composition_id, &actor) {
                         Some(correction) => correction,
+                        None if is_terminal_kind => CorrectionPayload::out_of_scope(),
                         None => return Ok(None),
                     }
                 }
