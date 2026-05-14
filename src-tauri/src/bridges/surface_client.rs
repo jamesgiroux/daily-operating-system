@@ -413,6 +413,121 @@ pub fn validate_session_bound_wp_user_id(
     Ok(())
 }
 
+/// Channels through which a SurfaceClient request can carry a `wp_user_id`
+/// assertion. Per packet §17 + L2 cycle-2 M1, ALL channels must be checked
+/// before dispatch — the JSON-body-only walker was a class shape bug
+/// (the spec literally enumerates "body, query string, header, or any
+/// other request channel"; class-pattern says enumerate-then-centralise).
+#[derive(Clone, Copy, Debug)]
+pub enum WpUserIdChannel {
+    Body,
+    Query,
+    Header,
+}
+
+/// Request-aware wrapper around `validate_session_bound_wp_user_id`. Walks
+/// the JSON body (if any), the URL query string (form-urlencoded), and the
+/// case-insensitive `wp_user_id` / `x-wp-user-id` headers. First mismatch
+/// short-circuits with a `WrongUserRejection` carrying the channel that
+/// produced the asserted value.
+pub fn validate_session_bound_wp_user_id_for_request(
+    session: &ValidatedSurfaceSession,
+    body_payload: Option<&serde_json::Value>,
+    query: Option<&str>,
+    headers: &http::HeaderMap,
+) -> Result<(), WrongUserRejection> {
+    if let Some(body) = body_payload {
+        let mut asserted = Vec::new();
+        collect_wp_user_ids(body, &mut asserted);
+        check_channel(session, asserted, WpUserIdChannel::Body)?;
+    }
+    if let Some(query) = query {
+        let asserted = parse_wp_user_ids_from_query(query);
+        check_channel(session, asserted, WpUserIdChannel::Query)?;
+    }
+    let header_asserted = parse_wp_user_ids_from_headers(headers);
+    check_channel(session, header_asserted, WpUserIdChannel::Header)?;
+    Ok(())
+}
+
+fn check_channel(
+    session: &ValidatedSurfaceSession,
+    asserted: Vec<u64>,
+    _channel: WpUserIdChannel,
+) -> Result<(), WrongUserRejection> {
+    for asserted_wp_user_id in asserted {
+        if session.wp_user_id != Some(asserted_wp_user_id) {
+            return Err(WrongUserRejection {
+                asserted_wp_user_id,
+                session_wp_user_id: session.wp_user_id,
+                surface_client_id: session.surface_client_id.clone(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn parse_wp_user_ids_from_query(query: &str) -> Vec<u64> {
+    let mut out = Vec::new();
+    for pair in query.split('&') {
+        let mut iter = pair.splitn(2, '=');
+        let key = iter.next().unwrap_or("");
+        let raw = iter.next().unwrap_or("");
+        if key.eq_ignore_ascii_case("wp_user_id") {
+            // Lenient form-urlencode: only '+' → ' ' and %XX → byte. We
+            // only need the digits.
+            let decoded = url_decode_minimal(raw);
+            if let Ok(id) = decoded.trim().parse::<u64>() {
+                out.push(id);
+            }
+        }
+    }
+    out
+}
+
+fn url_decode_minimal(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out = String::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b == b'+' {
+            out.push(' ');
+            i += 1;
+        } else if b == b'%' && i + 2 < bytes.len() {
+            let hex = std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap_or("");
+            match u8::from_str_radix(hex, 16) {
+                Ok(decoded) => {
+                    out.push(decoded as char);
+                    i += 3;
+                }
+                Err(_) => {
+                    out.push(b as char);
+                    i += 1;
+                }
+            }
+        } else {
+            out.push(b as char);
+            i += 1;
+        }
+    }
+    out
+}
+
+fn parse_wp_user_ids_from_headers(headers: &http::HeaderMap) -> Vec<u64> {
+    let mut out = Vec::new();
+    for name in &["wp_user_id", "x-wp-user-id"] {
+        for value in headers.get_all(*name).iter() {
+            if let Ok(raw) = value.to_str() {
+                if let Ok(id) = raw.trim().parse::<u64>() {
+                    out.push(id);
+                }
+            }
+        }
+    }
+    out
+}
+
 fn collect_wp_user_ids(value: &serde_json::Value, output: &mut Vec<u64>) {
     match value {
         serde_json::Value::Object(object) => {

@@ -194,11 +194,18 @@ impl VersionActorKind {
     }
 
     pub fn from_service_actor(actor: &str) -> Self {
-        match actor {
+        // Canonical service-context actor strings carry an optional
+        // `<kind>:<instance>` prefix (e.g. `agent:test`, `user:42`,
+        // `surface_client:studio-instance-a`). Exact-match would
+        // misattribute every prefixed instance to `System`. Parse the
+        // kind prefix before `:`; fall back to exact match for the
+        // bare kind tokens, then default to System.
+        let kind = actor.split_once(':').map(|(prefix, _)| prefix).unwrap_or(actor);
+        match kind {
             "user" => Self::User,
             "agent" => Self::Agent,
             "admin" => Self::Admin,
-            "surface_client" => Self::SurfaceClient,
+            "surface_client" | "surface" => Self::SurfaceClient,
             _ => Self::System,
         }
     }

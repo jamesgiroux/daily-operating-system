@@ -42,6 +42,18 @@ pub enum CompositionError {
         expected: u64,
         current: u64,
     },
+    /// Caller-presented `expected_composition_version` is greater than the
+    /// substrate's current value (fabricated). Wire-compatible with
+    /// `StaleVersion` (HTTP 409 `stale_composition_watermark`), but emits
+    /// `inflated_version_rejected` on the audit channel.
+    #[error(
+        "inflated composition version for {composition_id}: expected {expected}, current {current}"
+    )]
+    InflatedVersion {
+        composition_id: String,
+        expected: u64,
+        current: u64,
+    },
     #[error("composition version overflow for {composition_id}")]
     Overflow { composition_id: String },
     #[error("composition transaction failed: {0}")]
@@ -93,10 +105,95 @@ pub fn commit_composition(
             actor_kind,
             ctx,
         )
-    })?;
+    });
+
+    let committed = match committed {
+        Ok(value) => value,
+        Err(error) => {
+            // Emit `composition.write_rejected` at the reserved cursor in a
+            // dedicated Tx so the audit row is durable even though the
+            // mutation Tx rolled back. Suppresses the Drop's
+            // `mutation_aborted` for these classified rejection paths.
+            let rejection_reason = match &error {
+                CompositionError::StaleVersion { current, .. } => {
+                    Some(("stale_composition_watermark", Some(*current)))
+                }
+                CompositionError::InflatedVersion { current, .. } => {
+                    Some(("inflated_version_rejected", Some(*current)))
+                }
+                CompositionError::Overflow { .. } => {
+                    Some(("composition_version_overflow", None))
+                }
+                _ => None,
+            };
+            if let Some((reason, current_version)) = rejection_reason {
+                let now = ctx.clock.now().to_rfc3339();
+                if let Err(audit_err) = record_composition_write_rejected_event(
+                    db,
+                    mutation_guard.attempt(),
+                    &composition_id,
+                    current_version,
+                    reason,
+                    &now,
+                    actor_kind,
+                ) {
+                    log::warn!(
+                        "failed to record composition.write_rejected event mutation_id={} error={audit_err}",
+                        mutation_guard.attempt().mutation_id
+                    );
+                }
+                mutation_guard.mark_completed();
+            }
+            return Err(error);
+        }
+    };
 
     mutation_guard.mark_completed();
     Ok(committed)
+}
+
+/// Side-Tx helper to mark a composition mutation attempt aborted and emit a
+/// `composition.write_rejected` event at the reserved cursor. Mirrors the
+/// claim-side `record_claim_write_rejected_event` helper.
+fn record_composition_write_rejected_event(
+    db: &ActionDb,
+    attempt: &crate::services::versioning::MutationAttempt,
+    composition_id: &str,
+    current_version: Option<u64>,
+    reason: &str,
+    now: &str,
+    actor_kind: VersionActorKind,
+) -> Result<(), CompositionError> {
+    db.with_transaction(|tx| {
+        tx.conn_ref()
+            .execute(
+                "UPDATE mutation_attempts \
+                 SET status = 'aborted', finalized_at = ?2 \
+                 WHERE mutation_id = ?1 AND status = 'in_flight'",
+                params![&attempt.mutation_id, now],
+            )
+            .map_err(|e| e.to_string())?;
+        insert_version_event(
+            tx,
+            VersionEventInsert {
+                cursor: &attempt.cursor,
+                event_kind: VersionEventKind::CompositionWriteRejected,
+                claim_id: None,
+                composition_id: Some(composition_id),
+                previous_version: None,
+                current_version: current_version.unwrap_or(0),
+                reason: Some(reason),
+                scope_redacted: false,
+                correction_event_log_id: None,
+                mutation_id: Some(&attempt.mutation_id),
+                created_at: now,
+                actor_kind,
+            },
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    })
+    .map_err(CompositionError::Transaction)
 }
 
 fn composition_transaction<T, F>(db: &ActionDb, f: F) -> Result<T, CompositionError>
@@ -173,6 +270,17 @@ fn commit_composition_tx(
             (Some(current_version), next)
         }
         Some(current_version) => {
+            // Branch inflated (expected > current) from stale (expected <
+            // current). Both still surface as HTTP 409
+            // `stale_composition_watermark`, but the trust-system-facing
+            // audit event_kind differs per packet §6 / §6.5 / ac §34.
+            if proposal.expected_composition_version > current_version {
+                return Err(CompositionError::InflatedVersion {
+                    composition_id: composition_id.to_string(),
+                    expected: proposal.expected_composition_version,
+                    current: current_version,
+                });
+            }
             return Err(CompositionError::StaleVersion {
                 composition_id: composition_id.to_string(),
                 expected: proposal.expected_composition_version,
@@ -195,7 +303,10 @@ fn commit_composition_tx(
             (None, 1)
         }
         None => {
-            return Err(CompositionError::StaleVersion {
+            // No row yet, caller asserted a non-zero expected — that's
+            // an inflated/fabricated version (substrate has no history
+            // to be stale against).
+            return Err(CompositionError::InflatedVersion {
                 composition_id: composition_id.to_string(),
                 expected: proposal.expected_composition_version,
                 current: 0,

@@ -67,7 +67,11 @@ where
 }
 
 pub fn run_watermark_doctor() -> Result<WatermarkDoctorReport, String> {
-    let db = ActionDb::open(Arc::new(LocalKeychain::new())).map_err(|error| error.to_string())?;
+    // Open without startup recovery so zombie `mutation_attempts` rows can
+    // be counted before they're auto-aborted. The doctor reports state;
+    // it must not heal what it's inspecting (packet ac §36 + L2 cycle-2 P2).
+    let db = ActionDb::open_for_inspection(Arc::new(LocalKeychain::new()))
+        .map_err(|error| error.to_string())?;
     inspect_watermarks(&db)
 }
 
@@ -90,11 +94,17 @@ pub fn inspect_watermarks(db: &ActionDb) -> Result<WatermarkDoctorReport, String
              WHERE status = 'in_flight' AND started_at < ?1",
             params![cutoff],
         )?,
+        // claim_version = 1 is the post-migration baseline. Migration 172
+        // backfills pre-existing rows to v=1 via a single summary event
+        // (sentinel '__migration_172_backfill__'); per-row events would
+        // fire a false invalidation storm. Outbox-integrity only checks
+        // mutations from v>=2 onwards (every subsequent commit_claim has
+        // its own version_events row at the matching current_version).
         claims_missing_outbox: count_i64(
             db,
             "SELECT COUNT(*)
              FROM intelligence_claims c
-             WHERE c.claim_version >= 1
+             WHERE c.claim_version >= 2
                AND NOT EXISTS (
                  SELECT 1
                  FROM version_events ve

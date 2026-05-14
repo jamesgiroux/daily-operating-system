@@ -27,7 +27,8 @@ use uuid::Uuid;
 use crate::abilities::NOOP_ABILITY_TRACER;
 use crate::bridges::correction_payload::{project_claim_for_scope, CorrectionPayload};
 use crate::bridges::surface_client::{
-    validate_session_bound_wp_user_id, SurfaceClientAbilityClassLimits, SurfaceClientBridge,
+    validate_session_bound_wp_user_id_for_request, SurfaceClientAbilityClassLimits,
+    SurfaceClientBridge,
     SurfaceClientBridgeConfig, SurfaceClientBridgeError, SurfaceClientRateLimitAxis,
     SurfaceClientRateLimitBudget, SurfaceClientRequestClassLimits,
 };
@@ -1375,29 +1376,38 @@ async fn signed_route_response(
     validated: ValidatedSurfaceSession,
     request_id: String,
 ) -> Response<ResponseBody> {
-    if let Ok(payload) = serde_json::from_slice::<serde_json::Value>(&request.body) {
-        if let Err(rejection) = validate_session_bound_wp_user_id(&validated, &payload) {
-            if let Some(app_state) = runtime.app_state.as_ref() {
-                emit_pairing_audit_event(
-                    app_state,
-                    &SurfacePairingAuditEvent {
-                        event_kind: "wrong_user_rejected",
-                        category: "security",
-                        actor: validated.actor.clone(),
-                        wp_user_id: validated.wp_user_id,
-                        wp_user_hash: validated.wp_user_hash.clone(),
-                        detail: json!({
-                            "surface_client_id": rejection.surface_client_id,
-                            "session_wp_user_id": rejection.session_wp_user_id,
-                            "asserted_wp_user_id": rejection.asserted_wp_user_id,
-                            "decision": "rejected",
-                            "reason": "wrong_user"
-                        }),
-                    },
-                );
-            }
-            return error_response(SurfaceHttpError::wrong_user().with_request_id(request_id));
+    // Walk body + query string + headers per packet §17 (extended in L2
+    // cycle-2 M1 from JSON-body-only). The class shape is that any
+    // wp_user_id channel into the bridge must be checked against the
+    // session-bound value before further dispatch.
+    let body_payload = serde_json::from_slice::<serde_json::Value>(&request.body).ok();
+    let validation = validate_session_bound_wp_user_id_for_request(
+        &validated,
+        body_payload.as_ref(),
+        request.uri.query(),
+        &request.headers,
+    );
+    if let Err(rejection) = validation {
+        if let Some(app_state) = runtime.app_state.as_ref() {
+            emit_pairing_audit_event(
+                app_state,
+                &SurfacePairingAuditEvent {
+                    event_kind: "wrong_user_rejected",
+                    category: "security",
+                    actor: validated.actor.clone(),
+                    wp_user_id: validated.wp_user_id,
+                    wp_user_hash: validated.wp_user_hash.clone(),
+                    detail: json!({
+                        "surface_client_id": rejection.surface_client_id,
+                        "session_wp_user_id": rejection.session_wp_user_id,
+                        "asserted_wp_user_id": rejection.asserted_wp_user_id,
+                        "decision": "rejected",
+                        "reason": "wrong_user"
+                    }),
+                },
+            );
         }
+        return error_response(SurfaceHttpError::wrong_user().with_request_id(request_id));
     }
 
     match (request.method.clone(), request.uri.path()) {
@@ -1517,7 +1527,7 @@ async fn signed_route_response(
                             bridge_surface_error_response(
                                 surface_error(error),
                                 app_state,
-                                &validated.actor,
+                                &validated,
                                 request_id,
                             )
                             .await
@@ -1571,9 +1581,14 @@ fn is_safe_ability_name(value: &str) -> bool {
 async fn bridge_surface_error_response(
     error: BridgeSurfaceError,
     app_state: &AppState,
-    actor: &Actor,
+    session: &ValidatedSurfaceSession,
     request_id: String,
 ) -> Response<ResponseBody> {
+    // Emit a JSONL audit row for every bridge-surface rejection that
+    // carries a watermark-class signature per packet §6.5 + ac §34.
+    // Inline 409 stale_watermark callers also emit a domain-specific row;
+    // this is the cross-class audit channel.
+    emit_bridge_rejection_audit(app_state, session, &error);
     match error {
         BridgeSurfaceError::StaleVersion {
             claim_id,
@@ -1581,11 +1596,124 @@ async fn bridge_surface_error_response(
             current,
             correction: _,
         } => {
-            stale_version_error_response(app_state, actor, request_id, claim_id, expected, current)
-                .await
+            stale_version_error_response(
+                app_state,
+                &session.actor,
+                request_id,
+                claim_id,
+                expected,
+                current,
+            )
+            .await
         }
         error => error_response(bridge_surface_error(error).with_request_id(request_id)),
     }
+}
+
+/// Emit a JSONL audit row for a bridge-surface rejection per packet ac §34.
+///
+/// Pins the `detail` shape to `{ rejection_reason, expected_version,
+/// current_version, claim_id, composition_id, mutation_id, scope_redacted,
+/// actor_instance, actor_scopes, wp_user_id }`. `wp_user_id` is sent for
+/// audit hash binding (the JSONL writer drops the raw value and stores
+/// `wp_user_hash`); the unredacted claim/composition ids are caller-supplied
+/// strings, not PII. `scope_redacted` is `true` whenever the rejection
+/// envelope returned to the client suppressed claim content.
+fn emit_bridge_rejection_audit(
+    app_state: &AppState,
+    session: &ValidatedSurfaceSession,
+    error: &BridgeSurfaceError,
+) {
+    let (event_kind, detail) = match error {
+        BridgeSurfaceError::StaleVersion {
+            claim_id,
+            expected,
+            current,
+            correction: _,
+        } => (
+            "claim.write_rejected",
+            json!({
+                "rejection_reason": "stale_watermark",
+                "claim_id": claim_id,
+                "composition_id": null,
+                "expected_version": expected,
+                "current_version": current,
+                "mutation_id": null,
+                "scope_redacted": true,
+            }),
+        ),
+        BridgeSurfaceError::StaleComposition {
+            composition_id,
+            expected,
+            current,
+        } => (
+            "composition.write_rejected",
+            json!({
+                "rejection_reason": "stale_composition_watermark",
+                "claim_id": null,
+                "composition_id": composition_id,
+                "expected_version": expected,
+                "current_version": current,
+                "mutation_id": null,
+                "scope_redacted": false,
+            }),
+        ),
+        BridgeSurfaceError::MidFlightMutation {
+            claim_id,
+            mutation_id,
+            retry_after_event: _,
+        } => (
+            "claim.write_rejected",
+            json!({
+                "rejection_reason": "mid_flight_mutation",
+                "claim_id": claim_id,
+                "composition_id": null,
+                "expected_version": null,
+                "current_version": null,
+                "mutation_id": mutation_id,
+                "scope_redacted": false,
+            }),
+        ),
+        BridgeSurfaceError::MissingExpectedClaimVersion { claim_id } => (
+            "claim.write_rejected",
+            json!({
+                "rejection_reason": "missing_expected_claim_version",
+                "claim_id": claim_id,
+                "composition_id": null,
+                "expected_version": null,
+                "current_version": null,
+                "mutation_id": null,
+                "scope_redacted": false,
+            }),
+        ),
+        BridgeSurfaceError::ClaimVersionOverflow { claim_id } => (
+            "claim.write_rejected",
+            json!({
+                "rejection_reason": "claim_version_overflow",
+                "claim_id": claim_id,
+                "composition_id": null,
+                "expected_version": null,
+                "current_version": null,
+                "mutation_id": null,
+                "scope_redacted": false,
+            }),
+        ),
+        // ProjectionTampered / ProjectionVersionRollback are W4-C-owned;
+        // their audit emission belongs in the W4-C handler. Validation /
+        // AbilityUnavailable / Ownership do not carry a watermark signature.
+        _ => return,
+    };
+    emit_pairing_audit_event(
+        app_state,
+        &SurfacePairingAuditEvent {
+            event_kind,
+            category: "data_access",
+            actor: session.actor.clone(),
+            wp_user_id: session.wp_user_id,
+            wp_user_hash: session.wp_user_hash.clone(),
+            detail,
+        },
+    );
 }
 
 async fn stale_version_error_response(

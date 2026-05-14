@@ -303,12 +303,36 @@ impl From<crate::services::claims::ClaimError> for BridgeSurfaceError {
                 current,
                 correction: None,
             },
+            // Inflated (expected > current) is wire-compatible with stale
+            // for HTTP 409 / `stale_watermark` envelope per packet §6 +
+            // §6.5; the trust-system-facing audit event already differs
+            // (substrate emits `inflated_version_rejected` via the
+            // version_events row before the error reaches this mapping).
+            crate::services::claims::ClaimError::InflatedVersion {
+                claim_id,
+                expected,
+                current,
+            } => Self::StaleVersion {
+                claim_id,
+                expected,
+                current,
+                correction: None,
+            },
             crate::services::claims::ClaimError::MissingExpectedClaimVersion { claim_id } => {
                 Self::MissingExpectedClaimVersion { claim_id }
             }
             crate::services::claims::ClaimError::ClaimVersionOverflow { claim_id } => {
                 Self::ClaimVersionOverflow { claim_id }
             }
+            crate::services::claims::ClaimError::MidFlightMutation {
+                claim_id,
+                mutation_id,
+                retry_after_event,
+            } => Self::MidFlightMutation {
+                claim_id,
+                mutation_id,
+                retry_after_event,
+            },
             error => Self::Validation(error.to_string()),
         }
     }

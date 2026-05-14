@@ -252,10 +252,32 @@ pub enum ClaimError {
         expected: u64,
         current: u64,
     },
+    /// Caller-presented `expected_claim_version` is greater than the substrate's
+    /// `current_claim_version` (fabricated / inflated). Wire-compatible with
+    /// `StaleVersion` (both map to HTTP 409 `stale_watermark`), but routed
+    /// through a distinct rejection event/audit (`inflated_version_rejected`)
+    /// so the trust system can downgrade the fabricator's reliability.
+    #[error("inflated claim version for {claim_id}: expected {expected}, current {current}")]
+    InflatedVersion {
+        claim_id: String,
+        expected: u64,
+        current: u64,
+    },
     #[error("missing expected claim version for {claim_id}")]
     MissingExpectedClaimVersion { claim_id: String },
     #[error("claim version overflow for {claim_id}")]
     ClaimVersionOverflow { claim_id: String },
+    /// Another mutation on `claim_id` is in flight (lock held). Caller can
+    /// subscribe to `retry_after_event` (the holder's cursor in
+    /// `mutation_attempts`) to learn when the in-flight Tx terminates.
+    /// Per packet §7: lock is defense-in-depth, CAS is correctness;
+    /// receiving this error means the holder still has not committed.
+    #[error("mid-flight mutation for {claim_id}")]
+    MidFlightMutation {
+        claim_id: String,
+        mutation_id: String,
+        retry_after_event: String,
+    },
     #[error("invalid claim feedback: {0}")]
     InvalidFeedback(String),
     #[error("invalid actor: {0}")]
@@ -722,6 +744,55 @@ fn commit_lock_for(key: CommitKey) -> Arc<Mutex<()>> {
     map.entry(key)
         .or_insert_with(|| Arc::new(Mutex::new(())))
         .clone()
+}
+
+/// Look up the holder of an in-flight `mutation_attempts` row for `claim_id`,
+/// excluding the caller's own reserved attempt (`self_mutation_id`).
+///
+/// Without the self-exclusion, callers race against their own reservation:
+/// `MutationGuard::reserve` writes the in-flight row BEFORE the lock attempt,
+/// so a `try_lock` failure followed by a holder lookup would always find the
+/// caller's own row instead of the actual lock-holding sibling.
+fn lookup_in_flight_mutation_holder(
+    db: &ActionDb,
+    claim_id: &str,
+    self_mutation_id: &str,
+) -> Result<Option<(String, String)>, ClaimError> {
+    db.conn_ref()
+        .query_row(
+            "SELECT mutation_id, cursor \
+             FROM mutation_attempts \
+             WHERE claim_id = ?1 \
+               AND status = 'in_flight' \
+               AND mutation_id != ?2 \
+             ORDER BY started_at DESC \
+             LIMIT 1",
+            params![claim_id, self_mutation_id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+        )
+        .optional()
+        .map_err(ClaimError::from)
+}
+
+/// Mark a reserved mutation attempt aborted when the caller never enters
+/// the mutation Tx (e.g. blocked by an in-flight 423 holder). Mirrors the
+/// `MutationGuard::Drop` path but runs without writing a `mutation_aborted`
+/// version event — the 423 loser's cursor is the holder's cursor, not the
+/// loser's own reservation.
+fn abort_unused_mutation_attempt(
+    db: &ActionDb,
+    attempt: &crate::services::versioning::MutationAttempt,
+    now: &str,
+) -> Result<(), ClaimError> {
+    db.conn_ref()
+        .execute(
+            "UPDATE mutation_attempts \
+             SET status = 'aborted', finalized_at = ?2 \
+             WHERE mutation_id = ?1 AND status = 'in_flight'",
+            params![&attempt.mutation_id, now],
+        )
+        .map_err(ClaimError::from)?;
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -5258,6 +5329,17 @@ fn enforce_claim_mutation_target_tx(
                 });
             }
             let current = current_claim_version_for_id_tx(tx, claim_id)?;
+            if *expected_claim_version > current {
+                // Caller presented a version higher than substrate's current —
+                // fabricated/inflated. Distinct rejection class from stale.
+                // Per packet §6 + ac §9 + ac §34, this routes through its own
+                // audit event_kind so trust scoring can downgrade the source.
+                return Err(ClaimError::InflatedVersion {
+                    claim_id: claim_id.clone(),
+                    expected: *expected_claim_version,
+                    current,
+                });
+            }
             if *expected_claim_version != current {
                 return Err(ClaimError::StaleVersion {
                     claim_id: claim_id.clone(),
@@ -5281,6 +5363,86 @@ struct ClaimVersionEventWrite<'a> {
     event_kind: VersionEventKind,
     now: &'a str,
     actor_kind: VersionActorKind,
+}
+
+/// Reason string written into `version_events.reason` for a `claim.write_rejected`
+/// event. Substrate-controlled vocabulary; pinned to the rejection_reason values
+/// declared in ac §34's `AuditFields.detail` schema.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum ClaimRejectionReason {
+    StaleWatermark,
+    InflatedVersionRejected,
+    MissingExpectedClaimVersion,
+    ClaimVersionOverflow,
+    MidFlightMutation,
+}
+
+impl ClaimRejectionReason {
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::StaleWatermark => "stale_watermark",
+            Self::InflatedVersionRejected => "inflated_version_rejected",
+            Self::MissingExpectedClaimVersion => "missing_expected_claim_version",
+            Self::ClaimVersionOverflow => "claim_version_overflow",
+            Self::MidFlightMutation => "mid_flight_mutation",
+        }
+    }
+}
+
+/// Record a `claim.write_rejected` event in a dedicated transaction.
+///
+/// Mutation rejections (stale, inflated, overflow, missing-version) need to
+/// emit a durable audit row even though their mutation Tx rolled back. The
+/// helper runs a side Tx that:
+///   1. Marks the reserved `mutation_attempts` row as `aborted`.
+///   2. Inserts a `claim.write_rejected` event at the same cursor.
+///
+/// Returns the cursor so callers can attach it to the response envelope or
+/// audit detail. The `MutationGuard` Drop path normally emits `mutation_aborted`
+/// at this cursor on rollback; calling this helper claims the cursor first by
+/// updating the attempt status, then the Drop sees `status != 'in_flight'` and
+/// becomes a no-op (see `finalize_mutation_attempt_aborted_tx`).
+fn record_claim_write_rejected_event(
+    db: &ActionDb,
+    attempt: &crate::services::versioning::MutationAttempt,
+    claim_id: &str,
+    current_version: Option<u64>,
+    reason: ClaimRejectionReason,
+    now: &str,
+    actor_kind: VersionActorKind,
+) -> Result<String, ClaimError> {
+    let cursor = attempt.cursor.as_str().to_string();
+    db.with_transaction(|tx| {
+        tx.conn_ref()
+            .execute(
+                "UPDATE mutation_attempts \
+                 SET status = 'aborted', finalized_at = ?2 \
+                 WHERE mutation_id = ?1 AND status = 'in_flight'",
+                params![&attempt.mutation_id, now],
+            )
+            .map_err(|e| e.to_string())?;
+        insert_version_event(
+            tx,
+            VersionEventInsert {
+                cursor: &attempt.cursor,
+                event_kind: VersionEventKind::ClaimWriteRejected,
+                claim_id: Some(claim_id),
+                composition_id: None,
+                previous_version: None,
+                current_version: current_version.unwrap_or(0),
+                reason: Some(reason.as_str()),
+                scope_redacted: false,
+                correction_event_log_id: None,
+                mutation_id: Some(&attempt.mutation_id),
+                created_at: now,
+                actor_kind,
+            },
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    })
+    .map_err(|e| ClaimError::Transaction(e.to_string()))?;
+    Ok(cursor)
 }
 
 fn finish_claim_version_event_tx(
@@ -5463,7 +5625,51 @@ where
             .unwrap_or_default(),
     );
     let lock = commit_lock_for(key);
-    let _guard = lock.lock();
+    // Non-blocking acquisition: when the lock is already held by another
+    // mutation, surface the holder's reservation row so the loser can
+    // subscribe to the cursor instead of serializing then CAS-failing
+    // (HTTP 423 mid_flight_mutation rather than HTTP 409 stale_watermark).
+    // Per packet §7, the CAS is still correctness; this is the contract
+    // surface for concurrent writers, not a defense-in-depth tuning.
+    let _guard = match lock.try_lock() {
+        Some(guard) => guard,
+        None => {
+            // Lock holder is mid-Tx. Look up its mutation_attempts row,
+            // EXCLUDING this caller's own reserved attempt (the reservation
+            // commits before the lock attempt — see MutationGuard::reserve).
+            let claim_id_for_holder = proposal
+                .id
+                .clone()
+                .unwrap_or_else(|| mutation_guard.attempt().subject.claim_id().unwrap_or("").to_string());
+            let self_mutation_id = mutation_guard.attempt().mutation_id.clone();
+            let holder = lookup_in_flight_mutation_holder(db, &claim_id_for_holder, &self_mutation_id)
+                .ok()
+                .flatten();
+            if let Some((holder_mutation_id, holder_cursor)) = holder {
+                // Mark our reserved attempt aborted (no Tx will run).
+                mutation_guard.mark_completed();
+                if let Err(error) = abort_unused_mutation_attempt(
+                    db,
+                    mutation_guard.attempt(),
+                    &ctx.clock.now().to_rfc3339(),
+                ) {
+                    log::warn!(
+                        "failed to abort unused mutation attempt mutation_id={} error={error}",
+                        mutation_guard.attempt().mutation_id
+                    );
+                }
+                return Err(ClaimError::MidFlightMutation {
+                    claim_id: claim_id_for_holder,
+                    mutation_id: holder_mutation_id,
+                    retry_after_event: holder_cursor,
+                });
+            }
+            // No holder visible (e.g. holder just released between try_lock
+            // and the lookup); fall through to the blocking acquire path so
+            // we don't spuriously 423.
+            lock.lock()
+        }
+    };
 
     let committed = with_claim_transaction(db, |tx| {
         let accepted_mutation = enforce_claim_mutation_target_tx(tx, &mutation_target)?;
@@ -6077,7 +6283,68 @@ where
         } else {
             Ok(CommittedClaim::Inserted { claim })
         }
-    })?;
+    });
+
+    let committed = match committed {
+        Ok(value) => value,
+        Err(error) => {
+            // Mutation Tx rolled back. For rejection classes that carry a
+            // distinct audit signature (stale, inflated, overflow,
+            // missing-version), emit a `claim.write_rejected` row at the
+            // reserved cursor before the MutationGuard's Drop would emit
+            // `mutation_aborted`. record_claim_write_rejected_event marks
+            // the attempt aborted in the same side-Tx, so Drop becomes a
+            // no-op for these rejection paths.
+            let rejection = match &error {
+                ClaimError::StaleVersion {
+                    claim_id, current, ..
+                } => Some((
+                    claim_id.clone(),
+                    Some(*current),
+                    ClaimRejectionReason::StaleWatermark,
+                )),
+                ClaimError::InflatedVersion {
+                    claim_id, current, ..
+                } => Some((
+                    claim_id.clone(),
+                    Some(*current),
+                    ClaimRejectionReason::InflatedVersionRejected,
+                )),
+                ClaimError::ClaimVersionOverflow { claim_id } => Some((
+                    claim_id.clone(),
+                    None,
+                    ClaimRejectionReason::ClaimVersionOverflow,
+                )),
+                ClaimError::MissingExpectedClaimVersion { claim_id } => Some((
+                    claim_id.clone(),
+                    None,
+                    ClaimRejectionReason::MissingExpectedClaimVersion,
+                )),
+                _ => None,
+            };
+            if let Some((claim_id, current_version, reason)) = rejection {
+                let now = ctx.clock.now().to_rfc3339();
+                if let Err(audit_err) = record_claim_write_rejected_event(
+                    db,
+                    mutation_guard.attempt(),
+                    &claim_id,
+                    current_version,
+                    reason,
+                    &now,
+                    actor_kind,
+                ) {
+                    log::warn!(
+                        "failed to record claim.write_rejected event mutation_id={} error={audit_err}",
+                        mutation_guard.attempt().mutation_id
+                    );
+                }
+                // Suppress Drop's mutation_aborted emit — the rejection row
+                // already terminates the cursor.
+                mutation_guard.mark_completed();
+            }
+            return Err(error);
+        }
+    };
 
     mutation_guard.mark_completed();
 
@@ -6106,7 +6373,17 @@ pub fn withdraw_claim(
         ));
     }
 
-    with_claim_transaction(db, |tx| {
+    // Withdraw is a lifecycle mutation on intelligence_claims: it changes
+    // claim_state + surfacing_state + retraction_reason. Per packet §13's
+    // "exclusive chokepoint" contract, every claim mutation that changes
+    // assertion lifecycle MUST bump claim_version + emit a version_events
+    // row in the same Tx. We reserve a MutationGuard so the cursor
+    // protocol (§7) is honoured and the Drop path emits mutation_aborted
+    // if the Tx panics.
+    let mut mutation_guard = MutationGuard::reserve(db, claim_id, ctx.clock.now())?;
+    let actor_kind = VersionActorKind::from_service_actor(ctx.actor);
+
+    let claim = with_claim_transaction(db, |tx| {
         let claim = load_claim_by_id(tx.conn_ref(), claim_id)?
             .ok_or_else(|| ClaimError::UnknownClaimId(claim_id.to_string()))?;
         let subject_value = serde_json::from_str::<serde_json::Value>(&claim.subject_ref)?;
@@ -6127,11 +6404,28 @@ pub fn withdraw_claim(
             )?;
             mark_claim_edges_tombstoned(tx, claim_id, &ctx.clock.now().to_rfc3339())?;
             tx.bump_for_subject(&subject)?;
+            let (previous, current) = bump_existing_claim_version_tx(tx, claim_id)?;
+            let now = ctx.clock.now().to_rfc3339();
+            finish_claim_version_event_tx(
+                tx,
+                mutation_guard.attempt(),
+                ClaimVersionEventWrite {
+                    claim_id,
+                    previous_version: Some(previous),
+                    current_version: current,
+                    event_kind: VersionEventKind::ClaimTombstoned,
+                    now: &now,
+                    actor_kind,
+                },
+            )?;
         }
 
         load_claim_by_id(tx.conn_ref(), claim_id)?
             .ok_or_else(|| ClaimError::UnknownClaimId(claim_id.to_string()))
-    })
+    })?;
+
+    mutation_guard.mark_completed();
+    Ok(claim)
 }
 
 // ---------------------------------------------------------------------------
@@ -6205,6 +6499,12 @@ pub fn record_claim_feedback(
 
     let metadata = feedback_semantics(input.action);
     validate_feedback_payload(&input, &metadata)?;
+
+    // Feedback mutates assertion-relevant columns on intelligence_claims
+    // (verification_state, lifecycle). Reserve a MutationGuard so the
+    // commit chokepoint contract (§7 + §13) covers this path too.
+    let mut mutation_guard = MutationGuard::reserve(db, input.claim_id.clone(), ctx.clock.now())?;
+    let version_actor_kind = VersionActorKind::from_service_actor(ctx.actor);
 
     let write = with_claim_transaction(db, |tx| {
         let now = ctx.clock.now().to_rfc3339();
@@ -6312,6 +6612,35 @@ pub fn record_claim_feedback(
             mark_claim_edges_tombstoned(tx, &input.claim_id, &now)?;
         }
 
+        // Bump claim_version + emit version_events when feedback actually
+        // changed the assertion-relevant columns (verification or lifecycle).
+        // Pure no-op feedback (false, false) skips the bump so we don't burn
+        // a version on metadata-only writes.
+        if verification_changed || lifecycle_changed {
+            let (previous, current) =
+                bump_existing_claim_version_tx(tx, &input.claim_id)?;
+            let event_kind = if matches!(
+                lifecycle_update.claim_state,
+                ClaimState::Tombstoned | ClaimState::Withdrawn
+            ) {
+                VersionEventKind::ClaimTombstoned
+            } else {
+                VersionEventKind::ClaimCorrected
+            };
+            finish_claim_version_event_tx(
+                tx,
+                mutation_guard.attempt(),
+                ClaimVersionEventWrite {
+                    claim_id: &input.claim_id,
+                    previous_version: Some(previous),
+                    current_version: current,
+                    event_kind,
+                    now: &now,
+                    actor_kind: version_actor_kind,
+                },
+            )?;
+        }
+
         bump_invalidation_for_claim_id(tx, &input.claim_id)?;
         let repair_job_id =
             targeted_repair_enqueue_job(ctx, tx, &claim, &feedback_id, metadata.repair)?;
@@ -6333,6 +6662,7 @@ pub fn record_claim_feedback(
         })
     })?;
 
+    mutation_guard.mark_completed();
     emit_claim_feedback_signals(ctx, db, &write);
 
     Ok(write.outcome)

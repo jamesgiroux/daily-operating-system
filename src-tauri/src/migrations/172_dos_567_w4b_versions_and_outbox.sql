@@ -67,6 +67,22 @@ UPDATE intelligence_claims
 SET claim_version = 1
 WHERE claim_version = 0;
 
+-- Per packet §11 + L2 cycle-2 H5: backfill MUST NOT emit a per-row
+-- mutation_attempts + version_events pair (2N rows + N synthetic
+-- claim.updated events would wake DOS-589 subscribers with a false
+-- invalidation storm on first migration). Backfill is a one-shot
+-- substrate operation, not an observable claim mutation.
+--
+-- Instead we emit a single summary `claim_version_backfill` audit row.
+-- We use a synthetic mutation_attempts + version_events pair anchored at
+-- a sentinel claim_id ('__migration_172_backfill__'). The single row's
+-- `reason` carries `claim_version_backfill:row_count=<N>:migration_version=172`
+-- per ac §34 audit-detail shape. Subscribers filter on event_kind =
+-- 'claim.updated' AND claim_id = '__migration_172_backfill__' as the
+-- single-row backfill marker — they do NOT see N spurious events.
+--
+-- The doctor outbox-integrity check treats `claim_version = 1` as the
+-- post-migration baseline that doesn't require a per-row outbox entry.
 INSERT INTO mutation_attempts (
     mutation_id,
     claim_id,
@@ -76,9 +92,9 @@ INSERT INTO mutation_attempts (
     status,
     finalized_at
 )
-SELECT
-    'migration-172-' || id,
-    id,
+VALUES (
+    'migration-172-backfill-summary',
+    '__migration_172_backfill__',
     NULL,
     lower(
         hex(randomblob(4)) || '-' ||
@@ -90,8 +106,7 @@ SELECT
     datetime('now'),
     'committed',
     datetime('now')
-FROM intelligence_claims
-WHERE claim_version = 1;
+);
 
 INSERT INTO version_events (
     cursor,
@@ -108,13 +123,13 @@ INSERT INTO version_events (
 SELECT
     cursor,
     'claim.updated',
-    claim_id,
+    '__migration_172_backfill__',
     0,
     1,
-    'claim_version_backfill',
+    'claim_version_backfill:row_count=' || (SELECT COUNT(*) FROM intelligence_claims WHERE claim_version = 1) || ':migration_version=172',
     0,
     mutation_id,
     finalized_at,
     'system'
 FROM mutation_attempts
-WHERE mutation_id LIKE 'migration-172-%';
+WHERE mutation_id = 'migration-172-backfill-summary';
