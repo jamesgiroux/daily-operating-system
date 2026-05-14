@@ -89,6 +89,15 @@ final class DailyOS_Mcp_Server {
 			add_filter( 'mcp_adapter_pre_tool_call', [ $server, 'prepare_tool_call' ], 10, 4 );
 		}
 
+		// McpAdapter::instance() registers the adapter's own rest_api_init hook
+		// that later fires mcp_adapter_init. Without this call the adapter
+		// singleton is never instantiated, the mcp_adapter_init action never
+		// fires, and the /wp-json/dailyos/v1/mcp REST route never registers
+		// despite the handler being wired above.
+		if ( class_exists( \WP\MCP\Core\McpAdapter::class ) ) {
+			\WP\MCP\Core\McpAdapter::instance();
+		}
+
 		return $server;
 	}
 
