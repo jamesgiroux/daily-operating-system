@@ -10,7 +10,7 @@
 - Linear source: `mcp__linear__.get_issue(id="DOS-221", includeRelations=true, includeReleases=true)`.
 - Working branch: `dos-280-w5-b-l0-prep`.
 - Worktree path: `/Users/jamesgiroux/Documents/dailyos-repo/worktrees/dos-280-w5-b-l0-prep`.
-- Packet version: V1 doc-only.
+- Packet version: V2 doc-only.
 - Packet status: L0 authoring packet for review.
 - Boundary: documentation-only.
 - Boundary: no Rust edits.
@@ -41,6 +41,7 @@
 - Runtime composition pattern source: `src-tauri/abilities-runtime/src/abilities/prepare_meeting/`.
 - ServiceContext narrow-reader pattern source: `src-tauri/abilities-runtime/src/services/context.rs`.
 - Existing bundle target: `src-tauri/tests/fixtures/bundle-10/`.
+- Existing bundle-10 files verified in this worktree: `state.sql`, `inputs.json`, `expected_output.json`, `expected_provenance.json`, `metadata.json`, `clock.txt`, `seed.txt`, `provider_replay.json`, and `external_replay.json`.
 - Only file intended for this turn: `.docs/plans/v1.4.1-waves/W5-B-L0-packet.md`.
 
 ## 2. Load-bearing user outcome
@@ -130,11 +131,44 @@
 | No customer data in fixtures | Yes | Fixtures use generic names, domains, account ids, people, and projects only. |
 | All mutations through services | Yes | The ability performs no mutation at all; old-path removal must still respect service boundaries. |
 
+### Composition handoff gate
+
+- DOS-221 itself has no prompt boundary.
+- DOS-221's direct parent in W5 is DOS-220 `get_daily_readiness`.
+- DOS-220 composes DOS-221 output and may feed selected loop facts into a rendered prompt.
+- Composition handoff gate: any parent ability that feeds DOS-221 output into a prompt must audit channel 6 rendered prompt plus canonical JSON at the parent's boundary.
+- Composition handoff gate: any parent ability that feeds DOS-221 output into a prompt must audit channel 7 template variables at the parent's boundary.
+- Source cross-reference: W5-A packet section 4, "Inherited Contracts From v1.4.0 W5 Pilots", already inherits the nine-channel sweep for DOS-220.
+- Source cross-reference: W5-A packet section 4, Contract 6, inherits the centralized `services/claims.rs` prompt-input sensitivity gate.
+- Central gate name in code: `prompt_input_sensitivity_allowed`.
+- Central gate source: `src-tauri/src/services/claims.rs:3461-3478`.
+- DOS-221 fulfills its side of the handoff by stamping every `OpenLoop` with sensitivity and `subject_ref`.
+- DOS-221 fulfills its side of the handoff by loading claim text only through the gated claim-read path.
+- DOS-221 must not leak raw claim text through output-only diagnostics, provenance warnings, or debug fields.
+- DOS-221 consumers must apply the centralized sensitivity gate before prompt rendering.
+- DOS-221 consumers must not invent a per-parent sensitivity allowlist.
+- Packet resolution: channel 6 and channel 7 are N/A inside DOS-221, but covered at the DOS-220 boundary when DOS-220 composes DOS-221.
+
 ## 5. Read-path shape
 
 - Ability name: `list_open_loops`.
 - Category: `Read`.
 - Trust: `Trusted`.
+- Metadata pattern source: `src-tauri/abilities-runtime/src/abilities/get_entity_context.rs:52-64`.
+- DOS-218 pilot actor pattern: `allowed_actors = [User, Agent, System]`.
+- Allowed actors packet decision: `allowed_actors = [User, Agent, System]`.
+- Reviewer shorthand `[User, System, Agent]` is the same actor set, but implementation should preserve the DOS-218 pilot order for local consistency.
+- MCP exposure enum source: `src-tauri/abilities-runtime/src/abilities/registry.rs:422-429`.
+- MCP exposure packet decision: `mcp_exposure = Invocable`.
+- Reason: `MetadataOnly` is discovery-only and does not register an invocation handler; DOS-221 acceptance requires MCP consumption through the registry.
+- Scope registry source: `src-tauri/abilities-runtime/src/abilities/registry.rs:771-786`.
+- Scope registry behavior: the runtime allowlist is seeded from each ability descriptor's `required_scopes`.
+- Required scope packet decision: `required_scopes = ["read.open_loops"]`.
+- Reason: no existing runtime scope named `read.open_loops` is present yet; the list-open-loops ability descriptor must introduce it through the registry union.
+- Contract-first operations array source: `src-tauri/src/operations/mod.rs:126-147`.
+- Operations packet decision: `operations = [{ name: "list-open-loops", category: Read, remote: true, requires_scope: Some("read.open_loops"), executor: read_list_open_loops_executor }]`.
+- Operation input schema: `operations/schemas/list-open-loops.input.schema.json`.
+- Operation output schema: `operations/schemas/list-open-loops.output.schema.json`.
 - Provider use: none.
 - LLM use: none.
 - Prompt template: none.
@@ -154,6 +188,12 @@
 - Blank `entity_type` with an `entity_id` is a schema error.
 - Entity filter converts into `SubjectRef` internally.
 - Subject kinds must match the registry's canonical subject set.
+- Ownership gate order: when `entity_id` is supplied, verify subject ownership before applying claim-type or `subject_ref` filters.
+- Ownership gate behavior: an entity from another workspace is a hard error, not an empty result.
+- Ownership gate code name requested by reviewers: `AbilityError::SubjectNotOwned`.
+- Existing code convention: `AbilityErrorKind::HardError(String)` exists; no enum variant named `SubjectNotOwned` exists in this worktree.
+- Packet pin: implement as `AbilityError::SubjectNotOwned` if the typed variant is added, otherwise as `AbilityErrorKind::HardError("subject_not_owned")`.
+- The error must be fail-closed and must not return `OpenLoopsResult { loops: [] }`.
 - Claim source: `intelligence_claims` active rows.
 - Active filter: `claim_state = 'active' AND surfacing_state = 'active'`.
 - Surface filter: respect surface-specific dismissal when the read is for a named surface.
@@ -170,6 +210,14 @@
 - Recency key: prefer `source_asof`, then `observed_at`, then `created_at`.
 - Ties use stable `claim_id` ordering.
 - Ranking beyond recency is out of scope.
+- Revoked-source gate order: load active claims, apply the centralized sensitivity/render gate, then resolve every loop `source_ref`.
+- Revoked-source behavior: omit any loop whose primary source is revoked.
+- Revoked-source behavior: do not surface the loop as masked text in `Vec<OpenLoop>`.
+- Revoked-source behavior: count the omission in the `AbilityOutput` envelope so callers can detect coverage degradation.
+- Reviewer-requested warning name: `ProvenanceWarning::SourceRevoked`.
+- Existing provenance convention: `ProvenanceWarning::Masked { reason: MaskReason::SourceRevoked }` and `ProvenanceMaskReason::SourceRevoked { data_source }` already exist.
+- Packet pin: implementation may add `ProvenanceWarning::SourceRevoked`; if it keeps the current enum shape, the envelope counter key must still be `source_revoked`.
+- Revoked Glean behavior: a loop backed primarily by a revoked Glean source is omitted and increments the `source_revoked` provenance warning count.
 - Output envelope: `AbilityOutput<OpenLoopsResult>`.
 - Linear output shape: `OpenLoopsResult { loops: Vec<OpenLoop>, schema_version: SchemaVersion }`.
 - User-requested shorthand: `Vec<OpenLoop>` with provenance per item.
@@ -197,7 +245,7 @@
 - No Tauri event emissions.
 - No file writes.
 - No external service calls.
-- Operations array: declare read operations only.
+- Operations array: declare the single read operation `list-open-loops` only.
 - Composition: none.
 - Downstream composition: DOS-220 calls this ability for daily readiness.
 
@@ -214,14 +262,23 @@
 - [ ] Wave-owned path supersedes Linear's older `src-tauri/src/abilities/read/list_open_loops.rs` path.
 - [ ] Input supports workspace scope and optional entity scope.
 - [ ] Entity-scope input supports `account`, `person`, `project`, and `meeting`.
+- [ ] Ability metadata explicitly declares `allowed_actors = [User, Agent, System]`.
+- [ ] Ability metadata explicitly declares `mcp_exposure = Invocable`.
+- [ ] Ability metadata explicitly declares `required_scopes = ["read.open_loops"]`.
+- [ ] Ability metadata declares a contract-first operations array entry for `list-open-loops`.
 - [ ] Claim-type allowlist is explicit and closed.
-- [ ] Current V1 allowlist is `open_loop` plus `commitment`.
+- [ ] Current V2 allowlist is `open_loop` plus `commitment`.
 - [ ] The packet records that `follow_up`, `open_question`, and `blocker` are not current registry claim types.
 - [ ] Implementation fails closed if a non-registered claim type is requested internally.
 - [ ] Output shape is `OpenLoopsResult { loops, schema_version }`.
 - [ ] Each returned loop has provenance field attribution.
 - [ ] Each returned loop has source attribution with `source_asof` when knowable.
+- [ ] Each returned loop carries sensitivity and `subject_ref` for downstream prompt-boundary filtering.
 - [ ] Empty result has explicit provenance for `/loops`.
+- [ ] Cross-tenant entity input fails before claim-type or `subject_ref` filtering.
+- [ ] Cross-tenant entity input returns `AbilityError::SubjectNotOwned` or `AbilityErrorKind::HardError("subject_not_owned")`, not an empty loop list.
+- [ ] Revoked-source loops are omitted from `Vec<OpenLoop>`.
+- [ ] Revoked-source omissions increment `ProvenanceWarning::SourceRevoked` coverage degradation, using the existing `Masked { SourceRevoked }` convention if the explicit variant is not added.
 - [ ] No provider call exists in code or fixtures.
 - [ ] Replay fixture is empty because the ability is pure Read.
 - [ ] ADR-0106 parity is explicitly N/A and is not required by reviewers.
@@ -229,10 +286,17 @@
 - [ ] Fixture 1 includes adjacent-subject rows that must not return.
 - [ ] Fixture 2: person with a single loop.
 - [ ] Fixture 3: entity with no loops returns empty result.
+- [ ] Fixture 4: `bundle-10-cross-tenant`.
+- [ ] Fixture 4 uses a well-formed `entity_id` for a subject owned by another workspace.
+- [ ] Fixture 4 seeds at least one active `open_loop` for that other-workspace subject.
+- [ ] Fixture 4 expects a typed hard error, not `Vec<OpenLoop>` emptiness.
+- [ ] Revoked-Glean fixture variant seeds an active loop whose primary Glean source is later revoked.
+- [ ] Revoked-Glean fixture variant expects the loop omitted and the `source_revoked` warning counter incremented.
 - [ ] Fixture set uses generic entities only.
 - [ ] Fixture equality is exact for data.
 - [ ] Fixture provenance diff is exact except for approved deterministic timestamps.
 - [ ] Subject-fit is verified by the account fixture's adjacent-subject rows.
+- [ ] Bundle-10 fixture presence is a Stage-0 gate.
 - [ ] Bundle-10 parity green per W5-B done condition.
 - [ ] Parallel-run sampling is 20% per Linear DOS-221 Stage 3.
 - [ ] Parallel-run divergence threshold is <=1%.
@@ -259,6 +323,16 @@
 | 7. Template variables | N/A | No prompt template. |
 | 8. Output-only provenance fields | Yes | Source refs, field paths, trust bands, and "About this" rendering must be safe and subject-scoped. |
 | 9. Non-claim prompt data | N/A | No prompt-input data exists; deterministic filters are not sent to a provider. |
+
+### Composition handoff gate
+
+- DOS-221 channel audit closes only this ability's own boundary.
+- Channels 6 and 7 become live when a parent composes DOS-221 output into a prompt.
+- DOS-220 W5-A section 4 already inherits the nine-channel sweep and centralized sensitivity gate.
+- DOS-221 handoff requirement: every `OpenLoop` includes sensitivity and `subject_ref`.
+- DOS-221 handoff requirement: consumers must call the centralized `services/claims.rs` prompt-input sensitivity gate before rendering prompts.
+- DOS-221 handoff requirement: raw claim text must enter parent prompts only through the gated load path.
+- Acceptance proof lives at the parent boundary, starting with DOS-220.
 
 ## 7. Linear dependency edges
 
@@ -289,7 +363,27 @@
 - Recommended W5 order: DOS-221 first, then DOS-220, then DOS-222.
 - Reason: DOS-221 is pure Read, has no LLM, and gives DOS-220 a stable child.
 
-## 8. L0 reviewer panel
+## 8. Stage-0 and fixture gates
+
+- Stage-0 gate: `src-tauri/tests/fixtures/bundle-10/` must exist before implementation work starts.
+- Current worktree status: the directory exists.
+- Stage-0 gate: bundle-10 must contain the standard harness files `state.sql`, `inputs.json`, `expected_output.json`, `expected_provenance.json`, `metadata.json`, `clock.txt`, `seed.txt`, `provider_replay.json`, and `external_replay.json`.
+- Current worktree status: all standard files are present.
+- Stage-0 deliverable: bundle-10 exists at `src-tauri/tests/fixtures/bundle-10/` with N seeded rows covering four fixture scenarios plus the revoked-source variant plus the cross-tenant variant.
+- Stage-0 deliverable: bundle-10 documents the fixture scenarios in `metadata.json`.
+- Stage-1 deliverable: if bundle-10 is missing in a rebased implementation branch, W5-B authors it before coding the ability.
+- Stage-1 deliverable: W5-B extends bundle-10 with N seeded rows covering the four fixture scenarios below plus revoked-source and cross-tenant variants.
+- Packet decision: N is at least 6 seeded loop-bearing or guard-bearing rows, with more rows allowed for adjacent-subject contamination proof.
+- Scenario 1: account with many open loops plus adjacent-subject rows.
+- Scenario 2: person with a single open loop.
+- Scenario 3: entity with no loops and explicit empty-result provenance.
+- Scenario 4: `bundle-10-cross-tenant`, a well-formed other-workspace subject that must hard-error as `subject_not_owned`.
+- Variant 5: revoked-Glean source, omitted from `Vec<OpenLoop>` with `source_revoked` warning count.
+- Variant 6: cross-tenant other-workspace subject has at least one active `open_loop`, proving the hard error is not a no-rows coincidence.
+- Stage-0 gate failure: missing bundle-10 blocks W5-B implementation until fixture presence is restored.
+- Stage-1 gate failure: missing scenario coverage blocks L1.
+
+## 9. L0 reviewer panel
 
 - Required reviewer: `/plan-eng-review`.
 - `/plan-eng-review` focus: ability registration metadata.
@@ -317,7 +411,7 @@
 - Optional reviewer: `/plan-design-review`.
 - `/plan-design-review` trigger: only if a new visual "open loops" surface is designed.
 
-## 9. L0 acceptance gate
+## 10. L0 acceptance gate
 
 - All required reviewer panels approve.
 - Required approval: `/plan-eng-review`.
@@ -325,10 +419,11 @@
 - Approval must be unanimous.
 - DOS-221 Linear ticket links to this packet.
 - Target link path: `.docs/plans/v1.4.1-waves/W5-B-L0-packet.md`.
-- Packet status remains V1 doc-only.
+- Packet status remains V2 doc-only.
 - Reviewers accept the wave-owned `abilities-runtime` path.
+- Reviewers accept the explicit ability metadata tuple: `allowed_actors`, `mcp_exposure`, `required_scopes`, and operations array.
 - Reviewers accept ADR-0106 N/A for this ability.
-- Reviewers accept `open_loop` plus `commitment` as the V1 registered claim-type allowlist.
+- Reviewers accept `open_loop` plus `commitment` as the V2 registered claim-type allowlist.
 - Reviewers explicitly acknowledge that `follow_up`, `open_question`, and `blocker` are not current registry claim types.
 - Reviewers decide whether missing claim types require a separate Linear issue.
 - Channel audit is complete.
@@ -339,7 +434,10 @@
 - Fixture 2: person with a single loop.
 - Fixture 3: entity with no loops.
 - Subject-fit proof is included in fixture 1 or a dedicated fourth fixture.
-- Bundle-10 parity is an explicit gate.
+- Cross-tenant ownership proof is included in `bundle-10-cross-tenant`.
+- Revoked-source omission proof is included in the revoked-Glean bundle-10 variant.
+- Bundle-10 fixture presence is a Stage-0 gate.
+- Bundle-10 parity is an explicit Stage-1/L1 gate.
 - Parallel-run divergence threshold is <=1%.
 - Parallel-run sampling is 20%.
 - Tauri registry consumption is explicit.
@@ -350,7 +448,7 @@
 - No ranking beyond recency is added.
 - L0 can close only after reviewers accept the claim-type registry gap.
 
-## 10. Out-of-scope
+## 11. Out-of-scope
 
 - LLM synthesis.
 - Prompt templates.
@@ -385,7 +483,7 @@
 - Customer-specific fixture data.
 - Commit or push.
 
-## 11. Why DOS-221 is the simplest of W5
+## 12. Why DOS-221 is the simplest of W5
 
 - DOS-221 is pure Read.
 - DOS-221 has no LLM call.
@@ -419,7 +517,7 @@
 - Natural W5 order remains DOS-221, then DOS-220, then DOS-222.
 - Shipping DOS-221 first gives W5 a small registry proof before composed readiness.
 
-## 12. Changelog
+## 13. Changelog
 
 - V1 2026-05-13 initial L0 packet.
 - V1 grounded on Linear DOS-221 MCP response.
@@ -437,3 +535,9 @@
 - V1 documents bundle-10 parity and 20% sampling.
 - V1 documents no code changes.
 - V1 documents no commit.
+- V2 2026-05-14 cycle-1 fold: 6 findings from L0 panel cycle-1.
+- V2 2026-05-14 Architect F1 -> ability metadata enum in section 5.
+- V2 2026-05-14 Architect F2 -> bundle-10 fixture presence gate in section 8 and Stage-0.
+- V2 2026-05-14 Architect F3 plus Codex F2 -> cross-tenant hard-error plus Fixture 4 in section 5, section 6, and section 8.
+- V2 2026-05-14 Codex F1 -> Composition handoff gate audit subsection in section 4 and channel audit.
+- V2 2026-05-14 Codex F3 -> revoked-Glean masking step plus `ProvenanceWarning::SourceRevoked` in section 5 read-path.
