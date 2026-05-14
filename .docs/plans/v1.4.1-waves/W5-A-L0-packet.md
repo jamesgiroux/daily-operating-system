@@ -599,7 +599,7 @@ Stage-3 parallel-run divergence metric:
 - Sampling: 10% of get_daily_readiness invocations
 - Comparator: legacy prepare::orchestrate + dashboard::get_dashboard_data aggregate — grounded at orchestrate.rs:2974-2978, :3102-3118, :3346-3386
 - Sample unit: one daily-readiness output, judge-scored across relevance, faithfulness, attribution-completeness
-- Judge model: TODO — packet pins judge config before Stage 3; same judge model as DOS-219; grep wave-W5/DOS-219-plan.md for the judge harness config; bind same model + prompt template here
+- Judge model: `claude-sonnet-4-6` (per ADR-0110 §judge_model line 113; matches DOS-219's harness binding) — superseded by V3 fold below; this V2 line retained for changelog continuity
 - Rubric: relevance ≥0.85, faithfulness ≥0.90, attribution-completeness ≥0.95 — matches DOS-219 thresholds
 - Drift threshold: ≤1% divergence over 7-day window
 - Drift-failure rule: alert + investigate; do NOT auto-cutover until divergence trends down for 7 days post-investigation
@@ -653,7 +653,7 @@ The narrative-synthesis prompt template daily_readiness.v{n}.txt is the single t
 
 V2 deferred judge config with TODO — packet pins judge config before Stage 3. V3 pins it at L0:
 
-- **Judge model:** Claude Sonnet 4.6 — same as DOS-219 prepare_meeting judge; grep .docs/plans/wave-W5/proof-bundle.md + DOS-219-plan.md to confirm exact model name; if DOS-219 used Opus 4.7, match that — bind to whichever DOS-219 actually used
+- **Judge model:** `claude-sonnet-4-6` (per ADR-0110 §judge_model line 113; matches DOS-219's harness binding)
 - **Judge prompt template:** judge/daily_readiness.v1.txt — new; ground in DOS-219 judge prompt shape; located at src-tauri/abilities-runtime/src/abilities/judge/templates/
 - **Sample unit:** one daily_readiness output per user per day at 10% sampling — matches DOS-220 spec
 - **Dimensions:** relevance, faithfulness, attribution-completeness — each scored independently 0.0-1.0
