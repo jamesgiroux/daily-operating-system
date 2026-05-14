@@ -1,0 +1,327 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GetDailyReadinessOperationOutput",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "invocation_id",
+    "ability_name",
+    "ability_version",
+    "schema_version",
+    "data",
+    "rendered_provenance",
+    "diagnostics"
+  ],
+  "properties": {
+    "invocation_id": { "type": "string" },
+    "ability_name": { "type": "string", "const": "get_daily_readiness" },
+    "ability_version": { "type": "string" },
+    "schema_version": { "type": "integer", "const": 1 },
+    "data": { "$ref": "#/$defs/DailyReadiness" },
+    "rendered_provenance": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "diagnostics": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "DailyReadiness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "narrative",
+        "meetings_today",
+        "overnight_changes",
+        "risk_shifts",
+        "open_loops",
+        "coverage_warnings",
+        "schema_version"
+      ],
+      "properties": {
+        "narrative": { "type": "string" },
+        "meetings_today": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/DailyReadinessMeeting" }
+        },
+        "overnight_changes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/DailyReadinessOvernightChange" }
+        },
+        "risk_shifts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/DailyReadinessRiskShift" }
+        },
+        "open_loops": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/DailyReadinessOpenLoop" }
+        },
+        "coverage_warnings": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/DailyReadinessCoverageWarning" }
+        },
+        "schema_version": { "type": "integer", "const": 1 }
+      }
+    },
+    "DailyReadinessMeeting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "meeting",
+        "workspace_scope",
+        "topics",
+        "attendee_context",
+        "open_loops",
+        "suggested_outcomes"
+      ],
+      "properties": {
+        "meeting": { "$ref": "#/$defs/MeetingSummary" },
+        "workspace_scope": { "type": "string" },
+        "topics": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Topic" }
+        },
+        "attendee_context": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/AttendeeContext" }
+        },
+        "open_loops": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/MeetingOpenLoop" }
+        },
+        "suggested_outcomes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/SuggestedOutcome" }
+        }
+      }
+    },
+    "MeetingSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "attendees"],
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "starts_at": { "type": "string" },
+        "ends_at": { "type": "string" },
+        "attendees": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/MeetingAttendee" }
+        }
+      }
+    },
+    "MeetingAttendee": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "person_id": { "type": "string" },
+        "account_id": { "type": "string" },
+        "domain": { "type": "string" }
+      }
+    },
+    "Topic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "detail", "subject", "temporal_scope"],
+      "properties": {
+        "title": { "type": "string" },
+        "detail": { "type": "string" },
+        "subject": { "$ref": "#/$defs/BriefSubjectRef" },
+        "temporal_scope": { "$ref": "#/$defs/BriefTemporalScope" }
+      }
+    },
+    "AttendeeContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attendee", "context", "subject", "temporal_scope"],
+      "properties": {
+        "attendee": { "type": "string" },
+        "context": { "type": "string" },
+        "subject": { "$ref": "#/$defs/BriefSubjectRef" },
+        "temporal_scope": { "$ref": "#/$defs/BriefTemporalScope" }
+      }
+    },
+    "MeetingOpenLoop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["description", "subject", "temporal_scope"],
+      "properties": {
+        "description": { "type": "string" },
+        "owner": { "type": "string" },
+        "subject": { "$ref": "#/$defs/BriefSubjectRef" },
+        "temporal_scope": { "$ref": "#/$defs/BriefTemporalScope" }
+      }
+    },
+    "SuggestedOutcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["outcome", "rationale", "subject", "temporal_scope"],
+      "properties": {
+        "outcome": { "type": "string" },
+        "rationale": { "type": "string" },
+        "subject": { "$ref": "#/$defs/BriefSubjectRef" },
+        "temporal_scope": { "$ref": "#/$defs/BriefTemporalScope" }
+      }
+    },
+    "BriefSubjectRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": { "type": "string" },
+        "id": { "type": "string" }
+      }
+    },
+    "BriefTemporalScope": {
+      "oneOf": [
+        { "type": "string", "const": "state" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["point_in_time"],
+          "properties": {
+            "point_in_time": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["occurred_at"],
+              "properties": {
+                "occurred_at": { "type": "string" }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["trend"],
+          "properties": {
+            "trend": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["window_start", "window_end"],
+              "properties": {
+                "window_start": { "type": "string" },
+                "window_end": { "type": "string" }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "DailyReadinessSubject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "display_name", "workspace_scope"],
+      "properties": {
+        "kind": { "type": "string" },
+        "id": { "type": "string" },
+        "display_name": { "type": "string" },
+        "workspace_scope": { "type": "string" }
+      }
+    },
+    "DailyReadinessOvernightChange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "subject",
+        "summary",
+        "observed_at",
+        "data_source",
+        "lifecycle",
+        "confidence",
+        "sensitivity",
+        "workspace_scope"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "subject": { "$ref": "#/$defs/DailyReadinessSubject" },
+        "summary": { "type": "string" },
+        "source_ref": { "type": "string" },
+        "observed_at": { "type": "string" },
+        "source_asof": { "type": "string" },
+        "data_source": { "type": "string" },
+        "lifecycle": { "type": "string" },
+        "confidence": { "type": "number" },
+        "sensitivity": { "type": "string" },
+        "workspace_scope": { "type": "string" }
+      }
+    },
+    "DailyReadinessRiskShift": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "subject",
+        "direction",
+        "evidence_summary",
+        "observed_at",
+        "data_source",
+        "lifecycle",
+        "confidence",
+        "sensitivity",
+        "workspace_scope"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "subject": { "$ref": "#/$defs/DailyReadinessSubject" },
+        "direction": { "type": "string" },
+        "evidence_summary": { "type": "string" },
+        "source_ref": { "type": "string" },
+        "observed_at": { "type": "string" },
+        "source_asof": { "type": "string" },
+        "data_source": { "type": "string" },
+        "lifecycle": { "type": "string" },
+        "confidence": { "type": "number" },
+        "sensitivity": { "type": "string" },
+        "workspace_scope": { "type": "string" }
+      }
+    },
+    "DailyReadinessOpenLoop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "text",
+        "subject",
+        "observed_at",
+        "data_source",
+        "lifecycle",
+        "confidence",
+        "sensitivity",
+        "workspace_scope"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "text": { "type": "string" },
+        "owner": { "type": "string" },
+        "subject": { "$ref": "#/$defs/DailyReadinessSubject" },
+        "due_date": { "type": "string" },
+        "source_ref": { "type": "string" },
+        "observed_at": { "type": "string" },
+        "source_asof": { "type": "string" },
+        "data_source": { "type": "string" },
+        "lifecycle": { "type": "string" },
+        "confidence": { "type": "number" },
+        "sensitivity": { "type": "string" },
+        "workspace_scope": { "type": "string" }
+      }
+    },
+    "DailyReadinessCoverageWarning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "message", "count", "workspace_scope"],
+      "properties": {
+        "kind": { "type": "string" },
+        "message": { "type": "string" },
+        "count": { "type": "integer" },
+        "workspace_scope": { "type": "string" }
+      }
+    }
+  }
+}
