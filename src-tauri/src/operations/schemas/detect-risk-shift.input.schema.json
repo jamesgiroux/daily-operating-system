@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DetectRiskShiftInput",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "entity_type", "entity_id"],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "entity_type": {
+      "type": "string",
+      "enum": ["account", "project", "person", "meeting"]
+    },
+    "entity_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "depth": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 255,
+      "default": 2
+    },
+    "evidence": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/RiskShiftSourceVerification" },
+      "default": []
+    }
+  },
+  "$defs": {
+    "RiskShiftSubjectRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["account", "project", "person", "meeting"]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "RiskShiftSourceVerification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "subject", "claim_type", "text", "observed_at"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "subject": { "$ref": "#/$defs/RiskShiftSubjectRef" },
+        "claim_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_asof": {
+          "type": "string"
+        },
+        "observed_at": {
+          "type": "string"
+        },
+        "data_source": {
+          "type": "string",
+          "default": "local_enrichment"
+        },
+        "lifecycle": {
+          "type": "string",
+          "default": "active"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 0.8
+        },
+        "sensitivity": {
+          "type": "string",
+          "default": "internal"
+        }
+      }
+    }
+  }
+}
