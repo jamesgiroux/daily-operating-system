@@ -623,7 +623,10 @@ mod tests {
         .expect("Tauri/User callers may invoke local-only operations");
 
         assert_eq!(response["schemaVersion"], json!(1));
-        assert_eq!(response["remoteOperationCount"], json!(1));
+        assert_eq!(
+            response["remoteOperationCount"],
+            json!(OPERATIONS.iter().filter(|op| op.remote).count())
+        );
         assert_eq!(response["operationCount"], json!(OPERATIONS.len()));
     }
 
