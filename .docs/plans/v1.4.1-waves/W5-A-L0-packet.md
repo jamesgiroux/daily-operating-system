@@ -626,6 +626,57 @@ L0 reviewer sign-off line in §9 Gates: "Reviewer panel accepts DOS-220 as categ
 - Codex F5 → §Source lifecycle across children
 - Codex F6 → §Judge-scored divergence metric
 
+## V3 Cycle-2 Fold (2026-05-14)
+
+Cycle-2 L0 panel: architect APPROVE (no blockers); codex BLOCK with 2 residual + 1 new finding. V3 closes the residuals.
+
+### Channel 7 per-child template variables (folds Codex C2-F1 residual)
+
+V2 enumerated channels 1-4 + 6 per composed child. V3 adds Channel 7 (template variables in the narrative-synthesis prompt template) per child + adds transitive child get_entity_context coverage:
+
+| Child ability | Output field crossing into prompt | Channel 7 template var (in daily_readiness narrative template) | Gate point |
+|---|---|---|---|
+| prepare_meeting | MeetingBrief.topics[] | {{meeting.topics}} | centralized gate at parent re-application |
+| prepare_meeting | MeetingBrief.attendee_context[] | {{meeting.attendees}} | centralized gate at parent |
+| prepare_meeting | MeetingBrief.open_loops[] | {{meeting.open_loops}} | centralized gate at parent |
+| prepare_meeting | MeetingBrief.suggested_outcomes[] | {{meeting.outcomes}} | centralized gate at parent |
+| **prepare_meeting → get_entity_context** transitive | composed entity_contexts payload | embedded in {{meeting.attendees}} rendering | gate applied at get_entity_context boundary AND re-applied at parent |
+| detect_risk_shift | RiskShiftResult.direction | {{risk_shifts[].direction}} | enum value, no claim text |
+| detect_risk_shift | RiskShiftResult.evidence_summary | {{risk_shifts[].summary}} | centralized gate at parent re-application |
+| list_open_loops | OpenLoopsResult.loops[].text | {{open_loops[].text}} | gated at child + re-applied at parent |
+
+**Transitive coverage:** prepare_meeting internally composes get_entity_context per attendee. DOS-220's parent gate fires AFTER prepare_meeting returns, so the entity_contexts payload re-enters channels 6+7 at DOS-220's boundary. The centralized sensitivity gate in services/claims.rs is the single enforcement point.
+
+The narrative-synthesis prompt template daily_readiness.v{n}.txt is the single template; each {{var}} listed above is sourced from a child's output field. No raw child text is interpolated outside this table; the prompt fingerprint test asserts no unlisted {{var}} appears.
+
+### Judge config pinned (folds Codex C2-F6 residual)
+
+V2 deferred judge config with TODO — packet pins judge config before Stage 3. V3 pins it at L0:
+
+- **Judge model:** Claude Sonnet 4.6 — same as DOS-219 prepare_meeting judge; grep .docs/plans/wave-W5/proof-bundle.md + DOS-219-plan.md to confirm exact model name; if DOS-219 used Opus 4.7, match that — bind to whichever DOS-219 actually used
+- **Judge prompt template:** judge/daily_readiness.v1.txt — new; ground in DOS-219 judge prompt shape; located at src-tauri/abilities-runtime/src/abilities/judge/templates/
+- **Sample unit:** one daily_readiness output per user per day at 10% sampling — matches DOS-220 spec
+- **Dimensions:** relevance, faithfulness, attribution-completeness — each scored independently 0.0-1.0
+- **Thresholds:** relevance ≥0.85, faithfulness ≥0.90, attribution-completeness ≥0.95 — matches DOS-219
+- **Per-sample fail rule:** any individual sample scoring below threshold on ANY dimension counts as a divergence event for that dimension; aggregate divergence is the fraction of samples falling below threshold per dimension
+- **Aggregate divergence threshold:** ≤1% per dimension over 7-day window
+- **Drift-failure rule:** if any dimension's 7-day rolling divergence exceeds 1%, alert + halt cutover; investigate; do not auto-cutover until divergence trends back below 1% for 7 consecutive days
+
+### Concurrency / cache fixture (folds Codex C2-NEW)
+
+Cache/partition concurrency fixture: bundle-9-concurrent-composition
+- Seeds: same user has 3 daily_readiness invocations in flight concurrently — e.g., from refresh + retry + scheduled
+- Asserts: cache dedupe key per V2 Codex-F4 ensures all 3 invocations return the same composition_id — no duplicate substrate writes from composed children
+- Asserts: provenance is consistent across the 3 invocations — no partial-child state leaks
+- Asserts: subsequent invocation after cache TTL produces fresh composition_id with same workspace scope
+
+### Changelog V3 (2026-05-14)
+
+- V3 folds 2 residual + 1 new codex cycle-2 finding.
+- Codex C2-F1 residual → §Channel 7 per-child template variables
+- Codex C2-F6 residual → §Judge config pinned — replaces V2 TODO
+- Codex C2-NEW → §Concurrency / cache fixture
+
 ## 11. Changelog
 
 - V1 2026-05-13: initial L0 packet.
