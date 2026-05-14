@@ -1,0 +1,134 @@
+{
+  "version": 1,
+  "ability_name": "detect_risk_shift",
+  "fixture_id": "replay-parity-risk-shift-sampling",
+  "description": "ADR-0106 replay parity fixture for detect_risk_shift LLM sampling capture.",
+  "sampling": {
+    "temperature": 0.7,
+    "top_p": 0.9,
+    "seed": 42
+  },
+  "prompt": {
+    "prompt_template_id": "detect_risk_shift",
+    "prompt_template_version": "1.0.0",
+    "prompt_template_hash": "b1450f8e47e00954869efb44a0cb97b7827677dfc63252fc956ad72edb9c8272",
+    "canonical_prompt_hash": "e2cda4496d934d2ba2add6ecf5d133f53eb85eda2f7d26be19d9682fec41e55e",
+    "completion_text_hash": "4472c4820ef45a6474db9ae29fac40e66c39316ca33e8e17f3a6f92b8b51d0d4",
+    "canonical_inputs": {
+      "schema_version": 1,
+      "risk_context": {
+        "schema_version": 1,
+        "subject": {
+          "kind": "account",
+          "id": "acct-risk-sampling"
+        },
+        "transform": {
+          "transform_id": "trajectory_delta_v1",
+          "short_window_days": 30,
+          "long_window_days": 90,
+          "engagement_threshold_positive_percent": 0.1,
+          "engagement_threshold_negative_percent": -0.1,
+          "major_threshold_positive_percent": 0.25,
+          "major_threshold_negative_percent": -0.25,
+          "null_handling": "Null, missing, or zero-denominator trajectory points are never coerced to zero; they produce insufficient_evidence for the affected delta."
+        },
+        "sampling": {
+          "temperature": 0.7,
+          "top_p": 0.9,
+          "seed": 42
+        },
+        "judge_model": "claude-sonnet-4-6",
+        "claims": [
+          {
+            "id": "claim-risk-sampling-engagement",
+            "source_ref": "src-risk-sampling-engagement",
+            "subject": {
+              "kind": "account",
+              "id": "acct-risk-sampling"
+            },
+            "claim_type": "account_risk_signal",
+            "text": "Engagement dropped for the generic account.",
+            "source_asof": "2026-05-12T09:00:00Z",
+            "observed_at": "2026-05-12T09:00:00Z",
+            "data_source": "user",
+            "lifecycle": "active",
+            "confidence": 0.9,
+            "sensitivity": "internal"
+          }
+        ],
+        "trajectory": {
+          "engagement_curve": {
+            "kind": "engagement_curve",
+            "entity_type": "account",
+            "entity_id": "acct-risk-sampling",
+            "series": [
+              {
+                "at": "2026-04-14T12:00:00Z",
+                "value": {
+                  "meetings_count": 6,
+                  "emails_count": 4,
+                  "bidirectional_ratio": 0.6
+                },
+                "source_refs": [
+                  {
+                    "source": {
+                      "source_index": 0
+                    }
+                  }
+                ]
+              },
+              {
+                "at": "2026-05-14T12:00:00Z",
+                "value": {
+                  "meetings_count": 2,
+                  "emails_count": 3,
+                  "bidirectional_ratio": 0.5
+                },
+                "source_refs": [
+                  {
+                    "source": {
+                      "source_index": 0
+                    }
+                  }
+                ]
+              }
+            ],
+            "computed_at": "2026-05-14T12:00:00Z",
+            "confidence": 0.95
+          }
+        },
+        "entity_context_children": [
+          {
+            "subject": {
+              "kind": "account",
+              "id": "acct-risk-sampling"
+            },
+            "entries": []
+          }
+        ],
+        "revoked_glean_revalidation": {
+          "checked": true,
+          "hook": "revoked_glean_cache_revalidation",
+          "revoked_refs": []
+        },
+        "mechanical_indicators": [
+          {
+            "label": "engagement_delta",
+            "direction": "increasing",
+            "severity": 0.5,
+            "rationale": "trajectory_delta_v1 compared pinned 30-day and 90-day windows; latest total 5, previous total 10, delta -50.00%."
+          }
+        ]
+      }
+    }
+  },
+  "provider_replay": {
+    "version": 1,
+    "fixtures": [
+      {
+        "canonical_prompt_hash": "e2cda4496d934d2ba2add6ecf5d133f53eb85eda2f7d26be19d9682fec41e55e",
+        "completion": "{\"direction\":\"increasing\",\"summary\":\"Engagement dropped across the pinned window, increasing account risk.\",\"confidence\":0.82,\"source_refs\":[\"src-risk-sampling-engagement\"],\"indicators\":[{\"label\":\"engagement_delta\",\"direction\":\"increasing\",\"severity\":0.5,\"rationale\":\"Latest engagement declined versus the prior window.\",\"source_refs\":[\"src-risk-sampling-engagement\"]}],\"claim_draft\":{\"claim_type\":\"account_risk_shift\",\"text\":\"Account risk is increasing from lower engagement.\",\"direction\":\"increasing\",\"confidence\":0.82,\"source_refs\":[\"src-risk-sampling-engagement\"]}}"
+      }
+    ]
+  }
+}

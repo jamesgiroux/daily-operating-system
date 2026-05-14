@@ -1,0 +1,11 @@
+{
+  "ability_name": "detect_risk_shift",
+  "scenario_id": "bundle11-detect-risk-shift-trajectory-subject-bleed",
+  "expected": {
+    "category": "transform",
+    "trust": "untrusted",
+    "warnings": [],
+    "blocked_source_refs": ["src-risk-adjacent-engagement"],
+    "allowed_source_refs": ["src-risk-target-engagement"]
+  }
+}

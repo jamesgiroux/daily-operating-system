@@ -1,0 +1,10 @@
+{
+  "ability_name": "detect_risk_shift",
+  "scenario_id": "bundle11-detect-risk-shift-hallucinated-source-ref",
+  "expected": {
+    "category": "transform",
+    "warning_counter": "hallucinated_source_ref",
+    "rejected_source_refs": ["src-risk-fabricated"],
+    "membership_check": "post-synthesis"
+  }
+}

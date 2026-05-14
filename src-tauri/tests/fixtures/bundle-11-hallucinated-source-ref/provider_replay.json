@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "fixtures": [
+    {
+      "canonical_prompt_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+      "completion": "{\n  \"direction\": \"increasing\",\n  \"summary\": \"The model cites one valid source and one fabricated source.\",\n  \"confidence\": 0.81,\n  \"source_refs\": [\"src-risk-valid\", \"src-risk-fabricated\"],\n  \"indicators\": [\n    {\n      \"label\": \"fabricated_source_membership\",\n      \"direction\": \"increasing\",\n      \"severity\": 0.55,\n      \"rationale\": \"This indicator intentionally references a fabricated source_ref.\",\n      \"source_refs\": [\"src-risk-fabricated\"]\n    }\n  ],\n  \"claim_draft\": {\n    \"claim_type\": \"account_risk_shift\",\n    \"text\": \"Risk is increasing, but the cited source registry must reject the fabricated ref.\",\n    \"direction\": \"increasing\",\n    \"confidence\": 0.81,\n    \"source_refs\": [\"src-risk-valid\", \"src-risk-fabricated\"]\n  }\n}"
+    }
+  ]
+}

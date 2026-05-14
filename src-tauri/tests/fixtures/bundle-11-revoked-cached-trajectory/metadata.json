@@ -1,0 +1,31 @@
+{
+  "bundle": 11,
+  "scenario_id": "bundle11-detect-risk-shift-revoked-cached-trajectory",
+  "invariant": "Cached trajectory evidence backed by a revoked Glean source must be revalidated before it can support risk output.",
+  "expected_render_policy": "omit-revoked-source",
+  "surfaces_exercised": [
+    "detect_risk_shift",
+    "revoked-glean",
+    "trajectory-cache-revalidation"
+  ],
+  "source_lifecycle_refs": [
+    "src-risk-active-cache",
+    "src-risk-revoked-cache"
+  ],
+  "anonymization_cert": "all-generic-placeholders-2026-05-14",
+  "retention_policy": "permanent",
+  "prompt_fingerprint_baseline": "3333333333333333333333333333333333333333333333333333333333333333",
+  "prompt_template_version": "1.0.0",
+  "completion_text_hash": "6c80ed0ee412794079e9386d41e1832a559787b290c7dbb788613b4c8f36cd5a",
+  "trust_factors_dominant": [
+    "source_lifecycle",
+    "trajectory_delta",
+    "source_membership"
+  ],
+  "pass_fail_definition": "PASS = revoked Glean source refs are omitted from accepted citations and surfaced as source_revoked degradation. FAIL = revoked cached trajectory source supports an indicator.",
+  "fixture_design_notes": {
+    "state_sql": "Seeds one active user source and one revoked Glean source for a cached trajectory scenario.",
+    "expected_output": "Accepted refs contain only src-risk-active-cache.",
+    "expected_provenance": "Records the SourceRevoked warning/counter shape required by the W5-C packet."
+  }
+}

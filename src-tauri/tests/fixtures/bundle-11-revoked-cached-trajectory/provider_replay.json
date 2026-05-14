@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "fixtures": [
+    {
+      "canonical_prompt_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+      "completion": "{\n  \"direction\": \"decreasing\",\n  \"summary\": \"Risk decreased after revoked cached evidence was excluded from accepted citations.\",\n  \"confidence\": 0.74,\n  \"source_refs\": [\"src-risk-active-cache\"],\n  \"indicators\": [\n    {\n      \"label\": \"active_evidence_only\",\n      \"direction\": \"decreasing\",\n      \"severity\": 0.31,\n      \"rationale\": \"Only active current evidence supports the final indicator.\",\n      \"source_refs\": [\"src-risk-active-cache\"]\n    }\n  ],\n  \"claim_draft\": {\n    \"claim_type\": \"account_risk_shift\",\n    \"text\": \"Risk is decreasing after active evidence is revalidated.\",\n    \"direction\": \"decreasing\",\n    \"confidence\": 0.74,\n    \"source_refs\": [\"src-risk-active-cache\"]\n  }\n}"
+    }
+  ]
+}
