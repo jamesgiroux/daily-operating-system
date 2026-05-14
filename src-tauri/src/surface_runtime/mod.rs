@@ -25,7 +25,9 @@ use tokio::task::{AbortHandle, JoinHandle, JoinSet};
 use uuid::Uuid;
 
 use crate::abilities::NOOP_ABILITY_TRACER;
-use crate::bridges::correction_payload::{project_claim_for_scope, CorrectionPayload};
+use crate::bridges::correction_payload::{
+    project_claim_for_scope, project_composition_for_scope, CorrectionPayload,
+};
 use crate::bridges::surface_client::{
     validate_session_bound_wp_user_id_for_request, SurfaceClientAbilityClassLimits,
     SurfaceClientBridge,
@@ -1325,16 +1327,27 @@ async fn surface_event_log_response(
                 return Ok(None);
             };
 
-            let correction = match row.claim_id.as_deref() {
-                Some(claim_id) => match project_claim_for_scope(db, claim_id, &actor) {
+            // Scope-gate every direct-key fetch per packet §16. The
+            // version_events row carries either a claim_id or a
+            // composition_id (XOR-enforced by migration 172). Both channels
+            // route through the same projection pipeline so that out-of-scope
+            // requesters receive a redacted envelope — never raw composition
+            // identifiers, version trajectory, mutation_id, or actor_kind.
+            let correction = match (row.claim_id.as_deref(), row.composition_id.as_deref()) {
+                (Some(claim_id), _) => match project_claim_for_scope(db, claim_id, &actor) {
                     Some(correction) => correction,
                     None => return Ok(None),
                 },
-                None => CorrectionPayload {
-                    claim: None,
-                    scope_redacted: false,
-                    reason: None,
-                },
+                (None, Some(composition_id)) => {
+                    match project_composition_for_scope(db, composition_id, &actor) {
+                        Some(correction) => correction,
+                        None => return Ok(None),
+                    }
+                }
+                // Defensive: a row without either pointer is not addressable
+                // by a scope projection. Treat as redacted rather than
+                // leaking the full event envelope.
+                (None, None) => CorrectionPayload::out_of_scope(),
             };
             let event = if correction.scope_redacted {
                 row.redacted_event()

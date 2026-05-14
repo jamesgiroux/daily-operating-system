@@ -48,8 +48,9 @@ use crate::services::comparator_thresholds::{
 };
 use crate::services::context::{ClaimDismissalSurface, ServiceContext};
 use crate::services::versioning::{
-    checked_next_version, insert_version_event, mark_mutation_attempt_committed, version_to_i64,
-    MutationGuard, VersionActorKind, VersionEventInsert, VersionEventKind,
+    checked_next_version, insert_version_event, mark_mutation_attempt_committed,
+    mark_mutation_attempt_committed_noop, version_to_i64, MutationGuard, SignalCursor,
+    VersionActorKind, VersionEventInsert, VersionEventKind,
 };
 use abilities_runtime::predicates::registry::{PredicateRef, PREDICATE_REGISTRY_VERSION};
 use abilities_runtime::structured_claim::{
@@ -110,6 +111,19 @@ pub enum ClaimMutationTarget {
         claim_type: String,
         dedup_key: Option<String>,
     },
+    /// Deterministic-id Insert. Used by controlled backfill paths that
+    /// derive a stable claim_id from a legacy row (e.g. user_note
+    /// backfills) so re-running the backfill is idempotent. Bypasses the
+    /// (Some(id), None) foot-gun rejection because the caller is asserting
+    /// "I checked the substrate has no row at this id and want to Insert
+    /// at exactly this id", not "I'm mutating something I forgot the
+    /// version of."
+    InsertWithId {
+        claim_id: String,
+        subject_ref: String,
+        claim_type: String,
+        dedup_key: Option<String>,
+    },
     Mutate {
         claim_id: String,
         expected_claim_version: u64,
@@ -139,6 +153,45 @@ impl MutatingProposal for ClaimProposal {
                 dedup_key: None,
             },
         }
+    }
+}
+
+/// Proposal wrapper for deterministic-id Inserts used by controlled backfill
+/// paths (e.g. legacy `user_note` migration). Routes through
+/// `ClaimMutationTarget::InsertWithId` so `commit_claim` treats it as an
+/// Insert at the caller-supplied id without engaging the foot-gun rejection
+/// that fires for `ClaimProposal { id: Some, expected_claim_version: None }`.
+///
+/// Callers MUST verify the substrate has no existing claim at this id before
+/// constructing this proposal; the Insert path does not CAS.
+#[derive(Debug, Clone)]
+pub struct DeterministicInsertProposal {
+    pub claim_id: String,
+    pub proposal: ClaimProposal,
+}
+
+impl DeterministicInsertProposal {
+    pub fn new(claim_id: String, mut proposal: ClaimProposal) -> Self {
+        proposal.id = Some(claim_id.clone());
+        proposal.expected_claim_version = None;
+        Self { claim_id, proposal }
+    }
+}
+
+impl MutatingProposal for DeterministicInsertProposal {
+    fn target(&self) -> ClaimMutationTarget {
+        ClaimMutationTarget::InsertWithId {
+            claim_id: self.claim_id.clone(),
+            subject_ref: self.proposal.subject_ref.clone(),
+            claim_type: self.proposal.claim_type.clone(),
+            dedup_key: None,
+        }
+    }
+}
+
+impl From<DeterministicInsertProposal> for ClaimProposal {
+    fn from(wrapper: DeterministicInsertProposal) -> Self {
+        wrapper.proposal
     }
 }
 
@@ -5318,7 +5371,7 @@ fn enforce_claim_mutation_target_tx(
     target: &ClaimMutationTarget,
 ) -> Result<Option<(String, u64, u64)>, ClaimError> {
     match target {
-        ClaimMutationTarget::Insert { .. } => Ok(None),
+        ClaimMutationTarget::Insert { .. } | ClaimMutationTarget::InsertWithId { .. } => Ok(None),
         ClaimMutationTarget::Mutate {
             claim_id,
             expected_claim_version,
@@ -5483,6 +5536,12 @@ pub fn commit_claim<P>(
 where
     P: MutatingProposal + Into<ClaimProposal>,
 {
+    // Capture the routing decision from the wrapper's `target()` impl BEFORE
+    // collapsing into the inner `ClaimProposal`. Wrapper types (e.g.
+    // `DeterministicInsertProposal`) override the default
+    // `MutatingProposal for ClaimProposal` routing to express intent that
+    // can't be inferred from the bare `ClaimProposal` shape.
+    let routed_target = proposal.target();
     let mut proposal: ClaimProposal = proposal.into();
     ctx.check_mutation_allowed()
         .map_err(|e| ClaimError::Mode(e.to_string()))?;
@@ -5601,9 +5660,10 @@ where
         )
     };
 
-    let mutation_target = proposal.target();
+    let mutation_target = routed_target;
     let attempt_claim_id = match &mutation_target {
         ClaimMutationTarget::Mutate { claim_id, .. } => claim_id.clone(),
+        ClaimMutationTarget::InsertWithId { claim_id, .. } => claim_id.clone(),
         ClaimMutationTarget::Insert { .. } => proposal
             .id
             .clone()
@@ -5824,6 +5884,43 @@ where
             )?;
 
             tx.bump_for_subject(&subject)?;
+
+            // Bump the superseded claim's watermark + emit its lifecycle
+            // event so subscribers holding its old version observe the
+            // transition. Migration 172 requires `version_events.cursor`
+            // to be UNIQUE, so this row gets a fresh cursor; the
+            // mutation_id stays the parent attempt's so both events
+            // remain attributable to the same supersession transaction.
+            let (superseded_previous, superseded_current) =
+                bump_existing_claim_version_tx(tx, superseded_id)?;
+            let superseded_event_kind = if matches!(
+                superseded.claim_state,
+                ClaimState::Tombstoned | ClaimState::Withdrawn
+            ) {
+                VersionEventKind::ClaimTombstoned
+            } else {
+                VersionEventKind::ClaimSuperseded
+            };
+            let superseded_reason = format!("superseded_by_{}", &new_id);
+            let superseded_cursor = SignalCursor::new();
+            insert_version_event(
+                tx,
+                VersionEventInsert {
+                    cursor: &superseded_cursor,
+                    event_kind: superseded_event_kind,
+                    claim_id: Some(superseded_id),
+                    composition_id: None,
+                    previous_version: Some(superseded_previous),
+                    current_version: superseded_current,
+                    reason: Some(&superseded_reason),
+                    scope_redacted: false,
+                    correction_event_log_id: None,
+                    mutation_id: Some(&mutation_guard.attempt().mutation_id),
+                    created_at: &now,
+                    actor_kind,
+                },
+            )?;
+
             finish_claim_version_event_tx(
                 tx,
                 mutation_guard.attempt(),
@@ -6615,7 +6712,10 @@ pub fn record_claim_feedback(
         // Bump claim_version + emit version_events when feedback actually
         // changed the assertion-relevant columns (verification or lifecycle).
         // Pure no-op feedback (false, false) skips the bump so we don't burn
-        // a version on metadata-only writes.
+        // a version on metadata-only writes — but still finalizes the
+        // reserved mutation_attempts row as `committed` so it doesn't sit
+        // `in_flight` forever (zombie attempt → later misclassified as
+        // `aborted` by startup recovery).
         if verification_changed || lifecycle_changed {
             let (previous, current) =
                 bump_existing_claim_version_tx(tx, &input.claim_id)?;
@@ -6639,6 +6739,8 @@ pub fn record_claim_feedback(
                     actor_kind: version_actor_kind,
                 },
             )?;
+        } else {
+            mark_mutation_attempt_committed_noop(tx, mutation_guard.attempt(), &now)?;
         }
 
         bump_invalidation_for_claim_id(tx, &input.claim_id)?;
@@ -13599,16 +13701,34 @@ mod tests {
         let mut user_claim = proposal(
             "Riley Rivera asked to start with a written agenda and confirm next ownership.",
         );
-        user_claim.id = Some("src-b5-user-edited-preference".to_string());
+        user_claim.id = None;
         user_claim.actor = "user:fixture".to_string();
         user_claim.data_source = "user".to_string();
-        let user_claim_id = inserted_claim_id(commit_claim(&ctx, &db, user_claim).unwrap());
+        let user_claim_id = inserted_claim_id(
+            commit_claim(
+                &ctx,
+                &db,
+                DeterministicInsertProposal::new(
+                    "src-b5-user-edited-preference".to_string(),
+                    user_claim,
+                ),
+            )
+            .unwrap(),
+        );
 
         let mut stale_agent_claim = proposal("Riley prefers a broad discovery agenda.");
-        stale_agent_claim.id = Some("src-b5-original-preference".to_string());
+        stale_agent_claim.id = None;
         stale_agent_claim.actor = "agent:fixture".to_string();
         stale_agent_claim.data_source = "email".to_string();
-        let forked = commit_claim(&ctx, &db, stale_agent_claim).unwrap();
+        let forked = commit_claim(
+            &ctx,
+            &db,
+            DeterministicInsertProposal::new(
+                "src-b5-original-preference".to_string(),
+                stale_agent_claim,
+            ),
+        )
+        .unwrap();
         let (contradiction_id, stale_claim_id) = match forked {
             CommittedClaim::Forked {
                 contradiction_id,

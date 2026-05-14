@@ -273,6 +273,28 @@ pub fn mark_mutation_attempt_committed(
     Ok(())
 }
 
+/// Mark a reserved `mutation_attempts` row as `committed` for a no-op
+/// outcome — i.e. the caller reserved the attempt before discovering the
+/// mutation does not alter any persisted state (e.g. `ConfirmCurrent`
+/// feedback against an already-active claim). No `version_events` row is
+/// emitted because nothing changed; the substrate audit trail records that
+/// an attempt was taken and completed cleanly, without burning a
+/// claim_version or waking subscribers with a spurious invalidation.
+pub fn mark_mutation_attempt_committed_noop(
+    tx: &ActionDb,
+    attempt: &MutationAttempt,
+    finalized_at: &str,
+) -> Result<(), rusqlite::Error> {
+    tx.conn_ref().execute(
+        "UPDATE mutation_attempts
+         SET status = 'committed',
+             finalized_at = ?2
+         WHERE mutation_id = ?1",
+        params![&attempt.mutation_id, finalized_at],
+    )?;
+    Ok(())
+}
+
 pub fn mark_composition_mutation_attempt_committed(
     tx: &ActionDb,
     attempt: &MutationAttempt,

@@ -9,6 +9,7 @@ use crate::db::claims::{ClaimSensitivity, IntelligenceClaim, TemporalScope};
 use crate::services::claims::{
     commit_claim, load_claim_by_id, load_entity_context_claims_active_for_surface,
     subject_ref_from_json, withdraw_claim, ClaimProposal, CommittedClaim,
+    DeterministicInsertProposal,
 };
 use crate::services::sensitivity::{
     renderable_claim_text_with_value, ClaimDismissalSurface, RenderActor, RenderSurface,
@@ -350,8 +351,14 @@ pub fn commit_backfilled_user_note(
             "id": legacy.id,
         })
         .to_string();
+        // Backfill uses a deterministic id derived from the legacy row's
+        // own id so re-running the migration is idempotent. We've just
+        // verified the substrate has no row at that id; route through
+        // `DeterministicInsertProposal` → `ClaimMutationTarget::InsertWithId`
+        // so commit_claim treats this as an Insert (claim_version=1, no
+        // CAS), bypassing the `Some(id), None` foot-gun rejection.
         let proposal = user_note_claim_proposal(UserNoteProposal {
-            id: Some(&claim_id),
+            id: None,
             supersedes: None,
             entity_type: &legacy.entity_type,
             entity_id: &legacy.entity_id,
@@ -362,7 +369,8 @@ pub fn commit_backfilled_user_note(
             source_ref: Some(&source_ref),
             provenance_json: user_note_backfill_provenance_json(&legacy.id),
         })?;
-        commit_claim(ctx, db, proposal)
+        let wrapped = DeterministicInsertProposal::new(claim_id.clone(), proposal);
+        commit_claim(ctx, db, wrapped)
             .map_err(|error| format!("Failed to backfill user_note claim: {error}"))?;
     }
 

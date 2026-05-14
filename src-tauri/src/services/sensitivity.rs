@@ -1865,7 +1865,9 @@ fn minimal_policy_claim(sensitivity: ClaimSensitivity, actor: &str) -> Intellige
 mod tests {
     use super::*;
     use crate::db::ActionDb;
-    use crate::services::claims::{commit_claim, ClaimProposal, CommittedClaim};
+    use crate::services::claims::{
+        commit_claim, ClaimProposal, CommittedClaim, DeterministicInsertProposal,
+    };
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
     use chrono::{TimeZone, Utc};
     use rusqlite::Connection;
@@ -1916,35 +1918,36 @@ CREATE TABLE accounts (
         let rng = SeedableRng::new(310);
         let external = ExternalClients::default();
         let ctx = ServiceContext::new_live(&clock, &rng, &external).with_actor("agent:test");
+        let proposal = ClaimProposal {
+            id: None,
+            expected_claim_version: None,
+            subject_ref: serde_json::json!({
+                "kind": "account",
+                "id": TEST_ENTITY_ID,
+            })
+            .to_string(),
+            claim_type: claim_type.to_string(),
+            field_path: Some(format!("intelligence.{claim_type}")),
+            topic_key: None,
+            text: text.to_string(),
+            actor: "agent:test".to_string(),
+            data_source: "user".to_string(),
+            source_ref: Some(format!("fixture:{id}")),
+            source_asof: Some("2026-05-09T13:00:00Z".to_string()),
+            observed_at: "2026-05-09T13:00:00Z".to_string(),
+            provenance_json: serde_json::json!({ "source": "projection-clear-regression" })
+                .to_string(),
+            metadata_json: None,
+            thread_id: None,
+            temporal_scope: Some(crate::db::claims::TemporalScope::State),
+            sensitivity: Some(ClaimSensitivity::Internal),
+            supersedes: None,
+            tombstone: None,
+        };
         let committed = commit_claim(
             &ctx,
             db,
-            ClaimProposal {
-                id: Some(id.to_string()),
-                expected_claim_version: None,
-                subject_ref: serde_json::json!({
-                    "kind": "account",
-                    "id": TEST_ENTITY_ID,
-                })
-                .to_string(),
-                claim_type: claim_type.to_string(),
-                field_path: Some(format!("intelligence.{claim_type}")),
-                topic_key: None,
-                text: text.to_string(),
-                actor: "agent:test".to_string(),
-                data_source: "user".to_string(),
-                source_ref: Some(format!("fixture:{id}")),
-                source_asof: Some("2026-05-09T13:00:00Z".to_string()),
-                observed_at: "2026-05-09T13:00:00Z".to_string(),
-                provenance_json: serde_json::json!({ "source": "projection-clear-regression" })
-                    .to_string(),
-                metadata_json: None,
-                thread_id: None,
-                temporal_scope: Some(crate::db::claims::TemporalScope::State),
-                sensitivity: Some(ClaimSensitivity::Internal),
-                supersedes: None,
-                tombstone: None,
-            },
+            DeterministicInsertProposal::new(id.to_string(), proposal),
         )
         .expect("commit projection claim");
 

@@ -19,6 +19,7 @@ mod v144_audit_action_token;
 mod v166_semantic_merge_safety;
 mod v167_structured_claim_canonicalization;
 mod v170_canonicalization_cutover;
+mod v172_dos_567_w4b_versions_and_outbox;
 
 type MigrationError = String;
 
@@ -879,9 +880,9 @@ const MIGRATIONS: &[Migration] = &[
         version: 171,
         sql: include_str!("migrations/171_dos_565_drop_surface_bearer_token_hash.sql"),
     },
-    Migration::Sql {
+    Migration::Fn {
         version: 172,
-        sql: include_str!("migrations/172_dos_567_w4b_versions_and_outbox.sql"),
+        apply: v172_dos_567_w4b_versions_and_outbox::migrate_v172,
     },
 ];
 
@@ -4511,10 +4512,10 @@ mod tests {
         )
         .expect("seed c5 zero-version shadow row");
 
-        let applied = run_migrations(&conn).expect("v157-v171 migrations should succeed");
+        let applied = run_migrations(&conn).expect("v157-v172 migrations should succeed");
         assert_eq!(
-            applied, 15,
-            "v157-v171 should be pending after rollback to v156"
+            applied, 16,
+            "v157-v172 should be pending after rollback to v156"
         );
         assert_eq!(
             current_version(&conn).expect("current version"),
@@ -4585,10 +4586,10 @@ mod tests {
         )
         .expect("seed v156-recorded live score");
 
-        let applied = run_migrations(&conn).expect("v157-v171 migrations should succeed");
+        let applied = run_migrations(&conn).expect("v157-v172 migrations should succeed");
         assert_eq!(
-            applied, 15,
-            "v157-v171 should be pending after rollback to v156"
+            applied, 16,
+            "v157-v172 should be pending after rollback to v156"
         );
         assert_eq!(
             current_version(&conn).expect("current version"),
@@ -4664,10 +4665,10 @@ mod tests {
         )
         .expect("seed partial v155 shadow row");
 
-        let applied = run_migrations(&conn).expect("v156-v171 migrations should succeed");
+        let applied = run_migrations(&conn).expect("v156-v172 migrations should succeed");
         assert_eq!(
-            applied, 16,
-            "v156-v171 should be pending after rollback to v155"
+            applied, 17,
+            "v156-v172 should be pending after rollback to v155"
         );
         assert_eq!(
             current_version(&conn).expect("current version"),
