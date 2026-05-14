@@ -7,8 +7,14 @@ use async_trait::async_trait;
 use chrono::{TimeZone, Utc};
 use dailyos_lib::abilities::feedback::ClaimVerificationState;
 use dailyos_lib::abilities::get_daily_readiness::synthesis::JUDGE_MODEL;
+use dailyos_lib::abilities::get_daily_readiness::synthesis::{
+    ComposedPrepareMeetingOutput, DailyReadinessContext, DailyReadinessMeetingSeed,
+};
 use dailyos_lib::abilities::get_daily_readiness::{
     get_daily_readiness, DailyReadiness, DailyReadinessInput,
+};
+use dailyos_lib::abilities::prepare_meeting::{
+    BriefSubjectRef, BriefTemporalScope, MeetingBrief, MeetingSummary, Topic,
 };
 use dailyos_lib::abilities::{
     AbilityContext, AbilityOutput, Actor, SchemaVersion, NOOP_ABILITY_TRACER,
@@ -36,6 +42,8 @@ const WORKSPACE_BETA: &str = "ws-beta";
 const TEST_DATE: &str = "2026-05-14";
 const PRIVATE_PARENT_TEXT: &str =
     "CONFIDENTIAL_PARENT_TEXT should never enter channel 6 or channel 7";
+const PRIVATE_CHILD_TOPIC_DETAIL: &str =
+    "CONFIDENTIAL_CHILD_TOPIC_DETAIL should never cross the parent prompt boundary";
 const BETA_ONLY_TEXT: &str =
     "Workspace Beta expansion risk should stay isolated from Account Alpha.";
 
@@ -268,6 +276,41 @@ async fn per_child_sensitivity_double_gate_at_parent_boundary() {
 }
 
 #[tokio::test]
+async fn prepare_meeting_child_private_topic_detail_filtered_at_parent_boundary() {
+    let reader = Arc::new(FixtureClaimReader::new(Vec::new()));
+    let provider = CapturingProvider::new("Only parent-allowed child context was synthesized.");
+    let input = DailyReadinessInput::evaluate_with_context(
+        private_prepare_child_context(),
+        SchemaVersion(1),
+    );
+
+    let output = invoke_daily_readiness_with_input(reader, &provider, Actor::Agent, input).await;
+
+    assert!(output.data().meetings_today[0].topics.is_empty());
+    assert!(output
+        .data()
+        .coverage_warnings
+        .iter()
+        .any(|warning| warning.kind == "private_prompt_input_filtered"));
+
+    let call = only_call(&provider);
+    assert!(
+        !call.prompt.text.contains(PRIVATE_CHILD_TOPIC_DETAIL),
+        "channel 7 rendered prompt text must not contain parent-filtered child topic detail"
+    );
+    let canonical_inputs = call
+        .prompt
+        .canonical_json_inputs
+        .expect("daily_readiness prompt has canonical JSON inputs");
+    let canonical_json =
+        serde_json::to_string(&canonical_inputs).expect("canonical JSON serializes");
+    assert!(
+        !canonical_json.contains(PRIVATE_CHILD_TOPIC_DETAIL),
+        "channel 6 canonical inputs must not contain parent-filtered child topic detail"
+    );
+}
+
+#[tokio::test]
 async fn workspace_scope_partition_rejects_cross_workspace_bleed() {
     let expected = fixture_json("bundle-9-subject-partition/expected_output.json");
     assert_eq!(expected["workspace_scope"], "ws-alpha");
@@ -355,6 +398,25 @@ async fn invoke_daily_readiness(
     actor: Actor,
     workspace_id: &str,
 ) -> AbilityOutput<DailyReadiness> {
+    invoke_daily_readiness_with_input(
+        reader,
+        provider,
+        actor,
+        DailyReadinessInput::public(
+            workspace_id.to_string(),
+            Some(TEST_DATE.to_string()),
+            SchemaVersion(1),
+        ),
+    )
+    .await
+}
+
+async fn invoke_daily_readiness_with_input(
+    reader: Arc<FixtureClaimReader>,
+    provider: &CapturingProvider,
+    actor: Actor,
+    input: DailyReadinessInput,
+) -> AbilityOutput<DailyReadiness> {
     let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 14, 12, 0, 0).unwrap());
     let rng = SeedableRng::new(220);
     let daily_reader: Arc<dyn DailyReadinessContextReadHandle> = reader.clone();
@@ -374,16 +436,9 @@ async fn invoke_daily_readiness(
         ClaimDismissalSurface::Eval,
     );
 
-    get_daily_readiness(
-        &ctx,
-        DailyReadinessInput::public(
-            workspace_id.to_string(),
-            Some(TEST_DATE.to_string()),
-            SchemaVersion(1),
-        ),
-    )
-    .await
-    .expect("get_daily_readiness succeeds")
+    get_daily_readiness(&ctx, input)
+        .await
+        .expect("get_daily_readiness succeeds")
 }
 
 fn only_call(provider: &CapturingProvider) -> CapturedProviderCall {
@@ -496,6 +551,59 @@ fn sensitivity_gate_snapshot() -> DailyReadinessContextSnapshot {
                 WORKSPACE_ALPHA,
             ),
         ],
+        open_loops: Vec::new(),
+        coverage_warnings: Vec::new(),
+    }
+}
+
+fn private_prepare_child_context() -> DailyReadinessContext {
+    let meeting = DailyReadinessMeetingSeed {
+        id: "meeting-alpha-private-topic".to_string(),
+        title: "Account Alpha sensitive prep".to_string(),
+        starts_at: Some("2026-05-14T14:00:00Z".to_string()),
+        ends_at: Some("2026-05-14T14:30:00Z".to_string()),
+        workspace_scope: WORKSPACE_ALPHA.to_string(),
+    };
+    let topic = Topic {
+        title: "Sensitive renewal blocker".to_string(),
+        detail: PRIVATE_CHILD_TOPIC_DETAIL.to_string(),
+        subject: BriefSubjectRef {
+            kind: "meeting".to_string(),
+            id: meeting.id.clone(),
+        },
+        temporal_scope: BriefTemporalScope::State,
+    };
+    let child = ComposedPrepareMeetingOutput {
+        meeting_id: meeting.id.clone(),
+        workspace_scope: WORKSPACE_ALPHA.to_string(),
+        cache_dedupe_key: format!("prepare_meeting:{}:{}", WORKSPACE_ALPHA, meeting.id),
+        sensitivity: "confidential".to_string(),
+        output: MeetingBrief {
+            meeting: MeetingSummary {
+                id: meeting.id.clone(),
+                title: meeting.title.clone(),
+                starts_at: meeting.starts_at.clone(),
+                ends_at: meeting.ends_at.clone(),
+                attendees: Vec::new(),
+            },
+            topics: vec![topic],
+            attendee_context: Vec::new(),
+            open_loops: Vec::new(),
+            what_changed_since_last: Vec::new(),
+            suggested_outcomes: Vec::new(),
+            schema_version: SchemaVersion(1),
+        },
+    };
+
+    DailyReadinessContext {
+        workspace_scope: WORKSPACE_ALPHA.to_string(),
+        date: TEST_DATE.to_string(),
+        meetings: vec![meeting],
+        tracked_subjects: Vec::new(),
+        prepare_meeting_children: vec![child],
+        entity_context_children: Vec::new(),
+        overnight_changes: Vec::new(),
+        risk_shifts: Vec::new(),
         open_loops: Vec::new(),
         coverage_warnings: Vec::new(),
     }

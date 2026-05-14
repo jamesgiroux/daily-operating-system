@@ -27,14 +27,16 @@ use crate::services::context::{
     DailyReadinessSignalSnapshot, DailyReadinessSubjectSnapshot,
 };
 use crate::types::{
-    prompt_input_sensitivity_name_allowed, ClaimSensitivity, ClaimState, IntelligenceClaim,
-    SurfacingState, TemporalScope,
+    prompt_input_sensitivity_name_allowed, ClaimSensitivity, ClaimState, EntityContextText,
+    IntelligenceClaim, SurfacingState, TemporalScope,
 };
 
 const ABILITY_NAME: &str = "get_daily_readiness";
 const ABILITY_SCHEMA_VERSION: u32 = 1;
 const PREPARE_MEETING_SCHEMA_VERSION: u32 = 1;
 const GET_ENTITY_CONTEXT_SCHEMA_VERSION: u32 = 2;
+const CHILD_PROMPT_DEFAULT_SENSITIVITY: &str = "internal";
+const CHILD_PROMPT_ACTIVE_LIFECYCLE: &str = "active";
 pub const JUDGE_MODEL: &str = "claude-sonnet-4-6";
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -61,6 +63,16 @@ impl DailyReadinessInput {
             workspace_id: workspace_id.into(),
             date,
             context: None,
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn evaluate_with_context(context: DailyReadinessContext, schema_version: SchemaVersion) -> Self {
+        Self {
+            workspace_id: context.workspace_scope.clone(),
+            date: Some(context.date.clone()),
+            schema_version,
+            context: Some(context),
         }
     }
 }
@@ -111,6 +123,11 @@ pub struct ComposedPrepareMeetingOutput {
     pub meeting_id: String,
     pub workspace_scope: String,
     pub cache_dedupe_key: String,
+    #[serde(
+        default = "default_child_prompt_sensitivity",
+        skip_serializing_if = "is_child_prompt_default_sensitivity"
+    )]
+    pub sensitivity: String,
     pub output: MeetingBrief,
 }
 
@@ -1251,6 +1268,117 @@ impl DailyReadinessContext {
             }
         });
 
+        for child in &mut self.prepare_meeting_children {
+            let meeting_id = child.meeting_id.clone();
+            let sensitivity = child.sensitivity.clone();
+
+            let mut topic_index = 0usize;
+            child.output.topics.retain_mut(|topic| {
+                let item_id = format!("prepare_meeting:{meeting_id}:topics:{topic_index}");
+                topic_index += 1;
+                match render_prepare_topic_for_parent_prompt(
+                    &item_id,
+                    topic,
+                    &sensitivity,
+                    &render_actor,
+                ) {
+                    PromptItemDecision::Allow => true,
+                    PromptItemDecision::Private => {
+                        filtered_private += 1;
+                        false
+                    }
+                    PromptItemDecision::Revoked => {
+                        filtered_revoked += 1;
+                        false
+                    }
+                }
+            });
+
+            let mut attendee_index = 0usize;
+            child.output.attendee_context.retain_mut(|attendee_context| {
+                let item_id =
+                    format!("prepare_meeting:{meeting_id}:attendee_context:{attendee_index}");
+                attendee_index += 1;
+                match render_prepare_attendee_for_parent_prompt(
+                    &item_id,
+                    attendee_context,
+                    &sensitivity,
+                    &render_actor,
+                ) {
+                    PromptItemDecision::Allow => true,
+                    PromptItemDecision::Private => {
+                        filtered_private += 1;
+                        false
+                    }
+                    PromptItemDecision::Revoked => {
+                        filtered_revoked += 1;
+                        false
+                    }
+                }
+            });
+
+            let mut open_loop_index = 0usize;
+            child.output.open_loops.retain_mut(|open_loop| {
+                let item_id = format!("prepare_meeting:{meeting_id}:open_loops:{open_loop_index}");
+                open_loop_index += 1;
+                match render_prepare_open_loop_for_parent_prompt(
+                    &item_id,
+                    open_loop,
+                    &sensitivity,
+                    &render_actor,
+                ) {
+                    PromptItemDecision::Allow => true,
+                    PromptItemDecision::Private => {
+                        filtered_private += 1;
+                        false
+                    }
+                    PromptItemDecision::Revoked => {
+                        filtered_revoked += 1;
+                        false
+                    }
+                }
+            });
+
+            let mut outcome_index = 0usize;
+            child.output.suggested_outcomes.retain_mut(|outcome| {
+                let item_id =
+                    format!("prepare_meeting:{meeting_id}:suggested_outcomes:{outcome_index}");
+                outcome_index += 1;
+                match render_prepare_outcome_for_parent_prompt(
+                    &item_id,
+                    outcome,
+                    &sensitivity,
+                    &render_actor,
+                ) {
+                    PromptItemDecision::Allow => true,
+                    PromptItemDecision::Private => {
+                        filtered_private += 1;
+                        false
+                    }
+                    PromptItemDecision::Revoked => {
+                        filtered_revoked += 1;
+                        false
+                    }
+                }
+            });
+        }
+
+        for child in &mut self.entity_context_children {
+            child.output.entries.retain_mut(|entry| {
+                match render_entity_entry_for_parent_prompt(entry, &render_actor) {
+                    PromptItemDecision::Allow => true,
+                    PromptItemDecision::Private => {
+                        filtered_private += 1;
+                        false
+                    }
+                    PromptItemDecision::Revoked => {
+                        filtered_revoked += 1;
+                        false
+                    }
+                }
+            });
+        }
+
         if filtered_private > 0 {
             self.coverage_warnings.push(DailyReadinessCoverageWarning {
                 kind: "private_prompt_input_filtered".into(),
@@ -1398,6 +1526,7 @@ fn synthetic_prepare_meeting_child(
         meeting_id: meeting.id.clone(),
         workspace_scope: meeting.workspace_scope.clone(),
         cache_dedupe_key: format!("prepare_meeting:{}:{}", meeting.workspace_scope, meeting.id),
+        sensitivity: default_child_prompt_sensitivity(),
         output,
     }
 }
@@ -1510,6 +1639,304 @@ enum PromptTextDecision {
     Revoked,
 }
 
+enum PromptItemDecision {
+    Allow,
+    Private,
+    Revoked,
+}
+
+struct ChildPromptText<'a> {
+    item_id: &'a str,
+    claim_type: &'a str,
+    field_path: &'a str,
+    value: &'a str,
+    subject_kind: &'a str,
+    subject_id: &'a str,
+    sensitivity: &'a str,
+}
+
+fn render_prepare_topic_for_parent_prompt(
+    item_id: &str,
+    topic: &mut Topic,
+    sensitivity: &str,
+    actor: &RenderActor,
+) -> PromptItemDecision {
+    match render_prepare_child_text(
+        item_id,
+        "meeting_topic",
+        "/title",
+        &topic.title,
+        &topic.subject,
+        sensitivity,
+        actor,
+    ) {
+        PromptTextDecision::Allow(rendered) => topic.title = rendered,
+        PromptTextDecision::Private => return PromptItemDecision::Private,
+        PromptTextDecision::Revoked => return PromptItemDecision::Revoked,
+    }
+    match render_prepare_child_text(
+        item_id,
+        "meeting_topic",
+        "/detail",
+        &topic.detail,
+        &topic.subject,
+        sensitivity,
+        actor,
+    ) {
+        PromptTextDecision::Allow(rendered) => {
+            topic.detail = rendered;
+            PromptItemDecision::Allow
+        }
+        PromptTextDecision::Private => PromptItemDecision::Private,
+        PromptTextDecision::Revoked => PromptItemDecision::Revoked,
+    }
+}
+
+fn render_prepare_attendee_for_parent_prompt(
+    item_id: &str,
+    attendee_context: &mut AttendeeContext,
+    sensitivity: &str,
+    actor: &RenderActor,
+) -> PromptItemDecision {
+    match render_prepare_child_text(
+        item_id,
+        "attendee_context",
+        "/attendee",
+        &attendee_context.attendee,
+        &attendee_context.subject,
+        sensitivity,
+        actor,
+    ) {
+        PromptTextDecision::Allow(rendered) => attendee_context.attendee = rendered,
+        PromptTextDecision::Private => return PromptItemDecision::Private,
+        PromptTextDecision::Revoked => return PromptItemDecision::Revoked,
+    }
+    match render_prepare_child_text(
+        item_id,
+        "attendee_context",
+        "/context",
+        &attendee_context.context,
+        &attendee_context.subject,
+        sensitivity,
+        actor,
+    ) {
+        PromptTextDecision::Allow(rendered) => {
+            attendee_context.context = rendered;
+            PromptItemDecision::Allow
+        }
+        PromptTextDecision::Private => PromptItemDecision::Private,
+        PromptTextDecision::Revoked => PromptItemDecision::Revoked,
+    }
+}
+
+fn render_prepare_open_loop_for_parent_prompt(
+    item_id: &str,
+    open_loop: &mut OpenLoop,
+    sensitivity: &str,
+    actor: &RenderActor,
+) -> PromptItemDecision {
+    match render_prepare_child_text(
+        item_id,
+        "open_loop",
+        "/description",
+        &open_loop.description,
+        &open_loop.subject,
+        sensitivity,
+        actor,
+    ) {
+        PromptTextDecision::Allow(rendered) => open_loop.description = rendered,
+        PromptTextDecision::Private => return PromptItemDecision::Private,
+        PromptTextDecision::Revoked => return PromptItemDecision::Revoked,
+    }
+    if let Some(owner) = open_loop.owner.as_mut() {
+        match render_prepare_child_text(
+            item_id,
+            "open_loop",
+            "/owner",
+            owner,
+            &open_loop.subject,
+            sensitivity,
+            actor,
+        ) {
+            PromptTextDecision::Allow(rendered) => *owner = rendered,
+            PromptTextDecision::Private => return PromptItemDecision::Private,
+            PromptTextDecision::Revoked => return PromptItemDecision::Revoked,
+        }
+    }
+    PromptItemDecision::Allow
+}
+
+fn render_prepare_outcome_for_parent_prompt(
+    item_id: &str,
+    outcome: &mut SuggestedOutcome,
+    sensitivity: &str,
+    actor: &RenderActor,
+) -> PromptItemDecision {
+    match render_prepare_child_text(
+        item_id,
+        "suggested_outcome",
+        "/outcome",
+        &outcome.outcome,
+        &outcome.subject,
+        sensitivity,
+        actor,
+    ) {
+        PromptTextDecision::Allow(rendered) => outcome.outcome = rendered,
+        PromptTextDecision::Private => return PromptItemDecision::Private,
+        PromptTextDecision::Revoked => return PromptItemDecision::Revoked,
+    }
+    match render_prepare_child_text(
+        item_id,
+        "suggested_outcome",
+        "/rationale",
+        &outcome.rationale,
+        &outcome.subject,
+        sensitivity,
+        actor,
+    ) {
+        PromptTextDecision::Allow(rendered) => {
+            outcome.rationale = rendered;
+            PromptItemDecision::Allow
+        }
+        PromptTextDecision::Private => PromptItemDecision::Private,
+        PromptTextDecision::Revoked => PromptItemDecision::Revoked,
+    }
+}
+
+fn render_prepare_child_text(
+    item_id: &str,
+    claim_type: &str,
+    field_path: &str,
+    value: &str,
+    subject: &crate::abilities::prepare_meeting::BriefSubjectRef,
+    sensitivity: &str,
+    actor: &RenderActor,
+) -> PromptTextDecision {
+    render_child_prompt_text(
+        ChildPromptText {
+            item_id,
+            claim_type,
+            field_path,
+            value,
+            subject_kind: &subject.kind,
+            subject_id: &subject.id,
+            sensitivity,
+        },
+        actor,
+    )
+}
+
+fn render_entity_entry_for_parent_prompt(
+    entry: &mut crate::types::EntityContextEntry,
+    actor: &RenderActor,
+) -> PromptItemDecision {
+    let title_sensitivity = entity_context_text_sensitivity(&entry.title).to_string();
+    let title_value = entry.title.as_str().to_string();
+    match render_child_prompt_text(
+        ChildPromptText {
+            item_id: &entry.id,
+            claim_type: "entity_context_entry",
+            field_path: "/title",
+            value: &title_value,
+            subject_kind: &entry.entity_type,
+            subject_id: &entry.entity_id,
+            sensitivity: &title_sensitivity,
+        },
+        actor,
+    ) {
+        PromptTextDecision::Allow(rendered) => set_entity_context_text(&mut entry.title, rendered),
+        PromptTextDecision::Private => return PromptItemDecision::Private,
+        PromptTextDecision::Revoked => return PromptItemDecision::Revoked,
+    }
+
+    let content_sensitivity = entity_context_text_sensitivity(&entry.content).to_string();
+    let content_value = entry.content.as_str().to_string();
+    match render_child_prompt_text(
+        ChildPromptText {
+            item_id: &entry.id,
+            claim_type: "entity_context_entry",
+            field_path: "/content",
+            value: &content_value,
+            subject_kind: &entry.entity_type,
+            subject_id: &entry.entity_id,
+            sensitivity: &content_sensitivity,
+        },
+        actor,
+    ) {
+        PromptTextDecision::Allow(rendered) => {
+            set_entity_context_text(&mut entry.content, rendered);
+            PromptItemDecision::Allow
+        }
+        PromptTextDecision::Private => PromptItemDecision::Private,
+        PromptTextDecision::Revoked => PromptItemDecision::Revoked,
+    }
+}
+
+fn entity_context_text_sensitivity(text: &EntityContextText) -> &'static str {
+    match text {
+        EntityContextText::Claim(rendered) => sensitivity_name(&rendered.policy.sensitivity),
+        EntityContextText::Plain(_) => CHILD_PROMPT_DEFAULT_SENSITIVITY,
+    }
+}
+
+fn set_entity_context_text(text: &mut EntityContextText, rendered: String) {
+    match text {
+        EntityContextText::Claim(claim_text) => claim_text.text = rendered,
+        EntityContextText::Plain(value) => *value = rendered,
+    }
+}
+
+fn render_child_prompt_text(input: ChildPromptText<'_>, actor: &RenderActor) -> PromptTextDecision {
+    let claim = child_prompt_claim(&input);
+    render_prompt_text(&claim, input.value, CHILD_PROMPT_ACTIVE_LIFECYCLE, actor)
+}
+
+fn child_prompt_claim(input: &ChildPromptText<'_>) -> IntelligenceClaim {
+    let sensitivity = if input.sensitivity.trim().is_empty() {
+        CHILD_PROMPT_DEFAULT_SENSITIVITY
+    } else {
+        input.sensitivity
+    };
+    IntelligenceClaim {
+        id: format!("{}:{}", input.item_id, input.field_path),
+        subject_ref: json!({
+            "kind": input.subject_kind,
+            "id": input.subject_id,
+        })
+        .to_string(),
+        claim_type: input.claim_type.to_string(),
+        field_path: Some(input.field_path.to_string()),
+        topic_key: None,
+        text: input.value.to_string(),
+        dedup_key: format!("prompt-child:{}:{}", input.item_id, input.field_path),
+        item_hash: None,
+        actor: "agent:get_daily_readiness".to_string(),
+        data_source: "composed_child".to_string(),
+        source_ref: None,
+        source_asof: None,
+        observed_at: "1970-01-01T00:00:00Z".to_string(),
+        created_at: "1970-01-01T00:00:00Z".to_string(),
+        provenance_json: "{}".to_string(),
+        metadata_json: None,
+        claim_state: ClaimState::Active,
+        surfacing_state: SurfacingState::Active,
+        demotion_reason: None,
+        reactivated_at: None,
+        retraction_reason: None,
+        expires_at: None,
+        superseded_by: None,
+        trust_score: None,
+        trust_computed_at: None,
+        trust_version: None,
+        thread_id: None,
+        temporal_scope: TemporalScope::State,
+        sensitivity: sensitivity_from_name(sensitivity),
+        verification_state: crate::sensitivity::ClaimVerificationState::Active,
+        verification_reason: None,
+        needs_user_decision_at: None,
+    }
+}
+
 fn render_prompt_text(
     claim: &IntelligenceClaim,
     value: &str,
@@ -1591,6 +2018,16 @@ fn sensitivity_from_name(value: &str) -> ClaimSensitivity {
         "user_only" | "user-only" => ClaimSensitivity::UserOnly,
         _ => ClaimSensitivity::Confidential,
     }
+}
+
+fn default_child_prompt_sensitivity() -> String {
+    CHILD_PROMPT_DEFAULT_SENSITIVITY.to_string()
+}
+
+fn is_child_prompt_default_sensitivity(value: &str) -> bool {
+    value
+        .trim()
+        .eq_ignore_ascii_case(CHILD_PROMPT_DEFAULT_SENSITIVITY)
 }
 
 fn sensitivity_name(value: &ClaimSensitivity) -> &'static str {
