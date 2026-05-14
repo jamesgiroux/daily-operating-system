@@ -117,19 +117,26 @@ pub struct StrategicProgram {
 impl DbAccount {
     /// Parsed `company_overview` blob, or `None` if empty/missing/malformed.
     pub fn company_overview_parsed(&self) -> Option<CompanyOverview> {
-        parse_account_json_blob("company_overview", &self.id, self.company_overview.as_deref())
+        parse_account_json_blob(
+            "company_overview",
+            &self.id,
+            self.company_overview.as_deref(),
+        )
     }
 
     /// Parsed `strategic_programs` blob, or an empty vec on missing/malformed JSON.
     pub fn strategic_programs_parsed(&self) -> Vec<StrategicProgram> {
-        parse_account_json_blob("strategic_programs", &self.id, self.strategic_programs.as_deref())
-            .unwrap_or_default()
+        parse_account_json_blob(
+            "strategic_programs",
+            &self.id,
+            self.strategic_programs.as_deref(),
+        )
+        .unwrap_or_default()
     }
 
     /// Parsed `keywords` blob (string array), or an empty vec on missing/malformed JSON.
     pub fn keywords_parsed(&self) -> Vec<String> {
-        parse_account_json_blob("keywords", &self.id, self.keywords.as_deref())
-            .unwrap_or_default()
+        parse_account_json_blob("keywords", &self.id, self.keywords.as_deref()).unwrap_or_default()
     }
 
     /// Parsed `metadata` blob, or `None` if empty/missing/malformed.
@@ -151,9 +158,7 @@ fn parse_account_json_blob<T: serde::de::DeserializeOwned>(
     match serde_json::from_str::<T>(raw) {
         Ok(value) => Some(value),
         Err(err) => {
-            log::warn!(
-                "DbAccount.{field} for account {account_id} failed to parse: {err}",
-            );
+            log::warn!("DbAccount.{field} for account {account_id} failed to parse: {err}",);
             None
         }
     }

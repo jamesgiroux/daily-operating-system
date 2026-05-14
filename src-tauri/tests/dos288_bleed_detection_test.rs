@@ -205,6 +205,7 @@ fn bundle13_prepare_meeting_output_passes_validator_without_adjacent_subject() {
 fn claim_with_sensitivity(id: &str, sensitivity: ClaimSensitivity) -> IntelligenceClaim {
     IntelligenceClaim {
         id: id.to_string(),
+        claim_version: 1,
         subject_ref: json!({
             "kind": "account",
             "id": TARGET_ACCOUNT_ID,

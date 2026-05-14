@@ -280,6 +280,7 @@ fn seed_confidential_entity_context_claim(ctx: &ServiceContext<'_>, conn: &Conne
         ActionDb::from_conn(conn),
         ClaimProposal {
             id: Some("claim-dos412-kk-confidential".to_string()),
+            expected_claim_version: None,
             subject_ref: json!({
                 "kind": "account",
                 "id": ACCOUNT_ID,
@@ -338,6 +339,7 @@ fn seed_entity_context_claim(
         ActionDb::from_conn(conn),
         ClaimProposal {
             id: Some(id.to_string()),
+            expected_claim_version: None,
             subject_ref: json!({
                 "kind": "account",
                 "id": ACCOUNT_ID,

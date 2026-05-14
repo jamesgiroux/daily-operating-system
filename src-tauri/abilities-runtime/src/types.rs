@@ -3,6 +3,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::sensitivity::RenderableClaimText;
 
+fn default_claim_version() -> u64 {
+    1
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ClaimState {
@@ -40,6 +44,8 @@ pub enum ClaimSensitivity {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
 pub struct IntelligenceClaim {
     pub id: String,
+    #[serde(default = "default_claim_version")]
+    pub claim_version: u64,
     pub subject_ref: String,
     pub claim_type: String,
     pub field_path: Option<String>,

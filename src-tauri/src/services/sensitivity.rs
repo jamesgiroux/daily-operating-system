@@ -1826,6 +1826,7 @@ fn claim_projection_text(claim: &IntelligenceClaim) -> String {
 fn minimal_policy_claim(sensitivity: ClaimSensitivity, actor: &str) -> IntelligenceClaim {
     IntelligenceClaim {
         id: "policy-fixture".to_string(),
+        claim_version: 1,
         subject_ref: "{}".to_string(),
         claim_type: "entity_summary".to_string(),
         field_path: None,
@@ -1920,6 +1921,7 @@ CREATE TABLE accounts (
             db,
             ClaimProposal {
                 id: Some(id.to_string()),
+                expected_claim_version: None,
                 subject_ref: serde_json::json!({
                     "kind": "account",
                     "id": TEST_ENTITY_ID,

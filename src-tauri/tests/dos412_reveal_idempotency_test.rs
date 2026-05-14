@@ -204,6 +204,7 @@ fn setup_conn() -> Connection {
 fn confidential_claim_proposal() -> ClaimProposal {
     ClaimProposal {
         id: Some("claim-dos412-idempotent-reveal".to_string()),
+        expected_claim_version: None,
         subject_ref: json!({
             "kind": "account",
             "id": ACCOUNT_ID,

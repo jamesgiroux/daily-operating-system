@@ -198,6 +198,7 @@ fn commit_claim_projects_entity_summary_to_legacy_reader() {
         ActionDb::from_conn(&conn),
         ClaimProposal {
             id: None,
+            expected_claim_version: None,
             subject_ref,
             claim_type: "entity_summary".to_string(),
             field_path: Some("executiveAssessment".to_string()),
@@ -253,6 +254,7 @@ fn tauri_report_read_uses_unfiltered_projection_after_entity_detail_dismissal() 
         db,
         ClaimProposal {
             id: Some("claim-dos301-entity-detail-dismissed-summary".to_string()),
+            expected_claim_version: None,
             subject_ref: subject_ref.clone(),
             claim_type: "entity_summary".to_string(),
             field_path: Some("executiveAssessment".to_string()),
@@ -292,6 +294,7 @@ fn tauri_report_read_uses_unfiltered_projection_after_entity_detail_dismissal() 
         db,
         ClaimProposal {
             id: Some("claim-dos301-report-visible-risk".to_string()),
+            expected_claim_version: None,
             subject_ref,
             claim_type: "entity_risk".to_string(),
             field_path: Some("risks".to_string()),

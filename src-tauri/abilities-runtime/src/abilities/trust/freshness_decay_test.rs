@@ -191,7 +191,10 @@ fn default_unmapped_warns_and_uses_21_days() {
     let clock = FixedClock::new(at());
     let ctx = ctx(&clock);
     assert_days(
-        half_life_for(&DataSource::Other(SourceName::new("boot_validation_unmapped")), &ctx),
+        half_life_for(
+            &DataSource::Other(SourceName::new("boot_validation_unmapped")),
+            &ctx,
+        ),
         21,
     );
     assert!(DEFAULT_WARNING_COUNT.load(std::sync::atomic::Ordering::SeqCst) >= 1);
@@ -222,7 +225,10 @@ fn floor_holds_for_any_age() {
     let ctx = ctx(&clock);
     let claim = claim_with_source("email", at() - Duration::days(20_000));
 
-    assert_eq!(freshness_weight(&claim, &ctx), freshness_config().policy.floor);
+    assert_eq!(
+        freshness_weight(&claim, &ctx),
+        freshness_config().policy.floor
+    );
 }
 
 #[test]

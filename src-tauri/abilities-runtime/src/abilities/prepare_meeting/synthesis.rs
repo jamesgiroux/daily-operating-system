@@ -1871,16 +1871,9 @@ mod tests {
             self
         }
 
-        fn with_claim_dismissal(
-            mut self,
-            claim_id: &str,
-            surface: ClaimDismissalSurface,
-        ) -> Self {
-            self.claim_reader = Arc::new(
-                (*self.claim_reader)
-                    .clone()
-                    .dismissed_on(claim_id, surface),
-            );
+        fn with_claim_dismissal(mut self, claim_id: &str, surface: ClaimDismissalSurface) -> Self {
+            self.claim_reader =
+                Arc::new((*self.claim_reader).clone().dismissed_on(claim_id, surface));
             self
         }
 
@@ -2928,6 +2921,7 @@ mod tests {
     ) -> IntelligenceClaim {
         IntelligenceClaim {
             id: id.to_string(),
+            claim_version: 1,
             subject_ref: serde_json::json!({
                 "kind": entity_type,
                 "id": entity_id,

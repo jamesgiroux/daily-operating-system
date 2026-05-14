@@ -261,6 +261,7 @@ fn setup_conn() -> Connection {
 fn confidential_claim_proposal() -> ClaimProposal {
     ClaimProposal {
         id: Some(CLAIM_ID.to_string()),
+        expected_claim_version: None,
         subject_ref: json!({
             "kind": "account",
             "id": ACCOUNT_ID,

@@ -349,7 +349,7 @@ impl ActionDb {
         Ok(jobs)
     }
 
-    pub fn current_claim_version_for_subject(
+    pub fn current_subject_claim_version(
         &self,
         subject_type: &str,
         subject_id: &str,
@@ -727,7 +727,7 @@ impl ActionDb {
         }
 
         let current_source_claim_version =
-            self.current_claim_version_for_subject(&job.subject_type, &job.subject_id)?;
+            self.current_subject_claim_version(&job.subject_type, &job.subject_id)?;
         let successor = if let Some(coalescing_key) = job.coalescing_key.as_deref() {
             self.find_active_successor_covering(
                 coalescing_key,

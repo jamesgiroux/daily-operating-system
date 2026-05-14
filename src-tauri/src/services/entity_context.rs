@@ -438,6 +438,7 @@ fn user_note_claim_proposal(input: UserNoteProposal<'_>) -> Result<ClaimProposal
     let entity_type = normalize_entity_type(input.entity_type)?;
     Ok(ClaimProposal {
         id: input.id.map(str::to_string),
+        expected_claim_version: None,
         subject_ref: serde_json::json!({
             "kind": entity_type,
             "id": input.entity_id,

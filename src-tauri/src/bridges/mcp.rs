@@ -893,6 +893,7 @@ CREATE TABLE accounts (
             db,
             ClaimProposal {
                 id: Some("claim-mcp-dismissed-context".to_string()),
+                expected_claim_version: None,
                 subject_ref: json!({
                     "kind": "account",
                     "id": MCP_ENTITY_ID,

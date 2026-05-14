@@ -123,6 +123,7 @@ fn seed_person_claim(ctx: &ServiceContext<'_>, db: &ActionDb) -> String {
         db,
         ClaimProposal {
             id: None,
+            expected_claim_version: None,
             subject_ref: json!({
                 "kind": "person",
                 "id": PERSON_ID,

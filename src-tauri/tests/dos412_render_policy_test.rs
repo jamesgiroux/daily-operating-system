@@ -365,6 +365,7 @@ fn claim(sensitivity: ClaimSensitivity, actor: &str) -> IntelligenceClaim {
 fn claim_with_text(sensitivity: ClaimSensitivity, actor: &str, text: &str) -> IntelligenceClaim {
     IntelligenceClaim {
         id: "claim-dos412".to_string(),
+        claim_version: 1,
         subject_ref: r#"{"kind":"account","id":"acct-dos412-example"}"#.to_string(),
         claim_type: "entity_summary".to_string(),
         field_path: None,

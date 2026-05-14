@@ -388,6 +388,56 @@ impl SurfaceClientBridge {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WrongUserRejection {
+    pub asserted_wp_user_id: u64,
+    pub session_wp_user_id: Option<u64>,
+    pub surface_client_id: String,
+}
+
+pub fn validate_session_bound_wp_user_id(
+    session: &ValidatedSurfaceSession,
+    payload: &serde_json::Value,
+) -> Result<(), WrongUserRejection> {
+    let mut asserted = Vec::new();
+    collect_wp_user_ids(payload, &mut asserted);
+    for asserted_wp_user_id in asserted {
+        if session.wp_user_id != Some(asserted_wp_user_id) {
+            return Err(WrongUserRejection {
+                asserted_wp_user_id,
+                session_wp_user_id: session.wp_user_id,
+                surface_client_id: session.surface_client_id.clone(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn collect_wp_user_ids(value: &serde_json::Value, output: &mut Vec<u64>) {
+    match value {
+        serde_json::Value::Object(object) => {
+            for (key, value) in object {
+                if key == "wp_user_id" {
+                    if let Some(id) = value.as_u64().or_else(|| {
+                        value
+                            .as_str()
+                            .and_then(|raw| raw.trim().parse::<u64>().ok())
+                    }) {
+                        output.push(id);
+                    }
+                }
+                collect_wp_user_ids(value, output);
+            }
+        }
+        serde_json::Value::Array(values) => {
+            for value in values {
+                collect_wp_user_ids(value, output);
+            }
+        }
+        _ => {}
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct SurfaceClientAuthorization {
     pub canonical_ability_name: String,

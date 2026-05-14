@@ -211,7 +211,12 @@ fn freshness_age_days_and_timestamp_known(
             (age_days.max(FACTOR_MIN), timestamp_known)
         }
         None => freshness_context
-            .map(|freshness| (freshness.age_days.max(FACTOR_MIN), freshness.timestamp_known))
+            .map(|freshness| {
+                (
+                    freshness.age_days.max(FACTOR_MIN),
+                    freshness.timestamp_known,
+                )
+            })
             .unwrap_or((FACTOR_MIN, false)),
     }
 }
@@ -530,7 +535,9 @@ fn freshness_decay_for_rule(rule: HalfLifeRule, age_days: f64) -> f64 {
             if age_days <= SALESFORCE_FIELD_UPDATE_THRESHOLD_DAYS as f64 {
                 FACTOR_MAX
             } else {
-                freshness_config().policy.salesforce_field_update_stale_weight
+                freshness_config()
+                    .policy
+                    .salesforce_field_update_stale_weight
             }
         }
     }
@@ -1060,7 +1067,12 @@ mod tests {
     #[test]
     fn renewal_mentions_do_not_override_source_specific_decay() {
         let cases = [
-            ("email", "Customer asked about renewal timing.", None, 14_f64),
+            (
+                "email",
+                "Customer asked about renewal timing.",
+                None,
+                14_f64,
+            ),
             (
                 "zendesk",
                 "Urgent escalation: renewal blockers are growing.",

@@ -114,8 +114,7 @@ pub async fn evaluate_email(
                 );
                 for child_id in children {
                     let cid = child_id.clone();
-                    let child_email =
-                        state.with_db(move |db| db.get_email_by_id_for_linking(&cid));
+                    let child_email = state.with_db(move |db| db.get_email_by_id_for_linking(&cid));
                     match child_email {
                         Ok(Some(child_email)) => {
                             // Box::pin required because evaluate_email calls itself

@@ -159,6 +159,7 @@ fn commit_projection_claim(
         db,
         crate::services::claims::ClaimProposal {
             id: None,
+            expected_claim_version: None,
             subject_ref: input.subject_ref.to_string(),
             claim_type: input.claim_type.to_string(),
             field_path: Some(input.field_path.to_string()),

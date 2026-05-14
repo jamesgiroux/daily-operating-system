@@ -119,8 +119,8 @@ impl CompositionVersion {
         Self(value)
     }
 
-    pub fn bump(self) -> Self {
-        Self(self.0.saturating_add(1))
+    pub fn bump(self) -> Option<Self> {
+        self.0.checked_add(1).map(Self)
     }
 }
 
@@ -136,6 +136,8 @@ pub struct ClaimRef {
     pub claim_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub claim_version: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub field_path: Option<FieldPath>,
 }
 
 impl ClaimRef {
@@ -143,6 +145,7 @@ impl ClaimRef {
         Self {
             claim_id: claim_id.into(),
             claim_version: None,
+            field_path: None,
         }
     }
 
@@ -150,8 +153,37 @@ impl ClaimRef {
         Self {
             claim_id: claim_id.into(),
             claim_version: Some(version),
+            field_path: None,
         }
     }
+
+    pub fn with_field(claim_id: impl Into<String>, version: u64, field_path: FieldPath) -> Self {
+        Self {
+            claim_id: claim_id.into(),
+            claim_version: Some(version),
+            field_path: Some(field_path),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(transparent)]
+pub struct ClaimRefIndex(pub usize);
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BindingRole {
+    Source,
+    ComputedFrom,
+    DisplayOnly,
+    FeedbackTarget,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+pub struct FieldBinding {
+    pub field_path: FieldPath,
+    pub role: BindingRole,
+    pub claim_refs: Vec<ClaimRefIndex>,
 }
 
 // ---------------------------------------------------------------------------
@@ -306,7 +338,9 @@ pub enum BlockType {
     MarkdownDocument,
     /// Extension point: ability-registered type. Renderers that do not know
     /// the `type_id` apply [`project_to_nearest_known`] per ADR-0130 §3.1.
-    Custom { type_id: String },
+    Custom {
+        type_id: String,
+    },
 }
 
 impl BlockType {
@@ -431,6 +465,8 @@ pub struct Block {
     pub block_type: BlockType,
     pub attributes: serde_json::Value,
     pub claim_refs: Vec<ClaimRef>,
+    #[serde(default)]
+    pub field_bindings: Vec<FieldBinding>,
     pub provenance: ProvenanceRef,
     #[serde(default)]
     pub salience: Salience,
@@ -476,6 +512,7 @@ impl Block {
             block_type,
             attributes,
             claim_refs,
+            field_bindings: Vec::new(),
             provenance,
             salience: Salience::default(),
             render_hints: RenderHints::default(),
@@ -496,7 +533,10 @@ impl Block {
             return Err(BlockBuildError::InvocationMismatch);
         }
 
-        if envelope.field_attributions.contains_key(&provenance.field_path) {
+        if envelope
+            .field_attributions
+            .contains_key(&provenance.field_path)
+        {
             return Ok(());
         }
 
@@ -591,7 +631,9 @@ impl Composition {
 
     /// Iterate every block in the composition in stable order.
     pub fn blocks(&self) -> impl Iterator<Item = &Block> {
-        self.sections.iter().flat_map(|section| section.blocks.iter())
+        self.sections
+            .iter()
+            .flat_map(|section| section.blocks.iter())
     }
 }
 
@@ -724,8 +766,7 @@ pub fn project_to_nearest_known(
     unknown_schema: &UnknownBlockSchema,
     known_types: &[BlockDescriptor],
 ) -> ProjectionResult {
-    let nearest =
-        select_nearest_known_type(unknown_schema, known_types);
+    let nearest = select_nearest_known_type(unknown_schema, known_types);
 
     let original_type = unknown_block.block_type.type_id().to_string();
 
@@ -738,8 +779,7 @@ pub fn project_to_nearest_known(
         .iter()
         .chain(unknown_schema.optional_pointers.iter())
         .filter(|ptr| {
-            nearest.required_pointers.contains(*ptr)
-                || nearest.optional_pointers.contains(*ptr)
+            nearest.required_pointers.contains(*ptr) || nearest.optional_pointers.contains(*ptr)
         })
         .collect();
 
@@ -756,9 +796,7 @@ pub fn project_to_nearest_known(
         .saturating_sub(projected_pointer_count);
 
     let selected_type_id = nearest.block_type.type_id().to_string();
-    let banner_text = format!(
-        "Rendered as {selected_type_id} — payload may be incomplete"
-    );
+    let banner_text = format!("Rendered as {selected_type_id} — payload may be incomplete");
 
     ProjectionResult {
         original_type: original_type.clone(),
@@ -834,7 +872,11 @@ fn select_nearest_known_type<'a>(
             .then(b_score.kind_match.cmp(&a_score.kind_match))
             .then(b_score.required_overlap.cmp(&a_score.required_overlap))
             .then(b_score.optional_overlap.cmp(&a_score.optional_overlap))
-            .then(b_score.annotation_similarity.cmp(&a_score.annotation_similarity))
+            .then(
+                b_score
+                    .annotation_similarity
+                    .cmp(&a_score.annotation_similarity),
+            )
             .then(a_desc.block_type.type_id().cmp(b_desc.block_type.type_id()))
     });
 
@@ -845,10 +887,7 @@ fn select_nearest_known_type<'a>(
     Some(*winner)
 }
 
-fn score_candidate(
-    unknown: &UnknownBlockSchema,
-    candidate: &BlockDescriptor,
-) -> NearestTypeScore {
+fn score_candidate(unknown: &UnknownBlockSchema, candidate: &BlockDescriptor) -> NearestTypeScore {
     let mut score = NearestTypeScore::default();
 
     if let (Some(unknown_kind), Some(candidate_kind)) =
@@ -877,10 +916,8 @@ fn score_candidate(
         .count() as u32;
     score.annotation_similarity = annotation_overlap.saturating_mul(4).min(20);
 
-    score.namespace_similarity = namespace_similarity(
-        &unknown.type_id,
-        candidate.type_namespace.as_deref(),
-    );
+    score.namespace_similarity =
+        namespace_similarity(&unknown.type_id, candidate.type_namespace.as_deref());
 
     score
 }
@@ -899,10 +936,7 @@ fn namespace_similarity(unknown_type: &str, candidate_ns: Option<&str>) -> u32 {
 /// Reconstruct only the pointers in `keep` from `source`. Container objects
 /// are rebuilt to hold allowed leaves; siblings are NEVER copied wholesale.
 /// Per ADR-0130 §3.1 step 4.
-fn project_pointers(
-    source: &serde_json::Value,
-    keep: &BTreeSet<&String>,
-) -> serde_json::Value {
+fn project_pointers(source: &serde_json::Value, keep: &BTreeSet<&String>) -> serde_json::Value {
     let mut out = serde_json::Map::new();
 
     for pointer in keep {
@@ -998,7 +1032,9 @@ mod tests {
 
     fn sample_provenance_ref() -> ProvenanceRef {
         ProvenanceRef::from_pointer(
-            InvocationId(uuid::Uuid::from_u128(0x1234_5678_90ab_cdef_1122_3344_5566_7788)),
+            InvocationId(uuid::Uuid::from_u128(
+                0x1234_5678_90ab_cdef_1122_3344_5566_7788,
+            )),
             "/sections/0/blocks/0",
         )
         .unwrap()
@@ -1010,6 +1046,7 @@ mod tests {
             block_type: BlockType::AccountOverview,
             attributes: json!({"name": "Acme"}),
             claim_refs: vec![ClaimRef::new("claim-1")],
+            field_bindings: Vec::new(),
             provenance: sample_provenance_ref(),
             salience: Salience::default(),
             render_hints: RenderHints::default(),
@@ -1084,13 +1121,9 @@ mod tests {
     /// tests to exercise the OK and rejection paths against an actual
     /// envelope rather than the deferred (None) path.
     fn fixture_envelope_with_attribution() -> Provenance {
-        use crate::abilities::provenance::{
-            FieldAttribution, SubjectAttribution, SubjectRef,
-        };
+        use crate::abilities::provenance::{FieldAttribution, SubjectAttribution, SubjectRef};
 
-        let subject = SubjectAttribution::direct_confident(SubjectRef::Account(
-            "acct-1".into(),
-        ));
+        let subject = SubjectAttribution::direct_confident(SubjectRef::Account("acct-1".into()));
         let mut attributions = BTreeMap::new();
         attributions.insert(
             FieldPath::new("/sections/0/blocks/0").unwrap(),
@@ -1109,8 +1142,9 @@ mod tests {
         );
         // Pin the invocation_id to match sample_provenance_ref so resolution
         // succeeds on the OK path.
-        envelope.invocation_id =
-            InvocationId(uuid::Uuid::from_u128(0x1234_5678_90ab_cdef_1122_3344_5566_7788));
+        envelope.invocation_id = InvocationId(uuid::Uuid::from_u128(
+            0x1234_5678_90ab_cdef_1122_3344_5566_7788,
+        ));
         envelope
     }
 
@@ -1169,6 +1203,7 @@ mod tests {
                 "secret_email": "user@example.com",
             }),
             claim_refs: vec![ClaimRef::new("c-1")],
+            field_bindings: Vec::new(),
             provenance: sample_provenance_ref(),
             salience: Salience::default(),
             render_hints: RenderHints::default(),
@@ -1186,8 +1221,9 @@ mod tests {
 
         let mut markdown_descriptor = BlockDescriptor::new(BlockType::MarkdownDocument);
         markdown_descriptor.composition_kind = Some("entity_page".to_string());
-        markdown_descriptor.required_pointers =
-            ["/title".to_string(), "/body".to_string()].into_iter().collect();
+        markdown_descriptor.required_pointers = ["/title".to_string(), "/body".to_string()]
+            .into_iter()
+            .collect();
 
         let mut action_descriptor = BlockDescriptor::new(BlockType::ActionList);
         action_descriptor.composition_kind = Some("entity_page".to_string());
@@ -1203,7 +1239,10 @@ mod tests {
         assert_eq!(result_a.selected_type, BlockType::MarkdownDocument);
         // Dropped fields MUST NOT leak.
         assert!(
-            result_a.projected_attributes.pointer("/secret_email").is_none(),
+            result_a
+                .projected_attributes
+                .pointer("/secret_email")
+                .is_none(),
             "dropped payload field leaked into projection"
         );
         // claim_refs preserved exactly.
@@ -1227,6 +1266,7 @@ mod tests {
             },
             attributes: json!({"weird": "value"}),
             claim_refs: vec![ClaimRef::new("c-1")],
+            field_bindings: Vec::new(),
             provenance: sample_provenance_ref(),
             salience: Salience::default(),
             render_hints: RenderHints::default(),
@@ -1249,7 +1289,10 @@ mod tests {
         );
         assert_eq!(result.projected_pointer_count(), 0);
         assert_eq!(result.claim_refs.len(), 1, "claim_refs preserved");
-        assert_eq!(result.provenance, unknown.provenance, "provenance preserved");
+        assert_eq!(
+            result.provenance, unknown.provenance,
+            "provenance preserved"
+        );
     }
 
     #[test]
@@ -1263,8 +1306,8 @@ mod tests {
     #[test]
     fn composition_version_is_monotonic() {
         let v1 = CompositionVersion::new(1);
-        let v2 = v1.bump();
-        let v3 = v2.bump();
+        let v2 = v1.bump().expect("version 2");
+        let v3 = v2.bump().expect("version 3");
         assert!(v1 < v2);
         assert!(v2 < v3);
     }
@@ -1282,7 +1325,10 @@ mod tests {
         let decoded: Composition = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(original, decoded);
         assert_eq!(decoded.kind.type_id(), "entity_page");
-        assert_eq!(decoded.subject.as_ref().map(|s| s.as_str()), Some("account:acme"));
+        assert_eq!(
+            decoded.subject.as_ref().map(|s| s.as_str()),
+            Some("account:acme")
+        );
         assert_eq!(decoded.generated_by.as_str(), "test.ability");
     }
 

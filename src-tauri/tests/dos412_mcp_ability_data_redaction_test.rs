@@ -676,6 +676,7 @@ fn seed_claim(
         ActionDb::from_conn(conn),
         ClaimProposal {
             id: Some(id.to_string()),
+            expected_claim_version: None,
             subject_ref: json!({ "kind": "account", "id": SUBJECT_ACCOUNT_ID }).to_string(),
             claim_type: "risk".to_string(),
             field_path: Some(format!("dos412.{id}")),

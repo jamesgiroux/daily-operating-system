@@ -95,6 +95,7 @@ fn seed_claim(
         ActionDb::from_conn(conn),
         ClaimProposal {
             id: None,
+            expected_claim_version: None,
             subject_ref: subject_ref.to_string(),
             claim_type: "attendee_context".to_string(),
             field_path: Some(field_path.to_string()),

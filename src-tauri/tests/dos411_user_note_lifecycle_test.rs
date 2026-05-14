@@ -62,6 +62,7 @@ fn ctx<'a>(
 fn proposal(text: &str, observed_at: &str, supersedes: Option<&str>) -> ClaimProposal {
     ClaimProposal {
         id: None,
+        expected_claim_version: None,
         subject_ref: serde_json::json!({
             "kind": "account",
             "id": "acct-dos411",

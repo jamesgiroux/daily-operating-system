@@ -879,6 +879,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 171,
         sql: include_str!("migrations/171_dos_565_drop_surface_bearer_token_hash.sql"),
     },
+    Migration::Sql {
+        version: 172,
+        sql: include_str!("migrations/172_dos_567_w4b_versions_and_outbox.sql"),
+    },
 ];
 
 const V155_SHADOW_TRUST_VERSION: i64 = 1_401_003;

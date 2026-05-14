@@ -66,10 +66,7 @@ impl DbKeyProvider for FixtureDbKeyProvider {
         Ok(self.key.clone())
     }
 
-    fn rotate_key(
-        &self,
-        _user: &UserIdentity,
-    ) -> crate::db::key_provider::Result<EncryptionKey> {
+    fn rotate_key(&self, _user: &UserIdentity) -> crate::db::key_provider::Result<EncryptionKey> {
         Ok(self.key.clone())
     }
 }
@@ -125,6 +122,16 @@ impl ActionDb {
                 let _ = self.conn.execute_batch("ROLLBACK");
                 Err(e)
             }
+        }
+    }
+
+    fn recover_stuck_version_mutations_logged(db: &ActionDb) {
+        match crate::services::versioning::recover_stuck_mutation_attempts(db, chrono::Utc::now()) {
+            Ok(0) => {}
+            Ok(count) => log::warn!(
+                "recovered {count} stale in-flight version mutation attempt(s) at startup"
+            ),
+            Err(error) => log::warn!("version mutation startup recovery scan failed: {error}"),
         }
     }
 
@@ -194,6 +201,8 @@ impl ActionDb {
         // Run schema migrations (ADR-0071)
         crate::migrations::run_migrations_with_key(&conn, Some(&encryption_key))
             .map_err(DbError::Migration)?;
+
+        Self::recover_stuck_version_mutations_logged(Self::from_conn(&conn));
 
         // Enable FK constraint enforcement. Set after migrations since
         // migration 010 uses PRAGMA foreign_keys = OFF for table recreation.
@@ -272,6 +281,7 @@ impl ActionDb {
             let conn = svc.open_fresh_serialized(path.clone(), encryption_key)?;
             drop(rotation_lock);
             let db = Self { conn };
+            Self::recover_stuck_version_mutations_logged(&db);
             #[allow(
                 clippy::let_underscore_must_use,
                 reason = "intentional best-effort discard; preserves existing non-blocking behavior"
@@ -327,6 +337,7 @@ impl ActionDb {
         let _ = Self::backfill_stakeholder_columns(&conn);
 
         let db = Self { conn };
+        Self::recover_stuck_version_mutations_logged(&db);
         let _ = db.run_guarded_init_backfill_account_domains();
         Ok(db)
     }

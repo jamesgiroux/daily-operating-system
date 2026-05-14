@@ -47,6 +47,10 @@ use crate::services::comparator_thresholds::{
     ambiguous_base_interval, COMPARATOR_THRESHOLD_VERSION, HIGH_THRESHOLD, LOW_THRESHOLD,
 };
 use crate::services::context::{ClaimDismissalSurface, ServiceContext};
+use crate::services::versioning::{
+    checked_next_version, insert_version_event, mark_mutation_attempt_committed, version_to_i64,
+    MutationGuard, VersionActorKind, VersionEventInsert, VersionEventKind,
+};
 use abilities_runtime::predicates::registry::{PredicateRef, PREDICATE_REGISTRY_VERSION};
 use abilities_runtime::structured_claim::{
     CanonicalStatus, ClaimStatus as StructuredClaimStatus, EntityRef, ObjectValue, Polarity,
@@ -71,6 +75,9 @@ pub struct ClaimProposal {
     /// Runtime writes leave this empty and receive a fresh UUID v4.
     #[serde(default)]
     pub id: Option<String>,
+    /// Expected server-assigned version for existing-claim mutations. Fresh inserts leave this empty.
+    #[serde(default)]
+    pub expected_claim_version: Option<u64>,
     pub subject_ref: String,
     pub claim_type: String,
     pub field_path: Option<String>,
@@ -93,6 +100,42 @@ pub struct ClaimProposal {
     /// If this commit is creating a tombstone, caller signals so via this
     /// enum + retraction_reason text.
     pub tombstone: Option<TombstoneSpec>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "target", rename_all = "snake_case")]
+pub enum ClaimMutationTarget {
+    Insert {
+        subject_ref: String,
+        claim_type: String,
+        dedup_key: Option<String>,
+    },
+    Mutate {
+        claim_id: String,
+        expected_claim_version: u64,
+    },
+}
+
+pub trait MutatingProposal {
+    /// Contract boundary for claim writes. Existing-claim mutations must carry
+    /// the version read from the substrate, never a client-synthesized zero.
+    fn target(&self) -> ClaimMutationTarget;
+}
+
+impl MutatingProposal for ClaimProposal {
+    fn target(&self) -> ClaimMutationTarget {
+        match (&self.id, self.expected_claim_version) {
+            (Some(claim_id), Some(expected_claim_version)) => ClaimMutationTarget::Mutate {
+                claim_id: claim_id.clone(),
+                expected_claim_version,
+            },
+            _ => ClaimMutationTarget::Insert {
+                subject_ref: self.subject_ref.clone(),
+                claim_type: self.claim_type.clone(),
+                dedup_key: None,
+            },
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -199,6 +242,16 @@ pub enum ClaimError {
     UnknownClaimId(String),
     #[error("claim not found: {0}")]
     ClaimNotFound(String),
+    #[error("stale claim version for {claim_id}: expected {expected}, current {current}")]
+    StaleVersion {
+        claim_id: String,
+        expected: u64,
+        current: u64,
+    },
+    #[error("missing expected claim version for {claim_id}")]
+    MissingExpectedClaimVersion { claim_id: String },
+    #[error("claim version overflow for {claim_id}")]
+    ClaimVersionOverflow { claim_id: String },
     #[error("invalid claim feedback: {0}")]
     InvalidFeedback(String),
     #[error("invalid actor: {0}")]
@@ -1356,6 +1409,10 @@ pub(crate) fn ensure_structured_claim_schema_for_tests(
         ("structural_field_content_hash", "TEXT"),
         ("backfill_epoch", "INTEGER NOT NULL DEFAULT 0"),
         ("backfill_attempts", "INTEGER NOT NULL DEFAULT 0"),
+        (
+            "claim_version",
+            "INTEGER NOT NULL DEFAULT 1 CHECK (claim_version BETWEEN 0 AND 9223372036854775807)",
+        ),
     ];
 
     for (name, definition) in columns {
@@ -1366,6 +1423,58 @@ pub(crate) fn ensure_structured_claim_schema_for_tests(
             )?;
         }
     }
+
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS mutation_attempts (
+            mutation_id TEXT PRIMARY KEY,
+            claim_id TEXT,
+            composition_id TEXT,
+            cursor TEXT NOT NULL UNIQUE,
+            started_at TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('in_flight', 'committed', 'aborted')),
+            finalized_at TEXT,
+            CHECK (
+                (status = 'in_flight' AND finalized_at IS NULL)
+                OR (status != 'in_flight' AND finalized_at IS NOT NULL)
+            ),
+            CHECK ((claim_id IS NOT NULL) != (composition_id IS NOT NULL))
+        );
+        CREATE INDEX IF NOT EXISTS idx_mutation_attempts_in_flight
+            ON mutation_attempts (started_at)
+            WHERE status = 'in_flight';
+        CREATE TABLE IF NOT EXISTS version_events (
+            event_seq INTEGER PRIMARY KEY AUTOINCREMENT,
+            cursor TEXT NOT NULL UNIQUE CHECK (length(cursor) = 36 AND cursor GLOB '*-*-*-*-*'),
+            event_kind TEXT NOT NULL CHECK (event_kind IN (
+                'claim.updated', 'claim.corrected', 'claim.superseded', 'claim.tombstoned',
+                'claim.write_rejected', 'claim.conflict_detected',
+                'composition.updated', 'composition.write_rejected', 'mutation_aborted'
+            )),
+            claim_id TEXT,
+            composition_id TEXT,
+            previous_version INTEGER,
+            current_version INTEGER NOT NULL,
+            reason TEXT,
+            scope_redacted INTEGER NOT NULL CHECK (scope_redacted IN (0, 1)),
+            correction_event_log_id TEXT,
+            mutation_id TEXT,
+            created_at TEXT NOT NULL,
+            actor_kind TEXT NOT NULL CHECK (actor_kind IN ('user', 'agent', 'admin', 'system', 'surface_client')),
+            CHECK ((claim_id IS NOT NULL) != (composition_id IS NOT NULL))
+        );
+        CREATE INDEX IF NOT EXISTS idx_version_events_claim
+            ON version_events (claim_id, current_version);
+        CREATE INDEX IF NOT EXISTS idx_version_events_composition
+            ON version_events (composition_id, current_version);
+        CREATE TABLE IF NOT EXISTS composition_versions (
+            composition_id TEXT PRIMARY KEY,
+            composition_version INTEGER NOT NULL,
+            generated_at TEXT NOT NULL,
+            generated_by_invocation_id TEXT NOT NULL,
+            generated_by_actor_kind TEXT NOT NULL,
+            CHECK (composition_version BETWEEN 1 AND 9223372036854775807)
+        );"
+    )?;
 
     Ok(())
 }
@@ -3121,13 +3230,13 @@ fn insert_claim_row_with_structured(
             demotion_reason, reactivated_at, retraction_reason, expires_at,
             superseded_by, trust_score, trust_computed_at, trust_version, thread_id,
             temporal_scope, sensitivity, verification_state, verification_reason,
-            needs_user_decision_at, predicate_ref, polarity, object_value, qualifiers,
+            needs_user_decision_at, claim_version, predicate_ref, polarity, object_value, qualifiers,
             structured_claim_json, canonical_status, non_semantic_mergeable,
             structural_canonical_id, structural_field_content_hash, backfill_epoch
         ) VALUES (
             ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
             ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29,
-            ?30, ?31, ?32, ?33, ?34, ?35, ?36, ?37, ?38, ?39, ?40, ?41, ?42
+            ?30, ?31, ?32, ?33, ?34, ?35, ?36, ?37, ?38, ?39, ?40, ?41, ?42, ?43
         )",
         params![
             &claim.id,
@@ -3162,6 +3271,7 @@ fn insert_claim_row_with_structured(
             enum_to_db(&claim.verification_state)?,
             claim.verification_reason.as_deref(),
             claim.needs_user_decision_at.as_deref(),
+            claim.claim_version,
             structural.predicate_ref.as_deref(),
             structural.polarity.as_deref(),
             structural.object_value.as_deref(),
@@ -3319,9 +3429,9 @@ const CLAIM_COLUMNS: &str = "id, subject_ref, claim_type, field_path, topic_key,
     provenance_json, metadata_json, claim_state, surfacing_state, demotion_reason,
     reactivated_at, retraction_reason, expires_at, superseded_by, trust_score,
     trust_computed_at, trust_version, thread_id, temporal_scope, sensitivity,
-    verification_state, verification_reason, needs_user_decision_at,
+    verification_state, verification_reason, needs_user_decision_at, claim_version,
     canonical_status, non_semantic_mergeable";
-const CLAIM_COLUMN_COUNT: usize = 34;
+const CLAIM_COLUMN_COUNT: usize = 35;
 
 #[derive(Debug, Clone)]
 struct ClaimSurfaceTrustDowngradeInputs {
@@ -3393,8 +3503,13 @@ fn read_claim_row_with_trust_flags(
     row: &rusqlite::Row<'_>,
     shadow_flags: Option<(bool, bool)>,
 ) -> Result<IntelligenceClaim, ClaimError> {
-    let canonical_status_raw: String = row.get(32)?;
-    let non_semantic_mergeable: bool = row.get(33)?;
+    let claim_version = row
+        .get::<_, i64>(32)
+        .ok()
+        .and_then(|value| u64::try_from(value).ok())
+        .unwrap_or(0);
+    let canonical_status_raw: String = row.get(33)?;
+    let non_semantic_mergeable: bool = row.get(34)?;
     let (unresolved_ambiguous_pair, hash_fallback_decision) = shadow_flags.unwrap_or_default();
     let trust_inputs = ClaimSurfaceTrustDowngradeInputs {
         canonical_status: parse_canonical_status(&canonical_status_raw),
@@ -3405,6 +3520,7 @@ fn read_claim_row_with_trust_flags(
 
     Ok(IntelligenceClaim {
         id: row.get(0)?,
+        claim_version,
         subject_ref: row.get(1)?,
         claim_type: row.get(2)?,
         field_path: row.get(3)?,
@@ -3798,8 +3914,8 @@ fn canonical_match_input_from_row(
     row: &rusqlite::Row<'_>,
 ) -> rusqlite::Result<CanonicalMatchInput> {
     let claim = read_claim_row_sqlite(row)?;
-    let canonical_status_raw: String = row.get(32)?;
-    let non_semantic_mergeable: bool = row.get(33)?;
+    let canonical_status_raw: String = row.get(33)?;
+    let non_semantic_mergeable: bool = row.get(34)?;
     let predicate_ref_raw: Option<String> = row.get(CLAIM_COLUMN_COUNT)?;
     let polarity_raw: Option<String> = row.get(CLAIM_COLUMN_COUNT + 1)?;
     let object_value_raw: Option<String> = row.get(CLAIM_COLUMN_COUNT + 2)?;
@@ -3872,8 +3988,14 @@ fn canonical_match_input_from_row(
 }
 
 fn read_claim_row_sqlite(row: &rusqlite::Row<'_>) -> rusqlite::Result<IntelligenceClaim> {
+    let claim_version = row
+        .get::<_, i64>(32)
+        .ok()
+        .and_then(|value| u64::try_from(value).ok())
+        .unwrap_or(0);
     Ok(IntelligenceClaim {
         id: row.get(0)?,
+        claim_version,
         subject_ref: row.get(1)?,
         claim_type: row.get(2)?,
         field_path: row.get(3)?,
@@ -5085,15 +5207,117 @@ fn initial_trust_score(kind: ClaimType) -> Option<f64> {
     }
 }
 
+fn current_claim_version_for_id_tx(tx: &ActionDb, claim_id: &str) -> Result<u64, ClaimError> {
+    tx.conn_ref()
+        .query_row(
+            "SELECT claim_version FROM intelligence_claims WHERE id = ?1",
+            params![claim_id],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()?
+        .ok_or_else(|| ClaimError::ClaimNotFound(claim_id.to_string()))
+        .and_then(|version| {
+            u64::try_from(version).map_err(|_| {
+                ClaimError::Transaction(format!(
+                    "claim {claim_id} has negative claim_version {version}"
+                ))
+            })
+        })
+}
+
+fn bump_existing_claim_version_tx(tx: &ActionDb, claim_id: &str) -> Result<(u64, u64), ClaimError> {
+    let previous = current_claim_version_for_id_tx(tx, claim_id)?;
+    let current =
+        checked_next_version(previous).ok_or_else(|| ClaimError::ClaimVersionOverflow {
+            claim_id: claim_id.to_string(),
+        })?;
+    tx.conn_ref().execute(
+        "UPDATE intelligence_claims SET claim_version = ?2 WHERE id = ?1",
+        params![claim_id, version_to_i64(current)],
+    )?;
+    Ok((previous, current))
+}
+
+fn enforce_claim_mutation_target_tx(
+    tx: &ActionDb,
+    target: &ClaimMutationTarget,
+) -> Result<Option<(String, u64, u64)>, ClaimError> {
+    match target {
+        ClaimMutationTarget::Insert { .. } => Ok(None),
+        ClaimMutationTarget::Mutate {
+            claim_id,
+            expected_claim_version,
+        } => {
+            if *expected_claim_version == 0 {
+                return Err(ClaimError::MissingExpectedClaimVersion {
+                    claim_id: claim_id.clone(),
+                });
+            }
+            let current = current_claim_version_for_id_tx(tx, claim_id)?;
+            if *expected_claim_version != current {
+                return Err(ClaimError::StaleVersion {
+                    claim_id: claim_id.clone(),
+                    expected: *expected_claim_version,
+                    current,
+                });
+            }
+            let next =
+                checked_next_version(current).ok_or_else(|| ClaimError::ClaimVersionOverflow {
+                    claim_id: claim_id.clone(),
+                })?;
+            Ok(Some((claim_id.clone(), current, next)))
+        }
+    }
+}
+
+struct ClaimVersionEventWrite<'a> {
+    claim_id: &'a str,
+    previous_version: Option<u64>,
+    current_version: u64,
+    event_kind: VersionEventKind,
+    now: &'a str,
+    actor_kind: VersionActorKind,
+}
+
+fn finish_claim_version_event_tx(
+    tx: &ActionDb,
+    attempt: &crate::services::versioning::MutationAttempt,
+    event: ClaimVersionEventWrite<'_>,
+) -> Result<(), ClaimError> {
+    insert_version_event(
+        tx,
+        VersionEventInsert {
+            cursor: &attempt.cursor,
+            event_kind: event.event_kind,
+            claim_id: Some(event.claim_id),
+            composition_id: None,
+            previous_version: event.previous_version,
+            current_version: event.current_version,
+            reason: None,
+            scope_redacted: false,
+            correction_event_log_id: None,
+            mutation_id: Some(&attempt.mutation_id),
+            created_at: event.now,
+            actor_kind: event.actor_kind,
+        },
+    )?;
+    mark_mutation_attempt_committed(tx, attempt, event.claim_id, event.now)?;
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // commit_claim
 // ---------------------------------------------------------------------------
 
-pub fn commit_claim(
+pub fn commit_claim<P>(
     ctx: &ServiceContext<'_>,
     db: &ActionDb,
-    proposal: ClaimProposal,
-) -> Result<CommittedClaim, ClaimError> {
+    proposal: P,
+) -> Result<CommittedClaim, ClaimError>
+where
+    P: MutatingProposal + Into<ClaimProposal>,
+{
+    let mut proposal: ClaimProposal = proposal.into();
     ctx.check_mutation_allowed()
         .map_err(|e| ClaimError::Mode(e.to_string()))?;
 
@@ -5211,6 +5435,20 @@ pub fn commit_claim(
         )
     };
 
+    let mutation_target = proposal.target();
+    let attempt_claim_id = match &mutation_target {
+        ClaimMutationTarget::Mutate { claim_id, .. } => claim_id.clone(),
+        ClaimMutationTarget::Insert { .. } => proposal
+            .id
+            .clone()
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+    };
+    if proposal.id.is_none() {
+        proposal.id = Some(attempt_claim_id.clone());
+    }
+    let mut mutation_guard = MutationGuard::reserve(db, attempt_claim_id, ctx.clock.now())?;
+    let actor_kind = VersionActorKind::from_service_actor(ctx.actor);
+
     let key = (
         subject_ref_compact.clone(),
         proposal.claim_type.clone(),
@@ -5224,6 +5462,11 @@ pub fn commit_claim(
     let _guard = lock.lock();
 
     let committed = with_claim_transaction(db, |tx| {
+        let accepted_mutation = enforce_claim_mutation_target_tx(tx, &mutation_target)?;
+        let inserted_claim_version = accepted_mutation
+            .as_ref()
+            .map(|(_, _, next)| *next)
+            .unwrap_or(1);
         let now = ctx.clock.now().to_rfc3339();
         let claim_metadata_json = link_map::metadata_with_structured_field(
             proposal.metadata_json.as_deref(),
@@ -5299,6 +5542,7 @@ pub fn commit_claim(
                 .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
             let claim = IntelligenceClaim {
                 id: new_id.clone(),
+                claim_version: inserted_claim_version,
                 subject_ref: subject_ref_compact.clone(),
                 claim_type: proposal.claim_type.clone(),
                 field_path: proposal.field_path.clone(),
@@ -5370,6 +5614,18 @@ pub fn commit_claim(
             )?;
 
             tx.bump_for_subject(&subject)?;
+            finish_claim_version_event_tx(
+                tx,
+                mutation_guard.attempt(),
+                ClaimVersionEventWrite {
+                    claim_id: &claim.id,
+                    previous_version: None,
+                    current_version: claim.claim_version,
+                    event_kind: VersionEventKind::ClaimSuperseded,
+                    now: &now,
+                    actor_kind,
+                },
+            )?;
             return Ok(CommittedClaim::Inserted { claim });
         }
 
@@ -5403,7 +5659,7 @@ pub fn commit_claim(
             && !matches!(metadata.commit_policy_class, CommitPolicyClass::Append)
         {
             let mut canonical_duplicate_needs_verification = None;
-            if let Some(existing) = load_active_claim_by_dedup_key(
+            if let Some(mut existing) = load_active_claim_by_dedup_key(
                 tx.conn_ref(),
                 &dedup_key,
                 &effective_temporal_scope,
@@ -5424,7 +5680,22 @@ pub fn commit_claim(
                     &proposal.text,
                 );
                 insert_claim_edges(tx, &edge_claim)?;
+                let (previous_version, current_version) =
+                    bump_existing_claim_version_tx(tx, &existing.id)?;
+                existing.claim_version = current_version;
                 tx.bump_for_subject(&subject)?;
+                finish_claim_version_event_tx(
+                    tx,
+                    mutation_guard.attempt(),
+                    ClaimVersionEventWrite {
+                        claim_id: &existing.id,
+                        previous_version: Some(previous_version),
+                        current_version,
+                        event_kind: VersionEventKind::ClaimUpdated,
+                        now: &now,
+                        actor_kind,
+                    },
+                )?;
                 return Ok(CommittedClaim::Reinforced {
                     claim: existing,
                     corroboration_id,
@@ -5460,24 +5731,40 @@ pub fn commit_claim(
                             Some(source_mechanism),
                             &now,
                         )?;
+                        let mut matched_claim = semantic_match.claim;
                         insert_semantic_evidence_in_tx(
                             tx,
-                            &semantic_match.claim.id,
+                            &matched_claim.id,
                             &corroboration_id,
                             &proposal,
                             source_mechanism,
                             &now,
                         )?;
-                        let mut edge_claim = semantic_match.claim.clone();
+                        let mut edge_claim = matched_claim.clone();
                         edge_claim.metadata_json = link_map::metadata_with_structured_field(
                             edge_claim.metadata_json.as_deref(),
                             proposal.field_path.as_deref(),
                             &proposal.text,
                         );
                         insert_claim_edges(tx, &edge_claim)?;
+                        let (previous_version, current_version) =
+                            bump_existing_claim_version_tx(tx, &matched_claim.id)?;
+                        matched_claim.claim_version = current_version;
                         tx.bump_for_subject(&subject)?;
+                        finish_claim_version_event_tx(
+                            tx,
+                            mutation_guard.attempt(),
+                            ClaimVersionEventWrite {
+                                claim_id: &matched_claim.id,
+                                previous_version: Some(previous_version),
+                                current_version,
+                                event_kind: VersionEventKind::ClaimUpdated,
+                                now: &now,
+                                actor_kind,
+                            },
+                        )?;
                         return Ok(CommittedClaim::Reinforced {
-                            claim: semantic_match.claim,
+                            claim: matched_claim,
                             corroboration_id,
                         });
                     }
@@ -5517,6 +5804,7 @@ pub fn commit_claim(
                     .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
                 let contradicting = IntelligenceClaim {
                     id: new_id.clone(),
+                    claim_version: inserted_claim_version,
                     subject_ref: subject_ref_compact.clone(),
                     claim_type: proposal.claim_type.clone(),
                     field_path: proposal.field_path.clone(),
@@ -5583,6 +5871,18 @@ pub fn commit_claim(
                 )?;
 
                 tx.bump_for_subject(&subject)?;
+                finish_claim_version_event_tx(
+                    tx,
+                    mutation_guard.attempt(),
+                    ClaimVersionEventWrite {
+                        claim_id: &contradicting.id,
+                        previous_version: None,
+                        current_version: contradicting.claim_version,
+                        event_kind: VersionEventKind::ClaimConflictDetected,
+                        now: &now,
+                        actor_kind,
+                    },
+                )?;
 
                 return Ok(CommittedClaim::Forked {
                     primary_claim: primary,
@@ -5598,6 +5898,7 @@ pub fn commit_claim(
                 let trust_score = Some(needs_verification_score());
                 let claim = IntelligenceClaim {
                     id,
+                    claim_version: inserted_claim_version,
                     subject_ref: subject_ref_compact,
                     claim_type: proposal.claim_type.clone(),
                     field_path: proposal.field_path.clone(),
@@ -5658,6 +5959,18 @@ pub fn commit_claim(
                 project_legacy_state_for_claim(ctx, tx, &claim)?;
                 insert_claim_edges(tx, &claim)?;
                 tx.bump_for_subject(&subject)?;
+                finish_claim_version_event_tx(
+                    tx,
+                    mutation_guard.attempt(),
+                    ClaimVersionEventWrite {
+                        claim_id: &claim.id,
+                        previous_version: None,
+                        current_version: claim.claim_version,
+                        event_kind: VersionEventKind::ClaimUpdated,
+                        now: &now,
+                        actor_kind,
+                    },
+                )?;
                 return Ok(CommittedClaim::Inserted { claim });
             }
         }
@@ -5679,6 +5992,7 @@ pub fn commit_claim(
             };
         let claim = IntelligenceClaim {
             id,
+            claim_version: inserted_claim_version,
             subject_ref: subject_ref_compact,
             claim_type: proposal.claim_type.clone(),
             field_path: proposal.field_path.clone(),
@@ -5736,6 +6050,23 @@ pub fn commit_claim(
             insert_claim_edges(tx, &claim)?;
         }
         tx.bump_for_subject(&subject)?;
+        let event_kind = if proposal.tombstone.is_some() {
+            VersionEventKind::ClaimTombstoned
+        } else {
+            VersionEventKind::ClaimUpdated
+        };
+        finish_claim_version_event_tx(
+            tx,
+            mutation_guard.attempt(),
+            ClaimVersionEventWrite {
+                claim_id: &claim.id,
+                previous_version: None,
+                current_version: claim.claim_version,
+                event_kind,
+                now: &now,
+                actor_kind,
+            },
+        )?;
 
         if proposal.tombstone.is_some() {
             Ok(CommittedClaim::Tombstoned { claim })
@@ -5743,6 +6074,8 @@ pub fn commit_claim(
             Ok(CommittedClaim::Inserted { claim })
         }
     })?;
+
+    mutation_guard.mark_completed();
 
     if let Err(error) = record_shadow_canonicalization_for_committed_claim(ctx, db, &committed) {
         log::warn!(
@@ -6446,7 +6779,7 @@ fn targeted_repair_enqueue_invalidation(
     };
 
     let subject_type = subject_type.to_ascii_lowercase();
-    let source_claim_version = tx.current_claim_version_for_subject(&subject_type, subject_id)?;
+    let source_claim_version = tx.current_subject_claim_version(&subject_type, subject_id)?;
     let input_snapshot_hash =
         targeted_repair_input_hash(&subject_type, subject_id, claim_id, source_claim_version);
     let prompt_fingerprint = targeted_repair_prompt_fingerprint(&input_snapshot_hash);
@@ -6850,7 +7183,7 @@ fn targeted_repair_reschedule_if_stale(
     payload: &TargetedRepairPayload,
 ) -> Result<bool, ClaimError> {
     let current_source_claim_version =
-        tx.current_claim_version_for_subject(&job.subject_type, &job.subject_id)?;
+        tx.current_subject_claim_version(&job.subject_type, &job.subject_id)?;
     if current_source_claim_version <= job.latest_source_claim_version {
         return Ok(false);
     }
@@ -7446,6 +7779,7 @@ fn targeted_repair_insert_replacement_claim(
     let target_subject_ref = canonical_subject_ref(target_subject)?;
     let proposal = ClaimProposal {
         id: None,
+        expected_claim_version: None,
         subject_ref: target_subject_ref,
         claim_type: original.claim_type.clone(),
         field_path: original.field_path.clone(),
@@ -7697,7 +8031,7 @@ fn targeted_repair_complete_invalidation_job(
     now: &str,
 ) -> Result<(), ClaimError> {
     let current_source_claim_version = tx
-        .current_claim_version_for_subject(&job.subject_type, &job.subject_id)
+        .current_subject_claim_version(&job.subject_type, &job.subject_id)
         .unwrap_or(job.latest_source_claim_version);
     let stale_marker = if current_source_claim_version > job.latest_source_claim_version {
         Some(
@@ -8555,6 +8889,7 @@ pub fn shadow_write_tombstone_claim(
 
     let proposal = ClaimProposal {
         id: None,
+        expected_claim_version: None,
         subject_ref,
         claim_type: claim_type.to_string(),
         field_path: field_path.map(|s| s.to_string()),
@@ -10548,6 +10883,7 @@ mod tests {
     fn proposal(text: &str) -> ClaimProposal {
         ClaimProposal {
             id: None,
+            expected_claim_version: None,
             subject_ref: SUBJECT.to_string(),
             claim_type: "risk".to_string(),
             field_path: Some("health.risk".to_string()),
@@ -10708,6 +11044,7 @@ mod tests {
             compute_dedup_key(&hash, &compact_subject_ref, claim_type, Some("health.risk"));
         let claim = IntelligenceClaim {
             id: id.to_string(),
+            claim_version: 1,
             subject_ref: compact_subject_ref,
             claim_type: claim_type.to_string(),
             field_path: Some("health.risk".to_string()),
@@ -11618,6 +11955,7 @@ mod tests {
         let dedup_key = compute_dedup_key(&hash, &subject_ref, "risk", Some("stakeholders"));
         let existing = IntelligenceClaim {
             id: "claim-pre-edge".to_string(),
+            claim_version: 1,
             subject_ref,
             claim_type: "risk".to_string(),
             field_path: Some("stakeholders".to_string()),
@@ -14128,7 +14466,9 @@ mod tests {
         // v2: polarity-flip routes to Fork polarity_distinct, no contradiction edge.
         match result {
             CommittedClaim::Inserted { claim } => assert_ne!(claim.id, primary_id),
-            other => panic!("negated secured claim must insert as polarity-distinct, got {other:?}"),
+            other => {
+                panic!("negated secured claim must insert as polarity-distinct, got {other:?}")
+            }
         }
 
         let active = load_claims_active(&db, SUBJECT, Some("risk")).unwrap();

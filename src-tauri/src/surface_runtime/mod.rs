@@ -16,6 +16,7 @@ use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper_util::rt::TokioIo;
 use parking_lot::{Mutex, RwLock};
+use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::net::TcpListener;
@@ -25,9 +26,9 @@ use uuid::Uuid;
 
 use crate::abilities::NOOP_ABILITY_TRACER;
 use crate::bridges::surface_client::{
-    SurfaceClientAbilityClassLimits, SurfaceClientBridge, SurfaceClientBridgeConfig,
-    SurfaceClientBridgeError, SurfaceClientRateLimitAxis, SurfaceClientRateLimitBudget,
-    SurfaceClientRequestClassLimits,
+    validate_session_bound_wp_user_id, SurfaceClientAbilityClassLimits, SurfaceClientBridge,
+    SurfaceClientBridgeConfig, SurfaceClientBridgeError, SurfaceClientRateLimitAxis,
+    SurfaceClientRateLimitBudget, SurfaceClientRequestClassLimits,
 };
 use crate::bridges::types::{
     invoke_registry_json_for_actor, provider_from_context_snapshot, surface_error, BridgeActor,
@@ -792,6 +793,9 @@ async fn signed_transport_response(
 }
 
 fn is_supported_signed_route(method: &Method, path: &str) -> bool {
+    if method == Method::GET && path.starts_with("/v1/surface/event-log/") {
+        return true;
+    }
     matches!(
         (method, path),
         (&Method::GET, "/v1/pairing/status")
@@ -1215,12 +1219,117 @@ async fn compensate_failed_session_registration(
     }
 }
 
+async fn surface_event_log_response(
+    runtime: &EndpointRuntime,
+    path: &str,
+    request_id: String,
+) -> Response<ResponseBody> {
+    let event_log_id = path
+        .trim_start_matches("/v1/surface/event-log/")
+        .trim()
+        .to_string();
+    if event_log_id.is_empty() || event_log_id.len() > 128 {
+        return error_response(
+            SurfaceHttpError::bad_request("event_log_id_invalid").with_request_id(request_id),
+        );
+    }
+    let Some(app_state) = runtime.app_state.as_ref().cloned() else {
+        return error_response(SurfaceHttpError::runtime_unavailable().with_request_id(request_id));
+    };
+    let lookup_id = event_log_id.clone();
+    let row = match app_state
+        .db_read(move |db| {
+            db.conn_ref()
+                .query_row(
+                    "SELECT event_seq, cursor, event_kind, claim_id, composition_id,
+                            previous_version, current_version, reason, scope_redacted,
+                            correction_event_log_id, mutation_id, created_at, actor_kind
+                     FROM version_events
+                     WHERE cursor = ?1 OR correction_event_log_id = ?1
+                     ORDER BY event_seq DESC
+                     LIMIT 1",
+                    rusqlite::params![lookup_id],
+                    |row| {
+                        Ok(json!({
+                            "event_seq": row.get::<_, i64>(0)?,
+                            "cursor": row.get::<_, String>(1)?,
+                            "event_kind": row.get::<_, String>(2)?,
+                            "claim_id": row.get::<_, Option<String>>(3)?,
+                            "composition_id": row.get::<_, Option<String>>(4)?,
+                            "previous_version": row.get::<_, Option<i64>>(5)?,
+                            "current_version": row.get::<_, i64>(6)?,
+                            "reason": row.get::<_, Option<String>>(7)?,
+                            "scope_redacted": row.get::<_, i64>(8)? != 0,
+                            "correction_event_log_id": row.get::<_, Option<String>>(9)?,
+                            "mutation_id": row.get::<_, Option<String>>(10)?,
+                            "created_at": row.get::<_, String>(11)?,
+                            "actor_kind": row.get::<_, String>(12)?,
+                        }))
+                    },
+                )
+                .optional()
+                .map_err(|error| error.to_string())
+        })
+        .await
+    {
+        Ok(row) => row,
+        Err(error) => {
+            return error_response(
+                SurfaceHttpError::from_pairing_error(SurfacePairingError::Write(error))
+                    .with_request_id(request_id),
+            );
+        }
+    };
+    let Some(event) = row else {
+        return error_response(SurfaceHttpError::route_not_found().with_request_id(request_id));
+    };
+    json_response(
+        StatusCode::OK,
+        json!({
+            "ok": true,
+            "request_id": request_id,
+            "event": event,
+            "correction": {
+                "claim": null,
+                "scope_redacted": true,
+                "reason": "out_of_scope",
+                "cursor": event_log_id,
+            }
+        }),
+    )
+}
+
 async fn signed_route_response(
     request: &SurfaceHttpRequest,
     runtime: &EndpointRuntime,
     validated: ValidatedSurfaceSession,
     request_id: String,
 ) -> Response<ResponseBody> {
+    if let Ok(payload) = serde_json::from_slice::<serde_json::Value>(&request.body) {
+        if let Err(rejection) = validate_session_bound_wp_user_id(&validated, &payload) {
+            if let Some(app_state) = runtime.app_state.as_ref() {
+                emit_pairing_audit_event(
+                    app_state,
+                    &SurfacePairingAuditEvent {
+                        event_kind: "wrong_user_rejected",
+                        category: "security",
+                        actor: validated.actor.clone(),
+                        wp_user_id: validated.wp_user_id,
+                        wp_user_hash: validated.wp_user_hash.clone(),
+                        detail: json!({
+                            "surface_client_id": rejection.surface_client_id,
+                            "session_wp_user_id": rejection.session_wp_user_id,
+                            "asserted_wp_user_id": rejection.asserted_wp_user_id,
+                            "decision": "rejected",
+                            "reason": "wrong_user"
+                        }),
+                    },
+                );
+            }
+            return error_response(SurfaceHttpError::wrong_user().with_request_id(request_id));
+        }
+    }
+
     match (request.method.clone(), request.uri.path()) {
         (Method::GET, "/v1/pairing/status") => json_response(
             StatusCode::OK,
@@ -1233,6 +1342,9 @@ async fn signed_route_response(
                 "site_binding_digest": validated.site_binding_digest,
             }),
         ),
+        (Method::GET, path) if path.starts_with("/v1/surface/event-log/") => {
+            surface_event_log_response(runtime, path, request_id).await
+        }
         (Method::GET, "/v1/surface/abilities") => {
             match surface_pairing::authorized_ability_projection(&validated.granted_scopes) {
                 Ok(projection) => json_response(
@@ -1391,6 +1503,45 @@ fn surface_bridge_error(error: SurfaceClientBridgeError) -> SurfaceHttpError {
 
 fn bridge_surface_error(error: BridgeSurfaceError) -> SurfaceHttpError {
     match error {
+        BridgeSurfaceError::ProjectionTampered { .. } => SurfaceHttpError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "projection_tampered",
+            "The submitted projection could not be verified.",
+            "Refresh the DailyOS projection and retry.",
+        ),
+        BridgeSurfaceError::ProjectionVersionRollback { .. } => SurfaceHttpError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "projection_version_rollback",
+            "The submitted projection is older than the current DailyOS ledger.",
+            "Refresh the DailyOS projection and retry.",
+        ),
+        BridgeSurfaceError::MissingExpectedClaimVersion { .. } => {
+            SurfaceHttpError::bad_request("missing_expected_claim_version")
+        }
+        BridgeSurfaceError::MidFlightMutation { .. } => SurfaceHttpError::new(
+            StatusCode::LOCKED,
+            "mid_flight_mutation",
+            "Another accepted mutation is still being finalized.",
+            "Wait for the mutation cursor event, then retry if needed.",
+        ),
+        BridgeSurfaceError::ClaimVersionOverflow { .. } => SurfaceHttpError::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "claim_version_overflow",
+            "DailyOS could not assign a new claim version.",
+            "Restart DailyOS and run diagnostics before retrying.",
+        ),
+        BridgeSurfaceError::StaleVersion { .. } => SurfaceHttpError::new(
+            StatusCode::CONFLICT,
+            "stale_watermark",
+            "The submitted claim version is stale.",
+            "Refresh the claim projection and retry.",
+        ),
+        BridgeSurfaceError::StaleComposition { .. } => SurfaceHttpError::new(
+            StatusCode::CONFLICT,
+            "stale_composition_watermark",
+            "The submitted composition version is stale.",
+            "Refresh the composition projection and retry.",
+        ),
         BridgeSurfaceError::Validation(_) => {
             SurfaceHttpError::bad_request("surface_invoke_invalid")
         }
@@ -1646,6 +1797,15 @@ impl SurfaceHttpError {
             "identity_mismatch",
             "The DailyOS surface session identity does not match the paired site.",
             "Review the paired site identity in DailyOS and pair the site again.",
+        )
+    }
+
+    fn wrong_user() -> Self {
+        Self::new(
+            StatusCode::FORBIDDEN,
+            "wrong_user",
+            "The request user does not match the paired DailyOS surface session.",
+            "Refresh the paired DailyOS session and retry as the same WordPress user.",
         )
     }
 

@@ -249,6 +249,39 @@ impl Serialize for AbilityResponseJson {
 #[derive(Debug, Clone, PartialEq, Error, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BridgeSurfaceError {
+    #[error("projection tampered: {reason}")]
+    ProjectionTampered { reason: String },
+    #[error("projection version rollback")]
+    ProjectionVersionRollback {
+        expected: u64,
+        current: u64,
+        surface: String,
+    },
+    #[error("missing expected claim version for {claim_id}")]
+    MissingExpectedClaimVersion { claim_id: String },
+    #[error("mid-flight mutation for {claim_id}")]
+    MidFlightMutation {
+        claim_id: String,
+        mutation_id: String,
+        retry_after_event: String,
+    },
+    #[error("claim version overflow for {claim_id}")]
+    ClaimVersionOverflow { claim_id: String },
+    #[error("stale claim version for {claim_id}: expected {expected}, current {current}")]
+    StaleVersion {
+        claim_id: String,
+        expected: u64,
+        current: u64,
+        correction: Option<serde_json::Value>,
+    },
+    #[error(
+        "stale composition version for {composition_id}: expected {expected}, current {current}"
+    )]
+    StaleComposition {
+        composition_id: String,
+        expected: u64,
+        current: u64,
+    },
     #[error("ability unavailable")]
     AbilityUnavailable,
     #[error("{0}")]
@@ -1276,6 +1309,7 @@ mod tests {
     ) -> crate::db::claims::IntelligenceClaim {
         crate::db::claims::IntelligenceClaim {
             id: "claim-tauri-surface-visible-on-entity-detail".to_string(),
+            claim_version: 1,
             subject_ref: serde_json::json!({
                 "kind": entity_type,
                 "id": entity_id,
