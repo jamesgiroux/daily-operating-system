@@ -4507,10 +4507,10 @@ mod tests {
         )
         .expect("seed c5 zero-version shadow row");
 
-        let applied = run_migrations(&conn).expect("v157-v170 migrations should succeed");
+        let applied = run_migrations(&conn).expect("v157-v171 migrations should succeed");
         assert_eq!(
-            applied, 14,
-            "v157-v170 should be pending after rollback to v156"
+            applied, 15,
+            "v157-v171 should be pending after rollback to v156"
         );
         assert_eq!(
             current_version(&conn).expect("current version"),
@@ -4581,10 +4581,10 @@ mod tests {
         )
         .expect("seed v156-recorded live score");
 
-        let applied = run_migrations(&conn).expect("v157-v170 migrations should succeed");
+        let applied = run_migrations(&conn).expect("v157-v171 migrations should succeed");
         assert_eq!(
-            applied, 14,
-            "v157-v170 should be pending after rollback to v156"
+            applied, 15,
+            "v157-v171 should be pending after rollback to v156"
         );
         assert_eq!(
             current_version(&conn).expect("current version"),
@@ -4660,10 +4660,10 @@ mod tests {
         )
         .expect("seed partial v155 shadow row");
 
-        let applied = run_migrations(&conn).expect("v156-v170 migrations should succeed");
+        let applied = run_migrations(&conn).expect("v156-v171 migrations should succeed");
         assert_eq!(
-            applied, 15,
-            "v156-v170 should be pending after rollback to v155"
+            applied, 16,
+            "v156-v171 should be pending after rollback to v155"
         );
         assert_eq!(
             current_version(&conn).expect("current version"),
