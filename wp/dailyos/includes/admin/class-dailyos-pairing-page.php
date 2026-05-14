@@ -82,9 +82,9 @@ final class DailyOS_Pairing_Page {
 		if ( '' !== $multisite_blog_id ) {
 			$wp_context['multisite_blog_id'] = $multisite_blog_id;
 		}
-		$credential_store     = new DailyOS_Credential_Store();
-		$runtime_client       = new DailyOS_Runtime_Client( $credential_store, new DailyOS_Hmac_Signer() );
-		$result               = $runtime_client->handshake( $pairing_code, $wp_context );
+		$credential_store = new DailyOS_Credential_Store();
+		$runtime_client   = new DailyOS_Runtime_Client( $credential_store, new DailyOS_Hmac_Signer() );
+		$result           = $runtime_client->handshake( $pairing_code, $wp_context );
 
 		if ( true === ( $result['ok'] ?? false ) ) {
 			$now_gmt             = gmdate( 'Y-m-d H:i:s', time() );

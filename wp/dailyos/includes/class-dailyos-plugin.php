@@ -65,6 +65,7 @@ final class DailyOS_Plugin {
 		// WP 6.9+ requires ability registration on the dedicated abilities-API hook.
 		// Calling wp_register_ability() outside this action triggers a _doing_it_wrong
 		// notice and skips the registration entirely.
+		add_action( 'wp_abilities_api_categories_init', [ $this, 'register_ability_categories' ], 10 );
 		add_action( 'wp_abilities_api_init', [ $this, 'register_abilities' ], 10 );
 		add_action( 'init', [ $this, 'register_blocks' ], 11 );
 		add_action( 'init', [ $this, 'register_mcp_server_config' ], 12 );
@@ -106,6 +107,14 @@ final class DailyOS_Plugin {
 	public function register_abilities(): void {
 		$registry = new DailyOS_Ability_Registry();
 		$registry->register_all();
+	}
+
+	/**
+	 * Register DailyOS ability categories from the local inventory.
+	 */
+	public function register_ability_categories(): void {
+		$registry = new DailyOS_Ability_Registry();
+		$registry->register_categories();
 	}
 
 	/**
@@ -164,6 +173,26 @@ final class DailyOS_Plugin {
 	 */
 	public function register_mcp_server_config(): void {
 		DailyOS_Mcp_Roles::register();
+
+		if ( function_exists( 'add_filter' ) ) {
+			add_filter(
+				'dailyos_surfaceclient_resolved_scopes',
+				static function (): array {
+					$marker = ( new DailyOS_Credential_Store() )->get_marker();
+
+					if ( null === $marker || ! isset( $marker['granted_scopes'] ) || ! is_array( $marker['granted_scopes'] ) ) {
+						return [];
+					}
+
+					return array_values(
+						array_filter(
+							$marker['granted_scopes'],
+							static fn( mixed $scope ): bool => is_string( $scope )
+						)
+					);
+				}
+			);
+		}
 
 		$registry = new DailyOS_Ability_Registry();
 		$resolver = static function (): array {

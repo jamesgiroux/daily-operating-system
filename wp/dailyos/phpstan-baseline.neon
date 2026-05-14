@@ -1,17 +1,7 @@
 parameters:
 	ignoreErrors:
 		-
-			message: "#^Call to function is_wp_error\\(\\) with WP_Ability\\|null will always evaluate to false\\.$#"
-			count: 1
-			path: includes/class-dailyos-ability-registry.php
-
-		-
 			message: "#^Constant DAILYOS_PLUGIN_DIR not found\\.$#"
-			count: 1
-			path: includes/class-dailyos-ability-registry.php
-
-		-
-			message: "#^is_wp_error\\(WP_Ability\\|null\\) will always evaluate to false\\.$#"
 			count: 1
 			path: includes/class-dailyos-ability-registry.php
 

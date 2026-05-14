@@ -171,7 +171,14 @@ final class DailyOS_Credential_Store {
 
 		$this->session_material_loaded = true;
 
-		if ( function_exists( 'current_user_can' ) && ! current_user_can( 'manage_options' ) ) {
+		// DOS 599: MCP runtime runs as substrate user with invoke capability, not manage_options.
+		if (
+			function_exists( 'current_user_can' )
+			&& ! (
+				current_user_can( 'manage_options' )
+				|| user_can( get_current_user_id(), 'dailyos_invoke_mcp_ability' )
+			)
+		) {
 			return null;
 		}
 
