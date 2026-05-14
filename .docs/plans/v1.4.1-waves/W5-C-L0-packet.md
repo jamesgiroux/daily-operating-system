@@ -667,3 +667,62 @@ Golden tests in Stage-2 fixtures:
 - Codex F5 maps to Post-synthesis source_ref membership check
 - Codex F6 maps to Revoked-Glean revalidation
 - Codex F7 maps to trajectory_delta_v1 contract pinned
+
+## V3 Cycle-2 Fold (2026-05-14)
+
+Cycle-2 L0 panel: architect APPROVE (no blockers); codex BLOCK with 2 residual + 2 new findings. V3 closes all four.
+
+### Channel-audit exact line citations (folds Codex C2-F1 residual)
+
+V2 said "grep at implementation time." V3 pins exact citations:
+
+- **Channel 1 (subject-ref claims via load_claims_active):** `src-tauri/src/services/claims.rs:3462` — `prompt_input_sensitivity_allowed(sensitivity: &ClaimSensitivity) -> bool`. Helper is shared across all prompt-input boundaries.
+- **Channel 2 (source-ref claims via load_claims_active_by_source_ref):** same helper at `src-tauri/src/services/claims.rs:3462`.
+- **Channel 3 (snapshot.claims → EvidenceSource):** gate applied at `src-tauri/src/services/claims.rs:3473` — `prompt_input_sensitivity_name_allowed(sensitivity: &str) -> bool` for string-form sensitivity at the snapshot→EvidenceSource boundary.
+- **Channel 4 (composed get_entity_context children):** gate applied AT DOS-222's parent boundary (not relying on get_entity_context's own gate). See §"Channel 4 parent-boundary gate clarification" below.
+- **Channel 5 (test seam):** `PrepareRiskShiftInput.context` carries `#[serde(skip_deserializing)]` per the cycle-4 pilot pattern; MCP/Agent cannot inject fabricated context JSON.
+- **Channel 6 (rendered prompt + canonical JSON):** gate applied at `src-tauri/abilities-runtime/src/abilities/transform/detect_risk_shift/synthesis.rs::prepare_prompt_inputs` (file path is the implementation contract; the V1 location for prepare_meeting's analogous helper is `prepare_meeting/synthesis.rs::prepare_prompt_inputs`; DOS-222 implementation will create the same helper for risk-shift and apply the centralized gate from `services/claims.rs:3462` before canonical JSON serialization).
+- **Channel 7 (template variables in `detect_risk_shift.v{n}.txt`):** gate applied at the same `prepare_prompt_inputs` site that produces the template-variable bindings; bindings derive from already-gated channel-6 inputs, so no separate Channel-7 enforcement beyond ensuring template only references variables whose underlying data passed channel-6.
+- **Channel 8 (output-only provenance fields):** no gate needed — provenance is metadata, not sent to provider.
+- **Channel 9 (non-claim prompt data):** no gate needed — entity_id and window parameters carry no claim text.
+
+### Channel 4 parent-boundary gate clarification (folds Codex C2-NEW Channel-4 contradiction)
+
+V2 §"Channel-audit citations" line 591 said get_entity_context's boundary gate suffices for Channel 4. That contradicts V1 §163 which requires DOS-222 to apply its own boundary gate. V3 resolves: **DOS-222 applies the centralized `prompt_input_sensitivity_allowed` gate independently at its own boundary**, not relying on get_entity_context's gate. Rationale per the v1.4.0 W5 cycle-7 lesson: aggregates surface combinations a child gate doesn't see. The double-gate is the pilot-validated invariant.
+
+### Judge config pinned to actual model (folds Codex C2-F4 residual)
+
+V2 said "same as DOS-219 — grep." V3 pins to actual config from ADR-0110 line 113:
+
+- **Judge model:** `claude-sonnet-4-6` (per ADR-0110 §judge_model line 113; matches DOS-219's harness binding)
+- **Judge prompt template:** `src-tauri/abilities-runtime/src/abilities/judge/templates/detect_risk_shift.v1.txt` (new template; ground in DOS-219's prepare_meeting judge prompt shape)
+- **Judge prompt fingerprint:** captured per ADR-0106; replay-key parity asserted between judge invocations
+- **Sample unit:** one risk-shift invocation per tracked-account per day at 100% sampling (low-frequency per DOS-222 spec)
+- **Dimensions:** relevance, faithfulness, attribution-completeness — independently scored 0.0-1.0
+- **Per-sample fail rule:** any individual sample scoring below threshold on ANY dimension counts as a divergence event for that dimension
+- **Aggregate divergence:** fraction of samples falling below threshold per dimension, ≤3% per dimension over 7-day window (matches DOS-222 spec; higher than DOS-220's 1% because synthesis variance per DOS-222 §"Why this is the most complex of W5")
+- **Drift-failure rule:** if any dimension's 7-day rolling divergence exceeds 3%, alert + halt cutover; investigate; do not auto-cutover until divergence trends back below 3% for 7 consecutive days
+
+### RiskDirection enum extension (folds Codex C2-NEW enum contradiction)
+
+V2 §"trajectory_delta_v1 contract pinned" lines 648 + 655 reference `RiskDirection::InsufficientEvidence`, but V1 §5 lines 281-284 declares the enum as `{Improving, Stable, DegradingMinor, DegradingMajor}` only. V3 amends the enum to include `InsufficientEvidence`:
+
+```rust
+pub enum RiskDirection {
+    Improving,
+    Stable,
+    DegradingMinor,
+    DegradingMajor,
+    InsufficientEvidence,  // V3 addition: <7 days of engagement curve or post-revocation trajectory drops below floor
+}
+```
+
+`InsufficientEvidence` carries the same `ProvenanceWarning::InsufficientEvidence` so consumers see why. UI renders as a "needs more data" affordance rather than a risk level.
+
+### Changelog V3 (2026-05-14)
+
+- V3 folds 2 residual + 2 new codex cycle-2 findings.
+- Codex C2-F1 residual maps to §"Channel-audit exact line citations"
+- Codex C2-NEW Channel-4 contradiction maps to §"Channel 4 parent-boundary gate clarification"
+- Codex C2-F4 residual maps to §"Judge config pinned to actual model"
+- Codex C2-NEW enum mismatch maps to §"RiskDirection enum extension"
