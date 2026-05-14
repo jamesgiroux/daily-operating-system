@@ -1,0 +1,63 @@
+{
+  "pair_id": "hard_negative_068",
+  "bucket": "hard_negatives",
+  "expected_decision": "fork",
+  "source": "synthetic",
+  "claim_a": {
+    "claim_type": "engagement_topic",
+    "field_path": "topic.mentioned",
+    "object": {
+      "canonical": "competitive_displacement",
+      "kind": "free_text"
+    },
+    "polarity": "affirm",
+    "predicate": "topic_mentioned",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "project_014",
+      "kind": "project"
+    },
+    "text": "The team raised competitive displacement risk on the call.",
+    "workspace_id": "workspace_alpha"
+  },
+  "claim_b": {
+    "claim_type": "engagement_topic",
+    "field_path": "topic.mentioned",
+    "object": {
+      "canonical": "competitive_displacement",
+      "kind": "free_text"
+    },
+    "polarity": "affirm",
+    "predicate": "topic_mentioned",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": {
+        "normalized": "region_alt_67"
+      },
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "project_014",
+      "kind": "project"
+    },
+    "text": "The team raised competitive displacement risk on the call.",
+    "workspace_id": "workspace_alpha"
+  },
+  "rationale": "Scope qualifier differs — different bucket within same predicate; must not merge."
+}

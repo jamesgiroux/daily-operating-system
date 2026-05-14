@@ -1,0 +1,61 @@
+{
+  "pair_id": "positive_paraphrase_164",
+  "bucket": "positive_paraphrases",
+  "expected_decision": "merge",
+  "source": "synthetic",
+  "claim_a": {
+    "claim_type": "engagement_topic",
+    "field_path": "topic.mentioned",
+    "object": {
+      "canonical": "security_audit",
+      "kind": "free_text"
+    },
+    "polarity": "affirm",
+    "predicate": "topic_mentioned",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "meeting_033",
+      "kind": "meeting"
+    },
+    "text": "Security audit findings were mentioned in passing.",
+    "workspace_id": "workspace_alpha"
+  },
+  "claim_b": {
+    "claim_type": "engagement_topic",
+    "field_path": "topic.mentioned",
+    "object": {
+      "canonical": "security_audit",
+      "kind": "free_text"
+    },
+    "polarity": "affirm",
+    "predicate": "topic_mentioned",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "meeting_033",
+      "kind": "meeting"
+    },
+    "text": "Brief mention of security audit findings on the call.",
+    "workspace_id": "workspace_alpha"
+  },
+  "rationale": "Same subject, predicate, polarity, object, qualifiers, and status; text varies only by paraphrase."
+}

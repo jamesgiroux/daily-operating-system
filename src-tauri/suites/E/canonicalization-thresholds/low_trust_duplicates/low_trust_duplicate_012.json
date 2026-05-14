@@ -1,0 +1,63 @@
+{
+  "pair_id": "low_trust_duplicate_012",
+  "bucket": "low_trust_duplicates",
+  "expected_decision": "merge",
+  "source": "synthetic",
+  "claim_a": {
+    "claim_type": "stakeholder_role",
+    "field_path": "role.classification",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "influencer"
+    },
+    "polarity": "affirm",
+    "predicate": "stakeholder_role",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "person_003",
+      "kind": "person"
+    },
+    "text": "She is acting as the executive champion for the rollout.",
+    "workspace_id": "workspace_alpha"
+  },
+  "claim_b": {
+    "claim_type": "stakeholder_role",
+    "field_path": "role.classification",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "influencer"
+    },
+    "polarity": "affirm",
+    "predicate": "stakeholder_role",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "person_003",
+      "kind": "person"
+    },
+    "text": "She is acting as the executive champion for the rollout.",
+    "workspace_id": "workspace_alpha"
+  },
+  "rationale": "Structurally identical pairs that v2 currently auto-merges; the wave-plan intent of routing low-trust duplicates to needs_verification requires trust-signal wiring not yet carried into the parity input — tracked separately."
+}

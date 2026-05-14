@@ -1,0 +1,67 @@
+{
+  "pair_id": "contradiction_041",
+  "bucket": "contradictions",
+  "expected_decision": "contradict",
+  "source": "synthetic",
+  "claim_a": {
+    "claim_type": "risk",
+    "field_path": "renewal.risk",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "high"
+    },
+    "polarity": "affirm",
+    "predicate": "account_renewal_risk",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": {
+        "normalized": "phase_2"
+      },
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "account_009",
+      "kind": "account"
+    },
+    "text": "The renewal risk level is high.",
+    "workspace_id": "workspace_alpha"
+  },
+  "claim_b": {
+    "claim_type": "risk",
+    "field_path": "renewal.risk",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "medium"
+    },
+    "polarity": "affirm",
+    "predicate": "account_renewal_risk",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": {
+        "normalized": "phase_2"
+      },
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "account_009",
+      "kind": "account"
+    },
+    "text": "The renewal risk level is medium.",
+    "workspace_id": "workspace_alpha"
+  },
+  "rationale": "Same subject, predicate, qualifiers, and polarity with different object values — contradiction."
+}

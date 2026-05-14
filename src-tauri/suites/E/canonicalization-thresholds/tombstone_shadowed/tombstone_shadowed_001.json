@@ -1,0 +1,68 @@
+{
+  "pair_id": "tombstone_shadowed_001",
+  "bucket": "tombstone_shadowed",
+  "expected_decision": "fork",
+  "source": "synthetic",
+  "claim_a": {
+    "claim_type": "risk",
+    "field_path": "risk.status",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "escalated"
+    },
+    "polarity": "affirm",
+    "predicate": "risk_status",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": {
+        "normalized": "phase_1"
+      },
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "account_001",
+      "kind": "account"
+    },
+    "text": "Migration risk is still open and unresolved.",
+    "workspace_id": "workspace_alpha"
+  },
+  "claim_b": {
+    "claim_type": "risk",
+    "field_path": "risk.status",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "escalated"
+    },
+    "polarity": "affirm",
+    "predicate": "risk_status",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": {
+        "normalized": "phase_1"
+      },
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "account_001",
+      "kind": "account"
+    },
+    "text": "Migration risk is still open and unresolved.",
+    "tombstone_shadowed": true,
+    "workspace_id": "workspace_alpha"
+  },
+  "rationale": "Candidate is shadowed by a compatible tombstone and must be filtered before v2 comparison."
+}

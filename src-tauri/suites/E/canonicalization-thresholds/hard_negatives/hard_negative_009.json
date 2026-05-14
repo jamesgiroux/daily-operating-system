@@ -1,0 +1,65 @@
+{
+  "pair_id": "hard_negative_009",
+  "bucket": "hard_negatives",
+  "expected_decision": "fork",
+  "source": "synthetic",
+  "claim_a": {
+    "claim_type": "risk",
+    "field_path": "approval.status",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "pending_finance_approval"
+    },
+    "polarity": "affirm",
+    "predicate": "contract_approval_status",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "meeting_002",
+      "kind": "meeting"
+    },
+    "text": "Phase 2 budget approval is pending with finance.",
+    "workspace_id": "workspace_alpha"
+  },
+  "claim_b": {
+    "claim_type": "risk",
+    "field_path": "approval.status",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "pending_finance_approval"
+    },
+    "polarity": "affirm",
+    "predicate": "contract_approval_status",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": {
+        "normalized": "2026-Q1"
+      }
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "meeting_002",
+      "kind": "meeting"
+    },
+    "text": "Phase 2 budget approval is pending with finance.",
+    "workspace_id": "workspace_alpha"
+  },
+  "rationale": "Same subject, predicate, polarity, and object but the time qualifier differs — must not merge."
+}

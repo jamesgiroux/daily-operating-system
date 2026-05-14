@@ -1,0 +1,65 @@
+{
+  "pair_id": "positive_paraphrase_116",
+  "bucket": "positive_paraphrases",
+  "expected_decision": "merge",
+  "source": "synthetic",
+  "claim_a": {
+    "claim_type": "engagement_topic",
+    "field_path": "topic.mentioned",
+    "object": {
+      "canonical": "pricing_negotiation",
+      "kind": "free_text"
+    },
+    "polarity": "affirm",
+    "predicate": "topic_mentioned",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": {
+        "normalized": "phase_2"
+      },
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "account_024",
+      "kind": "account"
+    },
+    "text": "Pricing came up multiple times during the QBR.",
+    "workspace_id": "workspace_alpha"
+  },
+  "claim_b": {
+    "claim_type": "engagement_topic",
+    "field_path": "topic.mentioned",
+    "object": {
+      "canonical": "pricing_negotiation",
+      "kind": "free_text"
+    },
+    "polarity": "affirm",
+    "predicate": "topic_mentioned",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": {
+        "normalized": "phase_2"
+      },
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "account_024",
+      "kind": "account"
+    },
+    "text": "Multiple pricing references showed up in the QBR.",
+    "workspace_id": "workspace_alpha"
+  },
+  "rationale": "Same subject, predicate, polarity, object, qualifiers, and status; text varies only by paraphrase."
+}

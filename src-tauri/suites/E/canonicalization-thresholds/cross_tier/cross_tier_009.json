@@ -1,0 +1,65 @@
+{
+  "pair_id": "cross_tier_009",
+  "bucket": "cross_tier",
+  "expected_decision": "fork",
+  "source": "synthetic",
+  "claim_a": {
+    "claim_type": "risk",
+    "field_path": "approval.status",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "pending_security_review"
+    },
+    "polarity": "affirm",
+    "predicate": "contract_approval_status",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "confidential",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "meeting_002",
+      "kind": "meeting"
+    },
+    "text": "Phase 2 budget approval is pending with finance.",
+    "tier_key": "state:confidential",
+    "workspace_id": "workspace_alpha"
+  },
+  "claim_b": {
+    "claim_type": "risk",
+    "field_path": "approval.status",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "pending_security_review"
+    },
+    "polarity": "affirm",
+    "predicate": "contract_approval_status",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "meeting_002",
+      "kind": "meeting"
+    },
+    "text": "Phase 2 budget approval is pending with finance.",
+    "tier_key": "state:internal",
+    "workspace_id": "workspace_alpha"
+  },
+  "rationale": "Sensitivity tiers differ in a non-compatible direction and must be filtered before v2 comparison."
+}

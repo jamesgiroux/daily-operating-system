@@ -1,0 +1,65 @@
+{
+  "pair_id": "cross_tier_010",
+  "bucket": "cross_tier",
+  "expected_decision": "fork",
+  "source": "synthetic",
+  "claim_a": {
+    "claim_type": "engagement",
+    "field_path": "usage.trend",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "seasonal_spike"
+    },
+    "polarity": "affirm",
+    "predicate": "product_usage_trend",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "confidential",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "email_002",
+      "kind": "email"
+    },
+    "text": "Weekly active users have dropped 18 percent over the last quarter.",
+    "tier_key": "state:confidential",
+    "workspace_id": "workspace_alpha"
+  },
+  "claim_b": {
+    "claim_type": "engagement",
+    "field_path": "usage.trend",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "seasonal_spike"
+    },
+    "polarity": "affirm",
+    "predicate": "product_usage_trend",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "email_002",
+      "kind": "email"
+    },
+    "text": "Weekly active users have dropped 18 percent over the last quarter.",
+    "tier_key": "state:internal",
+    "workspace_id": "workspace_alpha"
+  },
+  "rationale": "Sensitivity tiers differ in a non-compatible direction and must be filtered before v2 comparison."
+}

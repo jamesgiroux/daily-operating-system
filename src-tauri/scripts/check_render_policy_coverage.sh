@@ -38,7 +38,7 @@ if not re.search(r"ActionDb::open_readonly\s*\(", bridge) or "render_mcp_ability
     violations.append("src-tauri/src/bridges/types.rs: MCP ability data redactor does not pass ActionDb and provenance into render_mcp_ability_data_for_surface_with_provenance")
 if "render_mcp_ability_data_without_claim_lookup(data)" not in bridge:
     violations.append("src-tauri/src/bridges/types.rs: MCP ability data redactor lacks fail-closed no-claim-lookup fallback")
-if not re.search(r"BridgeSurface::TauriApp\s*\|\s*BridgeSurface::Worker\s*\|\s*BridgeSurface::Eval\s*=>\s*data", bridge):
+if not re.search(r"BridgeSurface::TauriApp\s*\|\s*BridgeSurface::Worker\s*\|\s*BridgeSurface::Eval(?:\s*\|\s*BridgeSurface::SurfaceClient)?\s*=>\s*data", bridge):
     violations.append("src-tauri/src/bridges/types.rs: non-MCP surfaces must pass ability data through unchanged")
 if "string leaf has exactly three possible outcomes" not in service:
     violations.append("src-tauri/src/services/sensitivity.rs: MCP ability data redactor lacks deny-by-default documentation")

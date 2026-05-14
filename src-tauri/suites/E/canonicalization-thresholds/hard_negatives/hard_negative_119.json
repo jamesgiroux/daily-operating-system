@@ -1,0 +1,62 @@
+{
+  "pair_id": "hard_negative_119",
+  "bucket": "hard_negatives",
+  "expected_decision": "fork",
+  "source": "synthetic",
+  "claim_a": {
+    "claim_type": "risk",
+    "field_path": "renewal.risk",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "high"
+    },
+    "polarity": "affirm",
+    "predicate": "account_renewal_risk",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "meeting_024",
+      "kind": "meeting"
+    },
+    "text": "Renewal probability looks weak this cycle.",
+    "workspace_id": "workspace_alpha"
+  },
+  "claim_b": {
+    "claim_type": "engagement_topic",
+    "field_path": "topic.mentioned",
+    "object": {
+      "canonical": "competitive_displacement",
+      "kind": "free_text"
+    },
+    "polarity": "affirm",
+    "predicate": "topic_mentioned",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "meeting_024",
+      "kind": "meeting"
+    },
+    "text": "The team raised competitive displacement risk on the call.",
+    "workspace_id": "workspace_alpha"
+  },
+  "rationale": "Subjects align but predicates differ — must not merge."
+}

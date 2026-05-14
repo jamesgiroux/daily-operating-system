@@ -1,0 +1,63 @@
+{
+  "pair_id": "low_trust_duplicate_003",
+  "bucket": "low_trust_duplicates",
+  "expected_decision": "merge",
+  "source": "synthetic",
+  "claim_a": {
+    "claim_type": "risk",
+    "field_path": "approval.status",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "blocked_legal"
+    },
+    "polarity": "affirm",
+    "predicate": "contract_approval_status",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "project_001",
+      "kind": "project"
+    },
+    "text": "Phase 2 budget approval is pending with finance.",
+    "workspace_id": "workspace_alpha"
+  },
+  "claim_b": {
+    "claim_type": "risk",
+    "field_path": "approval.status",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "blocked_legal"
+    },
+    "polarity": "affirm",
+    "predicate": "contract_approval_status",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "project_001",
+      "kind": "project"
+    },
+    "text": "Phase 2 budget approval is pending with finance.",
+    "workspace_id": "workspace_alpha"
+  },
+  "rationale": "Structurally identical pairs that v2 currently auto-merges; the wave-plan intent of routing low-trust duplicates to needs_verification requires trust-signal wiring not yet carried into the parity input — tracked separately."
+}

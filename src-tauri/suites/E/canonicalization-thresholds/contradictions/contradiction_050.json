@@ -1,0 +1,61 @@
+{
+  "pair_id": "contradiction_050",
+  "bucket": "contradictions",
+  "expected_decision": "contradict",
+  "source": "synthetic",
+  "claim_a": {
+    "claim_type": "engagement_topic",
+    "field_path": "topic.mentioned",
+    "object": {
+      "canonical": "competitive_displacement",
+      "kind": "free_text"
+    },
+    "polarity": "affirm",
+    "predicate": "topic_mentioned",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "email_010",
+      "kind": "email"
+    },
+    "text": "The mentioned topic is competitive displacement.",
+    "workspace_id": "workspace_alpha"
+  },
+  "claim_b": {
+    "claim_type": "engagement_topic",
+    "field_path": "topic.mentioned",
+    "object": {
+      "canonical": "pricing_negotiation",
+      "kind": "free_text"
+    },
+    "polarity": "affirm",
+    "predicate": "topic_mentioned",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "email_010",
+      "kind": "email"
+    },
+    "text": "The mentioned topic is pricing negotiation.",
+    "workspace_id": "workspace_alpha"
+  },
+  "rationale": "Same subject, predicate, qualifiers, and polarity with different object values — contradiction."
+}

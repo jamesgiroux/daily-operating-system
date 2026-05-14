@@ -1,0 +1,63 @@
+{
+  "pair_id": "contradiction_019",
+  "bucket": "contradictions",
+  "expected_decision": "contradict",
+  "source": "synthetic",
+  "claim_a": {
+    "claim_type": "risk",
+    "field_path": "risk.status",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "mitigated"
+    },
+    "polarity": "affirm",
+    "predicate": "risk_status",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "meeting_004",
+      "kind": "meeting"
+    },
+    "text": "The risk status is mitigated.",
+    "workspace_id": "workspace_alpha"
+  },
+  "claim_b": {
+    "claim_type": "risk",
+    "field_path": "risk.status",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "escalated"
+    },
+    "polarity": "affirm",
+    "predicate": "risk_status",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "meeting_004",
+      "kind": "meeting"
+    },
+    "text": "The risk status is escalated.",
+    "workspace_id": "workspace_alpha"
+  },
+  "rationale": "Same subject, predicate, qualifiers, and polarity with different object values — contradiction."
+}

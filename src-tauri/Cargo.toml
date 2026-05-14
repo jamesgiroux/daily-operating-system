@@ -161,6 +161,10 @@ name = "suite_p_baseline"
 harness = false
 required-features = ["bench-harness"]
 
+[[bin]]
+name = "generate_canonicalization_corpus"
+path = "src/bin/generate_canonicalization_corpus.rs"
+
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 objc2-foundation = "0.3"

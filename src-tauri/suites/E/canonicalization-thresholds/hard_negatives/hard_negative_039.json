@@ -1,0 +1,63 @@
+{
+  "pair_id": "hard_negative_039",
+  "bucket": "hard_negatives",
+  "expected_decision": "fork",
+  "source": "synthetic",
+  "claim_a": {
+    "claim_type": "risk",
+    "field_path": "approval.status",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "pending_finance_approval"
+    },
+    "polarity": "affirm",
+    "predicate": "contract_approval_status",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "meeting_008",
+      "kind": "meeting"
+    },
+    "text": "Phase 2 budget approval is pending with finance.",
+    "workspace_id": "workspace_alpha"
+  },
+  "claim_b": {
+    "claim_type": "stakeholder_role",
+    "field_path": "role.classification",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "champion"
+    },
+    "polarity": "affirm",
+    "predicate": "stakeholder_role",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "meeting_008",
+      "kind": "meeting"
+    },
+    "text": "She is acting as the executive champion for the rollout.",
+    "workspace_id": "workspace_alpha"
+  },
+  "rationale": "Subjects align but predicates differ — must not merge."
+}

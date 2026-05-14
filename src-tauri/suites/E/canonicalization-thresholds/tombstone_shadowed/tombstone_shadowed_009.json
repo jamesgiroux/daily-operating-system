@@ -1,0 +1,64 @@
+{
+  "pair_id": "tombstone_shadowed_009",
+  "bucket": "tombstone_shadowed",
+  "expected_decision": "fork",
+  "source": "synthetic",
+  "claim_a": {
+    "claim_type": "risk",
+    "field_path": "approval.status",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "pending_security_review"
+    },
+    "polarity": "affirm",
+    "predicate": "contract_approval_status",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "meeting_002",
+      "kind": "meeting"
+    },
+    "text": "Phase 2 budget approval is pending with finance.",
+    "workspace_id": "workspace_alpha"
+  },
+  "claim_b": {
+    "claim_type": "risk",
+    "field_path": "approval.status",
+    "object": {
+      "kind": "literal",
+      "literal_kind": "enum",
+      "value": "pending_security_review"
+    },
+    "polarity": "affirm",
+    "predicate": "contract_approval_status",
+    "qualifiers": {
+      "entity": null,
+      "extras": {},
+      "numerics": [],
+      "region": null,
+      "scope": null,
+      "time": null
+    },
+    "sensitivity": "internal",
+    "sentiment": "neutral",
+    "status": "confirmed",
+    "subject_ref": {
+      "id": "meeting_002",
+      "kind": "meeting"
+    },
+    "text": "Phase 2 budget approval is pending with finance.",
+    "tombstone_shadowed": true,
+    "workspace_id": "workspace_alpha"
+  },
+  "rationale": "Candidate is shadowed by a compatible tombstone and must be filtered before v2 comparison."
+}
