@@ -7,6 +7,7 @@
 use chrono::{Duration, TimeZone, Utc};
 use dailyos_lib::db::claims::{ClaimSensitivity, TemporalScope};
 use dailyos_lib::db::ActionDb;
+use dailyos_lib::migration_test_api::run_migrations;
 use dailyos_lib::services::claims::{
     commit_claim, ClaimError, ClaimProposal, CommittedClaim, TombstoneSpec,
 };
@@ -19,8 +20,10 @@ const DISTINCT_PARAPHRASED_RISK: &str = "Renewal slippage increases ARR risk";
 
 fn fresh_full_db() -> Connection {
     let conn = Connection::open_in_memory().expect("open in-memory db");
-    dailyos_lib::migration_test_api::run_migrations(&conn)
-        .expect("apply migrations");
+    // Running the full migration set ensures the schema stays in lockstep with
+    // production, including post-v167 tables that commit_claim writes to via the
+    // v170 canonicalization cutover (canonicalization_decisions, ambiguous_claim_pairs).
+    run_migrations(&conn).expect("apply production migrations");
     conn
 }
 

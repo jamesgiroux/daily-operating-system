@@ -1,0 +1,28 @@
+includes:
+  - vendor/szepeviktor/phpstan-wordpress/extension.neon
+  - phpstan-baseline.neon
+
+parameters:
+  level: 5
+  phpVersion: 80100
+  paths:
+    - dailyos.php
+    - includes
+  excludePaths:
+    - tests/*
+    - vendor/*
+    - node_modules/*
+  bootstrapFiles:
+    - vendor/php-stubs/wordpress-stubs/wordpress-stubs.php
+  scanDirectories:
+    - vendor/wordpress/mcp-adapter
+  treatPhpDocTypesAsCertain: false
+  # DAILYOS_* runtime constants are define()d in dailyos.php; the dynamic
+  # declaration tells PHPStan their values are not statically narrowable.
+  # (Resolving the constant-not-found findings is tracked in DOS-602.)
+  dynamicConstantNames:
+    - DAILYOS_PLUGIN_FILE
+    - DAILYOS_PLUGIN_DIR
+    - DAILYOS_PLUGIN_URL
+    - DAILYOS_VERSION
+    - DAILYOS_PLUGIN_VERSION

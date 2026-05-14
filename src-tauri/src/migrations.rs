@@ -872,6 +872,13 @@ const MIGRATIONS: &[Migration] = &[
         version: 170,
         apply: migrate_v170_canonicalization_cutover,
     },
+    // Drop the surface_client_sessions.bearer_token_hash column: V5 signed-surface
+    // protocol authenticates via HMAC signature alone, with session_id carried in
+    // a non-secret request header. No bearer is generated, stored, or verified.
+    Migration::Sql {
+        version: 171,
+        sql: include_str!("migrations/171_dos_565_drop_surface_bearer_token_hash.sql"),
+    },
 ];
 
 const V155_SHADOW_TRUST_VERSION: i64 = 1_401_003;
@@ -4500,10 +4507,10 @@ mod tests {
         )
         .expect("seed c5 zero-version shadow row");
 
-        let applied = run_migrations(&conn).expect("v157-v170 migrations should succeed");
+        let applied = run_migrations(&conn).expect("v157-v171 migrations should succeed");
         assert_eq!(
-            applied, 14,
-            "v157-v170 should be pending after rollback to v156"
+            applied, 15,
+            "v157-v171 should be pending after rollback to v156"
         );
         assert_eq!(
             current_version(&conn).expect("current version"),
@@ -4574,10 +4581,10 @@ mod tests {
         )
         .expect("seed v156-recorded live score");
 
-        let applied = run_migrations(&conn).expect("v157-v170 migrations should succeed");
+        let applied = run_migrations(&conn).expect("v157-v171 migrations should succeed");
         assert_eq!(
-            applied, 14,
-            "v157-v170 should be pending after rollback to v156"
+            applied, 15,
+            "v157-v171 should be pending after rollback to v156"
         );
         assert_eq!(
             current_version(&conn).expect("current version"),
@@ -4653,10 +4660,10 @@ mod tests {
         )
         .expect("seed partial v155 shadow row");
 
-        let applied = run_migrations(&conn).expect("v156-v170 migrations should succeed");
+        let applied = run_migrations(&conn).expect("v156-v171 migrations should succeed");
         assert_eq!(
-            applied, 15,
-            "v156-v170 should be pending after rollback to v155"
+            applied, 16,
+            "v156-v171 should be pending after rollback to v155"
         );
         assert_eq!(
             current_version(&conn).expect("current version"),

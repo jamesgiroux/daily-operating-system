@@ -1,0 +1,15 @@
+{
+  "name": "@dailyos/wordpress-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "wp-scripts build",
+    "start": "wp-scripts start",
+    "lint:js": "wp-scripts lint-js",
+    "format": "wp-scripts format"
+  },
+  "devDependencies": {
+    "@wordpress/create-block": "^4.0.0",
+    "@wordpress/scripts": "^28.0.0"
+  }
+}

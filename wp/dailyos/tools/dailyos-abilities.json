@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.0",
+  "abilities": [
+    {
+      "name": "account-overview",
+      "category": "Read",
+      "description": "Returns substrate account overview composition.",
+      "mcp_exposure": "Invocable",
+      "client_side_executable": true,
+      "allowed_actors": [
+        "User",
+        "SurfaceClient"
+      ],
+      "required_scopes": [
+        "read.account_overview"
+      ],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "account_id"
+        ]
+      },
+      "output_schema": {
+        "type": "object"
+      }
+    }
+  ],
+  "field_documentation": {
+    "mcp_exposure": "Enum: None | MetadataOnly | Invocable. Independent of client_side_executable.",
+    "client_side_executable": "Boolean. Independent of mcp_exposure. Governs WP 7.0 client-side executeAbility path."
+  }
+}
