@@ -5,6 +5,7 @@ pub mod composition;
 pub mod extractors;
 pub mod feedback;
 pub mod get_entity_context;
+pub mod detect_risk_shift;
 pub mod prepare_meeting;
 pub mod provenance;
 pub mod registry;
