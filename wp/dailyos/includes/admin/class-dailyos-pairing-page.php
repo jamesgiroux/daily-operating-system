@@ -73,8 +73,15 @@ final class DailyOS_Pairing_Page {
 			'site_url'             => site_url(),
 			'wp_install_uuid'      => $wp_install_uuid,
 			'plugin_instance_uuid' => $plugin_instance_uuid,
-			'multisite_blog_id'    => self::multisite_blog_id(),
 		];
+
+		// The runtime rejects empty-string multisite_blog_id (Some("")).
+		// Omit the field entirely for single-site installs so serde treats
+		// it as Option::None.
+		$multisite_blog_id = self::multisite_blog_id();
+		if ( '' !== $multisite_blog_id ) {
+			$wp_context['multisite_blog_id'] = $multisite_blog_id;
+		}
 		$credential_store     = new DailyOS_Credential_Store();
 		$runtime_client       = new DailyOS_Runtime_Client( $credential_store, new DailyOS_Hmac_Signer() );
 		$result               = $runtime_client->handshake( $pairing_code, $wp_context );
@@ -179,6 +186,13 @@ final class DailyOS_Pairing_Page {
 			DailyOS_Credential_Store::ERROR_RUNTIME_RESTART => __( 'The DailyOS runtime restarted during pairing. Generate a new code and retry.', 'dailyos' ),
 			DailyOS_Credential_Store::ERROR_STALE_PAIRING_CODE => __( 'The pairing code has expired. Generate a fresh code and retry.', 'dailyos' ),
 			DailyOS_Credential_Store::ERROR_CONCURRENT_ADMIN_PAIRING => __( 'Another administrator completed a pairing attempt first. Refresh this page before retrying.', 'dailyos' ),
+			'pairing_code_invalid' => __( 'DailyOS did not recognise that pairing code. Generate a fresh code and paste the full string.', 'dailyos' ),
+			'pairing_code_expired' => __( 'The pairing code has expired. Generate a fresh code and retry.', 'dailyos' ),
+			'pairing_code_consumed' => __( 'That pairing code has already been used. Generate a fresh code and retry.', 'dailyos' ),
+			'pairing_code_limited' => __( 'Too many pairing attempts. Wait a moment, generate a fresh code, and retry.', 'dailyos' ),
+			'multisite_blog_id_invalid', 'wp_site_id_invalid', 'wp_install_uuid_invalid', 'plugin_instance_uuid_invalid' => __( 'DailyOS rejected the site identity sent with this pairing request. Check the plugin install and retry.', 'dailyos' ),
+			'home_url_invalid', 'site_url_invalid' => __( 'DailyOS rejected the home or site URL sent with this pairing request. Check the WordPress URLs and retry.', 'dailyos' ),
+			'handshake_body_invalid' => __( 'DailyOS could not parse the pairing request body. Update the plugin and retry.', 'dailyos' ),
 			default => __( 'DailyOS pairing failed. Generate a new code and retry.', 'dailyos' ),
 		};
 	}
