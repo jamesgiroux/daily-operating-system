@@ -10,7 +10,7 @@ use crate::intelligence::provider::{Completion, PromptInput};
 pub const TEMPLATE_ID: &str = "daily_readiness";
 pub const TEMPLATE_VERSION: &str = "1.0.0";
 
-const TEMPLATE: &str = include_str!("../../../../src/abilities/prompts/daily_readiness.v1.txt");
+const TEMPLATE: &str = include_str!("../../../../src/abilities/prompts/daily_readiness.v1.0.0.txt");
 
 pub struct RenderedPrompt {
     pub text: String,
