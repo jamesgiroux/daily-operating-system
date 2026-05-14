@@ -8,7 +8,7 @@ import {
   SettingsInput,
   SettingsSectionLabel,
   formRowStyles,
-} from "@/components/settings/FormRow";
+} from "@/features/settings-ui/FormRow";
 import { useGleanAuth } from "@/hooks/useGleanAuth";
 import type { GleanTokenHealth } from "@/types";
 

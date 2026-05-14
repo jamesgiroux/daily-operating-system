@@ -10,7 +10,7 @@ import {
   SettingsRule,
   SettingsSectionLabel,
   formRowStyles,
-} from "@/components/settings/FormRow";
+} from "@/features/settings-ui/FormRow";
 import type { DataSummary, ExportReport, ClearReport } from "@/types";
 
 // ---------------------------------------------------------------------------

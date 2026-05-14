@@ -10,7 +10,7 @@ import {
   SettingsButton,
   SettingsSectionLabel,
   formRowStyles,
-} from "@/components/settings/FormRow";
+} from "@/features/settings-ui/FormRow";
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;

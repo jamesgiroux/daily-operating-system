@@ -8,7 +8,7 @@ import {
   SettingsSectionLabel,
   SettingsStatusDot,
   formRowStyles,
-} from "@/components/settings/FormRow";
+} from "@/features/settings-ui/FormRow";
 
 export default function GoogleDriveConnector() {
   const [status, setStatus] = useState<DriveStatusData | null>(null);

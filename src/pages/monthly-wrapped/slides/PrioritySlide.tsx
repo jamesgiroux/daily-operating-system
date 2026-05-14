@@ -1,7 +1,7 @@
 import type React from "react";
 import { useSlideActive, anim } from "../hooks";
 import type { MonthlyWrappedContent } from "../types";
-import { AnimatedNumber } from "@/components/monthly-wrapped/AnimatedNumber";
+import { AnimatedNumber } from "@/pages/monthly-wrapped/AnimatedNumber";
 import styles from "../monthly-wrapped.module.css";
 
 export function PrioritySlide({
