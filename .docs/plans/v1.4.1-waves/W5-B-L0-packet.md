@@ -427,7 +427,7 @@
 - Reviewers explicitly acknowledge that `follow_up`, `open_question`, and `blocker` are not current registry claim types.
 - Reviewers decide whether missing claim types require a separate Linear issue.
 - Channel audit is complete.
-- Channel audit confirms channels 3-7 are N/A.
+- Channel audit confirms channels 3-7 are N/A **for DOS-221 itself** (no LLM, no prompt, no template variables inside this ability). The composition-handoff gate at §4 lines 134-150 + §6 lines 328-335 keeps channels 6 and 7 live at any parent ability's boundary (e.g., DOS-220) that composes DOS-221's output into a prompt.
 - Channel audit confirms output rendering remains in scope.
 - Fixtures are enumerated.
 - Fixture 1: account with many loops and adjacent-subject contamination.
