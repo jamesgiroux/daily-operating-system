@@ -5,3 +5,9 @@ id = "prepare_meeting_prep"
 version = "1.0.0"
 path = "prepare_meeting_prep.v1.0.0.txt"
 sha256 = "94d1d6494eec239657053723612cd20b259841535f61563ba9a6107a689a68e4"
+
+[[template]]
+id = "detect_risk_shift"
+version = "1.0.0"
+path = "detect_risk_shift.v1.0.0.txt"
+sha256 = "b1450f8e47e00954869efb44a0cb97b7827677dfc63252fc956ad72edb9c8272"

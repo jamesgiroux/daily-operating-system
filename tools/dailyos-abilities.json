@@ -2,6 +2,25 @@
   "schema_version": 1,
   "abilities": [
     {
+      "name": "detect_risk_shift",
+      "description": "",
+      "category": "transform",
+      "annotations": {},
+      "wp_permission": "none",
+      "allowed_actors": [
+        "user",
+        "runtime"
+      ],
+      "required_scopes": [],
+      "mcp_exposure": "none",
+      "client_side_executable": false,
+      "idempotency_class": "idempotent",
+      "composition_kind": {
+        "produces_blocks": false,
+        "block_types": []
+      }
+    },
+    {
       "name": "detect_role_change",
       "description": "",
       "category": "maintenance",
