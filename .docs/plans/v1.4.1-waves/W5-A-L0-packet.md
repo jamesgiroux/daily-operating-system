@@ -651,7 +651,7 @@ The narrative-synthesis prompt template daily_readiness.v{n}.txt is the single t
 
 ### Judge config pinned (folds Codex C2-F6 residual)
 
-V2 deferred judge config with TODO — packet pins judge config before Stage 3. V3 pins it at L0:
+Judge config (pinned at L0):
 
 - **Judge model:** `claude-sonnet-4-6` (per ADR-0110 §judge_model line 113; matches DOS-219's harness binding)
 - **Judge prompt template:** judge/daily_readiness.v1.txt — new; ground in DOS-219 judge prompt shape; located at src-tauri/abilities-runtime/src/abilities/judge/templates/
