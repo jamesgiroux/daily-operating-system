@@ -242,6 +242,59 @@ SAFE_STRING_FIELDS = {
         "org": "organization metadata",
         "seniority": "role level metadata",
     },
+    "DailyReadiness": {
+        "narrative": "claim/provenance-attested",
+    },
+    "DailyReadinessMeeting": {
+        "workspace_scope": "workspace identifier metadata",
+    },
+    "DailyReadinessOvernightChange": {
+        "id": "identifier metadata",
+        "summary": "claim/provenance-attested",
+        "source_ref": "source identifier metadata",
+        "observed_at": "timestamp metadata",
+        "source_asof": "timestamp metadata",
+        "data_source": "enum metadata",
+        "lifecycle": "enum metadata",
+        "sensitivity": "enum metadata",
+        "workspace_scope": "workspace identifier metadata",
+    },
+    "DailyReadinessRiskShift": {
+        "id": "identifier metadata",
+        "direction": "enum metadata",
+        "evidence_summary": "claim/provenance-attested",
+        "source_ref": "source identifier metadata",
+        "observed_at": "timestamp metadata",
+        "source_asof": "timestamp metadata",
+        "data_source": "enum metadata",
+        "lifecycle": "enum metadata",
+        "sensitivity": "enum metadata",
+        "workspace_scope": "workspace identifier metadata",
+    },
+    "DailyReadinessOpenLoop": {
+        "id": "identifier metadata",
+        "text": "claim/provenance-attested",
+        "owner": "claim/provenance-attested",
+        "due_date": "timestamp metadata",
+        "source_ref": "source identifier metadata",
+        "observed_at": "timestamp metadata",
+        "source_asof": "timestamp metadata",
+        "data_source": "enum metadata",
+        "lifecycle": "enum metadata",
+        "sensitivity": "enum metadata",
+        "workspace_scope": "workspace identifier metadata",
+    },
+    "DailyReadinessCoverageWarning": {
+        "kind": "enum metadata",
+        "message": "constant string metadata",
+        "workspace_scope": "workspace identifier metadata",
+    },
+    "DailyReadinessSubject": {
+        "kind": "enum metadata",
+        "id": "identifier metadata",
+        "display_name": "entity name metadata",
+        "workspace_scope": "workspace identifier metadata",
+    },
 }
 
 NESTED_OUTPUT_STRUCTS = {
@@ -268,11 +321,28 @@ NESTED_OUTPUT_STRUCTS = {
     "OpenLoop": ["BriefSubjectRef", "BriefTemporalScope"],
     "ChangeMarker": ["BriefSubjectRef", "BriefTemporalScope"],
     "SuggestedOutcome": ["BriefSubjectRef", "BriefTemporalScope"],
+    "DailyReadiness": [
+        "DailyReadinessMeeting",
+        "DailyReadinessOvernightChange",
+        "DailyReadinessRiskShift",
+        "DailyReadinessOpenLoop",
+        "DailyReadinessCoverageWarning",
+    ],
+    "DailyReadinessMeeting": [
+        "MeetingSummary",
+        "Topic",
+        "AttendeeContext",
+        "OpenLoop",
+    ],
+    "DailyReadinessOvernightChange": ["DailyReadinessSubject"],
+    "DailyReadinessRiskShift": ["DailyReadinessSubject"],
+    "DailyReadinessOpenLoop": ["DailyReadinessSubject"],
 }
 
 EXPECTED_AGENT_OUTPUTS = {
     "get_entity_context": "GetEntityContextOutput",
     "prepare_meeting": "MeetingBrief",
+    "get_daily_readiness": "DailyReadiness",
 }
 
 SAFE_WRAPPERS = ("RenderableMcpClaimText", "RenderableMcpEntityName")
@@ -293,13 +363,17 @@ def raw_string_type(type_text: str) -> bool:
     return text in {"String", "Option<String>", "Vec<String>"}
 
 def struct_body(name: str):
-    marker = f"pub struct {name}"
-    start = combined.find(marker)
-    if start == -1:
-        marker = f"struct {name}"
-        start = combined.find(marker)
-    if start == -1:
+    # Match `pub struct {name}` followed by `{` or `<` (generic) — NOT a longer
+    # identifier (e.g. avoid prefix-matching `DailyReadinessInput` when we want
+    # `DailyReadiness`).
+    pattern = re.compile(rf"pub\s+struct\s+{re.escape(name)}\b\s*[{{<]")
+    match = pattern.search(combined)
+    if match is None:
+        pattern = re.compile(rf"struct\s+{re.escape(name)}\b\s*[{{<]")
+        match = pattern.search(combined)
+    if match is None:
         return None
+    start = match.start()
     brace = combined.find("{", start)
     if brace == -1:
         return None
