@@ -4,6 +4,7 @@ pub mod claims;
 pub mod composition;
 pub mod extractors;
 pub mod feedback;
+pub mod get_daily_readiness;
 pub mod get_entity_context;
 pub mod prepare_meeting;
 pub mod provenance;
