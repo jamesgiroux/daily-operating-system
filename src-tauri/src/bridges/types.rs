@@ -290,6 +290,30 @@ pub enum BridgeSurfaceError {
     Ownership(#[from] crate::abilities::provenance::OwnershipError),
 }
 
+impl From<crate::services::claims::ClaimError> for BridgeSurfaceError {
+    fn from(error: crate::services::claims::ClaimError) -> Self {
+        match error {
+            crate::services::claims::ClaimError::StaleVersion {
+                claim_id,
+                expected,
+                current,
+            } => Self::StaleVersion {
+                claim_id,
+                expected,
+                current,
+                correction: None,
+            },
+            crate::services::claims::ClaimError::MissingExpectedClaimVersion { claim_id } => {
+                Self::MissingExpectedClaimVersion { claim_id }
+            }
+            crate::services::claims::ClaimError::ClaimVersionOverflow { claim_id } => {
+                Self::ClaimVersionOverflow { claim_id }
+            }
+            error => Self::Validation(error.to_string()),
+        }
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum AbilityInvokeError {
     #[error(transparent)]

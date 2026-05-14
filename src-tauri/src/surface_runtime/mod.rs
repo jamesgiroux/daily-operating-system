@@ -18,13 +18,14 @@ use hyper_util::rt::TokioIo;
 use parking_lot::{Mutex, RwLock};
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{json, Value};
 use tokio::net::TcpListener;
 use tokio::sync::watch;
 use tokio::task::{AbortHandle, JoinHandle, JoinSet};
 use uuid::Uuid;
 
 use crate::abilities::NOOP_ABILITY_TRACER;
+use crate::bridges::correction_payload::{project_claim_for_scope, CorrectionPayload};
 use crate::bridges::surface_client::{
     validate_session_bound_wp_user_id, SurfaceClientAbilityClassLimits, SurfaceClientBridge,
     SurfaceClientBridgeConfig, SurfaceClientBridgeError, SurfaceClientRateLimitAxis,
@@ -1219,10 +1220,74 @@ async fn compensate_failed_session_registration(
     }
 }
 
+#[derive(Debug)]
+struct SurfaceVersionEventRow {
+    event_seq: i64,
+    cursor: String,
+    event_kind: String,
+    claim_id: Option<String>,
+    composition_id: Option<String>,
+    previous_version: Option<i64>,
+    current_version: i64,
+    reason: Option<String>,
+    scope_redacted: bool,
+    correction_event_log_id: Option<String>,
+    mutation_id: Option<String>,
+    created_at: String,
+    actor_kind: String,
+}
+
+impl SurfaceVersionEventRow {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(Self {
+            event_seq: row.get(0)?,
+            cursor: row.get(1)?,
+            event_kind: row.get(2)?,
+            claim_id: row.get(3)?,
+            composition_id: row.get(4)?,
+            previous_version: row.get(5)?,
+            current_version: row.get(6)?,
+            reason: row.get(7)?,
+            scope_redacted: row.get::<_, i64>(8)? != 0,
+            correction_event_log_id: row.get(9)?,
+            mutation_id: row.get(10)?,
+            created_at: row.get(11)?,
+            actor_kind: row.get(12)?,
+        })
+    }
+
+    fn full_event(&self) -> Value {
+        json!({
+            "event_seq": self.event_seq,
+            "cursor": &self.cursor,
+            "event_kind": &self.event_kind,
+            "claim_id": &self.claim_id,
+            "composition_id": &self.composition_id,
+            "previous_version": self.previous_version,
+            "current_version": self.current_version,
+            "reason": &self.reason,
+            "scope_redacted": self.scope_redacted,
+            "correction_event_log_id": &self.correction_event_log_id,
+            "mutation_id": &self.mutation_id,
+            "created_at": &self.created_at,
+            "actor_kind": &self.actor_kind,
+        })
+    }
+
+    fn redacted_event(&self) -> Value {
+        json!({
+            "cursor": &self.cursor,
+            "created_at": &self.created_at,
+            "scope_redacted": true,
+        })
+    }
+}
+
 async fn surface_event_log_response(
     runtime: &EndpointRuntime,
     path: &str,
     request_id: String,
+    actor: Actor,
 ) -> Response<ResponseBody> {
     let event_log_id = path
         .trim_start_matches("/v1/surface/event-log/")
@@ -1237,9 +1302,10 @@ async fn surface_event_log_response(
         return error_response(SurfaceHttpError::runtime_unavailable().with_request_id(request_id));
     };
     let lookup_id = event_log_id.clone();
-    let row = match app_state
+    let projection = match app_state
         .db_read(move |db| {
-            db.conn_ref()
+            let row = db
+                .conn_ref()
                 .query_row(
                     "SELECT event_seq, cursor, event_kind, claim_id, composition_id,
                             previous_version, current_version, reason, scope_redacted,
@@ -1249,30 +1315,39 @@ async fn surface_event_log_response(
                      ORDER BY event_seq DESC
                      LIMIT 1",
                     rusqlite::params![lookup_id],
-                    |row| {
-                        Ok(json!({
-                            "event_seq": row.get::<_, i64>(0)?,
-                            "cursor": row.get::<_, String>(1)?,
-                            "event_kind": row.get::<_, String>(2)?,
-                            "claim_id": row.get::<_, Option<String>>(3)?,
-                            "composition_id": row.get::<_, Option<String>>(4)?,
-                            "previous_version": row.get::<_, Option<i64>>(5)?,
-                            "current_version": row.get::<_, i64>(6)?,
-                            "reason": row.get::<_, Option<String>>(7)?,
-                            "scope_redacted": row.get::<_, i64>(8)? != 0,
-                            "correction_event_log_id": row.get::<_, Option<String>>(9)?,
-                            "mutation_id": row.get::<_, Option<String>>(10)?,
-                            "created_at": row.get::<_, String>(11)?,
-                            "actor_kind": row.get::<_, String>(12)?,
-                        }))
-                    },
+                    SurfaceVersionEventRow::from_row,
                 )
                 .optional()
-                .map_err(|error| error.to_string())
+                .map_err(|error| error.to_string())?;
+
+            let Some(row) = row else {
+                return Ok(None);
+            };
+
+            let correction = match row.claim_id.as_deref() {
+                Some(claim_id) => match project_claim_for_scope(db, claim_id, &actor) {
+                    Some(correction) => correction,
+                    None => return Ok(None),
+                },
+                None => CorrectionPayload {
+                    claim: None,
+                    scope_redacted: false,
+                    reason: None,
+                },
+            };
+            let event = if correction.scope_redacted {
+                row.redacted_event()
+            } else {
+                row.full_event()
+            };
+            let mut correction =
+                serde_json::to_value(correction).map_err(|error| error.to_string())?;
+            correction["cursor"] = json!(row.cursor);
+            Ok(Some((event, correction)))
         })
         .await
     {
-        Ok(row) => row,
+        Ok(projection) => projection,
         Err(error) => {
             return error_response(
                 SurfaceHttpError::from_pairing_error(SurfacePairingError::Write(error))
@@ -1280,7 +1355,7 @@ async fn surface_event_log_response(
             );
         }
     };
-    let Some(event) = row else {
+    let Some((event, correction)) = projection else {
         return error_response(SurfaceHttpError::route_not_found().with_request_id(request_id));
     };
     json_response(
@@ -1289,12 +1364,7 @@ async fn surface_event_log_response(
             "ok": true,
             "request_id": request_id,
             "event": event,
-            "correction": {
-                "claim": null,
-                "scope_redacted": true,
-                "reason": "out_of_scope",
-                "cursor": event_log_id,
-            }
+            "correction": correction,
         }),
     )
 }
@@ -1343,7 +1413,7 @@ async fn signed_route_response(
             }),
         ),
         (Method::GET, path) if path.starts_with("/v1/surface/event-log/") => {
-            surface_event_log_response(runtime, path, request_id).await
+            surface_event_log_response(runtime, path, request_id, validated.actor.clone()).await
         }
         (Method::GET, "/v1/surface/abilities") => {
             match surface_pairing::authorized_ability_projection(&validated.granted_scopes) {
@@ -1443,9 +1513,15 @@ async fn signed_route_response(
                                 "ability": ability,
                             }),
                         ),
-                        Err(error) => error_response(
-                            bridge_surface_error(surface_error(error)).with_request_id(request_id),
-                        ),
+                        Err(error) => {
+                            bridge_surface_error_response(
+                                surface_error(error),
+                                app_state,
+                                &validated.actor,
+                                request_id,
+                            )
+                            .await
+                        }
                     }
                 }
                 Err(SurfaceClientBridgeError::RateLimited(rejection)) => {
@@ -1490,6 +1566,99 @@ fn is_safe_ability_name(value: &str) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b':'))
+}
+
+async fn bridge_surface_error_response(
+    error: BridgeSurfaceError,
+    app_state: &AppState,
+    actor: &Actor,
+    request_id: String,
+) -> Response<ResponseBody> {
+    match error {
+        BridgeSurfaceError::StaleVersion {
+            claim_id,
+            expected,
+            current,
+            correction: _,
+        } => {
+            stale_version_error_response(app_state, actor, request_id, claim_id, expected, current)
+                .await
+        }
+        error => error_response(bridge_surface_error(error).with_request_id(request_id)),
+    }
+}
+
+async fn stale_version_error_response(
+    app_state: &AppState,
+    actor: &Actor,
+    request_id: String,
+    claim_id: String,
+    expected: u64,
+    current: u64,
+) -> Response<ResponseBody> {
+    let actor = actor.clone();
+    let claim_id_for_lookup = claim_id.clone();
+    let projection = match app_state
+        .db_read(move |db| {
+            let correction = project_claim_for_scope(db, &claim_id_for_lookup, &actor)
+                .unwrap_or_else(CorrectionPayload::out_of_scope);
+            let cursor = latest_claim_version_cursor(db, &claim_id_for_lookup, current)?;
+            Ok((correction, cursor))
+        })
+        .await
+    {
+        Ok(projection) => projection,
+        Err(error) => {
+            return error_response(
+                SurfaceHttpError::from_pairing_error(SurfacePairingError::Write(error))
+                    .with_request_id(request_id),
+            );
+        }
+    };
+
+    let (correction, cursor) = projection;
+    let mut correction = serde_json::to_value(correction).unwrap_or_else(|_| {
+        json!({
+            "claim": null,
+            "scope_redacted": true,
+            "reason": "out_of_scope",
+        })
+    });
+    correction["retry_after_ms"] = Value::Null;
+    correction["cursor"] = cursor.map(Value::String).unwrap_or(Value::Null);
+
+    json_response(
+        StatusCode::CONFLICT,
+        json!({
+            "ok": false,
+            "error": "stale_watermark",
+            "request_id": request_id,
+            "claim_id": claim_id,
+            "expected": { "claim_version": expected },
+            "current": { "claim_version": current },
+            "correction": correction,
+        }),
+    )
+}
+
+fn latest_claim_version_cursor(
+    db: &crate::db::ActionDb,
+    claim_id: &str,
+    current: u64,
+) -> Result<Option<String>, String> {
+    let current = i64::try_from(current).map_err(|_| "claim_version_out_of_range".to_string())?;
+    db.conn_ref()
+        .query_row(
+            "SELECT cursor
+             FROM version_events
+             WHERE claim_id = ?1 AND current_version = ?2
+             ORDER BY event_seq DESC
+             LIMIT 1",
+            rusqlite::params![claim_id, current],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())
 }
 
 fn surface_bridge_error(error: SurfaceClientBridgeError) -> SurfaceHttpError {

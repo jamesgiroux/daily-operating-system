@@ -129,7 +129,11 @@ impl MutatingProposal for ClaimProposal {
                 claim_id: claim_id.clone(),
                 expected_claim_version,
             },
-            _ => ClaimMutationTarget::Insert {
+            (Some(claim_id), None) => ClaimMutationTarget::Mutate {
+                claim_id: claim_id.clone(),
+                expected_claim_version: 0,
+            },
+            (None, _) => ClaimMutationTarget::Insert {
                 subject_ref: self.subject_ref.clone(),
                 claim_type: self.claim_type.clone(),
                 dedup_key: None,
