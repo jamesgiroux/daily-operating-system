@@ -1,4 +1,4 @@
-//! DOS-567 W4-B ac §32a — cursor durability through panic + startup recovery.
+//! W4-B ac §32a — cursor durability through panic + startup recovery.
 //!
 //! Three-Tx protocol per §7: pre-mutation Tx 1 reserves the cursor in
 //! `mutation_attempts`; mutation Tx 2 attaches the event to that cursor; on

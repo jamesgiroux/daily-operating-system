@@ -1,4 +1,4 @@
-//! DOS-567 W4-B ac §32 — `CorrectionRef` event-log fetch is scope-filtered
+//! W4-B ac §32 — `CorrectionRef` event-log fetch is scope-filtered
 //! identically to the inline 409 path (§16 + §27). Out-of-scope callers
 //! requesting `/v1/surface/event-log/{cursor}` receive a redacted envelope
 //! containing only `cursor`, `created_at`, and `scope_redacted: true`. No

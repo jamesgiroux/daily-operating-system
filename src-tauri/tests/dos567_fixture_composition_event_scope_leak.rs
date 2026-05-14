@@ -1,4 +1,4 @@
-//! DOS-567 W4-B §16 + ac §37 — composition-bound `version_events` rows are
+//! W4-B §16 + ac §37 — composition-bound `version_events` rows are
 //! scope-filtered identically to claim-bound rows. Out-of-scope callers
 //! requesting `/v1/surface/event-log/{cursor}` for a composition event must
 //! receive a redacted envelope containing only `cursor`, `created_at`, and

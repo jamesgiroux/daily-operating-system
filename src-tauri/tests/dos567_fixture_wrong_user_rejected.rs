@@ -1,4 +1,4 @@
-//! DOS-567 W4-B ac §44 + §17 — wp_user_id session binding rejects body /
+//! W4-B ac §44 + §17 — wp_user_id session binding rejects body /
 //! query / header channels.
 //!
 //! `validate_session_bound_wp_user_id` walks any request payload, collects

@@ -1,4 +1,4 @@
-//! DOS-567 W4-B ac §25 — claim_version overflow defense.
+//! W4-B ac §25 — claim_version overflow defense.
 //!
 //! Seeds an `intelligence_claims` row at `claim_version = i64::MAX`; attempts a
 //! `commit_claim` Mutate proposal with `expected_claim_version = i64::MAX`. The

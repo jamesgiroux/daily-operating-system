@@ -1,4 +1,4 @@
-//! DOS-567 W4-B ac §28 — inflated `expected_claim_version` rejection.
+//! W4-B ac §28 — inflated `expected_claim_version` rejection.
 //!
 //! Distinct from stale (`expected < current`): when the caller presents
 //! `expected_claim_version > current`, the substrate rejects with

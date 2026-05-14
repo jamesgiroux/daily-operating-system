@@ -1,4 +1,4 @@
-//! DOS-567 W4-B ac §27 — out-of-scope SurfaceClient receives a redacted
+//! W4-B ac §27 — out-of-scope SurfaceClient receives a redacted
 //! correction envelope. The 409 stale-watermark response includes
 //! `correction.claim = null` and `scope_redacted: true, reason: "out_of_scope"`
 //! when the caller's scopes don't permit reading the corrected claim.

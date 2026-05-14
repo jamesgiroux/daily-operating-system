@@ -1,4 +1,4 @@
-//! DOS-567 W4-B ac §32c — concurrent Inserts with the same dedup-equivalent
+//! W4-B ac §32c — concurrent Inserts with the same dedup-equivalent
 //! key collapse to one Insert + one Reinforced inside the canonical
 //! commit/dedup-lock path (`claims.rs:5286-5314`).
 //!

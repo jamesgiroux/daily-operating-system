@@ -1,4 +1,4 @@
-//! DOS-567 W4-B ac §38 — `BridgeSurfaceError` precedence (§6.5 table).
+//! W4-B ac §38 — `BridgeSurfaceError` precedence (§6.5 table).
 //!
 //! When multiple BridgeSurfaceError conditions could fire simultaneously, the
 //! bridge entry point must evaluate top-down per §6.5 and return the first

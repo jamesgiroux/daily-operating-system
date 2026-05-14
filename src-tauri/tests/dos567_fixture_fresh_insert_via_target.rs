@@ -1,4 +1,4 @@
-//! DOS-567 W4-B ac §32b — fresh insert routes via `ClaimMutationTarget::Insert`.
+//! W4-B ac §32b — fresh insert routes via `ClaimMutationTarget::Insert`.
 //!
 //! Positive: `ClaimProposal { id: None, expected_claim_version: None }` flows
 //! through `commit_claim` as `Insert`, skipping version CAS and producing a

@@ -1,4 +1,4 @@
-//! DOS-567 W4-B ac §24 — mid-flight mutation 423.
+//! W4-B ac §24 — mid-flight mutation 423.
 //!
 //! Two SurfaceClients write concurrently to the same claim subject. The
 //! commit-lock holder runs the mutation Tx; the second caller observes

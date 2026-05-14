@@ -1,4 +1,4 @@
-//! DOS-567 W4-B ac §31 — outbox atomicity: claim row + version_events row are
+//! W4-B ac §31 — outbox atomicity: claim row + version_events row are
 //! tied by the mutation transaction. If the outbox insert fails after the
 //! version row was updated within the same Tx, the entire Tx rolls back —
 //! neither survives.

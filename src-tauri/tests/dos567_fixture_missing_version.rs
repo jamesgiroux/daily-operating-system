@@ -1,4 +1,4 @@
-//! DOS-567 W4-B ac §26 — MissingExpectedClaimVersion foot-gun fix.
+//! W4-B ac §26 — MissingExpectedClaimVersion foot-gun fix.
 //!
 //! A `ClaimProposal { id: Some("existing-claim-id"), expected_claim_version: None }`
 //! submitted against an existing claim must be rejected with

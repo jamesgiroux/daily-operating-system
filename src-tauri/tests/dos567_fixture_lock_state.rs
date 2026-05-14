@@ -1,4 +1,4 @@
-//! DOS-567 W4-B ac §30 — MutationGuard `Drop` finalizes aborted attempts.
+//! W4-B ac §30 — MutationGuard `Drop` finalizes aborted attempts.
 //!
 //! The MutationGuard wraps the `mutation_attempts` reservation; if the
 //! mutation Tx panics or returns Err without `mark_completed`, the `Drop`
