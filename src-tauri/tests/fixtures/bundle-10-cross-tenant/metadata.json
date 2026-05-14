@@ -1,0 +1,33 @@
+{
+  "bundle": 10,
+  "scenario_id": "bundle10-list-open-loops-cross-tenant",
+  "invariant": "A well-formed account filter for a subject owned by another workspace fails closed with SubjectNotOwned even when that subject has active open loops.",
+  "expected_render_policy": "hard-error",
+  "surfaces_exercised": [
+    "list_open_loops",
+    "cross-tenant",
+    "subject-ownership"
+  ],
+  "source_lifecycle_refs": [
+    "src-b10-cross-tenant-open-loop",
+    "acct-b10-other-workspace"
+  ],
+  "anonymization_cert": "all-generic-example-domains-2026-05-14",
+  "retention_policy": "permanent",
+  "prompt_fingerprint_baseline": "no-provider-list-open-loops",
+  "prompt_template_version": null,
+  "completion_text_hash": null,
+  "trust_factors_dominant": [
+    "subject_ownership",
+    "subject_fit",
+    "read_boundary"
+  ],
+  "pass_fail_definition": "PASS = list_open_loops returns AbilityError::SubjectNotOwned for acct-b10-other-workspace and does not return an empty loops list. FAIL = active other-workspace open_loop rows are silently treated as zero results.",
+  "fixture_design_notes": {
+    "state_sql": "Mirrors bundle-10 tables and adds subject_ownerships so the other-workspace account ownership is explicit.",
+    "inputs": "Entity-scope list_open_loops call for account acct-b10-other-workspace.",
+    "expected_output": "Typed hard error, not OpenLoopsResult emptiness.",
+    "provider_replay": "Empty because list_open_loops is a pure Read ability with no provider call."
+  },
+  "post_action_state": null
+}

@@ -1,0 +1,18 @@
+{
+  "ability_name": "list_open_loops",
+  "scenario_id": "bundle10-list-open-loops-cross-tenant",
+  "expected": {
+    "category": "read",
+    "provider_call": false,
+    "hard_error": {
+      "kind": "SubjectNotOwned",
+      "code": "subject_not_owned"
+    },
+    "subject": {
+      "kind": "account",
+      "id": "acct-b10-other-workspace",
+      "workspace_id": "workspace-other"
+    },
+    "seeded_active_open_loop": "src-b10-cross-tenant-open-loop"
+  }
+}
