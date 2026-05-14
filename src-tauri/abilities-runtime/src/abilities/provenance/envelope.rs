@@ -436,6 +436,7 @@ pub enum ProvenanceWarning {
     AttributionIncomplete {
         field: FieldPath,
     },
+    SourceRevoked,
     Masked {
         reason: MaskReason,
     },

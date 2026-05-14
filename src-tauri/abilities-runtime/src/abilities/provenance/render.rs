@@ -1948,6 +1948,7 @@ fn render_warning_for_surface(
             object.insert("field".to_string(), json!(field));
             Value::Object(object)
         }
+        ProvenanceWarning::SourceRevoked => Value::Object(warning_object("source_revoked")),
         ProvenanceWarning::Masked { reason } => {
             let mut object = warning_object("masked");
             object.insert(

@@ -92,6 +92,7 @@ fn error_kind_label(kind: &AbilityErrorKind) -> String {
         AbilityErrorKind::OptionalComposedReadFailed { .. } => {
             "OptionalComposedReadFailed".to_string()
         }
+        AbilityErrorKind::SubjectNotOwned => "SubjectNotOwned".to_string(),
         AbilityErrorKind::HardError(_) => "HardError".to_string(),
     }
 }
