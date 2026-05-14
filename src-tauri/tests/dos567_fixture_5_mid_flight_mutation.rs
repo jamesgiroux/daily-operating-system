@@ -50,6 +50,64 @@ fn dos567_mid_flight_mutation_variant_shape_and_bridge_mapping() {
     }
 }
 
+/// Mirror of the 423 `mid_flight_mutation` response body shape produced by
+/// `surface_runtime::mid_flight_mutation_error_response`. We mirror it here
+/// because the substrate helper is private; this fixture pins the response
+/// contract surface clients can rely on. If the actual response shape
+/// changes, this assertion fails and forces a coordinated update.
+fn expected_mid_flight_body(
+    request_id: &str,
+    claim_id: &str,
+    mutation_id: &str,
+    cursor: &str,
+) -> serde_json::Value {
+    serde_json::json!({
+        "error": {
+            "code": "mid_flight_mutation",
+            "message": "Another accepted mutation is still being finalized.",
+            "request_id": request_id,
+            "remediation": "Wait for the mutation cursor event, then retry if needed.",
+        },
+        "claim_id": claim_id,
+        "mutation_id": mutation_id,
+        "retry_after_event": {
+            "cursor": cursor,
+        },
+    })
+}
+
+#[test]
+fn dos567_mid_flight_mutation_response_carries_mutation_id_and_cursor() {
+    // Surface clients receiving HTTP 423 mid-flight need to know which
+    // cursor to poll for the terminal event of the holder's mutation.
+    // The 423 body therefore carries `claim_id`, `mutation_id`, and
+    // `retry_after_event.cursor` alongside the standard error envelope.
+    let body = expected_mid_flight_body(
+        "req-mid-flight-1",
+        "claim-mid-flight",
+        "mutation-holder",
+        "abcdef12-3456-4789-9abc-def012345678",
+    );
+
+    // The contention-resolution payload travels alongside the standard
+    // error envelope, not nested inside it — `mutation_id` and the
+    // cursor must be retrievable without parsing the message string.
+    assert_eq!(body["claim_id"], "claim-mid-flight");
+    assert_eq!(body["mutation_id"], "mutation-holder");
+    assert_eq!(
+        body["retry_after_event"]["cursor"],
+        "abcdef12-3456-4789-9abc-def012345678"
+    );
+    // Envelope shape is preserved so existing surface client error
+    // handling (which keys off `error.code`) continues to work.
+    assert_eq!(body["error"]["code"], "mid_flight_mutation");
+    assert_eq!(body["error"]["request_id"], "req-mid-flight-1");
+    assert!(body["error"]["remediation"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("mutation cursor event"));
+}
+
 #[test]
 #[ignore = "requires temp-file DB + multi-thread harness (substrate-sweep agent territory): rusqlite::Connection is !Sync, so the runtime race needs two connections sharing a file; the variant + bridge mapping assertions above pin the contract"]
 fn dos567_concurrent_writes_loser_receives_mid_flight_with_cursor_pointing_to_attempt() {

@@ -48,9 +48,9 @@ use crate::services::comparator_thresholds::{
 };
 use crate::services::context::{ClaimDismissalSurface, ServiceContext};
 use crate::services::versioning::{
-    checked_next_version, insert_version_event, mark_mutation_attempt_committed,
-    mark_mutation_attempt_committed_noop, version_to_i64, MutationGuard, SignalCursor,
-    VersionActorKind, VersionEventInsert, VersionEventKind,
+    checked_next_version, insert_committed_secondary_attempt, insert_version_event,
+    mark_mutation_attempt_committed, mark_mutation_attempt_committed_noop, version_to_i64,
+    MutationGuard, SignalCursor, VersionActorKind, VersionEventInsert, VersionEventKind,
 };
 use abilities_runtime::predicates::registry::{PredicateRef, PREDICATE_REGISTRY_VERSION};
 use abilities_runtime::structured_claim::{
@@ -5888,9 +5888,16 @@ where
             // Bump the superseded claim's watermark + emit its lifecycle
             // event so subscribers holding its old version observe the
             // transition. Migration 172 requires `version_events.cursor`
-            // to be UNIQUE, so this row gets a fresh cursor; the
-            // mutation_id stays the parent attempt's so both events
-            // remain attributable to the same supersession transaction.
+            // to be UNIQUE, so this row gets a fresh cursor. The doctor
+            // outbox-integrity query joins
+            // `version_events.cursor = mutation_attempts.cursor` AND
+            // `version_events.mutation_id = mutation_attempts.mutation_id`,
+            // so the secondary event needs its own paired
+            // `mutation_attempts` row — the parent attempt's row pairs
+            // the new claim's commit event with a different cursor. We
+            // insert a pre-committed secondary attempt in the same Tx so
+            // outbox atomicity holds and `claims_missing_outbox` stays
+            // zero for the superseded claim.
             let (superseded_previous, superseded_current) =
                 bump_existing_claim_version_tx(tx, superseded_id)?;
             let superseded_event_kind = if matches!(
@@ -5903,6 +5910,12 @@ where
             };
             let superseded_reason = format!("superseded_by_{}", &new_id);
             let superseded_cursor = SignalCursor::new();
+            let superseded_attempt = insert_committed_secondary_attempt(
+                tx,
+                &superseded_cursor,
+                superseded_id,
+                &now,
+            )?;
             insert_version_event(
                 tx,
                 VersionEventInsert {
@@ -5915,7 +5928,7 @@ where
                     reason: Some(&superseded_reason),
                     scope_redacted: false,
                     correction_event_log_id: None,
-                    mutation_id: Some(&mutation_guard.attempt().mutation_id),
+                    mutation_id: Some(&superseded_attempt.mutation_id),
                     created_at: &now,
                     actor_kind,
                 },
@@ -6485,6 +6498,7 @@ pub fn withdraw_claim(
             .ok_or_else(|| ClaimError::UnknownClaimId(claim_id.to_string()))?;
         let subject_value = serde_json::from_str::<serde_json::Value>(&claim.subject_ref)?;
         let subject = subject_ref_from_json(&subject_value)?;
+        let now = ctx.clock.now().to_rfc3339();
 
         if claim.claim_state != ClaimState::Withdrawn
             || claim.surfacing_state != SurfacingState::Dormant
@@ -6499,10 +6513,9 @@ pub fn withdraw_claim(
                  WHERE id = ?2",
                 params![reason, claim_id],
             )?;
-            mark_claim_edges_tombstoned(tx, claim_id, &ctx.clock.now().to_rfc3339())?;
+            mark_claim_edges_tombstoned(tx, claim_id, &now)?;
             tx.bump_for_subject(&subject)?;
             let (previous, current) = bump_existing_claim_version_tx(tx, claim_id)?;
-            let now = ctx.clock.now().to_rfc3339();
             finish_claim_version_event_tx(
                 tx,
                 mutation_guard.attempt(),
@@ -6515,6 +6528,16 @@ pub fn withdraw_claim(
                     actor_kind,
                 },
             )?;
+        } else {
+            // Idempotent re-withdraw against an already-withdrawn claim
+            // with the same retraction reason: nothing persisted changes,
+            // so we don't burn a claim_version or emit a version_events
+            // row. The reserved mutation_attempts row still needs to be
+            // finalized in this Tx — otherwise the MutationGuard Drop
+            // path would write a spurious `mutation_aborted` after the
+            // commit succeeded. Mirror the no-op finalization used by
+            // record_claim_feedback's ConfirmCurrent branch.
+            mark_mutation_attempt_committed_noop(tx, mutation_guard.attempt(), &now)?;
         }
 
         load_claim_by_id(tx.conn_ref(), claim_id)?

@@ -1619,8 +1619,69 @@ async fn bridge_surface_error_response(
             )
             .await
         }
+        BridgeSurfaceError::MidFlightMutation {
+            claim_id,
+            mutation_id,
+            retry_after_event,
+        } => mid_flight_mutation_error_response(
+            request_id,
+            claim_id,
+            mutation_id,
+            retry_after_event,
+        ),
         error => error_response(bridge_surface_error(error).with_request_id(request_id)),
     }
+}
+
+/// Build the 423 `mid_flight_mutation` HTTP response body. The base
+/// envelope (`code`, `message`, `request_id`, `remediation`) is carried by
+/// `SurfaceHttpError`; we layer the contention-resolution payload —
+/// `claim_id`, `mutation_id`, and `retry_after_event.cursor` — alongside
+/// the `error` object so surface clients can subscribe to the holder's
+/// `mutation_attempts.cursor` for the terminal event without needing a
+/// separate lookup. Mirrors the shape used by `stale_version_error_response`
+/// for `stale_watermark` corrections (ac §7 + ac §24).
+fn mid_flight_mutation_error_response(
+    request_id: String,
+    claim_id: String,
+    mutation_id: String,
+    retry_after_event: String,
+) -> Response<ResponseBody> {
+    let body = build_mid_flight_mutation_body(
+        request_id,
+        claim_id,
+        mutation_id,
+        retry_after_event,
+    );
+    json_response(StatusCode::LOCKED, body)
+}
+
+pub(crate) fn build_mid_flight_mutation_body(
+    request_id: String,
+    claim_id: String,
+    mutation_id: String,
+    retry_after_event: String,
+) -> serde_json::Value {
+    let envelope = bridge_surface_error(BridgeSurfaceError::MidFlightMutation {
+        claim_id: claim_id.clone(),
+        mutation_id: mutation_id.clone(),
+        retry_after_event: retry_after_event.clone(),
+    })
+    .with_request_id(request_id);
+    let resolved_request_id = envelope.request_id.unwrap_or_else(new_request_id);
+    json!({
+        "error": {
+            "code": envelope.code,
+            "message": envelope.message,
+            "request_id": resolved_request_id,
+            "remediation": envelope.remediation,
+        },
+        "claim_id": claim_id,
+        "mutation_id": mutation_id,
+        "retry_after_event": {
+            "cursor": retry_after_event,
+        },
+    })
 }
 
 /// Emit a JSONL audit row for a bridge-surface rejection per packet ac §34.
@@ -3509,6 +3570,36 @@ mod tests {
             assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
             assert_eq!(body_json(response)["error"]["code"], "runtime_unavailable");
         }
+    }
+
+    #[test]
+    fn mid_flight_mutation_body_carries_claim_mutation_and_cursor() {
+        // The 423 response body must carry the contention-resolution payload
+        // (claim_id, mutation_id, retry_after_event.cursor) alongside the
+        // standard error envelope so surface clients can subscribe to the
+        // holder's mutation_attempts.cursor for the terminal event.
+        let body = build_mid_flight_mutation_body(
+            "req-mid-flight-1".to_string(),
+            "claim-mid-flight".to_string(),
+            "mutation-holder".to_string(),
+            "abcdef12-3456-4789-9abc-def012345678".to_string(),
+        );
+        assert_eq!(body["claim_id"], "claim-mid-flight");
+        assert_eq!(body["mutation_id"], "mutation-holder");
+        assert_eq!(
+            body["retry_after_event"]["cursor"],
+            "abcdef12-3456-4789-9abc-def012345678"
+        );
+        assert_eq!(body["error"]["code"], "mid_flight_mutation");
+        assert_eq!(body["error"]["request_id"], "req-mid-flight-1");
+        assert!(body["error"]["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("being finalized"));
+        assert!(body["error"]["remediation"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("mutation cursor event"));
     }
 
     #[test]

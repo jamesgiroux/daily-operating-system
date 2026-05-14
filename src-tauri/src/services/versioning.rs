@@ -273,6 +273,38 @@ pub fn mark_mutation_attempt_committed(
     Ok(())
 }
 
+/// Insert a `mutation_attempts` row that is already in the `committed`
+/// terminal state, paired with a fresh cursor that an in-flight Tx will
+/// reference from a sibling `version_events` row. Used when a single Tx
+/// emits a secondary lifecycle event (e.g. a supersession bump on the old
+/// claim alongside the new claim's insert) and needs the doctor outbox
+/// query — which joins `version_events.cursor = mutation_attempts.cursor`
+/// — to find a satisfying row for the secondary event's cursor.
+///
+/// The secondary attempt gets its own `mutation_id`; the parent attempt's
+/// `mutation_id` remains the canonical mutation for the surrounding Tx.
+/// `claim_id` is set to the entity the secondary event references so the
+/// CHECK constraint (`claim_id XOR composition_id`) is satisfied.
+pub fn insert_committed_secondary_attempt(
+    tx: &ActionDb,
+    cursor: &SignalCursor,
+    claim_id: &str,
+    now: &str,
+) -> Result<MutationAttempt, rusqlite::Error> {
+    let mutation_id = uuid::Uuid::new_v4().to_string();
+    tx.conn_ref().execute(
+        "INSERT INTO mutation_attempts \
+         (mutation_id, claim_id, composition_id, cursor, started_at, status, finalized_at) \
+         VALUES (?1, ?2, NULL, ?3, ?4, 'committed', ?4)",
+        params![&mutation_id, claim_id, cursor.as_str(), now],
+    )?;
+    Ok(MutationAttempt {
+        mutation_id,
+        subject: MutationSubject::Claim(claim_id.to_string()),
+        cursor: cursor.clone(),
+    })
+}
+
 /// Mark a reserved `mutation_attempts` row as `committed` for a no-op
 /// outcome — i.e. the caller reserved the attempt before discovering the
 /// mutation does not alter any persisted state (e.g. `ConfirmCurrent`
