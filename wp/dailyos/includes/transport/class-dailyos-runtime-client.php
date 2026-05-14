@@ -482,10 +482,25 @@ final class DailyOS_Runtime_Client {
 			return null;
 		}
 
+		// The runtime binds wp_user_hash at pairing time; subsequent signed requests
+		// must present the same wp_user_id or the runtime suspends the pairing as
+		// a wp_user mismatch. MCP invocations run as the substrate user (not the
+		// admin who paired), so we read the paired wp_user_id from the marker and
+		// only fall back to current_user_id for installs that paired before this
+		// field was tracked.
+		$paired_wp_user_id = isset( $marker['paired_wp_user_id'] )
+			? (string) $marker['paired_wp_user_id']
+			: '';
+		if ( '' === $paired_wp_user_id ) {
+			$paired_wp_user_id = function_exists( 'get_current_user_id' )
+				? (string) get_current_user_id()
+				: '0';
+		}
+
 		return [
 			'site_binding_digest'  => $site_binding_digest,
 			'site_nonce'           => $site_nonce,
-			'wp_user_id'           => function_exists( 'get_current_user_id' ) ? (string) get_current_user_id() : '0',
+			'wp_user_id'           => $paired_wp_user_id,
 			'wp_site_id'           => $this->wp_site_id( $marker, $wp_install_uuid ),
 			'home_url'             => function_exists( 'home_url' ) ? home_url() : '',
 			'site_url'             => function_exists( 'site_url' ) ? site_url() : '',

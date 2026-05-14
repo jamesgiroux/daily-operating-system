@@ -88,6 +88,11 @@ final class DailyOS_Credential_Store {
 			'endpoint_version'     => isset( $marker['endpoint_version'] ) ? (string) $marker['endpoint_version'] : '',
 			'paired_at_gmt'        => isset( $marker['paired_at_gmt'] ) ? (string) $marker['paired_at_gmt'] : '',
 			'last_use_gmt'         => isset( $marker['last_use_gmt'] ) ? (string) $marker['last_use_gmt'] : '',
+			// Runtime binds wp_user_hash to the wp_user_id that completed the pairing
+			// handshake; subsequent signed requests must present the same id. Stored
+			// so the runtime client's canonical_identity sends a stable wp_user_id
+			// across admin vs substrate-user contexts.
+			'paired_wp_user_id'    => isset( $marker['paired_wp_user_id'] ) ? (string) $marker['paired_wp_user_id'] : '',
 		];
 
 		update_option( self::PAIRING_MARKER_OPTION, $normalized_marker, false );

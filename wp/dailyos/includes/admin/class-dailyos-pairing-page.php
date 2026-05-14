@@ -113,6 +113,12 @@ final class DailyOS_Pairing_Page {
 					'endpoint_version'     => $result['endpoint_version'] ?? '',
 					'paired_at_gmt'        => $now_gmt,
 					'last_use_gmt'         => $now_gmt,
+					// The runtime binds wp_user_hash at pairing time to whatever wp_user_id
+					// signed the handshake. Later signed requests (MCP invocations run as
+					// the substrate user, settings AJAX runs as the admin) must present
+					// this same id, not the current request's user, or the runtime sees
+					// a wp_user mismatch and suspends the pairing.
+					'paired_wp_user_id'    => (string) get_current_user_id(),
 				]
 			);
 
