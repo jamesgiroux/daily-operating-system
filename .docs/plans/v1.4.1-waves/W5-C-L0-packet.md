@@ -552,3 +552,118 @@
 - V1 grounded on current runtime `TrajectoryBundle` shape.
 - V1 notes missing exact `detect_risk_shift` legacy symbol.
 - V1 notes missing requested ADR-0106 short filename.
+
+## V2 Cycle-1 Fold (2026-05-14)
+
+Cycle-1 L0 panel raised 11 findings (4 architect APPROVE-WITH-COMMENTS + 7 codex BLOCK). This section folds them.
+
+### ADR-0106 sampling capture (folds Architect F1 + Codex F2)
+
+PromptFingerprint captures non-default temperature, top_p, seed from provider completion when present; defaults are elided per ADR-0106 contract. The same canonicalization helper computes the hash both for ReplayProvider lookup AND for PromptFingerprint provenance so the bytes match.
+
+Fixture: replay_parity_risk_shift_sampling.json
+- Seeds: deterministic risk-shift input with non-default sampling params
+- Asserts: PromptFingerprint.canonical_prompt_hash == ReplayProvider lookup hash byte-for-byte
+- Includes: golden replay across temperature=0.7, top_p=0.9, seed=42
+
+### Untrusted-output downstream-handoff (folds Architect F2)
+
+AbilityOutput trust is Untrusted. Any downstream ability — e.g., DOS-220 daily readiness, future surfaces — that elevates a RiskIndicator to a persisted claim MUST re-verify source_refs against the gated input source registry. Trust does NOT inherit through composition. AC: downstream callers receive a TrustEnvelope::Untrusted discriminant that hard-errors on persist_as_claim paths without explicit re-verification.
+
+### evidence_summary.source_asof = oldest contributing (folds Architect F3)
+
+evidence_summary.source_asof is set to the OLDEST contributing source_asof across indicators[].source_refs. Freshness diagnostics then surface the weakest link rather than averaging away staleness. Behavior fixture: indicator A from a 30-day-old signal + indicator B from a 6-month-old Glean doc → evidence_summary.source_asof = the 6-month-old timestamp.
+
+### Empty-indicators path (folds Architect F4)
+
+Fixture 2 — stable account — acceptance extended:
+- Asserts: indicators[] is empty
+- Asserts: direction = RiskDirection::Stable
+- Asserts: diagnostic emission for no supported risk shift path — via ProvenanceWarning::InsufficientEvidence or equivalent
+- Asserts: evidence_summary text reflects stability — no material risk shift indicators detected over window — rather than fabricating risk
+
+### Channel-audit citations (folds Codex F1)
+
+Channel-by-channel gate citations:
+- Channel 1 — subject-ref claims via load_claims_active: services/claims.rs — grep apply_central_sensitivity_gate for the function; cite line range
+- Channel 2 — source-ref claims via load_claims_active_by_source_ref: same gate, same file
+- Channel 3 — snapshot.claims to EvidenceSource: grep prepare_meeting/synthesis.rs for the helper that filters EvidenceSource by subject; cite line range
+- Channel 4 — composed get_entity_context children: gate at get_entity_context own boundary — DOS-218; cite get_entity_context.rs Agent-actor filter line range
+- Channel 5 — PrepareMeetingInput.context.evidence test seam: serde skip_deserializing enforces; cite the struct definition
+- Channel 6 — rendered prompt + canonical JSON: gate applied at prepare_prompt_inputs — or similar; grep for the helper that assembles canonical JSON; cite line range
+- Channel 7 — template variables: same upstream gate; cite the template-substitution call site
+- Channel 8 — output-only provenance fields: no gate needed; documents what is not sent to provider
+- Channel 9 — non-claim prompt data: no gate needed; documents trivially-safe metadata
+
+If exact line numbers can not be determined from grep, leave the function name + file path as the citation and note exact line at implementation time.
+
+### TrajectoryBundle subject-fit (folds Codex F3)
+
+Input-boundary verification: BEFORE PromptRiskContext.trajectory serialization, every trajectory point + signal source_ref subject is verified to belong to the caller input entity_id. Cross-stakeholder leakage defense — if a trajectory point references a person who is also a stakeholder at a different account, that point is dropped — not just the cross-account ref.
+
+Fixture: bundle-11-trajectory-subject-bleed
+- Seeds: Account A trajectory includes a person who is also a stakeholder at Account B
+- Asserts: prompt input for Account A risk-shift call does NOT include the cross-account person signal text
+- Asserts: source_ref to that person claim is masked or dropped
+
+### Judge config pinned (folds Codex F4)
+
+Judge model: same as DOS-219 prepare_meeting judge — grep .docs/plans/wave-W5/DOS-219-plan.md and .docs/plans/wave-W5/proof-bundle.md for the judge harness config; bind same provider + model + prompt template here.
+
+Judge prompt template: judge/detect_risk_shift.v1.txt — new template; ground in DOS-219 judge prompt shape.
+
+Sample unit: one risk-shift invocation per entity_id per day at 100% sampling — low-frequency; per DOS-222 spec line, risk shifts are bounded by tracked-account count.
+
+Dimensions: relevance >= 0.85, faithfulness >= 0.90, attribution-completeness >= 0.95 — matches DOS-219.
+
+Divergence definition: judge score variance between legacy and new ability over 7-day window, weighted equally across dimensions. Drift threshold <= 3%. Drift-failure rule: alert + investigate; do NOT auto-cutover until divergence trends down for 7 days.
+
+### Post-synthesis source_ref membership check (folds Codex F5)
+
+After the LLM returns RiskIndicator[], every source_ref in every indicator is verified against the GATED input source registry — the trajectory points + signals + claims that were sensitivity-gated at input. Refs that do not match a gated input source ID are rejected: the indicator is dropped — not the whole output. ProvenanceWarning::HallucinatedSourceRef increments.
+
+Fixture: bundle-11-hallucinated-source-ref
+- Seeds: input with N trajectory points; LLM returns an indicator with a fabricated source_ref ID
+- Asserts: indicator dropped; warning counter incremented; rest of output preserved
+
+### Revoked-Glean revalidation (folds Codex F6)
+
+BEFORE prompt assembly, cached trajectory source_refs are revalidated against current Glean revocation state. If a source backing a cached trajectory point has been revoked since the cache write, that point is dropped from prompt input. Pair with ProvenanceWarning::SourceRevoked shape from W5-B V2.
+
+Fixture: bundle-11-revoked-cached-trajectory
+- Seeds: trajectory cached at T1; source revoked at T2; risk-shift call at T3
+- Asserts: revoked source trajectory point dropped from prompt
+- Asserts: ProvenanceWarning::SourceRevoked emitted
+
+### trajectory_delta_v1 contract pinned (folds Codex F7)
+
+Algorithm version: trajectory_delta_v1
+- Input contract: TrajectoryBundle with engagement_curve, role_progression — current runtime shape
+- Window sizes: 30-day vs 90-day delta windows
+- Thresholds:
+  - Improving: 30-day engagement up greater than 10% AND no role-progression downward signal
+  - Stable: absolute 30-day engagement delta less than or equal to 10% AND no role-progression downward
+  - DegradingMinor: 30-day engagement down 10-25% OR single role-progression downward
+  - DegradingMajor: 30-day engagement down greater than 25% OR multiple role-progression downward signals
+- Null handling: insufficient data — less than 7 days of engagement curve — yields RiskDirection::InsufficientEvidence + ProvenanceWarning::InsufficientEvidence
+- Output mapping: direction enum, deterministic, golden-testable
+
+Golden tests in Stage-2 fixtures:
+- account-trending-down yields DegradingMajor + indicators
+- account-stable yields Stable + empty indicators
+- account-active-escalation yields DegradingMajor or DegradingMinor depending on signal magnitude
+- account-with-revoked-Glean yields InsufficientEvidence — Glean revocation drops enough trajectory points that the 7-day floor is not met
+
+### Changelog V2 (2026-05-14)
+
+- V2 folds 11 cycle-1 panel findings — 4 architect + 7 codex.
+- Architect F1 + Codex F2 maps to ADR-0106 sampling capture
+- Architect F2 maps to Untrusted-output downstream-handoff
+- Architect F3 maps to evidence_summary.source_asof = oldest contributing
+- Architect F4 maps to Empty-indicators path
+- Codex F1 maps to Channel-audit citations
+- Codex F3 maps to TrajectoryBundle subject-fit
+- Codex F4 maps to Judge config pinned
+- Codex F5 maps to Post-synthesis source_ref membership check
+- Codex F6 maps to Revoked-Glean revalidation
+- Codex F7 maps to trajectory_delta_v1 contract pinned
