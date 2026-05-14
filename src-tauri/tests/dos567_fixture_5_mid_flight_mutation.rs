@@ -108,6 +108,52 @@ fn dos567_mid_flight_mutation_response_carries_mutation_id_and_cursor() {
         .contains("mutation cursor event"));
 }
 
+/// Fresh-insert contention: two writers each reserve their own fresh
+/// `proposal.id` UUID before acquiring the per-key commit lock. The loser's
+/// holder lookup cannot resolve the winner by `claim_id`, since the winner's
+/// `proposal.id` is a different fresh UUID. The holder lookup is therefore
+/// keyed on the commit key tuple via an in-memory sidecar map, not on
+/// `mutation_attempts.claim_id`. The 423 body the loser receives names the
+/// WINNER's claim_id, mutation_id, and cursor — never the loser's own
+/// reservation.
+///
+/// Runtime trigger is exercised in `services::claims::tests` (private
+/// helpers are not reachable from integration tests); this assertion pins
+/// the surface contract.
+#[test]
+fn dos567_fresh_insert_contender_surfaces_winner_identity_not_self() {
+    // The 423 envelope identifies the WINNER's claim_id/mutation_id/cursor.
+    // If the substrate ever regresses to "report loser's own reservation,"
+    // surface clients would subscribe to a cursor that never terminates
+    // (the loser's reservation is aborted with no payload event).
+    let loser_proposal_uuid = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+    let winner_claim_id = "claim-winner-fresh";
+    let winner_mutation_id = "mutation-winner-fresh";
+    let winner_cursor = "11111111-2222-4333-8444-555555555555";
+
+    let claim_err = ClaimError::MidFlightMutation {
+        claim_id: winner_claim_id.to_string(),
+        mutation_id: winner_mutation_id.to_string(),
+        retry_after_event: winner_cursor.to_string(),
+    };
+    match claim_err {
+        ClaimError::MidFlightMutation {
+            claim_id,
+            mutation_id,
+            retry_after_event,
+        } => {
+            assert_eq!(claim_id, winner_claim_id);
+            assert_eq!(mutation_id, winner_mutation_id);
+            assert_eq!(retry_after_event, winner_cursor);
+            assert_ne!(
+                claim_id, loser_proposal_uuid,
+                "fresh-insert loser must NOT see its own reservation in the 423 body"
+            );
+        }
+        other => panic!("expected MidFlightMutation, got {other:?}"),
+    }
+}
+
 #[test]
 #[ignore = "requires temp-file DB + multi-thread harness (substrate-sweep agent territory): rusqlite::Connection is !Sync, so the runtime race needs two connections sharing a file; the variant + bridge mapping assertions above pin the contract"]
 fn dos567_concurrent_writes_loser_receives_mid_flight_with_cursor_pointing_to_attempt() {

@@ -799,34 +799,6 @@ fn commit_lock_for(key: CommitKey) -> Arc<Mutex<()>> {
         .clone()
 }
 
-/// Look up the holder of an in-flight `mutation_attempts` row for `claim_id`,
-/// excluding the caller's own reserved attempt (`self_mutation_id`).
-///
-/// Without the self-exclusion, callers race against their own reservation:
-/// `MutationGuard::reserve` writes the in-flight row BEFORE the lock attempt,
-/// so a `try_lock` failure followed by a holder lookup would always find the
-/// caller's own row instead of the actual lock-holding sibling.
-fn lookup_in_flight_mutation_holder(
-    db: &ActionDb,
-    claim_id: &str,
-    self_mutation_id: &str,
-) -> Result<Option<(String, String)>, ClaimError> {
-    db.conn_ref()
-        .query_row(
-            "SELECT mutation_id, cursor \
-             FROM mutation_attempts \
-             WHERE claim_id = ?1 \
-               AND status = 'in_flight' \
-               AND mutation_id != ?2 \
-             ORDER BY started_at DESC \
-             LIMIT 1",
-            params![claim_id, self_mutation_id],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
-        )
-        .optional()
-        .map_err(ClaimError::from)
-}
-
 /// Mark a reserved mutation attempt aborted when the caller never enters
 /// the mutation Tx (e.g. blocked by an in-flight 423 holder). Mirrors the
 /// `MutationGuard::Drop` path but runs without writing a `mutation_aborted`
@@ -846,6 +818,61 @@ fn abort_unused_mutation_attempt(
         )
         .map_err(ClaimError::from)?;
     Ok(())
+}
+
+/// In-memory sidecar mapping a commit key to the identifiers of the lock
+/// holder running the mutation Tx. Required because two fresh-insert
+/// contenders each reserve their own `proposal.id` UUID before acquiring
+/// the per-key lock — a DB lookup by `claim_id = self_proposal_id` cannot
+/// resolve the holder's row. The sidecar is written when the lock is
+/// acquired and cleared when the guard is dropped, so it is consistent
+/// with the parking_lot mutex's actual ownership lifetime.
+///
+/// Tuple layout: `(holder_mutation_id, holder_cursor, holder_claim_id)`.
+type HolderIdentity = (String, String, String);
+
+static COMMIT_KEY_HOLDERS: OnceLock<Mutex<HashMap<CommitKey, HolderIdentity>>> = OnceLock::new();
+
+fn commit_key_holders() -> &'static Mutex<HashMap<CommitKey, HolderIdentity>> {
+    COMMIT_KEY_HOLDERS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Record that `holder` now owns the per-key commit lock for `key`.
+/// Called after the parking_lot mutex is acquired; cleared by
+/// `CommitKeyHolderGuard::drop`.
+fn record_commit_key_holder(key: CommitKey, holder: HolderIdentity) {
+    commit_key_holders().lock().insert(key, holder);
+}
+
+fn clear_commit_key_holder(key: &CommitKey, holder_mutation_id: &str) {
+    let mut map = commit_key_holders().lock();
+    // Only remove if the entry still names us — defensive against the
+    // (impossible-but-cheap-to-guard) case where another writer somehow
+    // wrote over our slot before our Drop ran.
+    if let Some(entry) = map.get(key) {
+        if entry.0 == holder_mutation_id {
+            map.remove(key);
+        }
+    }
+}
+
+fn lookup_commit_key_holder(key: &CommitKey) -> Option<HolderIdentity> {
+    commit_key_holders().lock().get(key).cloned()
+}
+
+/// RAII deregistration for the sidecar holder map. Pairs 1:1 with the
+/// parking_lot `MutexGuard` lifetime; dropping this struct removes the
+/// sidecar entry so the next contender's `lookup_commit_key_holder` sees
+/// no stale holder.
+struct CommitKeyHolderGuard {
+    key: CommitKey,
+    mutation_id: String,
+}
+
+impl Drop for CommitKeyHolderGuard {
+    fn drop(&mut self) {
+        clear_commit_key_holder(&self.key, &self.mutation_id);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -5684,28 +5711,26 @@ where
             .or_else(|| proposal.topic_key.clone())
             .unwrap_or_default(),
     );
-    let lock = commit_lock_for(key);
+    let lock = commit_lock_for(key.clone());
     // Non-blocking acquisition: when the lock is already held by another
-    // mutation, surface the holder's reservation row so the loser can
-    // subscribe to the cursor instead of serializing then CAS-failing
-    // (HTTP 423 mid_flight_mutation rather than HTTP 409 stale_watermark).
-    // Per packet §7, the CAS is still correctness; this is the contract
-    // surface for concurrent writers, not a defense-in-depth tuning.
+    // mutation, surface the holder's identity from the in-memory sidecar so
+    // the loser can subscribe to the holder's cursor instead of serializing
+    // then CAS-failing (HTTP 423 mid_flight_mutation rather than HTTP 409
+    // stale_watermark). Two fresh-insert contenders each reserve their own
+    // proposal.id UUID before acquiring the lock; a DB lookup by claim_id
+    // would miss the holder's row, so the sidecar is keyed on the commit
+    // key itself. Per packet §7, the CAS is still correctness; this is the
+    // contract surface for concurrent writers, not a defense-in-depth
+    // tuning.
     let _guard = match lock.try_lock() {
         Some(guard) => guard,
         None => {
-            // Lock holder is mid-Tx. Look up its mutation_attempts row,
-            // EXCLUDING this caller's own reserved attempt (the reservation
-            // commits before the lock attempt — see MutationGuard::reserve).
-            let claim_id_for_holder = proposal
-                .id
-                .clone()
-                .unwrap_or_else(|| mutation_guard.attempt().subject.claim_id().unwrap_or("").to_string());
-            let self_mutation_id = mutation_guard.attempt().mutation_id.clone();
-            let holder = lookup_in_flight_mutation_holder(db, &claim_id_for_holder, &self_mutation_id)
-                .ok()
-                .flatten();
-            if let Some((holder_mutation_id, holder_cursor)) = holder {
+            // Lock holder is mid-Tx. Read its identity from the sidecar,
+            // which is populated atomically against the parking_lot guard
+            // lifetime (see CommitKeyHolderGuard).
+            if let Some((holder_mutation_id, holder_cursor, holder_claim_id)) =
+                lookup_commit_key_holder(&key)
+            {
                 // Mark our reserved attempt aborted (no Tx will run).
                 mutation_guard.mark_completed();
                 if let Err(error) = abort_unused_mutation_attempt(
@@ -5719,7 +5744,7 @@ where
                     );
                 }
                 return Err(ClaimError::MidFlightMutation {
-                    claim_id: claim_id_for_holder,
+                    claim_id: holder_claim_id,
                     mutation_id: holder_mutation_id,
                     retry_after_event: holder_cursor,
                 });
@@ -5728,6 +5753,29 @@ where
             // and the lookup); fall through to the blocking acquire path so
             // we don't spuriously 423.
             lock.lock()
+        }
+    };
+    // Register ourselves as the lock holder so the next contender's
+    // `lookup_commit_key_holder` resolves correctly. Held for the lifetime
+    // of `_guard` (which lives to the end of `commit_claim`); cleared on
+    // drop.
+    let _holder_guard = {
+        let attempt = mutation_guard.attempt();
+        record_commit_key_holder(
+            key.clone(),
+            (
+                attempt.mutation_id.clone(),
+                attempt.cursor.as_str().to_string(),
+                attempt
+                    .subject
+                    .claim_id()
+                    .unwrap_or_default()
+                    .to_string(),
+            ),
+        );
+        CommitKeyHolderGuard {
+            key: key.clone(),
+            mutation_id: attempt.mutation_id.clone(),
         }
     };
 
@@ -6434,7 +6482,7 @@ where
             };
             if let Some((claim_id, current_version, reason)) = rejection {
                 let now = ctx.clock.now().to_rfc3339();
-                if let Err(audit_err) = record_claim_write_rejected_event(
+                match record_claim_write_rejected_event(
                     db,
                     mutation_guard.attempt(),
                     &claim_id,
@@ -6443,14 +6491,27 @@ where
                     &now,
                     actor_kind,
                 ) {
-                    log::warn!(
-                        "failed to record claim.write_rejected event mutation_id={} error={audit_err}",
-                        mutation_guard.attempt().mutation_id
-                    );
+                    Ok(_) => {
+                        // Terminal `claim.write_rejected` row landed at the
+                        // reserved cursor and the helper marked the attempt
+                        // aborted in the same side-Tx. Suppress Drop's
+                        // `mutation_aborted` emit so we don't double-write.
+                        mutation_guard.mark_completed();
+                    }
+                    Err(audit_err) => {
+                        // No terminal version_events row was written. Leave
+                        // the guard "not completed" so `MutationGuard::Drop`
+                        // finalises the attempt as `aborted` (its normal
+                        // mutation_aborted emit at the reserved cursor).
+                        // Otherwise the `mutation_attempts` row would stay
+                        // `in_flight` forever and later contenders would see
+                        // a phantom MidFlightMutation against this zombie.
+                        log::warn!(
+                            "failed to record claim.write_rejected event mutation_id={} error={audit_err}",
+                            mutation_guard.attempt().mutation_id
+                        );
+                    }
                 }
-                // Suppress Drop's mutation_aborted emit — the rejection row
-                // already terminates the cursor.
-                mutation_guard.mark_completed();
             }
             return Err(error);
         }
@@ -12287,6 +12348,88 @@ mod tests {
             .recv_timeout(Duration::from_secs(1))
             .expect("second writer acquired after release");
         handle.join().expect("thread joined");
+    }
+
+    // Fresh-insert contention: two writers each reserve their own fresh
+    // proposal.id UUID before the lock attempt. The loser's holder lookup
+    // can NOT resolve the winner by claim_id (different UUIDs). The
+    // commit-key sidecar map closes that gap by recording the holder's
+    // identity at lock-acquisition time, keyed on the commit key itself.
+    //
+    // Uses a dedicated account id so this test's pre-acquired commit lock
+    // doesn't poison the parallel commit_claim_* tests that share the
+    // default `acct-1` SUBJECT (process-wide COMMIT_LOCKS map).
+    #[test]
+    fn fresh_insert_contender_resolves_holder_via_commit_key_sidecar() {
+        let db = test_db();
+        // Seed a dedicated account so this test's commit key does not
+        // collide with the rest of the suite.
+        db.conn_ref()
+            .execute(
+                "INSERT INTO accounts (id, name, updated_at) VALUES (?1, ?2, ?3)",
+                params!["acct-fresh-contend", "Fresh Contend", TS],
+            )
+            .expect("seed dedicated account");
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        // Commit key for a fresh-insert proposal on acct-fresh-contend
+        // (claim_type=risk, field_path=health.risk).
+        let key: CommitKey = (
+            serde_json::json!({ "id": "acct-fresh-contend", "kind": "account" }).to_string(),
+            "risk".to_string(),
+            "health.risk".to_string(),
+        );
+
+        // Simulate a winner mid-Tx: hold the parking_lot lock AND populate
+        // the sidecar with the winner's mutation identity. Both pieces must
+        // be present for the loser's contention path to fire (see
+        // commit_claim ~5694).
+        let lock = commit_lock_for(key.clone());
+        let _guard = lock.lock();
+        let winner_claim_id = "claim-winner-fresh".to_string();
+        let winner_mutation_id = "mutation-winner-fresh".to_string();
+        let winner_cursor = "11111111-2222-4333-8444-555555555555".to_string();
+        record_commit_key_holder(
+            key.clone(),
+            (
+                winner_mutation_id.clone(),
+                winner_cursor.clone(),
+                winner_claim_id.clone(),
+            ),
+        );
+
+        // Loser is a fresh proposal (id: None) targeting the same key. It
+        // reserves its own UUID via MutationGuard::reserve, then fails
+        // try_lock and hits the sidecar lookup.
+        let mut loser = proposal("contending fresh insert");
+        loser.subject_ref =
+            serde_json::json!({ "kind": "account", "id": "acct-fresh-contend" }).to_string();
+        let error = commit_claim(&ctx, &db, loser).expect_err("must surface MidFlightMutation");
+        match error {
+            ClaimError::MidFlightMutation {
+                claim_id,
+                mutation_id,
+                retry_after_event,
+            } => {
+                // Loser must see the WINNER's identity, not its own
+                // reservation. Without the sidecar fix, claim_id would
+                // resolve to the loser's fresh UUID or fall through to
+                // blocking serialization + CAS rejection.
+                assert_eq!(claim_id, winner_claim_id);
+                assert_eq!(mutation_id, winner_mutation_id);
+                assert_eq!(retry_after_event, winner_cursor);
+            }
+            other => panic!("expected MidFlightMutation, got {other:?}"),
+        }
+
+        // Sidecar is cleared when the winner's guard drops.
+        drop(_guard);
+        clear_commit_key_holder(&key, &winner_mutation_id);
+        assert!(
+            lookup_commit_key_holder(&key).is_none(),
+            "sidecar must be empty after holder release"
+        );
     }
 
     #[test]
