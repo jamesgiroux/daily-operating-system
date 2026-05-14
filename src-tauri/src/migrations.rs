@@ -872,7 +872,9 @@ const MIGRATIONS: &[Migration] = &[
         version: 170,
         apply: migrate_v170_canonicalization_cutover,
     },
-    // W3-B DOS-565 V5 removes bearer material from the local signed-surface protocol.
+    // Drop the surface_client_sessions.bearer_token_hash column: V5 signed-surface
+    // protocol authenticates via HMAC signature alone, with session_id carried in
+    // a non-secret request header. No bearer is generated, stored, or verified.
     Migration::Sql {
         version: 171,
         sql: include_str!("migrations/171_dos_565_drop_surface_bearer_token_hash.sql"),
