@@ -176,6 +176,7 @@ final class DailyOS_Credential_Store {
 			function_exists( 'current_user_can' )
 			&& ! (
 				current_user_can( 'manage_options' )
+				// phpcs:ignore WordPress.WP.Capabilities.Unknown -- Custom capability registered by DailyOS_Mcp_Roles.
 				|| user_can( get_current_user_id(), 'dailyos_invoke_mcp_ability' )
 			)
 		) {
