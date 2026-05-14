@@ -6166,10 +6166,21 @@ where
             )?;
             canonicalization_evaluations.extend(contradiction_evaluations);
             if let Some((primary, mut v2_snapshot)) = contradiction_match {
-                let new_id = proposal
-                    .id
-                    .clone()
-                    .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+                // When the routing target is Mutate, `proposal.id` is the
+                // EXISTING claim's id (the CAS target). The contradicting
+                // row is a NEW row; reusing the Mutate target id here would
+                // PK-collide with the existing claim row. Always mint a
+                // fresh UUID for the contradicting row when the caller is
+                // mutating an existing claim; otherwise honour the
+                // caller-supplied id (Insert/InsertWithId paths) and fall
+                // back to a fresh UUID when none was supplied.
+                let new_id = match &mutation_target {
+                    ClaimMutationTarget::Mutate { .. } => uuid::Uuid::new_v4().to_string(),
+                    _ => proposal
+                        .id
+                        .clone()
+                        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+                };
                 let contradicting = IntelligenceClaim {
                     id: new_id.clone(),
                     claim_version: inserted_claim_version,
