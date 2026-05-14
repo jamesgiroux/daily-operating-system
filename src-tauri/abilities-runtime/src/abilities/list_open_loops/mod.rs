@@ -108,17 +108,16 @@ pub async fn list_open_loops(
         .collect::<Vec<_>>();
     eligible_claims.sort_by(|left, right| {
         (
-            left.source_asof.as_deref(),
-            left.observed_at.as_str(),
-            left.created_at.as_str(),
-            left.id.as_str(),
+            right.source_asof.as_deref(),
+            right.observed_at.as_str(),
+            right.created_at.as_str(),
         )
             .cmp(&(
-                right.source_asof.as_deref(),
-                right.observed_at.as_str(),
-                right.created_at.as_str(),
-                right.id.as_str(),
+                left.source_asof.as_deref(),
+                left.observed_at.as_str(),
+                left.created_at.as_str(),
             ))
+            .then_with(|| left.id.as_str().cmp(right.id.as_str()))
     });
 
     let mut builder = ProvenanceBuilder::new(provenance_config(ctx, input.schema_version));
