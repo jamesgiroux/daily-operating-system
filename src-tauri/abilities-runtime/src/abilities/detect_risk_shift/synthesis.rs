@@ -48,14 +48,20 @@ pub struct DetectRiskShiftInput {
     pub entity_id: String,
     #[serde(default = "default_depth")]
     pub depth: u8,
-    #[serde(default)]
-    pub evidence: Vec<RiskShiftSourceVerification>,
+    #[serde(default, skip_deserializing, skip_serializing)]
+    #[schemars(skip)]
+    evidence: Vec<RiskShiftSourceVerification>,
     #[serde(default, skip_deserializing, skip_serializing)]
     #[schemars(skip)]
     context: Option<RiskShiftContext>,
 }
 
 impl DetectRiskShiftInput {
+    pub fn with_evidence(mut self, evidence: Vec<RiskShiftSourceVerification>) -> Self {
+        self.evidence = evidence;
+        self
+    }
+
     pub fn with_context(mut self, context: RiskShiftContext) -> Self {
         self.context = Some(context);
         self
@@ -247,6 +253,15 @@ pub struct RevokedGleanCacheRevalidation {
     pub hook: String,
     #[serde(default)]
     pub revoked_refs: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub coverage_warnings: Vec<RiskShiftCoverageWarning>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+pub struct RiskShiftCoverageWarning {
+    pub kind: String,
+    pub source_ref: String,
+    pub trajectory_path: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
@@ -308,8 +323,6 @@ struct PromptMechanicalIndicator {
 #[derive(Debug, Deserialize)]
 struct RawRiskShift {
     #[serde(default)]
-    direction: Option<RiskDirection>,
-    #[serde(default)]
     summary: Option<String>,
     #[serde(default)]
     confidence: Option<f32>,
@@ -361,9 +374,12 @@ pub async fn build_risk_shift(
     // The prompt boundary must retain the centralized sensitivity gate even
     // after real child composition wiring replaces the synthetic empty child.
     context.retain_prompt_input_allowed_claims();
-    context.revoked_glean_revalidation = revoked_glean_cache_revalidation_hook(&context.claims);
+    context.revoked_glean_revalidation =
+        revoked_glean_cache_revalidation_hook(&context.claims, context.trajectory.as_mut());
 
     let mechanical_indicators = mechanical_indicators_from_trajectory(context.trajectory.as_ref());
+    let deterministic_direction =
+        deterministic_direction_from_mechanical_indicators(&mechanical_indicators);
     let prompt_context = PromptRiskContext {
         schema_version: input.schema_version.0,
         subject: &context.subject,
@@ -399,7 +415,13 @@ pub async fn build_risk_shift(
             .seed
             .unwrap_or(context.sampling.seed),
     };
-    let synthesized = assemble_untrusted_result(&context, raw, sampling, ctx.services().clock.now())?;
+    let synthesized = assemble_untrusted_result(
+        &context,
+        raw,
+        sampling,
+        ctx.services().clock.now(),
+        deterministic_direction,
+    )?;
     let fingerprint = prompts::fingerprint_from_completion(&completion, &rendered);
 
     finalize_result(ctx, input.schema_version, synthesized, fingerprint, &context)
@@ -462,6 +484,7 @@ impl RiskShiftContext {
                 checked: false,
                 hook: "revoked_glean_cache_revalidation".to_string(),
                 revoked_refs: Vec::new(),
+                coverage_warnings: Vec::new(),
             },
         })
     }
@@ -472,11 +495,8 @@ fn assemble_untrusted_result(
     raw: RawRiskShift,
     sampling: RiskShiftSamplingCapture,
     now: DateTime<Utc>,
+    direction: RiskDirection,
 ) -> Result<RiskShiftUntrustedResult, AbilityError> {
-    let direction = raw
-        .direction
-        .clone()
-        .unwrap_or(RiskDirection::InsufficientEvidence);
     let source_refs = collect_source_refs(&raw);
     if !matches!(direction, RiskDirection::InsufficientEvidence) && source_refs.is_empty() {
         return Err(validation_error(
@@ -814,6 +834,16 @@ fn mechanical_indicators_from_trajectory(
     }]
 }
 
+fn deterministic_direction_from_mechanical_indicators(
+    indicators: &[PromptMechanicalIndicator],
+) -> RiskDirection {
+    indicators
+        .iter()
+        .find(|indicator| indicator.label == "engagement_delta")
+        .map(|indicator| indicator.direction.clone())
+        .unwrap_or(RiskDirection::InsufficientEvidence)
+}
+
 fn insufficient_mechanical_indicator(label: &str, rationale: &str) -> PromptMechanicalIndicator {
     PromptMechanicalIndicator {
         label: label.to_string(),
@@ -825,21 +855,172 @@ fn insufficient_mechanical_indicator(label: &str, rationale: &str) -> PromptMech
 
 fn revoked_glean_cache_revalidation_hook(
     claims: &[RiskShiftSourceVerification],
+    trajectory: Option<&mut TrajectoryBundle>,
 ) -> RevokedGleanCacheRevalidation {
-    RevokedGleanCacheRevalidation {
+    let revoked_refs = claims
+        .iter()
+        .filter(|claim| is_revoked_glean_source(claim))
+        .map(|claim| claim.source_ref.clone().unwrap_or_else(|| claim.id.clone()))
+        .collect::<Vec<_>>();
+    let mut revalidation = RevokedGleanCacheRevalidation {
         checked: true,
         hook: "revoked_glean_cache_revalidation".to_string(),
-        revoked_refs: claims
-            .iter()
-            .filter(|claim| is_revoked_glean_source(claim))
-            .map(|claim| {
-                claim
-                    .source_ref
-                    .clone()
-                    .unwrap_or_else(|| claim.id.clone())
-            })
-            .collect(),
+        revoked_refs,
+        coverage_warnings: Vec::new(),
+    };
+
+    let revoked_ref_set = revoked_claim_ref_set(claims);
+    if let Some(trajectory) = trajectory {
+        if let Some(snapshot) = trajectory.engagement_curve.as_mut() {
+            retain_non_revoked_trajectory_points(
+                &mut snapshot.series,
+                claims,
+                &revoked_ref_set,
+                "engagement_curve",
+                &mut revalidation.coverage_warnings,
+            );
+        }
+        if let Some(snapshot) = trajectory.role_progression.as_mut() {
+            retain_non_revoked_trajectory_points(
+                &mut snapshot.series,
+                claims,
+                &revoked_ref_set,
+                "role_progression",
+                &mut revalidation.coverage_warnings,
+            );
+        }
     }
+
+    revalidation
+}
+
+fn retain_non_revoked_trajectory_points<T>(
+    series: &mut Vec<crate::abilities::temporal::DataPoint<T>>,
+    claims: &[RiskShiftSourceVerification],
+    revoked_refs: &BTreeSet<String>,
+    section: &str,
+    coverage_warnings: &mut Vec<RiskShiftCoverageWarning>,
+) {
+    let mut retained = Vec::with_capacity(series.len());
+    for (index, point) in series.drain(..).enumerate() {
+        if let Some(source_ref) =
+            revoked_primary_trajectory_source_ref(&point.source_refs, claims, revoked_refs)
+        {
+            coverage_warnings.push(RiskShiftCoverageWarning {
+                kind: "source_revoked".to_string(),
+                source_ref,
+                trajectory_path: format!("/trajectory/{section}/series/{index}"),
+            });
+        } else {
+            retained.push(point);
+        }
+    }
+    *series = retained;
+}
+
+fn revoked_primary_trajectory_source_ref(
+    source_refs: &[SourceRef],
+    claims: &[RiskShiftSourceVerification],
+    revoked_refs: &BTreeSet<String>,
+) -> Option<String> {
+    source_refs
+        .first()
+        .and_then(|source_ref| revoked_trajectory_source_ref(source_ref, claims, revoked_refs))
+}
+
+fn revoked_trajectory_source_ref(
+    source_ref: &SourceRef,
+    claims: &[RiskShiftSourceVerification],
+    revoked_refs: &BTreeSet<String>,
+) -> Option<String> {
+    match source_ref {
+        SourceRef::Source { source_index } => claims
+            .get(source_index.as_usize())
+            .filter(|claim| is_revoked_glean_source(claim))
+            .map(|claim| claim.source_ref.clone().unwrap_or_else(|| claim.id.clone())),
+        SourceRef::Direct {
+            data_source: DataSource::Glean { .. },
+            identifier,
+            ..
+        } => source_identifier_revoked_ref(identifier, revoked_refs),
+        SourceRef::Direct { .. } | SourceRef::Child { .. } => None,
+    }
+}
+
+fn source_identifier_revoked_ref(
+    identifier: &SourceIdentifier,
+    revoked_refs: &BTreeSet<String>,
+) -> Option<String> {
+    source_identifier_candidate_refs(identifier)
+        .into_iter()
+        .find(|candidate| revoked_refs.contains(candidate))
+}
+
+fn source_identifier_candidate_refs(identifier: &SourceIdentifier) -> Vec<String> {
+    match identifier {
+        SourceIdentifier::Signal { signal_id } => vec![signal_id.0.clone()],
+        SourceIdentifier::Entity { entity_id, .. } => vec![entity_id.0.clone()],
+        SourceIdentifier::EmailThread {
+            thread_id,
+            message_id,
+        } => {
+            let mut refs = vec![thread_id.0.to_string()];
+            if let Some(message_id) = message_id {
+                refs.push(message_id.0.clone());
+            }
+            refs
+        }
+        SourceIdentifier::EmailMessage {
+            email_id,
+            message_id,
+        } => {
+            let mut refs = vec![email_id.0.clone()];
+            if let Some(message_id) = message_id {
+                refs.push(message_id.0.clone());
+            }
+            refs
+        }
+        SourceIdentifier::Meeting { meeting_id } => vec![meeting_id.0.clone()],
+        SourceIdentifier::Document {
+            document_id,
+            chunk_id,
+        } => {
+            let mut refs = vec![document_id.0.clone()];
+            if let Some(chunk_id) = chunk_id {
+                refs.push(chunk_id.0.clone());
+            }
+            refs
+        }
+        SourceIdentifier::UserEntry { entry_id } => vec![entry_id.0.clone()],
+        SourceIdentifier::GleanAssessment {
+            assessment_id,
+            cited_sources,
+            ..
+        } => {
+            let mut refs = vec![assessment_id.0.clone()];
+            refs.extend(cited_sources.iter().map(|source| source.citation.clone()));
+            refs
+        }
+        SourceIdentifier::ProviderCompletion {
+            completion_id,
+            provider,
+        } => vec![completion_id.clone(), provider.0.clone()],
+        SourceIdentifier::OpaqueGleanSource { opaque_ref, .. } => vec![opaque_ref.clone()],
+    }
+}
+
+fn revoked_claim_ref_set(claims: &[RiskShiftSourceVerification]) -> BTreeSet<String> {
+    claims
+        .iter()
+        .filter(|claim| is_revoked_glean_source(claim))
+        .flat_map(|claim| {
+            let mut refs = vec![claim.id.clone()];
+            if let Some(source_ref) = &claim.source_ref {
+                refs.push(source_ref.clone());
+            }
+            refs
+        })
+        .collect()
 }
 
 fn is_revoked_glean_source(claim: &RiskShiftSourceVerification) -> bool {

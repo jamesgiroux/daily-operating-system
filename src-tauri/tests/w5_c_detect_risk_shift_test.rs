@@ -1,18 +1,18 @@
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, TimeZone, Utc};
+use dailyos_lib::abilities::detect_risk_shift::detect_risk_shift;
 use dailyos_lib::abilities::detect_risk_shift::prompts;
 use dailyos_lib::abilities::detect_risk_shift::synthesis::{
     DetectRiskShiftInput, RevokedGleanCacheRevalidation, RiskDirection, RiskShiftContext,
-    RiskShiftEntityContextChild, RiskShiftSamplingCapture, RiskShiftSourceVerification,
-    RiskShiftSubjectRef, TrajectoryDeltaTransformSpec, TrustEnvelope,
+    RiskShiftCoverageWarning, RiskShiftEntityContextChild, RiskShiftSamplingCapture,
+    RiskShiftSourceVerification, RiskShiftSubjectRef, TrajectoryDeltaTransformSpec, TrustEnvelope,
     JUDGE_MODEL, TRAJECTORY_DELTA_ENGAGEMENT_THRESHOLD_NEGATIVE_PERCENT,
     TRAJECTORY_DELTA_ENGAGEMENT_THRESHOLD_POSITIVE_PERCENT, TRAJECTORY_DELTA_LONG_WINDOW_DAYS,
     TRAJECTORY_DELTA_NULL_HANDLING, TRAJECTORY_DELTA_SHORT_WINDOW_DAYS,
     TRAJECTORY_DELTA_TRANSFORM_ID,
 };
-use dailyos_lib::abilities::detect_risk_shift::detect_risk_shift;
 use dailyos_lib::abilities::feedback::ClaimVerificationState;
 use dailyos_lib::abilities::provenance::{EffectiveTrust, EntityId, SourceIndex, SourceRef};
 use dailyos_lib::abilities::temporal::{
@@ -81,7 +81,8 @@ impl TrajectoryReadHandle for FixtureClaimReader {
 }
 
 #[tokio::test]
-async fn happy_path_trajectory_delta_v1_increasing_detects_deterministic_increasing_risk_direction() {
+async fn happy_path_trajectory_delta_v1_increasing_detects_deterministic_increasing_risk_direction()
+{
     let sampling_fixture = sampling_capture_fixture();
     let entity_id = "acct-risk-sampling";
     let context = risk_context(
@@ -99,12 +100,10 @@ async fn happy_path_trajectory_delta_v1_increasing_detects_deterministic_increas
         Some(engagement_trajectory(entity_id, (6, 4), (2, 3))),
         sampling_fixture.sampling.clone(),
     );
-    let (output, _prompt_hash, _canonical_inputs) = invoke_with_private_context(
-        context,
-        sampling_fixture.completion.clone(),
-    )
-    .await
-    .expect("risk shift succeeds");
+    let (output, _prompt_hash, _canonical_inputs) =
+        invoke_with_private_context(context, sampling_fixture.completion.clone())
+            .await
+            .expect("risk shift succeeds");
 
     let TrustEnvelope::Untrusted(result) = &output.data().envelope;
     assert_eq!(result.direction, RiskDirection::Increasing);
@@ -130,7 +129,8 @@ async fn happy_path_trajectory_delta_v1_increasing_detects_deterministic_increas
 }
 
 #[tokio::test]
-async fn happy_path_trajectory_delta_v1_decreasing_detects_deterministic_decreasing_risk_direction() {
+async fn happy_path_trajectory_delta_v1_decreasing_detects_deterministic_decreasing_risk_direction()
+{
     let entity_id = "acct-risk-decreasing";
     let claims = vec![fixture_claim(
         "claim-risk-decreasing-engagement",
@@ -164,6 +164,39 @@ async fn happy_path_trajectory_delta_v1_decreasing_detects_deterministic_decreas
         result.source_verification.accepted_source_refs,
         vec!["src-risk-decreasing-engagement"]
     );
+}
+
+#[tokio::test]
+async fn overall_direction_ignores_llm_direction_and_uses_trajectory_delta_v1() {
+    let entity_id = "acct-risk-llm-direction-ignored";
+    let claims = vec![fixture_claim(
+        "claim-risk-llm-direction-ignored",
+        "Engagement improved for the generic account.",
+        "src-risk-llm-direction-ignored",
+        ClaimSensitivity::Internal,
+        entity_id,
+        "user",
+        "2026-05-12T09:00:00Z",
+    )];
+    let trajectory = engagement_trajectory(entity_id, (2, 3), (6, 4));
+
+    let output = invoke_with_reader(
+        entity_id,
+        claims,
+        trajectory,
+        completion_text(
+            RiskDirection::Increasing,
+            "The provider claimed increasing risk despite improving engagement.",
+            "src-risk-llm-direction-ignored",
+        ),
+        RiskShiftSamplingCapture::default(),
+    )
+    .await
+    .expect("risk shift succeeds")
+    .0;
+
+    let TrustEnvelope::Untrusted(result) = &output.data().envelope;
+    assert_eq!(result.direction, RiskDirection::Decreasing);
 }
 
 #[tokio::test]
@@ -343,7 +376,11 @@ async fn revoked_glean_cache_revalidation_omits_loop() {
                 "2026-04-10T09:00:00Z",
             ),
         ],
-        Some(engagement_trajectory("acct-risk-revoked-cache", (2, 3), (6, 4))),
+        Some(engagement_trajectory(
+            "acct-risk-revoked-cache",
+            (2, 3),
+            (6, 4),
+        )),
         RiskShiftSamplingCapture::default(),
     );
 
@@ -361,22 +398,106 @@ async fn revoked_glean_cache_revalidation_omits_loop() {
         result.source_verification.accepted_source_refs,
         vec!["src-risk-active-cache"]
     );
-    assert!(
-        !result
-            .source_verification
-            .accepted_source_refs
-            .iter()
-            .any(|source_ref| source_ref == "src-risk-revoked-cache")
-    );
+    assert!(!result
+        .source_verification
+        .accepted_source_refs
+        .iter()
+        .any(|source_ref| source_ref == "src-risk-revoked-cache"));
     assert_fixture_scenario(
         "bundle-11-revoked-cached-trajectory",
         "bundle11-detect-risk-shift-revoked-cached-trajectory",
     );
 }
 
+#[tokio::test]
+async fn revoked_glean_cache_revalidation_drops_cached_trajectory_points_before_prompt() {
+    let entity_id = "acct-risk-revoked-trajectory-point";
+    let context = raw_risk_context(
+        entity_id,
+        vec![
+            risk_source(
+                "claim-risk-active-trajectory",
+                "Active evidence shows improved engagement.",
+                "src-risk-active-trajectory",
+                entity_id,
+                "user",
+                "active",
+                "internal",
+                "2026-05-13T09:00:00Z",
+            ),
+            risk_source(
+                "claim-risk-revoked-trajectory",
+                "Revoked Glean evidence backed a cached trajectory point.",
+                "src-risk-revoked-trajectory",
+                entity_id,
+                "glean",
+                "revoked",
+                "internal",
+                "2026-04-10T09:00:00Z",
+            ),
+        ],
+        Some(engagement_trajectory_with_indexed_sources(
+            entity_id,
+            vec![((2, 3), 0), ((20, 20), 1), ((6, 4), 0)],
+        )),
+        RiskShiftSamplingCapture::default(),
+    );
+
+    let (output, _prompt_hash, canonical_inputs) = invoke_with_private_context(
+        context,
+        completion_text(
+            RiskDirection::Decreasing,
+            "Active engagement recovered after dropping revoked cached trajectory evidence.",
+            "src-risk-active-trajectory",
+        ),
+    )
+    .await
+    .expect("risk shift succeeds after dropping revoked trajectory point");
+
+    let TrustEnvelope::Untrusted(result) = &output.data().envelope;
+    assert_eq!(result.direction, RiskDirection::Decreasing);
+
+    let series = canonical_inputs
+        .pointer("/risk_context/trajectory/engagement_curve/series")
+        .and_then(Value::as_array)
+        .expect("actual prompt includes engagement trajectory series");
+    assert_eq!(series.len(), 2);
+    assert!(
+        series.iter().all(|point| point
+            .pointer("/value/meetings_count")
+            .and_then(Value::as_u64)
+            != Some(20)),
+        "revoked trajectory point must be dropped before prompt assembly"
+    );
+
+    let coverage_warnings = canonical_inputs
+        .pointer("/risk_context/revoked_glean_revalidation/coverage_warnings")
+        .and_then(Value::as_array)
+        .expect("actual prompt includes revoked-source coverage warnings");
+    assert!(coverage_warnings.iter().any(|warning| {
+        warning.pointer("/kind").and_then(Value::as_str) == Some("source_revoked")
+            && warning.pointer("/source_ref").and_then(Value::as_str)
+                == Some("src-risk-revoked-trajectory")
+    }));
+}
+
 #[test]
 fn judge_model_pinned_to_claude_sonnet_4_6() {
     assert_eq!(JUDGE_MODEL, "claude-sonnet-4-6");
+}
+
+#[test]
+fn public_input_schema_does_not_expose_evidence() {
+    let schema: Value = serde_json::from_str(include_str!(
+        "../src/operations/schemas/detect-risk-shift.input.schema.json"
+    ))
+    .expect("detect_risk_shift input schema parses");
+
+    assert!(schema.pointer("/properties/evidence").is_none());
+    assert!(
+        !schema.to_string().contains("\"evidence\""),
+        "public input schema must not expose fixture-only evidence"
+    );
 }
 
 #[tokio::test]
@@ -405,7 +526,11 @@ async fn centralized_sensitivity_gate_applied_independently_of_child() {
                 "2026-05-12T10:00:00Z",
             ),
         ],
-        Some(engagement_trajectory("acct-risk-sensitivity", (6, 4), (2, 3))),
+        Some(engagement_trajectory(
+            "acct-risk-sensitivity",
+            (6, 4),
+            (2, 3),
+        )),
         RiskShiftSamplingCapture::default(),
     );
 
@@ -422,20 +547,16 @@ async fn centralized_sensitivity_gate_applied_independently_of_child() {
     .0;
 
     let TrustEnvelope::Untrusted(result) = &output.data().envelope;
-    assert!(
-        result
-            .source_verification
-            .input_claim_refs
-            .iter()
-            .any(|source_ref| source_ref == INTERNAL_SOURCE_REF)
-    );
-    assert!(
-        !result
-            .source_verification
-            .input_claim_refs
-            .iter()
-            .any(|source_ref| source_ref == CONFIDENTIAL_SOURCE_REF)
-    );
+    assert!(result
+        .source_verification
+        .input_claim_refs
+        .iter()
+        .any(|source_ref| source_ref == INTERNAL_SOURCE_REF));
+    assert!(!result
+        .source_verification
+        .input_claim_refs
+        .iter()
+        .any(|source_ref| source_ref == CONFIDENTIAL_SOURCE_REF));
 }
 
 async fn invoke_with_reader(
@@ -446,14 +567,17 @@ async fn invoke_with_reader(
     sampling: RiskShiftSamplingCapture,
 ) -> Result<
     (
-        dailyos_lib::abilities::AbilityOutput<dailyos_lib::abilities::detect_risk_shift::RiskShiftResult>,
+        dailyos_lib::abilities::AbilityOutput<
+            dailyos_lib::abilities::detect_risk_shift::RiskShiftResult,
+        >,
         String,
         Value,
     ),
     (AbilityError, String, Value),
 > {
-    let expected_context = risk_context_from_claims(entity_id, &claims, Some(trajectory.clone()), sampling);
-    let (provider, prompt_hash, canonical_inputs) =
+    let expected_context =
+        risk_context_from_claims(entity_id, &claims, Some(trajectory.clone()), sampling);
+    let (provider, prompt_hash, expected_canonical_inputs, captured_canonical_inputs) =
         replay_provider_for_context(&expected_context, completion);
     let mut trajectories = HashMap::new();
     trajectories.insert((ENTITY_TYPE.to_string(), entity_id.to_string()), trajectory);
@@ -476,8 +600,14 @@ async fn invoke_with_reader(
         ClaimDismissalSurface::Eval,
     );
 
-    detect_risk_shift(&ctx, input_for(entity_id))
-        .await
+    let outcome = detect_risk_shift(&ctx, input_for(entity_id)).await;
+    let canonical_inputs = captured_canonical_inputs
+        .lock()
+        .expect("captured prompt lock is available")
+        .clone()
+        .unwrap_or(expected_canonical_inputs);
+
+    outcome
         .map(|output| (output, prompt_hash.clone(), canonical_inputs.clone()))
         .map_err(|error| (error, prompt_hash, canonical_inputs))
 }
@@ -487,14 +617,16 @@ async fn invoke_with_private_context(
     completion: String,
 ) -> Result<
     (
-        dailyos_lib::abilities::AbilityOutput<dailyos_lib::abilities::detect_risk_shift::RiskShiftResult>,
+        dailyos_lib::abilities::AbilityOutput<
+            dailyos_lib::abilities::detect_risk_shift::RiskShiftResult,
+        >,
         String,
         Value,
     ),
     (AbilityError, String, Value),
 > {
     let expected_context = context_after_prompt_boundary(context.clone());
-    let (provider, prompt_hash, canonical_inputs) =
+    let (provider, prompt_hash, expected_canonical_inputs, captured_canonical_inputs) =
         replay_provider_for_context(&expected_context, completion);
     let clock = FixedClock::new(timestamp(CLOCK));
     let rng = SeedableRng::new(222);
@@ -508,8 +640,15 @@ async fn invoke_with_private_context(
         ClaimDismissalSurface::Eval,
     );
 
-    detect_risk_shift(&ctx, input_for(&context.subject.id).with_context(context))
-        .await
+    let outcome =
+        detect_risk_shift(&ctx, input_for(&context.subject.id).with_context(context)).await;
+    let canonical_inputs = captured_canonical_inputs
+        .lock()
+        .expect("captured prompt lock is available")
+        .clone()
+        .unwrap_or(expected_canonical_inputs);
+
+    outcome
         .map(|output| (output, prompt_hash.clone(), canonical_inputs.clone()))
         .map_err(|error| (error, prompt_hash, canonical_inputs))
 }
@@ -524,15 +663,20 @@ async fn invoke_with_private_context(
 struct FixedCompletionProvider {
     completion_text: String,
     sampling: RiskShiftSamplingCapture,
+    captured_canonical_inputs: Arc<Mutex<Option<Value>>>,
 }
 
 #[async_trait::async_trait]
 impl IntelligenceProvider for FixedCompletionProvider {
     async fn complete(
         &self,
-        _prompt: PromptInput,
+        prompt: PromptInput,
         _tier: ModelTier,
     ) -> Result<Completion, ProviderError> {
+        *self
+            .captured_canonical_inputs
+            .lock()
+            .expect("captured prompt lock is available") = prompt.canonical_json_inputs.clone();
         Ok(Completion {
             text: self.completion_text.clone(),
             fingerprint_metadata: FingerprintMetadata {
@@ -560,7 +704,12 @@ impl IntelligenceProvider for FixedCompletionProvider {
 fn replay_provider_for_context(
     context: &RiskShiftContext,
     completion: String,
-) -> (FixedCompletionProvider, String, Value) {
+) -> (
+    FixedCompletionProvider,
+    String,
+    Value,
+    Arc<Mutex<Option<Value>>>,
+) {
     let risk_context_json = serde_json::to_string_pretty(&prompt_context_value(context))
         .expect("prompt context serializes");
     let rendered = prompts::render_prompt(&risk_context_json, 1);
@@ -571,11 +720,18 @@ fn replay_provider_for_context(
         .canonical_json_inputs
         .clone()
         .expect("rendered prompt includes canonical JSON inputs");
+    let captured_canonical_inputs = Arc::new(Mutex::new(None));
     let provider = FixedCompletionProvider {
         completion_text: completion,
         sampling: context.sampling.clone(),
+        captured_canonical_inputs: captured_canonical_inputs.clone(),
     };
-    (provider, prompt_hash, canonical_inputs)
+    (
+        provider,
+        prompt_hash,
+        canonical_inputs,
+        captured_canonical_inputs,
+    )
 }
 
 fn prompt_context_value(context: &RiskShiftContext) -> Value {
@@ -595,13 +751,19 @@ fn prompt_context_value(context: &RiskShiftContext) -> Value {
 
 fn mechanical_indicators_value(trajectory: Option<&TrajectoryBundle>) -> Value {
     let Some(trajectory) = trajectory else {
-        return json!([insufficient_mechanical_indicator("No trajectory bundle was supplied.")]);
+        return json!([insufficient_mechanical_indicator(
+            "No trajectory bundle was supplied."
+        )]);
     };
     let Some(snapshot) = trajectory.engagement_curve.as_ref() else {
-        return json!([insufficient_mechanical_indicator("No engagement curve was supplied.")]);
+        return json!([insufficient_mechanical_indicator(
+            "No engagement curve was supplied."
+        )]);
     };
     if snapshot.series.len() < 2 {
-        return json!([insufficient_mechanical_indicator(TRAJECTORY_DELTA_NULL_HANDLING)]);
+        return json!([insufficient_mechanical_indicator(
+            TRAJECTORY_DELTA_NULL_HANDLING
+        )]);
     }
 
     let latest = snapshot.series.last().expect("series length checked");
@@ -609,7 +771,9 @@ fn mechanical_indicators_value(trajectory: Option<&TrajectoryBundle>) -> Value {
     let latest_total = latest.value.meetings_count + latest.value.emails_count;
     let previous_total = previous.value.meetings_count + previous.value.emails_count;
     if previous_total == 0 {
-        return json!([insufficient_mechanical_indicator(TRAJECTORY_DELTA_NULL_HANDLING)]);
+        return json!([insufficient_mechanical_indicator(
+            TRAJECTORY_DELTA_NULL_HANDLING
+        )]);
     }
 
     let delta = (latest_total as f32 - previous_total as f32) / previous_total as f32;
@@ -682,7 +846,16 @@ fn risk_context(
     trajectory: Option<TrajectoryBundle>,
     sampling: RiskShiftSamplingCapture,
 ) -> RiskShiftContext {
-    let context = RiskShiftContext {
+    context_after_prompt_boundary(raw_risk_context(entity_id, claims, trajectory, sampling))
+}
+
+fn raw_risk_context(
+    entity_id: &str,
+    claims: Vec<RiskShiftSourceVerification>,
+    trajectory: Option<TrajectoryBundle>,
+    sampling: RiskShiftSamplingCapture,
+) -> RiskShiftContext {
+    RiskShiftContext {
         subject: RiskShiftSubjectRef {
             kind: ENTITY_TYPE.to_string(),
             id: entity_id.to_string(),
@@ -704,9 +877,9 @@ fn risk_context(
             checked: false,
             hook: "revoked_glean_cache_revalidation".to_string(),
             revoked_refs: Vec::new(),
+            coverage_warnings: Vec::new(),
         },
-    };
-    context_after_prompt_boundary(context)
+    }
 }
 
 fn context_after_prompt_boundary(mut context: RiskShiftContext) -> RiskShiftContext {
@@ -714,6 +887,7 @@ fn context_after_prompt_boundary(mut context: RiskShiftContext) -> RiskShiftCont
         .claims
         .retain(|claim| prompt_input_sensitivity_allowed(&claim.sensitivity));
     context.revoked_glean_revalidation = revoked_glean_cache_revalidation(&context.claims);
+    revalidate_trajectory_for_revoked_sources(&mut context);
     context
 }
 
@@ -734,7 +908,85 @@ fn revoked_glean_cache_revalidation(
             })
             .map(|claim| claim.source_ref.clone().unwrap_or_else(|| claim.id.clone()))
             .collect(),
+        coverage_warnings: Vec::new(),
     }
+}
+
+fn revalidate_trajectory_for_revoked_sources(context: &mut RiskShiftContext) {
+    let revoked_claim_indexes = context
+        .claims
+        .iter()
+        .enumerate()
+        .filter(|(_, claim)| {
+            claim.data_source.trim().eq_ignore_ascii_case("glean")
+                && matches!(
+                    claim.lifecycle.trim().to_ascii_lowercase().as_str(),
+                    "revoked" | "withdrawn" | "tombstoned"
+                )
+        })
+        .map(|(index, claim)| {
+            (
+                index,
+                claim.source_ref.clone().unwrap_or_else(|| claim.id.clone()),
+            )
+        })
+        .collect::<HashMap<_, _>>();
+
+    let Some(trajectory) = context.trajectory.as_mut() else {
+        return;
+    };
+
+    if let Some(snapshot) = trajectory.engagement_curve.as_mut() {
+        let mut retained = Vec::with_capacity(snapshot.series.len());
+        for (index, point) in snapshot.series.drain(..).enumerate() {
+            if let Some(source_ref) =
+                revoked_source_ref_for_test_point(&point.source_refs, &revoked_claim_indexes)
+            {
+                context.revoked_glean_revalidation.coverage_warnings.push(
+                    RiskShiftCoverageWarning {
+                        kind: "source_revoked".to_string(),
+                        source_ref,
+                        trajectory_path: format!("/trajectory/engagement_curve/series/{index}"),
+                    },
+                );
+            } else {
+                retained.push(point);
+            }
+        }
+        snapshot.series = retained;
+    }
+
+    if let Some(snapshot) = trajectory.role_progression.as_mut() {
+        let mut retained = Vec::with_capacity(snapshot.series.len());
+        for (index, point) in snapshot.series.drain(..).enumerate() {
+            if let Some(source_ref) =
+                revoked_source_ref_for_test_point(&point.source_refs, &revoked_claim_indexes)
+            {
+                context.revoked_glean_revalidation.coverage_warnings.push(
+                    RiskShiftCoverageWarning {
+                        kind: "source_revoked".to_string(),
+                        source_ref,
+                        trajectory_path: format!("/trajectory/role_progression/series/{index}"),
+                    },
+                );
+            } else {
+                retained.push(point);
+            }
+        }
+        snapshot.series = retained;
+    }
+}
+
+fn revoked_source_ref_for_test_point(
+    source_refs: &[SourceRef],
+    revoked_claim_indexes: &HashMap<usize, String>,
+) -> Option<String> {
+    source_refs.first().and_then(|source_ref| match source_ref {
+        SourceRef::Source { source_index } => {
+            revoked_claim_indexes.get(&source_index.as_usize()).cloned()
+        }
+        SourceRef::Direct { .. } | SourceRef::Child { .. } => None,
+    })
 }
 
 fn risk_source_from_claim(claim: IntelligenceClaim) -> RiskShiftSourceVerification {
@@ -803,13 +1055,17 @@ fn engagement_trajectory(
             at: previous_at,
             value: EngagementWindow::new(previous.0, previous.1, 0.6)
                 .expect("valid previous engagement window"),
-            source_refs: source_refs(1),
+            source_refs: vec![SourceRef::Source {
+                source_index: SourceIndex(0),
+            }],
         },
         DataPoint {
             at: latest_at,
             value: EngagementWindow::new(latest.0, latest.1, 0.5)
                 .expect("valid latest engagement window"),
-            source_refs: source_refs(1),
+            source_refs: vec![SourceRef::Source {
+                source_index: SourceIndex(0),
+            }],
         },
     ];
     let engagement_curve = TrajectorySnapshot::new(
@@ -828,12 +1084,46 @@ fn engagement_trajectory(
     }
 }
 
-fn source_refs(count: usize) -> Vec<SourceRef> {
-    (0..count)
-        .map(|source_index| SourceRef::Source {
-            source_index: SourceIndex(source_index),
+fn engagement_trajectory_with_indexed_sources(
+    entity_id: &str,
+    points: Vec<((u32, u32), usize)>,
+) -> TrajectoryBundle {
+    let computed_at = timestamp(CLOCK);
+    let len = points.len();
+    let series = points
+        .into_iter()
+        .enumerate()
+        .map(|(index, ((meetings_count, emails_count), source_index))| {
+            let at = if index + 1 == len {
+                timestamp(CLOCK)
+            } else {
+                Utc.with_ymd_and_hms(2026, 4, 14 + index as u32, 12, 0, 0)
+                    .unwrap()
+            };
+            DataPoint {
+                at,
+                value: EngagementWindow::new(meetings_count, emails_count, 0.6)
+                    .expect("valid engagement window"),
+                source_refs: vec![SourceRef::Source {
+                    source_index: SourceIndex(source_index),
+                }],
+            }
         })
-        .collect()
+        .collect::<Vec<_>>();
+    let engagement_curve = TrajectorySnapshot::new(
+        TrajectoryKind::EngagementCurve,
+        ENTITY_TYPE.to_string(),
+        EntityId::new(entity_id),
+        series,
+        computed_at,
+        0.95,
+    )
+    .expect("valid engagement trajectory");
+
+    TrajectoryBundle {
+        engagement_curve: Some(engagement_curve),
+        role_progression: None,
+    }
 }
 
 fn fixture_claim(
@@ -985,8 +1275,7 @@ fn sampling_capture_fixture() -> SamplingCaptureFixture {
     let sampling = RiskShiftSamplingCapture {
         temperature: value["sampling"]["temperature"]
             .as_f64()
-            .expect("temperature")
-            as f32,
+            .expect("temperature") as f32,
         top_p: value["sampling"]["top_p"].as_f64().expect("top_p") as f32,
         seed: value["sampling"]["seed"].as_u64().expect("seed"),
     };
