@@ -178,13 +178,12 @@ final class DailyOS_Runtime_Client {
 			$nonce,
 			$timestamp
 		);
-		$bearer     = $credential->bearer_token();
 		$session_id = $credential->session_id();
 		$url        = $this->runtime_url( $runtime_base_url, $path );
 		$headers    = [
 			'Content-Type'                   => self::CONTENT_TYPE,
 			'Accept'                         => self::CONTENT_TYPE,
-			'Authorization'                  => 'Bearer ' . $bearer,
+			'X-DailyOS-Session-Id'           => $session_id,
 			'X-DailyOS-SurfaceClient'        => $this->surface_client_id( $marker ),
 			'X-DailyOS-Key-Id'               => $session_id,
 			'X-DailyOS-Signature'            => $signature,

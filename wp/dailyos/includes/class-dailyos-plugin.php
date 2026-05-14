@@ -148,7 +148,161 @@ final class DailyOS_Plugin {
 	 * Register transport-layer hooks.
 	 */
 	public function register_transport(): void {
+		$this->register_session_refresh_filter();
 		( new DailyOS_Credential_Store() )->register_session_key_filter_safeguard();
+	}
+
+	/**
+	 * Register the runtime refresh endpoint as the session material source.
+	 */
+	private function register_session_refresh_filter(): void {
+		if ( ! function_exists( 'add_filter' ) ) {
+			return;
+		}
+
+		add_filter(
+			'dailyos_wp_bridge_session_key',
+			[ $this, 'refresh_session_key' ],
+			10,
+			1
+		);
+	}
+
+	/**
+	 * Resolve process-local session material from the paired runtime.
+	 *
+	 * @param mixed $candidate Existing filter value.
+	 * @return mixed Existing candidate, normalized session material, or null.
+	 */
+	public function refresh_session_key( mixed $candidate ): mixed {
+		if ( null !== $candidate ) {
+			return $candidate;
+		}
+
+		$marker = ( new DailyOS_Credential_Store() )->get_marker();
+
+		if ( null === $marker ) {
+			return null;
+		}
+
+		$session_id           = self::marker_string( $marker, 'session_id' );
+		$site_binding_digest  = self::marker_string( $marker, 'site_binding_digest' );
+		$wp_install_uuid      = self::marker_string( $marker, 'wp_install_uuid' );
+		$plugin_instance_uuid = self::marker_string( $marker, 'plugin_instance_uuid' );
+		$runtime_url          = self::marker_string( $marker, 'runtime_url' );
+
+		if (
+			null === $session_id
+			|| null === $site_binding_digest
+			|| null === $wp_install_uuid
+			|| null === $plugin_instance_uuid
+			|| null === $runtime_url
+		) {
+			return null;
+		}
+
+		$runtime_base_url = self::normalize_loopback_runtime_url( $runtime_url );
+
+		if ( null === $runtime_base_url ) {
+			return null;
+		}
+
+		$body_bytes = wp_json_encode(
+			[
+				'session_id'           => $session_id,
+				'site_binding_digest'  => $site_binding_digest,
+				'wp_install_uuid'      => $wp_install_uuid,
+				'plugin_instance_uuid' => $plugin_instance_uuid,
+			],
+			JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+		);
+
+		if ( ! is_string( $body_bytes ) ) {
+			return null;
+		}
+
+		$response = wp_remote_post(
+			$runtime_base_url . '/v1/surface/session/refresh',
+			[
+				'body'        => $body_bytes,
+				'headers'     => [
+					'Content-Type' => 'application/json',
+					'Accept'       => 'application/json',
+				],
+				'redirection' => 0,
+				'timeout'     => 5,
+				'sslverify'   => false,
+				'blocking'    => true,
+				'data_format' => 'body',
+			]
+		);
+
+		if ( is_wp_error( $response ) || 200 !== (int) wp_remote_retrieve_response_code( $response ) ) {
+			return null;
+		}
+
+		$body    = (string) wp_remote_retrieve_body( $response );
+		$decoded = '' === $body ? null : json_decode( $body, true );
+
+		if ( ! is_array( $decoded ) || true !== ( $decoded['ok'] ?? false ) ) {
+			return null;
+		}
+
+		$hmac_key_hex = $decoded['hmac_key'] ?? null;
+
+		if ( ! is_string( $hmac_key_hex ) || 64 !== strlen( $hmac_key_hex ) || ! ctype_xdigit( $hmac_key_hex ) ) {
+			return null;
+		}
+
+		$hmac_key = hex2bin( $hmac_key_hex );
+
+		if ( ! is_string( $hmac_key ) || 32 !== strlen( $hmac_key ) ) {
+			return null;
+		}
+
+		return [
+			'hmac_key'   => $hmac_key,
+			'session_id' => $session_id,
+		];
+	}
+
+	/**
+	 * Return a required string marker field.
+	 *
+	 * @param array<string, mixed> $marker Pairing marker.
+	 * @param string               $key Marker key.
+	 */
+	private static function marker_string( array $marker, string $key ): ?string {
+		if ( ! isset( $marker[ $key ] ) || ! is_string( $marker[ $key ] ) || '' === trim( $marker[ $key ] ) ) {
+			return null;
+		}
+
+		return $marker[ $key ];
+	}
+
+	/**
+	 * Validate and normalize a loopback runtime base URL.
+	 *
+	 * @param string $runtime_url Runtime URL candidate.
+	 */
+	private static function normalize_loopback_runtime_url( string $runtime_url ): ?string {
+		$parts = wp_parse_url( trim( $runtime_url ) );
+
+		if ( ! is_array( $parts ) ) {
+			return null;
+		}
+
+		$scheme    = isset( $parts['scheme'] ) ? strtolower( (string) $parts['scheme'] ) : '';
+		$host      = isset( $parts['host'] ) ? strtolower( (string) $parts['host'] ) : '';
+		$port      = isset( $parts['port'] ) ? (int) $parts['port'] : 0;
+		$path      = isset( $parts['path'] ) ? (string) $parts['path'] : '';
+		$has_extra = isset( $parts['query'] ) || isset( $parts['fragment'] ) || ( '' !== $path && '/' !== $path );
+
+		if ( 'http' !== $scheme || '127.0.0.1' !== $host || 1 > $port || 65535 < $port || $has_extra ) {
+			return null;
+		}
+
+		return 'http://127.0.0.1:' . $port;
 	}
 
 	/**

@@ -192,7 +192,7 @@ final class DailyOS_Credential_Store {
 
 		try {
 			$this->session_material = [
-				'credential' => new DailyOS_Session_Credential( $material['bearer'], $material['session_id'] ),
+				'credential' => new DailyOS_Session_Credential( $material['session_id'] ),
 				'hmac_key'   => new DailyOS_Hmac_Key( $material['hmac_key'] ),
 			];
 		} catch ( InvalidArgumentException ) {
@@ -225,7 +225,7 @@ final class DailyOS_Credential_Store {
 	 * Validate and normalize the session key filter result.
 	 *
 	 * @param mixed $candidate Filter result.
-	 * @return array{bearer: string, hmac_key: string, session_id: string}|null Normalized result.
+	 * @return array{hmac_key: string, session_id: string}|null Normalized result.
 	 */
 	private static function normalize_session_key_result( mixed $candidate ): ?array {
 		if ( null === $candidate ) {
@@ -236,13 +236,8 @@ final class DailyOS_Credential_Store {
 			return null;
 		}
 
-		$bearer     = $candidate['bearer'] ?? null;
 		$hmac_key   = $candidate['hmac_key'] ?? null;
 		$session_id = $candidate['session_id'] ?? null;
-
-		if ( ! is_string( $bearer ) || '' === $bearer ) {
-			return null;
-		}
 
 		if ( ! is_string( $hmac_key ) || 32 !== strlen( $hmac_key ) ) {
 			return null;
@@ -253,7 +248,6 @@ final class DailyOS_Credential_Store {
 		}
 
 		return [
-			'bearer'     => $bearer,
 			'hmac_key'   => $hmac_key,
 			'session_id' => $session_id,
 		];

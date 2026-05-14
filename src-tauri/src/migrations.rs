@@ -863,6 +863,11 @@ const MIGRATIONS: &[Migration] = &[
         version: 169,
         sql: include_str!("migrations/169_dos_559_surface_client_pairings.sql"),
     },
+    // W3-B DOS-565 V5 removes bearer material from the local signed-surface protocol.
+    Migration::Sql {
+        version: 170,
+        sql: include_str!("migrations/170_dos_565_drop_surface_bearer_token_hash.sql"),
+    },
 ];
 
 const V155_SHADOW_TRUST_VERSION: i64 = 1_401_003;

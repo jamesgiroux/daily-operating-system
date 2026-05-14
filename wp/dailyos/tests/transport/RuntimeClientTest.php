@@ -7,6 +7,7 @@
 
 declare(strict_types=1);
 
+use DailyOS\DailyOS_Plugin;
 use DailyOS\Transport\DailyOS_Credential_Store;
 use DailyOS\Transport\DailyOS_Hmac_Key;
 use DailyOS\Transport\DailyOS_Hmac_Signer;
@@ -70,6 +71,7 @@ final class DailyOS_RuntimeClientTest extends TestCase {
 
 		$this->assertSame( $expected_signature, $headers['X-DailyOS-Signature'] );
 		$this->assertSame( 'http://127.0.0.1:54321/v1/surface/invoke', $call['url'] );
+		$this->assertSame( 'surface-session-id', $headers['X-DailyOS-Session-Id'] );
 		$this->assertSame( 'surface-client-123', $headers['X-DailyOS-SurfaceClient'] );
 		$this->assertSame( str_repeat( 'a', 64 ), $headers['X-DailyOS-Site-Binding-Digest'] );
 		$this->assertSame( 'siteNonceAlpha123', $headers['X-DailyOS-Site-Nonce'] );
@@ -136,6 +138,87 @@ final class DailyOS_RuntimeClientTest extends TestCase {
 		$client->invoke_ability( 'briefing.daily', [], [] );
 
 		$this->assertSame( 'http://127.0.0.1:54321/v1/surface/invoke', $GLOBALS['dailyos_test_remote_post_calls'][0]['url'] );
+	}
+
+	/**
+	 * Session refresh filter posts marker identity and returns process-local material.
+	 */
+	public function test_session_refresh_filter_posts_marker_identity_and_returns_session_material(): void {
+		$hmac_key_bytes = str_repeat( "\x03", 32 );
+
+		$this->save_marker();
+
+		$GLOBALS['dailyos_test_remote_post_response'] = [
+			'response' => [
+				'code' => 200,
+			],
+			'body'     => wp_json_encode(
+				[
+					'ok'       => true,
+					'hmac_key' => bin2hex( $hmac_key_bytes ),
+				]
+			),
+		];
+
+		DailyOS_Plugin::instance()->register_transport();
+
+		$material = apply_filters( 'dailyos_wp_bridge_session_key', null );
+
+		$this->assertIsArray( $material );
+		$this->assertSame( $hmac_key_bytes, $material['hmac_key'] );
+		$this->assertSame( 'session-123', $material['session_id'] );
+		$this->assertCount( 1, $GLOBALS['dailyos_test_remote_post_calls'] );
+
+		$call = $GLOBALS['dailyos_test_remote_post_calls'][0];
+		$args = $call['args'];
+
+		$this->assertSame( 'http://127.0.0.1:54321/v1/surface/session/refresh', $call['url'] );
+		$this->assertSame( 5, $args['timeout'] );
+		$this->assertFalse( $args['sslverify'] );
+		$this->assertSame( 'string', gettype( $args['body'] ) );
+		$this->assertSame(
+			[
+				'session_id'           => 'session-123',
+				'site_binding_digest'  => str_repeat( 'a', 64 ),
+				'wp_install_uuid'      => 'install-1',
+				'plugin_instance_uuid' => 'plugin-1',
+			],
+			json_decode( $args['body'], true )
+		);
+	}
+
+	/**
+	 * Session refresh filter leaves existing candidates untouched.
+	 */
+	public function test_session_refresh_filter_skips_existing_candidate(): void {
+		$candidate = [
+			'hmac_key'   => str_repeat( "\x04", 32 ),
+			'session_id' => 'existing-session',
+		];
+
+		$result = DailyOS_Plugin::instance()->refresh_session_key( $candidate );
+
+		$this->assertSame( $candidate, $result );
+		$this->assertSame( [], $GLOBALS['dailyos_test_remote_post_calls'] );
+	}
+
+	/**
+	 * Session refresh filter rejects failed runtime refresh responses.
+	 */
+	public function test_session_refresh_filter_rejects_non_200_response(): void {
+		$this->save_marker();
+
+		$GLOBALS['dailyos_test_remote_post_response'] = [
+			'response' => [
+				'code' => 500,
+			],
+			'body'     => '{"ok":false}',
+		];
+
+		DailyOS_Plugin::instance()->register_transport();
+
+		$this->assertNull( apply_filters( 'dailyos_wp_bridge_session_key', null ) );
+		$this->assertCount( 1, $GLOBALS['dailyos_test_remote_post_calls'] );
 	}
 
 	/**
@@ -213,7 +296,6 @@ final class DailyOS_RuntimeClientTest extends TestCase {
 			'dailyos_wp_bridge_session_key',
 			static function (): array {
 				return [
-					'bearer'     => 'surface-bearer-token',
 					'hmac_key'   => str_repeat( "\x02", 32 ),
 					'session_id' => 'surface-session-id',
 				];

@@ -19,11 +19,10 @@ final class DailyOS_CredentialRedactionTest extends TestCase {
 	 * Session credentials redact debug and serialization output.
 	 */
 	public function test_session_credential_redacts_debug_and_serialization_output(): void {
-		$secret     = 'surface-bearer-secret-token';
 		$session_id = 'surface-session-secret-id';
-		$credential = new DailyOS_Session_Credential( $secret, $session_id );
+		$credential = new DailyOS_Session_Credential( $session_id );
 
-		$this->assert_redacted_output( $credential, [ $secret, $session_id ] );
+		$this->assert_redacted_output( $credential, [ $session_id ] );
 	}
 
 	/**

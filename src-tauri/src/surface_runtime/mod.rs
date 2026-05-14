@@ -33,16 +33,16 @@ use crate::bridges::types::{
     invoke_registry_json_for_actor, provider_from_context_snapshot, surface_error, BridgeActor,
     BridgeSurface, RequestScopedInvocation,
 };
-use abilities_runtime::abilities::registry::{Actor, ScopeSet, SurfaceClientId};
 use crate::bridges::BridgeSurfaceError;
 use crate::services::context::ClaimDismissalSurface;
 use crate::services::surface_pairing::{
     self, PairingCodeFailureInput, PairingHandshakeCapacityInput, PairingHandshakeInput,
     PairingHandshakeRequest, SignedSessionValidationInput, SignedSiteClaimsInput,
     SignedTransportFailureInput, SurfacePairingAuditEvent, SurfacePairingError,
-    ValidatedSurfaceSession,
+    SurfaceSessionRefreshIdentity, SurfaceSessionRefreshInput, ValidatedSurfaceSession,
 };
 use crate::state::AppState;
+use abilities_runtime::abilities::registry::{Actor, ScopeSet, SurfaceClientId};
 
 mod hmac;
 
@@ -52,6 +52,7 @@ const DEFAULT_LOOPBACK_REQUESTS_PER_MINUTE: u32 = 60;
 const DEFAULT_LOOPBACK_BURST_PER_SECOND: u32 = 10;
 const DEFAULT_PAIRING_CODE_FAILED_ATTEMPTS: u32 = 5;
 const MAX_HANDSHAKE_BODY_BYTES: usize = 4 * 1024;
+const MAX_SESSION_REFRESH_BODY_BYTES: usize = 1024;
 const DEFAULT_SIGNED_REQUEST_MAX_BODY_BYTES: usize = 256 * 1024;
 
 type ResponseBody = Full<Bytes>;
@@ -615,6 +616,8 @@ async fn handle_hyper_request(
     let headers = request.headers().clone();
     let body_limit = if method == Method::POST && uri.path() == "/v1/pairing/handshake" {
         Some(MAX_HANDSHAKE_BODY_BYTES)
+    } else if method == Method::POST && uri.path() == "/v1/surface/session/refresh" {
+        Some(MAX_SESSION_REFRESH_BODY_BYTES)
     } else if is_signed_route_candidate(uri.path()) {
         Some(runtime.signed_request_max_body_bytes)
     } else {
@@ -677,6 +680,9 @@ async fn dispatch_surface_request(
         (&Method::GET, "/v1/surface/health") => health_response(request_id),
         (&Method::POST, "/v1/pairing/handshake") => {
             pairing_handshake_response(request.body, runtime, request_id).await
+        }
+        (&Method::POST, "/v1/surface/session/refresh") => {
+            surface_session_refresh_response(request.body, runtime, request_id).await
         }
         _ if is_signed_route_candidate(path.as_str()) => {
             let route_supported = is_supported_signed_route(&request.method, path.as_str());
@@ -758,9 +764,7 @@ async fn signed_transport_response(
     {
         Ok((Ok(validated), _)) => validated,
         Ok((Err(error), scopes_for_audit)) => {
-            for event in
-                validation_rejection_events(&verified, &error, scopes_for_audit.as_ref())
-            {
+            for event in validation_rejection_events(&verified, &error, scopes_for_audit.as_ref()) {
                 emit_pairing_audit_event(&app_state, &event);
             }
             evict_cached_session_after_validation_error(
@@ -799,7 +803,9 @@ fn is_supported_signed_route(method: &Method, path: &str) -> bool {
 }
 
 fn is_signed_route_candidate(path: &str) -> bool {
-    (path.starts_with("/v1/surface/") && path != "/v1/surface/health")
+    (path.starts_with("/v1/surface/")
+        && path != "/v1/surface/health"
+        && path != "/v1/surface/session/refresh")
         || (path.starts_with("/v1/pairing/") && path != "/v1/pairing/handshake")
 }
 
@@ -992,7 +998,6 @@ async fn pairing_handshake_response(
     let session = hmac::SignedSurfaceSession::new_active(
         outcome.session.session_id.clone(),
         outcome.session.surface_client_id.clone(),
-        &outcome.session.bearer_token,
         outcome.session.hmac_master_key,
     );
     let registration_result = match capacity_reservation {
@@ -1029,6 +1034,81 @@ async fn pairing_handshake_response(
             "ok": true,
             "request_id": request_id,
             "pairing": outcome.response,
+        }),
+    )
+}
+
+async fn surface_session_refresh_response(
+    body: Bytes,
+    runtime: Arc<EndpointRuntime>,
+    request_id: String,
+) -> Response<ResponseBody> {
+    let Some(app_state) = runtime.app_state.as_ref().cloned() else {
+        return error_response(SurfaceHttpError::runtime_unavailable().with_request_id(request_id));
+    };
+
+    let request = match serde_json::from_slice::<SurfaceSessionRefreshRequest>(&body) {
+        Ok(request) => request,
+        Err(_error) => {
+            return error_response(
+                SurfaceHttpError::bad_request("session_refresh_body_invalid")
+                    .with_safe_message("The session refresh payload is invalid.")
+                    .with_request_id(request_id),
+            );
+        }
+    };
+    let session_id = request.session_id.clone();
+    let input = SurfaceSessionRefreshInput {
+        session_id: request.session_id,
+        site_binding_digest: request.site_binding_digest,
+        wp_install_uuid: request.wp_install_uuid,
+        plugin_instance_uuid: request.plugin_instance_uuid,
+    };
+
+    let identity = match app_state
+        .db_read(move |db| {
+            surface_pairing::verify_session_refresh_identity(db, input)
+                .map_err(|error| error.to_string())
+        })
+        .await
+    {
+        Ok(identity) => identity,
+        Err(error) => {
+            return error_response(
+                SurfaceHttpError::from_pairing_error(SurfacePairingError::Write(error))
+                    .with_request_id(request_id),
+            );
+        }
+    };
+
+    match identity {
+        SurfaceSessionRefreshIdentity::Matched => {}
+        SurfaceSessionRefreshIdentity::SessionNotFound => {
+            return error_response(
+                SurfaceHttpError::session_not_found().with_request_id(request_id),
+            );
+        }
+        SurfaceSessionRefreshIdentity::IdentityMismatch => {
+            return error_response(
+                SurfaceHttpError::identity_mismatch().with_request_id(request_id),
+            );
+        }
+    }
+
+    let Some(hmac_key) = runtime
+        .signed_transport
+        .derive_active_session_key(&session_id)
+    else {
+        return error_response(SurfaceHttpError::session_not_found().with_request_id(request_id));
+    };
+
+    json_response(
+        StatusCode::OK,
+        json!({
+            "ok": true,
+            "request_id": request_id,
+            "session_id": session_id,
+            "hmac_key": hex::encode(hmac_key),
         }),
     )
 }
@@ -1273,6 +1353,15 @@ async fn signed_route_response(
         }
         _ => error_response(SurfaceHttpError::runtime_unavailable().with_request_id(request_id)),
     }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+struct SurfaceSessionRefreshRequest {
+    session_id: String,
+    site_binding_digest: String,
+    wp_install_uuid: String,
+    plugin_instance_uuid: String,
 }
 
 #[derive(Deserialize)]
@@ -1539,6 +1628,24 @@ impl SurfaceHttpError {
             error.code(),
             error.safe_message(),
             remediation,
+        )
+    }
+
+    fn session_not_found() -> Self {
+        Self::new(
+            StatusCode::UNAUTHORIZED,
+            "session_not_found",
+            "The DailyOS surface session could not be refreshed.",
+            "Pair the surface with DailyOS again before retrying.",
+        )
+    }
+
+    fn identity_mismatch() -> Self {
+        Self::new(
+            StatusCode::FORBIDDEN,
+            "identity_mismatch",
+            "The DailyOS surface session identity does not match the paired site.",
+            "Review the paired site identity in DailyOS and pair the site again.",
         )
     }
 
@@ -2170,7 +2277,6 @@ mod tests {
             .register_session(hmac::SignedSurfaceSession::new_active(
                 "sess_test_1234567890",
                 "surface_client_test",
-                "bearer_token_test",
                 test_master_key(),
             ))
             .unwrap();
@@ -2201,7 +2307,6 @@ mod tests {
                 .register_session(hmac::SignedSurfaceSession::new_active(
                     "sess_replacement",
                     "surface_replacement",
-                    "bearer_replacement",
                     alternate_master_key(),
                 ))
                 .unwrap_err()
@@ -2215,7 +2320,6 @@ mod tests {
             hmac::SignedSurfaceSession::new_active(
                 "sess_replacement",
                 "surface_replacement",
-                "bearer_replacement",
                 alternate_master_key(),
             ),
         )
@@ -2309,15 +2413,11 @@ mod tests {
         );
         let mut headers = HeaderMap::new();
         headers.insert(
-            header::AUTHORIZATION,
-            HeaderValue::from_static("Bearer bearer_token_test"),
-        );
-        headers.insert(
             "x-dailyos-surfaceclient",
             HeaderValue::from_static("surface_client_test"),
         );
         headers.insert(
-            "x-dailyos-key-id",
+            hmac::HEADER_SESSION_ID,
             HeaderValue::from_static("sess_test_1234567890"),
         );
         headers.insert(
@@ -2458,7 +2558,205 @@ mod tests {
         }
 
         assert!(!is_signed_route_candidate("/v1/surface/health"));
+        assert!(!is_signed_route_candidate("/v1/surface/session/refresh"));
         assert!(!is_signed_route_candidate("/v1/pairing/handshake"));
+    }
+
+    fn refresh_pairing_request(pairing_code: String) -> PairingHandshakeRequest {
+        PairingHandshakeRequest {
+            pairing_code,
+            wp_user_id: 42,
+            wp_site_id: hmac::TEST_WP_SITE_ID.to_string(),
+            home_url: hmac::TEST_HOME_URL.to_string(),
+            site_url: hmac::TEST_SITE_URL.to_string(),
+            wp_install_uuid: hmac::TEST_WP_INSTALL_UUID.to_string(),
+            plugin_instance_uuid: hmac::TEST_PLUGIN_INSTANCE_UUID.to_string(),
+            multisite_blog_id: None,
+            request_id: Some("req_refresh_pair".to_string()),
+            client_metadata: Some(json!({"plugin_version": "0.0.0"})),
+        }
+    }
+
+    fn runtime_with_refresh_pairing_for_tests() -> (
+        Arc<EndpointRuntime>,
+        surface_pairing::PairingHandshakeOutcome,
+    ) {
+        ScopeSet::set_allowlist_for_tests([
+            SurfaceScope::new("read.account_overview"),
+            SurfaceScope::new("submit.feedback"),
+        ]);
+        let tokio_runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let db_path =
+            std::env::temp_dir().join(format!("dailyos-session-refresh-{}.sqlite", Uuid::new_v4()));
+        let db_service = tokio_runtime
+            .block_on(crate::db_service::DbService::open_at_unencrypted(db_path))
+            .unwrap();
+        let app_state = Arc::new(AppState::test_with_db_service(db_service));
+        let outcome = tokio_runtime.block_on({
+            let app_state = Arc::clone(&app_state);
+            async move {
+                app_state
+                    .db_write(|db| {
+                        let clock = crate::services::context::SystemClock;
+                        let rng = crate::services::context::SystemRng;
+                        let external = crate::services::context::ExternalClients::default();
+                        let ctx = crate::services::context::ServiceContext::new_live(
+                            &clock, &rng, &external,
+                        );
+                        let now = Utc::now();
+                        let issued = surface_pairing::issue_pairing_code(
+                            &ctx,
+                            db,
+                            surface_pairing::PairingCodeIssueInput {
+                                runtime_anchor_id: "anchor_refresh_test".to_string(),
+                                endpoint_startup_id: "startup_refresh_test".to_string(),
+                                bound_port: 49152,
+                                now,
+                            },
+                        )
+                        .map_err(|error| error.to_string())?;
+                        surface_pairing::complete_handshake(
+                            &ctx,
+                            db,
+                            PairingHandshakeInput {
+                                runtime_anchor_id: "anchor_refresh_test".to_string(),
+                                endpoint_startup_id: "startup_refresh_test".to_string(),
+                                bound_port: 49152,
+                                endpoint_version: SURFACE_ENDPOINT_VERSION,
+                                max_failed_attempts: 5,
+                                now,
+                                request: refresh_pairing_request(issued.pairing_string),
+                            },
+                        )
+                        .map_err(|error| error.to_string())
+                    })
+                    .await
+                    .unwrap()
+            }
+        });
+        let runtime = Arc::new(EndpointRuntime {
+            startup_id: Uuid::new_v4(),
+            bound_port: 49152,
+            runtime_anchor_id: "anchor_refresh_test".to_string(),
+            loopback_bucket: Mutex::new(TokenBucket::new(TokenBucketConfig {
+                capacity: 100,
+                refill_per_second: 100.0,
+            })),
+            pairing_attempts: Arc::new(Mutex::new(PairingAttemptLimiter {
+                config: PairingAttemptConfig {
+                    max_failed_attempts_per_code: 5,
+                },
+                attempts_by_code: HashMap::new(),
+            })),
+            paired_site_origins: Arc::new(RwLock::new(HashSet::new())),
+            signed_transport: hmac::SignedTransportState::default(),
+            signed_request_max_body_bytes: DEFAULT_SIGNED_REQUEST_MAX_BODY_BYTES,
+            surface_client_bridge: SurfaceClientBridge::new(SurfaceClientBridgeConfig::default()),
+            ability_registry_override: None,
+            app_state: Some(app_state),
+        });
+        runtime
+            .signed_transport
+            .register_session(hmac::SignedSurfaceSession::new_active(
+                outcome.session.session_id.clone(),
+                outcome.session.surface_client_id.clone(),
+                outcome.session.hmac_master_key,
+            ))
+            .unwrap();
+        (runtime, outcome)
+    }
+
+    fn refresh_body_for_tests(
+        outcome: &surface_pairing::PairingHandshakeOutcome,
+        session_id: &str,
+        plugin_instance_uuid: &str,
+    ) -> Bytes {
+        Bytes::from(
+            serde_json::to_vec(&json!({
+                "session_id": session_id,
+                "site_binding_digest": outcome.response.site_binding_digest.as_str(),
+                "wp_install_uuid": hmac::TEST_WP_INSTALL_UUID,
+                "plugin_instance_uuid": plugin_instance_uuid,
+            }))
+            .unwrap(),
+        )
+    }
+
+    #[test]
+    fn session_refresh_returns_hex_hmac_key_for_matching_identity() {
+        let (runtime, outcome) = runtime_with_refresh_pairing_for_tests();
+        let response = dispatch_for_tests(
+            request_for_tests(
+                Method::POST,
+                "/v1/surface/session/refresh",
+                refresh_body_for_tests(
+                    &outcome,
+                    &outcome.session.session_id,
+                    hmac::TEST_PLUGIN_INSTANCE_UUID,
+                ),
+            ),
+            runtime,
+            "req_refresh_success".to_string(),
+        );
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = body_json(response);
+        assert_eq!(body["ok"], true);
+        assert_eq!(body["request_id"], "req_refresh_success");
+        assert_eq!(
+            body["session_id"].as_str(),
+            Some(outcome.session.session_id.as_str())
+        );
+        let expected_hmac_key = hex::encode(hmac::derive_session_key(
+            outcome.session.hmac_master_key,
+            &outcome.session.session_id,
+        ));
+        assert_eq!(body["hmac_key"].as_str(), Some(expected_hmac_key.as_str()));
+    }
+
+    #[test]
+    fn session_refresh_rejects_identity_mismatch() {
+        let (runtime, outcome) = runtime_with_refresh_pairing_for_tests();
+        let response = dispatch_for_tests(
+            request_for_tests(
+                Method::POST,
+                "/v1/surface/session/refresh",
+                refresh_body_for_tests(&outcome, &outcome.session.session_id, "plugin_mismatch"),
+            ),
+            runtime,
+            "req_refresh_mismatch".to_string(),
+        );
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let body = body_json(response);
+        assert_eq!(body["error"]["code"], "identity_mismatch");
+        assert_eq!(body["error"]["request_id"], "req_refresh_mismatch");
+    }
+
+    #[test]
+    fn session_refresh_rejects_unknown_session_id() {
+        let (runtime, outcome) = runtime_with_refresh_pairing_for_tests();
+        let response = dispatch_for_tests(
+            request_for_tests(
+                Method::POST,
+                "/v1/surface/session/refresh",
+                refresh_body_for_tests(
+                    &outcome,
+                    "sess_missing_refresh",
+                    hmac::TEST_PLUGIN_INSTANCE_UUID,
+                ),
+            ),
+            runtime,
+            "req_refresh_missing".to_string(),
+        );
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let body = body_json(response);
+        assert_eq!(body["error"]["code"], "session_not_found");
+        assert_eq!(body["error"]["request_id"], "req_refresh_missing");
     }
 
     #[test]
@@ -3040,7 +3338,10 @@ mod tests {
         );
         for event in &events {
             match &event.actor {
-                Actor::SurfaceClient { instance, scopes: actor_scopes } => {
+                Actor::SurfaceClient {
+                    instance,
+                    scopes: actor_scopes,
+                } => {
                     assert_eq!(
                         instance.as_str(),
                         verified.surface_client_id.as_str(),
@@ -3087,8 +3388,14 @@ mod tests {
                 matches!(event.actor, Actor::System),
                 "fallback to Actor::System when scopes unrecoverable"
             );
-            assert!(event.wp_user_id.is_none(), "no wp_user_id without attribution");
-            assert!(event.wp_user_hash.is_none(), "no wp_user_hash without attribution");
+            assert!(
+                event.wp_user_id.is_none(),
+                "no wp_user_id without attribution"
+            );
+            assert!(
+                event.wp_user_hash.is_none(),
+                "no wp_user_hash without attribution"
+            );
         }
     }
 }

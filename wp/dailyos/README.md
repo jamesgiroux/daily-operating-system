@@ -23,7 +23,7 @@ The marker contains `marker_version`, `runtime_instance_id`, `site_nonce_hash`, 
 
 `DailyOS_Runtime_Client` sends JSON as pre-serialized string bodies through `wp_remote_post()`. Signed calls include the W2 HMAC headers and preserve the six transport caveats covered by the tests: exact bytes, string body, no redirects, bounded timeout, no browser-direct runtime calls, and no HTTP argument mutation hooks.
 
-Session material is request-local. The plugin retrieves it through the gated `dailyos_wp_bridge_session_key` filter and never persists HMAC keys, bearer values, derived keys, pairing tokens, or session keys in WordPress storage or browser-visible state.
+Session material is request-local. The plugin retrieves it through the gated `dailyos_wp_bridge_session_key` filter and never persists HMAC keys, derived keys, pairing tokens, or session keys in WordPress storage or browser-visible state.
 
 ## MCP Server
 
