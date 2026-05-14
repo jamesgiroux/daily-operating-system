@@ -532,6 +532,100 @@
 - Checked source says W5 proof bundle date 2026-05-06 and status Cycle-8 APPROVE.
 - Source: `.docs/plans/wave-W5/proof-bundle.md:3-5`, `:27`.
 
+## V2 Cycle-1 Fold (2026-05-14)
+
+Cycle-1 L0 panel raised 12 findings — 7 architect APPROVE-WITH-COMMENTS + 5 codex BLOCK. This section folds them. Forward references back to V1 sections remain valid; this section adds tightening + missing enforcement gates.
+
+### Ability registration — folds Architect F1
+
+Explicit registration metadata:
+- allowed_actors = [User, Agent, System]
+- mcp_exposure = Invocable
+- required_scopes = ["read.daily_readiness"]
+- operations = [IntelligenceComplete]
+
+Grounded source: src-tauri/abilities-runtime/src/registry.rs for the registration macro shape — search for similar Read+LLM abilities to confirm exact form.
+
+Per ADR-0102 §141-182 + wave plan §588-592.
+
+### Narrative-prompt channel table — folds Architect F2 + Codex F1
+
+Cycle-7 pilot lesson: pre-enumerate, don't discover. Each composed child ability contributes output fields to the narrative-synthesis prompt:
+
+| Child ability | Output field | Channel | Gate point | Reaches prompt? |
+|---|---|---|---|---|
+| prepare_meeting | MeetingBrief.topics[] | 1 — subject-ref claims | services/claims.rs centralized gate | YES |
+| prepare_meeting | MeetingBrief.attendee_context[] | 4 — composed children | applied at child invocation | YES |
+| prepare_meeting | MeetingBrief.open_loops[] | 1+4 | gated at child | YES |
+| prepare_meeting | MeetingBrief.suggested_outcomes[] | 4 | gated at child | YES |
+| detect_risk_shift | RiskShiftResult.direction | 4 | Computed; no claim text | metadata only |
+| detect_risk_shift | RiskShiftResult.indicators[].source_refs | 1 — subject-ref | gated at child | metadata only — refs, not text |
+| detect_risk_shift | RiskShiftResult.evidence_summary | 6 — rendered prompt | parent boundary gate fires | YES |
+| list_open_loops | OpenLoopsResult.loops[].text | 1+2 | gated at child | YES |
+
+At DOS-220's boundary, after all children return, the centralized sensitivity gate fires again on every claim-bearing field before serialization into canonical JSON for the narrative LLM call.
+
+### ADR-0106 replay parity fixture — folds Architect F3
+
+Fixture: replay_parity_narrative_synthesis.json
+- Seeds: deterministic composition input — today + N meetings + N tracked accounts
+- Captures: ReplayProvider lookup hash for the narrative completion
+- Asserts: PromptFingerprint.canonical_prompt_hash == ReplayProvider lookup hash, byte-for-byte
+- Includes: non-default temperature/top_p/seed assertion — pair with W5-C's same fixture pattern
+
+### Composition handoff — folds Architect F4
+
+When child output fields are used as narrative prompt inputs, they re-enter channels 6+7 at DOS-220's boundary. The centralized sensitivity gate in services/claims.rs fires a second time at this boundary — children may have applied their own gate at their boundary, but the parent re-applies because composition aggregates can surface combinations a child gate doesn't see.
+
+### Per-child subject-fit + parent workspace scope — folds Architect F5 + Codex F3
+
+Subject-fit hard-error applies per child invocation. Each composed child's input carries an explicit subject_ref; child returns AbilityError::SubjectNotOwned — or AbilityErrorKind::HardError with "subject_not_owned" — on cross-tenant/cross-workspace inputs.
+
+Parent DailyReadiness declares workspace scope explicitly — no subject attribution at parent level. Bundle-9 fixture additions:
+- bundle-9-subject-partition: Account A attendee in today's meetings + Account B in tracked-accounts; assert Account A meeting/attendee claim text does NOT enter Account B risk fields/narrative.
+
+### Workspace scope per child — folds Codex F4
+
+Every child invocation carries the calling workspace in its input + provenance scope + cache dedupe key. Cross-workspace meeting fixture: meeting includes attendees from a foreign workspace; child invocation for that attendee returns SubjectNotOwned hard-error.
+
+### Source lifecycle across children — folds Codex F5
+
+Each composed child applies the source revocation check during its load path — per W5-B V2 pattern: ProvenanceWarning::Masked with SourceRevoked shape + source_revoked envelope counter. DOS-220 surfaces aggregated counter at the parent DailyReadiness.coverage_warnings field so users see degradation across composed children.
+
+### Judge-scored divergence metric — folds Codex F6
+
+Stage-3 parallel-run divergence metric:
+- Window: 7-day rolling
+- Sampling: 10% of get_daily_readiness invocations
+- Comparator: legacy prepare::orchestrate + dashboard::get_dashboard_data aggregate — grounded at orchestrate.rs:2974-2978, :3102-3118, :3346-3386
+- Sample unit: one daily-readiness output, judge-scored across relevance, faithfulness, attribution-completeness
+- Judge model: TODO — packet pins judge config before Stage 3; same judge model as DOS-219; grep wave-W5/DOS-219-plan.md for the judge harness config; bind same model + prompt template here
+- Rubric: relevance ≥0.85, faithfulness ≥0.90, attribution-completeness ≥0.95 — matches DOS-219 thresholds
+- Drift threshold: ≤1% divergence over 7-day window
+- Drift-failure rule: alert + investigate; do NOT auto-cutover until divergence trends down for 7 days post-investigation
+
+### Legacy comparator — folds Architect F6
+
+Stage-3 parallel-run legacy comparator: prepare::orchestrate + dashboard::get_dashboard_data aggregate — per grounded source citations above. Stage-1 fixtures authored against this comparator pair.
+
+### Category=Read-with-LLM-call reviewer sign-off — folds Architect F7
+
+L0 reviewer sign-off line in §9 Gates: "Reviewer panel accepts DOS-220 as category=Read despite the narrative-synthesis LLM call. ADR-0102 §141-182 allows Read abilities to call LLMs for synthesis when the output is composed from Trusted children + a single narrative wrap; the wrap does not introduce new claim text, only narrative framing of existing children's claims."
+
+### Changelog V2 — 2026-05-14
+
+- V2 folds 12 cycle-1 panel findings — 7 architect + 5 codex.
+- Architect F1 → §Ability registration
+- Architect F2 + Codex F1 → §Narrative-prompt channel table
+- Architect F3 → §ADR-0106 replay parity fixture
+- Architect F4 → §Composition handoff
+- Architect F5 + Codex F3 → §Per-child subject-fit + parent workspace scope
+- Architect F6 → §Legacy comparator
+- Architect F7 → §Category=Read reviewer sign-off
+- Codex F4 → §Workspace scope per child
+- Codex F5 → §Source lifecycle across children
+- Codex F6 → §Judge-scored divergence metric
+
 ## 11. Changelog
 
 - V1 2026-05-13: initial L0 packet.
