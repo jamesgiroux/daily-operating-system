@@ -145,6 +145,16 @@ pub const OPERATIONS: &[OperationDef] = &[
         executor: read_list_open_loops_executor,
     },
     operation_def! {
+        name: "get-daily-readiness",
+        description: "Compose a daily readiness narrative from meetings, changes, risks, and open loops.",
+        remote: true,
+        category: Read,
+        input_schema: include_str!("schemas/get-daily-readiness.input.schema.json"),
+        output_schema: include_str!("schemas/get-daily-readiness.output.schema.json"),
+        requires_scope: Some("read.daily_readiness"),
+        executor: read_get_daily_readiness_executor,
+    },
+    operation_def! {
         name: "internal-debug-dump",
         description: "Return local diagnostic counts for the operation registry and app runtime.",
         remote: false,
@@ -339,6 +349,28 @@ fn read_list_open_loops_executor(invocation: OperationInvocation) -> OperationFu
             .invoke(
                 invocation.state.as_ref(),
                 "list_open_loops",
+                invocation.input_json,
+                TauriInvokeContext::new(
+                    invocation.actor,
+                    invocation.surface,
+                    invocation.claim_dismissal_surface,
+                    invocation.dry_run,
+                    invocation.confirmation.as_ref(),
+                ),
+            )
+            .await?;
+        serde_json::to_value(response).map_err(|_| BridgeSurfaceError::AbilityUnavailable)
+    })
+}
+
+fn read_get_daily_readiness_executor(invocation: OperationInvocation) -> OperationFuture {
+    Box::pin(async move {
+        let registry = AbilityRegistry::global_checked()
+            .map_err(|_| BridgeSurfaceError::AbilityUnavailable)?;
+        let response = TauriAbilityBridge::new(registry)
+            .invoke(
+                invocation.state.as_ref(),
+                "get_daily_readiness",
                 invocation.input_json,
                 TauriInvokeContext::new(
                     invocation.actor,

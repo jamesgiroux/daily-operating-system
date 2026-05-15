@@ -1,0 +1,24 @@
+{
+  "ability_name": "get_daily_readiness",
+  "workspace_scope": "ws-alpha",
+  "prompt_template_id": "daily_readiness",
+  "prompt_template_version": "1.0.0",
+  "expected_child_composition_ids": [
+    "prepare_meeting:ws-alpha:meeting-alpha-readiness",
+    "get_entity_context:ws-alpha:account:acct-alpha"
+  ],
+  "forbidden_child_composition_ids": [
+    "prepare_meeting:ws-beta:meeting-beta-expansion",
+    "get_entity_context:ws-beta:account:acct-beta"
+  ],
+  "field_assertions": [
+    {
+      "path": "/narrative",
+      "source": "ws-alpha children plus ws-alpha risk/open-loop sources"
+    },
+    {
+      "path": "/risk_shifts/0",
+      "workspace_scope": "ws-alpha"
+    }
+  ]
+}

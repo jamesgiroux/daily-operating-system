@@ -5,3 +5,9 @@ id = "prepare_meeting_prep"
 version = "1.0.0"
 path = "prepare_meeting_prep.v1.0.0.txt"
 sha256 = "94d1d6494eec239657053723612cd20b259841535f61563ba9a6107a689a68e4"
+
+[[template]]
+id = "daily_readiness"
+version = "1.0.0"
+path = "daily_readiness.v1.0.0.txt"
+sha256 = "f3cdde78f40893df3e5966b6534f54154c01f76e80cd99a0482beb66d8034f48"

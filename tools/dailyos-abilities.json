@@ -20,6 +20,28 @@
       }
     },
     {
+      "name": "get_daily_readiness",
+      "description": "",
+      "category": "read",
+      "annotations": {},
+      "wp_permission": "none",
+      "allowed_actors": [
+        "user",
+        "runtime",
+        "mcp_client"
+      ],
+      "required_scopes": [
+        "read.daily_readiness"
+      ],
+      "mcp_exposure": "invocable",
+      "client_side_executable": false,
+      "idempotency_class": "idempotent",
+      "composition_kind": {
+        "produces_blocks": false,
+        "block_types": []
+      }
+    },
+    {
       "name": "get_entity_context",
       "description": "",
       "category": "read",

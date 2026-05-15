@@ -1,0 +1,19 @@
+You are judging one get_daily_readiness migration sample.
+
+Compare the legacy daily briefing aggregate with the ability output.
+
+Score each dimension independently from 0.0 to 1.0:
+- relevance: the ability output includes the same materially useful daily items.
+- faithfulness: the ability output is grounded in the supplied sources and children.
+- attribution_completeness: material fields have provenance and source coverage.
+
+Judge model: claude-sonnet-4-6.
+
+Return strict JSON:
+{
+  "relevance": 0.0,
+  "faithfulness": 0.0,
+  "attribution_completeness": 0.0,
+  "divergence": true,
+  "reason": "Brief reason with no customer-specific data."
+}

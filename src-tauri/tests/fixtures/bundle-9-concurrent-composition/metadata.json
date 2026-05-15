@@ -1,0 +1,32 @@
+{
+  "bundle": 9,
+  "scenario_id": "bundle9-daily-readiness-concurrent-composition-cache-key",
+  "invariant": "Concurrent get_daily_readiness composition dedupes only within the same workspace_scope; identical subject ids in another workspace use a distinct key.",
+  "expected_render_policy": "show-with-warnings",
+  "surfaces_exercised": [
+    "get_daily_readiness",
+    "concurrent-composition",
+    "cache-dedupe",
+    "bundle-9-concurrent-composition"
+  ],
+  "source_lifecycle_refs": [
+    "src-alpha-loop",
+    "src-beta-loop"
+  ],
+  "anonymization_cert": "all-generic-placeholders-2026-05-14",
+  "retention_policy": "permanent",
+  "prompt_fingerprint_baseline": "bundle-9-concurrent-composition-daily-readiness-v1",
+  "prompt_template_version": "1.0.0",
+  "completion_text_hash": "c6a58798c7b7997b2a7bc6822cdb862380d6fa55741e6cba31b2254c6c36c8df",
+  "trust_factors_dominant": [
+    "cache_key",
+    "workspace_scope",
+    "composition"
+  ],
+  "pass_fail_definition": "PASS = three concurrent ws-alpha invocations have identical composition ids, and ws-beta composition ids differ by workspace_scope. FAIL = workspace_scope is absent from child cache/provenance keys.",
+  "fixture_design_notes": {
+    "state_sql": "Seeds duplicate same-user invocations plus a second workspace with matching subject ids to catch workspace-agnostic cache keys.",
+    "expected_output": "Records the expected stable and cross-workspace-distinct composition ids.",
+    "provider_replay": "Synthetic canonical replay key for the concurrency daily readiness narrative."
+  }
+}
