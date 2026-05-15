@@ -1,9 +1,9 @@
 # Module Map
 
 > Rust backend module inventory (`src-tauri/src/`).
-> **Auto-generated:** 2026-05-14 by `.docs/generators/gen-module-map.sh`
+> **Auto-generated:** 2026-05-15 by `.docs/generators/gen-module-map.sh`
 
-**334** Rust files across **46** module directories and **45** standalone modules.
+**339** Rust files across **46** module directories and **46** standalone modules.
 
 ---
 
@@ -13,7 +13,7 @@
 |--------|-------|-----------|---------|
 | `abilities/` | 3 | 3 | Ability substrate modules. |
 | `bin/` | 4 | 0 | Binary entry points |
-| `bridges/` | 7 | 1 | Runtime-surface bridges for ability invocation. |
+| `bridges/` | 8 | 5 | Runtime-surface bridges for ability invocation. |
 | `clay/` | 5 | 6 | Clay.earth MCP integration for contact and company enrichment. |
 | `commands/` | 13 | 405 | Tauri IPC command handlers |
 | `context_provider/` | 4 | 2 | Context provider abstraction for dual-mode operation (ADR-0095). |
@@ -29,7 +29,7 @@
 | `intelligence/` | 21 | 73 | Intelligence lifecycle, enrichment orchestration |
 | `linear/` | 4 | 3 | Linear issue tracker integration. |
 | `mcp/` | 1 | 6 | — |
-| `migrations/` | 4 | 0 | SQL schema migrations |
+| `migrations/` | 5 | 0 | SQL schema migrations |
 | `oauth/` | 1 | 11 | Shared OAuth2 primitives used by Google and Glean consent flows. |
 | `observability/` | 1 | 0 | — |
 | `operations/` | 1 | 4 | Contract-first operations registry. |
@@ -41,7 +41,7 @@
 | `quill/` | 5 | 12 | Quill MCP client integration for automatic transcript sync. |
 | `reports/` | 11 | 38 | Report infrastructure for v0.15.0. |
 | `self_healing/` | 6 | 19 | Intelligence self-healing (–). |
-| `services/` | 71 | 428 | ServiceLayer — mandatory mutation boundary |
+| `services/` | 73 | 438 | ServiceLayer — mandatory mutation boundary |
 | `signals/` | 22 | 59 | Universal signal bus for intelligence fusion (ADR-0080 Phase 2). |
 | `surface_runtime/` | 2 | 1 | — |
 | `workflow/` | 10 | 46 | Workflow definitions |
@@ -50,7 +50,7 @@
 
 | Module | Lines | Public Fns | Purpose |
 |--------|-------|-----------|---------|
-| `accounts.rs` | 1813 | 10 | Account workspace file I/O (ADR-0047). |
+| `accounts.rs` | 1818 | 10 | Account workspace file I/O (ADR-0047). |
 | `action_status.rs` | 96 | 2 | — |
 | `activity.rs` | 187 | 3 | User activity monitoring for background task throttling. |
 | `audit_log.rs` | 972 | 5 | Tamper-evident audit log for enterprise observability (ADR-0094). |
@@ -62,8 +62,9 @@
 0 | Legacy monolith command handler (being decomposed) |
 | `connectivity.rs` | 151 | 3 | Connectivity tracking and sync freshness. |
 | `db_backup.rs` | 653 | 8 | SQLite backup and rebuild-from-filesystem (ADR-0048) |
-| `db_service.rs` | 1022 | 3 | Unified async/sync database connection pool (DOS-* DbService refactor). |
+| `db_service.rs` | 1019 | 3 | Unified async/sync database connection pool (DOS-* DbService refactor). |
 | `demo.rs` | 1002 | 6 | Production demo data for first-run experience. |
+| `doctor.rs` | 158 | 3 | — |
 | `embeddings.rs` | 321 | 3 | Local semantic search (nomic-embed-text) |
 | `enrichment.rs` | 494 | 1 | Unified enrichment processor. |
 | `entity_io.rs` | 166 | 5 | Shared entity I/O helpers. |
@@ -77,12 +78,12 @@
 | `focus_prioritization.rs` | 406 | 1 | — |
 | `google.rs` | 1855 | 5 | Google authentication and calendar polling |
 | `helpers.rs` | 493 | 12 | — |
-| `intel_queue.rs` | 6117 | 8 | Background intelligence enrichment queue. |
+| `intel_queue.rs` | 6110 | 8 | Background intelligence enrichment queue. |
 | `json_loader.rs` | 426 | 1 | JSON data loader with markdown fallback |
 | `latency.rs` | 186 | 3 | Lightweight in-memory latency rollups for hot command diagnostics. |
-| `lib.rs` | 1156 | 1 | App setup, command registration, plugin init |
+| `lib.rs` | 1157 | 1 | App setup, command registration, plugin init |
 | `meeting_prep_queue.rs` | 1076 | 7 | Background meeting prep queue. |
-| `migrations.rs` | 6093 | 1 | Schema migration framework (ADR-0071). |
+| `migrations.rs` | 6098 | 1 | Schema migration framework (ADR-0071). |
 | `notification.rs` | 262 | 6 | Native notification wrapper |
 | `parser.rs` | 2404 | 14 | Structured data parsing |
 | `people.rs` | 667 | 7 | People workspace file I/O (ADR-0047). |

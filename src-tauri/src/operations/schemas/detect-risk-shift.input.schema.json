@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DetectRiskShiftInput",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "entity_type", "entity_id"],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "entity_type": {
+      "type": "string",
+      "enum": ["account", "project", "person", "meeting"]
+    },
+    "entity_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "depth": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 255,
+      "default": 2
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "ability_name": "detect_risk_shift",
+  "scenario_id": "bundle11-detect-risk-shift-revoked-cached-trajectory",
+  "expected": {
+    "category": "transform",
+    "warning_counter": "source_revoked",
+    "revoked_source_refs": ["src-risk-revoked-cache"],
+    "accepted_source_refs": ["src-risk-active-cache"]
+  }
+}

@@ -2,6 +2,7 @@
 
 pub mod claims;
 pub mod composition;
+pub mod detect_risk_shift;
 pub mod extractors;
 pub mod feedback;
 pub mod get_daily_readiness;

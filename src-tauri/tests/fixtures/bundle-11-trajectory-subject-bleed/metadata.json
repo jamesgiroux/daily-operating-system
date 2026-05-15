@@ -1,0 +1,31 @@
+{
+  "bundle": 11,
+  "scenario_id": "bundle11-detect-risk-shift-trajectory-subject-bleed",
+  "invariant": "TrajectoryBundle returned for one account must not contaminate the input boundary for another account.",
+  "expected_render_policy": "hard-error-or-mask-adjacent-subject",
+  "surfaces_exercised": [
+    "detect_risk_shift",
+    "trajectory-subject-fit",
+    "subject-bleed-gate"
+  ],
+  "source_lifecycle_refs": [
+    "src-risk-target-engagement",
+    "src-risk-adjacent-engagement"
+  ],
+  "anonymization_cert": "all-generic-placeholders-2026-05-14",
+  "retention_policy": "permanent",
+  "prompt_fingerprint_baseline": "1111111111111111111111111111111111111111111111111111111111111111",
+  "prompt_template_version": "1.0.0",
+  "completion_text_hash": "a1a2f5202fc8d2a4f921823e719a5a95c876720c8fefcbfbb7a56ce717b33fac",
+  "trust_factors_dominant": [
+    "subject_fit",
+    "trajectory_delta",
+    "source_membership"
+  ],
+  "pass_fail_definition": "PASS = acct-risk-adjacent trajectory and source refs cannot enter the acct-risk-target prompt boundary. FAIL = adjacent subject trajectory or claim text contributes to the target account risk shift.",
+  "fixture_design_notes": {
+    "state_sql": "Seeds two generic account subjects and trajectories so subject-fit can be verified at the input boundary.",
+    "expected_output": "Only target account source refs are accepted.",
+    "provider_replay": "Completion cites the target account source only; any adjacent source in prompt input would violate the fixture invariant."
+  }
+}

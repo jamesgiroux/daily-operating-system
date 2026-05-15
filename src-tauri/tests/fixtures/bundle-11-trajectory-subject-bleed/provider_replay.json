@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "fixtures": [
+    {
+      "canonical_prompt_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+      "completion": "{\n  \"direction\": \"increasing\",\n  \"summary\": \"Target account engagement declined without using adjacent account evidence.\",\n  \"confidence\": 0.78,\n  \"source_refs\": [\"src-risk-target-engagement\"],\n  \"indicators\": [\n    {\n      \"label\": \"engagement_delta\",\n      \"direction\": \"increasing\",\n      \"severity\": 0.42,\n      \"rationale\": \"Recent target account activity is lower than the prior window.\",\n      \"source_refs\": [\"src-risk-target-engagement\"]\n    }\n  ],\n  \"claim_draft\": {\n    \"claim_type\": \"account_risk_shift\",\n    \"text\": \"Target account risk is increasing from lower engagement.\",\n    \"direction\": \"increasing\",\n    \"confidence\": 0.78,\n    \"source_refs\": [\"src-risk-target-engagement\"]\n  }\n}"
+    }
+  ]
+}

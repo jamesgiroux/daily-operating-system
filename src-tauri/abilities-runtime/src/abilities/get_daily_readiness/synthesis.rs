@@ -1899,6 +1899,7 @@ fn child_prompt_claim(input: &ChildPromptText<'_>) -> IntelligenceClaim {
     };
     IntelligenceClaim {
         id: format!("{}:{}", input.item_id, input.field_path),
+        claim_version: 1,
         subject_ref: json!({
             "kind": input.subject_kind,
             "id": input.subject_id,
@@ -1969,6 +1970,7 @@ fn snapshot_claim(
 ) -> IntelligenceClaim {
     IntelligenceClaim {
         id: id.to_string(),
+        claim_version: 1,
         subject_ref: json!({
             "kind": subject.kind,
             "id": subject.id,

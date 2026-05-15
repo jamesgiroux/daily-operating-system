@@ -306,6 +306,34 @@ SAFE_STRING_FIELDS = {
         "display_name": "entity name metadata",
         "workspace_scope": "workspace identifier metadata",
     },
+    "RiskShiftResult": {},
+    "RiskShiftUntrustedResult": {
+        "summary": "claim/provenance-attested",
+        "judge_model": "model name metadata",
+    },
+    "RiskIndicator": {
+        "label": "enum metadata",
+        "rationale": "claim/provenance-attested",
+    },
+    "RiskShiftClaimDraft": {
+        "claim_type": "enum metadata",
+        "text": "claim/provenance-attested",
+    },
+    "EvidenceSummary": {
+        "source_asof": "timestamp metadata",
+        "oldest_contributing_claim_id": "identifier metadata",
+        "contributing_claim_ids": "identifier metadata",
+        "source_refs": "source identifier metadata",
+    },
+    "RiskShiftSourceMembership": {
+        "input_claim_refs": "source identifier metadata",
+        "accepted_source_refs": "source identifier metadata",
+    },
+    "RiskShiftSamplingCapture": {},
+    "RiskShiftSubjectRef": {
+        "kind": "enum metadata",
+        "id": "identifier metadata",
+    },
 }
 
 NESTED_OUTPUT_STRUCTS = {
@@ -349,6 +377,17 @@ NESTED_OUTPUT_STRUCTS = {
     "DailyReadinessOvernightChange": ["DailyReadinessSubject"],
     "DailyReadinessRiskShift": ["DailyReadinessSubject"],
     "DailyReadinessOpenLoop": ["DailyReadinessSubject"],
+    "RiskShiftResult": ["RiskShiftUntrustedResult"],
+    "RiskShiftUntrustedResult": [
+        "RiskShiftSubjectRef",
+        "RiskIndicator",
+        "RiskShiftClaimDraft",
+        "EvidenceSummary",
+        "RiskShiftSourceMembership",
+        "RiskShiftSamplingCapture",
+    ],
+    "RiskIndicator": ["EvidenceSummary"],
+    "RiskShiftClaimDraft": ["RiskShiftSubjectRef", "EvidenceSummary"],
 }
 
 EXPECTED_AGENT_OUTPUTS = {
@@ -356,6 +395,7 @@ EXPECTED_AGENT_OUTPUTS = {
     "prepare_meeting": "MeetingBrief",
     "list_open_loops": "OpenLoopsResult",
     "get_daily_readiness": "DailyReadiness",
+    "detect_risk_shift": "RiskShiftResult",
 }
 
 SAFE_WRAPPERS = ("RenderableMcpClaimText", "RenderableMcpEntityName")

@@ -1,0 +1,30 @@
+{
+  "bundle": 11,
+  "scenario_id": "bundle11-detect-risk-shift-hallucinated-source-ref",
+  "invariant": "Provider output cannot cite source_refs that are absent from the gated input source registry.",
+  "expected_render_policy": "reject-hallucinated-source-ref",
+  "surfaces_exercised": [
+    "detect_risk_shift",
+    "source-ref-membership",
+    "post-synthesis-validation"
+  ],
+  "source_lifecycle_refs": [
+    "src-risk-valid",
+    "src-risk-fabricated"
+  ],
+  "anonymization_cert": "all-generic-placeholders-2026-05-14",
+  "retention_policy": "permanent",
+  "prompt_fingerprint_baseline": "2222222222222222222222222222222222222222222222222222222222222222",
+  "prompt_template_version": "1.0.0",
+  "completion_text_hash": "f26d8f42e10944906f5e7569e3f4767d3061f7c57c5a6c32191d65596b0b6634",
+  "trust_factors_dominant": [
+    "source_membership",
+    "prompt_input_gate"
+  ],
+  "pass_fail_definition": "PASS = fabricated provider source_ref is rejected after synthesis and cannot appear in accepted_source_refs. FAIL = fabricated source_ref survives into output evidence.",
+  "fixture_design_notes": {
+    "state_sql": "Seeds only src-risk-valid as an input source; provider replay intentionally cites src-risk-fabricated.",
+    "expected_output": "Validation rejection is the expected output because the fabricated source ref is not in gated input claims.",
+    "expected_provenance": "Records the warning/counter shape required by the W5-C packet."
+  }
+}

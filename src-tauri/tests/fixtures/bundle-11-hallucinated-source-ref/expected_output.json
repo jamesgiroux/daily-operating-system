@@ -1,0 +1,8 @@
+{
+  "expected_error": {
+    "kind": "validation",
+    "message_contains": "not present in input claims"
+  },
+  "rejected_source_refs": ["src-risk-fabricated"],
+  "preserved_input_source_refs": ["src-risk-valid"]
+}

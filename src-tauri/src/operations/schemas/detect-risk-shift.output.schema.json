@@ -1,0 +1,242 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DetectRiskShiftOperationOutput",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "invocation_id",
+    "ability_name",
+    "ability_version",
+    "schema_version",
+    "data",
+    "rendered_provenance",
+    "diagnostics"
+  ],
+  "properties": {
+    "invocation_id": { "type": "string" },
+    "ability_name": { "type": "string", "const": "detect_risk_shift" },
+    "ability_version": { "type": "string" },
+    "schema_version": { "type": "integer", "const": 1 },
+    "data": { "$ref": "#/$defs/RiskShiftResult" },
+    "rendered_provenance": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "diagnostics": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "RiskShiftResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "envelope"],
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "envelope": { "$ref": "#/$defs/TrustEnvelope" }
+      }
+    },
+    "TrustEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["trust", "payload"],
+      "properties": {
+        "trust": {
+          "type": "string",
+          "const": "untrusted"
+        },
+        "payload": { "$ref": "#/$defs/RiskShiftUntrustedResult" }
+      }
+    },
+    "RiskShiftUntrustedResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subject",
+        "direction",
+        "summary",
+        "confidence",
+        "indicators",
+        "claim_draft",
+        "evidence_summary",
+        "source_verification",
+        "sampling",
+        "judge_model"
+      ],
+      "properties": {
+        "subject": { "$ref": "#/$defs/RiskShiftSubjectRef" },
+        "direction": { "$ref": "#/$defs/RiskDirection" },
+        "summary": { "type": "string" },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "indicators": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/RiskIndicator" }
+        },
+        "claim_draft": { "$ref": "#/$defs/RiskShiftClaimDraft" },
+        "evidence_summary": { "$ref": "#/$defs/EvidenceSummary" },
+        "source_verification": { "$ref": "#/$defs/RiskShiftSourceMembership" },
+        "sampling": { "$ref": "#/$defs/RiskShiftSamplingCapture" },
+        "judge_model": { "type": "string" }
+      }
+    },
+    "RiskShiftSubjectRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["account", "project", "person", "meeting"]
+        },
+        "id": { "type": "string" }
+      }
+    },
+    "RiskDirection": {
+      "type": "string",
+      "enum": [
+        "increasing",
+        "decreasing",
+        "stable",
+        "mixed",
+        "insufficient_evidence"
+      ]
+    },
+    "RiskIndicator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "direction", "severity", "rationale", "evidence_summary"],
+      "properties": {
+        "label": { "type": "string" },
+        "direction": { "$ref": "#/$defs/RiskDirection" },
+        "severity": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "rationale": { "type": "string" },
+        "evidence_summary": { "$ref": "#/$defs/EvidenceSummary" }
+      }
+    },
+    "EvidenceSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["claim_count", "contributing_claim_ids", "source_refs"],
+      "properties": {
+        "claim_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "contributing_claim_ids": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "source_refs": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "source_asof": { "type": "string" },
+        "oldest_contributing_claim_id": { "type": "string" }
+      }
+    },
+    "RiskShiftClaimDraft": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "claim_type",
+        "text",
+        "subject",
+        "direction",
+        "confidence",
+        "evidence_summary"
+      ],
+      "properties": {
+        "claim_type": { "type": "string" },
+        "text": { "type": "string" },
+        "subject": { "$ref": "#/$defs/RiskShiftSubjectRef" },
+        "direction": { "$ref": "#/$defs/RiskDirection" },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "evidence_summary": { "$ref": "#/$defs/EvidenceSummary" },
+        "persist_error": { "$ref": "#/$defs/RiskShiftPersistError" }
+      }
+    },
+    "RiskShiftPersistError": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": {
+            "kind": { "type": "string", "const": "not_attempted" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": {
+            "kind": { "type": "string", "const": "mutation_blocked" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "detail"],
+          "properties": {
+            "kind": { "type": "string", "const": "validation" },
+            "detail": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "detail"],
+          "properties": {
+            "kind": { "type": "string", "const": "storage" },
+            "detail": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "RiskShiftSourceMembership": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["checked", "input_claim_refs", "accepted_source_refs"],
+      "properties": {
+        "checked": { "type": "boolean" },
+        "input_claim_refs": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "accepted_source_refs": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "RiskShiftSamplingCapture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["temperature", "top_p", "seed"],
+      "properties": {
+        "temperature": { "type": "number" },
+        "top_p": { "type": "number" },
+        "seed": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}
