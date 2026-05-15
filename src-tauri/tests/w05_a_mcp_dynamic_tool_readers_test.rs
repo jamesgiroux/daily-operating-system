@@ -70,7 +70,8 @@ async fn mcp_dynamic_get_entity_context_uses_readonly_actiondb_readers() {
     write_conn
         .execute_batch(STRUCTURED_CLAIM_CANONICALIZATION_COLUMNS_SQL)
         .expect("apply structured claim canonicalization columns");
-    conn.execute_batch(V172_SUBSTRATE_CONCURRENCY_SQL)
+    write_conn
+        .execute_batch(V172_SUBSTRATE_CONCURRENCY_SQL)
         .expect("apply v172 substrate concurrency schema");
 
     let write_db = ActionDb::from_connection_for_tests(write_conn);
