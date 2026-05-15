@@ -23,6 +23,8 @@ ALTER TABLE intelligence_claims ADD COLUMN non_semantic_mergeable BOOLEAN NOT NU
 ALTER TABLE intelligence_claims ADD COLUMN structural_field_content_hash TEXT;
 ALTER TABLE intelligence_claims ADD COLUMN backfill_epoch INTEGER NOT NULL DEFAULT 0;
 "#;
+const V172_SUBSTRATE_CONCURRENCY_SQL: &str =
+    include_str!("./shared_schemas/v172_substrate_concurrency.sql");
 
 fn setup_conn() -> Connection {
     let conn = Connection::open_in_memory().expect("open in-memory db");
@@ -43,6 +45,8 @@ fn setup_conn() -> Connection {
         .expect("apply typed feedback schema");
     conn.execute_batch(STRUCTURED_CLAIM_CANONICALIZATION_COLUMNS_SQL)
         .expect("apply structured claim canonicalization columns");
+    conn.execute_batch(V172_SUBSTRATE_CONCURRENCY_SQL)
+        .expect("apply v172 substrate concurrency schema");
     conn.execute(
         "INSERT INTO accounts (id, name, updated_at) VALUES ('acct-dos411', 'Test Account', '2026-05-06T12:00:00Z')",
         [],

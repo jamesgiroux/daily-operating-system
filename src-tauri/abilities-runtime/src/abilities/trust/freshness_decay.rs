@@ -857,6 +857,7 @@ mod tests {
     fn claim_with_source(source: &str, created_at: DateTime<Utc>) -> Claim {
         Claim {
             id: "claim-1".to_string(),
+            claim_version: 1,
             subject_ref: r#"{"kind":"account","id":"acct-1"}"#.to_string(),
             claim_type: "risk".to_string(),
             field_path: None,

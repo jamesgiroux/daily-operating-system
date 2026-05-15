@@ -1,7 +1,9 @@
 use chrono::{TimeZone, Utc};
 use dailyos_lib::db::claims::{ClaimSensitivity, TemporalScope};
 use dailyos_lib::db::ActionDb;
-use dailyos_lib::services::claims::{commit_claim, ClaimProposal, CommittedClaim};
+use dailyos_lib::services::claims::{
+    commit_claim, ClaimProposal, CommittedClaim, DeterministicInsertProposal,
+};
 use dailyos_lib::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
 use dailyos_lib::services::sensitivity::{
     reveal_claim_text_for_tauri, RenderActor, RenderPolicyKind, RenderSurface,
@@ -10,6 +12,8 @@ use rusqlite::Connection;
 use serde_json::json;
 
 const CLAIMS_SCHEMA_SQL: &str = include_str!("../src/migrations/129_dos_7_claims_schema.sql");
+const V172_SUBSTRATE_CONCURRENCY_SQL: &str =
+    include_str!("./shared_schemas/v172_substrate_concurrency.sql");
 const PROJECTION_STATUS_SQL: &str =
     include_str!("../src/migrations/134_dos_301_claim_projection_status.sql");
 const TYPED_FEEDBACK_SQL: &str =
@@ -54,14 +58,14 @@ const ACTION_ID_WITH_ALPHA: &str = "abcdefab-cdef-4abc-8def-abcdefabcdef";
 
 #[test]
 fn reveal_sensitive_claim_text_is_idempotent_for_same_action_id() {
-    let conn = setup_conn();
+    let conn = setup_conn("same-action");
     let db = ActionDb::from_conn(&conn);
     let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 7, 12, 0, 0).unwrap());
     let rng = SeedableRng::new(41210);
     let external = ExternalClients::default();
     let ctx = ServiceContext::new_live(&clock, &rng, &external).with_actor("agent:test");
     let claim_id = inserted_id(
-        commit_claim(&ctx, db, confidential_claim_proposal())
+        commit_claim(&ctx, db, confidential_claim_proposal("same-action"))
             .expect("commit confidential claim fixture"),
     );
     let actor = RenderActor::user("user", Some("user"));
@@ -96,14 +100,14 @@ fn reveal_sensitive_claim_text_is_idempotent_for_same_action_id() {
 
 #[test]
 fn reveal_sensitive_claim_text_records_new_audit_for_different_action_ids() {
-    let conn = setup_conn();
+    let conn = setup_conn("different-action");
     let db = ActionDb::from_conn(&conn);
     let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 7, 12, 0, 0).unwrap());
     let rng = SeedableRng::new(41211);
     let external = ExternalClients::default();
     let ctx = ServiceContext::new_live(&clock, &rng, &external).with_actor("agent:test");
     let claim_id = inserted_id(
-        commit_claim(&ctx, db, confidential_claim_proposal())
+        commit_claim(&ctx, db, confidential_claim_proposal("different-action"))
             .expect("commit confidential claim fixture"),
     );
     let actor = RenderActor::user("user", Some("user"));
@@ -136,14 +140,14 @@ fn reveal_sensitive_claim_text_records_new_audit_for_different_action_ids() {
 
 #[test]
 fn reveal_sensitive_claim_text_is_idempotent_for_same_logical_uuid_in_different_text_forms() {
-    let conn = setup_conn();
+    let conn = setup_conn("logical-uuid");
     let db = ActionDb::from_conn(&conn);
     let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 7, 12, 0, 0).unwrap());
     let rng = SeedableRng::new(41214);
     let external = ExternalClients::default();
     let ctx = ServiceContext::new_live(&clock, &rng, &external).with_actor("agent:test");
     let claim_id = inserted_id(
-        commit_claim(&ctx, db, confidential_claim_proposal())
+        commit_claim(&ctx, db, confidential_claim_proposal("logical-uuid"))
             .expect("commit confidential claim fixture"),
     );
     let actor = RenderActor::user("user", Some("user"));
@@ -174,7 +178,7 @@ fn reveal_sensitive_claim_text_is_idempotent_for_same_logical_uuid_in_different_
     );
 }
 
-fn setup_conn() -> Connection {
+fn setup_conn(discriminator: &str) -> Connection {
     let conn = Connection::open_in_memory().expect("open in-memory db");
     conn.execute_batch(
         "CREATE TABLE accounts (
@@ -185,7 +189,7 @@ fn setup_conn() -> Connection {
     .expect("create account table");
     conn.execute(
         "INSERT INTO accounts (id, claim_version) VALUES (?1, 0)",
-        [ACCOUNT_ID],
+        [format!("{ACCOUNT_ID}-{discriminator}").as_str()],
     )
     .expect("seed account");
     conn.execute_batch(CLAIMS_SCHEMA_SQL)
@@ -196,41 +200,50 @@ fn setup_conn() -> Connection {
         .expect("apply typed feedback schema");
     conn.execute_batch(STRUCTURED_CLAIM_CANONICALIZATION_COLUMNS_SQL)
         .expect("apply structured claim canonicalization columns");
+    conn.execute_batch(V172_SUBSTRATE_CONCURRENCY_SQL)
+        .expect("apply v172 substrate concurrency schema");
     conn.execute_batch(REVEAL_AUDIT_ACTION_TOKEN_SCHEMA_SQL)
         .expect("apply reveal audit action token schema");
     conn
 }
 
-fn confidential_claim_proposal() -> ClaimProposal {
-    ClaimProposal {
-        id: Some("claim-dos412-idempotent-reveal".to_string()),
-        expected_claim_version: None,
-        subject_ref: json!({
-            "kind": "account",
-            "id": ACCOUNT_ID,
-        })
-        .to_string(),
-        claim_type: "entity_summary".to_string(),
-        field_path: Some("context.risk".to_string()),
-        topic_key: None,
-        text: CONFIDENTIAL_TEXT.to_string(),
-        actor: "agent:test".to_string(),
-        data_source: "user".to_string(),
-        source_ref: Some("fixture:example.com/reveal-idempotency".to_string()),
-        source_asof: Some("2026-05-07T12:00:00Z".to_string()),
-        observed_at: "2026-05-07T12:00:00Z".to_string(),
-        provenance_json: json!({
-            "source": "dos412-cycle10-regression",
-            "domain": "example.com"
-        })
-        .to_string(),
-        metadata_json: None,
-        thread_id: None,
-        temporal_scope: Some(TemporalScope::State),
-        sensitivity: Some(ClaimSensitivity::Confidential),
-        supersedes: None,
-        tombstone: None,
-    }
+// Per-test discriminator keeps the substrate's process-global commit lock
+// (keyed by subject_ref + claim_type + field_path) from serializing parallel
+// tests that exercise the same logical fixture in separate in-memory
+// connections.
+fn confidential_claim_proposal(discriminator: &str) -> DeterministicInsertProposal {
+    DeterministicInsertProposal::new(
+        format!("claim-dos412-idempotent-reveal-{discriminator}"),
+        ClaimProposal {
+            id: None,
+            expected_claim_version: None,
+            subject_ref: json!({
+                "kind": "account",
+                "id": format!("{ACCOUNT_ID}-{discriminator}"),
+            })
+            .to_string(),
+            claim_type: "entity_summary".to_string(),
+            field_path: Some(format!("context.risk.{discriminator}")),
+            topic_key: None,
+            text: CONFIDENTIAL_TEXT.to_string(),
+            actor: "agent:test".to_string(),
+            data_source: "user".to_string(),
+            source_ref: Some("fixture:example.com/reveal-idempotency".to_string()),
+            source_asof: Some("2026-05-07T12:00:00Z".to_string()),
+            observed_at: "2026-05-07T12:00:00Z".to_string(),
+            provenance_json: json!({
+                "source": "dos412-cycle10-regression",
+                "domain": "example.com"
+            })
+            .to_string(),
+            metadata_json: None,
+            thread_id: None,
+            temporal_scope: Some(TemporalScope::State),
+            sensitivity: Some(ClaimSensitivity::Confidential),
+            supersedes: None,
+            tombstone: None,
+        },
+    )
 }
 
 fn inserted_id(result: CommittedClaim) -> String {

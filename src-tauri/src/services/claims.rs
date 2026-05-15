@@ -384,6 +384,11 @@ const CLAIM_UPDATE_ALLOWED_COLUMNS: &[&str] = &[
     "verification_state",
     "verification_reason",
     "needs_user_decision_at",
+    // W4-B substrate concurrency watermark; bumped via CAS by the
+    // MutationGuard protocol on every mutate, and by the v172 migration
+    // backfill. Not assertion identity — it is a per-row version counter
+    // for the three-view consistency contract.
+    "claim_version",
 ];
 
 fn execute_claims_update<P>(conn: &Connection, sql: &str, params: P) -> Result<usize, ClaimError>
@@ -781,10 +786,20 @@ fn is_ident_continue(ch: char) -> bool {
 // Per-key commit lock (ADR-0113 R2)
 // ---------------------------------------------------------------------------
 
-/// Process-wide lock map keyed on (subject_ref, claim_type,
-/// field_path|topic_key). Lock entries are intentionally retained for the
-/// process lifetime; cardinality is bounded by distinct claim keys.
-type CommitKey = (String, String, String);
+/// Process-wide lock map keyed on (db_id, subject_ref, claim_type,
+/// field_path|topic_key). `db_id` is the `ActionDb`'s connection pointer
+/// cast to `usize`; including it scopes contention to writers sharing the
+/// same underlying connection. Without it, parallel tests holding distinct
+/// in-memory connections collide on the same logical key and spuriously
+/// surface `MidFlightMutation`. In production, all writers share one
+/// connection, so the discriminator is a no-op there. Lock entries are
+/// intentionally retained for the process lifetime; cardinality is bounded
+/// by distinct (db_id, claim key) pairs.
+type CommitKey = (usize, String, String, String);
+
+fn db_id_of(db: &ActionDb) -> usize {
+    db.conn_ref() as *const rusqlite::Connection as usize
+}
 
 static COMMIT_LOCKS: OnceLock<Mutex<HashMap<CommitKey, Arc<Mutex<()>>>>> = OnceLock::new();
 
@@ -5702,7 +5717,8 @@ where
     let mut mutation_guard = MutationGuard::reserve(db, attempt_claim_id, ctx.clock.now())?;
     let actor_kind = VersionActorKind::from_service_actor(ctx.actor);
 
-    let key = (
+    let key: CommitKey = (
+        db_id_of(db),
         subject_ref_compact.clone(),
         proposal.claim_type.clone(),
         proposal
@@ -12370,7 +12386,8 @@ mod tests {
 
     #[test]
     fn commit_lock_serializes_same_key_writers() {
-        let key = (
+        let key: CommitKey = (
+            0,
             "subject-lock".to_string(),
             "risk".to_string(),
             "health.risk".to_string(),
@@ -12427,6 +12444,7 @@ mod tests {
         // Commit key for a fresh-insert proposal on acct-fresh-contend
         // (claim_type=risk, field_path=health.risk).
         let key: CommitKey = (
+            db_id_of(&db),
             serde_json::json!({ "id": "acct-fresh-contend", "kind": "account" }).to_string(),
             "risk".to_string(),
             "health.risk".to_string(),

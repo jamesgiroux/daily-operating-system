@@ -18,6 +18,8 @@ use rusqlite::Connection;
 use tauri::Manager;
 
 const CLAIMS_SCHEMA_SQL: &str = include_str!("../src/migrations/129_dos_7_claims_schema.sql");
+const V172_SUBSTRATE_CONCURRENCY_SQL: &str =
+    include_str!("./shared_schemas/v172_substrate_concurrency.sql");
 const PROJECTION_STATUS_SQL: &str =
     include_str!("../src/migrations/134_dos_301_claim_projection_status.sql");
 const TYPED_FEEDBACK_SQL: &str =
@@ -80,6 +82,8 @@ fn fresh_claims_conn() -> Connection {
         .expect("apply typed feedback schema");
     conn.execute_batch(STRUCTURED_CLAIM_CANONICALIZATION_COLUMNS_SQL)
         .expect("apply structured claim canonicalization columns");
+    conn.execute_batch(V172_SUBSTRATE_CONCURRENCY_SQL)
+        .expect("apply v172 substrate concurrency schema");
     conn
 }
 
