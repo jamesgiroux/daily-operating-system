@@ -836,6 +836,7 @@ pub struct ServiceContext<'a> {
     pub external: &'a ExternalClients,
     entity_context_reader: Option<Arc<dyn EntityContextReadHandle>>,
     entity_context_claim_reader: Option<Arc<dyn EntityContextClaimReadHandle>>,
+    list_open_loops_reader: Option<Arc<dyn ListOpenLoopsReadHandle>>,
     prepare_meeting_context_reader: Option<Arc<dyn PrepareMeetingContextReadHandle>>,
     trajectory_reader: Option<Arc<dyn TrajectoryReadHandle>>,
     temporal_maintenance: Option<Arc<dyn TemporalMaintenanceHandle>>,
@@ -871,6 +872,37 @@ pub trait EntityContextClaimReadHandle: Send + Sync {
         surface: ClaimDismissalSurface,
         depth: usize,
     ) -> EntityContextClaimReadFuture<'a>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListOpenLoopsQuery {
+    pub entity_type: Option<String>,
+    pub entity_id: Option<String>,
+    pub surface: ClaimDismissalSurface,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ListOpenLoopsSnapshot {
+    pub claims: Vec<IntelligenceClaim>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ListOpenLoopsReadError {
+    #[error("subject is not owned by this workspace: {entity_type}:{entity_id}")]
+    SubjectNotOwned {
+        entity_type: String,
+        entity_id: String,
+    },
+    #[error("{0}")]
+    ReadFailed(String),
+}
+
+pub type ListOpenLoopsReadFuture<'a> = Pin<
+    Box<dyn Future<Output = Result<ListOpenLoopsSnapshot, ListOpenLoopsReadError>> + Send + 'a>,
+>;
+
+pub trait ListOpenLoopsReadHandle: Send + Sync {
+    fn read_open_loops<'a>(&'a self, query: ListOpenLoopsQuery) -> ListOpenLoopsReadFuture<'a>;
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -970,6 +1002,7 @@ impl<'a> ServiceContext<'a> {
             external,
             entity_context_reader: None,
             entity_context_claim_reader: None,
+            list_open_loops_reader: None,
             prepare_meeting_context_reader: None,
             trajectory_reader: None,
             temporal_maintenance: None,
@@ -993,6 +1026,7 @@ impl<'a> ServiceContext<'a> {
             external,
             entity_context_reader: None,
             entity_context_claim_reader: None,
+            list_open_loops_reader: None,
             prepare_meeting_context_reader: None,
             trajectory_reader: None,
             temporal_maintenance: None,
@@ -1027,6 +1061,7 @@ impl<'a> ServiceContext<'a> {
             external,
             entity_context_reader: None,
             entity_context_claim_reader: None,
+            list_open_loops_reader: None,
             prepare_meeting_context_reader: None,
             trajectory_reader: None,
             temporal_maintenance: None,
@@ -1063,6 +1098,14 @@ impl<'a> ServiceContext<'a> {
         reader: Arc<dyn EntityContextClaimReadHandle>,
     ) -> Self {
         self.entity_context_claim_reader = Some(reader);
+        self
+    }
+
+    pub fn with_list_open_loops_reader(
+        mut self,
+        reader: Arc<dyn ListOpenLoopsReadHandle>,
+    ) -> Self {
+        self.list_open_loops_reader = Some(reader);
         self
     }
 
@@ -1116,6 +1159,19 @@ impl<'a> ServiceContext<'a> {
         }
 
         Err(self.missing_reader_error("entity_context_claim_reader"))
+    }
+
+    pub async fn read_list_open_loops(
+        &self,
+        query: ListOpenLoopsQuery,
+    ) -> Result<ListOpenLoopsSnapshot, ListOpenLoopsReadError> {
+        let Some(reader) = &self.list_open_loops_reader else {
+            return Err(ListOpenLoopsReadError::ReadFailed(
+                self.missing_reader_error("list_open_loops_read"),
+            ));
+        };
+
+        reader.read_open_loops(query).await
     }
 
     pub async fn read_trajectory_bundle(

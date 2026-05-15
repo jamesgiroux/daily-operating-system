@@ -1,0 +1,11 @@
+{
+  "ability_name": "list_open_loops",
+  "input_json": {
+    "schema_version": 1,
+    "entity_type": "account",
+    "entity_id": "acct-b10-other-workspace"
+  },
+  "actor": "user",
+  "mode": "evaluate",
+  "dry_run": false
+}
