@@ -1137,6 +1137,7 @@ fn fixture_claim(
 ) -> IntelligenceClaim {
     IntelligenceClaim {
         id: id.to_string(),
+        claim_version: 1,
         subject_ref: json!({
             "kind": ENTITY_TYPE,
             "id": entity_id,
