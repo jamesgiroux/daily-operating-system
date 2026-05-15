@@ -1,30 +1,23 @@
 # Rust CI — macOS only because Tauri externalBin validation + macOS keychain
-# integration paths require it. Triggers are deliberately narrow:
+# integration paths require it.
 #
-# - Pushes/PRs to trunk: always run (release branch — full safety).
-# - PRs to dev: only when src-tauri/**, Cargo.*, or workflow files change.
-#   Frontend-only PRs to dev skip this job entirely (the cost saving).
+# Triggers (intentionally narrow per 2026-05-15 amendment):
+# - Pushes to main: always run (release branch — full safety on the
+#   versioned release path).
+# - No PR triggers. Dev-side coverage is owned entirely by the
+#   .githooks/pre-commit gate (clippy + cargo test --lib + tsc) plus L2
+#   review on every PR. The macos-latest Rust workflow was costing ~10x
+#   the Linux cost per run for redundant signal — local clippy is the
+#   real gate; CI-on-every-Rust-touching-PR was overhead, not safety.
 #
-# Rationale: the .githooks/pre-commit gate runs clippy + cargo test --lib
-# + tsc locally on every commit post-hook-wiring. L2 review catches
-# anything the local gate misses before merge. CI-on-every-dev-PR was
-# redundant + expensive (10x Linux cost on macos-latest).
+# If a regression slips through the local gate, it is caught at the
+# release-cut push to main.
 name: Rust
 
 on:
   push:
     branches:
-      - trunk
-    paths:
-      - 'src-tauri/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - '.github/workflows/rust.yml'
-      - '.github/workflows/test.yml'
-  pull_request:
-    branches:
-      - dev
-      - trunk
+      - main
     paths:
       - 'src-tauri/**'
       - 'Cargo.toml'
@@ -34,7 +27,7 @@ on:
 
 concurrency:
   group: rust-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: false
 
 jobs:
   rust:
