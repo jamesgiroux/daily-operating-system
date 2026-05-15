@@ -29,10 +29,10 @@ use crate::bridges::correction_payload::{
     project_claim_for_scope, project_composition_for_scope, CorrectionPayload,
 };
 use crate::bridges::surface_client::{
-    validate_session_bound_wp_user_id_for_request, SurfaceClientAbilityClassLimits,
-    SurfaceClientBridge,
-    SurfaceClientBridgeConfig, SurfaceClientBridgeError, SurfaceClientRateLimitAxis,
-    SurfaceClientRateLimitBudget, SurfaceClientRequestClassLimits,
+    is_surface_nonce_route, validate_session_bound_wp_user_id_for_request,
+    SurfaceClientAbilityClassLimits, SurfaceClientBridge, SurfaceClientBridgeConfig,
+    SurfaceClientBridgeError, SurfaceClientRateLimitAxis, SurfaceClientRateLimitBudget,
+    SurfaceClientRequestClassLimits,
 };
 use crate::bridges::types::{
     invoke_registry_json_for_actor, provider_from_context_snapshot, surface_error, BridgeActor,
@@ -40,6 +40,7 @@ use crate::bridges::types::{
 };
 use crate::bridges::BridgeSurfaceError;
 use crate::services::context::ClaimDismissalSurface;
+use crate::services::surface_nonce::{SurfaceNonceError, SurfaceNonceService};
 use crate::services::surface_pairing::{
     self, PairingCodeFailureInput, PairingHandshakeCapacityInput, PairingHandshakeInput,
     PairingHandshakeRequest, SignedSessionValidationInput, SignedSiteClaimsInput,
@@ -249,6 +250,14 @@ impl SurfaceEndpointState {
         self.signed_transport
             .configure(config.signed_transport.clone());
         self.paired_site_origins.write().clear();
+        let surface_nonce = SurfaceNonceService::new_from_w2b_secret(
+            self.signed_transport.presence_nonce_secret_material(),
+        )
+        .map_err(|error| {
+            let message = format!("surface endpoint presence nonce key unavailable: {error}");
+            self.mark_failed(message.clone());
+            SurfaceEndpointStartError::new(message)
+        })?;
         let runtime_anchor_id = if app_state.is_some() {
             crate::db::key_provider::get_or_create_surface_runtime_anchor_id().map_err(|error| {
                 let message = format!("surface endpoint runtime anchor unavailable: {error}");
@@ -291,6 +300,7 @@ impl SurfaceEndpointState {
                         surface_client_bridge: SurfaceClientBridge::new(
                             config.surface_client_bridge.clone(),
                         ),
+                        surface_nonce: surface_nonce.clone(),
                         #[cfg(test)]
                         ability_registry_override: None,
                         app_state: app_state.clone(),
@@ -545,6 +555,7 @@ struct EndpointRuntime {
     signed_transport: hmac::SignedTransportState,
     signed_request_max_body_bytes: usize,
     surface_client_bridge: SurfaceClientBridge,
+    surface_nonce: SurfaceNonceService,
     #[cfg(test)]
     ability_registry_override: Option<Arc<crate::abilities::AbilityRegistry>>,
     app_state: Option<Arc<AppState>>,
@@ -798,6 +809,9 @@ async fn signed_transport_response(
 
 fn is_supported_signed_route(method: &Method, path: &str) -> bool {
     if method == Method::GET && path.starts_with("/v1/surface/event-log/") {
+        return true;
+    }
+    if is_surface_nonce_route(method, path) {
         return true;
     }
     matches!(
@@ -1471,6 +1485,13 @@ async fn signed_route_response(
                 ),
             }
         }
+        (Method::POST, "/v1/surface/nonce/issue") => {
+            surface_nonce_issue_response(runtime, validated, request.body.clone(), request_id).await
+        }
+        (Method::POST, "/v1/surface/nonce/verify") => {
+            surface_nonce_verify_response(runtime, validated, request.body.clone(), request_id)
+                .await
+        }
         (Method::POST, "/v1/surface/invoke") => {
             let invoke = match serde_json::from_slice::<SurfaceInvokeRequest>(&request.body) {
                 Ok(invoke) if is_safe_ability_name(&invoke.ability) => invoke,
@@ -1581,6 +1602,143 @@ async fn signed_route_response(
     }
 }
 
+async fn surface_nonce_issue_response(
+    runtime: &EndpointRuntime,
+    validated: ValidatedSurfaceSession,
+    body: Bytes,
+    request_id: String,
+) -> Response<ResponseBody> {
+    let Some(app_state) = runtime.app_state.as_ref().cloned() else {
+        return error_response(SurfaceHttpError::runtime_unavailable().with_request_id(request_id));
+    };
+    let payload = serde_json::from_slice::<Value>(&body).unwrap_or(Value::Null);
+    let service = runtime.surface_nonce.clone();
+    let request_id_for_work = request_id.clone();
+    let session_for_work = validated;
+    let result = app_state
+        .db_read(move |db| {
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let external = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &external)
+                .with_actor("surface_client");
+            Ok(service.issue_nonce(&ctx, db, &session_for_work, payload, &request_id_for_work))
+        })
+        .await;
+
+    match result {
+        Ok(Ok(issue)) => {
+            emit_surface_nonce_audit_events(&app_state, &issue.audit_events);
+            json_response(
+                StatusCode::OK,
+                json!({
+                    "ok": true,
+                    "presence_nonce": issue.presence_nonce,
+                    "expires_at": issue.expires_at,
+                    "ttl_seconds": issue.ttl_seconds,
+                    "request_id": issue.request_id,
+                }),
+            )
+        }
+        Ok(Err(error)) => {
+            emit_surface_nonce_audit_events(&app_state, &error.audit_events);
+            surface_nonce_error_response(error)
+        }
+        Err(error) => error_response(
+            SurfaceHttpError::from_pairing_error(SurfacePairingError::Write(error))
+                .with_request_id(request_id),
+        ),
+    }
+}
+
+async fn surface_nonce_verify_response(
+    runtime: &EndpointRuntime,
+    validated: ValidatedSurfaceSession,
+    body: Bytes,
+    request_id: String,
+) -> Response<ResponseBody> {
+    let Some(app_state) = runtime.app_state.as_ref().cloned() else {
+        return error_response(SurfaceHttpError::runtime_unavailable().with_request_id(request_id));
+    };
+    let payload = serde_json::from_slice::<Value>(&body).unwrap_or(Value::Null);
+    let service = runtime.surface_nonce.clone();
+    let request_id_for_work = request_id.clone();
+    let session_for_work = validated;
+    let result = app_state
+        .db_read(move |db| {
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let external = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &external)
+                .with_actor("surface_client");
+            Ok(service.verify_nonce(&ctx, db, &session_for_work, payload, &request_id_for_work))
+        })
+        .await;
+
+    match result {
+        Ok(Ok(verify)) => {
+            emit_surface_nonce_audit_events(&app_state, &verify.audit_events);
+            json_response(
+                StatusCode::OK,
+                json!({
+                    "ok": true,
+                    "verified": true,
+                    "consumed_at": verify.consumed_at,
+                    "request_id": verify.request_id,
+                    "expected": {
+                        "claim_version": verify.expected_claim_version,
+                        "composition_version": verify.expected_composition_version,
+                    },
+                }),
+            )
+        }
+        Ok(Err(error)) => {
+            emit_surface_nonce_audit_events(&app_state, &error.audit_events);
+            surface_nonce_error_response(error)
+        }
+        Err(error) => error_response(
+            SurfaceHttpError::from_pairing_error(SurfacePairingError::Write(error))
+                .with_request_id(request_id),
+        ),
+    }
+}
+
+fn emit_surface_nonce_audit_events(
+    app_state: &AppState,
+    events: &[crate::services::surface_nonce::SurfaceNonceAuditEvent],
+) {
+    let mut audit = app_state.audit_log.lock();
+    if let Err(error) = SurfaceNonceService::emit_audit_events(&mut audit, events) {
+        log::warn!("surface nonce audit write failed: {error}");
+    }
+}
+
+fn surface_nonce_error_response(error: SurfaceNonceError) -> Response<ResponseBody> {
+    let retry_after_ms = error
+        .retry_after
+        .map(|retry_after| retry_after.as_millis().try_into().unwrap_or(u64::MAX));
+    let mut body = json!({
+        "ok": false,
+        "error": "presence_nonce_rejected",
+        "reason": error.reason.as_str(),
+        "message": "Refresh this block and try again.",
+        "request_id": error.request_id,
+    });
+    if let Some(retry_after_ms) = retry_after_ms {
+        body["retry_after_ms"] = json!(retry_after_ms);
+    }
+    let mut response = json_response(error.status, body);
+    if let Some(retry_after_ms) = retry_after_ms {
+        let retry_after_seconds = retry_after_ms.div_ceil(1_000).max(1);
+        let header_value = HeaderValue::from_str(&retry_after_seconds.to_string())
+            .unwrap_or_else(|_| HeaderValue::from_static("1"));
+        response
+            .headers_mut()
+            .insert(header::RETRY_AFTER, header_value);
+    }
+    response
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "snake_case")]
 struct SurfaceSessionRefreshRequest {
@@ -1638,12 +1796,9 @@ async fn bridge_surface_error_response(
             claim_id,
             mutation_id,
             retry_after_event,
-        } => mid_flight_mutation_error_response(
-            request_id,
-            claim_id,
-            mutation_id,
-            retry_after_event,
-        ),
+        } => {
+            mid_flight_mutation_error_response(request_id, claim_id, mutation_id, retry_after_event)
+        }
         error => error_response(bridge_surface_error(error).with_request_id(request_id)),
     }
 }
@@ -1662,12 +1817,7 @@ fn mid_flight_mutation_error_response(
     mutation_id: String,
     retry_after_event: String,
 ) -> Response<ResponseBody> {
-    let body = build_mid_flight_mutation_body(
-        request_id,
-        claim_id,
-        mutation_id,
-        retry_after_event,
-    );
+    let body = build_mid_flight_mutation_body(request_id, claim_id, mutation_id, retry_after_event);
     json_response(StatusCode::LOCKED, body)
 }
 
@@ -2654,6 +2804,8 @@ mod tests {
             signed_transport: hmac::SignedTransportState::default(),
             signed_request_max_body_bytes: DEFAULT_SIGNED_REQUEST_MAX_BODY_BYTES,
             surface_client_bridge: SurfaceClientBridge::new(SurfaceClientBridgeConfig::default()),
+            surface_nonce: SurfaceNonceService::new_from_w2b_secret([7_u8; 32])
+                .expect("nonce service"),
             ability_registry_override: None,
             app_state: None,
         })
@@ -2711,6 +2863,8 @@ mod tests {
             signed_transport: hmac::SignedTransportState::default(),
             signed_request_max_body_bytes: DEFAULT_SIGNED_REQUEST_MAX_BODY_BYTES,
             surface_client_bridge: SurfaceClientBridge::new(bridge_config),
+            surface_nonce: SurfaceNonceService::new_from_w2b_secret([7_u8; 32])
+                .expect("nonce service"),
             ability_registry_override: Some(registry),
             app_state: Some(Arc::new(AppState::new())),
         })
@@ -3073,6 +3227,8 @@ mod tests {
             (Method::GET, "/v1/pairing/status"),
             (Method::POST, "/v1/surface/invoke"),
             (Method::POST, "/v1/surface/feedback"),
+            (Method::POST, "/v1/surface/nonce/issue"),
+            (Method::POST, "/v1/surface/nonce/verify"),
             (Method::GET, "/v1/surface/abilities"),
             (Method::GET, "/v1/surface/keyring"),
         ] {
@@ -3096,6 +3252,8 @@ mod tests {
             "/v1/pairing/status/",
             "/v1/surface/invoke/",
             "/v1/surface/feedback/",
+            "/v1/surface/nonce/issue/",
+            "/v1/surface/nonce/verify/",
             "/v1/surface/abilities/",
             "/v1/surface/keyring/",
             "/v1/surface/unknown",
@@ -3201,6 +3359,8 @@ mod tests {
             signed_transport: hmac::SignedTransportState::default(),
             signed_request_max_body_bytes: DEFAULT_SIGNED_REQUEST_MAX_BODY_BYTES,
             surface_client_bridge: SurfaceClientBridge::new(SurfaceClientBridgeConfig::default()),
+            surface_nonce: SurfaceNonceService::new_from_w2b_secret([7_u8; 32])
+                .expect("nonce service"),
             ability_registry_override: None,
             app_state: Some(app_state),
         });

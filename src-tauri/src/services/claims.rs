@@ -5395,6 +5395,14 @@ fn current_claim_version_for_id_tx(tx: &ActionDb, claim_id: &str) -> Result<u64,
         })
 }
 
+pub fn current_claim_version_for_claim_id(
+    _ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    claim_id: &str,
+) -> Result<u64, ClaimError> {
+    current_claim_version_for_id_tx(db, claim_id)
+}
+
 fn bump_existing_claim_version_tx(tx: &ActionDb, claim_id: &str) -> Result<(u64, u64), ClaimError> {
     let previous = current_claim_version_for_id_tx(tx, claim_id)?;
     let current =
@@ -5782,11 +5790,7 @@ where
             (
                 attempt.mutation_id.clone(),
                 attempt.cursor.as_str().to_string(),
-                attempt
-                    .subject
-                    .claim_id()
-                    .unwrap_or_default()
-                    .to_string(),
+                attempt.subject.claim_id().unwrap_or_default().to_string(),
             ),
         );
         CommitKeyHolderGuard {
@@ -5974,12 +5978,8 @@ where
             };
             let superseded_reason = format!("superseded_by_{}", &new_id);
             let superseded_cursor = SignalCursor::new();
-            let superseded_attempt = insert_committed_secondary_attempt(
-                tx,
-                &superseded_cursor,
-                superseded_id,
-                &now,
-            )?;
+            let superseded_attempt =
+                insert_committed_secondary_attempt(tx, &superseded_cursor, superseded_id, &now)?;
             insert_version_event(
                 tx,
                 VersionEventInsert {
@@ -6828,8 +6828,7 @@ pub fn record_claim_feedback(
         // `in_flight` forever (zombie attempt → later misclassified as
         // `aborted` by startup recovery).
         if verification_changed || lifecycle_changed {
-            let (previous, current) =
-                bump_existing_claim_version_tx(tx, &input.claim_id)?;
+            let (previous, current) = bump_existing_claim_version_tx(tx, &input.claim_id)?;
             let event_kind = if matches!(
                 lifecycle_update.claim_state,
                 ClaimState::Tombstoned | ClaimState::Withdrawn
@@ -8410,8 +8409,7 @@ fn targeted_repair_insert_replacement_claim(
     // pairs the secondary `version_events` row so the outbox-integrity
     // join holds (§15 outbox atomicity).
     let actor_kind = VersionActorKind::from_service_actor(&feedback.actor);
-    let (original_previous, original_current) =
-        bump_existing_claim_version_tx(tx, &original.id)?;
+    let (original_previous, original_current) = bump_existing_claim_version_tx(tx, &original.id)?;
     let original_event_kind = if original_was_tombstoned {
         VersionEventKind::ClaimTombstoned
     } else {
@@ -14342,12 +14340,9 @@ mod tests {
             "post-feedback bumped version sits at v>=1"
         );
 
-        let outcome = targeted_repair_process_next_job(
-            &ctx,
-            &db,
-            "repair-worker-version-event-pin",
-        )
-        .expect("process subject-fit repair");
+        let outcome =
+            targeted_repair_process_next_job(&ctx, &db, "repair-worker-version-event-pin")
+                .expect("process subject-fit repair");
         assert!(matches!(
             outcome,
             TargetedRepairProcessOutcome::Completed {

@@ -7,6 +7,7 @@ use chrono::{DateTime, Utc};
 use http::header::{self, HeaderMap};
 use http::{Method, StatusCode, Uri};
 use parking_lot::{Mutex, RwLock};
+use rand::RngExt;
 use ring::{digest, hmac};
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
@@ -104,6 +105,7 @@ struct SignedTransportInner {
     session_reservations: Mutex<HashSet<String>>,
     nonce_store: Mutex<NonceReplayStore>,
     session_buckets: Mutex<SessionAbuseBuckets>,
+    presence_nonce_secret: SecretBytes32,
 }
 
 impl Default for SignedTransportState {
@@ -115,6 +117,7 @@ impl Default for SignedTransportState {
                 session_reservations: Mutex::new(HashSet::new()),
                 nonce_store: Mutex::new(NonceReplayStore::default()),
                 session_buckets: Mutex::new(SessionAbuseBuckets::default()),
+                presence_nonce_secret: SecretBytes32(random_secret32()),
             }),
         }
     }
@@ -281,6 +284,10 @@ impl SignedTransportState {
         self.inner.session_reservations.lock().clear();
         self.inner.nonce_store.lock().records.clear();
         self.inner.session_buckets.lock().buckets.clear();
+    }
+
+    pub(super) fn presence_nonce_secret_material(&self) -> [u8; 32] {
+        self.inner.presence_nonce_secret.0
     }
 
     pub(super) fn derive_active_session_key(&self, session_id: &str) -> Option<[u8; 32]> {
@@ -607,6 +614,12 @@ enum SignedSessionState {
 
 #[derive(Clone)]
 struct SecretBytes32([u8; 32]);
+
+fn random_secret32() -> [u8; 32] {
+    let mut bytes = [0_u8; 32];
+    rand::rng().fill(&mut bytes);
+    bytes
+}
 
 impl Drop for SecretBytes32 {
     fn drop(&mut self) {
