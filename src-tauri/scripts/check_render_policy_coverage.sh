@@ -219,8 +219,19 @@ SAFE_STRING_FIELDS = {
         "context": "claim/provenance-attested",
     },
     "OpenLoop": {
+        "id": "identifier metadata",
         "description": "claim/provenance-attested",
         "owner": "claim/provenance-attested",
+        "loop_kind": "enum metadata",
+        "due_date": "timestamp metadata",
+        "status": "enum metadata",
+        "source_asof": "timestamp metadata",
+        "claim_type": "enum metadata",
+    },
+    "OpenLoopsResult": {},
+    "OpenLoopSubject": {
+        "entity_type": "enum metadata",
+        "entity_id": "identifier metadata",
     },
     "ChangeMarker": {
         "description": "claim/provenance-attested",
@@ -265,7 +276,8 @@ NESTED_OUTPUT_STRUCTS = {
     "MeetingSummary": ["MeetingAttendee"],
     "Topic": ["BriefSubjectRef", "BriefTemporalScope"],
     "AttendeeContext": ["BriefSubjectRef", "BriefTemporalScope"],
-    "OpenLoop": ["BriefSubjectRef", "BriefTemporalScope"],
+    "OpenLoop": ["BriefSubjectRef", "BriefTemporalScope", "OpenLoopSubject"],
+    "OpenLoopsResult": ["OpenLoop"],
     "ChangeMarker": ["BriefSubjectRef", "BriefTemporalScope"],
     "SuggestedOutcome": ["BriefSubjectRef", "BriefTemporalScope"],
 }
@@ -273,6 +285,7 @@ NESTED_OUTPUT_STRUCTS = {
 EXPECTED_AGENT_OUTPUTS = {
     "get_entity_context": "GetEntityContextOutput",
     "prepare_meeting": "MeetingBrief",
+    "list_open_loops": "OpenLoopsResult",
 }
 
 SAFE_WRAPPERS = ("RenderableMcpClaimText", "RenderableMcpEntityName")
@@ -293,13 +306,17 @@ def raw_string_type(type_text: str) -> bool:
     return text in {"String", "Option<String>", "Vec<String>"}
 
 def struct_body(name: str):
-    marker = f"pub struct {name}"
-    start = combined.find(marker)
-    if start == -1:
-        marker = f"struct {name}"
-        start = combined.find(marker)
-    if start == -1:
+    # Match `pub struct {name}` followed by `{` or `<` (generic) — NOT a longer
+    # identifier (e.g. avoid prefix-matching `OpenLoopsResult` when we want
+    # `OpenLoops`).
+    pattern = re.compile(rf"pub\s+struct\s+{re.escape(name)}\b\s*[{{<]")
+    match = pattern.search(combined)
+    if match is None:
+        pattern = re.compile(rf"struct\s+{re.escape(name)}\b\s*[{{<]")
+        match = pattern.search(combined)
+    if match is None:
         return None
+    start = match.start()
     brace = combined.find("{", start)
     if brace == -1:
         return None

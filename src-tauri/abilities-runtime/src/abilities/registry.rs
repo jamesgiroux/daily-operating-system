@@ -608,6 +608,7 @@ pub enum AbilityErrorKind {
         composition_id: CompositionId,
         reason: String,
     },
+    SubjectNotOwned,
     HardError(String),
 }
 
