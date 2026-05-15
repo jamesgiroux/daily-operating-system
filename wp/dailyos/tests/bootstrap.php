@@ -35,6 +35,9 @@ namespace {
 	$GLOBALS['dailyos_test_registered_abilities'] = [];
 	$GLOBALS['dailyos_test_settings_errors']      = [];
 	$GLOBALS['dailyos_test_remote_post_calls']    = [];
+	$GLOBALS['dailyos_test_rest_routes']          = [];
+	$GLOBALS['dailyos_test_parse_blocks_result']  = null;
+	$GLOBALS['dailyos_test_serialized_blocks']    = null;
 	$GLOBALS['dailyos_test_remote_post_response'] = [
 		'response' => [
 			'code' => 200,
@@ -102,6 +105,9 @@ namespace {
 		$GLOBALS['dailyos_test_registered_abilities'] = [];
 		$GLOBALS['dailyos_test_settings_errors']      = [];
 		$GLOBALS['dailyos_test_remote_post_calls']    = [];
+		$GLOBALS['dailyos_test_rest_routes']          = [];
+		$GLOBALS['dailyos_test_parse_blocks_result']  = null;
+		$GLOBALS['dailyos_test_serialized_blocks']    = null;
 		$GLOBALS['dailyos_test_remote_post_response'] = [
 			'response' => [
 				'code' => 200,
@@ -369,6 +375,14 @@ namespace {
 	if ( ! function_exists( 'register_uninstall_hook' ) ) {
 		function register_uninstall_hook( string $file, callable $callback ): void {
 			unset( $file, $callback );
+		}
+	}
+
+	if ( ! function_exists( 'register_rest_route' ) ) {
+		function register_rest_route( string $namespace, string $route, array $args = [], bool $override = false ): bool {
+			unset( $override );
+			$GLOBALS['dailyos_test_rest_routes'][ $namespace . $route ] = $args;
+			return true;
 		}
 	}
 
@@ -842,6 +856,35 @@ namespace {
 	if ( ! function_exists( 'wp_json_encode' ) ) {
 		function wp_json_encode( mixed $value, int $flags = 0, int $depth = 512 ): string|false {
 			return json_encode( $value, $flags, $depth );
+		}
+	}
+
+	if ( ! function_exists( 'parse_blocks' ) ) {
+		function parse_blocks( string $content ): array {
+			if ( is_array( $GLOBALS['dailyos_test_parse_blocks_result'] ) ) {
+				return $GLOBALS['dailyos_test_parse_blocks_result'];
+			}
+
+			$decoded = json_decode( $content, true );
+
+			return is_array( $decoded ) ? $decoded : [];
+		}
+	}
+
+	if ( ! function_exists( 'serialize_block' ) ) {
+		function serialize_block( array $block ): string {
+			$encoded = wp_json_encode( $block );
+
+			return is_string( $encoded ) ? $encoded : '';
+		}
+	}
+
+	if ( ! function_exists( 'serialize_blocks' ) ) {
+		function serialize_blocks( array $blocks ): string {
+			$GLOBALS['dailyos_test_serialized_blocks'] = $blocks;
+			$encoded = wp_json_encode( $blocks );
+
+			return is_string( $encoded ) ? $encoded : '';
 		}
 	}
 }

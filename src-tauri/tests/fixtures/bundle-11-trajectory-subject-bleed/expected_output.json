@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "envelope": {
+    "trust": "untrusted",
+    "payload": {
+      "subject": {
+        "kind": "account",
+        "id": "acct-risk-target"
+      },
+      "direction": "increasing",
+      "summary": "Target account engagement declined without using adjacent account evidence.",
+      "confidence": 0.78,
+      "indicators": [
+        {
+          "label": "engagement_delta",
+          "direction": "increasing",
+          "severity": 0.42,
+          "rationale": "Recent target account activity is lower than the prior window.",
+          "evidence_summary": {
+            "claim_count": 1,
+            "contributing_claim_ids": ["claim-risk-target-engagement"],
+            "source_refs": ["src-risk-target-engagement"],
+            "source_asof": "2026-05-12T09:00:00Z",
+            "oldest_contributing_claim_id": "claim-risk-target-engagement"
+          }
+        }
+      ],
+      "source_verification": {
+        "checked": true,
+        "accepted_source_refs": ["src-risk-target-engagement"]
+      }
+    }
+  }
+}

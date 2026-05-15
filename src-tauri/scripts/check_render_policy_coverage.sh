@@ -253,6 +253,87 @@ SAFE_STRING_FIELDS = {
         "org": "organization metadata",
         "seniority": "role level metadata",
     },
+    "DailyReadiness": {
+        "narrative": "claim/provenance-attested",
+    },
+    "DailyReadinessMeeting": {
+        "workspace_scope": "workspace identifier metadata",
+    },
+    "DailyReadinessOvernightChange": {
+        "id": "identifier metadata",
+        "summary": "claim/provenance-attested",
+        "source_ref": "source identifier metadata",
+        "observed_at": "timestamp metadata",
+        "source_asof": "timestamp metadata",
+        "data_source": "enum metadata",
+        "lifecycle": "enum metadata",
+        "sensitivity": "enum metadata",
+        "workspace_scope": "workspace identifier metadata",
+    },
+    "DailyReadinessRiskShift": {
+        "id": "identifier metadata",
+        "direction": "enum metadata",
+        "evidence_summary": "claim/provenance-attested",
+        "source_ref": "source identifier metadata",
+        "observed_at": "timestamp metadata",
+        "source_asof": "timestamp metadata",
+        "data_source": "enum metadata",
+        "lifecycle": "enum metadata",
+        "sensitivity": "enum metadata",
+        "workspace_scope": "workspace identifier metadata",
+    },
+    "DailyReadinessOpenLoop": {
+        "id": "identifier metadata",
+        "text": "claim/provenance-attested",
+        "owner": "claim/provenance-attested",
+        "due_date": "timestamp metadata",
+        "source_ref": "source identifier metadata",
+        "observed_at": "timestamp metadata",
+        "source_asof": "timestamp metadata",
+        "data_source": "enum metadata",
+        "lifecycle": "enum metadata",
+        "sensitivity": "enum metadata",
+        "workspace_scope": "workspace identifier metadata",
+    },
+    "DailyReadinessCoverageWarning": {
+        "kind": "enum metadata",
+        "message": "constant string metadata",
+        "workspace_scope": "workspace identifier metadata",
+    },
+    "DailyReadinessSubject": {
+        "kind": "enum metadata",
+        "id": "identifier metadata",
+        "display_name": "entity name metadata",
+        "workspace_scope": "workspace identifier metadata",
+    },
+    "RiskShiftResult": {},
+    "RiskShiftUntrustedResult": {
+        "summary": "claim/provenance-attested",
+        "judge_model": "model name metadata",
+    },
+    "RiskIndicator": {
+        "label": "enum metadata",
+        "rationale": "claim/provenance-attested",
+    },
+    "RiskShiftClaimDraft": {
+        "claim_type": "enum metadata",
+        "text": "claim/provenance-attested",
+    },
+    "EvidenceSummary": {
+        "source_asof": "timestamp metadata",
+        "oldest_contributing_claim_id": "identifier metadata",
+        "contributing_claim_ids": "identifier metadata",
+        "source_refs": "source identifier metadata",
+    },
+    "RiskShiftSourceMembership": {
+        "input_claim_refs": "source identifier metadata",
+        "accepted_source_refs": "source identifier metadata",
+    },
+    "RiskShiftSamplingCapture": {},
+    "RiskShiftSubjectRef": {
+        "kind": "enum metadata",
+        "id": "identifier metadata",
+    },
 }
 
 NESTED_OUTPUT_STRUCTS = {
@@ -280,12 +361,41 @@ NESTED_OUTPUT_STRUCTS = {
     "OpenLoopsResult": ["OpenLoop"],
     "ChangeMarker": ["BriefSubjectRef", "BriefTemporalScope"],
     "SuggestedOutcome": ["BriefSubjectRef", "BriefTemporalScope"],
+    "DailyReadiness": [
+        "DailyReadinessMeeting",
+        "DailyReadinessOvernightChange",
+        "DailyReadinessRiskShift",
+        "DailyReadinessOpenLoop",
+        "DailyReadinessCoverageWarning",
+    ],
+    "DailyReadinessMeeting": [
+        "MeetingSummary",
+        "Topic",
+        "AttendeeContext",
+        "OpenLoop",
+    ],
+    "DailyReadinessOvernightChange": ["DailyReadinessSubject"],
+    "DailyReadinessRiskShift": ["DailyReadinessSubject"],
+    "DailyReadinessOpenLoop": ["DailyReadinessSubject"],
+    "RiskShiftResult": ["RiskShiftUntrustedResult"],
+    "RiskShiftUntrustedResult": [
+        "RiskShiftSubjectRef",
+        "RiskIndicator",
+        "RiskShiftClaimDraft",
+        "EvidenceSummary",
+        "RiskShiftSourceMembership",
+        "RiskShiftSamplingCapture",
+    ],
+    "RiskIndicator": ["EvidenceSummary"],
+    "RiskShiftClaimDraft": ["RiskShiftSubjectRef", "EvidenceSummary"],
 }
 
 EXPECTED_AGENT_OUTPUTS = {
     "get_entity_context": "GetEntityContextOutput",
     "prepare_meeting": "MeetingBrief",
     "list_open_loops": "OpenLoopsResult",
+    "get_daily_readiness": "DailyReadiness",
+    "detect_risk_shift": "RiskShiftResult",
 }
 
 SAFE_WRAPPERS = ("RenderableMcpClaimText", "RenderableMcpEntityName")
@@ -307,8 +417,8 @@ def raw_string_type(type_text: str) -> bool:
 
 def struct_body(name: str):
     # Match `pub struct {name}` followed by `{` or `<` (generic) — NOT a longer
-    # identifier (e.g. avoid prefix-matching `OpenLoopsResult` when we want
-    # `OpenLoops`).
+    # identifier (e.g. avoid prefix-matching `DailyReadinessInput` /
+    # `OpenLoopsResult` when we want `DailyReadiness` / `OpenLoops`).
     pattern = re.compile(rf"pub\s+struct\s+{re.escape(name)}\b\s*[{{<]")
     match = pattern.search(combined)
     if match is None:

@@ -1,10 +1,6 @@
-#[cfg(test)]
-use abilities_runtime::abilities::composition::{AbilityRef, CompositionKind, CompositionMetadata};
 use abilities_runtime::abilities::composition::{
     Composition, CompositionDocId, CompositionVersion,
 };
-#[cfg(test)]
-use abilities_runtime::abilities::provenance::SchemaVersion;
 use chrono::{DateTime, Utc};
 use rusqlite::{params, OptionalExtension};
 use thiserror::Error;
@@ -121,9 +117,7 @@ pub fn commit_composition(
                 CompositionError::InflatedVersion { current, .. } => {
                     Some(("inflated_version_rejected", Some(*current)))
                 }
-                CompositionError::Overflow { .. } => {
-                    Some(("composition_version_overflow", None))
-                }
+                CompositionError::Overflow { .. } => Some(("composition_version_overflow", None)),
                 _ => None,
             };
             if let Some((reason, current_version)) = rejection_reason {
@@ -150,6 +144,34 @@ pub fn commit_composition(
 
     mutation_guard.mark_completed();
     Ok(committed)
+}
+
+pub fn current_composition_version_for_composition_id(
+    _ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    composition_id: &str,
+) -> Result<u64, CompositionError> {
+    let composition_id = composition_id.trim();
+    if composition_id.is_empty() {
+        return Err(CompositionError::EmptyCompositionId);
+    }
+
+    db.conn_ref()
+        .query_row(
+            "SELECT composition_version FROM composition_versions WHERE composition_id = ?1",
+            params![composition_id],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()?
+        .map(|value| {
+            u64::try_from(value).map_err(|_| {
+                CompositionError::Transaction(format!(
+                    "composition {composition_id} has negative composition_version {value}"
+                ))
+            })
+        })
+        .transpose()
+        .map(|version| version.unwrap_or(0))
 }
 
 /// Side-Tx helper to mark a composition mutation attempt aborted and emit a
@@ -396,7 +418,11 @@ mod tests {
         let proposal = CompositionProposal {
             composition_id: CompositionDocId::new("composition-1"),
             expected_composition_version: 0,
-            composition: Composition::empty(CompositionDocId::new("composition-1"), CompositionVersion::new(99), clock.now()),
+            composition: Composition::empty(
+                CompositionDocId::new("composition-1"),
+                CompositionVersion::new(99),
+                clock.now(),
+            ),
         };
         let committed = commit_composition(&ctx, &db, proposal).expect("bootstrap composition");
         assert_eq!(committed.composition_version, 1);
@@ -405,7 +431,11 @@ mod tests {
         let stale = CompositionProposal {
             composition_id: CompositionDocId::new("composition-1"),
             expected_composition_version: 0,
-            composition: Composition::empty(CompositionDocId::new("composition-1"), CompositionVersion::new(1), clock.now()),
+            composition: Composition::empty(
+                CompositionDocId::new("composition-1"),
+                CompositionVersion::new(1),
+                clock.now(),
+            ),
         };
         let error = commit_composition(&ctx, &db, stale).expect_err("stale version rejected");
         assert!(matches!(
@@ -429,7 +459,11 @@ mod tests {
         let proposal = CompositionProposal {
             composition_id: CompositionDocId::new("composition-events"),
             expected_composition_version: 0,
-            composition: Composition::empty(CompositionDocId::new("composition-events"), CompositionVersion::new(0), clock.now()),
+            composition: Composition::empty(
+                CompositionDocId::new("composition-events"),
+                CompositionVersion::new(0),
+                clock.now(),
+            ),
         };
         commit_composition(&ctx, &db, proposal).expect("commit composition");
 

@@ -2,8 +2,10 @@
 
 pub mod claims;
 pub mod composition;
+pub mod detect_risk_shift;
 pub mod extractors;
 pub mod feedback;
+pub mod get_daily_readiness;
 pub mod get_entity_context;
 pub mod list_open_loops;
 pub mod prepare_meeting;

@@ -37,6 +37,7 @@ pub mod signals;
 pub mod source_asof_backfill;
 pub mod stakeholder_writer;
 pub mod success_plans;
+pub mod surface_nonce;
 pub mod surface_pairing;
 pub mod temporal;
 pub mod threads;

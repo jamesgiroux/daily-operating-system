@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "workspace_scope": "ws-alpha",
+  "date": "2026-05-14",
+  "narrative": "Account Alpha needs security-review follow-through before today's readiness review; no Workspace Beta material is in scope.",
+  "meetings_today": [
+    {
+      "id": "meeting-alpha-readiness",
+      "title": "Account Alpha readiness review",
+      "workspace_scope": "ws-alpha"
+    }
+  ],
+  "tracked_subjects": [
+    {
+      "kind": "account",
+      "id": "acct-alpha",
+      "display_name": "Account Alpha",
+      "workspace_scope": "ws-alpha"
+    }
+  ],
+  "risk_shifts": [
+    {
+      "id": "risk-alpha-renewal",
+      "subject": {
+        "kind": "account",
+        "id": "acct-alpha",
+        "display_name": "Account Alpha",
+        "workspace_scope": "ws-alpha"
+      },
+      "direction": "up",
+      "evidence_summary": "Account Alpha renewal risk increased after the sponsor missed yesterday's security review.",
+      "workspace_scope": "ws-alpha"
+    }
+  ],
+  "absent_text": [
+    "Workspace Beta expansion risk should stay isolated from Account Alpha.",
+    "acct-beta"
+  ]
+}

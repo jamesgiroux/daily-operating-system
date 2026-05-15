@@ -838,6 +838,7 @@ pub struct ServiceContext<'a> {
     entity_context_claim_reader: Option<Arc<dyn EntityContextClaimReadHandle>>,
     list_open_loops_reader: Option<Arc<dyn ListOpenLoopsReadHandle>>,
     prepare_meeting_context_reader: Option<Arc<dyn PrepareMeetingContextReadHandle>>,
+    daily_readiness_context_reader: Option<Arc<dyn DailyReadinessContextReadHandle>>,
     trajectory_reader: Option<Arc<dyn TrajectoryReadHandle>>,
     temporal_maintenance: Option<Arc<dyn TemporalMaintenanceHandle>>,
 }
@@ -951,6 +952,104 @@ pub trait PrepareMeetingContextReadHandle: Send + Sync {
     ) -> PrepareMeetingContextReadFuture<'a>;
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct DailyReadinessContextSnapshot {
+    pub workspace_scope: String,
+    pub date: String,
+    pub meetings: Vec<DailyReadinessMeetingSnapshot>,
+    pub tracked_subjects: Vec<DailyReadinessSubjectSnapshot>,
+    pub overnight_changes: Vec<DailyReadinessSignalSnapshot>,
+    pub risk_shifts: Vec<DailyReadinessRiskSnapshot>,
+    pub open_loops: Vec<DailyReadinessOpenLoopSnapshot>,
+    pub coverage_warnings: Vec<DailyReadinessCoverageWarningSnapshot>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DailyReadinessMeetingSnapshot {
+    pub id: String,
+    pub title: String,
+    pub starts_at: Option<String>,
+    pub ends_at: Option<String>,
+    pub workspace_scope: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DailyReadinessSubjectSnapshot {
+    pub kind: String,
+    pub id: String,
+    pub display_name: String,
+    pub workspace_scope: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct DailyReadinessSignalSnapshot {
+    pub id: String,
+    pub subject: DailyReadinessSubjectSnapshot,
+    pub summary: String,
+    pub source_ref: Option<String>,
+    pub observed_at: String,
+    pub source_asof: Option<String>,
+    pub data_source: String,
+    pub lifecycle: String,
+    pub confidence: f32,
+    pub sensitivity: String,
+    pub workspace_scope: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct DailyReadinessRiskSnapshot {
+    pub id: String,
+    pub subject: DailyReadinessSubjectSnapshot,
+    pub direction: String,
+    pub evidence_summary: String,
+    pub source_ref: Option<String>,
+    pub observed_at: String,
+    pub source_asof: Option<String>,
+    pub data_source: String,
+    pub lifecycle: String,
+    pub confidence: f32,
+    pub sensitivity: String,
+    pub workspace_scope: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct DailyReadinessOpenLoopSnapshot {
+    pub id: String,
+    pub text: String,
+    pub owner: Option<String>,
+    pub subject: DailyReadinessSubjectSnapshot,
+    pub due_date: Option<String>,
+    pub source_ref: Option<String>,
+    pub observed_at: String,
+    pub source_asof: Option<String>,
+    pub data_source: String,
+    pub lifecycle: String,
+    pub confidence: f32,
+    pub sensitivity: String,
+    pub workspace_scope: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DailyReadinessCoverageWarningSnapshot {
+    pub kind: String,
+    pub message: String,
+    pub count: u32,
+    pub workspace_scope: String,
+}
+
+pub type DailyReadinessContextReadFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<DailyReadinessContextSnapshot, String>> + Send + 'a>>;
+
+/// Narrow read handle for daily-readiness seed assembly. Ability code receives
+/// only this workspace-scoped snapshot, never raw DB or app-state handles.
+pub trait DailyReadinessContextReadHandle: Send + Sync {
+    fn read_daily_readiness_context<'a>(
+        &'a self,
+        workspace_scope: String,
+        date: String,
+    ) -> DailyReadinessContextReadFuture<'a>;
+}
+
 /// Transaction-scoped context exposed to `with_transaction_*` closures.
 ///
 /// Same `mode`/`clock`/`rng` as the parent `ServiceContext` plus a
@@ -1004,6 +1103,7 @@ impl<'a> ServiceContext<'a> {
             entity_context_claim_reader: None,
             list_open_loops_reader: None,
             prepare_meeting_context_reader: None,
+            daily_readiness_context_reader: None,
             trajectory_reader: None,
             temporal_maintenance: None,
         }
@@ -1028,6 +1128,7 @@ impl<'a> ServiceContext<'a> {
             entity_context_claim_reader: None,
             list_open_loops_reader: None,
             prepare_meeting_context_reader: None,
+            daily_readiness_context_reader: None,
             trajectory_reader: None,
             temporal_maintenance: None,
         }
@@ -1063,6 +1164,7 @@ impl<'a> ServiceContext<'a> {
             entity_context_claim_reader: None,
             list_open_loops_reader: None,
             prepare_meeting_context_reader: None,
+            daily_readiness_context_reader: None,
             trajectory_reader: None,
             temporal_maintenance: None,
         }
@@ -1117,6 +1219,14 @@ impl<'a> ServiceContext<'a> {
         self
     }
 
+    pub fn with_daily_readiness_context_reader(
+        mut self,
+        reader: Arc<dyn DailyReadinessContextReadHandle>,
+    ) -> Self {
+        self.daily_readiness_context_reader = Some(reader);
+        self
+    }
+
     pub fn with_trajectory_reader(mut self, reader: Arc<dyn TrajectoryReadHandle>) -> Self {
         self.trajectory_reader = Some(reader);
         self
@@ -1139,6 +1249,20 @@ impl<'a> ServiceContext<'a> {
         }
 
         Err(self.missing_reader_error("prepare_meeting_context_reader"))
+    }
+
+    pub async fn read_daily_readiness_context(
+        &self,
+        workspace_scope: String,
+        date: String,
+    ) -> Result<DailyReadinessContextSnapshot, String> {
+        if let Some(reader) = &self.daily_readiness_context_reader {
+            return reader
+                .read_daily_readiness_context(workspace_scope, date)
+                .await;
+        }
+
+        Err(self.missing_reader_error("daily_readiness_context_reader"))
     }
 
     /// Read active entity-context claims for the caller's actual render context.

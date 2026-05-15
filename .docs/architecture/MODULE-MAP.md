@@ -1,9 +1,9 @@
 # Module Map
 
 > Rust backend module inventory (`src-tauri/src/`).
-> **Auto-generated:** 2026-05-11 by `.docs/generators/gen-module-map.sh`
+> **Auto-generated:** 2026-05-15 by `.docs/generators/gen-module-map.sh`
 
-**321** Rust files across **41** module directories and **45** standalone modules.
+**339** Rust files across **46** module directories and **46** standalone modules.
 
 ---
 
@@ -11,11 +11,11 @@
 
 | Module | Files | Public Fns | Purpose |
 |--------|-------|-----------|---------|
-| `abilities/` | 1 | 0 | Ability substrate modules. |
-| `bin/` | 3 | 0 | Binary entry points |
-| `bridges/` | 6 | 1 | Runtime-surface bridges for ability invocation. |
+| `abilities/` | 3 | 3 | Ability substrate modules. |
+| `bin/` | 4 | 0 | Binary entry points |
+| `bridges/` | 8 | 5 | Runtime-surface bridges for ability invocation. |
 | `clay/` | 5 | 6 | Clay.earth MCP integration for contact and company enrichment. |
-| `commands/` | 12 | 401 | Tauri IPC command handlers |
+| `commands/` | 13 | 405 | Tauri IPC command handlers |
 | `context_provider/` | 4 | 2 | Context provider abstraction for dual-mode operation (ADR-0095). |
 | `db/` | 27 | 28 | SQLite database modules |
 | `devtools/` | 1 | 11 | Dev tools for scenario switching and mock data. |
@@ -26,10 +26,10 @@
 | `gravatar/` | 4 | 11 | Gravatar MCP server integration for avatar and profile enrichment. |
 | `harness/` | 8 | 33 | — |
 | `hygiene/` | 6 | 12 | Proactive intelligence maintenance (- ADR-0058). |
-| `intelligence/` | 21 | 71 | Intelligence lifecycle, enrichment orchestration |
+| `intelligence/` | 21 | 73 | Intelligence lifecycle, enrichment orchestration |
 | `linear/` | 4 | 3 | Linear issue tracker integration. |
 | `mcp/` | 1 | 6 | — |
-| `migrations/` | 1 | 0 | SQL schema migrations |
+| `migrations/` | 5 | 0 | SQL schema migrations |
 | `oauth/` | 1 | 11 | Shared OAuth2 primitives used by Google and Glean consent flows. |
 | `observability/` | 1 | 0 | — |
 | `operations/` | 1 | 4 | Contract-first operations registry. |
@@ -41,29 +41,31 @@
 | `quill/` | 5 | 12 | Quill MCP client integration for automatic transcript sync. |
 | `reports/` | 11 | 38 | Report infrastructure for v0.15.0. |
 | `self_healing/` | 6 | 19 | Intelligence self-healing (–). |
-| `services/` | 67 | 390 | ServiceLayer — mandatory mutation boundary |
+| `services/` | 73 | 438 | ServiceLayer — mandatory mutation boundary |
 | `signals/` | 22 | 59 | Universal signal bus for intelligence fusion (ADR-0080 Phase 2). |
+| `surface_runtime/` | 2 | 1 | — |
 | `workflow/` | 10 | 46 | Workflow definitions |
 
 ## Standalone Modules
 
 | Module | Lines | Public Fns | Purpose |
 |--------|-------|-----------|---------|
-| `accounts.rs` | 1780 | 10 | Account workspace file I/O (ADR-0047). |
+| `accounts.rs` | 1818 | 10 | Account workspace file I/O (ADR-0047). |
 | `action_status.rs` | 96 | 2 | — |
 | `activity.rs` | 187 | 3 | User activity monitoring for background task throttling. |
-| `audit_log.rs` | 469 | 4 | Tamper-evident audit log for enterprise observability (ADR-0094). |
+| `audit_log.rs` | 972 | 5 | Tamper-evident audit log for enterprise observability (ADR-0094). |
 | `audit.rs` | 150 | 2 | Audit trail for AI-generated data. |
 | `backfill_meetings.rs` | 456 | 1 | — |
 | `calendar_merge.rs` | 291 | 1 | Calendar hybrid overlay merge (ADR-0032) |
 | `capture.rs` | 405 | 1 | Post-meeting capture state machine |
-| `commands.rs` | 85 | 0
+| `commands.rs` | 87 | 0
 0 | Legacy monolith command handler (being decomposed) |
 | `connectivity.rs` | 151 | 3 | Connectivity tracking and sync freshness. |
 | `db_backup.rs` | 653 | 8 | SQLite backup and rebuild-from-filesystem (ADR-0048) |
-| `db_service.rs` | 980 | 3 | Unified async/sync database connection pool (DOS-* DbService refactor). |
+| `db_service.rs` | 1019 | 3 | Unified async/sync database connection pool (DOS-* DbService refactor). |
 | `demo.rs` | 1002 | 6 | Production demo data for first-run experience. |
-| `embeddings.rs` | 315 | 3 | Local semantic search (nomic-embed-text) |
+| `doctor.rs` | 158 | 3 | — |
+| `embeddings.rs` | 321 | 3 | Local semantic search (nomic-embed-text) |
 | `enrichment.rs` | 494 | 1 | Unified enrichment processor. |
 | `entity_io.rs` | 166 | 5 | Shared entity I/O helpers. |
 | `entity.rs` | 61 | 0
@@ -73,15 +75,15 @@
 | `executor.rs` | 1611 | 1 | Workflow execution engine |
 | `export.rs` | 300 | 1 | User data export — ZIP file with human-readable JSON per domain. |
 | `focus_capacity.rs` | 423 | 1 | — |
-| `focus_prioritization.rs` | 398 | 1 | — |
+| `focus_prioritization.rs` | 406 | 1 | — |
 | `google.rs` | 1855 | 5 | Google authentication and calendar polling |
 | `helpers.rs` | 493 | 12 | — |
-| `intel_queue.rs` | 5897 | 8 | Background intelligence enrichment queue. |
+| `intel_queue.rs` | 6110 | 8 | Background intelligence enrichment queue. |
 | `json_loader.rs` | 426 | 1 | JSON data loader with markdown fallback |
 | `latency.rs` | 186 | 3 | Lightweight in-memory latency rollups for hot command diagnostics. |
-| `lib.rs` | 1122 | 1 | App setup, command registration, plugin init |
-| `meeting_prep_queue.rs` | 1070 | 7 | Background meeting prep queue. |
-| `migrations.rs` | 3086 | 1 | Schema migration framework (ADR-0071). |
+| `lib.rs` | 1157 | 1 | App setup, command registration, plugin init |
+| `meeting_prep_queue.rs` | 1076 | 7 | Background meeting prep queue. |
+| `migrations.rs` | 6098 | 1 | Schema migration framework (ADR-0071). |
 | `notification.rs` | 262 | 6 | Native notification wrapper |
 | `parser.rs` | 2404 | 14 | Structured data parsing |
 | `people.rs` | 667 | 7 | People workspace file I/O (ADR-0047). |
@@ -91,9 +93,9 @@
 | `release_gate.rs` | 1739 | 7 | — |
 | `risk_briefing.rs` | 612 | 5 | Risk Briefing generation for at-risk accounts. |
 | `scheduler.rs` | 779 | 2 | Scheduler for cron-based workflow execution |
-| `state.rs` | 2075 | 13 | AppState — DB, PTY, config |
+| `state.rs` | 2088 | 13 | AppState — DB, PTY, config |
 | `task_supervisor.rs` | 34 | 1 | — |
-| `types.rs` | 3365 | 7 | Shared type definitions |
+| `types.rs` | 3735 | 9 | Shared type definitions |
 | `util.rs` | 1267 | 28 | — |
 | `watcher.rs` | 981 | 1 | File watcher for _inbox/ directory |
 
@@ -101,8 +103,8 @@
 
 | Module | Depends On |
 |--------|-----------|
-| `commands/` |                     intel_queue,         intel_queue,     context_provider,     db,     glean,     intelligence,     processor,     services, abilities, bridges, services, state, types |
-| `services/` |         db,         intelligence,     abilities,     db,     google_api,     intel_queue,     intelligence,     reports,     signals,     state, abilities, action_status, commands, db, embeddings, google_api, intel_queue, intelligence, json_loader, linear, parser, pty, pub abilities, reports, signals, state, types |
+| `commands/` |                     intel_queue,         intel_queue,     context_provider,     db,     glean,     intelligence,     processor,     services, abilities, bridges, services, state, surface_runtime, types |
+| `services/` |         db,         intelligence,     abilities,     commands,     db,     google_api,     intel_queue,     intelligence,     reports,     signals,     state, abilities, action_status, audit_log, commands, db, embeddings, google_api, intel_queue, intelligence, json_loader, linear, parser, pty, pub abilities, reports, signals, state, types |
 | `signals/` |             db,         presets,     db,     google_api,     state, db, embeddings, entity, helpers, prepare, services, types |
 | `intelligence/` |         intel_queue,     db,     services,     signals,     types, accounts, context_provider, db, embeddings, error, helpers, presets, pty, signals, state, types, util |
 | `prepare/` |     db,     entity,     helpers, db, embeddings, entity, error, google_api, helpers, presets, pty, signals, state, types |

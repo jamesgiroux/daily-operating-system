@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "envelope": {
+    "trust": "untrusted",
+    "payload": {
+      "subject": {
+        "kind": "account",
+        "id": "acct-risk-revoked-cache"
+      },
+      "direction": "decreasing",
+      "source_verification": {
+        "checked": true,
+        "accepted_source_refs": ["src-risk-active-cache"]
+      },
+      "revoked_source_refs": ["src-risk-revoked-cache"]
+    }
+  }
+}

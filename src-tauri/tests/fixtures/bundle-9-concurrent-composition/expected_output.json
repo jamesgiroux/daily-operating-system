@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "workspace_scope": "ws-alpha",
+  "date": "2026-05-14",
+  "narrative": "Account Alpha has the same readiness composition across refresh, retry, and scheduled invocations.",
+  "same_workspace_invocations": [
+    "refresh",
+    "retry",
+    "scheduled"
+  ],
+  "expected_same_workspace_composition_ids": [
+    "prepare_meeting:ws-alpha:meeting-alpha-readiness",
+    "get_entity_context:ws-alpha:account:acct-shared"
+  ],
+  "expected_other_workspace_composition_ids": [
+    "prepare_meeting:ws-beta:meeting-beta-readiness",
+    "get_entity_context:ws-beta:account:acct-shared"
+  ]
+}

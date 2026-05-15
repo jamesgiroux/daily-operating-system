@@ -125,12 +125,45 @@ final class DailyOS_Runtime_Client {
 	}
 
 	/**
-	 * Request a runtime-issued session nonce.
+	 * Request a runtime-issued user-presence nonce.
 	 *
+	 * @param array<string, mixed> $payload Nonce binding tuple.
 	 * @return array<string, mixed>|\WP_Error Runtime nonce response or typed pairing error.
 	 */
-	public function get_session_nonce(): array|\WP_Error {
-		return $this->signed_post( '/v1/surface/nonce/issue', '{}' );
+	public function issue_nonce( array $payload ): array|\WP_Error {
+		$body_bytes = $this->encode_json( $payload );
+
+		if ( null === $body_bytes ) {
+			return $this->error_response( 'json_encode_failed', 'DailyOS nonce request could not be encoded.' );
+		}
+
+		return $this->signed_post( '/v1/surface/nonce/issue', $body_bytes );
+	}
+
+	/**
+	 * Verify and consume a runtime-issued user-presence nonce.
+	 *
+	 * @param array<string, mixed> $payload Nonce binding tuple and nonce token.
+	 * @return array<string, mixed>|\WP_Error Runtime verify response or typed pairing error.
+	 */
+	public function verify_nonce( array $payload ): array|\WP_Error {
+		$body_bytes = $this->encode_json( $payload );
+
+		if ( null === $body_bytes ) {
+			return $this->error_response( 'json_encode_failed', 'DailyOS nonce verify request could not be encoded.' );
+		}
+
+		return $this->signed_post( '/v1/surface/nonce/verify', $body_bytes );
+	}
+
+	/**
+	 * Request a runtime-issued session nonce.
+	 *
+	 * @param array<string, mixed> $payload Nonce binding tuple.
+	 * @return array<string, mixed>|\WP_Error Runtime nonce response or typed pairing error.
+	 */
+	public function get_session_nonce( array $payload = [] ): array|\WP_Error {
+		return $this->issue_nonce( $payload );
 	}
 
 	/**
@@ -287,7 +320,7 @@ final class DailyOS_Runtime_Client {
 		$envelope = is_array( $decoded ) ? $decoded : [];
 
 		if ( 200 > $status_code || 299 < $status_code ) {
-			if ( ! isset( $envelope['error'] ) || ! is_array( $envelope['error'] ) ) {
+			if ( ! array_key_exists( 'error', $envelope ) ) {
 				$envelope['error'] = [
 					'code'    => 'runtime_http_error',
 					'message' => 'DailyOS runtime returned an HTTP error.',

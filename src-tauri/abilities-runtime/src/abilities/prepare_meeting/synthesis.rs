@@ -47,6 +47,23 @@ pub struct PrepareMeetingInput {
     context: Option<MeetingBriefContext>,
 }
 
+impl PrepareMeetingInput {
+    pub fn public(
+        meeting_id: impl Into<String>,
+        depth: u8,
+        include_open_loops: bool,
+        schema_version: SchemaVersion,
+    ) -> Self {
+        Self {
+            meeting_id: meeting_id.into(),
+            depth,
+            include_open_loops,
+            schema_version,
+            context: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
 pub struct MeetingBriefContext {
     pub meeting: MeetingSummary,

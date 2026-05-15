@@ -2,6 +2,25 @@
   "schema_version": 1,
   "abilities": [
     {
+      "name": "detect_risk_shift",
+      "description": "",
+      "category": "transform",
+      "annotations": {},
+      "wp_permission": "none",
+      "allowed_actors": [
+        "user",
+        "runtime"
+      ],
+      "required_scopes": [],
+      "mcp_exposure": "none",
+      "client_side_executable": false,
+      "idempotency_class": "idempotent",
+      "composition_kind": {
+        "produces_blocks": false,
+        "block_types": []
+      }
+    },
+    {
       "name": "detect_role_change",
       "description": "",
       "category": "maintenance",
@@ -14,6 +33,28 @@
       "mcp_exposure": "none",
       "client_side_executable": false,
       "idempotency_class": "side_effect",
+      "composition_kind": {
+        "produces_blocks": false,
+        "block_types": []
+      }
+    },
+    {
+      "name": "get_daily_readiness",
+      "description": "",
+      "category": "read",
+      "annotations": {},
+      "wp_permission": "none",
+      "allowed_actors": [
+        "user",
+        "runtime",
+        "mcp_client"
+      ],
+      "required_scopes": [
+        "read.daily_readiness"
+      ],
+      "mcp_exposure": "invocable",
+      "client_side_executable": false,
+      "idempotency_class": "idempotent",
       "composition_kind": {
         "produces_blocks": false,
         "block_types": []
