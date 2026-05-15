@@ -702,15 +702,17 @@ fn edit_routes_for_block(
                 ctx,
             );
             if let Some(reason) = refusal {
-                diagnostics.push(projection_diagnostic(
-                    composition,
-                    DiagnosticKind::EditRouteRefused,
-                    Some(block),
-                    Some(block.block_type.type_id().to_string()),
-                    Some(rule.block_type.type_id().to_string()),
-                    diagnostic_reason_for_refusal(reason),
-                    0,
-                ));
+                if let Some(diag_reason) = diagnostic_reason_for_refusal(reason) {
+                    diagnostics.push(projection_diagnostic(
+                        composition,
+                        DiagnosticKind::EditRouteRefused,
+                        Some(block),
+                        Some(block.block_type.type_id().to_string()),
+                        Some(rule.block_type.type_id().to_string()),
+                        diag_reason,
+                        0,
+                    ));
+                }
             }
             EditRoute {
                 field_path: binding.field_path.clone(),
@@ -760,19 +762,25 @@ fn route_refusal(
     }
 }
 
-fn diagnostic_reason_for_refusal(reason: EditRouteRefusalReason) -> DiagnosticReason {
+fn diagnostic_reason_for_refusal(reason: EditRouteRefusalReason) -> Option<DiagnosticReason> {
     match reason {
-        EditRouteRefusalReason::MissingClaimRef => DiagnosticReason::MissingClaimRef,
-        EditRouteRefusalReason::AmbiguousReceiver => DiagnosticReason::AmbiguousReceiver,
-        EditRouteRefusalReason::SensitivityBlocked => DiagnosticReason::SensitivityBlocked,
-        EditRouteRefusalReason::UnknownRole => DiagnosticReason::UnknownRole,
-        EditRouteRefusalReason::OutOfScope => DiagnosticReason::OutOfScope,
+        EditRouteRefusalReason::MissingClaimRef => Some(DiagnosticReason::MissingClaimRef),
+        EditRouteRefusalReason::AmbiguousReceiver => Some(DiagnosticReason::AmbiguousReceiver),
+        EditRouteRefusalReason::SensitivityBlocked => Some(DiagnosticReason::SensitivityBlocked),
+        EditRouteRefusalReason::UnknownRole => Some(DiagnosticReason::UnknownRole),
+        EditRouteRefusalReason::OutOfScope => Some(DiagnosticReason::OutOfScope),
         EditRouteRefusalReason::FallbackDegradedWithoutReceiver => {
-            DiagnosticReason::FallbackDegradedWithoutReceiver
+            Some(DiagnosticReason::FallbackDegradedWithoutReceiver)
         }
+        // Computed/DisplayOnly/SourceWithoutTarget refusals are routing-shape
+        // decisions, not §9 diagnostic-reason cases. The closed DiagnosticReason
+        // enum has no variant for them, and emitting `MissingClaimRef` here would
+        // mislead W4-A/W5-A consumers about why the route was refused. The
+        // refusal is surfaced via the EditRoute.refusal_reason field; no
+        // ProjectionDiagnostic is published.
         EditRouteRefusalReason::Computed
         | EditRouteRefusalReason::DisplayOnly
-        | EditRouteRefusalReason::SourceWithoutTarget => DiagnosticReason::MissingClaimRef,
+        | EditRouteRefusalReason::SourceWithoutTarget => None,
     }
 }
 
