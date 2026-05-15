@@ -6,6 +6,7 @@ use std::panic;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use base64::Engine as _;
 use bytes::Bytes;
 use chrono::Utc;
 use http::header::{self, HeaderMap, HeaderName, HeaderValue};
@@ -30,9 +31,8 @@ use crate::bridges::correction_payload::{
 };
 use crate::bridges::surface_client::{
     validate_session_bound_wp_user_id_for_request, SurfaceClientAbilityClassLimits,
-    SurfaceClientBridge,
-    SurfaceClientBridgeConfig, SurfaceClientBridgeError, SurfaceClientRateLimitAxis,
-    SurfaceClientRateLimitBudget, SurfaceClientRequestClassLimits,
+    SurfaceClientBridge, SurfaceClientBridgeConfig, SurfaceClientBridgeError,
+    SurfaceClientRateLimitAxis, SurfaceClientRateLimitBudget, SurfaceClientRequestClassLimits,
 };
 use crate::bridges::types::{
     invoke_registry_json_for_actor, provider_from_context_snapshot, surface_error, BridgeActor,
@@ -1567,6 +1567,20 @@ async fn signed_route_response(
                     );
                 }
             };
+            if let Some(projection) = invoke.projection_verification.clone() {
+                match surface_projection_preflight_response(
+                    runtime,
+                    &validated,
+                    projection,
+                    request_id.clone(),
+                )
+                .await
+                {
+                    Ok(Some(response)) => return response,
+                    Ok(None) => {}
+                    Err(error) => return error_response(error.with_request_id(request_id)),
+                }
+            }
             #[cfg(test)]
             let registry_override = runtime.ability_registry_override.clone();
             #[cfg(test)]
@@ -1676,12 +1690,135 @@ struct SurfaceSessionRefreshRequest {
     plugin_instance_uuid: String,
 }
 
+#[derive(Clone, Deserialize)]
+struct SurfaceProjectionVerificationRequest {
+    projection_id: String,
+    surface: crate::services::projection_signing::ProjectionSurface,
+    surface_locator: String,
+    #[serde(default)]
+    expected_runtime_anchor_id: Option<String>,
+    payload: crate::services::projection_signing::SignedProjectionPayload,
+    #[serde(default)]
+    signature_envelope_b64url: Option<String>,
+    #[serde(default)]
+    observed_payload_b64url: Option<String>,
+}
+
 #[derive(Deserialize)]
 struct SurfaceInvokeRequest {
     ability: String,
     #[allow(dead_code)]
     #[serde(default)]
     input: serde_json::Value,
+    #[serde(default, alias = "projectionRead", alias = "projection_read")]
+    projection_verification: Option<SurfaceProjectionVerificationRequest>,
+}
+
+async fn surface_projection_preflight_response(
+    runtime: &EndpointRuntime,
+    session: &ValidatedSurfaceSession,
+    projection: SurfaceProjectionVerificationRequest,
+    request_id: String,
+) -> Result<Option<Response<ResponseBody>>, SurfaceHttpError> {
+    let Some(app_state) = runtime.app_state.as_ref() else {
+        return Err(SurfaceHttpError::runtime_unavailable());
+    };
+    let observed_payload_bytes = match projection.observed_payload_b64url.as_deref() {
+        Some(value) => Some(
+            base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .decode(value.as_bytes())
+                .map_err(|_| {
+                    SurfaceHttpError::bad_request("projection_observed_payload_invalid")
+                })?,
+        ),
+        None => None,
+    };
+    let expected_runtime_anchor_id = projection
+        .expected_runtime_anchor_id
+        .clone()
+        .or_else(|| Some(runtime.runtime_anchor_id.clone()));
+    let input = crate::services::projection_signing::ProjectionVerificationInput {
+        projection_id: projection.projection_id,
+        surface: projection.surface,
+        surface_locator: projection.surface_locator,
+        expected_runtime_anchor_id,
+        payload: projection.payload,
+        signature_envelope_b64url: projection.signature_envelope_b64url,
+        observed_payload_bytes,
+    };
+    let verification = app_state
+        .db_write(move |db| {
+            let mode =
+                crate::services::projection_signing::projection_signature_enforcement_mode(db)
+                    .map_err(|error| error.to_string())?;
+            if mode == crate::services::context::ProjectionSignatureEnforcementMode::Disabled {
+                return Ok((mode, None));
+            }
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let external = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &external)
+                .with_actor("surface_client");
+            let outcome = crate::services::projection_signing::verify_with_unknown_key_refresh(
+                &ctx,
+                db,
+                input,
+                || Ok(()),
+            )
+            .map_err(|error| error.to_string())?;
+            Ok((mode, Some(outcome)))
+        })
+        .await
+        .map_err(|error| SurfaceHttpError::from_pairing_error(SurfacePairingError::Write(error)))?;
+
+    let (mode, Some(outcome)) = verification else {
+        return Ok(None);
+    };
+    if outcome.failure.is_none() {
+        return Ok(None);
+    }
+    if mode == crate::services::context::ProjectionSignatureEnforcementMode::Shadow {
+        log::warn!(
+            "surface projection verification shadow failure status={} projection_id={} request_id={}",
+            outcome.status.as_str(),
+            outcome.projection_id,
+            request_id
+        );
+        return Ok(None);
+    }
+
+    let Some(failure) = outcome.failure else {
+        return Ok(None);
+    };
+    let error = bridge_error_from_projection_failure(failure);
+    Ok(Some(
+        bridge_surface_error_response(error, app_state, session, request_id).await,
+    ))
+}
+
+fn bridge_error_from_projection_failure(
+    failure: crate::services::projection_signing::ProjectionVerificationFailure,
+) -> BridgeSurfaceError {
+    match failure {
+        crate::services::projection_signing::ProjectionVerificationFailure::Tampered(fields) => {
+            BridgeSurfaceError::ProjectionTampered {
+                projection_id: fields.projection_id,
+                signature_id: fields.signature_id,
+                key_id: fields.key_id,
+                observed_signature_status: fields.observed_signature_status,
+                quarantine_id: fields.quarantine_id,
+            }
+        }
+        crate::services::projection_signing::ProjectionVerificationFailure::VersionRollback(
+            fields,
+        ) => BridgeSurfaceError::ProjectionVersionRollback {
+            projection_id: fields.projection_id,
+            signed_composition_version: fields.signed_composition_version,
+            ledger_composition_version: fields.ledger_composition_version,
+            signed_claim_version: fields.signed_claim_version,
+            ledger_claim_version: fields.ledger_claim_version,
+        },
+    }
 }
 
 fn is_safe_ability_name(value: &str) -> bool {
@@ -1724,12 +1861,9 @@ async fn bridge_surface_error_response(
             claim_id,
             mutation_id,
             retry_after_event,
-        } => mid_flight_mutation_error_response(
-            request_id,
-            claim_id,
-            mutation_id,
-            retry_after_event,
-        ),
+        } => {
+            mid_flight_mutation_error_response(request_id, claim_id, mutation_id, retry_after_event)
+        }
         error => error_response(bridge_surface_error(error).with_request_id(request_id)),
     }
 }
@@ -1748,12 +1882,7 @@ fn mid_flight_mutation_error_response(
     mutation_id: String,
     retry_after_event: String,
 ) -> Response<ResponseBody> {
-    let body = build_mid_flight_mutation_body(
-        request_id,
-        claim_id,
-        mutation_id,
-        retry_after_event,
-    );
+    let body = build_mid_flight_mutation_body(request_id, claim_id, mutation_id, retry_after_event);
     json_response(StatusCode::LOCKED, body)
 }
 
@@ -1873,9 +2002,43 @@ fn emit_bridge_rejection_audit(
                 "scope_redacted": false,
             }),
         ),
-        // ProjectionTampered / ProjectionVersionRollback are W4-C-owned;
-        // their audit emission belongs in the W4-C handler. Validation /
-        // AbilityUnavailable / Ownership do not carry a watermark signature.
+        BridgeSurfaceError::ProjectionTampered {
+            projection_id,
+            signature_id,
+            key_id,
+            observed_signature_status,
+            quarantine_id,
+        } => (
+            "projection.tampered",
+            json!({
+                "rejection_reason": "projection_tampered",
+                "projection_id": projection_id,
+                "signature_id": signature_id,
+                "key_id": key_id,
+                "observed_signature_status": observed_signature_status,
+                "quarantine_id": quarantine_id,
+                "scope_redacted": false,
+            }),
+        ),
+        BridgeSurfaceError::ProjectionVersionRollback {
+            projection_id,
+            signed_composition_version,
+            ledger_composition_version,
+            signed_claim_version,
+            ledger_claim_version,
+        } => (
+            "projection.version_rollback",
+            json!({
+                "rejection_reason": "projection_version_rollback",
+                "projection_id": projection_id,
+                "signed_composition_version": signed_composition_version,
+                "ledger_composition_version": ledger_composition_version,
+                "signed_claim_version": signed_claim_version,
+                "ledger_claim_version": ledger_claim_version,
+                "scope_redacted": false,
+            }),
+        ),
+        // Validation / AbilityUnavailable / Ownership do not carry a watermark signature.
         _ => return,
     };
     emit_pairing_audit_event(

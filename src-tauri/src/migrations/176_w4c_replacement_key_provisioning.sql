@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS projection_resign_queue (
         status IN ('pending', 'processing', 'completed', 'failed')
     ),
     attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
-    max_attempts INTEGER NOT NULL DEFAULT 3 CHECK (max_attempts >= 1),
+    max_attempts INTEGER NOT NULL DEFAULT 5 CHECK (max_attempts >= 1),
     last_error TEXT,
     last_resign_at TEXT,
     last_retampered_at TEXT,

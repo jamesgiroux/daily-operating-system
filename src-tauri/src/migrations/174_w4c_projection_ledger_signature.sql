@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS projection_ledger (
         verification_status IN (
             'pending',
             'verified',
+            'verified_retired',
             'stale',
             'tampered',
             'unknown_key',
@@ -27,10 +28,12 @@ CREATE TABLE IF NOT EXISTS projection_ledger (
             'rollback',
             'payload_too_large',
             'missing_signature',
+            'malformed_envelope',
             'unsupported_algorithm',
             'unsupported_canonicalization',
             'wrong_runtime_anchor',
-            'signature_invalid'
+            'signature_invalid',
+            'tombstoned'
         )
     )
 );

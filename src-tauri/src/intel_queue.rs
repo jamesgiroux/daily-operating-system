@@ -590,6 +590,28 @@ pub struct EnrichmentParseResult {
     pub inferred_relationships: Vec<InferredRelationship>,
 }
 
+async fn drain_projection_resign_queue_once(state: &Arc<AppState>) {
+    match state
+        .db_write(|db| {
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let external = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &external)
+                .with_actor("scheduled_worker");
+            let key_store = crate::services::projection_signing::MacOsProjectionKeyStore;
+            crate::services::projection_signing::drain_resign_queue(&ctx, db, &key_store, 16)
+                .map_err(|error| error.to_string())
+        })
+        .await
+    {
+        Ok(count) if count > 0 => {
+            log::info!("ProjectionSigning: drained {count} queued re-sign jobs")
+        }
+        Ok(_) => {}
+        Err(error) => log::warn!("ProjectionSigning: re-sign queue drain failed: {error}"),
+    }
+}
+
 /// Background intelligence processor.
 ///
 /// Runs in a loop, checking the queue every `POLL_INTERVAL_SECS`.
@@ -635,6 +657,8 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             state.intel_queue.prune_stale_entries();
             polls_since_prune = 0;
         }
+
+        drain_projection_resign_queue_once(&state).await;
 
         // Process one request per wake so automatic background bursts do not
         // stack PTY calls back-to-back and starve manual work.
@@ -3164,14 +3188,23 @@ fn source_reliability_for_claim(
     input: &EnrichmentInput,
     claim: &crate::db::claims::IntelligenceClaim,
 ) -> TrustInput<f64> {
-    match claim_has_projection_signature_invalid_signal(db, &claim.id) {
-        Ok(true) => {
+    match claim_projection_signature_signal(db, &claim.id) {
+        Ok(Some(signal))
+            if signal
+                == crate::services::projection_signing::PROJECTION_SIGNATURE_INVALID_SIGNAL =>
+        {
             return TrustInput::indeterminate(0.2, "projection_signature_invalid");
         }
-        Ok(false) => {}
+        Ok(Some(signal))
+            if signal
+                == crate::services::projection_signing::PROJECTION_SIGNATURE_RETIRED_KEY_SIGNAL =>
+        {
+            return TrustInput::indeterminate(0.6, "projection_signature_retired_key");
+        }
+        Ok(Some(_)) | Ok(None) => {}
         Err(e) => {
             log::warn!(
-                "TrustRecompute: failed to read projection signature invalid signal for {}: {e}",
+                "TrustRecompute: failed to read projection signature signal for {}: {e}",
                 claim.id
             );
             return TrustInput::indeterminate(1.0, "projection_signature_signal_read_failed");
@@ -3219,27 +3252,28 @@ fn source_reliability_for_claim(
     }
 }
 
-fn claim_has_projection_signature_invalid_signal(
+fn claim_projection_signature_signal(
     db: &crate::db::ActionDb,
     claim_id: &str,
-) -> Result<bool, rusqlite::Error> {
+) -> Result<Option<String>, rusqlite::Error> {
     db.conn_ref()
         .query_row(
-            "SELECT EXISTS(
-                 SELECT 1
-                   FROM signal_events
-                  WHERE entity_type = ?2
-                    AND entity_id = ?1
-                    AND signal_type = ?3
-             )",
+            "SELECT signal_type
+               FROM signal_events
+              WHERE entity_type = ?2
+                AND entity_id = ?1
+                AND signal_type IN (?3, ?4)
+              ORDER BY created_at DESC
+              LIMIT 1",
             rusqlite::params![
                 claim_id,
                 "claim",
-                crate::services::projection_signing::PROJECTION_SIGNATURE_INVALID_SIGNAL
+                crate::services::projection_signing::PROJECTION_SIGNATURE_INVALID_SIGNAL,
+                crate::services::projection_signing::PROJECTION_SIGNATURE_RETIRED_KEY_SIGNAL,
             ],
-            |row| row.get::<_, i64>(0),
+            |row| row.get::<_, String>(0),
         )
-        .map(|count| count != 0)
+        .optional()
 }
 
 fn source_lifecycle_for_claim(

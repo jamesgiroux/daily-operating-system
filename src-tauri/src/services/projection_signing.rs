@@ -1,5 +1,6 @@
 use std::collections::{BTreeSet, HashMap};
-use std::process::Command;
+use std::io::Write;
+use std::process::{Command, Stdio};
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::{Duration, SecondsFormat};
@@ -22,6 +23,7 @@ pub const WP_PROJECTION_DOMAIN: &str = "dailyos.wp_studio.projection.v1";
 pub const MARKDOWN_PROJECTION_DOMAIN: &str = "dailyos.markdown.projection.v1";
 pub const KEYRING_MAX_AGE_SECONDS: u64 = 300;
 pub const PROJECTION_SIGNATURE_INVALID_SIGNAL: &str = "signature_invalid";
+pub const PROJECTION_SIGNATURE_RETIRED_KEY_SIGNAL: &str = "signature_verified_retired_key";
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectionSigningError {
@@ -52,15 +54,25 @@ impl From<serde_json::Error> for ProjectionSigningError {
 }
 
 pub trait ProjectionKeyStore: Send + Sync {
-    fn get_private_key(&self, account_ref: &str) -> Result<Zeroizing<Vec<u8>>, ProjectionSigningError>;
-    fn put_private_key(&self, account_ref: &str, pkcs8: &[u8]) -> Result<(), ProjectionSigningError>;
+    fn get_private_key(
+        &self,
+        account_ref: &str,
+    ) -> Result<Zeroizing<Vec<u8>>, ProjectionSigningError>;
+    fn put_private_key(
+        &self,
+        account_ref: &str,
+        pkcs8: &[u8],
+    ) -> Result<(), ProjectionSigningError>;
 }
 
 #[derive(Debug, Default)]
 pub struct MacOsProjectionKeyStore;
 
 impl ProjectionKeyStore for MacOsProjectionKeyStore {
-    fn get_private_key(&self, account_ref: &str) -> Result<Zeroizing<Vec<u8>>, ProjectionSigningError> {
+    fn get_private_key(
+        &self,
+        account_ref: &str,
+    ) -> Result<Zeroizing<Vec<u8>>, ProjectionSigningError> {
         let output = Command::new("security")
             .args([
                 "find-generic-password",
@@ -89,18 +101,42 @@ impl ProjectionKeyStore for MacOsProjectionKeyStore {
         Ok(Zeroizing::new(bytes))
     }
 
-    fn put_private_key(&self, account_ref: &str, pkcs8: &[u8]) -> Result<(), ProjectionSigningError> {
-        let encoded = URL_SAFE_NO_PAD.encode(pkcs8);
-        let output = Command::new("security")
+    fn put_private_key(
+        &self,
+        account_ref: &str,
+        pkcs8: &[u8],
+    ) -> Result<(), ProjectionSigningError> {
+        let encoded = Zeroizing::new(URL_SAFE_NO_PAD.encode(pkcs8));
+        let runtime_binary = runtime_binary_acl_path()?;
+        let mut child = Command::new("security")
             .arg("add-generic-password")
             .arg("-s")
             .arg(PROJECTION_KEYCHAIN_SERVICE)
             .arg("-a")
             .arg(account_ref)
-            .arg("-w")
-            .arg(encoded)
             .arg("-U")
-            .output()
+            .arg("-T")
+            .arg(runtime_binary)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| ProjectionSigningError::Keychain(error.to_string()))?;
+
+        {
+            let stdin = child.stdin.as_mut().ok_or_else(|| {
+                ProjectionSigningError::Keychain(
+                    "projection signing key write failed: stdin unavailable".to_string(),
+                )
+            })?;
+            stdin
+                .write_all(encoded.as_bytes())
+                .and_then(|()| stdin.write_all(b"\n"))
+                .map_err(|error| ProjectionSigningError::Keychain(error.to_string()))?;
+        }
+
+        let output = child
+            .wait_with_output()
             .map_err(|error| ProjectionSigningError::Keychain(error.to_string()))?;
 
         if !output.status.success() {
@@ -112,6 +148,16 @@ impl ProjectionKeyStore for MacOsProjectionKeyStore {
         }
         Ok(())
     }
+}
+
+fn runtime_binary_acl_path() -> Result<String, ProjectionSigningError> {
+    std::env::current_exe()
+        .map_err(|error| ProjectionSigningError::Keychain(error.to_string()))?
+        .into_os_string()
+        .into_string()
+        .map_err(|_| {
+            ProjectionSigningError::Keychain("runtime binary path is not UTF-8".to_string())
+        })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -277,7 +323,9 @@ pub struct ProjectionKeyringKey {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProjectionVerificationStatus {
     Verified,
+    VerifiedRetired,
     MissingSignature,
+    MalformedEnvelope,
     UnsupportedAlgorithm,
     UnsupportedCanonicalization,
     UnknownKey,
@@ -285,13 +333,16 @@ pub enum ProjectionVerificationStatus {
     SignatureInvalid,
     VersionRollback,
     WrongRuntimeAnchor,
+    Tombstoned,
 }
 
 impl ProjectionVerificationStatus {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Verified => "verified",
+            Self::VerifiedRetired => "verified_retired",
             Self::MissingSignature => "missing_signature",
+            Self::MalformedEnvelope => "malformed_envelope",
             Self::UnsupportedAlgorithm => "unsupported_algorithm",
             Self::UnsupportedCanonicalization => "unsupported_canonicalization",
             Self::UnknownKey => "unknown_key",
@@ -299,6 +350,7 @@ impl ProjectionVerificationStatus {
             Self::SignatureInvalid => "signature_invalid",
             Self::VersionRollback => "rollback",
             Self::WrongRuntimeAnchor => "wrong_runtime_anchor",
+            Self::Tombstoned => "tombstoned",
         }
     }
 }
@@ -333,6 +385,7 @@ pub struct ProjectionVerificationOutcome {
     pub projection_id: String,
     pub quarantine_id: Option<String>,
     pub failure: Option<ProjectionVerificationFailure>,
+    pub key_status: Option<ProjectionKeyStatus>,
 }
 
 #[derive(Debug, Clone)]
@@ -343,6 +396,7 @@ pub struct ProjectionVerificationInput {
     pub expected_runtime_anchor_id: Option<String>,
     pub payload: SignedProjectionPayload,
     pub signature_envelope_b64url: Option<String>,
+    pub observed_payload_bytes: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Clone)]
@@ -363,6 +417,7 @@ struct LedgerCurrentness {
     current_signature_id: Option<String>,
     key_id: Option<String>,
     signature_status: Option<String>,
+    locator_status: String,
     composition_version: u64,
     claim_versions: HashMap<String, u64>,
     canonical_signed_payload_sha256: String,
@@ -435,8 +490,40 @@ pub fn verify_projection_read(
     db: &ActionDb,
     input: ProjectionVerificationInput,
 ) -> Result<ProjectionVerificationOutcome, ProjectionSigningError> {
+    verify_projection_read_internal::<fn() -> Result<(), ProjectionSigningError>>(
+        ctx, db, input, None,
+    )
+}
+
+pub fn verify_with_unknown_key_refresh<F>(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    input: ProjectionVerificationInput,
+    refresh_once: F,
+) -> Result<ProjectionVerificationOutcome, ProjectionSigningError>
+where
+    F: FnOnce() -> Result<(), ProjectionSigningError>,
+{
+    verify_projection_read_internal(ctx, db, input, Some(refresh_once))
+}
+
+fn verify_projection_read_internal<F>(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    input: ProjectionVerificationInput,
+    mut refresh_once: Option<F>,
+) -> Result<ProjectionVerificationOutcome, ProjectionSigningError>
+where
+    F: FnOnce() -> Result<(), ProjectionSigningError>,
+{
     let Some(envelope_b64url) = input.signature_envelope_b64url.as_deref() else {
-        return quarantine_tamper(ctx, db, &input, None, ProjectionVerificationStatus::MissingSignature);
+        return quarantine_tamper(
+            ctx,
+            db,
+            &input,
+            None,
+            ProjectionVerificationStatus::MissingSignature,
+        );
     };
 
     let envelope = match decode_signature_envelope(envelope_b64url) {
@@ -463,7 +550,9 @@ pub fn verify_projection_read(
         );
     }
     if let Some(expected) = input.expected_runtime_anchor_id.as_deref() {
-        if envelope.dailyos_source_runtime != expected || input.payload.dailyos_source_runtime != expected {
+        if envelope.dailyos_source_runtime != expected
+            || input.payload.dailyos_source_runtime != expected
+        {
             return quarantine_tamper(
                 ctx,
                 db,
@@ -474,7 +563,14 @@ pub fn verify_projection_read(
         }
     }
 
-    let Some(key) = load_signing_key(db, &envelope.key_id)? else {
+    let key = loop {
+        if let Some(key) = load_signing_key(db, &envelope.key_id)? {
+            break key;
+        }
+        if let Some(refresh) = refresh_once.take() {
+            refresh()?;
+            continue;
+        }
         return quarantine_tamper(
             ctx,
             db,
@@ -501,13 +597,26 @@ pub fn verify_projection_read(
         .decode(key.public_key_b64.as_bytes())
         .map_err(|error| ProjectionSigningError::Serialization(error.to_string()))?;
     let public_key = UnparsedPublicKey::new(&ED25519, public_key_bytes);
-    if public_key.verify(&canonical_bytes, &signature_bytes).is_err() {
+    if public_key
+        .verify(&canonical_bytes, &signature_bytes)
+        .is_err()
+    {
         return quarantine_tamper(
             ctx,
             db,
             &input,
             Some(&envelope),
             ProjectionVerificationStatus::SignatureInvalid,
+        );
+    }
+
+    if projection_locator_is_tombstoned(db, &input.projection_id)? {
+        return quarantine_tamper(
+            ctx,
+            db,
+            &input,
+            Some(&envelope),
+            ProjectionVerificationStatus::Tombstoned,
         );
     }
 
@@ -524,21 +633,32 @@ pub fn verify_projection_read(
             projection_id: input.projection_id,
             quarantine_id: Some(quarantine_id),
             failure: Some(ProjectionVerificationFailure::VersionRollback(rollback)),
+            key_status: Some(key.key_status),
         });
     }
+
+    let verification_status = if key.key_status == ProjectionKeyStatus::Retired {
+        ProjectionVerificationStatus::VerifiedRetired
+    } else {
+        ProjectionVerificationStatus::Verified
+    };
 
     db.with_transaction(|tx| {
         tx.conn_ref()
             .execute(
                 "UPDATE projection_ledger
                     SET last_verified_at = ?2,
-                        verification_status = 'verified',
+                        verification_status = ?3,
                         quarantine_state = CASE
                             WHEN quarantine_state = 'quarantined' THEN quarantine_state
                             ELSE 'none'
                         END
                   WHERE projection_id = ?1",
-                params![input.projection_id, timestamp(ctx)],
+                params![
+                    &input.projection_id,
+                    timestamp(ctx),
+                    verification_status.as_str()
+                ],
             )
             .map_err(|error| error.to_string())?;
         crate::services::signals::emit_in_transaction(
@@ -549,21 +669,145 @@ pub fn verify_projection_read(
             "projection_verified",
             "projection_signing",
             json!({
-                "signature_id": envelope.signature_id,
-                "key_id": envelope.key_id,
+                "signature_id": &envelope.signature_id,
+                "key_id": &envelope.key_id,
+                "key_status": key.key_status.as_str(),
+                "verification_status": verification_status.as_str(),
             }),
         )
         .map_err(|error| error.to_string())?;
+        if verification_status == ProjectionVerificationStatus::VerifiedRetired {
+            emit_projection_status_signal_in_tx(
+                ctx,
+                tx,
+                "projection",
+                &input.projection_id,
+                PROJECTION_SIGNATURE_RETIRED_KEY_SIGNAL,
+                json!({
+                    "signature_id": &envelope.signature_id,
+                    "key_id": &envelope.key_id,
+                    "verification_status": verification_status.as_str(),
+                }),
+            )?;
+            for claim_id in claim_ids_from_payload(&input.payload) {
+                emit_projection_status_signal_in_tx(
+                    ctx,
+                    tx,
+                    "claim",
+                    &claim_id,
+                    PROJECTION_SIGNATURE_RETIRED_KEY_SIGNAL,
+                    json!({
+                        "projection_id": &input.projection_id,
+                        "signature_id": &envelope.signature_id,
+                        "key_id": &envelope.key_id,
+                        "verification_status": verification_status.as_str(),
+                    }),
+                )?;
+            }
+        }
         Ok(())
     })
     .map_err(ProjectionSigningError::Database)?;
 
     Ok(ProjectionVerificationOutcome {
-        status: ProjectionVerificationStatus::Verified,
+        status: verification_status,
         projection_id: input.projection_id,
         quarantine_id: None,
         failure: None,
+        key_status: Some(key.key_status),
     })
+}
+
+pub fn projection_signature_enforcement_mode(
+    db: &ActionDb,
+) -> Result<crate::services::context::ProjectionSignatureEnforcementMode, ProjectionSigningError> {
+    let mode = db
+        .conn_ref()
+        .query_row(
+            "SELECT mode
+               FROM projection_signature_enforcement_state
+              WHERE state_id = 'projection_signature_enforcement'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    Ok(mode
+        .as_deref()
+        .and_then(crate::services::context::ProjectionSignatureEnforcementMode::parse_config)
+        .unwrap_or_default())
+}
+
+pub fn set_projection_signature_enforcement_mode(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    mode: crate::services::context::ProjectionSignatureEnforcementMode,
+    reason: &str,
+) -> Result<(), ProjectionSigningError> {
+    ctx.check_mutation_allowed()
+        .map_err(|error| ProjectionSigningError::Service(error.to_string()))?;
+    let now = timestamp(ctx);
+    db.with_transaction(|tx| {
+        tx.conn_ref()
+            .execute(
+                "INSERT OR IGNORE INTO projection_signature_enforcement_state
+                    (state_id, mode, updated_at, actor_kind)
+                 VALUES ('projection_signature_enforcement', 'shadow', ?1, ?2)",
+                params![&now, actor_kind(ctx.actor)],
+            )
+            .map_err(|error| error.to_string())?;
+        let previous = tx
+            .conn_ref()
+            .query_row(
+                "SELECT mode
+                   FROM projection_signature_enforcement_state
+                  WHERE state_id = 'projection_signature_enforcement'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .map_err(|error| error.to_string())?;
+        if previous == mode.as_str() {
+            return Ok(());
+        }
+        tx.conn_ref()
+            .execute(
+                "UPDATE projection_signature_enforcement_state
+                    SET mode = ?1,
+                        updated_at = ?2,
+                        actor_kind = ?3
+                  WHERE state_id = 'projection_signature_enforcement'",
+                params![mode.as_str(), &now, actor_kind(ctx.actor)],
+            )
+            .map_err(|error| error.to_string())?;
+        tx.conn_ref()
+            .execute(
+                "INSERT INTO projection_enforcement_mode_events
+                    (event_id, previous_mode, next_mode, reason, created_at, actor_kind)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    format!("peme_{}", Uuid::new_v4().simple()),
+                    previous,
+                    mode.as_str(),
+                    reason,
+                    &now,
+                    actor_kind(ctx.actor),
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        emit_projection_status_signal_in_tx(
+            ctx,
+            tx,
+            "projection_signature_enforcement",
+            "projection_signature_enforcement",
+            "projection.enforcement_mode_changed",
+            json!({
+                "previous_mode": previous,
+                "next_mode": mode.as_str(),
+                "reason": reason,
+            }),
+        )?;
+        Ok(())
+    })
+    .map_err(ProjectionSigningError::Database)
 }
 
 pub fn public_keyring(
@@ -581,7 +825,9 @@ pub fn public_keyring(
             Ok(ProjectionKeyringKey {
                 key_id: row.get("key_id")?,
                 public_key_b64: row.get("public_key_b64")?,
-                key_status: ProjectionKeyStatus::from_str(row.get::<_, String>("key_status")?.as_str()),
+                key_status: ProjectionKeyStatus::from_str(
+                    row.get::<_, String>("key_status")?.as_str(),
+                ),
                 valid_from: row.get("valid_from")?,
                 valid_until: row.get("valid_until")?,
                 retired_at: row.get("retired_at")?,
@@ -594,10 +840,49 @@ pub fn public_keyring(
     Ok(ProjectionKeyringResponse {
         ok: true,
         runtime_anchor_id: runtime_anchor_id.into(),
-        keyring_version: keys.len() as u64,
+        keyring_version: current_keyring_version(db)?,
         max_age_seconds: KEYRING_MAX_AGE_SECONDS,
         keys,
     })
+}
+
+fn current_keyring_version(db: &ActionDb) -> Result<u64, ProjectionSigningError> {
+    let version = db
+        .conn_ref()
+        .query_row(
+            "SELECT current_version
+               FROM projection_keyring_state
+              WHERE state_id = 'projection_keyring'",
+            [],
+            |row| row.get::<_, u64>(0),
+        )
+        .optional()?;
+    Ok(version.unwrap_or(1))
+}
+
+fn bump_keyring_version_in_tx(tx: &ActionDb, now: &str) -> Result<u64, ProjectionSigningError> {
+    tx.conn_ref().execute(
+        "INSERT OR IGNORE INTO projection_keyring_state
+            (state_id, current_version, updated_at)
+         VALUES ('projection_keyring', 1, ?1)",
+        params![now],
+    )?;
+    tx.conn_ref().execute(
+        "UPDATE projection_keyring_state
+            SET current_version = current_version + 1,
+                updated_at = ?1
+          WHERE state_id = 'projection_keyring'",
+        params![now],
+    )?;
+    tx.conn_ref()
+        .query_row(
+            "SELECT current_version
+           FROM projection_keyring_state
+          WHERE state_id = 'projection_keyring'",
+            [],
+            |row| row.get::<_, u64>(0),
+        )
+        .map_err(ProjectionSigningError::from)
 }
 
 pub fn revoke_projection_signing_key(
@@ -609,7 +894,8 @@ pub fn revoke_projection_signing_key(
 ) -> Result<String, ProjectionSigningError> {
     ctx.check_mutation_allowed()
         .map_err(|error| ProjectionSigningError::Service(error.to_string()))?;
-    let replacement = create_signing_key(ctx, db, key_store, ProjectionKeyStatus::Rotating, reason)?;
+    let replacement =
+        create_signing_key(ctx, db, key_store, ProjectionKeyStatus::Rotating, reason)?;
     let now = timestamp(ctx);
     db.with_transaction(|tx| {
         let previous = tx
@@ -638,17 +924,32 @@ pub fn revoke_projection_signing_key(
                 params![&replacement.key_id],
             )
             .map_err(|error| error.to_string())?;
-        insert_key_status_event(ctx, tx, &replacement.key_id, Some("rotating"), "active", reason, &now)
-            .map_err(|error| error.to_string())?;
+        insert_key_status_event(
+            ctx,
+            tx,
+            &replacement.key_id,
+            Some("rotating"),
+            "active",
+            reason,
+            &now,
+        )
+        .map_err(|error| error.to_string())?;
         tx.conn_ref()
             .execute(
                 "INSERT INTO projection_replacement_keys
                     (replacement_id, old_key_id, new_key_id, reason, provisioned_at, activated_at,
                      completed_at, recovery_status)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?5, NULL, 'pending')",
-                params![format!("repl_{}", Uuid::new_v4().simple()), key_id, &replacement.key_id, reason, now],
+                params![
+                    format!("repl_{}", Uuid::new_v4().simple()),
+                    key_id,
+                    &replacement.key_id,
+                    reason,
+                    now
+                ],
             )
             .map_err(|error| error.to_string())?;
+        bump_keyring_version_in_tx(tx, &now).map_err(|error| error.to_string())?;
         queue_resign_for_key(ctx, tx, key_id, &replacement.key_id, reason, &now)
             .map_err(|error| error.to_string())?;
         Ok(())
@@ -662,10 +963,84 @@ fn ensure_active_signing_key(
     db: &ActionDb,
     key_store: &dyn ProjectionKeyStore,
 ) -> Result<ProjectionSigningKey, ProjectionSigningError> {
+    reconcile_projection_signing_keychain(ctx, db, key_store)?;
     if let Some(key) = load_active_signing_key(db)? {
         return Ok(key);
     }
-    create_signing_key(ctx, db, key_store, ProjectionKeyStatus::Active, "initial_projection_key")
+    create_signing_key(
+        ctx,
+        db,
+        key_store,
+        ProjectionKeyStatus::Active,
+        "initial_projection_key",
+    )
+}
+
+pub fn reconcile_projection_signing_keychain(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    key_store: &dyn ProjectionKeyStore,
+) -> Result<usize, ProjectionSigningError> {
+    ctx.check_mutation_allowed()
+        .map_err(|error| ProjectionSigningError::Service(error.to_string()))?;
+    let mut stmt = db.conn_ref().prepare(
+        "SELECT key_id, keychain_account_ref
+           FROM projection_signing_keys
+          WHERE key_status IN ('active', 'rotating')",
+    )?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    let missing = rows
+        .into_iter()
+        .filter_map(|(key_id, account_ref)| {
+            key_store
+                .get_private_key(&account_ref)
+                .is_err()
+                .then_some(key_id)
+        })
+        .collect::<Vec<_>>();
+    if missing.is_empty() {
+        return Ok(0);
+    }
+    let now = timestamp(ctx);
+    db.with_transaction(|tx| {
+        for key_id in &missing {
+            let previous = tx
+                .conn_ref()
+                .query_row(
+                    "SELECT key_status FROM projection_signing_keys WHERE key_id = ?1",
+                    params![key_id],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()
+                .map_err(|error| error.to_string())?;
+            tx.conn_ref()
+                .execute(
+                    "UPDATE projection_signing_keys
+                        SET key_status = 'revoked', revoked_at = ?2
+                      WHERE key_id = ?1",
+                    params![key_id, &now],
+                )
+                .map_err(|error| error.to_string())?;
+            insert_key_status_event(
+                ctx,
+                tx,
+                key_id,
+                previous.as_deref(),
+                "revoked",
+                "keychain_missing_reconciled",
+                &now,
+            )
+            .map_err(|error| error.to_string())?;
+        }
+        bump_keyring_version_in_tx(tx, &now).map_err(|error| error.to_string())?;
+        Ok(())
+    })
+    .map_err(ProjectionSigningError::Database)?;
+    Ok(missing.len())
 }
 
 fn create_signing_key(
@@ -676,13 +1051,14 @@ fn create_signing_key(
     reason: &str,
 ) -> Result<ProjectionSigningKey, ProjectionSigningError> {
     let rng = SystemRandom::new();
-    let pkcs8 = Ed25519KeyPair::generate_pkcs8(&rng)
-        .map_err(|error| ProjectionSigningError::Crypto(format!("key generation failed: {error}")))?;
-    let key_pair = Ed25519KeyPair::from_pkcs8(pkcs8.as_ref())
-        .map_err(|error| ProjectionSigningError::Crypto(format!("generated key rejected: {error}")))?;
+    let pkcs8 = Ed25519KeyPair::generate_pkcs8(&rng).map_err(|error| {
+        ProjectionSigningError::Crypto(format!("key generation failed: {error}"))
+    })?;
+    let key_pair = Ed25519KeyPair::from_pkcs8(pkcs8.as_ref()).map_err(|error| {
+        ProjectionSigningError::Crypto(format!("generated key rejected: {error}"))
+    })?;
     let key_id = format!("psk_{}", Uuid::new_v4().simple());
     let account_ref = format!("projection-signing/{key_id}");
-    key_store.put_private_key(&account_ref, pkcs8.as_ref())?;
     let public_key_b64 = URL_SAFE_NO_PAD.encode(key_pair.public_key().as_ref());
     let now = timestamp(ctx);
     let status_str = status.as_str();
@@ -697,16 +1073,46 @@ fn create_signing_key(
                 params![&key_id, &public_key_b64, status_str, &now, PROJECTION_KEYCHAIN_SERVICE, &account_ref],
             )
             .map_err(|error| error.to_string())?;
+        bump_keyring_version_in_tx(tx, &now).map_err(|error| error.to_string())?;
         insert_key_status_event(ctx, tx, &key_id, None, status_str, reason, &now)
             .map_err(|error| error.to_string())?;
         Ok(())
     })
     .map_err(ProjectionSigningError::Database)?;
 
+    if let Err(error) = key_store.put_private_key(&account_ref, pkcs8.as_ref()) {
+        let cleanup_result = db.with_transaction(|tx| {
+            tx.conn_ref()
+                .execute(
+                    "DELETE FROM projection_key_status_events WHERE key_id = ?1",
+                    params![&key_id],
+                )
+                .map_err(|error| error.to_string())?;
+            tx.conn_ref()
+                .execute(
+                    "DELETE FROM projection_signing_keys WHERE key_id = ?1",
+                    params![&key_id],
+                )
+                .map_err(|error| error.to_string())?;
+            bump_keyring_version_in_tx(tx, &timestamp(ctx)).map_err(|error| error.to_string())?;
+            Ok(())
+        });
+        if let Err(cleanup_error) = cleanup_result {
+            log::warn!(
+                "projection signing key db cleanup failed after keychain write failure for {}: {}",
+                key_id,
+                cleanup_error
+            );
+        }
+        return Err(error);
+    }
+
     load_signing_key(db, &key_id)?.ok_or(ProjectionSigningError::ProjectionNotFound(key_id))
 }
 
-fn load_active_signing_key(db: &ActionDb) -> Result<Option<ProjectionSigningKey>, ProjectionSigningError> {
+fn load_active_signing_key(
+    db: &ActionDb,
+) -> Result<Option<ProjectionSigningKey>, ProjectionSigningError> {
     db.conn_ref()
         .query_row(
             "SELECT key_id, public_key_b64, key_status, keychain_account_ref,
@@ -912,8 +1318,8 @@ fn upsert_ledger_and_signature(
         "projection_signature_issued",
         "projection_signing",
         json!({
-            "signature_id": envelope.signature_id,
-            "key_id": envelope.key_id,
+            "signature_id": &envelope.signature_id,
+            "key_id": &envelope.key_id,
             "composition_id": input.composition_id,
             "composition_version": input.composition_version,
             "claim_watermark_sha256": claim_watermark,
@@ -947,7 +1353,30 @@ fn quarantine_tamper(
         projection_id: input.projection_id.clone(),
         quarantine_id: Some(quarantine_id),
         failure: Some(ProjectionVerificationFailure::Tampered(bridge_fields)),
+        key_status: None,
     })
+}
+
+fn emit_projection_status_signal_in_tx(
+    ctx: &ServiceContext<'_>,
+    tx: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+    signal_type: &str,
+    payload: Value,
+) -> Result<(), String> {
+    let side_effect_ctx =
+        ServiceContext::new_live(ctx.clock, ctx.rng, ctx.external).with_actor(ctx.actor);
+    crate::services::signals::emit_in_transaction(
+        &side_effect_ctx,
+        tx,
+        entity_type,
+        entity_id,
+        signal_type,
+        "projection_signing",
+        payload,
+    )
+    .map(|_| ())
 }
 
 fn record_quarantine(
@@ -957,10 +1386,12 @@ fn record_quarantine(
     envelope: Option<&ProjectionSignatureEnvelope>,
     status: ProjectionVerificationStatus,
 ) -> Result<String, ProjectionSigningError> {
-    ctx.check_mutation_allowed()
-        .map_err(|error| ProjectionSigningError::Service(error.to_string()))?;
     let canonical_payload = canonical_json_bytes(&input.payload)?;
-    let observed_payload_hash = sha256_hex(&canonical_payload);
+    let observed_payload_bytes = input
+        .observed_payload_bytes
+        .clone()
+        .unwrap_or_else(|| canonical_payload.clone());
+    let observed_payload_hash = sha256_hex(&observed_payload_bytes);
     let surface_locator_hash = sha256_hex(input.surface_locator.as_bytes());
     let observed_signature = envelope.map(|e| e.signature_b64url.clone());
     let expected_signature_id = db
@@ -973,8 +1404,8 @@ fn record_quarantine(
         .optional()?;
     let expected_signature_id = expected_signature_id.flatten();
     let now = timestamp(ctx);
-    let coalesced_until = (ctx.clock.now() + Duration::seconds(60))
-        .to_rfc3339_opts(SecondsFormat::Secs, true);
+    let coalesced_until =
+        (ctx.clock.now() + Duration::seconds(60)).to_rfc3339_opts(SecondsFormat::Secs, true);
     let claim_ids = claim_ids_from_payload(&input.payload);
     let projection_id = input.projection_id.clone();
     let verification_error = status.as_str().to_string();
@@ -1000,14 +1431,16 @@ fn record_quarantine(
                         SET last_seen_at = ?2,
                             seen_count = seen_count + 1,
                             observed_payload_hash = ?3,
-                            observed_signature_b64 = ?4,
-                            verification_error = ?5,
-                            coalesced_until = ?6
+                            observed_payload_bytes = ?4,
+                            observed_signature_b64 = ?5,
+                            verification_error = ?6,
+                            coalesced_until = ?7
                       WHERE quarantine_id = ?1",
                     params![
                         existing_id,
                         now,
                         observed_payload_hash,
+                        observed_payload_bytes,
                         observed_signature,
                         verification_error,
                         coalesced_until,
@@ -1021,18 +1454,19 @@ fn record_quarantine(
                 .execute(
                     "INSERT INTO projection_quarantine
                         (quarantine_id, projection_id, surface, surface_locator_hash,
-                         observed_payload_hash, observed_signature_b64, expected_signature_id,
-                         verification_error, field_pointer, byte_range_start, byte_range_end,
-                         sanitized_observed_excerpt_hash, detected_by, detected_at, last_seen_at,
-                         seen_count, coalesced_until, status)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL, NULL, NULL, NULL,
-                             'projection_signing', ?9, ?9, 1, ?10, 'open')",
+                         observed_payload_hash, observed_payload_bytes, observed_signature_b64,
+                         expected_signature_id, verification_error, field_pointer, byte_range_start,
+                         byte_range_end, sanitized_observed_excerpt_hash, detected_by, detected_at,
+                         last_seen_at, seen_count, coalesced_until, status)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, NULL, NULL, NULL, NULL,
+                             'projection_signing', ?10, ?10, 1, ?11, 'open')",
                     params![
                         quarantine_id,
                         projection_id,
                         input.surface.as_str(),
                         surface_locator_hash,
                         observed_payload_hash,
+                        observed_payload_bytes,
                         observed_signature,
                         expected_signature_id,
                         verification_error,
@@ -1056,35 +1490,31 @@ fn record_quarantine(
             )
             .map_err(|error| error.to_string())?;
 
-        crate::services::signals::emit_in_transaction(
+        emit_projection_status_signal_in_tx(
             ctx,
             tx,
             "projection",
             &projection_id,
             PROJECTION_SIGNATURE_INVALID_SIGNAL,
-            "projection_signing",
             json!({
                 "projection_id": projection_id,
                 "quarantine_id": quarantine_id,
                 "verification_error": status.as_str(),
             }),
-        )
-        .map_err(|error| error.to_string())?;
+        )?;
         for claim_id in &claim_ids {
-            crate::services::signals::emit_in_transaction(
+            emit_projection_status_signal_in_tx(
                 ctx,
                 tx,
                 "claim",
                 claim_id,
                 PROJECTION_SIGNATURE_INVALID_SIGNAL,
-                "projection_signing",
                 json!({
                     "projection_id": projection_id,
                     "quarantine_id": quarantine_id,
                     "verification_error": status.as_str(),
                 }),
-            )
-            .map_err(|error| error.to_string())?;
+            )?;
         }
         Ok(quarantine_id)
     })
@@ -1109,9 +1539,11 @@ fn detect_currentness_rollback(
 
     let canonical_hash = sha256_hex(canonical_bytes);
     let claim_watermark = claim_watermark_hash(&input.payload)?;
-    let current_signature_mismatch = current.current_signature_id.as_deref() != Some(&envelope.signature_id)
+    let current_signature_mismatch = current.current_signature_id.as_deref()
+        != Some(&envelope.signature_id)
         || current.key_id.as_deref() != Some(&envelope.key_id)
-        || current.signature_status.as_deref() != Some("active");
+        || current.signature_status.as_deref() != Some("active")
+        || current.locator_status != "live";
     let composition_rollback = input.payload.composition_version < current.composition_version;
     let payload_hash_mismatch = canonical_hash != current.canonical_signed_payload_sha256
         || claim_watermark != current.claim_watermark_sha256;
@@ -1121,18 +1553,28 @@ fn detect_currentness_rollback(
         .iter()
         .flat_map(|block| block.claim_refs.iter())
         .find_map(|claim_ref| {
-            current.claim_versions.get(&claim_ref.claim_id).and_then(|ledger_version| {
-                (claim_ref.claim_version < *ledger_version).then_some((
-                    claim_ref.claim_version,
-                    *ledger_version,
-                ))
-            })
+            current
+                .claim_versions
+                .get(&claim_ref.claim_id)
+                .and_then(|ledger_version| {
+                    (claim_ref.claim_version < *ledger_version)
+                        .then_some((claim_ref.claim_version, *ledger_version))
+                })
         });
 
-    if current_signature_mismatch || composition_rollback || payload_hash_mismatch || claim_rollback.is_some() {
+    if current_signature_mismatch
+        || composition_rollback
+        || payload_hash_mismatch
+        || claim_rollback.is_some()
+    {
         let (signed_claim_version, ledger_claim_version) = claim_rollback
             .map(|(signed, ledger)| (Some(signed), Some(ledger)))
-            .unwrap_or_else(|| (max_payload_claim_version(&input.payload), max_ledger_claim_version(&current)));
+            .unwrap_or_else(|| {
+                (
+                    max_payload_claim_version(&input.payload),
+                    max_ledger_claim_version(&current),
+                )
+            });
         return Ok(Some(ProjectionRollbackBridgeFields {
             projection_id: input.projection_id.clone(),
             signed_composition_version: input.payload.composition_version,
@@ -1144,6 +1586,21 @@ fn detect_currentness_rollback(
     Ok(None)
 }
 
+fn projection_locator_is_tombstoned(
+    db: &ActionDb,
+    projection_id: &str,
+) -> Result<bool, ProjectionSigningError> {
+    let status = db
+        .conn_ref()
+        .query_row(
+            "SELECT locator_status FROM projection_ledger WHERE projection_id = ?1",
+            params![projection_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    Ok(status.as_deref() == Some("tombstoned"))
+}
+
 fn load_ledger_currentness(
     db: &ActionDb,
     projection_id: &str,
@@ -1151,7 +1608,7 @@ fn load_ledger_currentness(
     let current = db
         .conn_ref()
         .query_row(
-            "SELECT l.current_signature_id, l.composition_version,
+            "SELECT l.current_signature_id, l.locator_status, l.composition_version,
                     l.canonical_signed_payload_sha256, l.claim_watermark_sha256,
                     s.key_id, s.signature_status
                FROM projection_ledger l
@@ -1161,16 +1618,26 @@ fn load_ledger_currentness(
             |row| {
                 Ok((
                     row.get::<_, Option<String>>(0)?,
-                    row.get::<_, u64>(1)?,
-                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, u64>(2)?,
                     row.get::<_, String>(3)?,
-                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, String>(4)?,
                     row.get::<_, Option<String>>(5)?,
+                    row.get::<_, Option<String>>(6)?,
                 ))
             },
         )
         .optional()?;
-    let Some((current_signature_id, composition_version, canonical_hash, claim_watermark, key_id, signature_status)) = current else {
+    let Some((
+        current_signature_id,
+        locator_status,
+        composition_version,
+        canonical_hash,
+        claim_watermark,
+        key_id,
+        signature_status,
+    )) = current
+    else {
         return Ok(None);
     };
     let mut stmt = db.conn_ref().prepare(
@@ -1180,12 +1647,15 @@ fn load_ledger_currentness(
           GROUP BY claim_id",
     )?;
     let claim_versions = stmt
-        .query_map(params![projection_id], |row| Ok((row.get::<_, String>(0)?, row.get::<_, u64>(1)?)))?
+        .query_map(params![projection_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, u64>(1)?))
+        })?
         .collect::<Result<HashMap<_, _>, _>>()?;
     Ok(Some(LedgerCurrentness {
         current_signature_id,
         key_id,
         signature_status,
+        locator_status,
         composition_version,
         claim_versions,
         canonical_signed_payload_sha256: canonical_hash,
@@ -1193,7 +1663,73 @@ fn load_ledger_currentness(
     }))
 }
 
-fn signed_payload_from_input(input: &ProjectionWriteInput) -> Result<SignedProjectionPayload, ProjectionSigningError> {
+pub fn read_quarantine_observed_payload_bytes_admin(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    quarantine_id: &str,
+) -> Result<Option<Vec<u8>>, ProjectionSigningError> {
+    if actor_kind(ctx.actor) != "admin" {
+        return Err(ProjectionSigningError::Service(
+            "observed projection payload bytes require admin scope".to_string(),
+        ));
+    }
+    db.conn_ref()
+        .query_row(
+            "SELECT observed_payload_bytes
+               FROM projection_quarantine
+              WHERE quarantine_id = ?1",
+            params![quarantine_id],
+            |row| row.get::<_, Option<Vec<u8>>>(0),
+        )
+        .optional()
+        .map(|value| value.flatten())
+        .map_err(ProjectionSigningError::from)
+}
+
+pub fn tombstone_projection_locator(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    projection_id: &str,
+    reason: &str,
+) -> Result<(), ProjectionSigningError> {
+    ctx.check_mutation_allowed()
+        .map_err(|error| ProjectionSigningError::Service(error.to_string()))?;
+    let now = timestamp(ctx);
+    db.with_transaction(|tx| {
+        let changed = tx
+            .conn_ref()
+            .execute(
+                "UPDATE projection_ledger
+                    SET locator_status = 'tombstoned',
+                        verification_status = 'tombstoned',
+                        last_verified_at = ?2
+                  WHERE projection_id = ?1
+                    AND locator_status != 'tombstoned'",
+                params![projection_id, &now],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed > 0 {
+            emit_projection_status_signal_in_tx(
+                ctx,
+                tx,
+                "projection",
+                projection_id,
+                "projection_locator_tombstoned",
+                json!({
+                    "projection_id": projection_id,
+                    "reason": reason,
+                    "tombstoned_at": now,
+                }),
+            )?;
+        }
+        Ok(())
+    })
+    .map_err(ProjectionSigningError::Database)
+}
+
+fn signed_payload_from_input(
+    input: &ProjectionWriteInput,
+) -> Result<SignedProjectionPayload, ProjectionSigningError> {
     let mut blocks = input
         .blocks
         .iter()
@@ -1235,15 +1771,49 @@ fn signed_payload_from_input(input: &ProjectionWriteInput) -> Result<SignedProje
     })
 }
 
+/// Return canonical JSON bytes for projection signing.
+///
+/// W4-C's RFC 8785 subset rejects non-integer JSON numbers at sign time.
+/// Fractional numeric values must be string-encoded by the caller before they
+/// enter `SignedProjectionPayload`; this prevents cross-runtime float spelling
+/// drift from changing signed bytes.
 pub fn canonical_json_bytes<T: Serialize>(value: &T) -> Result<Vec<u8>, ProjectionSigningError> {
     let value = serde_json::to_value(value)?;
+    validate_canonical_json_numbers(&value, "$")?;
     let canonical = canonicalize_json_value(value);
     serde_json::to_vec(&canonical).map_err(ProjectionSigningError::from)
 }
 
+fn validate_canonical_json_numbers(
+    value: &Value,
+    path: &str,
+) -> Result<(), ProjectionSigningError> {
+    match value {
+        Value::Array(items) => {
+            for (index, item) in items.iter().enumerate() {
+                validate_canonical_json_numbers(item, &format!("{path}[{index}]"))?;
+            }
+        }
+        Value::Object(map) => {
+            for (key, item) in map {
+                validate_canonical_json_numbers(item, &format!("{path}.{key}"))?;
+            }
+        }
+        Value::Number(number) if !(number.is_i64() || number.is_u64()) => {
+            return Err(ProjectionSigningError::Serialization(format!(
+                "projection canonical JSON rejects non-integer numeric value at {path}; encode fractional values as strings"
+            )));
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
 fn canonicalize_json_value(value: Value) -> Value {
     match value {
-        Value::Array(items) => Value::Array(items.into_iter().map(canonicalize_json_value).collect()),
+        Value::Array(items) => {
+            Value::Array(items.into_iter().map(canonicalize_json_value).collect())
+        }
         Value::Object(map) => {
             let mut sorted = Map::new();
             let mut keys = map.keys().cloned().collect::<Vec<_>>();
@@ -1264,11 +1834,13 @@ fn decode_signature_envelope(
 ) -> Result<ProjectionSignatureEnvelope, ProjectionVerificationStatus> {
     let bytes = URL_SAFE_NO_PAD
         .decode(envelope_b64url.as_bytes())
-        .map_err(|_| ProjectionVerificationStatus::MissingSignature)?;
-    serde_json::from_slice(&bytes).map_err(|_| ProjectionVerificationStatus::MissingSignature)
+        .map_err(|_| ProjectionVerificationStatus::MalformedEnvelope)?;
+    serde_json::from_slice(&bytes).map_err(|_| ProjectionVerificationStatus::MalformedEnvelope)
 }
 
-fn claim_watermark_hash(payload: &SignedProjectionPayload) -> Result<String, ProjectionSigningError> {
+fn claim_watermark_hash(
+    payload: &SignedProjectionPayload,
+) -> Result<String, ProjectionSigningError> {
     let refs = payload
         .blocks
         .iter()
@@ -1293,7 +1865,12 @@ fn claim_ids_from_payload(payload: &SignedProjectionPayload) -> Vec<String> {
     payload
         .blocks
         .iter()
-        .flat_map(|block| block.claim_refs.iter().map(|claim_ref| claim_ref.claim_id.clone()))
+        .flat_map(|block| {
+            block
+                .claim_refs
+                .iter()
+                .map(|claim_ref| claim_ref.claim_id.clone())
+        })
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect()
@@ -1303,7 +1880,12 @@ fn max_payload_claim_version(payload: &SignedProjectionPayload) -> Option<u64> {
     payload
         .blocks
         .iter()
-        .flat_map(|block| block.claim_refs.iter().map(|claim_ref| claim_ref.claim_version))
+        .flat_map(|block| {
+            block
+                .claim_refs
+                .iter()
+                .map(|claim_ref| claim_ref.claim_version)
+        })
         .max()
 }
 
@@ -1375,7 +1957,9 @@ fn queue_resign_for_key(
           WHERE s.key_id = ?1 AND l.locator_status = 'live'",
     )?;
     let rows = stmt
-        .query_map(params![old_key_id], |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)))?
+        .query_map(params![old_key_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+        })?
         .collect::<Result<Vec<_>, _>>()?;
     for (projection_id, old_signature_id) in rows {
         tx.conn_ref().execute(
@@ -1383,7 +1967,7 @@ fn queue_resign_for_key(
                 (queue_id, projection_id, old_signature_id, old_key_id, new_key_id, reason,
                  status, attempts, max_attempts, last_error, last_resign_at, last_retampered_at,
                  operator_escalated_at, queued_at, updated_at, completed_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'pending', 0, 3, NULL, NULL, NULL, NULL, ?7, ?7, NULL)",
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'pending', 0, 5, NULL, NULL, NULL, NULL, ?7, ?7, NULL)",
             params![
                 format!("prq_{}", Uuid::new_v4().simple()),
                 projection_id,
@@ -1410,6 +1994,347 @@ fn queue_resign_for_key(
         .map_err(ProjectionSigningError::Service)?;
     }
     Ok(())
+}
+
+#[derive(Debug)]
+struct ResignQueueRow {
+    queue_id: String,
+    projection_id: String,
+    old_signature_id: Option<String>,
+    old_key_id: String,
+    new_key_id: String,
+    reason: String,
+}
+
+struct ResignSourceProjection {
+    current_signature_id: Option<String>,
+    dailyos_source_runtime: String,
+    dailyos_projection_version: u64,
+    quarantine_state: String,
+    last_quarantine_event_at: Option<String>,
+    canonical_signed_payload_bytes: Vec<u8>,
+    canonical_signed_payload_sha256: String,
+}
+
+pub fn drain_resign_queue(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    key_store: &dyn ProjectionKeyStore,
+    limit: usize,
+) -> Result<usize, ProjectionSigningError> {
+    ctx.check_mutation_allowed()
+        .map_err(|error| ProjectionSigningError::Service(error.to_string()))?;
+    let limit = i64::try_from(limit.max(1)).unwrap_or(i64::MAX);
+    let mut stmt = db.conn_ref().prepare(
+        "SELECT queue_id, projection_id, old_signature_id, old_key_id, new_key_id, reason
+           FROM projection_resign_queue
+          WHERE status IN ('pending', 'failed')
+            AND attempts < max_attempts
+            AND operator_escalated_at IS NULL
+          ORDER BY queued_at ASC
+          LIMIT ?1",
+    )?;
+    let rows = stmt
+        .query_map(params![limit], |row| {
+            Ok(ResignQueueRow {
+                queue_id: row.get("queue_id")?,
+                projection_id: row.get("projection_id")?,
+                old_signature_id: row.get("old_signature_id")?,
+                old_key_id: row.get("old_key_id")?,
+                new_key_id: row.get("new_key_id")?,
+                reason: row.get("reason")?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let mut completed = 0;
+    for row in rows {
+        match process_resign_queue_row(ctx, db, key_store, &row) {
+            Ok(()) => completed += 1,
+            Err(error) => {
+                mark_resign_failure(ctx, db, &row.queue_id, &error.to_string())?;
+            }
+        }
+    }
+    Ok(completed)
+}
+
+fn process_resign_queue_row(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    key_store: &dyn ProjectionKeyStore,
+    row: &ResignQueueRow,
+) -> Result<(), ProjectionSigningError> {
+    let now = timestamp(ctx);
+    let source = load_resign_source_projection(db, row)?;
+    if source.current_signature_id != row.old_signature_id {
+        mark_resign_completed(ctx, db, row, None, "already_superseded")?;
+        return Ok(());
+    }
+    if projection_recently_retampered(ctx, &source) {
+        mark_resign_retampered(ctx, db, &row.queue_id, &now)?;
+        return Ok(());
+    }
+
+    let new_key = load_signing_key(db, &row.new_key_id)?
+        .ok_or_else(|| ProjectionSigningError::ProjectionNotFound(row.new_key_id.clone()))?;
+    if new_key.key_status == ProjectionKeyStatus::Revoked {
+        return Err(ProjectionSigningError::Service(
+            "replacement projection signing key is revoked".to_string(),
+        ));
+    }
+    let private_key = key_store.get_private_key(&new_key.keychain_account_ref)?;
+    let key_pair = Ed25519KeyPair::from_pkcs8(private_key.as_ref())
+        .map_err(|error| ProjectionSigningError::Crypto(format!("invalid Ed25519 key: {error}")))?;
+    let signature = key_pair.sign(&source.canonical_signed_payload_bytes);
+    let signature_id = format!("sig_{}", Uuid::new_v4().simple());
+    let envelope = ProjectionSignatureEnvelope {
+        signature_id: signature_id.clone(),
+        key_id: row.new_key_id.clone(),
+        alg: PROJECTION_SIGNATURE_ALG.to_string(),
+        canonicalization: PROJECTION_CANONICALIZATION.to_string(),
+        signed_at: now.clone(),
+        signature_b64url: URL_SAFE_NO_PAD.encode(signature.as_ref()),
+        dailyos_source_runtime: source.dailyos_source_runtime,
+        dailyos_projection_version: source.dailyos_projection_version,
+    };
+    let envelope_b64url = URL_SAFE_NO_PAD.encode(canonical_json_bytes(&envelope)?);
+
+    db.with_transaction(|tx| {
+        tx.conn_ref()
+            .execute(
+                "UPDATE projection_resign_queue
+                    SET status = 'processing',
+                        attempts = attempts + 1,
+                        updated_at = ?2,
+                        last_error = NULL
+                  WHERE queue_id = ?1",
+                params![&row.queue_id, &now],
+            )
+            .map_err(|error| error.to_string())?;
+        tx.conn_ref()
+            .execute(
+                "UPDATE projection_signatures
+                    SET signature_status = 'superseded',
+                        superseded_by_signature_id = ?2,
+                        retired_at = COALESCE(retired_at, ?3)
+                  WHERE signature_id = ?1",
+                params![row.old_signature_id.as_deref(), &signature_id, &now],
+            )
+            .map_err(|error| error.to_string())?;
+        tx.conn_ref()
+            .execute(
+                "INSERT INTO projection_signatures
+                    (signature_id, projection_id, key_id, signature_status, alg, canonicalization,
+                     canonical_signed_payload_bytes, canonical_signed_payload_sha256,
+                     signature_bytes, signature_envelope_b64url, issued_at,
+                     superseded_by_signature_id, revoked_at, retired_at)
+                 VALUES (?1, ?2, ?3, 'active', ?4, ?5, ?6, ?7, ?8, ?9, ?10, NULL, NULL, NULL)",
+                params![
+                    &signature_id,
+                    &row.projection_id,
+                    &row.new_key_id,
+                    PROJECTION_SIGNATURE_ALG,
+                    PROJECTION_CANONICALIZATION,
+                    &source.canonical_signed_payload_bytes,
+                    &source.canonical_signed_payload_sha256,
+                    signature.as_ref(),
+                    &envelope_b64url,
+                    &now,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        tx.conn_ref()
+            .execute(
+                "UPDATE projection_ledger
+                    SET current_signature_id = ?2,
+                        verification_status = 'verified',
+                        last_verified_at = ?3
+                  WHERE projection_id = ?1",
+                params![&row.projection_id, &signature_id, &now],
+            )
+            .map_err(|error| error.to_string())?;
+        tx.conn_ref()
+            .execute(
+                "UPDATE projection_resign_queue
+                    SET status = 'completed',
+                        last_resign_at = ?2,
+                        updated_at = ?2,
+                        completed_at = ?2,
+                        last_error = NULL
+                  WHERE queue_id = ?1",
+                params![&row.queue_id, &now],
+            )
+            .map_err(|error| error.to_string())?;
+        tx.conn_ref()
+            .execute(
+                "UPDATE projection_replacement_keys
+                    SET completed_at = COALESCE(completed_at, ?3),
+                        recovery_status = 'completed'
+                  WHERE old_key_id = ?1
+                    AND new_key_id = ?2
+                    AND NOT EXISTS (
+                        SELECT 1
+                          FROM projection_resign_queue
+                         WHERE old_key_id = ?1
+                           AND new_key_id = ?2
+                           AND status != 'completed'
+                    )",
+                params![&row.old_key_id, &row.new_key_id, &now],
+            )
+            .map_err(|error| error.to_string())?;
+        emit_projection_status_signal_in_tx(
+            ctx,
+            tx,
+            "projection",
+            &row.projection_id,
+            "projection_resigned",
+            json!({
+                "old_key_id": row.old_key_id,
+                "new_key_id": row.new_key_id,
+                "old_signature_id": row.old_signature_id,
+                "new_signature_id": signature_id,
+                "reason": row.reason,
+            }),
+        )?;
+        Ok(())
+    })
+    .map_err(ProjectionSigningError::Database)
+}
+
+fn load_resign_source_projection(
+    db: &ActionDb,
+    row: &ResignQueueRow,
+) -> Result<ResignSourceProjection, ProjectionSigningError> {
+    db.conn_ref()
+        .query_row(
+            "SELECT l.current_signature_id, l.dailyos_source_runtime,
+                    l.dailyos_projection_version, l.quarantine_state,
+                    l.last_quarantine_event_at, s.canonical_signed_payload_bytes,
+                    s.canonical_signed_payload_sha256
+               FROM projection_ledger l
+               JOIN projection_signatures s ON s.signature_id = ?2
+              WHERE l.projection_id = ?1
+                AND l.locator_status = 'live'",
+            params![&row.projection_id, row.old_signature_id.as_deref()],
+            |row| {
+                Ok(ResignSourceProjection {
+                    current_signature_id: row.get(0)?,
+                    dailyos_source_runtime: row.get(1)?,
+                    dailyos_projection_version: row.get(2)?,
+                    quarantine_state: row.get(3)?,
+                    last_quarantine_event_at: row.get(4)?,
+                    canonical_signed_payload_bytes: row.get(5)?,
+                    canonical_signed_payload_sha256: row.get(6)?,
+                })
+            },
+        )
+        .optional()?
+        .ok_or_else(|| ProjectionSigningError::ProjectionNotFound(row.projection_id.clone()))
+}
+
+fn projection_recently_retampered(
+    ctx: &ServiceContext<'_>,
+    source: &ResignSourceProjection,
+) -> bool {
+    if source.quarantine_state != "quarantined" {
+        return false;
+    }
+    source
+        .last_quarantine_event_at
+        .as_deref()
+        .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
+        .map(|detected_at| {
+            ctx.clock
+                .now()
+                .signed_duration_since(detected_at.with_timezone(&chrono::Utc))
+                <= Duration::seconds(120)
+        })
+        .unwrap_or(false)
+}
+
+fn mark_resign_completed(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    row: &ResignQueueRow,
+    last_resign_at: Option<&str>,
+    reason: &str,
+) -> Result<(), ProjectionSigningError> {
+    let now = timestamp(ctx);
+    db.conn_ref().execute(
+        "UPDATE projection_resign_queue
+            SET status = 'completed',
+                updated_at = ?2,
+                completed_at = ?2,
+                last_resign_at = COALESCE(?3, last_resign_at),
+                last_error = ?4
+          WHERE queue_id = ?1",
+        params![&row.queue_id, &now, last_resign_at, reason],
+    )?;
+    Ok(())
+}
+
+fn mark_resign_failure(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    queue_id: &str,
+    error: &str,
+) -> Result<(), ProjectionSigningError> {
+    let now = timestamp(ctx);
+    let error = truncate_queue_error(error);
+    db.conn_ref().execute(
+        "UPDATE projection_resign_queue
+            SET attempts = attempts + 1,
+                status = CASE WHEN attempts + 1 >= max_attempts THEN 'failed' ELSE 'pending' END,
+                last_error = ?2,
+                updated_at = ?3,
+                operator_escalated_at = CASE
+                    WHEN attempts + 1 >= max_attempts THEN COALESCE(operator_escalated_at, ?3)
+                    ELSE operator_escalated_at
+                END
+          WHERE queue_id = ?1",
+        params![queue_id, error, now],
+    )?;
+    Ok(())
+}
+
+fn mark_resign_retampered(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    queue_id: &str,
+    now: &str,
+) -> Result<(), ProjectionSigningError> {
+    db.conn_ref().execute(
+        "UPDATE projection_resign_queue
+            SET attempts = max_attempts,
+                status = 'failed',
+                last_error = 'projection_retampered_after_resign',
+                last_retampered_at = ?2,
+                operator_escalated_at = COALESCE(operator_escalated_at, ?2),
+                updated_at = ?2
+          WHERE queue_id = ?1",
+        params![queue_id, now],
+    )?;
+    emit_projection_status_signal_in_tx(
+        ctx,
+        db,
+        "projection_resign_queue",
+        queue_id,
+        "projection_resign_operator_escalated",
+        json!({
+            "queue_id": queue_id,
+            "reason": "projection_retampered_after_resign",
+            "detected_at": now,
+            "actor_kind": actor_kind(ctx.actor),
+        }),
+    )
+    .map_err(ProjectionSigningError::Service)?;
+    Ok(())
+}
+
+fn truncate_queue_error(error: &str) -> String {
+    const MAX_ERROR_CHARS: usize = 240;
+    error.chars().take(MAX_ERROR_CHARS).collect()
 }
 
 #[cfg(test)]
@@ -1442,7 +2367,9 @@ mod tests {
             account_ref: &str,
             pkcs8: &[u8],
         ) -> Result<(), ProjectionSigningError> {
-            self.keys.lock().insert(account_ref.to_string(), pkcs8.to_vec());
+            self.keys
+                .lock()
+                .insert(account_ref.to_string(), pkcs8.to_vec());
             Ok(())
         }
     }
@@ -1535,7 +2462,8 @@ mod tests {
         let ext = ExternalClients::default();
         let ctx = test_ctx(&clock, &rng, &ext);
 
-        let signed = sign_projection(&ctx, &db, &key_store, projection_input()).expect("sign projection");
+        let signed =
+            sign_projection(&ctx, &db, &key_store, projection_input()).expect("sign projection");
         let outcome = verify_projection_read(
             &ctx,
             &db,
@@ -1546,6 +2474,7 @@ mod tests {
                 expected_runtime_anchor_id: Some("dailyos-runtime-test".to_string()),
                 payload: signed.payload.clone(),
                 signature_envelope_b64url: Some(signed.signature_envelope_b64url.clone()),
+                observed_payload_bytes: None,
             },
         )
         .expect("verify projection");
@@ -1560,7 +2489,10 @@ mod tests {
             )
             .expect("ledger row");
         assert_eq!(ledger_status, "verified");
-        assert_ne!(signed.signature_envelope_b64url, signed.canonical_signed_payload_sha256);
+        assert_ne!(
+            signed.signature_envelope_b64url,
+            signed.canonical_signed_payload_sha256
+        );
     }
 
     #[test]
@@ -1571,7 +2503,8 @@ mod tests {
         let rng = SeedableRng::new(42);
         let ext = ExternalClients::default();
         let ctx = test_ctx(&clock, &rng, &ext);
-        let signed = sign_projection(&ctx, &db, &key_store, projection_input()).expect("sign projection");
+        let signed =
+            sign_projection(&ctx, &db, &key_store, projection_input()).expect("sign projection");
         let mut tampered_payload = signed.payload.clone();
         tampered_payload.blocks.swap(0, 1);
 
@@ -1585,13 +2518,20 @@ mod tests {
                 expected_runtime_anchor_id: None,
                 payload: tampered_payload,
                 signature_envelope_b64url: Some(signed.signature_envelope_b64url.clone()),
+                observed_payload_bytes: None,
             },
         )
         .expect("tamper outcome");
 
-        assert_eq!(outcome.status, ProjectionVerificationStatus::SignatureInvalid);
+        assert_eq!(
+            outcome.status,
+            ProjectionVerificationStatus::SignatureInvalid
+        );
         assert!(outcome.quarantine_id.is_some());
-        assert!(matches!(outcome.failure, Some(ProjectionVerificationFailure::Tampered(_))));
+        assert!(matches!(
+            outcome.failure,
+            Some(ProjectionVerificationFailure::Tampered(_))
+        ));
     }
 
     #[test]
@@ -1602,7 +2542,8 @@ mod tests {
         let rng = SeedableRng::new(42);
         let ext = ExternalClients::default();
         let ctx = test_ctx(&clock, &rng, &ext);
-        let signed = sign_projection(&ctx, &db, &key_store, projection_input()).expect("sign projection");
+        let signed =
+            sign_projection(&ctx, &db, &key_store, projection_input()).expect("sign projection");
         let mut envelope = signed.signature_envelope.clone();
         envelope.alg = "HMAC-SHA256".to_string();
         let envelope_b64 = URL_SAFE_NO_PAD.encode(canonical_json_bytes(&envelope).unwrap());
@@ -1617,14 +2558,20 @@ mod tests {
                 expected_runtime_anchor_id: None,
                 payload: signed.payload,
                 signature_envelope_b64url: Some(envelope_b64),
+                observed_payload_bytes: None,
             },
         )
         .expect("unsupported alg outcome");
 
-        assert_eq!(outcome.status, ProjectionVerificationStatus::UnsupportedAlgorithm);
+        assert_eq!(
+            outcome.status,
+            ProjectionVerificationStatus::UnsupportedAlgorithm
+        );
         let seen_count: i64 = db
             .conn_ref()
-            .query_row("SELECT COUNT(*) FROM projection_quarantine", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM projection_quarantine", [], |row| {
+                row.get(0)
+            })
             .expect("quarantine count");
         assert_eq!(seen_count, 1);
     }
@@ -1637,7 +2584,8 @@ mod tests {
         let rng = SeedableRng::new(42);
         let ext = ExternalClients::default();
         let ctx = test_ctx(&clock, &rng, &ext);
-        let signed = sign_projection(&ctx, &db, &key_store, projection_input()).expect("sign projection");
+        let signed =
+            sign_projection(&ctx, &db, &key_store, projection_input()).expect("sign projection");
         let mut tampered_payload = signed.payload.clone();
         tampered_payload.blocks[0].block_payload = json!({"a": 99});
 
@@ -1652,6 +2600,7 @@ mod tests {
                     expected_runtime_anchor_id: None,
                     payload: tampered_payload.clone(),
                     signature_envelope_b64url: Some(signed.signature_envelope_b64url.clone()),
+                    observed_payload_bytes: None,
                 },
             )
             .expect("tamper outcome");
@@ -1677,7 +2626,8 @@ mod tests {
         let rng = SeedableRng::new(42);
         let ext = ExternalClients::default();
         let ctx = test_ctx(&clock, &rng, &ext);
-        let old_signed = sign_projection(&ctx, &db, &key_store, projection_input()).expect("sign old");
+        let old_signed =
+            sign_projection(&ctx, &db, &key_store, projection_input()).expect("sign old");
         let next = projection_input_with_currentness(8, 4);
         let _new_signed = sign_projection(&ctx, &db, &key_store, next).expect("sign new");
 
@@ -1691,12 +2641,19 @@ mod tests {
                 expected_runtime_anchor_id: None,
                 payload: old_signed.payload,
                 signature_envelope_b64url: Some(old_signed.signature_envelope_b64url),
+                observed_payload_bytes: None,
             },
         )
         .expect("rollback outcome");
 
-        assert_eq!(outcome.status, ProjectionVerificationStatus::VersionRollback);
-        assert!(matches!(outcome.failure, Some(ProjectionVerificationFailure::VersionRollback(_))));
+        assert_eq!(
+            outcome.status,
+            ProjectionVerificationStatus::VersionRollback
+        );
+        assert!(matches!(
+            outcome.failure,
+            Some(ProjectionVerificationFailure::VersionRollback(_))
+        ));
     }
 
     #[test]
@@ -1707,7 +2664,8 @@ mod tests {
         let rng = SeedableRng::new(42);
         let ext = ExternalClients::default();
         let ctx = test_ctx(&clock, &rng, &ext);
-        let signed = sign_projection(&ctx, &db, &key_store, projection_input()).expect("sign projection");
+        let signed =
+            sign_projection(&ctx, &db, &key_store, projection_input()).expect("sign projection");
         let old_key_id = signed.signature_envelope.key_id.clone();
         let replacement_key_id = revoke_projection_signing_key(
             &ctx,
@@ -1721,7 +2679,9 @@ mod tests {
         assert_ne!(replacement_key_id, old_key_id);
         let queue_count: i64 = db
             .conn_ref()
-            .query_row("SELECT COUNT(*) FROM projection_resign_queue", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM projection_resign_queue", [], |row| {
+                row.get(0)
+            })
             .expect("queue count");
         assert_eq!(queue_count, 1);
 
@@ -1735,6 +2695,7 @@ mod tests {
                 expected_runtime_anchor_id: None,
                 payload: signed.payload,
                 signature_envelope_b64url: Some(signed.signature_envelope_b64url),
+                observed_payload_bytes: None,
             },
         )
         .expect("revoked outcome");
@@ -1761,7 +2722,374 @@ mod tests {
         let a = json!({"b": 2, "a": [1, 2]});
         let b = json!({"a": [1, 2], "b": 2});
         let c = json!({"a": [2, 1], "b": 2});
-        assert_eq!(canonical_json_bytes(&a).unwrap(), canonical_json_bytes(&b).unwrap());
-        assert_ne!(canonical_json_bytes(&a).unwrap(), canonical_json_bytes(&c).unwrap());
+        assert_eq!(
+            canonical_json_bytes(&a).unwrap(),
+            canonical_json_bytes(&b).unwrap()
+        );
+        assert_ne!(
+            canonical_json_bytes(&a).unwrap(),
+            canonical_json_bytes(&c).unwrap()
+        );
+    }
+
+    #[test]
+    fn dos569_cycle2_malformed_envelope_records_distinct_status() {
+        let db = test_db();
+        let key_store = InMemoryProjectionKeyStore::default();
+        let clock = fixture_clock();
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+        let signed =
+            sign_projection(&ctx, &db, &key_store, projection_input()).expect("sign projection");
+
+        let outcome = verify_projection_read(
+            &ctx,
+            &db,
+            ProjectionVerificationInput {
+                projection_id: signed.payload.projection_id.clone(),
+                surface: signed.payload.surface,
+                surface_locator: "wp:post:42:block:account-overview".to_string(),
+                expected_runtime_anchor_id: None,
+                payload: signed.payload,
+                signature_envelope_b64url: Some("not-valid-base64*".to_string()),
+                observed_payload_bytes: None,
+            },
+        )
+        .expect("malformed envelope outcome");
+
+        assert_eq!(
+            outcome.status,
+            ProjectionVerificationStatus::MalformedEnvelope
+        );
+        let stored_status: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT verification_error FROM projection_quarantine WHERE quarantine_id = ?1",
+                params![outcome.quarantine_id.as_deref()],
+                |row| row.get(0),
+            )
+            .expect("quarantine status");
+        assert_eq!(stored_status, "malformed_envelope");
+    }
+
+    #[test]
+    fn dos569_cycle2_non_integer_numbers_rejected_before_signing() {
+        let mut input = projection_input();
+        input.blocks[0].block_payload = json!({"ratio": 1.5});
+
+        let error = signed_payload_from_input(&input).expect_err("fractional payload rejected");
+        assert!(
+            error
+                .to_string()
+                .contains("rejects non-integer numeric value"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn dos569_cycle2_unknown_key_refreshes_once_then_falls_through() {
+        let db = test_db();
+        let key_store = InMemoryProjectionKeyStore::default();
+        let clock = fixture_clock();
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+        let signed =
+            sign_projection(&ctx, &db, &key_store, projection_input()).expect("sign projection");
+        let mut envelope = signed.signature_envelope.clone();
+        envelope.key_id = "psk_missing_refresh_once".to_string();
+        let envelope_b64 = URL_SAFE_NO_PAD.encode(canonical_json_bytes(&envelope).unwrap());
+        let mut refresh_calls = 0;
+
+        let outcome = verify_with_unknown_key_refresh(
+            &ctx,
+            &db,
+            ProjectionVerificationInput {
+                projection_id: signed.payload.projection_id.clone(),
+                surface: signed.payload.surface,
+                surface_locator: "wp:post:42:block:account-overview".to_string(),
+                expected_runtime_anchor_id: None,
+                payload: signed.payload,
+                signature_envelope_b64url: Some(envelope_b64),
+                observed_payload_bytes: None,
+            },
+            || {
+                refresh_calls += 1;
+                Ok(())
+            },
+        )
+        .expect("unknown key outcome");
+
+        assert_eq!(refresh_calls, 1);
+        assert_eq!(outcome.status, ProjectionVerificationStatus::UnknownKey);
+    }
+
+    #[test]
+    fn dos569_cycle2_keyring_version_is_monotonic_across_rotation() {
+        let db = test_db();
+        let key_store = InMemoryProjectionKeyStore::default();
+        let clock = fixture_clock();
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+        let signed =
+            sign_projection(&ctx, &db, &key_store, projection_input()).expect("sign projection");
+        let before = public_keyring(&db, "runtime-anchor").expect("keyring before revoke");
+
+        revoke_projection_signing_key(
+            &ctx,
+            &db,
+            &key_store,
+            &signed.signature_envelope.key_id,
+            "test_rotation",
+        )
+        .expect("revoke projection key");
+        let after = public_keyring(&db, "runtime-anchor").expect("keyring after revoke");
+
+        assert!(after.keyring_version > before.keyring_version);
+        assert!(after.keyring_version > after.keys.len() as u64);
+    }
+
+    #[test]
+    fn dos569_cycle2_retired_key_verifies_with_degraded_status() {
+        let db = test_db();
+        let key_store = InMemoryProjectionKeyStore::default();
+        let clock = fixture_clock();
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+        let signed =
+            sign_projection(&ctx, &db, &key_store, projection_input()).expect("sign projection");
+        db.conn_ref()
+            .execute(
+                "UPDATE projection_signing_keys
+                    SET key_status = 'retired', retired_at = ?2
+                  WHERE key_id = ?1",
+                params![&signed.signature_envelope.key_id, timestamp(&ctx)],
+            )
+            .expect("retire key");
+
+        let outcome = verify_projection_read(
+            &ctx,
+            &db,
+            ProjectionVerificationInput {
+                projection_id: signed.payload.projection_id.clone(),
+                surface: signed.payload.surface,
+                surface_locator: "wp:post:42:block:account-overview".to_string(),
+                expected_runtime_anchor_id: None,
+                payload: signed.payload,
+                signature_envelope_b64url: Some(signed.signature_envelope_b64url),
+                observed_payload_bytes: None,
+            },
+        )
+        .expect("retired verify outcome");
+
+        assert_eq!(
+            outcome.status,
+            ProjectionVerificationStatus::VerifiedRetired
+        );
+        assert_eq!(outcome.key_status, Some(ProjectionKeyStatus::Retired));
+        let retired_signal_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM signal_events WHERE signal_type = ?1",
+                params![PROJECTION_SIGNATURE_RETIRED_KEY_SIGNAL],
+                |row| row.get(0),
+            )
+            .expect("retired signal count");
+        assert!(retired_signal_count >= 1);
+    }
+
+    #[test]
+    fn dos569_cycle2_tombstoned_locator_blocks_verified_read() {
+        let db = test_db();
+        let key_store = InMemoryProjectionKeyStore::default();
+        let clock = fixture_clock();
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+        let signed =
+            sign_projection(&ctx, &db, &key_store, projection_input()).expect("sign projection");
+
+        tombstone_projection_locator(&ctx, &db, &signed.payload.projection_id, "test_removal")
+            .expect("tombstone projection locator");
+        let outcome = verify_projection_read(
+            &ctx,
+            &db,
+            ProjectionVerificationInput {
+                projection_id: signed.payload.projection_id.clone(),
+                surface: signed.payload.surface,
+                surface_locator: "wp:post:42:block:account-overview".to_string(),
+                expected_runtime_anchor_id: None,
+                payload: signed.payload,
+                signature_envelope_b64url: Some(signed.signature_envelope_b64url),
+                observed_payload_bytes: None,
+            },
+        )
+        .expect("tombstoned verify outcome");
+
+        assert_eq!(outcome.status, ProjectionVerificationStatus::Tombstoned);
+        let locator_status: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT locator_status FROM projection_ledger WHERE projection_id = ?1",
+                params![outcome.projection_id],
+                |row| row.get(0),
+            )
+            .expect("locator status");
+        assert_eq!(locator_status, "tombstoned");
+    }
+
+    #[test]
+    fn dos569_cycle2_quarantine_preserves_observed_bytes_admin_only() {
+        let db = test_db();
+        let key_store = InMemoryProjectionKeyStore::default();
+        let clock = fixture_clock();
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+        let admin_ctx = ServiceContext::test_live(&clock, &rng, &ext).with_actor("admin:test");
+        let signed =
+            sign_projection(&ctx, &db, &key_store, projection_input()).expect("sign projection");
+        let mut tampered_payload = signed.payload.clone();
+        tampered_payload.blocks[0].block_payload = json!({"a": 99});
+        let observed_bytes = br#"{"raw":"tampered wp row"}"#.to_vec();
+
+        let outcome = verify_projection_read(
+            &ctx,
+            &db,
+            ProjectionVerificationInput {
+                projection_id: tampered_payload.projection_id.clone(),
+                surface: tampered_payload.surface,
+                surface_locator: "wp:post:42:block:account-overview".to_string(),
+                expected_runtime_anchor_id: None,
+                payload: tampered_payload,
+                signature_envelope_b64url: Some(signed.signature_envelope_b64url),
+                observed_payload_bytes: Some(observed_bytes.clone()),
+            },
+        )
+        .expect("tampered outcome");
+        let quarantine_id = outcome.quarantine_id.expect("quarantine id");
+
+        let stored = read_quarantine_observed_payload_bytes_admin(&admin_ctx, &db, &quarantine_id)
+            .expect("admin read observed bytes")
+            .expect("stored observed bytes");
+        assert_eq!(stored, observed_bytes);
+        assert!(read_quarantine_observed_payload_bytes_admin(&ctx, &db, &quarantine_id).is_err());
+    }
+
+    #[test]
+    fn dos569_cycle2_enforcement_mode_transition_is_audited() {
+        let db = test_db();
+        let clock = fixture_clock();
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+
+        assert_eq!(
+            projection_signature_enforcement_mode(&db).expect("default mode"),
+            crate::services::context::ProjectionSignatureEnforcementMode::Shadow
+        );
+        set_projection_signature_enforcement_mode(
+            &ctx,
+            &db,
+            crate::services::context::ProjectionSignatureEnforcementMode::Enforce,
+            "test_enforce",
+        )
+        .expect("set enforce mode");
+        set_projection_signature_enforcement_mode(
+            &ctx,
+            &db,
+            crate::services::context::ProjectionSignatureEnforcementMode::Enforce,
+            "idempotent",
+        )
+        .expect("set enforce mode idempotently");
+
+        assert_eq!(
+            projection_signature_enforcement_mode(&db).expect("updated mode"),
+            crate::services::context::ProjectionSignatureEnforcementMode::Enforce
+        );
+        let event_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM projection_enforcement_mode_events",
+                [],
+                |row| row.get(0),
+            )
+            .expect("event count");
+        assert_eq!(event_count, 1);
+        let signal_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM signal_events WHERE signal_type = 'projection.enforcement_mode_changed'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("signal count");
+        assert_eq!(signal_count, 1);
+    }
+
+    #[test]
+    fn dos569_cycle2_resign_queue_drain_reissues_active_signature() {
+        let db = test_db();
+        let key_store = InMemoryProjectionKeyStore::default();
+        let clock = fixture_clock();
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+        let signed =
+            sign_projection(&ctx, &db, &key_store, projection_input()).expect("sign projection");
+        let old_signature_id = signed.signature_envelope.signature_id.clone();
+        let old_key_id = signed.signature_envelope.key_id.clone();
+        let replacement_key_id = revoke_projection_signing_key(
+            &ctx,
+            &db,
+            &key_store,
+            &old_key_id,
+            "test_key_compromise",
+        )
+        .expect("revoke key");
+
+        let drained = drain_resign_queue(&ctx, &db, &key_store, 10).expect("drain resign queue");
+
+        assert_eq!(drained, 1);
+        let queue_status: String = db
+            .conn_ref()
+            .query_row("SELECT status FROM projection_resign_queue", [], |row| {
+                row.get(0)
+            })
+            .expect("queue status");
+        assert_eq!(queue_status, "completed");
+        let active_key_id: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT s.key_id
+                   FROM projection_ledger l
+                   JOIN projection_signatures s ON s.signature_id = l.current_signature_id
+                  WHERE l.projection_id = ?1",
+                params![signed.payload.projection_id],
+                |row| row.get(0),
+            )
+            .expect("active key id");
+        assert_eq!(active_key_id, replacement_key_id);
+        let old_status: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT signature_status FROM projection_signatures WHERE signature_id = ?1",
+                params![old_signature_id],
+                |row| row.get(0),
+            )
+            .expect("old signature status");
+        assert_eq!(old_status, "superseded");
+        let recovery_status: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT recovery_status FROM projection_replacement_keys WHERE old_key_id = ?1",
+                params![old_key_id],
+                |row| row.get(0),
+            )
+            .expect("replacement status");
+        assert_eq!(recovery_status, "completed");
     }
 }

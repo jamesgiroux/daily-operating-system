@@ -15,6 +15,34 @@ use crate::abilities::temporal::{
     TrajectoryQueryDepth, TrajectoryReadFuture, TrajectoryReadHandle,
 };
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectionSignatureEnforcementMode {
+    #[default]
+    Shadow,
+    Enforce,
+    Disabled,
+}
+
+impl ProjectionSignatureEnforcementMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Shadow => "shadow",
+            Self::Enforce => "enforce",
+            Self::Disabled => "disabled",
+        }
+    }
+
+    pub fn parse_config(value: &str) -> Option<Self> {
+        Some(match value {
+            "shadow" => Self::Shadow,
+            "enforce" => Self::Enforce,
+            "disabled" => Self::Disabled,
+            _ => return None,
+        })
+    }
+}
+
 pub struct LiveEntityContextReader;
 pub struct LiveEntityContextClaimReader;
 pub struct LivePrepareMeetingContextReader;
