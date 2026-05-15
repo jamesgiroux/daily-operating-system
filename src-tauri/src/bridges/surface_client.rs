@@ -307,6 +307,18 @@ impl SurfaceClientBridge {
             );
         }
 
+        if ensure_required_scopes(session, descriptor).is_err() {
+            let request = identity_rate_limit_request(
+                session,
+                descriptor.name,
+                request_id,
+                request_class_for_descriptor(descriptor),
+                ability_class_for_descriptor(descriptor),
+                &audit_hash_secret,
+            );
+            return self
+                .reject_after_identity_rate_limit(request, SurfaceClientBridgeError::ScopeDenied);
+        }
         if !descriptor.policy.client_side_executable {
             let request = identity_rate_limit_request(
                 session,
@@ -320,18 +332,6 @@ impl SurfaceClientBridge {
                 request,
                 SurfaceClientBridgeError::AbilityUnavailable,
             );
-        }
-        if ensure_required_scopes(session, descriptor).is_err() {
-            let request = identity_rate_limit_request(
-                session,
-                descriptor.name,
-                request_id,
-                request_class_for_descriptor(descriptor),
-                ability_class_for_descriptor(descriptor),
-                &audit_hash_secret,
-            );
-            return self
-                .reject_after_identity_rate_limit(request, SurfaceClientBridgeError::ScopeDenied);
         }
 
         let request_class = request_class_for_descriptor(descriptor);
@@ -1465,6 +1465,31 @@ mod tests {
                 .unwrap_err(),
             SurfaceClientBridgeError::RateLimited(rejection)
                 if rejection.axis == SurfaceClientRateLimitAxis::SurfaceClient
+        ));
+    }
+
+    #[test]
+    fn required_scope_is_checked_before_client_side_executable_policy() {
+        let clock = FixedClock::new(Instant::now());
+        let bridge = bridge_with(test_config(), clock);
+        let mut descriptor = descriptor(
+            "dailyos/account-overview",
+            AbilityCategory::Read,
+            &["read.account_overview"],
+            None,
+        );
+        descriptor.policy.client_side_executable = false;
+        let registry =
+            AbilityRegistry::from_descriptors_unchecked_for_runtime_validation_tests(vec![
+                descriptor,
+            ]);
+        let session = session(&["submit.feedback"]);
+
+        assert!(matches!(
+            bridge
+                .authorize(&registry, &session, "dailyos/account-overview", "req_1")
+                .unwrap_err(),
+            SurfaceClientBridgeError::ScopeDenied
         ));
     }
 

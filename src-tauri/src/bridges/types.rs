@@ -275,6 +275,8 @@ pub enum BridgeSurfaceError {
     },
     #[error("claim version overflow for {claim_id}")]
     ClaimVersionOverflow { claim_id: String },
+    #[error("composition version overflow for {composition_id}")]
+    CompositionVersionOverflow { composition_id: String },
     #[error("stale claim version for {claim_id}: expected {expected}, current {current}")]
     StaleVersion {
         claim_id: String,
@@ -939,8 +941,22 @@ fn render_diagnostics(surface: BridgeSurface, diagnostics: serde_json::Value) ->
 pub(crate) fn surface_error(error: AbilityInvokeError) -> BridgeSurfaceError {
     match error {
         AbilityInvokeError::Surface(error) => error,
-        AbilityInvokeError::Ability(_)
-        | AbilityInvokeError::InvalidEnvelope
+        AbilityInvokeError::Ability(error) => match error.kind {
+            crate::abilities::AbilityErrorKind::StaleComposition {
+                composition_id,
+                expected,
+                current,
+            } => BridgeSurfaceError::StaleComposition {
+                composition_id,
+                expected,
+                current,
+            },
+            crate::abilities::AbilityErrorKind::CompositionVersionOverflow { composition_id } => {
+                BridgeSurfaceError::CompositionVersionOverflow { composition_id }
+            }
+            _ => BridgeSurfaceError::AbilityUnavailable,
+        },
+        AbilityInvokeError::InvalidEnvelope
         | AbilityInvokeError::ProvenanceTooLarge
         | AbilityInvokeError::ProvenanceSerialize(_) => BridgeSurfaceError::AbilityUnavailable,
     }

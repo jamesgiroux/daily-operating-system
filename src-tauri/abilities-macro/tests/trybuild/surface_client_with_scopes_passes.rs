@@ -182,6 +182,14 @@ mod abilities {
                 reason: String,
             },
             SubjectNotOwned,
+            StaleComposition {
+                composition_id: String,
+                expected: u64,
+                current: u64,
+            },
+            CompositionVersionOverflow {
+                composition_id: String,
+            },
             HardError(String),
         }
 

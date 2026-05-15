@@ -36,8 +36,8 @@ use crate::bridges::surface_client::{
     SurfaceClientRequestClassLimits,
 };
 use crate::bridges::types::{
-    invoke_registry_json_for_actor, provider_from_context_snapshot, surface_error, BridgeActor,
-    BridgeSurface, RequestScopedInvocation,
+    invoke_registry_json_for_actor, provider_from_context_snapshot, surface_error,
+    AbilityResponseJson, BridgeActor, BridgeSurface, RequestScopedInvocation,
 };
 use crate::bridges::BridgeSurfaceError;
 use crate::services::context::ClaimDismissalSurface;
@@ -1649,6 +1649,7 @@ async fn signed_route_response(
                     let services = app_state
                         .live_service_context()
                         .with_actor("surface_client");
+                    let audit_input = invoke.input.clone();
                     match invoke_registry_json_for_actor(
                         registry,
                         &services,
@@ -1665,14 +1666,23 @@ async fn signed_route_response(
                     )
                     .await
                     {
-                        Ok(ability) => json_response(
-                            StatusCode::OK,
-                            json!({
-                                "ok": true,
-                                "request_id": request_id,
-                                "ability": ability,
-                            }),
-                        ),
+                        Ok(ability) => {
+                            let audit = successful_surface_invocation_audit_event(
+                                &validated,
+                                &request_id,
+                                &audit_input,
+                                &ability,
+                            );
+                            emit_pairing_audit_event(app_state, &audit);
+                            json_response(
+                                StatusCode::OK,
+                                json!({
+                                    "ok": true,
+                                    "request_id": request_id,
+                                    "ability": ability,
+                                }),
+                            )
+                        }
                         Err(error) => {
                             bridge_surface_error_response(
                                 surface_error(error),
@@ -2161,6 +2171,18 @@ fn emit_bridge_rejection_audit(
                 "scope_redacted": false,
             }),
         ),
+        BridgeSurfaceError::CompositionVersionOverflow { composition_id } => (
+            "composition.write_rejected",
+            json!({
+                "rejection_reason": "composition_version_overflow",
+                "claim_id": null,
+                "composition_id": composition_id,
+                "expected_version": null,
+                "current_version": null,
+                "mutation_id": null,
+                "scope_redacted": false,
+            }),
+        ),
         BridgeSurfaceError::ProjectionTampered {
             projection_id,
             signature_id,
@@ -2336,6 +2358,12 @@ fn bridge_surface_error(error: BridgeSurfaceError) -> SurfaceHttpError {
             "The submitted composition version is stale.",
             "Refresh the composition projection and retry.",
         ),
+        BridgeSurfaceError::CompositionVersionOverflow { .. } => SurfaceHttpError::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "composition_version_overflow",
+            "DailyOS could not assign a new composition version.",
+            "Restart DailyOS and run diagnostics before retrying.",
+        ),
         BridgeSurfaceError::Validation(_) => {
             SurfaceHttpError::bad_request("surface_invoke_invalid")
         }
@@ -2468,6 +2496,72 @@ fn signed_transport_failure_event(
             "decision": "rejected"
         }),
     })
+}
+
+fn successful_surface_invocation_audit_event(
+    session: &ValidatedSurfaceSession,
+    request_id: &str,
+    input: &Value,
+    ability: &AbilityResponseJson,
+) -> SurfacePairingAuditEvent {
+    let mut detail = json!({
+        "surface_client_id": &session.surface_client_id,
+        "actor_instance": &session.surface_client_id,
+        "ability_name": &ability.ability_name,
+        "ability_version": &ability.ability_version,
+        "schema_version": ability.schema_version,
+        "request_id": request_id,
+        "claim_ref_count": composition_claim_ref_count(&ability.data),
+    });
+    if let Some(account_id) = input
+        .get("account_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        detail["account_id"] = json!(account_id);
+    }
+    if let Some(composition_id) = ability.data.get("id").and_then(Value::as_str) {
+        detail["composition_id"] = json!(composition_id);
+    }
+    if let Some(composition_version) = ability
+        .data
+        .pointer("/metadata/composition_version")
+        .and_then(Value::as_u64)
+    {
+        detail["composition_version"] = json!(composition_version);
+    }
+
+    SurfacePairingAuditEvent {
+        event_kind: "ability_invoked",
+        category: "data_access",
+        actor: session.actor.clone(),
+        wp_user_id: session.wp_user_id,
+        wp_user_hash: session.wp_user_hash.clone(),
+        detail,
+    }
+}
+
+fn composition_claim_ref_count(composition: &Value) -> usize {
+    composition
+        .get("sections")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .flat_map(|section| {
+            section
+                .get("blocks")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+        })
+        .map(|block| {
+            block
+                .get("claim_refs")
+                .and_then(Value::as_array)
+                .map_or(0, Vec::len)
+        })
+        .sum()
 }
 
 fn emit_pairing_audit_event(app_state: &AppState, event: &SurfacePairingAuditEvent) {
@@ -3103,6 +3197,12 @@ mod tests {
         registry: Arc<crate::abilities::AbilityRegistry>,
         bridge_config: SurfaceClientBridgeConfig,
     ) -> Arc<EndpointRuntime> {
+        let app_state = Arc::new(AppState::new());
+        let audit_path = std::env::temp_dir().join(format!(
+            "dailyos-surface-runtime-test-{}.jsonl",
+            Uuid::new_v4()
+        ));
+        *app_state.audit_log.lock() = crate::audit_log::AuditLogger::new(audit_path);
         Arc::new(EndpointRuntime {
             startup_id: Uuid::new_v4(),
             bound_port: 49152,
@@ -3124,7 +3224,7 @@ mod tests {
             surface_nonce: SurfaceNonceService::new_from_w2b_secret([7_u8; 32])
                 .expect("nonce service"),
             ability_registry_override: Some(registry),
-            app_state: Some(Arc::new(AppState::new())),
+            app_state: Some(app_state),
         })
     }
 
@@ -4064,6 +4164,87 @@ mod tests {
             "surface_client"
         );
         assert!(body["ability"].get("diagnostics").is_none());
+
+        let audit_path = runtime
+            .app_state
+            .as_ref()
+            .expect("test app state")
+            .audit_log
+            .lock()
+            .path()
+            .to_path_buf();
+        let audit_records = crate::audit_log::read_records(&audit_path, 10, Some("data_access"));
+        let invoked = audit_records
+            .iter()
+            .find(|record| record.event == "ability_invoked")
+            .expect("successful invoke audit is written");
+        assert_eq!(invoked.actor_kind.as_deref(), Some("surface_client"));
+        assert_eq!(
+            invoked.actor_instance.as_ref().map(SurfaceClientId::as_str),
+            Some("surface_client_test")
+        );
+        assert_eq!(invoked.wp_user_hash.as_deref(), Some("wp_user_hash_test"));
+        assert_eq!(invoked.detail["ability_name"], json!("surface_route_test"));
+        assert_eq!(invoked.detail["claim_ref_count"], json!(0));
+    }
+
+    #[test]
+    fn account_overview_success_audit_carries_composition_fields_and_writes() {
+        let session = validated_surface_session_for_tests();
+        let ability: AbilityResponseJson = serde_json::from_value(json!({
+            "invocation_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "ability_name": "dailyos/account-overview",
+            "ability_version": "1.0.0",
+            "schema_version": 1,
+            "data": {
+                "id": "acct-overview-fixture",
+                "metadata": { "composition_version": 7 },
+                "sections": [{
+                    "blocks": [
+                        { "claim_refs": [{ "claim_id": "claim-a" }, { "claim_id": "claim-b" }] },
+                        { "claim_refs": [{ "claim_id": "claim-c" }] }
+                    ]
+                }]
+            },
+            "rendered_provenance": { "surface": "surface_client", "value": {} },
+            "diagnostics": { "warnings": [] }
+        }))
+        .expect("ability response fixture deserializes");
+        let event = successful_surface_invocation_audit_event(
+            &session,
+            "req_account_overview",
+            &json!({ "account_id": "acct-fixture-1" }),
+            &ability,
+        );
+
+        assert_eq!(event.event_kind, "ability_invoked");
+        assert_eq!(event.wp_user_id, Some(42));
+        assert_eq!(event.detail["actor_instance"], json!("surface_client_test"));
+        assert_eq!(event.detail["account_id"], json!("acct-fixture-1"));
+        assert_eq!(
+            event.detail["composition_id"],
+            json!("acct-overview-fixture")
+        );
+        assert_eq!(event.detail["composition_version"], json!(7));
+        assert_eq!(event.detail["claim_ref_count"], json!(3));
+
+        let audit_path = std::env::temp_dir().join(format!(
+            "dailyos-account-overview-audit-test-{}.jsonl",
+            Uuid::new_v4()
+        ));
+        let mut logger = crate::audit_log::AuditLogger::new(audit_path.clone());
+        surface_pairing::emit_pairing_audit(&mut logger, &event)
+            .expect("SurfaceClient success audit includes wp_user_id/hash");
+        let raw = std::fs::read_to_string(&audit_path).expect("audit file is readable");
+        assert!(!raw.contains("\"wp_user_id\""));
+        let records = crate::audit_log::read_records(&audit_path, 10, Some("data_access"));
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].event, "ability_invoked");
+        assert_eq!(records[0].actor_kind.as_deref(), Some("surface_client"));
+        assert_eq!(
+            records[0].wp_user_hash.as_deref(),
+            Some("wp_user_hash_test")
+        );
     }
 
     #[test]

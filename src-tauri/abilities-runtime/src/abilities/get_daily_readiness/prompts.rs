@@ -45,14 +45,26 @@ pub fn render_prompt<T: Serialize>(
     let context_value = serde_json::to_value(context)?;
     let text = TEMPLATE
         .replace("{{schema_version}}", &schema_version.to_string())
-        .replace("{{meeting.topics}}", &section_json(&sections.meeting_topics)?)
-        .replace("{{meeting.attendees}}", &section_json(&sections.meeting_attendees)?)
+        .replace(
+            "{{meeting.topics}}",
+            &section_json(&sections.meeting_topics)?,
+        )
+        .replace(
+            "{{meeting.attendees}}",
+            &section_json(&sections.meeting_attendees)?,
+        )
         .replace(
             "{{meeting.open_loops}}",
             &section_json(&sections.meeting_open_loops)?,
         )
-        .replace("{{meeting.outcomes}}", &section_json(&sections.meeting_outcomes)?)
-        .replace("{{entity_contexts}}", &section_json(&sections.entity_contexts)?)
+        .replace(
+            "{{meeting.outcomes}}",
+            &section_json(&sections.meeting_outcomes)?,
+        )
+        .replace(
+            "{{entity_contexts}}",
+            &section_json(&sections.entity_contexts)?,
+        )
         .replace(
             "{{risk_shifts[].direction}}",
             &section_json(&sections.risk_directions)?,
@@ -69,7 +81,10 @@ pub fn render_prompt<T: Serialize>(
             "{{overnight_changes[].summary}}",
             &section_json(&sections.overnight_summaries)?,
         )
-        .replace("{{coverage_warnings}}", &section_json(&sections.coverage_warnings)?);
+        .replace(
+            "{{coverage_warnings}}",
+            &section_json(&sections.coverage_warnings)?,
+        );
     let canonical_inputs = canonical_prompt_inputs(context_value, schema_version);
     let prompt = PromptInput::new(text.clone())
         .with_template(

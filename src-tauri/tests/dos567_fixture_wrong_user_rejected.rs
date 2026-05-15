@@ -14,8 +14,8 @@ use dailyos_lib::bridges::surface_client::{validate_session_bound_wp_user_id, Wr
 use dailyos_lib::services::surface_pairing::ValidatedSurfaceSession;
 
 fn session_bound_to(wp_user_id: u64) -> ValidatedSurfaceSession {
-    let scope_set = ScopeSet::new([SurfaceScope::new("read.account_overview")])
-        .expect("non-empty scopes");
+    let scope_set =
+        ScopeSet::new([SurfaceScope::new("read.account_overview")]).expect("non-empty scopes");
     ValidatedSurfaceSession {
         surface_client_id: "sc-wrong-user-test".to_string(),
         session_id: "sess-wrong-user-test".to_string(),

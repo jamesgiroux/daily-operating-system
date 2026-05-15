@@ -41,6 +41,7 @@ use serde::de::DeserializeOwned;
 use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+use crate::abilities::composition::{Composition, CompositionDocId};
 use crate::abilities::temporal::{
     DetectRoleChangeInput, DetectRoleChangeResult, RefreshEngagementCurveInput,
     RefreshEngagementCurveResult, TemporalMaintenanceHandle, TrajectoryBundle,
@@ -841,6 +842,7 @@ pub struct ServiceContext<'a> {
     daily_readiness_context_reader: Option<Arc<dyn DailyReadinessContextReadHandle>>,
     trajectory_reader: Option<Arc<dyn TrajectoryReadHandle>>,
     temporal_maintenance: Option<Arc<dyn TemporalMaintenanceHandle>>,
+    composition_commit: Option<Arc<dyn CompositionCommitHandle>>,
 }
 
 pub type EntityContextReadFuture<'a> =
@@ -873,6 +875,69 @@ pub trait EntityContextClaimReadHandle: Send + Sync {
         surface: ClaimDismissalSurface,
         depth: usize,
     ) -> EntityContextClaimReadFuture<'a>;
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CompositionProposal {
+    pub composition_id: CompositionDocId,
+    pub expected_composition_version: u64,
+    pub composition: Composition,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CommittedComposition {
+    pub composition_id: CompositionDocId,
+    pub composition_version: u64,
+    pub composition: Composition,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum CompositionCommitError {
+    #[error("composition id is empty")]
+    EmptyCompositionId,
+    #[error(
+        "stale composition version for {composition_id}: expected {expected}, current {current}"
+    )]
+    StaleVersion {
+        composition_id: String,
+        expected: u64,
+        current: u64,
+    },
+    #[error(
+        "inflated composition version for {composition_id}: expected {expected}, current {current}"
+    )]
+    InflatedVersion {
+        composition_id: String,
+        expected: u64,
+        current: u64,
+    },
+    #[error("composition version overflow for {composition_id}")]
+    Overflow { composition_id: String },
+    #[error("composition transaction failed: {0}")]
+    Transaction(String),
+    #[error("composition mutation blocked by mode: {0}")]
+    Mode(String),
+    #[error("composition finalizer unavailable: {0}")]
+    Unavailable(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct CompositionCommitRequest {
+    pub proposal: CompositionProposal,
+    pub actor: String,
+    pub ability_id: Option<String>,
+}
+
+pub type CompositionCommitFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<CommittedComposition, CompositionCommitError>> + Send + 'a>>;
+
+/// Narrow finalizer seam for W4-B `commit_composition`. Ability code remains
+/// in `abilities-runtime`; app code attaches the concrete SQLite adapter.
+pub trait CompositionCommitHandle: Send + Sync {
+    fn commit_composition<'a>(
+        &'a self,
+        request: CompositionCommitRequest,
+    ) -> CompositionCommitFuture<'a>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1106,6 +1171,7 @@ impl<'a> ServiceContext<'a> {
             daily_readiness_context_reader: None,
             trajectory_reader: None,
             temporal_maintenance: None,
+            composition_commit: None,
         }
     }
 
@@ -1131,6 +1197,7 @@ impl<'a> ServiceContext<'a> {
             daily_readiness_context_reader: None,
             trajectory_reader: None,
             temporal_maintenance: None,
+            composition_commit: None,
         }
     }
 
@@ -1167,6 +1234,7 @@ impl<'a> ServiceContext<'a> {
             daily_readiness_context_reader: None,
             trajectory_reader: None,
             temporal_maintenance: None,
+            composition_commit: None,
         }
     }
 
@@ -1203,10 +1271,7 @@ impl<'a> ServiceContext<'a> {
         self
     }
 
-    pub fn with_list_open_loops_reader(
-        mut self,
-        reader: Arc<dyn ListOpenLoopsReadHandle>,
-    ) -> Self {
+    pub fn with_list_open_loops_reader(mut self, reader: Arc<dyn ListOpenLoopsReadHandle>) -> Self {
         self.list_open_loops_reader = Some(reader);
         self
     }
@@ -1238,6 +1303,33 @@ impl<'a> ServiceContext<'a> {
     ) -> Self {
         self.temporal_maintenance = Some(maintenance);
         self
+    }
+
+    pub fn with_composition_commit_handle(
+        mut self,
+        finalizer: Arc<dyn CompositionCommitHandle>,
+    ) -> Self {
+        self.composition_commit = Some(finalizer);
+        self
+    }
+
+    pub async fn commit_composition(
+        &self,
+        proposal: CompositionProposal,
+    ) -> Result<CommittedComposition, CompositionCommitError> {
+        let Some(finalizer) = &self.composition_commit else {
+            return Err(CompositionCommitError::Unavailable(
+                self.missing_reader_error("composition_commit"),
+            ));
+        };
+
+        finalizer
+            .commit_composition(CompositionCommitRequest {
+                proposal,
+                actor: self.actor.to_string(),
+                ability_id: self.ability_id.map(str::to_string),
+            })
+            .await
     }
 
     pub async fn read_prepare_meeting_context(

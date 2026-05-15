@@ -119,8 +119,8 @@ fn dos567_named_existing_id_without_version_rejects_missing_expected_claim_versi
     let ctx = live_ctx(&clock, &rng, &external);
     let db = ActionDb::from_conn(&conn);
 
-    let bootstrap = commit_claim(&ctx, db, risk_proposal("acct-foot-gun", None, None))
-        .expect("bootstrap");
+    let bootstrap =
+        commit_claim(&ctx, db, risk_proposal("acct-foot-gun", None, None)).expect("bootstrap");
     let new_id = match bootstrap {
         CommittedClaim::Inserted { claim } => claim.id,
         other => panic!("bootstrap expected Inserted, got {other:?}"),
@@ -131,7 +131,10 @@ fn dos567_named_existing_id_without_version_rejects_missing_expected_claim_versi
     // expected_claim_version: 0 (reserved → rejected by tx).
     assert!(matches!(
         foot_gun.target(),
-        ClaimMutationTarget::Mutate { expected_claim_version: 0, .. }
+        ClaimMutationTarget::Mutate {
+            expected_claim_version: 0,
+            ..
+        }
     ));
 
     let error = commit_claim(&ctx, db, foot_gun).expect_err("must reject");

@@ -47,6 +47,7 @@ pub struct LiveEntityContextReader;
 pub struct LiveEntityContextClaimReader;
 pub struct LivePrepareMeetingContextReader;
 pub struct LiveTemporalWorkspaceReader;
+pub struct LiveCompositionCommitter;
 
 pub fn attach_live_workspace_readers(ctx: ServiceContext<'_>) -> ServiceContext<'_> {
     ctx.with_entity_context_reader(Arc::new(LiveEntityContextReader))
@@ -54,6 +55,7 @@ pub fn attach_live_workspace_readers(ctx: ServiceContext<'_>) -> ServiceContext<
         .with_prepare_meeting_context_reader(Arc::new(LivePrepareMeetingContextReader))
         .with_trajectory_reader(Arc::new(LiveTemporalWorkspaceReader))
         .with_temporal_maintenance(Arc::new(LiveTemporalWorkspaceReader))
+        .with_composition_commit_handle(Arc::new(LiveCompositionCommitter))
 }
 
 impl EntityContextReadHandle for LiveEntityContextReader {
@@ -100,6 +102,88 @@ impl EntityContextClaimReadHandle for LiveEntityContextClaimReader {
             .await
             .map_err(|error| format!("Entity context claim read task failed: {error}"))?
         })
+    }
+}
+
+impl CompositionCommitHandle for LiveCompositionCommitter {
+    fn commit_composition<'a>(
+        &'a self,
+        request: CompositionCommitRequest,
+    ) -> CompositionCommitFuture<'a> {
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                let db =
+                    crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                        .map_err(|error| {
+                            CompositionCommitError::Transaction(format!(
+                                "Database unavailable: {error}"
+                            ))
+                        })?;
+                let clock = SystemClock;
+                let rng = SystemRng;
+                let external = ExternalClients::default();
+                let mut ctx = ServiceContext::new_live(&clock, &rng, &external)
+                    .with_actor(request.actor.as_str());
+                if let Some(ability_id) = request.ability_id.as_deref() {
+                    ctx = ctx.with_ability_id(ability_id);
+                }
+                let proposal = crate::services::compositions::CompositionProposal {
+                    composition_id: request.proposal.composition_id,
+                    expected_composition_version: request.proposal.expected_composition_version,
+                    composition: request.proposal.composition,
+                };
+                crate::services::compositions::commit_composition(&ctx, &db, proposal)
+                    .map(|committed| CommittedComposition {
+                        composition_id: committed.composition_id,
+                        composition_version: committed.composition_version,
+                        composition: committed.composition,
+                    })
+                    .map_err(composition_commit_error)
+            })
+            .await
+            .map_err(|error| {
+                CompositionCommitError::Transaction(format!(
+                    "composition commit task failed: {error}"
+                ))
+            })?
+        })
+    }
+}
+
+fn composition_commit_error(
+    error: crate::services::compositions::CompositionError,
+) -> CompositionCommitError {
+    match error {
+        crate::services::compositions::CompositionError::EmptyCompositionId => {
+            CompositionCommitError::EmptyCompositionId
+        }
+        crate::services::compositions::CompositionError::StaleVersion {
+            composition_id,
+            expected,
+            current,
+        } => CompositionCommitError::StaleVersion {
+            composition_id,
+            expected,
+            current,
+        },
+        crate::services::compositions::CompositionError::InflatedVersion {
+            composition_id,
+            expected,
+            current,
+        } => CompositionCommitError::InflatedVersion {
+            composition_id,
+            expected,
+            current,
+        },
+        crate::services::compositions::CompositionError::Overflow { composition_id } => {
+            CompositionCommitError::Overflow { composition_id }
+        }
+        crate::services::compositions::CompositionError::Transaction(message) => {
+            CompositionCommitError::Transaction(message)
+        }
+        crate::services::compositions::CompositionError::Mode(message) => {
+            CompositionCommitError::Mode(message)
+        }
     }
 }
 

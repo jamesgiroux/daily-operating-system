@@ -33,8 +33,7 @@ fn dos567_cursor_durable_through_drop_path_panic() {
     // Capture the cursor a 423-loser would have received before the mutation
     // Tx panics.
     let (cursor, mutation_id) = {
-        let guard =
-            MutationGuard::reserve(&db, "claim-cursor-drop", now).expect("reserve");
+        let guard = MutationGuard::reserve(&db, "claim-cursor-drop", now).expect("reserve");
         (
             guard.cursor().as_str().to_string(),
             guard.attempt().mutation_id.clone(),
@@ -112,8 +111,8 @@ fn dos567_cursor_durable_through_startup_recovery_after_process_kill() {
 }
 
 fn surface_client_with_scopes(scopes: &[&str]) -> Actor {
-    let scope_set = ScopeSet::new(scopes.iter().map(|s| SurfaceScope::new(*s)))
-        .expect("scopes non-empty");
+    let scope_set =
+        ScopeSet::new(scopes.iter().map(|s| SurfaceScope::new(*s))).expect("scopes non-empty");
     Actor::SurfaceClient {
         instance: SurfaceClientId::new("sc-cursor-durability-test"),
         scopes: scope_set,

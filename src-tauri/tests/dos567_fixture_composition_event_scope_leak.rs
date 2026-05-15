@@ -24,8 +24,8 @@ fn fresh_full_db() -> Connection {
 }
 
 fn surface_client_with_scopes(scopes: &[&str]) -> Actor {
-    let scope_set = ScopeSet::new(scopes.iter().map(|s| SurfaceScope::new(*s)))
-        .expect("scopes non-empty");
+    let scope_set =
+        ScopeSet::new(scopes.iter().map(|s| SurfaceScope::new(*s))).expect("scopes non-empty");
     Actor::SurfaceClient {
         instance: SurfaceClientId::new("sc-composition-scope-test"),
         scopes: scope_set,
@@ -83,8 +83,7 @@ fn build_redacted_envelope(cursor: &str, created_at: &str) -> serde_json::Value 
 #[test]
 fn dos567_out_of_scope_composition_event_fetch_returns_redacted_envelope() {
     let conn = fresh_full_db();
-    let (cursor, created_at) =
-        seed_composition_version_event(&conn, "composition-scope-test-1");
+    let (cursor, created_at) = seed_composition_version_event(&conn, "composition-scope-test-1");
     let db = ActionDb::from_conn(&conn);
 
     // `submit.feedback` is a write scope — not a read scope. Per §16 the

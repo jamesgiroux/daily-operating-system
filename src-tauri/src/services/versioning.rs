@@ -200,7 +200,10 @@ impl VersionActorKind {
         // misattribute every prefixed instance to `System`. Parse the
         // kind prefix before `:`; fall back to exact match for the
         // bare kind tokens, then default to System.
-        let kind = actor.split_once(':').map(|(prefix, _)| prefix).unwrap_or(actor);
+        let kind = actor
+            .split_once(':')
+            .map(|(prefix, _)| prefix)
+            .unwrap_or(actor);
         match kind {
             "user" => Self::User,
             "agent" => Self::Agent,

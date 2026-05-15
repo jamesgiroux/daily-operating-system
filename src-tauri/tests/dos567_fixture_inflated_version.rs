@@ -12,9 +12,7 @@ use chrono::{TimeZone, Utc};
 use dailyos_lib::db::claims::{ClaimSensitivity, TemporalScope};
 use dailyos_lib::db::ActionDb;
 use dailyos_lib::migration_test_api::run_migrations;
-use dailyos_lib::services::claims::{
-    commit_claim, ClaimError, ClaimProposal, CommittedClaim,
-};
+use dailyos_lib::services::claims::{commit_claim, ClaimError, ClaimProposal, CommittedClaim};
 use dailyos_lib::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
 use rusqlite::{params, Connection};
 

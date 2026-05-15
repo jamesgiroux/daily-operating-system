@@ -8,9 +8,8 @@ use super::prompts;
 use crate::abilities::provenance::source_time::{parse_source_timestamp, SourceTimestampStatus};
 use crate::abilities::provenance::{
     AbilityExecutionMode, AbilityVersion, Confidence, DataSource, FieldAttribution, FieldPath,
-    GleanDownstream, ProvenanceBuilder, ProvenanceBuilderConfig, SchemaVersion,
-    SourceAttribution, SourceIdentifier, SourceName, SourceRef, SubjectAttribution,
-    SubjectRef,
+    GleanDownstream, ProvenanceBuilder, ProvenanceBuilderConfig, SchemaVersion, SourceAttribution,
+    SourceIdentifier, SourceName, SourceRef, SubjectAttribution, SubjectRef,
 };
 use crate::abilities::temporal::{TrajectoryBundle, TrajectoryQueryDepth};
 use crate::abilities::{AbilityCategory, AbilityContext, AbilityError, AbilityErrorKind};
@@ -424,7 +423,13 @@ pub async fn build_risk_shift(
     )?;
     let fingerprint = prompts::fingerprint_from_completion(&completion, &rendered);
 
-    finalize_result(ctx, input.schema_version, synthesized, fingerprint, &context)
+    finalize_result(
+        ctx,
+        input.schema_version,
+        synthesized,
+        fingerprint,
+        &context,
+    )
 }
 
 impl RiskShiftContext {
@@ -508,8 +513,9 @@ fn assemble_untrusted_result(
     let overall_evidence_summary =
         evidence_summary(&membership.accepted_source_refs, &context.claims, now);
     let summary = raw.summary.unwrap_or_else(|| match direction {
-        RiskDirection::InsufficientEvidence => "Insufficient evidence to determine a risk shift."
-            .to_string(),
+        RiskDirection::InsufficientEvidence => {
+            "Insufficient evidence to determine a risk shift.".to_string()
+        }
         _ => "Risk shift detected from cited evidence.".to_string(),
     });
     let confidence = clamp_confidence(raw.confidence.unwrap_or(default_direction_confidence(
@@ -749,8 +755,7 @@ fn evidence_summary(
     let oldest = contributing_claims
         .iter()
         .filter_map(|claim| {
-            source_asof_timestamp(claim.source_asof.as_deref(), now)
-                .map(|parsed| (parsed, *claim))
+            source_asof_timestamp(claim.source_asof.as_deref(), now).map(|parsed| (parsed, *claim))
         })
         .min_by_key(|(parsed, _)| *parsed)
         .map(|(_, claim)| claim);
@@ -769,9 +774,8 @@ fn evidence_summary(
 
 fn source_asof_timestamp(input: Option<&str>, now: DateTime<Utc>) -> Option<DateTime<Utc>> {
     match parse_source_timestamp(input, now, None) {
-        SourceTimestampStatus::Accepted(parsed) | SourceTimestampStatus::Implausible { parsed, .. } => {
-            Some(parsed)
-        }
+        SourceTimestampStatus::Accepted(parsed)
+        | SourceTimestampStatus::Implausible { parsed, .. } => Some(parsed),
         SourceTimestampStatus::Malformed(_) | SourceTimestampStatus::Missing => None,
     }
 }
@@ -1154,9 +1158,9 @@ fn claim_for_ref<'a>(
     source_ref: &str,
     claims: &'a [RiskShiftSourceVerification],
 ) -> Option<&'a RiskShiftSourceVerification> {
-    claims.iter().find(|claim| {
-        claim.id == source_ref || claim.source_ref.as_deref() == Some(source_ref)
-    })
+    claims
+        .iter()
+        .find(|claim| claim.id == source_ref || claim.source_ref.as_deref() == Some(source_ref))
 }
 
 fn default_direction_confidence(direction: &RiskDirection, summary: &EvidenceSummary) -> f32 {
