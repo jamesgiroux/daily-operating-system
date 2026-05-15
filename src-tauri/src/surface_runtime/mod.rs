@@ -3167,6 +3167,14 @@ mod tests {
         name: &'static str,
         invoke_erased: for<'a> fn(&'a AbilityContext<'a>, serde_json::Value) -> ErasedFuture<'a>,
     ) -> AbilityDescriptor {
+        surface_route_descriptor_with_client_side_policy(name, invoke_erased, true)
+    }
+
+    fn surface_route_descriptor_with_client_side_policy(
+        name: &'static str,
+        invoke_erased: for<'a> fn(&'a AbilityContext<'a>, serde_json::Value) -> ErasedFuture<'a>,
+        client_side_executable: bool,
+    ) -> AbilityDescriptor {
         AbilityDescriptor {
             name,
             version: "1.0.0",
@@ -3179,7 +3187,7 @@ mod tests {
                 may_publish: false,
                 required_scopes: &["read.account_overview"],
                 mcp_exposure: McpExposure::None,
-                client_side_executable: true,
+                client_side_executable,
                 rate_limit: None,
             },
             composes: &[],
@@ -3229,12 +3237,19 @@ mod tests {
     }
 
     fn surface_route_dispatch_registry() -> Arc<crate::abilities::AbilityRegistry> {
+        surface_route_dispatch_registry_with_client_side_policy(true)
+    }
+
+    fn surface_route_dispatch_registry_with_client_side_policy(
+        client_side_executable: bool,
+    ) -> Arc<crate::abilities::AbilityRegistry> {
         SURFACE_ROUTE_DISPATCH_COUNT.store(0, Ordering::SeqCst);
         Arc::new(
             crate::abilities::AbilityRegistry::from_descriptors_unchecked_for_runtime_validation_tests(
-                vec![surface_route_descriptor(
+                vec![surface_route_descriptor_with_client_side_policy(
                     "surface_route_test",
                     surface_route_dispatch_erased,
+                    client_side_executable,
                 )],
             ),
         )
@@ -4186,6 +4201,39 @@ mod tests {
         assert_eq!(invoked.wp_user_hash.as_deref(), Some("wp_user_hash_test"));
         assert_eq!(invoked.detail["ability_name"], json!("surface_route_test"));
         assert_eq!(invoked.detail["claim_ref_count"], json!(0));
+    }
+
+    #[test]
+    fn surface_invoke_route_allows_signed_surface_client_for_client_side_disabled_ability() {
+        let registry = surface_route_dispatch_registry_with_client_side_policy(false);
+        let runtime =
+            runtime_for_surface_route_tests(registry, SurfaceClientBridgeConfig::default());
+        let request = request_for_tests(
+            Method::POST,
+            "/v1/surface/invoke",
+            Bytes::from_static(br#"{"ability":"surface_route_test","input":{"value":568}}"#),
+        );
+
+        let response = signed_route_for_tests(
+            &request,
+            &runtime,
+            validated_surface_session_for_tests(),
+            "req_surface_invoke_client_side_disabled",
+        );
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(SURFACE_ROUTE_DISPATCH_COUNT.load(Ordering::SeqCst), 1);
+        let body = body_json(response);
+        assert_eq!(body["ok"], true);
+        assert_eq!(
+            body["request_id"],
+            "req_surface_invoke_client_side_disabled"
+        );
+        assert_eq!(body["ability"]["data"]["input"]["value"], 568);
+        assert_eq!(
+            body["ability"]["rendered_provenance"]["surface"],
+            "surface_client"
+        );
     }
 
     #[test]

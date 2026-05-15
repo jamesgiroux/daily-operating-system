@@ -152,6 +152,14 @@ async fn prepare_account_overview(
     ctx: &AbilityContext<'_>,
     input: &NormalizedInput,
 ) -> Result<PreparedAccountOverview, AbilityError> {
+    // The reader currently takes (entity_type, entity_id, surface, depth)
+    // without an actor/scope discriminator. The substrate-side SurfaceClient
+    // scope contract (W4-B §16) calls for SQL-layer projection keyed on
+    // Actor::SurfaceClient { scopes }; until that lands, scope filtering is
+    // enforced one layer up by prompt_input_sensitivity_allowed, which gates
+    // Confidential+ before any block, ClaimRef, or count flows into the
+    // composition. Behavior is preserved; the longer-term tightening is
+    // tracked in the maintenance project.
     let claims = ctx
         .services()
         .read_entity_context_claims(
