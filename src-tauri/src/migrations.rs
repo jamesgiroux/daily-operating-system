@@ -884,6 +884,26 @@ const MIGRATIONS: &[Migration] = &[
         version: 172,
         apply: v172_dos_567_w4b_versions_and_outbox::migrate_v172,
     },
+    Migration::Sql {
+        version: 173,
+        sql: include_str!("migrations/173_w4c_projection_signing_keys.sql"),
+    },
+    Migration::Sql {
+        version: 174,
+        sql: include_str!("migrations/174_w4c_projection_ledger_signature.sql"),
+    },
+    Migration::Fn {
+        version: 175,
+        apply: migrate_v175_w4c_projection_quarantine,
+    },
+    Migration::Sql {
+        version: 176,
+        sql: include_str!("migrations/176_w4c_replacement_key_provisioning.sql"),
+    },
+    Migration::Fn {
+        version: 177,
+        apply: migrate_v177_w4c_projection_signing_cycle2,
+    },
 ];
 
 const V155_SHADOW_TRUST_VERSION: i64 = 1_401_003;
@@ -2084,6 +2104,22 @@ fn migrate_v167_structured_claim_canonicalization(conn: &Connection) -> Result<(
 
 fn migrate_v170_canonicalization_cutover(conn: &Connection) -> Result<(), MigrationError> {
     v170_canonicalization_cutover::migrate_v170(conn)
+}
+
+fn migrate_v175_w4c_projection_quarantine(conn: &Connection) -> Result<(), MigrationError> {
+    apply_idempotent_sql_migration(
+        conn,
+        include_str!("migrations/175_w4c_projection_quarantine.sql"),
+        "DOS-569 projection quarantine",
+    )
+}
+
+fn migrate_v177_w4c_projection_signing_cycle2(conn: &Connection) -> Result<(), MigrationError> {
+    apply_idempotent_sql_migration(
+        conn,
+        include_str!("migrations/177_w4c_projection_signing_cycle2.sql"),
+        "DOS-569 projection signing cycle 2",
+    )
 }
 
 fn migrate_v166_semantic_merge_safety(conn: &Connection) -> Result<(), MigrationError> {
@@ -4512,10 +4548,10 @@ mod tests {
         )
         .expect("seed c5 zero-version shadow row");
 
-        let applied = run_migrations(&conn).expect("v157-v172 migrations should succeed");
+        let applied = run_migrations(&conn).expect("v157-v177 migrations should succeed");
         assert_eq!(
-            applied, 16,
-            "v157-v172 should be pending after rollback to v156"
+            applied, 21,
+            "v157-v177 should be pending after rollback to v156"
         );
         assert_eq!(
             current_version(&conn).expect("current version"),
@@ -4586,10 +4622,10 @@ mod tests {
         )
         .expect("seed v156-recorded live score");
 
-        let applied = run_migrations(&conn).expect("v157-v172 migrations should succeed");
+        let applied = run_migrations(&conn).expect("v157-v177 migrations should succeed");
         assert_eq!(
-            applied, 16,
-            "v157-v172 should be pending after rollback to v156"
+            applied, 21,
+            "v157-v177 should be pending after rollback to v156"
         );
         assert_eq!(
             current_version(&conn).expect("current version"),
@@ -4665,10 +4701,10 @@ mod tests {
         )
         .expect("seed partial v155 shadow row");
 
-        let applied = run_migrations(&conn).expect("v156-v172 migrations should succeed");
+        let applied = run_migrations(&conn).expect("v156-v177 migrations should succeed");
         assert_eq!(
-            applied, 17,
-            "v156-v172 should be pending after rollback to v155"
+            applied, 22,
+            "v156-v177 should be pending after rollback to v155"
         );
         assert_eq!(
             current_version(&conn).expect("current version"),
