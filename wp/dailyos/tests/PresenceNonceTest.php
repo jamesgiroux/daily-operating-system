@@ -70,7 +70,7 @@ final class DailyOS_PresenceNonceTest extends TestCase {
 	}
 
 	/**
-	 * claim_version must be a JSON integer, not a coercible string.
+	 * Claim_version must be a JSON integer, not a coercible string.
 	 */
 	public function test_issue_presence_nonce_rejects_string_claim_version(): void {
 		$GLOBALS['dailyos_test_is_user_logged_in'] = true;
@@ -175,11 +175,15 @@ final class DailyOS_PresenceNonceTest extends TestCase {
 
 		return new class( $params ) {
 			/**
+			 * Constructor.
+			 *
 			 * @param array<string, mixed> $params Request params.
 			 */
 			public function __construct( private array $params ) {}
 
 			/**
+			 * Return request params.
+			 *
 			 * @return array<string, mixed> Request params.
 			 */
 			public function get_json_params(): array {
@@ -196,7 +200,7 @@ final class DailyOS_PresenceNonceTest extends TestCase {
 			'dailyos_wp_bridge_session_key',
 			static function (): array {
 				return [
-					'hmac_key'   => str_repeat( "", 32 ),
+					'hmac_key'   => str_repeat( chr( 0 ), 32 ),
 					'session_id' => 'surface-session-id',
 				];
 			},

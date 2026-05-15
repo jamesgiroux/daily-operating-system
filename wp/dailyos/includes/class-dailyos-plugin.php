@@ -348,7 +348,7 @@ final class DailyOS_Plugin {
 			return new \WP_Error( 'dailyos_nonce_unauthenticated', __( 'Sign in before requesting a DailyOS nonce.', 'dailyos' ), [ 'status' => 401 ] );
 		}
 
-		$post_id = self::post_id_from_request( $request );
+		$post_id  = self::post_id_from_request( $request );
 		$can_edit = 0 < $post_id
 			? current_user_can( 'edit_post', $post_id )
 			: current_user_can( 'edit_posts' );
