@@ -356,24 +356,10 @@ fn generated_by_invocation_id(ctx: &ServiceContext<'_>, composition: &Compositio
         .unwrap_or_else(|| composition.generated_by.as_str().to_string())
 }
 
-#[cfg(test)]
-fn empty_composition(id: &str, version: u64, generated_at: DateTime<Utc>) -> Composition {
-    Composition {
-        id: CompositionDocId::new(id),
-        kind: CompositionKind::EntityPage,
-        subject: None,
-        sections: Vec::new(),
-        salience: Default::default(),
-        generated_at,
-        generated_by: AbilityRef::new("test_composer"),
-        metadata: CompositionMetadata {
-            schema_version: SchemaVersion(1),
-            generated_at,
-            composition_version: CompositionVersion::new(version),
-            generated_by: "test_composer".to_string(),
-        },
-    }
-}
+// Composition::empty is invoked directly at each test call site — a local
+// wrapper helper would re-introduce a return-type signature that the
+// substrate-authorship lint flags (ADR-0130 §1). Substrate authorship stays
+// inside abilities-runtime.
 
 #[cfg(test)]
 mod tests {
@@ -410,7 +396,7 @@ mod tests {
         let proposal = CompositionProposal {
             composition_id: CompositionDocId::new("composition-1"),
             expected_composition_version: 0,
-            composition: empty_composition("composition-1", 99, clock.now()),
+            composition: Composition::empty(CompositionDocId::new("composition-1"), CompositionVersion::new(99), clock.now()),
         };
         let committed = commit_composition(&ctx, &db, proposal).expect("bootstrap composition");
         assert_eq!(committed.composition_version, 1);
@@ -419,7 +405,7 @@ mod tests {
         let stale = CompositionProposal {
             composition_id: CompositionDocId::new("composition-1"),
             expected_composition_version: 0,
-            composition: empty_composition("composition-1", 1, clock.now()),
+            composition: Composition::empty(CompositionDocId::new("composition-1"), CompositionVersion::new(1), clock.now()),
         };
         let error = commit_composition(&ctx, &db, stale).expect_err("stale version rejected");
         assert!(matches!(
@@ -443,7 +429,7 @@ mod tests {
         let proposal = CompositionProposal {
             composition_id: CompositionDocId::new("composition-events"),
             expected_composition_version: 0,
-            composition: empty_composition("composition-events", 0, clock.now()),
+            composition: Composition::empty(CompositionDocId::new("composition-events"), CompositionVersion::new(0), clock.now()),
         };
         commit_composition(&ctx, &db, proposal).expect("commit composition");
 

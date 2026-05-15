@@ -629,6 +629,40 @@ impl Composition {
         }
     }
 
+    /// Construct an empty `Composition` (no sections, no salience, no
+    /// subject) at a specific version + timestamp. Substrate chokepoint
+    /// callers (e.g. `commit_composition`) use this to materialize the
+    /// initial shell before any ability fills it in; fixture/test code
+    /// uses it to seed deterministic composition rows.
+    ///
+    /// This is the *only* `pub` constructor on `Composition` — all
+    /// substantive composition construction still flows through the
+    /// `pub(crate) new(...)` path inside `abilities-runtime` per ADR-0130
+    /// §1. `empty` is a constrained surface (id + version + timestamp
+    /// only) that can't smuggle authored content across the substrate
+    /// boundary.
+    pub fn empty(
+        id: CompositionDocId,
+        version: CompositionVersion,
+        generated_at: DateTime<Utc>,
+    ) -> Self {
+        Self {
+            id,
+            kind: CompositionKind::EntityPage,
+            subject: None,
+            sections: Vec::new(),
+            salience: Salience::default(),
+            generated_at,
+            generated_by: AbilityRef::new("test_composer"),
+            metadata: CompositionMetadata {
+                schema_version: SchemaVersion(1),
+                generated_at,
+                composition_version: version,
+                generated_by: "test_composer".to_string(),
+            },
+        }
+    }
+
     /// Iterate every block in the composition in stable order.
     pub fn blocks(&self) -> impl Iterator<Item = &Block> {
         self.sections

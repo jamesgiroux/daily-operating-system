@@ -72,24 +72,10 @@ fn risk_claim(ctx: &ServiceContext<'_>, account_id: &str) -> ClaimProposal {
     }
 }
 
-fn empty_composition(id: &str, version: u64, clock: &FixedClock) -> Composition {
-    let generated_at = clock.now();
-    Composition {
-        id: CompositionDocId::new(id),
-        kind: CompositionKind::EntityPage,
-        subject: None,
-        sections: Vec::new(),
-        salience: Default::default(),
-        generated_at,
-        generated_by: AbilityRef::new("test_composer"),
-        metadata: CompositionMetadata {
-            schema_version: SchemaVersion(1),
-            generated_at,
-            composition_version: CompositionVersion::new(version),
-            generated_by: "test_composer".to_string(),
-        },
-    }
-}
+// Composition::empty is invoked directly at each call site below — a local
+// wrapper helper would re-introduce a return-type signature that the
+// substrate-authorship lint at scripts/check_composition_authorship.sh
+// flags (ADR-0130 §1). Substrate authorship stays inside abilities-runtime.
 
 #[test]
 fn dos567_fresh_claim_insert_gets_version_one_and_outbox_event() {
@@ -143,7 +129,7 @@ fn dos567_composition_commit_assigns_versions_and_rejects_stale() {
     let bootstrap = CompositionProposal {
         composition_id: CompositionDocId::new("comp-dos567"),
         expected_composition_version: 0,
-        composition: empty_composition("comp-dos567", 41, &clock),
+        composition: Composition::empty(CompositionDocId::new("comp-dos567"), CompositionVersion::new(41), clock.now()),
     };
     let committed = commit_composition(&ctx, db, bootstrap).expect("bootstrap composition");
     assert_eq!(committed.composition_version, 1);
@@ -152,7 +138,7 @@ fn dos567_composition_commit_assigns_versions_and_rejects_stale() {
     let stale = CompositionProposal {
         composition_id: CompositionDocId::new("comp-dos567"),
         expected_composition_version: 0,
-        composition: empty_composition("comp-dos567", 1, &clock),
+        composition: Composition::empty(CompositionDocId::new("comp-dos567"), CompositionVersion::new(1), clock.now()),
     };
     let error = commit_composition(&ctx, db, stale).expect_err("stale composition rejected");
     assert!(matches!(
@@ -167,7 +153,7 @@ fn dos567_composition_commit_assigns_versions_and_rejects_stale() {
     let next = CompositionProposal {
         composition_id: CompositionDocId::new("comp-dos567"),
         expected_composition_version: 1,
-        composition: empty_composition("comp-dos567", 1, &clock),
+        composition: Composition::empty(CompositionDocId::new("comp-dos567"), CompositionVersion::new(1), clock.now()),
     };
     let committed = commit_composition(&ctx, db, next).expect("second composition commit");
     assert_eq!(committed.composition_version, 2);
@@ -202,7 +188,7 @@ fn dos567_doctor_accepts_clean_claim_and_composition_watermarks() {
         CompositionProposal {
             composition_id: CompositionDocId::new("comp-doctor"),
             expected_composition_version: 0,
-            composition: empty_composition("comp-doctor", 0, &clock),
+            composition: Composition::empty(CompositionDocId::new("comp-doctor"), CompositionVersion::new(0), clock.now()),
         },
     )
     .expect("commit composition");
