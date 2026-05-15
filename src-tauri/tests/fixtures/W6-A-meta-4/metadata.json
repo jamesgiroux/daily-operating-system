@@ -1,0 +1,25 @@
+{
+  "scenario_id": "empty",
+  "invariant": "get_daily_readiness returns an explicit no-meetings empty state when the requested day has no meetings or claims.",
+  "expected_render_policy": "empty-state",
+  "surfaces_exercised": [
+    "get_daily_readiness"
+  ],
+  "source_lifecycle_refs": [],
+  "anonymization_cert": "synthetic",
+  "retention_policy": "permanent",
+  "prompt_fingerprint_baseline": "no-provider-get-daily-readiness-empty",
+  "prompt_template_version": null,
+  "completion_text_hash": null,
+  "trust_factors_dominant": [
+    "claim_absence",
+    "meeting_absence"
+  ],
+  "pass_fail_definition": "PASS = get_daily_readiness returns no meetings, no focus items, and the no_meetings empty state for 2026-05-15.",
+  "fixture_design_notes": {
+    "state_sql": "Defines meetings and claims tables and intentionally leaves them empty.",
+    "inputs": "Daily readiness request for the empty day.",
+    "expected_output": "No meetings, focus items, or overnight changes.",
+    "expected_provenance": "No source attribution because no meetings or claim-backed fields exist."
+  }
+}

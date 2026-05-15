@@ -1,0 +1,19 @@
+{
+  "ability_name": "list_open_loops",
+  "input_json": {
+    "schema_version": 1,
+    "entity_type": "account",
+    "entity_id": "account-meta-10-example"
+  },
+  "actor": "user",
+  "mode": "evaluate",
+  "dry_run": false,
+  "surface_inputs": {
+    "extract_commitments": {
+      "source_ids": [
+        "source-meta-10-transcript",
+        "source-meta-10-email"
+      ]
+    }
+  }
+}

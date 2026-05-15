@@ -1,0 +1,54 @@
+{
+  "provenance": {
+    "subject": {
+      "kind": "account",
+      "id": "account-meta-10-example"
+    },
+    "sources": [
+      {
+        "source_id": "source-meta-10-transcript",
+        "claim_id": "claim-meta-10-transcript-commitment",
+        "data_source": "meeting_transcript",
+        "source_asof": "2026-05-14T18:00:00Z",
+        "observed_at": "2026-05-14T18:05:00Z",
+        "trust_band": "use_with_caution",
+        "trust_caveats": [
+          "unresolved_contradiction"
+        ]
+      },
+      {
+        "source_id": "source-meta-10-email",
+        "claim_id": "claim-meta-10-email-no-commitment",
+        "data_source": "email",
+        "source_asof": "2026-05-15T09:00:00Z",
+        "observed_at": "2026-05-15T09:05:00Z",
+        "trust_band": "use_with_caution",
+        "trust_caveats": [
+          "unresolved_contradiction"
+        ]
+      }
+    ],
+    "warnings": [
+      {
+        "unresolved_contradiction": {
+          "primary_claim_id": "claim-meta-10-transcript-commitment",
+          "contradicting_claim_id": "claim-meta-10-email-no-commitment"
+        }
+      }
+    ],
+    "field_attribution": {
+      "/loops/0": {
+        "claim_id": "claim-meta-10-transcript-commitment",
+        "source_id": "source-meta-10-transcript",
+        "trust_band": "use_with_caution"
+      },
+      "/conflicts/0": {
+        "claim_ids": [
+          "claim-meta-10-transcript-commitment",
+          "claim-meta-10-email-no-commitment"
+        ],
+        "trust_band": "use_with_caution"
+      }
+    }
+  }
+}

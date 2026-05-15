@@ -1,0 +1,25 @@
+{
+  "scenario_id": "empty",
+  "invariant": "list_open_loops and commitment extraction return explicit empty arrays for a workspace with no open-loop substrate.",
+  "expected_render_policy": "empty-state",
+  "surfaces_exercised": [
+    "list_open_loops_extract_commitments"
+  ],
+  "source_lifecycle_refs": [],
+  "anonymization_cert": "synthetic",
+  "retention_policy": "permanent",
+  "prompt_fingerprint_baseline": "no-provider-list-open-loops-extract-commitments-empty",
+  "prompt_template_version": null,
+  "completion_text_hash": null,
+  "trust_factors_dominant": [
+    "claim_absence",
+    "workspace_scope"
+  ],
+  "pass_fail_definition": "PASS = the ability returns zero open loops and zero extracted commitments for the empty workspace.",
+  "fixture_design_notes": {
+    "state_sql": "Defines the claim table and intentionally inserts zero open-loop or commitment rows.",
+    "inputs": "Workspace-scope list_open_loops call.",
+    "expected_output": "Empty loops and extracted_commitments arrays.",
+    "expected_provenance": "No attribution because no source rows exist."
+  }
+}

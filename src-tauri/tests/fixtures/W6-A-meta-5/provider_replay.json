@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "provider": "replay",
+  "model": "replay",
+  "temperature": 0,
+  "seed": 600005,
+  "fixtures": [
+    {
+      "canonical_prompt_hash": "w6a-meta-5-detect-risk-shift-happy",
+      "completion": "{\"summary\":\"Risk is increasing because the account reported lower adoption and escalated implementation concerns.\",\"confidence\":0.78,\"source_refs\":[\"claim-meta-5-degrading\"],\"indicators\":[{\"label\":\"Adoption trend\",\"direction\":\"increasing\",\"severity\":0.72,\"rationale\":\"Recent account note says adoption is slipping.\",\"source_refs\":[\"claim-meta-5-degrading\"]}],\"claim_draft\":{\"claim_type\":\"risk_shift\",\"text\":\"Risk is increasing for account-meta-5-example.\",\"direction\":\"increasing\",\"confidence\":0.78,\"source_refs\":[\"claim-meta-5-degrading\"]}}"
+    }
+  ]
+}

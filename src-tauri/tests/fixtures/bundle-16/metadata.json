@@ -1,0 +1,42 @@
+{
+  "bundle": 16,
+  "scenario_id": "ambiguous-identity-primary-context",
+  "invariant": "Subject selection must encode primary, secondary, ambiguous, and user-confirmed states before rendering. Ambiguous candidates cannot become confident primary context; direct evidence outranks inherited evidence; user-confirmed primary subject survives classifier re-enrichment attempts.",
+  "expected_render_policy": "ambiguous-or-confirmation-request",
+  "surfaces_exercised": [
+    "prepare_meeting",
+    "get_entity_context",
+    "get_daily_readiness"
+  ],
+  "source_lifecycle_refs": [
+    "source-b16-same-domain-twins",
+    "source-b16-parent-child-account",
+    "source-b16-similar-project-names",
+    "source-b16-same-name-people",
+    "source-b16-recurring-series-subject-change",
+    "source-b16-email-thread-two-customers",
+    "source-b16-linear-title-internal-work",
+    "source-b16-user-confirmed-override-attempt"
+  ],
+  "anonymization_cert": "synthetic",
+  "retention_policy": "permanent",
+  "prompt_fingerprint_baseline": "bundle-16-v1-synthetic-fingerprint",
+  "prompt_template_version": "1.0.0",
+  "completion_text_hash": "0ad4cf80b229632668bb3f127f8ba6e9f4c3ee9db0eaf4ff6f7274457fce9fd1",
+  "trust_factors_dominant": [
+    "subject_selection_confidence",
+    "direct_evidence_precedence",
+    "inheritance_reason",
+    "user_feedback_override_durability"
+  ],
+  "pass_fail_definition": "PASS = all eight DOS-291 scenarios are present; ambiguous evidence yields the explicit ambiguous state and blocks confident primary context; direct child/current evidence beats inherited parent/series evidence in entity-linker output; user-confirmed primary subject remains in linked_entities_raw after a rejected classifier override attempt recorded in entity_linking_evaluations; prepare_meeting and get_entity_context carry subject-selection provenance. FAIL = any ambiguous candidate renders as confident primary context, inherited evidence wins over stronger direct evidence, the user-confirmed row changes, the rejected override is not auditable, or bundle-16 is not mandatory.",
+  "fixture_design_notes": {
+    "state_sql": "Seeds a bundle16_scenarios registry with the eight stable DOS-291 scenario IDs plus linked_entities_raw/entity_linking_evaluations substrate rows. linked_entities_raw source='user' is the actual schema substitute for a user_confirmed_subjects row.",
+    "schema_substitution": "No user_confirmed_subjects or classifier_override_attempts table exists in migrations or services/claims.rs. The closest actual schema is linked_entities_raw for confirmed primary links and entity_linking_evaluations.evidence_json for rejected classifier attempts.",
+    "provider_replay": "Includes attempted confident primary-subject talking points keyed by each ambiguous scenario ID that must not render as confident primary context.",
+    "external_replay": "Pins domain, parent-child, thread, Linear title, and recurring-series evidence used by subject selection.",
+    "expected_output": "Stores explicit subject-selection states and render policies for prepare_meeting, get_entity_context, and get_daily_readiness.",
+    "expected_provenance": "Asserts ADR-0105 subject-selection provenance: chosen subject_ref, alternatives, evidence, confidence margin, decision rule, and source_asof.",
+    "expected_state": "Asserts the linked_entities_raw user-confirmed primary row is unchanged and the entity_linking_evaluations override-attempt substitute is rejected."
+  }
+}

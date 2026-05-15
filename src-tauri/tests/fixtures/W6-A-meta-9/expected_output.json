@@ -1,0 +1,16 @@
+{
+  "scenario_id": "stale",
+  "ability": "list_open_loops_extract_commitments",
+  "result": {
+    "loops": [],
+    "excluded_commitments": [
+      {
+        "claim_id": "claim-meta-9-expired-commitment",
+        "reason": "commitment_ttl_expired",
+        "expires_at": "2026-05-01T00:00:00Z",
+        "trust_band": "needs_verification"
+      }
+    ],
+    "schema_version": 1
+  }
+}

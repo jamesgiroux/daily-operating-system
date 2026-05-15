@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "fixtures": [
+    {
+      "source_id": "source-meta-7-support",
+      "kind": "support_note",
+      "source_asof": "2026-05-15T09:00:00Z",
+      "observed_at": "2026-05-15T09:05:00Z"
+    },
+    {
+      "source_id": "source-meta-7-email",
+      "kind": "email_thread",
+      "source_asof": "2026-05-15T09:30:00Z",
+      "observed_at": "2026-05-15T09:35:00Z"
+    }
+  ]
+}

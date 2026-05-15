@@ -1,0 +1,48 @@
+{
+  "bundle": 17,
+  "scenario_id": "source-lifecycle-actor-provenance",
+  "invariant": "Source lifecycle, actor visibility, and sensitivity policy jointly govern trust, provenance rendering, operational channels, and customer-facing output eligibility.",
+  "expected_render_policy": "degrade-mask-suppress-or-show-summary",
+  "surfaces_exercised": [
+    "callouts",
+    "prep_outputs",
+    "mcp_responses",
+    "tauri_renders",
+    "signal_payloads",
+    "telemetry",
+    "eval_fixtures",
+    "replay",
+    "error_logs"
+  ],
+  "source_lifecycle_refs": [
+    "source-b17-google-disconnected",
+    "source-b17-slack-revoked",
+    "source-b17-gong-expired",
+    "source-b17-zendesk-revoked",
+    "source-b17-glean-restricted",
+    "source-b17-stale-downstream",
+    "source-b17-active-baseline",
+    "source-b17-internal-note"
+  ],
+  "anonymization_cert": "synthetic",
+  "retention_policy": "fixture-synthetic",
+  "prompt_fingerprint_baseline": "bundle-17-v1-synthetic-fingerprint",
+  "prompt_template_version": "1.0.0",
+  "completion_text_hash": "b17e0ff17ce0b17e0ff17ce0b17e0ff17ce0b17e0ff17ce0b17e0ff17ce0b17e0",
+  "trust_factors_dominant": [
+    "source_lifecycle",
+    "actor_restriction",
+    "sensitivity",
+    "freshness",
+    "provenance_redaction"
+  ],
+  "pass_fail_definition": "PASS = bundle-17 is mandatory; active, unavailable, revoked, expired, restricted, and stale source states are substrate-backed; downstream source_asof beats fresh wrapper fetch time; Tauri and MCP render through shared actor/surface policy; every RenderPolicyChannel::all() channel rejects revoked or restricted source detail; redaction keeps safe source class, lifecycle state, timestamp posture, and reason; logs and telemetry stay low-detail; internal-only content never becomes customer-facing text. FAIL = any restricted, revoked, stale, or internal-only detail leaks through a channel, MCP detail bypasses actor filtering, a new channel is unclassified, or fixture data is not synthetic.",
+  "fixture_design_notes": {
+    "state_sql": "Seeds one synthetic account, one synthetic meeting, source lifecycle rows, channel policy rows, and claims for disconnected Google, revoked Slack/Gong/Zendesk, restricted Glean downstream, stale downstream object behind fresh wrapper fetch, and an internal-only note near a public suggestion.",
+    "provider_replay": "Includes attempted unsafe public suggestions from internal-only and revoked sources so tests assert rejection instead of absence by omission.",
+    "external_replay": "Pins wrapper fetch time versus downstream object source_asof for Clay/Glean and actor visibility for Tauri user versus MCP agent.",
+    "expected_output": "Stores the channel sweep oracle keyed by RenderPolicyChannel::all() names and safe surface outputs.",
+    "expected_provenance": "Stores useful redaction summary, masked provenance shape, actor scope contract, and forbidden detail tokens.",
+    "expected_state": "Asserts source lifecycle state, invalidation/degradation, trust bands, redaction, and no-leak outcomes."
+  }
+}

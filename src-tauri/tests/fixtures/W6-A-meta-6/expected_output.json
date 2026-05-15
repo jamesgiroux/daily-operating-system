@@ -1,0 +1,23 @@
+{
+  "scenario_id": "stale",
+  "ability": "detect_risk_shift",
+  "result": {
+    "schema_version": 1,
+    "envelope": {
+      "trust": "untrusted",
+      "payload": {
+        "subject": {
+          "kind": "account",
+          "id": "account-meta-6-example"
+        },
+        "direction": "insufficient_evidence",
+        "summary": "Champion silence is stale and should be treated as insufficient current evidence.",
+        "confidence": 0.42,
+        "source_claim_ids": [
+          "claim-meta-6-champion-silence"
+        ],
+        "trust_band": "needs_verification"
+      }
+    }
+  }
+}

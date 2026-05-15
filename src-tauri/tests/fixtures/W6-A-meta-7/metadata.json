@@ -1,0 +1,32 @@
+{
+  "scenario_id": "contradiction",
+  "invariant": "detect_risk_shift renders contradicting fresh risk signals as mixed with caution rather than choosing an unqualified winner.",
+  "expected_render_policy": "warning",
+  "surfaces_exercised": [
+    "detect_risk_shift"
+  ],
+  "source_lifecycle_refs": [
+    "source-meta-7-support",
+    "source-meta-7-email",
+    "claim-meta-7-support-risk",
+    "claim-meta-7-email-stable",
+    "contradiction-meta-7-risk"
+  ],
+  "anonymization_cert": "synthetic",
+  "retention_policy": "permanent",
+  "prompt_fingerprint_baseline": "w6a-meta-7-detect-risk-shift-contradiction",
+  "prompt_template_version": "1.0.0",
+  "completion_text_hash": "75f750b1ee860bf24bd2e2b19ca07ba5e43d0d01ccef4f47dd6871c918d7c271",
+  "trust_factors_dominant": [
+    "contradiction",
+    "source_attribution",
+    "untrusted_synthesis"
+  ],
+  "pass_fail_definition": "PASS = detect_risk_shift returns mixed risk with both contradictory claim ids and an unresolved contradiction warning.",
+  "fixture_design_notes": {
+    "state_sql": "Seeds one account, two fresh contested risk claims, and one unresolved contradiction edge.",
+    "provider_replay": "Pins mixed risk with both source claim refs.",
+    "expected_output": "No unqualified increasing or stable direction wins.",
+    "expected_provenance": "Both source claims appear in attribution and contradiction warnings."
+  }
+}

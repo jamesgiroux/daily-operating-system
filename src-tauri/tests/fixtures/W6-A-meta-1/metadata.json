@@ -1,0 +1,25 @@
+{
+  "scenario_id": "empty",
+  "invariant": "get_entity_context returns an explicit empty result when the subject exists but has zero claims.",
+  "expected_render_policy": "empty-state",
+  "surfaces_exercised": [
+    "get_entity_context"
+  ],
+  "source_lifecycle_refs": [],
+  "anonymization_cert": "synthetic",
+  "retention_policy": "permanent",
+  "prompt_fingerprint_baseline": "no-provider-get-entity-context-empty",
+  "prompt_template_version": null,
+  "completion_text_hash": null,
+  "trust_factors_dominant": [
+    "subject_fit",
+    "claim_absence"
+  ],
+  "pass_fail_definition": "PASS = get_entity_context returns an empty claims list for account-meta-1-example without fabricating context.",
+  "fixture_design_notes": {
+    "state_sql": "Defines entity and claim tables, inserts the synthetic subject, and intentionally inserts zero claims.",
+    "inputs": "Standard account get_entity_context request for the synthetic subject.",
+    "expected_output": "Empty result with an explicit zero_claims_for_subject reason.",
+    "expected_provenance": "No sources or field attribution because no claim-backed data exists."
+  }
+}

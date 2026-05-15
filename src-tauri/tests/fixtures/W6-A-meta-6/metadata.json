@@ -1,0 +1,29 @@
+{
+  "scenario_id": "stale",
+  "invariant": "detect_risk_shift treats old champion silence as stale evidence rather than fresh current risk.",
+  "expected_render_policy": "warning",
+  "surfaces_exercised": [
+    "detect_risk_shift"
+  ],
+  "source_lifecycle_refs": [
+    "source-meta-6-email",
+    "claim-meta-6-champion-silence"
+  ],
+  "anonymization_cert": "synthetic",
+  "retention_policy": "permanent",
+  "prompt_fingerprint_baseline": "w6a-meta-6-detect-risk-shift-stale",
+  "prompt_template_version": "1.0.0",
+  "completion_text_hash": "8b5ac3c684bede1d50568c9cb78da2e778fc28b3876381a31e2be6de9ac43df8",
+  "trust_factors_dominant": [
+    "freshness",
+    "source_asof",
+    "untrusted_synthesis"
+  ],
+  "pass_fail_definition": "PASS = detect_risk_shift returns insufficient_evidence with a stale-source warning for claim-meta-6-champion-silence.",
+  "fixture_design_notes": {
+    "state_sql": "Seeds one account and one stale champion engagement risk claim.",
+    "provider_replay": "Pins an insufficient-evidence synthesis instead of fresh current risk.",
+    "expected_output": "Risk direction is insufficient_evidence and trust is needs_verification.",
+    "expected_provenance": "The stale source_asof warning is explicit."
+  }
+}

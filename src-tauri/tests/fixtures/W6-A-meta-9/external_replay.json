@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "fixtures": [
+    {
+      "source_id": "source-meta-9-transcript",
+      "kind": "meeting_transcript",
+      "source_asof": "2026-04-01T16:00:00Z",
+      "observed_at": "2026-04-01T16:05:00Z"
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "scenario_id": "happy",
+  "invariant": "get_daily_readiness renders a typical day with one current meeting and one claim-backed focus item.",
+  "expected_render_policy": "show",
+  "surfaces_exercised": [
+    "get_daily_readiness"
+  ],
+  "source_lifecycle_refs": [
+    "source-meta-3-calendar",
+    "claim-meta-3-renewal-ready"
+  ],
+  "anonymization_cert": "synthetic",
+  "retention_policy": "permanent",
+  "prompt_fingerprint_baseline": "no-provider-get-daily-readiness-happy",
+  "prompt_template_version": null,
+  "completion_text_hash": null,
+  "trust_factors_dominant": [
+    "freshness",
+    "source_attribution",
+    "subject_fit"
+  ],
+  "pass_fail_definition": "PASS = get_daily_readiness returns the single meeting and claim-backed focus item with likely_current provenance.",
+  "fixture_design_notes": {
+    "state_sql": "Seeds one synthetic meeting, one linked account, and one fresh current-state claim.",
+    "external_replay": "Pins the calendar event source_asof used by the focus item.",
+    "expected_output": "Daily readiness contains exactly one meeting and one focus item.",
+    "expected_provenance": "The focus item is field-attributed to the calendar-backed claim."
+  }
+}

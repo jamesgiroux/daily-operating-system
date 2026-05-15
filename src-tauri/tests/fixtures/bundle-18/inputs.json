@@ -1,0 +1,29 @@
+{
+  "ability_name": "prepare_meeting",
+  "input_json": {
+    "schema_version": 1,
+    "meeting_id": "meeting-b18-sync-refresh",
+    "depth": 2,
+    "include_open_loops": true,
+    "surface_inputs": {
+      "get_entity_context": {
+        "schema_version": 2,
+        "entity_type": "account",
+        "entity_id": "account-b18-example",
+        "depth": "standard"
+      },
+      "get_daily_readiness": {
+        "schema_version": 1,
+        "workspace_id": "workspace-b18-example",
+        "date": "2026-05-15"
+      },
+      "extract_commitments": {
+        "schema_version": 1,
+        "meeting_id": "meeting-b18-sync-refresh"
+      }
+    }
+  },
+  "actor": "user",
+  "mode": "evaluate",
+  "dry_run": false
+}

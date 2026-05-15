@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "fixtures": [],
+  "subject_selection_sources": [
+    {
+      "scenario_id": "same-domain-twins",
+      "source_id": "source-b16-same-domain-twins",
+      "provider": "crm",
+      "source_asof": "2026-05-15T09:00:00Z",
+      "observed_at": "2026-05-15T09:05:00Z",
+      "evidence": "shared.example.com maps to two active account records with equal confidence."
+    },
+    {
+      "scenario_id": "parent-child-account",
+      "source_id": "source-b16-parent-child-account",
+      "provider": "calendar",
+      "source_asof": "2026-05-15T09:10:00Z",
+      "observed_at": "2026-05-15T09:11:00Z",
+      "evidence": "Current attendee identity belongs to the child account; parent match is inherited."
+    },
+    {
+      "scenario_id": "similar-project-names",
+      "source_id": "source-b16-similar-project-names",
+      "provider": "linear",
+      "source_asof": "2026-05-15T09:20:00Z",
+      "observed_at": "2026-05-15T09:21:00Z",
+      "evidence": "Two project names share the Phoenix prefix under one account."
+    },
+    {
+      "scenario_id": "same-name-people",
+      "source_id": "source-b16-same-name-people",
+      "provider": "calendar",
+      "source_asof": "2026-05-15T09:30:00Z",
+      "observed_at": "2026-05-15T09:31:00Z",
+      "evidence": "Two people share the same first name and similar title."
+    },
+    {
+      "scenario_id": "recurring-series-subject-change",
+      "source_id": "source-b16-recurring-series-subject-change",
+      "provider": "calendar",
+      "source_asof": "2026-05-15T09:40:00Z",
+      "observed_at": "2026-05-15T09:41:00Z",
+      "evidence": "Historical series link points to Account A; current attendee domain points to Account B."
+    },
+    {
+      "scenario_id": "email-thread-two-customers",
+      "source_id": "source-b16-email-thread-two-customers",
+      "provider": "email",
+      "source_asof": "2026-05-15T09:50:00Z",
+      "observed_at": "2026-05-15T09:51:00Z",
+      "evidence": "One email thread includes Account Thread A and Account Thread B references."
+    },
+    {
+      "scenario_id": "linear-title-internal-work",
+      "source_id": "source-b16-linear-title-internal-work",
+      "provider": "linear",
+      "source_asof": "2026-05-15T10:00:00Z",
+      "observed_at": "2026-05-15T10:01:00Z",
+      "evidence": "Linear title mentions Account Linear Example but project metadata marks the issue internal platform work."
+    },
+    {
+      "scenario_id": "user-confirmed-override-attempt",
+      "source_id": "source-b16-user-confirmed-override-attempt",
+      "provider": "user",
+      "source_asof": "2026-05-15T10:10:00Z",
+      "observed_at": "2026-05-15T10:11:00Z",
+      "evidence": "User-confirmed linked_entities_raw primary row takes precedence over classifier confidence."
+    }
+  ]
+}

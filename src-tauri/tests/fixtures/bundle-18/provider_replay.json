@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "provider": "replay",
+  "model": "replay",
+  "temperature": 0,
+  "seed": 180293,
+  "fixtures": [
+    {
+      "canonical_prompt_hash": "bundle-18-v1-synthetic-fingerprint",
+      "completion": "{\n  \"topics\": [\n    {\n      \"title\": \"Review the preserved user agenda before discussing generated account risks\",\n      \"detail\": \"The user-authored agenda, notes, and dismissals remain authoritative while refresh results are degraded.\",\n      \"source_claim_ids\": [\"claim-b18-user-correction-current\", \"claim-b18-generation-current\"]\n    }\n  ],\n  \"attendee_context\": [],\n  \"open_loops\": [],\n  \"what_changed_since_last\": [],\n  \"suggested_outcomes\": []\n}"
+    }
+  ],
+  "attempted_concurrent_enrichment": {
+    "scenario_id": "user-correction-vs-concurrent-enrichment",
+    "source_claim_id": "claim-b18-user-correction-current",
+    "attempted_text": "Generated enrichment tries to restore the old implementation summary.",
+    "expected_policy": "reject_because_user_correction_wins"
+  },
+  "older_generation_retry": {
+    "scenario_id": "older-generation-retry-rejected",
+    "claim_id": "claim-b18-generation-current",
+    "attempted_generation": 6,
+    "current_generation": 7,
+    "expected_policy": "reject_stale_generation"
+  },
+  "eval_replay": {
+    "scenario_id": "eval-determinism-canonical-equality",
+    "clock": "2026-05-15T12:18:00Z",
+    "seed": 180293,
+    "provider_key": "bundle-18-v1-synthetic-fingerprint"
+  }
+}

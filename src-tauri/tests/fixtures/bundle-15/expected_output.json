@@ -1,0 +1,502 @@
+{
+  "scenario_id": "cross-surface-consistency",
+  "subjects": {
+    "account": {
+      "entity_type": "account",
+      "entity_id": "account-b15-example",
+      "domain": "example.com"
+    },
+    "meeting": {
+      "meeting_id": "meeting-b15-example",
+      "meeting_type": "customer"
+    },
+    "project": {
+      "entity_type": "project",
+      "entity_id": "project-b15-example"
+    },
+    "person": {
+      "entity_type": "person",
+      "entity_id": "person-b15-example"
+    }
+  },
+  "surfaces": {
+    "get_entity_context": {
+      "subject": {
+        "entity_type": "account",
+        "entity_id": "account-b15-example"
+      },
+      "produced_at": "2026-05-15T12:15:00Z",
+      "entries": [
+        {
+          "claim_id": "claim-b15-account-health-current",
+          "field": "account.health_risk",
+          "current_state": {
+            "health": "at_risk",
+            "risk": "expansion_blocked"
+          },
+          "source_asof": "2026-05-15T11:00:00Z",
+          "trust_band": "likely_current",
+          "render_policy": "show"
+        },
+        {
+          "claim_id": "claim-b15-post-refresh-risk",
+          "field": "account.refresh_state",
+          "current_state": {
+            "health": "at_risk",
+            "post_refresh": true
+          },
+          "source_asof": "2026-05-15T11:05:00Z",
+          "trust_band": "likely_current",
+          "render_policy": "show"
+        }
+      ],
+      "linked_projects": [
+        {
+          "entity_id": "project-b15-example",
+          "status": "blocked_by_dependency",
+          "claim_id": "claim-b15-project-status-current",
+          "source_asof": "2026-05-15T11:00:00Z",
+          "trust_band": "likely_current"
+        }
+      ],
+      "blocked_claims": [
+        {
+          "claim_id": "claim-b15-lint-blocked-bleed",
+          "render_policy": "blocked",
+          "trust_band": "needs_verification",
+          "rendered_confidently": false
+        }
+      ]
+    },
+    "get_entity_context_project": {
+      "subject": {
+        "entity_type": "project",
+        "entity_id": "project-b15-example"
+      },
+      "produced_at": "2026-05-15T12:15:00Z",
+      "entries": [
+        {
+          "claim_id": "claim-b15-project-status-current",
+          "field": "project.status",
+          "current_state": {
+            "project_status": "blocked_by_dependency"
+          },
+          "source_asof": "2026-05-15T11:00:00Z",
+          "trust_band": "likely_current",
+          "render_policy": "show"
+        }
+      ]
+    },
+    "get_entity_context_person": {
+      "subject": {
+        "entity_type": "person",
+        "entity_id": "person-b15-example"
+      },
+      "produced_at": "2026-05-15T12:15:00Z",
+      "meetings": [
+        "meeting-b15-example"
+      ],
+      "actions": [
+        {
+          "open_loop_id": "loop-b15-owner-action",
+          "claim_id": "claim-b15-person-action-current",
+          "meeting_id": "meeting-b15-example",
+          "source_asof": "2026-05-15T11:00:00Z",
+          "trust_band": "likely_current"
+        }
+      ]
+    },
+    "prepare_meeting": {
+      "meeting_id": "meeting-b15-example",
+      "produced_at": "2026-05-15T12:15:00Z",
+      "attendee_context": [
+        {
+          "entity_type": "account",
+          "entity_id": "account-b15-example",
+          "source_claim_ids": [
+            "claim-b15-account-health-current"
+          ],
+          "source_asof": "2026-05-15T11:00:00Z",
+          "trust_band": "likely_current"
+        },
+        {
+          "entity_type": "person",
+          "entity_id": "person-b15-example",
+          "source_claim_ids": [
+            "claim-b15-person-action-current"
+          ],
+          "source_asof": "2026-05-15T11:00:00Z",
+          "trust_band": "likely_current"
+        }
+      ],
+      "topics": [
+        {
+          "title": "Expansion risk needs executive alignment",
+          "health_posture": "at_risk",
+          "project_status": "blocked_by_dependency",
+          "source_claim_ids": [
+            "claim-b15-account-health-current",
+            "claim-b15-project-status-current",
+            "claim-b15-person-action-current"
+          ],
+          "source_asof": "2026-05-15T11:00:00Z",
+          "trust_band": "likely_current"
+        }
+      ],
+      "open_loops": [
+        {
+          "id": "loop-b15-owner-action",
+          "person_id": "person-b15-example",
+          "meeting_id": "meeting-b15-example",
+          "source_claim_ids": [
+            "claim-b15-person-action-current"
+          ],
+          "source_asof": "2026-05-15T11:00:00Z",
+          "trust_band": "likely_current"
+        }
+      ],
+      "blocked_claims": [
+        {
+          "claim_id": "claim-b15-lint-blocked-bleed",
+          "render_policy": "blocked",
+          "rendered_confidently": false
+        }
+      ]
+    },
+    "get_daily_readiness": {
+      "date": "2026-05-15",
+      "produced_at": "2026-05-15T12:15:00Z",
+      "readiness_checks": {
+        "eligible_meeting_count": 4,
+        "ready_meeting_count": 4,
+        "eligibility_set_id": "eligibility-b15-2026-05-15"
+      },
+      "surfaces": {
+        "account": [
+          {
+            "entity_id": "account-b15-example",
+            "source_claim_ids": [
+              "claim-b15-account-health-current"
+            ],
+            "health": "at_risk",
+            "trust_band": "likely_current",
+            "source_asof": "2026-05-15T11:00:00Z"
+          }
+        ]
+      },
+      "overnight_changes": [
+        {
+          "source_claim_ids": [
+            "claim-b15-account-health-current",
+            "claim-b15-project-status-current"
+          ],
+          "health": "at_risk",
+          "project_status": "blocked_by_dependency",
+          "source_asof": "2026-05-15T11:00:00Z",
+          "trust_band": "likely_current"
+        }
+      ],
+      "blocked_claims": [
+        {
+          "claim_id": "claim-b15-lint-blocked-bleed",
+          "render_policy": "blocked",
+          "rendered_confidently": false
+        }
+      ]
+    },
+    "dashboard": {
+      "generated_at": "2026-05-15T12:15:00Z",
+      "meeting_count": 4,
+      "ready_meeting_count": 4,
+      "eligibility_set_id": "eligibility-b15-2026-05-15",
+      "account_chips": [
+        {
+          "entity_id": "account-b15-example",
+          "health": "at_risk",
+          "trust_band": "likely_current",
+          "claim_refs": [
+            "claim-b15-account-health-current"
+          ],
+          "freshness": {
+            "source_asof": "2026-05-15T11:00:00Z"
+          }
+        }
+      ],
+      "project_chips": [
+        {
+          "entity_id": "project-b15-example",
+          "status": "blocked_by_dependency",
+          "trust_band": "likely_current",
+          "claim_refs": [
+            "claim-b15-project-status-current"
+          ],
+          "freshness": {
+            "source_asof": "2026-05-15T11:00:00Z"
+          }
+        }
+      ],
+      "claim_refs": [
+        "claim-b15-account-health-current",
+        "claim-b15-project-status-current",
+        "claim-b15-person-action-current"
+      ],
+      "blocked_claims": [
+        {
+          "claim_id": "claim-b15-lint-blocked-bleed",
+          "render_policy": "blocked",
+          "rendered_confidently": false
+        }
+      ]
+    },
+    "mcp": {
+      "ability_name": "get_entity_context",
+      "entity_id": "account-b15-example",
+      "produced_at": "2026-05-15T12:15:00Z",
+      "data": {
+        "primary_account_id": "account-b15-example",
+        "eligible_meeting_count": 4,
+        "health": "at_risk",
+        "project_status": "blocked_by_dependency",
+        "person_action_present": true
+      },
+      "provenance": {
+        "surface": "McpTool",
+        "source_claim_ids": [
+          "claim-b15-account-health-current",
+          "claim-b15-project-status-current",
+          "claim-b15-person-action-current"
+        ],
+        "source_asof": "2026-05-15T11:00:00Z",
+        "trust_band": "likely_current"
+      },
+      "redacted_fields": [
+        {
+          "field": "diagnostics.warnings",
+          "policy": "diagnostics_warnings_dropped_for_mcp",
+          "value": null
+        }
+      ],
+      "blocked_claims": [
+        {
+          "claim_id": "claim-b15-lint-blocked-bleed",
+          "render_policy": "blocked",
+          "rendered_confidently": false
+        }
+      ]
+    }
+  },
+  "project_page_surface_pinned": {
+    "project_page": {
+      "surface": "get_entity_context_project",
+      "entity_id": "project-b15-example",
+      "status": "blocked_by_dependency",
+      "claim_id": "claim-b15-project-status-current"
+    },
+    "account_page_project_section": {
+      "surface": "get_entity_context",
+      "entity_id": "project-b15-example",
+      "status": "blocked_by_dependency",
+      "claim_id": "claim-b15-project-status-current"
+    },
+    "equal": true
+  },
+  "normalized_field_level_diff_matrix": [
+    {
+      "field": "primary_account_id",
+      "get_entity_context": "account-b15-example",
+      "prepare_meeting": "account-b15-example",
+      "get_daily_readiness": "account-b15-example",
+      "dashboard_render": "account-b15-example",
+      "mcp_bridge_response": "account-b15-example",
+      "allowed_divergence": "none",
+      "equal": true
+    },
+    {
+      "field": "eligible_meeting_count",
+      "get_entity_context": "not_applicable",
+      "prepare_meeting": "not_applicable",
+      "get_daily_readiness": 4,
+      "dashboard_render": 4,
+      "mcp_bridge_response": 4,
+      "allowed_divergence": "none",
+      "equal": true
+    },
+    {
+      "field": "account_health_risk",
+      "get_entity_context": "at_risk",
+      "prepare_meeting": "at_risk",
+      "get_daily_readiness": "at_risk",
+      "dashboard_render": "at_risk",
+      "mcp_bridge_response": "at_risk",
+      "allowed_divergence": "none",
+      "equal": true
+    },
+    {
+      "field": "project_status",
+      "get_entity_context": "blocked_by_dependency",
+      "prepare_meeting": "blocked_by_dependency",
+      "get_daily_readiness": "blocked_by_dependency",
+      "dashboard_render": "blocked_by_dependency",
+      "mcp_bridge_response": "blocked_by_dependency",
+      "allowed_divergence": "none",
+      "equal": true
+    },
+    {
+      "field": "current_state_claim_id",
+      "get_entity_context": [
+        "claim-b15-account-health-current",
+        "claim-b15-project-status-current",
+        "claim-b15-person-action-current"
+      ],
+      "prepare_meeting": [
+        "claim-b15-account-health-current",
+        "claim-b15-project-status-current",
+        "claim-b15-person-action-current"
+      ],
+      "get_daily_readiness": [
+        "claim-b15-project-status-current",
+        "claim-b15-person-action-current",
+        "claim-b15-account-health-current"
+      ],
+      "dashboard_render": [
+        "claim-b15-person-action-current",
+        "claim-b15-account-health-current",
+        "claim-b15-project-status-current"
+      ],
+      "mcp_bridge_response": [
+        "claim-b15-account-health-current",
+        "claim-b15-project-status-current",
+        "claim-b15-person-action-current"
+      ],
+      "allowed_divergence": "set_equality",
+      "equal": true
+    },
+    {
+      "field": "source_asof",
+      "get_entity_context": "2026-05-15T11:00:00Z",
+      "prepare_meeting": "2026-05-15T11:00:00Z",
+      "get_daily_readiness": "2026-05-15T11:00:00Z",
+      "dashboard_render": "2026-05-15T11:00:00Z",
+      "mcp_bridge_response": "2026-05-15T11:00:00Z",
+      "allowed_divergence": "format_only",
+      "equal": true
+    },
+    {
+      "field": "produced_at_generated_at",
+      "get_entity_context": "2026-05-15T12:15:00Z",
+      "prepare_meeting": "2026-05-15T12:15:00Z",
+      "get_daily_readiness": "2026-05-15T12:15:00Z",
+      "dashboard_render": "2026-05-15T12:15:00Z",
+      "mcp_bridge_response": "2026-05-15T12:15:00Z",
+      "allowed_divergence": "format_only",
+      "equal": true
+    },
+    {
+      "field": "trust_band",
+      "get_entity_context": "likely_current",
+      "prepare_meeting": "likely_current",
+      "get_daily_readiness": "likely_current",
+      "dashboard_render": "likely_current",
+      "mcp_bridge_response": "likely_current",
+      "allowed_divergence": "none",
+      "equal": true
+    }
+  ],
+  "field_level_diffs": [],
+  "meeting_count_oracle": {
+    "eligible_meeting_ids": [
+      "meeting-b15-example",
+      "meeting-b15-secondary-1",
+      "meeting-b15-secondary-2",
+      "meeting-b15-secondary-3"
+    ],
+    "dashboard_meeting_count": 4,
+    "daily_readiness_eligible_count": 4,
+    "readiness_ready_count": 4,
+    "same_eligibility_set": true,
+    "counterexample_daily_page_5_readiness_4": {
+      "status": "would_fail",
+      "reason": "meeting_count_disagreement_without_timestamped_degraded_state"
+    }
+  },
+  "primary_entity_oracle": {
+    "meeting_id": "meeting-b15-example",
+    "primary_account_id": "account-b15-example",
+    "disagreement_counterexample": {
+      "daily_account_id": "account-b15-example",
+      "meeting_detail_account_id": "account-b15-other",
+      "status": "release_gate_failure",
+      "mandatory_bundle": "bundle-15"
+    }
+  },
+  "person_action_oracle": {
+    "person_id": "person-b15-example",
+    "meeting_id": "meeting-b15-example",
+    "action_id": "loop-b15-owner-action",
+    "person_detail_has_action": true,
+    "person_detail_has_meeting": true,
+    "prepare_meeting_uses_person_context": true,
+    "empty_person_detail_counterexample": {
+      "status": "would_fail",
+      "reason": "person_detail_missing_action_or_meeting_used_by_meeting_prep"
+    }
+  },
+  "stale_degraded_visibility": {
+    "surfaces_with_visible_timestamps": [
+      "get_entity_context",
+      "prepare_meeting",
+      "get_daily_readiness",
+      "dashboard",
+      "mcp"
+    ],
+    "lint_blocked_claim_id": "claim-b15-lint-blocked-bleed",
+    "blocked_claim_visible_as_confident_anywhere": false,
+    "pre_refresh_old_state_visible_after_refresh": false
+  },
+  "mcp_redaction_policy": {
+    "actor": "seeded-tauri-user",
+    "surface": "McpTool",
+    "fields": [
+      {
+        "field": "primary_account_id",
+        "tauri_value": "account-b15-example",
+        "mcp_value": "account-b15-example",
+        "policy": "same_value_required"
+      },
+      {
+        "field": "health",
+        "tauri_value": "at_risk",
+        "mcp_value": "at_risk",
+        "policy": "same_value_required"
+      },
+      {
+        "field": "project_status",
+        "tauri_value": "blocked_by_dependency",
+        "mcp_value": "blocked_by_dependency",
+        "policy": "same_value_required"
+      },
+      {
+        "field": "diagnostics.warnings",
+        "tauri_value": "lint-blocked bleed detail",
+        "mcp_value": null,
+        "policy": "diagnostics_warnings_dropped_for_mcp"
+      }
+    ],
+    "unexpected_divergences": []
+  },
+  "validation_lint": {
+    "rule": "cross_surface_current_state_must_match_or_degrade",
+    "bundle": 15,
+    "status": "would_fail",
+    "failure_cases": [
+      "primary_entity_disagreement",
+      "meeting_count_disagreement",
+      "account_health_risk_disagreement",
+      "project_status_disagreement",
+      "person_action_or_meeting_absent",
+      "lint_blocked_claim_rendered_confidently",
+      "mcp_tauri_unredacted_value_disagreement"
+    ],
+    "release_gate_failure": true
+  }
+}

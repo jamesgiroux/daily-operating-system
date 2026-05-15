@@ -1,0 +1,29 @@
+{
+  "scenario_id": "happy",
+  "invariant": "detect_risk_shift summarizes a fresh degrading-account signal without losing claim provenance.",
+  "expected_render_policy": "show-with-caution",
+  "surfaces_exercised": [
+    "detect_risk_shift"
+  ],
+  "source_lifecycle_refs": [
+    "source-meta-5-support",
+    "claim-meta-5-degrading"
+  ],
+  "anonymization_cert": "synthetic",
+  "retention_policy": "permanent",
+  "prompt_fingerprint_baseline": "w6a-meta-5-detect-risk-shift-happy",
+  "prompt_template_version": "1.0.0",
+  "completion_text_hash": "f55046d0b27038b80151c13abf8799cfba25938936f48fc0144e2f072c258789",
+  "trust_factors_dominant": [
+    "freshness",
+    "source_attribution",
+    "untrusted_synthesis"
+  ],
+  "pass_fail_definition": "PASS = detect_risk_shift returns increasing risk for account-meta-5-example with claim-meta-5-degrading as the accepted source.",
+  "fixture_design_notes": {
+    "state_sql": "Seeds one account and one fresh risk_signal claim.",
+    "provider_replay": "Pins the minimum increasing-risk synthesis payload.",
+    "expected_output": "Risk direction is increasing and remains inside an untrusted envelope.",
+    "expected_provenance": "Summary attribution points back to the support source claim."
+  }
+}

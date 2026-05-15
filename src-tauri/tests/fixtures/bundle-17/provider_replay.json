@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "provider": "replay",
+  "model": "replay",
+  "temperature": 0,
+  "seed": 170292,
+  "fixtures": [
+    {
+      "canonical_prompt_hash": "bundle-17-v1-synthetic-fingerprint",
+      "completion": "{\n  \"topics\": [\n    {\n      \"title\": \"Confirm current lifecycle-safe status\",\n      \"detail\": \"Use only active or safe-summary evidence for account-b17-example.\",\n      \"source_claim_ids\": [\"claim-b17-active-baseline\"]\n    }\n  ],\n  \"attendee_context\": [],\n  \"open_loops\": [],\n  \"what_changed_since_last\": [],\n  \"suggested_outcomes\": []\n}"
+    }
+  ],
+  "attempted_unsafe_public_suggestions": [
+    {
+      "candidate_id": "candidate-b17-internal-note-public",
+      "source_claim_id": "claim-b17-internal-only-public-risk",
+      "source_lifecycle_state": "active",
+      "sensitivity": "internal",
+      "text": "Unsafe public wording from the internal-only note.",
+      "expected_policy": "reject_internal_only"
+    },
+    {
+      "candidate_id": "candidate-b17-revoked-source-public",
+      "source_claim_id": "claim-b17-zendesk-revoked",
+      "source_lifecycle_state": "revoked",
+      "sensitivity": "confidential",
+      "text": "Unsafe public wording from revoked source detail.",
+      "expected_policy": "reject_revoked_source"
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "provenance": {
+    "workspace_id": "workspace-meta-example",
+    "date": "2026-05-15",
+    "sources": [
+      {
+        "source_id": "source-meta-3-calendar",
+        "claim_id": "claim-meta-3-renewal-ready",
+        "data_source": "calendar",
+        "source_asof": "2026-05-15T09:00:00Z",
+        "observed_at": "2026-05-15T09:05:00Z",
+        "trust_band": "likely_current",
+        "trust_caveats": []
+      }
+    ],
+    "warnings": [],
+    "field_attribution": {
+      "/focus_items/0": {
+        "claim_id": "claim-meta-3-renewal-ready",
+        "source_id": "source-meta-3-calendar",
+        "trust_band": "likely_current"
+      }
+    },
+    "child_composition": [
+      {
+        "parent": "get_daily_readiness",
+        "child": "prepare_meeting",
+        "meeting_id": "meeting-meta-3-example"
+      }
+    ]
+  }
+}

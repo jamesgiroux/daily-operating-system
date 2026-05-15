@@ -1,0 +1,152 @@
+{
+  "provenance": {
+    "subject": {
+      "kind": "account",
+      "id": "account-stale-example"
+    },
+    "sources": [
+      {
+        "source_id": "source-b14-old-downstream",
+        "claim_id": "claim-b14-source-asof-independent",
+        "data_source": "glean",
+        "source_asof": "2025-11-15T10:00:00Z",
+        "observed_at": "2026-05-14T09:00:00Z",
+        "source_age_days": 181,
+        "trust_band": "needs_verification",
+        "trust_caveats": [
+          "source_asof_stale_despite_recent_observed_at"
+        ]
+      },
+      {
+        "source_id": "source-b14-contradiction-old",
+        "claim_id": "claim-b14-contradiction-old-happy",
+        "data_source": "google",
+        "source_asof": "2026-04-01T14:00:00Z",
+        "observed_at": "2026-04-01T14:05:00Z",
+        "trust_band": "use_with_caution",
+        "trust_caveats": [
+          "unresolved_contradiction"
+        ]
+      },
+      {
+        "source_id": "source-b14-contradiction-fresh",
+        "claim_id": "claim-b14-contradiction-fresh-risk",
+        "data_source": "support",
+        "source_asof": "2026-05-14T15:00:00Z",
+        "observed_at": "2026-05-14T15:05:00Z",
+        "trust_band": "use_with_caution",
+        "trust_caveats": [
+          "unresolved_contradiction"
+        ]
+      },
+      {
+        "source_id": "source-b14-superseded-open-risk",
+        "claim_id": "claim-b14-superseded-open-risk",
+        "data_source": "support",
+        "source_asof": "2025-11-15T10:00:00Z",
+        "observed_at": "2025-11-15T10:05:00Z",
+        "trust_band": "needs_verification",
+        "trust_caveats": [
+          "superseded"
+        ],
+        "rendered_current": false
+      },
+      {
+        "source_id": "source-b14-fresh-resolved-risk",
+        "claim_id": "claim-b14-current-resolved-risk",
+        "data_source": "support",
+        "source_asof": "2026-05-14T15:00:00Z",
+        "observed_at": "2026-05-14T15:05:00Z",
+        "trust_band": "likely_current",
+        "trust_caveats": []
+      },
+      {
+        "source_id": "source-b14-feedback-old-title",
+        "claim_id": "claim-b14-feedback-only-old-title",
+        "data_source": "user",
+        "source_asof": "2026-02-01T10:00:00Z",
+        "observed_at": "2026-02-01T10:00:00Z",
+        "trust_band": "needs_verification",
+        "trust_caveats": [
+          "user_marked_outdated"
+        ],
+        "rendered_current": false
+      },
+      {
+        "source_id": "source-b14-historical-case-study",
+        "claim_id": "claim-b14-historical-case-study",
+        "data_source": "glean",
+        "source_asof": "2025-08-20T10:00:00Z",
+        "observed_at": "2026-05-13T10:00:00Z",
+        "trust_band": "likely_current",
+        "trust_caveats": [
+          "historical_only"
+        ],
+        "rendered_current": false
+      }
+    ],
+    "warnings": [
+      {
+        "stale_source_asof": {
+          "claim_id": "claim-b14-source-asof-independent",
+          "source_asof": "2025-11-15T10:00:00Z",
+          "observed_at": "2026-05-14T09:00:00Z"
+        }
+      },
+      {
+        "unresolved_contradiction": {
+          "primary_claim_id": "claim-b14-contradiction-old-happy",
+          "contradicting_claim_id": "claim-b14-contradiction-fresh-risk"
+        }
+      },
+      {
+        "superseded_current_claim": {
+          "claim_id": "claim-b14-superseded-open-risk",
+          "superseded_by": "claim-b14-current-resolved-risk"
+        }
+      },
+      {
+        "user_marked_outdated": {
+          "claim_id": "claim-b14-feedback-only-old-title",
+          "render_policy": "HiddenFromCurrent"
+        }
+      }
+    ],
+    "warning_posture": "show_current_state_with_stale_and_contradiction_caveats",
+    "field_attribution": {
+      "/current_state": {
+        "claim_id": "claim-b14-current-resolved-risk",
+        "source_id": "source-b14-fresh-resolved-risk",
+        "trust_band": "likely_current"
+      },
+      "/timestamped_disagreement/stakeholder.sentiment": {
+        "claim_ids": [
+          "claim-b14-contradiction-old-happy",
+          "claim-b14-contradiction-fresh-risk"
+        ],
+        "trust_band": "use_with_caution"
+      },
+      "/historical_context/0": {
+        "claim_id": "claim-b14-historical-case-study",
+        "temporal_scope": "point_in_time"
+      }
+    },
+    "child_composition": [
+      {
+        "parent": "prepare_meeting",
+        "child": "get_entity_context",
+        "subject_id": "account-stale-example"
+      },
+      {
+        "parent": "get_daily_readiness",
+        "child": "prepare_meeting",
+        "meeting_id": "meeting-stale-example"
+      },
+      {
+        "parent": "get_daily_readiness",
+        "child": "get_entity_context",
+        "subject_id": "account-stale-example"
+      }
+    ]
+  }
+}

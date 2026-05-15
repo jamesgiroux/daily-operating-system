@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "fixtures": [
+    {
+      "source_id": "source-meta-5-support",
+      "kind": "support_note",
+      "source_asof": "2026-05-14T18:00:00Z",
+      "observed_at": "2026-05-14T18:05:00Z"
+    }
+  ]
+}

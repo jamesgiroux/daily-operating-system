@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "provider": "replay",
+  "model": "replay",
+  "temperature": 0,
+  "seed": 140289,
+  "fixtures": [
+    {
+      "canonical_prompt_hash": "bundle-14-v1-synthetic-fingerprint",
+      "completion": "{\n  \"topics\": [\n    {\n      \"title\": \"Press on the open implementation risk\",\n      \"detail\": \"Ask whether the six-month-old implementation escalation is still active.\",\n      \"source_claim_ids\": [\"claim-b14-superseded-open-risk\"]\n    }\n  ],\n  \"attendee_context\": [],\n  \"open_loops\": [],\n  \"what_changed_since_last\": [],\n  \"suggested_outcomes\": []\n}"
+    }
+  ],
+  "attempted_stale_current_talking_point": {
+    "source_claim_id": "claim-b14-superseded-open-risk",
+    "text": "Ask whether the six-month-old implementation escalation is still active.",
+    "expected_policy": "reject_or_timestamp_qualify"
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "provenance": {
+    "subject": {
+      "kind": "account",
+      "id": "account-meta-7-example"
+    },
+    "sources": [
+      {
+        "source_id": "source-meta-7-support",
+        "claim_id": "claim-meta-7-support-risk",
+        "data_source": "support",
+        "source_asof": "2026-05-15T09:00:00Z",
+        "observed_at": "2026-05-15T09:05:00Z",
+        "trust_band": "use_with_caution",
+        "trust_caveats": [
+          "unresolved_contradiction"
+        ]
+      },
+      {
+        "source_id": "source-meta-7-email",
+        "claim_id": "claim-meta-7-email-stable",
+        "data_source": "email",
+        "source_asof": "2026-05-15T09:30:00Z",
+        "observed_at": "2026-05-15T09:35:00Z",
+        "trust_band": "use_with_caution",
+        "trust_caveats": [
+          "unresolved_contradiction"
+        ]
+      }
+    ],
+    "warnings": [
+      {
+        "unresolved_contradiction": {
+          "primary_claim_id": "claim-meta-7-support-risk",
+          "contradicting_claim_id": "claim-meta-7-email-stable"
+        }
+      }
+    ],
+    "field_attribution": {
+      "/envelope/payload/summary": {
+        "claim_ids": [
+          "claim-meta-7-support-risk",
+          "claim-meta-7-email-stable"
+        ],
+        "trust_band": "use_with_caution"
+      }
+    }
+  }
+}

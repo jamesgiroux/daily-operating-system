@@ -1,0 +1,25 @@
+{
+  "scenario_id": "empty",
+  "invariant": "prepare_meeting returns an explicit empty preparation shell when the meeting exists but no attendee, entity, claim, or loop context exists.",
+  "expected_render_policy": "empty-state",
+  "surfaces_exercised": [
+    "prepare_meeting"
+  ],
+  "source_lifecycle_refs": [],
+  "anonymization_cert": "synthetic",
+  "retention_policy": "permanent",
+  "prompt_fingerprint_baseline": "w6a-meta-2-empty-prepare-meeting",
+  "prompt_template_version": "1.0.0",
+  "completion_text_hash": "e9e16823f541c752b3833d2b341445855b665838bfdbc35bf3cb7934bef17de0",
+  "trust_factors_dominant": [
+    "claim_absence",
+    "provider_boundary"
+  ],
+  "pass_fail_definition": "PASS = prepare_meeting returns no topics, context, loops, changes, or outcomes for meeting-meta-2-example.",
+  "fixture_design_notes": {
+    "state_sql": "Defines meeting and relationship tables, inserts one synthetic meeting, and intentionally leaves context tables empty.",
+    "provider_replay": "Pins an empty provider completion so the provider boundary cannot invent context.",
+    "expected_output": "Empty meeting preparation arrays with a meeting_has_zero_context reason.",
+    "expected_provenance": "No source or child composition because no claim-backed context exists."
+  }
+}

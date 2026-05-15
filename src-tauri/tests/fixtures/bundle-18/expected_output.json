@@ -1,0 +1,110 @@
+{
+  "scenario_id": "sync-refresh-concurrency-partial-failure",
+  "subjects": {
+    "account": {
+      "entity_type": "account",
+      "entity_id": "account-b18-example"
+    },
+    "meeting": {
+      "meeting_id": "meeting-b18-sync-refresh"
+    }
+  },
+  "scenarios": {
+    "user-correction-vs-concurrent-enrichment": {
+      "claim_id": "claim-b18-user-correction-current",
+      "winner": "user_authored",
+      "current_generation": 4,
+      "attempted_generation": 3,
+      "enrichment_status": "rejected",
+      "preserved_text": "User corrected the implementation summary to say the account wants a written agenda before renewal planning."
+    },
+    "older-generation-retry-rejected": {
+      "claim_id": "claim-b18-generation-current",
+      "generation": 7,
+      "attempted_generation": 6,
+      "rejection_reason": "stale_generation_rejected",
+      "persisted_claim_row_unchanged": true
+    },
+    "refresh-preserves-agenda-notes-dismissals": {
+      "meeting_id": "meeting-b18-sync-refresh",
+      "preserved_user_layer_rows": {
+        "agenda": [
+          "agenda-b18-preserved"
+        ],
+        "notes": [
+          "note-b18-preserved"
+        ],
+        "dismissals": [
+          "dismissal-b18-preserved"
+        ]
+      },
+      "all_three_required": true
+    },
+    "child-failure-parent-partial-warning": {
+      "parent_ability": "get_daily_readiness",
+      "parent_render_state": "degraded",
+      "child_ability": "get_entity_context",
+      "child_status": "failed_optional",
+      "warning_enum": "OptionalComposedReadFailed",
+      "silent_complete": false
+    },
+    "offline-mode-stale-age-field": {
+      "offline_mode": true,
+      "warning_class": "OfflineStale",
+      "stale_age_hours": 49,
+      "source_id": "source-b18-offline-stale"
+    },
+    "signal-coalescing-preserves-invalidations": {
+      "coalesced_job_id": "invalidation-b18-coalesced",
+      "raw_signal_count": 2,
+      "invalidated_claim_ids": [
+        "claim-b18-coalesced-invalidated"
+      ],
+      "dropped_invalidations": []
+    },
+    "duplicate-refresh-single-claim-row": {
+      "dedup_key": "b18:duplicate-refresh:account-b18-example:risk",
+      "claim_id": "claim-b18-duplicate-refresh-canonical",
+      "claim_count": 1,
+      "commitment_count": 1,
+      "refresh_jobs": [
+        "refresh-b18-duplicate-a",
+        "refresh-b18-duplicate-b"
+      ]
+    },
+    "eval-determinism-canonical-equality": {
+      "clock": "2026-05-15T12:18:00Z",
+      "seed": 180293,
+      "provider_replay_key": "bundle-18-v1-synthetic-fingerprint",
+      "run_a": {
+        "surface": "prepare_meeting",
+        "scenario_id": "eval-determinism-canonical-equality",
+        "source_claim_ids": [
+          "claim-b18-user-correction-current",
+          "claim-b18-generation-current"
+        ],
+        "result": {
+          "status": "degraded",
+          "offline": true
+        }
+      },
+      "run_b": {
+        "scenario_id": "eval-determinism-canonical-equality",
+        "result": {
+          "offline": true,
+          "status": "degraded"
+        },
+        "source_claim_ids": [
+          "claim-b18-user-correction-current",
+          "claim-b18-generation-current"
+        ],
+        "surface": "prepare_meeting"
+      }
+    }
+  },
+  "validation_lint": {
+    "rule": "dos293_sync_refresh_concurrency_partial_failure_requires_substrate_assertions",
+    "release_gate_failure": true,
+    "failure_case": "output_absence_without_generation_user_layer_warning_or_idempotency_assertion"
+  }
+}

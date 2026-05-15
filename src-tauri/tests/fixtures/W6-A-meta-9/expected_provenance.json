@@ -1,0 +1,31 @@
+{
+  "provenance": {
+    "subject": {
+      "kind": "account",
+      "id": "account-meta-9-example"
+    },
+    "sources": [
+      {
+        "source_id": "source-meta-9-transcript",
+        "claim_id": "claim-meta-9-expired-commitment",
+        "data_source": "meeting_transcript",
+        "source_asof": "2026-04-01T16:00:00Z",
+        "observed_at": "2026-04-01T16:05:00Z",
+        "trust_band": "needs_verification",
+        "trust_caveats": [
+          "commitment_ttl_expired"
+        ],
+        "rendered_current": false
+      }
+    ],
+    "warnings": [
+      {
+        "expired_commitment": {
+          "claim_id": "claim-meta-9-expired-commitment",
+          "expires_at": "2026-05-01T00:00:00Z"
+        }
+      }
+    ],
+    "field_attribution": {}
+  }
+}

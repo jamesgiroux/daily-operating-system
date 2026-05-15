@@ -1,0 +1,13 @@
+{
+  "scenario_id": "empty",
+  "ability": "prepare_meeting",
+  "meeting_id": "meeting-meta-2-example",
+  "result": {
+    "topics": [],
+    "attendee_context": [],
+    "open_loops": [],
+    "what_changed_since_last": [],
+    "suggested_outcomes": [],
+    "empty_state": "meeting_has_zero_context"
+  }
+}

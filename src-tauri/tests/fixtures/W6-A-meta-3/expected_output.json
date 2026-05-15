@@ -1,0 +1,32 @@
+{
+  "scenario_id": "happy",
+  "ability": "get_daily_readiness",
+  "date": "2026-05-15",
+  "result": {
+    "meetings": [
+      {
+        "meeting_id": "meeting-meta-3-example",
+        "title": "Weekly Account Review",
+        "start_time": "2026-05-15T15:00:00Z",
+        "primary_subject": {
+          "kind": "account",
+          "id": "account-meta-3-example"
+        },
+        "source_claim_ids": [
+          "claim-meta-3-renewal-ready"
+        ],
+        "trust_band": "likely_current"
+      }
+    ],
+    "focus_items": [
+      {
+        "text": "The account is ready for a renewal check-in today.",
+        "source_claim_ids": [
+          "claim-meta-3-renewal-ready"
+        ],
+        "trust_band": "likely_current"
+      }
+    ],
+    "empty_state": null
+  }
+}

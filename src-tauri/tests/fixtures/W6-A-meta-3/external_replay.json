@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "fixtures": [
+    {
+      "source_id": "source-meta-3-calendar",
+      "kind": "calendar_event",
+      "source_asof": "2026-05-15T09:00:00Z",
+      "observed_at": "2026-05-15T09:05:00Z"
+    }
+  ]
+}

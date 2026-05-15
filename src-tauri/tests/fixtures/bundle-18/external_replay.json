@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "fixtures": [],
+  "offline_mode": {
+    "scenario_id": "offline-mode-stale-age-field",
+    "source_id": "source-b18-offline-stale",
+    "source_asof": "2026-05-13T11:18:00Z",
+    "observed_at": "2026-05-15T12:18:00Z",
+    "stale_age_hours": 49,
+    "expected_warning_class": "OfflineStale"
+  },
+  "partial_child_read": {
+    "scenario_id": "child-failure-parent-partial-warning",
+    "parent_ability": "get_daily_readiness",
+    "child_ability": "get_entity_context",
+    "composition_id": "daily-readiness:child:get-entity-context:account-b18-example",
+    "expected_warning_enum": "OptionalComposedReadFailed"
+  },
+  "signal_coalescing": {
+    "scenario_id": "signal-coalescing-preserves-invalidations",
+    "signal_ids": [
+      "signal-b18-coalesce-a",
+      "signal-b18-coalesce-b"
+    ],
+    "coalescing_key": "claim_recompute:account:account-b18-example:get_entity_context",
+    "invalidated_claim_ids": [
+      "claim-b18-coalesced-invalidated"
+    ],
+    "dropped_invalidations": []
+  },
+  "duplicate_refresh": {
+    "scenario_id": "duplicate-refresh-single-claim-row",
+    "refresh_job_ids": [
+      "refresh-b18-duplicate-a",
+      "refresh-b18-duplicate-b"
+    ],
+    "dedup_key": "b18:duplicate-refresh:account-b18-example:risk",
+    "expected_claim_count": 1,
+    "expected_commitment_count": 1
+  }
+}

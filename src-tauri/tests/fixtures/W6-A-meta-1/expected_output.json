@@ -1,0 +1,15 @@
+{
+  "scenario_id": "empty",
+  "ability": "get_entity_context",
+  "subject": {
+    "entity_type": "account",
+    "entity_id": "account-meta-1-example"
+  },
+  "result": {
+    "claims": [],
+    "summary": null,
+    "open_loops": [],
+    "warnings": [],
+    "empty_state": "zero_claims_for_subject"
+  }
+}

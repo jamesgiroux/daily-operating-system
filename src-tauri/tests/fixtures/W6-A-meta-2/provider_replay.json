@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "provider": "replay",
+  "model": "replay",
+  "temperature": 0,
+  "seed": 600002,
+  "fixtures": [
+    {
+      "canonical_prompt_hash": "w6a-meta-2-empty-prepare-meeting",
+      "completion": "{\"topics\":[],\"attendee_context\":[],\"open_loops\":[],\"what_changed_since_last\":[],\"suggested_outcomes\":[]}"
+    }
+  ]
+}

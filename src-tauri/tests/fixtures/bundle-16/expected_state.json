@@ -1,0 +1,152 @@
+{
+  "post_action_state": {
+    "schema_substitution": {
+      "user_confirmed_subjects": "No user_confirmed_subjects table exists in migrations or services/claims.rs; linked_entities_raw source='user' and role='primary' is the actual confirmed primary-subject substrate.",
+      "classifier_override_attempts": "No classifier_override_attempts table exists; entity_linking_evaluations.evidence_json records the rejected classifier attempt."
+    },
+    "scenario_registry": [
+      "same-domain-twins",
+      "parent-child-account",
+      "similar-project-names",
+      "same-name-people",
+      "recurring-series-subject-change",
+      "email-thread-two-customers",
+      "linear-title-internal-work",
+      "user-confirmed-override-attempt"
+    ],
+    "subject_selection_state": [
+      {
+        "scenario_id": "same-domain-twins",
+        "owner_type": "meeting",
+        "owner_id": "meeting-b16-same-domain-twins",
+        "state": "ambiguous",
+        "primary_subject_ref": null,
+        "alternatives": [
+          "account-b16-domain-a",
+          "account-b16-domain-b"
+        ]
+      },
+      {
+        "scenario_id": "parent-child-account",
+        "owner_type": "meeting",
+        "owner_id": "meeting-b16-parent-child-account",
+        "state": "primary",
+        "primary_subject_ref": {
+          "kind": "account",
+          "id": "account-b16-child-example"
+        },
+        "secondary_subject_refs": [
+          {
+            "kind": "account",
+            "id": "account-b16-parent-example",
+            "inheritance_reason": "parent_account_domain_match"
+          }
+        ]
+      },
+      {
+        "scenario_id": "similar-project-names",
+        "owner_type": "meeting",
+        "owner_id": "meeting-b16-similar-project-names",
+        "state": "ambiguous",
+        "primary_subject_ref": null,
+        "alternatives": [
+          "project-b16-phoenix-alpha",
+          "project-b16-phoenix-beta"
+        ]
+      },
+      {
+        "scenario_id": "same-name-people",
+        "owner_type": "meeting",
+        "owner_id": "meeting-b16-same-name-people",
+        "state": "ambiguous",
+        "primary_subject_ref": null,
+        "alternatives": [
+          "person-b16-alex-a",
+          "person-b16-alex-b"
+        ]
+      },
+      {
+        "scenario_id": "recurring-series-subject-change",
+        "owner_type": "meeting",
+        "owner_id": "meeting-b16-recurring-current",
+        "state": "primary",
+        "primary_subject_ref": {
+          "kind": "account",
+          "id": "account-b16-recurring-b"
+        },
+        "secondary_subject_refs": [
+          {
+            "kind": "account",
+            "id": "account-b16-recurring-a",
+            "inheritance_reason": "historical_series_subject"
+          }
+        ]
+      },
+      {
+        "scenario_id": "email-thread-two-customers",
+        "owner_type": "email_thread",
+        "owner_id": "thread-b16-two-customers",
+        "state": "ambiguous",
+        "primary_subject_ref": null,
+        "alternatives": [
+          "account-b16-thread-a",
+          "account-b16-thread-b"
+        ]
+      },
+      {
+        "scenario_id": "linear-title-internal-work",
+        "owner_type": "linear_issue",
+        "owner_id": "linear-b16-internal-work",
+        "state": "unconfirmed",
+        "primary_subject_ref": null,
+        "alternatives": [
+          "account-b16-linear-title-match"
+        ]
+      },
+      {
+        "scenario_id": "user-confirmed-override-attempt",
+        "owner_type": "meeting",
+        "owner_id": "meeting-b16-user-confirmed-override-attempt",
+        "state": "primary",
+        "primary_subject_ref": {
+          "kind": "account",
+          "id": "account-b16-user-confirmed"
+        }
+      }
+    ],
+    "user_confirmed_subjects_substitute": {
+      "table": "linked_entities_raw",
+      "id": "linked:meeting:meeting-b16-user-confirmed-override-attempt:account-b16-user-confirmed",
+      "row": {
+        "owner_type": "meeting",
+        "owner_id": "meeting-b16-user-confirmed-override-attempt",
+        "entity_id": "account-b16-user-confirmed",
+        "entity_type": "account",
+        "role": "primary",
+        "source": "user",
+        "rule_id": "P1",
+        "confidence": 1,
+        "graph_version": 16
+      },
+      "unchanged_after_enrichment_cycle": true
+    },
+    "classifier_override_attempts_substitute": [
+      {
+        "table": "entity_linking_evaluations",
+        "id": 1608,
+        "attempt_id": "classifier-override-b16-user-confirmed",
+        "scenario_id": "user-confirmed-override-attempt",
+        "attempted_subject_ref": {
+          "kind": "account",
+          "id": "account-b16-classifier-attempt"
+        },
+        "preserved_subject_ref": {
+          "kind": "account",
+          "id": "account-b16-user-confirmed"
+        },
+        "rejected": true,
+        "rejection_reason": "user_confirmed_wins"
+      }
+    ]
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "fixtures": [],
+  "downstream_source_semantics": [
+    {
+      "source_id": "source-b17-stale-downstream",
+      "provider": "glean",
+      "wrapper_fetch_at": "2026-05-15T11:45:00Z",
+      "downstream_provider": "zendesk",
+      "downstream_object_id": "object-b17-zendesk-stale",
+      "downstream_source_asof": "2025-10-01T09:00:00Z",
+      "assertion": "Trust and render policy use downstream_source_asof, not wrapper_fetch_at."
+    },
+    {
+      "source_id": "source-b17-glean-restricted",
+      "provider": "glean",
+      "downstream_provider": "zendesk",
+      "downstream_object_id": "object-b17-restricted-downstream",
+      "tauri_actor_visibility": "detail_allowed",
+      "mcp_actor_visibility": "summary_only",
+      "assertion": "MCP actor cannot see downstream object identifiers even when Tauri user can."
+    }
+  ],
+  "actor_visibility": {
+    "tauri_user": {
+      "actor": "user",
+      "can_view": [
+        "source_class",
+        "safe_summary",
+        "source_asof",
+        "permitted_identifier"
+      ]
+    },
+    "mcp_agent": {
+      "actor": "agent",
+      "can_view": [
+        "source_class",
+        "lifecycle_state",
+        "redaction_reason"
+      ],
+      "cannot_view": [
+        "object-b17-restricted-downstream",
+        "internal-graph-b17-restricted",
+        "raw-attribution-b17-restricted"
+      ]
+    }
+  }
+}

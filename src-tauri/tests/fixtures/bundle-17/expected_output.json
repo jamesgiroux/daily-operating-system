@@ -1,0 +1,168 @@
+{
+  "surfaces": {
+    "callouts": {
+      "rendered": [
+        {
+          "id": "callout-b17-safe-summary",
+          "text": "Source access changed; verify before using this item.",
+          "source_claim_ids": [
+            "claim-b17-google-disconnected"
+          ],
+          "render_policy": "degraded_safe_summary"
+        }
+      ],
+      "blocked_claim_ids": [
+        "claim-b17-internal-only-public-risk",
+        "claim-b17-slack-revoked",
+        "claim-b17-zendesk-revoked"
+      ]
+    },
+    "prep_outputs": {
+      "topics": [
+        {
+          "title": "Confirm current lifecycle-safe status",
+          "source_claim_ids": [
+            "claim-b17-active-baseline"
+          ]
+        }
+      ],
+      "suggested_outcomes": [],
+      "rejected_provider_candidates": [
+        "candidate-b17-internal-note-public",
+        "candidate-b17-revoked-source-public"
+      ]
+    },
+    "mcp_responses": {
+      "default_actor": "agent",
+      "detail_actor": "agent",
+      "restricted_identifier_visible": false,
+      "internal_graph_id_visible": false,
+      "raw_attribution_visible": false,
+      "wrapper_detail_equals_actor_filtered_render": true
+    },
+    "tauri_renders": {
+      "actor": "user",
+      "restricted_source_summary_visible": true,
+      "restricted_source_detail_visible_when_authorized": true,
+      "revoked_source_detail_visible": false
+    },
+    "signal_payloads": {
+      "event": "source_lifecycle_changed",
+      "claim_ids": [
+        "claim-b17-google-disconnected",
+        "claim-b17-glean-restricted",
+        "claim-b17-stale-downstream"
+      ],
+      "safe_fields_only": true
+    },
+    "telemetry": {
+      "event": "render_policy_channel_rejection",
+      "invocation_id": "17171717-aaaa-4717-87ab-bbbbbbbbbbbb",
+      "source_class": "glean",
+      "lifecycle_state": "restricted",
+      "raw_content_visible": false
+    },
+    "eval_fixtures": {
+      "fixture_bundle": 17,
+      "expected_channel_matrix": "RenderPolicyChannel::all",
+      "raw_content_visible": false
+    },
+    "replay": {
+      "provider_replay_redacted": true,
+      "external_replay_redacted": true,
+      "raw_restricted_detail_visible": false
+    },
+    "error_logs": {
+      "message": "source detail unavailable for actor",
+      "invocation_id": "17171717-aaaa-4717-87ab-bbbbbbbbbbbb",
+      "source_class": "glean",
+      "lifecycle_state": "restricted",
+      "raw_content_visible": false
+    }
+  },
+  "render_policy_channel_matrix": [
+    {
+      "channel": "callouts",
+      "revoked_source_rejected": true,
+      "restricted_source_rejected": true,
+      "internal_only_rejected": true,
+      "safe_summary_retained": true,
+      "low_detail_only": false
+    },
+    {
+      "channel": "prep_outputs",
+      "revoked_source_rejected": true,
+      "restricted_source_rejected": true,
+      "internal_only_rejected": true,
+      "safe_summary_retained": true,
+      "low_detail_only": false
+    },
+    {
+      "channel": "mcp_responses",
+      "revoked_source_rejected": true,
+      "restricted_source_rejected": true,
+      "internal_only_rejected": true,
+      "safe_summary_retained": true,
+      "low_detail_only": false
+    },
+    {
+      "channel": "tauri_renders",
+      "revoked_source_rejected": true,
+      "restricted_source_rejected": true,
+      "internal_only_rejected": true,
+      "safe_summary_retained": true,
+      "low_detail_only": false
+    },
+    {
+      "channel": "signal_payloads",
+      "revoked_source_rejected": true,
+      "restricted_source_rejected": true,
+      "internal_only_rejected": true,
+      "safe_summary_retained": true,
+      "low_detail_only": true
+    },
+    {
+      "channel": "telemetry",
+      "revoked_source_rejected": true,
+      "restricted_source_rejected": true,
+      "internal_only_rejected": true,
+      "safe_summary_retained": true,
+      "low_detail_only": true
+    },
+    {
+      "channel": "eval_fixtures",
+      "revoked_source_rejected": true,
+      "restricted_source_rejected": true,
+      "internal_only_rejected": true,
+      "safe_summary_retained": true,
+      "low_detail_only": true
+    },
+    {
+      "channel": "replay",
+      "revoked_source_rejected": true,
+      "restricted_source_rejected": true,
+      "internal_only_rejected": true,
+      "safe_summary_retained": true,
+      "low_detail_only": true
+    },
+    {
+      "channel": "error_logs",
+      "revoked_source_rejected": true,
+      "restricted_source_rejected": true,
+      "internal_only_rejected": true,
+      "safe_summary_retained": true,
+      "low_detail_only": true
+    }
+  ],
+  "customer_facing_output": {
+    "public_suggestion_text": "Discuss current status using active evidence only.",
+    "blocked_source_claim_ids": [
+      "claim-b17-internal-only-public-risk",
+      "claim-b17-slack-revoked",
+      "claim-b17-gong-expired",
+      "claim-b17-zendesk-revoked"
+    ],
+    "contains_internal_only_note": false,
+    "contains_revoked_source_detail": false
+  }
+}

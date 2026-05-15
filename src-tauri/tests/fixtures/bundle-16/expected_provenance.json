@@ -1,0 +1,281 @@
+{
+  "provenance": {
+    "subject": {
+      "kind": "bundle",
+      "id": "ambiguous-identity-primary-context"
+    },
+    "source_asof_reachable": true,
+    "subject_selection": {
+      "same-domain-twins": {
+        "state": "ambiguous",
+        "chosen_subject_ref": null,
+        "alternatives": [
+          {
+            "kind": "account",
+            "id": "account-b16-domain-a",
+            "score": 0.81
+          },
+          {
+            "kind": "account",
+            "id": "account-b16-domain-b",
+            "score": 0.8
+          }
+        ],
+        "evidence": [
+          {
+            "source_id": "source-b16-same-domain-twins",
+            "source_asof": "2026-05-15T09:00:00Z",
+            "kind": "domain_match",
+            "weight": "direct_but_tied"
+          }
+        ],
+        "confidence_margin": 0.01,
+        "decision_rule": "ambiguous_blocks_confident_primary"
+      },
+      "parent-child-account": {
+        "state": "primary",
+        "chosen_subject_ref": {
+          "kind": "account",
+          "id": "account-b16-child-example"
+        },
+        "alternatives": [
+          {
+            "kind": "account",
+            "id": "account-b16-parent-example",
+            "inheritance_reason": "parent_account_domain_match",
+            "score": 0.7
+          }
+        ],
+        "evidence": [
+          {
+            "source_id": "source-b16-parent-child-account",
+            "source_asof": "2026-05-15T09:10:00Z",
+            "kind": "attendee_identity",
+            "score": 0.92
+          },
+          {
+            "source_id": "source-b16-parent-child-account",
+            "source_asof": "2026-05-15T09:10:00Z",
+            "kind": "inherited_parent_domain",
+            "score": 0.7
+          }
+        ],
+        "confidence_margin": 0.22,
+        "decision_rule": "direct_over_inherited"
+      },
+      "similar-project-names": {
+        "state": "ambiguous",
+        "chosen_subject_ref": null,
+        "alternatives": [
+          {
+            "kind": "project",
+            "id": "project-b16-phoenix-alpha",
+            "score": 0.78
+          },
+          {
+            "kind": "project",
+            "id": "project-b16-phoenix-beta",
+            "score": 0.77
+          }
+        ],
+        "evidence": [
+          {
+            "source_id": "source-b16-similar-project-names",
+            "source_asof": "2026-05-15T09:20:00Z",
+            "kind": "linear_title_prefix",
+            "weight": "weak"
+          }
+        ],
+        "confidence_margin": 0.01,
+        "decision_rule": "ambiguous_blocks_confident_primary"
+      },
+      "same-name-people": {
+        "state": "ambiguous",
+        "chosen_subject_ref": null,
+        "alternatives": [
+          {
+            "kind": "person",
+            "id": "person-b16-alex-a",
+            "score": 0.74
+          },
+          {
+            "kind": "person",
+            "id": "person-b16-alex-b",
+            "score": 0.73
+          }
+        ],
+        "evidence": [
+          {
+            "source_id": "source-b16-same-name-people",
+            "source_asof": "2026-05-15T09:30:00Z",
+            "kind": "name_title_similarity",
+            "weight": "weak"
+          }
+        ],
+        "confidence_margin": 0.01,
+        "decision_rule": "ambiguous_blocks_confident_primary"
+      },
+      "recurring-series-subject-change": {
+        "state": "primary",
+        "chosen_subject_ref": {
+          "kind": "account",
+          "id": "account-b16-recurring-b"
+        },
+        "alternatives": [
+          {
+            "kind": "account",
+            "id": "account-b16-recurring-a",
+            "inheritance_reason": "historical_series_subject",
+            "score": 0.68
+          }
+        ],
+        "evidence": [
+          {
+            "source_id": "source-b16-recurring-series-subject-change",
+            "source_asof": "2026-05-15T09:40:00Z",
+            "kind": "current_attendee_domain",
+            "score": 0.91
+          },
+          {
+            "source_id": "source-b16-recurring-series-subject-change",
+            "source_asof": "2026-05-01T09:40:00Z",
+            "kind": "historical_series_primary",
+            "score": 0.68
+          }
+        ],
+        "confidence_margin": 0.23,
+        "decision_rule": "current_direct_over_historical_inheritance"
+      },
+      "email-thread-two-customers": {
+        "state": "ambiguous",
+        "chosen_subject_ref": null,
+        "alternatives": [
+          {
+            "kind": "account",
+            "id": "account-b16-thread-a",
+            "score": 0.83
+          },
+          {
+            "kind": "account",
+            "id": "account-b16-thread-b",
+            "score": 0.82
+          }
+        ],
+        "evidence": [
+          {
+            "source_id": "source-b16-email-thread-two-customers",
+            "source_asof": "2026-05-15T09:50:00Z",
+            "kind": "thread_mentions_two_accounts",
+            "weight": "tied"
+          }
+        ],
+        "confidence_margin": 0.01,
+        "decision_rule": "ambiguous_blocks_confident_primary"
+      },
+      "linear-title-internal-work": {
+        "state": "unconfirmed",
+        "chosen_subject_ref": null,
+        "alternatives": [
+          {
+            "kind": "account",
+            "id": "account-b16-linear-title-match",
+            "rejection_reason": "internal_platform_work",
+            "score": 0.52
+          }
+        ],
+        "evidence": [
+          {
+            "source_id": "source-b16-linear-title-internal-work",
+            "source_asof": "2026-05-15T10:00:00Z",
+            "kind": "linear_title_match_without_customer_context",
+            "weight": "weak"
+          }
+        ],
+        "confidence_margin": 0,
+        "decision_rule": "title_match_does_not_select_customer_for_internal_work"
+      },
+      "user-confirmed-override-attempt": {
+        "state": "primary",
+        "chosen_subject_ref": {
+          "kind": "account",
+          "id": "account-b16-user-confirmed"
+        },
+        "alternatives": [
+          {
+            "kind": "account",
+            "id": "account-b16-classifier-attempt",
+            "attempted_by": "classifier",
+            "score": 0.93,
+            "rejected": true
+          }
+        ],
+        "evidence": [
+          {
+            "source_id": "source-b16-user-confirmed-override-attempt",
+            "source_asof": "2026-05-15T10:10:00Z",
+            "kind": "user_confirmed_primary",
+            "score": 1
+          },
+          {
+            "source_id": "source-b16-user-confirmed-override-attempt",
+            "source_asof": "2026-05-15T10:11:00Z",
+            "kind": "classifier_override_attempt",
+            "score": 0.93,
+            "rejected": true
+          }
+        ],
+        "confidence_margin": 0.07,
+        "decision_rule": "user_confirmed_wins"
+      }
+    },
+    "warnings": [
+      {
+        "ambiguous_subject_selection": {
+          "scenario_ids": [
+            "same-domain-twins",
+            "similar-project-names",
+            "same-name-people",
+            "email-thread-two-customers"
+          ]
+        }
+      },
+      {
+        "internal_title_match_not_primary": {
+          "scenario_id": "linear-title-internal-work"
+        }
+      },
+      {
+        "classifier_override_rejected": {
+          "scenario_id": "user-confirmed-override-attempt",
+          "preserved_row_id": "linked:meeting:meeting-b16-user-confirmed-override-attempt:account-b16-user-confirmed"
+        }
+      }
+    ],
+    "field_attribution": {
+      "/subject_selection/same-domain-twins/state": {
+        "source_id": "source-b16-same-domain-twins",
+        "decision_rule": "ambiguous_blocks_confident_primary"
+      },
+      "/subject_selection/parent-child-account/primary_subject_ref": {
+        "source_id": "source-b16-parent-child-account",
+        "decision_rule": "direct_over_inherited"
+      },
+      "/subject_selection/user-confirmed-override-attempt/primary_subject_ref": {
+        "source_id": "source-b16-user-confirmed-override-attempt",
+        "decision_rule": "user_confirmed_wins"
+      }
+    },
+    "child_composition": [
+      {
+        "parent": "prepare_meeting",
+        "child": "get_entity_context",
+        "subject_selection_required": true
+      },
+      {
+        "parent": "get_daily_readiness",
+        "child": "prepare_meeting",
+        "subject_selection_required": true
+      }
+    ]
+  }
+}

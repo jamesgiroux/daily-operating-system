@@ -1,0 +1,13 @@
+{
+  "provenance": {
+    "subject": {
+      "kind": "account",
+      "id": "account-meta-1-example"
+    },
+    "sources": [],
+    "warnings": [],
+    "field_attribution": {},
+    "trust_band": null,
+    "empty_reason": "zero_claims_for_subject"
+  }
+}
