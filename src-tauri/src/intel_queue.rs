@@ -3164,6 +3164,20 @@ fn source_reliability_for_claim(
     input: &EnrichmentInput,
     claim: &crate::db::claims::IntelligenceClaim,
 ) -> TrustInput<f64> {
+    match claim_has_projection_signature_invalid_signal(db, &claim.id) {
+        Ok(true) => {
+            return TrustInput::indeterminate(0.2, "projection_signature_invalid");
+        }
+        Ok(false) => {}
+        Err(e) => {
+            log::warn!(
+                "TrustRecompute: failed to read projection signature invalid signal for {}: {e}",
+                claim.id
+            );
+            return TrustInput::indeterminate(1.0, "projection_signature_signal_read_failed");
+        }
+    }
+
     match db.get_signal_weight(&claim.data_source, &input.entity_type, "enrichment_quality") {
         Ok(Some((alpha, beta, _))) => {
             let denom = alpha + beta;
@@ -3203,6 +3217,29 @@ fn source_reliability_for_claim(
             TrustInput::indeterminate(1.0, "source_reliability_read_failed")
         }
     }
+}
+
+fn claim_has_projection_signature_invalid_signal(
+    db: &crate::db::ActionDb,
+    claim_id: &str,
+) -> Result<bool, rusqlite::Error> {
+    db.conn_ref()
+        .query_row(
+            "SELECT EXISTS(
+                 SELECT 1
+                   FROM signal_events
+                  WHERE entity_type = ?2
+                    AND entity_id = ?1
+                    AND signal_type = ?3
+             )",
+            rusqlite::params![
+                claim_id,
+                "claim",
+                crate::services::projection_signing::PROJECTION_SIGNATURE_INVALID_SIGNAL
+            ],
+            |row| row.get::<_, i64>(0),
+        )
+        .map(|count| count != 0)
 }
 
 fn source_lifecycle_for_claim(

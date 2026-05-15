@@ -38,15 +38,21 @@ fn precedence_rank(error: &BridgeSurfaceError) -> u8 {
 
 fn tampered() -> BridgeSurfaceError {
     BridgeSurfaceError::ProjectionTampered {
-        reason: "ed25519_mismatch".to_string(),
+        projection_id: "proj-prec".to_string(),
+        signature_id: "sig-prec".to_string(),
+        key_id: "psk-prec".to_string(),
+        observed_signature_status: "signature_invalid".to_string(),
+        quarantine_id: "pq-prec".to_string(),
     }
 }
 
 fn rollback() -> BridgeSurfaceError {
     BridgeSurfaceError::ProjectionVersionRollback {
-        expected: 5,
-        current: 12,
-        surface: "account_overview".to_string(),
+        projection_id: "proj-prec".to_string(),
+        signed_composition_version: 5,
+        ledger_composition_version: 12,
+        signed_claim_version: Some(3),
+        ledger_claim_version: Some(4),
     }
 }
 

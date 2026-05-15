@@ -249,13 +249,21 @@ impl Serialize for AbilityResponseJson {
 #[derive(Debug, Clone, PartialEq, Error, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BridgeSurfaceError {
-    #[error("projection tampered: {reason}")]
-    ProjectionTampered { reason: String },
-    #[error("projection version rollback")]
+    #[error("projection tampered: {projection_id}")]
+    ProjectionTampered {
+        projection_id: String,
+        signature_id: String,
+        key_id: String,
+        observed_signature_status: String,
+        quarantine_id: String,
+    },
+    #[error("projection version rollback: {projection_id}")]
     ProjectionVersionRollback {
-        expected: u64,
-        current: u64,
-        surface: String,
+        projection_id: String,
+        signed_composition_version: u64,
+        ledger_composition_version: u64,
+        signed_claim_version: Option<u64>,
+        ledger_claim_version: Option<u64>,
     },
     #[error("missing expected claim version for {claim_id}")]
     MissingExpectedClaimVersion { claim_id: String },

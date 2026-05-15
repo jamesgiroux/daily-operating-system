@@ -1398,6 +1398,89 @@ async fn surface_event_log_response(
     )
 }
 
+async fn surface_keyring_response(
+    runtime: &EndpointRuntime,
+    request_id: String,
+    validated: &ValidatedSurfaceSession,
+) -> Response<ResponseBody> {
+    if !surface_client_can_read_keyring(&validated.actor) {
+        if let Some(app_state) = runtime.app_state.as_ref() {
+            emit_pairing_audit_event(
+                app_state,
+                &SurfacePairingAuditEvent {
+                    event_kind: "projection_keyring_scope_denied",
+                    category: "security",
+                    actor: validated.actor.clone(),
+                    wp_user_id: validated.wp_user_id,
+                    wp_user_hash: validated.wp_user_hash.clone(),
+                    detail: json!({
+                        "surface_client_id": validated.surface_client_id,
+                        "decision": "rejected",
+                        "reason": "scope_denied"
+                    }),
+                },
+            );
+        }
+        return error_response(
+            SurfaceHttpError::from_pairing_error(SurfacePairingError::ScopeDenied)
+                .with_request_id(request_id),
+        );
+    }
+
+    let Some(app_state) = runtime.app_state.as_ref() else {
+        return error_response(SurfaceHttpError::runtime_unavailable().with_request_id(request_id));
+    };
+    let runtime_anchor_id = validated.wp_site_id.clone();
+    match app_state
+        .db_read(move |db| {
+            crate::services::projection_signing::public_keyring(db, runtime_anchor_id)
+                .map_err(|error| error.to_string())
+        })
+        .await
+    {
+        Ok(keyring) => {
+            emit_pairing_audit_event(
+                app_state,
+                &SurfacePairingAuditEvent {
+                    event_kind: "projection_keyring_read",
+                    category: "data_access",
+                    actor: validated.actor.clone(),
+                    wp_user_id: validated.wp_user_id,
+                    wp_user_hash: validated.wp_user_hash.clone(),
+                    detail: json!({
+                        "surface_client_id": validated.surface_client_id,
+                        "scope_digest": validated.scope_digest,
+                        "key_count": keyring.keys.len(),
+                    }),
+                },
+            );
+            json_response(
+                StatusCode::OK,
+                json!({
+                    "ok": true,
+                    "request_id": request_id,
+                    "endpoint_version": SURFACE_ENDPOINT_VERSION,
+                    "keyring": keyring,
+                }),
+            )
+        }
+        Err(error) => error_response(
+            SurfaceHttpError::from_pairing_error(SurfacePairingError::Write(error))
+                .with_request_id(request_id),
+        ),
+    }
+}
+
+fn surface_client_can_read_keyring(actor: &Actor) -> bool {
+    match actor {
+        Actor::SurfaceClient { scopes, .. } => scopes
+            .iter()
+            .any(|scope| scope.as_str().starts_with("read.") || scope.as_str() == "manage.pairing"),
+        Actor::Admin | Actor::System => true,
+        Actor::Agent | Actor::User => false,
+    }
+}
+
 async fn signed_route_response(
     request: &SurfaceHttpRequest,
     runtime: &EndpointRuntime,
@@ -1439,6 +1522,9 @@ async fn signed_route_response(
     }
 
     match (request.method.clone(), request.uri.path()) {
+        (Method::GET, "/v1/surface/keyring") => {
+            surface_keyring_response(runtime, request_id, &validated).await
+        }
         (Method::GET, "/v1/pairing/status") => json_response(
             StatusCode::OK,
             json!({

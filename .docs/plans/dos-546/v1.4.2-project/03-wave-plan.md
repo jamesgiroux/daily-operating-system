@@ -421,6 +421,7 @@ Six agents. **Internal staging:** W4-B (concurrency contract impl) gates the pro
 
 * **Spec:** Issue `Tamper detection contract: projection signing + verification`.
 * **Depends on:** W4-B merged (signatures include `composition_version`).
+* **Migration slots reserved:** v173-v176 (v171 W3 and v172 W4-B are already claimed on dev).
 * **Files owned:** `abilities-runtime/src/tamper.rs` (signing + verification), `projection_ledger` DB table + migration (per artifact 03 §"runtime ledger"; the `projection_signatures` working name is retired), quarantine state on projection rows, tamper-event audit emission, `GET /v1/surface/keyring` route handler for SurfaceClient public-key distribution.
 * **Don't touch:** concurrency (W4-B owns); fallback (W4-D); nonce (W4-E); block code (W4-A).
 * **Done when:** Ed25519 signatures issued on every projection write per artifact 03 (no HMAC, no algorithm negotiation); offline verification on read detects out-of-band edits; key lifecycle (unknown-key refresh, revocation, replacement-key provisioning, queued re-sign, retired-key historical verification) all implemented per artifact 03 §"Fixture C" + §"Out-of-Band Detection"; quarantine preserves tampered state; banner on render when tamper detected; negative fixtures from artifact 03 green.

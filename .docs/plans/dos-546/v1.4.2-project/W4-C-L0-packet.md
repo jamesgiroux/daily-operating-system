@@ -218,31 +218,30 @@ Canonicalization:
 
 ### §4. Migration slot reservations
 
-W4-C has exactly four migration slots: v171 through v174.
-W4-B V8 carries the V7 slot correction: W4-B at v170 and W4-C at v171-v174.
-W4-C does not claim v175.
+W4-C has exactly four migration slots: v173 through v176 for this implementation.
+Implementation note: dev already has v171 reserved by W3 and v172 reserved by W4-B, so DOS-569 uses v173-v176 as the non-overlapping block.
 
 | Slot | Migration name | Concrete schema |
 |---|---|---|
-| v171 | `171_w4c_projection_signing_keys.sql` | `projection_signing_keys`, `projection_key_status_events` |
-| v172 | `172_w4c_projection_ledger_signature.sql` | `projection_ledger`, `projection_signatures`, `projection_ledger_blocks`, `projection_ledger_block_refs` |
-| v173 | `173_w4c_projection_quarantine_state.sql` | `projection_quarantine`, `projection_ledger.quarantine_state`, quarantine indexes |
-| v174 | `174_w4c_replacement_key_provisioning.sql` | `projection_replacement_keys`, `projection_resign_queue`, retired/revoked key linkage |
+| v173 | `173_w4c_projection_signing_keys.sql` | `projection_signing_keys`, `projection_key_status_events` |
+| v174 | `174_w4c_projection_ledger_signature.sql` | `projection_ledger`, `projection_signatures`, `projection_ledger_blocks`, `projection_ledger_block_refs` |
+| v175 | `175_w4c_projection_quarantine.sql` | `projection_quarantine`, `projection_ledger.quarantine_state`, quarantine indexes |
+| v176 | `176_w4c_replacement_key_provisioning.sql` | `projection_replacement_keys`, `projection_resign_queue`, retired/revoked key linkage |
 
 Concrete table and column allocation:
 
 | Slot | Table / alteration | Required columns |
 |---|---|---|
-| v171 | `projection_signing_keys` | `key_id` PK, `public_key_b64`, `key_status` (`active`/`rotating`/`retired`/`revoked`), `created_at`, `valid_from`, `valid_until`, `retired_at`, `revoked_at`, `replacement_key_id`, `keychain_service`, `keychain_account_ref` |
-| v171 | `projection_key_status_events` | `event_id` PK, `key_id`, `previous_status`, `next_status`, `reason`, `created_at`, `actor_kind` |
-| v172 | `projection_ledger` | `projection_id` PK, `surface`, `surface_locator`, `surface_locator_hash`, `locator_status` (`live`/`tombstoned`), `dailyos_canonical_id`, `dailyos_source_runtime`, `dailyos_projection_version`, `composition_id`, `composition_version`, `current_signature_id`, `canonical_signed_payload_sha256`, `claim_watermark_sha256`, `last_verified_at`, `verification_status` |
-| v172 | `projection_signatures` | `signature_id` PK, `projection_id` FK, `key_id` FK, `signature_status` (`active`/`superseded`/`revoked`/`retired`), `alg`, `canonicalization`, `canonical_signed_payload_bytes`, `canonical_signed_payload_sha256`, `signature_bytes`, `signature_envelope_b64url`, `issued_at`, `superseded_by_signature_id`, `revoked_at`, `retired_at` |
-| v172 | `projection_ledger_blocks` | `projection_id`, `block_id`, `block_order`, `block_type`, `block_payload_sha256` |
-| v172 | `projection_ledger_block_refs` | `projection_id`, `block_id`, `claim_ref_index`, `claim_id`, `claim_version`, `field_path`, `provenance_invocation_id`, `provenance_field_path`, `scope_grant_hash` |
-| v173 | `projection_ledger` alteration | `quarantine_state` with values `none`, `suspected`, `quarantined`, `resolved`; `last_quarantine_event_at`; `quarantine_event_count` |
-| v173 | `projection_quarantine` | `quarantine_id` PK, `projection_id`, `surface`, `surface_locator_hash`, `observed_payload_hash`, `observed_signature_b64`, `expected_signature_id`, `verification_error`, `field_pointer`, `byte_range_start`, `byte_range_end`, `sanitized_observed_excerpt_hash`, `detected_by`, `detected_at`, `last_seen_at`, `seen_count`, `coalesced_until`, `status` |
-| v174 | `projection_replacement_keys` | `replacement_id` PK, `old_key_id`, `new_key_id`, `reason`, `provisioned_at`, `activated_at`, `completed_at`, `recovery_status` |
-| v174 | `projection_resign_queue` | `queue_id` PK, `projection_id`, `old_signature_id`, `old_key_id`, `new_key_id`, `status`, `attempts`, `max_attempts`, `last_error`, `last_resign_at`, `last_retampered_at`, `operator_escalated_at`, `queued_at`, `updated_at` |
+| v173 | `projection_signing_keys` | `key_id` PK, `public_key_b64`, `key_status` (`active`/`rotating`/`retired`/`revoked`), `created_at`, `valid_from`, `valid_until`, `retired_at`, `revoked_at`, `replacement_key_id`, `keychain_service`, `keychain_account_ref` |
+| v173 | `projection_key_status_events` | `event_id` PK, `key_id`, `previous_status`, `next_status`, `reason`, `created_at`, `actor_kind` |
+| v174 | `projection_ledger` | `projection_id` PK, `surface`, `surface_locator`, `surface_locator_hash`, `locator_status` (`live`/`tombstoned`), `dailyos_canonical_id`, `dailyos_source_runtime`, `dailyos_projection_version`, `composition_id`, `composition_version`, `current_signature_id`, `canonical_signed_payload_sha256`, `claim_watermark_sha256`, `last_verified_at`, `verification_status` |
+| v174 | `projection_signatures` | `signature_id` PK, `projection_id` FK, `key_id` FK, `signature_status` (`active`/`superseded`/`revoked`/`retired`), `alg`, `canonicalization`, `canonical_signed_payload_bytes`, `canonical_signed_payload_sha256`, `signature_bytes`, `signature_envelope_b64url`, `issued_at`, `superseded_by_signature_id`, `revoked_at`, `retired_at` |
+| v174 | `projection_ledger_blocks` | `projection_id`, `block_id`, `block_order`, `block_type`, `block_payload_sha256` |
+| v174 | `projection_ledger_block_refs` | `projection_id`, `block_id`, `claim_ref_index`, `claim_id`, `claim_version`, `field_path`, `provenance_invocation_id`, `provenance_field_path`, `scope_grant_hash` |
+| v175 | `projection_ledger` alteration | `quarantine_state` with values `none`, `suspected`, `quarantined`, `resolved`; `last_quarantine_event_at`; `quarantine_event_count` |
+| v175 | `projection_quarantine` | `quarantine_id` PK, `projection_id`, `surface`, `surface_locator_hash`, `observed_payload_hash`, `observed_signature_b64`, `expected_signature_id`, `verification_error`, `field_pointer`, `byte_range_start`, `byte_range_end`, `sanitized_observed_excerpt_hash`, `detected_by`, `detected_at`, `last_seen_at`, `seen_count`, `coalesced_until`, `status` |
+| v176 | `projection_replacement_keys` | `replacement_id` PK, `old_key_id`, `new_key_id`, `reason`, `provisioned_at`, `activated_at`, `completed_at`, `recovery_status` |
+| v176 | `projection_resign_queue` | `queue_id` PK, `projection_id`, `old_signature_id`, `old_key_id`, `new_key_id`, `status`, `attempts`, `max_attempts`, `last_error`, `last_resign_at`, `last_retampered_at`, `operator_escalated_at`, `queued_at`, `updated_at` |
 
 Required constraints:
 
