@@ -365,12 +365,33 @@ pub enum SurfaceNonceKeyError {
     Derive,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug)]
 pub struct NonceDigest([u8; DIGEST_BYTES]);
 
 impl NonceDigest {
     fn prefix(&self) -> String {
         hex::encode(&self.0[..8])
+    }
+}
+
+// Constant-time equality per packet §5 ("Digest comparison uses
+// constant-time equality"). HashMap lookup resolves bucket collisions
+// via PartialEq, so this path needs to be constant-time even though the
+// per-key hash short-circuits at the bucket level. Manual Hash impl
+// pairs with manual Eq per clippy::derived_hash_with_manual_eq —
+// hashing the full byte array preserves HashMap semantics.
+impl PartialEq for NonceDigest {
+    fn eq(&self, other: &Self) -> bool {
+        use subtle::ConstantTimeEq;
+        self.0.ct_eq(&other.0).into()
+    }
+}
+
+impl Eq for NonceDigest {}
+
+impl std::hash::Hash for NonceDigest {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
     }
 }
 

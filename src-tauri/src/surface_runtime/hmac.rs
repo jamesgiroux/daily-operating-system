@@ -105,7 +105,18 @@ struct SignedTransportInner {
     session_reservations: Mutex<HashSet<String>>,
     nonce_store: Mutex<NonceReplayStore>,
     session_buckets: Mutex<SessionAbuseBuckets>,
-    presence_nonce_secret: SecretBytes32,
+    // Runtime-scoped W2-B root entropy for the presence-nonce digest key
+    // (packet §5 / AC #8). Owned by `SignedTransportState` — the W2-B
+    // signing-transport substrate — and minted once at runtime
+    // construction. `services::surface_nonce` HKDF-expands this root with
+    // the `PRESENCE_NONCE_KEY_INFO` context label and `PRESENCE_NONCE_KEY_SALT`
+    // domain separator to produce the actual digest key. Pinned for the
+    // runtime lifetime; rotates only on full process restart, which
+    // discards all live nonce bindings (no live-rotation window). This
+    // root is never persisted, logged, or returned over any surface — only
+    // `presence_nonce_secret_material()` exposes the bytes in-process to
+    // the nonce service's key-derivation constructor.
+    surface_nonce_w2b_root: SecretBytes32,
 }
 
 impl Default for SignedTransportState {
@@ -117,7 +128,7 @@ impl Default for SignedTransportState {
                 session_reservations: Mutex::new(HashSet::new()),
                 nonce_store: Mutex::new(NonceReplayStore::default()),
                 session_buckets: Mutex::new(SessionAbuseBuckets::default()),
-                presence_nonce_secret: SecretBytes32(random_secret32()),
+                surface_nonce_w2b_root: SecretBytes32(random_secret32()),
             }),
         }
     }
@@ -286,8 +297,14 @@ impl SignedTransportState {
         self.inner.session_buckets.lock().buckets.clear();
     }
 
+    /// Returns the W2-B-scoped root entropy used to derive the
+    /// presence-nonce digest key. Caller MUST feed this through HKDF with
+    /// the `PRESENCE_NONCE_KEY_INFO` / `PRESENCE_NONCE_KEY_SALT` domain
+    /// separators before using as a digest key (see
+    /// `services::surface_nonce::PresenceNonceDigestKey::derive_from_w2b_secret`).
+    /// Per packet §5 / AC #8.
     pub(super) fn presence_nonce_secret_material(&self) -> [u8; 32] {
-        self.inner.presence_nonce_secret.0
+        self.inner.surface_nonce_w2b_root.0
     }
 
     pub(super) fn derive_active_session_key(&self, session_id: &str) -> Option<[u8; 32]> {
