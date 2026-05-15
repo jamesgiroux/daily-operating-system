@@ -264,6 +264,39 @@ impl SurfaceClientBridge {
         ability_name: &str,
         request_id: &str,
     ) -> Result<SurfaceClientAuthorization, SurfaceClientBridgeError> {
+        self.authorize_for_path(
+            SurfaceClientInvocationPath::SignedServer,
+            registry,
+            session,
+            ability_name,
+            request_id,
+        )
+    }
+
+    pub fn authorize_browser_direct_js(
+        &self,
+        registry: &AbilityRegistry,
+        session: &ValidatedSurfaceSession,
+        ability_name: &str,
+        request_id: &str,
+    ) -> Result<SurfaceClientAuthorization, SurfaceClientBridgeError> {
+        self.authorize_for_path(
+            SurfaceClientInvocationPath::BrowserDirectJs,
+            registry,
+            session,
+            ability_name,
+            request_id,
+        )
+    }
+
+    fn authorize_for_path(
+        &self,
+        invocation_path: SurfaceClientInvocationPath,
+        registry: &AbilityRegistry,
+        session: &ValidatedSurfaceSession,
+        ability_name: &str,
+        request_id: &str,
+    ) -> Result<SurfaceClientAuthorization, SurfaceClientBridgeError> {
         let audit_hash_secret = format!("{}:{}", session.session_id, session.site_nonce);
         let Some(descriptor) = registry
             .iter_all()
@@ -307,7 +340,21 @@ impl SurfaceClientBridge {
             );
         }
 
-        if !descriptor.policy.client_side_executable {
+        if ensure_required_scopes(session, descriptor).is_err() {
+            let request = identity_rate_limit_request(
+                session,
+                descriptor.name,
+                request_id,
+                request_class_for_descriptor(descriptor),
+                ability_class_for_descriptor(descriptor),
+                &audit_hash_secret,
+            );
+            return self
+                .reject_after_identity_rate_limit(request, SurfaceClientBridgeError::ScopeDenied);
+        }
+        if invocation_path == SurfaceClientInvocationPath::BrowserDirectJs
+            && !descriptor.policy.client_side_executable
+        {
             let request = identity_rate_limit_request(
                 session,
                 descriptor.name,
@@ -320,18 +367,6 @@ impl SurfaceClientBridge {
                 request,
                 SurfaceClientBridgeError::AbilityUnavailable,
             );
-        }
-        if ensure_required_scopes(session, descriptor).is_err() {
-            let request = identity_rate_limit_request(
-                session,
-                descriptor.name,
-                request_id,
-                request_class_for_descriptor(descriptor),
-                ability_class_for_descriptor(descriptor),
-                &audit_hash_secret,
-            );
-            return self
-                .reject_after_identity_rate_limit(request, SurfaceClientBridgeError::ScopeDenied);
         }
 
         let request_class = request_class_for_descriptor(descriptor);
@@ -397,6 +432,12 @@ impl SurfaceClientBridge {
             }
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SurfaceClientInvocationPath {
+    SignedServer,
+    BrowserDirectJs,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1455,16 +1496,74 @@ mod tests {
 
         assert!(matches!(
             bridge
-                .authorize(&registry, &session, "surface_disabled", "req_1")
+                .authorize_browser_direct_js(&registry, &session, "surface_disabled", "req_1")
                 .unwrap_err(),
             SurfaceClientBridgeError::AbilityUnavailable
         ));
         assert!(matches!(
             bridge
-                .authorize(&registry, &session, "surface_disabled", "req_2")
+                .authorize_browser_direct_js(&registry, &session, "surface_disabled", "req_2")
                 .unwrap_err(),
             SurfaceClientBridgeError::RateLimited(rejection)
                 if rejection.axis == SurfaceClientRateLimitAxis::SurfaceClient
+        ));
+    }
+
+    #[test]
+    fn signed_surface_invoke_allows_server_side_client_side_disabled_ability() {
+        let clock = FixedClock::new(Instant::now());
+        let bridge = bridge_with(test_config(), clock);
+        let mut descriptor = descriptor(
+            "dailyos/account-overview",
+            AbilityCategory::Read,
+            &["read.account_overview"],
+            None,
+        );
+        descriptor.policy.client_side_executable = false;
+        let registry =
+            AbilityRegistry::from_descriptors_unchecked_for_runtime_validation_tests(vec![
+                descriptor,
+            ]);
+        let session = session(&["read.account_overview"]);
+
+        let authorization = bridge
+            .authorize(&registry, &session, "dailyos/account-overview", "req_1")
+            .expect("signed /v1/surface/invoke path is server-side HMAC authenticated");
+
+        assert_eq!(
+            authorization.canonical_ability_name,
+            "dailyos/account-overview"
+        );
+        assert_eq!(authorization.request_class, SurfaceClientRequestClass::Read);
+    }
+
+    #[test]
+    fn required_scope_is_checked_before_client_side_executable_policy() {
+        let clock = FixedClock::new(Instant::now());
+        let bridge = bridge_with(test_config(), clock);
+        let mut descriptor = descriptor(
+            "dailyos/account-overview",
+            AbilityCategory::Read,
+            &["read.account_overview"],
+            None,
+        );
+        descriptor.policy.client_side_executable = false;
+        let registry =
+            AbilityRegistry::from_descriptors_unchecked_for_runtime_validation_tests(vec![
+                descriptor,
+            ]);
+        let session = session(&["submit.feedback"]);
+
+        assert!(matches!(
+            bridge
+                .authorize_browser_direct_js(
+                    &registry,
+                    &session,
+                    "dailyos/account-overview",
+                    "req_1"
+                )
+                .unwrap_err(),
+            SurfaceClientBridgeError::ScopeDenied
         ));
     }
 

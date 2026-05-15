@@ -119,6 +119,9 @@ jobs:
       - name: Enforce ADR-0130 substrate-owned composition authorship
         run: ./scripts/check_composition_authorship.sh
 
+      - name: Enforce account overview surface claim loading
+        run: ./scripts/check_account_overview_surface_loader.sh
+
       - name: Enforce must_use on DB mutation methods
         run: ./scripts/check_db_mutator_must_use.sh
 

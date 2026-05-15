@@ -8,7 +8,7 @@
 //!   2. ProjectionVersionRollback (W4-C ledger replay defense)
 //!   3. MidFlightMutation        (W4-B lock holder collision)
 //!   4. MissingExpectedClaimVersion (W4-B foot-gun / Mutate-w/o-version)
-//!   5. ClaimVersionOverflow     (W4-B i64::MAX defense)
+//!   5. ClaimVersionOverflow / CompositionVersionOverflow (W4-B i64::MAX defense)
 //!   6. StaleVersion             (W4-B watermark CAS miss)
 //!   7. StaleComposition         (W4-B composition watermark CAS miss)
 //!
@@ -27,7 +27,8 @@ fn precedence_rank(error: &BridgeSurfaceError) -> u8 {
         BridgeSurfaceError::ProjectionVersionRollback { .. } => 1,
         BridgeSurfaceError::MidFlightMutation { .. } => 2,
         BridgeSurfaceError::MissingExpectedClaimVersion { .. } => 3,
-        BridgeSurfaceError::ClaimVersionOverflow { .. } => 4,
+        BridgeSurfaceError::ClaimVersionOverflow { .. }
+        | BridgeSurfaceError::CompositionVersionOverflow { .. } => 4,
         BridgeSurfaceError::StaleVersion { .. } => 5,
         BridgeSurfaceError::StaleComposition { .. } => 6,
         BridgeSurfaceError::AbilityUnavailable
@@ -76,6 +77,12 @@ fn overflow() -> BridgeSurfaceError {
     }
 }
 
+fn composition_overflow() -> BridgeSurfaceError {
+    BridgeSurfaceError::CompositionVersionOverflow {
+        composition_id: "comp-prec".to_string(),
+    }
+}
+
 fn stale_claim() -> BridgeSurfaceError {
     BridgeSurfaceError::StaleVersion {
         claim_id: "claim-prec".to_string(),
@@ -120,6 +127,14 @@ fn dos567_precedence_missing_version_beats_overflow() {
     // because the caller's request is malformed before substrate state is
     // examined.
     assert!(precedence_rank(&missing_version()) < precedence_rank(&overflow()));
+}
+
+#[test]
+fn dos567_precedence_composition_overflow_matches_claim_overflow() {
+    assert_eq!(
+        precedence_rank(&composition_overflow()),
+        precedence_rank(&overflow())
+    );
 }
 
 #[test]

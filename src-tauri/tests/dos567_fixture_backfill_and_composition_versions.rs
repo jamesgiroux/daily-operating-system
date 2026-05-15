@@ -129,7 +129,11 @@ fn dos567_composition_commit_assigns_versions_and_rejects_stale() {
     let bootstrap = CompositionProposal {
         composition_id: CompositionDocId::new("comp-dos567"),
         expected_composition_version: 0,
-        composition: Composition::empty(CompositionDocId::new("comp-dos567"), CompositionVersion::new(41), clock.now()),
+        composition: Composition::empty(
+            CompositionDocId::new("comp-dos567"),
+            CompositionVersion::new(41),
+            clock.now(),
+        ),
     };
     let committed = commit_composition(&ctx, db, bootstrap).expect("bootstrap composition");
     assert_eq!(committed.composition_version, 1);
@@ -138,7 +142,11 @@ fn dos567_composition_commit_assigns_versions_and_rejects_stale() {
     let stale = CompositionProposal {
         composition_id: CompositionDocId::new("comp-dos567"),
         expected_composition_version: 0,
-        composition: Composition::empty(CompositionDocId::new("comp-dos567"), CompositionVersion::new(1), clock.now()),
+        composition: Composition::empty(
+            CompositionDocId::new("comp-dos567"),
+            CompositionVersion::new(1),
+            clock.now(),
+        ),
     };
     let error = commit_composition(&ctx, db, stale).expect_err("stale composition rejected");
     assert!(matches!(
@@ -153,7 +161,11 @@ fn dos567_composition_commit_assigns_versions_and_rejects_stale() {
     let next = CompositionProposal {
         composition_id: CompositionDocId::new("comp-dos567"),
         expected_composition_version: 1,
-        composition: Composition::empty(CompositionDocId::new("comp-dos567"), CompositionVersion::new(1), clock.now()),
+        composition: Composition::empty(
+            CompositionDocId::new("comp-dos567"),
+            CompositionVersion::new(1),
+            clock.now(),
+        ),
     };
     let committed = commit_composition(&ctx, db, next).expect("second composition commit");
     assert_eq!(committed.composition_version, 2);
@@ -188,7 +200,11 @@ fn dos567_doctor_accepts_clean_claim_and_composition_watermarks() {
         CompositionProposal {
             composition_id: CompositionDocId::new("comp-doctor"),
             expected_composition_version: 0,
-            composition: Composition::empty(CompositionDocId::new("comp-doctor"), CompositionVersion::new(0), clock.now()),
+            composition: Composition::empty(
+                CompositionDocId::new("comp-doctor"),
+                CompositionVersion::new(0),
+                clock.now(),
+            ),
         },
     )
     .expect("commit composition");

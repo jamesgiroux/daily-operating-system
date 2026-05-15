@@ -67,7 +67,10 @@ impl DailyReadinessInput {
     }
 
     #[doc(hidden)]
-    pub fn evaluate_with_context(context: DailyReadinessContext, schema_version: SchemaVersion) -> Self {
+    pub fn evaluate_with_context(
+        context: DailyReadinessContext,
+        schema_version: SchemaVersion,
+    ) -> Self {
         Self {
             workspace_id: context.workspace_scope.clone(),
             date: Some(context.date.clone()),
@@ -1295,27 +1298,30 @@ impl DailyReadinessContext {
             });
 
             let mut attendee_index = 0usize;
-            child.output.attendee_context.retain_mut(|attendee_context| {
-                let item_id =
-                    format!("prepare_meeting:{meeting_id}:attendee_context:{attendee_index}");
-                attendee_index += 1;
-                match render_prepare_attendee_for_parent_prompt(
-                    &item_id,
-                    attendee_context,
-                    &sensitivity,
-                    &render_actor,
-                ) {
-                    PromptItemDecision::Allow => true,
-                    PromptItemDecision::Private => {
-                        filtered_private += 1;
-                        false
+            child
+                .output
+                .attendee_context
+                .retain_mut(|attendee_context| {
+                    let item_id =
+                        format!("prepare_meeting:{meeting_id}:attendee_context:{attendee_index}");
+                    attendee_index += 1;
+                    match render_prepare_attendee_for_parent_prompt(
+                        &item_id,
+                        attendee_context,
+                        &sensitivity,
+                        &render_actor,
+                    ) {
+                        PromptItemDecision::Allow => true,
+                        PromptItemDecision::Private => {
+                            filtered_private += 1;
+                            false
+                        }
+                        PromptItemDecision::Revoked => {
+                            filtered_revoked += 1;
+                            false
+                        }
                     }
-                    PromptItemDecision::Revoked => {
-                        filtered_revoked += 1;
-                        false
-                    }
-                }
-            });
+                });
 
             let mut open_loop_index = 0usize;
             child.output.open_loops.retain_mut(|open_loop| {

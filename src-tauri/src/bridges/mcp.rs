@@ -918,10 +918,7 @@ CREATE TABLE accounts (
         let committed = commit_claim(
             &ctx,
             db,
-            DeterministicInsertProposal::new(
-                "claim-mcp-dismissed-context".to_string(),
-                proposal,
-            ),
+            DeterministicInsertProposal::new("claim-mcp-dismissed-context".to_string(), proposal),
         )
         .expect("commit MCP entity context claim");
 

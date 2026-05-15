@@ -69,8 +69,8 @@ fn risk_proposal(account_id: &str) -> ClaimProposal {
 }
 
 fn surface_client_with_scopes(scopes: &[&str]) -> Actor {
-    let scope_set = ScopeSet::new(scopes.iter().map(|s| SurfaceScope::new(*s)))
-        .expect("scopes non-empty");
+    let scope_set =
+        ScopeSet::new(scopes.iter().map(|s| SurfaceScope::new(*s))).expect("scopes non-empty");
     Actor::SurfaceClient {
         instance: SurfaceClientId::new("sc-scope-leak-test"),
         scopes: scope_set,
@@ -107,7 +107,10 @@ fn dos567_out_of_scope_surface_client_receives_redacted_correction() {
             scope_redacted,
             reason,
         } => {
-            assert!(claim.is_none(), "no claim body leaks to out-of-scope caller");
+            assert!(
+                claim.is_none(),
+                "no claim body leaks to out-of-scope caller"
+            );
             assert!(scope_redacted, "envelope reports redaction");
             assert_eq!(reason.as_deref(), Some("out_of_scope"));
         }
@@ -115,8 +118,8 @@ fn dos567_out_of_scope_surface_client_receives_redacted_correction() {
 
     // Sanity contrast: an in-scope caller receives the claim body.
     let in_scope_caller = surface_client_with_scopes(&["read.account_overview"]);
-    let allowed = project_claim_for_scope(db, &claim_id, &in_scope_caller)
-        .expect("in-scope projection");
+    let allowed =
+        project_claim_for_scope(db, &claim_id, &in_scope_caller).expect("in-scope projection");
     assert!(!allowed.scope_redacted);
     assert!(allowed.claim.is_some());
 }

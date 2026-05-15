@@ -284,6 +284,12 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
                 crate::abilities::registry::AbilityErrorKind::SubjectNotOwned => {
                     "SubjectNotOwned".to_string()
                 }
+                crate::abilities::registry::AbilityErrorKind::StaleComposition { .. } => {
+                    "StaleComposition".to_string()
+                }
+                crate::abilities::registry::AbilityErrorKind::CompositionVersionOverflow { .. } => {
+                    "CompositionVersionOverflow".to_string()
+                }
                 crate::abilities::registry::AbilityErrorKind::HardError(_) => "HardError".to_string(),
             }
         }

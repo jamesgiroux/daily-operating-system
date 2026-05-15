@@ -77,8 +77,8 @@ fn risk_proposal(account_id: &str) -> ClaimProposal {
 }
 
 fn surface_client_with_scopes(scopes: &[&str]) -> Actor {
-    let scope_set = ScopeSet::new(scopes.iter().map(|s| SurfaceScope::new(*s)))
-        .expect("scopes non-empty");
+    let scope_set =
+        ScopeSet::new(scopes.iter().map(|s| SurfaceScope::new(*s))).expect("scopes non-empty");
     Actor::SurfaceClient {
         instance: SurfaceClientId::new("sc-correction-ref-test"),
         scopes: scope_set,

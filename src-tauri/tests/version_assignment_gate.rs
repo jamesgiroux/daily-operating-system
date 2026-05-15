@@ -29,10 +29,7 @@ const CLAIM_VERSION_FN_ALLOWLIST: &[&str] = &[
     // walks up to the enclosing fn.
 ];
 
-const COMPOSITION_VERSION_FN_ALLOWLIST: &[&str] = &[
-    "commit_composition",
-    "commit_composition_tx",
-];
+const COMPOSITION_VERSION_FN_ALLOWLIST: &[&str] = &["commit_composition", "commit_composition_tx"];
 
 struct AssignmentVisitor<'a> {
     path: &'a Path,
@@ -116,9 +113,7 @@ fn assignment_allowed(path: &Path, field: &str, function_stack: &[String]) -> bo
     let normalized = path.to_string_lossy().replace('\\', "/");
     let path_ok = match field {
         "claim_version" => normalized.ends_with("src-tauri/src/services/claims.rs"),
-        "composition_version" => {
-            normalized.ends_with("src-tauri/src/services/compositions.rs")
-        }
+        "composition_version" => normalized.ends_with("src-tauri/src/services/compositions.rs"),
         _ => false,
     };
     if !path_ok {

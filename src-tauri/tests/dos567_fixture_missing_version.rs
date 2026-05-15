@@ -83,8 +83,8 @@ fn dos567_existing_claim_id_without_expected_version_rejected_not_silent_insert(
     let db = ActionDb::from_conn(&conn);
 
     // Bootstrap: commit a fresh claim so we have an existing claim_id to target.
-    let inserted = commit_claim(&ctx, db, risk_claim("acct-missing", None, None))
-        .expect("bootstrap insert");
+    let inserted =
+        commit_claim(&ctx, db, risk_claim("acct-missing", None, None)).expect("bootstrap insert");
     let existing_claim_id = match inserted {
         CommittedClaim::Inserted { claim } => claim.id,
         other => panic!("expected inserted bootstrap, got {other:?}"),

@@ -2,6 +2,27 @@
   "schema_version": 1,
   "abilities": [
     {
+      "name": "dailyos/account-overview",
+      "description": "",
+      "category": "read",
+      "annotations": {},
+      "wp_permission": "none",
+      "allowed_actors": [
+        "user",
+        "surface_client"
+      ],
+      "required_scopes": [
+        "read.account_overview"
+      ],
+      "mcp_exposure": "invocable",
+      "client_side_executable": false,
+      "idempotency_class": "idempotent",
+      "composition_kind": {
+        "produces_blocks": false,
+        "block_types": []
+      }
+    },
+    {
       "name": "detect_risk_shift",
       "description": "",
       "category": "transform",

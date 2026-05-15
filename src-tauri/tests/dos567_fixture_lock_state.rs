@@ -29,8 +29,7 @@ fn dos567_mutation_guard_drop_finalizes_aborted_attempt_and_emits_terminal_event
     // Reserve cursor through Tx 1, then drop the guard mid-flight (no
     // mark_completed) — simulates panic-unwind in the mutation Tx 2.
     let (cursor, mutation_id) = {
-        let guard =
-            MutationGuard::reserve(&db, "claim-drop-test", now).expect("reserve mutation");
+        let guard = MutationGuard::reserve(&db, "claim-drop-test", now).expect("reserve mutation");
         let cursor = guard.cursor().as_str().to_string();
         let mutation_id = guard.attempt().mutation_id.clone();
 

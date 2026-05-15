@@ -8,8 +8,8 @@ use crate::abilities::provenance::trust::claim_trust_band_from_score;
 use crate::abilities::provenance::{
     AbilityExecutionMode, AbilityVersion, ChunkId, ContextEntryId, DataSource, DocumentId,
     EntityId, FieldAttribution, FieldPath, GleanDownstream, MeetingId, ProvenanceBuilder,
-    ProvenanceBuilderConfig, ProvenanceWarning, SchemaVersion, SourceAttribution,
-    SourceIdentifier, SourceName, SubjectAttribution, SubjectRef,
+    ProvenanceBuilderConfig, ProvenanceWarning, SchemaVersion, SourceAttribution, SourceIdentifier,
+    SourceName, SubjectAttribution, SubjectRef,
 };
 use crate::abilities::{
     AbilityCategory, AbilityContext, AbilityError, AbilityErrorKind, AbilityResult, Actor,
@@ -411,7 +411,10 @@ fn source_json_marks_revoked(raw: Option<&str>) -> bool {
 }
 
 fn value_marks_revoked_source(value: &Value) -> bool {
-    if bool_field(value, &["source_revoked", "sourceRevoked", "primary_source_revoked"]) {
+    if bool_field(
+        value,
+        &["source_revoked", "sourceRevoked", "primary_source_revoked"],
+    ) {
         return true;
     }
     if lifecycle_field_revoked(
@@ -439,11 +442,7 @@ fn value_marks_revoked_source(value: &Value) -> bool {
         "itemSource",
     ]
     .iter()
-    .any(|key| {
-        value
-            .get(*key)
-            .is_some_and(value_marks_revoked_source)
-    })
+    .any(|key| value.get(*key).is_some_and(value_marks_revoked_source))
 }
 
 fn bool_field(value: &Value, keys: &[&str]) -> bool {

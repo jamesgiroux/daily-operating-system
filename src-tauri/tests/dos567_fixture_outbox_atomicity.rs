@@ -10,12 +10,12 @@
 //! doctor `claims_missing_outbox == 0`.
 
 use chrono::{TimeZone, Utc};
+use dailyos_lib::db::claims::{ClaimSensitivity, TemporalScope};
 use dailyos_lib::db::ActionDb;
 use dailyos_lib::doctor::inspect_watermarks;
 use dailyos_lib::migration_test_api::run_migrations;
 use dailyos_lib::services::claims::{commit_claim, ClaimProposal, CommittedClaim};
 use dailyos_lib::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
-use dailyos_lib::db::claims::{ClaimSensitivity, TemporalScope};
 use rusqlite::{params, Connection};
 
 fn fresh_full_db() -> Connection {
@@ -157,8 +157,7 @@ fn dos567_outbox_atomic_with_claim_version_advance() {
         )
         .expect("post-event-count");
     assert_eq!(
-        event_count_post,
-        event_count_pre,
+        event_count_post, event_count_pre,
         "no event row persists after rollback (orphans forbidden)"
     );
 
