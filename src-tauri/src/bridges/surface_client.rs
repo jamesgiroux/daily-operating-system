@@ -2,6 +2,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use http::Method;
 use parking_lot::Mutex;
 use ring::hmac;
 use serde::Serialize;
@@ -14,6 +15,16 @@ use crate::services::context::ExecutionMode;
 use crate::services::surface_pairing::{SurfacePairingAuditEvent, ValidatedSurfaceSession};
 
 const EARLY_RETRY_TIGHTEN_DIVISOR: u32 = 2;
+
+pub const SURFACE_NONCE_ISSUE_PATH: &str = "/v1/surface/nonce/issue";
+pub const SURFACE_NONCE_VERIFY_PATH: &str = "/v1/surface/nonce/verify";
+
+pub fn is_surface_nonce_route(method: &Method, path: &str) -> bool {
+    matches!(
+        (method, path),
+        (&Method::POST, SURFACE_NONCE_ISSUE_PATH) | (&Method::POST, SURFACE_NONCE_VERIFY_PATH)
+    )
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "snake_case")]

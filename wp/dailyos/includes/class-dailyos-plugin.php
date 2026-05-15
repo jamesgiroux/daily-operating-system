@@ -13,6 +13,8 @@ use DailyOS\Admin\DailyOS_Pairing_Page;
 use DailyOS\Admin\DailyOS_Settings_Page;
 use DailyOS\CLI\DailyOS_CLI;
 use DailyOS\Transport\DailyOS_Credential_Store;
+use DailyOS\Transport\DailyOS_Hmac_Signer;
+use DailyOS\Transport\DailyOS_Runtime_Client;
 use DailyOS\Mcp\DailyOS_Mcp_Roles;
 use DailyOS\Mcp\DailyOS_Mcp_Server;
 
@@ -306,21 +308,387 @@ final class DailyOS_Plugin {
 	}
 
 	/**
-	 * Register REST routes in later waves.
+	 * Register REST routes for user-presence nonce issuance.
 	 */
-	public function register_rest_routes(): void {}
+	public function register_rest_routes(): void {
+		if ( ! function_exists( 'register_rest_route' ) ) {
+			return;
+		}
+
+		register_rest_route(
+			'dailyos/v1',
+			'/nonce',
+			[
+				'methods'             => 'POST',
+				'callback'            => [ $this, 'issue_presence_nonce' ],
+				'permission_callback' => [ $this, 'can_issue_presence_nonce' ],
+			]
+		);
+	}
 
 	/**
-	 * Register save hooks in later waves.
+	 * Register save hooks that prevent ephemeral nonce serialization.
 	 */
-	public function register_save_hooks(): void {}
+	public function register_save_hooks(): void {
+		if ( ! function_exists( 'add_filter' ) ) {
+			return;
+		}
+
+		add_filter( 'wp_insert_post_data', [ $this, 'strip_presence_nonces_from_post_data' ], 10, 2 );
+	}
+
+	/**
+	 * Check whether the active user can request a nonce for a block gesture.
+	 *
+	 * @param mixed $request REST request object or payload array.
+	 * @return bool|\WP_Error Permission result.
+	 */
+	public function can_issue_presence_nonce( mixed $request ): bool|\WP_Error {
+		if ( function_exists( 'is_user_logged_in' ) && ! is_user_logged_in() ) {
+			return new \WP_Error( 'dailyos_nonce_unauthenticated', __( 'Sign in before requesting a DailyOS nonce.', 'dailyos' ), [ 'status' => 401 ] );
+		}
+
+		$post_id  = self::post_id_from_request( $request );
+		$can_edit = 0 < $post_id
+			? current_user_can( 'edit_post', $post_id )
+			: current_user_can( 'edit_posts' );
+
+		if ( ! $can_edit ) {
+			return new \WP_Error( 'dailyos_nonce_forbidden', __( 'You cannot request a DailyOS nonce for this surface.', 'dailyos' ), [ 'status' => 403 ] );
+		}
+
+		if ( ! ( new DailyOS_Credential_Store() )->is_paired() ) {
+			return new \WP_Error( 'dailyos_not_paired', __( 'DailyOS is not paired with an active loopback runtime.', 'dailyos' ), [ 'status' => 403 ] );
+		}
+
+		return true;
+	}
+
+	/**
+	 * Issue a user-presence nonce through the paired runtime.
+	 *
+	 * @param mixed $request REST request object or payload array.
+	 * @return array<string, mixed>|\WP_Error Runtime response or validation error.
+	 */
+	public function issue_presence_nonce( mixed $request ): array|\WP_Error {
+		$payload = $this->presence_nonce_payload( $request );
+
+		if ( is_wp_error( $payload ) ) {
+			return $payload;
+		}
+
+		$client = new DailyOS_Runtime_Client( new DailyOS_Credential_Store(), new DailyOS_Hmac_Signer() );
+
+		return $client->issue_nonce( $payload );
+	}
+
+	/**
+	 * Strip ephemeral presence nonce attributes before post content is saved.
+	 *
+	 * @param array<string, mixed> $data Post data.
+	 * @param array<string, mixed> $postarr Raw post array.
+	 * @return array<string, mixed> Sanitized post data.
+	 */
+	public function strip_presence_nonces_from_post_data( array $data, array $postarr ): array {
+		unset( $postarr );
+
+		if ( isset( $data['post_content'] ) && is_string( $data['post_content'] ) ) {
+			$data['post_content'] = self::strip_presence_nonces_from_content( $data['post_content'] );
+		}
+
+		return $data;
+	}
+
+	/**
+	 * Strip ephemeral presence nonce attributes from serialized block content.
+	 *
+	 * @param string $content Serialized block content.
+	 */
+	public static function strip_presence_nonces_from_content( string $content ): string {
+		if ( ! function_exists( 'parse_blocks' ) || ! function_exists( 'serialize_block' ) ) {
+			return $content;
+		}
+
+		$blocks = parse_blocks( $content );
+
+		if ( ! is_array( $blocks ) ) {
+			return $content;
+		}
+
+		$changed = false;
+		$blocks  = array_map(
+			static function ( array $block ) use ( &$changed ): array {
+				return self::strip_presence_nonce_from_block( $block, $changed );
+			},
+			$blocks
+		);
+
+		if ( ! $changed ) {
+			return $content;
+		}
+
+		if ( function_exists( 'serialize_blocks' ) ) {
+			return serialize_blocks( $blocks );
+		}
+
+		return implode( '', array_map( 'serialize_block', $blocks ) );
+	}
 
 	/**
 	 * Handle the scheduled nonce sweep hook.
-	 *
-	 * Full nonce-sweep implementation lands in W4-E presence nonce lifecycle.
 	 */
 	public function sweep_presence_nonces(): void {}
+
+	/**
+	 * Build the runtime nonce issue payload from a REST request.
+	 *
+	 * @param mixed $request REST request object or payload array.
+	 * @return array<string, mixed>|\WP_Error Runtime nonce payload or validation error.
+	 */
+	private function presence_nonce_payload( mixed $request ): array|\WP_Error {
+		$params        = self::rest_request_params( $request );
+		$claim_version = self::required_u64_param( $params, 'claim_version', 'malformed_claim_version' );
+
+		if ( is_wp_error( $claim_version ) ) {
+			return $claim_version;
+		}
+
+		$composition_version = self::required_u64_param( $params, 'composition_version', 'malformed_request' );
+
+		if ( is_wp_error( $composition_version ) ) {
+			return $composition_version;
+		}
+
+		$claim_id       = self::required_string_param( $params, 'claim_id' );
+		$field_path     = self::required_string_param( $params, 'field_path' );
+		$action         = self::required_string_param( $params, 'action' );
+		$composition_id = self::required_string_param( $params, 'composition_id' );
+
+		foreach ( [ $claim_id, $field_path, $action, $composition_id ] as $candidate ) {
+			if ( is_wp_error( $candidate ) ) {
+				return $candidate;
+			}
+		}
+
+		if ( ! in_array( $action, [ 'correct', 'dismiss', 'corroborate', 'contradict' ], true ) ) {
+			return self::nonce_payload_error( 'malformed_request', 400 );
+		}
+
+		$current_user_id = function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0;
+
+		if ( 0 >= $current_user_id ) {
+			return new \WP_Error( 'dailyos_nonce_unauthenticated', __( 'Sign in before requesting a DailyOS nonce.', 'dailyos' ), [ 'status' => 401 ] );
+		}
+
+		$credential_store = new DailyOS_Credential_Store();
+		$marker           = $credential_store->get_marker();
+
+		if ( null === $marker ) {
+			return new \WP_Error( 'dailyos_not_paired', __( 'DailyOS is not paired with an active loopback runtime.', 'dailyos' ), [ 'status' => 403 ] );
+		}
+
+		$paired_wp_user_id = self::paired_wp_user_id( $marker, $current_user_id );
+
+		if ( $paired_wp_user_id !== $current_user_id ) {
+			return new \WP_Error( 'dailyos_nonce_wrong_user', __( 'This DailyOS session is paired to another WordPress user.', 'dailyos' ), [ 'status' => 403 ] );
+		}
+
+		$credential = $credential_store->retrieve_session_key();
+
+		if ( null === $credential ) {
+			return new \WP_Error( 'missing_session_key', __( 'DailyOS is not paired with an active runtime session.', 'dailyos' ), [ 'status' => 403 ] );
+		}
+
+		$payload = [
+			'session_id'          => $credential->session_id(),
+			'wp_user_id'          => $current_user_id,
+			'claim_id'            => $claim_id,
+			'field_path'          => $field_path,
+			'action'              => $action,
+			'claim_version'       => $claim_version,
+			'composition_id'      => $composition_id,
+			'composition_version' => $composition_version,
+		];
+
+		$request_id = self::optional_string_param( $params, 'request_id' );
+
+		if ( null !== $request_id ) {
+			$payload['request_id'] = $request_id;
+		}
+
+		return $payload;
+	}
+
+	/**
+	 * Return request parameters from either WP_REST_Request or tests.
+	 *
+	 * @param mixed $request REST request object or payload array.
+	 * @return array<string, mixed> Request params.
+	 */
+	private static function rest_request_params( mixed $request ): array {
+		if ( is_array( $request ) ) {
+			return $request;
+		}
+
+		if ( is_object( $request ) && method_exists( $request, 'get_json_params' ) ) {
+			$params = $request->get_json_params();
+
+			if ( is_array( $params ) ) {
+				return $params;
+			}
+		}
+
+		if ( is_object( $request ) && method_exists( $request, 'get_params' ) ) {
+			$params = $request->get_params();
+
+			if ( is_array( $params ) ) {
+				return $params;
+			}
+		}
+
+		return [];
+	}
+
+	/**
+	 * Return an optional request string.
+	 *
+	 * @param array<string, mixed> $params Request params.
+	 * @param string               $key Request key.
+	 */
+	private static function optional_string_param( array $params, string $key ): ?string {
+		if ( ! isset( $params[ $key ] ) || ! is_string( $params[ $key ] ) ) {
+			return null;
+		}
+
+		$value = trim( $params[ $key ] );
+
+		return '' === $value || 128 < strlen( $value ) ? null : $value;
+	}
+
+	/**
+	 * Return a required request string.
+	 *
+	 * @param array<string, mixed> $params Request params.
+	 * @param string               $key Request key.
+	 * @return string|\WP_Error Required string or validation error.
+	 */
+	private static function required_string_param( array $params, string $key ): string|\WP_Error {
+		$value = self::optional_string_param( $params, $key );
+
+		if ( null === $value ) {
+			return self::nonce_payload_error( 'malformed_request', 400 );
+		}
+
+		return $value;
+	}
+
+	/**
+	 * Return a required unsigned integer request value.
+	 *
+	 * @param array<string, mixed> $params Request params.
+	 * @param string               $key Request key.
+	 * @param string               $code Error code.
+	 * @return int|\WP_Error Required unsigned integer or validation error.
+	 */
+	private static function required_u64_param( array $params, string $key, string $code ): int|\WP_Error {
+		if ( ! array_key_exists( $key, $params ) || ! is_int( $params[ $key ] ) || 0 > $params[ $key ] ) {
+			return self::nonce_payload_error( $code, 400 );
+		}
+
+		return $params[ $key ];
+	}
+
+	/**
+	 * Build a nonce request validation error.
+	 *
+	 * @param string $code Error code.
+	 * @param int    $status HTTP status.
+	 */
+	private static function nonce_payload_error( string $code, int $status ): \WP_Error {
+		return new \WP_Error( $code, __( 'Refresh this block and try again.', 'dailyos' ), [ 'status' => $status ] );
+	}
+
+	/**
+	 * Return the post id supplied with a REST request.
+	 *
+	 * @param mixed $request REST request object or payload array.
+	 */
+	private static function post_id_from_request( mixed $request ): int {
+		$params  = self::rest_request_params( $request );
+		$post_id = $params['post_id'] ?? 0;
+
+		return is_int( $post_id ) && 0 < $post_id ? $post_id : 0;
+	}
+
+	/**
+	 * Return the stable paired WordPress user id.
+	 *
+	 * @param array<string, mixed> $marker Pairing marker.
+	 * @param int                  $fallback_user_id Fallback user id.
+	 */
+	private static function paired_wp_user_id( array $marker, int $fallback_user_id ): int {
+		$paired_wp_user_id = $marker['paired_wp_user_id'] ?? null;
+
+		if ( is_string( $paired_wp_user_id ) && ctype_digit( $paired_wp_user_id ) ) {
+			return (int) $paired_wp_user_id;
+		}
+
+		if ( is_int( $paired_wp_user_id ) && 0 <= $paired_wp_user_id ) {
+			return $paired_wp_user_id;
+		}
+
+		return $fallback_user_id;
+	}
+
+	/**
+	 * Strip nonce keys from one parsed block.
+	 *
+	 * @param array<string, mixed> $block Parsed block.
+	 * @param bool                 $changed Change flag.
+	 * @return array<string, mixed> Sanitized block.
+	 */
+	private static function strip_presence_nonce_from_block( array $block, bool &$changed ): array {
+		if ( isset( $block['attrs'] ) && is_array( $block['attrs'] ) ) {
+			$block['attrs'] = self::strip_presence_nonce_from_value( $block['attrs'], $changed );
+		}
+
+		if ( isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ) {
+			$block['innerBlocks'] = array_map(
+				static function ( array $inner_block ) use ( &$changed ): array {
+					return self::strip_presence_nonce_from_block( $inner_block, $changed );
+				},
+				$block['innerBlocks']
+			);
+		}
+
+		return $block;
+	}
+
+	/**
+	 * Strip nonce keys from arbitrary block attribute values.
+	 *
+	 * @param mixed $value Attribute value.
+	 * @param bool  $changed Change flag.
+	 * @return mixed Sanitized value.
+	 */
+	private static function strip_presence_nonce_from_value( mixed $value, bool &$changed ): mixed {
+		if ( ! is_array( $value ) ) {
+			return $value;
+		}
+
+		foreach ( [ 'presence_nonce', 'presenceNonce', 'dailyos_presence_nonce', 'dailyosPresenceNonce' ] as $nonce_key ) {
+			if ( array_key_exists( $nonce_key, $value ) ) {
+				unset( $value[ $nonce_key ] );
+				$changed = true;
+			}
+		}
+
+		foreach ( $value as $key => $child ) {
+			$value[ $key ] = self::strip_presence_nonce_from_value( $child, $changed );
+		}
+
+		return $value;
+	}
 
 	/**
 	 * Register MCP server configuration.
