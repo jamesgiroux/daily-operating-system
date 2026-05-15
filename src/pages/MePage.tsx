@@ -117,12 +117,7 @@ function PrioritySection({
                 onChange={(v) => handleEditText(item.id, v)}
                 multiline={false}
                 placeholder="Priority..."
-                style={{
-                  fontFamily: "var(--font-sans)",
-                  fontSize: 14,
-                  color: "var(--color-text-primary)",
-                  lineHeight: 1.5,
-                }}
+                className={s.priorityTextEdit}
               />
             </div>
             <div className={s.priorityEntityLink}>
@@ -200,60 +195,24 @@ export default function MePage() {
       activePage: "me" as const,
       chapters: CHAPTERS,
       folioActions: (
-        <div style={{ display: "flex", gap: 8 }}>
+        <div className={s.folioActionGroup}>
           {bobEnabled && (
             <button
               onClick={() => navigate({ to: "/me/reports/book_of_business" })}
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                fontWeight: 600,
-                letterSpacing: "0.06em",
-                textTransform: "uppercase" as const,
-                color: "var(--color-spice-turmeric)",
-                background: "none",
-                border: "1px solid var(--color-spice-turmeric)",
-                borderRadius: 4,
-                padding: "2px 10px",
-                cursor: "pointer",
-              }}
+              className={`${s.folioActionButton} ${s.folioActionTurmeric}`}
             >
               {getPortfolioReportLabel(activePreset)}
             </button>
           )}
           <button
             onClick={() => navigate({ to: "/me/reports/$reportType", params: { reportType: "weekly_impact" } })}
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              fontWeight: 600,
-              letterSpacing: "0.06em",
-              textTransform: "uppercase" as const,
-              color: "var(--color-garden-eucalyptus)",
-              background: "none",
-              border: "1px solid var(--color-garden-eucalyptus)",
-              borderRadius: 4,
-              padding: "2px 10px",
-              cursor: "pointer",
-            }}
+            className={`${s.folioActionButton} ${s.folioActionEucalyptus}`}
           >
             Weekly Impact
           </button>
           <button
             onClick={() => navigate({ to: "/me/reports/$reportType", params: { reportType: "monthly_wrapped" } })}
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              fontWeight: 600,
-              letterSpacing: "0.06em",
-              textTransform: "uppercase" as const,
-              color: "var(--color-garden-sage)",
-              background: "none",
-              border: "1px solid var(--color-garden-sage)",
-              borderRadius: 4,
-              padding: "2px 10px",
-              cursor: "pointer",
-            }}
+            className={`${s.folioActionButton} ${s.folioActionSage}`}
           >
             Monthly Wrapped
           </button>
@@ -306,7 +265,7 @@ export default function MePage() {
       )}
 
       {/* ═══ SECTION 1: About Me ═══ */}
-      <section id="about-me" className={s.section} style={{ scrollMarginTop: 60 }}>
+      <section id="about-me" className={s.section}>
         <ChapterHeading
           title="About Me"
           epigraph="Who you are and what you do."
@@ -320,7 +279,7 @@ export default function MePage() {
               onChange={(v) => me.saveField("name", v)}
               multiline={false}
               placeholder="Your name"
-              style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 400, color: "var(--color-text-primary)" }}
+              className={s.fieldValue}
             />
           </div>
           <div className={s.fieldRow}>
@@ -330,7 +289,7 @@ export default function MePage() {
               onChange={(v) => me.saveField("title", v)}
               multiline={false}
               placeholder="Your title"
-              style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 400, color: "var(--color-text-primary)" }}
+              className={s.fieldValue}
             />
           </div>
           <div className={s.fieldRow}>
@@ -340,7 +299,7 @@ export default function MePage() {
               onChange={(v) => me.saveField("company", v)}
               multiline={false}
               placeholder="Your company"
-              style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 400, color: "var(--color-text-primary)" }}
+              className={s.fieldValue}
             />
           </div>
           <div className={s.fieldRow}>
@@ -350,7 +309,7 @@ export default function MePage() {
               onChange={(v) => me.saveField("focus", v)}
               multiline={false}
               placeholder="What you're focused on"
-              style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 400, color: "var(--color-text-primary)" }}
+              className={s.fieldValue}
             />
           </div>
         </div>
@@ -363,7 +322,7 @@ export default function MePage() {
             value={entity.companyBio ?? ""}
             onChange={(v) => me.saveField("company_bio", v)}
             placeholder="Brief description of your company..."
-            style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 300, color: "var(--color-text-primary)", lineHeight: 1.65 }}
+            className={s.fieldValueMultiline}
           />
         </div>
 
@@ -373,7 +332,7 @@ export default function MePage() {
             value={entity.roleDescription ?? ""}
             onChange={(v) => me.saveField("role_description", v)}
             placeholder="What does your role involve?"
-            style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 300, color: "var(--color-text-primary)", lineHeight: 1.65 }}
+            className={s.fieldValueMultiline}
           />
         </div>
 
@@ -383,13 +342,13 @@ export default function MePage() {
             value={entity.howImMeasured ?? ""}
             onChange={(v) => me.saveField("how_im_measured", v)}
             placeholder="KPIs, metrics, success criteria..."
-            style={{ fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 300, color: "var(--color-text-primary)", lineHeight: 1.65 }}
+            className={s.fieldValueMultiline}
           />
         </div>
       </section>
 
       {/* ═══ SECTION 2: My Priorities ═══ */}
-      <section id="my-priorities" className={`${s.section} editorial-reveal`} style={{ scrollMarginTop: 60 }}>
+      <section id="my-priorities" className={`${s.section} editorial-reveal`}>
         <ChapterHeading
           title="My Priorities"
           epigraph="Annual bets and quarterly focus areas. They persist until you remove them."
@@ -411,7 +370,7 @@ export default function MePage() {
       </section>
 
       {/* ═══ SECTION 3: Context & Knowledge ═══ */}
-      <section id="context-entries" className={`${s.section} editorial-reveal`} style={{ scrollMarginTop: 60 }}>
+      <section id="context-entries" className={`${s.section} editorial-reveal`}>
         <ChapterHeading
           title="Context"
           epigraph="Professional knowledge that shapes your briefings. Embedding happens in the background."
@@ -426,7 +385,7 @@ export default function MePage() {
       </section>
 
       {/* ═══ SECTION 4: Attachments ═══ */}
-      <section id="attachments" className={`${s.section} editorial-reveal`} style={{ scrollMarginTop: 60 }}>
+      <section id="attachments" className={`${s.section} editorial-reveal`}>
         <ChapterHeading
           title="Attachments"
           epigraph="Documents that provide deeper context."
@@ -439,7 +398,7 @@ export default function MePage() {
       <div className="editorial-reveal">
         <FinisMarker />
       </div>
-      <div style={{ height: 80 }} />
+      <div className={s.bottomSpacer} />
     </div>
   );
 }

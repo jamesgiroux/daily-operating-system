@@ -263,10 +263,7 @@ fn names_for_account(account: &DbAccount) -> Vec<String> {
 }
 
 fn aliases_for_account(account: &DbAccount) -> Vec<String> {
-    let Some(metadata) = account.metadata.as_deref() else {
-        return Vec::new();
-    };
-    let Ok(value) = serde_json::from_str::<Value>(metadata) else {
+    let Some(value) = account.metadata_parsed() else {
         return Vec::new();
     };
 

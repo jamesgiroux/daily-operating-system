@@ -5,7 +5,7 @@ import {
   SettingsButton,
   SettingsSectionLabel,
   formRowStyles,
-} from "@/components/settings/FormRow";
+} from "@/features/settings-ui/FormRow";
 import surface from "./ConnectorSurface.module.css";
 
 interface QuillStatusData {

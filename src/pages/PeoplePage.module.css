@@ -1,0 +1,218 @@
+/* =============================================================================
+   PeoplePage.module.css — People list page styles
+
+   Editorial magazine layout for the /people page.
+   Covers the add-person form and the duplicate detection panel (DOS-98).
+   ============================================================================= */
+
+@import "../styles/design-tokens.css";
+
+/* ─────────────────────────────────────────────────────────────────────────
+   ADD PERSON FORM
+   ───────────────────────────────────────────────────────────────────────── */
+.addForm {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md) 0;
+  border-bottom: 1px solid var(--color-rule-heavy);
+  margin-bottom: var(--space-sm);
+}
+
+.addFormInput {
+  flex: 1;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-primary);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--color-rule-light);
+  padding: var(--space-xs) 0;
+  outline: none;
+}
+
+.addFormCreate {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-garden-larkspur);
+  background: none;
+  border: 1px solid var(--color-garden-larkspur);
+  border-radius: 4px;
+  padding: 3px 12px;
+  cursor: pointer;
+}
+
+.addFormCreate:disabled {
+  color: var(--color-text-tertiary);
+  border-color: var(--color-rule-heavy);
+  cursor: default;
+}
+
+.addFormCancel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   HYGIENE / DUPLICATES BANNER — shared shell
+   ───────────────────────────────────────────────────────────────────────── */
+.banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-left: 3px solid var(--color-spice-turmeric);
+  background: var(--color-spice-turmeric-6);
+  border-radius: 8px;
+  padding: 10px 16px;
+}
+
+.bannerStandalone {
+  margin-bottom: var(--space-lg);
+}
+
+.bannerText {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.bannerAction {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-spice-turmeric);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   DUPLICATE DETECTION PANEL
+   ───────────────────────────────────────────────────────────────────────── */
+.duplicatesContainer {
+  margin-bottom: var(--space-lg);
+}
+
+.duplicatesList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+}
+
+.duplicateRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--color-rule-light);
+  font-family: var(--font-sans);
+  font-size: 13px;
+}
+
+.duplicateNames {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.duplicateActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.duplicateLink {
+  color: var(--color-garden-larkspur);
+  text-decoration: none;
+}
+
+.duplicateSeparator {
+  color: var(--color-text-tertiary);
+}
+
+.duplicateConfidence {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+.duplicateReason {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+.duplicateReviewButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   FOLIO ADD BUTTON — Outlined caps button in the FolioBar.
+   ───────────────────────────────────────────────────────────────────────── */
+.folioAddButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-garden-larkspur);
+  background: none;
+  border: 1px solid var(--color-garden-larkspur);
+  border-radius: 4px;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   PERSON LIST CONTAINERS
+   ───────────────────────────────────────────────────────────────────────── */
+.personList {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   PERSON ROW — Relationship caps badge + avatar ring
+   ───────────────────────────────────────────────────────────────────────── */
+.relationshipBadge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.relationshipBadgeExternal {
+  color: var(--color-garden-larkspur);
+}
+
+.avatarRing {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  /* --avatar-ring-color is set per row via the style prop (dynamic relationship) */
+  border: 2px solid var(--avatar-ring-color, var(--color-paper-linen));
+  flex-shrink: 0;
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.archivedRelationshipLabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}

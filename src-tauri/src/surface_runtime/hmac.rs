@@ -20,7 +20,7 @@ const SIGNATURE_HEX_BYTES: usize = SIGNATURE_BYTES * 2;
 const MAX_SIGNED_IDENTIFIER_BYTES: usize = 128;
 
 const HEADER_SURFACE_CLIENT: &str = "x-dailyos-surfaceclient";
-const HEADER_KEY_ID: &str = "x-dailyos-key-id";
+pub(super) const HEADER_SESSION_ID: &str = "x-dailyos-session-id";
 const HEADER_SIGNATURE: &str = "x-dailyos-signature";
 const HEADER_TIMESTAMP: &str = "x-dailyos-timestamp";
 const HEADER_NONCE: &str = "x-dailyos-nonce";
@@ -283,6 +283,15 @@ impl SignedTransportState {
         self.inner.session_buckets.lock().buckets.clear();
     }
 
+    pub(super) fn derive_active_session_key(&self, session_id: &str) -> Option<[u8; 32]> {
+        if !is_safe_identifier(session_id) {
+            return None;
+        }
+        let sessions = self.inner.sessions.read();
+        let session = sessions.get(session_id)?;
+        (session.state == SignedSessionState::Active).then(|| session.derive_signing_key())
+    }
+
     pub(super) fn verify(
         &self,
         request: SignedRequest<'_>,
@@ -297,42 +306,36 @@ impl SignedTransportState {
             .inner
             .sessions
             .read()
-            .get(headers.key_id)
+            .get(headers.session_id)
             .cloned()
             .ok_or_else(|| {
                 SignedTransportError::key_not_found("session_missing")
-                    .with_session_id(headers.key_id)
+                    .with_session_id(headers.session_id)
                     .with_surface_client_id(headers.surface_client_id)
             })?;
 
         if session.state == SignedSessionState::Rotated {
             return Err(SignedTransportError::key_rotated("rotated")
-                .with_session_id(headers.key_id)
+                .with_session_id(headers.session_id)
                 .with_surface_client_id(headers.surface_client_id));
         }
         if session.surface_client_id != headers.surface_client_id {
             return Err(
                 SignedTransportError::token_invalid("surface_client_mismatch")
-                    .with_session_id(headers.key_id)
+                    .with_session_id(headers.session_id)
                     .with_surface_client_id(headers.surface_client_id),
             );
         }
-        if !session.matches_bearer(headers.bearer_token) {
-            return Err(SignedTransportError::token_invalid("bearer_mismatch")
-                .with_session_id(headers.key_id)
-                .with_surface_client_id(headers.surface_client_id));
-        }
-
         let signing_key = session.derive_signing_key();
         let nonce_hash = nonce_hash(&signing_key, headers.nonce);
-        self.reserve_nonce(headers.key_id, nonce_hash, &config, request.instant)?;
+        self.reserve_nonce(headers.session_id, nonce_hash, &config, request.instant)?;
 
         let canonical = match canonicalize_signed_request(&request, &headers) {
             Ok(canonical) => canonical,
             Err(error) => {
-                self.mark_nonce_consumed(headers.key_id, nonce_hash, &config, request.instant);
+                self.mark_nonce_consumed(headers.session_id, nonce_hash, &config, request.instant);
                 return Err(error
-                    .with_session_id(headers.key_id)
+                    .with_session_id(headers.session_id)
                     .with_surface_client_id(headers.surface_client_id));
             }
         };
@@ -342,18 +345,18 @@ impl SignedTransportState {
         );
         let comparison = computed.as_ref().ct_eq(headers.signature.as_slice());
 
-        self.mark_nonce_consumed(headers.key_id, nonce_hash, &config, request.instant);
+        self.mark_nonce_consumed(headers.session_id, nonce_hash, &config, request.instant);
         if !bool::from(comparison) {
             return Err(
                 SignedTransportError::signature_invalid("hmac_compare_failed")
-                    .with_session_id(headers.key_id)
+                    .with_session_id(headers.session_id)
                     .with_surface_client_id(headers.surface_client_id),
             );
         }
 
         let wp_user_id = headers.wp_user_id.parse::<u64>().map_err(|_| {
             SignedTransportError::signature_invalid("wp_user_id_malformed")
-                .with_session_id(headers.key_id)
+                .with_session_id(headers.session_id)
                 .with_surface_client_id(headers.surface_client_id)
         })?;
         let wp_user_hash = crate::services::surface_pairing::wp_user_hash(
@@ -363,7 +366,7 @@ impl SignedTransportState {
         );
 
         Ok(VerifiedSignedRequest {
-            session_id: headers.key_id.to_string(),
+            session_id: headers.session_id.to_string(),
             surface_client_id: headers.surface_client_id.to_string(),
             site_binding_digest: headers.site_binding_digest.to_string(),
             site_nonce: headers.site_nonce.to_string(),
@@ -532,7 +535,6 @@ pub(super) struct VerifiedSignedRequest {
 pub(super) struct SignedSurfaceSession {
     session_id: String,
     surface_client_id: String,
-    bearer_token_hash: [u8; 32],
     master_key: SecretBytes32,
     state: SignedSessionState,
 }
@@ -554,13 +556,11 @@ impl SignedSurfaceSession {
     pub(super) fn new_active(
         session_id: impl Into<String>,
         surface_client_id: impl Into<String>,
-        bearer_token: &str,
         master_key: [u8; 32],
     ) -> Self {
         Self::new(
             session_id,
             surface_client_id,
-            bearer_token,
             master_key,
             SignedSessionState::Active,
         )
@@ -570,13 +570,11 @@ impl SignedSurfaceSession {
     pub(super) fn new_rotated_for_tests(
         session_id: impl Into<String>,
         surface_client_id: impl Into<String>,
-        bearer_token: &str,
         master_key: [u8; 32],
     ) -> Self {
         Self::new(
             session_id,
             surface_client_id,
-            bearer_token,
             master_key,
             SignedSessionState::Rotated,
         )
@@ -585,25 +583,15 @@ impl SignedSurfaceSession {
     fn new(
         session_id: impl Into<String>,
         surface_client_id: impl Into<String>,
-        bearer_token: &str,
         master_key: [u8; 32],
         state: SignedSessionState,
     ) -> Self {
         Self {
             session_id: session_id.into(),
             surface_client_id: surface_client_id.into(),
-            bearer_token_hash: sha256_bytes(bearer_token.as_bytes()),
             master_key: SecretBytes32(master_key),
             state,
         }
-    }
-
-    fn matches_bearer(&self, bearer_token: &str) -> bool {
-        bool::from(
-            self.bearer_token_hash
-                .as_slice()
-                .ct_eq(sha256_bytes(bearer_token.as_bytes()).as_slice()),
-        )
     }
 
     pub(super) fn derive_signing_key(&self) -> [u8; 32] {
@@ -627,9 +615,8 @@ impl Drop for SecretBytes32 {
 }
 
 struct ParsedSigningHeaders<'a> {
-    bearer_token: &'a str,
     surface_client_id: &'a str,
-    key_id: &'a str,
+    session_id: &'a str,
     signature: [u8; SIGNATURE_BYTES],
     timestamp_raw: &'a str,
     timestamp: DateTime<Utc>,
@@ -647,9 +634,8 @@ struct ParsedSigningHeaders<'a> {
 
 impl<'a> ParsedSigningHeaders<'a> {
     fn parse(headers: &'a HeaderMap) -> Result<Self, SignedTransportError> {
-        let bearer_token = parse_authorization_bearer(headers)?;
+        let session_id = required_session_id_header(headers)?;
         let surface_client_id = required_identifier_header(headers, HEADER_SURFACE_CLIENT)?;
-        let key_id = required_identifier_header(headers, HEADER_KEY_ID)?;
         let signature = parse_signature_header(required_single_header(headers, HEADER_SIGNATURE)?)?;
         let timestamp_raw = required_single_header(headers, HEADER_TIMESTAMP)?;
         let timestamp = parse_timestamp(timestamp_raw)?;
@@ -676,9 +662,8 @@ impl<'a> ParsedSigningHeaders<'a> {
             .unwrap_or("");
 
         Ok(Self {
-            bearer_token,
             surface_client_id,
-            key_id,
+            session_id,
             signature,
             timestamp_raw,
             timestamp,
@@ -947,21 +932,21 @@ fn content_type_for_canonical_request(headers: &HeaderMap) -> Result<String, Sig
     Ok(trim_ascii_whitespace(value).to_string())
 }
 
-fn parse_authorization_bearer(headers: &HeaderMap) -> Result<&str, SignedTransportError> {
-    let value = required_single_header(headers, header::AUTHORIZATION.as_str())
-        .map_err(|_| SignedTransportError::token_invalid("authorization_missing"))?;
-    let Some(token) = value.strip_prefix("Bearer ") else {
-        return Err(SignedTransportError::token_invalid(
-            "authorization_malformed",
-        ));
+fn required_session_id_header(headers: &HeaderMap) -> Result<&str, SignedTransportError> {
+    let mut values = headers.get_all(HEADER_SESSION_ID).iter();
+    let Some(value) = values.next() else {
+        return Err(SignedTransportError::token_invalid("session_id_missing"));
     };
-    if token.is_empty() || token.len() > 512 || token.bytes().any(|byte| byte.is_ascii_whitespace())
-    {
-        return Err(SignedTransportError::token_invalid(
-            "authorization_malformed",
-        ));
+    if values.next().is_some() {
+        return Err(SignedTransportError::token_invalid("session_id_multiple"));
     }
-    Ok(token)
+    let value = value
+        .to_str()
+        .map_err(|_| SignedTransportError::token_invalid("session_id_malformed"))?;
+    if !is_safe_identifier(value) {
+        return Err(SignedTransportError::token_invalid("session_id_malformed"));
+    }
+    Ok(value)
 }
 
 fn required_identifier_header<'a>(
@@ -1177,12 +1162,12 @@ fn parseable_active_session_id(
     headers: &HeaderMap,
     sessions: &HashMap<String, SignedSurfaceSession>,
 ) -> Option<String> {
-    if let Some(key_id) = optional_safe_single_header(headers, HEADER_KEY_ID) {
+    if let Some(session_id) = optional_safe_single_header(headers, HEADER_SESSION_ID) {
         if sessions
-            .get(key_id)
+            .get(session_id)
             .is_some_and(|session| session.state == SignedSessionState::Active)
         {
-            return Some(key_id.to_string());
+            return Some(session_id.to_string());
         }
     }
 
@@ -1215,13 +1200,6 @@ fn nonce_hash(signing_key: &[u8; 32], nonce: &str) -> [u8; 32] {
     let mut hash = [0_u8; 32];
     hash.copy_from_slice(tag.as_ref());
     hash
-}
-
-fn sha256_bytes(value: &[u8]) -> [u8; 32] {
-    let digest = digest::digest(&digest::SHA256, value);
-    let mut bytes = [0_u8; 32];
-    bytes.copy_from_slice(digest.as_ref());
-    bytes
 }
 
 pub(super) fn hash_prefix(value: &str) -> String {
@@ -1440,7 +1418,6 @@ mod tests {
 
     const SESSION_ID: &str = "sess_test_1234567890";
     const SURFACE_CLIENT_ID: &str = "surface_client_test";
-    const BEARER_TOKEN: &str = "bearer_token_test";
     const BODY: &[u8] = br#"{"depth":"standard"}"#;
     const TIMESTAMP: &str = "2026-05-10T17:20:31Z";
     const NONCE: &str = "0123456789abcdef0123456789abcdef";
@@ -1504,7 +1481,6 @@ mod tests {
             .register_session(SignedSurfaceSession::new_active(
                 SESSION_ID,
                 SURFACE_CLIENT_ID,
-                BEARER_TOKEN,
                 master_key(),
             ))
             .unwrap();
@@ -1523,14 +1499,10 @@ mod tests {
     fn headers_with_signature(signature: &str, nonce: &str, timestamp: &str) -> HeaderMap {
         let mut headers = HeaderMap::new();
         headers.insert(
-            header::AUTHORIZATION,
-            HeaderValue::from_static("Bearer bearer_token_test"),
-        );
-        headers.insert(
             HEADER_SURFACE_CLIENT,
             HeaderValue::from_static(SURFACE_CLIENT_ID),
         );
-        headers.insert(HEADER_KEY_ID, HeaderValue::from_static(SESSION_ID));
+        headers.insert(HEADER_SESSION_ID, HeaderValue::from_static(SESSION_ID));
         headers.insert(HEADER_SIGNATURE, HeaderValue::from_str(signature).unwrap());
         headers.insert(HEADER_TIMESTAMP, HeaderValue::from_str(timestamp).unwrap());
         headers.insert(HEADER_NONCE, HeaderValue::from_str(nonce).unwrap());
@@ -1925,14 +1897,14 @@ mod tests {
     }
 
     #[test]
-    fn session_token_and_rotation_fail_before_nonce_work() {
+    fn session_identity_and_rotation_fail_before_nonce_work() {
         let state = state_with_session();
         let method = Method::POST;
         let uri = "/v1/surface/invoke".parse::<Uri>().unwrap();
         let mut headers = signed_headers(&method, &uri, BODY, NONCE);
         headers.insert(
-            header::AUTHORIZATION,
-            HeaderValue::from_static("Bearer wrong"),
+            HEADER_SURFACE_CLIENT,
+            HeaderValue::from_static("surface_client_wrong"),
         );
         let error = verify(&state, &method, &uri, &headers, BODY).unwrap_err();
         assert_eq!(error.kind, SignedTransportErrorKind::TokenInvalid);
@@ -1942,7 +1914,6 @@ mod tests {
             .register_session(SignedSurfaceSession::new_rotated_for_tests(
                 SESSION_ID,
                 SURFACE_CLIENT_ID,
-                BEARER_TOKEN,
                 master_key(),
             ))
             .unwrap();
@@ -2070,7 +2041,6 @@ mod tests {
             .register_session(SignedSurfaceSession::new_active(
                 "sess_one",
                 "surface_one",
-                "bearer_one",
                 master_key(),
             ))
             .unwrap();
@@ -2086,7 +2056,6 @@ mod tests {
             .register_session(SignedSurfaceSession::new_active(
                 "sess_two",
                 "surface_two",
-                "bearer_two",
                 alternate_master_key(),
             ))
             .unwrap();
@@ -2103,7 +2072,6 @@ mod tests {
             .register_session(SignedSurfaceSession::new_active(
                 "sess_one",
                 "surface_one",
-                "bearer_one",
                 master_key(),
             ))
             .unwrap();
@@ -2133,7 +2101,6 @@ mod tests {
             .register_session(SignedSurfaceSession::new_active(
                 "sess_one",
                 "surface_one",
-                "bearer_one",
                 master_key(),
             ))
             .unwrap();
@@ -2146,7 +2113,6 @@ mod tests {
                 .register_session(SignedSurfaceSession::new_active(
                     "sess_interleaved",
                     "surface_interleaved",
-                    "bearer_interleaved",
                     alternate_master_key(),
                 ))
                 .unwrap_err()
@@ -2160,7 +2126,6 @@ mod tests {
                 SignedSurfaceSession::new_active(
                     "sess_replacement",
                     "surface_replacement",
-                    "bearer_replacement",
                     alternate_master_key(),
                 ),
             )

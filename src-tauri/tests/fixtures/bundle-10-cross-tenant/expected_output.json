@@ -1,0 +1,6 @@
+{
+  "error": {
+    "kind": "SubjectNotOwned",
+    "message": "subject is not owned by this workspace: account:acct-b10-other-workspace"
+  }
+}

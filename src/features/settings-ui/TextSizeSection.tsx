@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { SettingsSectionLabel } from "@/components/settings/FormRow";
+import { SettingsSectionLabel } from "@/features/settings-ui/FormRow";
 import s from "./TextSizeSection.module.css";
 
 const SCALE_PRESETS = [90, 100, 110, 120] as const;

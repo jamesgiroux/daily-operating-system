@@ -219,8 +219,19 @@ SAFE_STRING_FIELDS = {
         "context": "claim/provenance-attested",
     },
     "OpenLoop": {
+        "id": "identifier metadata",
         "description": "claim/provenance-attested",
         "owner": "claim/provenance-attested",
+        "loop_kind": "enum metadata",
+        "due_date": "timestamp metadata",
+        "status": "enum metadata",
+        "source_asof": "timestamp metadata",
+        "claim_type": "enum metadata",
+    },
+    "OpenLoopsResult": {},
+    "OpenLoopSubject": {
+        "entity_type": "enum metadata",
+        "entity_id": "identifier metadata",
     },
     "ChangeMarker": {
         "description": "claim/provenance-attested",
@@ -318,7 +329,8 @@ NESTED_OUTPUT_STRUCTS = {
     "MeetingSummary": ["MeetingAttendee"],
     "Topic": ["BriefSubjectRef", "BriefTemporalScope"],
     "AttendeeContext": ["BriefSubjectRef", "BriefTemporalScope"],
-    "OpenLoop": ["BriefSubjectRef", "BriefTemporalScope"],
+    "OpenLoop": ["BriefSubjectRef", "BriefTemporalScope", "OpenLoopSubject"],
+    "OpenLoopsResult": ["OpenLoop"],
     "ChangeMarker": ["BriefSubjectRef", "BriefTemporalScope"],
     "SuggestedOutcome": ["BriefSubjectRef", "BriefTemporalScope"],
     "DailyReadiness": [
@@ -342,6 +354,7 @@ NESTED_OUTPUT_STRUCTS = {
 EXPECTED_AGENT_OUTPUTS = {
     "get_entity_context": "GetEntityContextOutput",
     "prepare_meeting": "MeetingBrief",
+    "list_open_loops": "OpenLoopsResult",
     "get_daily_readiness": "DailyReadiness",
 }
 
@@ -364,8 +377,8 @@ def raw_string_type(type_text: str) -> bool:
 
 def struct_body(name: str):
     # Match `pub struct {name}` followed by `{` or `<` (generic) — NOT a longer
-    # identifier (e.g. avoid prefix-matching `DailyReadinessInput` when we want
-    # `DailyReadiness`).
+    # identifier (e.g. avoid prefix-matching `DailyReadinessInput` /
+    # `OpenLoopsResult` when we want `DailyReadiness` / `OpenLoops`).
     pattern = re.compile(rf"pub\s+struct\s+{re.escape(name)}\b\s*[{{<]")
     match = pattern.search(combined)
     if match is None:

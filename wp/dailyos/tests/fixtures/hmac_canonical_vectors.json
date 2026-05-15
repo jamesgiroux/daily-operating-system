@@ -1,0 +1,71 @@
+[
+    {
+        "name": "json_post_single_site",
+        "session_key_hex": "0101010101010101010101010101010101010101010101010101010101010101",
+        "method": "POST",
+        "path_query": "/dailyos/v1/example",
+        "content_type": "application/json",
+        "body_b64": "eyJvayI6dHJ1ZX0=",
+        "identity": {
+            "site_binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "site_nonce": "siteNonceAlpha123",
+            "wp_user_id": "42",
+            "wp_site_id": "site-1",
+            "home_url": "https://example.test",
+            "site_url": "https://example.test",
+            "wp_install_uuid": "00000000-0000-4000-8000-000000000101",
+            "plugin_instance_uuid": "00000000-0000-4000-8000-000000000201",
+            "multisite_blog_id": ""
+        },
+        "nonce": "nonce-alpha-123",
+        "timestamp": "2024-11-13T12:13:20Z",
+        "expected_canonical_bytes_b64": "REFJTFlPUy1XUC1CUklER0UtSE1BQy1WMQptZXRob2Q6NApQT1NUCnBhdGhfcXVlcnk6MTkKL2RhaWx5b3MvdjEvZXhhbXBsZQpjb250ZW50X3R5cGU6MTYKYXBwbGljYXRpb24vanNvbgpib2R5OjExCnsib2siOnRydWV9CnNpdGVfYmluZGluZ19kaWdlc3Q6NjQKYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYQpzaXRlX25vbmNlOjE3CnNpdGVOb25jZUFscGhhMTIzCndwX3VzZXJfaWQ6Mgo0Mgp3cF9zaXRlX2lkOjYKc2l0ZS0xCmhvbWVfdXJsOjIwCmh0dHBzOi8vZXhhbXBsZS50ZXN0CnNpdGVfdXJsOjIwCmh0dHBzOi8vZXhhbXBsZS50ZXN0CndwX2luc3RhbGxfdXVpZDozNgowMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAxMDEKcGx1Z2luX2luc3RhbmNlX3V1aWQ6MzYKMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMjAxCm11bHRpc2l0ZV9ibG9nX2lkOjAKCm5vbmNlOjE1Cm5vbmNlLWFscGhhLTEyMwp0aW1lc3RhbXA6MjAKMjAyNC0xMS0xM1QxMjoxMzoyMFoK",
+        "expected_signature_hex": "084886f8d62d0557fee0050fcb46f04959bbc4d97e14d639c05d6b65f2093f3c"
+    },
+    {
+        "name": "binary_body_empty_content_type",
+        "session_key_hex": "2323232323232323232323232323232323232323232323232323232323232323",
+        "method": "post",
+        "path_query": "/dailyos/v1/blob?part=1&mode=raw",
+        "content_type": "",
+        "body_b64": "AP9yYXcKYnl0ZXM=",
+        "identity": {
+            "site_binding_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "site_nonce": "siteNonceBeta456",
+            "wp_user_id": "7",
+            "wp_site_id": "install-beta:3",
+            "home_url": "https://example.test",
+            "site_url": "https://example.test/wp",
+            "wp_install_uuid": "00000000-0000-4000-8000-000000000102",
+            "plugin_instance_uuid": "00000000-0000-4000-8000-000000000202",
+            "multisite_blog_id": "3"
+        },
+        "nonce": "nonce-beta-456",
+        "timestamp": "2024-11-13T12:15:00Z",
+        "expected_canonical_bytes_b64": "REFJTFlPUy1XUC1CUklER0UtSE1BQy1WMQptZXRob2Q6NApQT1NUCnBhdGhfcXVlcnk6MzIKL2RhaWx5b3MvdjEvYmxvYj9wYXJ0PTEmbW9kZT1yYXcKY29udGVudF90eXBlOjAKCmJvZHk6MTEKAP9yYXcKYnl0ZXMKc2l0ZV9iaW5kaW5nX2RpZ2VzdDo2NApiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiCnNpdGVfbm9uY2U6MTYKc2l0ZU5vbmNlQmV0YTQ1Ngp3cF91c2VyX2lkOjEKNwp3cF9zaXRlX2lkOjE0Cmluc3RhbGwtYmV0YTozCmhvbWVfdXJsOjIwCmh0dHBzOi8vZXhhbXBsZS50ZXN0CnNpdGVfdXJsOjIzCmh0dHBzOi8vZXhhbXBsZS50ZXN0L3dwCndwX2luc3RhbGxfdXVpZDozNgowMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAxMDIKcGx1Z2luX2luc3RhbmNlX3V1aWQ6MzYKMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMjAyCm11bHRpc2l0ZV9ibG9nX2lkOjEKMwpub25jZToxNApub25jZS1iZXRhLTQ1Ngp0aW1lc3RhbXA6MjAKMjAyNC0xMS0xM1QxMjoxNTowMFoK",
+        "expected_signature_hex": "34cc6f91a9592342a6bf3767ff5e5c9c6d3d47849a5d8f2ab7a14f2d5a20b5c3"
+    },
+    {
+        "name": "trimmed_content_type_multisite",
+        "session_key_hex": "abababababababababababababababababababababababababababababababab",
+        "method": "PUT",
+        "path_query": "/dailyos/v1/example?foo=bar",
+        "content_type": " \tapplication/json; charset=utf-8 \r\n",
+        "body_b64": "W10=",
+        "identity": {
+            "site_binding_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "site_nonce": "siteNonceGamma789",
+            "wp_user_id": "108",
+            "wp_site_id": "install-gamma:12",
+            "home_url": "https://example.test",
+            "site_url": "https://example.test/network",
+            "wp_install_uuid": "00000000-0000-4000-8000-000000000103",
+            "plugin_instance_uuid": "00000000-0000-4000-8000-000000000203",
+            "multisite_blog_id": "12"
+        },
+        "nonce": "nonce-gamma-789",
+        "timestamp": "2024-11-13T12:16:40Z",
+        "expected_canonical_bytes_b64": "REFJTFlPUy1XUC1CUklER0UtSE1BQy1WMQptZXRob2Q6MwpQVVQKcGF0aF9xdWVyeToyNwovZGFpbHlvcy92MS9leGFtcGxlP2Zvbz1iYXIKY29udGVudF90eXBlOjMxCmFwcGxpY2F0aW9uL2pzb247IGNoYXJzZXQ9dXRmLTgKYm9keToyCltdCnNpdGVfYmluZGluZ19kaWdlc3Q6NjQKY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjYwpzaXRlX25vbmNlOjE3CnNpdGVOb25jZUdhbW1hNzg5CndwX3VzZXJfaWQ6MwoxMDgKd3Bfc2l0ZV9pZDoxNgppbnN0YWxsLWdhbW1hOjEyCmhvbWVfdXJsOjIwCmh0dHBzOi8vZXhhbXBsZS50ZXN0CnNpdGVfdXJsOjI4Cmh0dHBzOi8vZXhhbXBsZS50ZXN0L25ldHdvcmsKd3BfaW5zdGFsbF91dWlkOjM2CjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDEwMwpwbHVnaW5faW5zdGFuY2VfdXVpZDozNgowMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAyMDMKbXVsdGlzaXRlX2Jsb2dfaWQ6MgoxMgpub25jZToxNQpub25jZS1nYW1tYS03ODkKdGltZXN0YW1wOjIwCjIwMjQtMTEtMTNUMTI6MTY6NDBaCg==",
+        "expected_signature_hex": "10fdfd8121abab5e814a89f8eaa19171e999885d1066c64a3b58eb21978cb6a6"
+    }
+]

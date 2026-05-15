@@ -6,6 +6,7 @@ pub mod extractors;
 pub mod feedback;
 pub mod get_daily_readiness;
 pub mod get_entity_context;
+pub mod list_open_loops;
 pub mod prepare_meeting;
 pub mod provenance;
 pub mod registry;

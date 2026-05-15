@@ -181,6 +181,7 @@ mod abilities {
                 composition_id: CompositionId,
                 reason: String,
             },
+            SubjectNotOwned,
             HardError(String),
         }
 

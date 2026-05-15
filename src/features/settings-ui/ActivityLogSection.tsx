@@ -6,7 +6,7 @@ import {
   SettingsButton,
   SettingsSectionLabel,
   formRowStyles,
-} from "@/components/settings/FormRow";
+} from "@/features/settings-ui/FormRow";
 import s from "./ActivityLogSection.module.css";
 
 // ---------------------------------------------------------------------------
