@@ -10,16 +10,16 @@ import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { SurfaceMasthead } from "@/components/layout/SurfaceMasthead";
 import StatusDot from "@/components/shared/StatusDot";
-import YouCard from "@/components/settings/YouCard";
-import ConnectorsGrid from "@/components/settings/ConnectorsGrid";
-import ContextSourceSection from "@/components/settings/ContextSourceSection";
-import SystemStatus from "@/components/settings/SystemStatus";
-import ActivityLogSection from "@/components/settings/ActivityLogSection";
-import DiagnosticsSection from "@/components/settings/DiagnosticsSection";
-import DatabaseRecoveryCard from "@/components/settings/DatabaseRecoveryCard";
-import DataPrivacySection from "@/components/settings/DataPrivacySection";
-import NotificationSection from "@/components/settings/NotificationSection";
-import TextSizeSection from "@/components/settings/TextSizeSection";
+import YouCard from "@/features/settings-ui/YouCard";
+import ConnectorsGrid from "@/features/settings-ui/ConnectorsGrid";
+import ContextSourceSection from "@/features/settings-ui/ContextSourceSection";
+import SystemStatus from "@/features/settings-ui/SystemStatus";
+import ActivityLogSection from "@/features/settings-ui/ActivityLogSection";
+import DiagnosticsSection from "@/features/settings-ui/DiagnosticsSection";
+import DatabaseRecoveryCard from "@/features/settings-ui/DatabaseRecoveryCard";
+import DataPrivacySection from "@/features/settings-ui/DataPrivacySection";
+import NotificationSection from "@/features/settings-ui/NotificationSection";
+import TextSizeSection from "@/features/settings-ui/TextSizeSection";
 import s from "./SettingsPage.module.css";
 
 // ═══════════════════════════════════════════════════════════════════════════

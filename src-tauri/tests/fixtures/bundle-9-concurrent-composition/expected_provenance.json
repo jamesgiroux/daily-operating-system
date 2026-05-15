@@ -1,0 +1,12 @@
+{
+  "ability_name": "get_daily_readiness",
+  "cache_key_contract": {
+    "prepare_meeting": "prepare_meeting:{workspace_scope}:{meeting_id}",
+    "get_entity_context": "get_entity_context:{workspace_scope}:{subject_kind}:{subject_id}"
+  },
+  "assertions": [
+    "same-workspace concurrent invocations return identical child composition ids",
+    "different-workspace invocation returns child composition ids containing ws-beta",
+    "workspace_scope is present in every child composition id"
+  ]
+}

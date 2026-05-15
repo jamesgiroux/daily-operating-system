@@ -47,6 +47,23 @@ pub struct PrepareMeetingInput {
     context: Option<MeetingBriefContext>,
 }
 
+impl PrepareMeetingInput {
+    pub fn public(
+        meeting_id: impl Into<String>,
+        depth: u8,
+        include_open_loops: bool,
+        schema_version: SchemaVersion,
+    ) -> Self {
+        Self {
+            meeting_id: meeting_id.into(),
+            depth,
+            include_open_loops,
+            schema_version,
+            context: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
 pub struct MeetingBriefContext {
     pub meeting: MeetingSummary,
@@ -1871,16 +1888,9 @@ mod tests {
             self
         }
 
-        fn with_claim_dismissal(
-            mut self,
-            claim_id: &str,
-            surface: ClaimDismissalSurface,
-        ) -> Self {
-            self.claim_reader = Arc::new(
-                (*self.claim_reader)
-                    .clone()
-                    .dismissed_on(claim_id, surface),
-            );
+        fn with_claim_dismissal(mut self, claim_id: &str, surface: ClaimDismissalSurface) -> Self {
+            self.claim_reader =
+                Arc::new((*self.claim_reader).clone().dismissed_on(claim_id, surface));
             self
         }
 
@@ -2928,6 +2938,7 @@ mod tests {
     ) -> IntelligenceClaim {
         IntelligenceClaim {
             id: id.to_string(),
+            claim_version: 1,
             subject_ref: serde_json::json!({
                 "kind": entity_type,
                 "id": entity_id,

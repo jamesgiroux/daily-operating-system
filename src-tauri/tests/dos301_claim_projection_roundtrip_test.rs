@@ -1,6 +1,6 @@
 use chrono::{TimeZone, Utc};
 use dailyos_lib::db::ActionDb;
-use dailyos_lib::services::claims::{commit_claim, ClaimProposal};
+use dailyos_lib::services::claims::{commit_claim, ClaimProposal, DeterministicInsertProposal};
 use dailyos_lib::services::context::{
     ClaimDismissalSurface, ExternalClients, FixedClock, SeedableRng, ServiceContext,
 };
@@ -139,6 +139,9 @@ CREATE TABLE entity_quality (
 );
 "#;
 
+const V172_SUBSTRATE_CONCURRENCY_SQL: &str =
+    include_str!("./shared_schemas/v172_substrate_concurrency.sql");
+
 fn ctx_parts() -> (FixedClock, SeedableRng, ExternalClients) {
     (
         FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 3, 12, 0, 0).unwrap()),
@@ -173,6 +176,8 @@ fn fresh_db() -> Connection {
         .expect("apply structured claim canonicalization columns");
     conn.execute_batch(CANONICALIZATION_DECISIONS_SCHEMA_SQL)
         .expect("apply canonicalization decisions schema");
+    conn.execute_batch(V172_SUBSTRATE_CONCURRENCY_SQL)
+        .expect("apply v172 substrate concurrency schema");
     conn
 }
 
@@ -198,6 +203,7 @@ fn commit_claim_projects_entity_summary_to_legacy_reader() {
         ActionDb::from_conn(&conn),
         ClaimProposal {
             id: None,
+            expected_claim_version: None,
             subject_ref,
             claim_type: "entity_summary".to_string(),
             field_path: Some("executiveAssessment".to_string()),
@@ -251,26 +257,30 @@ fn tauri_report_read_uses_unfiltered_projection_after_entity_detail_dismissal() 
     commit_claim(
         &ctx,
         db,
-        ClaimProposal {
-            id: Some("claim-dos301-entity-detail-dismissed-summary".to_string()),
-            subject_ref: subject_ref.clone(),
-            claim_type: "entity_summary".to_string(),
-            field_path: Some("executiveAssessment".to_string()),
-            topic_key: None,
-            text: "summary must remain in shared report projection".to_string(),
-            actor: "agent:test".to_string(),
-            data_source: "test".to_string(),
-            source_ref: None,
-            source_asof: Some("2026-05-03T12:00:00Z".to_string()),
-            observed_at: "2026-05-03T12:00:00Z".to_string(),
-            provenance_json: "{}".to_string(),
-            metadata_json: None,
-            thread_id: None,
-            temporal_scope: None,
-            sensitivity: None,
-            supersedes: None,
-            tombstone: None,
-        },
+        DeterministicInsertProposal::new(
+            "claim-dos301-entity-detail-dismissed-summary".to_string(),
+            ClaimProposal {
+                id: None,
+                expected_claim_version: None,
+                subject_ref: subject_ref.clone(),
+                claim_type: "entity_summary".to_string(),
+                field_path: Some("executiveAssessment".to_string()),
+                topic_key: None,
+                text: "summary must remain in shared report projection".to_string(),
+                actor: "agent:test".to_string(),
+                data_source: "test".to_string(),
+                source_ref: None,
+                source_asof: Some("2026-05-03T12:00:00Z".to_string()),
+                observed_at: "2026-05-03T12:00:00Z".to_string(),
+                provenance_json: "{}".to_string(),
+                metadata_json: None,
+                thread_id: None,
+                temporal_scope: None,
+                sensitivity: None,
+                supersedes: None,
+                tombstone: None,
+            },
+        ),
     )
     .expect("commit summary claim");
 
@@ -290,26 +300,30 @@ fn tauri_report_read_uses_unfiltered_projection_after_entity_detail_dismissal() 
     commit_claim(
         &ctx,
         db,
-        ClaimProposal {
-            id: Some("claim-dos301-report-visible-risk".to_string()),
-            subject_ref,
-            claim_type: "entity_risk".to_string(),
-            field_path: Some("risks".to_string()),
-            topic_key: None,
-            text: "risk triggers projection rebuild".to_string(),
-            actor: "agent:test".to_string(),
-            data_source: "test".to_string(),
-            source_ref: None,
-            source_asof: Some("2026-05-03T12:00:00Z".to_string()),
-            observed_at: "2026-05-03T12:00:00Z".to_string(),
-            provenance_json: "{}".to_string(),
-            metadata_json: None,
-            thread_id: None,
-            temporal_scope: None,
-            sensitivity: None,
-            supersedes: None,
-            tombstone: None,
-        },
+        DeterministicInsertProposal::new(
+            "claim-dos301-report-visible-risk".to_string(),
+            ClaimProposal {
+                id: None,
+                expected_claim_version: None,
+                subject_ref,
+                claim_type: "entity_risk".to_string(),
+                field_path: Some("risks".to_string()),
+                topic_key: None,
+                text: "risk triggers projection rebuild".to_string(),
+                actor: "agent:test".to_string(),
+                data_source: "test".to_string(),
+                source_ref: None,
+                source_asof: Some("2026-05-03T12:00:00Z".to_string()),
+                observed_at: "2026-05-03T12:00:00Z".to_string(),
+                provenance_json: "{}".to_string(),
+                metadata_json: None,
+                thread_id: None,
+                temporal_scope: None,
+                sensitivity: None,
+                supersedes: None,
+                tombstone: None,
+            },
+        ),
     )
     .expect("commit risk claim");
 

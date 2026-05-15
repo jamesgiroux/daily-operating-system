@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { connectors } from "./connectors/registry";
 import ConnectorDetail from "./ConnectorDetail";
-import { SettingsStatusDot } from "@/components/settings/FormRow";
+import { SettingsStatusDot } from "@/features/settings-ui/FormRow";
 
 interface ConnectionStatus {
   id: string;

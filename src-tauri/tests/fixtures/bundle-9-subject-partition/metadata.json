@@ -1,0 +1,31 @@
+{
+  "bundle": 9,
+  "scenario_id": "bundle9-daily-readiness-workspace-scope-partition",
+  "invariant": "Daily readiness partitions all composed child inputs by workspace_scope before the narrative prompt boundary.",
+  "expected_render_policy": "show-with-warnings",
+  "surfaces_exercised": [
+    "get_daily_readiness",
+    "workspace-scope-partition",
+    "bundle-9-subject-partition"
+  ],
+  "source_lifecycle_refs": [
+    "src-alpha-risk",
+    "src-beta-risk"
+  ],
+  "anonymization_cert": "all-generic-placeholders-2026-05-14",
+  "retention_policy": "permanent",
+  "prompt_fingerprint_baseline": "bundle-9-subject-partition-daily-readiness-v1",
+  "prompt_template_version": "1.0.0",
+  "completion_text_hash": "f9d436a4c7077475db6d3374e1285376da2406a05b114a0ef0cd33d596ad3409",
+  "trust_factors_dominant": [
+    "workspace_scope",
+    "subject_fit",
+    "composition"
+  ],
+  "pass_fail_definition": "PASS = ws-alpha output and prompt inputs contain Account Alpha facts only. FAIL = any ws-beta subject text or source enters ws-alpha risk fields or narrative.",
+  "fixture_design_notes": {
+    "state_sql": "Seeds two workspaces with same-day meetings and tracked account subjects so a reader must partition by workspace_scope.",
+    "expected_output": "Expected get_daily_readiness domain output for ws-alpha; beta-only text is listed as an explicit absence assertion.",
+    "provider_replay": "Synthetic canonical replay key for the workspace-partition daily readiness narrative."
+  }
+}

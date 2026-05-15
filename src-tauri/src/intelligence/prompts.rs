@@ -230,20 +230,18 @@ pub fn load_disambiguators(
         }
 
         // Account ID from metadata JSON (accepts several key spellings).
-        if let Some(ref meta) = acct.metadata {
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(meta) {
-                for key in &[
-                    "REDACTED_id",
-                    "salesforceAccountId",
-                    "sfdc_id",
-                    "salesforceId",
-                ] {
-                    if let Some(v) = json.get(*key).and_then(|v| v.as_str()) {
-                        let s = v.trim();
-                        if !s.is_empty() {
-                            out.account_id = Some(s.to_string());
-                            break;
-                        }
+        if let Some(json) = acct.metadata_parsed() {
+            for key in &[
+                "REDACTED_id",
+                "salesforceAccountId",
+                "sfdc_id",
+                "salesforceId",
+            ] {
+                if let Some(v) = json.get(*key).and_then(|v| v.as_str()) {
+                    let s = v.trim();
+                    if !s.is_empty() {
+                        out.account_id = Some(s.to_string());
+                        break;
                     }
                 }
             }

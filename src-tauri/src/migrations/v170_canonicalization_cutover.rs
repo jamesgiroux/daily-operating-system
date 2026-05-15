@@ -62,7 +62,10 @@ fn migrate_in_transaction(conn: &Connection) -> Result<(), MigrationError> {
         "INSERT OR IGNORE INTO canonicalization_cutover \
             (id, cutover_at, embedding_model_version, comparator_threshold_version) \
          VALUES (1, datetime('now'), ?1, ?2)",
-        rusqlite::params![EMBEDDING_MODEL_VERSION_AT_CUTOVER, COMPARATOR_THRESHOLD_VERSION],
+        rusqlite::params![
+            EMBEDDING_MODEL_VERSION_AT_CUTOVER,
+            COMPARATOR_THRESHOLD_VERSION
+        ],
     )
     .map_err(|e| format!("insert cutover row: {e}"))?;
 
@@ -104,11 +107,9 @@ mod tests {
     }
 
     fn cutover_row_count(conn: &Connection) -> i64 {
-        conn.query_row(
-            "SELECT count(*) FROM canonicalization_cutover",
-            [],
-            |row| row.get::<_, i64>(0),
-        )
+        conn.query_row("SELECT count(*) FROM canonicalization_cutover", [], |row| {
+            row.get::<_, i64>(0)
+        })
         .expect("count cutover rows")
     }
 
@@ -152,7 +153,10 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("query sqlite_master");
-        assert_eq!(table_exists_after, 0, "cutover table must not be created when precondition fails");
+        assert_eq!(
+            table_exists_after, 0,
+            "cutover table must not be created when precondition fails"
+        );
     }
 
     #[test]

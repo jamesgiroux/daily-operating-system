@@ -335,6 +335,7 @@ fn trust_factor_raw_value(computation: &TrustComputation, name: &str) -> f64 {
 fn trust_claim(text: &str) -> IntelligenceClaim {
     IntelligenceClaim {
         id: "dos287-bundle1-claim".to_string(),
+        claim_version: 1,
         subject_ref: serde_json::json!({
             "kind": "account",
             "id": TARGET_ACCOUNT_ID,

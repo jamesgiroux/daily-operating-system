@@ -700,6 +700,7 @@ fn capture_intelligence_claim_rows(conn: &Connection) -> Result<Vec<Intelligence
 
         claims.push(IntelligenceClaim {
             id: row.get(0).map_err(sql_error)?,
+            claim_version: 1,
             subject_ref: row.get(1).map_err(sql_error)?,
             claim_type: row.get(2).map_err(sql_error)?,
             field_path: row.get(3).map_err(sql_error)?,

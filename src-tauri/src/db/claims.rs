@@ -220,6 +220,7 @@ mod tests {
     fn intelligence_claim_roundtrip_preserves_snake_case_and_options() {
         let claim = IntelligenceClaim {
             id: "claim-1".to_string(),
+            claim_version: 1,
             subject_ref: r#"{"kind":"account","id":"acct-1"}"#.to_string(),
             claim_type: "risk".to_string(),
             field_path: Some("health.risk".to_string()),
@@ -269,6 +270,7 @@ mod tests {
     fn intelligence_claim_roundtrip_preserves_some_optional_fields() {
         let claim = IntelligenceClaim {
             id: "claim-2".to_string(),
+            claim_version: 1,
             subject_ref: r#"{"kind":"person","id":"person-1"}"#.to_string(),
             claim_type: "role".to_string(),
             field_path: None,

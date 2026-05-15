@@ -1,0 +1,39 @@
+{
+  "gates": [
+    {
+      "id": "raw_wpdb_outside_services",
+      "description": "Disallow raw $wpdb usage outside DailyOS service classes.",
+      "pattern": "\\$wpdb\\s*->",
+      "include_glob": "wp/dailyos/**/*.php",
+      "exclude_glob": "wp/dailyos/includes/services/**/*.php"
+    },
+    {
+      "id": "filesystem_writes_outside_uploads",
+      "description": "Disallow direct filesystem writes outside wp-content/uploads/dailyos.",
+      "pattern": "\\b(file_put_contents|fwrite)\\s*\\(|\\bfopen\\s*\\([^\\n;]*['\\\"]w(?:b)?['\\\"]",
+      "include_glob": "wp/dailyos/**/*.php",
+      "exclude_glob": ""
+    },
+    {
+      "id": "secret_persistence",
+      "description": "Disallow persisting transport secrets or localizing them to JavaScript.",
+      "pattern": "(?i)\\b(update_option|set_transient|update_post_meta|update_user_meta|wp_localize_script)\\s*\\([^;]*(hmac|bearer|session_key|pairing_token|derived_key)",
+      "include_glob": "wp/dailyos/**/*.php",
+      "exclude_glob": ""
+    },
+    {
+      "id": "wp_remote_post_body_array",
+      "description": "Require wp_remote_post body payloads to be pre-serialized strings.",
+      "pattern": "wp_remote_post\\s*\\([^;]*['\\\"]body['\\\"]\\s*=>\\s*(\\[|array\\s*\\()",
+      "include_glob": "wp/dailyos/**/*.php",
+      "exclude_glob": ""
+    },
+    {
+      "id": "ephemeral_issue_refs",
+      "description": "Disallow ephemeral issue or cycle references in PHP comments.",
+      "pattern": "DOS-[0-9]+|cycle-[0-9]+|fix #[0-9]+",
+      "include_glob": "wp/dailyos/**/*.php",
+      "exclude_glob": ""
+    }
+  ]
+}

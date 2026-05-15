@@ -106,6 +106,65 @@ pub struct StrategicProgram {
 }
 
 // =============================================================================
+// Typed JSON accessors for DbAccount blob fields
+//
+// DbAccount stores company_overview/strategic_programs/keywords/metadata as
+// Option<String> JSON. Callers historically inlined the same parse-and-swallow
+// pattern; these accessors centralize parsing and log warnings on malformed
+// JSON so silent data corruption surfaces instead of degrading to None.
+// =============================================================================
+
+impl DbAccount {
+    /// Parsed `company_overview` blob, or `None` if empty/missing/malformed.
+    pub fn company_overview_parsed(&self) -> Option<CompanyOverview> {
+        parse_account_json_blob(
+            "company_overview",
+            &self.id,
+            self.company_overview.as_deref(),
+        )
+    }
+
+    /// Parsed `strategic_programs` blob, or an empty vec on missing/malformed JSON.
+    pub fn strategic_programs_parsed(&self) -> Vec<StrategicProgram> {
+        parse_account_json_blob(
+            "strategic_programs",
+            &self.id,
+            self.strategic_programs.as_deref(),
+        )
+        .unwrap_or_default()
+    }
+
+    /// Parsed `keywords` blob (string array), or an empty vec on missing/malformed JSON.
+    pub fn keywords_parsed(&self) -> Vec<String> {
+        parse_account_json_blob("keywords", &self.id, self.keywords.as_deref()).unwrap_or_default()
+    }
+
+    /// Parsed `metadata` blob, or `None` if empty/missing/malformed.
+    pub fn metadata_parsed(&self) -> Option<serde_json::Value> {
+        parse_account_json_blob("metadata", &self.id, self.metadata.as_deref())
+    }
+}
+
+/// Parse a DbAccount JSON blob field, logging at warn level on malformed input.
+fn parse_account_json_blob<T: serde::de::DeserializeOwned>(
+    field: &str,
+    account_id: &str,
+    raw: Option<&str>,
+) -> Option<T> {
+    let raw = raw?;
+    if raw.trim().is_empty() {
+        return None;
+    }
+    match serde_json::from_str::<T>(raw) {
+        Ok(value) => Some(value),
+        Err(err) => {
+            log::warn!("DbAccount.{field} for account {account_id} failed to parse: {err}",);
+            None
+        }
+    }
+}
+
+// =============================================================================
 // Filesystem I/O
 // =============================================================================
 
@@ -178,15 +237,8 @@ pub fn write_account_json(
             csm: None,
             champion: None,
         },
-        company_overview: account
-            .company_overview
-            .as_deref()
-            .and_then(|s| serde_json::from_str(s).ok()),
-        strategic_programs: account
-            .strategic_programs
-            .as_deref()
-            .and_then(|s| serde_json::from_str(s).ok())
-            .unwrap_or_default(),
+        company_overview: account.company_overview_parsed(),
+        strategic_programs: account.strategic_programs_parsed(),
         notes: account.notes.clone(),
         custom_sections: existing_json
             .map(|j| j.custom_sections.clone())
@@ -263,10 +315,7 @@ pub fn write_account_markdown(
         .and_then(|i| i.company_context.as_ref())
         .is_some();
     if !intel_has_company {
-        let overview: Option<CompanyOverview> = account
-            .company_overview
-            .as_deref()
-            .and_then(|s| serde_json::from_str(s).ok());
+        let overview = account.company_overview_parsed();
         if let Some(overview) = overview {
             md.push_str("## Company Overview\n\n");
             if let Some(ref desc) = overview.description {
@@ -287,11 +336,7 @@ pub fn write_account_markdown(
     }
 
     // Strategic Programs (from DB)
-    let programs: Vec<StrategicProgram> = account
-        .strategic_programs
-        .as_deref()
-        .and_then(|s| serde_json::from_str(s).ok())
-        .unwrap_or_default();
+    let programs = account.strategic_programs_parsed();
     if !programs.is_empty() {
         md.push_str("## Strategic Programs\n\n");
         for p in &programs {
@@ -1002,15 +1047,8 @@ pub fn default_account_json(account: &DbAccount) -> AccountJson {
             csm: None,
             champion: None,
         },
-        company_overview: account
-            .company_overview
-            .as_deref()
-            .and_then(|s| serde_json::from_str(s).ok()),
-        strategic_programs: account
-            .strategic_programs
-            .as_deref()
-            .and_then(|s| serde_json::from_str(s).ok())
-            .unwrap_or_default(),
+        company_overview: account.company_overview_parsed(),
+        strategic_programs: account.strategic_programs_parsed(),
         notes: account.notes.clone(),
         custom_sections: Vec::new(),
         parent_id: account.parent_id.clone(),

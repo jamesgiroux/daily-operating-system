@@ -1,0 +1,112 @@
+{
+  "version": 1,
+  "scenario_id": "adr-0106-daily-readiness-narrative-synthesis",
+  "ability_name": "get_daily_readiness",
+  "template": {
+    "id": "daily_readiness",
+    "version": "1.0.0",
+    "path": "src-tauri/src/abilities/prompts/daily_readiness.v1.txt",
+    "sha256": "f3cdde78f40893df3e5966b6534f54154c01f76e80cd99a0482beb66d8034f48"
+  },
+  "provider": "claude_code",
+  "model": "claude-sonnet-4-6",
+  "temperature": 0.0,
+  "top_p": null,
+  "seed": null,
+  "canonical_inputs": {
+    "schema_version": 1,
+    "context": {
+      "workspace_scope": "ws-alpha",
+      "date": "2026-05-14",
+      "meeting_topics": [],
+      "meeting_attendees": [],
+      "meeting_open_loops": [],
+      "meeting_outcomes": [],
+      "entity_contexts": [
+        {
+          "subject": {
+            "kind": "account",
+            "id": "acct-alpha",
+            "display_name": "Account Alpha",
+            "workspace_scope": "ws-alpha"
+          },
+          "entries": []
+        }
+      ],
+      "risk_directions": [
+        {
+          "id": "risk-alpha-renewal",
+          "subject": {
+            "kind": "account",
+            "id": "acct-alpha",
+            "display_name": "Account Alpha",
+            "workspace_scope": "ws-alpha"
+          },
+          "direction": "up"
+        }
+      ],
+      "risk_summaries": [
+        {
+          "id": "risk-alpha-renewal",
+          "subject": {
+            "kind": "account",
+            "id": "acct-alpha",
+            "display_name": "Account Alpha",
+            "workspace_scope": "ws-alpha"
+          },
+          "summary": "Account Alpha renewal risk increased after the sponsor missed yesterday's security review."
+        }
+      ],
+      "open_loop_texts": [
+        {
+          "id": "loop-alpha-security-review",
+          "subject": {
+            "kind": "account",
+            "id": "acct-alpha",
+            "display_name": "Account Alpha",
+            "workspace_scope": "ws-alpha"
+          },
+          "text": "Confirm Account Alpha security reviewer before the 14:00 readiness call."
+        }
+      ],
+      "overnight_summaries": [
+        {
+          "id": "change-alpha-sponsor-delay",
+          "subject": {
+            "kind": "account",
+            "id": "acct-alpha",
+            "display_name": "Account Alpha",
+            "workspace_scope": "ws-alpha"
+          },
+          "summary": "Account Alpha sponsor delayed the security review overnight."
+        }
+      ],
+      "coverage_warnings": []
+    }
+  },
+  "prompt_fingerprint": {
+    "provider": "claude_code",
+    "model": "claude-sonnet-4-6",
+    "prompt_template_id": "daily_readiness",
+    "prompt_template_version": "1.0.0",
+    "canonical_prompt_hash": "90f3b29214a6dcaf5004b52af15ab78fe611f855f2227ae0aaf36f325a58c4d0",
+    "temperature": 0.0,
+    "top_p": null,
+    "seed": null
+  },
+  "recorded_completion": "{\"narrative\":\"Account Alpha needs security-review follow-through before today's readiness review.\"}",
+  "provider_replay": {
+    "version": 1,
+    "provider": "claude_code",
+    "model": "claude-sonnet-4-6",
+    "temperature": 0.0,
+    "fixtures": [
+      {
+        "canonical_prompt_hash": "90f3b29214a6dcaf5004b52af15ab78fe611f855f2227ae0aaf36f325a58c4d0",
+        "completion": {
+          "text": "{\"narrative\":\"Account Alpha needs security-review follow-through before today's readiness review.\"}"
+        }
+      }
+    ]
+  }
+}

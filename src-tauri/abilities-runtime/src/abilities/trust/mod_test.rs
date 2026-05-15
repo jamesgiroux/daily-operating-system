@@ -8,6 +8,7 @@ use crate::types::{ClaimSensitivity, ClaimState, SurfacingState, TemporalScope};
 fn test_claim() -> ClaimRow {
     ClaimRow {
         id: "claim-1".to_string(),
+        claim_version: 1,
         subject_ref: r#"{"account":"acct-target"}"#.to_string(),
         claim_type: "risk".to_string(),
         field_path: Some("risk.summary".to_string()),

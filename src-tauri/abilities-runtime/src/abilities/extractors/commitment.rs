@@ -126,13 +126,7 @@ pub fn normalize_commitment_title(title: &str) -> String {
 pub fn normalize_commitment_identity_text(value: &str) -> String {
     value
         .chars()
-        .map(|ch| {
-            if ch.is_ascii_punctuation() {
-                ' '
-            } else {
-                ch
-            }
-        })
+        .map(|ch| if ch.is_ascii_punctuation() { ' ' } else { ch })
         .collect::<String>()
         .split_whitespace()
         .collect::<Vec<_>>()
@@ -180,7 +174,11 @@ fn derive_commitment_id_from_normalized(
         b"due_normalized",
         due_normalized.unwrap_or("").as_bytes(),
     );
-    update_component(&mut hasher, b"owner_raw", owner_raw.unwrap_or("").as_bytes());
+    update_component(
+        &mut hasher,
+        b"owner_raw",
+        owner_raw.unwrap_or("").as_bytes(),
+    );
     format!("commitment:{}", hex::encode(hasher.finalize()))
 }
 

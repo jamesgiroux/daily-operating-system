@@ -2587,18 +2587,8 @@ pub fn run_enrichment_post_commit_side_effects(
 
     // Dual-write commitments from Glean enrichment to captured_commitments.
     if input.entity_type == "account" {
-        dual_write_enrichment_commitments(
-            db,
-            &state.signals.engine,
-            &input.entity_id,
-            final_intel,
-        );
-        dual_write_enrichment_products(
-            db,
-            &state.signals.engine,
-            &input.entity_id,
-            final_intel,
-        );
+        dual_write_enrichment_commitments(db, &state.signals.engine, &input.entity_id, final_intel);
+        dual_write_enrichment_products(db, &state.signals.engine, &input.entity_id, final_intel);
     }
 
     // Regenerate person files after intelligence enrichment.
@@ -4573,6 +4563,7 @@ mod tests {
     fn trust_claim_proposal(account_id: &str, text: &str, data_source: &str) -> ClaimProposal {
         ClaimProposal {
             id: None,
+            expected_claim_version: None,
             subject_ref: serde_json::json!({ "kind": "account", "id": account_id }).to_string(),
             claim_type: "risk".to_string(),
             field_path: Some("health.risk".to_string()),
@@ -6012,6 +6003,7 @@ mod tests {
             .expect("drop signal_weights to simulate read failure");
         let claim = crate::db::claims::IntelligenceClaim {
             id: "c-1".into(),
+            claim_version: 1,
             subject_ref: "{}".into(),
             claim_type: "fact".into(),
             field_path: None,
@@ -6057,6 +6049,7 @@ mod tests {
     fn internal_consistency_honors_metadata_hint_otherwise_defaults_to_one() {
         let mut claim = crate::db::claims::IntelligenceClaim {
             id: "c-1".into(),
+            claim_version: 1,
             subject_ref: "{}".into(),
             claim_type: "fact".into(),
             field_path: None,

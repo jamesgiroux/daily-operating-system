@@ -8,6 +8,7 @@ pub mod claims;
 pub mod claims_backfill;
 pub mod commitment_bridge;
 pub mod comparator_thresholds;
+pub mod compositions;
 pub mod context;
 pub mod dashboard;
 pub mod derived_state;
@@ -40,6 +41,7 @@ pub mod temporal;
 pub mod threads;
 pub mod trust_extraction;
 pub mod user_entity;
+pub mod versioning;
 
 /// Command-facing service boundary for mutation workflows.
 ///

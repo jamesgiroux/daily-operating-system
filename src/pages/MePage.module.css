@@ -36,6 +36,7 @@
    ───────────────────────────────────────────────────────────────────────── */
 .section {
   margin-bottom: var(--space-2xl);
+  scroll-margin-top: 60px;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -286,4 +287,55 @@
   font-family: var(--font-sans);
   font-size: 14px;
   color: var(--color-text-primary);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   FOLIO ACTION BUTTONS — Outlined caps buttons rendered in the FolioBar.
+   Color modifiers select the accent; .folioActionGroup wraps the row.
+   ───────────────────────────────────────────────────────────────────────── */
+.folioActionGroup {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.folioActionButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: none;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+
+.folioActionTurmeric {
+  color: var(--color-spice-turmeric);
+}
+
+.folioActionEucalyptus {
+  color: var(--color-garden-eucalyptus);
+}
+
+.folioActionSage {
+  color: var(--color-garden-sage);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   PRIORITY EDITABLE TEXT — priority row text input/display
+   ───────────────────────────────────────────────────────────────────────── */
+.priorityTextEdit {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-primary);
+  line-height: 1.5;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   BOTTOM SPACER — keep finis above the next-page lip
+   ───────────────────────────────────────────────────────────────────────── */
+.bottomSpacer {
+  height: 80px;
 }

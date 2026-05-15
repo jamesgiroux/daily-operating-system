@@ -8,8 +8,8 @@ use schemars::{gen::SchemaGenerator, JsonSchema};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::field::{FieldAttribution, FieldPath};
-use super::source::{EntityId, SourceAttribution, SourceIndex};
 use super::source::DataSource;
+use super::source::{EntityId, SourceAttribution, SourceIndex};
 use super::subject::SubjectAttribution;
 use super::trust::{EffectiveTrust, TrustAssessment};
 use crate::abilities::registry::AbilityCategory;
@@ -436,6 +436,7 @@ pub enum ProvenanceWarning {
     AttributionIncomplete {
         field: FieldPath,
     },
+    SourceRevoked,
     Masked {
         reason: MaskReason,
     },

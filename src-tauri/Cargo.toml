@@ -115,6 +115,7 @@ filetime = "0.2.27"
 tauri = { version = "2", features = ["test"] }
 tracing-test = "0.2"
 trybuild = "1"
+syn = { version = "2", features = ["full", "visit"] }
 
 [features]
 experimental = ["abilities-runtime/experimental", "dailyos-abilities-macro/experimental"]

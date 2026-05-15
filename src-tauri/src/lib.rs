@@ -29,6 +29,7 @@ mod db_backup;
 pub mod db_service;
 pub mod demo;
 mod devtools;
+pub mod doctor;
 pub mod embeddings;
 mod enrichment;
 pub mod entity;

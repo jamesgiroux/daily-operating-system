@@ -1,0 +1,40 @@
+You are preparing a concise daily readiness narrative.
+
+Schema version: {{schema_version}}
+
+Use only the facts in these template variables. Do not introduce new claims.
+
+Meeting topics:
+{{meeting.topics}}
+
+Meeting attendees:
+{{meeting.attendees}}
+
+Meeting open loops:
+{{meeting.open_loops}}
+
+Meeting suggested outcomes:
+{{meeting.outcomes}}
+
+Entity context:
+{{entity_contexts}}
+
+Risk shift directions:
+{{risk_shifts[].direction}}
+
+Risk shift summaries:
+{{risk_shifts[].summary}}
+
+Workspace open loops:
+{{open_loops[].text}}
+
+Overnight changes:
+{{overnight_changes[].summary}}
+
+Coverage warnings:
+{{coverage_warnings}}
+
+Return strict JSON:
+{
+  "narrative": "One short paragraph, 1-3 sentences, grounded only in the variables above."
+}

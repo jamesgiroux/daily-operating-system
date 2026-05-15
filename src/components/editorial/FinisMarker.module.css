@@ -1,0 +1,27 @@
+/* =============================================================================
+   FinisMarker.module.css — End-of-briefing marker
+   Three spaced brand marks + optional enriched-at timestamp.
+   Mockup: Montserrat 18px, turmeric color, 0.4em letter-spacing.
+   ============================================================================= */
+
+@import "../../styles/design-tokens.css";
+
+.root {
+  text-align: center;
+  padding: 72px 0 24px;
+}
+
+.marks {
+  display: flex;
+  justify-content: center;
+  gap: 0.4em;
+  color: var(--color-spice-turmeric);
+}
+
+.timestamp {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.06em;
+  margin-top: 16px;
+}

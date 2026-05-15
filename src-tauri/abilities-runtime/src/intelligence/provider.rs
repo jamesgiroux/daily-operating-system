@@ -26,12 +26,12 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use serde_json::Value;
 
+use super::prompt_fingerprint::canonicalize_json_value;
 #[allow(deprecated)]
 pub use super::prompt_fingerprint::{
     canonical_prompt_hash, canonical_template_hash, prompt_fingerprint_from_completion,
     replay_fixture_key, CanonicalPromptRequest,
 };
-use super::prompt_fingerprint::canonicalize_json_value;
 
 /// Model tier for AI operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -567,10 +567,7 @@ mod tests {
         let a = PromptInput::new("same prompt");
         let b = PromptInput::new("same prompt");
         let meta = FingerprintMetadata::default();
-        assert_eq!(
-            replay_fixture_key(&a, &meta),
-            replay_fixture_key(&b, &meta)
-        );
+        assert_eq!(replay_fixture_key(&a, &meta), replay_fixture_key(&b, &meta));
     }
 
     #[test]
@@ -592,10 +589,7 @@ mod tests {
             tokens_output: None,
             provider_completion_id: None,
         };
-        assert_ne!(
-            replay_fixture_key(&a, &meta),
-            replay_fixture_key(&b, &meta)
-        );
+        assert_ne!(replay_fixture_key(&a, &meta), replay_fixture_key(&b, &meta));
     }
 
     #[test]

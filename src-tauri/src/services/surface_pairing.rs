@@ -80,7 +80,6 @@ pub struct PairingHandshakeCapacityInput {
 pub struct PairingHandshakeResponse {
     pub surface_client_id: String,
     pub session_id: String,
-    pub bearer_token: String,
     pub hmac_key_id: String,
     pub hmac_key: String,
     pub endpoint_version: &'static str,
@@ -98,7 +97,6 @@ pub struct PairingHandshakeResponse {
 pub struct IssuedSessionMaterial {
     pub session_id: String,
     pub surface_client_id: String,
-    pub bearer_token: String,
     pub hmac_master_key: [u8; 32],
 }
 
@@ -110,6 +108,21 @@ pub struct PairingHandshakeOutcome {
     pub revocation_audit: Option<SurfacePairingAuditEvent>,
     pub paired_origin: String,
     pub revoked_surface_client_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SurfaceSessionRefreshInput {
+    pub session_id: String,
+    pub site_binding_digest: String,
+    pub wp_install_uuid: String,
+    pub plugin_instance_uuid: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SurfaceSessionRefreshIdentity {
+    Matched,
+    SessionNotFound,
+    IdentityMismatch,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -461,9 +474,7 @@ pub fn complete_handshake(
     let surface_client_id = format!("sc_{}", Uuid::new_v4().simple());
     let pairing_id = format!("sp_{}", Uuid::new_v4().simple());
     let session_id = format!("sess_{}", Uuid::new_v4().simple());
-    let bearer_token = random_url_token(32);
     let hmac_master_key = random_key32();
-    let bearer_token_hash = stable_hash("bearer_token", &bearer_token);
     let hmac_key_id = session_id.clone();
     let issued_at = format_ts(input.now);
     let inactive_expires_at =
@@ -566,15 +577,14 @@ pub fn complete_handshake(
             tx.conn_ref()
                 .execute(
                     "INSERT INTO surface_client_sessions (
-                        session_id, surface_client_id, pairing_epoch, bearer_token_hash,
-                        hmac_key_id, issued_at, last_seen_at, inactive_expires_at,
-                        absolute_expires_at, scope_digest, site_binding_digest, wp_user_hash
-                    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7, ?8, ?9, ?10, ?11)",
+                        session_id, surface_client_id, pairing_epoch, hmac_key_id,
+                        issued_at, last_seen_at, inactive_expires_at, absolute_expires_at,
+                        scope_digest, site_binding_digest, wp_user_hash
+                    ) VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?6, ?7, ?8, ?9, ?10)",
                     params![
                         session_id,
                         surface_client_id,
                         next_epoch,
-                        bearer_token_hash,
                         hmac_key_id,
                         issued_at,
                         inactive_expires_at,
@@ -595,7 +605,6 @@ pub fn complete_handshake(
     let response = PairingHandshakeResponse {
         surface_client_id: surface_client_id.clone(),
         session_id: session_id.clone(),
-        bearer_token: bearer_token.clone(),
         hmac_key_id: hmac_key_id.clone(),
         hmac_key: base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(hmac_session_key),
         endpoint_version: input.endpoint_version,
@@ -663,7 +672,6 @@ pub fn complete_handshake(
         session: IssuedSessionMaterial {
             session_id,
             surface_client_id,
-            bearer_token,
             hmac_master_key,
         },
         audit,
@@ -828,6 +836,54 @@ pub fn load_session_scope_set_for_audit(
         .flatten()?;
     let scopes = scopes_from_json(&row.scopes_json).ok()?;
     scope_set_from_strings(&scopes).ok()
+}
+
+pub fn verify_session_refresh_identity(
+    db: &ActionDb,
+    input: SurfaceSessionRefreshInput,
+) -> Result<SurfaceSessionRefreshIdentity, SurfacePairingError> {
+    struct RefreshIdentityRow {
+        site_binding_digest: String,
+        wp_install_uuid_hash: String,
+        plugin_instance_uuid_hash: String,
+    }
+
+    let row = db
+        .conn_ref()
+        .query_row(
+            "SELECT p.site_binding_digest, p.wp_install_uuid_hash, p.plugin_instance_uuid_hash
+             FROM surface_client_sessions s
+             JOIN surface_client_pairings p
+               ON p.surface_client_id = s.surface_client_id
+              AND p.pairing_epoch = s.pairing_epoch
+             WHERE s.session_id = ?1
+               AND s.revoked_at IS NULL
+               AND p.lifecycle_state = 'active'
+               AND p.revoked_at IS NULL",
+            params![input.session_id],
+            |row| {
+                Ok(RefreshIdentityRow {
+                    site_binding_digest: row.get("site_binding_digest")?,
+                    wp_install_uuid_hash: row.get("wp_install_uuid_hash")?,
+                    plugin_instance_uuid_hash: row.get("plugin_instance_uuid_hash")?,
+                })
+            },
+        )
+        .optional()
+        .map_err(|error| SurfacePairingError::Write(error.to_string()))?;
+    let Some(row) = row else {
+        return Ok(SurfaceSessionRefreshIdentity::SessionNotFound);
+    };
+
+    if row.site_binding_digest != input.site_binding_digest
+        || row.wp_install_uuid_hash != stable_hash("wp_install_uuid", &input.wp_install_uuid)
+        || row.plugin_instance_uuid_hash
+            != stable_hash("plugin_instance_uuid", &input.plugin_instance_uuid)
+    {
+        return Ok(SurfaceSessionRefreshIdentity::IdentityMismatch);
+    }
+
+    Ok(SurfaceSessionRefreshIdentity::Matched)
 }
 
 pub fn list_pairings(
@@ -2225,7 +2281,6 @@ mod tests {
         )
         .unwrap();
         assert_eq!(ok.response.endpoint_version, "v1");
-        assert!(!ok.response.bearer_token.is_empty());
         assert!(!ok.response.hmac_key.is_empty());
         let returned_hmac_key = base64::engine::general_purpose::URL_SAFE_NO_PAD
             .decode(ok.response.hmac_key.as_bytes())

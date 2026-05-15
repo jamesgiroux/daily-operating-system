@@ -29,9 +29,9 @@ use std::thread;
 use rusqlite::Connection;
 use tokio::sync::oneshot;
 
-use crate::db::key_provider::{rekey_database_standalone, DbKeyProvider, EncryptionKey};
 #[cfg(test)]
 use crate::db::key_provider::UserIdentity;
+use crate::db::key_provider::{rekey_database_standalone, DbKeyProvider, EncryptionKey};
 use crate::db::DbError;
 
 /// Number of read connections in the pool.
@@ -311,10 +311,7 @@ impl DbKeyProvider for FixtureDbServiceKeyProvider {
         Ok(self.key.clone())
     }
 
-    fn rotate_key(
-        &self,
-        _user: &UserIdentity,
-    ) -> crate::db::key_provider::Result<EncryptionKey> {
+    fn rotate_key(&self, _user: &UserIdentity) -> crate::db::key_provider::Result<EncryptionKey> {
         Ok(self.key.clone())
     }
 }

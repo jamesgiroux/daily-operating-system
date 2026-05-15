@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ListOpenLoopsOperationOutput",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "invocation_id",
+    "ability_name",
+    "ability_version",
+    "schema_version",
+    "data",
+    "rendered_provenance",
+    "diagnostics"
+  ],
+  "properties": {
+    "invocation_id": { "type": "string" },
+    "ability_name": { "type": "string", "const": "list_open_loops" },
+    "ability_version": { "type": "string" },
+    "schema_version": { "type": "integer", "const": 1 },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["loops", "schema_version"],
+      "properties": {
+        "loops": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "subject", "loop_kind", "description", "claim_type"],
+            "properties": {
+              "id": { "type": "string" },
+              "subject": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["entity_type", "entity_id"],
+                "properties": {
+                  "entity_type": {
+                    "type": "string",
+                    "enum": ["account", "project", "person", "meeting"]
+                  },
+                  "entity_id": { "type": "string", "minLength": 1 }
+                }
+              },
+              "loop_kind": { "type": "string" },
+              "description": { "type": "string" },
+              "owner": { "type": "string" },
+              "due_date": { "type": "string" },
+              "status": { "type": "string" },
+              "source_asof": { "type": "string" },
+              "claim_type": { "type": "string" }
+            }
+          }
+        },
+        "schema_version": { "type": "integer", "const": 1 }
+      }
+    },
+    "rendered_provenance": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "diagnostics": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}

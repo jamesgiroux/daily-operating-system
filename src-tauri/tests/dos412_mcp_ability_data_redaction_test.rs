@@ -12,7 +12,9 @@ use dailyos_lib::bridges::tauri::TauriAbilityBridge;
 use dailyos_lib::bridges::McpSessionId;
 use dailyos_lib::db::claims::{ClaimSensitivity, TemporalScope};
 use dailyos_lib::db::ActionDb;
-use dailyos_lib::services::claims::{commit_claim, withdraw_claim, ClaimProposal, CommittedClaim};
+use dailyos_lib::services::claims::{
+    commit_claim, withdraw_claim, ClaimProposal, CommittedClaim, DeterministicInsertProposal,
+};
 use dailyos_lib::services::context::{ClaimDismissalSurface, ExecutionMode};
 use dailyos_lib::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
 use dailyos_lib::services::sensitivity::{
@@ -31,6 +33,8 @@ const CYCLE4_OWNER_TEXT: &str = "Private owner text from source content.";
 const CYCLE4_ATTENDEE_TEXT: &str = "Private attendee context name from source content.";
 const DIAGNOSTIC_PRIVATE_TEXT: &str = "Diagnostic warning with confidential customer text.";
 const CLAIMS_SCHEMA_SQL: &str = include_str!("../src/migrations/129_dos_7_claims_schema.sql");
+const V172_SUBSTRATE_CONCURRENCY_SQL: &str =
+    include_str!("./shared_schemas/v172_substrate_concurrency.sql");
 const TYPED_FEEDBACK_SQL: &str =
     include_str!("../src/migrations/135_dos_294_typed_feedback_schema.sql");
 const PROJECTION_STATUS_SQL: &str =
@@ -492,7 +496,14 @@ macro_rules! tagged_sibling_regression {
     ($test_name:ident, $field:literal) => {
         #[test]
         fn $test_name() {
-            assert_tagged_claim_sibling_is_stripped($field);
+            // Per-test claim_id keeps the substrate's process-global commit
+            // lock (keyed by subject_ref + claim_type + field_path) from
+            // serializing parallel tests that exercise the same logical
+            // fixture in separate in-memory connections.
+            assert_tagged_claim_sibling_is_stripped(
+                $field,
+                concat!("claim-internal-sibling-", stringify!($test_name)),
+            );
         }
     };
 }
@@ -512,18 +523,18 @@ tagged_sibling_regression!(
 tagged_sibling_regression!(tagged_claim_carrier_strips_raw_text_sibling, "rawText");
 tagged_sibling_regression!(tagged_claim_carrier_strips_quote_sibling, "quote");
 
-fn assert_tagged_claim_sibling_is_stripped(field: &str) {
+fn assert_tagged_claim_sibling_is_stripped(field: &str, claim_id: &str) {
     let conn = fresh_claims_conn();
     let ctx = live_claim_ctx();
     seed_claim(
         &ctx,
         &conn,
-        "claim-internal-sibling",
+        claim_id,
         ClaimSensitivity::Internal,
         INTERNAL_TEXT,
     );
 
-    let mut tagged = tagged_claim("claim-internal-sibling", "internal", INTERNAL_TEXT);
+    let mut tagged = tagged_claim(claim_id, "internal", INTERNAL_TEXT);
     tagged[field] = json!(CONFIDENTIAL_TEXT);
     let rendered =
         render_mcp_ability_data_for_surface(ActionDb::from_conn(&conn), json!({ "claim": tagged }));
@@ -621,6 +632,8 @@ fn fresh_claims_conn() -> Connection {
         .expect("apply projection status schema");
     conn.execute_batch(STRUCTURED_CLAIM_CANONICALIZATION_COLUMNS_SQL)
         .expect("apply structured claim canonicalization columns");
+    conn.execute_batch(V172_SUBSTRATE_CONCURRENCY_SQL)
+        .expect("apply v172 substrate concurrency schema");
     conn
 }
 
@@ -674,26 +687,30 @@ fn seed_claim(
     let committed = commit_claim(
         ctx,
         ActionDb::from_conn(conn),
-        ClaimProposal {
-            id: Some(id.to_string()),
-            subject_ref: json!({ "kind": "account", "id": SUBJECT_ACCOUNT_ID }).to_string(),
-            claim_type: "risk".to_string(),
-            field_path: Some(format!("dos412.{id}")),
-            topic_key: None,
-            text: text.to_string(),
-            actor: "agent:test".to_string(),
-            data_source: "unit_test".to_string(),
-            source_ref: None,
-            source_asof: Some(TS.to_string()),
-            observed_at: TS.to_string(),
-            provenance_json: "{}".to_string(),
-            metadata_json: None,
-            thread_id: None,
-            temporal_scope: Some(TemporalScope::State),
-            sensitivity: Some(sensitivity),
-            supersedes: None,
-            tombstone: None,
-        },
+        DeterministicInsertProposal::new(
+            id.to_string(),
+            ClaimProposal {
+                id: None,
+                expected_claim_version: None,
+                subject_ref: json!({ "kind": "account", "id": SUBJECT_ACCOUNT_ID }).to_string(),
+                claim_type: "risk".to_string(),
+                field_path: Some(format!("dos412.{id}")),
+                topic_key: None,
+                text: text.to_string(),
+                actor: "agent:test".to_string(),
+                data_source: "unit_test".to_string(),
+                source_ref: None,
+                source_asof: Some(TS.to_string()),
+                observed_at: TS.to_string(),
+                provenance_json: "{}".to_string(),
+                metadata_json: None,
+                thread_id: None,
+                temporal_scope: Some(TemporalScope::State),
+                sensitivity: Some(sensitivity),
+                supersedes: None,
+                tombstone: None,
+            },
+        ),
     )
     .expect("commit claim fixture");
 
