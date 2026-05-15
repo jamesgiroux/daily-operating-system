@@ -1,0 +1,11 @@
+{
+  "scenario_id": "empty",
+  "ability": "get_daily_readiness",
+  "date": "2026-05-15",
+  "result": {
+    "meetings": [],
+    "focus_items": [],
+    "overnight_changes": [],
+    "empty_state": "no_meetings"
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "bundle": 15,
+  "scenario_id": "cross-surface-consistency",
+  "invariant": "Daily readiness, meeting briefing, entity detail, dashboard render data, and MCP output agree on shared current-state claims for the same account, meeting, project, person, and open loop, or expose the same timestamped/degraded state.",
+  "expected_render_policy": "show-consistent-current-state-with-visible-freshness-and-shared-degraded-posture",
+  "surfaces_exercised": [
+    "get_entity_context",
+    "prepare_meeting",
+    "get_daily_readiness",
+    "dashboard",
+    "mcp"
+  ],
+  "source_lifecycle_refs": [
+    "source-b15-account-health-current",
+    "source-b15-project-status-current",
+    "source-b15-person-action-current",
+    "source-b15-lint-blocked-bleed",
+    "source-b15-pre-refresh-healthy",
+    "source-b15-post-refresh-risk",
+    "activity-b15-refresh-completed"
+  ],
+  "anonymization_cert": "synthetic",
+  "retention_policy": "permanent",
+  "prompt_fingerprint_baseline": "bundle-15-v1-synthetic-fingerprint",
+  "prompt_template_version": "1.0.0",
+  "completion_text_hash": "cd915bfe4c5e05512431c3bc39f4f33ff5853966bf69b0ceab3da2d604c8f7f0",
+  "trust_factors_dominant": [
+    "cross_surface_consistency",
+    "source_freshness",
+    "subject_ownership",
+    "render_policy",
+    "bridge_parity"
+  ],
+  "pass_fail_definition": "PASS = normalized field-level values for primary account, eligible meeting count, health/risk, project status, current-state claim ids, source_asof, produced/generated timestamp, and trust band match across get_entity_context, prepare_meeting, get_daily_readiness, dashboard render data, and MCP after policy redaction; lint-blocked and stale/degraded claims never render confidently elsewhere; refresh_completed activity-log state is followed by post-refresh reads. FAIL = any surface silently disagrees on the shared current-state story, daily and readiness meeting counts derive from different eligibility sets, MCP reports a different Tauri value outside an explicit redaction carve-out, or bundle-15 is not mandatory.",
+  "fixture_design_notes": {
+    "state_sql": "Seeds account-b15-example with domain example.com, customer meeting meeting-b15-example, project-b15-example, person-b15-example, four eligible meetings, active current-state claims, one lint-blocked bleed claim, and an activity-log refresh_completed event.",
+    "provider_replay": "Pins a provider completion that attempts no divergence so field-level assertions are determined by the substrate oracle.",
+    "external_replay": "Pins dashboard eligibility, source freshness, MCP bridge policy, and refresh-completion state for the same fixture subjects.",
+    "expected_output": "Stores the DOS-290 normalized field-level matrix across get_entity_context, prepare_meeting, get_daily_readiness, dashboard render data, and MCP response.",
+    "expected_provenance": "Asserts source_asof, produced/generated timestamp visibility, field attribution, child composition, MCP bridge surface, and shared degraded posture.",
+    "expected_state": "Asserts post-refresh state, lint-blocked render policy across all surfaces, and no confident rendering of a blocked claim."
+  }
+}

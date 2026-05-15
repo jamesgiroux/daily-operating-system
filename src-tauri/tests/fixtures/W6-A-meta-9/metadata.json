@@ -1,0 +1,29 @@
+{
+  "scenario_id": "stale",
+  "invariant": "list_open_loops and commitment extraction exclude commitments whose TTL has expired while preserving stale provenance.",
+  "expected_render_policy": "suppress-stale-current",
+  "surfaces_exercised": [
+    "list_open_loops_extract_commitments"
+  ],
+  "source_lifecycle_refs": [
+    "source-meta-9-transcript",
+    "claim-meta-9-expired-commitment"
+  ],
+  "anonymization_cert": "synthetic",
+  "retention_policy": "permanent",
+  "prompt_fingerprint_baseline": "no-provider-list-open-loops-extract-commitments-stale",
+  "prompt_template_version": null,
+  "completion_text_hash": null,
+  "trust_factors_dominant": [
+    "freshness",
+    "lifecycle_state",
+    "source_asof"
+  ],
+  "pass_fail_definition": "PASS = the expired commitment is absent from active loops and appears only as an excluded stale commitment.",
+  "fixture_design_notes": {
+    "state_sql": "Seeds one expired open_loop claim with explicit TTL metadata.",
+    "external_replay": "Pins the transcript source timestamp for provenance.",
+    "expected_output": "Active loops are empty and the stale commitment is listed only as excluded.",
+    "expected_provenance": "The expired commitment warning preserves the source attribution."
+  }
+}

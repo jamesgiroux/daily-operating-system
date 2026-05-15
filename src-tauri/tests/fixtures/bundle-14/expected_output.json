@@ -1,0 +1,175 @@
+{
+  "scenario_id": "stale-current-contradiction",
+  "current_rendering": {
+    "subject": {
+      "entity_type": "account",
+      "entity_id": "account-stale-example"
+    },
+    "current_state": {
+      "claim_id": "claim-b14-current-resolved-risk",
+      "state": "resolved",
+      "trust_band": "likely_current",
+      "source_asof": "2026-05-14T15:00:00Z"
+    },
+    "stale_current_advice_absent": true,
+    "stale_claims_not_current": [
+      "claim-b14-source-asof-independent",
+      "claim-b14-superseded-open-risk",
+      "claim-b14-feedback-only-old-title"
+    ]
+  },
+  "surfaces": {
+    "get_entity_context": {
+      "subject": {
+        "entity_type": "account",
+        "entity_id": "account-stale-example"
+      },
+      "current_state_claim_id": "claim-b14-current-resolved-risk",
+      "current_state_trust_band": "likely_current",
+      "source_asof": "2026-05-14T15:00:00Z",
+      "current_claim_ids": [
+        "claim-b14-current-resolved-risk"
+      ],
+      "historical_or_qualified_claim_ids": [
+        "claim-b14-source-asof-independent",
+        "claim-b14-contradiction-old-happy",
+        "claim-b14-contradiction-fresh-risk",
+        "claim-b14-historical-case-study"
+      ],
+      "historical_case_study": {
+        "claim_id": "claim-b14-historical-case-study",
+        "temporal_scope": "point_in_time",
+        "render_class": "historical",
+        "can_drive_current_state": false
+      }
+    },
+    "prepare_meeting": {
+      "meeting_id": "meeting-stale-example",
+      "subject": {
+        "entity_type": "account",
+        "entity_id": "account-stale-example"
+      },
+      "topics": [
+        {
+          "title": "Implementation escalation is resolved",
+          "source_claim_ids": [
+            "claim-b14-current-resolved-risk"
+          ],
+          "trust_band": "likely_current",
+          "source_asof": "2026-05-14T15:00:00Z"
+        }
+      ],
+      "attendee_context": [
+        {
+          "entity_id": "account-stale-example",
+          "source_claim_ids": [
+            "claim-b14-current-resolved-risk"
+          ],
+          "trust_band": "likely_current",
+          "source_asof": "2026-05-14T15:00:00Z"
+        }
+      ],
+      "open_loops": [],
+      "what_changed_since_last": [
+        {
+          "source_claim_ids": [
+            "claim-b14-current-resolved-risk"
+          ],
+          "change": "Implementation escalation resolved on 2026-05-14."
+        }
+      ],
+      "suggested_outcomes": [
+        {
+          "source_claim_ids": [
+            "claim-b14-current-resolved-risk"
+          ],
+          "outcome": "Do not ask about the stale open escalation as if it is active."
+        }
+      ],
+      "rejected_provider_candidates": [
+        {
+          "source_claim_id": "claim-b14-superseded-open-risk",
+          "reason": "superseded_stale_current_talking_point",
+          "attempted_text": "Ask whether the six-month-old implementation escalation is still active."
+        }
+      ]
+    },
+    "get_daily_readiness": {
+      "date": "2026-05-15",
+      "surfaces": {
+        "account": [
+          {
+            "entity_id": "account-stale-example",
+            "current_state_claim_id": "claim-b14-current-resolved-risk",
+            "trust_band": "likely_current",
+            "source_asof": "2026-05-14T15:00:00Z"
+          }
+        ]
+      },
+      "overnight_changes": [
+        {
+          "source_claim_ids": [
+            "claim-b14-current-resolved-risk"
+          ],
+          "trust_band": "likely_current",
+          "source_asof": "2026-05-14T15:00:00Z",
+          "summary": "Implementation escalation is resolved."
+        }
+      ]
+    }
+  },
+  "normalized_field_level_diff_matrix": [
+    {
+      "field": "primary_subject_id",
+      "get_entity_context": "account-stale-example",
+      "prepare_meeting": "account-stale-example",
+      "get_daily_readiness": "account-stale-example",
+      "equal": true
+    },
+    {
+      "field": "current_state_claim_id",
+      "get_entity_context": "claim-b14-current-resolved-risk",
+      "prepare_meeting": "claim-b14-current-resolved-risk",
+      "get_daily_readiness": "claim-b14-current-resolved-risk",
+      "equal": true
+    },
+    {
+      "field": "current_state_trust_band",
+      "get_entity_context": "likely_current",
+      "prepare_meeting": "likely_current",
+      "get_daily_readiness": "likely_current",
+      "equal": true
+    },
+    {
+      "field": "source_asof",
+      "get_entity_context": "2026-05-14T15:00:00Z",
+      "prepare_meeting": "2026-05-14T15:00:00Z",
+      "get_daily_readiness": "2026-05-14T15:00:00Z",
+      "allowed_divergence": "format_only",
+      "equal": true
+    },
+    {
+      "field": "stale_claim_current_presence",
+      "get_entity_context": "absent_from_current",
+      "prepare_meeting": "absent_from_current",
+      "get_daily_readiness": "absent_from_current",
+      "equal": true
+    }
+  ],
+  "field_level_diffs": [],
+  "validation_lint": {
+    "rule": "stale_current_contradiction_requires_suppression_or_timestamped_disagreement",
+    "failure_case": "old_open_and_fresh_resolved_both_current_without_qualification",
+    "status": "would_fail",
+    "bundle": 14
+  },
+  "post_feedback_render_attempt": {
+    "surface": "get_entity_context",
+    "claim_id": "claim-b14-feedback-only-old-title",
+    "current_claim_ids_after_feedback": [
+      "claim-b14-current-resolved-risk"
+    ],
+    "rendered_as_current": false,
+    "no_resurrection": true
+  }
+}

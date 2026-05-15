@@ -1,0 +1,24 @@
+{
+  "scenario_id": "contradiction",
+  "ability": "detect_risk_shift",
+  "result": {
+    "schema_version": 1,
+    "envelope": {
+      "trust": "untrusted",
+      "payload": {
+        "subject": {
+          "kind": "account",
+          "id": "account-meta-7-example"
+        },
+        "direction": "mixed",
+        "summary": "Risk signals conflict: support indicates escalation while email indicates sponsor confidence.",
+        "confidence": 0.55,
+        "source_claim_ids": [
+          "claim-meta-7-support-risk",
+          "claim-meta-7-email-stable"
+        ],
+        "trust_band": "use_with_caution"
+      }
+    }
+  }
+}

@@ -1,0 +1,189 @@
+{
+  "post_action_state": {
+    "intelligence_claims": [
+      {
+        "claim_id": "claim-b14-source-asof-independent",
+        "subject_ref": {
+          "kind": "account",
+          "id": "account-stale-example"
+        },
+        "claim_type": "current_state",
+        "field_path": "risk.status",
+        "source_asof": "2025-11-15T10:00:00Z",
+        "observed_at": "2026-05-14T09:00:00Z",
+        "claim_state": "active",
+        "surfacing_state": "active",
+        "trust_score": 0.48,
+        "trust_band": "needs_verification",
+        "verification_state": "contested",
+        "verification_reason": "source_asof_stale_despite_recent_observed_at",
+        "temporal_scope": "state",
+        "metadata": {
+          "freshness_age_days": 181,
+          "source_semantics": "downstream_object_asof_wins_observed_at",
+          "render_class": "stale_qualified"
+        }
+      },
+      {
+        "claim_id": "claim-b14-contradiction-old-happy",
+        "subject_ref": {
+          "kind": "account",
+          "id": "account-stale-example"
+        },
+        "claim_type": "current_state",
+        "field_path": "stakeholder.sentiment",
+        "source_asof": "2026-04-01T14:00:00Z",
+        "observed_at": "2026-04-01T14:05:00Z",
+        "claim_state": "active",
+        "surfacing_state": "active",
+        "trust_score": 0.62,
+        "trust_band": "use_with_caution",
+        "verification_state": "contested",
+        "verification_reason": "unresolved_contradiction",
+        "temporal_scope": "state"
+      },
+      {
+        "claim_id": "claim-b14-contradiction-fresh-risk",
+        "subject_ref": {
+          "kind": "account",
+          "id": "account-stale-example"
+        },
+        "claim_type": "current_state",
+        "field_path": "stakeholder.sentiment",
+        "source_asof": "2026-05-14T15:00:00Z",
+        "observed_at": "2026-05-14T15:05:00Z",
+        "claim_state": "active",
+        "surfacing_state": "active",
+        "trust_score": 0.64,
+        "trust_band": "use_with_caution",
+        "verification_state": "contested",
+        "verification_reason": "unresolved_contradiction",
+        "temporal_scope": "state"
+      },
+      {
+        "claim_id": "claim-b14-superseded-open-risk",
+        "subject_ref": {
+          "kind": "account",
+          "id": "account-stale-example"
+        },
+        "claim_type": "current_state",
+        "field_path": "implementation.risk",
+        "source_asof": "2025-11-15T10:00:00Z",
+        "observed_at": "2025-11-15T10:05:00Z",
+        "claim_state": "dormant",
+        "surfacing_state": "dormant",
+        "demotion_reason": "superseded",
+        "superseded_by": "claim-b14-current-resolved-risk",
+        "trust_score": 0.18,
+        "trust_band": "needs_verification",
+        "verification_state": "contested",
+        "verification_reason": "superseded_by_fresh_resolution",
+        "temporal_scope": "state"
+      },
+      {
+        "claim_id": "claim-b14-current-resolved-risk",
+        "subject_ref": {
+          "kind": "account",
+          "id": "account-stale-example"
+        },
+        "claim_type": "current_state",
+        "field_path": "implementation.risk",
+        "source_asof": "2026-05-14T15:00:00Z",
+        "observed_at": "2026-05-14T15:05:00Z",
+        "claim_state": "active",
+        "surfacing_state": "active",
+        "trust_score": 0.91,
+        "trust_band": "likely_current",
+        "verification_state": "active",
+        "temporal_scope": "state",
+        "metadata": {
+          "current_state": "resolved",
+          "supersedes": "claim-b14-superseded-open-risk"
+        }
+      },
+      {
+        "claim_id": "claim-b14-feedback-only-old-title",
+        "subject_ref": {
+          "kind": "account",
+          "id": "account-stale-example"
+        },
+        "claim_type": "current_state",
+        "field_path": "stakeholder.role",
+        "source_asof": "2026-02-01T10:00:00Z",
+        "observed_at": "2026-02-01T10:00:00Z",
+        "claim_state": "dormant",
+        "surfacing_state": "dormant",
+        "demotion_reason": "mark_outdated",
+        "superseded_by": null,
+        "trust_score": 0.22,
+        "trust_band": "needs_verification",
+        "verification_state": "contested",
+        "verification_reason": "user_marked_outdated",
+        "temporal_scope": "state",
+        "feedback_effect": "HiddenFromCurrent"
+      },
+      {
+        "claim_id": "claim-b14-historical-case-study",
+        "subject_ref": {
+          "kind": "account",
+          "id": "account-stale-example"
+        },
+        "claim_type": "historical_context",
+        "field_path": "case_study.2025_launch",
+        "source_asof": "2025-08-20T10:00:00Z",
+        "observed_at": "2026-05-13T10:00:00Z",
+        "claim_state": "active",
+        "surfacing_state": "active",
+        "trust_score": 0.73,
+        "trust_band": "likely_current",
+        "verification_state": "active",
+        "temporal_scope": "point_in_time",
+        "metadata": {
+          "render_class": "historical",
+          "cannot_drive_current_state": true
+        }
+      }
+    ],
+    "claim_contradictions": [
+      {
+        "id": "edge-b14-contradiction-sentiment",
+        "primary_claim_id": "claim-b14-contradiction-old-happy",
+        "contradicting_claim_id": "claim-b14-contradiction-fresh-risk",
+        "branch_kind": "contradiction",
+        "reconciliation_kind": null,
+        "winner_claim_id": null
+      },
+      {
+        "id": "edge-b14-supersession-risk",
+        "primary_claim_id": "claim-b14-superseded-open-risk",
+        "contradicting_claim_id": "claim-b14-current-resolved-risk",
+        "branch_kind": "supersession",
+        "reconciliation_kind": "evidence_converged",
+        "winner_claim_id": "claim-b14-current-resolved-risk"
+      }
+    ],
+    "claim_feedback": [
+      {
+        "id": "feedback-b14-mark-outdated-old-title",
+        "claim_id": "claim-b14-feedback-only-old-title",
+        "feedback_type": "mark_outdated",
+        "actor": "user",
+        "actor_id": null,
+        "payload_json": {
+          "reason": "was_true_no_longer_current",
+          "repair_action": "FreshnessRefresh",
+          "render_policy": "HiddenFromCurrent"
+        },
+        "submitted_at": "2026-05-15T09:30:00Z",
+        "applied_at": "2026-05-15T09:30:00Z"
+      }
+    ],
+    "post_feedback_render_attempt": {
+      "surface": "get_entity_context",
+      "claim_id": "claim-b14-feedback-only-old-title",
+      "rendered_as_current": false,
+      "no_resurrection": true,
+      "newer_validating_source_present": false
+    }
+  }
+}

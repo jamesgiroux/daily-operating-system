@@ -23,7 +23,16 @@ pub const EXIT_SUCCESS: u8 = 0;
 pub const EXIT_MANDATORY_FAILURE: u8 = 1;
 pub const EXIT_INFRA_FAILURE: u8 = 2;
 
-pub const DEFAULT_MANDATORY_BUNDLES: &[&str] = &["bundle-1", "bundle-5", "bundle-13"];
+pub const DEFAULT_MANDATORY_BUNDLES: &[&str] = &[
+    "bundle-1",
+    "bundle-5",
+    "bundle-13",
+    "bundle-14",
+    "bundle-15",
+    "bundle-16",
+    "bundle-17",
+    "bundle-18",
+];
 pub const DEFAULT_TRACKED_BUNDLES: &[&str] = &[
     "bundle-2",
     "bundle-3",
@@ -37,6 +46,15 @@ pub const DEFAULT_TRACKED_BUNDLES: &[&str] = &[
     "bundle-12",
 ];
 pub const RELEASE_GATE_BUILD_GIT_SHA: &str = env!("BUILD_GIT_SHA");
+
+/// Edge-case fast subset cargo test targets that gate per-PR CI.
+///
+/// CI orchestration is required to invoke each named target with
+/// `cargo test --features release-gate --test <name>` before the release
+/// gate is allowed to pass. The targets exercise the per-axis regressions
+/// and the edge-case unit/integration substrate; their absence from CI is
+/// a release-gate failure.
+pub const DEFAULT_MANDATORY_TEST_TARGETS: &[&str] = &["edge_cases_fast", "edge_cases_full"];
 
 const DOS288_SELECTORS: &[&str] = &[
     "dos288_bleed_detection_test",
@@ -1408,12 +1426,15 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    fn release_gate_cli_defaults_to_bundle1_bundle5_bundle13() {
+    fn release_gate_cli_defaults_to_mandatory_bundle_set() {
         let config = parse_cli_from(["release-gate"].map(OsString::from)).unwrap();
 
         assert_eq!(
             config.bundle_filters,
-            vec!["bundle-1", "bundle-5", "bundle-13"]
+            DEFAULT_MANDATORY_BUNDLES
+                .iter()
+                .map(|bundle| (*bundle).to_string())
+                .collect::<Vec<_>>()
         );
         assert_eq!(config.mode, GateMode::Hermetic);
     }

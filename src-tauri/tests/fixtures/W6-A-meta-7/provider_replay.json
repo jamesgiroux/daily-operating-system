@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "provider": "replay",
+  "model": "replay",
+  "temperature": 0,
+  "seed": 600007,
+  "fixtures": [
+    {
+      "canonical_prompt_hash": "w6a-meta-7-detect-risk-shift-contradiction",
+      "completion": "{\"summary\":\"Risk signals conflict: support indicates escalation while email indicates sponsor confidence.\",\"confidence\":0.55,\"source_refs\":[\"claim-meta-7-support-risk\",\"claim-meta-7-email-stable\"],\"indicators\":[{\"label\":\"Contradicting account signals\",\"direction\":\"mixed\",\"severity\":0.62,\"rationale\":\"Fresh support and email evidence disagree.\",\"source_refs\":[\"claim-meta-7-support-risk\",\"claim-meta-7-email-stable\"]}],\"claim_draft\":{\"claim_type\":\"risk_shift\",\"text\":\"Risk direction is mixed for account-meta-7-example because current signals conflict.\",\"direction\":\"mixed\",\"confidence\":0.55,\"source_refs\":[\"claim-meta-7-support-risk\",\"claim-meta-7-email-stable\"]}}"
+    }
+  ]
+}

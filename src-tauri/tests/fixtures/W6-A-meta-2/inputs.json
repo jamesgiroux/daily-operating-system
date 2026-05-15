@@ -1,0 +1,12 @@
+{
+  "ability_name": "prepare_meeting",
+  "input_json": {
+    "schema_version": 1,
+    "meeting_id": "meeting-meta-2-example",
+    "depth": 1,
+    "include_open_loops": true
+  },
+  "actor": "user",
+  "mode": "evaluate",
+  "dry_run": false
+}

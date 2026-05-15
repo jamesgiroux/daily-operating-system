@@ -1,0 +1,9 @@
+{
+  "ability_name": "list_open_loops",
+  "input_json": {
+    "schema_version": 1
+  },
+  "actor": "user",
+  "mode": "evaluate",
+  "dry_run": false
+}

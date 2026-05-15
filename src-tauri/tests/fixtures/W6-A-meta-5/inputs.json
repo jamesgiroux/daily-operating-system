@@ -1,0 +1,12 @@
+{
+  "ability_name": "detect_risk_shift",
+  "input_json": {
+    "schema_version": 1,
+    "entity_type": "account",
+    "entity_id": "account-meta-5-example",
+    "depth": 2
+  },
+  "actor": "user",
+  "mode": "evaluate",
+  "dry_run": false
+}

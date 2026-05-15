@@ -1,0 +1,38 @@
+{
+  "provenance": {
+    "subject": {
+      "kind": "account",
+      "id": "account-meta-6-example"
+    },
+    "sources": [
+      {
+        "source_id": "source-meta-6-email",
+        "claim_id": "claim-meta-6-champion-silence",
+        "data_source": "email",
+        "source_asof": "2026-03-04T15:00:00Z",
+        "observed_at": "2026-03-04T15:05:00Z",
+        "source_age_days": 72,
+        "trust_band": "needs_verification",
+        "trust_caveats": [
+          "source_asof_outside_current_window",
+          "synthesis_untrusted_envelope"
+        ]
+      }
+    ],
+    "warnings": [
+      {
+        "stale_source_asof": {
+          "claim_id": "claim-meta-6-champion-silence",
+          "source_asof": "2026-03-04T15:00:00Z"
+        }
+      }
+    ],
+    "field_attribution": {
+      "/envelope/payload/summary": {
+        "claim_id": "claim-meta-6-champion-silence",
+        "source_id": "source-meta-6-email",
+        "trust_band": "needs_verification"
+      }
+    }
+  }
+}

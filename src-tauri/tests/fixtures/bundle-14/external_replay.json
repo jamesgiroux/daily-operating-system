@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "fixtures": [],
+  "downstream_source_semantics": [
+    {
+      "source_id": "source-b14-old-downstream",
+      "provider": "glean",
+      "downstream_object": "document",
+      "source_asof": "2025-11-15T10:00:00Z",
+      "observed_at": "2026-05-14T09:00:00Z",
+      "assertion": "Recent fetch time does not make the downstream object current."
+    },
+    {
+      "source_id": "source-b14-fresh-resolved-risk",
+      "provider": "support",
+      "downstream_object": "case",
+      "source_asof": "2026-05-14T15:00:00Z",
+      "observed_at": "2026-05-14T15:05:00Z",
+      "assertion": "Fresh source semantics win current-state rendering."
+    }
+  ]
+}

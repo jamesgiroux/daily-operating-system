@@ -1,0 +1,452 @@
+CREATE TABLE meetings (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    meeting_type TEXT NOT NULL DEFAULT 'external',
+    start_time TEXT NOT NULL,
+    end_time TEXT,
+    attendees TEXT,
+    created_at TEXT NOT NULL,
+    calendar_event_id TEXT,
+    description TEXT
+);
+
+CREATE TABLE people (
+    id TEXT PRIMARY KEY,
+    email TEXT NOT NULL,
+    name TEXT NOT NULL
+);
+
+CREATE TABLE meeting_attendees (
+    meeting_id TEXT NOT NULL,
+    person_id TEXT NOT NULL,
+    PRIMARY KEY (meeting_id, person_id)
+);
+
+CREATE TABLE entities (
+    id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    tracker_path TEXT,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (id, entity_type)
+);
+
+CREATE TABLE meeting_entities (
+    meeting_id TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    confidence REAL DEFAULT 0.95,
+    is_primary INTEGER DEFAULT 1,
+    PRIMARY KEY (meeting_id, entity_id, entity_type)
+);
+
+CREATE TABLE intelligence_claims (
+    id TEXT PRIMARY KEY,
+    subject_ref TEXT NOT NULL,
+    claim_type TEXT NOT NULL,
+    field_path TEXT,
+    topic_key TEXT,
+    text TEXT NOT NULL,
+    dedup_key TEXT NOT NULL,
+    item_hash TEXT,
+    actor TEXT NOT NULL,
+    data_source TEXT NOT NULL,
+    source_ref TEXT,
+    source_asof TEXT,
+    observed_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    provenance_json TEXT NOT NULL,
+    metadata_json TEXT,
+    claim_state TEXT NOT NULL DEFAULT 'active',
+    surfacing_state TEXT NOT NULL DEFAULT 'active',
+    demotion_reason TEXT,
+    reactivated_at TEXT,
+    retraction_reason TEXT,
+    expires_at TEXT,
+    superseded_by TEXT,
+    trust_score REAL,
+    trust_computed_at TEXT,
+    trust_version INTEGER,
+    thread_id TEXT,
+    temporal_scope TEXT NOT NULL DEFAULT 'state',
+    sensitivity TEXT NOT NULL DEFAULT 'internal',
+    verification_state TEXT NOT NULL DEFAULT 'active',
+    verification_reason TEXT,
+    needs_user_decision_at TEXT,
+    claim_version INTEGER NOT NULL DEFAULT 1,
+    canonical_status TEXT NOT NULL DEFAULT 'live',
+    non_semantic_mergeable BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+CREATE TABLE claim_corroborations (
+    id TEXT PRIMARY KEY,
+    claim_id TEXT NOT NULL,
+    data_source TEXT NOT NULL,
+    source_asof TEXT,
+    source_mechanism TEXT,
+    strength REAL NOT NULL DEFAULT 0.5,
+    reinforcement_count INTEGER NOT NULL DEFAULT 1,
+    last_reinforced_at TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE claim_contradictions (
+    id TEXT PRIMARY KEY,
+    primary_claim_id TEXT NOT NULL,
+    contradicting_claim_id TEXT NOT NULL,
+    branch_kind TEXT NOT NULL,
+    detected_at TEXT NOT NULL,
+    reconciliation_kind TEXT,
+    reconciliation_note TEXT,
+    reconciled_at TEXT,
+    winner_claim_id TEXT,
+    merged_claim_id TEXT
+);
+
+CREATE TABLE claim_feedback (
+    id TEXT PRIMARY KEY,
+    claim_id TEXT NOT NULL,
+    feedback_type TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    actor_id TEXT,
+    payload_json TEXT,
+    submitted_at TEXT NOT NULL,
+    applied_at TEXT
+);
+
+INSERT INTO meetings (id, title, meeting_type, start_time, end_time, attendees, created_at)
+VALUES (
+    'meeting-stale-example',
+    'Stale Current Validation',
+    'external',
+    '2026-05-15T16:00:00Z',
+    '2026-05-15T16:30:00Z',
+    '["contact@example.com"]',
+    '2026-05-15T08:00:00Z'
+);
+
+INSERT INTO people (id, email, name)
+VALUES ('subject-stale-example', 'contact@example.com', 'Example Contact');
+
+INSERT INTO meeting_attendees (meeting_id, person_id)
+VALUES ('meeting-stale-example', 'subject-stale-example');
+
+INSERT INTO entities (id, name, entity_type, tracker_path, updated_at)
+VALUES ('account-stale-example', 'Account Stale Example', 'account', NULL, '2026-05-15T08:00:00Z');
+
+INSERT INTO meeting_entities (meeting_id, entity_id, entity_type, confidence, is_primary)
+VALUES ('meeting-stale-example', 'account-stale-example', 'account', 0.95, 1);
+
+INSERT INTO intelligence_claims (
+    id, subject_ref, claim_type, field_path, topic_key, text, dedup_key, item_hash,
+    actor, data_source, source_ref, source_asof, observed_at, created_at, provenance_json,
+    metadata_json, claim_state, surfacing_state, demotion_reason, reactivated_at,
+    retraction_reason, expires_at, superseded_by, trust_score, trust_computed_at,
+    trust_version, thread_id, temporal_scope, sensitivity, verification_state,
+    verification_reason, needs_user_decision_at, claim_version, canonical_status,
+    non_semantic_mergeable
+)
+VALUES
+    (
+        'claim-b14-source-asof-independent',
+        '{"kind":"account","id":"account-stale-example"}',
+        'current_state',
+        'risk.status',
+        'account-stale-example:risk:source-asof-independence',
+        'A recently fetched downstream document still says the implementation risk is open, but the document itself is from November 2025.',
+        'dedup-b14-source-asof-independent',
+        'hash-b14-source-asof-independent',
+        'agent:fixture',
+        'glean',
+        '{"source_id":"source-b14-old-downstream","provider":"glean","downstream_object":"document"}',
+        '2025-11-15T10:00:00Z',
+        '2026-05-14T09:00:00Z',
+        '2026-05-14T09:00:00Z',
+        '{}',
+        '{"freshness_age_days":181,"source_semantics":"downstream_object_asof_wins_observed_at","render_class":"stale_qualified"}',
+        'active',
+        'active',
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        0.48,
+        '2026-05-15T12:00:00Z',
+        1,
+        NULL,
+        'state',
+        'internal',
+        'contested',
+        'source_asof_stale_despite_recent_observed_at',
+        NULL,
+        1,
+        'live',
+        FALSE
+    ),
+    (
+        'claim-b14-contradiction-old-happy',
+        '{"kind":"account","id":"account-stale-example"}',
+        'current_state',
+        'stakeholder.sentiment',
+        'account-stale-example:stakeholder-sentiment',
+        'An April call transcript says the stakeholder sentiment was happy.',
+        'dedup-b14-contradiction-old-happy',
+        'hash-b14-contradiction-old-happy',
+        'agent:fixture',
+        'google',
+        '{"source_id":"source-b14-contradiction-old","provider":"calendar"}',
+        '2026-04-01T14:00:00Z',
+        '2026-04-01T14:05:00Z',
+        '2026-04-01T14:05:00Z',
+        '{}',
+        '{"unresolved_contradiction":true,"contradicts_claim_id":"claim-b14-contradiction-fresh-risk"}',
+        'active',
+        'active',
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        0.62,
+        '2026-05-15T12:00:00Z',
+        1,
+        NULL,
+        'state',
+        'internal',
+        'contested',
+        'unresolved_contradiction',
+        NULL,
+        1,
+        'live',
+        FALSE
+    ),
+    (
+        'claim-b14-contradiction-fresh-risk',
+        '{"kind":"account","id":"account-stale-example"}',
+        'current_state',
+        'stakeholder.sentiment',
+        'account-stale-example:stakeholder-sentiment',
+        'A May support note says stakeholder sentiment is at risk and needs follow-up.',
+        'dedup-b14-contradiction-fresh-risk',
+        'hash-b14-contradiction-fresh-risk',
+        'agent:fixture',
+        'support',
+        '{"source_id":"source-b14-contradiction-fresh","provider":"support"}',
+        '2026-05-14T15:00:00Z',
+        '2026-05-14T15:05:00Z',
+        '2026-05-14T15:05:00Z',
+        '{}',
+        '{"unresolved_contradiction":true,"contradicts_claim_id":"claim-b14-contradiction-old-happy"}',
+        'active',
+        'active',
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        0.64,
+        '2026-05-15T12:00:00Z',
+        1,
+        NULL,
+        'state',
+        'internal',
+        'contested',
+        'unresolved_contradiction',
+        NULL,
+        1,
+        'live',
+        FALSE
+    ),
+    (
+        'claim-b14-superseded-open-risk',
+        '{"kind":"account","id":"account-stale-example"}',
+        'current_state',
+        'implementation.risk',
+        'account-stale-example:implementation-risk',
+        'The implementation escalation is open and should be treated as an active meeting risk.',
+        'dedup-b14-superseded-open-risk',
+        'hash-b14-superseded-open-risk',
+        'agent:fixture',
+        'support',
+        '{"source_id":"source-b14-superseded-open-risk","provider":"support"}',
+        '2025-11-15T10:00:00Z',
+        '2025-11-15T10:05:00Z',
+        '2025-11-15T10:05:00Z',
+        '{}',
+        '{"provider_attempted_current_talking_point":true}',
+        'dormant',
+        'dormant',
+        'superseded',
+        NULL,
+        NULL,
+        NULL,
+        'claim-b14-current-resolved-risk',
+        0.18,
+        '2026-05-15T12:00:00Z',
+        2,
+        NULL,
+        'state',
+        'internal',
+        'contested',
+        'superseded_by_fresh_resolution',
+        NULL,
+        2,
+        'live',
+        FALSE
+    ),
+    (
+        'claim-b14-current-resolved-risk',
+        '{"kind":"account","id":"account-stale-example"}',
+        'current_state',
+        'implementation.risk',
+        'account-stale-example:implementation-risk',
+        'The implementation escalation was resolved on 2026-05-14; treat it as historical unless new evidence reopens it.',
+        'dedup-b14-current-resolved-risk',
+        'hash-b14-current-resolved-risk',
+        'agent:fixture',
+        'support',
+        '{"source_id":"source-b14-fresh-resolved-risk","provider":"support"}',
+        '2026-05-14T15:00:00Z',
+        '2026-05-14T15:05:00Z',
+        '2026-05-14T15:05:00Z',
+        '{}',
+        '{"current_state":"resolved","supersedes":"claim-b14-superseded-open-risk"}',
+        'active',
+        'active',
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        0.91,
+        '2026-05-15T12:00:00Z',
+        1,
+        NULL,
+        'state',
+        'internal',
+        'active',
+        NULL,
+        NULL,
+        1,
+        'live',
+        FALSE
+    ),
+    (
+        'claim-b14-feedback-only-old-title',
+        '{"kind":"account","id":"account-stale-example"}',
+        'current_state',
+        'stakeholder.role',
+        'account-stale-example:stakeholder-role',
+        'Example Contact is the current escalation owner.',
+        'dedup-b14-feedback-only-old-title',
+        'hash-b14-feedback-only-old-title',
+        'agent:fixture',
+        'user',
+        '{"source_id":"source-b14-feedback-old-title","provider":"user"}',
+        '2026-02-01T10:00:00Z',
+        '2026-02-01T10:00:00Z',
+        '2026-02-01T10:00:00Z',
+        '{}',
+        '{"mark_outdated_effect":"hidden_from_current","feedback_only":true}',
+        'dormant',
+        'dormant',
+        'mark_outdated',
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        0.22,
+        '2026-05-15T12:00:00Z',
+        2,
+        NULL,
+        'state',
+        'internal',
+        'contested',
+        'user_marked_outdated',
+        NULL,
+        2,
+        'live',
+        FALSE
+    ),
+    (
+        'claim-b14-historical-case-study',
+        '{"kind":"account","id":"account-stale-example"}',
+        'historical_context',
+        'case_study.2025_launch',
+        'account-stale-example:historical-case-study',
+        'A 2025 launch case study is relevant as history, not as current implementation state.',
+        'dedup-b14-historical-case-study',
+        'hash-b14-historical-case-study',
+        'agent:fixture',
+        'glean',
+        '{"source_id":"source-b14-historical-case-study","provider":"glean"}',
+        '2025-08-20T10:00:00Z',
+        '2026-05-13T10:00:00Z',
+        '2026-05-13T10:00:00Z',
+        '{}',
+        '{"render_class":"historical","cannot_drive_current_state":true}',
+        'active',
+        'active',
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        0.73,
+        '2026-05-15T12:00:00Z',
+        1,
+        NULL,
+        'point_in_time',
+        'internal',
+        'active',
+        NULL,
+        NULL,
+        1,
+        'live',
+        FALSE
+    );
+
+INSERT INTO claim_contradictions (
+    id, primary_claim_id, contradicting_claim_id, branch_kind, detected_at,
+    reconciliation_kind, reconciliation_note, reconciled_at, winner_claim_id, merged_claim_id
+)
+VALUES
+    (
+        'edge-b14-contradiction-sentiment',
+        'claim-b14-contradiction-old-happy',
+        'claim-b14-contradiction-fresh-risk',
+        'contradiction',
+        '2026-05-14T15:10:00Z',
+        NULL,
+        'Both claims remain active but contested until reconciliation.',
+        NULL,
+        NULL,
+        NULL
+    ),
+    (
+        'edge-b14-supersession-risk',
+        'claim-b14-superseded-open-risk',
+        'claim-b14-current-resolved-risk',
+        'supersession',
+        '2026-05-14T15:10:00Z',
+        'evidence_converged',
+        'Fresh support evidence resolved the stale open-risk claim.',
+        '2026-05-14T15:10:00Z',
+        'claim-b14-current-resolved-risk',
+        NULL
+    );
+
+INSERT INTO claim_feedback (
+    id, claim_id, feedback_type, actor, actor_id, payload_json, submitted_at, applied_at
+)
+VALUES (
+    'feedback-b14-mark-outdated-old-title',
+    'claim-b14-feedback-only-old-title',
+    'mark_outdated',
+    'user',
+    NULL,
+    '{"reason":"was_true_no_longer_current","repair_action":"FreshnessRefresh","render_policy":"HiddenFromCurrent"}',
+    '2026-05-15T09:30:00Z',
+    '2026-05-15T09:30:00Z'
+);

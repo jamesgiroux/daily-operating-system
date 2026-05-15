@@ -1,0 +1,43 @@
+{
+  "bundle": 18,
+  "scenario_id": "sync-refresh-concurrency-partial-failure",
+  "invariant": "User-authored corrections, agenda items, notes, and dismissals survive refresh pressure; generated claim writes are monotonic through claim_version; optional child failures and offline stale state are explicit in provenance; coalesced invalidations and duplicate refreshes stay idempotent; eval replay is deterministic under injected clock, seed, and provider replay.",
+  "expected_render_policy": "show-degraded-with-user-layer-preserved",
+  "surfaces_exercised": [
+    "prepare_meeting",
+    "get_entity_context",
+    "get_daily_readiness",
+    "extract_commitments"
+  ],
+  "source_lifecycle_refs": [
+    "user-correction-vs-concurrent-enrichment",
+    "older-generation-retry-rejected",
+    "refresh-preserves-agenda-notes-dismissals",
+    "child-failure-parent-partial-warning",
+    "offline-mode-stale-age-field",
+    "signal-coalescing-preserves-invalidations",
+    "duplicate-refresh-single-claim-row",
+    "eval-determinism-canonical-equality"
+  ],
+  "anonymization_cert": "synthetic",
+  "retention_policy": "permanent",
+  "prompt_fingerprint_baseline": "bundle-18-v1-synthetic-fingerprint",
+  "prompt_template_version": "1.0.0",
+  "completion_text_hash": "7f0a4519ec5a2207bf0f56e8a3218cea9b83c23d7f80db8ebf27f5932c25b48f",
+  "trust_factors_dominant": [
+    "user_authored_precedence",
+    "generation_monotonicity",
+    "partial_failure_propagation",
+    "refresh_idempotency",
+    "eval_determinism"
+  ],
+  "pass_fail_definition": "PASS = all eight DOS-293 scenario ids are present; user correction survives the sequential enrichment attempt; older retry output is rejected with the persisted claim_version/generation unchanged and a generated_output_rejections row; agenda, notes, and dismissals are all preserved; daily readiness provenance uses OptionalComposedReadFailed for the optional child read failure; offline provenance warning carries class OfflineStale and stale_age_hours; coalescing preserves invalidations; duplicate refresh creates one claim and one commitment; eval outputs are canonical-JSON equal through the harness scoring path; bundle-18 is mandatory. FAIL = any user-authored row is missing, stale retry advances generation, partial failure is silent or uses new warning vocabulary, stale offline age is unnamed, coalescing drops invalidations, duplicate refresh produces duplicate claims or commitments, eval replay differs canonically, or bundle-18 is not mandatory.",
+  "fixture_design_notes": {
+    "state_sql": "Seeds one synthetic account and meeting plus eight named scenario rows. The persisted claim generation watermark is the existing intelligence_claims.claim_version column; tests read it as generation because that is the substrate's monotonic version field.",
+    "provider_replay": "Pins a deterministic provider completion for the fixture input. The validation assertions use provider replay only as part of the eval determinism contract and do not call live providers.",
+    "external_replay": "Pins offline source age, coalesced invalidation, duplicate refresh, and partial child-read inputs with synthetic source ids.",
+    "expected_output": "Stores per-scenario output oracles, including canonical-equality eval runs that differ only by JSON object key order.",
+    "expected_provenance": "Asserts the parent provenance warnings array uses existing OptionalComposedReadFailed vocabulary and carries the OfflineStale stale_age_hours field.",
+    "expected_state": "Required bundle-18 extension even though the global loader treats expected_state.json as optional. It captures the post-action substrate state for all eight DOS-293 scenarios."
+  }
+}

@@ -1,0 +1,172 @@
+{
+  "scenario_id": "ambiguous-identity-primary-context",
+  "subject_selection": {
+    "same-domain-twins": {
+      "state": "ambiguous",
+      "primary_subject_ref": null,
+      "alternatives": [
+        {
+          "kind": "account",
+          "id": "account-b16-domain-a"
+        },
+        {
+          "kind": "account",
+          "id": "account-b16-domain-b"
+        }
+      ],
+      "render_policy": "confirmation_request",
+      "confident_primary_rendered": false,
+      "blocked_provider_candidate_id": "provider-b16-same-domain-confident-primary"
+    },
+    "parent-child-account": {
+      "state": "primary",
+      "primary_subject_ref": {
+        "kind": "account",
+        "id": "account-b16-child-example"
+      },
+      "secondary_subject_refs": [
+        {
+          "kind": "account",
+          "id": "account-b16-parent-example",
+          "inheritance_reason": "parent_account_domain_match"
+        }
+      ],
+      "entity_linker_evidence": {
+        "direct_score": 0.92,
+        "inherited_score": 0.7,
+        "winning_rule": "direct_over_inherited"
+      },
+      "confident_primary_rendered": true
+    },
+    "similar-project-names": {
+      "state": "ambiguous",
+      "primary_subject_ref": null,
+      "alternatives": [
+        {
+          "kind": "project",
+          "id": "project-b16-phoenix-alpha"
+        },
+        {
+          "kind": "project",
+          "id": "project-b16-phoenix-beta"
+        }
+      ],
+      "render_policy": "confirmation_request",
+      "confident_primary_rendered": false,
+      "blocked_provider_candidate_id": "provider-b16-similar-project-confident-primary"
+    },
+    "same-name-people": {
+      "state": "ambiguous",
+      "primary_subject_ref": null,
+      "alternatives": [
+        {
+          "kind": "person",
+          "id": "person-b16-alex-a"
+        },
+        {
+          "kind": "person",
+          "id": "person-b16-alex-b"
+        }
+      ],
+      "render_policy": "confirmation_request",
+      "confident_primary_rendered": false,
+      "blocked_provider_candidate_id": "provider-b16-same-name-confident-primary"
+    },
+    "recurring-series-subject-change": {
+      "state": "primary",
+      "primary_subject_ref": {
+        "kind": "account",
+        "id": "account-b16-recurring-b"
+      },
+      "secondary_subject_refs": [
+        {
+          "kind": "account",
+          "id": "account-b16-recurring-a",
+          "inheritance_reason": "historical_series_subject"
+        }
+      ],
+      "entity_linker_evidence": {
+        "current_direct_score": 0.91,
+        "historical_inherited_score": 0.68,
+        "winning_rule": "current_direct_over_historical_inheritance"
+      },
+      "confident_primary_rendered": true
+    },
+    "email-thread-two-customers": {
+      "state": "ambiguous",
+      "primary_subject_ref": null,
+      "alternatives": [
+        {
+          "kind": "account",
+          "id": "account-b16-thread-a"
+        },
+        {
+          "kind": "account",
+          "id": "account-b16-thread-b"
+        }
+      ],
+      "render_policy": "confirmation_request",
+      "confident_primary_rendered": false,
+      "blocked_provider_candidate_id": "provider-b16-email-thread-confident-primary"
+    },
+    "linear-title-internal-work": {
+      "state": "unconfirmed",
+      "primary_subject_ref": null,
+      "alternatives": [
+        {
+          "kind": "account",
+          "id": "account-b16-linear-title-match",
+          "rejection_reason": "title_match_internal_work"
+        }
+      ],
+      "render_policy": "internal_work_no_account_primary",
+      "confident_primary_rendered": false,
+      "blocked_provider_candidate_id": "provider-b16-linear-title-confident-primary"
+    },
+    "user-confirmed-override-attempt": {
+      "state": "primary",
+      "primary_subject_ref": {
+        "kind": "account",
+        "id": "account-b16-user-confirmed"
+      },
+      "classifier_attempted_subject_ref": {
+        "kind": "account",
+        "id": "account-b16-classifier-attempt"
+      },
+      "classifier_override_rejected": true,
+      "user_confirmed_row_unchanged": true,
+      "confident_primary_rendered": true
+    }
+  },
+  "surfaces": {
+    "prepare_meeting": {
+      "subject_selection_state_field": "subject_selection.state",
+      "ambiguous_scenarios_block_confident_primary": [
+        "same-domain-twins",
+        "similar-project-names",
+        "same-name-people",
+        "email-thread-two-customers",
+        "linear-title-internal-work"
+      ],
+      "confirmation_request_scenarios": [
+        "same-domain-twins",
+        "similar-project-names",
+        "same-name-people",
+        "email-thread-two-customers"
+      ]
+    },
+    "get_entity_context": {
+      "subject_selection_provenance_required": true,
+      "primary_only_when_threshold_cleared": true
+    },
+    "get_daily_readiness": {
+      "confident_primary_from_ambiguous_evidence": false
+    }
+  },
+  "validation_lint": {
+    "rule": "ambiguous_subject_selection_blocks_confident_primary_context",
+    "status": "would_fail",
+    "failure_case": "ambiguous_candidate_rendered_as_confident_primary",
+    "bundle": 16
+  }
+}

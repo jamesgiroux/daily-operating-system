@@ -78,6 +78,53 @@ pub enum BridgeSurface {
     SurfaceClient,
 }
 
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RenderPolicyChannel {
+    Callouts,
+    PrepOutputs,
+    McpResponses,
+    TauriRenders,
+    SignalPayloads,
+    Telemetry,
+    EvalFixtures,
+    Replay,
+    ErrorLogs,
+}
+
+impl RenderPolicyChannel {
+    const ALL: [Self; 9] = [
+        Self::Callouts,
+        Self::PrepOutputs,
+        Self::McpResponses,
+        Self::TauriRenders,
+        Self::SignalPayloads,
+        Self::Telemetry,
+        Self::EvalFixtures,
+        Self::Replay,
+        Self::ErrorLogs,
+    ];
+
+    pub const fn all() -> &'static [Self] {
+        &Self::ALL
+    }
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Callouts => "callouts",
+            Self::PrepOutputs => "prep_outputs",
+            Self::McpResponses => "mcp_responses",
+            Self::TauriRenders => "tauri_renders",
+            Self::SignalPayloads => "signal_payloads",
+            Self::Telemetry => "telemetry",
+            Self::EvalFixtures => "eval_fixtures",
+            Self::Replay => "replay",
+            Self::ErrorLogs => "error_logs",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConfirmationToken {
     pub actor: BridgeActor,

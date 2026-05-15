@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "provider": "replay",
+  "model": "replay",
+  "temperature": 0,
+  "seed": 600010,
+  "fixtures": [
+    {
+      "canonical_prompt_hash": "w6a-meta-10-extract-commitments-contradiction",
+      "completion": "{\"commitments\":[{\"source\":\"transcript\",\"text\":\"Send the draft by Friday.\",\"due_date\":\"2026-05-22\",\"subject_ref\":{\"kind\":\"account\",\"id\":\"account-meta-10-example\"}},{\"source\":\"email\",\"text\":\"No commitment to send the draft this week; revisit next month.\",\"due_date\":null,\"subject_ref\":{\"kind\":\"account\",\"id\":\"account-meta-10-example\"}}]}"
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "scenario_id": "contradiction",
+  "invariant": "list_open_loops and commitment extraction surface transcript-vs-email commitment conflicts with caution rather than rendering an unqualified commitment.",
+  "expected_render_policy": "warning",
+  "surfaces_exercised": [
+    "list_open_loops_extract_commitments"
+  ],
+  "source_lifecycle_refs": [
+    "source-meta-10-transcript",
+    "source-meta-10-email",
+    "claim-meta-10-transcript-commitment",
+    "claim-meta-10-email-no-commitment",
+    "contradiction-meta-10-commitment"
+  ],
+  "anonymization_cert": "synthetic",
+  "retention_policy": "permanent",
+  "prompt_fingerprint_baseline": "w6a-meta-10-extract-commitments-contradiction",
+  "prompt_template_version": "1.0.0",
+  "completion_text_hash": "4108161f4e120c8a1f5507edc56b2c2d8e7ecaa3acea631ad4687a89a99b0e78",
+  "trust_factors_dominant": [
+    "contradiction",
+    "source_attribution",
+    "field_attribution"
+  ],
+  "pass_fail_definition": "PASS = the transcript commitment is rendered only with use_with_caution and the email conflict is attached as an unresolved contradiction.",
+  "fixture_design_notes": {
+    "state_sql": "Seeds two contested commitment claims and one contradiction edge.",
+    "provider_replay": "Pins extracted commitments from both transcript and email sources.",
+    "external_replay": "Includes synthetic source summaries without real customer data.",
+    "expected_output": "The open loop is contested and paired with an explicit conflict object.",
+    "expected_provenance": "Both sources are attributed and the conflict is visible."
+  }
+}

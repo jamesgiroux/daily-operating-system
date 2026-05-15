@@ -1,0 +1,88 @@
+{
+  "ability_name": "prepare_meeting",
+  "input_json": {
+    "schema_version": 1,
+    "meeting_id": "meeting-b15-example",
+    "depth": 2,
+    "include_open_loops": true,
+    "surface_inputs": {
+      "get_entity_context_account": {
+        "schema_version": 2,
+        "entity_type": "account",
+        "entity_id": "account-b15-example",
+        "depth": "standard"
+      },
+      "get_entity_context_project": {
+        "schema_version": 2,
+        "entity_type": "project",
+        "entity_id": "project-b15-example",
+        "depth": "standard"
+      },
+      "get_entity_context_person": {
+        "schema_version": 2,
+        "entity_type": "person",
+        "entity_id": "person-b15-example",
+        "depth": "standard"
+      },
+      "get_daily_readiness": {
+        "schema_version": 1,
+        "workspace_id": "workspace-b15-example",
+        "date": "2026-05-15"
+      },
+      "dashboard": {
+        "workspace_id": "workspace-b15-example",
+        "date": "2026-05-15"
+      },
+      "mcp": {
+        "ability_name": "get_entity_context",
+        "schema_version": 2,
+        "entity_type": "account",
+        "entity_id": "account-b15-example",
+        "actor": "seeded-tauri-user"
+      }
+    }
+  },
+  "surface_invocations": [
+    {
+      "surface": "get_entity_context",
+      "subject": {
+        "entity_type": "account",
+        "entity_id": "account-b15-example"
+      }
+    },
+    {
+      "surface": "get_entity_context",
+      "subject": {
+        "entity_type": "project",
+        "entity_id": "project-b15-example"
+      }
+    },
+    {
+      "surface": "get_entity_context",
+      "subject": {
+        "entity_type": "person",
+        "entity_id": "person-b15-example"
+      }
+    },
+    {
+      "surface": "prepare_meeting",
+      "meeting_id": "meeting-b15-example"
+    },
+    {
+      "surface": "get_daily_readiness",
+      "date": "2026-05-15"
+    },
+    {
+      "surface": "dashboard",
+      "date": "2026-05-15"
+    },
+    {
+      "surface": "mcp",
+      "ability_name": "get_entity_context",
+      "entity_id": "account-b15-example"
+    }
+  ],
+  "actor": "user",
+  "mode": "evaluate",
+  "dry_run": false
+}

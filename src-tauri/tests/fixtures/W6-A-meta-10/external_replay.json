@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "fixtures": [
+    {
+      "source_id": "source-meta-10-transcript",
+      "kind": "meeting_transcript",
+      "source_asof": "2026-05-14T18:00:00Z",
+      "observed_at": "2026-05-14T18:05:00Z",
+      "summary": "Synthetic transcript states that a draft will be sent by Friday."
+    },
+    {
+      "source_id": "source-meta-10-email",
+      "kind": "email_thread",
+      "source_asof": "2026-05-15T09:00:00Z",
+      "observed_at": "2026-05-15T09:05:00Z",
+      "summary": "Synthetic email states there is no draft commitment this week."
+    }
+  ]
+}

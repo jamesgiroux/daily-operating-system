@@ -1,0 +1,11 @@
+{
+  "ability_name": "get_daily_readiness",
+  "input_json": {
+    "schema_version": 1,
+    "workspace_id": "workspace-meta-example",
+    "date": "2026-05-15"
+  },
+  "actor": "user",
+  "mode": "evaluate",
+  "dry_run": false
+}

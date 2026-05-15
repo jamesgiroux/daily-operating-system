@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "provider": "replay",
+  "model": "replay",
+  "temperature": 0,
+  "seed": 150290,
+  "fixtures": [
+    {
+      "canonical_prompt_hash": "bundle-15-v1-synthetic-fingerprint",
+      "completion": "{\n  \"topics\": [\n    {\n      \"title\": \"Expansion risk needs executive alignment\",\n      \"detail\": \"Use the same at-risk account posture, blocked project status, and open owner action visible on the account, project, person, daily, dashboard, and MCP surfaces.\",\n      \"source_claim_ids\": [\"claim-b15-account-health-current\", \"claim-b15-project-status-current\", \"claim-b15-person-action-current\"]\n    }\n  ],\n  \"attendee_context\": [\n    {\n      \"entity_id\": \"account-b15-example\",\n      \"entity_type\": \"account\",\n      \"source_claim_ids\": [\"claim-b15-account-health-current\"]\n    }\n  ],\n  \"open_loops\": [\n    {\n      \"id\": \"loop-b15-owner-action\",\n      \"source_claim_ids\": [\"claim-b15-person-action-current\"]\n    }\n  ],\n  \"what_changed_since_last\": [\n    {\n      \"source_claim_ids\": [\"claim-b15-post-refresh-risk\"],\n      \"change\": \"Refresh completed and the account now renders the post-refresh at-risk state.\"\n    }\n  ],\n  \"suggested_outcomes\": []\n}"
+    }
+  ],
+  "provider_assertions": {
+    "no_surface_divergence_inserted": true,
+    "attempted_primary_account": "account-b15-example",
+    "attempted_project_status": "blocked_by_dependency"
+  }
+}

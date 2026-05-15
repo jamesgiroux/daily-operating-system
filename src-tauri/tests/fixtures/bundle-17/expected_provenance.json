@@ -1,0 +1,66 @@
+{
+  "provenance": {
+    "actor_scope_contract": {
+      "field": "actor",
+      "required_in_envelope": true,
+      "fixture_actor": {
+        "kind": "agent",
+        "name": "dailyos-mcp",
+        "version": "fixture"
+      }
+    },
+    "safe_redaction_summary": {
+      "source_class": "glean",
+      "lifecycle_state": "restricted",
+      "timestamp_posture": "source_asof_known",
+      "source_asof": "2026-05-10T10:00:00Z",
+      "redaction_reason": "actor_not_authorized",
+      "safe_source_count": 1
+    },
+    "masked_provenance": {
+      "kind": "provenance_masked",
+      "status": "masked",
+      "mask_reason": {
+        "kind": "source_revoked",
+        "source_class": "glean"
+      },
+      "sources_masked": [
+        {
+          "source_class": "glean"
+        }
+      ]
+    },
+    "source_asof_reachable": {
+      "claim_id": "claim-b17-stale-downstream",
+      "source_id": "source-b17-stale-downstream",
+      "downstream_source_asof": "2025-10-01T09:00:00Z",
+      "wrapper_fetch_at": "2026-05-15T11:45:00Z",
+      "trust_path_input": "downstream_source_asof"
+    },
+    "warnings": [
+      {
+        "kind": "source_unresolvable",
+        "source_class": "google",
+        "lifecycle_state": "unavailable"
+      },
+      {
+        "kind": "masked",
+        "reason": {
+          "kind": "source_revoked"
+        }
+      },
+      {
+        "kind": "source_stale",
+        "source_class": "glean",
+        "source_asof": "2025-10-01T09:00:00Z"
+      }
+    ],
+    "forbidden_detail_tokens": [
+      "object-b17-restricted-downstream",
+      "internal-graph-b17-restricted",
+      "raw-attribution-b17-restricted",
+      "prompt-hash-b17-secret",
+      "watermark-b17-internal"
+    ]
+  }
+}

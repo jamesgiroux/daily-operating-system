@@ -1,0 +1,196 @@
+{
+  "provenance": {
+    "subject": {
+      "kind": "account",
+      "id": "account-b15-example"
+    },
+    "produced_at": "2026-05-15T12:15:00Z",
+    "sources": [
+      {
+        "source_id": "source-b15-account-health-current",
+        "claim_id": "claim-b15-account-health-current",
+        "data_source": "support",
+        "source_asof": "2026-05-15T11:00:00Z",
+        "observed_at": "2026-05-15T11:02:00Z",
+        "trust_band": "likely_current",
+        "surfaces": [
+          "get_entity_context",
+          "prepare_meeting",
+          "get_daily_readiness",
+          "dashboard",
+          "mcp"
+        ]
+      },
+      {
+        "source_id": "source-b15-project-status-current",
+        "claim_id": "claim-b15-project-status-current",
+        "data_source": "project",
+        "source_asof": "2026-05-15T11:00:00Z",
+        "observed_at": "2026-05-15T11:02:00Z",
+        "trust_band": "likely_current",
+        "surfaces": [
+          "get_entity_context_project",
+          "prepare_meeting",
+          "get_daily_readiness",
+          "dashboard",
+          "mcp"
+        ]
+      },
+      {
+        "source_id": "source-b15-person-action-current",
+        "claim_id": "claim-b15-person-action-current",
+        "data_source": "calendar",
+        "source_asof": "2026-05-15T11:00:00Z",
+        "observed_at": "2026-05-15T11:02:00Z",
+        "trust_band": "likely_current",
+        "surfaces": [
+          "get_entity_context_person",
+          "prepare_meeting",
+          "get_daily_readiness",
+          "dashboard",
+          "mcp"
+        ]
+      },
+      {
+        "source_id": "source-b15-lint-blocked-bleed",
+        "claim_id": "claim-b15-lint-blocked-bleed",
+        "data_source": "lint",
+        "source_asof": "2026-05-15T10:30:00Z",
+        "observed_at": "2026-05-15T10:31:00Z",
+        "trust_band": "needs_verification",
+        "render_policy": "blocked",
+        "rendered_current": false,
+        "surfaces": [
+          "get_entity_context",
+          "prepare_meeting",
+          "get_daily_readiness",
+          "dashboard",
+          "mcp"
+        ]
+      },
+      {
+        "source_id": "source-b15-post-refresh-risk",
+        "claim_id": "claim-b15-post-refresh-risk",
+        "data_source": "support",
+        "source_asof": "2026-05-15T11:05:00Z",
+        "observed_at": "2026-05-15T11:06:00Z",
+        "trust_band": "likely_current",
+        "activity_id": "activity-b15-refresh-completed"
+      }
+    ],
+    "field_attribution": {
+      "/primary_account_id": {
+        "claim_id": "claim-b15-account-health-current",
+        "source_id": "source-b15-account-health-current",
+        "source_asof": "2026-05-15T11:00:00Z",
+        "trust_band": "likely_current"
+      },
+      "/account/health": {
+        "claim_id": "claim-b15-account-health-current",
+        "source_id": "source-b15-account-health-current",
+        "source_asof": "2026-05-15T11:00:00Z",
+        "trust_band": "likely_current"
+      },
+      "/project/status": {
+        "claim_id": "claim-b15-project-status-current",
+        "source_id": "source-b15-project-status-current",
+        "source_asof": "2026-05-15T11:00:00Z",
+        "trust_band": "likely_current"
+      },
+      "/person/actions/0": {
+        "claim_id": "claim-b15-person-action-current",
+        "source_id": "source-b15-person-action-current",
+        "source_asof": "2026-05-15T11:00:00Z",
+        "trust_band": "likely_current"
+      },
+      "/blocked_claims/0": {
+        "claim_id": "claim-b15-lint-blocked-bleed",
+        "source_id": "source-b15-lint-blocked-bleed",
+        "source_asof": "2026-05-15T10:30:00Z",
+        "trust_band": "needs_verification",
+        "render_policy": "blocked"
+      }
+    },
+    "timestamp_visibility": {
+      "get_entity_context": {
+        "source_asof_visible": true,
+        "produced_at_visible": true
+      },
+      "prepare_meeting": {
+        "source_asof_visible": true,
+        "produced_at_visible": true
+      },
+      "get_daily_readiness": {
+        "source_asof_visible": true,
+        "produced_at_visible": true
+      },
+      "dashboard": {
+        "source_asof_visible": true,
+        "generated_at_visible": true
+      },
+      "mcp": {
+        "source_asof_visible": true,
+        "produced_at_visible": true
+      }
+    },
+    "warnings": [
+      {
+        "lint_blocked_claim": {
+          "claim_id": "claim-b15-lint-blocked-bleed",
+          "render_policy": "blocked",
+          "trust_band": "needs_verification"
+        }
+      },
+      {
+        "refresh_completed_post_state": {
+          "activity_id": "activity-b15-refresh-completed",
+          "old_claim_id": "claim-b15-pre-refresh-healthy",
+          "post_refresh_claim_id": "claim-b15-post-refresh-risk"
+        }
+      }
+    ],
+    "warning_posture": "show_current_state_with_shared_blocked_claim_warning",
+    "child_composition": [
+      {
+        "parent": "prepare_meeting",
+        "child": "get_entity_context",
+        "subject_id": "account-b15-example"
+      },
+      {
+        "parent": "prepare_meeting",
+        "child": "get_entity_context",
+        "subject_id": "project-b15-example"
+      },
+      {
+        "parent": "prepare_meeting",
+        "child": "get_entity_context",
+        "subject_id": "person-b15-example"
+      },
+      {
+        "parent": "get_daily_readiness",
+        "child": "prepare_meeting",
+        "meeting_id": "meeting-b15-example"
+      },
+      {
+        "parent": "get_daily_readiness",
+        "child": "get_entity_context",
+        "subject_id": "account-b15-example"
+      },
+      {
+        "parent": "mcp",
+        "child": "get_entity_context",
+        "subject_id": "account-b15-example"
+      }
+    ],
+    "bridge_policy": {
+      "tauri_surface": "TauriApp",
+      "mcp_surface": "McpTool",
+      "actor": "seeded-tauri-user",
+      "same_authoritative_claim_ids": true,
+      "allowed_redactions": [
+        "diagnostics.warnings"
+      ],
+      "unexpected_divergences": []
+    }
+  }
+}

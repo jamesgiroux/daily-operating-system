@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "fixtures": [
+    {
+      "source_id": "source-meta-6-email",
+      "kind": "email_thread",
+      "source_asof": "2026-03-04T15:00:00Z",
+      "observed_at": "2026-03-04T15:05:00Z"
+    }
+  ]
+}

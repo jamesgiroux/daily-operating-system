@@ -1,0 +1,40 @@
+{
+  "bundle": 14,
+  "scenario_id": "stale-current-contradiction",
+  "invariant": "Stale historical evidence with an old source_asof cannot drive current-state advice when fresher contradictory, superseding, or user-outdated evidence exists. Recent observation or ingestion time does not refresh stale downstream semantics.",
+  "expected_render_policy": "suppress-stale-current",
+  "surfaces_exercised": [
+    "prepare_meeting",
+    "get_entity_context",
+    "get_daily_readiness"
+  ],
+  "source_lifecycle_refs": [
+    "source-b14-old-downstream",
+    "source-b14-contradiction-old",
+    "source-b14-contradiction-fresh",
+    "source-b14-superseded-open-risk",
+    "source-b14-fresh-resolved-risk",
+    "source-b14-feedback-old-title",
+    "source-b14-historical-case-study"
+  ],
+  "anonymization_cert": "synthetic",
+  "retention_policy": "permanent",
+  "prompt_fingerprint_baseline": "bundle-14-v1-synthetic-fingerprint",
+  "prompt_template_version": "1.0.0",
+  "completion_text_hash": "7f1f65f76fd0d76466db405cf7a530b093ff0ec6c0a8c8b4b5437b2e1af6b914",
+  "trust_factors_dominant": [
+    "freshness",
+    "contradiction",
+    "source_semantics",
+    "user_feedback"
+  ],
+  "pass_fail_definition": "PASS = old source_asof plus recent observed_at is not likely_current; contradiction and supersession are both represented; the stale open-risk claim is absent from current prepare_meeting, get_entity_context, and get_daily_readiness fields; MarkOutdated hides a non-superseded claim from a post-feedback render attempt; bundle-14 is mandatory. FAIL = stale current advice renders as current state, freshness uses observed_at instead of source_asof, only contradiction or supersession is exercised, or MarkOutdated is masked by supersession.",
+  "fixture_design_notes": {
+    "state_sql": "Seeds one synthetic account, one synthetic meeting, and four substrate scenario groups: source_asof independence, unresolved contradiction, supersession, and feedback-only MarkOutdated. Claim and source identifiers are generic and use example.com only.",
+    "provider_replay": "Includes an attempted stale-current talking point from the superseded open-risk claim so validation can assert the candidate is rejected rather than rendered.",
+    "external_replay": "Pins downstream source semantics where observed_at is recent but source_asof remains old.",
+    "expected_output": "Stores the normalized field-level oracle across prepare_meeting, get_entity_context, and get_daily_readiness for the stale-current scenario.",
+    "expected_provenance": "Asserts source attribution, source age, warning posture, trust caveats, and child composition.",
+    "expected_state": "Asserts claim states, contradiction and supersession edges, MarkOutdated feedback, and no resurrection after feedback."
+  }
+}

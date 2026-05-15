@@ -1,0 +1,12 @@
+{
+  "ability_name": "get_entity_context",
+  "input_json": {
+    "schema_version": 2,
+    "entity_type": "account",
+    "entity_id": "account-meta-1-example",
+    "depth": "standard"
+  },
+  "actor": "user",
+  "mode": "evaluate",
+  "dry_run": false
+}

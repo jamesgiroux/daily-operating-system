@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "provider": "replay",
+  "model": "replay",
+  "temperature": 0,
+  "seed": 160291,
+  "fixtures": [
+    {
+      "canonical_prompt_hash": "bundle-16-v1-synthetic-fingerprint",
+      "completion": "{\n  \"topics\": [],\n  \"attendee_context\": [],\n  \"open_loops\": [],\n  \"what_changed_since_last\": [],\n  \"suggested_outcomes\": []\n}"
+    }
+  ],
+  "attempted_confident_primary_subject_talking_points": {
+    "same-domain-twins": {
+      "candidate_id": "provider-b16-same-domain-confident-primary",
+      "attempted_subject_ref": {
+        "kind": "account",
+        "id": "account-b16-domain-a"
+      },
+      "text": "Treat Account Domain A Example as the confirmed primary account for the shared-domain meeting.",
+      "expected_policy": "reject_or_request_confirmation"
+    },
+    "similar-project-names": {
+      "candidate_id": "provider-b16-similar-project-confident-primary",
+      "attempted_subject_ref": {
+        "kind": "project",
+        "id": "project-b16-phoenix-alpha"
+      },
+      "text": "Center the briefing on Phoenix Alpha as the confirmed project.",
+      "expected_policy": "reject_or_request_confirmation"
+    },
+    "same-name-people": {
+      "candidate_id": "provider-b16-same-name-confident-primary",
+      "attempted_subject_ref": {
+        "kind": "person",
+        "id": "person-b16-alex-a"
+      },
+      "text": "Assume Alex Example A is the attendee who owns the follow-up.",
+      "expected_policy": "reject_or_request_confirmation"
+    },
+    "email-thread-two-customers": {
+      "candidate_id": "provider-b16-email-thread-confident-primary",
+      "attempted_subject_ref": {
+        "kind": "account",
+        "id": "account-b16-thread-a"
+      },
+      "text": "Summarize the email thread as if Account Thread A Example is the primary customer.",
+      "expected_policy": "reject_or_request_confirmation"
+    },
+    "linear-title-internal-work": {
+      "candidate_id": "provider-b16-linear-title-confident-primary",
+      "attempted_subject_ref": {
+        "kind": "account",
+        "id": "account-b16-linear-title-match"
+      },
+      "text": "Attribute the internal Linear platform work to Account Linear Example because the account name appears in the title.",
+      "expected_policy": "reject_or_classify_internal"
+    }
+  }
+}

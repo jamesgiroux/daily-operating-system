@@ -1,0 +1,253 @@
+{
+  "post_action_state": {
+    "intelligence_claims": [
+      {
+        "claim_id": "claim-b18-user-correction-current",
+        "subject_ref": {
+          "kind": "account",
+          "id": "account-b18-example"
+        },
+        "claim_type": "current_state",
+        "field_path": "implementation.summary",
+        "text": "User corrected the implementation summary to say the account wants a written agenda before renewal planning.",
+        "actor": "user",
+        "source_asof": "2026-05-15T10:15:00Z",
+        "observed_at": "2026-05-15T10:15:00Z",
+        "claim_state": "active",
+        "surfacing_state": "active",
+        "trust_score": 0.98,
+        "trust_band": "likely_current",
+        "verification_state": "active",
+        "temporal_scope": "state",
+        "sensitivity": "user_only",
+        "generation": 4,
+        "metadata": {
+          "scenario_id": "user-correction-vs-concurrent-enrichment",
+          "user_authored": true,
+          "concurrent_enrichment_attempt_id": "enrichment-b18-user-correction-stale"
+        }
+      },
+      {
+        "claim_id": "claim-b18-generation-current",
+        "subject_ref": {
+          "kind": "account",
+          "id": "account-b18-example"
+        },
+        "claim_type": "current_state",
+        "field_path": "risk.status",
+        "text": "Generation 7 says the account risk is watch because the implementation owner changed.",
+        "source_asof": "2026-05-15T11:00:00Z",
+        "observed_at": "2026-05-15T11:01:00Z",
+        "claim_state": "active",
+        "surfacing_state": "active",
+        "trust_score": 0.88,
+        "trust_band": "likely_current",
+        "verification_state": "active",
+        "temporal_scope": "state",
+        "generation": 7,
+        "metadata": {
+          "scenario_id": "older-generation-retry-rejected",
+          "generation": 7,
+          "retry_rejected_generation": 6
+        }
+      },
+      {
+        "claim_id": "claim-b18-offline-stale-source",
+        "subject_ref": {
+          "kind": "account",
+          "id": "account-b18-example"
+        },
+        "claim_type": "current_state",
+        "field_path": "offline.snapshot",
+        "source_asof": "2026-05-13T11:18:00Z",
+        "observed_at": "2026-05-15T12:18:00Z",
+        "claim_state": "active",
+        "surfacing_state": "active",
+        "trust_score": 0.52,
+        "trust_band": "use_with_caution",
+        "verification_state": "contested",
+        "verification_reason": "offline_stale",
+        "temporal_scope": "state",
+        "generation": 2,
+        "metadata": {
+          "scenario_id": "offline-mode-stale-age-field",
+          "offline_mode": true,
+          "stale_age_hours": 49
+        }
+      },
+      {
+        "claim_id": "claim-b18-coalesced-invalidated",
+        "subject_ref": {
+          "kind": "account",
+          "id": "account-b18-example"
+        },
+        "claim_type": "current_state",
+        "field_path": "briefing.freshness",
+        "source_asof": "2026-05-15T12:12:00Z",
+        "observed_at": "2026-05-15T12:13:00Z",
+        "claim_state": "active",
+        "surfacing_state": "active",
+        "trust_score": 0.9,
+        "trust_band": "likely_current",
+        "verification_state": "active",
+        "temporal_scope": "state",
+        "generation": 5,
+        "metadata": {
+          "scenario_id": "signal-coalescing-preserves-invalidations",
+          "invalidation_status": "refreshed_after_coalescing",
+          "raw_signal_count": 2
+        }
+      },
+      {
+        "claim_id": "claim-b18-duplicate-refresh-canonical",
+        "subject_ref": {
+          "kind": "account",
+          "id": "account-b18-example"
+        },
+        "claim_type": "current_state",
+        "field_path": "refresh.risk",
+        "source_asof": "2026-05-15T12:16:00Z",
+        "observed_at": "2026-05-15T12:17:00Z",
+        "claim_state": "active",
+        "surfacing_state": "active",
+        "trust_score": 0.86,
+        "trust_band": "likely_current",
+        "verification_state": "active",
+        "temporal_scope": "state",
+        "generation": 1,
+        "dedup_key": "b18:duplicate-refresh:account-b18-example:risk",
+        "metadata": {
+          "scenario_id": "duplicate-refresh-single-claim-row",
+          "refresh_job_ids": [
+            "refresh-b18-duplicate-a",
+            "refresh-b18-duplicate-b"
+          ],
+          "deduplicated": true
+        }
+      }
+    ],
+    "claim_feedback": [
+      {
+        "id": "feedback-b18-user-correction",
+        "claim_id": "claim-b18-user-correction-current",
+        "feedback_type": "correct",
+        "actor": "user",
+        "payload_json": {
+          "correction_text": "User corrected the implementation summary to say the account wants a written agenda before renewal planning.",
+          "render_policy": "UserAuthoredWins"
+        },
+        "submitted_at": "2026-05-15T10:15:00Z",
+        "applied_at": "2026-05-15T10:15:00Z"
+      }
+    ],
+    "concurrent_enrichment_attempts": [
+      {
+        "id": "enrichment-b18-user-correction-stale",
+        "scenario_id": "user-correction-vs-concurrent-enrichment",
+        "claim_id": "claim-b18-user-correction-current",
+        "attempted_generation": 3,
+        "current_generation": 4,
+        "status": "rejected",
+        "rejection_reason": "user_authored_layer_wins"
+      }
+    ],
+    "generated_output_rejections": [
+      {
+        "id": "rejection-b18-older-generation",
+        "scenario_id": "older-generation-retry-rejected",
+        "claim_id": "claim-b18-generation-current",
+        "attempted_generation": 6,
+        "current_generation": 7,
+        "rejection_reason": "stale_generation_rejected",
+        "rejected_at": "2026-05-15T11:03:00Z"
+      }
+    ],
+    "version_events": [
+      {
+        "event_kind": "claim.write_rejected",
+        "claim_id": "claim-b18-generation-current",
+        "previous_version": 6,
+        "current_version": 7,
+        "reason": "stale_generation_rejected"
+      }
+    ],
+    "user_agenda_items": [
+      {
+        "id": "agenda-b18-preserved",
+        "meeting_id": "meeting-b18-sync-refresh",
+        "body": "Start with the user-authored renewal agenda before generated risk topics.",
+        "preserved_after_refresh": true
+      }
+    ],
+    "user_notes": [
+      {
+        "id": "note-b18-preserved",
+        "owner_type": "meeting",
+        "owner_id": "meeting-b18-sync-refresh",
+        "body": "User note: confirm whether the account wants the rollout sequence in writing.",
+        "preserved_after_refresh": true
+      }
+    ],
+    "user_dismissals": [
+      {
+        "id": "dismissal-b18-preserved",
+        "surface": "prepare_meeting",
+        "dismissed_key": "topic:old-implementation-summary",
+        "preserved_after_refresh": true
+      }
+    ],
+    "daily_readiness_child_reads": [
+      {
+        "id": "child-read-b18-optional-failed",
+        "parent_ability": "get_daily_readiness",
+        "child_ability": "get_entity_context",
+        "composition_id": "daily-readiness:child:get-entity-context:account-b18-example",
+        "child_status": "failed_optional",
+        "parent_render_state": "degraded",
+        "warning_enum": "OptionalComposedReadFailed"
+      }
+    ],
+    "offline_source_snapshots": [
+      {
+        "id": "offline-b18-stale-source",
+        "source_id": "source-b18-offline-stale",
+        "offline_mode": true,
+        "stale_age_hours": 49,
+        "warning_class": "OfflineStale"
+      }
+    ],
+    "signal_coalescing": {
+      "job_id": "invalidation-b18-coalesced",
+      "status": "completed",
+      "raw_signal_count": 2,
+      "first_signal_id": "signal-b18-coalesce-a",
+      "latest_signal_id": "signal-b18-coalesce-b",
+      "invalidated_claim_ids": [
+        "claim-b18-coalesced-invalidated"
+      ],
+      "dropped_invalidations": [],
+      "briefing_stale_after_refresh": false
+    },
+    "duplicate_refresh": {
+      "dedup_key": "b18:duplicate-refresh:account-b18-example:risk",
+      "claim_count": 1,
+      "commitment_count": 1,
+      "completed_job": "refresh-b18-duplicate-a",
+      "coalesced_job": "refresh-b18-duplicate-b"
+    },
+    "eval_replay_runs": [
+      {
+        "run_label": "first",
+        "clock": "2026-05-15T12:18:00Z",
+        "seed": 180293,
+        "provider_replay_key": "bundle-18-v1-synthetic-fingerprint"
+      },
+      {
+        "run_label": "second",
+        "clock": "2026-05-15T12:18:00Z",
+        "seed": 180293,
+        "provider_replay_key": "bundle-18-v1-synthetic-fingerprint"
+      }
+    ]
+  }
+}

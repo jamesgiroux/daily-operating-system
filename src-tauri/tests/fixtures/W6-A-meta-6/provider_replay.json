@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "provider": "replay",
+  "model": "replay",
+  "temperature": 0,
+  "seed": 600006,
+  "fixtures": [
+    {
+      "canonical_prompt_hash": "w6a-meta-6-detect-risk-shift-stale",
+      "completion": "{\"summary\":\"Champion silence is stale and should be treated as insufficient current evidence.\",\"confidence\":0.42,\"source_refs\":[\"claim-meta-6-champion-silence\"],\"indicators\":[{\"label\":\"Champion silence\",\"direction\":\"insufficient_evidence\",\"severity\":0.45,\"rationale\":\"The last champion response is outside the freshness window.\",\"source_refs\":[\"claim-meta-6-champion-silence\"]}],\"claim_draft\":{\"claim_type\":\"risk_shift\",\"text\":\"Champion silence may indicate risk, but the evidence is stale.\",\"direction\":\"insufficient_evidence\",\"confidence\":0.42,\"source_refs\":[\"claim-meta-6-champion-silence\"]}}"
+    }
+  ]
+}

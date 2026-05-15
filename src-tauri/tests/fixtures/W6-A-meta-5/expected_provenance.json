@@ -1,0 +1,29 @@
+{
+  "provenance": {
+    "subject": {
+      "kind": "account",
+      "id": "account-meta-5-example"
+    },
+    "sources": [
+      {
+        "source_id": "source-meta-5-support",
+        "claim_id": "claim-meta-5-degrading",
+        "data_source": "support",
+        "source_asof": "2026-05-14T18:00:00Z",
+        "observed_at": "2026-05-14T18:05:00Z",
+        "trust_band": "use_with_caution",
+        "trust_caveats": [
+          "synthesis_untrusted_envelope"
+        ]
+      }
+    ],
+    "warnings": [],
+    "field_attribution": {
+      "/envelope/payload/summary": {
+        "claim_id": "claim-meta-5-degrading",
+        "source_id": "source-meta-5-support",
+        "trust_band": "use_with_caution"
+      }
+    }
+  }
+}

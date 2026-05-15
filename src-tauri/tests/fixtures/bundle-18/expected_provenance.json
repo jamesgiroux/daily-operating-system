@@ -1,0 +1,102 @@
+{
+  "provenance": {
+    "subject": {
+      "kind": "account",
+      "id": "account-b18-example"
+    },
+    "produced_at": "2026-05-15T12:18:00Z",
+    "sources": [
+      {
+        "source_id": "source-b18-user-correction",
+        "claim_id": "claim-b18-user-correction-current",
+        "data_source": "user_correction",
+        "source_asof": "2026-05-15T10:15:00Z",
+        "observed_at": "2026-05-15T10:15:00Z",
+        "trust_band": "likely_current",
+        "layer": "user_authored"
+      },
+      {
+        "source_id": "source-b18-generation-current",
+        "claim_id": "claim-b18-generation-current",
+        "data_source": "glean",
+        "source_asof": "2026-05-15T11:00:00Z",
+        "observed_at": "2026-05-15T11:01:00Z",
+        "trust_band": "likely_current",
+        "generation": 7
+      },
+      {
+        "source_id": "source-b18-offline-stale",
+        "claim_id": "claim-b18-offline-stale-source",
+        "data_source": "glean",
+        "source_asof": "2026-05-13T11:18:00Z",
+        "observed_at": "2026-05-15T12:18:00Z",
+        "trust_band": "use_with_caution",
+        "offline_mode": true,
+        "stale_age_hours": 49
+      }
+    ],
+    "field_attribution": {
+      "/user_layer/agenda/0": {
+        "row_id": "agenda-b18-preserved",
+        "source_asof": "2026-05-15T09:00:00Z",
+        "actor": "user"
+      },
+      "/user_layer/notes/0": {
+        "row_id": "note-b18-preserved",
+        "source_asof": "2026-05-15T09:05:00Z",
+        "actor": "user"
+      },
+      "/user_layer/dismissals/0": {
+        "row_id": "dismissal-b18-preserved",
+        "source_asof": "2026-05-15T09:10:00Z",
+        "actor": "user"
+      },
+      "/daily_readiness/partial_warning": {
+        "warning_enum": "OptionalComposedReadFailed",
+        "composition_id": "daily-readiness:child:get-entity-context:account-b18-example"
+      },
+      "/offline/warnings/0/stale_age_hours": {
+        "warning_class": "OfflineStale",
+        "source_id": "source-b18-offline-stale"
+      }
+    },
+    "warnings": [
+      {
+        "optional_composed_read_failed": {
+          "enum": "OptionalComposedReadFailed",
+          "composition_id": "daily-readiness:child:get-entity-context:account-b18-example",
+          "child_ability": "get_entity_context",
+          "reason": "Synthetic optional get_entity_context read failed during daily readiness composition."
+        }
+      },
+      {
+        "class": "OfflineStale",
+        "source_id": "source-b18-offline-stale",
+        "source_asof": "2026-05-13T11:18:00Z",
+        "observed_at": "2026-05-15T12:18:00Z",
+        "stale_age_hours": 49
+      }
+    ],
+    "warning_posture": "degraded_not_complete",
+    "child_composition": [
+      {
+        "parent": "get_daily_readiness",
+        "child": "get_entity_context",
+        "composition_id": "daily-readiness:child:get-entity-context:account-b18-example",
+        "status": "failed_optional"
+      },
+      {
+        "parent": "prepare_meeting",
+        "child": "extract_commitments",
+        "composition_id": "prepare-meeting:child:extract-commitments:meeting-b18-sync-refresh",
+        "status": "completed"
+      }
+    ],
+    "bridge_policy": {
+      "tauri_surface": "TauriApp",
+      "mcp_surface": "McpTool",
+      "same_degraded_warning_shape": true,
+      "unexpected_divergences": []
+    }
+  }
+}

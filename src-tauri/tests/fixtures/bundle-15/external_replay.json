@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "fixtures": [],
+  "dashboard_eligibility": {
+    "workspace_id": "workspace-b15-example",
+    "date": "2026-05-15",
+    "eligible_meeting_ids": [
+      "meeting-b15-example",
+      "meeting-b15-secondary-1",
+      "meeting-b15-secondary-2",
+      "meeting-b15-secondary-3"
+    ],
+    "excluded_meeting_ids": [
+      {
+        "meeting_id": "meeting-b15-personal",
+        "reason": "personal"
+      }
+    ],
+    "assertion": "Dashboard meeting_count and daily readiness eligible_meeting_count derive from this same active, non-personal, non-archived set."
+  },
+  "source_freshness": [
+    {
+      "source_id": "source-b15-account-health-current",
+      "source_asof": "2026-05-15T11:00:00Z",
+      "observed_at": "2026-05-15T11:02:00Z",
+      "trust_band": "likely_current"
+    },
+    {
+      "source_id": "source-b15-lint-blocked-bleed",
+      "source_asof": "2026-05-15T10:30:00Z",
+      "observed_at": "2026-05-15T10:31:00Z",
+      "trust_band": "needs_verification",
+      "render_policy": "blocked"
+    }
+  ],
+  "mcp_bridge_policy": {
+    "actor": "seeded-tauri-user",
+    "surface": "McpTool",
+    "redaction_carve_outs": [
+      {
+        "field": "diagnostics.warnings",
+        "tauri_value": "lint-blocked bleed detail",
+        "mcp_value": null,
+        "policy": "diagnostics_warnings_dropped_for_mcp"
+      }
+    ]
+  },
+  "refresh_completion": {
+    "activity_id": "activity-b15-refresh-completed",
+    "event_type": "refresh_completed",
+    "subject": {
+      "kind": "account",
+      "id": "account-b15-example"
+    },
+    "completed_at": "2026-05-15T11:05:00Z",
+    "post_refresh_claim_id": "claim-b15-post-refresh-risk",
+    "assertion": "Subsequent entity, meeting, dashboard, and MCP reads render the post-refresh state rather than pre-refresh healthy state."
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "scenario_id": "happy",
+  "ability": "detect_risk_shift",
+  "result": {
+    "schema_version": 1,
+    "envelope": {
+      "trust": "untrusted",
+      "payload": {
+        "subject": {
+          "kind": "account",
+          "id": "account-meta-5-example"
+        },
+        "direction": "increasing",
+        "summary": "Risk is increasing because the account reported lower adoption and escalated implementation concerns.",
+        "confidence": 0.78,
+        "source_claim_ids": [
+          "claim-meta-5-degrading"
+        ],
+        "trust_band": "use_with_caution"
+      }
+    }
+  }
+}

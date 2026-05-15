@@ -1,0 +1,170 @@
+{
+  "post_action_state": {
+    "source_lifecycle_states": [
+      {
+        "source_id": "source-b17-active-baseline",
+        "lifecycle_state": "active",
+        "claim_id": "claim-b17-active-baseline",
+        "render_policy": "show"
+      },
+      {
+        "source_id": "source-b17-google-disconnected",
+        "lifecycle_state": "unavailable",
+        "claim_id": "claim-b17-google-disconnected",
+        "render_policy": "degraded_safe_summary"
+      },
+      {
+        "source_id": "source-b17-slack-revoked",
+        "lifecycle_state": "revoked",
+        "claim_id": "claim-b17-slack-revoked",
+        "render_policy": "masked"
+      },
+      {
+        "source_id": "source-b17-gong-expired",
+        "lifecycle_state": "expired",
+        "claim_id": "claim-b17-gong-expired",
+        "render_policy": "masked"
+      },
+      {
+        "source_id": "source-b17-glean-restricted",
+        "lifecycle_state": "restricted",
+        "claim_id": "claim-b17-glean-restricted",
+        "render_policy": "actor_filtered_summary"
+      },
+      {
+        "source_id": "source-b17-stale-downstream",
+        "lifecycle_state": "stale",
+        "claim_id": "claim-b17-stale-downstream",
+        "render_policy": "stale_qualified"
+      }
+    ],
+    "intelligence_claims": [
+      {
+        "claim_id": "claim-b17-active-baseline",
+        "source_asof": "2026-05-15T09:00:00Z",
+        "observed_at": "2026-05-15T09:05:00Z",
+        "claim_state": "active",
+        "surfacing_state": "active",
+        "trust_band": "likely_current",
+        "sensitivity": "public",
+        "metadata": {
+          "source_lifecycle_state": "active",
+          "render_policy": "show"
+        }
+      },
+      {
+        "claim_id": "claim-b17-google-disconnected",
+        "source_asof": "2026-05-01T13:00:00Z",
+        "observed_at": "2026-05-01T13:05:00Z",
+        "claim_state": "active",
+        "surfacing_state": "dormant",
+        "trust_band": "needs_verification",
+        "sensitivity": "internal",
+        "metadata": {
+          "source_lifecycle_state": "unavailable",
+          "render_policy": "degraded_safe_summary",
+          "invalidation_signal": "source_lifecycle_changed"
+        }
+      },
+      {
+        "claim_id": "claim-b17-slack-revoked",
+        "source_asof": "2026-04-20T10:00:00Z",
+        "observed_at": "2026-04-20T10:05:00Z",
+        "claim_state": "dormant",
+        "surfacing_state": "dormant",
+        "trust_band": "needs_verification",
+        "sensitivity": "confidential",
+        "metadata": {
+          "source_lifecycle_state": "revoked",
+          "render_policy": "masked",
+          "mask_reason": "source_revoked"
+        }
+      },
+      {
+        "claim_id": "claim-b17-gong-expired",
+        "source_asof": "2026-03-15T15:00:00Z",
+        "observed_at": "2026-03-15T15:05:00Z",
+        "claim_state": "dormant",
+        "surfacing_state": "dormant",
+        "trust_band": "needs_verification",
+        "sensitivity": "confidential",
+        "metadata": {
+          "source_lifecycle_state": "expired",
+          "render_policy": "masked",
+          "mask_reason": "retention_expired"
+        }
+      },
+      {
+        "claim_id": "claim-b17-zendesk-revoked",
+        "source_asof": "2026-04-25T11:00:00Z",
+        "observed_at": "2026-04-25T11:05:00Z",
+        "claim_state": "dormant",
+        "surfacing_state": "dormant",
+        "trust_band": "needs_verification",
+        "sensitivity": "confidential",
+        "metadata": {
+          "source_lifecycle_state": "revoked",
+          "render_policy": "masked",
+          "mask_reason": "source_revoked"
+        }
+      },
+      {
+        "claim_id": "claim-b17-glean-restricted",
+        "source_asof": "2026-05-10T10:00:00Z",
+        "observed_at": "2026-05-15T10:00:00Z",
+        "claim_state": "active",
+        "surfacing_state": "active",
+        "trust_band": "use_with_caution",
+        "sensitivity": "internal",
+        "metadata": {
+          "source_lifecycle_state": "restricted",
+          "render_policy": "actor_filtered_summary",
+          "tauri_user_visibility": "detail_allowed",
+          "mcp_agent_visibility": "summary_only"
+        }
+      },
+      {
+        "claim_id": "claim-b17-stale-downstream",
+        "source_asof": "2025-10-01T09:00:00Z",
+        "observed_at": "2026-05-15T11:45:00Z",
+        "claim_state": "active",
+        "surfacing_state": "active",
+        "trust_band": "needs_verification",
+        "sensitivity": "internal",
+        "metadata": {
+          "source_lifecycle_state": "stale",
+          "wrapper_fetch_at": "2026-05-15T11:45:00Z",
+          "downstream_source_asof": "2025-10-01T09:00:00Z",
+          "trust_path_input": "downstream_source_asof",
+          "render_policy": "stale_qualified"
+        }
+      },
+      {
+        "claim_id": "claim-b17-internal-only-public-risk",
+        "source_asof": "2026-05-14T16:00:00Z",
+        "observed_at": "2026-05-14T16:05:00Z",
+        "claim_state": "active",
+        "surfacing_state": "active",
+        "trust_band": "use_with_caution",
+        "sensitivity": "internal",
+        "metadata": {
+          "source_lifecycle_state": "active",
+          "render_policy": "block_customer_facing"
+        }
+      }
+    ],
+    "channel_policy": {
+      "source": "RenderPolicyChannel::all",
+      "all_channels_classified": true,
+      "revoked_or_restricted_rejection_green": true,
+      "expected_channel_count": 9
+    },
+    "no_leak_outcomes": {
+      "restricted_provenance_no_hidden_ids": true,
+      "redacted_provenance_useful": true,
+      "mcp_detail_bypass_blocked": true,
+      "internal_only_public_suggestion_blocked": true,
+      "logs_telemetry_low_detail": true
+    }
+  }
+}
