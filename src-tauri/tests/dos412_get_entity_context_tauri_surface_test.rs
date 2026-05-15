@@ -23,6 +23,8 @@ use rusqlite::Connection;
 use serde_json::json;
 
 const CLAIMS_SCHEMA_SQL: &str = include_str!("../src/migrations/129_dos_7_claims_schema.sql");
+const V172_SUBSTRATE_CONCURRENCY_SQL: &str =
+    include_str!("./shared_schemas/v172_substrate_concurrency.sql");
 const PROJECTION_STATUS_SQL: &str =
     include_str!("../src/migrations/134_dos_301_claim_projection_status.sql");
 const TYPED_FEEDBACK_SQL: &str =
@@ -269,6 +271,8 @@ fn fresh_claims_conn() -> Connection {
         .expect("apply projection status schema");
     conn.execute_batch(STRUCTURED_CLAIM_CANONICALIZATION_COLUMNS_SQL)
         .expect("apply structured claim canonicalization columns");
+    conn.execute_batch(V172_SUBSTRATE_CONCURRENCY_SQL)
+        .expect("apply v172 substrate concurrency schema");
     conn.execute_batch(REVEAL_AUDIT_ACTION_TOKEN_SCHEMA_SQL)
         .expect("apply reveal audit action token schema");
     conn
@@ -280,6 +284,7 @@ fn seed_confidential_entity_context_claim(ctx: &ServiceContext<'_>, conn: &Conne
         ActionDb::from_conn(conn),
         ClaimProposal {
             id: Some("claim-dos412-kk-confidential".to_string()),
+            expected_claim_version: None,
             subject_ref: json!({
                 "kind": "account",
                 "id": ACCOUNT_ID,
@@ -338,6 +343,7 @@ fn seed_entity_context_claim(
         ActionDb::from_conn(conn),
         ClaimProposal {
             id: Some(id.to_string()),
+            expected_claim_version: None,
             subject_ref: json!({
                 "kind": "account",
                 "id": ACCOUNT_ID,

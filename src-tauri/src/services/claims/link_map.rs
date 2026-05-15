@@ -354,6 +354,7 @@ mod tests {
     fn fixture_claim(rule: &LinkRule, text: &str) -> IntelligenceClaim {
         IntelligenceClaim {
             id: format!("claim-{}", rule.field),
+            claim_version: 1,
             subject_ref: subject_for(rule.subject_type, "subject-1"),
             claim_type: "risk".to_string(),
             field_path: Some(rule.field.to_string()),

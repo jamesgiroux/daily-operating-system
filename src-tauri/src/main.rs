@@ -11,5 +11,8 @@ compile_error!(
 );
 
 fn main() {
+    if let Some(code) = dailyos_lib::doctor::run_from_args(std::env::args()) {
+        std::process::exit(code);
+    }
     dailyos_lib::run()
 }

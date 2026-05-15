@@ -11,8 +11,7 @@ use std::collections::BTreeMap;
 use serde_json::{Map, Value};
 
 use crate::abilities::provenance::{
-    HashValue, ModelName as ProvenanceModelName, PromptFingerprint, PromptTemplateId,
-    PromptVersion,
+    HashValue, ModelName as ProvenanceModelName, PromptFingerprint, PromptTemplateId, PromptVersion,
 };
 
 use super::provider::{Completion, FingerprintMetadata, PromptInput};
@@ -270,11 +269,8 @@ mod tests {
         let mut meta = metadata();
         meta.seed = None;
 
-        for (temperature, expected_hex) in [
-            (0.0, "00000000"),
-            (0.5, "3f000000"),
-            (1.0, "3f800000"),
-        ] {
+        for (temperature, expected_hex) in [(0.0, "00000000"), (0.5, "3f000000"), (1.0, "3f800000")]
+        {
             meta.temperature = temperature;
             meta.top_p = None;
             let canonical = canonical_prompt_request_value(CanonicalPromptRequest {
@@ -328,8 +324,11 @@ mod tests {
 
     #[test]
     fn prompt_fingerprint_from_completion_carries_provider_metadata() {
-        let prompt = PromptInput::new("Hello")
-            .with_template("greeting", "1.0.0", canonical_template_hash("Hello\n"));
+        let prompt = PromptInput::new("Hello").with_template(
+            "greeting",
+            "1.0.0",
+            canonical_template_hash("Hello\n"),
+        );
         let completion = Completion {
             text: "response".to_string(),
             fingerprint_metadata: metadata(),

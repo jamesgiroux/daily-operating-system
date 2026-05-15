@@ -1424,7 +1424,9 @@ impl ActionDb {
     /// Auto-dismiss stakeholder suggestions for internal team members.
     /// Cleans up suggestions that were created before the internal filter was added.
     #[must_use = "check that internal stakeholder suggestion cleanup succeeded before assuming the queue is filtered"]
-    pub(super) fn dismiss_internal_stakeholder_suggestions(conn: &Connection) -> Result<(), DbError> {
+    pub(super) fn dismiss_internal_stakeholder_suggestions(
+        conn: &Connection,
+    ) -> Result<(), DbError> {
         let dismissed = conn.execute(
             "UPDATE stakeholder_suggestions SET status = 'dismissed', resolved_at = datetime('now')
              WHERE status = 'pending' AND (
@@ -1553,7 +1555,10 @@ impl ActionDb {
     /// Check if a one-time init task has been completed.
     ///
     /// Returns true if the task has already run and been marked in init_tasks.
-    pub(super) fn is_init_task_completed(conn: &Connection, task_name: &str) -> Result<bool, DbError> {
+    pub(super) fn is_init_task_completed(
+        conn: &Connection,
+        task_name: &str,
+    ) -> Result<bool, DbError> {
         let completed = conn
             .query_row(
                 "SELECT 1 FROM init_tasks WHERE task_name = ?1",
@@ -1566,7 +1571,10 @@ impl ActionDb {
 
     /// Mark a one-time init task as completed.
     #[must_use = "check that init-task mark succeeded before assuming the guarded backfill will not re-run on next startup"]
-    pub(super) fn mark_init_task_completed(conn: &Connection, task_name: &str) -> Result<(), DbError> {
+    pub(super) fn mark_init_task_completed(
+        conn: &Connection,
+        task_name: &str,
+    ) -> Result<(), DbError> {
         conn.execute(
             "INSERT OR IGNORE INTO init_tasks (task_name) VALUES (?1)",
             params![task_name],

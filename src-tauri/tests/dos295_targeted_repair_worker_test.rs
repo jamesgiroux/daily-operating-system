@@ -56,6 +56,7 @@ fn seed_account(db: &ActionDb, id: &str) {
 fn proposal(account_id: &str, field_path: &str, text: &str) -> ClaimProposal {
     ClaimProposal {
         id: None,
+        expected_claim_version: None,
         subject_ref: serde_json::json!({
             "kind": "account",
             "id": account_id

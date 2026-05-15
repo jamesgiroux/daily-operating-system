@@ -1527,7 +1527,7 @@ fn resolve_owner_for_commitment_sighting(
         incoming_owner_raw,
         OwnerResolutionMode::FreshInput,
     )
-        .map(|resolution| (resolution, OwnerResolutionProvenance::IncomingLlmOwner))
+    .map(|resolution| (resolution, OwnerResolutionProvenance::IncomingLlmOwner))
 }
 
 fn identity_verified_user_reassigned_owner(
@@ -1777,6 +1777,7 @@ fn synthetic_commitment_claim(
     let now = now.to_rfc3339();
     IntelligenceClaim {
         id: commitment_id.clone(),
+        claim_version: 1,
         subject_ref: serde_json::json!({ "kind": "account", "id": account_id }).to_string(),
         claim_type: "commitment".to_string(),
         field_path: Some("open_commitments".to_string()),
@@ -3579,13 +3580,8 @@ mod tests {
             Some(incoming_owner),
             Some("meeting"),
         );
-        let summary = sync_one_with_ingestion_source(
-            &ctx,
-            &db,
-            &stale_sighting,
-            "meeting",
-            "owner-leak",
-        );
+        let summary =
+            sync_one_with_ingestion_source(&ctx, &db, &stale_sighting, "meeting", "owner-leak");
 
         assert_eq!(summary.created, 1);
         assert_eq!(summary.aliased_to_existing, 0);

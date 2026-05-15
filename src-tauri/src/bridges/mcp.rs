@@ -620,7 +620,9 @@ mod tests {
     use crate::bridges::tauri::UserAttestationHost;
     use crate::bridges::UserAttestationRequest;
     use crate::db::claims::{ClaimSensitivity, TemporalScope};
-    use crate::services::claims::{commit_claim, ClaimProposal, CommittedClaim};
+    use crate::services::claims::{
+        commit_claim, ClaimProposal, CommittedClaim, DeterministicInsertProposal,
+    };
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
 
     const AGENT_ACTORS: &[ActorKind] = &[ActorKind::Agent];
@@ -888,33 +890,38 @@ CREATE TABLE accounts (
         let rng = SeedableRng::new(309);
         let external = ExternalClients::default();
         let ctx = ServiceContext::new_live(&clock, &rng, &external).with_actor("agent:test");
+        let proposal = ClaimProposal {
+            id: None,
+            expected_claim_version: None,
+            subject_ref: json!({
+                "kind": "account",
+                "id": MCP_ENTITY_ID,
+            })
+            .to_string(),
+            claim_type: "entity_summary".to_string(),
+            field_path: Some("context.summary".to_string()),
+            topic_key: None,
+            text: "MCP-visible context that must be hidden after dismissal".to_string(),
+            actor: "agent:test".to_string(),
+            data_source: "user".to_string(),
+            source_ref: Some("fixture:mcp-dismissed-context".to_string()),
+            source_asof: Some("2026-05-09T12:00:00Z".to_string()),
+            observed_at: "2026-05-09T12:00:00Z".to_string(),
+            provenance_json: json!({ "source": "mcp-dismissal-regression" }).to_string(),
+            metadata_json: None,
+            thread_id: None,
+            temporal_scope: Some(TemporalScope::State),
+            sensitivity: Some(ClaimSensitivity::Internal),
+            supersedes: None,
+            tombstone: None,
+        };
         let committed = commit_claim(
             &ctx,
             db,
-            ClaimProposal {
-                id: Some("claim-mcp-dismissed-context".to_string()),
-                subject_ref: json!({
-                    "kind": "account",
-                    "id": MCP_ENTITY_ID,
-                })
-                .to_string(),
-                claim_type: "entity_summary".to_string(),
-                field_path: Some("context.summary".to_string()),
-                topic_key: None,
-                text: "MCP-visible context that must be hidden after dismissal".to_string(),
-                actor: "agent:test".to_string(),
-                data_source: "user".to_string(),
-                source_ref: Some("fixture:mcp-dismissed-context".to_string()),
-                source_asof: Some("2026-05-09T12:00:00Z".to_string()),
-                observed_at: "2026-05-09T12:00:00Z".to_string(),
-                provenance_json: json!({ "source": "mcp-dismissal-regression" }).to_string(),
-                metadata_json: None,
-                thread_id: None,
-                temporal_scope: Some(TemporalScope::State),
-                sensitivity: Some(ClaimSensitivity::Internal),
-                supersedes: None,
-                tombstone: None,
-            },
+            DeterministicInsertProposal::new(
+                "claim-mcp-dismissed-context".to_string(),
+                proposal,
+            ),
         )
         .expect("commit MCP entity context claim");
 

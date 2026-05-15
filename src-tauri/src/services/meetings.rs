@@ -5684,6 +5684,7 @@ mod tests {
             db,
             ClaimProposal {
                 id: None,
+                expected_claim_version: None,
                 subject_ref: subject_ref.to_string(),
                 claim_type: "risk".to_string(),
                 field_path: Some("health.risk".to_string()),

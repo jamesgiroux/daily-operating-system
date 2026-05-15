@@ -15,6 +15,8 @@ use rusqlite::Connection;
 use serde_json::json;
 
 const CLAIMS_SCHEMA_SQL: &str = include_str!("../src/migrations/129_dos_7_claims_schema.sql");
+const V172_SUBSTRATE_CONCURRENCY_SQL: &str =
+    include_str!("./shared_schemas/v172_substrate_concurrency.sql");
 const PROJECTION_STATUS_SQL: &str =
     include_str!("../src/migrations/134_dos_301_claim_projection_status.sql");
 const TYPED_FEEDBACK_SQL: &str =
@@ -68,6 +70,9 @@ async fn mcp_dynamic_get_entity_context_uses_readonly_actiondb_readers() {
     write_conn
         .execute_batch(STRUCTURED_CLAIM_CANONICALIZATION_COLUMNS_SQL)
         .expect("apply structured claim canonicalization columns");
+    write_conn
+        .execute_batch(V172_SUBSTRATE_CONCURRENCY_SQL)
+        .expect("apply v172 substrate concurrency schema");
 
     let write_db = ActionDb::from_connection_for_tests(write_conn);
     let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 6, 12, 0, 0).unwrap());
@@ -123,6 +128,7 @@ fn seed_person_claim(ctx: &ServiceContext<'_>, db: &ActionDb) -> String {
         db,
         ClaimProposal {
             id: None,
+            expected_claim_version: None,
             subject_ref: json!({
                 "kind": "person",
                 "id": PERSON_ID,

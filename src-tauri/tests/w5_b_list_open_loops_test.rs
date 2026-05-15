@@ -347,6 +347,7 @@ fn claim(
 ) -> IntelligenceClaim {
     IntelligenceClaim {
         id: id.to_string(),
+        claim_version: 1,
         subject_ref: json!({
             "kind": entity_type,
             "id": entity_id,

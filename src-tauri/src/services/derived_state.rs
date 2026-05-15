@@ -1389,6 +1389,7 @@ mod tests {
     fn projection_claim(claim_type: &str, subject_ref: &str) -> IntelligenceClaim {
         IntelligenceClaim {
             id: "projection-claim".to_string(),
+            claim_version: 1,
             subject_ref: subject_ref.to_string(),
             claim_type: claim_type.to_string(),
             field_path: None,
@@ -1426,6 +1427,7 @@ mod tests {
     fn claim_proposal(claim_type: &str, text: &str) -> ClaimProposal {
         ClaimProposal {
             id: None,
+            expected_claim_version: None,
             subject_ref: "{\"kind\":\"account\",\"id\":\"acct-commit\"}".to_string(),
             claim_type: claim_type.to_string(),
             field_path: None,
@@ -1449,6 +1451,7 @@ mod tests {
     fn stakeholder_claim_proposal(person_id: &str, text: &str) -> ClaimProposal {
         ClaimProposal {
             id: None,
+            expected_claim_version: None,
             subject_ref: serde_json::json!({
                 "kind": "person",
                 "id": person_id,

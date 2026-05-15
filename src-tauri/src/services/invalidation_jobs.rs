@@ -85,7 +85,7 @@ pub fn enqueue_signal_claim_recompute_with_config_in_tx(
     config: InvalidationJobQueueConfig,
 ) -> Result<crate::db::invalidation_jobs::InvalidationJobReceipt, String> {
     let source_claim_version = tx
-        .current_claim_version_for_subject(subject_type, subject_id)
+        .current_subject_claim_version(subject_type, subject_id)
         .map_err(|e| e.to_string())?;
     let input = EnqueueInvalidationJob::claim_recompute_from_signal(
         origin_signal_id,

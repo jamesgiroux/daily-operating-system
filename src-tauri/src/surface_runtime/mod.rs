@@ -16,18 +16,23 @@ use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper_util::rt::TokioIo;
 use parking_lot::{Mutex, RwLock};
+use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{json, Value};
 use tokio::net::TcpListener;
 use tokio::sync::watch;
 use tokio::task::{AbortHandle, JoinHandle, JoinSet};
 use uuid::Uuid;
 
 use crate::abilities::NOOP_ABILITY_TRACER;
+use crate::bridges::correction_payload::{
+    project_claim_for_scope, project_composition_for_scope, CorrectionPayload,
+};
 use crate::bridges::surface_client::{
-    SurfaceClientAbilityClassLimits, SurfaceClientBridge, SurfaceClientBridgeConfig,
-    SurfaceClientBridgeError, SurfaceClientRateLimitAxis, SurfaceClientRateLimitBudget,
-    SurfaceClientRequestClassLimits,
+    validate_session_bound_wp_user_id_for_request, SurfaceClientAbilityClassLimits,
+    SurfaceClientBridge,
+    SurfaceClientBridgeConfig, SurfaceClientBridgeError, SurfaceClientRateLimitAxis,
+    SurfaceClientRateLimitBudget, SurfaceClientRequestClassLimits,
 };
 use crate::bridges::types::{
     invoke_registry_json_for_actor, provider_from_context_snapshot, surface_error, BridgeActor,
@@ -792,6 +797,9 @@ async fn signed_transport_response(
 }
 
 fn is_supported_signed_route(method: &Method, path: &str) -> bool {
+    if method == Method::GET && path.starts_with("/v1/surface/event-log/") {
+        return true;
+    }
     matches!(
         (method, path),
         (&Method::GET, "/v1/pairing/status")
@@ -1215,12 +1223,221 @@ async fn compensate_failed_session_registration(
     }
 }
 
+#[derive(Debug)]
+struct SurfaceVersionEventRow {
+    event_seq: i64,
+    cursor: String,
+    event_kind: String,
+    claim_id: Option<String>,
+    composition_id: Option<String>,
+    previous_version: Option<i64>,
+    current_version: i64,
+    reason: Option<String>,
+    scope_redacted: bool,
+    correction_event_log_id: Option<String>,
+    mutation_id: Option<String>,
+    created_at: String,
+    actor_kind: String,
+}
+
+impl SurfaceVersionEventRow {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(Self {
+            event_seq: row.get(0)?,
+            cursor: row.get(1)?,
+            event_kind: row.get(2)?,
+            claim_id: row.get(3)?,
+            composition_id: row.get(4)?,
+            previous_version: row.get(5)?,
+            current_version: row.get(6)?,
+            reason: row.get(7)?,
+            scope_redacted: row.get::<_, i64>(8)? != 0,
+            correction_event_log_id: row.get(9)?,
+            mutation_id: row.get(10)?,
+            created_at: row.get(11)?,
+            actor_kind: row.get(12)?,
+        })
+    }
+
+    fn full_event(&self) -> Value {
+        json!({
+            "event_seq": self.event_seq,
+            "cursor": &self.cursor,
+            "event_kind": &self.event_kind,
+            "claim_id": &self.claim_id,
+            "composition_id": &self.composition_id,
+            "previous_version": self.previous_version,
+            "current_version": self.current_version,
+            "reason": &self.reason,
+            "scope_redacted": self.scope_redacted,
+            "correction_event_log_id": &self.correction_event_log_id,
+            "mutation_id": &self.mutation_id,
+            "created_at": &self.created_at,
+            "actor_kind": &self.actor_kind,
+        })
+    }
+
+    fn redacted_event(&self) -> Value {
+        json!({
+            "cursor": &self.cursor,
+            "created_at": &self.created_at,
+            "scope_redacted": true,
+        })
+    }
+}
+
+async fn surface_event_log_response(
+    runtime: &EndpointRuntime,
+    path: &str,
+    request_id: String,
+    actor: Actor,
+) -> Response<ResponseBody> {
+    let event_log_id = path
+        .trim_start_matches("/v1/surface/event-log/")
+        .trim()
+        .to_string();
+    if event_log_id.is_empty() || event_log_id.len() > 128 {
+        return error_response(
+            SurfaceHttpError::bad_request("event_log_id_invalid").with_request_id(request_id),
+        );
+    }
+    let Some(app_state) = runtime.app_state.as_ref().cloned() else {
+        return error_response(SurfaceHttpError::runtime_unavailable().with_request_id(request_id));
+    };
+    let lookup_id = event_log_id.clone();
+    let projection = match app_state
+        .db_read(move |db| {
+            let row = db
+                .conn_ref()
+                .query_row(
+                    "SELECT event_seq, cursor, event_kind, claim_id, composition_id,
+                            previous_version, current_version, reason, scope_redacted,
+                            correction_event_log_id, mutation_id, created_at, actor_kind
+                     FROM version_events
+                     WHERE cursor = ?1 OR correction_event_log_id = ?1
+                     ORDER BY event_seq DESC
+                     LIMIT 1",
+                    rusqlite::params![lookup_id],
+                    SurfaceVersionEventRow::from_row,
+                )
+                .optional()
+                .map_err(|error| error.to_string())?;
+
+            let Some(row) = row else {
+                return Ok(None);
+            };
+
+            // Scope-gate every direct-key fetch per packet §16. The
+            // version_events row carries either a claim_id or a
+            // composition_id (XOR-enforced by migration 172). Both channels
+            // route through the same projection pipeline so that out-of-scope
+            // requesters receive a redacted envelope — never raw composition
+            // identifiers, version trajectory, mutation_id, or actor_kind.
+            //
+            // Terminal-event cursor durability (§7): when the target row is
+            // missing AND the event is a terminal kind (mutation_aborted,
+            // claim.write_rejected), the cursor must still resolve to a
+            // redacted envelope. A 423-loser handed this cursor would
+            // otherwise hit 404 forever if the holder aborted before
+            // creating its `intelligence_claims` row. Non-terminal kinds
+            // against a missing row remain 404 (the claim was deleted; the
+            // event is non-recoverable).
+            let is_terminal_kind = matches!(
+                row.event_kind.as_str(),
+                "mutation_aborted" | "claim.write_rejected" | "composition.write_rejected"
+            );
+            let correction = match (row.claim_id.as_deref(), row.composition_id.as_deref()) {
+                (Some(claim_id), _) => match project_claim_for_scope(db, claim_id, &actor) {
+                    Some(correction) => correction,
+                    None if is_terminal_kind => CorrectionPayload::out_of_scope(),
+                    None => return Ok(None),
+                },
+                (None, Some(composition_id)) => {
+                    match project_composition_for_scope(db, composition_id, &actor) {
+                        Some(correction) => correction,
+                        None if is_terminal_kind => CorrectionPayload::out_of_scope(),
+                        None => return Ok(None),
+                    }
+                }
+                // Defensive: a row without either pointer is not addressable
+                // by a scope projection. Treat as redacted rather than
+                // leaking the full event envelope.
+                (None, None) => CorrectionPayload::out_of_scope(),
+            };
+            let event = if correction.scope_redacted {
+                row.redacted_event()
+            } else {
+                row.full_event()
+            };
+            let mut correction =
+                serde_json::to_value(correction).map_err(|error| error.to_string())?;
+            correction["cursor"] = json!(row.cursor);
+            Ok(Some((event, correction)))
+        })
+        .await
+    {
+        Ok(projection) => projection,
+        Err(error) => {
+            return error_response(
+                SurfaceHttpError::from_pairing_error(SurfacePairingError::Write(error))
+                    .with_request_id(request_id),
+            );
+        }
+    };
+    let Some((event, correction)) = projection else {
+        return error_response(SurfaceHttpError::route_not_found().with_request_id(request_id));
+    };
+    json_response(
+        StatusCode::OK,
+        json!({
+            "ok": true,
+            "request_id": request_id,
+            "event": event,
+            "correction": correction,
+        }),
+    )
+}
+
 async fn signed_route_response(
     request: &SurfaceHttpRequest,
     runtime: &EndpointRuntime,
     validated: ValidatedSurfaceSession,
     request_id: String,
 ) -> Response<ResponseBody> {
+    // Walk body + query string + headers per packet §17 (extended in L2
+    // cycle-2 M1 from JSON-body-only). The class shape is that any
+    // wp_user_id channel into the bridge must be checked against the
+    // session-bound value before further dispatch.
+    let body_payload = serde_json::from_slice::<serde_json::Value>(&request.body).ok();
+    let validation = validate_session_bound_wp_user_id_for_request(
+        &validated,
+        body_payload.as_ref(),
+        request.uri.query(),
+        &request.headers,
+    );
+    if let Err(rejection) = validation {
+        if let Some(app_state) = runtime.app_state.as_ref() {
+            emit_pairing_audit_event(
+                app_state,
+                &SurfacePairingAuditEvent {
+                    event_kind: "wrong_user_rejected",
+                    category: "security",
+                    actor: validated.actor.clone(),
+                    wp_user_id: validated.wp_user_id,
+                    wp_user_hash: validated.wp_user_hash.clone(),
+                    detail: json!({
+                        "surface_client_id": rejection.surface_client_id,
+                        "session_wp_user_id": rejection.session_wp_user_id,
+                        "asserted_wp_user_id": rejection.asserted_wp_user_id,
+                        "decision": "rejected",
+                        "reason": "wrong_user"
+                    }),
+                },
+            );
+        }
+        return error_response(SurfaceHttpError::wrong_user().with_request_id(request_id));
+    }
+
     match (request.method.clone(), request.uri.path()) {
         (Method::GET, "/v1/pairing/status") => json_response(
             StatusCode::OK,
@@ -1233,6 +1450,9 @@ async fn signed_route_response(
                 "site_binding_digest": validated.site_binding_digest,
             }),
         ),
+        (Method::GET, path) if path.starts_with("/v1/surface/event-log/") => {
+            surface_event_log_response(runtime, path, request_id, validated.actor.clone()).await
+        }
         (Method::GET, "/v1/surface/abilities") => {
             match surface_pairing::authorized_ability_projection(&validated.granted_scopes) {
                 Ok(projection) => json_response(
@@ -1331,9 +1551,15 @@ async fn signed_route_response(
                                 "ability": ability,
                             }),
                         ),
-                        Err(error) => error_response(
-                            bridge_surface_error(surface_error(error)).with_request_id(request_id),
-                        ),
+                        Err(error) => {
+                            bridge_surface_error_response(
+                                surface_error(error),
+                                app_state,
+                                &validated,
+                                request_id,
+                            )
+                            .await
+                        }
                     }
                 }
                 Err(SurfaceClientBridgeError::RateLimited(rejection)) => {
@@ -1380,6 +1606,278 @@ fn is_safe_ability_name(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b':'))
 }
 
+async fn bridge_surface_error_response(
+    error: BridgeSurfaceError,
+    app_state: &AppState,
+    session: &ValidatedSurfaceSession,
+    request_id: String,
+) -> Response<ResponseBody> {
+    // Emit a JSONL audit row for every bridge-surface rejection that
+    // carries a watermark-class signature per packet §6.5 + ac §34.
+    // Inline 409 stale_watermark callers also emit a domain-specific row;
+    // this is the cross-class audit channel.
+    emit_bridge_rejection_audit(app_state, session, &error);
+    match error {
+        BridgeSurfaceError::StaleVersion {
+            claim_id,
+            expected,
+            current,
+            correction: _,
+        } => {
+            stale_version_error_response(
+                app_state,
+                &session.actor,
+                request_id,
+                claim_id,
+                expected,
+                current,
+            )
+            .await
+        }
+        BridgeSurfaceError::MidFlightMutation {
+            claim_id,
+            mutation_id,
+            retry_after_event,
+        } => mid_flight_mutation_error_response(
+            request_id,
+            claim_id,
+            mutation_id,
+            retry_after_event,
+        ),
+        error => error_response(bridge_surface_error(error).with_request_id(request_id)),
+    }
+}
+
+/// Build the 423 `mid_flight_mutation` HTTP response body. The base
+/// envelope (`code`, `message`, `request_id`, `remediation`) is carried by
+/// `SurfaceHttpError`; we layer the contention-resolution payload —
+/// `claim_id`, `mutation_id`, and `retry_after_event.cursor` — alongside
+/// the `error` object so surface clients can subscribe to the holder's
+/// `mutation_attempts.cursor` for the terminal event without needing a
+/// separate lookup. Mirrors the shape used by `stale_version_error_response`
+/// for `stale_watermark` corrections (ac §7 + ac §24).
+fn mid_flight_mutation_error_response(
+    request_id: String,
+    claim_id: String,
+    mutation_id: String,
+    retry_after_event: String,
+) -> Response<ResponseBody> {
+    let body = build_mid_flight_mutation_body(
+        request_id,
+        claim_id,
+        mutation_id,
+        retry_after_event,
+    );
+    json_response(StatusCode::LOCKED, body)
+}
+
+pub(crate) fn build_mid_flight_mutation_body(
+    request_id: String,
+    claim_id: String,
+    mutation_id: String,
+    retry_after_event: String,
+) -> serde_json::Value {
+    let envelope = bridge_surface_error(BridgeSurfaceError::MidFlightMutation {
+        claim_id: claim_id.clone(),
+        mutation_id: mutation_id.clone(),
+        retry_after_event: retry_after_event.clone(),
+    })
+    .with_request_id(request_id);
+    let resolved_request_id = envelope.request_id.unwrap_or_else(new_request_id);
+    json!({
+        "error": {
+            "code": envelope.code,
+            "message": envelope.message,
+            "request_id": resolved_request_id,
+            "remediation": envelope.remediation,
+        },
+        "claim_id": claim_id,
+        "mutation_id": mutation_id,
+        "retry_after_event": {
+            "cursor": retry_after_event,
+        },
+    })
+}
+
+/// Emit a JSONL audit row for a bridge-surface rejection per packet ac §34.
+///
+/// Pins the `detail` shape to `{ rejection_reason, expected_version,
+/// current_version, claim_id, composition_id, mutation_id, scope_redacted,
+/// actor_instance, actor_scopes, wp_user_id }`. `wp_user_id` is sent for
+/// audit hash binding (the JSONL writer drops the raw value and stores
+/// `wp_user_hash`); the unredacted claim/composition ids are caller-supplied
+/// strings, not PII. `scope_redacted` is `true` whenever the rejection
+/// envelope returned to the client suppressed claim content.
+fn emit_bridge_rejection_audit(
+    app_state: &AppState,
+    session: &ValidatedSurfaceSession,
+    error: &BridgeSurfaceError,
+) {
+    let (event_kind, detail) = match error {
+        BridgeSurfaceError::StaleVersion {
+            claim_id,
+            expected,
+            current,
+            correction: _,
+        } => (
+            "claim.write_rejected",
+            json!({
+                "rejection_reason": "stale_watermark",
+                "claim_id": claim_id,
+                "composition_id": null,
+                "expected_version": expected,
+                "current_version": current,
+                "mutation_id": null,
+                "scope_redacted": true,
+            }),
+        ),
+        BridgeSurfaceError::StaleComposition {
+            composition_id,
+            expected,
+            current,
+        } => (
+            "composition.write_rejected",
+            json!({
+                "rejection_reason": "stale_composition_watermark",
+                "claim_id": null,
+                "composition_id": composition_id,
+                "expected_version": expected,
+                "current_version": current,
+                "mutation_id": null,
+                "scope_redacted": false,
+            }),
+        ),
+        BridgeSurfaceError::MidFlightMutation {
+            claim_id,
+            mutation_id,
+            retry_after_event: _,
+        } => (
+            "claim.write_rejected",
+            json!({
+                "rejection_reason": "mid_flight_mutation",
+                "claim_id": claim_id,
+                "composition_id": null,
+                "expected_version": null,
+                "current_version": null,
+                "mutation_id": mutation_id,
+                "scope_redacted": false,
+            }),
+        ),
+        BridgeSurfaceError::MissingExpectedClaimVersion { claim_id } => (
+            "claim.write_rejected",
+            json!({
+                "rejection_reason": "missing_expected_claim_version",
+                "claim_id": claim_id,
+                "composition_id": null,
+                "expected_version": null,
+                "current_version": null,
+                "mutation_id": null,
+                "scope_redacted": false,
+            }),
+        ),
+        BridgeSurfaceError::ClaimVersionOverflow { claim_id } => (
+            "claim.write_rejected",
+            json!({
+                "rejection_reason": "claim_version_overflow",
+                "claim_id": claim_id,
+                "composition_id": null,
+                "expected_version": null,
+                "current_version": null,
+                "mutation_id": null,
+                "scope_redacted": false,
+            }),
+        ),
+        // ProjectionTampered / ProjectionVersionRollback are W4-C-owned;
+        // their audit emission belongs in the W4-C handler. Validation /
+        // AbilityUnavailable / Ownership do not carry a watermark signature.
+        _ => return,
+    };
+    emit_pairing_audit_event(
+        app_state,
+        &SurfacePairingAuditEvent {
+            event_kind,
+            category: "data_access",
+            actor: session.actor.clone(),
+            wp_user_id: session.wp_user_id,
+            wp_user_hash: session.wp_user_hash.clone(),
+            detail,
+        },
+    );
+}
+
+async fn stale_version_error_response(
+    app_state: &AppState,
+    actor: &Actor,
+    request_id: String,
+    claim_id: String,
+    expected: u64,
+    current: u64,
+) -> Response<ResponseBody> {
+    let actor = actor.clone();
+    let claim_id_for_lookup = claim_id.clone();
+    let projection = match app_state
+        .db_read(move |db| {
+            let correction = project_claim_for_scope(db, &claim_id_for_lookup, &actor)
+                .unwrap_or_else(CorrectionPayload::out_of_scope);
+            let cursor = latest_claim_version_cursor(db, &claim_id_for_lookup, current)?;
+            Ok((correction, cursor))
+        })
+        .await
+    {
+        Ok(projection) => projection,
+        Err(error) => {
+            return error_response(
+                SurfaceHttpError::from_pairing_error(SurfacePairingError::Write(error))
+                    .with_request_id(request_id),
+            );
+        }
+    };
+
+    let (correction, cursor) = projection;
+    let mut correction = serde_json::to_value(correction).unwrap_or_else(|_| {
+        json!({
+            "claim": null,
+            "scope_redacted": true,
+            "reason": "out_of_scope",
+        })
+    });
+    correction["retry_after_ms"] = Value::Null;
+    correction["cursor"] = cursor.map(Value::String).unwrap_or(Value::Null);
+
+    json_response(
+        StatusCode::CONFLICT,
+        json!({
+            "ok": false,
+            "error": "stale_watermark",
+            "request_id": request_id,
+            "claim_id": claim_id,
+            "expected": { "claim_version": expected },
+            "current": { "claim_version": current },
+            "correction": correction,
+        }),
+    )
+}
+
+fn latest_claim_version_cursor(
+    db: &crate::db::ActionDb,
+    claim_id: &str,
+    current: u64,
+) -> Result<Option<String>, String> {
+    let current = i64::try_from(current).map_err(|_| "claim_version_out_of_range".to_string())?;
+    db.conn_ref()
+        .query_row(
+            "SELECT cursor
+             FROM version_events
+             WHERE claim_id = ?1 AND current_version = ?2
+             ORDER BY event_seq DESC
+             LIMIT 1",
+            rusqlite::params![claim_id, current],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())
+}
+
 fn surface_bridge_error(error: SurfaceClientBridgeError) -> SurfaceHttpError {
     if let Some(_surface_error) = error.as_surface_error() {
         return SurfaceHttpError::auth_missing()
@@ -1391,6 +1889,45 @@ fn surface_bridge_error(error: SurfaceClientBridgeError) -> SurfaceHttpError {
 
 fn bridge_surface_error(error: BridgeSurfaceError) -> SurfaceHttpError {
     match error {
+        BridgeSurfaceError::ProjectionTampered { .. } => SurfaceHttpError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "projection_tampered",
+            "The submitted projection could not be verified.",
+            "Refresh the DailyOS projection and retry.",
+        ),
+        BridgeSurfaceError::ProjectionVersionRollback { .. } => SurfaceHttpError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "projection_version_rollback",
+            "The submitted projection is older than the current DailyOS ledger.",
+            "Refresh the DailyOS projection and retry.",
+        ),
+        BridgeSurfaceError::MissingExpectedClaimVersion { .. } => {
+            SurfaceHttpError::bad_request("missing_expected_claim_version")
+        }
+        BridgeSurfaceError::MidFlightMutation { .. } => SurfaceHttpError::new(
+            StatusCode::LOCKED,
+            "mid_flight_mutation",
+            "Another accepted mutation is still being finalized.",
+            "Wait for the mutation cursor event, then retry if needed.",
+        ),
+        BridgeSurfaceError::ClaimVersionOverflow { .. } => SurfaceHttpError::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "claim_version_overflow",
+            "DailyOS could not assign a new claim version.",
+            "Restart DailyOS and run diagnostics before retrying.",
+        ),
+        BridgeSurfaceError::StaleVersion { .. } => SurfaceHttpError::new(
+            StatusCode::CONFLICT,
+            "stale_watermark",
+            "The submitted claim version is stale.",
+            "Refresh the claim projection and retry.",
+        ),
+        BridgeSurfaceError::StaleComposition { .. } => SurfaceHttpError::new(
+            StatusCode::CONFLICT,
+            "stale_composition_watermark",
+            "The submitted composition version is stale.",
+            "Refresh the composition projection and retry.",
+        ),
         BridgeSurfaceError::Validation(_) => {
             SurfaceHttpError::bad_request("surface_invoke_invalid")
         }
@@ -1646,6 +2183,15 @@ impl SurfaceHttpError {
             "identity_mismatch",
             "The DailyOS surface session identity does not match the paired site.",
             "Review the paired site identity in DailyOS and pair the site again.",
+        )
+    }
+
+    fn wrong_user() -> Self {
+        Self::new(
+            StatusCode::FORBIDDEN,
+            "wrong_user",
+            "The request user does not match the paired DailyOS surface session.",
+            "Refresh the paired DailyOS session and retry as the same WordPress user.",
         )
     }
 
@@ -3039,6 +3585,36 @@ mod tests {
             assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
             assert_eq!(body_json(response)["error"]["code"], "runtime_unavailable");
         }
+    }
+
+    #[test]
+    fn mid_flight_mutation_body_carries_claim_mutation_and_cursor() {
+        // The 423 response body must carry the contention-resolution payload
+        // (claim_id, mutation_id, retry_after_event.cursor) alongside the
+        // standard error envelope so surface clients can subscribe to the
+        // holder's mutation_attempts.cursor for the terminal event.
+        let body = build_mid_flight_mutation_body(
+            "req-mid-flight-1".to_string(),
+            "claim-mid-flight".to_string(),
+            "mutation-holder".to_string(),
+            "abcdef12-3456-4789-9abc-def012345678".to_string(),
+        );
+        assert_eq!(body["claim_id"], "claim-mid-flight");
+        assert_eq!(body["mutation_id"], "mutation-holder");
+        assert_eq!(
+            body["retry_after_event"]["cursor"],
+            "abcdef12-3456-4789-9abc-def012345678"
+        );
+        assert_eq!(body["error"]["code"], "mid_flight_mutation");
+        assert_eq!(body["error"]["request_id"], "req-mid-flight-1");
+        assert!(body["error"]["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("being finalized"));
+        assert!(body["error"]["remediation"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("mutation cursor event"));
     }
 
     #[test]

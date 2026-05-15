@@ -4,7 +4,9 @@ use std::sync::Arc;
 use chrono::{TimeZone, Utc};
 use dailyos_lib::db::claims::{ClaimSensitivity, TemporalScope};
 use dailyos_lib::db::ActionDb;
-use dailyos_lib::services::claims::{commit_claim, ClaimProposal, CommittedClaim};
+use dailyos_lib::services::claims::{
+    commit_claim, ClaimProposal, CommittedClaim, DeterministicInsertProposal,
+};
 use dailyos_lib::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
 use dailyos_lib::services::sensitivity::{
     canonicalize_reveal_action_id, reveal_claim_text_for_tauri,
@@ -18,6 +20,8 @@ use serde_json::json;
 use tauri::Manager;
 
 const CLAIMS_SCHEMA_SQL: &str = include_str!("../src/migrations/129_dos_7_claims_schema.sql");
+const V172_SUBSTRATE_CONCURRENCY_SQL: &str =
+    include_str!("./shared_schemas/v172_substrate_concurrency.sql");
 const PROJECTION_STATUS_SQL: &str =
     include_str!("../src/migrations/134_dos_301_claim_projection_status.sql");
 const TYPED_FEEDBACK_SQL: &str =
@@ -167,14 +171,14 @@ async fn command_boundary_rejects_simple_uuid_before_service() {
 
 #[test]
 fn valid_uuid_v4_action_id_is_accepted() {
-    let conn = setup_conn();
+    let conn = setup_conn("valid-uuid");
     let db = ActionDb::from_conn(&conn);
     let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 7, 12, 0, 0).unwrap());
     let rng = SeedableRng::new(41212);
     let external = ExternalClients::default();
     let ctx = ServiceContext::new_live(&clock, &rng, &external).with_actor("agent:test");
     let claim_id = inserted_id(
-        commit_claim(&ctx, db, confidential_claim_proposal())
+        commit_claim(&ctx, db, confidential_claim_proposal("valid-uuid"))
             .expect("commit confidential claim fixture"),
     );
 
@@ -193,14 +197,14 @@ fn valid_uuid_v4_action_id_is_accepted() {
 
 #[test]
 fn service_boundary_stores_canonical_action_id_and_dedupes_equivalent_text_forms() {
-    let conn = setup_conn();
+    let conn = setup_conn("canonical-dedupe");
     let db = ActionDb::from_conn(&conn);
     let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 7, 12, 0, 0).unwrap());
     let rng = SeedableRng::new(41213);
     let external = ExternalClients::default();
     let ctx = ServiceContext::new_live(&clock, &rng, &external).with_actor("agent:test");
     let claim_id = inserted_id(
-        commit_claim(&ctx, db, confidential_claim_proposal())
+        commit_claim(&ctx, db, confidential_claim_proposal("canonical-dedupe"))
             .expect("commit confidential claim fixture"),
     );
     let actor = RenderActor::user("user", Some("user"));
@@ -231,7 +235,7 @@ fn service_boundary_stores_canonical_action_id_and_dedupes_equivalent_text_forms
     );
 }
 
-fn setup_conn() -> Connection {
+fn setup_conn(discriminator: &str) -> Connection {
     let conn = Connection::open_in_memory().expect("open in-memory db");
     conn.execute_batch(
         "CREATE TABLE accounts (
@@ -242,7 +246,7 @@ fn setup_conn() -> Connection {
     .expect("create account table");
     conn.execute(
         "INSERT INTO accounts (id, claim_version) VALUES (?1, 0)",
-        [ACCOUNT_ID],
+        [format!("{ACCOUNT_ID}-{discriminator}").as_str()],
     )
     .expect("seed account");
     conn.execute_batch(CLAIMS_SCHEMA_SQL)
@@ -253,17 +257,31 @@ fn setup_conn() -> Connection {
         .expect("apply typed feedback schema");
     conn.execute_batch(STRUCTURED_CLAIM_CANONICALIZATION_COLUMNS_SQL)
         .expect("apply structured claim canonicalization columns");
+    conn.execute_batch(V172_SUBSTRATE_CONCURRENCY_SQL)
+        .expect("apply v172 substrate concurrency schema");
     conn.execute_batch(REVEAL_AUDIT_ACTION_TOKEN_SCHEMA_SQL)
         .expect("apply reveal audit action token schema");
     conn
 }
 
-fn confidential_claim_proposal() -> ClaimProposal {
+// Per-test discriminator keeps the substrate's process-global commit lock
+// (keyed by subject_ref + claim_type + field_path) from serializing parallel
+// tests that exercise the same logical fixture in separate in-memory
+// connections.
+fn confidential_claim_proposal(discriminator: &str) -> DeterministicInsertProposal {
+    DeterministicInsertProposal::new(
+        format!("{CLAIM_ID}-{discriminator}"),
+        confidential_claim_inner(discriminator),
+    )
+}
+
+fn confidential_claim_inner(discriminator: &str) -> ClaimProposal {
     ClaimProposal {
-        id: Some(CLAIM_ID.to_string()),
+        id: None,
+        expected_claim_version: None,
         subject_ref: json!({
             "kind": "account",
-            "id": ACCOUNT_ID,
+            "id": format!("{ACCOUNT_ID}-{discriminator}"),
         })
         .to_string(),
         claim_type: "entity_summary".to_string(),

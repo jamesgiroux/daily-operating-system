@@ -66,10 +66,7 @@ impl DbKeyProvider for FixtureDbKeyProvider {
         Ok(self.key.clone())
     }
 
-    fn rotate_key(
-        &self,
-        _user: &UserIdentity,
-    ) -> crate::db::key_provider::Result<EncryptionKey> {
+    fn rotate_key(&self, _user: &UserIdentity) -> crate::db::key_provider::Result<EncryptionKey> {
         Ok(self.key.clone())
     }
 }
@@ -125,6 +122,16 @@ impl ActionDb {
                 let _ = self.conn.execute_batch("ROLLBACK");
                 Err(e)
             }
+        }
+    }
+
+    fn recover_stuck_version_mutations_logged(db: &ActionDb) {
+        match crate::services::versioning::recover_stuck_mutation_attempts(db, chrono::Utc::now()) {
+            Ok(0) => {}
+            Ok(count) => log::warn!(
+                "recovered {count} stale in-flight version mutation attempt(s) at startup"
+            ),
+            Err(error) => log::warn!("version mutation startup recovery scan failed: {error}"),
         }
     }
 
@@ -195,6 +202,8 @@ impl ActionDb {
         crate::migrations::run_migrations_with_key(&conn, Some(&encryption_key))
             .map_err(DbError::Migration)?;
 
+        Self::recover_stuck_version_mutations_logged(Self::from_conn(&conn));
+
         // Enable FK constraint enforcement. Set after migrations since
         // migration 010 uses PRAGMA foreign_keys = OFF for table recreation.
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
@@ -259,6 +268,73 @@ impl ActionDb {
         Self::open_resolved_path(path, key_provider)
     }
 
+    /// Open the database for diagnostic inspection WITHOUT running startup
+    /// recovery for stuck mutation attempts.
+    ///
+    /// `ActionDb::open` calls `recover_stuck_mutation_attempts` during
+    /// connection bring-up, which aborts any `mutation_attempts` row whose
+    /// `in_flight` lease exceeds 30 seconds. `dailyos doctor watermarks`
+    /// needs to inventory those zombie rows BEFORE recovery wipes them;
+    /// otherwise the doctor's own action mutates the state it's reporting.
+    /// Per packet ac §36 + L2 cycle-2 P2 (codex): the doctor must read,
+    /// not heal.
+    pub fn open_for_inspection(key_provider: Arc<dyn DbKeyProvider>) -> Result<Self, DbError> {
+        let path = Self::db_path()?;
+        let (conn, _key) = Self::prepare_encrypted_connection_no_recovery(&path, key_provider)?;
+        Ok(Self { conn })
+    }
+
+    /// Variant of `prepare_encrypted_connection` that runs migrations but
+    /// skips startup recovery for in-flight mutation attempts. Used by
+    /// `open_for_inspection`. The two should diverge in EXACTLY that line
+    /// of behaviour; centralised so the encryption + migration setup
+    /// cannot drift between paths.
+    fn prepare_encrypted_connection_no_recovery(
+        path: &Path,
+        key_provider: Arc<dyn DbKeyProvider>,
+    ) -> Result<(Connection, EncryptionKey), DbError> {
+        if let Some(parent) = path.parent() {
+            if !parent.exists() {
+                std::fs::create_dir_all(parent).map_err(DbError::CreateDir)?;
+            }
+        }
+
+        let user = UserIdentity::local(path.to_path_buf());
+        let encryption_key = key_provider
+            .get_or_create_key(&user)
+            .map_err(Self::map_key_error)?;
+
+        if path.exists() && encryption::is_database_plaintext(path) {
+            log::info!("Detected plaintext database, migrating to encrypted...");
+            encryption::migrate_to_encrypted(path, encryption_key.as_hex())
+                .map_err(DbError::Encryption)?;
+        }
+
+        let conn = Connection::open(path)?;
+        conn.execute_batch(&encryption_key.to_pragma())?;
+        conn.query_row("SELECT count(*) FROM sqlite_master LIMIT 1", [], |row| {
+            row.get::<_, i64>(0)
+        })
+        .map_err(|e| {
+            DbError::Encryption(format!(
+                "SQLCipher key verification failed (database unreadable): {e}"
+            ))
+        })?;
+        conn.execute_batch("PRAGMA journal_mode=WAL;")?;
+        conn.execute_batch("PRAGMA busy_timeout = 5000;")?;
+        conn.execute_batch("PRAGMA synchronous = NORMAL;")?;
+
+        crate::migrations::run_migrations_with_key(&conn, Some(&encryption_key))
+            .map_err(DbError::Migration)?;
+
+        // Intentionally skip recover_stuck_version_mutations_logged so the
+        // doctor inspection can count zombie attempts. No legacy backfill
+        // either — those are healing operations.
+        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+
+        Ok((conn, encryption_key))
+    }
+
     fn open_resolved_path(
         path: PathBuf,
         key_provider: Arc<dyn DbKeyProvider>,
@@ -272,6 +348,7 @@ impl ActionDb {
             let conn = svc.open_fresh_serialized(path.clone(), encryption_key)?;
             drop(rotation_lock);
             let db = Self { conn };
+            Self::recover_stuck_version_mutations_logged(&db);
             #[allow(
                 clippy::let_underscore_must_use,
                 reason = "intentional best-effort discard; preserves existing non-blocking behavior"
@@ -327,6 +404,7 @@ impl ActionDb {
         let _ = Self::backfill_stakeholder_columns(&conn);
 
         let db = Self { conn };
+        Self::recover_stuck_version_mutations_logged(&db);
         let _ = db.run_guarded_init_backfill_account_domains();
         Ok(db)
     }

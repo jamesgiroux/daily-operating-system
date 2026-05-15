@@ -74,6 +74,7 @@ fn claim_proposal(
     let observed_at = ctx.clock.now().to_rfc3339();
     ClaimProposal {
         id: None,
+        expected_claim_version: None,
         subject_ref: subject_ref(account_id),
         claim_type: "risk".to_string(),
         field_path: Some("risks".to_string()),
