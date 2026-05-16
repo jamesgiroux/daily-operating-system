@@ -1317,6 +1317,28 @@
           "supporting_source_refs": []
         },
         "trust_band": "use_with_caution"
+      },
+      "/trajectory": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "constant",
+        "explanation": null,
+        "source_refs": [],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        }
       }
     },
     "inputs_snapshot": {
