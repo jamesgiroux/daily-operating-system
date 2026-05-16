@@ -442,7 +442,13 @@ mod tests {
 
     #[test]
     fn disabling_telemetry_drops_pending_buffer_without_flush() {
+        // Construct disabled then explicitly enable with a fixture install_id so the
+        // test is hermetic — `new(true)` reads from the user's macOS app-support dir
+        // via `AnonInstallId::load_existing()`, which makes the test outcome depend
+        // on host state (whether DailyOS was previously opted in on this machine).
         let telemetry = AggregateTelemetry::new(false);
+        telemetry.enable_with_install_id(fixture_install_id());
+
         telemetry.record(
             crate::aggregate_metric_name!("ability_invocation_count"),
             MetricValue::Count(1),
