@@ -11,7 +11,17 @@ parameters:
 			path: includes/class-dailyos-activation.php
 
 		-
+			message: "#^Class DailyOS\\\\Transport\\\\DailyOS_Hmac_Signer does not have a constructor and must be instantiated without any parameters\\.$#"
+			count: 1
+			path: includes/class-dailyos-plugin.php
+
+		-
 			message: "#^Constant DAILYOS_PLUGIN_DIR not found\\.$#"
+			count: 2
+			path: includes/class-dailyos-plugin.php
+
+		-
+			message: "#^Function dailyos_account_overview_render not found\\.$#"
 			count: 1
 			path: includes/class-dailyos-plugin.php
 

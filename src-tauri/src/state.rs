@@ -429,6 +429,10 @@ pub struct AppState {
     app_handle: RwLock<Option<tauri::AppHandle>>,
     /// Runtime-owned loopback endpoint state for paired local surfaces.
     pub surface_runtime_endpoint: Arc<crate::surface_runtime::SurfaceEndpointState>,
+    /// W4-A composition render orchestrator. Owns the per-actor cache the
+    /// WordPress block surface consults via `/v1/surface/project-composition`.
+    pub composition_render_orchestrator:
+        Arc<crate::services::composition_render_orchestrator::CompositionRenderOrchestrator>,
     /// Version-event dispatcher for W4-B-signals. Holds live
     /// subscriber handles for native Tauri-channel transports; SurfaceClient
     /// stateless polling routes share this singleton so reconnect lookups
@@ -919,6 +923,9 @@ impl AppState {
             surface_runtime_endpoint: Arc::new(
                 crate::surface_runtime::SurfaceEndpointState::default(),
             ),
+            composition_render_orchestrator: Arc::new(
+                crate::services::composition_render_orchestrator::CompositionRenderOrchestrator::new(),
+            ),
             version_dispatcher: Arc::new(
                 crate::services::version_dispatcher::VersionDispatcher::new(),
             ),
@@ -1017,6 +1024,9 @@ impl AppState {
             app_handle: RwLock::new(None),
             surface_runtime_endpoint: Arc::new(
                 crate::surface_runtime::SurfaceEndpointState::default(),
+            ),
+            composition_render_orchestrator: Arc::new(
+                crate::services::composition_render_orchestrator::CompositionRenderOrchestrator::new(),
             ),
             version_dispatcher: Arc::new(
                 crate::services::version_dispatcher::VersionDispatcher::new(),

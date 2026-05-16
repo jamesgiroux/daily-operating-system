@@ -822,6 +822,7 @@ fn is_supported_signed_route(method: &Method, path: &str) -> bool {
             | (&Method::POST, "/v1/surface/feedback")
             | (&Method::GET, "/v1/surface/abilities")
             | (&Method::GET, "/v1/surface/keyring")
+            | (&Method::POST, "/v1/surface/project-composition")
             | (&Method::POST, "/v1/surface/subscribe")
             | (&Method::POST, "/v1/surface/replay")
     )
@@ -1581,6 +1582,15 @@ async fn signed_route_response(
             surface_nonce_verify_response(runtime, validated, request.body.clone(), request_id)
                 .await
         }
+        (Method::POST, "/v1/surface/project-composition") => {
+            surface_project_composition_response(
+                runtime,
+                validated,
+                request.body.clone(),
+                request_id,
+            )
+            .await
+        }
         (Method::POST, "/v1/surface/subscribe") => {
             surface_subscribe_response(runtime, validated, request.body.clone(), request_id).await
         }
@@ -1849,6 +1859,208 @@ async fn surface_nonce_issue_response(
                 .with_request_id(request_id),
         ),
     }
+}
+
+#[derive(serde::Deserialize)]
+struct SurfaceProjectCompositionRequest {
+    composition_id: String,
+    composition_version: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cache_hint_token: Option<String>,
+}
+
+async fn surface_project_composition_response(
+    runtime: &EndpointRuntime,
+    validated: ValidatedSurfaceSession,
+    body: Bytes,
+    request_id: String,
+) -> Response<ResponseBody> {
+    use crate::services::composition_render_orchestrator::{
+        extract_account_id_from_composition_id, project_from_ability_data,
+        resolve_producer_ability_name, FALLBACK_POLICY_VERSION,
+    };
+
+    let request: SurfaceProjectCompositionRequest = match serde_json::from_slice(&body) {
+        Ok(r) => r,
+        Err(_) => {
+            return error_response(
+                SurfaceHttpError::bad_request("project_composition_invalid")
+                    .with_request_id(request_id),
+            );
+        }
+    };
+
+    let Some(app_state) = runtime.app_state.as_ref().cloned() else {
+        return error_response(SurfaceHttpError::runtime_unavailable().with_request_id(request_id));
+    };
+
+    let actor = validated.actor.clone();
+    let orchestrator = app_state.composition_render_orchestrator.clone();
+
+    // Authorize FIRST — cache hits must not bypass ability authorization,
+    // rate limiting, or audit emission. The bridge gates allowed_actors,
+    // required_scopes, and per-instance/per-class budgets. Skipping this
+    // step on cache hits would let an unauthorized SurfaceClient serve
+    // projections cached by an authorized peer with the same scope set.
+    let Some(ability_name) = resolve_producer_ability_name(&request.composition_id) else {
+        return error_response(
+            SurfaceHttpError::bad_request("project_composition_unknown_producer")
+                .with_request_id(request_id),
+        );
+    };
+    let Some(account_id) = extract_account_id_from_composition_id(&request.composition_id) else {
+        return error_response(
+            SurfaceHttpError::bad_request("project_composition_invalid_id")
+                .with_request_id(request_id),
+        );
+    };
+
+    let registry = match crate::abilities::AbilityRegistry::global_checked() {
+        Ok(registry) => registry,
+        Err(_) => {
+            return error_response(
+                SurfaceHttpError::runtime_unavailable().with_request_id(request_id),
+            );
+        }
+    };
+
+    let authorization = match runtime.surface_client_bridge.authorize(
+        registry,
+        &validated,
+        ability_name,
+        &request_id,
+    ) {
+        Ok(authorization) => {
+            for event in authorization.audit_events.clone() {
+                emit_pairing_audit_event(&app_state, &event);
+            }
+            authorization
+        }
+        Err(SurfaceClientBridgeError::RateLimited(rejection)) => {
+            let rejection = *rejection;
+            emit_pairing_audit_event(&app_state, &rejection.audit_event);
+            return error_response(
+                SurfaceHttpError::rate_limited(rejection.axis, rejection.retry_after)
+                    .with_request_id(request_id),
+            );
+        }
+        Err(error) => {
+            return error_response(surface_bridge_error(error).with_request_id(request_id));
+        }
+    };
+
+    // After authorization succeeds, check the cache. Cache key includes the
+    // scopes-canonical id, so a different actor with different scopes will
+    // miss naturally; authorization above gates the allowed_actors/required_
+    // scopes/rate-limit policy that the cache key alone doesn't enforce.
+    if let Some(cached) = orchestrator.cache_lookup(
+        &actor,
+        &request.composition_id,
+        request.composition_version,
+    ) {
+        let projection_json = match serde_json::to_value(&cached.projection) {
+            Ok(value) => value,
+            Err(_) => {
+                return error_response(
+                    SurfaceHttpError::runtime_unavailable().with_request_id(request_id),
+                );
+            }
+        };
+        return json_response(
+            StatusCode::OK,
+            json!({
+                "ok": true,
+                "request_id": request_id,
+                "projection": projection_json,
+                "cache_hint_token": cached.cache_hint_token,
+                "served_from_cache": true,
+            }),
+        );
+    }
+
+    let snapshot = app_state.context_snapshot();
+    let provider = provider_from_context_snapshot(&snapshot);
+    let services = app_state
+        .live_service_context()
+        .with_actor("surface_client");
+
+    let input = json!({
+        "account_id": account_id,
+        "composition_id": request.composition_id,
+        "schema_version": 1,
+    });
+    let invoke_outcome = invoke_registry_json_for_actor(
+        registry,
+        &services,
+        provider,
+        &NOOP_ABILITY_TRACER,
+        RequestScopedInvocation {
+            registry_actor: validated.actor.clone(),
+            response_actor: BridgeActor::SurfaceClient,
+            surface: BridgeSurface::SurfaceClient,
+            claim_dismissal_surface: ClaimDismissalSurface::LogStructured,
+        },
+        &authorization.canonical_ability_name,
+        input,
+    )
+    .await;
+
+    let response_json = match invoke_outcome {
+        Ok(response_json) => response_json,
+        Err(error) => {
+            return bridge_surface_error_response(
+                surface_error(error),
+                &app_state,
+                &validated,
+                request_id,
+            )
+            .await;
+        }
+    };
+
+    let (projection, _audits) = match project_from_ability_data(
+        &response_json.data,
+        validated.actor.clone(),
+        FALLBACK_POLICY_VERSION,
+    ) {
+        Ok(tuple) => tuple,
+        Err(_) => {
+            return error_response(
+                SurfaceHttpError::runtime_unavailable().with_request_id(request_id),
+            );
+        }
+    };
+
+    // Audit intents from the projector are operator-side diagnostics. The
+    // substrate audit-logger drain is intentionally not wired in this
+    // commit; see the v1.4.2 wave maintenance backlog for the
+    // audit-emission interlock.
+    let cache_hint_token = orchestrator
+        .cache_store(
+            &validated.actor,
+            &request.composition_id,
+            request.composition_version,
+            projection.clone(),
+        )
+        .unwrap_or_default();
+    let projection_json = match serde_json::to_value(&projection) {
+        Ok(value) => value,
+        Err(_) => {
+            return error_response(
+                SurfaceHttpError::runtime_unavailable().with_request_id(request_id),
+            );
+        }
+    };
+    json_response(
+        StatusCode::OK,
+        json!({
+            "ok": true,
+            "request_id": request_id,
+            "projection": projection_json,
+            "cache_hint_token": cache_hint_token,
+            "served_from_cache": false,
+        }),
+    )
 }
 
 async fn surface_nonce_verify_response(

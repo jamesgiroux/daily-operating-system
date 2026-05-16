@@ -28,4 +28,14 @@
 	<rule ref="Squiz.Commenting.FunctionComment.Missing">
 		<exclude-pattern>tests/bootstrap.php</exclude-pattern>
 	</rule>
+
+	<!-- Tests legitimately read local fixture files (JSON snapshots, expected
+	     output); wp_remote_get is for HTTP. The alternative-functions sniff
+	     fires a remote-URL warning that doesn't apply to local fixture I/O. -->
+	<rule ref="WordPress.WP.AlternativeFunctions.file_system_operations_file_get_contents">
+		<exclude-pattern>tests/*</exclude-pattern>
+	</rule>
+	<rule ref="WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents">
+		<exclude-pattern>tests/*</exclude-pattern>
+	</rule>
 </ruleset>
