@@ -98,6 +98,9 @@ jobs:
       - name: Enforce DOS-589 dispatcher module boundaries
         run: ./scripts/check_version_dispatcher_boundaries.sh
 
+      - name: Enforce W4-A account-overview block boundaries
+        run: ./scripts/check_w4a_account_overview_block.sh
+
       - name: Enforce ability surface drift guard
         run: |
           bash src-tauri/scripts/check_ability_surface_drift.sh
