@@ -2063,6 +2063,7 @@ mod tests {
     fn allow_surface_scopes() {
         ScopeSet::set_allowlist_for_tests([
             SurfaceScope::new("read.account_overview"),
+            SurfaceScope::new("read.composition"),
             SurfaceScope::new("submit.feedback"),
         ]);
     }

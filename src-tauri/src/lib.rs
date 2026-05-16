@@ -673,6 +673,8 @@ pub fn run() {
             commands::list_surface_client_pairings,
             commands::create_surface_runtime_pairing_string,
             commands::revoke_surface_client_pairing,
+            commands::version_dispatcher_subscribe,
+            commands::version_dispatcher_replay,
             commands::get_config,
             commands::reload_configuration,
             commands::get_dashboard_data,

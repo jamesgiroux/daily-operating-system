@@ -402,3 +402,6 @@ get_surface_runtime_pairing_status
 list_surface_client_pairings
 create_surface_runtime_pairing_string
 revoke_surface_client_pairing
+# W4-B-signals dispatcher: packet V3 §13.5 / devex P2-2 mandated Tauri ipc::Channel entrypoints, not capability-level operations, so they do not go through invoke_ability.
+version_dispatcher_replay
+version_dispatcher_subscribe

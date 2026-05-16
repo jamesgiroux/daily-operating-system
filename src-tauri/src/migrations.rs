@@ -904,6 +904,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 177,
         apply: migrate_v177_w4c_projection_signing_cycle2,
     },
+    Migration::Sql {
+        version: 178,
+        sql: include_str!("migrations/178_dos_589_subscription_checkpoints.sql"),
+    },
 ];
 
 const V155_SHADOW_TRUST_VERSION: i64 = 1_401_003;
@@ -4548,10 +4552,10 @@ mod tests {
         )
         .expect("seed c5 zero-version shadow row");
 
-        let applied = run_migrations(&conn).expect("v157-v177 migrations should succeed");
+        let applied = run_migrations(&conn).expect("v157-v178 migrations should succeed");
         assert_eq!(
-            applied, 21,
-            "v157-v177 should be pending after rollback to v156"
+            applied, 22,
+            "v157-v178 should be pending after rollback to v156"
         );
         assert_eq!(
             current_version(&conn).expect("current version"),
@@ -4622,10 +4626,10 @@ mod tests {
         )
         .expect("seed v156-recorded live score");
 
-        let applied = run_migrations(&conn).expect("v157-v177 migrations should succeed");
+        let applied = run_migrations(&conn).expect("v157-v178 migrations should succeed");
         assert_eq!(
-            applied, 21,
-            "v157-v177 should be pending after rollback to v156"
+            applied, 22,
+            "v157-v178 should be pending after rollback to v156"
         );
         assert_eq!(
             current_version(&conn).expect("current version"),
@@ -4701,10 +4705,10 @@ mod tests {
         )
         .expect("seed partial v155 shadow row");
 
-        let applied = run_migrations(&conn).expect("v156-v177 migrations should succeed");
+        let applied = run_migrations(&conn).expect("v156-v178 migrations should succeed");
         assert_eq!(
-            applied, 22,
-            "v156-v177 should be pending after rollback to v155"
+            applied, 23,
+            "v156-v178 should be pending after rollback to v155"
         );
         assert_eq!(
             current_version(&conn).expect("current version"),

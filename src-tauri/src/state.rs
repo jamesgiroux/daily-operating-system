@@ -427,6 +427,11 @@ pub struct AppState {
     app_handle: RwLock<Option<tauri::AppHandle>>,
     /// Runtime-owned loopback endpoint state for paired local surfaces.
     pub surface_runtime_endpoint: Arc<crate::surface_runtime::SurfaceEndpointState>,
+    /// Version-event dispatcher for W4-B-signals. Holds live
+    /// subscriber handles for native Tauri-channel transports; SurfaceClient
+    /// stateless polling routes share this singleton so reconnect lookups
+    /// hit the same in-memory reconnect-index.
+    pub version_dispatcher: Arc<crate::services::version_dispatcher::VersionDispatcher>,
 }
 
 /// Base signal keywords applicable to any role (generic, role-neutral).
@@ -905,6 +910,9 @@ impl AppState {
             surface_runtime_endpoint: Arc::new(
                 crate::surface_runtime::SurfaceEndpointState::default(),
             ),
+            version_dispatcher: Arc::new(
+                crate::services::version_dispatcher::VersionDispatcher::new(),
+            ),
         }
     }
 
@@ -997,6 +1005,9 @@ impl AppState {
             app_handle: RwLock::new(None),
             surface_runtime_endpoint: Arc::new(
                 crate::surface_runtime::SurfaceEndpointState::default(),
+            ),
+            version_dispatcher: Arc::new(
+                crate::services::version_dispatcher::VersionDispatcher::new(),
             ),
         }
     }

@@ -792,6 +792,7 @@ impl AbilityRegistry {
                 .map(|s| SurfaceScope::new(*s))
                 .collect();
             union.insert(SurfaceScope::new("read.account_overview"));
+            union.insert(SurfaceScope::new("read.composition"));
             union.insert(SurfaceScope::new("submit.feedback"));
             // OnceLock::set returns Err if already initialized — that's
             // the intended path on subsequent registry builds within a
@@ -2354,6 +2355,7 @@ mod tests {
         let mut all: BTreeSet<SurfaceScope> =
             scopes.iter().map(|s| SurfaceScope::new(*s)).collect();
         all.insert(SurfaceScope::new("read.account_overview"));
+        all.insert(SurfaceScope::new("read.composition"));
         all.insert(SurfaceScope::new("submit.feedback"));
         ScopeSet::set_allowlist_for_tests(all);
     }
