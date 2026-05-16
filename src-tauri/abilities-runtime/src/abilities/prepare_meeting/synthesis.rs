@@ -21,7 +21,9 @@ use crate::abilities::{metadata_for_claim_type, AbilityCategory};
 use crate::abilities::{AbilityContext, AbilityError, AbilityErrorKind, AbilityResult};
 use crate::abilities::{Actor as RegistryActor, ClaimType};
 use crate::intelligence::provider::{ModelTier, ProviderError};
-use crate::services::context::{ClaimDismissalSurface, PrepareMeetingContextSnapshot};
+use crate::services::context::{
+    ClaimDismissalSurface, PrepareMeetingContextSnapshot, PrepareMeetingLinearIssueChangeSnapshot,
+};
 use crate::types::{
     claim_allowed_for_prompt_input, prompt_input_sensitivity_name_allowed, subject_ref_from_json,
     ClaimSensitivity, ClaimSubjectRef, EntityContextEntry, IntelligenceClaim, TemporalScope,
@@ -71,6 +73,8 @@ pub struct MeetingBriefContext {
     pub evidence: Vec<EvidenceSource>,
     #[serde(default)]
     pub entity_contexts: Vec<EntityContextSeed>,
+    #[serde(default)]
+    pub linear_issue_changes: Vec<LinearIssueChangeEvidence>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
@@ -132,6 +136,29 @@ pub struct EvidenceSource {
 pub struct EntityContextSeed {
     pub subject: BriefSubjectRef,
     pub display_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
+pub struct LinearIssueChangeEvidence {
+    pub signal_id: String,
+    pub issue_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identifier: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    pub subject: BriefSubjectRef,
+    pub signal_type: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_state: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_state: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_state_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_state_name: Option<String>,
+    pub source_asof: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
@@ -509,17 +536,45 @@ impl MeetingBriefContext {
                 display_name: subject.display_name,
             })
             .collect();
+        let linear_issue_changes = snapshot
+            .linear_issue_changes
+            .into_iter()
+            .map(LinearIssueChangeEvidence::from)
+            .collect();
 
         Ok(Self {
             meeting,
             evidence,
             entity_contexts,
+            linear_issue_changes,
         })
     }
 
     fn retain_prompt_input_allowed_evidence(&mut self) {
         self.evidence
             .retain(evidence_source_allowed_for_prompt_input);
+    }
+}
+
+impl From<PrepareMeetingLinearIssueChangeSnapshot> for LinearIssueChangeEvidence {
+    fn from(change: PrepareMeetingLinearIssueChangeSnapshot) -> Self {
+        Self {
+            signal_id: change.signal_id,
+            issue_id: change.issue_id,
+            identifier: change.identifier,
+            title: change.title,
+            url: change.url,
+            subject: BriefSubjectRef {
+                kind: change.subject.kind,
+                id: change.subject.id,
+            },
+            signal_type: change.signal_type,
+            from_state: change.from_state,
+            to_state: change.to_state,
+            current_state_type: change.current_state_type,
+            current_state_name: change.current_state_name,
+            source_asof: change.source_asof,
+        }
     }
 }
 
@@ -663,6 +718,14 @@ fn parse_completion(text: &str) -> Result<RawMeetingBrief, AbilityError> {
         kind: AbilityErrorKind::Validation,
         message: format!("prepare_meeting provider response was not valid JSON: {error}"),
     })
+}
+
+#[derive(Debug, Clone)]
+struct LinearIssueCallout {
+    description: String,
+    subject: BriefSubjectRef,
+    occurred_at: String,
+    changes: Vec<LinearIssueChangeEvidence>,
 }
 
 struct BriefAssembler<'a> {
@@ -818,6 +881,21 @@ impl<'a> BriefAssembler<'a> {
                 ClaimType::MeetingChangeMarker,
                 "/what_changed_since_last",
             )? {
+                push_subject_unique(&mut accepted_subjects, attribution.subject.subject.clone());
+                let index = brief.what_changed_since_last.len();
+                brief.what_changed_since_last.push(item);
+                self.attribute_item(
+                    &mut builder,
+                    format!("/what_changed_since_last/{index}"),
+                    attribution,
+                )?;
+            }
+        }
+
+        for callout in self.linear_issue_callouts() {
+            if let Some((item, attribution)) =
+                self.accept_linear_issue_callout(&mut builder, callout)?
+            {
                 push_subject_unique(&mut accepted_subjects, attribution.subject.subject.clone());
                 let index = brief.what_changed_since_last.len();
                 brief.what_changed_since_last.push(item);
@@ -1101,6 +1179,156 @@ impl<'a> BriefAssembler<'a> {
         }
         self.source_indices.insert(evidence.id.clone(), index);
         Ok(index)
+    }
+
+    fn ensure_linear_issue_source(
+        &mut self,
+        builder: &mut ProvenanceBuilder,
+        change: &LinearIssueChangeEvidence,
+    ) -> Result<crate::abilities::provenance::SourceIndex, AbilityError> {
+        let source_key = format!("linear:{}", change.signal_id);
+        if let Some(index) = self.source_indices.get(&source_key) {
+            return Ok(*index);
+        }
+        let now = self.ctx.services().clock.now();
+        let source_asof = source_asof(Some(&change.source_asof), now);
+        let observed_at = source_asof.unwrap_or(now);
+        let source = SourceAttribution::new(
+            DataSource::Other(crate::abilities::provenance::SourceName::new("linear")),
+            vec![SourceIdentifier::Signal {
+                signal_id: crate::abilities::provenance::SignalId::new(change.signal_id.clone()),
+            }],
+            observed_at,
+            source_asof,
+            0.85,
+            None,
+        )
+        .map_err(|error| AbilityError {
+            kind: AbilityErrorKind::Validation,
+            message: error.to_string(),
+        })?;
+        let index = builder.add_source(source);
+        builder.set_source_trust_band(index, TrustBand::LikelyCurrent);
+        self.source_indices.insert(source_key, index);
+        Ok(index)
+    }
+
+    fn accept_linear_issue_callout(
+        &mut self,
+        builder: &mut ProvenanceBuilder,
+        callout: LinearIssueCallout,
+    ) -> Result<Option<(ChangeMarker, FieldAttribution)>, AbilityError> {
+        let Some(subject) = self.subject_catalog.attribution_for(&callout.subject, 0.9) else {
+            return Ok(None);
+        };
+        if !subject.is_confident() {
+            return Ok(None);
+        }
+
+        let mut source_refs = Vec::new();
+        for change in &callout.changes {
+            source_refs.push(SourceRef::Source {
+                source_index: self.ensure_linear_issue_source(builder, change)?,
+            });
+        }
+
+        let attribution = FieldAttribution::computed(
+            subject,
+            format!("claim_type:{}", ClaimType::MeetingChangeMarker.as_str()),
+            source_refs,
+            Confidence::computed(0.9).map_err(map_field_error)?,
+        )
+        .map_err(map_field_error)?;
+
+        Ok(Some((
+            ChangeMarker {
+                description: callout.description,
+                subject: callout.subject,
+                temporal_scope: BriefTemporalScope::PointInTime {
+                    occurred_at: callout.occurred_at,
+                },
+            },
+            attribution,
+        )))
+    }
+
+    fn linear_issue_callouts(&self) -> Vec<LinearIssueCallout> {
+        let Some(primary_subject) = self.primary_meeting_subject() else {
+            return Vec::new();
+        };
+        let mut callouts = Vec::new();
+        let mut done_changes = Vec::new();
+
+        for change in self
+            .context
+            .linear_issue_changes
+            .iter()
+            .filter(|change| change.subject.key() == primary_subject.key())
+        {
+            match change.signal_type.as_str() {
+                "state_changed_to_blocked" if !linear_issue_current_done(change) => {
+                    callouts.push(LinearIssueCallout {
+                        description: format!(
+                            "{} moved to Blocked and is still unresolved.",
+                            linear_issue_label(change)
+                        ),
+                        subject: change.subject.clone(),
+                        occurred_at: change.source_asof.clone(),
+                        changes: vec![change.clone()],
+                    });
+                }
+                "state_changed_to_done" => {
+                    done_changes.push(change.clone());
+                }
+                "state_changed_to_in_progress" => {
+                    callouts.push(LinearIssueCallout {
+                        description: format!(
+                            "{} moved to In Progress.",
+                            linear_issue_label(change)
+                        ),
+                        subject: change.subject.clone(),
+                        occurred_at: change.source_asof.clone(),
+                        changes: vec![change.clone()],
+                    });
+                }
+                _ => {}
+            }
+        }
+
+        if done_changes.len() >= 2 {
+            let occurred_at = done_changes
+                .iter()
+                .map(|change| change.source_asof.as_str())
+                .max()
+                .unwrap_or("unknown")
+                .to_string();
+            callouts.push(LinearIssueCallout {
+                description: format!(
+                    "{} Linear issues moved to Done for this meeting subject.",
+                    done_changes.len()
+                ),
+                subject: primary_subject,
+                occurred_at,
+                changes: done_changes,
+            });
+        } else {
+            callouts.extend(done_changes.into_iter().map(|change| LinearIssueCallout {
+                description: format!("{} moved to Done.", linear_issue_label(&change)),
+                subject: change.subject.clone(),
+                occurred_at: change.source_asof.clone(),
+                changes: vec![change],
+            }));
+        }
+
+        callouts
+    }
+
+    fn primary_meeting_subject(&self) -> Option<BriefSubjectRef> {
+        self.context
+            .entity_contexts
+            .iter()
+            .map(|entity| entity.subject.clone())
+            .find(|subject| matches!(subject.kind.as_str(), "account" | "project"))
     }
 
     fn attribute_item(
@@ -1504,6 +1732,36 @@ fn parse_rfc3339(value: &str) -> Option<DateTime<Utc>> {
     DateTime::parse_from_rfc3339(value.trim())
         .map(|parsed| parsed.with_timezone(&Utc))
         .ok()
+}
+
+fn linear_issue_label(change: &LinearIssueChangeEvidence) -> String {
+    match (
+        change.identifier.as_deref().map(str::trim),
+        change.title.as_deref().map(str::trim),
+    ) {
+        (Some(identifier), Some(title)) if !identifier.is_empty() && !title.is_empty() => {
+            format!("{identifier} - {title}")
+        }
+        (Some(identifier), _) if !identifier.is_empty() => identifier.to_string(),
+        (_, Some(title)) if !title.is_empty() => title.to_string(),
+        _ => "A Linear issue".to_string(),
+    }
+}
+
+fn linear_issue_current_done(change: &LinearIssueChangeEvidence) -> bool {
+    let state_type = change
+        .current_state_type
+        .as_deref()
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase();
+    let state_name = change
+        .current_state_name
+        .as_deref()
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase();
+    state_type == "completed" || matches!(state_name.as_str(), "done" | "completed")
 }
 
 fn data_source(value: &str) -> DataSource {
@@ -2529,6 +2787,7 @@ mod tests {
                 },
                 evidence,
                 entity_contexts: Vec::new(),
+                linear_issue_changes: Vec::new(),
             }),
         };
         let harness = Harness::new(empty_completion());
@@ -2829,6 +3088,71 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn prepare_meeting_adds_blocked_linear_issue_callout_for_primary_subject() {
+        let harness = Harness::new(empty_completion());
+        let mut input = input_with_source("meeting-1", "src-1");
+        let context = input.context.as_mut().unwrap();
+        context.entity_contexts.push(EntityContextSeed {
+            subject: BriefSubjectRef::account("acct-linear"),
+            display_name: "Example Account".into(),
+        });
+        context
+            .linear_issue_changes
+            .push(fixture_linear_issue_change(
+                "signal-blocked",
+                "DOS-285",
+                "Wire linked work chapter",
+                "state_changed_to_blocked",
+                "acct-linear",
+            ));
+
+        let output = harness.run(input).await.unwrap();
+
+        assert_eq!(output.data().what_changed_since_last.len(), 1);
+        assert_eq!(
+            output.data().what_changed_since_last[0].description,
+            "DOS-285 - Wire linked work chapter moved to Blocked and is still unresolved."
+        );
+    }
+
+    #[tokio::test]
+    async fn prepare_meeting_aggregates_multiple_done_linear_issue_callouts() {
+        let harness = Harness::new(empty_completion());
+        let mut input = input_with_source("meeting-1", "src-1");
+        let context = input.context.as_mut().unwrap();
+        context.entity_contexts.push(EntityContextSeed {
+            subject: BriefSubjectRef::project("proj-linear"),
+            display_name: "Example Project".into(),
+        });
+        context
+            .linear_issue_changes
+            .push(fixture_linear_issue_change(
+                "signal-done-1",
+                "DOS-286",
+                "Finish issue grouping",
+                "state_changed_to_done",
+                "proj-linear",
+            ));
+        context
+            .linear_issue_changes
+            .push(fixture_linear_issue_change(
+                "signal-done-2",
+                "DOS-287",
+                "Finish issue source labels",
+                "state_changed_to_done",
+                "proj-linear",
+            ));
+
+        let output = harness.run(input).await.unwrap();
+
+        assert_eq!(output.data().what_changed_since_last.len(), 1);
+        assert_eq!(
+            output.data().what_changed_since_last[0].description,
+            "2 Linear issues moved to Done for this meeting subject."
+        );
+    }
+
     fn input_with_source(meeting_id: &str, source_id: &str) -> PrepareMeetingInput {
         PrepareMeetingInput {
             meeting_id: meeting_id.into(),
@@ -2864,6 +3188,7 @@ mod tests {
                     sensitivity: "internal".into(),
                 }],
                 entity_contexts: Vec::new(),
+                linear_issue_changes: Vec::new(),
             }),
         }
     }
@@ -2876,6 +3201,45 @@ mod tests {
             "what_changed_since_last": [],
             "suggested_outcomes": []
         })
+    }
+
+    fn fixture_linear_issue_change(
+        signal_id: &str,
+        identifier: &str,
+        title: &str,
+        signal_type: &str,
+        subject_id: &str,
+    ) -> LinearIssueChangeEvidence {
+        LinearIssueChangeEvidence {
+            signal_id: signal_id.into(),
+            issue_id: format!("issue-{identifier}"),
+            identifier: Some(identifier.into()),
+            title: Some(title.into()),
+            url: Some(format!("https://linear.example/issue/{identifier}")),
+            subject: if subject_id.starts_with("proj-") {
+                BriefSubjectRef::project(subject_id)
+            } else {
+                BriefSubjectRef::account(subject_id)
+            },
+            signal_type: signal_type.into(),
+            from_state: Some("Todo".into()),
+            to_state: if signal_type == "state_changed_to_done" {
+                Some("Done".into())
+            } else {
+                Some("Blocked".into())
+            },
+            current_state_type: if signal_type == "state_changed_to_done" {
+                Some("completed".into())
+            } else {
+                Some("started".into())
+            },
+            current_state_name: if signal_type == "state_changed_to_done" {
+                Some("Done".into())
+            } else {
+                Some("Blocked".into())
+            },
+            source_asof: "2026-05-06T11:00:00Z".into(),
+        }
     }
 
     fn captured_entity_contexts(harness: &Harness) -> serde_json::Value {
@@ -2925,6 +3289,7 @@ mod tests {
             attendees,
             subjects,
             claims,
+            linear_issue_changes: Vec::new(),
         }
     }
 

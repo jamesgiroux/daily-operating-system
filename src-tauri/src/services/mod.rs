@@ -27,6 +27,7 @@ pub mod integrations;
 pub mod intelligence;
 pub mod invalidation_jobs;
 pub mod linear;
+pub mod linear_issue_signals;
 pub mod meetings;
 pub mod mutations;
 pub mod people;
@@ -45,6 +46,7 @@ pub mod temporal;
 pub mod threads;
 pub mod trust_extraction;
 pub mod user_entity;
+pub mod version_dispatcher;
 pub mod versioning;
 
 /// Command-facing service boundary for mutation workflows.

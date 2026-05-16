@@ -52,8 +52,8 @@ import { UnifiedTimeline } from "@/components/entity/UnifiedTimeline";
 import { TheWork } from "@/components/entity/TheWork";
 import { RecommendedActions } from "@/components/entity/RecommendedActions";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
-import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { AddToRecord } from "@/components/entity/AddToRecord";
+import { LinearIssuesChapter } from "@/components/entity/LinearIssuesChapter";
 import { useEntityContextEntries } from "@/hooks/useEntityContextEntries";
 import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
 import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
@@ -119,6 +119,7 @@ const BASE_CHAPTERS: { id: string; label: string; icon: React.ReactNode }[] = [
   { id: "the-room", label: "The Team", icon: <Users size={18} strokeWidth={1.5} /> },
   { id: "the-record", label: "The Record", icon: <Activity size={18} strokeWidth={1.5} /> },
   { id: "the-work", label: "The Work", icon: <CheckSquare2 size={18} strokeWidth={1.5} /> },
+  { id: "linear-issues", label: "Linear Issues", icon: <CheckSquare2 size={18} strokeWidth={1.5} /> },
 ];
 
 const PORTFOLIO_CHAPTER = {
@@ -522,10 +523,10 @@ export default function ProjectDetailEditorial() {
         />
       </div>
 
-      {/* Finis marker */}
-      <div className="editorial-reveal">
-        <FinisMarker enrichedAt={intelligence?.enrichedAt} />
-      </div>
+      <LinearIssuesChapter
+        entityRef={{ kind: "project", id: detail.id }}
+        actorScope="user"
+      />
 
       {/* Archive Confirmation */}
       <AlertDialog open={archiveDialogOpen} onOpenChange={setArchiveDialogOpen}>

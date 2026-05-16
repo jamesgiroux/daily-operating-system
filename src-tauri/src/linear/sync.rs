@@ -12,19 +12,17 @@ pub fn upsert_issues(state: &AppState, issues: &[LinearIssue]) -> Result<(), Str
 
     for issue in issues {
         // Capture old state for signal comparison
-        let old_state_type: Option<String> = conn
-            .query_row(
-                "SELECT state_type FROM linear_issues WHERE id = ?1",
-                [&issue.id],
-                |row| row.get(0),
-            )
-            .ok();
+        let previous =
+            crate::services::linear_issue_signals::PreviousLinearIssueState::load(&db, &issue.id)
+                .unwrap_or(None);
+        let synced_at = chrono::Utc::now().to_rfc3339();
 
         conn.execute(
             "INSERT OR REPLACE INTO linear_issues
              (id, identifier, title, state_name, state_type, priority, priority_label,
-              project_id, project_name, due_date, url, synced_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, datetime('now'))",
+              project_id, project_name, assignee_id, assignee_name, due_date,
+              linear_updated_at, url, synced_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
             rusqlite::params![
                 issue.id,
                 issue.identifier,
@@ -35,11 +33,23 @@ pub fn upsert_issues(state: &AppState, issues: &[LinearIssue]) -> Result<(), Str
                 issue.priority_label,
                 issue.project_id,
                 issue.project_name,
+                issue.assignee_id,
+                issue.assignee_name,
                 issue.due_date,
+                issue.updated_at,
                 issue.url,
+                synced_at,
             ],
         )
         .map_err(|e| format!("Failed to upsert Linear issue: {}", e))?;
+
+        crate::services::linear_issue_signals::emit_issue_change_signals(
+            &db,
+            &state.signals.engine,
+            issue,
+            previous.as_ref(),
+            &synced_at,
+        );
 
         // Look up entity link for this issue's project
         let entity_link: Option<(String, String)> = issue.project_id.as_ref().and_then(|pid| {
@@ -52,6 +62,9 @@ pub fn upsert_issues(state: &AppState, issues: &[LinearIssue]) -> Result<(), Str
 
         if let Some((entity_id, entity_type)) = &entity_link {
             let new_state = issue.state_type.as_deref();
+            let old_state_type = previous
+                .as_ref()
+                .and_then(|state| state.state_type.as_deref());
             let value = serde_json::json!({
                 "identifier": issue.identifier,
                 "title": issue.title,
@@ -59,7 +72,7 @@ pub fn upsert_issues(state: &AppState, issues: &[LinearIssue]) -> Result<(), Str
             .to_string();
 
             // Signal: issue completed
-            if new_state == Some("completed") && old_state_type.as_deref() != Some("completed") {
+            if new_state == Some("completed") && old_state_type != Some("completed") {
                 #[allow(
                     clippy::let_underscore_must_use,
                     reason = "intentional best-effort discard; preserves existing non-blocking behavior"
@@ -78,9 +91,7 @@ pub fn upsert_issues(state: &AppState, issues: &[LinearIssue]) -> Result<(), Str
 
             // Signal: issue blocked
             if let Some(state_name) = &issue.state_name {
-                if state_name.to_lowercase().contains("blocked")
-                    && old_state_type.as_deref() != new_state
-                {
+                if state_name.to_lowercase().contains("blocked") && old_state_type != new_state {
                     #[allow(
                         clippy::let_underscore_must_use,
                         reason = "intentional best-effort discard; preserves existing non-blocking behavior"
@@ -101,7 +112,10 @@ pub fn upsert_issues(state: &AppState, issues: &[LinearIssue]) -> Result<(), Str
             // Signal: issue overdue
             if let Some(due) = &issue.due_date {
                 let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
-                if due < &today && new_state != Some("completed") && new_state != Some("cancelled")
+                if due < &today
+                    && new_state != Some("completed")
+                    && new_state != Some("cancelled")
+                    && new_state != Some("canceled")
                 {
                     #[allow(
                         clippy::let_underscore_must_use,

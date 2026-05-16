@@ -30,3 +30,5 @@ pub mod rules;
 pub mod sampling;
 pub mod scoring;
 pub mod user_relevance;
+
+pub use policy_registry::SignalType;

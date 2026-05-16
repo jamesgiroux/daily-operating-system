@@ -20,6 +20,7 @@ const EXPECTED_WORK_SECTION_IDS_NO_SHARED = [
   "recently-landed",
   "outputs",
   "the-record",
+  "linear-issues",
 ];
 
 const EXPECTED_WORK_SECTION_IDS_WITH_SHARED = [
@@ -30,6 +31,7 @@ const EXPECTED_WORK_SECTION_IDS_WITH_SHARED = [
   "recently-landed",
   "outputs",
   "the-record",
+  "linear-issues",
 ];
 
 const EXPECTED_WORK_SECTION_IDS_WITH_FILES = [
@@ -41,6 +43,7 @@ const EXPECTED_WORK_SECTION_IDS_WITH_FILES = [
   "outputs",
   "the-record",
   "files",
+  "linear-issues",
 ];
 
 const ALL_CONTENT_FLAGS = {
@@ -52,9 +55,9 @@ const ALL_CONTENT_FLAGS = {
 };
 
 describe("buildWorkChapters", () => {
-  it("omitting all flags returns only the always-on chapter", () => {
+  it("omitting all flags returns only the always-on chapters", () => {
     const chapters = buildWorkChapters();
-    expect(chapters.map((c) => c.id)).toEqual(["the-record"]);
+    expect(chapters.map((c) => c.id)).toEqual(["the-record", "linear-issues"]);
   });
 
   it("omits the 'shared' pill when hasSharedData is false", () => {

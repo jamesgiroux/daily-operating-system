@@ -823,6 +823,8 @@ fn is_supported_signed_route(method: &Method, path: &str) -> bool {
             | (&Method::GET, "/v1/surface/abilities")
             | (&Method::GET, "/v1/surface/keyring")
             | (&Method::POST, "/v1/surface/project-composition")
+            | (&Method::POST, "/v1/surface/subscribe")
+            | (&Method::POST, "/v1/surface/replay")
     )
 }
 
@@ -1589,6 +1591,12 @@ async fn signed_route_response(
             )
             .await
         }
+        (Method::POST, "/v1/surface/subscribe") => {
+            surface_subscribe_response(runtime, validated, request.body.clone(), request_id).await
+        }
+        (Method::POST, "/v1/surface/replay") => {
+            surface_replay_response(runtime, validated, request.body.clone(), request_id).await
+        }
         (Method::POST, "/v1/surface/invoke") => {
             let invoke = match serde_json::from_slice::<SurfaceInvokeRequest>(&request.body) {
                 Ok(invoke) if is_safe_ability_name(&invoke.ability) => invoke,
@@ -1720,6 +1728,87 @@ async fn signed_route_response(
             }
         }
         _ => error_response(SurfaceHttpError::runtime_unavailable().with_request_id(request_id)),
+    }
+}
+
+async fn surface_subscribe_response(
+    runtime: &EndpointRuntime,
+    validated: ValidatedSurfaceSession,
+    body: Bytes,
+    request_id: String,
+) -> Response<ResponseBody> {
+    use crate::services::version_dispatcher::SubscribeRequest;
+    let Some(app_state) = runtime.app_state.as_ref().cloned() else {
+        return error_response(SurfaceHttpError::runtime_unavailable().with_request_id(request_id));
+    };
+    let request: SubscribeRequest = match serde_json::from_slice(&body) {
+        Ok(r) => r,
+        Err(_) => {
+            return error_response(
+                SurfaceHttpError::bad_request("subscribe_invalid").with_request_id(request_id),
+            );
+        }
+    };
+    let actor = validated.actor.clone();
+    let dispatcher = app_state.version_dispatcher.clone();
+    let result = app_state
+        .db_write(move |db| {
+            dispatcher
+                .subscribe_stateless(db, &request, actor)
+                .map_err(|e| e.to_string())
+        })
+        .await;
+    match result {
+        Ok(ack) => json_response(StatusCode::OK, serde_json::to_value(&ack).unwrap_or(json!({}))),
+        Err(error) => error_response(
+            SurfaceHttpError::from_pairing_error(SurfacePairingError::Write(error))
+                .with_request_id(request_id),
+        ),
+    }
+}
+
+async fn surface_replay_response(
+    runtime: &EndpointRuntime,
+    validated: ValidatedSurfaceSession,
+    body: Bytes,
+    request_id: String,
+) -> Response<ResponseBody> {
+    use crate::services::version_dispatcher::{ReplayRequest, SubjectFilter};
+    let Some(app_state) = runtime.app_state.as_ref().cloned() else {
+        return error_response(SurfaceHttpError::runtime_unavailable().with_request_id(request_id));
+    };
+    #[derive(serde::Deserialize)]
+    struct WireReplay {
+        #[serde(flatten)]
+        replay: ReplayRequest,
+        #[serde(default)]
+        subjects: SubjectFilter,
+    }
+    let wire: WireReplay = match serde_json::from_slice(&body) {
+        Ok(w) => w,
+        Err(_) => {
+            return error_response(
+                SurfaceHttpError::bad_request("replay_invalid").with_request_id(request_id),
+            );
+        }
+    };
+    let actor = validated.actor.clone();
+    let dispatcher = app_state.version_dispatcher.clone();
+    let result = app_state
+        .db_write(move |db| {
+            dispatcher
+                .replay_stateless(db, &wire.replay, &actor, &wire.subjects)
+                .map_err(|e| e.to_string())
+        })
+        .await;
+    match result {
+        Ok(response) => {
+            json_response(StatusCode::OK, serde_json::to_value(&response).unwrap_or(json!({})))
+        }
+        Err(error) => error_response(
+            SurfaceHttpError::from_pairing_error(SurfacePairingError::Write(error))
+                .with_request_id(request_id),
+        ),
     }
 }
 

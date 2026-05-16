@@ -12,8 +12,9 @@ use crate::commands::{MeetingHistoryDetail, MeetingSearchResult, PrepContext};
 use crate::db::claim_invalidation::SubjectRef as ClaimSubjectRef;
 use crate::db::ActionDb;
 use crate::services::context::{
-    PrepareMeetingAttendeeSnapshot, PrepareMeetingContextSnapshot, PrepareMeetingSnapshot,
-    PrepareMeetingSubjectSnapshot, ServiceContext,
+    PrepareMeetingAttendeeSnapshot, PrepareMeetingContextSnapshot,
+    PrepareMeetingLinearIssueChangeSnapshot, PrepareMeetingSnapshot, PrepareMeetingSubjectSnapshot,
+    ServiceContext,
 };
 use crate::state::AppState;
 use crate::types::{CapturedOutcome, IntelligenceQuality, MeetingIntelligence};
@@ -137,11 +138,14 @@ pub fn load_prepare_meeting_context_snapshot(
     }
 
     let claims = load_prepare_meeting_claims(db, meeting_id, &subjects)?;
+    let linear_issue_changes =
+        load_prepare_meeting_linear_issue_changes(db, meeting_id, &subjects)?;
     Ok(PrepareMeetingContextSnapshot {
         meeting,
         attendees,
         subjects,
         claims,
+        linear_issue_changes,
     })
 }
 
@@ -380,6 +384,174 @@ fn load_prepare_meeting_claims(
 
     claims.sort_by(|left, right| left.id.cmp(&right.id));
     Ok(claims)
+}
+
+fn load_prepare_meeting_linear_issue_changes(
+    db: &ActionDb,
+    meeting_id: &str,
+    subjects: &[PrepareMeetingSubjectSnapshot],
+) -> Result<Vec<PrepareMeetingLinearIssueChangeSnapshot>, String> {
+    if !object_exists(db, "signal_events")? || !object_exists(db, "linear_issues")? {
+        return Ok(Vec::new());
+    }
+
+    let cutoff = load_last_briefed_at(db, meeting_id)?
+        .unwrap_or_else(|| (Utc::now() - chrono::Duration::days(14)).to_rfc3339());
+    let mut changes = Vec::new();
+    let mut seen = HashSet::new();
+
+    for subject in subjects
+        .iter()
+        .filter(|subject| matches!(subject.kind.as_str(), "account" | "project"))
+    {
+        let mut statement = db
+            .conn_ref()
+            .prepare(
+                "SELECT id, signal_type, value, created_at
+                 FROM signal_events
+                 WHERE entity_type = ?1
+                   AND entity_id = ?2
+                   AND signal_type IN (?3, ?4, ?5, ?6, ?7)
+                   AND superseded_by IS NULL
+                   AND created_at >= ?8
+                 ORDER BY created_at DESC
+                 LIMIT 25",
+            )
+            .map_err(|error| format!("prepare Linear issue signal read: {error}"))?;
+        let rows = statement
+            .query_map(
+                rusqlite::params![
+                    subject.kind.as_str(),
+                    subject.id.as_str(),
+                    crate::services::linear_issue_signals::SIGNAL_STATE_CHANGED_TO_IN_PROGRESS,
+                    crate::services::linear_issue_signals::SIGNAL_STATE_CHANGED_TO_BLOCKED,
+                    crate::services::linear_issue_signals::SIGNAL_STATE_CHANGED_TO_DONE,
+                    crate::services::linear_issue_signals::SIGNAL_ASSIGNEE_CHANGED,
+                    crate::services::linear_issue_signals::SIGNAL_PRIORITY_CHANGED_TO_URGENT,
+                    cutoff.as_str(),
+                ],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                        row.get::<_, String>(3)?,
+                    ))
+                },
+            )
+            .map_err(|error| format!("read Linear issue signals: {error}"))?;
+
+        for row in rows {
+            let (signal_id, signal_type, value, created_at) =
+                row.map_err(|error| format!("map Linear issue signal: {error}"))?;
+            if !seen.insert(signal_id.clone()) {
+                continue;
+            }
+            let Some(value) = value else {
+                continue;
+            };
+            let Ok(payload) = serde_json::from_str::<
+                crate::services::linear_issue_signals::LinearIssueSignalPayload,
+            >(&value) else {
+                continue;
+            };
+            if payload.subject_ref.kind != subject.kind || payload.subject_ref.id != subject.id {
+                continue;
+            }
+            if linear_issue_is_restricted(db, &payload.source_ref)? {
+                continue;
+            }
+            let issue = load_linear_issue_for_callout(db, &payload.source_ref)?;
+            changes.push(PrepareMeetingLinearIssueChangeSnapshot {
+                signal_id,
+                issue_id: payload.source_ref,
+                identifier: payload.identifier.or(issue.identifier),
+                title: issue.title,
+                url: payload.url.or(issue.url),
+                subject: subject.clone(),
+                signal_type,
+                from_state: payload.from_state,
+                to_state: payload.to_state,
+                current_state_type: issue.state_type,
+                current_state_name: issue.state_name,
+                source_asof: if payload.source_asof.trim().is_empty() {
+                    created_at
+                } else {
+                    payload.source_asof
+                },
+            });
+        }
+    }
+
+    Ok(changes)
+}
+
+#[derive(Debug, Default)]
+struct LinearIssueCalloutRow {
+    identifier: Option<String>,
+    title: Option<String>,
+    url: Option<String>,
+    state_type: Option<String>,
+    state_name: Option<String>,
+}
+
+fn load_linear_issue_for_callout(
+    db: &ActionDb,
+    issue_id: &str,
+) -> Result<LinearIssueCalloutRow, String> {
+    db.conn_ref()
+        .query_row(
+            "SELECT identifier, title, url, state_type, state_name
+             FROM linear_issues
+             WHERE id = ?1",
+            rusqlite::params![issue_id],
+            |row| {
+                Ok(LinearIssueCalloutRow {
+                    identifier: row.get(0)?,
+                    title: row.get(1)?,
+                    url: row.get(2)?,
+                    state_type: row.get(3)?,
+                    state_name: row.get(4)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(|error| format!("read Linear issue {issue_id}: {error}"))
+        .map(|row| row.unwrap_or_default())
+}
+
+fn linear_issue_is_restricted(db: &ActionDb, issue_id: &str) -> Result<bool, String> {
+    db.conn_ref()
+        .query_row(
+            "SELECT EXISTS (
+                SELECT 1
+                FROM linear_issues li
+                JOIN linear_entity_links lel ON lel.linear_project_id = li.project_id
+                JOIN accounts a ON a.id = lel.entity_id AND lel.entity_type = 'account'
+                WHERE li.id = ?1
+                  AND a.account_type = 'internal'
+             )",
+            rusqlite::params![issue_id],
+            |row| row.get::<_, i64>(0).map(|exists| exists != 0),
+        )
+        .map_err(|error| format!("read Linear issue restriction: {error}"))
+}
+
+fn load_last_briefed_at(db: &ActionDb, meeting_id: &str) -> Result<Option<String>, String> {
+    if !object_exists(db, "meeting_prep")? {
+        return Ok(None);
+    }
+    db.conn_ref()
+        .query_row(
+            "SELECT prep_frozen_at
+             FROM meeting_prep
+             WHERE meeting_id = ?1",
+            rusqlite::params![meeting_id],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .optional()
+        .map_err(|error| format!("read meeting prep timestamp: {error}"))
+        .map(Option::flatten)
 }
 
 fn hide_shadow_trust_for_briefing(
@@ -3940,6 +4112,7 @@ fn trust_factor_inputs_for_claim(
         subject_fit_confidence: DEFAULT_SUBJECT_FIT_CONFIDENCE,
         internal_consistency: DEFAULT_INTERNAL_CONSISTENCY,
         source_lifecycle: source_lifecycle_for_claim(claim),
+        linear_issue_state: crate::abilities::trust::LinearIssueStateContext::default(),
         read_state_indeterminate: false,
     })
 }

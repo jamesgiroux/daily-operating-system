@@ -56,10 +56,16 @@
       "safe_fields_only": true
     },
     "telemetry": {
-      "event": "render_policy_channel_rejection",
-      "invocation_id": "17171717-aaaa-4717-87ab-bbbbbbbbbbbb",
-      "source_class": "glean",
-      "lifecycle_state": "restricted",
+      "metric_name": "ghost_resurrection_incidents",
+      "metric_value": {
+        "type": "count",
+        "value": 1
+      },
+      "ability_name": null,
+      "ability_version": null,
+      "signal_type": null,
+      "outcome": "skipped",
+      "source_derived_fields_present": false,
       "raw_content_visible": false
     },
     "eval_fixtures": {

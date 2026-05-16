@@ -403,6 +403,8 @@ pub struct AppState {
     pub database_recovery_status: Mutex<DatabaseRecoveryStatus>,
     /// Tamper-evident audit log for enterprise observability.
     pub audit_log: Arc<Mutex<crate::audit_log::AuditLogger>>,
+    /// Opt-in anonymous aggregate telemetry buffer and emission state.
+    pub aggregate_telemetry: Arc<crate::observability::aggregate_metric::AggregateTelemetry>,
     /// Active role preset loaded from config.
     pub active_preset: RwLock<Option<crate::presets::schema::RolePreset>>,
     /// Cached merged signal/email config for the active preset.
@@ -431,6 +433,11 @@ pub struct AppState {
     /// WordPress block surface consults via `/v1/surface/project-composition`.
     pub composition_render_orchestrator:
         Arc<crate::services::composition_render_orchestrator::CompositionRenderOrchestrator>,
+    /// Version-event dispatcher for W4-B-signals. Holds live
+    /// subscriber handles for native Tauri-channel transports; SurfaceClient
+    /// stateless polling routes share this singleton so reconnect lookups
+    /// hit the same in-memory reconnect-index.
+    pub version_dispatcher: Arc<crate::services::version_dispatcher::VersionDispatcher>,
 }
 
 /// Base signal keywords applicable to any role (generic, role-neutral).
@@ -835,6 +842,10 @@ impl AppState {
         signal_engine.set_prep_queue(Arc::clone(&prep_queue));
         // Wire intel_queue so propagated cross-entity signals trigger enrichment
         signal_engine.set_intel_queue(Arc::clone(&intel_queue_arc));
+        let telemetry_enabled = config
+            .as_ref()
+            .map(|cfg| cfg.telemetry.enabled)
+            .unwrap_or(false);
 
         Self {
             config: RwLock::new(config),
@@ -895,6 +906,9 @@ impl AppState {
             encryption_key_missing: AtomicBool::new(encryption_key_missing),
             database_recovery_status: Mutex::new(database_recovery_status),
             audit_log,
+            aggregate_telemetry: Arc::new(
+                crate::observability::aggregate_metric::AggregateTelemetry::new(telemetry_enabled),
+            ),
             active_preset: RwLock::new(active_preset),
             merged_signal_config: RwLock::new(startup_merged_config),
             meeting_prep_queue: Arc::new(crate::meeting_prep_queue::MeetingPrepQueue::new()),
@@ -911,6 +925,9 @@ impl AppState {
             ),
             composition_render_orchestrator: Arc::new(
                 crate::services::composition_render_orchestrator::CompositionRenderOrchestrator::new(),
+            ),
+            version_dispatcher: Arc::new(
+                crate::services::version_dispatcher::VersionDispatcher::new(),
             ),
         }
     }
@@ -991,6 +1008,9 @@ impl AppState {
             encryption_key_missing: AtomicBool::new(false),
             database_recovery_status: Mutex::new(DatabaseRecoveryStatus::not_required()),
             audit_log: Arc::new(Mutex::new(audit_logger)),
+            aggregate_telemetry: Arc::new(
+                crate::observability::aggregate_metric::AggregateTelemetry::new(false),
+            ),
             active_preset: RwLock::new(None),
             merged_signal_config: RwLock::new(MergedSignalConfig::default()),
             meeting_prep_queue: Arc::new(crate::meeting_prep_queue::MeetingPrepQueue::new()),
@@ -1007,6 +1027,9 @@ impl AppState {
             ),
             composition_render_orchestrator: Arc::new(
                 crate::services::composition_render_orchestrator::CompositionRenderOrchestrator::new(),
+            ),
+            version_dispatcher: Arc::new(
+                crate::services::version_dispatcher::VersionDispatcher::new(),
             ),
         }
     }
@@ -1825,6 +1848,7 @@ pub fn create_or_update_config(
                 notifications: crate::types::NotificationConfig::default(),
                 text_scale_percent: 100,
                 surface_runtime: crate::types::SurfaceRuntimeConfig::default(),
+                telemetry: crate::types::TelemetryConfig::default(),
             }
         }
     };

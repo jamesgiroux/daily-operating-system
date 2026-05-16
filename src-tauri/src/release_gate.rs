@@ -1,8 +1,12 @@
+use std::collections::VecDeque;
 use std::ffi::OsString;
 use std::fs;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::sync::Arc;
+use std::process::{Command, ExitStatus, Stdio};
+use std::sync::{mpsc, Arc};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
 use clap::{Parser, ValueEnum};
@@ -22,6 +26,7 @@ pub const RELEASE_GATE_SCHEMA_VERSION: &str = "release_gate_evidence_v1";
 pub const EXIT_SUCCESS: u8 = 0;
 pub const EXIT_MANDATORY_FAILURE: u8 = 1;
 pub const EXIT_INFRA_FAILURE: u8 = 2;
+pub const DEFAULT_DOS288_TIMEOUT_SECS: u64 = 600;
 
 pub const DEFAULT_MANDATORY_BUNDLES: &[&str] = &[
     "bundle-1",
@@ -60,6 +65,9 @@ const DOS288_SELECTORS: &[&str] = &[
     "dos288_bleed_detection_test",
     "dos288_ownership_validator_test",
 ];
+const DOS288_OUTPUT_CAPTURE_CAP_BYTES: usize = 64 * 1024;
+const DOS288_OUTPUT_CAPTURE_EDGE_BYTES: usize = DOS288_OUTPUT_CAPTURE_CAP_BYTES / 2;
+const DOS288_SELECTOR_TIMEOUT_SUMMARY: &str = "dos288-selector-timeout-exceeded";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ValueEnum)]
 #[serde(rename_all = "snake_case")]
@@ -68,7 +76,7 @@ pub enum GateMode {
     Manual,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GateConfig {
     pub mode: GateMode,
     pub bundle_filters: Vec<String>,
@@ -80,6 +88,8 @@ pub struct GateConfig {
     pub manual_evidence: Option<PathBuf>,
     pub run_tests: bool,
     pub git_sha: String,
+    #[serde(default = "default_dos288_timeout_secs")]
+    pub dos288_timeout_secs: u64,
 }
 
 impl GateConfig {
@@ -90,6 +100,10 @@ impl GateConfig {
     fn default_harness_report_path() -> PathBuf {
         manifest_dir().join("target/eval/harness-report.json")
     }
+}
+
+fn default_dos288_timeout_secs() -> u64 {
+    DEFAULT_DOS288_TIMEOUT_SECS
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -117,6 +131,8 @@ pub struct SuiteResult {
     pub status: GateStatus,
     pub mandatory: bool,
     pub duration_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure_summary: Option<String>,
     pub failures: Vec<String>,
 }
 
@@ -300,6 +316,8 @@ struct CliArgs {
     manual_evidence: Option<PathBuf>,
     #[arg(long = "no-run-tests")]
     no_run_tests: bool,
+    #[arg(long = "dos288-timeout-secs", default_value_t = DEFAULT_DOS288_TIMEOUT_SECS)]
+    dos288_timeout_secs: u64,
     #[arg(
         long = "git-sha",
         help = "Optional assertion. The canonical SHA is embedded at build time; if provided, it must match the embedded SHA."
@@ -360,6 +378,7 @@ where
         manual_evidence: cli.manual_evidence,
         run_tests: !cli.no_run_tests,
         git_sha: resolve_git_sha(cli.git_sha)?,
+        dos288_timeout_secs: cli.dos288_timeout_secs,
     })
 }
 
@@ -519,6 +538,7 @@ fn build_hermetic_evidence(config: &GateConfig) -> Result<GateEvidenceV1, GateEr
                 status: GateStatus::Pass,
                 mandatory: true,
                 duration_ms: None,
+                failure_summary: None,
                 failures: Vec::new(),
             });
             suites.extend(bundle_suites_from_report(&report, config));
@@ -539,6 +559,7 @@ fn build_hermetic_evidence(config: &GateConfig) -> Result<GateEvidenceV1, GateEr
                 status: GateStatus::InfraFailure,
                 mandatory: true,
                 duration_ms: None,
+                failure_summary: Some(failure.clone()),
                 failures: vec![failure],
             });
             None
@@ -611,6 +632,7 @@ fn build_manual_evidence(
         status: GateStatus::Pass,
         mandatory: true,
         duration_ms: None,
+        failure_summary: None,
         failures: Vec::new(),
     }];
     let invariants = vec![
@@ -754,6 +776,8 @@ fn bundle_suites_from_report(report: &HarnessReport, config: &GateConfig) -> Vec
                 status,
                 mandatory,
                 duration_ms: (runtime_ms > 0).then_some(runtime_ms),
+                failure_summary: (status != GateStatus::Pass)
+                    .then(|| redacted_summary("bundle_status", bundle)),
                 failures: if status == GateStatus::Pass {
                     Vec::new()
                 } else {
@@ -960,7 +984,7 @@ fn dos288_suite_results(config: &GateConfig, binding: &EvidenceBinding) -> Vec<S
         .iter()
         .map(|selector| {
             if config.run_tests {
-                run_dos288_selector(selector)
+                run_dos288_selector(selector, config)
             } else {
                 read_dos288_evidence(selector, &config.output_dir, binding)
             }
@@ -968,52 +992,331 @@ fn dos288_suite_results(config: &GateConfig, binding: &EvidenceBinding) -> Vec<S
         .collect()
 }
 
-fn run_dos288_selector(selector: &str) -> SuiteResult {
-    let started = std::time::Instant::now();
+fn run_dos288_selector(selector: &str, config: &GateConfig) -> SuiteResult {
+    let started = Instant::now();
     // remains an integration-test binary rather than a library module.
     // The release gate deliberately keeps only this selector as a subprocess;
     // the Golden Daily Loop harness itself runs in-process for structured data.
     let args = dos288_selector_args(selector);
     let command_or_report = dos288_selector_command(selector);
-    let output = Command::new("cargo")
+    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
+    let child = Command::new(&cargo)
         .current_dir(repo_root())
         .args(&args)
         .env("CARGO_TERM_COLOR", "never")
-        .output();
-    match output {
-        Ok(output) if output.status.success() => SuiteResult {
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn();
+
+    let mut child = match child {
+        Ok(child) => child,
+        Err(error) => {
+            return dos288_selector_infra_result(
+                selector,
+                command_or_report,
+                started,
+                redacted_summary("dos288_selector_infra", &error.to_string()),
+            );
+        }
+    };
+    let stdout = match child.stdout.take() {
+        Some(stdout) => stdout,
+        None => {
+            let _kill_result = child.kill();
+            let _wait_result = child.wait();
+            return dos288_selector_infra_result(
+                selector,
+                command_or_report,
+                started,
+                redacted_summary("dos288_selector_infra", "stdout pipe unavailable"),
+            );
+        }
+    };
+    let stderr = match child.stderr.take() {
+        Some(stderr) => stderr,
+        None => {
+            let _kill_result = child.kill();
+            let _wait_result = child.wait();
+            return dos288_selector_infra_result(
+                selector,
+                command_or_report,
+                started,
+                redacted_summary("dos288_selector_infra", "stderr pipe unavailable"),
+            );
+        }
+    };
+
+    let (tx, rx) = mpsc::channel();
+    let _stdout_reader = spawn_dos288_stream_reader(Dos288Stream::Stdout, stdout, tx.clone());
+    let _stderr_reader = spawn_dos288_stream_reader(Dos288Stream::Stderr, stderr, tx);
+    let timeout = Duration::from_secs(config.dos288_timeout_secs);
+    let deadline = Instant::now() + timeout;
+    let mut stdout_capture = None;
+    let mut stderr_capture = None;
+
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                collect_dos288_streams(
+                    &rx,
+                    &mut stdout_capture,
+                    &mut stderr_capture,
+                    Duration::from_millis(100),
+                );
+                return dos288_selector_completed_result(
+                    selector,
+                    command_or_report,
+                    started,
+                    status,
+                    stdout_capture,
+                    stderr_capture,
+                );
+            }
+            Ok(None) => {}
+            Err(error) => {
+                let _kill_result = child.kill();
+                let _wait_result = child.wait();
+                return dos288_selector_infra_result(
+                    selector,
+                    command_or_report,
+                    started,
+                    redacted_summary("dos288_selector_infra", &error.to_string()),
+                );
+            }
+        }
+
+        let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
+            let _kill_result = child.kill();
+            let _wait_result = child.wait();
+            return dos288_selector_timeout_result(selector, command_or_report, started);
+        };
+
+        let wait_for = remaining.min(Duration::from_millis(100));
+        match rx.recv_timeout(wait_for) {
+            Ok(event) => store_dos288_stream_event(event, &mut stdout_capture, &mut stderr_capture),
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                if wait_for == remaining {
+                    let _kill_result = child.kill();
+                    let _wait_result = child.wait();
+                    return dos288_selector_timeout_result(selector, command_or_report, started);
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                thread::sleep(remaining.min(Duration::from_millis(50)));
+            }
+        }
+    }
+}
+
+fn dos288_selector_completed_result(
+    selector: &str,
+    command_or_report: String,
+    started: Instant,
+    status: ExitStatus,
+    stdout: Option<Result<String, String>>,
+    stderr: Option<Result<String, String>>,
+) -> SuiteResult {
+    if status.success() {
+        SuiteResult {
             name: selector.to_string(),
             source: "cargo_test_selector".to_string(),
             command_or_report,
             status: GateStatus::Pass,
             mandatory: true,
             duration_ms: Some(started.elapsed().as_millis() as u64),
+            failure_summary: None,
             failures: Vec::new(),
-        },
-        Ok(output) => SuiteResult {
+        }
+    } else {
+        let failure = redacted_summary(
+            "dos288_selector_failed",
+            &dos288_selector_failure_detail(selector, status, stdout, stderr),
+        );
+        SuiteResult {
             name: selector.to_string(),
             source: "cargo_test_selector".to_string(),
             command_or_report,
             status: GateStatus::Fail,
             mandatory: true,
             duration_ms: Some(started.elapsed().as_millis() as u64),
-            failures: vec![redacted_summary(
-                "dos288_selector_failed",
-                &format!("{selector}:{:?}", output.status.code()),
-            )],
-        },
-        Err(error) => SuiteResult {
-            name: selector.to_string(),
-            source: "cargo_test_selector".to_string(),
-            command_or_report,
-            status: GateStatus::InfraFailure,
-            mandatory: true,
-            duration_ms: Some(started.elapsed().as_millis() as u64),
-            failures: vec![redacted_summary(
-                "dos288_selector_infra",
-                &error.to_string(),
-            )],
-        },
+            failure_summary: Some(failure.clone()),
+            failures: vec![failure],
+        }
+    }
+}
+
+fn dos288_selector_infra_result(
+    selector: &str,
+    command_or_report: String,
+    started: Instant,
+    failure_summary: String,
+) -> SuiteResult {
+    SuiteResult {
+        name: selector.to_string(),
+        source: "cargo_test_selector".to_string(),
+        command_or_report,
+        status: GateStatus::InfraFailure,
+        mandatory: true,
+        duration_ms: Some(started.elapsed().as_millis() as u64),
+        failure_summary: Some(failure_summary.clone()),
+        failures: vec![failure_summary],
+    }
+}
+
+fn dos288_selector_timeout_result(
+    selector: &str,
+    command_or_report: String,
+    started: Instant,
+) -> SuiteResult {
+    SuiteResult {
+        name: selector.to_string(),
+        source: "cargo_test_selector".to_string(),
+        command_or_report,
+        status: GateStatus::InfraFailure,
+        mandatory: true,
+        duration_ms: Some(started.elapsed().as_millis() as u64),
+        failure_summary: Some(DOS288_SELECTOR_TIMEOUT_SUMMARY.to_string()),
+        failures: vec![DOS288_SELECTOR_TIMEOUT_SUMMARY.to_string()],
+    }
+}
+
+fn dos288_selector_failure_detail(
+    selector: &str,
+    status: ExitStatus,
+    stdout: Option<Result<String, String>>,
+    stderr: Option<Result<String, String>>,
+) -> String {
+    format!(
+        "{selector}:status={:?}:stdout={}:stderr={}",
+        status.code(),
+        dos288_stream_detail(stdout),
+        dos288_stream_detail(stderr)
+    )
+}
+
+fn dos288_stream_detail(stream: Option<Result<String, String>>) -> String {
+    match stream {
+        Some(Ok(output)) if output.is_empty() => "<empty>".to_string(),
+        Some(Ok(output)) => output,
+        Some(Err(error)) => format!("<read error: {error}>"),
+        None => "<not captured>".to_string(),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Dos288Stream {
+    Stdout,
+    Stderr,
+}
+
+struct Dos288StreamEvent {
+    stream: Dos288Stream,
+    result: Result<String, String>,
+}
+
+fn spawn_dos288_stream_reader<R>(
+    stream: Dos288Stream,
+    reader: R,
+    tx: mpsc::Sender<Dos288StreamEvent>,
+) -> thread::JoinHandle<()>
+where
+    R: Read + Send + 'static,
+{
+    thread::spawn(move || {
+        let result = capture_bounded_dos288_output(reader).map_err(|error| error.to_string());
+        let _send_result = tx.send(Dos288StreamEvent { stream, result });
+    })
+}
+
+fn capture_bounded_dos288_output<R>(mut reader: R) -> io::Result<String>
+where
+    R: Read,
+{
+    let mut capture = BoundedDos288Output::new();
+    let mut buffer = [0; 8192];
+    loop {
+        let read = reader.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        capture.push(&buffer[..read]);
+    }
+    Ok(String::from_utf8_lossy(&capture.into_bytes()).into_owned())
+}
+
+fn collect_dos288_streams(
+    rx: &mpsc::Receiver<Dos288StreamEvent>,
+    stdout: &mut Option<Result<String, String>>,
+    stderr: &mut Option<Result<String, String>>,
+    max_wait: Duration,
+) {
+    let deadline = Instant::now() + max_wait;
+    while stdout.is_none() || stderr.is_none() {
+        let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
+            break;
+        };
+        match rx.recv_timeout(remaining) {
+            Ok(event) => store_dos288_stream_event(event, stdout, stderr),
+            Err(mpsc::RecvTimeoutError::Timeout | mpsc::RecvTimeoutError::Disconnected) => break,
+        }
+    }
+}
+
+fn store_dos288_stream_event(
+    event: Dos288StreamEvent,
+    stdout: &mut Option<Result<String, String>>,
+    stderr: &mut Option<Result<String, String>>,
+) {
+    match event.stream {
+        Dos288Stream::Stdout => *stdout = Some(event.result),
+        Dos288Stream::Stderr => *stderr = Some(event.result),
+    }
+}
+
+struct BoundedDos288Output {
+    total_len: usize,
+    head: Vec<u8>,
+    tail: VecDeque<u8>,
+}
+
+impl BoundedDos288Output {
+    fn new() -> Self {
+        Self {
+            total_len: 0,
+            head: Vec::with_capacity(DOS288_OUTPUT_CAPTURE_EDGE_BYTES),
+            tail: VecDeque::with_capacity(DOS288_OUTPUT_CAPTURE_EDGE_BYTES),
+        }
+    }
+
+    fn push(&mut self, bytes: &[u8]) {
+        self.total_len += bytes.len();
+        let mut offset = 0;
+        if self.head.len() < DOS288_OUTPUT_CAPTURE_EDGE_BYTES {
+            let take = (DOS288_OUTPUT_CAPTURE_EDGE_BYTES - self.head.len()).min(bytes.len());
+            self.head.extend_from_slice(&bytes[..take]);
+            offset = take;
+        }
+        for byte in &bytes[offset..] {
+            if self.tail.len() == DOS288_OUTPUT_CAPTURE_EDGE_BYTES {
+                self.tail.pop_front();
+            }
+            self.tail.push_back(*byte);
+        }
+    }
+
+    fn into_bytes(self) -> Vec<u8> {
+        let mut output = self.head;
+        if self.total_len > DOS288_OUTPUT_CAPTURE_CAP_BYTES {
+            output.extend_from_slice(
+                format!(
+                    "\n[... {} bytes truncated ...]\n",
+                    self.total_len - DOS288_OUTPUT_CAPTURE_CAP_BYTES
+                )
+                .as_bytes(),
+            );
+        }
+        output.extend(self.tail);
+        output
     }
 }
 
@@ -1082,6 +1385,14 @@ fn read_dos288_evidence(
         status,
         mandatory: true,
         duration_ms: None,
+        failure_summary: match (status, binding_error.as_ref()) {
+            (GateStatus::Pass, _) => None,
+            (_, Some(error)) => Some(error.to_string()),
+            _ => Some(redacted_summary(
+                "dos288_evidence_missing_or_failed",
+                selector,
+            )),
+        },
         failures: match (status, binding_error) {
             (GateStatus::Pass, _) => Vec::new(),
             (_, Some(error)) => vec![error.to_string()],
@@ -1437,6 +1748,7 @@ mod tests {
                 .collect::<Vec<_>>()
         );
         assert_eq!(config.mode, GateMode::Hermetic);
+        assert_eq!(config.dos288_timeout_secs, DEFAULT_DOS288_TIMEOUT_SECS);
     }
 
     #[test]
@@ -1537,6 +1849,7 @@ mod tests {
                 status: GateStatus::Fail,
                 mandatory: false,
                 duration_ms: Some(5),
+                failure_summary: Some(redacted_summary("tracked_failed", "bundle-2")),
                 failures: vec![redacted_summary("tracked_failed", "bundle-2")],
             }],
             vec![],
@@ -1573,6 +1886,7 @@ mod tests {
                 status: GateStatus::InfraFailure,
                 mandatory: true,
                 duration_ms: None,
+                failure_summary: Some(redacted_summary("missing", "harness")),
                 failures: vec![redacted_summary("missing", "harness")],
             }],
             vec![],
@@ -1615,6 +1929,7 @@ mod tests {
             manual_evidence: Some(manual_path),
             run_tests: false,
             git_sha: "abc123".to_string(),
+            dos288_timeout_secs: DEFAULT_DOS288_TIMEOUT_SECS,
         };
         let reader = MockReader(std::sync::Mutex::new(Vec::new()));
 
