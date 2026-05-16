@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Pre-push CI parity check.
 #
-# Runs the same gates that .github/workflows/test.yml runs on push, in the same
+# Runs the same gates that .github/workflows/lint-frontend.yml runs on push, in the same
 # order, fail-fast. Run this from the repo root before pushing a branch so that
 # preventable CI failures show up locally instead of after a 30-minute round
 # trip on the macOS runner.

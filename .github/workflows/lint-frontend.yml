@@ -32,7 +32,7 @@ on:
       - 'tsconfig*.json'
       - 'vite.config.*'
       - 'vitest.config.*'
-      - '.github/workflows/test.yml'
+      - '.github/workflows/lint-frontend.yml'
   pull_request:
     branches:
       - dev
@@ -50,7 +50,7 @@ on:
       - 'tsconfig*.json'
       - 'vite.config.*'
       - 'vitest.config.*'
-      - '.github/workflows/test.yml'
+      - '.github/workflows/lint-frontend.yml'
 
 # Cancel superseded PR runs (force-push); never cancel main-branch landings.
 concurrency:
