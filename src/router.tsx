@@ -14,6 +14,8 @@ import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { CommandMenu, useCommandMenu } from "@/components/layout/CommandMenu";
 import { Header } from "@/components/dashboard/Header";
 import { OnboardingFlow } from "@/components/onboarding/OnboardingFlow";
+import { TelemetryOptInSplash } from "@/components/onboarding/TelemetryOptInSplash";
+import { TelemetryActiveIndicator } from "@/components/shared/TelemetryActiveIndicator";
 
 // Lazy load pages for code splitting
 import { DailyBriefing } from "@/components/dashboard/DailyBriefing";
@@ -79,6 +81,7 @@ import { StartupBriefingScreen } from "@/components/startup/StartupBriefingScree
 const settingsTabs = new Set([
   "you",
   "connectors",
+  "data",
   "system",
   "diagnostics",
   // Legacy tab IDs for backwards compatibility
@@ -385,6 +388,8 @@ function RootLayout() {
             <WhatsNewModal open={whatsNewOpen || autoShowOpen} onClose={handleWhatsNewClose} />
             <ICloudWarningModal />
             <TourTips />
+            <TelemetryActiveIndicator />
+            <TelemetryOptInSplash />
             <Toaster position="bottom-right" />
             {showWelcomeOverlay && <StartupBriefingScreen fading={welcomeFading} />}
           </ClaudeStatusCtx.Provider>
@@ -412,6 +417,8 @@ function RootLayout() {
           <WhatsNewModal open={whatsNewOpen || autoShowOpen} onClose={handleWhatsNewClose} />
           <ICloudWarningModal />
           <TourTips />
+          <TelemetryActiveIndicator />
+          <TelemetryOptInSplash />
           <Toaster position="bottom-right" />
           <DevToolsPanelStandalone />
           {showWelcomeOverlay && <StartupBriefingScreen fading={welcomeFading} />}

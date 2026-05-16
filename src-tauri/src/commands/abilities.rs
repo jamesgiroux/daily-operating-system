@@ -15,6 +15,7 @@ use crate::bridges::tauri::{
     parse_tauri_claim_dismissal_surface, TauriAbilityBridge, TauriInvokeContext,
 };
 use crate::bridges::{AbilityResponseJson, BridgeSurface, BridgeSurfaceError, ConfirmationToken};
+use crate::observability::aggregate_metric::{MetricDimensions, MetricValue, Outcome};
 use crate::state::AppState;
 
 #[allow(
@@ -42,7 +43,7 @@ pub async fn invoke_ability(
         .ok_or(BridgeSurfaceError::AbilityUnavailable)?;
     let input_for_policy = input_json.clone();
     let claim_dismissal_surface = parse_tauri_claim_dismissal_surface(&render_surface)?;
-    let response = TauriAbilityBridge::new(registry)
+    let response = match TauriAbilityBridge::new(registry)
         .invoke(
             state.inner().as_ref(),
             &ability_name,
@@ -55,18 +56,58 @@ pub async fn invoke_ability(
                 confirmation.as_ref(),
             ),
         )
-        .await?;
-    let policy = build_ownership_policy_for_invocation(
+        .await
+    {
+        Ok(response) => response,
+        Err(err) => {
+            record_ability_invocation_metric(
+                state.inner().as_ref(),
+                ability_meta,
+                Outcome::Failure,
+            );
+            return Err(err);
+        }
+    };
+    let policy = match build_ownership_policy_for_invocation(
         ability_meta,
         &input_for_policy,
         response.raw_provenance_value(),
-    )?;
-    validate_serialized_subject_ownership(
+    ) {
+        Ok(policy) => policy,
+        Err(err) => {
+            record_ability_invocation_metric(
+                state.inner().as_ref(),
+                ability_meta,
+                Outcome::Failure,
+            );
+            return Err(err.into());
+        }
+    };
+    if let Err(err) = validate_serialized_subject_ownership(
         response.data.clone(),
         response.raw_provenance_value().clone(),
         response.diagnostics.clone(),
         &[],
         policy,
-    )?;
+    ) {
+        record_ability_invocation_metric(state.inner().as_ref(), ability_meta, Outcome::Failure);
+        return Err(err.into());
+    }
+    record_ability_invocation_metric(state.inner().as_ref(), ability_meta, Outcome::Success);
     Ok(response)
+}
+
+fn record_ability_invocation_metric(
+    state: &AppState,
+    ability_meta: &crate::abilities::AbilityDescriptor,
+    outcome: Outcome,
+) {
+    crate::observability::aggregate_metric::emit_aggregate_metric(
+        state,
+        crate::aggregate_metric_name!("ability_invocation_count"),
+        MetricValue::Count(1),
+        MetricDimensions::default()
+            .ability(ability_meta.name, ability_meta.version)
+            .outcome(outcome),
+    );
 }

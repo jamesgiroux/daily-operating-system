@@ -977,6 +977,7 @@ pub struct PrepareMeetingContextSnapshot {
     pub attendees: Vec<PrepareMeetingAttendeeSnapshot>,
     pub subjects: Vec<PrepareMeetingSubjectSnapshot>,
     pub claims: Vec<IntelligenceClaim>,
+    pub linear_issue_changes: Vec<PrepareMeetingLinearIssueChangeSnapshot>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1002,6 +1003,22 @@ pub struct PrepareMeetingSubjectSnapshot {
     pub kind: String,
     pub id: String,
     pub display_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PrepareMeetingLinearIssueChangeSnapshot {
+    pub signal_id: String,
+    pub issue_id: String,
+    pub identifier: Option<String>,
+    pub title: Option<String>,
+    pub url: Option<String>,
+    pub subject: PrepareMeetingSubjectSnapshot,
+    pub signal_type: String,
+    pub from_state: Option<String>,
+    pub to_state: Option<String>,
+    pub current_state_type: Option<String>,
+    pub current_state_name: Option<String>,
+    pub source_asof: String,
 }
 
 pub type PrepareMeetingContextReadFuture<'a> =

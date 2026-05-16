@@ -3,7 +3,16 @@
 
 use crate::services::context::ServiceContext;
 use crate::state::AppState;
-use crate::types::{Config, WorkflowId};
+use crate::types::{Config, TelemetryConfig, WorkflowId};
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AggregateTelemetryStatus {
+    pub enabled: bool,
+    pub opt_in_splash_dismissed: bool,
+    pub catalog: &'static [&'static str],
+    pub preview: Vec<crate::observability::aggregate_metric::AggregateMetricPreview>,
+}
 
 fn validate_ai_model_choice(tier: &str, model: &str) -> Result<(), String> {
     let valid_tiers = ["synthesis", "extraction", "background", "mechanical"];
@@ -159,6 +168,62 @@ pub fn reset_ai_models_to_recommended(
         config.ai_models = crate::types::AiModelConfig::default();
         config.ai_model_routing_version = crate::types::AI_MODEL_ROUTING_VERSION;
     })
+}
+
+pub fn aggregate_telemetry_status(state: &AppState) -> AggregateTelemetryStatus {
+    let config = state
+        .config
+        .read()
+        .as_ref()
+        .map(|config| config.telemetry.clone())
+        .unwrap_or_default();
+    AggregateTelemetryStatus {
+        enabled: state.aggregate_telemetry.is_enabled(),
+        opt_in_splash_dismissed: config.opt_in_splash_dismissed,
+        catalog: crate::observability::aggregate_metric::AGGREGATE_METRIC_CATALOG,
+        preview: state.aggregate_telemetry.preview(),
+    }
+}
+
+pub fn set_aggregate_telemetry_enabled(
+    ctx: &ServiceContext<'_>,
+    enabled: bool,
+    state: &AppState,
+) -> Result<AggregateTelemetryStatus, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+
+    if enabled {
+        let install_id =
+            crate::observability::aggregate_metric::AnonInstallId::generate_on_opt_in()
+                .map_err(|e| e.to_string())?;
+        crate::state::create_or_update_config(state, |config| {
+            config.telemetry.enabled = true;
+            config.telemetry.opt_in_splash_dismissed = true;
+        })?;
+        state.aggregate_telemetry.enable_with_install_id(install_id);
+    } else {
+        state.aggregate_telemetry.disable_and_drop_pending();
+        crate::state::create_or_update_config(state, |config| {
+            config.telemetry.enabled = false;
+            config.telemetry.opt_in_splash_dismissed = true;
+        })?;
+    }
+
+    Ok(aggregate_telemetry_status(state))
+}
+
+pub fn dismiss_aggregate_telemetry_splash(
+    ctx: &ServiceContext<'_>,
+    state: &AppState,
+) -> Result<AggregateTelemetryStatus, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    crate::state::create_or_update_config(state, |config| {
+        config.telemetry = TelemetryConfig {
+            enabled: state.aggregate_telemetry.is_enabled(),
+            opt_in_splash_dismissed: true,
+        };
+    })?;
+    Ok(aggregate_telemetry_status(state))
 }
 
 /// Set Google calendar and email poll intervals in minutes.

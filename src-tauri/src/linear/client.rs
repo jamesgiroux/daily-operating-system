@@ -27,7 +27,10 @@ pub struct LinearIssue {
     pub priority_label: Option<String>,
     pub project_id: Option<String>,
     pub project_name: Option<String>,
+    pub assignee_id: Option<String>,
+    pub assignee_name: Option<String>,
     pub due_date: Option<String>,
+    pub updated_at: Option<String>,
     pub url: String,
 }
 
@@ -135,7 +138,7 @@ impl LinearClient {
         Ok(resp.viewer)
     }
 
-    /// Fetch issues assigned to the current user that are not completed/cancelled.
+    /// Fetch recently updated issues assigned to the current user.
     pub async fn fetch_my_issues(&self) -> Result<Vec<LinearIssue>, String> {
         #[derive(Deserialize)]
         struct IssuesResponse {
@@ -160,7 +163,9 @@ impl LinearClient {
             priority: Option<i32>,
             priority_label: Option<String>,
             project: Option<ProjectRef>,
+            assignee: Option<AssigneeRef>,
             due_date: Option<String>,
+            updated_at: Option<String>,
             url: String,
         }
         #[derive(Deserialize)]
@@ -174,11 +179,15 @@ impl LinearClient {
             id: String,
             name: String,
         }
+        #[derive(Deserialize)]
+        struct AssigneeRef {
+            id: String,
+            name: String,
+        }
 
         let query = r#"{
             viewer {
                 assignedIssues(
-                    filter: { state: { type: { nin: ["completed", "cancelled"] } } }
                     first: 100
                     orderBy: updatedAt
                 ) {
@@ -187,7 +196,8 @@ impl LinearClient {
                         state { name type }
                         priority priorityLabel
                         project { id name }
-                        dueDate url
+                        assignee { id name }
+                        dueDate updatedAt url
                     }
                 }
             }
@@ -210,7 +220,10 @@ impl LinearClient {
                 priority_label: n.priority_label,
                 project_id: n.project.as_ref().map(|p| p.id.clone()),
                 project_name: n.project.as_ref().map(|p| p.name.clone()),
+                assignee_id: n.assignee.as_ref().map(|a| a.id.clone()),
+                assignee_name: n.assignee.as_ref().map(|a| a.name.clone()),
                 due_date: n.due_date,
+                updated_at: n.updated_at,
                 url: n.url,
             })
             .collect())

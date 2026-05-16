@@ -403,6 +403,28 @@ fn revoked_restricted_rejection_is_green_for_each_channel() {
             "{channel} must keep safe redaction summary"
         );
     }
+
+    let telemetry = &fixture.expected.output["surfaces"]["telemetry"];
+    for forbidden in [
+        "source_id",
+        "source_ref",
+        "source_class",
+        "lifecycle_state",
+        "claim_text",
+        "entity_id",
+        "field_path",
+        "prompt_template_id",
+        "invocation_id",
+        "file_path",
+        "content_hash",
+    ] {
+        assert!(
+            telemetry.get(forbidden).is_none(),
+            "telemetry channel must not carry source-derived field `{forbidden}`"
+        );
+    }
+    assert_eq!(telemetry["source_derived_fields_present"], false);
+    assert_eq!(telemetry["raw_content_visible"], false);
 }
 
 #[test]

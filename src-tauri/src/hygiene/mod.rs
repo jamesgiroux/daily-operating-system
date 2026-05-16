@@ -517,6 +517,7 @@ pub(crate) mod tests_common {
             notifications: crate::types::NotificationConfig::default(),
             text_scale_percent: 100,
             surface_runtime: crate::types::SurfaceRuntimeConfig::default(),
+            telemetry: crate::types::TelemetryConfig::default(),
         }
     }
 }

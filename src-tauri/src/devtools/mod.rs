@@ -1095,17 +1095,17 @@ fn seed_linear_mock_data(db: &ActionDb) -> Result<(), String> {
     )).map_err(|e| format!("Linear projects: {e}"))?;
 
     conn.execute_batch(&format!(
-        "INSERT OR IGNORE INTO linear_issues (id, identifier, title, state_name, state_type, priority, priority_label, project_id, project_name, due_date, url, synced_at) VALUES
-         ('mock-li-1', 'DOS-101', 'Migrate CMS data to v2 schema', 'In Progress', 'started', 2, 'High', 'mock-lp-acme', 'Acme Phase 2 Migration', NULL, 'https://linear.app/dailyos/issue/DOS-101', '{now}'),
-         ('mock-li-2', 'DOS-102', 'Analytics dashboard integration', 'Todo', 'unstarted', 3, 'Normal', 'mock-lp-acme', 'Acme Phase 2 Migration', NULL, 'https://linear.app/dailyos/issue/DOS-102', '{now}'),
-         ('mock-li-3', 'DOS-103', 'SSO configuration for enterprise tier', 'Done', 'completed', 2, 'High', 'mock-lp-acme', 'Acme Phase 2 Migration', NULL, 'https://linear.app/dailyos/issue/DOS-103', '{now}'),
-         ('mock-li-4', 'DOS-104', 'Renewal pricing proposal review', 'In Progress', 'started', 1, 'Urgent', 'mock-lp-globex', 'Globex Renewal', NULL, 'https://linear.app/dailyos/issue/DOS-104', '{now}'),
-         ('mock-li-5', 'DOS-105', 'Executive stakeholder mapping', 'Todo', 'unstarted', 3, 'Normal', 'mock-lp-globex', 'Globex Renewal', NULL, 'https://linear.app/dailyos/issue/DOS-105', '{now}'),
-         ('mock-li-6', 'DOS-106', 'Contract terms negotiation', 'In Progress', 'started', 2, 'High', 'mock-lp-globex', 'Globex Renewal', NULL, 'https://linear.app/dailyos/issue/DOS-106', '{now}'),
-         ('mock-li-7', 'DOS-107', 'Performance audit: page load times', 'Backlog', 'backlog', 3, 'Normal', 'mock-lp-platform', 'Platform Hardening', NULL, 'https://linear.app/dailyos/issue/DOS-107', '{now}'),
-         ('mock-li-8', 'DOS-108', 'CDN migration for static assets', 'In Progress', 'started', 2, 'High', 'mock-lp-platform', 'Platform Hardening', NULL, 'https://linear.app/dailyos/issue/DOS-108', '{now}'),
-         ('mock-li-9', 'DOS-109', 'Security headers compliance', 'Done', 'completed', 1, 'Urgent', 'mock-lp-platform', 'Platform Hardening', NULL, 'https://linear.app/dailyos/issue/DOS-109', '{now}'),
-         ('mock-li-10', 'DOS-110', 'Database connection pooling', 'Todo', 'unstarted', 3, 'Normal', 'mock-lp-platform', 'Platform Hardening', NULL, 'https://linear.app/dailyos/issue/DOS-110', '{now}');"
+        "INSERT OR IGNORE INTO linear_issues (id, identifier, title, state_name, state_type, priority, priority_label, project_id, project_name, due_date, url, synced_at, linear_updated_at, assignee_id, assignee_name) VALUES
+         ('mock-li-1', 'DOS-101', 'Migrate CMS data to v2 schema', 'In Progress', 'started', 2, 'High', 'mock-lp-acme', 'Acme Phase 2 Migration', NULL, 'https://linear.app/dailyos/issue/DOS-101', '{now}', '{now}', 'mock-user-alex', 'Alex Example'),
+         ('mock-li-2', 'DOS-102', 'Analytics dashboard integration', 'Todo', 'unstarted', 3, 'Normal', 'mock-lp-acme', 'Acme Phase 2 Migration', NULL, 'https://linear.app/dailyos/issue/DOS-102', '{now}', '{now}', NULL, NULL),
+         ('mock-li-3', 'DOS-103', 'SSO configuration for enterprise tier', 'Done', 'completed', 2, 'High', 'mock-lp-acme', 'Acme Phase 2 Migration', NULL, 'https://linear.app/dailyos/issue/DOS-103', '{now}', '{now}', 'mock-user-blake', 'Blake Example'),
+         ('mock-li-4', 'DOS-104', 'Renewal pricing proposal review', 'In Progress', 'started', 1, 'Urgent', 'mock-lp-globex', 'Globex Renewal', NULL, 'https://linear.app/dailyos/issue/DOS-104', '{now}', '{now}', 'mock-user-alex', 'Alex Example'),
+         ('mock-li-5', 'DOS-105', 'Executive stakeholder mapping', 'Todo', 'unstarted', 3, 'Normal', 'mock-lp-globex', 'Globex Renewal', NULL, 'https://linear.app/dailyos/issue/DOS-105', '{now}', '{now}', NULL, NULL),
+         ('mock-li-6', 'DOS-106', 'Contract terms negotiation', 'In Progress', 'started', 2, 'High', 'mock-lp-globex', 'Globex Renewal', NULL, 'https://linear.app/dailyos/issue/DOS-106', '{now}', '{now}', 'mock-user-blake', 'Blake Example'),
+         ('mock-li-7', 'DOS-107', 'Performance audit: page load times', 'Backlog', 'backlog', 3, 'Normal', 'mock-lp-platform', 'Platform Hardening', NULL, 'https://linear.app/dailyos/issue/DOS-107', '{now}', '{now}', NULL, NULL),
+         ('mock-li-8', 'DOS-108', 'CDN migration for static assets', 'In Progress', 'started', 2, 'High', 'mock-lp-platform', 'Platform Hardening', NULL, 'https://linear.app/dailyos/issue/DOS-108', '{now}', '{now}', 'mock-user-alex', 'Alex Example'),
+         ('mock-li-9', 'DOS-109', 'Security headers compliance', 'Done', 'completed', 1, 'Urgent', 'mock-lp-platform', 'Platform Hardening', NULL, 'https://linear.app/dailyos/issue/DOS-109', '{now}', '{now}', 'mock-user-blake', 'Blake Example'),
+         ('mock-li-10', 'DOS-110', 'Database connection pooling', 'Todo', 'unstarted', 3, 'Normal', 'mock-lp-platform', 'Platform Hardening', NULL, 'https://linear.app/dailyos/issue/DOS-110', '{now}', '{now}', NULL, NULL);"
     )).map_err(|e| format!("Linear issues: {e}"))?;
 
     conn.execute_batch(

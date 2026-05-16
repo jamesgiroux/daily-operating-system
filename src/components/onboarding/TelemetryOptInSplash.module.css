@@ -1,0 +1,112 @@
+@import "../../styles/design-tokens.css";
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-lock);
+  display: grid;
+  place-items: center;
+  padding: var(--space-lg);
+  background: var(--color-desk-charcoal-25);
+  backdrop-filter: var(--backdrop-blur);
+}
+
+.panel {
+  width: min(560px, 100%);
+  padding: var(--space-lg);
+  border: 1px solid var(--color-rule-heavy);
+  border-radius: 8px;
+  background: var(--color-paper-warm-white);
+  box-shadow: var(--shadow-lg);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.turmericIcon {
+  color: var(--color-spice-turmeric);
+}
+
+.title {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-family: var(--font-serif);
+  font-size: 24px;
+  font-weight: 400;
+}
+
+.body {
+  margin: 0 0 14px;
+  color: var(--color-text-secondary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.points {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.point {
+  display: flex;
+  gap: 9px;
+}
+
+.pointIcon {
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+
+.olivePointIcon {
+  composes: pointIcon;
+  color: var(--color-garden-olive);
+}
+
+.terracottaPointIcon {
+  composes: pointIcon;
+  color: var(--color-spice-terracotta);
+}
+
+.pointText {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.button {
+  padding: var(--space-sm) 12px;
+  border-radius: 6px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.secondaryButton {
+  composes: button;
+  border: 1px solid var(--color-rule-heavy);
+  background: transparent;
+  color: var(--color-text-secondary);
+}
+
+.primaryButton {
+  composes: button;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--color-spice-turmeric);
+  background: var(--color-spice-turmeric);
+  color: var(--color-paper-warm-white);
+}

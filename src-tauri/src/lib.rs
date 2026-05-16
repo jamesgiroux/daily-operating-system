@@ -167,6 +167,12 @@ pub fn run() {
             // Create shared state
             let state = Arc::new(AppState::new());
             state.set_app_handle(app.handle().clone());
+            {
+                let telemetry = Arc::clone(&state.aggregate_telemetry);
+                tauri::async_runtime::spawn(async move {
+                    crate::observability::aggregate_metric::run_emission_loop(telemetry).await;
+                });
+            }
 
             // One-time filesystem hardening: permissions + Time Machine exclusion
             if let Some(home) = dirs::home_dir() {
@@ -675,6 +681,9 @@ pub fn run() {
             commands::revoke_surface_client_pairing,
             commands::get_config,
             commands::reload_configuration,
+            commands::get_aggregate_telemetry_status,
+            commands::set_aggregate_telemetry_enabled,
+            commands::dismiss_aggregate_telemetry_splash,
             commands::get_dashboard_data,
             commands::run_workflow,
             commands::get_workflow_status,
@@ -1054,6 +1063,7 @@ pub fn run() {
             commands::test_linear_connection,
             commands::start_linear_sync,
             commands::get_linear_recent_issues,
+            commands::get_linear_issues_for_entity,
             commands::get_linear_entity_links,
             commands::get_linear_projects,
             commands::create_linear_entity_link,
