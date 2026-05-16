@@ -20,7 +20,7 @@
 	const { __ } = wp.i18n;
 	const { registerBlockType } = wp.blocks;
 	const { InspectorControls, useBlockProps } = wp.blockEditor;
-	const { PanelBody, ComboboxControl, Button, Spinner, Notice } = wp.components;
+	const { PanelBody, ComboboxControl, TextControl, Button, Spinner, Notice } = wp.components;
 	const { useState, useEffect, useCallback } = wp.element;
 	const apiFetch = wp.apiFetch;
 
@@ -117,12 +117,24 @@
 				wp.element.createElement(
 					PanelBody,
 					{ title: __( 'Account', 'dailyos' ) },
-					wp.element.createElement( ComboboxControl, {
-						label: __( 'Account', 'dailyos' ),
+					// Account-list discovery is path-α (DOS-?). Until the
+					// runtime exposes a list endpoint, use a free-text
+					// input so editors can paste any account id without
+					// going through code-editor view.
+					wp.element.createElement( TextControl, {
+						label: __( 'Account ID', 'dailyos' ),
+						help: __( 'Account id from the DailyOS runtime (e.g. acme-corp).', 'dailyos' ),
 						value: attributes.account_id || '',
-						options: accounts,
 						onChange: onAccountChange,
 					} ),
+					accounts.length > 0
+						? wp.element.createElement( ComboboxControl, {
+								label: __( 'Or pick from list', 'dailyos' ),
+								value: attributes.account_id || '',
+								options: accounts,
+								onChange: onAccountChange,
+						  } )
+						: null,
 					wp.element.createElement(
 						Button,
 						{

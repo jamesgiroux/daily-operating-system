@@ -7,6 +7,8 @@ const ignoredWatchPaths = [
   path.join(__dirname, "src-tauri/**"),
   path.join(__dirname, ".worktrees/**"),
   path.join(__dirname, ".codex/worktrees/**"),
+  path.join(__dirname, ".claude/**"),
+  path.join(__dirname, ".claude"),
 ];
 
 // https://vitejs.dev/config/
