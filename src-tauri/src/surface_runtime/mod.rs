@@ -794,6 +794,10 @@ async fn signed_transport_response(
             );
         }
         Err(error) => {
+            log::warn!(
+                target: "dailyos_lib::surface_runtime",
+                "validate_signed_session db_write failed (request_id={request_id}): {error}"
+            );
             return error_response(
                 SurfaceHttpError::from_pairing_error(SurfacePairingError::Write(error))
                     .with_request_id(request_id),
@@ -2296,7 +2300,7 @@ fn is_safe_ability_name(value: &str) -> bool {
         && value.len() <= 128
         && value
             .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b':'))
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b':' | b'/'))
 }
 
 async fn bridge_surface_error_response(
