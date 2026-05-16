@@ -69,13 +69,13 @@ if ( ! function_exists( 'dailyos_account_overview_render' ) ) {
 			return dailyos_account_overview_render_verification_banner();
 		}
 
-		$delivered_state = function_exists( 'get_option' )
+		$delivered_state         = function_exists( 'get_option' )
 			? get_option( 'dailyos_composition_versions', [] )
 			: [];
 		$delivered_state_version = is_array( $delivered_state ) && isset( $delivered_state[ $composition_id ] )
 			? (int) $delivered_state[ $composition_id ]
 			: (int) ( $projection['composition_version'] ?? 0 );
-		$is_stale = $delivered_state_version > $composition_version;
+		$is_stale                = $delivered_state_version > $composition_version;
 
 		$wrapper_attrs = function_exists( 'get_block_wrapper_attributes' )
 			? get_block_wrapper_attributes(

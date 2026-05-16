@@ -371,7 +371,7 @@ final class DailyOS_Plugin {
 	 * @return array<string, mixed>|\WP_Error
 	 */
 	public function account_overview_preview( mixed $request ): array|\WP_Error {
-		$params = self::request_params( $request );
+		$params              = self::request_params( $request );
 		$composition_id      = isset( $params['composition_id'] ) ? (string) $params['composition_id'] : '';
 		$composition_version = isset( $params['composition_version'] ) ? (int) $params['composition_version'] : 0;
 		$cache_hint_token    = isset( $params['cache_hint_token'] ) && '' !== $params['cache_hint_token']
@@ -416,8 +416,8 @@ final class DailyOS_Plugin {
 		return array_merge(
 			$response,
 			[
-				'html'             => $html,
-				'attributes'       => $attributes,
+				'html'       => $html,
+				'attributes' => $attributes,
 			]
 		);
 	}

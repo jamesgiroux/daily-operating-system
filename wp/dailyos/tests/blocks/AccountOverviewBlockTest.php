@@ -76,7 +76,7 @@ final class DailyOS_AccountOverviewBlockTest extends TestCase {
 	public function test_render_emits_trust_band_data_attrs_per_design_system(): void {
 		$client = $this->fake_runtime_client_with_response(
 			[
-				'projection'      => [
+				'projection'       => [
 					'composition_id'      => 'dailyos/account-overview:account:acct-test-001',
 					'composition_version' => 1,
 					'blocks'              => [
@@ -220,7 +220,7 @@ final class DailyOS_AccountOverviewBlockTest extends TestCase {
 	 * Asserts block attributes omit scope and cache leak vectors.
 	 */
 	public function test_block_attributes_omit_scope_and_cache_leak_vectors(): void {
-		$block_json = json_decode(
+		$block_json      = json_decode(
 			(string) file_get_contents( __DIR__ . '/../../blocks/account-overview/block.json' ),
 			true
 		);
