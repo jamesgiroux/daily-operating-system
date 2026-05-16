@@ -17,9 +17,9 @@ use crate::abilities::read::resolve_owner::{
     resolution_to_columns, resolve_owner_with_mode, OwnerResolution, OwnerResolutionMode,
 };
 use crate::abilities::trust::{
-    compile_trust, CrossEntityCoherenceInput, FreshnessContext, SourceLifecycleState, SurfaceClass,
-    TargetFootprint, TrustBand, TrustConfig, TrustContext, TrustFactorInputs, TrustScore,
-    UserFeedbackSignal,
+    compile_trust, CrossEntityCoherenceInput, FreshnessContext, LinearIssueStateContext,
+    SourceLifecycleState, SurfaceClass, TargetFootprint, TrustBand, TrustConfig, TrustContext,
+    TrustFactorInputs, TrustScore, UserFeedbackSignal,
 };
 use crate::action_status::{BACKLOG, KIND_COMMITMENT, STARTED, UNSTARTED};
 use crate::db::{ActionDb, DbAction};
@@ -1720,6 +1720,7 @@ fn compute_commitment_trust(
             subject_fit_confidence: owner_confidence,
             internal_consistency: 1.0,
             source_lifecycle: SourceLifecycleState::Active,
+            linear_issue_state: LinearIssueStateContext::default(),
             read_state_indeterminate: false,
         },
         cross_entity: CrossEntityCoherenceInput {

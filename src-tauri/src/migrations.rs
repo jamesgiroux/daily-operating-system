@@ -906,7 +906,11 @@ const MIGRATIONS: &[Migration] = &[
     },
     Migration::Sql {
         version: 178,
-        sql: include_str!("migrations/178_dos_589_subscription_checkpoints.sql"),
+        sql: include_str!("migrations/178_dos_285_linear_issue_state.sql"),
+    },
+    Migration::Sql {
+        version: 179,
+        sql: include_str!("migrations/179_dos_589_subscription_checkpoints.sql"),
     },
 ];
 

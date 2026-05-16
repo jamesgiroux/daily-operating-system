@@ -1,8 +1,9 @@
 use chrono::{TimeZone, Utc};
 use dailyos_lib::abilities::provenance::SubjectRef;
 use dailyos_lib::abilities::trust::{
-    compile_trust, CrossEntityCoherenceInput, FreshnessContext, SourceLifecycleState,
-    TrustComputation, TrustConfig, TrustContext, TrustFactorInputs, UserFeedbackSignal,
+    compile_trust, CrossEntityCoherenceInput, FreshnessContext, LinearIssueStateContext,
+    SourceLifecycleState, TrustComputation, TrustConfig, TrustContext, TrustFactorInputs,
+    UserFeedbackSignal,
 };
 use dailyos_lib::db::claims::{
     ClaimSensitivity, ClaimState, ClaimVerificationState, IntelligenceClaim, SurfacingState,
@@ -306,6 +307,7 @@ fn cross_entity_coherence_factor(db: &ActionDb, claim_text: &str) -> f64 {
                 subject_fit_confidence: 1.0,
                 internal_consistency: 1.0,
                 source_lifecycle: SourceLifecycleState::Active,
+                linear_issue_state: LinearIssueStateContext::default(),
                 read_state_indeterminate: false,
             },
             cross_entity: CrossEntityCoherenceInput {

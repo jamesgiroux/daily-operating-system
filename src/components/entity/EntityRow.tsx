@@ -3,9 +3,10 @@ import { Link } from "@tanstack/react-router";
 import s from "./EntityRow.module.css";
 
 interface EntityRowProps {
-  to: string;
-  params: Record<string, string>;
-  dotColor: string;
+  to?: string;
+  params?: Record<string, string>;
+  href?: string | null;
+  dotColor?: string;
   name: string;
   showBorder: boolean;
   paddingLeft?: number;
@@ -22,6 +23,7 @@ interface EntityRowProps {
 export function EntityRow({
   to,
   params,
+  href,
   dotColor,
   name,
   showBorder,
@@ -31,23 +33,17 @@ export function EntityRow({
   children,
   avatar,
 }: EntityRowProps) {
-  return (
-    <Link
-      to={to}
-      params={params}
-      className={`${s.row} ${showBorder ? s.rowBorder : ""}`}
-      // Runtime hierarchy controls nested row indentation.
-      style={{
-        paddingLeft,
-      }}
-    >
+  const className = `${s.row} ${showBorder ? s.rowBorder : ""}`;
+  const rowStyle = { paddingLeft };
+  const content = (
+    <>
       {/* Avatar or accent dot */}
       {avatar ?? (
         <div
           className={s.dot}
           // Runtime entity type controls accent color.
           style={{
-            background: dotColor,
+            background: dotColor ?? "var(--color-text-tertiary)",
           }}
         />
       )}
@@ -73,6 +69,40 @@ export function EntityRow({
           {children}
         </div>
       )}
-    </Link>
+    </>
+  );
+
+  if (href) {
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        className={className}
+        style={rowStyle}
+      >
+        {content}
+      </a>
+    );
+  }
+
+  if (to) {
+    return (
+      <Link
+        to={to}
+        params={params ?? {}}
+        className={className}
+        // Runtime hierarchy controls nested row indentation.
+        style={rowStyle}
+      >
+        {content}
+      </Link>
+    );
+  }
+
+  return (
+    <div className={className} style={rowStyle}>
+      {content}
+    </div>
   );
 }

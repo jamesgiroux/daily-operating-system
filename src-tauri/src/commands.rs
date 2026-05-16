@@ -40,6 +40,7 @@ mod projects_data;
 mod sensitivity;
 mod success_plans;
 mod surface_runtime;
+mod telemetry;
 mod version_dispatcher;
 mod workspace;
 
@@ -55,6 +56,7 @@ pub use projects_data::*;
 pub use sensitivity::*;
 pub use success_plans::*;
 pub use surface_runtime::*;
+pub use telemetry::*;
 pub use version_dispatcher::*;
 pub use workspace::*;
 

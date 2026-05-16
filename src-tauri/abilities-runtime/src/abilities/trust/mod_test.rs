@@ -61,6 +61,7 @@ fn test_context() -> TrustContext {
             subject_fit_confidence: 1.0,
             internal_consistency: 1.0,
             source_lifecycle: SourceLifecycleState::Active,
+            linear_issue_state: LinearIssueStateContext::default(),
             read_state_indeterminate: false,
         },
         cross_entity: CrossEntityCoherenceInput {
@@ -115,6 +116,7 @@ fn zero_weights() -> TrustFactorWeights {
         internal_consistency: 0.0,
         cross_entity_coherence: 0.0,
         sensitivity_aware_filtering: 0.0,
+        linear_issue_state_weight: 0.0,
     }
 }
 
@@ -214,13 +216,17 @@ fn is_identifier_byte(byte: u8) -> bool {
 
 #[test]
 fn trust_geometric_mean_all_floor_05_returns_floor() {
-    let score = aggregate_geometric_mean(&factors(&[0.0; 10]), 0.05).unwrap();
+    let score =
+        aggregate_geometric_mean(&factors(&[0.0; super::factors::TRUST_FACTOR_COUNT]), 0.05)
+            .unwrap();
     assert_close(score, 0.05);
 }
 
 #[test]
 fn trust_geometric_mean_all_one_returns_one() {
-    let score = aggregate_geometric_mean(&factors(&[1.0; 10]), 0.05).unwrap();
+    let score =
+        aggregate_geometric_mean(&factors(&[1.0; super::factors::TRUST_FACTOR_COUNT]), 0.05)
+            .unwrap();
     assert_close(score, 1.0);
 }
 
@@ -276,7 +282,7 @@ fn trust_contradiction_present_downranks() {
 }
 
 #[test]
-fn trust_factor_count_is_ten_canonical_factors() {
+fn trust_factor_count_includes_linear_issue_state_weight() {
     let computation = compile_trust(&test_claim(), test_context()).unwrap();
     let names: Vec<&str> = computation
         .evidence
@@ -298,9 +304,14 @@ fn trust_factor_count_is_ten_canonical_factors() {
             "internal_consistency",
             "cross_entity_coherence",
             "sensitivity_aware_filtering",
+            "linear_issue_state_weight",
         ]
     );
-    assert_eq!(names.len(), 10, "trust factor count");
+    assert_eq!(
+        names.len(),
+        super::factors::TRUST_FACTOR_COUNT,
+        "trust factor count"
+    );
 }
 
 #[test]
@@ -664,6 +675,7 @@ fn trust_rejects_zero_positive_weight_denominator() {
         internal_consistency: 0.0,
         cross_entity_coherence: 0.0,
         sensitivity_aware_filtering: 0.0,
+        linear_issue_state_weight: 0.0,
     };
 
     assert!(matches!(
@@ -764,7 +776,7 @@ fn gate_caveat(computation: &TrustComputation) -> Option<&ConfidenceCaveat> {
 
 #[test]
 fn confidential_on_public_caps_at_needs_verification_under_default_weights() {
-    // Without a gate, geometric mean over 10 weight-1 factors with one 0.0
+    // Without a gate, geometric mean over equal-weight factors with one 0.0
     // (clamped to 0.05) is exp(ln(0.05)/10) ≈ 0.741, which is UseWithCaution.
     // The sensitivity gate must override that and force NeedsVerification.
     let mut claim = test_claim();

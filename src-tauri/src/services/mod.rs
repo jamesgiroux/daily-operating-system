@@ -26,6 +26,7 @@ pub mod integrations;
 pub mod intelligence;
 pub mod invalidation_jobs;
 pub mod linear;
+pub mod linear_issue_signals;
 pub mod meetings;
 pub mod mutations;
 pub mod people;

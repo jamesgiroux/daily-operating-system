@@ -29,9 +29,9 @@ pub use freshness_decay::{
 pub use types::{
     ConfidenceCaveat, ConfidenceEvidence, CorroboratorWeight, CrossEntityCoherenceInput,
     CrossEntityHit, CrossEntityHitKind, EntityFootprint, FactorEvidence, FreshnessContext,
-    SourceLifecycleState, SourceReliabilityInput, SurfaceClass, TargetFootprint, TrustBand,
-    TrustComputation, TrustContext, TrustFactorInputs, TrustGateKind, TrustScore,
-    UserFeedbackSignal,
+    LinearIssueStateContext, LinearIssueStateSignal, SourceLifecycleState, SourceReliabilityInput,
+    SurfaceClass, TargetFootprint, TrustBand, TrustComputation, TrustContext, TrustFactorInputs,
+    TrustGateKind, TrustScore, UserFeedbackSignal,
 };
 
 pub type ClaimRow = crate::types::IntelligenceClaim;

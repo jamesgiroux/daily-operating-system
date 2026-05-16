@@ -1761,6 +1761,31 @@ pub async fn get_linear_recent_issues(
     }).await
 }
 
+/// Get Linear issues linked to an account or project entity.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
+#[tauri::command]
+pub async fn get_linear_issues_for_entity(
+    entity_type: String,
+    entity_id: String,
+    actor_scope: Option<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<crate::services::linear::LinearEntityIssue>, String> {
+    let actor_scope = crate::services::linear::LinearActorScope::from_wire(actor_scope.as_deref());
+    state
+        .db_read(move |db| {
+            crate::services::linear::get_entity_linear_issues(
+                db,
+                &entity_type,
+                &entity_id,
+                actor_scope,
+            )
+        })
+        .await
+}
+
 /// Get all Linear entity links with project and entity names.
 #[allow(
     clippy::let_underscore_must_use,

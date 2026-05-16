@@ -19,6 +19,9 @@ pub(crate) const SECONDS_PER_DAY: f64 = 86_400.0;
 pub(crate) const SALESFORCE_FIELD_UPDATE_STALE_WEIGHT: f64 = 0.3;
 pub(crate) const AUTHORITATIVE_CONTRADICTION_MIN_WEIGHT: f64 = 0.8;
 pub(crate) const AUTHORITATIVE_CONFIRMING_RATIO: f64 = 0.5;
+pub(crate) const LINEAR_KNOWN_ATTRIBUTE_CHANGE_WEIGHT: f64 = 0.85;
+pub(crate) const LINEAR_UNCATEGORIZED_ISSUE_WEIGHT: f64 = 0.65;
+pub(crate) const LINEAR_SUBJECT_MISMATCH_WEIGHT: f64 = 0.50;
 
 /// Tunable Trust Compiler configuration.
 ///
@@ -68,6 +71,7 @@ pub struct TrustFactorWeights {
     pub internal_consistency: f64,
     pub cross_entity_coherence: f64,
     pub sensitivity_aware_filtering: f64,
+    pub linear_issue_state_weight: f64,
 }
 
 impl Default for TrustFactorWeights {
@@ -83,12 +87,13 @@ impl Default for TrustFactorWeights {
             internal_consistency: FACTOR_MAX,
             cross_entity_coherence: FACTOR_MAX,
             sensitivity_aware_filtering: FACTOR_MAX,
+            linear_issue_state_weight: FACTOR_MAX,
         }
     }
 }
 
 impl TrustFactorWeights {
-    pub const fn as_named_weights(self) -> [(&'static str, f64); 10] {
+    pub const fn as_named_weights(self) -> [(&'static str, f64); 11] {
         [
             ("source_reliability", self.source_reliability),
             ("source_lifecycle_weight", self.source_lifecycle_weight),
@@ -103,6 +108,7 @@ impl TrustFactorWeights {
                 "sensitivity_aware_filtering",
                 self.sensitivity_aware_filtering,
             ),
+            ("linear_issue_state_weight", self.linear_issue_state_weight),
         ]
     }
 }

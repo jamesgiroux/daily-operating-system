@@ -241,7 +241,7 @@ export function buildContextChapters(
  *
  * Section-id contract (verified in account-detail-utils.test.ts):
  *   commitments, suggestions, programs, [shared?], recently-landed,
- *   outputs, the-record, [files?].
+ *   outputs, the-record, [files?], linear-issues.
  *
  * Optional pills are only emitted when the page renders the matching section.
  * Otherwise the nav island creates dead anchors.
@@ -286,6 +286,7 @@ export function buildWorkChapters({
   if (hasFiles) {
     chapters.push({ id: "files", label: "Files", icon: React.createElement(FileText, { size: 18, strokeWidth: 1.5 }) });
   }
+  chapters.push({ id: "linear-issues", label: "Linear Issues", icon: React.createElement(CheckSquare2, { size: 18, strokeWidth: 1.5 }) });
   return chapters;
 }
 

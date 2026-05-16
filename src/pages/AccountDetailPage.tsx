@@ -54,6 +54,7 @@ import { ValueCommitments } from "@/components/entity/ValueCommitments";
 import { UnifiedTimeline } from "@/components/entity/UnifiedTimeline";
 import { AddToRecord } from "@/components/entity/AddToRecord";
 import { FileListSection } from "@/components/entity/FileListSection";
+import { LinearIssuesChapter } from "@/components/entity/LinearIssuesChapter";
 import { CommercialShape } from "@/components/context/CommercialShape";
 import { RelationshipFabric } from "@/components/context/RelationshipFabric";
 // View 3 — The Work (workbench, not todo list)
@@ -967,7 +968,10 @@ export default function AccountDetailPage() {
           </MarginSection>
         )}
 
-        <FinisMarker enrichedAt={intelligence?.enrichedAt} />
+        <LinearIssuesChapter
+          entityRef={{ kind: "account", id: detail.id }}
+          actorScope="user"
+        />
       </>
     );
   };
