@@ -427,8 +427,12 @@ final class DailyOS_Plugin {
 	 * the runtime's account index without surfacing PII beyond what the
 	 * runtime already exposes to a logged-in editor.
 	 *
-	 * @param mixed $request REST request.
+	 * @param mixed $request REST request (signature required by register_rest_route
+	 *     callback contract; this stub-mode endpoint returns the same empty list
+	 *     regardless of request payload — kept for the future search wiring).
 	 * @return array<int, array<string, string>>|\WP_Error
+	 *
+	 * @phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
 	 */
 	public function account_overview_accounts( mixed $request ): array|\WP_Error {
 		$client = $this->build_runtime_client_for_block();
