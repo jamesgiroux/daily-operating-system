@@ -427,6 +427,10 @@ pub struct AppState {
     app_handle: RwLock<Option<tauri::AppHandle>>,
     /// Runtime-owned loopback endpoint state for paired local surfaces.
     pub surface_runtime_endpoint: Arc<crate::surface_runtime::SurfaceEndpointState>,
+    /// W4-A composition render orchestrator. Owns the per-actor cache the
+    /// WordPress block surface consults via `/v1/surface/project-composition`.
+    pub composition_render_orchestrator:
+        Arc<crate::services::composition_render_orchestrator::CompositionRenderOrchestrator>,
 }
 
 /// Base signal keywords applicable to any role (generic, role-neutral).
@@ -905,6 +909,9 @@ impl AppState {
             surface_runtime_endpoint: Arc::new(
                 crate::surface_runtime::SurfaceEndpointState::default(),
             ),
+            composition_render_orchestrator: Arc::new(
+                crate::services::composition_render_orchestrator::CompositionRenderOrchestrator::new(),
+            ),
         }
     }
 
@@ -997,6 +1004,9 @@ impl AppState {
             app_handle: RwLock::new(None),
             surface_runtime_endpoint: Arc::new(
                 crate::surface_runtime::SurfaceEndpointState::default(),
+            ),
+            composition_render_orchestrator: Arc::new(
+                crate::services::composition_render_orchestrator::CompositionRenderOrchestrator::new(),
             ),
         }
     }

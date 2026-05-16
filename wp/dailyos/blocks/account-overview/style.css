@@ -1,0 +1,110 @@
+/*
+ * Account Overview block — editorial styling.
+ *
+ * Resolves to DailyOS theme tokens when the magazine theme is active;
+ * falls back to safe local variables under stock WordPress themes (AC
+ * §22 / §52 / §53).
+ */
+
+.wp-block-dailyos-account-overview {
+	--dailyos-paper: var( --color-paper, #fafaf7 );
+	--dailyos-ink: var( --color-ink, #1c1c1a );
+	--dailyos-rule: var( --color-rule, #e2e0d8 );
+	--dailyos-account: var( --color-account, #2a4a7f );
+	--dailyos-trust-likely-current: var( --color-trust-likely-current, #2a7f3b );
+	--dailyos-trust-use-with-caution: var( --color-trust-use-with-caution, #b06a1a );
+	--dailyos-trust-needs-verification: var( --color-trust-needs-verification, #a93131 );
+
+	background: var( --dailyos-paper );
+	color: var( --dailyos-ink );
+	padding: 1.5rem;
+	max-width: 48rem;
+	font-family: var( --font-serif, Georgia, serif );
+	line-height: 1.6;
+}
+
+.wp-block-dailyos-account-overview.is-empty {
+	color: var( --dailyos-ink );
+	opacity: 0.7;
+	font-style: italic;
+}
+
+.dailyos-block {
+	margin: 1.25rem 0;
+	border-top: 1px solid var( --dailyos-rule );
+	padding-top: 1rem;
+}
+
+.dailyos-block header {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 0.75rem;
+	margin-bottom: 0.5rem;
+}
+
+.dailyos-block h3 {
+	font-size: 1.1rem;
+	margin: 0;
+	color: var( --dailyos-account );
+}
+
+[ data-ds-name = "TrustBandBadge" ] {
+	font-size: 0.75rem;
+	letter-spacing: 0.04em;
+	padding: 0.1rem 0.5rem;
+	border-radius: 0.25rem;
+	background: rgba( 0, 0, 0, 0.04 );
+}
+
+[ data-ds-name = "TrustBandBadge" ][ data-ds-trust-band = "likely_current" ] {
+	color: var( --dailyos-trust-likely-current );
+}
+
+[ data-ds-name = "TrustBandBadge" ][ data-ds-trust-band = "use_with_caution" ] {
+	color: var( --dailyos-trust-use-with-caution );
+}
+
+[ data-ds-name = "TrustBandBadge" ][ data-ds-trust-band = "needs_verification" ] {
+	color: var( --dailyos-trust-needs-verification );
+}
+
+.dailyos-stale-banner,
+.dailyos-verification-banner {
+	border-top: 1px solid var( --dailyos-rule );
+	padding-top: 0.5rem;
+	margin-top: 0.5rem;
+	font-size: 0.85rem;
+}
+
+.dailyos-stale-banner::before {
+	content: "Refresh";
+	display: block;
+	font-size: 0.7rem;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var( --dailyos-account );
+	margin-bottom: 0.25rem;
+}
+
+.dailyos-verification-banner::before {
+	content: "Verify";
+	display: block;
+	font-size: 0.7rem;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var( --dailyos-trust-needs-verification );
+	margin-bottom: 0.25rem;
+}
+
+.dailyos-empty {
+	font-style: italic;
+	opacity: 0.7;
+}
+
+.dailyos-finis-marker {
+	border: none;
+	border-top: 1px solid var( --dailyos-rule );
+	width: 30%;
+	margin: 2rem auto 0;
+}

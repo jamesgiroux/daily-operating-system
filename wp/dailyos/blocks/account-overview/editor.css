@@ -1,0 +1,14 @@
+/*
+ * Editor chrome for the Account Overview block. Magazine shell is NOT
+ * embedded inside the Gutenberg canvas (§6.9 V2 NEW); the editor view
+ * shows only the projected block content plus an inspector control.
+ */
+
+.wp-block-dailyos-account-overview .components-spinner {
+	display: block;
+	margin: 1rem auto;
+}
+
+.wp-block-dailyos-account-overview .components-notice {
+	margin: 0.5rem 0;
+}

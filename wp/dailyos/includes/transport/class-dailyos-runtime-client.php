@@ -98,6 +98,45 @@ final class DailyOS_Runtime_Client {
 		return $this->signed_post( '/v1/surface/invoke', $body_bytes );
 	}
 
+
+	/**
+	 * Request a scope-filtered projected composition for a WordPress render.
+	 *
+	 * Calls POST /v1/surface/project-composition. The substrate side
+	 * orchestrates: cache lookup → producer ability invocation → W4-D
+	 * projection → cache store → response. The block surface receives only
+	 * the scope-filtered ProjectedComposition DTO plus an opaque
+	 * cache_hint_token (advisory; never interpreted by PHP).
+	 *
+	 * @param string      $composition_id      Composition identifier (UUID/string from block attribute).
+	 * @param int         $composition_version Expected composition version watermark.
+	 * @param string|null $cache_hint_token    Opaque runtime cache hint from a prior render.
+	 * @return array<string, mixed>|\WP_Error Response envelope with `projection`, `cache_hint_token`, `served_from_cache`.
+	 */
+	public function project_composition_for_surface(
+		string $composition_id,
+		int $composition_version,
+		?string $cache_hint_token = null
+	): array|\WP_Error {
+		$payload = [
+			'composition_id'      => $composition_id,
+			'composition_version' => $composition_version,
+		];
+		if ( null !== $cache_hint_token && '' !== $cache_hint_token ) {
+			$payload['cache_hint_token'] = $cache_hint_token;
+		}
+
+		$body_bytes = $this->encode_json( $payload );
+		if ( null === $body_bytes ) {
+			return $this->error_response(
+				'json_encode_failed',
+				'DailyOS project_composition request could not be encoded.'
+			);
+		}
+
+		return $this->signed_post( '/v1/surface/project-composition', $body_bytes );
+	}
+
 	/**
 	 * Submit feedback for a runtime surface claim.
 	 *
@@ -165,6 +204,7 @@ final class DailyOS_Runtime_Client {
 	public function get_session_nonce( array $payload = [] ): array|\WP_Error {
 		return $this->issue_nonce( $payload );
 	}
+
 
 	/**
 	 * Send an HMAC-signed JSON POST request.
