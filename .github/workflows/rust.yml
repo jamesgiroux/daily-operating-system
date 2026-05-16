@@ -23,7 +23,7 @@ on:
       - 'Cargo.toml'
       - 'Cargo.lock'
       - '.github/workflows/rust.yml'
-      - '.github/workflows/test.yml'
+      - '.github/workflows/lint-frontend.yml'
 
 concurrency:
   group: rust-${{ github.workflow }}-${{ github.ref }}

@@ -36,7 +36,7 @@ Bypass with `--no-verify` is available but defeats the point — use only with e
 |---|---|
 | `workflows/l2-review.yml` | Fires on PR open/sync vs dev. Runs **config-fence** (self-modification trust boundary) + **validate-pr-template** (security_auditor_invoked field check) + **l2-summary** (aggregator). No reviewer panel — that runs locally. |
 | `workflows/l3-review.yml` | Fires on PR open/sync vs main. Runs the codex/architect panel + Suite S/P/E against the release bundle. |
-| `workflows/test.yml` | The base `test` workflow (clippy, cargo test, pnpm test, etc.) — unchanged by this scaffolding. |
+| `workflows/lint-frontend.yml` | `Lint & Frontend` workflow — Linux fast-dev gate: TS type-check, ESLint, Stylelint, ~15 guard scripts (service-layer boundary, write-fence usage, ability surface drift, prompt fingerprint boundary, composition authorship, etc.), OAuth secret scan, reference fidelity audit, and `pnpm test`. Rust runs in `rust.yml` on macOS, main-branch-only. |
 | `actions/l3-reviewer-job/` | Composite action for L3 panel slots. |
 | `scripts/check-config-fence.sh` | Trust-boundary check used by L2's fence. |
 | `scripts/configure-branch-protection.sh` | One-time branch-protection setup. |
