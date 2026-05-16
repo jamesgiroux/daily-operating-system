@@ -51,9 +51,9 @@ W8 (DOS-505 eval harness/benchmark) is an independent workstream — release-blo
 | 4 | W1 signal load-test gate | ✅ | `tests/dos237_load_test.rs` |
 | 5 | Trust shadow ≥50 events × 3 bands | 🟡 Amendment 1 | Real distribution 4489/1/0; routed to v1.4.2 spike per `.docs/plans/v1.4.1-waves-amendments.md` Amendment 1 |
 | 6 | clippy + cargo test + tsc green | ✅ | tsc green at 58fdca7c; cargo clippy/test from W7 CI |
-| 7 | `pnpm release-gate -- --mode hermetic` exits 0 | ❌ GAP | DOS-645 (urgent) — hermetic exits 2; harness-report.json flow + bundle 14-18 invariant evaluators not wired |
-| 8 | MCP-bridge re-test for 3 W5 capabilities | 🟡 PENDING | DOS-220/221/222 wire green at unit level; standalone re-test artifact not captured yet |
-| 9 | W8/DOS-505 stop-check recorded | ❌ GAP | Decision pending (release-blocking subset = DOS-503 + DOS-348 + DOS-261 or L6 routing) |
+| 7 | `pnpm release-gate -- --mode hermetic` exits 0 | ✅ | Resolved via DOS-645 commit `8099b5c9` — 8/8 mandatory bundles Pass, 11/11 invariants Pass |
+| 8 | MCP-bridge re-test for 3 W5 capabilities | ✅ | `.docs/proofs/v1.4.1/W5-mcp-bridge-retest.md` captures 46/46 tests green |
+| 9 | W8/DOS-505 stop-check recorded | ✅ | §709 release-blocking subset SATISFIED in dev (2026-05-16). Evidence: `pnpm wave8:smoke` exit 0, `pnpm eval:abilities --mode smoke` exit 0, `bash scripts/suite-p.sh --mode smoke` exit 0; all three emit valid Evaluation Evidence Records under `src-tauri/target/evidence/`. Stop-check decision posted on DOS-505 comment `613d568f-1467-421e-a312-a7a45b36893e`. |
 | 10 | Dogfood ≥20 real-dev meetings | ❌ GAP | Not captured |
 | 11 | Proof bundle written | 🟢 This doc | — |
 | 12 | Tag v1.4.1 on trunk after dev merge | ❌ Gated | Version files at 1.2.1; CHANGELOG no v1.4.1 entry; `dev → trunk` not merged; tag pending user release-checklist + UI validation per `feedback_no_auto_tag_without_user_validation` |
@@ -74,7 +74,8 @@ All filed to maintenance project `b8e6aea4-d47e-4f3a-b03d-a05bec914aeb`:
 | DOS-642 | W7 L2 | Low | W7-E in-memory buffer UX clarification |
 | DOS-643 | W6+W7 L3 | Medium | ADR-0108 RenderPolicyChannel registry centralization |
 | DOS-644 | L5 | Urgent → **closed via `93bcbebf`** | Bundle 1-13 fixture schema drift (claim_version/canonical_status/non_semantic_mergeable) — sweep complete |
-| DOS-645 | L5 | **Urgent** | Release-gate hermetic mode bundles 14-18 invariant wiring + harness-report flow |
+| DOS-645 | L5 | Urgent → **closed via `8099b5c9`** | Release-gate hermetic exits 0; bundles 14-18 invariant evaluators wired; harness pipeline integrated |
+| DOS-648 | v1.4.2 dev | High | Linear projects picker typeahead search (blocks linking actions to per-entity Linear projects in large orgs) |
 
 ---
 
@@ -100,17 +101,23 @@ ADR contracts preserved end-to-end across W3+W5+W6+W7 integrated state:
 ## Remaining release-tag gates
 
 Before `v1.4.1` tag:
-1. **DOS-645** resolved → `pnpm release-gate -- --mode hermetic` exits 0
-2. MCP-bridge re-test artifact for DOS-220/221/222 captured
-3. W8 DOS-505 stop/check decision recorded (release-blocking subset accepted or L6 routing)
-4. Manual dogfood evidence ≥20 real-dev meetings captured
-5. DoD §705 trust-band reconciliation (release-notes language describing Amendment 1 override OR amend §705 text)
-6. Version files bumped (`package.json`, `tauri.conf.json`, `Cargo.toml` to `1.4.1`)
-7. CHANGELOG entry for v1.4.1
-8. `dev → trunk` merge
-9. User release-checklist + hands-on UI validation (per `feedback_no_auto_tag_without_user_validation`)
-10. L4 surface QA on entity Linear chapter + telemetry splash + Privacy panel (`/qa`)
-11. Tag `v1.4.1` on `trunk`
+1. ~~DOS-645~~ ✅ resolved (`8099b5c9`)
+2. ~~MCP-bridge re-test artifact~~ ✅ captured
+3. ~~W8 DOS-505 stop/check decision~~ ✅ recorded on DOS-505 comment `613d568f` — release-blocking subset complete in dev
+4. ~~DoD §705 trust-band reconciliation~~ ✅ amended at `0ab1a213`
+5. ~~Version files bumped~~ ✅ at `0ab1a213` (`1.4.1` across all three)
+6. ~~CHANGELOG entry~~ ✅ at `0ab1a213`
+7. **Manual dogfood evidence ≥20 real-dev meetings** — pending user
+8. **L4 surface QA on entity Linear chapter + telemetry splash + Privacy panel** — pending user
+9. **User release-checklist + hands-on UI validation** (per `feedback_no_auto_tag_without_user_validation`) — pending user
+10. **`dev → trunk` merge** — pending user
+11. **Tag `v1.4.1` on `trunk`** — pending user
+
+Substrate work complete. Remaining items are real-usage validation + the release-cut lane that requires the user's hands on the running app.
+
+## First substrate consumer landed
+
+v1.4.1 ships with one real consumer of the W3 trust scoring substrate: `ActionRow` renders `<TrustBandIndicator>` next to action titles when `trust_band` is set on the underlying claim (commit `ca124e2a`). Cascades to TheWork chapter (entity pages), MeetingDetailPage, and ActionsPage. Use-with-caution + needs-verification bands appear as tooltip chips; likely-current stays clean by design.
 
 ---
 
