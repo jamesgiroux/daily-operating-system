@@ -406,3 +406,6 @@ get_linear_issues_for_entity
 get_aggregate_telemetry_status
 set_aggregate_telemetry_enabled
 dismiss_aggregate_telemetry_splash
+# W4-B-signals dispatcher: packet V3 §13.5 / devex P2-2 mandated Tauri ipc::Channel entrypoints, not capability-level operations, so they do not go through invoke_ability.
+version_dispatcher_replay
+version_dispatcher_subscribe
