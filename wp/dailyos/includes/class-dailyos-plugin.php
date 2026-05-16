@@ -431,10 +431,9 @@ final class DailyOS_Plugin {
 	 *     callback contract; this stub-mode endpoint returns the same empty list
 	 *     regardless of request payload — kept for the future search wiring).
 	 * @return array<int, array<string, string>>|\WP_Error
-	 *
-	 * @phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
 	 */
 	public function account_overview_accounts( mixed $request ): array|\WP_Error {
+		unset( $request ); // Intentionally unused — stub returns empty list until account search ships.
 		$client = $this->build_runtime_client_for_block();
 		if ( $client instanceof \WP_Error ) {
 			return $client;
