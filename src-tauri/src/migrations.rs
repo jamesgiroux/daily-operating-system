@@ -20,6 +20,7 @@ mod v166_semantic_merge_safety;
 mod v167_structured_claim_canonicalization;
 mod v170_canonicalization_cutover;
 mod v172_dos_567_w4b_versions_and_outbox;
+mod v178_dos_285_linear_issue_state;
 
 type MigrationError = String;
 
@@ -904,9 +905,9 @@ const MIGRATIONS: &[Migration] = &[
         version: 177,
         apply: migrate_v177_w4c_projection_signing_cycle2,
     },
-    Migration::Sql {
+    Migration::Fn {
         version: 178,
-        sql: include_str!("migrations/178_dos_285_linear_issue_state.sql"),
+        apply: v178_dos_285_linear_issue_state::migrate_v178,
     },
     Migration::Sql {
         version: 179,

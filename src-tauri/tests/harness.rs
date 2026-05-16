@@ -45,7 +45,9 @@ fn loader_loads_all_committed_bundles() {
     let discovered: Vec<FixtureRef> =
         discover_fixtures(&[root.as_path()]).expect("fixture discovery succeeds");
 
-    let expected = BTreeSet::from([1_u32, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
+    let expected = BTreeSet::from([
+        1_u32, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+    ]);
     let mut seen = BTreeSet::new();
 
     for fixture_ref in discovered {

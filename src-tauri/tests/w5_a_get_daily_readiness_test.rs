@@ -776,6 +776,7 @@ fn prepare_snapshot(meeting: &DailyReadinessMeetingSnapshot) -> PrepareMeetingCo
             display_name: meeting.title.clone(),
         }],
         claims: Vec::new(),
+        linear_issue_changes: Vec::new(),
     }
 }
 

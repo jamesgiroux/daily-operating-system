@@ -5,8 +5,8 @@ use dailyos_lib::abilities::feedback::ClaimVerificationState;
 use dailyos_lib::abilities::provenance::SubjectRef;
 use dailyos_lib::abilities::trust::{
     compile_trust, CorroboratorWeight, CrossEntityCoherenceInput, FreshnessContext,
-    SourceLifecycleState, SurfaceClass, TargetFootprint, TrustBand, TrustConfig, TrustContext,
-    TrustFactorInputs, TrustScore, UserFeedbackSignal,
+    LinearIssueStateContext, SourceLifecycleState, SurfaceClass, TargetFootprint, TrustBand,
+    TrustConfig, TrustContext, TrustFactorInputs, TrustScore, UserFeedbackSignal,
 };
 use dailyos_lib::db::ActionDb;
 use rusqlite::Connection;
@@ -104,6 +104,7 @@ pub fn baseline_trust_inputs() -> TrustFactorInputs {
         subject_fit_confidence: 1.0,
         internal_consistency: 1.0,
         source_lifecycle: SourceLifecycleState::Active,
+        linear_issue_state: LinearIssueStateContext::default(),
         read_state_indeterminate: false,
     }
 }

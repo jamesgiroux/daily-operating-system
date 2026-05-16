@@ -69,6 +69,79 @@ const DOS288_OUTPUT_CAPTURE_CAP_BYTES: usize = 64 * 1024;
 const DOS288_OUTPUT_CAPTURE_EDGE_BYTES: usize = DOS288_OUTPUT_CAPTURE_CAP_BYTES / 2;
 const DOS288_SELECTOR_TIMEOUT_SUMMARY: &str = "dos288-selector-timeout-exceeded";
 
+const SUBSTRATE_ONLY_BUNDLES: &[&str] = &[
+    "bundle-14",
+    "bundle-15",
+    "bundle-16",
+    "bundle-17",
+    "bundle-18",
+];
+
+const BUNDLE_INVARIANT_SPECS: &[BundleInvariantSpec] = &[
+    BundleInvariantSpec {
+        id: "bundle-1.get_entity_context_parity_subject_ownership_no_bleed",
+        bundle: "bundle-1",
+        surface: "get_entity_context",
+        evaluator: BundleInvariantEvaluator::HarnessReport,
+    },
+    BundleInvariantSpec {
+        id: "bundle-5.prepare_meeting_correction_tombstone_no_resurrection",
+        bundle: "bundle-5",
+        surface: "prepare_meeting",
+        evaluator: BundleInvariantEvaluator::HarnessReport,
+    },
+    BundleInvariantSpec {
+        id: "bundle-13.prepare_meeting_subject_bleed_rejection",
+        bundle: "bundle-13",
+        surface: "prepare_meeting",
+        evaluator: BundleInvariantEvaluator::HarnessReport,
+    },
+    BundleInvariantSpec {
+        id: "bundle-14.stale_current_contradiction_rejection",
+        bundle: "bundle-14",
+        surface: "prepare_meeting",
+        evaluator: BundleInvariantEvaluator::FixtureContract,
+    },
+    BundleInvariantSpec {
+        id: "bundle-15.cross_surface_current_state_consistency",
+        bundle: "bundle-15",
+        surface: "get_entity_context",
+        evaluator: BundleInvariantEvaluator::FixtureContract,
+    },
+    BundleInvariantSpec {
+        id: "bundle-16.ambiguous_identity_primary_context_selection",
+        bundle: "bundle-16",
+        surface: "prepare_meeting",
+        evaluator: BundleInvariantEvaluator::FixtureContract,
+    },
+    BundleInvariantSpec {
+        id: "bundle-17.source_lifecycle_actor_provenance_policy",
+        bundle: "bundle-17",
+        surface: "mcp_responses",
+        evaluator: BundleInvariantEvaluator::FixtureContract,
+    },
+    BundleInvariantSpec {
+        id: "bundle-18.sync_refresh_concurrency_partial_failure",
+        bundle: "bundle-18",
+        surface: "prepare_meeting",
+        evaluator: BundleInvariantEvaluator::FixtureContract,
+    },
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct BundleInvariantSpec {
+    id: &'static str,
+    bundle: &'static str,
+    surface: &'static str,
+    evaluator: BundleInvariantEvaluator,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BundleInvariantEvaluator {
+    HarnessReport,
+    FixtureContract,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ValueEnum)]
 #[serde(rename_all = "snake_case")]
 pub enum GateMode {
@@ -569,7 +642,7 @@ fn build_hermetic_evidence(config: &GateConfig) -> Result<GateEvidenceV1, GateEr
     suites.extend(dos288_suite_results(config, &binding));
 
     let mut invariants = Vec::new();
-    invariants.extend(bundle_invariants(report.as_ref(), config));
+    invariants.extend(bundle_invariants(report.as_ref(), config, &loader));
     invariants.push(provenance_source_coverage_invariant(
         report.as_ref(),
         config,
@@ -720,13 +793,29 @@ fn harness_report_for_config(
         return Ok((report, "harness_report".to_string()));
     }
 
+    let harness_bundle_filters = harness_report_bundle_filters(&config.bundle_filters);
+    let report_path = GateConfig::default_harness_report_path();
+    if harness_bundle_filters.is_empty() {
+        let mut report = HarnessReport::new();
+        report.finalize();
+        report.git_sha = binding.git_sha.clone();
+        report.fixtures_hash = binding.fixtures_hash.clone();
+        report.write_json(&report_path).map_err(|error| {
+            GateError::infra(format!(
+                "failed to bind harness report {}: {error}",
+                report_path.display()
+            ))
+        })?;
+        return Ok((report, "in_process_harness".to_string()));
+    }
+
     let fixture_refs = loader
-        .fixtures_for_bundle_names(&config.bundle_filters)
+        .fixtures_for_bundle_names(&harness_bundle_filters)
         .map_err(|error| GateError::infra(format!("fixture discovery failed: {error}")))?;
     if fixture_refs.is_empty() {
         return Err(GateError::infra(format!(
             "no fixtures matched bundles {}",
-            config.bundle_filters.join(",")
+            harness_bundle_filters.join(",")
         )));
     }
 
@@ -736,7 +825,6 @@ fn harness_report_for_config(
     let deps = RunnerDeps {
         registry: Arc::new(registry),
     };
-    let report_path = GateConfig::default_harness_report_path();
     let mut report = run_harness_suite(&deps, &fixture_refs, &report_path)
         .map_err(|error| GateError::infra(format!("harness run failed: {error}")))?;
     report.git_sha = binding.git_sha.clone();
@@ -755,6 +843,7 @@ fn bundle_suites_from_report(report: &HarnessReport, config: &GateConfig) -> Vec
         .mandatory_bundles
         .iter()
         .chain(config.tracked_bundles.iter())
+        .filter(|bundle| harness_report_includes_bundle(bundle))
         .filter_map(|bundle| {
             let bundle_number = bundle_number(bundle)?;
             let run = report.bundle_coverage.bundles_run.contains(&bundle_number);
@@ -788,57 +877,133 @@ fn bundle_suites_from_report(report: &HarnessReport, config: &GateConfig) -> Vec
         .collect()
 }
 
-fn bundle_invariants(report: Option<&HarnessReport>, config: &GateConfig) -> Vec<InvariantResult> {
-    [
-        (
-            "bundle-1.get_entity_context_parity_subject_ownership_no_bleed",
-            "bundle-1",
-            "get_entity_context",
-        ),
-        (
-            "bundle-5.prepare_meeting_correction_tombstone_no_resurrection",
-            "bundle-5",
-            "prepare_meeting",
-        ),
-        (
-            "bundle-13.prepare_meeting_subject_bleed_rejection",
-            "bundle-13",
-            "prepare_meeting",
-        ),
-    ]
-    .into_iter()
-    .map(|(id, bundle, surface)| {
-        let mandatory = config
-            .mandatory_bundles
-            .iter()
-            .any(|candidate| candidate == bundle);
-        let (status, failure_summary) =
-            match report.map(|report| bundle_report_status(report, bundle, mandatory)) {
-                Some(GateStatus::Pass) => (GateStatus::Pass, None),
-                Some(GateStatus::Fail) => (
-                    GateStatus::Fail,
-                    Some(redacted_summary("mandatory_bundle_failed", bundle)),
-                ),
-                Some(GateStatus::InfraFailure) | None => (
-                    GateStatus::InfraFailure,
-                    Some(redacted_summary("mandatory_bundle_missing", bundle)),
-                ),
-                Some(GateStatus::Skipped) => (
-                    GateStatus::InfraFailure,
-                    Some(redacted_summary("mandatory_bundle_skipped", bundle)),
-                ),
-            };
-        InvariantResult {
-            id: id.to_string(),
-            bundle: Some(bundle.to_string()),
-            surface: surface.to_string(),
-            status,
-            mandatory,
-            evidence_ref: "target/eval/harness-report.json".to_string(),
-            failure_summary,
-        }
-    })
-    .collect()
+fn bundle_invariants(
+    report: Option<&HarnessReport>,
+    config: &GateConfig,
+    loader: &BundleLoader,
+) -> Vec<InvariantResult> {
+    BUNDLE_INVARIANT_SPECS
+        .iter()
+        .map(|spec| match spec.evaluator {
+            BundleInvariantEvaluator::HarnessReport => {
+                harness_report_bundle_invariant(*spec, report, config)
+            }
+            BundleInvariantEvaluator::FixtureContract => {
+                fixture_contract_bundle_invariant(*spec, config, loader)
+            }
+        })
+        .collect()
+}
+
+fn harness_report_bundle_invariant(
+    spec: BundleInvariantSpec,
+    report: Option<&HarnessReport>,
+    config: &GateConfig,
+) -> InvariantResult {
+    let mandatory = bundle_is_mandatory(config, spec.bundle);
+    let (status, failure_summary) =
+        match report.map(|report| bundle_report_status(report, spec.bundle, mandatory)) {
+            Some(GateStatus::Pass) => (GateStatus::Pass, None),
+            Some(GateStatus::Fail) => (
+                GateStatus::Fail,
+                Some(redacted_summary("mandatory_bundle_failed", spec.bundle)),
+            ),
+            Some(GateStatus::InfraFailure) | None => (
+                GateStatus::InfraFailure,
+                Some(redacted_summary("mandatory_bundle_missing", spec.bundle)),
+            ),
+            Some(GateStatus::Skipped) => (
+                GateStatus::InfraFailure,
+                Some(redacted_summary("mandatory_bundle_skipped", spec.bundle)),
+            ),
+        };
+
+    InvariantResult {
+        id: spec.id.to_string(),
+        bundle: Some(spec.bundle.to_string()),
+        surface: spec.surface.to_string(),
+        status,
+        mandatory,
+        evidence_ref: "target/eval/harness-report.json".to_string(),
+        failure_summary,
+    }
+}
+
+fn fixture_contract_bundle_invariant(
+    spec: BundleInvariantSpec,
+    config: &GateConfig,
+    loader: &BundleLoader,
+) -> InvariantResult {
+    let mandatory = bundle_is_mandatory(config, spec.bundle);
+    let failure_summary = validate_fixture_contract(spec, loader)
+        .err()
+        .map(|error| redacted_summary("bundle_fixture_contract", &error));
+
+    InvariantResult {
+        id: spec.id.to_string(),
+        bundle: Some(spec.bundle.to_string()),
+        surface: spec.surface.to_string(),
+        status: if failure_summary.is_some() {
+            GateStatus::InfraFailure
+        } else {
+            GateStatus::Pass
+        },
+        mandatory,
+        evidence_ref: format!("src-tauri/tests/fixtures/{}/metadata.json", spec.bundle),
+        failure_summary,
+    }
+}
+
+fn validate_fixture_contract(
+    spec: BundleInvariantSpec,
+    loader: &BundleLoader,
+) -> Result<(), String> {
+    let expected_bundle_number =
+        bundle_number(spec.bundle).ok_or_else(|| format!("invalid bundle name {}", spec.bundle))?;
+    let refs = loader
+        .fixtures_for_bundle_names(&[spec.bundle.to_string()])
+        .map_err(|error| error.to_string())?;
+    let fixture_ref = refs
+        .first()
+        .ok_or_else(|| format!("missing fixture {}", spec.bundle))?;
+    let fixture = crate::harness::load_fixture(&fixture_ref.fixture_dir)
+        .map_err(|error| error.to_string())?;
+
+    if fixture.metadata.bundle != Some(expected_bundle_number) {
+        return Err(format!("metadata bundle mismatch for {}", spec.bundle));
+    }
+    if !fixture
+        .metadata
+        .surfaces_exercised
+        .iter()
+        .any(|surface| surface == spec.surface)
+    {
+        return Err(format!(
+            "fixture {} does not exercise {}",
+            spec.bundle, spec.surface
+        ));
+    }
+    if fixture.metadata.source_lifecycle_refs.is_empty() {
+        return Err(format!(
+            "fixture {} has no source lifecycle refs",
+            spec.bundle
+        ));
+    }
+    if fixture.expected.state.is_none() {
+        return Err(format!(
+            "fixture {} has no expected_state.json",
+            spec.bundle
+        ));
+    }
+
+    Ok(())
+}
+
+fn bundle_is_mandatory(config: &GateConfig, bundle: &str) -> bool {
+    config
+        .mandatory_bundles
+        .iter()
+        .any(|candidate| candidate == bundle)
 }
 
 fn provenance_source_coverage_invariant(
@@ -1582,12 +1747,24 @@ fn normalize_bundle_name(value: &str) -> Result<String, GateError> {
     let parsed = number
         .parse::<u32>()
         .map_err(|_| GateError::config(format!("bundle number must be numeric; got `{value}`")))?;
-    if !(1..=13).contains(&parsed) {
+    if !(1..=18).contains(&parsed) {
         return Err(GateError::config(format!(
-            "bundle number must be in 1..=13; got `{value}`"
+            "bundle number must be in 1..=18; got `{value}`"
         )));
     }
     Ok(format!("bundle-{parsed}"))
+}
+
+fn harness_report_bundle_filters(bundle_filters: &[String]) -> Vec<String> {
+    bundle_filters
+        .iter()
+        .filter(|bundle| harness_report_includes_bundle(bundle))
+        .cloned()
+        .collect()
+}
+
+fn harness_report_includes_bundle(bundle: &str) -> bool {
+    !SUBSTRATE_ONLY_BUNDLES.contains(&bundle)
 }
 
 fn bundle_number(value: &str) -> Option<u32> {
@@ -1767,6 +1944,31 @@ mod tests {
                 .unwrap();
 
         assert_eq!(config.mode, GateMode::Hermetic);
+    }
+
+    #[test]
+    fn release_gate_cli_accepts_validation_bundle_filters() {
+        let config =
+            parse_cli_from(["release-gate", "--bundle", "bundle-18"].map(OsString::from)).unwrap();
+
+        assert_eq!(config.bundle_filters, vec!["bundle-18".to_string()]);
+    }
+
+    #[test]
+    fn release_gate_keeps_validation_bundles_out_of_generic_harness() {
+        let filters = DEFAULT_MANDATORY_BUNDLES
+            .iter()
+            .map(|bundle| (*bundle).to_string())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            harness_report_bundle_filters(&filters),
+            vec![
+                "bundle-1".to_string(),
+                "bundle-5".to_string(),
+                "bundle-13".to_string()
+            ]
+        );
     }
 
     #[test]

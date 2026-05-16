@@ -91,7 +91,10 @@ CREATE TABLE IF NOT EXISTS intelligence_claims (
     verification_state TEXT NOT NULL DEFAULT 'active'
         CHECK (verification_state IN ('active', 'contested', 'needs_user_decision')),
     verification_reason TEXT,
-    needs_user_decision_at TEXT
+    needs_user_decision_at TEXT,
+    claim_version INTEGER NOT NULL DEFAULT 1,
+    canonical_status TEXT NOT NULL DEFAULT 'live',
+    non_semantic_mergeable BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 CREATE TABLE IF NOT EXISTS claim_corroborations (

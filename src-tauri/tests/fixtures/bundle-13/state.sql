@@ -49,7 +49,10 @@ CREATE TABLE intelligence_claims (
     demotion_reason TEXT, reactivated_at TEXT, retraction_reason TEXT, expires_at TEXT,
     superseded_by TEXT, trust_score REAL, trust_computed_at TEXT, trust_version INTEGER,
     thread_id TEXT, temporal_scope TEXT NOT NULL DEFAULT 'state', sensitivity TEXT NOT NULL DEFAULT 'internal',
-    verification_state TEXT NOT NULL DEFAULT 'active', verification_reason TEXT, needs_user_decision_at TEXT
+    verification_state TEXT NOT NULL DEFAULT 'active', verification_reason TEXT, needs_user_decision_at TEXT,
+    claim_version INTEGER NOT NULL DEFAULT 1,
+    canonical_status TEXT NOT NULL DEFAULT 'live',
+    non_semantic_mergeable BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 CREATE TABLE claim_corroborations (

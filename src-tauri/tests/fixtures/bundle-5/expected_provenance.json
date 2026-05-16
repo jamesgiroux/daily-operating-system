@@ -25,7 +25,7 @@
         },
         "children": [],
         "field_attributions": {
-          "/0/content/policy/claimId": {
+          "/entries/0/content/policy/claimId": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -54,7 +54,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/0/content/policy/kind": {
+          "/entries/0/content/policy/kind": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -83,7 +83,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/0/content/policy/sensitivity": {
+          "/entries/0/content/policy/sensitivity": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -112,7 +112,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/0/content/policy/surface": {
+          "/entries/0/content/policy/surface": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -141,7 +141,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/0/content/text": {
+          "/entries/0/content/text": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -170,7 +170,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/0/createdAt": {
+          "/entries/0/createdAt": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -199,7 +199,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/0/entityId": {
+          "/entries/0/entityId": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -228,7 +228,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/0/entityType": {
+          "/entries/0/entityType": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -257,7 +257,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/0/id": {
+          "/entries/0/id": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -286,7 +286,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/0/title/policy/claimId": {
+          "/entries/0/title/policy/claimId": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -315,7 +315,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/0/title/policy/kind": {
+          "/entries/0/title/policy/kind": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -344,7 +344,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/0/title/policy/sensitivity": {
+          "/entries/0/title/policy/sensitivity": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -373,7 +373,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/0/title/policy/surface": {
+          "/entries/0/title/policy/surface": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -402,7 +402,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/0/title/text": {
+          "/entries/0/title/text": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -431,7 +431,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/0/updatedAt": {
+          "/entries/0/updatedAt": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -460,7 +460,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/1/content/policy/claimId": {
+          "/entries/1/content/policy/claimId": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -489,7 +489,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/1/content/policy/kind": {
+          "/entries/1/content/policy/kind": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -518,7 +518,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/1/content/policy/sensitivity": {
+          "/entries/1/content/policy/sensitivity": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -547,7 +547,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/1/content/policy/surface": {
+          "/entries/1/content/policy/surface": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -576,7 +576,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/1/content/text": {
+          "/entries/1/content/text": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -605,7 +605,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/1/createdAt": {
+          "/entries/1/createdAt": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -634,7 +634,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/1/entityId": {
+          "/entries/1/entityId": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -663,7 +663,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/1/entityType": {
+          "/entries/1/entityType": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -692,7 +692,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/1/id": {
+          "/entries/1/id": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -721,7 +721,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/1/title/policy/claimId": {
+          "/entries/1/title/policy/claimId": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -750,7 +750,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/1/title/policy/kind": {
+          "/entries/1/title/policy/kind": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -779,7 +779,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/1/title/policy/sensitivity": {
+          "/entries/1/title/policy/sensitivity": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -808,7 +808,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/1/title/policy/surface": {
+          "/entries/1/title/policy/surface": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -837,7 +837,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/1/title/text": {
+          "/entries/1/title/text": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -866,7 +866,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/1/updatedAt": {
+          "/entries/1/updatedAt": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -895,7 +895,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/2/content/policy/claimId": {
+          "/entries/2/content/policy/claimId": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -924,7 +924,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/2/content/policy/kind": {
+          "/entries/2/content/policy/kind": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -953,7 +953,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/2/content/policy/sensitivity": {
+          "/entries/2/content/policy/sensitivity": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -982,7 +982,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/2/content/policy/surface": {
+          "/entries/2/content/policy/surface": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -1011,7 +1011,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/2/content/text": {
+          "/entries/2/content/text": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -1040,7 +1040,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/2/createdAt": {
+          "/entries/2/createdAt": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -1069,7 +1069,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/2/entityId": {
+          "/entries/2/entityId": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -1098,7 +1098,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/2/entityType": {
+          "/entries/2/entityType": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -1127,7 +1127,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/2/id": {
+          "/entries/2/id": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -1156,7 +1156,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/2/title/policy/claimId": {
+          "/entries/2/title/policy/claimId": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -1185,7 +1185,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/2/title/policy/kind": {
+          "/entries/2/title/policy/kind": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -1214,7 +1214,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/2/title/policy/sensitivity": {
+          "/entries/2/title/policy/sensitivity": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -1243,7 +1243,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/2/title/policy/surface": {
+          "/entries/2/title/policy/surface": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -1272,7 +1272,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/2/title/text": {
+          "/entries/2/title/text": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0
@@ -1301,7 +1301,7 @@
             },
             "trust_band": "likely_current"
           },
-          "/2/updatedAt": {
+          "/entries/2/updatedAt": {
             "confidence": {
               "kind": "implicit",
               "value": 1.0

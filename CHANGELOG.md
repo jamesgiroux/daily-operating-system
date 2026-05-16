@@ -5,6 +5,37 @@ All notable changes to DailyOS are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 
+## [1.4.1] — 2026-05-16
+
+Substrate release. v1.4.1 lands the Intelligence Loop primitives — abilities runtime, claim-substrate provenance, sensitivity-aware rendering, trust scoring (in shadow mode for v1.4.1), telemetry contract, validation suite — with limited surface consumption. The substrate is ready; wiring it into the magazine surfaces is the v1.4.2+ arc.
+
+### Added
+
+- **Abilities runtime as the canonical contract (DOS-220, DOS-221, DOS-222 — W5)** — three new capabilities (`get_daily_readiness`, `list_open_loops`, `detect_risk_shift`) migrate to the W5 ability runtime (ADR-0102). Read+LLM composed, Read-only, and Transform+Composition+LLM patterns ship together. Each ability is invocable via `invoke_ability` on Tauri + MCP without surface-specific shims.
+- **Linear issues entity chapter (DOS-285 — W7-A)** — `LinearIssuesChapter` renders Linear issue state on entity pages with claim-backed provenance (`source_ref` + `subject_ref` + `source_lifecycle_state`). 5 signal types emitted (state-change-to-blocked/in-progress/done, priority-changed-to-urgent, assignee-changed). New trust factor (`linear_issue_state_weight`) composes alongside existing factors. ADR-0108 sensitivity: issues from internal-only projects do not reach MCP responses.
+- **Opt-in anonymous aggregate telemetry (DOS-260 — W7-E)** — `AggregateMetric` per ADR-0120 §10 with HTTPS-only collector URL enforced at compile time, `AnonInstallId::generate_on_opt_in()` (no identifier until user opts in), `FORBIDDEN_AGGREGATE_FIELDS` lint blocks PII fields at build time, drop-on-disable buffer policy. `PrivacyPanel` + `TelemetryOptInSplash` + `TelemetryActiveIndicator` UI.
+- **Adversarial fixture validation suite (W6)** — bundles 14-18 added to the validation matrix (stale-current contradiction, cross-surface consistency, ambiguous identity, source-lifecycle actor provenance, sync-refresh concurrency). Each ships fixture quartet (state.sql + inputs.json + expected_output.json + expected_provenance.json) and is enumerated alongside bundles 1-13.
+- **Release-gate hardening for v1.4.1 close (W7-B/C/D)** — `dos288` selector subprocess timeout with 64KB output cap (DOS-439); `build.rs` worktree-aware SHA resolution (DOS-440); source-only fail-fast + `DAILYOS_BUILD_SHA=dev-unknown` opt-in (DOS-441).
+- **W3 stage-3a trust scoring shadow mode** — trust factor instrumentation lands; band distribution skews toward `likely_current`. **Amendment 1** routes W3 stage-3b closure (band distribution tuning, surface coverage, alert canary, ADR-0132 threshold deltas) to the v1.4.2 spike outcome. Trust band rendering on existing surfaces operates against live trust scoring; calibration is the v1.4.2 deliverable.
+- **Wave-protocol Amendment 2** — L2 (Diff) review is wave-scoped against integrated diff, not per-PR. Codified at `.docs/plans/v1.4.1-waves-amendments.md`.
+- **Integrated proof bundle** — `.docs/proofs/v1.4.1/INTEGRATED-PROOF-BUNDLE.md` aggregates W1+W5+W6+W7 evidence, ADR contract integrity verdict, path-α ticket lineage, remaining release-tag gates. `W5-mcp-bridge-retest.md` captures 46/46 MCP-bridge + ability tests green.
+
+### Changed
+
+- **Validation bundle fixture schema (DOS-644)** — `claim_version` / `canonical_status` / `non_semantic_mergeable` columns added to bundles 1-13 `intelligence_claims` CREATE TABLE to track substrate migrations (v123/v132/v153/v172/v174). Class-wide sweep per CLAUDE.md discipline.
+- **W7-A propagation** — `PrepareMeetingContextSnapshot` gains `linear_issue_changes: Vec<PrepareMeetingLinearIssueChangeSnapshot>` to flow Linear issue state into prep outputs.
+
+### Substrate ready, surfaces pending
+
+Trust band rendering on `AccountDetailEditorial` is not wired in v1.4.1 — the substrate exists but the surface still reads from raw `accounts` columns and `account_field_*` metadata. Wiring is on the v1.4.2+ roadmap.
+
+### Known limitations
+
+- W3 trust scoring shadow distribution is heavily skewed (4489/1/0 across the three bands); calibration deferred to v1.4.2 spike per Amendment 1.
+- Release-gate `hermetic` mode requires the harness pipeline to be invoked alongside (DOS-645 follow-up — not release-blocking for v1.4.1 substrate work).
+- Path-α maintenance backlog: DOS-637 through DOS-645 filed against `Codebase Maintenance & Production Quality`.
+
+
 ## [1.2.2] — 2026-04-25
 
 ### Added

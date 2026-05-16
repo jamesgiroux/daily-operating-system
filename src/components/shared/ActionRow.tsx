@@ -12,6 +12,8 @@ import { Link } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-shell";
 import { toast } from "sonner";
+import { TrustBandIndicator } from "@/components/ui/TrustBandIndicator";
+import type { TrustBandWire } from "@/lib/trust-band";
 
 function priorityLabel(p: number | string): string {
   const v = typeof p === "string" ? parseInt(p, 10) : p;
@@ -40,7 +42,13 @@ export function statusLabel(status: string): string {
 
 interface ActionRowCompactProps {
   variant: "compact";
-  action: { id: string; title: string; dueDate?: string; source?: string };
+  action: {
+    id: string;
+    title: string;
+    dueDate?: string;
+    source?: string;
+    trustBand?: TrustBandWire;
+  };
   accentColor?: string;
   dateColor?: string;
   bold?: boolean;
@@ -62,6 +70,7 @@ interface ActionRowFullProps {
     needsDecision?: boolean;
     linearIdentifier?: string | null;
     linearUrl?: string | null;
+    trustBand?: TrustBandWire;
   };
   onToggle: () => void;
   showBorder?: boolean;
@@ -140,9 +149,13 @@ function CompactActionRow({
           lineHeight: 1.55,
           fontWeight: bold ? 500 : 400,
           color: "var(--color-text-primary)",
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
         }}
       >
-        {action.title}
+        <span>{action.title}</span>
+        {action.trustBand && <TrustBandIndicator band={action.trustBand} />}
       </div>
       {(action.dueDate || action.source) && (
         <div style={{ display: "flex", gap: 16, marginTop: 4 }}>
@@ -249,6 +262,9 @@ function FullActionRow({
         >
           {stripMarkdown(action.title)}
         </Link>
+        {action.trustBand && (
+          <TrustBandIndicator band={action.trustBand} style={{ marginLeft: 8, verticalAlign: "middle" }} />
+        )}
         {action.needsDecision && !decisionResolved && (
           <span
             style={{
