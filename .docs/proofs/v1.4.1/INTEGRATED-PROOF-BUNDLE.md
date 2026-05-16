@@ -115,9 +115,15 @@ Before `v1.4.1` tag:
 
 Substrate work complete. Remaining items are real-usage validation + the release-cut lane that requires the user's hands on the running app.
 
-## First substrate consumer landed
+## First substrate consumer on the actions surface
 
-v1.4.1 ships with one real consumer of the W3 trust scoring substrate: `ActionRow` renders `<TrustBandIndicator>` next to action titles when `trust_band` is set on the underlying claim (commit `ca124e2a`). Cascades to TheWork chapter (entity pages), MeetingDetailPage, and ActionsPage. Use-with-caution + needs-verification bands appear as tooltip chips; likely-current stays clean by design.
+v1.4.1 ships with `ActionRow` rendering `<TrustBandIndicator>` next to action titles when `trust_band` is set on the underlying commitment claim (commit `ca124e2a`). Cascades to TheWork chapter (entity pages), MeetingDetailPage, and ActionsPage. Use-with-caution + needs-verification bands appear as tooltip chips; likely-current stays clean by design. Actions that haven't been substrate-scored show no chip (designed behavior).
+
+`MeetingDetailPage` already consumed `TrustBandIndicator` from v1.4.0 era — ActionRow is the first consumer on the **actions** surface, not the first substrate consumer overall.
+
+### Feedback loop status
+
+User accept/reject/edit on actions does NOT yet refeed trust-factor weights for that commitment lineage. Per Amendment 1, this closure is routed to the v1.4.2 spike outcome and is not in v1.4.1 scope. Substrate plumbing is correct (services → db → query hydration → TS type → UI); the missing piece is the bidirectional weight update on correction.
 
 ---
 
