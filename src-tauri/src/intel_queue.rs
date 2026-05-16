@@ -3076,6 +3076,7 @@ fn build_trust_context_for_claim(
             subject_fit_confidence: subject_fit_confidence_for_feedback(feedback_signal),
             internal_consistency,
             source_lifecycle,
+            linear_issue_state: crate::abilities::trust::LinearIssueStateContext::default(),
             read_state_indeterminate,
         },
         cross_entity: crate::abilities::trust::CrossEntityCoherenceInput {

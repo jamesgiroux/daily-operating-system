@@ -1,0 +1,72 @@
+@import "../../styles/design-tokens.css";
+
+.statusRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: 12px 0;
+}
+
+.statusCopy {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.oliveIcon {
+  color: var(--color-garden-olive);
+}
+
+.confirmationPanel {
+  margin: var(--space-sm) 0 var(--space-md);
+  padding: 14px;
+  border: 1px solid var(--color-rule-heavy);
+  border-radius: 6px;
+  background: var(--color-paper-warm-white);
+}
+
+.previewHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-sm);
+}
+
+.turmericIcon {
+  color: var(--color-spice-turmeric);
+}
+
+.previewList {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.metricRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.confirmActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.catalog {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-top: var(--space-sm);
+}
+
+.catalogItem {
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}

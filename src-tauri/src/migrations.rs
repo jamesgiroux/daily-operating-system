@@ -904,6 +904,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 177,
         apply: migrate_v177_w4c_projection_signing_cycle2,
     },
+    Migration::Sql {
+        version: 178,
+        sql: include_str!("migrations/178_dos_285_linear_issue_state.sql"),
+    },
 ];
 
 const V155_SHADOW_TRUST_VERSION: i64 = 1_401_003;

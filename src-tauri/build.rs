@@ -3,10 +3,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+#[path = "src/observability/aggregate_metric/lint.rs"]
+mod aggregate_metric_lint;
+
 fn main() {
     emit_suite_p_bench_cfg();
     emit_build_git_sha();
     validate_operations_contract();
+    validate_aggregate_metric_contract();
     tauri_build::build()
 }
 
@@ -21,23 +25,33 @@ fn emit_suite_p_bench_cfg() {
 fn emit_build_git_sha() {
     println!("cargo:rerun-if-env-changed=DAILYOS_BUILD_SHA");
     println!("cargo:rerun-if-env-changed=GITHUB_SHA");
+    println!("cargo:rerun-if-env-changed=CARGO_FEATURE_RELEASE_GATE");
 
     let manifest_dir =
         PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is set by Cargo"));
     watch_git_head(&manifest_dir);
 
-    let sha = env_sha("DAILYOS_BUILD_SHA")
-        .or_else(|| env_sha("GITHUB_SHA"))
-        .or_else(|| git_sha(&manifest_dir))
-        .unwrap_or_else(|| "unknown".to_string());
+    let dailyos_build_sha = env_sha("DAILYOS_BUILD_SHA");
+    let github_sha = env_sha("GITHUB_SHA");
+    let git_rev_parse_head = git_sha(&manifest_dir);
+    let release_gate_enabled = std::env::var("CARGO_FEATURE_RELEASE_GATE").is_ok();
+
+    let sha = match (dailyos_build_sha, github_sha, git_rev_parse_head) {
+        (Some(value), _, _) => value,
+        (None, Some(value), _) => value,
+        (None, None, Some(value)) => value,
+        (None, None, None) if release_gate_enabled => {
+            panic!(
+                "BUILD_GIT_SHA cannot be determined. Set DAILYOS_BUILD_SHA, GITHUB_SHA, or run inside a git checkout. For source-only local builds, set DAILYOS_BUILD_SHA=dev-unknown."
+            );
+        }
+        (None, None, None) => "unknown".to_string(),
+    };
     println!("cargo:rustc-env=BUILD_GIT_SHA={sha}");
 }
 
 fn env_sha(name: &str) -> Option<String> {
-    env::var(name)
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
+    env::var(name).ok().filter(|value| !value.trim().is_empty())
 }
 
 fn git_sha(manifest_dir: &Path) -> Option<String> {
@@ -63,6 +77,20 @@ fn watch_git_head(manifest_dir: &Path) {
     let Some(git_dir) = git_dir(manifest_dir) else {
         return;
     };
+    let Some(git_common_dir) = git_common_dir(manifest_dir) else {
+        watch_standard_git_head(&git_dir);
+        return;
+    };
+
+    if git_dir != git_common_dir {
+        watch_linked_worktree_git_head(manifest_dir, &git_dir, &git_common_dir);
+        return;
+    }
+
+    watch_standard_git_head(&git_dir);
+}
+
+fn watch_standard_git_head(git_dir: &Path) {
     let head_path = git_dir.join("HEAD");
     println!("cargo:rerun-if-changed={}", head_path.display());
 
@@ -87,14 +115,45 @@ fn watch_git_head(manifest_dir: &Path) {
     );
 }
 
+fn watch_linked_worktree_git_head(manifest_dir: &Path, git_dir: &Path, git_common_dir: &Path) {
+    // Manual repro for linked-worktree SHA watching:
+    //   git init /tmp/dailyos-sha-watch && cd /tmp/dailyos-sha-watch
+    //   # add the DailyOS sources, then create an initial commit
+    //   git add . && git commit -m "initial"
+    //   git worktree add /tmp/dailyos-sha-watch-linked
+    //   cd /tmp/dailyos-sha-watch-linked
+    //   cargo build --features release-gate -p dailyos
+    //   git commit --allow-empty -m "second"
+    //   cargo build --features release-gate -p dailyos
+    // The second build must rerun build.rs so BUILD_GIT_SHA tracks HEAD.
+    println!("cargo:rerun-if-changed={}", git_dir.join("HEAD").display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        git_common_dir.join("packed-refs").display()
+    );
+
+    let Some(reference) = symbolic_head_reference(manifest_dir)
+        .filter(|reference| reference.starts_with("refs/heads/"))
+    else {
+        return;
+    };
+    println!(
+        "cargo:rerun-if-changed={}",
+        git_common_dir.join(reference).display()
+    );
+}
+
 fn git_dir(manifest_dir: &Path) -> Option<PathBuf> {
+    git_rev_parse_path(manifest_dir, "--git-dir")
+}
+
+fn git_common_dir(manifest_dir: &Path) -> Option<PathBuf> {
+    git_rev_parse_path(manifest_dir, "--git-common-dir")
+}
+
+fn git_rev_parse_path(manifest_dir: &Path, flag: &str) -> Option<PathBuf> {
     let output = Command::new("git")
-        .args([
-            "-C",
-            &manifest_dir.display().to_string(),
-            "rev-parse",
-            "--git-dir",
-        ])
+        .args(["-C", &manifest_dir.display().to_string(), "rev-parse", flag])
         .output()
         .ok()?;
     if !output.status.success() {
@@ -110,6 +169,25 @@ fn git_dir(manifest_dir: &Path) -> Option<PathBuf> {
     } else {
         manifest_dir.join(path)
     })
+}
+
+fn symbolic_head_reference(manifest_dir: &Path) -> Option<String> {
+    let output = Command::new("git")
+        .args([
+            "-C",
+            &manifest_dir.display().to_string(),
+            "symbolic-ref",
+            "HEAD",
+        ])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8(output.stdout)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 fn validate_operations_contract() {
@@ -195,6 +273,12 @@ fn validate_operations_contract() {
             }
         }
     }
+}
+
+fn validate_aggregate_metric_contract() {
+    let manifest_dir =
+        PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is set by Cargo"));
+    aggregate_metric_lint::validate_aggregate_metric_contract(&manifest_dir);
 }
 
 fn operation_def_blocks(source: &str) -> Vec<String> {

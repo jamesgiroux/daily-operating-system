@@ -125,6 +125,18 @@ pub struct Config {
     /// Loopback runtime endpoint settings for paired local surfaces.
     #[serde(default)]
     pub surface_runtime: SurfaceRuntimeConfig,
+    /// Opt-in anonymous aggregate telemetry. Default OFF.
+    #[serde(default)]
+    pub telemetry: TelemetryConfig,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TelemetryConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub opt_in_splash_dismissed: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -3220,6 +3232,7 @@ mod tests {
             notifications: NotificationConfig::default(),
             text_scale_percent: 100,
             surface_runtime: SurfaceRuntimeConfig::default(),
+            telemetry: TelemetryConfig::default(),
         }
     }
 

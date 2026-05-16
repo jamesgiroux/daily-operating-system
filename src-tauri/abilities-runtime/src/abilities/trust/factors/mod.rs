@@ -11,6 +11,7 @@ mod cross_entity;
 mod feedback;
 mod freshness;
 mod lifecycle;
+mod linear_issue_state;
 mod reliability;
 mod sensitivity;
 mod subject;
@@ -29,6 +30,7 @@ pub use freshness::{
     FreshnessFactorInput,
 };
 pub use lifecycle::source_lifecycle_weight;
+pub use linear_issue_state::linear_issue_state_weight;
 pub use reliability::{source_reliability, source_reliability_aggregated};
 pub use sensitivity::sensitivity_aware_filtering;
 pub use subject::subject_fit_confidence;
@@ -39,7 +41,7 @@ pub use surface::{
 
 pub type Claim = crate::types::IntelligenceClaim;
 
-pub const TRUST_FACTOR_COUNT: usize = 10;
+pub const TRUST_FACTOR_COUNT: usize = 11;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrustFactorId {
@@ -53,6 +55,7 @@ pub enum TrustFactorId {
     InternalConsistency,
     CrossEntityCoherence,
     SensitivityAwareFiltering,
+    LinearIssueStateWeight,
 }
 
 impl TrustFactorId {
@@ -68,6 +71,7 @@ impl TrustFactorId {
             Self::InternalConsistency => "internal_consistency",
             Self::CrossEntityCoherence => "cross_entity_coherence",
             Self::SensitivityAwareFiltering => "sensitivity_aware_filtering",
+            Self::LinearIssueStateWeight => "linear_issue_state_weight",
         }
     }
 
@@ -83,6 +87,7 @@ impl TrustFactorId {
             Self::InternalConsistency => weights.internal_consistency,
             Self::CrossEntityCoherence => weights.cross_entity_coherence,
             Self::SensitivityAwareFiltering => weights.sensitivity_aware_filtering,
+            Self::LinearIssueStateWeight => weights.linear_issue_state_weight,
         }
     }
 }
@@ -130,6 +135,7 @@ impl FactorRegistry {
         TrustFactorId::InternalConsistency,
         TrustFactorId::CrossEntityCoherence,
         TrustFactorId::SensitivityAwareFiltering,
+        TrustFactorId::LinearIssueStateWeight,
     ];
 
     pub fn evaluate(self, claim: &Claim, ctx: &TrustContext) -> FactorEvaluation {
@@ -192,6 +198,11 @@ impl FactorRegistry {
                 evaluated_factor(
                     TrustFactorId::SensitivityAwareFiltering,
                     sensitivity_aware_filtering(&claim.sensitivity, ctx.target_surface),
+                    weights,
+                ),
+                evaluated_factor(
+                    TrustFactorId::LinearIssueStateWeight,
+                    linear_issue_state_weight(&ctx.factor_inputs),
                     weights,
                 ),
             ],

@@ -125,6 +125,7 @@ harness-hermetic = ["abilities-runtime/harness-hermetic"]
 test-harness = []
 bench-harness = []
 release-gate = []
+debug-telemetry-override = []
 mcp = ["dep:anyhow"]
 load-test = ["test-harness"]
 

@@ -1,0 +1,19 @@
+@import "../../styles/design-tokens.css";
+
+.indicator {
+  position: fixed;
+  left: 18px;
+  bottom: 18px;
+  z-index: var(--z-app-shell);
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid var(--color-rule-heavy);
+  border-radius: 8px;
+  background: var(--frosted-glass-nav);
+  color: var(--color-garden-olive);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  backdrop-filter: var(--backdrop-blur);
+}

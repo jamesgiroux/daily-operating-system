@@ -1,5 +1,5 @@
 {
-  ".docs/design/reference/surfaces/account.html": "clean",
+  ".docs/design/reference/surfaces/account.html": "critical",
   ".docs/design/reference/surfaces/accounts.html": "clean",
   ".docs/design/reference/surfaces/action-detail.html": "clean",
   ".docs/design/reference/surfaces/actions.html": "clean",
@@ -19,7 +19,7 @@
   ".docs/design/reference/surfaces/onboarding/youcard.html": "clean",
   ".docs/design/reference/surfaces/people.html": "clean",
   ".docs/design/reference/surfaces/person.html": "major",
-  ".docs/design/reference/surfaces/project.html": "major",
+  ".docs/design/reference/surfaces/project.html": "critical",
   ".docs/design/reference/surfaces/projects.html": "clean",
   ".docs/design/reference/surfaces/reports/account-health.html": "clean",
   ".docs/design/reference/surfaces/reports/book-of-business.html": "clean",

@@ -11,6 +11,7 @@ import {
   SettingsSectionLabel,
   formRowStyles,
 } from "@/features/settings-ui/FormRow";
+import PrivacyPanel from "@/components/settings/PrivacyPanel";
 import type { DataSummary, ExportReport, ClearReport } from "@/types";
 
 // ---------------------------------------------------------------------------
@@ -114,6 +115,8 @@ export default function DataPrivacySection() {
 
   return (
     <div>
+      <PrivacyPanel />
+
       {/* ── Section: What DailyOS stores ───────────────────────────── */}
       <SettingsSectionLabel>Your data</SettingsSectionLabel>
 

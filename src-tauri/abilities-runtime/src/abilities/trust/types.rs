@@ -127,6 +127,8 @@ pub struct TrustFactorInputs {
     /// Range: normalized factor bounds.
     pub internal_consistency: f64,
     pub source_lifecycle: SourceLifecycleState,
+    #[serde(default)]
+    pub linear_issue_state: LinearIssueStateContext,
     /// True when at least one upstream read (corroborations, contradictions,
     /// feedback, source weights) failed. Triggers the IndeterminateReadState
     /// gate so the recompute fails closed instead of scoring on a partial
@@ -134,6 +136,40 @@ pub struct TrustFactorInputs {
     /// detected a read error.
     #[serde(default)]
     pub read_state_indeterminate: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct LinearIssueStateContext {
+    #[serde(default)]
+    pub signal: LinearIssueStateSignal,
+    #[serde(default = "default_subject_matches")]
+    pub subject_matches: bool,
+}
+
+impl Default for LinearIssueStateContext {
+    fn default() -> Self {
+        Self {
+            signal: LinearIssueStateSignal::None,
+            subject_matches: true,
+        }
+    }
+}
+
+fn default_subject_matches() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum LinearIssueStateSignal {
+    #[default]
+    None,
+    UncategorizedIssue,
+    StateChangedToInProgress,
+    StateChangedToBlocked,
+    StateChangedToDone,
+    AssigneeChanged,
+    PriorityChangedToUrgent,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
