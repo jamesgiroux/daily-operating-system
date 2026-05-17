@@ -20,7 +20,13 @@
 	const { __ } = wp.i18n;
 	const { registerBlockType } = wp.blocks;
 	const { InspectorControls, useBlockProps } = wp.blockEditor;
-	const { PanelBody, ComboboxControl, Button, Spinner, Notice } = wp.components;
+	// W4-F L4-unblock backport: swap ComboboxControl → TextControl. The combobox
+	// requires a populated `options` list (account discovery endpoint is
+	// stubbed at [] until path-α implements list-discovery), and rejects
+	// arbitrary input. TextControl lets the user type an account_id directly,
+	// which is sufficient for the L4 render proof. Re-promote to combobox
+	// once the discovery endpoint is wired.
+	const { PanelBody, TextControl, Button, Spinner, Notice } = wp.components;
 	const { useState, useEffect, useCallback } = wp.element;
 	const apiFetch = wp.apiFetch;
 
@@ -117,11 +123,11 @@
 				wp.element.createElement(
 					PanelBody,
 					{ title: __( 'Account', 'dailyos' ) },
-					wp.element.createElement( ComboboxControl, {
-						label: __( 'Account', 'dailyos' ),
+					wp.element.createElement( TextControl, {
+						label: __( 'Account ID', 'dailyos' ),
 						value: attributes.account_id || '',
-						options: accounts,
 						onChange: onAccountChange,
+						help: __( 'Enter the account_id (e.g. acme-corp).', 'dailyos' ),
 					} ),
 					wp.element.createElement(
 						Button,

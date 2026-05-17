@@ -70,6 +70,7 @@ final class DailyOS_Plugin {
 		add_action( 'wp_abilities_api_categories_init', [ $this, 'register_ability_categories' ], 10 );
 		add_action( 'wp_abilities_api_init', [ $this, 'register_abilities' ], 10 );
 		add_action( 'init', [ $this, 'register_blocks' ], 11 );
+		add_filter( 'block_categories_all', [ $this, 'register_block_category' ], 10, 1 );
 		add_action( 'init', [ $this, 'register_mcp_server_config' ], 12 );
 		add_action( 'init', [ $this, 'register_save_hooks' ], 13 );
 		add_action( 'admin_menu', [ $this, 'register_admin_pages' ], 10 );
@@ -117,6 +118,29 @@ final class DailyOS_Plugin {
 	public function register_ability_categories(): void {
 		$registry = new DailyOS_Ability_Registry();
 		$registry->register_categories();
+	}
+
+	/**
+	 * Register the "dailyos" block category (W4-F L4-unblock backport from
+	 * wave3-l2-integration). block.json files declare `"category": "dailyos"`,
+	 * but the category itself must be registered via `block_categories_all`
+	 * for blocks to appear in the WP editor inserter.
+	 *
+	 * @param array<int,array<string,mixed>> $categories Existing categories.
+	 * @return array<int,array<string,mixed>>
+	 */
+	public function register_block_category( array $categories ): array {
+		foreach ( $categories as $category ) {
+			if ( isset( $category['slug'] ) && 'dailyos' === $category['slug'] ) {
+				return $categories;
+			}
+		}
+		$categories[] = [
+			'slug'  => 'dailyos',
+			'title' => __( 'DailyOS', 'dailyos' ),
+			'icon'  => null,
+		];
+		return $categories;
 	}
 
 	/**
