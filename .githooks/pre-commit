@@ -218,4 +218,18 @@ ROOT_DIR="$(git rev-parse --show-toplevel)"
 "$ROOT_DIR/scripts/check_prompt_template_registry.sh"
 "$ROOT_DIR/scripts/check_prompt_fingerprint_boundary.sh"
 
+# Cache tree-SHA: lets pre-push short-circuit its duplicate gauntlet when
+# HEAD's tree hasn't drifted from what pre-commit just verified. Only write
+# the marker when the heavy gauntlet actually ran (not WIP mode) AND
+# everything passed. Pre-push compares HEAD's tree to this marker.
+# Use `git rev-parse --git-dir` so the marker is per-worktree (in worktrees
+# the path `.git` is a file pointing at `.git/worktrees/<name>/`).
+if [ "$WIP_MODE" = false ]; then
+  GIT_DIR_RESOLVED="$(git rev-parse --git-dir 2>/dev/null)"
+  if [ -n "$GIT_DIR_RESOLVED" ]; then
+    mkdir -p "${GIT_DIR_RESOLVED}/hooks-state" 2>/dev/null || true
+    git write-tree > "${GIT_DIR_RESOLVED}/hooks-state/last-green-tree" 2>/dev/null || true
+  fi
+fi
+
 exit 0

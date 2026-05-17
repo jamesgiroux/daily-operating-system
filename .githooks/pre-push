@@ -79,21 +79,43 @@ if [ "$HAS_RUST" = true ] && [ -d "$BACKEND_DIR" ] && [ -f "${BACKEND_DIR}/scrip
   fi
 fi
 
+# Cache check: if pre-commit just ran the gauntlet against the same tree
+# that's now at HEAD, skip the duplicate run. Pre-commit writes the tree
+# SHA to <git-dir>/hooks-state/last-green-tree after a clean gauntlet
+# pass. Pushing an unmodified commit takes pre-push to ~0s; WIP=1 commits
+# and amended trees still pay the full gauntlet cost. Use --git-dir so
+# the marker is per-worktree.
+GIT_DIR_RESOLVED="$(git rev-parse --git-dir 2>/dev/null)"
+LAST_GREEN_TREE=""
+if [ -n "$GIT_DIR_RESOLVED" ] && [ -f "${GIT_DIR_RESOLVED}/hooks-state/last-green-tree" ]; then
+  LAST_GREEN_TREE="$(tr -d '[:space:]' < "${GIT_DIR_RESOLVED}/hooks-state/last-green-tree" 2>/dev/null || echo "")"
+fi
+CURRENT_TREE="$(git rev-parse HEAD^{tree} 2>/dev/null || echo "")"
+if [ -n "$LAST_GREEN_TREE" ] && [ -n "$CURRENT_TREE" ] && [ "$LAST_GREEN_TREE" = "$CURRENT_TREE" ]; then
+  echo "pre-push: HEAD tree ${CURRENT_TREE} already passed pre-commit gauntlet — skipping clippy/test/tsc" >&2
+  exit 0
+fi
+
 if [ "$HAS_RUST" = true ] && [ -d "$BACKEND_DIR" ]; then
+  # Silence cargo output. When git push wraps the hook, ~2500 lines of
+  # cargo test stdout streamed through git push's stdio caused git push
+  # to die with SIGPIPE (exit 141) before reaching the transmit phase,
+  # even though the hook itself returned 0 standalone. Matches the
+  # pattern pre-commit already uses for the same reason.
   echo "pre-push: cargo clippy -- -D warnings" >&2
-  if ! cargo clippy --manifest-path "$BACKEND_DIR/Cargo.toml" -- -D warnings; then
+  if ! cargo clippy --manifest-path "$BACKEND_DIR/Cargo.toml" -- -D warnings >/dev/null 2>&1; then
     append_error "❌ cargo clippy -- -D warnings FAILED"
   fi
 
   echo "pre-push: cargo test --lib" >&2
-  if ! cargo test --lib --manifest-path "$BACKEND_DIR/Cargo.toml"; then
+  if ! cargo test --lib --manifest-path "$BACKEND_DIR/Cargo.toml" >/dev/null 2>&1; then
     append_error "❌ cargo test --lib FAILED"
   fi
 fi
 
 if [ "$HAS_FRONTEND" = true ] && [ -f "${CWD}/package.json" ]; then
   echo "pre-push: pnpm tsc --noEmit" >&2
-  if ! pnpm tsc --noEmit; then
+  if ! pnpm tsc --noEmit >/dev/null 2>&1; then
     append_error "❌ pnpm tsc --noEmit FAILED"
   fi
 fi
