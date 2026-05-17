@@ -51,6 +51,20 @@ When a user installs the DailyOS bundle (Studio + plugin + theme + runtime) on a
 
 This is the foundation. v1.4.3+ builds the rich entity, briefing, claim/trust, and salience surfaces on top of it — but every block, every theme treatment, every editorial pattern in those releases lands as a Gutenberg surface, not a Tauri React component.
 
+## Threat model: local-to-local
+
+**v1.4.2 is a decoupling test, not a remote-surface release.** Both the Tauri runtime and WordPress Studio run on the user's machine. The transport is loopback HTTP. There is no network, no multi-tenant boundary, no untrusted remote client. The WordPress side is a *different shape of local surface* — equivalent to a Tauri React page that consumes substrate state via `invoke`, not a remote browser hitting a server.
+
+This shapes every defense in this release:
+
+* **Reads do not write.** A block render is an HTTP GET against the loopback runtime that returns substrate-projected state. The read path MUST NOT mutate `surface_client_sessions`, audit tables, rate-limit buckets, or any other DB state. Tauri React's `invoke` doesn't write on read; the WP equivalent doesn't either. Writes on the read path are the primary mechanism that put W4-A's L4 render into writer-mutex contention with background workers; eliminating them is the load-bearing fix.
+* **Only feedback writes.** User feedback (corrections, dismissals, edits) is the one path that writes. It carries presence nonce + signed envelope + claim version + scope check, because that's where the actual write semantics live. The substrate's normal claim/feedback write path absorbs it.
+* **Pairing is a one-time write, then a read-only lookup.** The pairing handshake writes a session row once. After that, every read consults the session without mutating it. Session lifetime is bounded by user intent (manual unpair) and machine reinstall, not by per-request TTLs sized for adversarial remote clients.
+* **Security defaults are sized for local-only.** Where the substrate-as-remote-service framing produced 5-minute pairing TTLs, session-evaporates-on-restart, per-request rate-limit consumption, and silent-503-on-DB-hiccup, the local-to-local framing produces: pairing persists across restarts, sessions are long-lived, rate limits exist but don't gate render-path reads, errors are loud and recoverable.
+* **The four pairing recovery threats (Reinstall, DB-Restore, Site-Switch, Exfiltration) still apply** — they are local threats, not remote ones. The defenses in Phase 0 artifact 01 remain in scope. The point of this section is not to weaken defenses; the point is to stop applying remote-model defenses to a local-model deployment.
+
+When future releases extend DailyOS to genuinely remote shapes (hosted substrate, federated MCP across machines, paid-tier infrastructure), this threat model expands. Any expansion is its own ADR with its own defenses; v1.4.2 does not preemptively defend against threats outside its deployment shape.
+
 ## Scope — what lands here
 
 ### Surface foundation
