@@ -1,6 +1,6 @@
 # L0 Packet A — Surface session lifecycle hardening
 
-**Current revision: V1.1 (cycle-1 fold, 2026-05-17). See §2 Changelog.**
+**Current revision: V1.1.1 (cycle-2 code-reviewer text fixes, 2026-05-17). See §2 Changelog.**
 
 ## 1. Header
 
@@ -37,6 +37,19 @@ review track, separate PR.
 
 ## 2. Changelog
 
+- **V1.1.1 (2026-05-17, cycle-2 text fixes):** All 4 cycle-2 reviewers
+  returned non-BLOCK verdicts (codex challenge APPROVE, CSO APPROVE,
+  code-reviewer CONDITIONAL APPROVE, codex consult CONDITIONAL APPROVE).
+  Both CONDITIONAL APPROVE verdicts surface text-only findings — no design
+  change. Folded inline:
+  - **§5.1a** keychain test-seam precedent corrected. Real precedent is `src-tauri/src/db/key_provider.rs:205-213` (`KeychainBackend` trait), `:215-251` (`SecurityCliKeychain` production impl), `:302-307` (`with_keychain_for_tests` injection), `:1052-1079` (`FakeKeychain`). Gravatar uses free functions with retry helper, NOT a trait — the V1.1 claim was wrong (caught by code-reviewer F-C2-1 + codex consult LOW, two-reviewer triangulation).
+  - **§5.4** clarified — `explicit_sentinel_cleanup()` runs BEFORE the existing `shutdown.send(true) + abort()` pair at `surface_runtime/mod.rs:415-419` (`stop`) and `:471-475` (`Drop::drop`). The ordering is the load-bearing part of the fix (code-reviewer F-C2-2 LOW).
+  - **§4** `write_runtime_sentinel` line corrected — `:818` not `~:880` (code-reviewer F-C2-3 LOW).
+  - **§5.3** `MarkSessionRevoked` plumbing detail added — `SignedSessionFailure::SessionExpired` variant must carry `surface_client_id` from `validate_signed_session_readonly` (at `surface_pairing.rs:888-891`) so `write_action()` (at `:1040-1047`) can populate the extended action payload (codex consult implementation note in validation #3).
+  - **§8 + §7** AC↔fixture mapping table added inline (codex consult MEDIUM). Some ACs map to CI invariants (#9 → §9 invariant #1) rather than fixtures; some are partially covered (#9 struct-shape is implicitly proven by construction in fixtures 10-15, acceptable per code-reviewer's note). Mapping table makes coverage explicit; no new fixtures added.
+  - **§2 V1.1 entry** corrected — "§8 fixture #8" was a typo; should read "§8 fixture #16" (codex challenge editorial nit).
+  - All cycle-2 review files at `.docs/plans/v1.4.3-wp-foundation/reviews/packet-A-cycle2-*.md`.
+
 - **V1.1 (2026-05-17, Path-α trim):** Cycle-1 fold against all 4 reviewer
   verdicts (CSO CA, codex consult CA, code-reviewer CA, codex challenge
   BLOCK). Same Path-α trim pattern as v1.4.2 W4-F V3.2 — each finding is
@@ -49,7 +62,7 @@ review track, separate PR.
     - **§5.3** `SignedSessionWriteAction::MarkSessionRevoked` payload extended to carry `surface_client_id` alongside `session_id` (codex consult HIGH). `delete_session_master_key` needs both; today the action carries only session_id. The dispatch site loads `row.surface_client_id` already (`surface_pairing.rs:754-755` / `1112-1114`); just plumb it through.
     - **§5.4** simplified — `stop_async` graceful-drain-with-timeout REPLACED with simpler shape: `explicit_sentinel_cleanup()` helper called from `stop` and `Drop` before `abort()`. `JoinHandle` ownership conflict (codex consult HIGH) thereby moot — no new join field needed in `RunningEndpoint`. The listener task continues to be aborted on stop/drop; the post-loop session-activity flush continues to run on graceful exit only (best-effort, as today). The `2s graceful timeout` design was over-engineering for a single-user local runtime where `Drop` is the dominant teardown path.
     - **§5.4** Tauri shutdown hook — packet now requires the existing tray quit (`lib.rs:584-585`) and `Drop` impl (`mod.rs:468-478`) to call `explicit_sentinel_cleanup()`. NO new `RunEvent::ExitRequested` wiring (codex consult HIGH deferred — see Deferred below). Local single-user runtime: tray-quit + Drop covers the realistic exit paths.
-    - **§9** CI invariant #4 (`db_writer_observer`) REMOVED. The primitive does not exist (code-reviewer + codex challenge HIGH). Replaced with §8 fixture #8 assertion: mocked-slow keychain CLI proves the SQLite writer lock is released within 10ms of DB commit, sufficient enforcement for the cleanup-outside-tx invariant.
+    - **§9** CI invariant #4 (`db_writer_observer`) REMOVED. The primitive does not exist (code-reviewer + codex challenge HIGH). Replaced with §8 fixture #16 assertion: mocked-slow keychain CLI proves the SQLite writer lock is released within 10ms of DB commit, sufficient enforcement for the cleanup-outside-tx invariant.
     - **§5.1** `security` CLI mock seam specified — `#[cfg(test)] thread_local!` static or trait-based dispatch. Pick: trait `KeychainBackend` with `RealKeychain` (production) and `MockKeychain` (tests). Pattern matches existing `gravatar/keychain.rs` (code-reviewer).
     - **§4** reuse audit cites the existing "transaction returns artifacts, caller runs side effects best-effort outside" pattern at `services/accounts.rs:3514-3548` (and 1364/1417/1465). `KeychainCleanupTarget` IS this pattern; the precedent is the right reuse anchor (code-reviewer).
     - **§4** line numbers re-synced — `persist_session_master_key` :79 not :60; `remove_runtime_sentinel` :887 not :883 (code-reviewer LOW).
@@ -101,7 +114,7 @@ must reject any net-new primitive in this packet that already exists:
 | Suspicious-replay revoke (DB) | `record_signed_transport_failure` → `revoke_pairing_row` | `src-tauri/src/services/surface_pairing.rs:1383` |
 | Signed-write-action dispatch | `apply_signed_session_write_action` | `src-tauri/src/services/surface_pairing.rs:1105` |
 | Session rehydration on startup | `rehydrate_sessions_from_keychain` | `src-tauri/src/surface_runtime/mod.rs:667` |
-| Runtime sentinel write | `write_runtime_sentinel` | `src-tauri/src/surface_runtime/mod.rs:~880` |
+| Runtime sentinel write | `write_runtime_sentinel` | `src-tauri/src/surface_runtime/mod.rs:818` |
 | Runtime sentinel remove | `remove_runtime_sentinel` | `src-tauri/src/surface_runtime/mod.rs:887` |
 | Shutdown session flush | `flush_session_activity_on_shutdown` | `src-tauri/src/surface_runtime/mod.rs:753` |
 | Listener task spawn | `tokio::spawn(run_listener(...))` | `src-tauri/src/surface_runtime/mod.rs:327` |
@@ -172,8 +185,15 @@ pub struct MockKeychain { /* scriptable responses */ }
 
 Free functions (`load_session_master_key` etc) keep their public signatures
 and delegate to a process-wide `RealKeychain` by default; tests inject
-`MockKeychain` via a `#[cfg(test)] thread_local!` override. Pattern matches
-the existing `src-tauri/src/services/gravatar/keychain.rs` trait shape.
+`MockKeychain` via a `#[cfg(test)] thread_local!` override.
+
+**Precedent:** the in-repo template is `src-tauri/src/db/key_provider.rs` —
+defines `KeychainBackend` trait at `:205-213`, ships `SecurityCliKeychain`
+production impl at `:215-251`, exposes `with_keychain_for_tests` injection
+at `:302-307`, provides `FakeKeychain` for tests at `:1052-1079`. The
+surface keychain mirrors this shape. (V1.1 incorrectly cited
+`gravatar/keychain.rs`, which uses free functions with retry helper and
+has NO trait; corrected in V1.1.1 — see §2.)
 
 ### 5.2 Update `rehydrate_sessions_from_keychain` match arms (DOS-673)
 
@@ -247,9 +267,8 @@ Lifecycle service functions changed:
 consult HIGH):** today the action carries only `session_id`
 (`surface_pairing.rs:1021-1025`). `delete_session_master_key` needs both
 `surface_client_id` AND `session_id`. The validation path already has
-`row.surface_client_id` in scope (`load_session_pairing` at
-`surface_pairing.rs:754-755`); plumb it into the action payload so the
-dispatch site doesn't need a second query:
+`row.surface_client_id` in scope; plumb it through the chain so the dispatch
+site doesn't need a second query:
 
 ```rust
 SignedSessionWriteAction::MarkSessionRevoked {
@@ -258,6 +277,14 @@ SignedSessionWriteAction::MarkSessionRevoked {
     reason: &'static str,
 }
 ```
+
+**Plumbing path (codex consult cycle-2 implementation note):** the active
+runtime read-path uses `validate_signed_session_readonly`, where the row is
+loaded at `surface_pairing.rs:876-880`. The intermediate enum
+`SignedSessionFailure::SessionExpired` (at `:888-891`) must first carry
+`row.surface_client_id`. Then `write_action()` (at `:1040-1047`) can populate
+the extended `MarkSessionRevoked` payload. Without that intermediate enum
+extension, the dispatch site has no source for `surface_client_id`.
 
 Cleanup runs **after** the SQLite transaction commits, not inside it. The
 caller of each lifecycle function invokes `delete_session_master_key` for each
@@ -288,8 +315,8 @@ fn explicit_sentinel_cleanup() {
 
 Call sites:
 - The graceful listener task post-loop at `surface_runtime/mod.rs:329-331` (current location — keeps the existing call).
-- `SurfaceEndpointState::stop` at `surface_runtime/mod.rs:404-421` — before the existing `abort()` call.
-- `impl Drop for SurfaceEndpointState` at `surface_runtime/mod.rs:468-478` — before the existing `abort()` call.
+- `SurfaceEndpointState::stop` at `surface_runtime/mod.rs:404-421` — call `explicit_sentinel_cleanup()` BEFORE the existing `shutdown.send(true) + abort()` pair at `:415-419`. The ordering is load-bearing: sentinel must be removed before the listener is torn down, otherwise the file persists pointing at a dead port.
+- `impl Drop for SurfaceEndpointState` at `surface_runtime/mod.rs:468-478` — call `explicit_sentinel_cleanup()` BEFORE the existing `shutdown.send(true) + abort()` pair at `:471-475`. Same ordering rule.
 - The existing tray quit handler at `lib.rs:584-585` already calls `app.exit(0)` which triggers `Drop` on `AppState` (and therefore on `SurfaceEndpointState` via the existing managed-state cleanup). No new Tauri shutdown hook is added.
 
 That's the entire fix. The listener task continues to be aborted on
@@ -452,6 +479,37 @@ larger active-session counts make it load-bearing.
 | 21 | `dos675_sentinel_cleaned_on_drop` | Dropping `SurfaceEndpointState` removes the sentinel before the listener task aborts |
 | 22 | `dos675_repeated_stop_is_idempotent` | Two `stop` calls in a row; neither panics, sentinel cleaned exactly once |
 | 23 | `dos675_drop_no_async_flush` | `Drop` does NOT block on DB writer; verified by drop with held writer lock |
+
+### 8.1 AC → fixture/invariant mapping (added in V1.1.1 per codex consult)
+
+Not every AC maps to a single fixture; some are enforced by CI invariants
+or implicitly proven by other fixtures. Explicit mapping:
+
+| AC | Coverage |
+|---|---|
+| AC #1 (`SessionKeyLookup` 3-variant return type) | §9 CI invariant #1 (grep gate) — not a runtime fixture |
+| AC #2 (Found classification) | Fixture #1 |
+| AC #3 (NotFound classification) | Fixture #2 |
+| AC #4 (Unavailable catch-all) | Fixtures #3, #4, #5, #6 (spawn-fail, locked, corrupt-base64, wrong-length — one per identified failure mode) |
+| AC #5 (rehydration revokes only NotFound) | Fixture #7 + §9 invariant #3 |
+| AC #6 (Unavailable audit emission) | Fixture #8 |
+| AC #7 (no read-path enum use) | §9 invariant #1 (grep gate for `SessionKeyLookup` outside startup rehydration) — fold into invariant if not already explicit |
+| AC #8 (`KeychainBackend` trait seam) | Fixture #9 |
+| AC #9 (`KeychainCleanupTarget` struct shape) | Implicitly proven by fixtures #10-#15 which construct and consume the struct (acceptable per code-reviewer cycle-2 note) |
+| AC #10 (three call sites wired) | Fixtures #10, #11, #13 (one per call site: explicit revoke, re-pair, suspicious-replay); §9 invariant #2 |
+| AC #11 (in-tx collection BEFORE revoke) | Fixture #15 |
+| AC #12 (explicit revoke deletes session keys) | Fixture #10 |
+| AC #13 (re-pair deletes OLD before persisting NEW) | Fixture #11 |
+| AC #14 (suspicious-replay cleanup) | Fixture #13 |
+| AC #15 (MarkSessionRevoked extension) | Fixture #14 |
+| AC #16 (mark_pairing_expired collects session ids) | Fixture #12 |
+| AC #17 (cleanup failure audit + log) | Fixture #17 (failure case + `pairing.session.key_cleanup_failed`); success-case audit (`pairing.session.key_cleaned`) covered by fixtures #10-#14 which all emit it on success |
+| AC #18 (cleanup OUTSIDE transaction) | Fixture #16 + §9 invariant #2 + fixture #19 |
+| AC #19 (cleanup idempotent) | Fixture #18 |
+| AC #20 (`explicit_sentinel_cleanup` called from 3 sites) | Fixture #20 (stop), fixture #21 (Drop), listener post-loop covered by existing call at `mod.rs:329-331` (no regression) |
+| AC #21 (sentinel removed after stop/Drop) | Fixtures #20 + #21 |
+| AC #22 (repeated stop/Drop idempotent) | Fixture #22 + extend to also cover Drop idempotence (V1.1.1 acknowledges this is currently stop-only; minor expansion of fixture #22 covers both) |
+| AC #23 (Drop no async DB flush) | Fixture #23 + §9 invariant #5 |
 
 ## 9. CI invariants
 
