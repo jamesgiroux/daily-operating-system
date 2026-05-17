@@ -18,8 +18,17 @@ use crate::db::ActionDb;
 use crate::services::context::ServiceContext;
 
 pub const PAIRING_CODE_TTL_SECONDS: i64 = 5 * 60;
-pub const SESSION_INACTIVE_TTL_SECONDS: i64 = 15 * 60;
-pub const SESSION_ABSOLUTE_TTL_SECONDS: i64 = 8 * 60 * 60;
+// W4-F V3.1 §12 Q2 + §6.3: absolute lifetime 365 days (local-to-local session
+// hygiene, not load-bearing security defense; Exfiltration defense is
+// site-binding + nonce + unpair per Phase 0 artifact 01). User-configurable
+// in v1.4.x; default codified here.
+pub const SESSION_ABSOLUTE_TTL_SECONDS: i64 = 365 * 24 * 60 * 60;
+// W4-F V3.1 §3 + V3 §6.2: inactive_expires_at is DEPRECATED for validity but
+// retained for forensic preservation. New inserts set this equal to
+// absolute_expires_at to satisfy the v169 NOT NULL constraint without
+// introducing ambiguous semantics ("both columns share the same future
+// timestamp; only absolute_expires_at is consulted by validate_signed_session_readonly").
+pub const SESSION_INACTIVE_TTL_SECONDS: i64 = SESSION_ABSOLUTE_TTL_SECONDS;
 pub const SESSION_SUSPICIOUS_THROTTLE_SECONDS: i64 = 60;
 const DEFAULT_GRANTED_SCOPES: &[&str] = &["read.account_overview", "submit.feedback"];
 const HMAC_SESSION_KEY_INFO: &[u8] = b"dailyos-wp-bridge-v1";
@@ -3155,5 +3164,223 @@ mod tests {
         let first = wp_user_hash(&first_secret, "site_digest", 42);
         assert_eq!(first, wp_user_hash(&first_secret, "site_digest", 42));
         assert_ne!(first, wp_user_hash(&second_secret, "site_digest", 42));
+    }
+
+    // =================================================================
+    // W4-F (DOS-655) V3.2 fixtures
+    // =================================================================
+    //
+    // Subset of the 25 named fixtures in W4-F packet §8 — covers the
+    // load-bearing assertions for §7 acceptance criteria 1-7 and 14.
+    // Remaining fixtures (cache-miss latency #15, sentinel substitution
+    // #16, keychain isolation #11, end-to-end concurrent reads #6) live
+    // in separate integration test files because they need a running
+    // runtime, signed test binaries, or harness setup beyond the unit
+    // scope here.
+
+    fn read_session_last_seen_at(db: &ActionDb, session_id: &str) -> Option<String> {
+        db.conn_ref()
+            .query_row(
+                "SELECT last_seen_at FROM surface_client_sessions WHERE session_id = ?1",
+                rusqlite::params![session_id],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .ok()
+            .flatten()
+    }
+
+    fn read_pairing_lifecycle_state(db: &ActionDb, surface_client_id: &str) -> Option<String> {
+        db.conn_ref()
+            .query_row(
+                "SELECT lifecycle_state FROM surface_client_pairings WHERE surface_client_id = ?1",
+                rusqlite::params![surface_client_id],
+                |row| row.get::<_, String>(0),
+            )
+            .ok()
+    }
+
+    /// W4-F packet §7 #1 + §8 fixture #1: validate_signed_session_readonly
+    /// returns Ok WITHOUT mutating surface_client_sessions (no last_seen_at
+    /// update). The dispatch site relocates to db_read; this fixture verifies
+    /// the readonly function does not touch DB on the Ok path.
+    #[test]
+    fn dos655_validate_readonly_does_not_write_on_ok_path() {
+        allow_surface_scopes();
+        let db = db();
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let now = Utc::now();
+        let outcome =
+            complete_test_handshake(&ctx, &db, now, issue_code(&ctx, &db, now).pairing_string);
+
+        let before = read_session_last_seen_at(&db, &outcome.session.session_id);
+
+        let validated = validate_signed_session_readonly(&db, validation_input(&outcome, now))
+            .expect("Ok-path validation should succeed");
+        assert_eq!(validated.session_id, outcome.session.session_id);
+
+        let after = read_session_last_seen_at(&db, &outcome.session.session_id);
+        assert_eq!(
+            before, after,
+            "validate_signed_session_readonly MUST NOT mutate last_seen_at (W4-F V3.2 §7 #1)"
+        );
+    }
+
+    /// W4-F packet §7 #7 + §8 fixture #8: session validity rule consults ONLY
+    /// absolute_expires_at (V3.2 §6.8). A session with `inactive_expires_at`
+    /// in the past but `absolute_expires_at` in the future still validates.
+    #[test]
+    fn dos655_validate_readonly_accepts_stale_inactive_expires_at() {
+        allow_surface_scopes();
+        let db = db();
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let now = Utc::now();
+        let outcome =
+            complete_test_handshake(&ctx, &db, now, issue_code(&ctx, &db, now).pairing_string);
+
+        // Force inactive_expires_at into the past while keeping absolute_expires_at
+        // in the future (simulates a row from pre-W4-F or rare drift scenarios).
+        let past = format_ts(now - chrono::Duration::days(1));
+        db.conn_ref()
+            .execute(
+                "UPDATE surface_client_sessions SET inactive_expires_at = ?1 WHERE session_id = ?2",
+                rusqlite::params![past, outcome.session.session_id],
+            )
+            .unwrap();
+
+        let validated = validate_signed_session_readonly(&db, validation_input(&outcome, now))
+            .expect("session should validate even with stale inactive_expires_at");
+        assert_eq!(validated.session_id, outcome.session.session_id);
+    }
+
+    /// W4-F packet §7 #3 + §8 fixture #4: SiteNonceMismatch failure path
+    /// returns the V3.2 split-out variant (distinct from SiteBindingDigestMismatch).
+    /// Both variants map to SurfacePairingError::SiteBindingMismatch on the wire.
+    #[test]
+    fn dos655_validate_readonly_returns_split_site_nonce_mismatch() {
+        allow_surface_scopes();
+        let db = db();
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let now = Utc::now();
+        let outcome =
+            complete_test_handshake(&ctx, &db, now, issue_code(&ctx, &db, now).pairing_string);
+
+        let mut input = validation_input(&outcome, now);
+        input.site_nonce = "bogus_nonce_does_not_match".into();
+        let err =
+            validate_signed_session_readonly(&db, input).expect_err("nonce mismatch should fail");
+        match err {
+            SignedSessionFailure::SiteNonceMismatch { surface_client_id } => {
+                assert_eq!(surface_client_id, outcome.session.surface_client_id);
+            }
+            other => panic!("expected SiteNonceMismatch, got {other:?}"),
+        }
+        // Both split variants collapse to SiteBindingMismatch on the wire.
+        let err = validate_signed_session_readonly(&db, {
+            let mut input = validation_input(&outcome, now);
+            input.site_nonce = "bogus".into();
+            input
+        })
+        .unwrap_err();
+        assert_eq!(
+            err.to_pairing_error(),
+            SurfacePairingError::SiteBindingMismatch,
+            "SiteNonceMismatch must collapse to SiteBindingMismatch on the wire"
+        );
+    }
+
+    /// W4-F packet §7 #3 + §8 fixture #5: apply_signed_session_write_action
+    /// preserves auto-quarantine (Phase 0 artifact 01 Site-Switch + Exfiltration
+    /// defenses) — failure-path writes routed via dispatch Err arm still
+    /// suspend the pairing.
+    #[test]
+    fn dos655_apply_write_action_suspends_pairing_on_wp_user_mismatch() {
+        allow_surface_scopes();
+        let db = db();
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let now = Utc::now();
+        let outcome =
+            complete_test_handshake(&ctx, &db, now, issue_code(&ctx, &db, now).pairing_string);
+
+        // Sanity: pairing starts active.
+        assert_eq!(
+            read_pairing_lifecycle_state(&db, &outcome.session.surface_client_id),
+            Some("active".into())
+        );
+
+        let failure = SignedSessionFailure::WpUserHashMismatch {
+            surface_client_id: outcome.session.surface_client_id.clone(),
+        };
+        let action = failure
+            .write_action()
+            .expect("WpUserHashMismatch must require write");
+        apply_signed_session_write_action(&db, action, now)
+            .expect("suspend_pairing should succeed");
+
+        assert_eq!(
+            read_pairing_lifecycle_state(&db, &outcome.session.surface_client_id),
+            Some("suspended".into()),
+            "WpUserHashMismatch must auto-quarantine the pairing (Phase 0 artifact 01 Exfiltration defense)"
+        );
+    }
+
+    /// W4-F packet §7 #11 + §8 fixture #11 (partial — full ACL test is in
+    /// integration suite). Verifies the `requires_write` discriminant is
+    /// exhaustive over all 11 variants: 5 quarantine-write variants return
+    /// Some(_), 6 no-write variants return None.
+    #[test]
+    fn dos655_signed_session_failure_write_action_exhaustive() {
+        let dummy_session = "s_test".to_string();
+        let dummy_client = "sc_test".to_string();
+
+        let cases = [
+            (SignedSessionFailure::UnknownRuntimeAnchor, false),
+            (
+                SignedSessionFailure::SessionExpired {
+                    session_id: dummy_session.clone(),
+                },
+                true,
+            ),
+            (SignedSessionFailure::RestoredStalePairing, false),
+            (SignedSessionFailure::PairingRevoked, false),
+            (SignedSessionFailure::PairingSuspended, false),
+            (
+                SignedSessionFailure::PairingExpired {
+                    surface_client_id: dummy_client.clone(),
+                },
+                true,
+            ),
+            (SignedSessionFailure::SessionInvalid, false),
+            (SignedSessionFailure::SessionThrottled, false),
+            (
+                SignedSessionFailure::SiteNonceMismatch {
+                    surface_client_id: dummy_client.clone(),
+                },
+                true,
+            ),
+            (
+                SignedSessionFailure::SiteBindingDigestMismatch {
+                    surface_client_id: dummy_client.clone(),
+                },
+                true,
+            ),
+            (
+                SignedSessionFailure::WpUserHashMismatch {
+                    surface_client_id: dummy_client.clone(),
+                },
+                true,
+            ),
+        ];
+
+        for (variant, expected_write) in cases {
+            let has_writer = variant.write_action().is_some();
+            assert_eq!(
+                has_writer, expected_write,
+                "variant {variant:?} write_action() mismatch — expected {expected_write}, got {has_writer}"
+            );
+        }
     }
 }

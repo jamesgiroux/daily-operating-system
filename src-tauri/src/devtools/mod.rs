@@ -8,6 +8,11 @@
 //! SurfaceClient pairing tables are not seeded: dev/test pairings must be
 //! minted through the runtime pairing command so authority material is never
 //! represented as static fixture data.
+//!
+//! W4-F (DOS-655) migration v180 is DATA-ONLY and has NO mock-data impact:
+//! repairs surface_client_sessions.absolute_expires_at on existing rows
+//! without introducing new tables, columns, or seed shapes. The existing
+//! pairing-mint rule above continues to apply post-v180.
 
 use std::path::Path;
 

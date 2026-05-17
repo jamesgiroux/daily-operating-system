@@ -913,6 +913,17 @@ const MIGRATIONS: &[Migration] = &[
         version: 179,
         sql: include_str!("migrations/179_dos_589_subscription_checkpoints.sql"),
     },
+    // DOS-655 W4-F V3.2: local-to-local read path. Data-only migration that
+    // repairs stale absolute_expires_at + installs an insert-time guard.
+    // DEPRECATED v180: inactive_expires_at no longer consulted for session
+    // validity; absolute_expires_at is authoritative. v179 still consults
+    // inactive_expires_at — rollback to v179 forces re-pair of any session
+    // whose inactive_expires_at was already past at v180 apply (see W4-F
+    // V3.1 §6.8b rollback note).
+    Migration::Sql {
+        version: 180,
+        sql: include_str!("migrations/180_dos_655_w4f_local_to_local.sql"),
+    },
 ];
 
 const V155_SHADOW_TRUST_VERSION: i64 = 1_401_003;
