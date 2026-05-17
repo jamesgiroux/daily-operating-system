@@ -2251,6 +2251,7 @@ async fn surface_project_composition_response(
     };
 
     let Some(app_state) = runtime.app_state.as_ref().cloned() else {
+        log::warn!("project_composition: app_state is None");
         return error_response(SurfaceHttpError::runtime_unavailable().with_request_id(request_id));
     };
 
@@ -2344,10 +2345,35 @@ async fn surface_project_composition_response(
         .live_service_context()
         .with_actor("surface_client");
 
+    // The producer always advances composition_version monotonically and
+    // commits unconditionally. The surface's previously-rendered version is
+    // structurally meaningless as an OCC token because the surface has no
+    // write path — only the producer mutates compositions. Forward the
+    // current substrate version on every render so the producer's commit
+    // step never trips its own watermark check on stale surface claims.
+    let composition_id_for_lookup = request.composition_id.clone();
+    let current_db_version = app_state
+        .db_read(move |db| {
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let external = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &external);
+            crate::services::compositions::current_composition_version_for_composition_id(
+                &ctx,
+                db,
+                &composition_id_for_lookup,
+            )
+            .map_err(|e| e.to_string())
+        })
+        .await
+        .ok()
+        .unwrap_or(0);
+    let expected_version_for_producer: u64 = current_db_version;
     let input = json!({
         "account_id": account_id,
         "composition_id": request.composition_id,
         "schema_version": 1,
+        "expected_composition_version": expected_version_for_producer,
     });
     let invoke_outcome = invoke_registry_json_for_actor(
         registry,
@@ -2384,7 +2410,8 @@ async fn surface_project_composition_response(
         FALLBACK_POLICY_VERSION,
     ) {
         Ok(tuple) => tuple,
-        Err(_) => {
+        Err(err) => {
+            log::warn!("project_composition: project_from_ability_data failed: {err:?}");
             return error_response(
                 SurfaceHttpError::runtime_unavailable().with_request_id(request_id),
             );

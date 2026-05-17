@@ -227,7 +227,14 @@ final class DailyOS_Plugin {
 			return null;
 		}
 
-		$runtime_base_url = self::normalize_loopback_runtime_url( $runtime_url );
+		// Prefer the sentinel-discovered URL (current runtime port) over the
+		// marker URL (post-pairing baseline). The runtime port changes on
+		// every restart; without this fallback, session refresh hits the
+		// stale marker port and the plugin reports a missing session key.
+		$runtime_base_url = self::discover_runtime_base_url();
+		if ( null === $runtime_base_url ) {
+			$runtime_base_url = self::normalize_loopback_runtime_url( $runtime_url );
+		}
 
 		if ( null === $runtime_base_url ) {
 			return null;

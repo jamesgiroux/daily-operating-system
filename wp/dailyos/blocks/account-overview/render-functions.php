@@ -121,14 +121,62 @@ if ( ! function_exists( 'dailyos_account_overview_render' ) ) {
 	 * @return string Rendered HTML.
 	 */
 	function dailyos_account_overview_render_block( array $block ): string {
-		$type          = isset( $block['block_type'] ) ? (string) $block['block_type'] : 'unknown';
+		// The runtime serializes ProjectedBlock with a structured shape:
+		// the chosen rule lives under selected_known_type_id, the data the
+		// producer emitted lives under payload, and trust_band is hoisted
+		// to the top level. Read those rather than the flat block_type /
+		// title / summary keys, which the runtime does not emit.
+		$type_full = isset( $block['selected_known_type_id'] ) ? (string) $block['selected_known_type_id'] : '';
+		if ( '' === $type_full && isset( $block['original_type_id'] ) ) {
+			$type_full = (string) $block['original_type_id'];
+		}
+		$type    = '' !== $type_full ? (string) preg_replace( '#^dailyos/#', '', $type_full ) : 'unknown';
+		$payload = isset( $block['payload'] ) && is_array( $block['payload'] ) ? $block['payload'] : [];
+
 		$trust         = isset( $block['trust_band'] ) ? (string) $block['trust_band'] : 'needs_verification';
 		$visible_bands = [ 'likely_current', 'use_with_caution', 'needs_verification' ];
 		if ( ! in_array( $trust, $visible_bands, true ) ) {
 			$trust = 'needs_verification';
 		}
-		$label = isset( $block['title'] ) ? (string) $block['title'] : ucfirst( str_replace( '_', ' ', $type ) );
-		$body  = isset( $block['summary'] ) ? (string) $block['summary'] : '';
+
+		// Header label. AccountOverview emits an explicit title; claim
+		// blocks don't, so fall back to the block-type label.
+		$label = isset( $payload['title'] ) && is_string( $payload['title'] )
+			? (string) $payload['title']
+			: ucfirst( str_replace( '_', ' ', $type ) );
+
+		// Body text. Producer emits claim text under /text for single-claim
+		// blocks, /items/*/text for ActionList, /nodes/*/text for
+		// RelationshipMap, and an array of overview claims under /context
+		// for the AccountOverview summary block.
+		$body = '';
+		if ( isset( $payload['text'] ) && is_string( $payload['text'] ) ) {
+			$body = (string) $payload['text'];
+		} elseif ( isset( $payload['items'] ) && is_array( $payload['items'] ) ) {
+			$parts = [];
+			foreach ( $payload['items'] as $item ) {
+				if ( is_array( $item ) && isset( $item['text'] ) && is_string( $item['text'] ) ) {
+					$parts[] = (string) $item['text'];
+				}
+			}
+			$body = implode( ' · ', $parts );
+		} elseif ( isset( $payload['nodes'] ) && is_array( $payload['nodes'] ) ) {
+			$parts = [];
+			foreach ( $payload['nodes'] as $node ) {
+				if ( is_array( $node ) && isset( $node['text'] ) && is_string( $node['text'] ) ) {
+					$parts[] = (string) $node['text'];
+				}
+			}
+			$body = implode( ' · ', $parts );
+		} elseif ( isset( $payload['context'] ) && is_array( $payload['context'] ) ) {
+			$parts = [];
+			foreach ( $payload['context'] as $ctx ) {
+				if ( is_array( $ctx ) && isset( $ctx['text'] ) && is_string( $ctx['text'] ) ) {
+					$parts[] = (string) $ctx['text'];
+				}
+			}
+			$body = implode( ' · ', $parts );
+		}
 
 		$out  = '<article class="dailyos-block dailyos-block-' . esc_attr( $type ) . '">';
 		$out .= '<header><h3>' . esc_html( $label ) . '</h3>';

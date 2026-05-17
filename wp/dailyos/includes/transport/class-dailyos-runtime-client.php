@@ -276,11 +276,15 @@ final class DailyOS_Runtime_Client {
 			$headers['X-DailyOS-Multisite-Blog-Id'] = $identity['multisite_blog_id'];
 		}
 
+		// Cold-cache producer commits + writer-mutex contention from background
+		// workers can take >5s in local-to-local deployments. The original 5s
+		// timeout was sized for a remote-shaped expectation; local renders
+		// against a busy substrate DB reliably exceed it.
 		$post_args = [
 			'body'        => $body_bytes,
 			'headers'     => $headers,
 			'redirection' => 0,
-			'timeout'     => 5,
+			'timeout'     => 30,
 			'sslverify'   => false,
 			'blocking'    => true,
 			'data_format' => 'body',
