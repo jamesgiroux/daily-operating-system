@@ -686,6 +686,10 @@ async fn rehydrate_sessions_from_keychain(
     // Step 4: mark DB rows revoked for sessions whose keychain entry is missing.
     if !missing.is_empty() {
         let missing_count = missing.len();
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "rehydrate reconciliation is best-effort; failure logged below but does not block startup"
+        )]
         let _ = app_state
             .db_write(move |db| {
                 for row in missing {
@@ -789,6 +793,10 @@ fn write_runtime_sentinel(port: u16, runtime_version: &str) -> io::Result<()> {
     // Atomic rename. If this fails (e.g. cross-device, unlikely on local FS),
     // clean up the tempfile so we don't leak it.
     if let Err(rename_err) = fs::rename(&tempfile_path, &sentinel_path) {
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "best-effort tempfile cleanup; rename error is the meaningful failure"
+        )]
         let _ = fs::remove_file(&tempfile_path);
         return Err(rename_err);
     }
@@ -802,6 +810,10 @@ fn write_runtime_sentinel(port: u16, runtime_version: &str) -> io::Result<()> {
 /// the file is already gone (e.g., user deleted it between bind and shutdown).
 fn remove_runtime_sentinel() {
     if let Ok(path) = runtime_sentinel_path() {
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "best-effort cleanup; missing sentinel on shutdown is fine"
+        )]
         let _ = fs::remove_file(path);
     }
 }
@@ -1031,6 +1043,10 @@ async fn signed_transport_response(
             if let Some(action) = failure.write_action() {
                 let now = Utc::now();
                 let action_for_closure = action.clone();
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "quarantine write best-effort; rejection response is the meaningful outcome"
+                )]
                 let _ = app_state
                     .db_write(move |db| {
                         surface_pairing::apply_signed_session_write_action(
