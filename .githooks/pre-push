@@ -80,20 +80,25 @@ if [ "$HAS_RUST" = true ] && [ -d "$BACKEND_DIR" ] && [ -f "${BACKEND_DIR}/scrip
 fi
 
 if [ "$HAS_RUST" = true ] && [ -d "$BACKEND_DIR" ]; then
+  # Silence cargo output. When git push wraps the hook, ~2500 lines of
+  # cargo test stdout streamed through git push's stdio caused git push
+  # to die with SIGPIPE (exit 141) before reaching the transmit phase,
+  # even though the hook itself returned 0 standalone. Matches the
+  # pattern pre-commit already uses for the same reason.
   echo "pre-push: cargo clippy -- -D warnings" >&2
-  if ! cargo clippy --manifest-path "$BACKEND_DIR/Cargo.toml" -- -D warnings; then
+  if ! cargo clippy --manifest-path "$BACKEND_DIR/Cargo.toml" -- -D warnings >/dev/null 2>&1; then
     append_error "❌ cargo clippy -- -D warnings FAILED"
   fi
 
   echo "pre-push: cargo test --lib" >&2
-  if ! cargo test --lib --manifest-path "$BACKEND_DIR/Cargo.toml"; then
+  if ! cargo test --lib --manifest-path "$BACKEND_DIR/Cargo.toml" >/dev/null 2>&1; then
     append_error "❌ cargo test --lib FAILED"
   fi
 fi
 
 if [ "$HAS_FRONTEND" = true ] && [ -f "${CWD}/package.json" ]; then
   echo "pre-push: pnpm tsc --noEmit" >&2
-  if ! pnpm tsc --noEmit; then
+  if ! pnpm tsc --noEmit >/dev/null 2>&1; then
     append_error "❌ pnpm tsc --noEmit FAILED"
   fi
 fi
