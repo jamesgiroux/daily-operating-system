@@ -601,6 +601,22 @@ pub fn complete_handshake(
     let previous_pairing_id = previous_pairing
         .as_ref()
         .map(|pairing| pairing.pairing_id.clone());
+
+    // W4-F DOS-646: persist the master key in macOS keychain so the runtime
+    // can rehydrate session state across Tauri restarts. Best-effort: a
+    // keychain failure is logged but does not fail the pairing (the session
+    // is still valid for the current Tauri lifetime; restart will surface
+    // session_requires_repair per the reconciliation contract).
+    if let Err(err) = crate::services::surface_session_keychain::persist_session_master_key(
+        &surface_client_id,
+        &session_id,
+        &hmac_master_key,
+    ) {
+        log::warn!(
+            "surface session key keychain persist failed (DOS-646): {err}"
+        );
+    }
+
     let hmac_session_key = derive_session_hmac_key(hmac_master_key, &session_id);
     let response = PairingHandshakeResponse {
         surface_client_id: surface_client_id.clone(),

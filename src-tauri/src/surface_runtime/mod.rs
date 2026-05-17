@@ -1,8 +1,12 @@
 use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
 use std::error::Error;
+use std::fs;
+use std::io;
 use std::net::{Ipv4Addr, SocketAddr};
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::panic;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -269,6 +273,18 @@ impl SurfaceEndpointState {
             "test_runtime_anchor".to_string()
         };
 
+        // W4-F DOS-646: rehydrate signed sessions from keychain so paired WP
+        // installs survive Tauri restart. Best-effort: if the keychain entry
+        // is missing for a DB-present session, mark that session revoked
+        // with reason `keychain_entry_missing` per W4-F packet §7 #12.
+        if let Some(state) = app_state.as_ref() {
+            if let Err(err) =
+                rehydrate_sessions_from_keychain(state, &self.signed_transport).await
+            {
+                log::warn!("surface session rehydrate failed (DOS-646): {err}");
+            }
+        }
+
         let max_attempts = config.max_bind_attempts.clamp(1, DEFAULT_MAX_BIND_ATTEMPTS);
         let mut last_error = None;
         for _attempt in 1..=max_attempts {
@@ -309,6 +325,9 @@ impl SurfaceEndpointState {
                     let endpoint_state = Arc::clone(&self);
                     let join = tokio::spawn(async move {
                         run_listener(listener, runtime, shutdown_rx).await;
+                        // W4-F DOS-636: remove the sentinel on shutdown so a
+                        // stale port doesn't redirect WP after restart.
+                        remove_runtime_sentinel();
                         endpoint_state.mark_stopped_if_current(startup_id);
                     });
                     let abort = join.abort_handle();
@@ -324,6 +343,15 @@ impl SurfaceEndpointState {
                             shutdown,
                             abort,
                         });
+                    }
+                    // W4-F DOS-636: write the runtime sentinel so the WP plugin
+                    // discovers the new port across Tauri restarts. Best-effort —
+                    // if the write fails, we log and continue; WP can still
+                    // discover via the stored pairing marker until next restart.
+                    if let Err(err) =
+                        write_runtime_sentinel(bound_port, env!("CARGO_PKG_VERSION"))
+                    {
+                        log::warn!("surface endpoint sentinel write failed: {err}");
                     }
                     return Ok((self.snapshot(), join));
                 }
@@ -560,6 +588,222 @@ struct EndpointRuntime {
     #[cfg(test)]
     ability_registry_override: Option<Arc<crate::abilities::AbilityRegistry>>,
     app_state: Option<Arc<AppState>>,
+}
+
+/// Row shape for rehydrating a signed session from the DB at startup.
+#[derive(Debug)]
+struct RehydrateRow {
+    session_id: String,
+    surface_client_id: String,
+}
+
+/// Rehydrate signed sessions from the DB + keychain (W4-F DOS-646).
+///
+/// Pre-condition: `signed_transport.configure(...)` already called.
+///
+/// Algorithm:
+/// 1. Query DB for active sessions (revoked_at IS NULL, lifecycle_state = 'active',
+///    absolute_expires_at > now).
+/// 2. For each row, attempt keychain load of the master key.
+/// 3. If Some, register the session in the in-memory transport state.
+/// 4. If None, mark the DB row revoked with reason `keychain_entry_missing`
+///    per packet §7 #12 — WP plugin will surface `session_requires_repair`.
+///
+/// Returns `Err(String)` on DB read failure; otherwise `Ok(())` with
+/// best-effort rehydration. Per-session errors are logged but do not abort.
+async fn rehydrate_sessions_from_keychain(
+    app_state: &Arc<AppState>,
+    signed_transport: &hmac::SignedTransportState,
+) -> Result<(), String> {
+    // Step 1: read active sessions from DB.
+    let rows: Vec<RehydrateRow> = app_state
+        .db_read(|db| {
+            let mut stmt = db
+                .conn_ref()
+                .prepare(
+                    "SELECT s.session_id, s.surface_client_id
+                     FROM surface_client_sessions s
+                     JOIN surface_client_pairings p
+                       ON p.surface_client_id = s.surface_client_id
+                     WHERE s.revoked_at IS NULL
+                       AND p.lifecycle_state = 'active'
+                       AND datetime(s.absolute_expires_at) > datetime('now')",
+                )
+                .map_err(|e| e.to_string())?;
+            let rows_iter = stmt
+                .query_map([], |row| {
+                    Ok(RehydrateRow {
+                        session_id: row.get::<_, String>("session_id")?,
+                        surface_client_id: row.get::<_, String>("surface_client_id")?,
+                    })
+                })
+                .map_err(|e| e.to_string())?;
+            let mut out = Vec::new();
+            for r in rows_iter {
+                out.push(r.map_err(|e| e.to_string())?);
+            }
+            Ok::<_, String>(out)
+        })
+        .await?;
+
+    if rows.is_empty() {
+        return Ok(());
+    }
+
+    // Step 2-4: per-row keychain load + register-or-revoke.
+    let mut rehydrated = 0usize;
+    let mut missing = Vec::new();
+    for row in rows {
+        match crate::services::surface_session_keychain::load_session_master_key(
+            &row.surface_client_id,
+            &row.session_id,
+        ) {
+            Some(master_key) => {
+                let session = hmac::SignedSurfaceSession::new_active(
+                    row.session_id.clone(),
+                    row.surface_client_id.clone(),
+                    master_key,
+                );
+                if let Err(err) = signed_transport.register_session(session) {
+                    log::warn!(
+                        "surface session rehydrate failed to register session: {err:?}"
+                    );
+                    continue;
+                }
+                rehydrated += 1;
+            }
+            None => {
+                missing.push(row);
+            }
+        }
+    }
+    if rehydrated > 0 {
+        log::info!(
+            "surface session rehydrate: {rehydrated} active sessions restored from keychain"
+        );
+    }
+
+    // Step 4: mark DB rows revoked for sessions whose keychain entry is missing.
+    if !missing.is_empty() {
+        let missing_count = missing.len();
+        let _ = app_state
+            .db_write(move |db| {
+                for row in missing {
+                    if let Err(err) = db.conn_ref().execute(
+                        "UPDATE surface_client_sessions
+                         SET revoked_at = datetime('now'),
+                             revoked_reason = 'keychain_entry_missing'
+                         WHERE session_id = ?1 AND revoked_at IS NULL",
+                        rusqlite::params![row.session_id],
+                    ) {
+                        log::warn!(
+                            "surface session rehydrate: keychain_entry_missing revoke write failed: {err}"
+                        );
+                    }
+                }
+                Ok::<_, String>(())
+            })
+            .await;
+        log::warn!(
+            "surface session rehydrate: {missing_count} sessions revoked (keychain_entry_missing); WP plugin will surface session_requires_repair on next request"
+        );
+    }
+    Ok(())
+}
+
+/// Path to the runtime sentinel file (W4-F DOS-636).
+///
+/// `~/.dailyos/runtime-endpoint.json` — written on bind, removed on shutdown.
+/// Parent dir is ensured at `0700`, sentinel at `0600` (W4-F §5 + §6.4).
+fn runtime_sentinel_path() -> io::Result<PathBuf> {
+    let home = std::env::var_os("HOME")
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "HOME unset"))?;
+    let mut path = PathBuf::from(home);
+    path.push(".dailyos");
+    path.push("runtime-endpoint.json");
+    Ok(path)
+}
+
+/// Write the runtime sentinel after a successful bind (W4-F DOS-636).
+///
+/// Per W4-F §5 + §6.4:
+/// - Parent dir `~/.dailyos/` ensured at mode `0700`.
+/// - Sentinel itself written at mode `0600` via temp-file + atomic rename.
+/// - `O_NOFOLLOW | O_EXCL` on the temp open prevents symlink + race attacks.
+/// - Payload contains ONLY `port` and `runtime_version`. NEVER auth material.
+///
+/// Defense per §6.4: sentinel is port-discovery convenience, NOT a defense.
+/// Defense is HMAC validation on every response. Substituted sentinel cannot
+/// produce valid HMAC, WP detects impersonation at first signed request.
+fn write_runtime_sentinel(port: u16, runtime_version: &str) -> io::Result<()> {
+    let sentinel_path = runtime_sentinel_path()?;
+    let parent = sentinel_path
+        .parent()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "sentinel parent missing"))?;
+
+    // Ensure parent dir exists at 0700. create_dir_all is idempotent; we then
+    // set perms whether we created it or not.
+    fs::create_dir_all(parent)?;
+    fs::set_permissions(parent, fs::Permissions::from_mode(0o700))?;
+
+    // Atomic write: open a tempfile in the same dir with O_NOFOLLOW|O_EXCL,
+    // write payload, fsync, then atomic rename over the sentinel.
+    let payload = serde_json::json!({
+        "port": port,
+        "runtime_version": runtime_version,
+    });
+    let body = serde_json::to_vec(&payload).map_err(|err| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("sentinel payload serialize: {err}"),
+        )
+    })?;
+
+    // Tempfile name: <sentinel>.tmp.<pid>.<nanos>. Unlikely to collide.
+    let tempfile_name = {
+        let now_ns = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        format!(
+            "runtime-endpoint.json.tmp.{}.{}",
+            std::process::id(),
+            now_ns
+        )
+    };
+    let tempfile_path = parent.join(tempfile_name);
+
+    {
+        use std::io::Write;
+        // O_NOFOLLOW | O_EXCL on create — refuses symlinks and existing files.
+        let mut opts = fs::OpenOptions::new();
+        opts.write(true)
+            .create_new(true)
+            .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW);
+        let mut file = opts.open(&tempfile_path)?;
+        file.write_all(&body)?;
+        file.sync_all()?;
+    }
+
+    // Atomic rename. If this fails (e.g. cross-device, unlikely on local FS),
+    // clean up the tempfile so we don't leak it.
+    if let Err(rename_err) = fs::rename(&tempfile_path, &sentinel_path) {
+        let _ = fs::remove_file(&tempfile_path);
+        return Err(rename_err);
+    }
+
+    Ok(())
+}
+
+/// Remove the runtime sentinel on shutdown (W4-F DOS-636).
+///
+/// Best-effort: a missing sentinel is fine. We do NOT propagate the error if
+/// the file is already gone (e.g., user deleted it between bind and shutdown).
+fn remove_runtime_sentinel() {
+    if let Ok(path) = runtime_sentinel_path() {
+        let _ = fs::remove_file(path);
+    }
 }
 
 async fn run_listener(
