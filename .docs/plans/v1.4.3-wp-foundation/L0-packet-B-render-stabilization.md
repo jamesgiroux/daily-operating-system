@@ -1,6 +1,6 @@
 # L0 Packet B — WP preview/runtime render stabilization
 
-**Current revision: V1.1 (cycle-1 fold + key reframing, 2026-05-17). See §2 Changelog.**
+**Current revision: V1.1.1 (cycle-2 text fixes, 2026-05-17). See §2 Changelog.**
 
 ## 1. Header
 
@@ -41,6 +41,79 @@ lifecycle hardening (DOS-673/674/675) — that is L0 Packet A, separate review
 track, separate PR.
 
 ## 2. Changelog
+
+- **V1.1.1 (2026-05-17, cycle-2 text fixes):** All 4 cycle-2 reviewers
+  returned non-BLOCK (CSO APPROVE, codex challenge CONDITIONAL APPROVE,
+  code-reviewer CONDITIONAL APPROVE, codex consult CONDITIONAL APPROVE).
+  All CONDITIONAL APPROVE findings are text-only — no architecture change.
+  Folded inline:
+  - **§5.3 + §5.4 clarification** (codex challenge LOW): "state movement"
+    means `composition_versions` row advancement through
+    `commit_composition`; upstream claim/source movement reaches this
+    cache through the existing DOS-589 / W4-A0 recomposition contract.
+    The cache invalidation proof is exact for committed composition-version
+    movement.
+  - **§5.5 type-shape correction** (codex consult): the existing substrate
+    `charge_ability_scope` is a boolean (`surface_client.rs:642`), not an
+    enum. V1.1.1 specifies a boolean parameter. Also cites the existing
+    precedent at `surface_client.rs:936` where another helper already
+    constructs requests with `charge_ability_scope=false`.
+  - **§5.2 ESLint suppression note** (codex consult): WP-side
+    `wp-scripts lint-js` may warn on `useEffect([reloadTrigger])` omitting
+    `reload` from the dep list. Spec: use an explicit ESLint disable
+    comment with rationale — or, if `react-hooks/exhaustive-deps` is set
+    to `warn` rather than `error`, the warning is non-blocking. Both
+    options preserve the architectural shape.
+  - **§5.6 `consistency_failure` marked as fail-safe-only** (codex consult):
+    `consistency_failure` is not verified as an emittable runtime code in
+    the current Rust surface. V1.1.1 keeps it as a renderer fail-safe
+    bucket (for any future code that maps to consistency) rather than
+    claiming it's an active runtime code. Removed from fixture #14's
+    code-matrix list.
+  - **§5.6 AC #14 / fixture #14 sync** (codex consult): AC #14 listed
+    `missing_expected_claim_version` and `mid_flight_mutation`; fixture
+    #14's 11-code matrix omitted both. V1.1.1 adds them to fixture #14's
+    enumeration. Now AC #14 and fixture #14 cover the same 13-code set
+    (11 from V1.1 + 2 omitted).
+  - **§5.6 session-repair arm extended** (code-reviewer F2 residual):
+    extend switch's session-repair arm to include `identity_mismatch`,
+    `wp_user_mismatch`, `pairing_code_invalid`, `pairing_code_expired`,
+    `pairing_code_consumed`, `pairing_code_limited`, `pairing_suspended`,
+    `pairing_revoked`, `pairing_expired`, `site_binding_mismatch`,
+    `session_expired`, `session_throttled`, `restored_stale_pairing`,
+    `scope_denied`, `auth_missing`. Plus a new "renderer-input-invalid"
+    arm for `request_body_too_large`, `request_body_unreadable`,
+    `handshake_body_invalid`, `session_refresh_body_invalid`,
+    `surface_invoke_invalid`, `event_log_id_invalid`. Reasoning: V1.1's
+    "unknown code → verification banner" fail-safe was functionally
+    correct but mis-attributed pairing/identity failures to projection
+    consistency. The extended arms route them to user-actionable notices.
+    Verification banner stays reserved for true projection-consistency
+    failures + unknown-code fail-safe.
+  - **§8 new fixture #17 — AC #16 coverage** (code-reviewer F8): Rust
+    test `dos672_authorize_local_render_enforces_scope` — when validated
+    session lacks `read.account_overview` scope, `authorize_local_render`
+    rejects with `ScopeDenied`, proving `charge_ability_scope=false` only
+    bypasses rate-budget consumption, NOT authorization gates.
+  - **§8 new fixture #18 — external composition-version invalidation**
+    (codex challenge LOW): Rust test that seeds cache at version N,
+    advances current DB composition_version outside the request watermark
+    (e.g., via an external producer path), renders with stale
+    `request.composition_version=N`, asserts lookup misses old key,
+    producer path runs, cache stored at the emitted version, subsequent
+    render hits. Concrete proof of the §5.4 reframe's invalidation claim.
+  - **§8.1 AC↔fixture mapping table added** (codex consult Validation 6 +
+    code-reviewer): the V1.1 "16 ACs ↔ 16 fixtures, 1:1" claim was
+    overstated — several ACs map to CI invariants or are covered by
+    multiple fixtures. V1.1.1 adds an explicit mapping table (Packet A
+    V1.1.1 §8.1 pattern). After fixture #17 + #18 additions, count is
+    18 fixtures covering 16 ACs + 2 CI-only invariants.
+  - **§9 whitespace tolerance note** (code-reviewer F7): invariants #2/#3
+    grep gates must tolerate whitespace inside dep array literals (e.g.,
+    `[ x, y ]` vs `[x, y]`). Spec: collapse whitespace before regex
+    match, or use a normalized-AST check via simple JS parse. L1
+    implementer detail; documented here so the gate doesn't become a
+    brittle literal-substring grep.
 
 - **V1.1 (2026-05-17, cycle-1 fold + key reframing):** Cycle-1 verdicts:
   codex challenge BLOCK, CSO CA, code-reviewer CA, codex consult CA. The
@@ -326,6 +399,22 @@ useEffect(() => {
 - Show an `error` notice in the editor but do NOT replace rendered content
   with the verification banner envelope.
 
+**ESLint suppression note (V1.1.1 per codex consult):** WP-side
+`wp-scripts lint-js` may emit `react-hooks/exhaustive-deps` warnings on
+`useEffect([reloadTrigger])` because `reload` is reachable from the body
+but not in the dep list. Two L1 implementer options, both architecturally
+correct:
+- Explicit ESLint disable comment with rationale (preferred for clarity):
+  ```js
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional:
+  // reload's identity is recomputed every render (full dep list); the
+  // auto-reload trigger gate is the derived reloadTrigger string. See
+  // L0 Packet B V1.1 §5.2.
+  useEffect(() => { reload(); }, [reloadTrigger]);
+  ```
+- OR set `react-hooks/exhaustive-deps` to `warn` not `error` at the WP
+  project level (root project already does this at `eslint.config.js:74`).
+
 ### 5.3 Runtime cache-key correction — option (a) picked (V1.1)
 
 At `src-tauri/src/surface_runtime/mod.rs:2317-2321` and `:2425-2430`, the cache
@@ -371,6 +460,20 @@ producer invocations are serialized by the SurfaceClient bridge's writer
 mutex; there is effectively no concurrent commit race. For
 federation/multi-writer scenarios, this would need the invalidation API
 from option (b) — out of scope for v1.4.3.
+
+**"State movement" definition** (added V1.1.1 per codex challenge cycle-2
+LOW): "state movement" in this packet means `composition_versions` row
+advancement through `commit_composition`. Upstream claim/source movement
+(claim version, source freshness, account_subject signals) reaches this
+cache through the existing DOS-589 / W4-A0 recomposition contract:
+upstream signal → producer re-invocation by some path → producer commits
+new composition version → next render's `current_db_version` read returns
+the new value → cache lookup misses old key → producer runs (this time
+from the actual render path) → cache populated at new version → subsequent
+renders hit. The cache invalidation proof is exact for committed
+composition-version movement; pre-commit upstream movement is invisible to
+this cache by design (and that's correct — without a committed projection
+to serve, there's nothing to invalidate or refresh).
 
 ### 5.4 Render-path producer behavior — V1.1 reframe: producer commits preserved
 
@@ -448,7 +551,11 @@ AC #15 ("local-render decharge emits zero `rate_limit_audit_event` entries
 for the ability/scope bucket"). Maintenance ticket filed for operator
 observability of local-render volume.
 
-**Implementation shape:**
+**Implementation shape (V1.1.1 — corrected type-shape per codex consult):**
+
+The existing substrate uses a **boolean** `charge_ability_scope` field
+(`surface_client.rs:642`), not an enum. V1.1's pseudo-code naming
+`ChargeAbilityScope::Off` was misleading; corrected:
 
 ```rust
 // New variant — same descriptor/actor/mode/scope checks, then bypass-ability-scope rate-limit
@@ -464,10 +571,15 @@ pub fn authorize_local_render(
         validated,
         ability_name,
         request_id,
-        ChargeAbilityScope::Off,  // existing internal flag; today hardcoded to On
+        false,  // charge_ability_scope — today hardcoded to true at :387/:409
     )
 }
 ```
+
+**Precedent:** there is already an identity-only helper at
+`surface_client.rs:936` that constructs requests with
+`charge_ability_scope=false`. V1.1.1's `authorize_local_render` follows
+the same pattern.
 
 Route handler at `surface_runtime/mod.rs:2288-2311` calls
 `authorize_local_render` instead of `authorize` for the `project_composition`
@@ -500,21 +612,50 @@ if ( isset( $response['ok'] ) && $response['ok'] === false ) {
     switch ( $code ) {
         case 'rate_limited':
             return dailyos_account_overview_render_throttled_notice();
+        // Session-repair-shaped: user action needed to restore pairing/session.
         case 'session_requires_repair':
         case 'session_not_found':
+        case 'session_expired':
+        case 'session_throttled':
+        case 'identity_mismatch':
+        case 'wp_user_mismatch':
+        case 'pairing_code_invalid':
+        case 'pairing_code_expired':
+        case 'pairing_code_consumed':
+        case 'pairing_code_limited':
+        case 'pairing_suspended':
+        case 'pairing_revoked':
+        case 'pairing_expired':
+        case 'site_binding_mismatch':
+        case 'restored_stale_pairing':
+        case 'scope_denied':
+        case 'auth_missing':
             return dailyos_account_overview_render_session_repair_notice();
+        // Runtime-unavailable: transient infrastructure problem; retry.
         case 'runtime_unavailable':
         case 'runtime_request_failed':
         case 'runtime_invalid_json':
         case 'runtime_http_error':
+        case 'host_invalid':
+        case 'browser_origin_forbidden':
+        case 'route_not_found':
             return dailyos_account_overview_render_runtime_unavailable_notice();
+        // Renderer-input-invalid: defensive — the renderer or its caller
+        // produced something the runtime can't process. Operator
+        // notice; not a user-actionable retry.
+        case 'request_body_too_large':
+        case 'request_body_unreadable':
+        case 'handshake_body_invalid':
+        case 'session_refresh_body_invalid':
+        case 'surface_invoke_invalid':
+        case 'event_log_id_invalid':
+            return dailyos_account_overview_render_invalid_request_notice();
+        // Projection-consistency failures — verification banner correct.
         case 'projection_tampered':
         case 'projection_version_rollback':
         case 'stale_composition_watermark':
         case 'missing_expected_claim_version':
         case 'mid_flight_mutation':
-        case 'consistency_failure':
-            // Genuine projection-consistency failure — verification banner correct.
             return dailyos_account_overview_render_verification_banner();
         default:
             // Unknown code: fail-safe to verification banner. Operator
@@ -536,9 +677,20 @@ New helpers (small, local copy):
 - `dailyos_account_overview_render_throttled_notice()` — "Runtime is throttling; retry shortly."
 - `dailyos_account_overview_render_session_repair_notice()` — "Surface session needs repair; reconnect from DailyOS settings."
 - `dailyos_account_overview_render_runtime_unavailable_notice()` — "Runtime unavailable; retry."
+- `dailyos_account_overview_render_invalid_request_notice()` — "Editor sent a request the runtime couldn't process. Reload the editor."
 
 The verification banner stays reserved for genuine projection-consistency
 failures + unknown codes (fail-safe).
+
+**Note on `consistency_failure` (V1.1.1 per codex consult):**
+`consistency_failure` is not verified as an actively emitted runtime code
+in the current Rust surface. The 5 specific consistency codes in the
+verification-banner switch arm (`projection_tampered`,
+`projection_version_rollback`, `stale_composition_watermark`,
+`missing_expected_claim_version`, `mid_flight_mutation`) ARE emittable
+(`surface_runtime/mod.rs:3010-3049`). The renderer's fail-safe default
+arm catches any new consistency code added later — including a future
+`consistency_failure` if introduced.
 
 ## 6. Directional decisions resolved at L0
 
@@ -620,7 +772,7 @@ its rendered state. No runtime contract change for this rule.
 11. Second consecutive manual reload succeeds (returns projection, not banner) — assuming first reload succeeded.
 12. Failed reload (any cause) preserves last-good `preview` state in the editor.
 13. Failed reload surfaces an `error` notice; does NOT replace rendered content with verification-banner HTML.
-14. PHP renderer maps `error.code` via switch table: `rate_limited` → throttled notice; `session_requires_repair` / `session_not_found` → session-repair notice; `runtime_unavailable` / `runtime_request_failed` / `runtime_invalid_json` / `runtime_http_error` → runtime-unavailable notice; consistency codes (`projection_tampered`, `projection_version_rollback`, `stale_composition_watermark`, `missing_expected_claim_version`, `mid_flight_mutation`, `consistency_failure`) → verification banner; unknown codes → verification banner (fail-safe).
+14. PHP renderer maps `error.code` via switch table (V1.1.1 expanded coverage): `rate_limited` → throttled notice; session-repair-shaped codes (`session_requires_repair`, `session_not_found`, `session_expired`, `session_throttled`, `identity_mismatch`, `wp_user_mismatch`, `pairing_*`, `site_binding_mismatch`, `restored_stale_pairing`, `scope_denied`, `auth_missing`) → session-repair notice; runtime-unavailable codes (`runtime_unavailable`, `runtime_request_failed`, `runtime_invalid_json`, `runtime_http_error`, `host_invalid`, `browser_origin_forbidden`, `route_not_found`) → runtime-unavailable notice; renderer-input-invalid codes (`request_body_*`, `handshake_body_invalid`, `session_refresh_body_invalid`, `surface_invoke_invalid`, `event_log_id_invalid`) → invalid-request notice; projection-consistency codes (`projection_tampered`, `projection_version_rollback`, `stale_composition_watermark`, `missing_expected_claim_version`, `mid_flight_mutation`) → verification banner; unknown codes → verification banner (fail-safe).
 15. **Local-render decharge by construction:** `authorize_local_render` calls `check_and_consume` with `charge_ability_scope=false`. Ability/scope buckets (`standard_read_composition`, `scope.read`) are NOT consumed; identity buckets (`surface_client`, `wp_user`, `wp_site`) ARE consumed. As a direct consequence, the `RateLimitOutcome::Allowed.audit_events` "tightened" emission for ability/scope is OMITTED — no observability event for that bucket because no consumption happens.
 16. Auth/scope mandatory checks (descriptor, actor, mode, experimental, required scopes, browser-direct guard) are NOT bypassed; only rate-budget consumption for ability/scope changes.
 
@@ -645,17 +797,44 @@ injection) for editor-side behavior assertions — no net-new jest setup (code-r
 | 11 | `dos671_local_render_no_tighten_event` | Rust test: 100 paired-loopback render reads produce ZERO `rate_limit_audit_event` entries (ability/scope bucket bypassed → no rejection → no tightening) |
 | 12 | `dos672_manual_reload_single_request` | PHP integration test: simulated button click via REST → exactly one runtime call (not two) |
 | 13 | `dos672_failed_reload_preserves_last_good` | PHP integration test: first reload succeeds → preview HTML rendered; second reload fails (mocked error) → response body returns error notice + last-good preview HTML unchanged in the response shape |
-| 14 | `dos672_typed_error_mapping` | PHP test matrix: each of the 11 error codes (`rate_limited`, `session_requires_repair`, `session_not_found`, `runtime_unavailable`, `runtime_request_failed`, `runtime_invalid_json`, `runtime_http_error`, `projection_tampered`, `projection_version_rollback`, `stale_composition_watermark`, `consistency_failure`) → expected user-facing string (throttled / repair / unavailable / verification banner per §5.6 table) |
+| 14 | `dos672_typed_error_mapping` | PHP test matrix (V1.1.1 expanded): per-arm grouping — throttled (`rate_limited`); session-repair (`session_requires_repair`, `session_not_found`, `session_expired`, `session_throttled`, `identity_mismatch`, `wp_user_mismatch`, `pairing_code_invalid`, `pairing_code_expired`, `pairing_code_consumed`, `pairing_code_limited`, `pairing_suspended`, `pairing_revoked`, `pairing_expired`, `site_binding_mismatch`, `restored_stale_pairing`, `scope_denied`, `auth_missing`); runtime-unavailable (`runtime_unavailable`, `runtime_request_failed`, `runtime_invalid_json`, `runtime_http_error`, `host_invalid`, `browser_origin_forbidden`, `route_not_found`); invalid-request (`request_body_too_large`, `request_body_unreadable`, `handshake_body_invalid`, `session_refresh_body_invalid`, `surface_invoke_invalid`, `event_log_id_invalid`); verification banner (`projection_tampered`, `projection_version_rollback`, `stale_composition_watermark`, `missing_expected_claim_version`, `mid_flight_mutation`). Each emittable code → expected user-facing string per §5.6 table. |
 | 15 | `dos672_unknown_code_failsafe` | PHP test: runtime response `{ok:false, error:{code:'unknown_xyz'}}` → verification banner renders (fail-safe) |
 | 16 | `dos671_l4_hands_on_log` | Hands-on log captured: initial render → wait 60s → focus switch x2 → manual reload x2; content remains visible throughout (the user-visible L4 target) |
+| 17 | `dos672_authorize_local_render_enforces_scope` | Rust test (added V1.1.1 for AC #16): when validated session lacks `read.account_overview` scope, `authorize_local_render` rejects with `ScopeDenied`; proves `charge_ability_scope=false` only bypasses rate-budget consumption, NOT authorization gates. Negative-control fixture against the §5.5 decharge. |
+| 18 | `dos671_external_version_advance_invalidates_cache` | Rust test (added V1.1.1 per codex challenge LOW): seed cache at version N for composition_id X; advance current_db_version for X outside the render request (e.g., external producer commit via a different ability path); render with `request.composition_version=N` (stale watermark); assert (a) cache lookup misses the V1.1 key `(actor, X, N+, scopes)` because current_db_version is now N+; (b) producer path runs and commits the projection at version N+; (c) cache is stored at N+; (d) immediately-subsequent render hits the cache. Proof of the §5.4 reframe's invalidation claim end-to-end.
+
+### 8.1 AC → fixture / invariant mapping (added V1.1.1 per codex consult + code-reviewer)
+
+V1.1's "16 ACs ↔ 16 fixtures, 1:1" claim was overstated. Explicit mapping:
+
+| AC | Coverage |
+|---|---|
+| AC #1 (single-fetch — wrapper + preview) | Fixtures #1 (preview single-fetch) + #2 (wrapper preserves single-fetch). Two-fixture coverage because the AC has two clauses. |
+| AC #2 (`reload` callback dep list) | §9 CI invariant #2 (grep gate) — not a runtime fixture |
+| AC #3 (useEffect trigger key) | §9 CI invariant #3 (grep gate) |
+| AC #4 (success no-retrigger) | Inferred from fixture #5 (first-mount fires ONE reload + V1.1.1 ESLint suppression note ensures Gutenberg attribute writes don't refire). For explicit assertion, fixture #5 should also assert no second reload happens within N ms of the first success — fold into fixture #5 description for L1. |
+| AC #5 (first-mount fires one reload) | Fixture #5 |
+| AC #6 (cache lookup keyed by current_db_version) | Fixtures #6, #7, #8, #18 + §9 CI invariant #4 (grep gate) |
+| AC #7 (cache store uses projection.composition_version) | Fixture #8 |
+| AC #8 (60s visibility + 2 focus changes) | Fixture #16 (L4 hands-on) |
+| AC #9 (manual reload single request) | Fixture #12 |
+| AC #10 (window-focus no reload) | Covered in fixture #16 hands-on log. For explicit automated assertion, fold into a sub-step of fixture #5 or add as L1 hardening. |
+| AC #11 (second manual reload succeeds) | Covered implicitly by fixture #12's repeatable-call shape + fixture #16 hands-on log |
+| AC #12 (failed reload preserves last-good) | Fixture #13 (PHP integration test asserts response shape contains last-good HTML; the editor-side React state preservation is exercised via fixture #5's React harness if available, else proven in fixture #16 hands-on) |
+| AC #13 (failed reload surfaces error notice) | Fixture #13 |
+| AC #14 (typed error switch — full coverage) | Fixture #14 (V1.1.1-expanded code matrix) + fixture #15 (unknown-code fail-safe) |
+| AC #15 (decharge omits tighten-event) | Fixtures #9 (no `rate_limited` failure) + #11 (zero `rate_limit_audit_event` entries) |
+| AC #16 (auth/scope checks not bypassed) | Fixture #17 (V1.1.1 — `authorize_local_render` still rejects on scope denial) |
+
+Total: 18 fixtures (was 16) covering 16 ACs + 4 CI invariants (§9 #2/#3/#4 — grep-gate enforcement of ACs that aren't runtime-testable).
 
 ## 9. CI invariants
 
 | # | Invariant | Enforcement |
 |---|---|---|
 | 1 | `account_overview_preview` calls `dailyos_account_overview_render_from_projection` directly; does NOT route the response back through `render_block_with_filter` → `dailyos_account_overview_render` | grep gate on `account_overview_preview` body |
-| 2 | Editor `reload` callback dep list keeps composition_id + composition_version + cache_hint_token + setAttributes (preserves manual-reload correctness) | grep gate on `edit.js` for the literal dep array shape (code-reviewer F7 — recommends grep over ESLint authoring; proper ESLint rule filed to maintenance) |
-| 3 | Editor `useEffect` for auto-reload depends on `[reloadTrigger]` (NOT `[reload]`) | grep gate on `edit.js` |
+| 2 | Editor `reload` callback dep list keeps composition_id + composition_version + cache_hint_token + setAttributes (preserves manual-reload correctness) | grep gate on `edit.js` for the literal dep array shape (V1.1.1: regex MUST collapse whitespace inside brackets — current `edit.js:82` uses prettier-style spaces `[ x, y ]`. Implementer detail per code-reviewer F7 / cycle-2 note: use `\s*` between tokens, or normalize via a small AST parse step. Brittle literal-substring grep will fail.) |
+| 3 | Editor `useEffect` for auto-reload depends on `[reloadTrigger]` (NOT `[reload]`) | grep gate on `edit.js` (same whitespace tolerance as invariant #2) |
 | 4 | Runtime `project_composition` cache lookup is keyed by current_db_version (NOT request.composition_version) | grep gate on `mod.rs` cache_lookup call site — verify the version argument is the current_db_version variable |
 | 5 | Cache hit rate ≥ 95% under workload that varies `request.composition_version` but holds `composition_id` constant | Rust integration test in existing `rust.yml` workflow |
 | 6 | `authorize_local_render` uses `charge_ability_scope=false`; main `authorize` continues to use `true` | grep gate on `surface_client.rs` for both variants |
@@ -789,12 +968,12 @@ change is withdrawn.
 
 ## 15. Acceptance for L0 closure
 
-- [ ] All 4 reviewers returned APPROVE (cycle 2 or later).
-- [ ] All 16 acceptance criteria (§7 V1.1) are testable; per-criterion fixture mapped to §8 (16 fixtures, 1:1 mapping verified).
-- [ ] All 7 CI invariants (§9 V1.1) have concrete grep/AST/runtime enforcement.
+- [ ] All 4 reviewers returned APPROVE (cycle 2 or later — V1.1.1 cycle-2 text fixes folded inline).
+- [ ] All 16 acceptance criteria (§7) testable; coverage mapped to §8 fixtures (18) + §9 CI invariants per §8.1 mapping table.
+- [ ] All 7 CI invariants (§9 V1.1.1) have concrete grep/AST/runtime enforcement.
 - [ ] All §12 V1.0 open questions resolved in V1.1 (6/6 — see §12).
 - [ ] §5.3 cache key shape picked: option (a) — current_db_version key.
-- [ ] §5.5 render-read decharge approach picked: option (a) — `charge_ability_scope=false`.
+- [ ] §5.5 render-read decharge approach picked: option (a) — `charge_ability_scope=false` boolean.
 - [ ] §5.4 producer-commit-removal WITHDRAWN — no architectural contest remains.
 - [ ] V1.1 deferred items filed as Linear maintenance tickets under project `b8e6aea4-d47e-4f3a-b03d-a05bec914aeb` (DailyOS Maintenance & Production Quality). 6 deferral ticket titles in §2 V1.1 changelog.
 - [ ] Landing shape (§10) confirmed: single PR with 4 commit groups (was 5; removed the producer-commit-removal group), no split.
