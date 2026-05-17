@@ -1,6 +1,6 @@
 # L0 Packet B — WP preview/runtime render stabilization
 
-**Current revision: V1.0 (initial draft, 2026-05-17). See §2 Changelog.**
+**Current revision: V1.1 (cycle-1 fold + key reframing, 2026-05-17). See §2 Changelog.**
 
 ## 1. Header
 
@@ -21,24 +21,172 @@ Primary code:
 - `src-tauri/src/bridges/surface_client.rs`
 Primary anchor: `.docs/plans/dos-546/v1.4.2-project/01-project-description.md` §"Threat model: local-to-local"
 Diagnostic anchor: `.docs/plans/v1.4.3-wp-foundation/stabilization-investigation.md`
-Architectural anchor (CHALLENGED): `src-tauri/src/surface_runtime/mod.rs:2348-2353` — the v1.4.2 "producer always advances composition_version monotonically and commits unconditionally" comment.
 
 This packet covers two confirmed defects in the WP editor → preview → runtime
 render path surfaced by v1.4.2 W4-F L4 hands-on (PR #298 merged
 2026-05-17). Both root causes are confirmed in code (not session TTL — the
 investigation explicitly rejects that framing).
 
-This packet challenges one architectural decision from v1.4.2 W4-F: the
-"always advance composition_version on render" pattern at `surface_runtime/mod.rs:2348`.
-That pattern violates the local-to-local read contract (reads don't write).
-The L0 reviewers — particularly CSO — MUST evaluate whether removing it
-breaks the producer's OCC invariant that v1.4.2 was repairing.
+**Intelligence Loop integration check — exempt.** No claim/table/surface
+added; no provenance/trust impact; no signal change; no runtime context
+surface consumes new state; no feedback loop change. Purely render-path
+operational hardening on existing primitives. CLAUDE.md §"Critical Rules —
+Intelligence Loop integration check" does not apply. (Acknowledgement: the
+v1.4.3 fix preserves signal-propagation triggers for the producer — see
+§5.4 V1.1; nothing about the existing producer/projection/renderer contract
+changes.)
 
 This packet is intentionally narrow. It does NOT include the keychain +
 lifecycle hardening (DOS-673/674/675) — that is L0 Packet A, separate review
 track, separate PR.
 
 ## 2. Changelog
+
+- **V1.1 (2026-05-17, cycle-1 fold + key reframing):** Cycle-1 verdicts:
+  codex challenge BLOCK, CSO CA, code-reviewer CA, codex consult CA. The
+  BLOCK was justified — V1.0 misdiagnosed the §5.4 fix. Key insight from
+  codex consult HIGH #2: **`commit_composition` does not persist a reusable
+  composition payload; it only updates `composition_versions` row + emits a
+  version event.** Removing producer commit-on-render leaves nothing in the
+  DB to project from on cache miss. The producer commit IS the
+  materialization step — it cannot be removed without inventing persistent
+  projection storage.
+
+  The actual local fix: **make the cache key effective (option a) so cache
+  HITS dominate**. Producer runs only on true cache miss; under steady-state
+  rendering, producer runs rarely; commit_composition fires rarely; no write
+  flood. The render-loop symptom comes from the cache key using the surface's
+  stale watermark (`request.composition_version`), which guarantees a cache
+  miss on every render and re-invokes the producer every time.
+
+  V1.1 trims §5.4 from "remove producer commit" to "fix the cache key so
+  producer runs only when needed". The architecturally contested removal is
+  withdrawn; the substrate's W4-F producer contract is unchanged. CSO + codex
+  challenge cycle-1 concerns about signal-propagation invalidation become
+  moot — signal-driven producer invocations still commit and naturally
+  populate the cache for the next render.
+
+  - **FOLDED (real local issues):**
+    - **§5.4 reframed** — producer commit STAYS on cache miss; the fix is
+      cache key correction (§5.3), not commit removal. The §5.4 "remove
+      render-path producer-commit" architecturally contested change is
+      withdrawn. The W4-F producer contract at `mod.rs:2348-2353` is left
+      intact; the comment's claim that "the producer always advances
+      composition_version" remains true (it just runs less often now).
+    - **§5.3 picks option (a)** — cache key `(actor, composition_id,
+      current_db_version, scopes_canonical_id)`. Codex consult cycle-1
+      recommended (a) on implementation grounds (option (b) requires a new
+      invalidation API on the orchestrator that doesn't exist). Move
+      `current_composition_version_for_composition_id` read BEFORE cache
+      lookup. Trade-off: +1 `db_read` per warm-path render — acceptable for
+      local-to-local (code-reviewer F5). Store cache by
+      `projection.composition_version.unwrap_or(current_db_version)`.
+    - **§5.2 stale-closure fix** — keep `reload` callback's full dep list
+      (`[composition_id, composition_version, cache_hint_token,
+      setAttributes]` — preserves manual-reload correctness per codex
+      challenge HIGH #2 + codex consult MEDIUM). Add a separate effect
+      trigger:
+      ```js
+      const reloadTrigger = `${attributes.account_id}|${attributes.composition_id ? '1' : '0'}`;
+      useEffect(() => { reload(); }, [reloadTrigger]);
+      ```
+      The trigger key changes only when account_id or composition_id-presence
+      changes — NOT when version+token change. Manual button keeps using the
+      live `reload` closure (latest deps). No stale-closure risk; no
+      auto-reload loop.
+    - **§5.2 Gutenberg lifecycle enumeration** (code-reviewer F4) —
+      expected-fire: initial mount, account_id change, composition_id
+      empty→non-empty transition. Expected-not-fire: window focus, autosave,
+      undo of cache_hint_token write, block-list reorder remount (which
+      fires the effect with current attributes once — benign). Add positive
+      fixture "first-mount fires exactly one reload" alongside the negative
+      fixtures.
+    - **§5.1 wrapper preservation** (code-reviewer F1) — `dailyos_account_overview_render`
+      retains its single-fetch contract for the block.json front-end render
+      path (`wp/dailyos/blocks/account-overview/render.php:20-25`) and the 6
+      test fixtures (`tests/blocks/AccountOverviewBlockTest.php` at lines 52,
+      61, 96, 131, 169, 189). The new pure helper
+      `dailyos_account_overview_render_from_projection($response, $attributes)`
+      is called ONLY by `account_overview_preview`, replacing the
+      `render_block_with_filter` re-entry that caused the double-fetch.
+    - **§5.6 error envelope rewrite** (code-reviewer F2 + codex consult
+      MEDIUM) — runtime returns `{"error":{"code","message","request_id",...}}`
+      NOT top-level `{ok:false, code:...}`. PHP transport
+      (`class-dailyos-runtime-client.php:393-509`) re-wraps non-2xx as
+      `{ok:false, error:{code, message}}`. Renderer's mapping table reworked
+      against this two-channel surface (WP_Error from transport-layer failure
+      vs runtime envelope from non-2xx). Match `error.code` by string —
+      `session_requires_repair` is a `SurfacePairingError` variant
+      (`surface_pairing.rs:277`) surfaced via `from_pairing_error`, not a
+      dedicated `SurfaceHttpError` constructor.
+    - **§5.5 narrow to `charge_ability_scope=false`** (codex consult MEDIUM
+      + code-reviewer F3 + CSO LOW) — add an `authorize_local_render`
+      variant of `authorize` that passes `charge_ability_scope=false` to
+      `check_and_consume`. Identity buckets (surface_client, wp_user,
+      wp_site) continue to be consumed; ability bucket
+      (`standard_read_composition`) and scope bucket (`scope.read`) are
+      bypassed. Authorization (descriptor, actor, mode, scope check,
+      browser-direct-executable guard) remains mandatory. AC explicitly
+      states "local-render decharge omits the
+      `RateLimitOutcome::Allowed.audit_events` tighten-event emission by
+      construction" (code-reviewer F3 acceptance).
+    - **§8 JS fixtures → PHP equivalents** (code-reviewer F6) — switch
+      fixtures #2, #3, #8, #10 to PHP integration tests against the existing
+      fake-runtime-client pattern at `tests/blocks/AccountOverviewBlockTest.php`.
+      Assertions: request count to runtime, payload shape, post-render HTML
+      shape. Avoids adding wp-scripts jest setup as net-new infrastructure.
+    - **§9 grep gates instead of ESLint rules** (code-reviewer F7) —
+      replace ESLint rule invariants #2 and #3 with grep gates on
+      `edit.js` (literal dep array shape + literal trigger key shape).
+      ESLint authoring filed to maintenance.
+    - **§5.4 framing narrowed** (code-reviewer F9) — the contested anchor
+      at `mod.rs:2348-2353` is a DOS-670 producer-side OCC workaround, NOT
+      a v1.4.2 W4-F V3.2 contract. The reframed V1.1 §5.4 (cache fix, not
+      commit removal) doesn't contest either; the substrate keeps its
+      always-forward-version behavior, just running less often. Removed the
+      "L6 trigger" prose from §14 since the §5.4 reframe eliminates the
+      contested decision.
+  - **DEFERRED to v1.x-federation maintenance:**
+    - **Signal-propagation cache invalidation bus** (CSO MEDIUM + codex
+      challenge MEDIUM cycle-1): moot in V1.1 because §5.4 reframed keeps
+      producer commits as the invalidation channel. Federation/multi-writer
+      scenarios where producer commits can occur from non-local sources
+      would benefit from an explicit invalidation API; v1.4.3 local-single-
+      runtime doesn't need it. **Maintenance ticket title:** "Signal-driven
+      cache invalidation API for composition_render_orchestrator (federation
+      scope)".
+    - **Hostile co-resident plugin error-code fingerprinting** (codex
+      challenge LOW cycle-1): the WP plugin is a trusted same-UID surface
+      principal in v1.4.3 local-to-local. A hostile co-resident plugin with
+      PHP execution already has ambient keychain/DB/loopback access. Finer
+      error-code redaction would be remote-shape defense. Filed as
+      maintenance ticket "Bounded error taxonomy for multi-tenant /
+      multi-plugin WordPress deployments".
+    - **Render-volume audit signal** (code-reviewer F3 maintenance note):
+      operator observability for local-render-decharge volume tracking
+      isn't security-load-bearing locally. Filed as maintenance ticket
+      "Local-render audit signal for operator observability".
+    - **ESLint rule authoring** for editor `useEffect` dep arrays
+      (code-reviewer F7): grep gates cover L0 closure; proper ESLint rule
+      is maintenance.
+
+  - **REJECTED (not findings against V1.1):**
+    - Codex challenge cycle-1 HIGH #1 "no replacement materialization
+      path" — moot because V1.1 doesn't remove the materialization path.
+    - Codex challenge cycle-1 MEDIUM "cache option (b) needs invalidation
+      bus" — moot because V1.1 picks option (a).
+    - V1.0 §12 Q1, Q2, Q3 — all resolved by the V1.1 reframe / picks.
+
+  - **NET V1.1 RESULT:** packet acceptance criteria count: 16 (was 15;
+    +1 for the decharge tighten-event acceptance, +1 for first-mount fixture,
+    -1 because AC #15 "merge no longer combines" becomes tautological after
+    §5.1). Fixtures: 14 (was 13; +1 first-mount-fires-once,
+    JS-to-PHP equivalents add no count change). §5.4 collapses from 5
+    architecturally contested sub-bullets to "preserved unchanged from W4-F";
+    the §5.4 architectural-contest section is replaced with "no architectural
+    contest". The CORE remains: single-fetch PHP, editor reload guard,
+    effective cache key, decharge for local render, typed error mapping. That
+    CORE is the right local fix for the user-visible render-loop bug.
 
 - **V1.0 (2026-05-17):** Initial L0 draft. Authored from
   `stabilization-investigation.md` plus direct verification of the cited
@@ -82,109 +230,315 @@ introduced; every change is an in-place modification of existing functions:
 
 ## 5. What this packet authors net-new
 
-### 5.1 Single-fetch PHP preview (DOS-671 + DOS-672, shared)
+### 5.1 Single-fetch PHP preview (DOS-671 + DOS-672) — V1.1 wrapper preservation
 
-Refactor `dailyos_account_overview_render` so the runtime call is **optional**:
+V1.0's framing made the wrapper "optional" — code-reviewer F1 caught this is
+wrong. `dailyos_account_overview_render` has TWO production callers (not
+just the preview route):
+1. `wp/dailyos/blocks/account-overview/render.php:20-25` — block.json
+   front-end render path. This MUST keep the single-fetch behavior (one
+   runtime call per render request).
+2. `wp/dailyos/includes/class-dailyos-plugin.php:587-612` — preview REST
+   route. THIS is where the double-fetch happens (preview-endpoint calls
+   runtime, then re-enters `dailyos_account_overview_render` via
+   `render_block_with_filter` at `:682-690`, causing a second runtime call).
+
+Plus 6 test fixtures at `wp/dailyos/tests/blocks/AccountOverviewBlockTest.php`
+(lines 52, 61, 96, 131, 169, 189) that call `dailyos_account_overview_render`
+directly and rely on the single-fetch wrapper behavior.
+
+**V1.1 refactor preserves the wrapper, adds a pure helper:**
 
 ```php
 function dailyos_account_overview_render( array $attributes ): string {
-    // ... validation as today ...
+    // Existing wrapper — unchanged behavior for render.php + 6 test fixtures.
+    // Validates composition_id, fetches runtime client, calls
+    // project_composition_for_surface once, delegates to
+    // dailyos_account_overview_render_from_projection.
     $response = dailyos_account_overview_fetch_projection( $attributes );
     return dailyos_account_overview_render_from_projection( $response, $attributes );
 }
 
 function dailyos_account_overview_render_from_projection( $response, $attributes ): string {
-    // pure projection-to-HTML — no runtime call
+    // Pure projection-to-HTML — no runtime call.
+    // Accepts both runtime success envelope (top-level `projection`,
+    // `cache_hint_token`, `served_from_cache`) AND WP transport error
+    // envelope (`{ok:false, error:{code,message}}` from class-dailyos-
+    // runtime-client.php:393-509) and WP_Error from transport-layer
+    // failure.
 }
 ```
 
-`account_overview_preview` calls `project_composition_for_surface` once, then
-calls `dailyos_account_overview_render_from_projection` directly (NOT
-`render_block_with_filter` → `dailyos_account_overview_render` which would
-re-call the runtime). One preview = one runtime call.
+`account_overview_preview` (at `class-dailyos-plugin.php:587-612`) is the
+ONLY caller that switches: it calls `project_composition_for_surface` once,
+then calls `dailyos_account_overview_render_from_projection` directly with
+the response (NOT `render_block_with_filter` → `dailyos_account_overview_render`).
+One preview = one runtime call.
 
-### 5.2 Editor reload guard (DOS-671 + DOS-672, shared)
+The existing test fixtures at `AccountOverviewBlockTest.php` continue to
+call `dailyos_account_overview_render($attributes)` unchanged. They keep
+passing because the wrapper's behavior is unchanged for them.
 
-Replace `useEffect( () => reload(), [reload] )` at
-`wp/dailyos/blocks/account-overview/edit.js:84-86` with an explicit trigger
-that fires ONLY when:
-- `attributes.composition_id` transitions from empty to non-empty, OR
-- `attributes.account_id` changes,
-- but NOT when `composition_version` or `cache_hint_token` change.
+### 5.2 Editor reload guard (DOS-671 + DOS-672, shared) — V1.1 stale-closure-safe
 
-The `reload` callback's dependency list at `:82` is also trimmed:
-- Remove `attributes.composition_version` and `attributes.cache_hint_token` from deps.
-- Reload reads them at call time via the latest `attributes` reference.
+V1.0's approach (remove `composition_version` and `cache_hint_token` from
+the `reload` callback's dep list) was unsafe — `reload` reads those values
+when building the POST body (`edit.js:54-56`), so a manual reload after a
+successful render would send STALE version/token (codex challenge HIGH #2 +
+codex consult MEDIUM).
 
-Failed-reload behavior:
+**V1.1 keeps `reload`'s full dep list AND adds a separate trigger key for
+the useEffect:**
+
+```js
+const reload = useCallback(() => {
+    // ... existing body, reads composition_id, composition_version, cache_hint_token
+}, [attributes.composition_id, attributes.composition_version, attributes.cache_hint_token, setAttributes]);
+
+const reloadTrigger = `${attributes.account_id || ''}|${attributes.composition_id ? '1' : '0'}`;
+useEffect(() => {
+    reload();
+}, [reloadTrigger]);
+```
+
+- `reloadTrigger` is a derived string that changes ONLY when `account_id`
+  changes OR `composition_id` transitions empty↔non-empty.
+- Successful reload's `setAttributes` write of `composition_version` /
+  `watermarks` / `cache_hint_token` does NOT change `reloadTrigger` → no
+  auto-reload retrigger.
+- Manual button continues to use the live `reload` closure (always has
+  latest deps including version+token) — no stale POST body.
+
+**Gutenberg lifecycle enumeration** (code-reviewer F4):
+- **Expected to fire:** initial mount (React effect fires on first render
+  with current attributes); `account_id` change via account selector;
+  `composition_id` empty→non-empty transition (i.e., user picks an account
+  for the first time).
+- **Expected NOT to fire:** window focus (no remount, dep value unchanged);
+  autosave (no edit.js dep change); undo/redo that only flips
+  `cache_hint_token` or `composition_version` (those aren't in the trigger
+  key); block-list reorder remount (effect fires once on remount with the
+  current `reloadTrigger`, which equals the pre-reorder value — benign
+  no-op if `account_id` and `composition_id` are unchanged).
+
+**Failed-reload behavior:**
 - Preserve last-good `preview` state.
-- Show an `error` notice in the editor but do NOT replace rendered content with the verification banner envelope.
+- Show an `error` notice in the editor but do NOT replace rendered content
+  with the verification banner envelope.
 
-### 5.3 Runtime cache-key correction (DOS-671 + DOS-672)
+### 5.3 Runtime cache-key correction — option (a) picked (V1.1)
 
 At `src-tauri/src/surface_runtime/mod.rs:2317-2321` and `:2425-2430`, the cache
 is keyed on the request's `composition_version` (which is the surface's stale
-watermark). After the fix, cache is keyed on the **effective projection
-version** (the one the producer is about to emit or has just emitted), so
-repeated requests with stale watermarks all hit the same cache entry.
+watermark — every render misses the cache, forcing producer invocation).
 
-Two viable shapes — pick one in L0:
-- **(a)** Look up cache by `(actor, composition_id, current_db_version)`, not request version. Store by the projection's actual version (already fetched at `:2355-2370`).
-- **(b)** Cache becomes version-agnostic: lookup by `(actor, composition_id)`, invalidate when producer commits a new version.
+**V1.1 picks option (a)** — cache key by current DB version. Codex consult
+cycle-1 recommended this on implementation grounds (option (b) requires a
+new orchestrator invalidation API that doesn't exist; option (a) uses the
+existing `current_composition_version_for_composition_id` reader).
 
-§12 Q1 picks between (a) and (b).
+**Concrete implementation:**
 
-### 5.4 Render-path producer-commit removal (DOS-671 — ARCHITECTURAL CHALLENGE)
+1. Move the existing `current_composition_version_for_composition_id` read
+   (`mod.rs:2355-2370`) from "after cache miss, before producer invocation"
+   to "BEFORE cache lookup". This adds one `db_read` per warm-path render —
+   accepted trade-off for local-to-local (code-reviewer F5).
 
-This is the contested change. Today at `surface_runtime/mod.rs:2348-2353`:
+2. Cache lookup key becomes `(actor, composition_id, current_db_version,
+   scopes_canonical_id)` (the orchestrator's existing key shape with
+   `composition_version` replaced from `request.composition_version` to
+   `current_db_version`). Lookup at `mod.rs:2317-2321`.
 
-> The producer always advances composition_version monotonically and commits unconditionally. The surface's previously-rendered version is structurally meaningless as an OCC token because the surface has no write path — only the producer mutates compositions. Forward the current substrate version on every render so the producer's commit step never trips its own watermark check on stale surface claims.
+3. Cache store key uses
+   `projection.composition_version.unwrap_or(current_db_version)`. Store
+   at `mod.rs:2425-2430`. `ProjectedComposition.composition_version` is
+   defined at `abilities-runtime/src/abilities/fallback_projection.rs:29-35`
+   and is set after producer invocation.
 
-The local-to-local threat model says reads don't write to `surface_client_sessions`,
-audit tables, rate-limit buckets, **or any other DB state**. The composition
-table is "any other DB state" — and producer commit on every render writes to it.
+4. The orchestrator's existing `(composition_id, composition_version,
+   scopes_canonical_id)` key tuple at
+   `composition_render_orchestrator.rs:51-56` is preserved — only the
+   value passed for `composition_version` changes.
 
-The investigation proposes:
-- Render path reads existing projected state from cache or DB.
-- Producer commit happens ONLY on:
-  - Explicit user-initiated refresh (the editor's "Reload from runtime" button),
-  - Signal-propagation invalidation (a watermark moved upstream — `account_subject.claim_changed`, `claim.lifecycle`, etc).
-  - Initial composition creation (first request for a composition_id).
+**Trade-off analysis** (code-reviewer F5):
+- V1.0 / current: warm-path is "zero DB-touch, cache hit" but ALSO "cache miss every time because key uses stale watermark".
+- V1.1 / option (a): warm-path is "one `db_read`, then cache hit". Net win: producer commits stop firing on every render.
+- Option (b) would preserve zero-DB-touch on warm path BUT requires net-new invalidation infrastructure (CSO recommended this; codex consult rejected on implementation cost). Deferred to v1.x-federation maintenance.
 
-The producer's OCC-token issue that v1.4.2 W4-F was repairing (DOS-670 substrate-side fix) had a narrower scope: the producer's commit step needs the current DB version, not a stale surface watermark. That requirement is still satisfied if we only commit on triggers, not on every read.
+**Race analysis:** between the new `current_db_version` read and the
+cache lookup, a concurrent commit could occur. For local single-runtime,
+producer invocations are serialized by the SurfaceClient bridge's writer
+mutex; there is effectively no concurrent commit race. For
+federation/multi-writer scenarios, this would need the invalidation API
+from option (b) — out of scope for v1.4.3.
 
-**§12 Q2** is the explicit reviewer prompt for whether removing render-path
-commit breaks DOS-670's substrate fix.
+### 5.4 Render-path producer behavior — V1.1 reframe: producer commits preserved
 
-### 5.5 Render-read decharge from `standard_read_composition` budget (DOS-672)
+**V1.0 proposed removing producer commit from the render path.** V1.1
+withdraws that proposal. The reframe rationale is in §2 changelog V1.1:
+- `commit_composition` does not persist a reusable projection payload (only
+  `composition_versions` row + version event — `services/compositions.rs:271-368`).
+- Removing producer commit-on-render leaves nothing in the DB to project from
+  on cache miss.
+- The producer commit IS the materialization step; it cannot be removed
+  without inventing persistent projection storage (which would be substantial
+  net-new infrastructure, federation-scale).
 
-At `src-tauri/src/bridges/surface_client.rs:213`, the default budget is 60/min
-+ burst 5. Even on a single user with one editor open, the auto-reload loop
-plus PHP double-fetch can exhaust the 5-burst within seconds.
+**The actual local fix is §5.3 — make the cache key effective.** Under V1.1:
+- Producer runs ONLY on cache miss (unchanged from today).
+- Cache misses become RARE once the cache key uses current_db_version
+  instead of the surface's stale watermark.
+- Under steady-state rendering with stable account state, all renders after
+  the first hit the cache → producer doesn't run → commit_composition doesn't
+  fire → no write flood.
+- Producer commits naturally fire when account state actually moves (signal
+  propagation triggers a new producer invocation through other paths, that
+  invocation commits a new version, which invalidates the cache via the
+  cache-key-by-current-db-version pattern).
 
-Two viable changes — pick one in L0:
-- **(a)** Local-render reads from `surface_client` actor on a paired loopback session are NOT gated by `standard_read_composition`. Authorization (scope check, actor allowlist) remains mandatory.
-- **(b)** The budget is raised significantly for local sessions (e.g. 600/min / burst 50), keeping the gate but sizing it for local.
+**The W4-F producer contract at `mod.rs:2348-2353` is preserved.** The
+comment's claim that "the producer always advances composition_version" stays
+true. The DOS-670 substrate-side fix (always forward current DB version to
+the producer) stays. Nothing about the producer's OCC contract changes.
+There is no architectural contest; V1.0's framing was wrong.
 
-§12 Q3 picks between (a) and (b).
+**What V1.1 §5.4 actually contains:** nothing net-new. The previous V1.0
+§5.4 "remove producer commit on render path" is withdrawn. The fix surface
+is entirely §5.3 (cache key correction). This section exists in V1.1 only to
+document the reframe rationale.
 
-### 5.6 Typed transport/session error mapping (DOS-672)
+**Removed in V1.1 (from V1.0):**
+- "Render path reads existing projected state from cache or DB" — DB doesn't have it; cache is the only read source, and cache-miss must invoke the producer.
+- "Producer commit happens ONLY on explicit refresh / signal-propagation / initial creation" — withdrawn. Producer commit happens on cache miss, which becomes rare once §5.3 lands.
+- The `§12 Q2` open question about "does removing render-path commit break the DOS-670 producer OCC contract" — moot; nothing is being removed.
+- The "L6 escalation trigger if CSO and codex challenge disagree on §5.4" — moot; no contested change remains.
 
-At `wp/dailyos/blocks/account-overview/render-functions.php:61-70`, ALL error
-states currently collapse into the verification banner (
-"Something about this account doesn't line up. Verify before acting.").
+### 5.5 Render-read decharge — V1.1: option (a) with `charge_ability_scope=false`
 
-The fix: distinguish at minimum:
-- `rate_limited` (HTTP 429) → "Runtime is throttling; retry shortly."
-- `session_requires_repair` (per W4-F error code) → "Surface session needs repair; reconnect."
-- `session_not_found` → same as repair.
-- `runtime_request_failed` (transport / timeout / 5xx) → "Runtime unavailable; retry."
-- consistency-failure (the actual case the banner was written for: projection inconsistency, contradicting evidence) → keep the verification banner.
+V1.1 picks option (a) (codex consult cycle-1 implementation guidance):
+local-render reads use a new `authorize_local_render` variant that calls
+`check_and_consume` with `charge_ability_scope=false`. Identity buckets
+(`surface_client`, `wp_user`, `wp_site`) continue to be consumed; ability
+bucket (`standard_read_composition`) and scope bucket (`scope.read`) are
+bypassed for paired-loopback local render reads.
 
-The PHP renderer needs a typed error shape from the runtime response (already
-present — runtime returns `{ ok: false, code: "...", ... }`); the renderer
-maps `code` → user-facing string. The verification banner is reserved for
-true consistency failures.
+**Mandatory checks preserved** (codex consult evidence — `surface_client.rs:301-355`):
+- Descriptor exists (ability is registered).
+- Actor / mode / experimental gates.
+- Required scopes (the actor must have read.account_overview etc).
+- Browser-direct-executable guard.
+
+**Decharge contract — bypass scope:**
+- `charge_ability_scope=false` (codex consult evidence — `surface_client.rs:409`,
+  `:795-822`) skips the ability_class and scope candidates inside
+  `check_and_consume`.
+- Identity candidates (surface_client/wp_user/wp_site read budgets at
+  `:766-793`) are STILL consumed. These remain as a per-principal limit on
+  total local-render volume — DoS protection without blocking normal usage.
+
+**Acceptance: tighten-event emission omitted by construction** (code-reviewer
+F3 + CSO LOW):
+`RateLimitOutcome::Allowed.audit_events` carries `rate_limit_audit_event(...,
+"tightened", ...)` when a previously-rejected window enters early-retry
+tightening (`surface_client.rs:411-415`, `:742-752`). When ability/scope
+candidates are bypassed, no consumption happens for those candidates → no
+rejection possible for them → no tightening → no tightened-event emitted.
+This is internally consistent for local-to-local. V1.1 codifies this with
+AC #15 ("local-render decharge emits zero `rate_limit_audit_event` entries
+for the ability/scope bucket"). Maintenance ticket filed for operator
+observability of local-render volume.
+
+**Implementation shape:**
+
+```rust
+// New variant — same descriptor/actor/mode/scope checks, then bypass-ability-scope rate-limit
+pub fn authorize_local_render(
+    &self,
+    registry: &AbilityRegistry,
+    validated: &SignedSessionContext,
+    ability_name: &str,
+    request_id: &str,
+) -> Result<Authorization, SurfaceClientBridgeError> {
+    self.authorize_for_path(
+        registry,
+        validated,
+        ability_name,
+        request_id,
+        ChargeAbilityScope::Off,  // existing internal flag; today hardcoded to On
+    )
+}
+```
+
+Route handler at `surface_runtime/mod.rs:2288-2311` calls
+`authorize_local_render` instead of `authorize` for the `project_composition`
+read path. Other surface client routes continue to use `authorize`.
+
+### 5.6 Typed transport/session error mapping (DOS-672) — V1.1 envelope rewrite
+
+V1.0's error envelope shape was wrong. Per code-reviewer F2 + codex consult
+MEDIUM:
+- Runtime returns `{"error":{"code","message","request_id","remediation",...}}` (NOT top-level `{ok:false, code:...}`). HTTP status conveys success/failure. Defined at `src-tauri/src/surface_runtime/mod.rs:3514-3548`.
+- WP transport (`wp/dailyos/includes/transport/class-dailyos-runtime-client.php:393-509`) re-wraps non-2xx responses as `{ok:false, error:{code, message}}`.
+- Local transport failures (signing failure before request, `wp_remote_post` failure, JSON parse) produce `WP_Error` OR `{ok:false, error:{code, message}}` with codes like `runtime_request_failed`, `runtime_invalid_json`, `runtime_http_error`.
+
+`session_requires_repair` is a `SurfacePairingError` variant
+(`surface_pairing.rs:277`) surfaced via `from_pairing_error`; there is NO
+dedicated `SurfaceHttpError::session_requires_repair()` constructor. Match
+by string on `error.code`.
+
+**V1.1 renderer mapping (replaces `render-functions.php:61-70` blanket banner):**
+
+```php
+// In dailyos_account_overview_render_from_projection(...)
+if ( is_wp_error( $response ) ) {
+    // Transport-layer failure (signing, network). No runtime envelope.
+    return dailyos_account_overview_render_runtime_unavailable_notice();
+}
+
+if ( isset( $response['ok'] ) && $response['ok'] === false ) {
+    $code = isset( $response['error']['code'] ) ? (string) $response['error']['code'] : 'runtime_request_failed';
+    switch ( $code ) {
+        case 'rate_limited':
+            return dailyos_account_overview_render_throttled_notice();
+        case 'session_requires_repair':
+        case 'session_not_found':
+            return dailyos_account_overview_render_session_repair_notice();
+        case 'runtime_unavailable':
+        case 'runtime_request_failed':
+        case 'runtime_invalid_json':
+        case 'runtime_http_error':
+            return dailyos_account_overview_render_runtime_unavailable_notice();
+        case 'projection_tampered':
+        case 'projection_version_rollback':
+        case 'stale_composition_watermark':
+        case 'missing_expected_claim_version':
+        case 'mid_flight_mutation':
+        case 'consistency_failure':
+            // Genuine projection-consistency failure — verification banner correct.
+            return dailyos_account_overview_render_verification_banner();
+        default:
+            // Unknown code: fail-safe to verification banner. Operator
+            // should add a typed mapping when a new code appears.
+            return dailyos_account_overview_render_verification_banner();
+    }
+}
+
+if ( ! isset( $response['projection'] ) || ! is_array( $response['projection'] ) ) {
+    // Successful response shape without projection — defensive fallback.
+    return dailyos_account_overview_render_verification_banner();
+}
+
+// Success path — render the projection.
+return dailyos_account_overview_render_projection_payload( $response, $attributes );
+```
+
+New helpers (small, local copy):
+- `dailyos_account_overview_render_throttled_notice()` — "Runtime is throttling; retry shortly."
+- `dailyos_account_overview_render_session_repair_notice()` — "Surface session needs repair; reconnect from DailyOS settings."
+- `dailyos_account_overview_render_runtime_unavailable_notice()` — "Runtime unavailable; retry."
+
+The verification banner stays reserved for genuine projection-consistency
+failures + unknown codes (fail-safe).
 
 ## 6. Directional decisions resolved at L0
 
@@ -215,15 +569,22 @@ attributes (`edit.js:62-68`); those are dependencies of `reload`
 with the 5/sec burst budget, this exhausts rate limits and produces the
 "reload-on-window-switch" symptom.
 
-### 6.4 Removing render-path producer-commit is the right local-shaped fix — but is L0-CONTESTED
+### 6.4 V1.1: producer-commit-on-render is PRESERVED; the fix is cache effectiveness
 
-The investigation argues for removal. v1.4.2 W4-F explicitly chose
-"always-forward DB version + producer commits unconditionally" as the
-DOS-670 substrate-side fix. The two appear to conflict.
+V1.0 framed this as "the contested change" requiring L6 escalation. V1.1
+withdraws the contest entirely. Codex consult cycle-1 surfaced the key fact:
+`commit_composition` does not persist a reusable projection payload, so
+removing producer-commit-on-render breaks materialization. The producer
+commit IS the materialization step.
 
-**§12 Q2** is the explicit L0 question for the reviewer panel: does the
-DOS-670 producer OCC contract require commit-on-render, or only
-commit-on-trigger?
+**Decision (V1.1):** producer commit on cache miss stays unchanged. The
+render-loop user-visible bug is fixed by §5.3 cache key correction, which
+causes cache hits to dominate → producer rarely runs → commit rarely fires.
+The W4-F producer contract at `mod.rs:2348-2353` is preserved. No
+architectural contest with v1.4.2 / W4-F remains. The DOS-670 producer-side
+OCC workaround is intact.
+
+**§12 Q2 RESOLVED** — moot; nothing is being removed.
 
 ### 6.5 Render-read decharge does not weaken authorization
 
@@ -243,54 +604,68 @@ its rendered state. No runtime contract change for this rule.
 
 ### DOS-671 (block content disappearance ≤30s)
 
-1. PHP preview makes exactly one `project_composition_for_surface` runtime call per preview request.
-2. Editor `useEffect`-driven auto-reload fires ONLY on `composition_id` empty→non-empty or `account_id` change.
-3. Editor `reload` callback's dependency list does NOT include `composition_version` or `cache_hint_token`.
-4. Successful reload's attribute write does NOT schedule another reload.
-5. Runtime `project_composition` route does NOT commit a new composition on every render. Commit happens on: explicit refresh, signal-propagation invalidation, initial composition creation.
-6. Runtime cache lookup hits regardless of stale request `composition_version` (cache keyed on current DB version OR version-agnostic per §5.3 outcome).
-7. Local-render reads from paired-loopback `surface_client` sessions do NOT consume `standard_read_composition` rate budget (or budget is raised per §5.5 outcome).
-8. After initial render, the block remains visible for ≥60 seconds without further user action AND across two browser-window focus changes.
+1. PHP preview makes exactly one `project_composition_for_surface` runtime call per preview request. `dailyos_account_overview_render` (the wrapper) keeps its single-fetch behavior for `render.php` + existing test fixtures.
+2. Editor `reload` callback's dep list keeps `[composition_id, composition_version, cache_hint_token, setAttributes]` — manual reload reads latest version+token, NO stale-closure risk.
+3. Editor `useEffect`-driven auto-reload fires ONLY when a separate derived `reloadTrigger` string changes — i.e., on `account_id` change OR `composition_id` empty↔non-empty transition. NOT when `composition_version` or `cache_hint_token` change.
+4. Successful reload's attribute write does NOT schedule another reload (the `reloadTrigger` value is unchanged).
+5. First-mount fires exactly ONE reload (initial materialization).
+6. Runtime `project_composition` cache lookup uses key `(actor, composition_id, current_db_version, scopes_canonical_id)` (NOT `request.composition_version`). Stale watermarks no longer cause cache misses.
+7. Runtime cache store uses `projection.composition_version.unwrap_or(current_db_version)` so the stored entry's version matches what the producer actually emitted.
+8. After initial render, the block remains visible for ≥60 seconds without further user action AND across two browser-window focus changes (the L4 user-visible target).
 
 ### DOS-672 (reload-on-window-switch + second-reload verification banner)
 
 9. Manual "Reload from runtime" fires exactly one preview request per click.
-10. Window-focus change does NOT trigger reload (no remount).
+10. Window-focus change does NOT trigger reload (no remount, no auto-reload retrigger).
 11. Second consecutive manual reload succeeds (returns projection, not banner) — assuming first reload succeeded.
 12. Failed reload (any cause) preserves last-good `preview` state in the editor.
 13. Failed reload surfaces an `error` notice; does NOT replace rendered content with verification-banner HTML.
-14. PHP renderer maps `rate_limited`, `session_requires_repair`, `session_not_found`, `runtime_request_failed` to distinct typed messages; verification banner reserved for true consistency-failure (projection contradiction / missing evidence).
-15. PHP preview response merge (`class-dailyos-plugin.php:613-618`) does NOT combine successful first-call projection with failed second-call banner HTML. After §5.1, there IS no second call.
+14. PHP renderer maps `error.code` via switch table: `rate_limited` → throttled notice; `session_requires_repair` / `session_not_found` → session-repair notice; `runtime_unavailable` / `runtime_request_failed` / `runtime_invalid_json` / `runtime_http_error` → runtime-unavailable notice; consistency codes (`projection_tampered`, `projection_version_rollback`, `stale_composition_watermark`, `missing_expected_claim_version`, `mid_flight_mutation`, `consistency_failure`) → verification banner; unknown codes → verification banner (fail-safe).
+15. **Local-render decharge by construction:** `authorize_local_render` calls `check_and_consume` with `charge_ability_scope=false`. Ability/scope buckets (`standard_read_composition`, `scope.read`) are NOT consumed; identity buckets (`surface_client`, `wp_user`, `wp_site`) ARE consumed. As a direct consequence, the `RateLimitOutcome::Allowed.audit_events` "tightened" emission for ability/scope is OMITTED — no observability event for that bucket because no consumption happens.
+16. Auth/scope mandatory checks (descriptor, actor, mode, experimental, required scopes, browser-direct guard) are NOT bypassed; only rate-budget consumption for ability/scope changes.
 
 ## 8. Negative fixtures
 
+All fixtures use PHP test infrastructure (existing
+`tests/blocks/AccountOverviewBlockTest.php` pattern with fake-runtime-client
+injection) for editor-side behavior assertions — no net-new jest setup (code-reviewer F6).
+
 | # | Fixture | Asserts |
 |---|---|---|
-| 1 | `dos671_preview_single_fetch` | PHP fake runtime returns projection on first call, asserts no second call happens during preview render |
-| 2 | `dos671_editor_no_reload_on_cache_token_change` | JS test with fake `apiFetch`: setAttributes({cache_hint_token: 'new'}) does NOT trigger a reload |
-| 3 | `dos671_editor_no_reload_on_version_change` | JS test with fake `apiFetch`: setAttributes({composition_version: 5}) does NOT trigger a reload |
-| 4 | `dos671_render_path_no_commit` | Rust test: 10 consecutive `project_composition` calls without external signal → no composition commit, no version advance |
-| 5 | `dos671_render_path_commits_on_trigger` | Rust test: signal propagation (`account_subject.claim_changed`) → next render commits new version |
-| 6 | `dos671_cache_hits_with_stale_request_version` | Rust test: lookup with request_version=1 hits cache populated by request_version=5 (or version-agnostic) |
-| 7 | `dos671_local_render_no_rate_consumption` | Rust test: tight `standard_read_composition` budget (1/min), 50 render reads from paired-loopback do NOT fail with `rate_limited` |
-| 8 | `dos672_manual_reload_single_request` | JS test: button click → exactly one `apiFetch` call |
-| 9 | `dos672_second_reload_returns_projection_not_banner` | PHP fake runtime returns projection on both calls; HTML output of second preview render contains block payload, NOT verification banner |
-| 10 | `dos672_failed_reload_preserves_last_good` | JS test: first reload succeeds → preview set; second reload fails (mocked error) → preview unchanged, error notice shown |
-| 11 | `dos672_typed_error_mapping` | PHP test: runtime response `{ok: false, code: "rate_limited"}` → user-facing string "Runtime is throttling..."; NOT the verification banner |
-| 12 | `dos672_verification_banner_reserved_for_consistency` | PHP test: runtime response `{ok: false, code: "consistency_failure"}` → verification banner DOES render |
-| 13 | `dos671_l4_hands_on_log` | Hands-on log captured: initial render → wait 60s → focus switch x2 → manual reload x2; content remains visible throughout |
+| 1 | `dos671_preview_single_fetch` | PHP test: preview REST route's fake runtime client receives exactly ONE `project_composition_for_surface` call per preview request (not two as today via `render_block_with_filter` re-entry) |
+| 2 | `dos671_wrapper_preserves_single_fetch` | PHP test: `dailyos_account_overview_render($attrs)` called by `render.php` triggers exactly one runtime call (regression guard for the wrapper) |
+| 3 | `dos671_editor_dep_array_literal` | PHP/grep gate: `edit.js` `reload` useCallback dep array literal contains `[attributes.composition_id, attributes.composition_version, attributes.cache_hint_token, setAttributes]` (manual reload reads latest) |
+| 4 | `dos671_editor_trigger_key_literal` | PHP/grep gate: `edit.js` defines `reloadTrigger` and `useEffect([reloadTrigger])` shape — trigger derived from account_id + composition_id-presence ONLY |
+| 5 | `dos671_first_mount_fires_one_reload` | PHP integration test simulating editor mount: exactly ONE reload request issued (initial materialization) |
+| 6 | `dos671_cache_key_uses_current_db_version` | Rust test: lookup with stale `request.composition_version=1` HITS cache when current_db_version=5 and prior render populated cache at version 5 |
+| 7 | `dos671_cache_hit_avoids_producer` | Rust test: cache hit returns projection WITHOUT invoking producer (verified by producer-invocation counter) |
+| 8 | `dos671_cache_miss_invokes_producer_and_commits` | Rust test: cache miss DOES invoke producer; producer commits a new version; cache is populated with the new version's projection (the materialization path is preserved) |
+| 9 | `dos671_local_render_no_ability_scope_consumption` | Rust test: tight `standard_read_composition` budget (1/min); 50 paired-loopback render reads do NOT fail with `rate_limited`; the ability_class bucket counter shows zero consumption |
+| 10 | `dos671_local_render_consumes_identity_buckets` | Rust test: paired-loopback render reads DO consume `surface_client_read` bucket (identity bucket still gated) |
+| 11 | `dos671_local_render_no_tighten_event` | Rust test: 100 paired-loopback render reads produce ZERO `rate_limit_audit_event` entries (ability/scope bucket bypassed → no rejection → no tightening) |
+| 12 | `dos672_manual_reload_single_request` | PHP integration test: simulated button click via REST → exactly one runtime call (not two) |
+| 13 | `dos672_failed_reload_preserves_last_good` | PHP integration test: first reload succeeds → preview HTML rendered; second reload fails (mocked error) → response body returns error notice + last-good preview HTML unchanged in the response shape |
+| 14 | `dos672_typed_error_mapping` | PHP test matrix: each of the 11 error codes (`rate_limited`, `session_requires_repair`, `session_not_found`, `runtime_unavailable`, `runtime_request_failed`, `runtime_invalid_json`, `runtime_http_error`, `projection_tampered`, `projection_version_rollback`, `stale_composition_watermark`, `consistency_failure`) → expected user-facing string (throttled / repair / unavailable / verification banner per §5.6 table) |
+| 15 | `dos672_unknown_code_failsafe` | PHP test: runtime response `{ok:false, error:{code:'unknown_xyz'}}` → verification banner renders (fail-safe) |
+| 16 | `dos671_l4_hands_on_log` | Hands-on log captured: initial render → wait 60s → focus switch x2 → manual reload x2; content remains visible throughout (the user-visible L4 target) |
 
 ## 9. CI invariants
 
 | # | Invariant | Enforcement |
 |---|---|---|
-| 1 | `dailyos_account_overview_render` is called at most once per preview request | grep / lint: `account_overview_preview` body does not call `render_block_with_filter` for the block-render path; calls `dailyos_account_overview_render_from_projection` directly |
-| 2 | Editor `reload` callback dep list contains exactly `[attributes.composition_id, attributes.account_id, setAttributes]` | ESLint rule or test that asserts the dep array literal |
-| 3 | `useEffect` for auto-reload depends on a narrow trigger value, not `reload` | ESLint rule or test |
-| 4 | Runtime `project_composition` handler does NOT call `commit_composition` on the steady-state read path | grep / AST check on the read-path branch body — no `commit_composition` call without a `requires_commit` guard |
-| 5 | Projection cache key (effective shape per §5.3 outcome) is invariant under request_version changes | runtime test asserts cache hit rate ≥ 95% in a workload that varies request_version but holds composition_id constant |
-| 6 | Local-render read decharge: `standard_read_composition` budget is not consumed for paired-loopback render | runtime test with tight budget (already enumerated as fixture #7) |
-| 7 | PHP error mapping uses a typed code → string lookup table | grep for `dailyos_account_overview_render_verification_banner` outside the consistency-failure branch fails CI |
+| 1 | `account_overview_preview` calls `dailyos_account_overview_render_from_projection` directly; does NOT route the response back through `render_block_with_filter` → `dailyos_account_overview_render` | grep gate on `account_overview_preview` body |
+| 2 | Editor `reload` callback dep list keeps composition_id + composition_version + cache_hint_token + setAttributes (preserves manual-reload correctness) | grep gate on `edit.js` for the literal dep array shape (code-reviewer F7 — recommends grep over ESLint authoring; proper ESLint rule filed to maintenance) |
+| 3 | Editor `useEffect` for auto-reload depends on `[reloadTrigger]` (NOT `[reload]`) | grep gate on `edit.js` |
+| 4 | Runtime `project_composition` cache lookup is keyed by current_db_version (NOT request.composition_version) | grep gate on `mod.rs` cache_lookup call site — verify the version argument is the current_db_version variable |
+| 5 | Cache hit rate ≥ 95% under workload that varies `request.composition_version` but holds `composition_id` constant | Rust integration test in existing `rust.yml` workflow |
+| 6 | `authorize_local_render` uses `charge_ability_scope=false`; main `authorize` continues to use `true` | grep gate on `surface_client.rs` for both variants |
+| 7 | PHP error mapping uses the typed switch table in §5.6; verification banner is emitted ONLY from the consistency-failure branch + unknown-code fail-safe | grep gate on `render-functions.php` for `dailyos_account_overview_render_verification_banner` call sites — verify all callers are inside the consistency-failure switch arm or the unknown-code default arm |
+
+V1.0 invariant #4 ("Runtime `project_composition` handler does NOT call
+`commit_composition` on the steady-state read path") REMOVED in V1.1: the
+§5.4 reframe preserves producer-commit-on-cache-miss. The user-visible
+write-flood reduction comes from §5.3 (cache hits dominate), measurable by
+invariant #5 above.
 
 ## 10. Interlocks
 
@@ -299,19 +674,20 @@ DOS-671 and DOS-672 share every file in scope (`edit.js`,
 `class-dailyos-runtime-client.php`, `surface_runtime/mod.rs`,
 `composition_render_orchestrator.rs`, `surface_client.rs`).
 
-**Landing shape:** single v1.4.3 stabilization-B PR with five commit groups:
-1. PHP single-fetch refactor (DOS-671 §5.1).
-2. Editor reload guard + last-good preserve (DOS-671 §5.2, DOS-672 §5.6 editor side).
-3. Runtime cache-key correction (DOS-671 §5.3).
-4. Render-path producer-commit removal (DOS-671 §5.4) — **the architecturally contested one**.
-5. Render-read decharge + typed error mapping (DOS-672 §5.5, §5.6 runtime side).
+**Landing shape (V1.1):** single v1.4.3 stabilization-B PR with four commit groups:
+1. PHP single-fetch refactor (§5.1) + typed error mapping (§5.6) — wraps the wrapper, adds the pure helper, adds the typed switch table.
+2. Editor reload guard + last-good preserve (§5.2) — reloadTrigger pattern, full reload dep list, Gutenberg lifecycle handling.
+3. Runtime cache-key correction (§5.3) — move current_db_version read upstream, switch lookup/store keys to current_db_version / projection.composition_version.
+4. Render-read decharge (§5.5) — new `authorize_local_render` variant, route handler switches.
+
+V1.0's commit group #4 "render-path producer-commit removal" REMOVED — the
+§5.4 reframe withdraws the architecturally contested change.
 
 Splitting this PR is NOT viable. Each fix in isolation produces false
 confidence: fix the editor without the PHP double-fetch and 50% of reloads
 still hang; fix PHP without the cache-key issue and the cache stays useless;
-fix the cache without removing render-path commit and you still write
-unnecessarily on read; etc. The investigation §"Coordination — Recommended
-Landing Shape" calls this out explicitly.
+etc. The investigation §"Coordination — Recommended Landing Shape" calls
+this out explicitly.
 
 **Cross-packet interlock:** Packet A (lifecycle hardening) and Packet B
 (render stabilization) touch `src-tauri/src/surface_runtime/mod.rs` but in
@@ -338,15 +714,49 @@ order; rebase cost is minimal.
   follow.
 - **Studio sandbox runtime discovery** (C3 in v1.4.3 project description).
   Distinct work track.
+- **Signal-propagation cache invalidation bus.** Cycle-1 CSO MEDIUM +
+  codex challenge MEDIUM — moot in V1.1 because §5.4 reframe preserves
+  producer-commit-on-cache-miss as the invalidation channel. Federation /
+  multi-writer deployments would benefit from an explicit invalidation API
+  on `composition_render_orchestrator`. Filed as v1.x-federation maintenance.
+- **Hostile co-resident WordPress plugin error-code fingerprinting.**
+  Cycle-1 codex challenge LOW — under same-UID local model, a co-resident
+  plugin with PHP execution already has ambient keychain/DB/loopback
+  access; finer error-code redaction would be remote-shape defense. Filed
+  as v1.x-federation maintenance ("Bounded error taxonomy for
+  multi-tenant / multi-plugin WordPress deployments").
+- **Render-volume audit signal for operator observability.** Cycle-1
+  code-reviewer F3 maintenance note — local-render-decharge volume
+  observability isn't security-load-bearing locally. Filed as v1.x
+  maintenance ("Local-render audit signal for operator observability").
+- **ESLint rule authoring for editor `useEffect` dep arrays.** Cycle-1
+  code-reviewer F7 — grep gates cover L0 closure; a proper ESLint rule is
+  maintenance.
+- **Persistent projection storage** (would enable producer-commit removal —
+  not v1.4.3 scope). Filed as v1.x-federation maintenance — substantial
+  new infrastructure, only beneficial when render-path mutation needs to
+  be strictly eliminated (federation / multi-writer).
+- **Hot-path performance budgeting** — cache hit rate ≥95% is the L0
+  invariant target; actual latency budgeting (warm-path p95, cold-path
+  p95) is operational tuning, not L0 scope.
 
-## 12. Open questions for L0 reviewers
+## 12. Open questions for L0 reviewers — all V1.0 questions RESOLVED in V1.1
 
-1. **(For codex consult + code-reviewer):** Cache key shape per §5.3 — (a) key on `current_db_version` (lookup races: between current_db_version read and cache_lookup, producer could commit) vs (b) version-agnostic key with explicit invalidation on commit. Pick one with implementation cost + correctness analysis.
-2. **(For CSO + codex challenge):** Removing render-path producer-commit per §5.4 — does this break the DOS-670 substrate-side OCC contract that v1.4.2 W4-F shipped? Specifically: when the producer commits on EXPLICIT refresh, can the surface still receive a projection that reflects the committed version, or does the commit-then-read window introduce a new race?
-3. **(For code-reviewer + codex consult):** Render-read decharge per §5.5 — (a) bypass `standard_read_composition` for paired-loopback render entirely vs (b) raise the budget significantly. Pick one.
-4. **(For codex challenge):** The investigation says "30s disappearance" is "the 30s signed-post timeout plus retrigger". Can codex propose a concrete reproduction script that confirms the timing chain end-to-end (browser DevTools network + Tauri audit log)?
-5. **(For CSO):** Typed error mapping per §5.6 — does exposing distinct error codes (`rate_limited`, `session_requires_repair`, etc) to the WP-side give an attacker a fingerprinting channel? Local-to-local says yes-because-WP-is-trusted, but please verify against any threat model that contemplates a hostile WP plugin co-resident on the same machine.
-6. **(For codex consult):** What's the actual user-trigger surface for "explicit refresh"? Today the editor has a button (`reload`); is there also a Gutenberg context that auto-saves, and does auto-save count as explicit refresh?
+1. **V1.0 Q1 (cache key shape):** RESOLVED — V1.1 picks option (a), key by `current_db_version`. Codex consult cycle-1 recommended on implementation grounds; CSO recommended (b) but that requires net-new invalidation API filed to maintenance.
+2. **V1.0 Q2 (producer-commit removal vs DOS-670):** RESOLVED — moot. V1.1 withdraws the proposed removal. Producer commit stays on cache miss; the user-visible write reduction comes from §5.3 cache effectiveness.
+3. **V1.0 Q3 (render-read decharge shape):** RESOLVED — V1.1 picks option (a) with `charge_ability_scope=false`. Identity buckets still charge; ability/scope buckets bypassed.
+4. **V1.0 Q4 (30s disappearance reproduction):** Partially RESOLVED — the L4 fixture #16 captures the user-visible target. Concrete timing-chain reproduction script can be authored during implementation as part of the L1 self-validation; not L0 closure-blocking.
+5. **V1.0 Q5 (typed error fingerprinting):** RESOLVED — same-UID local model; deferred to v1.x-federation maintenance per §11.
+6. **V1.0 Q6 (explicit refresh trigger surface):** RESOLVED — moot, since V1.1 doesn't require distinguishing "explicit refresh" from "render read". All triggers route through the same `project_composition` route; cache key determines whether producer runs.
+
+### New open questions for V1.1 cycle 2
+
+V1.1 has no new open questions — all cycle-1 findings folded with explicit
+disposition (FOLD / DEFER / REJECT). Cycle 2 reviewers should validate that:
+- The §5.4 reframe (producer commit preserved) correctly resolves the cycle-1 BLOCK without reintroducing the user-visible loop.
+- The §5.3 option (a) implementation correctly avoids the cache-miss-on-stale-watermark loop.
+- The §5.2 reloadTrigger pattern + full reload dep list correctly resolves the stale-closure risk.
+- The §5.6 envelope rewrite matches the actual two-channel error surface (WP_Error from transport, runtime envelope from non-2xx).
 
 ## 13. Linear dependency edges
 
@@ -357,32 +767,37 @@ order; rebase cost is minimal.
 
 ## 14. L0 reviewer panel — required runners
 
-| Reviewer | Mode | Why |
+| Reviewer | Mode | V1.1 cycle-2 focus |
 |---|---|---|
-| `/codex challenge` | adversarial | Specifically: stress the producer-commit-removal claim. Construct a scenario where the cache returns a projection that doesn't match the substrate's current state because the producer hasn't run yet. Stress the cache-key change for stale-version + concurrent commit races. |
-| `code-reviewer` (claude) | domain | The render route is the hottest path in the system. Independent read by the domain reviewer catches places where the fix shape conflicts with existing patterns (request-id propagation, audit emission, error envelope shape, http status code semantics). |
-| `/codex consult` | implementation feasibility | Walk the proposed single-fetch refactor through every existing caller of `dailyos_account_overview_render` (block render path, REST preview, any new caller v1.4.3+ might introduce); confirm no behavioral break. |
-| `/cso` | **mandatory** | Render-path authorization (must NOT be bypassed), rate-budget consumption semantics (the decharge is policy-load-bearing), producer-commit semantics (write-on-read removal touches the substrate's trust-of-its-own-version invariant), and typed-error-mapping (fingerprinting risk vs operability). Every one of these is trust-boundary. |
+| `/codex challenge` | adversarial | Re-verify the §5.4 reframe (producer commit preserved + cache effectiveness fix). Is there a scenario where the §5.3 option (a) cache fails to invalidate when state actually moves? Stress the stale-closure resolution in §5.2 — is `reloadTrigger`'s derived-string pattern actually stable across React's render cycle? Confirm the V1.1 deferrals are correctly classified as remote/federation, not local-shipping. |
+| `code-reviewer` (claude) | domain | Verify §5.1 wrapper preservation against the 6 existing test fixtures. Verify the §5.6 typed-error switch table is exhaustive against existing runtime error codes. Verify the §9 grep gates are enforceable. |
+| `/codex consult` | implementation feasibility | Walk the §5.3 option (a) implementation through `composition_render_orchestrator::cache_lookup` / `cache_store` and `mod.rs:2317-2430`. Verify §5.5 `authorize_local_render` plumbing through `authorize_for_path` with the new flag. Verify the §5.6 PHP switch table compiles cleanly with the existing renderer error helpers. |
+| `/cso` | **mandatory** | Confirm the §5.4 reframe preserves the W4-F producer contract without weakening any trust boundary. Specifically: (a) cache-key-by-current-db-version still requires authorization BEFORE lookup (same as today); (b) `charge_ability_scope=false` decharge does NOT bypass scope check or authorization; (c) the typed error mapping does not expose any new attack vector under same-UID local model. |
 
 **Convergence rule:** unanimous APPROVE required before code lands. Any reviewer
-returning CONDITIONAL APPROVE → fold finding into V2 of this packet, re-run all
-four reviewers. Cycle cap: 3 cycles before escalation to L6.
+returning CONDITIONAL APPROVE → fold finding into V1.2 (or maintenance backlog
+if remote-shape) and re-run all four reviewers. Cycle cap: 3 cycles before
+escalation to L6.
 
-**Specific L6 trigger:** if CSO and codex challenge disagree on §5.4 (render-path
-producer-commit removal), escalate to L6 immediately. This is the contested
-architectural call, and the v1.4.2 W4-F authors deliberately chose the current
-shape. James decides.
+**Cycle 2 special handling for codex challenge:** if codex challenge re-flags
+the V1.1 deferred items as local-blocking, the deferral classification must
+be re-examined — but the L0 reviewer panel is not allowed to overturn a
+Path-α trim that aligns with the v1.4.2 explicit threat-model commitment.
+Persistent disagreement → L6 (James) decides. The §5.4 architecturally
+contested-change L6 trigger from V1.0 is removed in V1.1 since the contested
+change is withdrawn.
 
 ## 15. Acceptance for L0 closure
 
-- [ ] All 4 reviewers returned APPROVE.
-- [ ] All 15 acceptance criteria (§7) are testable; per-criterion fixture mapped (§8 has 13 — gap analysis in cycle 1).
-- [ ] All 7 CI invariants (§9) have concrete grep/AST/runtime enforcement.
-- [ ] All §12 open questions resolved.
-- [ ] §5.4 producer-commit-removal explicitly approved by CSO (not just non-blocking).
-- [ ] §5.3 cache key shape picked (a or b) with implementation rationale recorded.
-- [ ] §5.5 render-read decharge approach picked (a or b) with implementation rationale recorded.
-- [ ] Landing shape (§10) confirmed: single PR with 5 commit groups, no split.
+- [ ] All 4 reviewers returned APPROVE (cycle 2 or later).
+- [ ] All 16 acceptance criteria (§7 V1.1) are testable; per-criterion fixture mapped to §8 (16 fixtures, 1:1 mapping verified).
+- [ ] All 7 CI invariants (§9 V1.1) have concrete grep/AST/runtime enforcement.
+- [ ] All §12 V1.0 open questions resolved in V1.1 (6/6 — see §12).
+- [ ] §5.3 cache key shape picked: option (a) — current_db_version key.
+- [ ] §5.5 render-read decharge approach picked: option (a) — `charge_ability_scope=false`.
+- [ ] §5.4 producer-commit-removal WITHDRAWN — no architectural contest remains.
+- [ ] V1.1 deferred items filed as Linear maintenance tickets under project `b8e6aea4-d47e-4f3a-b03d-a05bec914aeb` (DailyOS Maintenance & Production Quality). 6 deferral ticket titles in §2 V1.1 changelog.
+- [ ] Landing shape (§10) confirmed: single PR with 4 commit groups (was 5; removed the producer-commit-removal group), no split.
 - [ ] No outstanding L0-cycle findings; packet is implementation-ready.
 
 When all nine boxes check, L0 is closed and implementation begins. L1 (self)
