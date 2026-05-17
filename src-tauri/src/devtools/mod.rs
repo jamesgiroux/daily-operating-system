@@ -13,6 +13,10 @@
 //! repairs surface_client_sessions.absolute_expires_at on existing rows
 //! without introducing new tables, columns, or seed shapes. The existing
 //! pairing-mint rule above continues to apply post-v180.
+//!
+//! L2 cycle-1 fold: v180 trigger DDL removed (codex HIGH — schema-change
+//! creep). Migration is now strictly data repair + comment marker on the
+//! deprecated inactive_expires_at column.
 
 use std::path::Path;
 

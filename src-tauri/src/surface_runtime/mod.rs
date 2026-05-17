@@ -323,11 +323,20 @@ impl SurfaceEndpointState {
                         app_state: app_state.clone(),
                     });
                     let endpoint_state = Arc::clone(&self);
+                    let runtime_for_shutdown = Arc::clone(&runtime);
                     let join = tokio::spawn(async move {
                         run_listener(listener, runtime, shutdown_rx).await;
                         // W4-F DOS-636: remove the sentinel on shutdown so a
                         // stale port doesn't redirect WP after restart.
                         remove_runtime_sentinel();
+                        // W4-F V3.1 §7 #9: lazy-flush last_seen_at + last_used_at
+                        // on graceful shutdown. Coalesced UPDATE — sets all
+                        // non-revoked sessions' last_seen_at and their pairings'
+                        // last_used_at to the current timestamp. §6.2 explicitly
+                        // accepts staleness; crash-stop is tolerated.
+                        if let Some(app_state) = runtime_for_shutdown.app_state.as_ref() {
+                            flush_session_activity_on_shutdown(app_state).await;
+                        }
                         endpoint_state.mark_stopped_if_current(startup_id);
                     });
                     let abort = join.abort_handle();
@@ -591,7 +600,7 @@ struct EndpointRuntime {
 }
 
 /// Row shape for rehydrating a signed session from the DB at startup.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct RehydrateRow {
     session_id: String,
     surface_client_id: String,
@@ -683,16 +692,18 @@ async fn rehydrate_sessions_from_keychain(
         );
     }
 
-    // Step 4: mark DB rows revoked for sessions whose keychain entry is missing.
+    // Step 4: mark DB rows revoked for sessions whose keychain entry is missing
+    // AND emit `pairing.session.key_missing` audit events per W4-F V3.1 §7 #12.
     if !missing.is_empty() {
         let missing_count = missing.len();
+        let missing_clone = missing.clone();
         #[allow(
             clippy::let_underscore_must_use,
             reason = "rehydrate reconciliation is best-effort; failure logged below but does not block startup"
         )]
         let _ = app_state
             .db_write(move |db| {
-                for row in missing {
+                for row in missing_clone {
                     if let Err(err) = db.conn_ref().execute(
                         "UPDATE surface_client_sessions
                          SET revoked_at = datetime('now'),
@@ -708,11 +719,76 @@ async fn rehydrate_sessions_from_keychain(
                 Ok::<_, String>(())
             })
             .await;
+        // Audit emission per W4-F V3.1 §7 #12. The audit log is file-based
+        // (JSONL via app_state.audit_log) — does NOT contend with the SQLite
+        // writer mutex, safe to emit in tight loop.
+        for row in &missing {
+            let event = surface_pairing::SurfacePairingAuditEvent {
+                event_kind: "pairing.session.key_missing",
+                category: "surface_pairing",
+                actor: abilities_runtime::abilities::registry::Actor::System,
+                wp_user_id: None,
+                wp_user_hash: None,
+                detail: serde_json::json!({
+                    "session_id_hash": stable_hash_for_audit(&row.session_id),
+                    "surface_client_id_hash": stable_hash_for_audit(&row.surface_client_id),
+                    "reason": "keychain_entry_missing",
+                    "remediation": "session_requires_repair",
+                }),
+            };
+            emit_pairing_audit_event(app_state, &event);
+        }
         log::warn!(
             "surface session rehydrate: {missing_count} sessions revoked (keychain_entry_missing); WP plugin will surface session_requires_repair on next request"
         );
     }
     Ok(())
+}
+
+/// Lazy-flush last_seen_at + last_used_at on Tauri graceful shutdown
+/// per W4-F V3.1 §7 #9. Single coalesced UPDATE; §6.2 accepts staleness
+/// and crash-stop tolerance, so a bulk-set is the right shape for the
+/// "admin diagnostics is approximate" semantic.
+async fn flush_session_activity_on_shutdown(app_state: &Arc<AppState>) {
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "shutdown flush is best-effort; failure during Tauri stop is acceptable"
+    )]
+    let _ = app_state
+        .db_write(|db| {
+            // Set last_seen_at on every active session, last_used_at on
+            // every active pairing. Coalesced into 2 writes regardless of
+            // session count.
+            let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+            db.conn_ref()
+                .execute(
+                    "UPDATE surface_client_sessions
+                     SET last_seen_at = ?1
+                     WHERE revoked_at IS NULL",
+                    rusqlite::params![now],
+                )
+                .map_err(|e| e.to_string())?;
+            db.conn_ref()
+                .execute(
+                    "UPDATE surface_client_pairings
+                     SET last_used_at = ?1
+                     WHERE lifecycle_state = 'active'",
+                    rusqlite::params![now],
+                )
+                .map_err(|e| e.to_string())?;
+            Ok::<_, String>(())
+        })
+        .await;
+}
+
+/// SHA256 hex hash for audit emission. Prevents raw session_id /
+/// surface_client_id from appearing in audit log records.
+fn stable_hash_for_audit(value: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(b"DAILYOS-SURFACE-AUDIT-V1\n");
+    hasher.update(value.as_bytes());
+    hex::encode(hasher.finalize())
 }
 
 /// Path to the runtime sentinel file (W4-F DOS-636).

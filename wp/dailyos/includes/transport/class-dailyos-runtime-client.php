@@ -288,12 +288,15 @@ final class DailyOS_Runtime_Client {
 
 		$response = wp_remote_post( $url, $post_args );
 
-		// W4-F DOS-636: on ECONNREFUSED (Tauri may have restarted with new port),
-		// invalidate the sentinel cache, re-discover, retry the request once.
+		// W4-F DOS-636: on ECONNREFUSED, invalidate the sentinel cache, re-discover,
+		// and retry the request once. The retry fires whether or not the URL
+		// changed — Tauri may have restarted on the same port, or the original
+		// failure may be transient. Per L2 cycle-1 codex MEDIUM: the previous
+		// "only retry if URL differs" guard missed same-port transient refusals.
 		if ( self::is_connection_refused( $response ) ) {
 			\DailyOS\DailyOS_Plugin::invalidate_runtime_endpoint_cache();
 			$retry_base_url = $this->runtime_base_url_for_signed_request( $marker );
-			if ( null !== $retry_base_url && $retry_base_url !== $runtime_base_url ) {
+			if ( null !== $retry_base_url ) {
 				$response = wp_remote_post( $this->runtime_url( $retry_base_url, $path ), $post_args );
 			}
 		}

@@ -33,19 +33,11 @@ UPDATE surface_client_sessions
        )
  WHERE datetime(absolute_expires_at) <= datetime('now');
 
--- Sanity assertion: no surface_client_sessions row has absolute_expires_at
--- in the past after the repair. Trigger ensures future inserts whose
--- absolute_expires_at is past are rejected (defensive; pairing flow at
--- services/surface_pairing.rs ensures correct values, but a stray write
--- would silently break validity).
---
--- NOTE: triggers create a write-time check; this preserves the forward
--- guarantee that absolute_expires_at is the authoritative validity column.
-DROP TRIGGER IF EXISTS dos655_v180_assert_absolute_expires_at_future;
-CREATE TRIGGER dos655_v180_assert_absolute_expires_at_future
-BEFORE INSERT ON surface_client_sessions
-FOR EACH ROW
-WHEN datetime(NEW.absolute_expires_at) <= datetime('now')
-BEGIN
-    SELECT RAISE(ABORT, 'dos655_v180: surface_client_sessions.absolute_expires_at must be in the future at insert');
-END;
+-- L2 cycle-1 codex HIGH fold: removed the BEFORE INSERT trigger that
+-- previously guarded against past `absolute_expires_at` on insert. CREATE
+-- TRIGGER is a schema-change DDL operation; v180 is committed to data-only
+-- per the W4-F packet §5 + V3.1 changelog. The pairing flow at
+-- services/surface_pairing.rs writes only future timestamps, and the
+-- §9.11 exhaustive-match enforcement on SignedSessionFailure prevents
+-- future variants from silently inserting past values. If insert-time
+-- validation becomes load-bearing, file a separate vNNN schema migration.

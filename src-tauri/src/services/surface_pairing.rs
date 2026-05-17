@@ -249,6 +249,9 @@ pub enum SurfacePairingError {
     SessionInvalid,
     SessionExpired,
     SessionThrottled,
+    /// W4-F V3.1 §7 #12: session was revoked by reconciliation because the
+    /// keychain entry was missing. WP plugin should re-pair on this error.
+    SessionRequiresRepair,
     WpUserMismatch,
     ScopeDenied,
     Write(String),
@@ -271,6 +274,7 @@ impl SurfacePairingError {
             Self::SessionInvalid => "session_invalid",
             Self::SessionExpired => "session_expired",
             Self::SessionThrottled => "session_throttled",
+            Self::SessionRequiresRepair => "session_requires_repair",
             Self::WpUserMismatch => "wp_user_mismatch",
             Self::ScopeDenied => "scope_denied",
             Self::Write(_) => "pairing_authority_unavailable",
@@ -287,6 +291,7 @@ impl SurfacePairingError {
             | Self::PairingRevoked
             | Self::PairingExpired
             | Self::RestoredStalePairing
+            | Self::SessionRequiresRepair
             | Self::WpUserMismatch
             | Self::ScopeDenied => StatusCode::FORBIDDEN,
             Self::Write(_) => StatusCode::SERVICE_UNAVAILABLE,
@@ -302,6 +307,9 @@ impl SurfacePairingError {
             Self::WpUserMismatch => "The paired user identity changed.",
             Self::PairingRevoked => "This surface pairing was revoked.",
             Self::PairingExpired | Self::SessionExpired => "This surface session expired.",
+            Self::SessionRequiresRepair => {
+                "This surface session needs to be re-paired."
+            }
             Self::Write(_) => "The DailyOS pairing authority is unavailable.",
             _ => "DailyOS surface pairing validation failed.",
         }
@@ -341,6 +349,7 @@ impl From<String> for SurfacePairingError {
             "session_invalid" => Self::SessionInvalid,
             "session_expired" => Self::SessionExpired,
             "session_throttled" => Self::SessionThrottled,
+            "session_requires_repair" => Self::SessionRequiresRepair,
             "wp_user_mismatch" => Self::WpUserMismatch,
             "scope_denied" => Self::ScopeDenied,
             _ => Self::Write(value),
@@ -899,6 +908,19 @@ pub fn validate_signed_session_readonly(
         _ => return Err(SignedSessionFailure::SessionInvalid),
     }
     if row.session_revoked_at.is_some() {
+        // W4-F V3.1 §7 #12: keychain reconciliation revokes sessions with
+        // reason `keychain_entry_missing` and the WP plugin must surface
+        // `session_requires_repair` to drive the re-pair flow. Other
+        // revocation reasons collapse to the generic SessionInvalid wire
+        // error.
+        if row
+            .session_revoked_reason
+            .as_deref()
+            .map(|reason| reason == "keychain_entry_missing")
+            .unwrap_or(false)
+        {
+            return Err(SignedSessionFailure::SessionRequiresRepair);
+        }
         return Err(SignedSessionFailure::SessionInvalid);
     }
     if row
@@ -982,6 +1004,11 @@ pub enum SignedSessionFailure {
     PairingExpired { surface_client_id: String },
     SessionInvalid,
     SessionThrottled,
+    /// W4-F V3.1 §7 #12: session was revoked by reconciliation because the
+    /// keychain entry was missing on startup. Distinct from SessionInvalid
+    /// so the WP plugin can drive the re-pair flow rather than treat as a
+    /// generic auth failure.
+    SessionRequiresRepair,
     SiteNonceMismatch { surface_client_id: String },
     SiteBindingDigestMismatch { surface_client_id: String },
     WpUserHashMismatch { surface_client_id: String },
@@ -1046,7 +1073,8 @@ impl SignedSessionFailure {
             | Self::PairingRevoked
             | Self::PairingSuspended
             | Self::SessionInvalid
-            | Self::SessionThrottled => None,
+            | Self::SessionThrottled
+            | Self::SessionRequiresRepair => None,
         }
     }
 
@@ -1064,6 +1092,7 @@ impl SignedSessionFailure {
             Self::PairingExpired { .. } => SurfacePairingError::PairingExpired,
             Self::SessionInvalid => SurfacePairingError::SessionInvalid,
             Self::SessionThrottled => SurfacePairingError::SessionThrottled,
+            Self::SessionRequiresRepair => SurfacePairingError::SessionRequiresRepair,
             Self::SiteNonceMismatch { .. } => SurfacePairingError::SiteBindingMismatch,
             Self::SiteBindingDigestMismatch { .. } => SurfacePairingError::SiteBindingMismatch,
             Self::WpUserHashMismatch { .. } => SurfacePairingError::WpUserMismatch,
@@ -1550,6 +1579,7 @@ struct SessionPairingRow {
     lifecycle_state: String,
     pairing_expires_at: String,
     session_revoked_at: Option<String>,
+    session_revoked_reason: Option<String>,
     revocation_id: Option<String>,
     inactive_expires_at: String,
     absolute_expires_at: String,
@@ -1876,6 +1906,7 @@ fn load_session_pairing(
                     COALESCE(f.highest_pairing_epoch, 0) AS epoch_floor,
                     p.lifecycle_state, p.expires_at AS pairing_expires_at,
                     s.revoked_at AS session_revoked_at,
+                    s.revoked_reason AS session_revoked_reason,
                     r.revocation_id,
                     s.inactive_expires_at, s.absolute_expires_at, s.throttled_until_at,
                     p.site_binding_digest, p.site_nonce, p.scope_digest, p.scopes_json,
@@ -1901,6 +1932,7 @@ fn load_session_pairing(
                     lifecycle_state: row.get("lifecycle_state")?,
                     pairing_expires_at: row.get("pairing_expires_at")?,
                     session_revoked_at: row.get("session_revoked_at")?,
+                    session_revoked_reason: row.get("session_revoked_reason")?,
                     revocation_id: row.get("revocation_id")?,
                     inactive_expires_at: row.get("inactive_expires_at")?,
                     absolute_expires_at: row.get("absolute_expires_at")?,
