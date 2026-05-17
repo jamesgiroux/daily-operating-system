@@ -276,18 +276,27 @@ final class DailyOS_Runtime_Client {
 			$headers['X-DailyOS-Multisite-Blog-Id'] = $identity['multisite_blog_id'];
 		}
 
-		$response = wp_remote_post(
-			$url,
-			[
-				'body'        => $body_bytes,
-				'headers'     => $headers,
-				'redirection' => 0,
-				'timeout'     => 5,
-				'sslverify'   => false,
-				'blocking'    => true,
-				'data_format' => 'body',
-			]
-		);
+		$post_args = [
+			'body'        => $body_bytes,
+			'headers'     => $headers,
+			'redirection' => 0,
+			'timeout'     => 5,
+			'sslverify'   => false,
+			'blocking'    => true,
+			'data_format' => 'body',
+		];
+
+		$response = wp_remote_post( $url, $post_args );
+
+		// W4-F DOS-636: on ECONNREFUSED (Tauri may have restarted with new port),
+		// invalidate the sentinel cache, re-discover, retry the request once.
+		if ( self::is_connection_refused( $response ) ) {
+			\DailyOS\DailyOS_Plugin::invalidate_runtime_endpoint_cache();
+			$retry_base_url = $this->runtime_base_url_for_signed_request( $marker );
+			if ( null !== $retry_base_url && $retry_base_url !== $runtime_base_url ) {
+				$response = wp_remote_post( $this->runtime_url( $retry_base_url, $path ), $post_args );
+			}
+		}
 
 		$parsed = $this->parse_response( $response );
 
@@ -296,6 +305,21 @@ final class DailyOS_Runtime_Client {
 		}
 
 		return $parsed;
+	}
+
+	/**
+	 * Detect ECONNREFUSED in a wp_remote_post response. Used by W4-F DOS-636
+	 * retry path to invalidate sentinel cache + re-discover + retry once.
+	 *
+	 * @param array|\WP_Error $response wp_remote_post return value.
+	 */
+	private static function is_connection_refused( $response ): bool {
+		if ( ! is_wp_error( $response ) ) {
+			return false;
+		}
+		$message = strtolower( (string) $response->get_error_message() );
+		return false !== strpos( $message, 'connection refused' )
+			|| false !== strpos( $message, 'econnrefused' );
 	}
 
 	/**
@@ -497,13 +521,23 @@ final class DailyOS_Runtime_Client {
 	 * @return string|null Base URL, or null when not paired.
 	 */
 	private function runtime_base_url_for_signed_request( array $marker ): ?string {
+		// W4-F DOS-636: prefer sentinel-discovered URL (current Tauri port across
+		// restarts) over the stored marker (may be stale after Tauri restart).
+		// Sentinel is HMAC-defended: even a substituted sentinel can't produce
+		// valid signed responses, so WP detects impersonation at first request.
+		$sentinel_url = \DailyOS\DailyOS_Plugin::discover_runtime_base_url();
+
 		$marker_url = isset( $marker['runtime_url'] ) ? self::normalize_loopback_runtime_url( (string) $marker['runtime_url'] ) : null;
 
+		// Admin filter override path retained — admins can still pin a specific URL
+		// for dev/testing. Sentinel is the runtime-tracked default; marker is the
+		// post-pairing baseline; filter overrides both for power users.
 		if ( function_exists( 'current_user_can' ) && ! current_user_can( 'manage_options' ) ) {
-			return $marker_url;
+			return $sentinel_url ?? $marker_url;
 		}
 
-		$filtered_url = apply_filters( 'dailyos_wp_bridge_runtime_url', $marker_url ?? '' );
+		$filter_seed  = $sentinel_url ?? ( $marker_url ?? '' );
+		$filtered_url = apply_filters( 'dailyos_wp_bridge_runtime_url', $filter_seed );
 
 		if ( is_string( $filtered_url ) && '' !== trim( $filtered_url ) ) {
 			$normalized_filtered_url = self::normalize_loopback_runtime_url( $filtered_url );
@@ -515,7 +549,7 @@ final class DailyOS_Runtime_Client {
 			$this->log_invalid_runtime_url_override();
 		}
 
-		return $marker_url;
+		return $sentinel_url ?? $marker_url;
 	}
 
 	/**
