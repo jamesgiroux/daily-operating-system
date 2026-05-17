@@ -292,11 +292,11 @@ final class DailyOS_Runtime_Client {
 
 		$response = wp_remote_post( $url, $post_args );
 
-		// W4-F DOS-636: on ECONNREFUSED, invalidate the sentinel cache, re-discover,
-		// and retry the request once. The retry fires whether or not the URL
-		// changed — Tauri may have restarted on the same port, or the original
-		// failure may be transient. Per L2 cycle-1 codex MEDIUM: the previous
-		// "only retry if URL differs" guard missed same-port transient refusals.
+		// On ECONNREFUSED, invalidate the sentinel cache, re-discover, and
+		// retry the request once. The retry fires whether or not the URL
+		// changed — the runtime may have restarted on the same port, or the
+		// original failure may be transient. A previous "only retry if URL
+		// differs" guard missed same-port transient refusals.
 		if ( self::is_connection_refused( $response ) ) {
 			\DailyOS\DailyOS_Plugin::invalidate_runtime_endpoint_cache();
 			$retry_base_url = $this->runtime_base_url_for_signed_request( $marker );
@@ -315,8 +315,8 @@ final class DailyOS_Runtime_Client {
 	}
 
 	/**
-	 * Detect ECONNREFUSED in a wp_remote_post response. Used by W4-F DOS-636
-	 * retry path to invalidate sentinel cache + re-discover + retry once.
+	 * Detect ECONNREFUSED in a wp_remote_post response. Used by the retry
+	 * path to invalidate the sentinel cache, re-discover, and retry once.
 	 *
 	 * @param array|\WP_Error $response wp_remote_post return value.
 	 */
@@ -528,10 +528,11 @@ final class DailyOS_Runtime_Client {
 	 * @return string|null Base URL, or null when not paired.
 	 */
 	private function runtime_base_url_for_signed_request( array $marker ): ?string {
-		// W4-F DOS-636: prefer sentinel-discovered URL (current Tauri port across
-		// restarts) over the stored marker (may be stale after Tauri restart).
-		// Sentinel is HMAC-defended: even a substituted sentinel can't produce
-		// valid signed responses, so WP detects impersonation at first request.
+		// Prefer the sentinel-discovered URL (current runtime port across
+		// restarts) over the stored marker (may be stale after the runtime
+		// restarts on a new port). The sentinel is HMAC-defended: a
+		// substituted sentinel cannot produce valid signed responses, so
+		// WP detects impersonation at first request.
 		$sentinel_url = \DailyOS\DailyOS_Plugin::discover_runtime_base_url();
 
 		$marker_url = isset( $marker['runtime_url'] ) ? self::normalize_loopback_runtime_url( (string) $marker['runtime_url'] ) : null;
