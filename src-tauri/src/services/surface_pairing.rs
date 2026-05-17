@@ -819,10 +819,259 @@ pub fn validate_signed_session(
     })
 }
 
+/// Read-only signed-session validation per W4-F (DOS-655).
+///
+/// Performs ONLY SELECTs. Returns a `SignedSessionFailure` enum identifying
+/// which check tripped; the caller (dispatch handler) decides whether to
+/// escalate to a writer-mutex acquisition via `apply_signed_session_write_action`
+/// for the 5 quarantine-write variants, or return the error directly for the
+/// 6 no-write variants.
+///
+/// Session validity rule (V3.1 §7 #7): `revoked_at IS NULL AND
+/// absolute_expires_at > ?now AND lifecycle_state = 'active'`.
+/// `inactive_expires_at` is NOT consulted (retained for forensic preservation
+/// per migration v180; see W4-F §6.8b for v179 rollback note).
+pub fn validate_signed_session_readonly(
+    db: &ActionDb,
+    input: SignedSessionValidationInput,
+) -> Result<ValidatedSurfaceSession, SignedSessionFailure> {
+    let now = format_ts(input.now);
+    let presented_site_binding_digest = SiteClaims::from_signed(&input.site_claims)
+        .map_err(|_| SignedSessionFailure::SessionInvalid)?
+        .site_binding_digest();
+    let row = match load_session_pairing(db, &input.session_id, &input.surface_client_id) {
+        Ok(Some(r)) => r,
+        Ok(None) => return Err(SignedSessionFailure::SessionInvalid),
+        Err(_) => return Err(SignedSessionFailure::SessionInvalid),
+    };
+
+    if row.runtime_anchor_id != input.runtime_anchor_id {
+        return Err(SignedSessionFailure::UnknownRuntimeAnchor);
+    }
+    // W4-F V3.1 §7 #7: only absolute_expires_at gates validity. inactive_expires_at
+    // is no longer consulted (V3 §6.8b rollback note: v179 still does, so rollback
+    // requires re-pair for rows with stale inactive_expires_at).
+    if ts_before_or_equal(&row.absolute_expires_at, &now) {
+        return Err(SignedSessionFailure::SessionExpired {
+            session_id: input.session_id.clone(),
+        });
+    }
+    if row.pairing_epoch < row.epoch_floor {
+        return Err(SignedSessionFailure::RestoredStalePairing);
+    }
+    if row.revocation_id.is_some() {
+        return Err(SignedSessionFailure::PairingRevoked);
+    }
+    match row.lifecycle_state.as_str() {
+        "active" => {}
+        "suspended" => return Err(SignedSessionFailure::PairingSuspended),
+        "revoked" => return Err(SignedSessionFailure::PairingRevoked),
+        "expired" => {
+            return Err(SignedSessionFailure::PairingExpired {
+                surface_client_id: row.surface_client_id.clone(),
+            });
+        }
+        _ => return Err(SignedSessionFailure::SessionInvalid),
+    }
+    if row.session_revoked_at.is_some() {
+        return Err(SignedSessionFailure::SessionInvalid);
+    }
+    if row
+        .throttled_until_at
+        .as_ref()
+        .is_some_and(|until| now.as_str() < until.as_str())
+    {
+        return Err(SignedSessionFailure::SessionThrottled);
+    }
+    if ts_before_or_equal(&row.pairing_expires_at, &now) {
+        return Err(SignedSessionFailure::PairingExpired {
+            surface_client_id: row.surface_client_id.clone(),
+        });
+    }
+    if row.site_nonce != input.site_nonce {
+        return Err(SignedSessionFailure::SiteNonceMismatch {
+            surface_client_id: row.surface_client_id.clone(),
+        });
+    }
+    if row.site_binding_digest != presented_site_binding_digest {
+        return Err(SignedSessionFailure::SiteBindingDigestMismatch {
+            surface_client_id: row.surface_client_id.clone(),
+        });
+    }
+
+    let scopes =
+        scopes_from_json(&row.scopes_json).map_err(|_| SignedSessionFailure::SessionInvalid)?;
+    let scope_set =
+        scope_set_from_strings(&scopes).map_err(|_| SignedSessionFailure::SessionInvalid)?;
+    if row.wp_user_hash != input.wp_user_hash {
+        return Err(SignedSessionFailure::WpUserHashMismatch {
+            surface_client_id: row.surface_client_id.clone(),
+        });
+    }
+
+    // W4-F V3.2 §6.8: NO writes on Ok-path. last_seen_at and last_used_at
+    // are lazy-flushed on graceful shutdown only (not implemented in this
+    // commit; staged for follow-up). The cycle-1 Ok-path writes at the old
+    // line 774-798 are removed.
+    Ok(ValidatedSurfaceSession {
+        surface_client_id: row.surface_client_id.clone(),
+        session_id: input.session_id,
+        actor: Actor::SurfaceClient {
+            instance: SurfaceClientId::new(row.surface_client_id.clone()),
+            scopes: scope_set,
+        },
+        wp_user_id: Some(input.wp_user_id),
+        wp_user_hash: Some(input.wp_user_hash),
+        wp_site_id: input.site_claims.wp_site_id.clone(),
+        wp_site_id_hash: private_audit_hash(
+            "wp_site_id",
+            &row.site_nonce,
+            &input.site_claims.wp_site_id,
+        ),
+        site_binding_digest: row.site_binding_digest,
+        site_nonce: row.site_nonce,
+        scope_digest: row.scope_digest,
+        granted_scopes: scopes,
+    })
+}
+
+/// Routing enum returned by [`validate_signed_session_readonly`] (W4-F V3.1 §5).
+///
+/// Carries enough context for the dispatch handler to:
+/// - Determine if a writer-mutex acquisition is needed (`write_action()`).
+/// - Convert to `SurfacePairingError` for the wire response (`to_pairing_error()`).
+///
+/// Per V3.2: the 5 quarantine-write variants (`SessionExpired`, `PairingExpired`,
+/// `SiteNonceMismatch`, `SiteBindingDigestMismatch`, `WpUserHashMismatch`) split
+/// out the current-code `SiteBindingMismatch` variant into its two underlying
+/// checks. The dispatch handler maps both `SiteNonceMismatch` and
+/// `SiteBindingDigestMismatch` back to `SurfacePairingError::SiteBindingMismatch`
+/// for wire compatibility.
+#[derive(Debug, Clone)]
+pub enum SignedSessionFailure {
+    UnknownRuntimeAnchor,
+    SessionExpired { session_id: String },
+    RestoredStalePairing,
+    PairingRevoked,
+    PairingSuspended,
+    PairingExpired { surface_client_id: String },
+    SessionInvalid,
+    SessionThrottled,
+    SiteNonceMismatch { surface_client_id: String },
+    SiteBindingDigestMismatch { surface_client_id: String },
+    WpUserHashMismatch { surface_client_id: String },
+}
+
+/// Writer action escalated from the dispatch handler's Err arm to a fresh
+/// `db_write` acquisition (W4-F V3 §6.9). The 5 variants here correspond to
+/// the 5 write-needing `SignedSessionFailure` variants.
+#[derive(Debug, Clone)]
+pub enum SignedSessionWriteAction {
+    MarkSessionRevoked {
+        session_id: String,
+        reason: &'static str,
+    },
+    MarkPairingExpired {
+        surface_client_id: String,
+    },
+    SuspendPairing {
+        surface_client_id: String,
+        reason: &'static str,
+    },
+}
+
+impl SignedSessionFailure {
+    /// Returns `Some(action)` for the 5 quarantine-write variants; `None`
+    /// for the 6 no-write variants. The exhaustive match (no wildcard) is
+    /// the V3.1 §9.11 enforcement — new variants must declare their write
+    /// footprint or fail to compile.
+    pub fn write_action(&self) -> Option<SignedSessionWriteAction> {
+        match self {
+            Self::SessionExpired { session_id } => {
+                Some(SignedSessionWriteAction::MarkSessionRevoked {
+                    session_id: session_id.clone(),
+                    reason: "session_expired",
+                })
+            }
+            Self::PairingExpired { surface_client_id } => {
+                Some(SignedSessionWriteAction::MarkPairingExpired {
+                    surface_client_id: surface_client_id.clone(),
+                })
+            }
+            Self::SiteNonceMismatch { surface_client_id } => {
+                Some(SignedSessionWriteAction::SuspendPairing {
+                    surface_client_id: surface_client_id.clone(),
+                    reason: "site_nonce_mismatch",
+                })
+            }
+            Self::SiteBindingDigestMismatch { surface_client_id } => {
+                Some(SignedSessionWriteAction::SuspendPairing {
+                    surface_client_id: surface_client_id.clone(),
+                    reason: "site_binding_mismatch",
+                })
+            }
+            Self::WpUserHashMismatch { surface_client_id } => {
+                Some(SignedSessionWriteAction::SuspendPairing {
+                    surface_client_id: surface_client_id.clone(),
+                    reason: "wp_user_mismatch",
+                })
+            }
+            Self::UnknownRuntimeAnchor
+            | Self::RestoredStalePairing
+            | Self::PairingRevoked
+            | Self::PairingSuspended
+            | Self::SessionInvalid
+            | Self::SessionThrottled => None,
+        }
+    }
+
+    /// Convert to the wire-error type. The two split variants
+    /// (`SiteNonceMismatch`, `SiteBindingDigestMismatch`) both map back to
+    /// `SurfacePairingError::SiteBindingMismatch` for wire compatibility —
+    /// the split exists only for internal write-action routing.
+    pub fn to_pairing_error(&self) -> SurfacePairingError {
+        match self {
+            Self::UnknownRuntimeAnchor => SurfacePairingError::UnknownRuntimeAnchor,
+            Self::SessionExpired { .. } => SurfacePairingError::SessionExpired,
+            Self::RestoredStalePairing => SurfacePairingError::RestoredStalePairing,
+            Self::PairingRevoked => SurfacePairingError::PairingRevoked,
+            Self::PairingSuspended => SurfacePairingError::PairingSuspended,
+            Self::PairingExpired { .. } => SurfacePairingError::PairingExpired,
+            Self::SessionInvalid => SurfacePairingError::SessionInvalid,
+            Self::SessionThrottled => SurfacePairingError::SessionThrottled,
+            Self::SiteNonceMismatch { .. } => SurfacePairingError::SiteBindingMismatch,
+            Self::SiteBindingDigestMismatch { .. } => SurfacePairingError::SiteBindingMismatch,
+            Self::WpUserHashMismatch { .. } => SurfacePairingError::WpUserMismatch,
+        }
+    }
+}
+
+/// Apply a write action escalated from a failed [`validate_signed_session_readonly`].
+/// Called by the dispatch handler's Err arm inside a fresh `db_write` block.
+pub fn apply_signed_session_write_action(
+    db: &ActionDb,
+    action: SignedSessionWriteAction,
+    now: DateTime<Utc>,
+) -> Result<(), SurfacePairingError> {
+    let now_str = format_ts(now);
+    match action {
+        SignedSessionWriteAction::MarkSessionRevoked { session_id, reason } => {
+            mark_session_revoked(db, &session_id, &now_str, reason)
+        }
+        SignedSessionWriteAction::MarkPairingExpired { surface_client_id } => {
+            mark_pairing_expired(db, &surface_client_id, &now_str)
+        }
+        SignedSessionWriteAction::SuspendPairing {
+            surface_client_id,
+            reason,
+        } => suspend_pairing(db, &surface_client_id, &now_str, reason),
+    }
+}
+
 /// Look up the scope set granted to a paired surface_client for audit attribution.
 ///
 /// Used by transport-layer rejection paths that have an HMAC-verified request
-/// but where `validate_signed_session` failed before producing a
+/// but where `validate_signed_session_readonly` failed before producing a
 /// `ValidatedSurfaceSession`. Returns `None` on any error (pairing row gone,
 /// scopes_json corrupted, etc.) — callers fall back to `Actor::System`
 /// attribution in that case.

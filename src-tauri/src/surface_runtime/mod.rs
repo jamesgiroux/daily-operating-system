@@ -754,19 +754,17 @@ async fn signed_transport_response(
         wp_user_hash: verified.wp_user_hash.clone(),
         now: Utc::now(),
     };
+    // W4-F V3.2 §6.8: dispatch on read lane. Successful validation never enters
+    // the writer mutex; only write-needing failure variants escalate to a fresh
+    // db_write block on the Err arm.
     let audit_session_id = verified.session_id.clone();
     let audit_surface_client_id = verified.surface_client_id.clone();
-    let validated = match app_state
-        .db_write(move |db| {
-            let clock = crate::services::context::SystemClock;
-            let rng = crate::services::context::SystemRng;
-            let external = crate::services::context::ExternalClients::default();
-            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &external);
-            let result = surface_pairing::validate_signed_session(&ctx, db, validation_input);
-            // On error, recover scopes from the pairing record for audit attribution.
-            // Best-effort: returns None if the row is already gone or scopes_json
-            // is corrupted, in which case the audit emission falls back to
-            // `Actor::System`.
+    let readonly_input = validation_input.clone();
+    let readonly_outcome = app_state
+        .db_read(move |db| {
+            let result = surface_pairing::validate_signed_session_readonly(db, readonly_input);
+            // Recover scopes for audit attribution on failure paths. Best-effort:
+            // load_session_scope_set_for_audit is itself a read, safe inside db_read.
             let scopes_for_audit = match &result {
                 Err(_) => surface_pairing::load_session_scope_set_for_audit(
                     db,
@@ -775,22 +773,48 @@ async fn signed_transport_response(
                 ),
                 Ok(_) => None,
             };
-            Ok((result, scopes_for_audit))
+            Ok::<_, String>((result, scopes_for_audit))
         })
-        .await
-    {
+        .await;
+
+    let validated = match readonly_outcome {
         Ok((Ok(validated), _)) => validated,
-        Ok((Err(error), scopes_for_audit)) => {
-            for event in validation_rejection_events(&verified, &error, scopes_for_audit.as_ref()) {
+        Ok((Err(failure), scopes_for_audit)) => {
+            // W4-F V3.2 §6.9: write-needing failure paths escalate to a separate
+            // db_write block. The 5 quarantine variants drive auto-quarantine writes
+            // per Phase 0 artifact 01 (Site-Switch + Exfiltration defenses). The 6
+            // no-write variants return directly.
+            if let Some(action) = failure.write_action() {
+                let now = Utc::now();
+                let action_for_closure = action.clone();
+                let _ = app_state
+                    .db_write(move |db| {
+                        surface_pairing::apply_signed_session_write_action(
+                            db,
+                            action_for_closure,
+                            now,
+                        )
+                        .map_err(|e| e.to_string())
+                    })
+                    .await;
+                // Quarantine write best-effort: even if the writer-mutex acquisition
+                // fails (e.g., flooding rejection attempts), the request is being
+                // rejected anyway. Rate-limit gate at surface_client_bridge.authorize
+                // catches flood attacks before the writer-mutex hot path.
+            }
+            let pairing_error = failure.to_pairing_error();
+            for event in
+                validation_rejection_events(&verified, &pairing_error, scopes_for_audit.as_ref())
+            {
                 emit_pairing_audit_event(&app_state, &event);
             }
             evict_cached_session_after_validation_error(
                 &runtime.signed_transport,
                 &verified.surface_client_id,
-                &error,
+                &pairing_error,
             );
             return error_response(
-                SurfaceHttpError::from_pairing_error(error).with_request_id(request_id),
+                SurfaceHttpError::from_pairing_error(pairing_error).with_request_id(request_id),
             );
         }
         Err(error) => {
