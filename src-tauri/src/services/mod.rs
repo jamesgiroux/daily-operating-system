@@ -42,6 +42,7 @@ pub mod stakeholder_writer;
 pub mod success_plans;
 pub mod surface_nonce;
 pub mod surface_pairing;
+pub mod surface_session_keychain;
 pub mod temporal;
 pub mod threads;
 pub mod trust_extraction;

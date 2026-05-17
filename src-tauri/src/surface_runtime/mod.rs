@@ -1,8 +1,12 @@
 use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
 use std::error::Error;
+use std::fs;
+use std::io;
 use std::net::{Ipv4Addr, SocketAddr};
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::panic;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -269,6 +273,18 @@ impl SurfaceEndpointState {
             "test_runtime_anchor".to_string()
         };
 
+        // Rehydrate signed sessions from keychain so paired WP installs
+        // survive Tauri restart. Best-effort: if the keychain entry is
+        // missing for a DB-present session, mark that session revoked
+        // with reason `keychain_entry_missing`.
+        if let Some(state) = app_state.as_ref() {
+            if let Err(err) =
+                rehydrate_sessions_from_keychain(state, &self.signed_transport).await
+            {
+                log::warn!("surface session rehydrate failed: {err}");
+            }
+        }
+
         let max_attempts = config.max_bind_attempts.clamp(1, DEFAULT_MAX_BIND_ATTEMPTS);
         let mut last_error = None;
         for _attempt in 1..=max_attempts {
@@ -307,8 +323,20 @@ impl SurfaceEndpointState {
                         app_state: app_state.clone(),
                     });
                     let endpoint_state = Arc::clone(&self);
+                    let runtime_for_shutdown = Arc::clone(&runtime);
                     let join = tokio::spawn(async move {
                         run_listener(listener, runtime, shutdown_rx).await;
+                        // Remove the runtime sentinel on shutdown so a stale
+                        // port doesn't redirect WP after restart.
+                        remove_runtime_sentinel();
+                        // Lazy-flush last_seen_at + last_used_at on graceful
+                        // shutdown. Coalesced UPDATE — sets all non-revoked
+                        // sessions' last_seen_at and their pairings'
+                        // last_used_at to the current timestamp. Staleness
+                        // is explicitly accepted; crash-stop is tolerated.
+                        if let Some(app_state) = runtime_for_shutdown.app_state.as_ref() {
+                            flush_session_activity_on_shutdown(app_state).await;
+                        }
                         endpoint_state.mark_stopped_if_current(startup_id);
                     });
                     let abort = join.abort_handle();
@@ -324,6 +352,15 @@ impl SurfaceEndpointState {
                             shutdown,
                             abort,
                         });
+                    }
+                    // Write the runtime sentinel so the WP plugin discovers
+                    // the new port across Tauri restarts. Best-effort — if
+                    // the write fails, we log and continue; WP can still
+                    // discover via the stored pairing marker until next restart.
+                    if let Err(err) =
+                        write_runtime_sentinel(bound_port, env!("CARGO_PKG_VERSION"))
+                    {
+                        log::warn!("surface endpoint sentinel write failed: {err}");
                     }
                     return Ok((self.snapshot(), join));
                 }
@@ -562,6 +599,301 @@ struct EndpointRuntime {
     app_state: Option<Arc<AppState>>,
 }
 
+/// Row shape for rehydrating a signed session from the DB at startup.
+#[derive(Debug, Clone)]
+struct RehydrateRow {
+    session_id: String,
+    surface_client_id: String,
+}
+
+/// Rehydrate signed sessions from the DB + keychain so paired WP installs
+/// survive Tauri restart.
+///
+/// Pre-condition: `signed_transport.configure(...)` already called.
+///
+/// Algorithm:
+/// 1. Query DB for active sessions (revoked_at IS NULL, lifecycle_state = 'active',
+///    absolute_expires_at > now).
+/// 2. For each row, attempt keychain load of the master key.
+/// 3. If Some, register the session in the in-memory transport state.
+/// 4. If None, mark the DB row revoked with reason `keychain_entry_missing`
+///    per packet §7 #12 — WP plugin will surface `session_requires_repair`.
+///
+/// Returns `Err(String)` on DB read failure; otherwise `Ok(())` with
+/// best-effort rehydration. Per-session errors are logged but do not abort.
+async fn rehydrate_sessions_from_keychain(
+    app_state: &Arc<AppState>,
+    signed_transport: &hmac::SignedTransportState,
+) -> Result<(), String> {
+    // Step 1: read active sessions from DB.
+    let rows: Vec<RehydrateRow> = app_state
+        .db_read(|db| {
+            let mut stmt = db
+                .conn_ref()
+                .prepare(
+                    "SELECT s.session_id, s.surface_client_id
+                     FROM surface_client_sessions s
+                     JOIN surface_client_pairings p
+                       ON p.surface_client_id = s.surface_client_id
+                     WHERE s.revoked_at IS NULL
+                       AND p.lifecycle_state = 'active'
+                       AND datetime(s.absolute_expires_at) > datetime('now')",
+                )
+                .map_err(|e| e.to_string())?;
+            let rows_iter = stmt
+                .query_map([], |row| {
+                    Ok(RehydrateRow {
+                        session_id: row.get::<_, String>("session_id")?,
+                        surface_client_id: row.get::<_, String>("surface_client_id")?,
+                    })
+                })
+                .map_err(|e| e.to_string())?;
+            let mut out = Vec::new();
+            for r in rows_iter {
+                out.push(r.map_err(|e| e.to_string())?);
+            }
+            Ok::<_, String>(out)
+        })
+        .await?;
+
+    if rows.is_empty() {
+        return Ok(());
+    }
+
+    // Step 2-4: per-row keychain load + register-or-revoke.
+    let mut rehydrated = 0usize;
+    let mut missing = Vec::new();
+    for row in rows {
+        match crate::services::surface_session_keychain::load_session_master_key(
+            &row.surface_client_id,
+            &row.session_id,
+        ) {
+            Some(master_key) => {
+                let session = hmac::SignedSurfaceSession::new_active(
+                    row.session_id.clone(),
+                    row.surface_client_id.clone(),
+                    master_key,
+                );
+                if let Err(err) = signed_transport.register_session(session) {
+                    log::warn!(
+                        "surface session rehydrate failed to register session: {err:?}"
+                    );
+                    continue;
+                }
+                rehydrated += 1;
+            }
+            None => {
+                missing.push(row);
+            }
+        }
+    }
+    if rehydrated > 0 {
+        log::info!(
+            "surface session rehydrate: {rehydrated} active sessions restored from keychain"
+        );
+    }
+
+    // Step 4: mark DB rows revoked for sessions whose keychain entry is missing
+    // AND emit `pairing.session.key_missing` audit events.
+    if !missing.is_empty() {
+        let missing_count = missing.len();
+        let missing_clone = missing.clone();
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "rehydrate reconciliation is best-effort; failure logged below but does not block startup"
+        )]
+        let _ = app_state
+            .db_write(move |db| {
+                for row in missing_clone {
+                    if let Err(err) = db.conn_ref().execute(
+                        "UPDATE surface_client_sessions
+                         SET revoked_at = datetime('now'),
+                             revoked_reason = 'keychain_entry_missing'
+                         WHERE session_id = ?1 AND revoked_at IS NULL",
+                        rusqlite::params![row.session_id],
+                    ) {
+                        log::warn!(
+                            "surface session rehydrate: keychain_entry_missing revoke write failed: {err}"
+                        );
+                    }
+                }
+                Ok::<_, String>(())
+            })
+            .await;
+        // Audit emission. The audit log is file-based (JSONL via
+        // app_state.audit_log) and does NOT contend with the SQLite writer
+        // mutex, safe to emit in tight loop.
+        for row in &missing {
+            let event = surface_pairing::SurfacePairingAuditEvent {
+                event_kind: "pairing.session.key_missing",
+                category: "surface_pairing",
+                actor: abilities_runtime::abilities::registry::Actor::System,
+                wp_user_id: None,
+                wp_user_hash: None,
+                detail: serde_json::json!({
+                    "session_id_hash": stable_hash_for_audit(&row.session_id),
+                    "surface_client_id_hash": stable_hash_for_audit(&row.surface_client_id),
+                    "reason": "keychain_entry_missing",
+                    "remediation": "session_requires_repair",
+                }),
+            };
+            emit_pairing_audit_event(app_state, &event);
+        }
+        log::warn!(
+            "surface session rehydrate: {missing_count} sessions revoked (keychain_entry_missing); WP plugin will surface session_requires_repair on next request"
+        );
+    }
+    Ok(())
+}
+
+/// Lazy-flush last_seen_at + last_used_at on Tauri graceful shutdown.
+/// Single coalesced UPDATE; the design explicitly accepts staleness and
+/// crash-stop tolerance, so a bulk-set is the right shape for the
+/// "admin diagnostics is approximate" semantic.
+async fn flush_session_activity_on_shutdown(app_state: &Arc<AppState>) {
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "shutdown flush is best-effort; failure during Tauri stop is acceptable"
+    )]
+    let _ = app_state
+        .db_write(|db| {
+            // Set last_seen_at on every active session, last_used_at on
+            // every active pairing. Coalesced into 2 writes regardless of
+            // session count.
+            let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+            db.conn_ref()
+                .execute(
+                    "UPDATE surface_client_sessions
+                     SET last_seen_at = ?1
+                     WHERE revoked_at IS NULL",
+                    rusqlite::params![now],
+                )
+                .map_err(|e| e.to_string())?;
+            db.conn_ref()
+                .execute(
+                    "UPDATE surface_client_pairings
+                     SET last_used_at = ?1
+                     WHERE lifecycle_state = 'active'",
+                    rusqlite::params![now],
+                )
+                .map_err(|e| e.to_string())?;
+            Ok::<_, String>(())
+        })
+        .await;
+}
+
+/// SHA256 hex hash for audit emission. Prevents raw session_id /
+/// surface_client_id from appearing in audit log records.
+fn stable_hash_for_audit(value: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(b"DAILYOS-SURFACE-AUDIT-V1\n");
+    hasher.update(value.as_bytes());
+    hex::encode(hasher.finalize())
+}
+
+/// Path to the runtime sentinel file.
+///
+/// `~/.dailyos/runtime-endpoint.json` — written on bind, removed on shutdown.
+/// Parent dir is ensured at `0700`, sentinel at `0600`.
+fn runtime_sentinel_path() -> io::Result<PathBuf> {
+    let home = std::env::var_os("HOME")
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "HOME unset"))?;
+    let mut path = PathBuf::from(home);
+    path.push(".dailyos");
+    path.push("runtime-endpoint.json");
+    Ok(path)
+}
+
+/// Write the runtime sentinel after a successful bind.
+///
+/// - Parent dir `~/.dailyos/` ensured at mode `0700`.
+/// - Sentinel itself written at mode `0600` via temp-file + atomic rename.
+/// - `O_NOFOLLOW | O_EXCL` on the temp open prevents symlink + race attacks.
+/// - Payload contains ONLY `port` and `runtime_version`. NEVER auth material.
+///
+/// The sentinel is port-discovery convenience, NOT a defense.
+/// Defense is HMAC validation on every response. Substituted sentinel cannot
+/// produce valid HMAC, WP detects impersonation at first signed request.
+fn write_runtime_sentinel(port: u16, runtime_version: &str) -> io::Result<()> {
+    let sentinel_path = runtime_sentinel_path()?;
+    let parent = sentinel_path
+        .parent()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "sentinel parent missing"))?;
+
+    // Ensure parent dir exists at 0700. create_dir_all is idempotent; we then
+    // set perms whether we created it or not.
+    fs::create_dir_all(parent)?;
+    fs::set_permissions(parent, fs::Permissions::from_mode(0o700))?;
+
+    // Atomic write: open a tempfile in the same dir with O_NOFOLLOW|O_EXCL,
+    // write payload, fsync, then atomic rename over the sentinel.
+    let payload = serde_json::json!({
+        "port": port,
+        "runtime_version": runtime_version,
+    });
+    let body = serde_json::to_vec(&payload).map_err(|err| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("sentinel payload serialize: {err}"),
+        )
+    })?;
+
+    // Tempfile name: <sentinel>.tmp.<pid>.<nanos>. Unlikely to collide.
+    let tempfile_name = {
+        let now_ns = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        format!(
+            "runtime-endpoint.json.tmp.{}.{}",
+            std::process::id(),
+            now_ns
+        )
+    };
+    let tempfile_path = parent.join(tempfile_name);
+
+    {
+        use std::io::Write;
+        // O_NOFOLLOW | O_EXCL on create — refuses symlinks and existing files.
+        let mut opts = fs::OpenOptions::new();
+        opts.write(true)
+            .create_new(true)
+            .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW);
+        let mut file = opts.open(&tempfile_path)?;
+        file.write_all(&body)?;
+        file.sync_all()?;
+    }
+
+    // Atomic rename. If this fails (e.g. cross-device, unlikely on local FS),
+    // clean up the tempfile so we don't leak it.
+    if let Err(rename_err) = fs::rename(&tempfile_path, &sentinel_path) {
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "best-effort tempfile cleanup; rename error is the meaningful failure"
+        )]
+        let _ = fs::remove_file(&tempfile_path);
+        return Err(rename_err);
+    }
+
+    Ok(())
+}
+
+/// Remove the runtime sentinel on shutdown.
+///
+/// Best-effort: a missing sentinel is fine. We do NOT propagate the error if
+/// the file is already gone (e.g., user deleted it between bind and shutdown).
+fn remove_runtime_sentinel() {
+    if let Ok(path) = runtime_sentinel_path() {
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "best-effort cleanup; missing sentinel on shutdown is fine"
+        )]
+        let _ = fs::remove_file(path);
+    }
+}
+
 async fn run_listener(
     listener: TcpListener,
     runtime: Arc<EndpointRuntime>,
@@ -754,19 +1086,17 @@ async fn signed_transport_response(
         wp_user_hash: verified.wp_user_hash.clone(),
         now: Utc::now(),
     };
+    // Dispatch on the read lane. Successful validation never enters the
+    // writer mutex; only write-needing failure variants escalate to a fresh
+    // db_write block on the Err arm.
     let audit_session_id = verified.session_id.clone();
     let audit_surface_client_id = verified.surface_client_id.clone();
-    let validated = match app_state
-        .db_write(move |db| {
-            let clock = crate::services::context::SystemClock;
-            let rng = crate::services::context::SystemRng;
-            let external = crate::services::context::ExternalClients::default();
-            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &external);
-            let result = surface_pairing::validate_signed_session(&ctx, db, validation_input);
-            // On error, recover scopes from the pairing record for audit attribution.
-            // Best-effort: returns None if the row is already gone or scopes_json
-            // is corrupted, in which case the audit emission falls back to
-            // `Actor::System`.
+    let readonly_input = validation_input.clone();
+    let readonly_outcome = app_state
+        .db_read(move |db| {
+            let result = surface_pairing::validate_signed_session_readonly(db, readonly_input);
+            // Recover scopes for audit attribution on failure paths. Best-effort:
+            // load_session_scope_set_for_audit is itself a read, safe inside db_read.
             let scopes_for_audit = match &result {
                 Err(_) => surface_pairing::load_session_scope_set_for_audit(
                     db,
@@ -775,22 +1105,52 @@ async fn signed_transport_response(
                 ),
                 Ok(_) => None,
             };
-            Ok((result, scopes_for_audit))
+            Ok::<_, String>((result, scopes_for_audit))
         })
-        .await
-    {
+        .await;
+
+    let validated = match readonly_outcome {
         Ok((Ok(validated), _)) => validated,
-        Ok((Err(error), scopes_for_audit)) => {
-            for event in validation_rejection_events(&verified, &error, scopes_for_audit.as_ref()) {
+        Ok((Err(failure), scopes_for_audit)) => {
+            // Write-needing failure paths escalate to a separate db_write
+            // block. The 5 quarantine variants drive auto-quarantine writes
+            // (site-switch + exfiltration defenses). The 6 no-write variants
+            // return directly.
+            if let Some(action) = failure.write_action() {
+                let now = Utc::now();
+                let action_for_closure = action.clone();
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "quarantine write best-effort; rejection response is the meaningful outcome"
+                )]
+                let _ = app_state
+                    .db_write(move |db| {
+                        surface_pairing::apply_signed_session_write_action(
+                            db,
+                            action_for_closure,
+                            now,
+                        )
+                        .map_err(|e| e.to_string())
+                    })
+                    .await;
+                // Quarantine write best-effort: even if the writer-mutex acquisition
+                // fails (e.g., flooding rejection attempts), the request is being
+                // rejected anyway. Rate-limit gate at surface_client_bridge.authorize
+                // catches flood attacks before the writer-mutex hot path.
+            }
+            let pairing_error = failure.to_pairing_error();
+            for event in
+                validation_rejection_events(&verified, &pairing_error, scopes_for_audit.as_ref())
+            {
                 emit_pairing_audit_event(&app_state, &event);
             }
             evict_cached_session_after_validation_error(
                 &runtime.signed_transport,
                 &verified.surface_client_id,
-                &error,
+                &pairing_error,
             );
             return error_response(
-                SurfaceHttpError::from_pairing_error(error).with_request_id(request_id),
+                SurfaceHttpError::from_pairing_error(pairing_error).with_request_id(request_id),
             );
         }
         Err(error) => {
@@ -1891,6 +2251,7 @@ async fn surface_project_composition_response(
     };
 
     let Some(app_state) = runtime.app_state.as_ref().cloned() else {
+        log::warn!("project_composition: app_state is None");
         return error_response(SurfaceHttpError::runtime_unavailable().with_request_id(request_id));
     };
 
@@ -1984,10 +2345,35 @@ async fn surface_project_composition_response(
         .live_service_context()
         .with_actor("surface_client");
 
+    // The producer always advances composition_version monotonically and
+    // commits unconditionally. The surface's previously-rendered version is
+    // structurally meaningless as an OCC token because the surface has no
+    // write path — only the producer mutates compositions. Forward the
+    // current substrate version on every render so the producer's commit
+    // step never trips its own watermark check on stale surface claims.
+    let composition_id_for_lookup = request.composition_id.clone();
+    let current_db_version = app_state
+        .db_read(move |db| {
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let external = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &external);
+            crate::services::compositions::current_composition_version_for_composition_id(
+                &ctx,
+                db,
+                &composition_id_for_lookup,
+            )
+            .map_err(|e| e.to_string())
+        })
+        .await
+        .ok()
+        .unwrap_or(0);
+    let expected_version_for_producer: u64 = current_db_version;
     let input = json!({
         "account_id": account_id,
         "composition_id": request.composition_id,
         "schema_version": 1,
+        "expected_composition_version": expected_version_for_producer,
     });
     let invoke_outcome = invoke_registry_json_for_actor(
         registry,
@@ -2024,7 +2410,8 @@ async fn surface_project_composition_response(
         FALLBACK_POLICY_VERSION,
     ) {
         Ok(tuple) => tuple,
-        Err(_) => {
+        Err(err) => {
+            log::warn!("project_composition: project_from_ability_data failed: {err:?}");
             return error_response(
                 SurfaceHttpError::runtime_unavailable().with_request_id(request_id),
             );
@@ -3383,6 +3770,13 @@ mod tests {
     static SURFACE_ROUTE_DISPATCH_COUNT: AtomicUsize = AtomicUsize::new(0);
     static SURFACE_ROUTE_LIMIT_COUNT: AtomicUsize = AtomicUsize::new(0);
 
+    /// Tests using SURFACE_ROUTE_{DISPATCH,LIMIT}_COUNT share a
+    /// process-global counter. Under parallel test execution (cargo test
+    /// default), one test's reset would race with another test's increment,
+    /// producing assertion failures like `left=2 right=1`. Serialize
+    /// affected tests via this lock.
+    static SURFACE_ROUTE_COUNTER_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     type ErasedFuture<'a> =
         Pin<Box<dyn Future<Output = Result<serde_json::Value, AbilityError>> + Send + 'a>>;
 
@@ -4454,6 +4848,9 @@ mod tests {
 
     #[test]
     fn surface_invoke_route_dispatches_after_bridge_authorization() {
+        let _counter_guard = SURFACE_ROUTE_COUNTER_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let registry = surface_route_dispatch_registry();
         let runtime =
             runtime_for_surface_route_tests(registry, SurfaceClientBridgeConfig::default());
@@ -4507,6 +4904,9 @@ mod tests {
 
     #[test]
     fn surface_invoke_route_allows_signed_surface_client_for_client_side_disabled_ability() {
+        let _counter_guard = SURFACE_ROUTE_COUNTER_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let registry = surface_route_dispatch_registry_with_client_side_policy(false);
         let runtime =
             runtime_for_surface_route_tests(registry, SurfaceClientBridgeConfig::default());
@@ -4599,6 +4999,9 @@ mod tests {
 
     #[test]
     fn surface_invoke_rate_limit_denial_skips_ability_body_for_each_axis() {
+        let _counter_guard = SURFACE_ROUTE_COUNTER_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         for expected_axis in [
             SurfaceClientRateLimitAxis::SurfaceClient,
             SurfaceClientRateLimitAxis::WpSite,

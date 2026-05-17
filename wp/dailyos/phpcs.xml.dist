@@ -38,4 +38,10 @@
 	<rule ref="WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents">
 		<exclude-pattern>tests/*</exclude-pattern>
 	</rule>
+
+	<!-- Gutenberg block asset manifests use the *.asset.php convention; this
+	     is the shape @wordpress/scripts auto-generates and core looks for. -->
+	<rule ref="WordPress.Files.FileName">
+		<exclude-pattern>blocks/*/*.asset.php</exclude-pattern>
+	</rule>
 </ruleset>

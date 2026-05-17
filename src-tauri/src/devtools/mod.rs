@@ -8,6 +8,14 @@
 //! SurfaceClient pairing tables are not seeded: dev/test pairings must be
 //! minted through the runtime pairing command so authority material is never
 //! represented as static fixture data.
+//!
+//! The local-to-local read-path migration v180 is DATA-ONLY and has NO
+//! mock-data impact: it repairs surface_client_sessions.absolute_expires_at
+//! on existing rows without introducing new tables, columns, or seed shapes.
+//! The pairing-mint rule above continues to apply post-v180. The earlier
+//! BEFORE INSERT trigger was removed during integration review (schema-
+//! change creep); v180 is now strictly data repair + comment marker on the
+//! deprecated inactive_expires_at column.
 
 use std::path::Path;
 

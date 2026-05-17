@@ -246,6 +246,9 @@ struct FieldPolicy {
 enum ValueKind {
     Text,
     Number,
+    Object,
+    Bool,
+    Array,
 }
 
 #[derive(Debug, Clone)]
@@ -437,6 +440,8 @@ fn project_known_block(
         ctx,
         &mut diagnostics,
     );
+    let trust_band =
+        trust_band_from_attributes(block).unwrap_or(rule.default_trust_band);
     Ok((
         ProjectedBlock {
             block_id: block.id.clone(),
@@ -445,7 +450,7 @@ fn project_known_block(
             selected_known_type_id: rule.block_type.type_id().to_string(),
             payload,
             banner: None,
-            trust_band: rule.default_trust_band,
+            trust_band,
             claim_refs: block.claim_refs.clone(),
             provenance: vec![block.provenance.clone()],
             edit_routes,
@@ -453,6 +458,19 @@ fn project_known_block(
         },
         audits,
     ))
+}
+
+fn trust_band_from_attributes(block: &Block) -> Option<TrustBand> {
+    block
+        .attributes
+        .get("trust_band")
+        .and_then(|value| value.as_str())
+        .and_then(|label| match label {
+            "likely_current" => Some(TrustBand::LikelyCurrent),
+            "use_with_caution" => Some(TrustBand::UseWithCaution),
+            "needs_verification" => Some(TrustBand::NeedsVerification),
+            _ => None,
+        })
 }
 
 fn project_custom_block(
@@ -880,6 +898,9 @@ fn value_for_kind(value: &Value, kind: ValueKind) -> Option<Value> {
     match (kind, value) {
         (ValueKind::Text, Value::String(_)) => Some(value.clone()),
         (ValueKind::Number, Value::Number(_)) => Some(value.clone()),
+        (ValueKind::Object, Value::Object(_)) => Some(value.clone()),
+        (ValueKind::Bool, Value::Bool(_)) => Some(value.clone()),
+        (ValueKind::Array, Value::Array(_)) => Some(value.clone()),
         _ => None,
     }
 }
@@ -1279,6 +1300,33 @@ const fn number_field(pointer: &'static str, sensitivity: ClaimSensitivity) -> F
     }
 }
 
+const fn object_field(pointer: &'static str, sensitivity: ClaimSensitivity) -> FieldPolicy {
+    FieldPolicy {
+        pointer,
+        sensitivity,
+        allowed_surfaces: ALL_SURFACES,
+        value_kind: ValueKind::Object,
+    }
+}
+
+const fn bool_field(pointer: &'static str, sensitivity: ClaimSensitivity) -> FieldPolicy {
+    FieldPolicy {
+        pointer,
+        sensitivity,
+        allowed_surfaces: ALL_SURFACES,
+        value_kind: ValueKind::Bool,
+    }
+}
+
+const fn array_field(pointer: &'static str, sensitivity: ClaimSensitivity) -> FieldPolicy {
+    FieldPolicy {
+        pointer,
+        sensitivity,
+        allowed_surfaces: ALL_SURFACES,
+        value_kind: ValueKind::Array,
+    }
+}
+
 const ACCOUNT_OVERVIEW_FIELDS: &[FieldPolicy] = &[
     text_field("/account/display_name", ClaimSensitivity::Internal),
     text_field("/summary", ClaimSensitivity::Internal),
@@ -1288,6 +1336,11 @@ const ACCOUNT_OVERVIEW_FIELDS: &[FieldPolicy] = &[
     text_field("/risk/body", ClaimSensitivity::Internal),
     text_field("/actions/*/title", ClaimSensitivity::Internal),
     text_field("/relationships/*/label", ClaimSensitivity::Internal),
+    text_field("/title", ClaimSensitivity::Internal),
+    number_field("/claim_count", ClaimSensitivity::Internal),
+    object_field("/counts_by_trust_band", ClaimSensitivity::Internal),
+    array_field("/context", ClaimSensitivity::Internal),
+    text_field("/account_id", ClaimSensitivity::Internal),
 ];
 const CLAIM_SUMMARY_FIELDS: &[FieldPolicy] = &[
     text_field("/title", ClaimSensitivity::Internal),
@@ -1296,6 +1349,12 @@ const CLAIM_SUMMARY_FIELDS: &[FieldPolicy] = &[
     text_field("/source_asof", ClaimSensitivity::Internal),
     text_field("/trust/band", ClaimSensitivity::Internal),
     text_field("/trust/source_label", ClaimSensitivity::Internal),
+    text_field("/text", ClaimSensitivity::Internal),
+    text_field("/trust_band", ClaimSensitivity::Internal),
+    text_field("/claim_id", ClaimSensitivity::Internal),
+    text_field("/claim_type", ClaimSensitivity::Internal),
+    text_field("/intent", ClaimSensitivity::Internal),
+    bool_field("/empty_state", ClaimSensitivity::Internal),
 ];
 const EVIDENCE_LIST_FIELDS: &[FieldPolicy] = &[
     text_field("/items/*/label", ClaimSensitivity::Internal),
@@ -1308,23 +1367,43 @@ const HEALTH_SNAPSHOT_FIELDS: &[FieldPolicy] = &[
     number_field("/score", ClaimSensitivity::Internal),
     text_field("/rationale", ClaimSensitivity::Internal),
     text_field("/trend", ClaimSensitivity::Internal),
+    text_field("/text", ClaimSensitivity::Internal),
+    text_field("/trust_band", ClaimSensitivity::Internal),
+    text_field("/claim_id", ClaimSensitivity::Internal),
+    text_field("/claim_type", ClaimSensitivity::Internal),
+    text_field("/source_asof", ClaimSensitivity::Internal),
 ];
 const RELATIONSHIP_MAP_FIELDS: &[FieldPolicy] = &[
     text_field("/nodes/*/label", ClaimSensitivity::Internal),
     text_field("/nodes/*/role", ClaimSensitivity::Internal),
     text_field("/edges/*/label", ClaimSensitivity::Internal),
+    text_field("/nodes/*/text", ClaimSensitivity::Internal),
+    text_field("/nodes/*/trust_band", ClaimSensitivity::Internal),
+    text_field("/nodes/*/claim_id", ClaimSensitivity::Internal),
+    text_field("/nodes/*/source_asof", ClaimSensitivity::Internal),
+    text_field("/claim_type", ClaimSensitivity::Internal),
 ];
 const RISK_CALLOUT_FIELDS: &[FieldPolicy] = &[
     text_field("/title", ClaimSensitivity::Internal),
     text_field("/body", ClaimSensitivity::Internal),
     text_field("/severity", ClaimSensitivity::Internal),
     text_field("/recommended_action", ClaimSensitivity::Internal),
+    text_field("/text", ClaimSensitivity::Internal),
+    text_field("/trust_band", ClaimSensitivity::Internal),
+    text_field("/claim_id", ClaimSensitivity::Internal),
+    text_field("/claim_type", ClaimSensitivity::Internal),
+    text_field("/source_asof", ClaimSensitivity::Internal),
 ];
 const ACTION_LIST_FIELDS: &[FieldPolicy] = &[
     text_field("/items/*/title", ClaimSensitivity::Internal),
     text_field("/items/*/status", ClaimSensitivity::Internal),
     text_field("/items/*/due_at", ClaimSensitivity::Internal),
     text_field("/items/*/owner_label", ClaimSensitivity::Internal),
+    text_field("/items/*/text", ClaimSensitivity::Internal),
+    text_field("/items/*/trust_band", ClaimSensitivity::Internal),
+    text_field("/items/*/claim_id", ClaimSensitivity::Internal),
+    text_field("/items/*/source_asof", ClaimSensitivity::Internal),
+    text_field("/claim_type", ClaimSensitivity::Internal),
 ];
 const MARKDOWN_DOCUMENT_FIELDS: &[FieldPolicy] = &[
     text_field("/title", ClaimSensitivity::Internal),

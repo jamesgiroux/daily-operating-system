@@ -70,6 +70,7 @@ final class DailyOS_Plugin {
 		add_action( 'wp_abilities_api_categories_init', [ $this, 'register_ability_categories' ], 10 );
 		add_action( 'wp_abilities_api_init', [ $this, 'register_abilities' ], 10 );
 		add_action( 'init', [ $this, 'register_blocks' ], 11 );
+		add_filter( 'block_categories_all', [ $this, 'register_block_category' ], 10, 1 );
 		add_action( 'init', [ $this, 'register_mcp_server_config' ], 12 );
 		add_action( 'init', [ $this, 'register_save_hooks' ], 13 );
 		add_action( 'admin_menu', [ $this, 'register_admin_pages' ], 10 );
@@ -117,6 +118,29 @@ final class DailyOS_Plugin {
 	public function register_ability_categories(): void {
 		$registry = new DailyOS_Ability_Registry();
 		$registry->register_categories();
+	}
+
+	/**
+	 * Register the "dailyos" block category (W4-F L4-unblock backport from
+	 * wave3-l2-integration). block.json files declare `"category": "dailyos"`,
+	 * but the category itself must be registered via `block_categories_all`
+	 * for blocks to appear in the WP editor inserter.
+	 *
+	 * @param array<int,array<string,mixed>> $categories Existing categories.
+	 * @return array<int,array<string,mixed>>
+	 */
+	public function register_block_category( array $categories ): array {
+		foreach ( $categories as $category ) {
+			if ( isset( $category['slug'] ) && 'dailyos' === $category['slug'] ) {
+				return $categories;
+			}
+		}
+		$categories[] = [
+			'slug'  => 'dailyos',
+			'title' => __( 'DailyOS', 'dailyos' ),
+			'icon'  => null,
+		];
+		return $categories;
 	}
 
 	/**
@@ -203,7 +227,14 @@ final class DailyOS_Plugin {
 			return null;
 		}
 
-		$runtime_base_url = self::normalize_loopback_runtime_url( $runtime_url );
+		// Prefer the sentinel-discovered URL (current runtime port) over the
+		// marker URL (post-pairing baseline). The runtime port changes on
+		// every restart; without this fallback, session refresh hits the
+		// stale marker port and the plugin reports a missing session key.
+		$runtime_base_url = self::discover_runtime_base_url();
+		if ( null === $runtime_base_url ) {
+			$runtime_base_url = self::normalize_loopback_runtime_url( $runtime_url );
+		}
 
 		if ( null === $runtime_base_url ) {
 			return null;
@@ -280,6 +311,172 @@ final class DailyOS_Plugin {
 		}
 
 		return $marker[ $key ];
+	}
+
+	/**
+	 * In-process cache for the runtime sentinel. 5s TTL.
+	 *
+	 * @var array{port:int,runtime_version:string}|null
+	 */
+	private static ?array $sentinel_cache = null;
+
+	/**
+	 * Sentinel cache timestamp (microtime float).
+	 *
+	 * @var float
+	 */
+	private static float $sentinel_cached_at = 0.0;
+
+	/**
+	 * Discover the current Tauri runtime endpoint via the sentinel file.
+	 *
+	 * Reads `~/.dailyos/runtime-endpoint.json` written by the Tauri runtime on bind.
+	 * Payload contains ONLY `port` and `runtime_version` per W4-F packet §5/§6.4 —
+	 * any payload containing `auth_token`, `session_key`, `hmac_key`, or `secret`
+	 * is rejected and logged (auth material belongs in keychain, not sentinel).
+	 *
+	 * Defense per W4-F §6.4: sentinel is port-discovery convenience, NOT a defense.
+	 * Defense is the HMAC session key in keychain. An attacker who reads the sentinel
+	 * without the HMAC key cannot make any signed request. WP HMAC validation on
+	 * every response catches substituted-endpoint impersonation.
+	 *
+	 * Mode/owner check: file MUST be 0600 and owned by the current effective user.
+	 * Retry up to 3x at 100ms on ENOENT (Tauri restart race) before returning null.
+	 * Result is cached in-process for 5s to avoid hot-path stat overhead.
+	 *
+	 * @return array{port:int,runtime_version:string}|null Decoded sentinel or null.
+	 */
+	public static function discover_runtime_endpoint(): ?array {
+		$now = microtime( true );
+
+		if ( null !== self::$sentinel_cache && ( $now - self::$sentinel_cached_at ) < 5.0 ) {
+			return self::$sentinel_cache;
+		}
+
+		$path = self::runtime_endpoint_sentinel_path();
+		if ( null === $path ) {
+			return null;
+		}
+
+		$attempts = 0;
+		while ( $attempts < 3 ) {
+			if ( file_exists( $path ) ) {
+				break;
+			}
+			++$attempts;
+			usleep( 100000 );
+		}
+
+		if ( ! file_exists( $path ) ) {
+			return null;
+		}
+
+		// Mode and ownership check. clearstatcache so we read live mode bits.
+		clearstatcache( true, $path );
+		// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+		$stat = @stat( $path );
+		if ( false === $stat ) {
+			self::log_sentinel_warning( 'stat failed' );
+			return null;
+		}
+		// Verify mode = 0600 (only owner can read/write).
+		$mode = $stat['mode'] & 0o777;
+		if ( 0o600 !== $mode ) {
+			self::log_sentinel_warning( sprintf( 'sentinel mode %o is not 0600', $mode ) );
+			return null;
+		}
+		// Verify ownership matches current effective user.
+		if ( function_exists( 'posix_geteuid' ) && posix_geteuid() !== $stat['uid'] ) {
+			self::log_sentinel_warning( 'sentinel ownership mismatch' );
+			return null;
+		}
+
+		// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged,WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+		$contents = @file_get_contents( $path );
+		if ( false === $contents ) {
+			self::log_sentinel_warning( 'sentinel read failed' );
+			return null;
+		}
+
+		$decoded = json_decode( $contents, true );
+		if ( ! is_array( $decoded ) ) {
+			self::log_sentinel_warning( 'sentinel JSON decode failed' );
+			return null;
+		}
+
+		// Per W4-F packet CI invariant #5 + Acceptance #14 sub-bullet: payload
+		// MUST contain only port + runtime_version. Reject any auth material.
+		$forbidden = array( 'auth_token', 'session_key', 'hmac_key', 'secret' );
+		foreach ( $forbidden as $field ) {
+			if ( array_key_exists( $field, $decoded ) ) {
+				self::log_sentinel_warning( sprintf( 'sentinel contains forbidden field %s', $field ) );
+				return null;
+			}
+		}
+
+		if ( ! isset( $decoded['port'] ) || ! is_int( $decoded['port'] ) ) {
+			return null;
+		}
+		if ( ! isset( $decoded['runtime_version'] ) || ! is_string( $decoded['runtime_version'] ) ) {
+			return null;
+		}
+		$port = (int) $decoded['port'];
+		if ( 1 > $port || 65535 < $port ) {
+			return null;
+		}
+
+		self::$sentinel_cache     = array(
+			'port'            => $port,
+			'runtime_version' => (string) $decoded['runtime_version'],
+		);
+		self::$sentinel_cached_at = $now;
+
+		return self::$sentinel_cache;
+	}
+
+	/**
+	 * Build the loopback runtime URL from a sentinel payload.
+	 *
+	 * Returns null if sentinel discovery failed.
+	 */
+	public static function discover_runtime_base_url(): ?string {
+		$sentinel = self::discover_runtime_endpoint();
+		if ( null === $sentinel ) {
+			return null;
+		}
+		$candidate = 'http://127.0.0.1:' . $sentinel['port'];
+		return self::normalize_loopback_runtime_url( $candidate );
+	}
+
+	/**
+	 * Reset the in-process sentinel cache. Used after ECONNREFUSED to force
+	 * a fresh sentinel read on the retry (Tauri may have restarted with new port).
+	 */
+	public static function invalidate_runtime_endpoint_cache(): void {
+		self::$sentinel_cache     = null;
+		self::$sentinel_cached_at = 0.0;
+	}
+
+	/**
+	 * Path to the runtime sentinel file. Returns null if HOME is unavailable.
+	 */
+	private static function runtime_endpoint_sentinel_path(): ?string {
+		$home = getenv( 'HOME' );
+		if ( ! is_string( $home ) || '' === trim( $home ) ) {
+			return null;
+		}
+		return rtrim( $home, '/' ) . '/.dailyos/runtime-endpoint.json';
+	}
+
+	/**
+	 * Best-effort warning log for sentinel anomalies. Uses error_log to avoid
+	 * depending on WP_DEBUG_LOG availability at plugin init.
+	 *
+	 * @param string $message Warning message body.
+	 */
+	private static function log_sentinel_warning( string $message ): void {
+		// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+		error_log( '[dailyos] runtime sentinel: ' . $message );
 	}
 
 	/**

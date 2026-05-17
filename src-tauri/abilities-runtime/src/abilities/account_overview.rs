@@ -449,7 +449,7 @@ fn build_overview_block(
     block.salience = salience(0.95, SalienceBand::Critical, "summary");
 
     if projections.is_empty() {
-        block.field_bindings = vec![display_only_binding("/attributes/title")?];
+        block.field_bindings = vec![display_only_binding("/title")?];
         attribute_block(
             provenance_builder,
             composition_block_path,
@@ -458,10 +458,10 @@ fn build_overview_block(
         )?;
     } else {
         block.field_bindings = vec![
-            computed_binding("/attributes/claim_count", 0..projections.len())?,
-            computed_binding("/attributes/counts_by_trust_band", 0..projections.len())?,
-            computed_binding("/attributes/context", 0..projections.len())?,
-            display_only_binding("/attributes/title")?,
+            computed_binding("/claim_count", 0..projections.len())?,
+            computed_binding("/counts_by_trust_band", 0..projections.len())?,
+            computed_binding("/context", 0..projections.len())?,
+            display_only_binding("/title")?,
         ];
         attribute_block(
             provenance_builder,
@@ -501,8 +501,8 @@ fn build_empty_state_block(
     )
     .map_err(block_error)?;
     block.field_bindings = vec![
-        display_only_binding("/attributes/title")?,
-        display_only_binding("/attributes/empty_state")?,
+        display_only_binding("/title")?,
+        display_only_binding("/empty_state")?,
     ];
     block.salience = salience(0.3, SalienceBand::Background, "empty state");
     attribute_block(
@@ -535,7 +535,7 @@ fn build_claim_block(
                     "trust_band": trust_band,
                     "source_asof": projection.claim.source_asof,
                 }),
-                source_feedback_computed_bindings("/attributes/text", "/attributes/trust_band")?,
+                source_feedback_computed_bindings("/text", "/trust_band")?,
                 0.9,
                 SalienceBand::Critical,
                 "risk claim",
@@ -550,7 +550,7 @@ fn build_claim_block(
                     "trust_band": trust_band,
                     "source_asof": projection.claim.source_asof,
                 }),
-                source_feedback_computed_bindings("/attributes/text", "/attributes/trust_band")?,
+                source_feedback_computed_bindings("/text", "/trust_band")?,
                 0.72,
                 SalienceBand::Important,
                 "win claim",
@@ -565,7 +565,7 @@ fn build_claim_block(
                     "trust_band": trust_band,
                     "source_asof": projection.claim.source_asof,
                 }),
-                source_feedback_computed_bindings("/attributes/text", "/attributes/trust_band")?,
+                source_feedback_computed_bindings("/text", "/trust_band")?,
                 0.72,
                 SalienceBand::Important,
                 "value claim",
@@ -582,8 +582,8 @@ fn build_claim_block(
                     "claim_type": projection.claim.claim_type,
                 }),
                 source_feedback_computed_bindings(
-                    "/attributes/items/0/text",
-                    "/attributes/items/0/trust_band",
+                    "/items/0/text",
+                    "/items/0/trust_band",
                 )?,
                 0.78,
                 SalienceBand::Important,
@@ -601,8 +601,8 @@ fn build_claim_block(
                     "claim_type": projection.claim.claim_type,
                 }),
                 source_feedback_computed_bindings(
-                    "/attributes/nodes/0/text",
-                    "/attributes/nodes/0/trust_band",
+                    "/nodes/0/text",
+                    "/nodes/0/trust_band",
                 )?,
                 0.62,
                 SalienceBand::Contextual,
@@ -617,7 +617,7 @@ fn build_claim_block(
                     "trust_band": trust_band,
                     "source_asof": projection.claim.source_asof,
                 }),
-                source_feedback_computed_bindings("/attributes/text", "/attributes/trust_band")?,
+                source_feedback_computed_bindings("/text", "/trust_band")?,
                 0.82,
                 SalienceBand::Important,
                 "health claim",
@@ -1570,5 +1570,102 @@ mod tests {
             .finalize(prepared.proposal.composition)
             .expect("provenance finalizes");
         output_json(&output)
+    }
+
+    // Asserts producer output passes fallback_projection's binding validator
+    // without BindingTargetsUnknownField. Covers the producer→projection
+    // contract that wasn't exercised by either side's isolated test suite.
+    #[tokio::test]
+    async fn dos670_producer_output_passes_w4d_projection() {
+        use crate::abilities::{
+            project_composition_for_surface, FallbackProjectionContext, SurfaceKind,
+        };
+
+        let claims = vec![
+            claim(
+                "claim-risk",
+                "entity_risk",
+                "/risk/current",
+                "Implementation risk is rising",
+                Some(0.97),
+                Some("2026-05-14T09:00:00Z"),
+                ClaimSensitivity::Internal,
+            ),
+            claim(
+                "claim-win",
+                "entity_win",
+                "/wins/latest",
+                "Renewal path is clearer",
+                Some(0.92),
+                Some("2026-05-14T09:00:00Z"),
+                ClaimSensitivity::Internal,
+            ),
+            claim(
+                "claim-commitment",
+                "commitment",
+                "/commitments/next",
+                "Follow up on launch checklist",
+                Some(0.85),
+                Some("2026-05-01T09:00:00Z"),
+                ClaimSensitivity::Internal,
+            ),
+            claim(
+                "claim-context",
+                "company_context",
+                "/company/industry",
+                "Fixture Account operates in software",
+                Some(0.96),
+                Some("2026-03-01T09:00:00Z"),
+                ClaimSensitivity::Internal,
+            ),
+        ];
+        let (clock, rng, external, reader, committer, provider) = fixture_parts(claims);
+        let services = services(&clock, &rng, &external, reader, committer);
+        let ctx = ability_ctx(&services, &provider);
+
+        let output = account_overview(&ctx, input())
+            .await
+            .expect("account overview succeeds");
+        let composition = output.data();
+
+        let proj_ctx = FallbackProjectionContext::new(
+            Actor::SurfaceClient {
+                instance: crate::abilities::registry::SurfaceClientId::new("sc_fixture"),
+                scopes: ScopeSet::new([crate::abilities::registry::SurfaceScope::new(
+                    "read.account_overview",
+                )])
+                .expect("scope set"),
+            },
+            SurfaceKind::SurfaceClient,
+            3,
+        );
+
+        let (projected, _audits) = project_composition_for_surface(composition, &proj_ctx)
+            .expect("projection must accept producer output (DOS-670 contract)");
+
+        assert!(
+            !projected.blocks.is_empty(),
+            "projected composition must contain at least one block"
+        );
+
+        let claim_text_rendered = projected.blocks.iter().any(|block| {
+            block.payload.pointer("/text").is_some()
+                || block.payload.pointer("/items/0/text").is_some()
+                || block.payload.pointer("/nodes/0/text").is_some()
+        });
+        assert!(
+            claim_text_rendered,
+            "projected payload must surface claim text from producer attributes"
+        );
+
+        let trust_band_rendered = projected.blocks.iter().any(|block| {
+            block.payload.pointer("/trust_band").is_some()
+                || block.payload.pointer("/items/0/trust_band").is_some()
+                || block.payload.pointer("/nodes/0/trust_band").is_some()
+        });
+        assert!(
+            trust_band_rendered,
+            "projected payload must surface trust_band from producer attributes"
+        );
     }
 }

@@ -913,6 +913,16 @@ const MIGRATIONS: &[Migration] = &[
         version: 179,
         sql: include_str!("migrations/179_dos_589_subscription_checkpoints.sql"),
     },
+    // Local-to-local read path: data-only migration that repairs stale
+    // absolute_expires_at. DEPRECATED v180: inactive_expires_at is no
+    // longer consulted for session validity; absolute_expires_at is
+    // authoritative. v179 still consults inactive_expires_at — rollback
+    // to v179 forces re-pair of any session whose inactive_expires_at
+    // was already past at v180 apply (see migration v180 header note).
+    Migration::Sql {
+        version: 180,
+        sql: include_str!("migrations/180_local_to_local_read_path.sql"),
+    },
 ];
 
 const V155_SHADOW_TRUST_VERSION: i64 = 1_401_003;
@@ -4557,10 +4567,11 @@ mod tests {
         )
         .expect("seed c5 zero-version shadow row");
 
-        let applied = run_migrations(&conn).expect("v157-v178 migrations should succeed");
+        let applied = run_migrations(&conn).expect("v157+ migrations should succeed");
         assert_eq!(
-            applied, 22,
-            "v157-v178 should be pending after rollback to v156"
+            applied,
+            (MIGRATIONS.last().unwrap().version() - 156) as usize,
+            "v157+ should be pending after rollback to v156"
         );
         assert_eq!(
             current_version(&conn).expect("current version"),
@@ -4631,10 +4642,11 @@ mod tests {
         )
         .expect("seed v156-recorded live score");
 
-        let applied = run_migrations(&conn).expect("v157-v178 migrations should succeed");
+        let applied = run_migrations(&conn).expect("v157+ migrations should succeed");
         assert_eq!(
-            applied, 22,
-            "v157-v178 should be pending after rollback to v156"
+            applied,
+            (MIGRATIONS.last().unwrap().version() - 156) as usize,
+            "v157+ should be pending after rollback to v156"
         );
         assert_eq!(
             current_version(&conn).expect("current version"),
@@ -4710,10 +4722,11 @@ mod tests {
         )
         .expect("seed partial v155 shadow row");
 
-        let applied = run_migrations(&conn).expect("v156-v178 migrations should succeed");
+        let applied = run_migrations(&conn).expect("v156+ migrations should succeed");
         assert_eq!(
-            applied, 23,
-            "v156-v178 should be pending after rollback to v155"
+            applied,
+            (MIGRATIONS.last().unwrap().version() - 155) as usize,
+            "v156+ should be pending after rollback to v155"
         );
         assert_eq!(
             current_version(&conn).expect("current version"),
