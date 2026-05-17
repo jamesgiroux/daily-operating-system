@@ -391,7 +391,7 @@ final class DailyOS_Plugin {
 			return null;
 		}
 
-		// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged,WordPressVIPMinimum.Performance.FetchingRemoteData.FileGetContentsUnknown
+		// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged,WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
 		$contents = @file_get_contents( $path );
 		if ( false === $contents ) {
 			self::log_sentinel_warning( 'sentinel read failed' );
