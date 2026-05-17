@@ -3743,6 +3743,13 @@ mod tests {
     static SURFACE_ROUTE_DISPATCH_COUNT: AtomicUsize = AtomicUsize::new(0);
     static SURFACE_ROUTE_LIMIT_COUNT: AtomicUsize = AtomicUsize::new(0);
 
+    /// DOS-668 fix: tests using SURFACE_ROUTE_{DISPATCH,LIMIT}_COUNT share a
+    /// process-global counter. Under parallel test execution (cargo test
+    /// default), one test's reset would race with another test's increment,
+    /// producing assertion failures like `left=2 right=1`. Serialize affected
+    /// tests via this lock.
+    static SURFACE_ROUTE_COUNTER_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     type ErasedFuture<'a> =
         Pin<Box<dyn Future<Output = Result<serde_json::Value, AbilityError>> + Send + 'a>>;
 
@@ -4814,6 +4821,9 @@ mod tests {
 
     #[test]
     fn surface_invoke_route_dispatches_after_bridge_authorization() {
+        let _counter_guard = SURFACE_ROUTE_COUNTER_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let registry = surface_route_dispatch_registry();
         let runtime =
             runtime_for_surface_route_tests(registry, SurfaceClientBridgeConfig::default());
@@ -4867,6 +4877,9 @@ mod tests {
 
     #[test]
     fn surface_invoke_route_allows_signed_surface_client_for_client_side_disabled_ability() {
+        let _counter_guard = SURFACE_ROUTE_COUNTER_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let registry = surface_route_dispatch_registry_with_client_side_policy(false);
         let runtime =
             runtime_for_surface_route_tests(registry, SurfaceClientBridgeConfig::default());
@@ -4959,6 +4972,9 @@ mod tests {
 
     #[test]
     fn surface_invoke_rate_limit_denial_skips_ability_body_for_each_axis() {
+        let _counter_guard = SURFACE_ROUTE_COUNTER_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         for expected_axis in [
             SurfaceClientRateLimitAxis::SurfaceClient,
             SurfaceClientRateLimitAxis::WpSite,
