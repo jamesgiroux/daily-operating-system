@@ -620,8 +620,8 @@ pub fn complete_handshake(
         .as_ref()
         .map(|pairing| pairing.pairing_id.clone());
 
-    // W4-F DOS-646: persist the master key in macOS keychain so the runtime
-    // can rehydrate session state across Tauri restarts. Best-effort: a
+    // Persist the master key in macOS keychain so the runtime can
+    // rehydrate session state across Tauri restarts. Best-effort: a
     // keychain failure is logged but does not fail the pairing (the session
     // is still valid for the current Tauri lifetime; restart will surface
     // session_requires_repair per the reconciliation contract).
@@ -853,7 +853,7 @@ pub fn validate_signed_session(
     })
 }
 
-/// Read-only signed-session validation per W4-F (DOS-655).
+/// Read-only signed-session validation for the local-to-local read path.
 ///
 /// Performs ONLY SELECTs. Returns a `SignedSessionFailure` enum identifying
 /// which check tripped; the caller (dispatch handler) decides whether to
@@ -3199,16 +3199,15 @@ mod tests {
     }
 
     // =================================================================
-    // W4-F (DOS-655) V3.2 fixtures
+    // Local-to-local read-path fixtures
     // =================================================================
     //
-    // Subset of the 25 named fixtures in W4-F packet §8 — covers the
-    // load-bearing assertions for §7 acceptance criteria 1-7 and 14.
-    // Remaining fixtures (cache-miss latency #15, sentinel substitution
-    // #16, keychain isolation #11, end-to-end concurrent reads #6) live
-    // in separate integration test files because they need a running
-    // runtime, signed test binaries, or harness setup beyond the unit
-    // scope here.
+    // Subset of the design-spec fixtures — covers the load-bearing
+    // assertions for the read-path acceptance criteria. Remaining
+    // fixtures (cache-miss latency, sentinel substitution, keychain
+    // isolation, end-to-end concurrent reads) live in separate
+    // integration test files because they need a running runtime,
+    // signed test binaries, or harness setup beyond the unit scope here.
 
     fn read_session_last_seen_at(db: &ActionDb, session_id: &str) -> Option<String> {
         db.conn_ref()

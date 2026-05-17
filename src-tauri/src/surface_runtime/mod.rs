@@ -273,15 +273,15 @@ impl SurfaceEndpointState {
             "test_runtime_anchor".to_string()
         };
 
-        // W4-F DOS-646: rehydrate signed sessions from keychain so paired WP
-        // installs survive Tauri restart. Best-effort: if the keychain entry
-        // is missing for a DB-present session, mark that session revoked
-        // with reason `keychain_entry_missing` per W4-F packet §7 #12.
+        // Rehydrate signed sessions from keychain so paired WP installs
+        // survive Tauri restart. Best-effort: if the keychain entry is
+        // missing for a DB-present session, mark that session revoked
+        // with reason `keychain_entry_missing`.
         if let Some(state) = app_state.as_ref() {
             if let Err(err) =
                 rehydrate_sessions_from_keychain(state, &self.signed_transport).await
             {
-                log::warn!("surface session rehydrate failed (DOS-646): {err}");
+                log::warn!("surface session rehydrate failed: {err}");
             }
         }
 
@@ -326,14 +326,14 @@ impl SurfaceEndpointState {
                     let runtime_for_shutdown = Arc::clone(&runtime);
                     let join = tokio::spawn(async move {
                         run_listener(listener, runtime, shutdown_rx).await;
-                        // W4-F DOS-636: remove the sentinel on shutdown so a
-                        // stale port doesn't redirect WP after restart.
+                        // Remove the runtime sentinel on shutdown so a stale
+                        // port doesn't redirect WP after restart.
                         remove_runtime_sentinel();
-                        // W4-F V3.1 §7 #9: lazy-flush last_seen_at + last_used_at
-                        // on graceful shutdown. Coalesced UPDATE — sets all
-                        // non-revoked sessions' last_seen_at and their pairings'
-                        // last_used_at to the current timestamp. §6.2 explicitly
-                        // accepts staleness; crash-stop is tolerated.
+                        // Lazy-flush last_seen_at + last_used_at on graceful
+                        // shutdown. Coalesced UPDATE — sets all non-revoked
+                        // sessions' last_seen_at and their pairings'
+                        // last_used_at to the current timestamp. Staleness
+                        // is explicitly accepted; crash-stop is tolerated.
                         if let Some(app_state) = runtime_for_shutdown.app_state.as_ref() {
                             flush_session_activity_on_shutdown(app_state).await;
                         }
@@ -353,9 +353,9 @@ impl SurfaceEndpointState {
                             abort,
                         });
                     }
-                    // W4-F DOS-636: write the runtime sentinel so the WP plugin
-                    // discovers the new port across Tauri restarts. Best-effort —
-                    // if the write fails, we log and continue; WP can still
+                    // Write the runtime sentinel so the WP plugin discovers
+                    // the new port across Tauri restarts. Best-effort — if
+                    // the write fails, we log and continue; WP can still
                     // discover via the stored pairing marker until next restart.
                     if let Err(err) =
                         write_runtime_sentinel(bound_port, env!("CARGO_PKG_VERSION"))
@@ -606,7 +606,8 @@ struct RehydrateRow {
     surface_client_id: String,
 }
 
-/// Rehydrate signed sessions from the DB + keychain (W4-F DOS-646).
+/// Rehydrate signed sessions from the DB + keychain so paired WP installs
+/// survive Tauri restart.
 ///
 /// Pre-condition: `signed_transport.configure(...)` already called.
 ///
@@ -693,7 +694,7 @@ async fn rehydrate_sessions_from_keychain(
     }
 
     // Step 4: mark DB rows revoked for sessions whose keychain entry is missing
-    // AND emit `pairing.session.key_missing` audit events per W4-F V3.1 §7 #12.
+    // AND emit `pairing.session.key_missing` audit events.
     if !missing.is_empty() {
         let missing_count = missing.len();
         let missing_clone = missing.clone();
@@ -719,9 +720,9 @@ async fn rehydrate_sessions_from_keychain(
                 Ok::<_, String>(())
             })
             .await;
-        // Audit emission per W4-F V3.1 §7 #12. The audit log is file-based
-        // (JSONL via app_state.audit_log) — does NOT contend with the SQLite
-        // writer mutex, safe to emit in tight loop.
+        // Audit emission. The audit log is file-based (JSONL via
+        // app_state.audit_log) and does NOT contend with the SQLite writer
+        // mutex, safe to emit in tight loop.
         for row in &missing {
             let event = surface_pairing::SurfacePairingAuditEvent {
                 event_kind: "pairing.session.key_missing",
@@ -745,9 +746,9 @@ async fn rehydrate_sessions_from_keychain(
     Ok(())
 }
 
-/// Lazy-flush last_seen_at + last_used_at on Tauri graceful shutdown
-/// per W4-F V3.1 §7 #9. Single coalesced UPDATE; §6.2 accepts staleness
-/// and crash-stop tolerance, so a bulk-set is the right shape for the
+/// Lazy-flush last_seen_at + last_used_at on Tauri graceful shutdown.
+/// Single coalesced UPDATE; the design explicitly accepts staleness and
+/// crash-stop tolerance, so a bulk-set is the right shape for the
 /// "admin diagnostics is approximate" semantic.
 async fn flush_session_activity_on_shutdown(app_state: &Arc<AppState>) {
     #[allow(
@@ -791,10 +792,10 @@ fn stable_hash_for_audit(value: &str) -> String {
     hex::encode(hasher.finalize())
 }
 
-/// Path to the runtime sentinel file (W4-F DOS-636).
+/// Path to the runtime sentinel file.
 ///
 /// `~/.dailyos/runtime-endpoint.json` — written on bind, removed on shutdown.
-/// Parent dir is ensured at `0700`, sentinel at `0600` (W4-F §5 + §6.4).
+/// Parent dir is ensured at `0700`, sentinel at `0600`.
 fn runtime_sentinel_path() -> io::Result<PathBuf> {
     let home = std::env::var_os("HOME")
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "HOME unset"))?;
@@ -804,15 +805,14 @@ fn runtime_sentinel_path() -> io::Result<PathBuf> {
     Ok(path)
 }
 
-/// Write the runtime sentinel after a successful bind (W4-F DOS-636).
+/// Write the runtime sentinel after a successful bind.
 ///
-/// Per W4-F §5 + §6.4:
 /// - Parent dir `~/.dailyos/` ensured at mode `0700`.
 /// - Sentinel itself written at mode `0600` via temp-file + atomic rename.
 /// - `O_NOFOLLOW | O_EXCL` on the temp open prevents symlink + race attacks.
 /// - Payload contains ONLY `port` and `runtime_version`. NEVER auth material.
 ///
-/// Defense per §6.4: sentinel is port-discovery convenience, NOT a defense.
+/// The sentinel is port-discovery convenience, NOT a defense.
 /// Defense is HMAC validation on every response. Substituted sentinel cannot
 /// produce valid HMAC, WP detects impersonation at first signed request.
 fn write_runtime_sentinel(port: u16, runtime_version: &str) -> io::Result<()> {
@@ -880,7 +880,7 @@ fn write_runtime_sentinel(port: u16, runtime_version: &str) -> io::Result<()> {
     Ok(())
 }
 
-/// Remove the runtime sentinel on shutdown (W4-F DOS-636).
+/// Remove the runtime sentinel on shutdown.
 ///
 /// Best-effort: a missing sentinel is fine. We do NOT propagate the error if
 /// the file is already gone (e.g., user deleted it between bind and shutdown).
@@ -1086,8 +1086,8 @@ async fn signed_transport_response(
         wp_user_hash: verified.wp_user_hash.clone(),
         now: Utc::now(),
     };
-    // W4-F V3.2 §6.8: dispatch on read lane. Successful validation never enters
-    // the writer mutex; only write-needing failure variants escalate to a fresh
+    // Dispatch on the read lane. Successful validation never enters the
+    // writer mutex; only write-needing failure variants escalate to a fresh
     // db_write block on the Err arm.
     let audit_session_id = verified.session_id.clone();
     let audit_surface_client_id = verified.surface_client_id.clone();
@@ -1112,10 +1112,10 @@ async fn signed_transport_response(
     let validated = match readonly_outcome {
         Ok((Ok(validated), _)) => validated,
         Ok((Err(failure), scopes_for_audit)) => {
-            // W4-F V3.2 §6.9: write-needing failure paths escalate to a separate
-            // db_write block. The 5 quarantine variants drive auto-quarantine writes
-            // per Phase 0 artifact 01 (Site-Switch + Exfiltration defenses). The 6
-            // no-write variants return directly.
+            // Write-needing failure paths escalate to a separate db_write
+            // block. The 5 quarantine variants drive auto-quarantine writes
+            // (site-switch + exfiltration defenses). The 6 no-write variants
+            // return directly.
             if let Some(action) = failure.write_action() {
                 let now = Utc::now();
                 let action_for_closure = action.clone();
@@ -3770,11 +3770,11 @@ mod tests {
     static SURFACE_ROUTE_DISPATCH_COUNT: AtomicUsize = AtomicUsize::new(0);
     static SURFACE_ROUTE_LIMIT_COUNT: AtomicUsize = AtomicUsize::new(0);
 
-    /// DOS-668 fix: tests using SURFACE_ROUTE_{DISPATCH,LIMIT}_COUNT share a
+    /// Tests using SURFACE_ROUTE_{DISPATCH,LIMIT}_COUNT share a
     /// process-global counter. Under parallel test execution (cargo test
     /// default), one test's reset would race with another test's increment,
-    /// producing assertion failures like `left=2 right=1`. Serialize affected
-    /// tests via this lock.
+    /// producing assertion failures like `left=2 right=1`. Serialize
+    /// affected tests via this lock.
     static SURFACE_ROUTE_COUNTER_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     type ErasedFuture<'a> =

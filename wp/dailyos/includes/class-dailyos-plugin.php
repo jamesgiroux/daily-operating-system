@@ -322,11 +322,13 @@ final class DailyOS_Plugin {
 
 	/**
 	 * Sentinel cache timestamp (microtime float).
+	 *
+	 * @var float
 	 */
 	private static float $sentinel_cached_at = 0.0;
 
 	/**
-	 * Discover the current Tauri runtime endpoint via the sentinel file (W4-F DOS-636).
+	 * Discover the current Tauri runtime endpoint via the sentinel file.
 	 *
 	 * Reads `~/.dailyos/runtime-endpoint.json` written by the Tauri runtime on bind.
 	 * Payload contains ONLY `port` and `runtime_version` per W4-F packet §5/§6.4 —
@@ -371,6 +373,7 @@ final class DailyOS_Plugin {
 
 		// Mode and ownership check. clearstatcache so we read live mode bits.
 		clearstatcache( true, $path );
+		// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
 		$stat = @stat( $path );
 		if ( false === $stat ) {
 			self::log_sentinel_warning( 'stat failed' );
@@ -383,11 +386,12 @@ final class DailyOS_Plugin {
 			return null;
 		}
 		// Verify ownership matches current effective user.
-		if ( function_exists( 'posix_geteuid' ) && $stat['uid'] !== posix_geteuid() ) {
+		if ( function_exists( 'posix_geteuid' ) && posix_geteuid() !== $stat['uid'] ) {
 			self::log_sentinel_warning( 'sentinel ownership mismatch' );
 			return null;
 		}
 
+		// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged,WordPressVIPMinimum.Performance.FetchingRemoteData.FileGetContentsUnknown
 		$contents = @file_get_contents( $path );
 		if ( false === $contents ) {
 			self::log_sentinel_warning( 'sentinel read failed' );
@@ -467,6 +471,8 @@ final class DailyOS_Plugin {
 	/**
 	 * Best-effort warning log for sentinel anomalies. Uses error_log to avoid
 	 * depending on WP_DEBUG_LOG availability at plugin init.
+	 *
+	 * @param string $message Warning message body.
 	 */
 	private static function log_sentinel_warning( string $message ): void {
 		// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log

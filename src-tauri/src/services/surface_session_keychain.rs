@@ -1,9 +1,9 @@
-//! Keychain persistence for signed-surface-session master keys (W4-F DOS-646).
+//! Keychain persistence for signed-surface-session master keys.
 //!
 //! Stores the 32-byte HMAC master key derived during pairing so the runtime
 //! can rehydrate session state across Tauri restarts. Without this, every
 //! restart invalidates every paired WP session and forces re-pairing — the
-//! observed failure mode that motivated W4-F.
+//! observed failure mode that motivated this module.
 //!
 //! ## Storage shape
 //!
@@ -11,12 +11,12 @@
 //! - Account: `<session_id>`
 //! - Password (raw bytes, base64-encoded for keychain transport): 32-byte master key
 //!
-//! ## Defense (W4-F V3.2 §11 — generalized from cycle 1 specifics)
+//! ## Defense
 //!
 //! Code-signing-bound app isolation: the keychain entry is owned by the
 //! DailyOS-signed binary. A separate binary signed by a different team ID
 //! cannot `SecItemCopyMatching` the entry. Negative fixture
-//! `dos655_keychain_isolation` is authoritative (W4-F packet §7 #11, §8 #11).
+//! `signing_team_keychain_isolation` is authoritative.
 //!
 //! Implementation uses the `security` CLI (same pattern as
 //! `gravatar::keychain` — see `services/keychain.rs` in this crate for
@@ -102,8 +102,8 @@ pub fn persist_session_master_key(
 
 /// Retrieve a previously-persisted session master key. Returns `None` if
 /// no entry exists for this surface_client_id + session_id pair (which
-/// signals reconciliation per W4-F packet §7 #12: mark the DB row revoked
-/// with reason `keychain_entry_missing`).
+/// signals reconciliation: mark the DB row revoked with reason
+/// `keychain_entry_missing`).
 pub fn load_session_master_key(
     surface_client_id: &str,
     session_id: &str,
@@ -161,8 +161,8 @@ mod tests {
     use super::*;
 
     // Note: these tests require macOS Keychain access and will be skipped on
-    // CI / non-darwin platforms. Full integration testing per W4-F packet §8
-    // fixture #11 (`dos655_keychain_isolation`) lives in tests/.
+    // CI / non-darwin platforms. Full integration testing for code-signing
+    // isolation lives in tests/.
 
     #[test]
     #[cfg_attr(not(target_os = "macos"), ignore)]
