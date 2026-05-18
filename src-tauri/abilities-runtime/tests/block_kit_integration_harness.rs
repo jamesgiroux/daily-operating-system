@@ -476,6 +476,8 @@ fn escape_pointer_segment(segment: &str) -> String {
 
 #[path = "fixtures/account_overview_integration_fixture.rs"]
 mod account_overview_integration_fixture;
+#[path = "fixtures/pill_integration_fixture.rs"]
+mod pill_integration_fixture;
 
 #[test]
 fn expected_block_fixtures_cover_requested_ci_block() {
@@ -486,7 +488,10 @@ fn expected_block_fixtures_cover_requested_ci_block() {
     if requested.is_empty() {
         return;
     }
-    let known = [account_overview_integration_fixture::account_overview_fixture()];
+    let known = [
+        account_overview_integration_fixture::account_overview_fixture(),
+        pill_integration_fixture::pill_fixture(),
+    ];
     assert!(
         known.iter().any(block_fixture_selected),
         "missing block integration fixture for wp/dailyos/blocks/{requested}/block.json"

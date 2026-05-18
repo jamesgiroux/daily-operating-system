@@ -1,0 +1,46 @@
+/* Pill (translated from src/components/ui/Pill.module.css).
+ * Front-end styles for the dailyos/pill block. Token-only — values via
+ * .docs/design/tokens/ + src/styles/design-tokens.css. */
+
+.wp-block-dailyos-pill .dailyos-pill,
+.dailyos-pill {
+	--pill-background: var(--wp--preset--color--desk-charcoal-4);
+	--pill-color: var(--wp--preset--color--text-secondary);
+	--pill-dot-color: var(--wp--preset--color--text-tertiary);
+	--pill-border: transparent;
+
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: var(--wp--preset--spacing--xs);
+	width: fit-content;
+	border: 1px solid var(--pill-border);
+	border-radius: 999px;
+	background: var(--pill-background);
+	color: var(--pill-color);
+	font-family: var(--wp--custom--dailyos--tokens--font-sans);
+	font-weight: 500;
+	line-height: 1;
+	white-space: nowrap;
+	vertical-align: middle;
+}
+
+.dailyos-pill--size-standard { padding: 5px 14px; font-size: 12px; }
+.dailyos-pill--size-compact { padding: 2px 8px; font-size: 11px; }
+.dailyos-pill--interactive { cursor: pointer; }
+
+.dailyos-pill__dot {
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--pill-dot-color);
+	flex-shrink: 0;
+}
+
+.dailyos-pill--tone-sage         { --pill-background: var(--wp--preset--color--garden-sage); --pill-color: var(--wp--preset--color--text-primary); }
+.dailyos-pill--tone-turmeric     { --pill-background: var(--wp--preset--color--spice-turmeric); --pill-color: var(--wp--preset--color--text-primary); }
+.dailyos-pill--tone-terracotta   { --pill-background: var(--wp--preset--color--spice-terracotta); --pill-color: var(--wp--preset--color--paper-warm-white); }
+.dailyos-pill--tone-larkspur     { --pill-background: var(--wp--preset--color--garden-larkspur); --pill-color: var(--wp--preset--color--text-primary); }
+.dailyos-pill--tone-olive        { --pill-background: var(--wp--preset--color--garden-olive); --pill-color: var(--wp--preset--color--paper-warm-white); }
+.dailyos-pill--tone-eucalyptus   { --pill-background: var(--wp--preset--color--garden-eucalyptus); --pill-color: var(--wp--preset--color--paper-warm-white); }
+.dailyos-pill--tone-neutral      { --pill-background: var(--wp--preset--color--desk-charcoal-4); --pill-color: var(--wp--preset--color--text-secondary); }
