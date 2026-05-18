@@ -6,8 +6,8 @@ A primitive is *not* a primitive if it knows about claims, trust, briefings, or 
 
 ## Status vocabulary
 
-- **proposed** — WIP, prototype, roadmap, or source-only work that is not yet integrated into routed app UI.
-- **integrated** — real app code exists and is used in the product, including shared components, page-local classes, or extracted modules.
+- **proposed** — WIP, prototype, roadmap, or source-only work that is not yet integrated into one of DailyOS's primary surfaces.
+- **integrated** — real app code exists and is consumed by at least one of DailyOS's primary surfaces. Per ADR-0129 the primary surfaces are **WordPress Studio** (the leading primary surface as of 2026-05-15) and the Tauri React app (in stasis per the reorientation but still primary until WP parity ships). A WordPress block under `wp/dailyos/blocks/<name>/` counts as integrated consumption of the underlying primitive — it does not also need a Tauri React surface consumer. Likewise a Tauri React surface consumer is integrated regardless of WordPress block status. The bar is: a primary surface routes or renders this primitive against real substrate data.
 - **production** — integrated and included in a tagged release.
 
 ## Index
