@@ -36,6 +36,13 @@
   - **§7.1 matrix expanded** to add focus / hover / compact / RTL / dark-mode state columns where applicable per design F1. Explicit `N/A` markers per primitive where a state doesn't apply (e.g., StatusDot has no hover; FreshnessIndicator has no compact variant).
   - **DOS-685 path-α append** filed: token-mapping manifest emission in `pnpm dailyos:translate-tauri` per §5.9. MUST land before first W2 PR opens. Codex consult confirmed `translate-tauri.mjs:414-419, 487-489` currently does NOT emit `.token-mapping.json`.
   - **Path-α filed to maintenance project `b8e6aea4-d47e-4f3a-b03d-a05bec914aeb`:** paste-snippet step 6 (run kit integration fixture per primitive) not enumerated in AC #8 — code-reviewer noted as path-α not blocking V1.2.
+- **V1.3 (2026-05-18):** Folded L0 cycle 3 findings. Cycle 3 verdicts: codex challenge #1 (§10 PR-D1 diff size) APPROVE — PR-D1 estimated ~1,143 changed LOC vs W1 PR #303 baseline 5,879 (~19%); codex challenge #2 (§6.4 ScoreBand vocab) BLOCK — primitives README forbids substrate-binding-as-disambiguator; codex challenge #3 (§5.8 chrome test coverage) BLOCK — grep gate specified in packet but absent from workflow file; codex consult (commit boundary + DOS-685 sequencing) APPROVE — one squash-merge at landing, DOS-685 lands first, D2-D4 parallel; code-reviewer CONDITIONAL (F-A chrome service test coverage, F-B commit ordering, path-α invariant #13 typo); design-reviewer CONDITIONAL (F1 HealthBadge.md vocabulary factual error, F2 chrome service contract enumeration deferred, F3 §7.1 matrix N/A mis-categorizations).
+  - **§6.4 ScoreBand vocabulary rewrite.** V1.2's "intentional collision" defense was built on a phantom: HealthBadge.md:9 actually declares `band="green" | "yellow" | "red"` plus insufficient-data — NOT `Healthy | Watching | Action Needed | No Read`. The collision V1.2 described doesn't exist on disk today. V1.3 reframe: ScoreBand introduces the band-LABEL vocabulary per DOS-325 voice rule; HealthBadge today exposes color-BAND tokens; the same DOS-325-style label-discipline pass applied to HealthBadge files as a v1.4.4 follow-up ticket (`DOS-XXX-healthbadge-label-discipline`). No co-render collision exists today; future co-render collision is prevented by either distinct labels OR the DOS-325 voice-rule pass landing first. Per cycle 3 design F1 + challenge #2.
+  - **§5.8 chrome service sweep — V1.3 closes the class-pattern.** V1.1 had reasoning wrong; V1.2 fixed naming + collision but left coverage gap; V1.3 lands the test fixture spec + workflow wiring + 6-bullet non-negotiable contract list AT L0. Per cycle 3 challenge #3 BLOCK + code-reviewer F-A + design F2. Concrete additions detailed in §5.8.
+  - **§10 PR-D1 commit shape synthesis.** code-reviewer F-B wanted 6 ordered sub-commits for L2 reviewability; codex consult said one squash-merge at landing (per W1 PR #303 precedent). V1.3 synthesizes: PR-D1 opens with 6 ordered development commits (paste-snippets → chrome service + design spec → TypeBadge split + AccountHero migration → ScoreBand Tauri + spec → Avatar.module.css → TrustBandBadge README promotion); merges to `dev` as squash. Best of both — reviewer walks per-concern diffs, dev history sees one entry.
+  - **§7.1 matrix N/A corrections (cycle 3 design F3).** Two mis-categorizations fixed: StatusDot compact = required per `StatusDot.md:9` (`size="sm" | "md"` IS the compact axis); FreshnessIndicator compact = required per `FreshnessIndicator.md:77` (chip-shaped is the default compact render; strip variant is the standard). Notation added to clarify variant naming.
+  - **§9 invariant #13 typo → maintenance.** Path-α filed to project `b8e6aea4-d47e-4f3a-b03d-a05bec914aeb` per cycle 3 code-reviewer; not blocking V1.3.
+  - **HealthBadge label-discipline-pass ticket** filed as new v1.4.4 lineage entry in §13 (`DOS-XXX-healthbadge-label-discipline`) — applies DOS-325 voice rule to HealthBadge labels alongside its existing color-band tokens.
 
 ## 3. Status Snapshot
 
@@ -122,11 +129,26 @@ Per L0 cycle 1 L6 #3 + cycle 2 class sweep (design F4 + code F-2 + codex challen
 - **Tauri side:** `src/components/ui/_chrome/PrimitiveChrome.tsx` exporting `<PrimitiveEmpty />`, `<PrimitiveLoading />`, `<PrimitiveError />` consumed by all 11 primitive components. **Renamed in V1.2** from `<EmptyState />` etc. to avoid collision with the existing page-scoped `src/components/editorial/EmptyState.tsx` (cycle 2 code-reviewer F-2). The editorial EmptyState is page-scoped (h2 + paragraph + buttons, inline-style-heavy at lines 33-110) and is NOT primitive chrome — primitives must NOT consume it. CSS Module driven by design tokens; **no inline styles** (cardinal rule per memory `feedback_no_inline_css.md`).
 - **WP side:** `wp/dailyos/blocks/_shared/chrome/` with `render-empty.php`, `render-loading.php`, `render-error.php` partials that primitive `render-functions.php` files `require_once`. Token consumption via theme.json variables only (per §5.9 manifest gate).
 
-**Design-system anchoring (V1.2 new).** Per cycle 2 design F4, the chrome service is design-system net-new — no upstream EmptyState/LoadingState/ErrorState pattern exists in `.docs/design/patterns/`. PR-D1 ships a paired markdown PR adding `.docs/design/primitives/_chrome/README.md` defining: token consumption (which theme.json palette entries chrome consumes), visual treatment (skeleton density + spacing + typography), surface-agnostic API contract, when-to-use vs page-scoped `editorial/EmptyState`, and accessibility (focus management for primitive-tier empty/loading/error). Design-reviewer signs off this spec at PR-D1 L4.
+**Design-system anchoring (V1.2 + V1.3 hardened).** Per cycle 2 design F4 + cycle 3 design F2, the chrome service is design-system net-new — no upstream EmptyState/LoadingState/ErrorState pattern exists in `.docs/design/patterns/`. PR-D1 ships a paired markdown PR adding `.docs/design/primitives/_chrome/README.md`.
 
-**Acceptance:** no primitive's `render-functions.php` contains an inline empty/loading/error rendering path. Grep gate: `wp/dailyos/blocks/<slug>/render-functions.php` MUST `require_once` one of `_shared/chrome/render-(empty|loading|error)\.php` when handling the corresponding state. CI invariant §9.8.
+**Non-negotiable spec contract (V1.3 — enumerated at L0, not deferred to PR-D1 prose):** the `_chrome/README.md` MUST cover all six items below. Design-reviewer L4 sign-off cannot pass with any item missing:
 
-**Cycle 3 review focus:** if the chrome service seam needs further rework, this section is what changes — not the per-primitive sections.
+1. **Named theme.json palette entries consumed.** Specific palette slug list (not "tokens"), e.g., `wp--preset--color--neutral-100`, `wp--preset--color--neutral-300`, `wp--preset--color--danger-fill`. Each entry pinned by name.
+2. **Skeleton density + spacing tokens.** Specific spacing/sizing tokens (not "visual treatment"), e.g., `wp--preset--spacing--40` for loading-skeleton bar spacing, `wp--custom--radius--sm` for skeleton corner radius.
+3. **Explicit "MUST NOT consume `src/components/editorial/EmptyState.tsx`" boundary.** Page-scoped editorial empty state is a separate primitive; primitives MUST NOT import it. CI grep gate at fixture #12.
+4. **Focus management for empty/error CTA targets.** When chrome renders an actionable element (e.g., "Retry" button in error state), focus management contract spec'd. For W2 display-only primitives without CTAs, this section reads "N/A for display-only primitives; defer to v1.4.4 W4 when interactive chrome lands."
+5. **RTL + dark-mode coverage.** Same axes §7.1 demands of the primitives themselves. Chrome MUST render correctly under both.
+6. **When to escalate to `editorial/EmptyState`.** Decision criteria: full-surface empty vs primitive-slot empty. E.g., entity-detail page with zero data → `editorial/EmptyState`; single ProvenanceTag with no source → primitive chrome.
+
+**Test coverage (V1.3 — closes cycle 3 challenge #3 BLOCK + code-reviewer F-A):** the W1 harness today only asserts non-empty HTML on the projected composition. V1.3 adds **dedicated chrome service test fixtures** that drive a primitive through each chrome state branch and assert the shared partial output:
+
+- **Rust harness extension** — `src-tauri/abilities-runtime/tests/chrome_service_integration_fixture.rs` (new). Drives the harness with four fixture compositions per primitive: (a) ready state with full payload; (b) loading state with empty `claim_refs` + `render_hints.chrome_state=Loading` if/when adopted, else surface-side derived; (c) empty state with empty `claim_refs` and resolved-to-no-data projection; (d) error state with projection error. For each state, the fixture asserts the rendered HTML contains the corresponding chrome partial marker (e.g., `data-chrome="empty"` set by `render-empty.php`) and does NOT contain the marker for any other state.
+- **WP-side standalone test** — `wp/dailyos/tests/blocks/chrome/ChromeServiceTest.php` (new). PHPUnit test that invokes each `render-(empty|loading|error).php` partial directly with a minimal fixture context, asserts the rendered HTML matches a snapshot, and verifies no inline `style=` attribute appears in the output (per memory `feedback_no_inline_css.md`).
+- **Workflow gate wiring (V1.3 fixes the absent gate cycle 3 challenge #3 caught)** — `.github/workflows/block-kit-integration.yml` adds a new step: "Chrome service coverage" that runs `cargo test -p abilities-runtime --test chrome_service_integration_fixture` AND `pnpm phpunit wp/dailyos/tests/blocks/chrome/` AND a grep gate over `wp/dailyos/blocks/<slug>/render-functions.php` asserting `require_once.*_shared/chrome/render-(empty|loading|error)\.php` is present whenever the corresponding state branch is handled.
+
+**Acceptance:** no primitive's `render-functions.php` contains an inline empty/loading/error rendering path. The chrome state-branch tests pass for every primitive. The workflow gate runs on every PR touching `wp/dailyos/blocks/`. New CI invariants §9.14 + §9.15.
+
+**Cycle 4 review focus** (if needed): chrome service contract sufficiency for v1.4.4 W4 editable-variant adoption, when producer-side `render_hints.chrome_state` is added.
 
 ### 5.9 Token-mapping manifest gate
 
@@ -177,11 +199,14 @@ Per primitives README, TrustBandBadge is currently `proposed`. The W2 WP block i
 
 Resolved at L0 cycle 1 L6 (James, 2026-05-18): ScoreBand is a distinct visual primitive (band-label with no raw number in the headline, per DOS-325 voice rule). W2 takes ScoreBand only. The remaining two DOS-325 primitives (TrendStrip + EvidenceDrawer) file to v1.4.4 W2 Entity Surfaces with explicit DOS-325 lineage (see §13).
 
-**Vocabulary justification (V1.2, cycle 2 design F2):** ScoreBand labels `On Track | Watching | Action Needed | No Read` overlap with HealthBadge's vocabulary on two of four bands. This is **intentional and load-bearing**: both primitives consume the same band-rendering vocabulary because both communicate "interpretive band, evidence available on demand" per DOS-325 voice rule + the design system's band discipline. They differ on substrate binding:
-- **HealthBadge** binds to entity-health rollup signal (multiple claims aggregated; e.g., `account.health.composite`).
-- **ScoreBand** binds to a single claim's score-with-trust-band rendering (e.g., `claim.score_band.derived_from_factors[]` with evidence drill-down via v1.4.4 EvidenceDrawer).
+**Vocabulary (V1.3 rewrite — V1.2's "intentional collision" defense was built on a phantom):** HealthBadge.md:9 actually declares `band="green" | "yellow" | "red"` plus insufficient-data — NOT `Healthy | Watching | Action Needed | No Read`. The collision V1.2 described doesn't exist on disk today. The corrected framing:
 
-Per DOS-325 issue body §"What good looks like": "renders a plain-language band label. No raw number in the headline." That's the canonical source for the vocabulary; the four labels are DailyOS magazine voice for the four trust-band cardinal directions (per ADR-0083 product vocabulary). When both primitives render `Watching` they are saying the same kind of thing about different substrate fields.
+- **ScoreBand introduces** the band-LABEL vocabulary `On Track | Watching | Action Needed | No Read` per DOS-325 issue body §"What good looks like": "renders a plain-language band label. No raw number in the headline." This is the FIRST primitive to apply DOS-325 voice rule to band rendering. ADR-0083 product vocabulary applies.
+- **HealthBadge today exposes color-BAND tokens** (`green` / `yellow` / `red` / insufficient-data) per `HealthBadge.md:9`. No label vocabulary at all — the labels are caller-supplied or surface-rendered above the primitive.
+- **The same DOS-325-style label-discipline pass** applied to HealthBadge files as a v1.4.4 follow-up ticket: `DOS-XXX-healthbadge-label-discipline` (see §13). That ticket folds DOS-325 voice rule into HealthBadge's spec; the vocabulary it lands on is a v1.4.4 decision, not v1.4.3 W2 scope.
+- **Co-render collision risk** in a future v1.4.4 entity-detail mockup (account HealthBadge + per-claim ScoreBand on the same page): prevented by the HealthBadge label-discipline pass landing first OR by HealthBadge picking distinct labels at that pass. No collision exists today because HealthBadge has no label vocabulary today.
+
+Primitives README discipline (`.docs/design/primitives/README.md:3-5`) is respected: ScoreBand stands on its labels + visuals (not "we have substrate-binding distinguishing us from HealthBadge" which V1.2 wrongly invoked). When `DOS-XXX-healthbadge-label-discipline` lands, that ticket owns the question of whether HealthBadge picks the same four labels or distinct ones — that's a design-system decision at the v1.4.4 boundary, not a v1.4.3 W2 question.
 
 **Authoring sequence in PR-D4 (V1.2 — hardened):**
 1. **`.docs/design/primitives/ScoreBand.md` design spec MUST exist + pass design-reviewer L0 sign-off BEFORE block translation** (new AC §7 step). Spec contents: band-vocabulary justification per V1.2 above; when-to-use vs HealthBadge boundary discipline (substrate-binding rule above); token consumption; visual treatment; evidence-drawer integration deferred-to-v1.4.4 note.
@@ -211,6 +236,8 @@ Visual parity vs Tauri React: hero-state side-by-side screenshots at L4. CSS val
 12. **`.docs/design/primitives/ScoreBand.md` design spec authored + design-reviewer L0 sign-off** BEFORE PR-D4 block translation begins (V1.2 — per cycle 2 design F3 + §6.4 step 1).
 13. **`.docs/design/primitives/_chrome/README.md` paired markdown spec authored + design-reviewer L4 sign-off** as part of PR-D1 chrome service shipping (V1.2 — per cycle 2 design F4 + §5.8 design-system anchoring).
 14. **DOS-685 path-α append landed BEFORE first W2 PR opens** — token-mapping manifest emission in `pnpm dailyos:translate-tauri` per §5.9. Codex consult confirmed missing; this is the only allowed W1-side edit during W2.
+15. **Chrome service state-branch test coverage** (V1.3 — closes cycle 3 challenge #3 BLOCK + code-reviewer F-A): `chrome_service_integration_fixture.rs` + `ChromeServiceTest.php` exist and pass; workflow gate "Chrome service coverage" wired into `.github/workflows/block-kit-integration.yml` and runs on every PR touching `wp/dailyos/blocks/`.
+16. **`.docs/design/primitives/_chrome/README.md` carries all 6 non-negotiable contract items** (V1.3 — per cycle 3 design F2 enumeration locked at L0): named theme.json palette entries; skeleton density + spacing tokens; "MUST NOT consume editorial/EmptyState" boundary; focus management contract; RTL + dark-mode coverage; escalation criteria to editorial/EmptyState.
 
 ### 7.1 Visual parity matrix
 
@@ -238,11 +265,11 @@ Per L0 cycle 1 L6 #3 + cycle 2 design F1: every visual state captured side-by-si
 |---|---|---|---|---|---|
 | Pill | required (interactive in some contexts) | required | N/A | required | required |
 | HealthBadge | N/A (display-only) | N/A | N/A | required | required |
-| StatusDot | N/A | N/A | N/A | required (mirrors only if used with text) | required |
+| StatusDot | N/A | N/A | **required (`size="sm"` variant per `StatusDot.md:9` + `StatusDot.tsx:4`; V1.3 correction)** | required (mirrors only if used with text) | required |
 | Avatar | N/A (display-only in W2) | N/A | required (compact size token) | N/A (square) | required |
 | TrustBandBadge | required (interactive when paired with tooltip) | required (tooltip trigger) | **required** (per `.docs/design/primitives/TrustBandBadge.md:35`) | required | required |
 | IntelligenceQualityBadge | required (tooltip trigger) | required (tooltip) | N/A | required | required |
-| FreshnessIndicator | N/A | N/A | N/A | required | required |
+| FreshnessIndicator | N/A | N/A | **required — chip = default compact render per `FreshnessIndicator.md:77`; strip variant = standard render (V1.3 correction)** | required | required |
 | ProvenanceTag | required (tooltip trigger) | required (tooltip) | N/A | required | required |
 | EntityChip | required (link in some contexts) | required | N/A | required (mirrors entity-type icon) | required |
 | TypeBadge (display-only) | N/A | N/A | N/A | required | required |
@@ -285,7 +312,9 @@ L4 sign-off requires every non-N/A cell across both axes rendered, captured, and
 | 10 | Every primitive's paste-snippet manifest applied (BlockType + projection rule entries exist) | New gate: per-block fixture asserts the primitive's `BlockType` variant is referenced in `composition.rs` AND its projection rule arm is present in `fallback_projection.rs:rule_for_block_type` AND its rule is registered in `known_projection_rules()` |
 | 11 | `.docs/design/primitives/ScoreBand.md` exists before any `wp/dailyos/blocks/score-band/` files land | New gate per §6.4 step 1 + AC #12 — CI workflow asserts spec markdown precedes block dir |
 | 12 | `.docs/design/primitives/_chrome/README.md` exists when `_chrome/` or `_shared/chrome/` directories land | New gate per §5.8 design-system anchoring + AC #13 |
-| 13 | DOS-685 path-α landed on dev BEFORE PR-D1 opens (manifest emission in translate-tauri.mjs) | Pre-PR gate per §5.9 + AC #14; PR-D1 CI workflow asserts `wp/dailyos/blocks/_shared/chrome/render-empty.php` co-exists with translator-emitted `.token-mapping.json` writer logic |
+| 13 | DOS-685 path-α landed on dev BEFORE PR-D1 opens (manifest emission in translate-tauri.mjs) | Pre-PR gate per §5.9 + AC #14 |
+| 14 | Chrome service state-branch tests pass | `cargo test -p abilities-runtime --test chrome_service_integration_fixture` + `pnpm phpunit wp/dailyos/tests/blocks/chrome/` green; new workflow step "Chrome service coverage" per §5.8 V1.3 test coverage + AC #15 |
+| 15 | `.docs/design/primitives/_chrome/README.md` non-negotiable 6-item contract complete | CI grep gate asserts spec file contains all 6 contract headings per §5.8 V1.3 + AC #16 |
 
 ## 10. Interlocks
 
@@ -321,6 +350,18 @@ PR-D1 is the **shared-substrate + foundation** PR. It carries everything that to
 - `wp/dailyos/blocks/score-band/` + fixture (translates ScoreBand from D1)
 
 **Ordering:** PR-D1 lands first (hard dependency for chrome service + paste-snippets + per-block Tauri primitives). PR-D2, D3, D4 can land in any order or in parallel after PR-D1. Each PR brings its own per-block fixture set + green CI + per-block style.css + per-block `.token-mapping.json` (per §5.9).
+
+**PR-D1 commit shape (V1.3 — synthesis of cycle 3 code-reviewer F-B + codex consult APPROVE).** PR-D1 opens with **6 ordered development commits** so reviewers walk per-concern diffs; the PR merges to `dev` as a **single squash-merge** so dev history sees one entry. Best of both — review granularity during cycle, atomic landing boundary.
+
+Ordered development commits in PR-D1:
+1. **Paste-snippet substrate touches.** 11 `BlockType` variants in `composition.rs` (lines 330 + 350) + 11 `<NAME>_FIELDS` + `<name>_rule` + `rule_for_block_type` arm + `known_projection_rules` Vec entry in `fallback_projection.rs` (lines 1236 + 1250 + 1408). Estimated +242 LOC per cycle 3 challenge #1.
+2. **Chrome service + design spec.** `src/components/ui/_chrome/PrimitiveChrome.tsx` + `wp/dailyos/blocks/_shared/chrome/render-{empty,loading,error}.php` + `.docs/design/primitives/_chrome/README.md` (with 6-bullet contract per §5.8) + chrome service test fixtures (`chrome_service_integration_fixture.rs` + `ChromeServiceTest.php`) + workflow gate addition. Estimated +319 LOC.
+3. **TypeBadge split + AccountHero migration.** `src/components/ui/TypeBadgeDisplay.tsx` + `src/components/ui/TypeBadge.tsx` + `src/components/ui/TypeBadge.module.css` + AccountHero migration. Estimated +198 / -159 LOC per cycle 3 challenge #1.
+4. **ScoreBand Tauri authoring + design spec.** `src/components/ui/ScoreBand.tsx` + `ScoreBand.module.css` + `.docs/design/primitives/ScoreBand.md` (DOS-325 voice-rule vocabulary justification + when-to-use vs HealthBadge boundary per §6.4 V1.3 framing) + `.docs/design/primitives/README.md` Wave 1 table update. Estimated +165 / -1 LOC.
+5. **Avatar CSS Module scaffolding.** `src/components/ui/Avatar.module.css` extracted from current inline rules per §5.2 row 4. Estimated +57 LOC.
+6. **TrustBandBadge README promotion.** `.docs/design/primitives/README.md` updated to mark TrustBandBadge `integrated` per §6.3 (PR #304 design vocab makes this legitimate). Estimated +1 / -1 LOC.
+
+PR-D1 total estimate: ~+982 / -161 = ~1,143 changed LOC per cycle 3 challenge #1 calculation, vs W1 PR #303 baseline of 5,879 (~19%). Merge-conflict elimination is worth the size — cycle 3 challenge #1 APPROVE.
 
 **Pre-W2 gate (V1.2 hard requirement):** **DOS-685 path-α append MUST land before PR-D1 opens** — the token-mapping manifest emission in `pnpm dailyos:translate-tauri` is required by §5.9 CI gates, and §5.9 says it's the only allowed W1-side edit during W2. Filing DOS-685 maintenance ticket is a §15 closure precondition.
 
@@ -370,40 +411,45 @@ Open for L0 cycle 3:
   - **DOS-9** (cite-chip age/freshness tooltip) — closes in PR-D2 (ProvenanceTag block).
   - **DOS-11** (trust-band UI) — closes in PR-D3 (TrustBandBadge block).
   - **DOS-325** (score bands + evidence drill-down) — **partial close in PR-D4 (ScoreBand)**. The remaining DOS-325 work files to v1.4.4 with explicit lineage (next bullet).
-- Filed to v1.4.4 W2 Entity Surfaces with DOS-325 lineage (NEW tickets to file at V1.1 lock):
+- Filed to v1.4.4 W2 Entity Surfaces with DOS-325 lineage (NEW tickets to file at V1.3 lock):
   - **DOS-325-TrendStrip** — translate TrendStrip primitive (Tauri authoring + WP block) for entity-detail surfaces.
   - **DOS-325-EvidenceDrawer** — translate EvidenceDrawer primitive + drawer integration into entity-detail pages (on-demand, display-safe per DOS-477).
   - **DOS-325-Surface-residue** — entity-envelope wiring, keyboard interaction, evidence-drawer integration on Account/Project/Person Detail surfaces.
   - **DOS-9-entity-envelope** — cite-chip tooltip wired into entity-detail envelope (surface-tier consumption beyond the primitive itself).
   - **DOS-11-keyboard** — trust-band UI keyboard navigation + a11y in the surface composition (the primitive itself is keyboard-accessible; the surface-level navigation is v1.4.4 scope).
+  - **DOS-XXX-healthbadge-label-discipline** (V1.3 — per cycle 3 design F1 reframe) — apply DOS-325 voice rule to HealthBadge primitive: today HealthBadge.md:9 exposes color-band tokens only (`green` / `yellow` / `red` / insufficient-data); add band-label vocabulary alongside the color tokens. Owns the v1.4.4 decision on whether HealthBadge labels collide with or distinguish from ScoreBand's `On Track | Watching | Action Needed | No Read`. Files alongside the v1.4.4 W2 Entity Surfaces work where HealthBadge composes into account-detail.
 - W1 amendment (V1.2 confirms required, files at V1.2 lock):
   - **DOS-685 path-α append** — token-mapping manifest emission in `pnpm dailyos:translate-tauri` per §5.9. Codex consult confirmed `translate-tauri.mjs:414-419, 487-489` does NOT currently emit `.token-mapping.json`. MUST land on `dev` BEFORE PR-D1 opens (new pre-W2 gate per §10 + AC #14).
 - Downstream: every v1.4.4+ surface composes these primitives. v1.4.4 W0 surface audit (DOS-677) is the first downstream consumer.
 
 ## 14. L0 reviewer panel — required runners
 
-| Reviewer | Mode | Cycle 3 focus |
+| Reviewer | Mode | Cycle 4 focus (if dispatched) |
 |---|---|---|
-| `/codex challenge` | adversarial | §10 PR-D1-carries-everything strategy — adversarially test the merge-conflict-elimination tradeoff against PR-D1 diff size; §6.4 ScoreBand vocabulary overlap with HealthBadge — does the substrate-binding distinction hold up? §5.8 chrome service test coverage from W1 harness sufficiency. Hunt new failure shapes V1.2 introduced. |
-| `/codex consult` | implementation feasibility | DOS-685 path-α landing sequence (before PR-D1 vs absorbed into PR-D1); validate PR-D1 commit ordering (paste-snippets first → chrome service → Tauri primitive extractions → CSS Module scaffolding); walk through whether the per-block fixture for PR-D2/D3/D4 still works when substrate touches all already-applied in PR-D1. |
-| `code-reviewer` (claude) | domain | §5.8 chrome service test coverage (separate tests vs harness-only); PR-D1 commit boundary (one big commit vs ordered sub-commits); verify the `TypeBadge` + `TypeBadgeDisplay` split actually unblocks the W2 block translation cleanly (PR-D4 only touches the WP block dir + fixture); §6.4 ScoreBand sequence (markdown → Tauri → block) is testable. |
-| `design-reviewer` (claude) | design system | §6.4 ScoreBand vocabulary collision — the intentional overlap argument: is "substrate-binding distinguishes them" enough or does the design system need distinct labels regardless? §5.8 chrome service spec — does the new `.docs/design/primitives/_chrome/README.md` carry enough specificity for L4 sign-off (token consumption + visual treatment + when-to-use boundary)? §7.1 Axis 2 N/A markers — are any cells mis-categorized? |
-| ~~`/cso`~~ | (dropped) | Dropped per James 2026-05-18 — packet declares no new trust boundaries; W2 renders over already-CSO-approved W0 substrate. Reserve CSO for v1.4.3 W4 feedback-write-infrastructure packet where real boundary crossings exist. |
+| `/codex challenge` | adversarial | §5.8 V1.3 test fixture spec sufficiency — do `chrome_service_integration_fixture.rs` + `ChromeServiceTest.php` adequately cover the four chrome state branches (ready / loading / empty / error) for all 11 primitives? Or does the spec rely on per-primitive integration fixtures to add their own state coverage? §6.4 V1.3 reframe — is filing `DOS-XXX-healthbadge-label-discipline` to v1.4.4 the right deferral, or should HealthBadge label-discipline land in v1.4.3 W2 alongside ScoreBand to avoid the v1.4.4 co-render collision risk? |
+| `/codex consult` | implementation feasibility | PR-D1 commit shape (V1.3) — is 6 ordered commits → squash-merge feasible given the workflow gate dependencies (e.g., does the chrome service test fixture need ordering relative to its consuming primitives)? §13 v1.4.4 lineage ticket filing sequence — file at V1.3 lock or at PR-D1 open? |
+| `code-reviewer` (claude) | domain | Verify V1.3 §5.8 test fixture spec actually compiles and runs against the W1 harness shape; verify §10 V1.3 6-commit ordering matches W1 PR #303 precedent; verify §7.1 V1.3 N/A corrections (StatusDot compact + FreshnessIndicator compact) match `StatusDot.md:9` + `FreshnessIndicator.md:77`. |
+| `design-reviewer` (claude) | design system | Verify V1.3 §6.4 reframe is grounded in `HealthBadge.md:9` color-band declaration; verify §5.8 V1.3 6-bullet contract list is complete; verify §7.1 V1.3 corrections fix the N/A issues without introducing new mis-categorizations. |
+| ~~`/cso`~~ | (dropped V1.2) | Dropped per James 2026-05-18 — packet declares no new trust boundaries. Reserve CSO for v1.4.3 W4 feedback-write-infrastructure packet. |
 
-**Convergence rule:** unanimous APPROVE required before code lands. CONDITIONAL APPROVE folds into V1.3 (or maintenance project `b8e6aea4-d47e-4f3a-b03d-a05bec914aeb` if non-AC). Cycle cap: 10 cycles before L6 escalation. Path-α partial convergence allowed per `.docs/plans/v1.4.0-waves.md` precedent if same-class findings recur across cycles.
+**Convergence rule:** unanimous APPROVE required before code lands. CONDITIONAL APPROVE folds into V1.4 (or maintenance project `b8e6aea4-d47e-4f3a-b03d-a05bec914aeb` if non-AC). Cycle cap: 10 cycles before L6 escalation. Path-α partial convergence allowed per `.docs/plans/v1.4.0-waves.md` precedent if same-class findings recur across cycles.
 
-**Cycle 3 dispatch shape (V1.2 — applies 5-way codex parallelism per James 2026-05-18):** codex challenge + codex consult + code-reviewer (Claude) + design-reviewer (Claude) run in parallel. Additional codex adversarial passes (up to 5 total codex) on specific high-risk sections — e.g., one codex agent focused solely on §10 PR-D1 diff-size risk, one on §6.4 vocabulary, one on §5.8 chrome — when the cycle-2 class-pattern signal suggests more depth is needed. 5-minute heartbeat per [[codex-heartbeat-5-min]] on every in-flight codex.
+**Cycle 4 dispatch shape (V1.3 — applies 5-way codex parallelism per [[codex-parallel-5way-allowed]]):** if cycle 4 is needed, run codex challenge + codex consult + code-reviewer + design-reviewer in parallel. Cycle 3 class-patterns (§5.8 chrome, §6.4 vocab) were closed in V1.3 with concrete spec changes — cycle 4 should validate the closures, not re-litigate the class. If cycle 4 returns substantive BLOCK on a NEW class, escalate to L6 per [[reviewer-dissent-is-signal]]; if cycle 4 returns unanimous APPROVE or CONDITIONAL with only minor fold work, lock the packet. 5-minute heartbeat per [[codex-heartbeat-5-min]] on every in-flight codex.
 
 ## 15. Acceptance for L0 closure
 
-- Cycle 3 reviewer panel returns unanimous non-BLOCK across codex challenge + codex consult + code-reviewer + design-reviewer. CSO dropped per V1.2.
+- Cycle 4 reviewer panel returns unanimous non-BLOCK (if cycle 4 dispatched) across codex challenge + codex consult + code-reviewer + design-reviewer. CSO dropped per V1.2.
+- Cycle 3 BLOCKs resolved in V1.3:
+  - challenge #2 §6.4 vocab BLOCK → V1.3 §6.4 reframe (HealthBadge uses color bands not labels; ScoreBand introduces labels; collision was phantom).
+  - challenge #3 §5.8 tests BLOCK → V1.3 §5.8 adds concrete fixture spec + workflow gate wiring.
 - §12 open questions 11-14 resolved (1-10 are V1.0/V1.1 carry-overs marked resolved in V1.2).
-- §5.8 chrome service seam locked (per-surface implementation; producer-side hint deferred to v1.4.4 W4).
-- §6.4 ScoreBand authoring sequence locked (`.docs/design/primitives/ScoreBand.md` precedes block translation).
+- §5.8 chrome service seam locked with 6-bullet non-negotiable contract + state-branch test fixtures + workflow gate.
+- §6.4 ScoreBand authoring sequence locked (`.docs/design/primitives/ScoreBand.md` precedes block translation; vocabulary justified via DOS-325 voice rule without phantom HealthBadge collision).
 - §5.10 TypeBadge split locked (`TypeBadge` + `TypeBadgeDisplay`).
-- §7.1 visual parity matrix Axis 2 (interaction/layout) state coverage locked.
-- §10 PR-D1-carries-everything strategy validated by cycle 3 reviewers.
+- §7.1 visual parity matrix Axis 2 (interaction/layout) state coverage locked with V1.3 N/A corrections.
+- §10 PR-D1-carries-everything strategy validated; PR-D1 commit shape = 6 ordered development commits → squash-merge at landing.
 - **DOS-685 path-α append filed + landed on `dev`** BEFORE PR-D1 opens (per AC #14).
-- **v1.4.4 lineage tickets filed in Linear** with explicit pointers to this packet: DOS-325-TrendStrip, DOS-325-EvidenceDrawer, DOS-325-Surface-residue, DOS-9-entity-envelope, DOS-11-keyboard.
+- **v1.4.4 lineage tickets filed in Linear** with explicit pointers to this packet: DOS-325-TrendStrip, DOS-325-EvidenceDrawer, DOS-325-Surface-residue, DOS-9-entity-envelope, DOS-11-keyboard, **DOS-XXX-healthbadge-label-discipline** (V1.3 addition).
+- **Maintenance ticket filed** to project `b8e6aea4-d47e-4f3a-b03d-a05bec914aeb` for path-α: paste-snippet step 6 not enumerated in AC #8; CI invariant #13 typo.
 
 When unanimous APPROVE reached, this packet locks; W2 implementation can proceed on the basis spec'd here (with PR-D1 first, then D2/D3/D4 in parallel — up to 5-way codex per [[codex-parallel-5way-allowed]]).
