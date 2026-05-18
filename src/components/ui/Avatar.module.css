@@ -1,0 +1,35 @@
+/* Avatar primitive — module CSS extracted from inline rules in Avatar.tsx
+ * per v1.4.3 W2 L0 Packet D §5.2 row 4 + §10 commit 5 (scaffolding for the
+ * WP block that ships in PR-D3).
+ *
+ * Dynamic values (size, font-size) flow through CSS custom properties:
+ *   --dailyos-avatar-size       — square edge in px (default 32)
+ *   --dailyos-avatar-font-size  — initials font size in px (default 0.4 * size, min 10)
+ *
+ * Token consumption (rewritten to wp--preset by the W1 translate-tauri.mjs
+ * manifest path when generating the WP block).
+ */
+
+.avatar {
+  width: var(--dailyos-avatar-size, 32px);
+  height: var(--dailyos-avatar-size, 32px);
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.avatarImage {
+  composes: avatar;
+  object-fit: cover;
+}
+
+.avatarFallback {
+  composes: avatar;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-paper-linen);
+  font-family: var(--font-sans);
+  font-size: var(--dailyos-avatar-font-size, 12.8px);
+  font-weight: 500;
+  color: var(--color-text-tertiary);
+}

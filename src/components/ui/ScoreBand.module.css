@@ -1,0 +1,39 @@
+/* ScoreBand primitive — band-label badge per DOS-325 voice rule.
+ * Self-contained (no compose-from-pattern-tier per primitives README).
+ *
+ * v1.4.3 W2 L0 Packet D §6.4 (DOS-682 + DOS-325) — introduces the
+ * label vocabulary `On Track | Watching | Action Needed | No Read`.
+ */
+
+.scoreBand {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 3px 10px;
+  border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.scoreBandOnTrack {
+  background: var(--color-garden-sage-15);
+  color: var(--color-garden-sage);
+}
+
+.scoreBandWatching {
+  background: var(--color-spice-turmeric-15);
+  color: var(--color-spice-turmeric);
+}
+
+.scoreBandActionNeeded {
+  background: var(--color-spice-terracotta-15);
+  color: var(--color-spice-terracotta);
+}
+
+.scoreBandNoRead {
+  background: var(--color-desk-charcoal-4);
+  color: var(--color-text-tertiary);
+}

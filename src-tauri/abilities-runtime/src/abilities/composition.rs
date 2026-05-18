@@ -336,6 +336,31 @@ pub enum BlockType {
     RiskCallout,
     ActionList,
     MarkdownDocument,
+    // v1.4.3 W2 Wave 1 primitive blocks (DOS-682). Each variant carries an
+    // explicit `dailyos/<kebab>` serde rename matching its WP block.json
+    // name, per the W1 starter-kit paste-snippet contract.
+    #[serde(rename = "dailyos/pill")]
+    Pill,
+    #[serde(rename = "dailyos/status-dot")]
+    StatusDot,
+    #[serde(rename = "dailyos/provenance-tag")]
+    ProvenanceTag,
+    #[serde(rename = "dailyos/health-badge")]
+    HealthBadge,
+    #[serde(rename = "dailyos/avatar")]
+    Avatar,
+    #[serde(rename = "dailyos/freshness-indicator")]
+    FreshnessIndicator,
+    #[serde(rename = "dailyos/trust-band-badge")]
+    TrustBandBadge,
+    #[serde(rename = "dailyos/intelligence-quality-badge")]
+    IntelligenceQualityBadge,
+    #[serde(rename = "dailyos/entity-chip")]
+    EntityChip,
+    #[serde(rename = "dailyos/type-badge")]
+    TypeBadge,
+    #[serde(rename = "dailyos/score-band")]
+    ScoreBand,
     /// Extension point: ability-registered type. Renderers that do not know
     /// the `type_id` apply [`project_to_nearest_known`] per ADR-0130 §3.1.
     Custom {
@@ -357,6 +382,19 @@ impl BlockType {
             Self::RiskCallout => "risk_callout",
             Self::ActionList => "action_list",
             Self::MarkdownDocument => "markdown_document",
+            // v1.4.3 W2 Wave 1 primitive blocks (DOS-682) — type_id matches the
+            // serde rename and the WP block.json name.
+            Self::Pill => "dailyos/pill",
+            Self::StatusDot => "dailyos/status-dot",
+            Self::ProvenanceTag => "dailyos/provenance-tag",
+            Self::HealthBadge => "dailyos/health-badge",
+            Self::Avatar => "dailyos/avatar",
+            Self::FreshnessIndicator => "dailyos/freshness-indicator",
+            Self::TrustBandBadge => "dailyos/trust-band-badge",
+            Self::IntelligenceQualityBadge => "dailyos/intelligence-quality-badge",
+            Self::EntityChip => "dailyos/entity-chip",
+            Self::TypeBadge => "dailyos/type-badge",
+            Self::ScoreBand => "dailyos/score-band",
             Self::Custom { type_id } => type_id.as_str(),
         }
     }
