@@ -34,13 +34,13 @@ const TOKEN_ALIAS_MAP = new Map([
 // Authoritative scope matrix from packet §5.7. Categories drive scaffold
 // behavior; new primitives must be added here before translation succeeds.
 const SCOPE_MATRIX = {
-	Pill:                       { category: 'Supported',                          shape: 'simple' },
+	Pill:                       { category: 'Supported',                          shape: 'primitive-inline' },
 	HealthBadge:                { category: 'Supported',                          shape: 'typed-display' },
-	StatusDot:                  { category: 'Supported',                          shape: 'simple' },
+	StatusDot:                  { category: 'Supported',                          shape: 'primitive-inline' },
 	Avatar:                     { category: 'Supported',                          shape: 'typed-display' },
 	IntelligenceQualityBadge:   { category: 'Supported',                          shape: 'typed-display' },
 	FreshnessIndicator:         { category: 'Supported',                          shape: 'typed-display' },
-	ProvenanceTag:              { category: 'Supported',                          shape: 'simple' },
+	ProvenanceTag:              { category: 'Supported',                          shape: 'primitive-inline' },
 	TrustBandBadge:             { category: 'SupportedWithSourcePromotion',       shape: 'typed-display' },
 	FolioRefreshButton:         { category: 'NotSupported',                       interactive: 'onClick handler bound to refresh action; inline-style extraction also deferred to v1.4.3 W7' },
 	InlineInput:                { category: 'NotSupported',                       interactive: 'onChange handler bound to live value' },
@@ -140,13 +140,13 @@ function classifyOrRefuse(primitive) {
 			`unknown primitive: ${primitive}.\n` +
 			`This primitive is not in the W1 scope matrix at wp/dailyos/scripts/translate-tauri.mjs.\n` +
 			`If it's a Wave 1 primitive that needs adding, update SCOPE_MATRIX with the category + shape.\n` +
-			`If it should be hand-authored, use \`pnpm dailyos:new-block --template <shape> <name>\`.`
+			`If it should be hand-authored, use \`pnpm dailyos:new-block --template <simple|primitive-inline|typed-display|composite> <name>\`.`
 		);
 	}
 	if (entry.category === 'NotSupported') {
 		fail(
 			`${primitive} requires interactive event handlers (${entry.interactive}).\n` +
-			`Use \`pnpm dailyos:new-block --template <simple|typed-display> ${kebab(primitive)}\` to scaffold manually.\n` +
+			`Use \`pnpm dailyos:new-block --template <primitive-inline|typed-display> ${kebab(primitive)}\` to scaffold manually.\n` +
 			`See .docs/design/primitives/${primitive}.md for the interactive contract this primitive ships.`
 		);
 	}

@@ -7,7 +7,7 @@
  * - Interactive fallback via `prompts` when invoked bare
  *
  * USAGE:
- *   pnpm dailyos:new-block <block-name> [--template simple|typed-display|composite] [--ability <existing-ability-name>] [--keep-partial]
+ *   pnpm dailyos:new-block <block-name> [--template simple|primitive-inline|typed-display|composite] [--ability <existing-ability-name>] [--keep-partial]
  *
  * Per L0 Packet C V1.3 §5.1 + §6.6: CLI does NOT modify
  * `wp/dailyos/includes/class-dailyos-plugin.php`. The existing
@@ -31,7 +31,7 @@ const REPO_ROOT = path.resolve( __dirname, '..', '..', '..' );
 const BLOCKS_DIR = path.resolve( REPO_ROOT, 'wp', 'dailyos', 'blocks' );
 const TEMPLATES_DIR = path.resolve( __dirname, 'templates' );
 
-const VALID_TEMPLATES = [ 'simple', 'typed-display', 'composite' ];
+const VALID_TEMPLATES = [ 'simple', 'primitive-inline', 'typed-display', 'composite' ];
 const BLOCK_NAME_RE = /^[a-z][a-z0-9-]+$/;
 const ABILITY_NAME_RE = /^[a-z][a-z0-9_-]+$/;
 
@@ -92,7 +92,7 @@ function printHelp() {
 
 USAGE
   pnpm dailyos:new-block <block-name>
-      [--template simple|typed-display|composite]   default: simple
+      [--template simple|primitive-inline|typed-display|composite]   default: simple
       [--ability <existing-ability-name>]           link to existing producer
       [--keep-partial]                              don't clean up on partial failure
       [-h|--help]
@@ -101,7 +101,8 @@ REQUIRED
   <block-name>     must match ${ BLOCK_NAME_RE.source }
 
 TEMPLATES
-  simple           single-payload primitive (Pill, StatusDot, ProvenanceTag)
+  simple           pattern-tier single-payload block with TrustBandBadge composition
+  primitive-inline inline primitive wrapper with no trust badge or composition chrome
   typed-display    multiple typed attrs (HealthBadge, Avatar, FreshnessIndicator)
   composite        multi-block composition (AccountOverview-style)
 
