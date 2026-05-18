@@ -165,6 +165,50 @@ final class DailyOS_AccountOverviewBlockTest extends TestCase {
 	}
 
 	/**
+	 * Asserts the editor reload callback keeps manual-reload inputs in its dep list.
+	 */
+	public function test_editor_reload_callback_dep_array_literal(): void {
+		$source = $this->account_overview_editor_source();
+
+		$this->assertMatchesRegularExpression(
+			'/\},\s*\[\s*attributes\.composition_id\s*,\s*attributes\.composition_version\s*,\s*attributes\.cache_hint_token\s*,\s*setAttributes\s*\]\s*\);/s',
+			$source
+		);
+	}
+
+	/**
+	 * Asserts auto-reload is keyed by account and composition presence only.
+	 */
+	public function test_editor_reload_trigger_key_literal(): void {
+		$source = $this->account_overview_editor_source();
+
+		$this->assertMatchesRegularExpression(
+			'/const\s+reloadTrigger\s*=\s*`.*attributes\.account_id\s*\|\|\s*\'\'.*attributes\.composition_id\s*\?\s*\'1\'\s*:\s*\'0\'.*`/s',
+			$source
+		);
+		$this->assertMatchesRegularExpression(
+			'/useEffect\s*\(\s*\(\s*\)\s*=>\s*\{.*reload\(\);.*\},\s*\[\s*reloadTrigger\s*\]\s*\);/s',
+			$source
+		);
+		$this->assertDoesNotMatchRegularExpression(
+			'/\},\s*\[\s*reload\s*\]\s*\);/',
+			$source
+		);
+	}
+
+	/**
+	 * Asserts failed preview responses preserve last-good editor state.
+	 */
+	public function test_editor_failed_reload_preserves_last_good_preview_shape(): void {
+		$source = $this->account_overview_editor_source();
+
+		$this->assertMatchesRegularExpression(
+			'/if\s*\(\s*response\s*&&\s*response\.ok\s*===\s*false\s*\)\s*\{.*setError\(.*return;.*\}\s*setPreview\(\s*response\s*\);/s',
+			$source
+		);
+	}
+
+	/**
 	 * Asserts unknown trust bands degrade to needs verification.
 	 */
 	public function test_unknown_trust_band_degrades_to_needs_verification(): void {
@@ -468,6 +512,12 @@ final class DailyOS_AccountOverviewBlockTest extends TestCase {
 	 * @param string $cache_hint_token Cache hint token.
 	 * @return array<string, mixed>
 	 */
+	private function account_overview_editor_source(): string {
+		$source = file_get_contents( __DIR__ . '/../../blocks/account-overview/edit.js' );
+		$this->assertIsString( $source );
+		return $source;
+	}
+
 	private function projection_response( int $version, string $cache_hint_token = '' ): array {
 		return [
 			'ok'               => true,

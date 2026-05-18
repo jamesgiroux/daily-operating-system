@@ -57,6 +57,18 @@
 				},
 			} )
 				.then( ( response ) => {
+					if ( response && response.ok === false ) {
+						setError(
+							response.error && response.error.message
+								? response.error.message
+								: __(
+									"Something about this account doesn't line up. Verify before acting.",
+									'dailyos'
+								)
+						);
+						return;
+					}
+
 					setPreview( response );
 					if ( response && response.projection ) {
 						setAttributes( {
@@ -81,9 +93,13 @@
 				.finally( () => setIsLoading( false ) );
 		}, [ attributes.composition_id, attributes.composition_version, attributes.cache_hint_token, setAttributes ] );
 
+		const reloadTrigger = `${attributes.account_id || ''}|${attributes.composition_id ? '1' : '0'}`;
 		useEffect( () => {
 			reload();
-		}, [ reload ] );
+			// reload intentionally excluded: auto-refresh is keyed only by
+			// account_id and composition_id presence; manual reload keeps the full deps.
+			// eslint-disable-next-line react-hooks/exhaustive-deps
+		}, [ reloadTrigger ] );
 
 		useEffect( () => {
 			apiFetch( { path: '/dailyos/v1/account-overview/accounts' } )
