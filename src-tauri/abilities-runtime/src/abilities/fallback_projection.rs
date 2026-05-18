@@ -1474,8 +1474,11 @@ const FRESHNESS_INDICATOR_FIELDS: &[FieldPolicy] = &[
     text_field("/variant", ClaimSensitivity::Internal),
     text_field("/className", ClaimSensitivity::Internal),
 ];
-const TRUST_BAND_BADGE_FIELDS: &[FieldPolicy] =
-    &[text_field("/payload/text", ClaimSensitivity::Internal)];
+const TRUST_BAND_BADGE_FIELDS: &[FieldPolicy] = &[
+    text_field("/band", ClaimSensitivity::Internal),
+    bool_field("/compact", ClaimSensitivity::Internal),
+    text_field("/label", ClaimSensitivity::Internal),
+];
 const INTELLIGENCE_QUALITY_BADGE_FIELDS: &[FieldPolicy] =
     &[text_field("/payload/text", ClaimSensitivity::Internal)];
 const ENTITY_CHIP_FIELDS: &[FieldPolicy] =

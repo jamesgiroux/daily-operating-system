@@ -482,6 +482,8 @@ mod avatar_integration_fixture;
 mod freshness_indicator_integration_fixture;
 #[path = "fixtures/health_badge_integration_fixture.rs"]
 mod health_badge_integration_fixture;
+#[path = "fixtures/trust_band_badge_integration_fixture.rs"]
+mod trust_band_badge_integration_fixture;
 
 #[test]
 fn expected_block_fixtures_cover_requested_ci_block() {
@@ -497,6 +499,7 @@ fn expected_block_fixtures_cover_requested_ci_block() {
         health_badge_integration_fixture::health_badge_fixture(),
         avatar_integration_fixture::avatar_fixture(),
         freshness_indicator_integration_fixture::freshness_indicator_fixture(),
+        trust_band_badge_integration_fixture::trust_band_badge_fixture(),
     ];
     assert!(
         known.iter().any(block_fixture_selected),
