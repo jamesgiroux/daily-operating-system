@@ -2248,58 +2248,67 @@ fn mark_pairing_expired(
     surface_client_id: &str,
     now: &str,
 ) -> Result<Option<KeychainCleanupTarget>, SurfacePairingError> {
-    let pairing_epoch = db
-        .conn_ref()
-        .query_row(
-            "SELECT pairing_epoch
-             FROM surface_client_pairings
-             WHERE surface_client_id = ?1
-               AND lifecycle_state = 'active'
-               AND datetime(expires_at) <= datetime(?2)
-             ORDER BY pairing_epoch DESC
-             LIMIT 1",
-            params![surface_client_id, now],
-            |row| row.get::<_, i64>(0),
-        )
-        .optional()
-        .map_err(|error| SurfacePairingError::Write(error.to_string()))?;
-    let cleanup_target = if let Some(pairing_epoch) = pairing_epoch {
-        let mut statement = db
+    // Per L0 Packet A V1.1.1 AC #16 + cycle-2 codex challenge HIGH:
+    // collect the cleanup target via an in-transaction snapshot BEFORE the
+    // expiry UPDATE, all inside a single db.with_transaction boundary.
+    // A direct conn_ref()-based sequence is not atomic against concurrent
+    // revoke paths and violates the AC's "in-tx SELECT before mark expired"
+    // requirement.
+    db.with_transaction(|tx| {
+        let pairing_epoch = tx
             .conn_ref()
-            .prepare(
-                "SELECT session_id
-                 FROM surface_client_sessions
+            .query_row(
+                "SELECT pairing_epoch
+                 FROM surface_client_pairings
                  WHERE surface_client_id = ?1
-                   AND pairing_epoch = ?2
-                   AND revoked_at IS NULL
-                 ORDER BY session_id",
+                   AND lifecycle_state = 'active'
+                   AND datetime(expires_at) <= datetime(?2)
+                 ORDER BY pairing_epoch DESC
+                 LIMIT 1",
+                params![surface_client_id, now],
+                |row| row.get::<_, i64>(0),
             )
-            .map_err(|error| SurfacePairingError::Write(error.to_string()))?;
-        let session_ids = statement
-            .query_map(params![surface_client_id, pairing_epoch], |row| {
-                row.get::<_, String>(0)
+            .optional()
+            .map_err(|error| error.to_string())?;
+        let cleanup_target = if let Some(pairing_epoch) = pairing_epoch {
+            let conn = tx.conn_ref();
+            let mut statement = conn
+                .prepare(
+                    "SELECT session_id
+                     FROM surface_client_sessions
+                     WHERE surface_client_id = ?1
+                       AND pairing_epoch = ?2
+                       AND revoked_at IS NULL
+                     ORDER BY session_id",
+                )
+                .map_err(|error| error.to_string())?;
+            let session_ids = statement
+                .query_map(params![surface_client_id, pairing_epoch], |row| {
+                    row.get::<_, String>(0)
+                })
+                .map_err(|error| error.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| error.to_string())?;
+            Some(KeychainCleanupTarget {
+                surface_client_id: surface_client_id.to_string(),
+                session_ids,
             })
-            .map_err(|error| SurfacePairingError::Write(error.to_string()))?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| SurfacePairingError::Write(error.to_string()))?;
-        Some(KeychainCleanupTarget {
-            surface_client_id: surface_client_id.to_string(),
-            session_ids,
-        })
-    } else {
-        None
-    };
-    db.conn_ref()
-        .execute(
-            "UPDATE surface_client_pairings
-             SET lifecycle_state = 'expired'
-             WHERE surface_client_id = ?1
-               AND lifecycle_state = 'active'
-               AND datetime(expires_at) <= datetime(?2)",
-            params![surface_client_id, now],
-        )
-        .map_err(|error| SurfacePairingError::Write(error.to_string()))?;
-    Ok(cleanup_target)
+        } else {
+            None
+        };
+        tx.conn_ref()
+            .execute(
+                "UPDATE surface_client_pairings
+                 SET lifecycle_state = 'expired'
+                 WHERE surface_client_id = ?1
+                   AND lifecycle_state = 'active'
+                   AND datetime(expires_at) <= datetime(?2)",
+                params![surface_client_id, now],
+            )
+            .map_err(|error| error.to_string())?;
+        Ok(cleanup_target)
+    })
+    .map_err(SurfacePairingError::Write)
 }
 
 fn suspend_pairing(
