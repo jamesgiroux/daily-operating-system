@@ -37,10 +37,11 @@
 	flex-shrink: 0;
 }
 
-.dailyos-pill--tone-sage         { --pill-background: var(--wp--preset--color--garden-sage); --pill-color: var(--wp--preset--color--text-primary); }
-.dailyos-pill--tone-turmeric     { --pill-background: var(--wp--preset--color--spice-turmeric); --pill-color: var(--wp--preset--color--text-primary); }
-.dailyos-pill--tone-terracotta   { --pill-background: var(--wp--preset--color--spice-terracotta); --pill-color: var(--wp--preset--color--paper-warm-white); }
-.dailyos-pill--tone-larkspur     { --pill-background: var(--wp--preset--color--garden-larkspur); --pill-color: var(--wp--preset--color--text-primary); }
-.dailyos-pill--tone-olive        { --pill-background: var(--wp--preset--color--garden-olive); --pill-color: var(--wp--preset--color--paper-warm-white); }
-.dailyos-pill--tone-eucalyptus   { --pill-background: var(--wp--preset--color--garden-eucalyptus); --pill-color: var(--wp--preset--color--paper-warm-white); }
+/* Tones per .docs/design/primitives/Pill.md §States/variants:
+ * lower-saturation -15 backgrounds with companion text colors (sage→rosemary,
+ * turmeric→turmeric, terracotta→chili, larkspur→larkspur, neutral→secondary). */
+.dailyos-pill--tone-sage         { --pill-background: var(--wp--preset--color--garden-sage-15); --pill-color: var(--wp--preset--color--garden-rosemary); }
+.dailyos-pill--tone-turmeric     { --pill-background: var(--wp--preset--color--spice-turmeric-15); --pill-color: var(--wp--preset--color--spice-turmeric); }
+.dailyos-pill--tone-terracotta   { --pill-background: var(--wp--preset--color--spice-terracotta-15); --pill-color: var(--wp--preset--color--spice-chili); }
+.dailyos-pill--tone-larkspur     { --pill-background: var(--wp--preset--color--garden-larkspur-15); --pill-color: var(--wp--preset--color--garden-larkspur); }
 .dailyos-pill--tone-neutral      { --pill-background: var(--wp--preset--color--desk-charcoal-4); --pill-color: var(--wp--preset--color--text-secondary); }

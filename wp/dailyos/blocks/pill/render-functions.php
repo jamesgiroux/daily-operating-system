@@ -1,7 +1,7 @@
 <?php
 /**
  * Pill (translated from src/components/ui/Pill.tsx).
- * Variants: tone (sage|turmeric|terracotta|larkspur|olive|eucalyptus|neutral),
+ * Variants: tone (sage|turmeric|terracotta|larkspur|neutral),
  *           size (standard|compact), dot (bool), interactive (bool).
  */
 
@@ -14,7 +14,7 @@ function dailyos_pill_render(array $attributes): string {
 	$interactive = !empty($attributes['interactive']);
 	$label = isset($attributes['label']) ? (string) $attributes['label'] : '';
 
-	$allowed_tones = ['sage', 'turmeric', 'terracotta', 'larkspur', 'olive', 'eucalyptus', 'neutral'];
+	$allowed_tones = ['sage', 'turmeric', 'terracotta', 'larkspur', 'neutral'];
 	if (!in_array($tone, $allowed_tones, true)) {
 		$tone = 'neutral';
 	}
