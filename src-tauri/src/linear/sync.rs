@@ -9,6 +9,7 @@ pub fn upsert_issues(state: &AppState, issues: &[LinearIssue]) -> Result<(), Str
     let db = ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
         .map_err(|e| format!("DB open failed: {e}"))?;
     let conn = db.conn_ref();
+    let signal_ctx = state.live_service_context().with_actor("linear_sync");
 
     for issue in issues {
         // Capture old state for signal comparison
@@ -44,6 +45,7 @@ pub fn upsert_issues(state: &AppState, issues: &[LinearIssue]) -> Result<(), Str
         .map_err(|e| format!("Failed to upsert Linear issue: {}", e))?;
 
         crate::services::linear_issue_signals::emit_issue_change_signals(
+            &signal_ctx,
             &db,
             &state.signals.engine,
             issue,
