@@ -224,9 +224,11 @@ Responsibilities:
 
 CLI errors out on existing block-name collision (no overwrite). Exit codes: 0 success, 1 validation error (bad name, collision, missing dep), 2 partial state (template copy + ability scaffold succeeded; registration stub failed → emits an exact cleanup manifest per L3 fix). `--keep-partial` overrides the cleanup-on-failure behavior for debugging.
 
-### 5.2 Block scaffold templates (`wp/dailyos/scripts/templates/{simple,composite}/`)
+### 5.2 Block scaffold templates (V1.2 — three shapes)
 
-Two template sets (per-shape):
+`wp/dailyos/scripts/templates/{simple,typed-display,composite}/` — three template sets:
+
+**typed-display shape (added V1.1 per codex challenge H2 + DX F3):** for Wave 1 primitives with multiple typed attrs (HealthBadge score/band/size/insufficient-data, Avatar photo-url/cache/initials/size, FreshnessIndicator timestamp/staleness, EntityChip type/name/icon, TypeBadge account-type). Per-attr type validation via block.json attribute schemas; deterministic PHP formatter; harness assertions for each attr's `ValueKind` + required-vs-optional.
 
 **Simple shape (Pill-class — single-payload primitive):**
 - `block.json` — TypeScript schema-validated; declares `composition_id`, `composition_version`, `block_id`, `cache_hint_token`, `block_instance_id` (per v1.4.2 W4-F standard 5 attributes) plus per-block payload attrs interpolated from a `--payload-shape` schema.
@@ -314,44 +316,54 @@ V1.0 templated `register_custom_block_schema(...).with_field_binding(BindingRole
 - The real `BindingRole` enum is `Source | ComputedFrom | DisplayOnly | FeedbackTarget` (`composition.rs:175`) — no `Title`/`Text` variants.
 - `FieldPath::new` requires `/`-prefixed JSON pointers (`provenance/field.rs:20`) — `payload.text` is invalid syntax.
 
-**V1.1 templates against the real flow:** production projection dispatches through the `BlockType` enum (`composition.rs:330+`) + `known_projection_rules()` Vec + concrete `<block>_rule()` constructor at `fallback_projection.rs:1236-1252,1415-1423`.
+**V1.2 templates against the real flow (V1.1 attempt had wrong type-signatures):**
+- `BlockProjectionRule` is private at `fallback_projection.rs:255` (cannot be returned from a separate module)
+- `known_projection_rules()` is private at `fallback_projection.rs:1250`
+- In-file pattern: each block rule lives as a private in-file `fn <name>_rule() -> BlockProjectionRule` (`account_overview_rule` at `:1415`)
 
-CLI emits three Rust scaffold pieces (developer fills the TODO regions):
+**V1.2 approach: CLI generates code snippets the developer pastes IN-FILE.** No new template module file (would need pub-exposing private types). The kit's CLI prints exact patch instructions; the developer applies them with one paste each. No automated file edits to Rust source — that's the boundary the kit respects (CLI does NOT modify any `.rs` file beyond creating the new ability scaffold).
 
-**1. New BlockType enum variant** (insert into `src-tauri/abilities-runtime/src/abilities/composition.rs` `BlockType` enum):
+**CLI output for `pnpm dailyos:new-block <name> --new-ability <ability-name>`:**
 
-```rust
-// Inserted by `pnpm dailyos:new-block` for the {{ABILITY_NAME}} producer.
-#[serde(rename = "dailyos/{{ABILITY_NAME_KEBAB}}")]
-{{BlockType}},
+```
+Block scaffold created at wp/dailyos/blocks/<name>/
+Producer ability scaffold created at src-tauri/abilities-runtime/src/abilities/<ability-name>.rs
+
+Manual steps required (paste these into the named files):
+
+[1] Add to BlockType enum at src-tauri/abilities-runtime/src/abilities/composition.rs:175:
+
+    #[serde(rename = "dailyos/<ability-name-kebab>")]
+    {{BlockType}},
+
+[2] Add the rule fn to src-tauri/abilities-runtime/src/abilities/fallback_projection.rs
+    (paste below account_overview_rule at line ~1415):
+
+    fn {{ability_name}}_rule() -> BlockProjectionRule {
+        BlockProjectionRule {
+            block_type: BlockType::{{BlockType}},
+            required_pointers: vec![FieldPath::new("/payload/text")],
+            optional_pointers: vec![FieldPath::new("/payload/subtitle")],
+            render_annotations: Vec::new(),
+            // TODO: extract per-binding projector fns here (mirror
+            // account_overview_rule structure)
+        }
+    }
+
+[3] Add to known_projection_rules() at fallback_projection.rs:1250 (inside the Vec literal):
+
+    {{ability_name}}_rule(),
+
+[4] Run the kit integration fixture:
+    pnpm dailyos:test-block <name>
+
+The harness fails fast if the producer's payload shape doesn't match the
+required/optional pointers in your rule — that's the DOS-670 catch.
 ```
 
-**2. Rule constructor function** (new file `src-tauri/abilities-runtime/src/abilities/{{ability_name}}_rule.rs`):
+**Rationale for the paste-not-edit approach (V1.2 vs V1.1):** Automated Rust file editing is brittle (formatting, import collisions, comment markers). The CLI's job is generating correct snippets; the developer's job is applying them. This is consistent with §5.1 V1.1's "CLI does NOT modify `class-dailyos-plugin.php`" decision — the kit respects file boundaries and emits snippets-for-paste.
 
-```rust
-use crate::abilities::composition::BlockType;
-use crate::abilities::fallback_projection::{KnownProjectionRule, ProjectionRuleResult};
-
-pub fn {{ability_name}}_rule() -> KnownProjectionRule {
-    KnownProjectionRule::for_block(BlockType::{{BlockType}}, |block, ctx| {
-        // TODO: extract payload fields with required_pointer / optional_pointer
-        // (see account_overview_rule at fallback_projection.rs:1236-1252 for
-        // reference). Required pointers MUST use /-prefixed JSON pointer
-        // syntax: "/payload/text" not "payload.text".
-        ProjectionRuleResult::ok(/* projected fields */)
-    })
-}
-```
-
-**3. Registration into `known_projection_rules()` Vec** (insert into `fallback_projection.rs:1415-1423`):
-
-```rust
-{{ability_name}}_rule(),
-```
-
-The integration test harness (§5.5) exercises producer → projection → renderer end-to-end and fails fast if the developer's TODO regions yield mismatched payload shapes — that's the DOS-670 catch.
-
-**Note on alternative path:** V1.0's `register_custom_block_schema` could be promoted from test-only to production as net-new substrate work. V1.1 rejects this option as scope expansion — the existing `BlockType` + `known_projection_rules()` flow is what production already uses, and templating against it costs zero new substrate. The dynamic `CustomBlockSchema` registration belongs in v1.x maintenance if a real consumer emerges.
+**Note on the alternative substrate-extension path:** Making `BlockProjectionRule` + `known_projection_rules()` `pub` + adding a registration helper would let the kit templatize as a separate file. V1.2 rejects this as scope expansion — the in-file paste pattern works against the existing API surface with zero substrate change. The pub-exposure work belongs in v1.x maintenance if/when a real consumer emerges (file as DOS-685 follow-up if codex consult requests it in cycle 3).
 
 ### 5.5 Shared integration test harness (`src-tauri/abilities-runtime/src/abilities/integration_test_harness.rs`)
 
@@ -468,15 +480,27 @@ Token docs define semantic aliases like `--color-account` → `--color-spice-tur
 
 **Idempotency:** re-running with no token-source changes produces zero diff. CI gate runs the generator with `--check` flag (verifies idempotency); fails CI on diff.
 
-### 5.7 Translation utility (`wp/dailyos/scripts/translate-tauri-to-block.mjs`)
+### 5.7 Translation utility (V1.2 — scope matrix)
 
-Reads a Tauri React component path (e.g., `src/components/ui/Pill.tsx`) + its CSS Module (`Pill.module.css`), emits a `wp/dailyos/blocks/<name>/` directory with `block.json` + `render.php` + `render-functions.php` + `style.css` derived from:
-- TSX → PHP: extract props, map to block.json attributes; extract JSX structure, emit equivalent PHP `<div>` / `<span>` tree; map React event handlers to data attributes (no JS interactivity for primitives).
-- CSS Module → style.css: rewrite `.className` → `.wp-block-dailyos-<name>` selectors; preserve token references.
+V1.0/V1.1 "90% scaffold" was overclaimed (codex challenge H1). V1.2 enumerates a hard support matrix:
 
-For complex shapes the translator emits a "needs human review" comment block in render.php; output is a 90% scaffold, not a 100% drop-in.
+| Category | Inputs | Output | Primitives covered |
+|---|---|---|---|
+| **Supported (static render-only, TSX + CSS Module)** | `*.tsx` + `*.module.css` | Full scaffold: `block.json`, `render.php`, `render-functions.php`, `style.css`, `edit.js` | Pill, HealthBadge, StatusDot, Avatar, IntelligenceQualityBadge, FreshnessIndicator, ProvenanceTag |
+| **Supported with source promotion (proposed → integrated)** | `*.tsx` (TBD source) + design-system spec | Full scaffold + reminder to promote source-only entry to integrated | TrustBandBadge |
+| **Supported with inline-style adaptation** | `*.tsx` + inline-style extraction | Full scaffold, inline styles extracted to `style.css` | FolioRefreshButton |
+| **NOT supported (interactive — manual template)** | — | Translator exits 1 with diagnostic | InlineInput, EditableText, Switch, Segmented, RemovableChip, EntityChip editable variants, TypeBadge editable mode |
 
-Tested on two reference primitives: Pill (simple) + AccountOverview (composite — verifies the existing v1.4.2 block can be re-generated from its TSX source).
+For NOT-supported primitives, translator emits actionable diagnostic:
+```
+error: <PrimitiveName> requires interactive event handlers (onChange/onClick).
+       Use `pnpm dailyos:new-block --template <simple|typed-display> <name>` to scaffold manually.
+       See .docs/design/primitives/<PrimitiveName>.md for the interactive contract this primitive ships.
+```
+
+CLI mode: `pnpm dailyos:translate-tauri --primitive <PrimitiveName>` reads `.docs/design/primitives/README.md` to determine category, then attempts translation (or refuses with the above diagnostic).
+
+**Translator parity targets (replaces V1.0 AC #6 AccountOverview claim per codex challenge H5):** Pill (simple shape) + HealthBadge (typed-display shape). Both have shipped Tauri React sources (`src/components/ui/Pill.tsx`, `src/components/shared/HealthBadge.tsx`). AccountOverview is NOT a translator target — there is no Tauri `AccountOverview.tsx` source; the existing WP `dailyos/account-overview` block is hand-authored.
 
 ## 6. Directional decisions resolved at L0
 
@@ -484,25 +508,26 @@ Tested on two reference primitives: Pill (simple) + AccountOverview (composite �
 
 Per execution constraint C1, no separate "block authoring playbook" markdown doc ships. The kit's CLI tool's `--help` output, the templates' inline comments, and the integration test harness's macro/function docs are the documentation. This avoids the documentation-drifts-from-code problem the constraint exists to prevent.
 
-### 6.2 Two template shapes only (simple + composite); no per-primitive presets
+### 6.2 Three template shapes (V1.2: added typed-display per codex challenge H2)
 
-Wave 1 primitives (W2) all fit one of two shapes — single-payload (Pill, HealthBadge, etc.) or multi-block-composition (AccountOverview-style). Adding per-primitive presets is over-engineering for v1.4.3 scope. New shapes can land via packet amendment.
+Wave 1 primitives fit one of three shapes: single-payload (`simple` — Pill, StatusDot, ProvenanceTag), multi-typed-attrs (`typed-display` — HealthBadge, Avatar, FreshnessIndicator, EntityChip, TypeBadge, IntelligenceQualityBadge), or multi-block composition (`composite` — AccountOverview-style). Per-primitive presets remain out of scope. New shapes can land via packet amendment.
 
 ### 6.3 Integration test harness is Rust-side primary, PHP-side proxy
 
 The harness lives in Rust (`integration_test_harness.rs`) and shells out to PHP for the renderer step. Rust owns the producer + projection invocations; PHP owns the render-block-with-filter call. This matches the v1.4.2 production architecture (Rust runtime, PHP renderer) and the test harness mirrors production.
 
-### 6.4 No new substrate primitives
+### 6.4 No new substrate primitives (V1.2 — corrected reuse list)
 
 The kit consumes:
 - Existing `#[ability(...)]` macro (substrate-side)
-- Existing `CustomBlockSchema` registration (substrate-side)
+- Existing `BlockType` enum + `known_projection_rules()` + private `BlockProjectionRule` (production projection flow — V1.2 paste pattern; NOT the test-only `register_custom_block_schema`)
 - Existing `Composition`/`ProjectedComposition`/`ProjectedBlock` types
 - Existing `project_composition_for_surface` route (post-Packet-B V1.1.1)
-- Existing `render_block_with_filter` PHP infrastructure
+- Existing `register_blocks()` glob at `class-dailyos-plugin.php:149-163` (CLI drops `block.json`; glob picks it up — V1.2 simplification)
 - Existing `class-dailyos-runtime-client` PHP transport
+- Generic `render_block()` test entrypoint (V1.2 — NOT the account-overview-specific `render_block_with_filter` at `class-dailyos-plugin.php:675-690`; that's filed as DOS-684 path-α for extraction)
 
-Net-new: only `BlockIntegrationFixture` struct + `run_block_integration_fixture` function + `integration_test_block!` macro + CLI scripts + templates. All in `templates/` or `scripts/` directories — clear separation from production substrate.
+Net-new: only `BlockIntegrationFixture` struct + `BindingExpectation`/`ProjectionDiagnostic`/`RendererBranchAssertion`/`BlockWrapperAssertion` value types + `run_block_integration_fixture` function + `integration_test_block!` macro + CLI scripts + 3 template shapes + token graph normalizer + scope-matrix translator. All in `templates/` or `scripts/` directories or as test-only Rust modules — clear separation from production substrate.
 
 ### 6.5 Token-source precedence: theme.json is canonical runtime, design/tokens is canonical authoring
 
@@ -520,10 +545,10 @@ V1.0 §6.6 justified "explicit allowlist over directory scan" citing a fictional
 
 1. **CLI scaffold produces a working block.** `pnpm dailyos:new-block test-block` creates `wp/dailyos/blocks/test-block/` with block.json, render.php, render-functions.php, style.css, edit.js, editor.css. Block registers in `class-dailyos-plugin.php`. WordPress block editor lists "Test Block" in the DailyOS category.
 2. **Integration test harness catches contract mismatch.** A negative fixture where the producer emits `payload.text` but the projection rule binds `payload.body` → harness detects mismatch + emits a DOS-670-style diagnostic ("producer/projection contract mismatch: declared field `payload.body` not found in producer output").
-3. **CLI scaffold registers block without manual editing.** `class-dailyos-plugin.php` enumeration is updated; no human edit required.
+3. **CLI scaffold integrates with glob registration without modifying plugin core.** Block auto-registers via existing `glob('blocks/*/block.json')` at `class-dailyos-plugin.php:149-163`; no edits to `class-dailyos-plugin.php` required.
 4. **Token-to-theme.json generator runs idempotently.** Two consecutive runs produce zero diff when token sources are unchanged.
-5. **Translation utility produces working primitive.** Running the translator on `src/components/ui/Pill.tsx` produces a `wp/dailyos/blocks/pill/` that the integration test harness passes.
-6. **Translation utility produces working composite.** Running the translator on the AccountOverview source generates a `wp/dailyos/blocks/account-overview-regenerated/` whose output HTML is byte-equal (modulo timestamps + IDs) to the live `dailyos/account-overview` block's HTML.
+5. **Translation utility produces working simple-shape primitive.** Running the translator on `src/components/ui/Pill.tsx` produces a `wp/dailyos/blocks/pill/` that the integration test harness passes.
+6. **Translation utility produces working typed-display primitive.** Running the translator on `src/components/shared/HealthBadge.tsx` produces a `wp/dailyos/blocks/health-badge/` that the integration test harness passes. (V1.2: replaces V1.0's AccountOverview parity target — there is no Tauri `AccountOverview.tsx` source to feed the translator.)
 7. **Generated render-functions.php uses the Packet B §5.6 typed error switch verbatim.** No two render-functions.php files diverge in their error-handling structure; the kit template is the source.
 8. **Integration test harness is invoked by CI on every block PR.** A new workflow file `block-kit-integration.yml` runs the harness against every changed `wp/dailyos/blocks/*` directory in a PR.
 
@@ -533,7 +558,7 @@ V1.0 §6.6 justified "explicit allowlist over directory scan" citing a fictional
 |---|---|---|
 | 1 | `c1_cli_rejects_invalid_block_name` | `pnpm dailyos:new-block FOO` (uppercase) exits 1 with validation error |
 | 2 | `c1_cli_rejects_existing_block_name` | `pnpm dailyos:new-block account-overview` (existing) exits 1; doesn't overwrite |
-| 3 | `c1_scaffold_block_registers` | After CLI run, `class-dailyos-plugin.php` enumeration contains the new block; the registration call is in the right block (per the file's section markers) |
+| 3 | `c1_scaffold_block_auto_registers_via_glob` | After CLI run, the new block's `block.json` exists at `wp/dailyos/blocks/<name>/block.json`; a fresh `register_blocks()` invocation picks it up via the existing glob; `class-dailyos-plugin.php` is NOT modified (V1.2 correction) |
 | 4 | `c1_scaffold_block_renders_empty` | Generated block with no input renders the "no content to show" placeholder per the template's empty-state branch |
 | 5 | `c1_integration_harness_detects_contract_mismatch` | Producer emits `payload.text`; projection rule binds `payload.body` → harness emits DOS-670-style diagnostic; exit code 1 |
 | 6 | `c1_integration_harness_passes_account_overview` | Existing `dailyos/account-overview` block passes the harness (regression guard — proves the harness is calibrated correctly) |
@@ -551,21 +576,27 @@ V1.0 §6.6 justified "explicit allowlist over directory scan" citing a fictional
 | 1 | Every new block in `wp/dailyos/blocks/` MUST have a corresponding integration fixture in `src-tauri/abilities-runtime/tests/block_integration_fixtures/<block-name>.rs` (or the kit's CI workflow rejects the PR). | New workflow `block-kit-integration.yml` enumerates `wp/dailyos/blocks/*` and asserts each has a fixture. |
 | 2 | Render-functions.php template MUST contain the Packet B §5.6 switch table (verbatim — bytewise-comparable header + 5 switch arms). | grep gate on every `wp/dailyos/blocks/*/render-functions.php` for the switch header + each of the 5 arm patterns |
 | 3 | Block.json scaffold MUST declare the 5 standard composition attributes (`composition_id`, `composition_version`, `block_id`, `cache_hint_token`, `block_instance_id`). | grep gate on every `wp/dailyos/blocks/*/block.json` for the 5 attribute keys |
-| 4 | Token-to-theme.json generator MUST run cleanly on every PR touching `.docs/design/tokens/`, `src/styles/tokens.css`, or `wp/dailyos/theme/theme.json`. | CI step runs generator with `--check` flag (verifies idempotency); fails CI on diff |
+| 4 | Token-to-theme.json generator MUST run cleanly on every PR touching `.docs/design/tokens/`, `src/styles/design-tokens.css`, or `wp/dailyos/theme/theme.json`. | CI step runs generator with `--check` flag (verifies idempotency); fails CI on diff |
 | 5 | CLI scaffold MUST exit 0 on a valid block name + exit 1 on invalid names. | CI runs scaffold with fixture inputs and asserts exit codes |
-| 6 | Translator MUST produce kit-passing output on the 2 reference primitives (Pill + AccountOverview). | CI runs translator + harness on each |
+| 6 | Translator MUST produce kit-passing output on the 2 reference primitives (Pill simple-shape + HealthBadge typed-display shape). | CI runs translator + harness on each (V1.2: replaces V1.0's AccountOverview target which lacks a Tauri TSX source) |
 
 ## 10. Interlocks
 
 **W0 stabilization (Packets A + B) is a soft dependency.** The §5.6 typed-error switch from Packet B is consumed verbatim by the render-functions.php template. The kit can be authored against the V1.1.1 spec without waiting for the merge, but the kit's PR must rebase on top of the Packet B merge before landing. Cross-packet rebase cost is low — disjoint code regions (Packet B touches `wp/dailyos/blocks/account-overview/*`; kit touches `wp/dailyos/scripts/templates/*` + new infrastructure files).
 
-**Landing shape (V1.0):** single v1.4.3 W1 PR with 4 commit groups:
-1. **Templates + CLI scaffold** (`wp/dailyos/scripts/new-block.mjs` + `wp/dailyos/scripts/templates/{simple,composite}/`).
-2. **Integration test harness** (Rust: `integration_test_harness.rs` + macro; PHP: `StarterKitIntegrationTest.php`).
-3. **Token + translator utilities** (`generate-theme-json.mjs` + `translate-tauri-to-block.mjs`).
-4. **CI workflow** (`block-kit-integration.yml`) + AC #11 fixtures + AC #12 manifest.
+**Landing shape (V1.2 — restructured per codex challenge H4):** single v1.4.3 W1 PR with 4 commit groups in dependency order — **CI workflow ships in group 1 to enforce the C1 invariant from PR open**:
+1. **Harness + CI workflow + first integration fixture** (Rust: `integration_test_harness.rs` + macro + `BindingExpectation`/etc value types; PHP: `StarterKitIntegrationTest.php`; CI: `.github/workflows/block-kit-integration.yml`). First fixture validates harness against existing `dailyos/account-overview` block — proves the harness works on a real production block before any new blocks land.
+2. **Templates + CLI scaffold** (`wp/dailyos/scripts/new-block.mjs` + 3 template shapes at `wp/dailyos/scripts/templates/{simple,typed-display,composite}/`).
+3. **Token generator** (`generate-theme-json.mjs` + token graph normalizer + atomic write).
+4. **Translator with scope matrix** (`translate-tauri-to-block.mjs` + 2-primitive reference fixtures).
 
-Splittable into 2 PRs only if review size demands: PR-C1 = groups 1+2 (the kit core); PR-C2 = groups 3+4 (translator + theme generator + CI). Do NOT split groups 1+2 — they reference each other.
+**Split policy if review size demands** (V1.2 per codex challenge M3 — translator and theme generator have different dep graphs):
+- PR-C1 = groups 1+2 (the kit core: harness + CI + CLI + templates). MERGEABLE on its own — every claim about "no block ships without integration fixture" is enforced.
+- PR-C2 = group 3 (token generator with token/theme tests + W3 consumer prep).
+- PR-C3 = group 4 (translator + parity fixtures).
+- Do NOT split groups 1+2.
+
+CI workflow in group 1 is the load-bearing enforcement: from the first commit forward, any PR touching `wp/dailyos/blocks/*` must have a passing integration fixture or CI fails.
 
 **Cross-version interlock:** W2 (Wave 1 primitives) cannot start until W1 merges. v1.4.4 surface migration cannot start until W1 + W2 merge. The kit's stability is the gate for every subsequent block author.
 
