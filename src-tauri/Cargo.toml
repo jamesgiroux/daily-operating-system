@@ -179,3 +179,7 @@ codegen-units = 1
 lto = true
 opt-level = "s"
 strip = true
+
+[[test]]
+name = "block_kit_integration_harness"
+path = "abilities-runtime/tests/block_kit_integration_harness.rs"
