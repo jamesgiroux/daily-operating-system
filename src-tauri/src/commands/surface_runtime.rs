@@ -64,7 +64,7 @@ pub async fn revoke_surface_client_pairing(
         reason: "user_revoked".to_string(),
         now: Utc::now(),
     };
-    let event = state
+    let (event, cleanup_target) = state
         .db_write(move |db| {
             let clock = crate::services::context::SystemClock;
             let rng = crate::services::context::SystemRng;
@@ -77,6 +77,13 @@ pub async fn revoke_surface_client_pairing(
         .surface_runtime_endpoint
         .forget_surface_client_sessions(&revoked_surface_client_id);
     let mut audit = state.audit_log.lock();
+    for cleanup_event in
+        surface_pairing::cleanup_session_keychain_entries(&cleanup_target, "user_revoked")
+    {
+        if let Err(error) = surface_pairing::emit_pairing_audit(&mut audit, &cleanup_event) {
+            log::warn!("surface pairing key cleanup audit write failed: {error}");
+        }
+    }
     if let Err(error) = surface_pairing::emit_pairing_audit(&mut audit, &event) {
         log::warn!("surface pairing revoke audit write failed: {error}");
     }

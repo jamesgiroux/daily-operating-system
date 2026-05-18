@@ -115,8 +115,15 @@ pub struct PairingHandshakeOutcome {
     pub session: IssuedSessionMaterial,
     pub audit: SurfacePairingAuditEvent,
     pub revocation_audit: Option<SurfacePairingAuditEvent>,
+    pub keychain_cleanup_audits: Vec<SurfacePairingAuditEvent>,
     pub paired_origin: String,
     pub revoked_surface_client_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeychainCleanupTarget {
+    pub surface_client_id: String,
+    pub session_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -217,6 +224,12 @@ pub struct SignedTransportFailureInput {
 }
 
 #[derive(Debug, Clone)]
+pub struct SignedTransportFailureOutcome {
+    pub events: Vec<SurfacePairingAuditEvent>,
+    pub cleanup_target: Option<KeychainCleanupTarget>,
+}
+
+#[derive(Debug, Clone)]
 pub struct RevokePairingInput {
     pub surface_client_id: String,
     pub reason: String,
@@ -307,9 +320,7 @@ impl SurfacePairingError {
             Self::WpUserMismatch => "The paired user identity changed.",
             Self::PairingRevoked => "This surface pairing was revoked.",
             Self::PairingExpired | Self::SessionExpired => "This surface session expired.",
-            Self::SessionRequiresRepair => {
-                "This surface session needs to be re-paired."
-            }
+            Self::SessionRequiresRepair => "This surface session needs to be re-paired.",
             Self::Write(_) => "The DailyOS pairing authority is unavailable.",
             _ => "DailyOS surface pairing validation failed.",
         }
@@ -529,7 +540,7 @@ pub fn complete_handshake(
             if let PairingCodeClaim::Rejected(error) = consume_pairing_code(tx, &code_hash, &input)? {
                 return Ok(Err(error));
             }
-            let previous_pairing = revoke_existing_pairing_for_site(
+            let (previous_pairing, previous_cleanup_target) = revoke_existing_pairing_for_site(
                 tx,
                 &input.runtime_anchor_id,
                 &site_binding_digest,
@@ -613,12 +624,16 @@ pub fn complete_handshake(
                     ],
                 )
                 .map_err(|error| SurfacePairingError::Write(error.to_string()))?;
-            Ok(Ok((next_epoch, previous_pairing)))
+            Ok(Ok((next_epoch, previous_pairing, previous_cleanup_target)))
         })?;
-    let (pairing_epoch, previous_pairing) = write_result?;
+    let (pairing_epoch, previous_pairing, previous_cleanup_target) = write_result?;
     let previous_pairing_id = previous_pairing
         .as_ref()
         .map(|pairing| pairing.pairing_id.clone());
+    let keychain_cleanup_audits = previous_cleanup_target
+        .as_ref()
+        .map(|target| cleanup_session_keychain_entries(target, "pairing_replaced"))
+        .unwrap_or_default();
 
     // Persist the master key in macOS keychain so the runtime can
     // rehydrate session state across Tauri restarts. Best-effort: a
@@ -630,9 +645,7 @@ pub fn complete_handshake(
         &session_id,
         &hmac_master_key,
     ) {
-        log::warn!(
-            "surface session key keychain persist failed (DOS-646): {err}"
-        );
+        log::warn!("surface session key keychain persist failed (DOS-646): {err}");
     }
 
     let hmac_session_key = derive_session_hmac_key(hmac_master_key, &session_id);
@@ -710,6 +723,7 @@ pub fn complete_handshake(
         },
         audit,
         revocation_audit,
+        keychain_cleanup_audits,
         paired_origin: site_origin,
         revoked_surface_client_ids,
     })
@@ -760,7 +774,13 @@ pub fn validate_signed_session(
     if ts_before_or_equal(&row.inactive_expires_at, &now)
         || ts_before_or_equal(&row.absolute_expires_at, &now)
     {
-        mark_session_revoked(db, &input.session_id, &now, "session_expired")?;
+        let _ = mark_session_revoked(
+            db,
+            &row.surface_client_id,
+            &input.session_id,
+            &now,
+            "session_expired",
+        )?;
         return Err(SurfacePairingError::SessionExpired);
     }
     if row.pairing_epoch < row.epoch_floor {
@@ -787,7 +807,7 @@ pub fn validate_signed_session(
         return Err(SurfacePairingError::SessionThrottled);
     }
     if ts_before_or_equal(&row.pairing_expires_at, &now) {
-        mark_pairing_expired(db, &row.surface_client_id, &now)?;
+        let _ = mark_pairing_expired(db, &row.surface_client_id, &now)?;
         return Err(SurfacePairingError::PairingExpired);
     }
     if row.site_nonce != input.site_nonce {
@@ -887,6 +907,7 @@ pub fn validate_signed_session_readonly(
     // requires re-pair for rows with stale inactive_expires_at).
     if ts_before_or_equal(&row.absolute_expires_at, &now) {
         return Err(SignedSessionFailure::SessionExpired {
+            surface_client_id: row.surface_client_id.clone(),
             session_id: input.session_id.clone(),
         });
     }
@@ -997,11 +1018,16 @@ pub fn validate_signed_session_readonly(
 #[derive(Debug, Clone)]
 pub enum SignedSessionFailure {
     UnknownRuntimeAnchor,
-    SessionExpired { session_id: String },
+    SessionExpired {
+        surface_client_id: String,
+        session_id: String,
+    },
     RestoredStalePairing,
     PairingRevoked,
     PairingSuspended,
-    PairingExpired { surface_client_id: String },
+    PairingExpired {
+        surface_client_id: String,
+    },
     SessionInvalid,
     SessionThrottled,
     /// W4-F V3.1 §7 #12: session was revoked by reconciliation because the
@@ -1009,9 +1035,15 @@ pub enum SignedSessionFailure {
     /// so the WP plugin can drive the re-pair flow rather than treat as a
     /// generic auth failure.
     SessionRequiresRepair,
-    SiteNonceMismatch { surface_client_id: String },
-    SiteBindingDigestMismatch { surface_client_id: String },
-    WpUserHashMismatch { surface_client_id: String },
+    SiteNonceMismatch {
+        surface_client_id: String,
+    },
+    SiteBindingDigestMismatch {
+        surface_client_id: String,
+    },
+    WpUserHashMismatch {
+        surface_client_id: String,
+    },
 }
 
 /// Writer action escalated from the dispatch handler's Err arm to a fresh
@@ -1020,6 +1052,7 @@ pub enum SignedSessionFailure {
 #[derive(Debug, Clone)]
 pub enum SignedSessionWriteAction {
     MarkSessionRevoked {
+        surface_client_id: String,
         session_id: String,
         reason: &'static str,
     },
@@ -1032,6 +1065,16 @@ pub enum SignedSessionWriteAction {
     },
 }
 
+impl SignedSessionWriteAction {
+    pub fn cleanup_reason(&self) -> Option<&'static str> {
+        match self {
+            Self::MarkSessionRevoked { reason, .. } => Some(reason),
+            Self::MarkPairingExpired { .. } => Some("pairing_expired"),
+            Self::SuspendPairing { .. } => None,
+        }
+    }
+}
+
 impl SignedSessionFailure {
     /// Returns `Some(action)` for the 5 quarantine-write variants; `None`
     /// for the 6 no-write variants. The exhaustive match (no wildcard) is
@@ -1039,12 +1082,14 @@ impl SignedSessionFailure {
     /// footprint or fail to compile.
     pub fn write_action(&self) -> Option<SignedSessionWriteAction> {
         match self {
-            Self::SessionExpired { session_id } => {
-                Some(SignedSessionWriteAction::MarkSessionRevoked {
-                    session_id: session_id.clone(),
-                    reason: "session_expired",
-                })
-            }
+            Self::SessionExpired {
+                surface_client_id,
+                session_id,
+            } => Some(SignedSessionWriteAction::MarkSessionRevoked {
+                surface_client_id: surface_client_id.clone(),
+                session_id: session_id.clone(),
+                reason: "session_expired",
+            }),
             Self::PairingExpired { surface_client_id } => {
                 Some(SignedSessionWriteAction::MarkPairingExpired {
                     surface_client_id: surface_client_id.clone(),
@@ -1106,19 +1151,24 @@ pub fn apply_signed_session_write_action(
     db: &ActionDb,
     action: SignedSessionWriteAction,
     now: DateTime<Utc>,
-) -> Result<(), SurfacePairingError> {
+) -> Result<Option<KeychainCleanupTarget>, SurfacePairingError> {
     let now_str = format_ts(now);
     match action {
-        SignedSessionWriteAction::MarkSessionRevoked { session_id, reason } => {
-            mark_session_revoked(db, &session_id, &now_str, reason)
-        }
+        SignedSessionWriteAction::MarkSessionRevoked {
+            surface_client_id,
+            session_id,
+            reason,
+        } => mark_session_revoked(db, &surface_client_id, &session_id, &now_str, reason),
         SignedSessionWriteAction::MarkPairingExpired { surface_client_id } => {
             mark_pairing_expired(db, &surface_client_id, &now_str)
         }
         SignedSessionWriteAction::SuspendPairing {
             surface_client_id,
             reason,
-        } => suspend_pairing(db, &surface_client_id, &now_str, reason),
+        } => {
+            suspend_pairing(db, &surface_client_id, &now_str, reason)?;
+            Ok(None)
+        }
     }
 }
 
@@ -1226,7 +1276,7 @@ pub fn revoke_pairing(
     ctx: &ServiceContext<'_>,
     db: &ActionDb,
     input: RevokePairingInput,
-) -> Result<SurfacePairingAuditEvent, SurfacePairingError> {
+) -> Result<(SurfacePairingAuditEvent, KeychainCleanupTarget), SurfacePairingError> {
     ctx.check_mutation_allowed()
         .map_err(|error| SurfacePairingError::Write(error.to_string()))?;
     let now = format_ts(input.now);
@@ -1266,23 +1316,31 @@ pub fn revoke_pairing(
         .optional()
         .map_err(|error| SurfacePairingError::Write(error.to_string()))?
         .ok_or(SurfacePairingError::SessionInvalid)?;
-    db.with_transaction(|tx| {
-        revoke_pairing_row(tx, &row, &now, &input.reason).map_err(|error| error.to_string())
-    })
-    .map_err(SurfacePairingError::Write)?;
-    Ok(pairing_revoked_audit_event(
-        RevocationAuditInput {
-            surface_client_id: &row.surface_client_id,
-            pairing_epoch: row.pairing_epoch,
-            site_binding_digest: &row.site_binding_digest,
-            scope_digest: &row.scope_digest,
-            site_binding_claims_json: row.site_binding_claims_json.as_deref(),
-            stored_wp_user_hash: row.wp_user_hash.as_deref(),
-            reason: &input.reason,
-        },
-        Actor::User,
-        None,
-        None,
+    let cleanup_target = db
+        .with_transaction(|tx| {
+            let cleanup_target =
+                collect_pairing_cleanup_target(tx, &row).map_err(|error| error.to_string())?;
+            revoke_pairing_row(tx, &row, &cleanup_target.session_ids, &now, &input.reason)
+                .map_err(|error| error.to_string())?;
+            Ok(cleanup_target)
+        })
+        .map_err(SurfacePairingError::Write)?;
+    Ok((
+        pairing_revoked_audit_event(
+            RevocationAuditInput {
+                surface_client_id: &row.surface_client_id,
+                pairing_epoch: row.pairing_epoch,
+                site_binding_digest: &row.site_binding_digest,
+                scope_digest: &row.scope_digest,
+                site_binding_claims_json: row.site_binding_claims_json.as_deref(),
+                stored_wp_user_hash: row.wp_user_hash.as_deref(),
+                reason: &input.reason,
+            },
+            Actor::User,
+            None,
+            None,
+        ),
+        cleanup_target,
     ))
 }
 
@@ -1290,7 +1348,7 @@ pub fn record_signed_transport_failure(
     ctx: &ServiceContext<'_>,
     db: &ActionDb,
     input: SignedTransportFailureInput,
-) -> Result<Vec<SurfacePairingAuditEvent>, SurfacePairingError> {
+) -> Result<SignedTransportFailureOutcome, SurfacePairingError> {
     ctx.check_mutation_allowed()
         .map_err(|error| SurfacePairingError::Write(error.to_string()))?;
     let now = format_ts(input.now);
@@ -1318,6 +1376,7 @@ pub fn record_signed_transport_failure(
             .map_err(|error| error.to_string())?;
 
         let mut events = Vec::new();
+        let mut cleanup_target = None;
         let suspicious_count: i64 = tx
             .conn_ref()
             .query_row(
@@ -1380,7 +1439,14 @@ pub fn record_signed_transport_failure(
                 .map_err(|error| error.to_string())?;
             if replay_count >= 5 {
                 if let Some(row) = target_for_session(tx, &input.session_id)? {
-                    revoke_pairing_row(tx, &row, &now, "suspicious_replay")?;
+                    let target = collect_pairing_cleanup_target(tx, &row)?;
+                    revoke_pairing_row(
+                        tx,
+                        &row,
+                        &target.session_ids,
+                        &now,
+                        "suspicious_replay",
+                    )?;
                     events.push(pairing_revoked_audit_event(
                         RevocationAuditInput {
                             surface_client_id: &row.surface_client_id,
@@ -1395,11 +1461,15 @@ pub fn record_signed_transport_failure(
                         None,
                         None,
                     ));
+                    cleanup_target = Some(target);
                 }
             }
         }
 
-        Ok(events)
+        Ok(SignedTransportFailureOutcome {
+            events,
+            cleanup_target,
+        })
     })
     .map_err(SurfacePairingError::Write)
 }
@@ -1417,6 +1487,58 @@ pub fn emit_pairing_audit(
     }
     emit_surface_audit(logger, event.event_kind, &event.actor, fields)
         .map_err(|error| error.to_string())
+}
+
+pub fn cleanup_session_keychain_entries(
+    target: &KeychainCleanupTarget,
+    reason: &'static str,
+) -> Vec<SurfacePairingAuditEvent> {
+    target
+        .session_ids
+        .iter()
+        .map(
+            |session_id| match crate::services::surface_session_keychain::delete_session_master_key(
+                &target.surface_client_id,
+                session_id,
+            ) {
+                Ok(()) => SurfacePairingAuditEvent {
+                    event_kind: "pairing.session.key_cleaned",
+                    category: "security",
+                    actor: Actor::System,
+                    wp_user_id: None,
+                    wp_user_hash: None,
+                    detail: json!({
+                        "surface_client_id": target.surface_client_id,
+                        "session_id": session_id,
+                        "reason": reason,
+                        "decision": "cleaned"
+                    }),
+                },
+                Err(error) => {
+                    log::warn!(
+                        "surface session key keychain cleanup failed for {} / {}: {}",
+                        target.surface_client_id,
+                        session_id,
+                        error
+                    );
+                    SurfacePairingAuditEvent {
+                        event_kind: "pairing.session.key_cleanup_failed",
+                        category: "security",
+                        actor: Actor::System,
+                        wp_user_id: None,
+                        wp_user_hash: None,
+                        detail: json!({
+                            "surface_client_id": target.surface_client_id,
+                            "session_id": session_id,
+                            "reason": reason,
+                            "error": error,
+                            "decision": "cleanup_failed"
+                        }),
+                    }
+                }
+            },
+        )
+        .collect()
 }
 
 struct RevocationAuditInput<'a> {
@@ -1806,7 +1928,7 @@ fn revoke_existing_pairing_for_site(
     site_binding_digest: &str,
     now: &DateTime<Utc>,
     reason: &str,
-) -> Result<Option<RevokedPairingRef>, SurfacePairingError> {
+) -> Result<(Option<RevokedPairingRef>, Option<KeychainCleanupTarget>), SurfacePairingError> {
     let previous: Option<RevocationTarget> = db
         .conn_ref()
         .query_row(
@@ -1845,6 +1967,7 @@ fn revoke_existing_pairing_for_site(
         .optional()
         .map_err(|error| SurfacePairingError::Write(error.to_string()))?;
     if let Some(row) = previous {
+        let cleanup_target = collect_pairing_cleanup_target(db, &row)?;
         let previous_pairing_id = row.pairing_id.clone();
         let previous_surface_client_id = row.surface_client_id.clone();
         let previous_pairing_epoch = row.pairing_epoch;
@@ -1852,18 +1975,27 @@ fn revoke_existing_pairing_for_site(
         let previous_scope_digest = row.scope_digest.clone();
         let previous_site_binding_claims_json = row.site_binding_claims_json.clone();
         let previous_wp_user_hash = row.wp_user_hash.clone();
-        revoke_pairing_row(db, &row, &format_ts(*now), reason)?;
-        Ok(Some(RevokedPairingRef {
-            pairing_id: previous_pairing_id,
-            surface_client_id: previous_surface_client_id,
-            pairing_epoch: previous_pairing_epoch,
-            site_binding_digest: previous_site_binding_digest,
-            scope_digest: previous_scope_digest,
-            site_binding_claims_json: previous_site_binding_claims_json,
-            wp_user_hash: previous_wp_user_hash,
-        }))
+        revoke_pairing_row(
+            db,
+            &row,
+            &cleanup_target.session_ids,
+            &format_ts(*now),
+            reason,
+        )?;
+        Ok((
+            Some(RevokedPairingRef {
+                pairing_id: previous_pairing_id,
+                surface_client_id: previous_surface_client_id,
+                pairing_epoch: previous_pairing_epoch,
+                site_binding_digest: previous_site_binding_digest,
+                scope_digest: previous_scope_digest,
+                site_binding_claims_json: previous_site_binding_claims_json,
+                wp_user_hash: previous_wp_user_hash,
+            }),
+            Some(cleanup_target),
+        ))
     } else {
-        Ok(None)
+        Ok((None, None))
     }
 }
 
@@ -1990,9 +2122,38 @@ fn target_for_session(
         .map_err(|error| SurfacePairingError::Write(error.to_string()))
 }
 
+fn collect_pairing_cleanup_target(
+    db: &ActionDb,
+    row: &RevocationTarget,
+) -> Result<KeychainCleanupTarget, SurfacePairingError> {
+    let mut statement = db
+        .conn_ref()
+        .prepare(
+            "SELECT session_id
+             FROM surface_client_sessions
+             WHERE surface_client_id = ?1
+               AND pairing_epoch = ?2
+               AND revoked_at IS NULL
+             ORDER BY session_id",
+        )
+        .map_err(|error| SurfacePairingError::Write(error.to_string()))?;
+    let session_ids = statement
+        .query_map(params![row.surface_client_id, row.pairing_epoch], |row| {
+            row.get::<_, String>(0)
+        })
+        .map_err(|error| SurfacePairingError::Write(error.to_string()))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| SurfacePairingError::Write(error.to_string()))?;
+    Ok(KeychainCleanupTarget {
+        surface_client_id: row.surface_client_id.clone(),
+        session_ids,
+    })
+}
+
 fn revoke_pairing_row(
     db: &ActionDb,
     row: &RevocationTarget,
+    revoked_session_ids: &[String],
     now: &str,
     reason: &str,
 ) -> Result<(), SurfacePairingError> {
@@ -2013,10 +2174,17 @@ fn revoke_pairing_row(
              SET revoked_at = ?1,
                  revoked_reason = ?2
              WHERE surface_client_id = ?3
+               AND pairing_epoch = ?4
                AND revoked_at IS NULL",
-            params![now, reason, row.surface_client_id],
+            params![now, reason, row.surface_client_id, row.pairing_epoch],
         )
         .map_err(|error| SurfacePairingError::Write(error.to_string()))?;
+    debug_assert!(
+        revoked_session_ids.is_empty()
+            || revoked_session_ids
+                .iter()
+                .all(|session_id| !session_id.trim().is_empty())
+    );
     db.conn_ref()
         .execute(
             "INSERT INTO surface_client_revocations (
@@ -2041,26 +2209,86 @@ fn revoke_pairing_row(
 
 fn mark_session_revoked(
     db: &ActionDb,
+    surface_client_id: &str,
     session_id: &str,
     now: &str,
     reason: &str,
-) -> Result<(), SurfacePairingError> {
+) -> Result<Option<KeychainCleanupTarget>, SurfacePairingError> {
+    let active_session = db
+        .conn_ref()
+        .query_row(
+            "SELECT session_id
+             FROM surface_client_sessions
+             WHERE surface_client_id = ?1
+               AND session_id = ?2
+               AND revoked_at IS NULL",
+            params![surface_client_id, session_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|error| SurfacePairingError::Write(error.to_string()))?;
     db.conn_ref()
         .execute(
             "UPDATE surface_client_sessions
              SET revoked_at = ?1, revoked_reason = ?2
-             WHERE session_id = ?3 AND revoked_at IS NULL",
-            params![now, reason, session_id],
+             WHERE surface_client_id = ?3
+               AND session_id = ?4
+               AND revoked_at IS NULL",
+            params![now, reason, surface_client_id, session_id],
         )
         .map_err(|error| SurfacePairingError::Write(error.to_string()))?;
-    Ok(())
+    Ok(active_session.map(|session_id| KeychainCleanupTarget {
+        surface_client_id: surface_client_id.to_string(),
+        session_ids: vec![session_id],
+    }))
 }
 
 fn mark_pairing_expired(
     db: &ActionDb,
     surface_client_id: &str,
     now: &str,
-) -> Result<(), SurfacePairingError> {
+) -> Result<Option<KeychainCleanupTarget>, SurfacePairingError> {
+    let pairing_epoch = db
+        .conn_ref()
+        .query_row(
+            "SELECT pairing_epoch
+             FROM surface_client_pairings
+             WHERE surface_client_id = ?1
+               AND lifecycle_state = 'active'
+               AND datetime(expires_at) <= datetime(?2)
+             ORDER BY pairing_epoch DESC
+             LIMIT 1",
+            params![surface_client_id, now],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()
+        .map_err(|error| SurfacePairingError::Write(error.to_string()))?;
+    let cleanup_target = if let Some(pairing_epoch) = pairing_epoch {
+        let mut statement = db
+            .conn_ref()
+            .prepare(
+                "SELECT session_id
+                 FROM surface_client_sessions
+                 WHERE surface_client_id = ?1
+                   AND pairing_epoch = ?2
+                   AND revoked_at IS NULL
+                 ORDER BY session_id",
+            )
+            .map_err(|error| SurfacePairingError::Write(error.to_string()))?;
+        let session_ids = statement
+            .query_map(params![surface_client_id, pairing_epoch], |row| {
+                row.get::<_, String>(0)
+            })
+            .map_err(|error| SurfacePairingError::Write(error.to_string()))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| SurfacePairingError::Write(error.to_string()))?;
+        Some(KeychainCleanupTarget {
+            surface_client_id: surface_client_id.to_string(),
+            session_ids,
+        })
+    } else {
+        None
+    };
     db.conn_ref()
         .execute(
             "UPDATE surface_client_pairings
@@ -2071,7 +2299,7 @@ fn mark_pairing_expired(
             params![surface_client_id, now],
         )
         .map_err(|error| SurfacePairingError::Write(error.to_string()))?;
-    Ok(())
+    Ok(cleanup_target)
 }
 
 fn suspend_pairing(
@@ -2311,8 +2539,13 @@ fn ts_before_or_equal(left: &str, right: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::surface_session_keychain::{
+        load_session_master_key, set_keychain_for_tests, MockKeychain, SessionKeyLookup,
+    };
     use abilities_runtime::abilities::registry::ScopeSet;
     use rusqlite::Connection;
+    use std::sync::Arc;
+    use std::time::{Duration as StdDuration, Instant};
 
     fn db() -> ActionDb {
         let conn = Connection::open_in_memory().unwrap();
@@ -2408,6 +2641,32 @@ mod tests {
             },
         )
         .unwrap()
+    }
+
+    fn assert_session_key_found(surface_client_id: &str, session_id: &str) {
+        assert!(matches!(
+            load_session_master_key(surface_client_id, session_id),
+            SessionKeyLookup::Found(_)
+        ));
+    }
+
+    fn assert_session_key_not_found(surface_client_id: &str, session_id: &str) {
+        assert!(matches!(
+            load_session_master_key(surface_client_id, session_id),
+            SessionKeyLookup::NotFound
+        ));
+    }
+
+    fn session_revoked_reason(db: &ActionDb, session_id: &str) -> Option<String> {
+        db.conn_ref()
+            .query_row(
+                "SELECT revoked_reason
+                 FROM surface_client_sessions
+                 WHERE session_id = ?1",
+                params![session_id],
+                |row| row.get(0),
+            )
+            .unwrap()
     }
 
     #[test]
@@ -2994,7 +3253,7 @@ mod tests {
         let outcome =
             complete_test_handshake(&ctx, &db, now, issue_code(&ctx, &db, now).pairing_string);
 
-        let event = revoke_pairing(
+        let (event, _cleanup_target) = revoke_pairing(
             &ctx,
             &db,
             RevokePairingInput {
@@ -3033,6 +3292,311 @@ mod tests {
         assert_eq!(
             validate_signed_session(&ctx, &db, validation_input(&outcome, now)).unwrap_err(),
             SurfacePairingError::PairingRevoked
+        );
+    }
+
+    #[test]
+    fn dos674_revoke_deletes_session_key() {
+        allow_surface_scopes();
+        let keychain = Arc::new(MockKeychain::new());
+        let _guard = set_keychain_for_tests(keychain);
+        let db = db();
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let now = Utc::now();
+        let outcome =
+            complete_test_handshake(&ctx, &db, now, issue_code(&ctx, &db, now).pairing_string);
+        assert_session_key_found(
+            &outcome.session.surface_client_id,
+            &outcome.session.session_id,
+        );
+
+        let (_event, cleanup_target) = revoke_pairing(
+            &ctx,
+            &db,
+            RevokePairingInput {
+                surface_client_id: outcome.session.surface_client_id.clone(),
+                reason: "user_revoked".to_string(),
+                now,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            cleanup_target.surface_client_id,
+            outcome.session.surface_client_id
+        );
+        assert_eq!(
+            cleanup_target.session_ids,
+            vec![outcome.session.session_id.clone()]
+        );
+
+        let audits = cleanup_session_keychain_entries(&cleanup_target, "user_revoked");
+        assert!(audits
+            .iter()
+            .any(|event| event.event_kind == "pairing.session.key_cleaned"));
+        assert_session_key_not_found(
+            &outcome.session.surface_client_id,
+            &outcome.session.session_id,
+        );
+    }
+
+    #[test]
+    fn dos674_repair_deletes_old_session_keys_only() {
+        allow_surface_scopes();
+        let keychain = Arc::new(MockKeychain::new());
+        let _guard = set_keychain_for_tests(keychain);
+        let db = db();
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let now = Utc::now();
+        let first =
+            complete_test_handshake(&ctx, &db, now, issue_code(&ctx, &db, now).pairing_string);
+        let second = complete_test_handshake(
+            &ctx,
+            &db,
+            now + Duration::seconds(1),
+            issue_code(&ctx, &db, now + Duration::seconds(1)).pairing_string,
+        );
+
+        assert!(second
+            .keychain_cleanup_audits
+            .iter()
+            .any(|event| event.event_kind == "pairing.session.key_cleaned"));
+        assert_session_key_not_found(&first.session.surface_client_id, &first.session.session_id);
+        assert_session_key_found(
+            &second.session.surface_client_id,
+            &second.session.session_id,
+        );
+    }
+
+    #[test]
+    fn dos674_expiry_deletes_session_key() {
+        allow_surface_scopes();
+        let keychain = Arc::new(MockKeychain::new());
+        let _guard = set_keychain_for_tests(keychain);
+        let db = db();
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let now = Utc::now();
+        let outcome =
+            complete_test_handshake(&ctx, &db, now, issue_code(&ctx, &db, now).pairing_string);
+        let expired_at = format_ts(now - Duration::seconds(1));
+        db.conn_ref()
+            .execute(
+                "UPDATE surface_client_pairings
+                 SET expires_at = ?1
+                 WHERE surface_client_id = ?2",
+                params![expired_at, outcome.session.surface_client_id],
+            )
+            .unwrap();
+
+        let cleanup_target =
+            mark_pairing_expired(&db, &outcome.session.surface_client_id, &format_ts(now))
+                .unwrap()
+                .expect("expired pairing should produce cleanup target");
+        assert_eq!(
+            cleanup_target.session_ids,
+            vec![outcome.session.session_id.clone()]
+        );
+
+        cleanup_session_keychain_entries(&cleanup_target, "pairing_expired");
+        assert_session_key_not_found(
+            &outcome.session.surface_client_id,
+            &outcome.session.session_id,
+        );
+    }
+
+    #[test]
+    fn dos674_mark_session_revoked_carries_surface_client_id() {
+        allow_surface_scopes();
+        let keychain = Arc::new(MockKeychain::new());
+        let _guard = set_keychain_for_tests(keychain);
+        let db = db();
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let now = Utc::now();
+        let outcome =
+            complete_test_handshake(&ctx, &db, now, issue_code(&ctx, &db, now).pairing_string);
+        let failure = validate_signed_session_readonly(
+            &db,
+            validation_input(
+                &outcome,
+                now + Duration::seconds(SESSION_ABSOLUTE_TTL_SECONDS + 1),
+            ),
+        )
+        .unwrap_err();
+        let SignedSessionFailure::SessionExpired {
+            surface_client_id,
+            session_id,
+        } = failure
+        else {
+            panic!("expected SessionExpired");
+        };
+        assert_eq!(surface_client_id, outcome.session.surface_client_id);
+        assert_eq!(session_id, outcome.session.session_id);
+
+        let action = SignedSessionFailure::SessionExpired {
+            surface_client_id: outcome.session.surface_client_id.clone(),
+            session_id: outcome.session.session_id.clone(),
+        }
+        .write_action()
+        .expect("expired session requires write");
+        let cleanup_target = apply_signed_session_write_action(&db, action, now)
+            .unwrap()
+            .expect("session revoke returns cleanup target");
+        assert_eq!(
+            cleanup_target.surface_client_id,
+            outcome.session.surface_client_id
+        );
+        assert_eq!(
+            cleanup_target.session_ids,
+            vec![outcome.session.session_id.clone()]
+        );
+    }
+
+    #[test]
+    fn dos674_cleanup_target_collected_inside_transaction() {
+        allow_surface_scopes();
+        let keychain = Arc::new(MockKeychain::new());
+        let _guard = set_keychain_for_tests(keychain);
+        let db = db();
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let now = Utc::now();
+        let outcome =
+            complete_test_handshake(&ctx, &db, now, issue_code(&ctx, &db, now).pairing_string);
+
+        let (_event, cleanup_target) = revoke_pairing(
+            &ctx,
+            &db,
+            RevokePairingInput {
+                surface_client_id: outcome.session.surface_client_id.clone(),
+                reason: "user_revoked".to_string(),
+                now,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            cleanup_target.session_ids,
+            vec![outcome.session.session_id.clone()],
+            "collection after revoke with revoked_at IS NULL would be empty"
+        );
+        assert_eq!(
+            session_revoked_reason(&db, &outcome.session.session_id).as_deref(),
+            Some("user_revoked")
+        );
+    }
+
+    #[test]
+    fn dos674_cleanup_outside_transaction() {
+        allow_surface_scopes();
+        let keychain = Arc::new(MockKeychain::new());
+        keychain.set_delete_delay(StdDuration::from_millis(100));
+        let _guard = set_keychain_for_tests(keychain);
+        let db = db();
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let now = Utc::now();
+        let outcome =
+            complete_test_handshake(&ctx, &db, now, issue_code(&ctx, &db, now).pairing_string);
+
+        let revoke_started = Instant::now();
+        let (_event, cleanup_target) = revoke_pairing(
+            &ctx,
+            &db,
+            RevokePairingInput {
+                surface_client_id: outcome.session.surface_client_id.clone(),
+                reason: "user_revoked".to_string(),
+                now,
+            },
+        )
+        .unwrap();
+        assert!(
+            revoke_started.elapsed() < StdDuration::from_millis(50),
+            "revoke transaction should not wait for slow keychain delete"
+        );
+        assert_eq!(
+            session_revoked_reason(&db, &outcome.session.session_id).as_deref(),
+            Some("user_revoked")
+        );
+
+        let cleanup_started = Instant::now();
+        cleanup_session_keychain_entries(&cleanup_target, "user_revoked");
+        assert!(cleanup_started.elapsed() >= StdDuration::from_millis(100));
+    }
+
+    #[test]
+    fn dos674_keychain_delete_failure_does_not_rollback_db() {
+        allow_surface_scopes();
+        let keychain = Arc::new(MockKeychain::new());
+        keychain.push_delete_result(Err("mock delete failure".to_string()));
+        let _guard = set_keychain_for_tests(keychain);
+        let db = db();
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let now = Utc::now();
+        let outcome =
+            complete_test_handshake(&ctx, &db, now, issue_code(&ctx, &db, now).pairing_string);
+
+        let (_event, cleanup_target) = revoke_pairing(
+            &ctx,
+            &db,
+            RevokePairingInput {
+                surface_client_id: outcome.session.surface_client_id.clone(),
+                reason: "user_revoked".to_string(),
+                now,
+            },
+        )
+        .unwrap();
+        let audits = cleanup_session_keychain_entries(&cleanup_target, "user_revoked");
+        assert!(audits
+            .iter()
+            .any(|event| event.event_kind == "pairing.session.key_cleanup_failed"));
+        assert_eq!(
+            session_revoked_reason(&db, &outcome.session.session_id).as_deref(),
+            Some("user_revoked")
+        );
+        assert_session_key_found(
+            &outcome.session.surface_client_id,
+            &outcome.session.session_id,
+        );
+    }
+
+    #[test]
+    fn dos674_cleanup_idempotent() {
+        allow_surface_scopes();
+        let keychain = Arc::new(MockKeychain::new());
+        let _guard = set_keychain_for_tests(keychain);
+        let db = db();
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let now = Utc::now();
+        let outcome =
+            complete_test_handshake(&ctx, &db, now, issue_code(&ctx, &db, now).pairing_string);
+        let (_event, cleanup_target) = revoke_pairing(
+            &ctx,
+            &db,
+            RevokePairingInput {
+                surface_client_id: outcome.session.surface_client_id.clone(),
+                reason: "user_revoked".to_string(),
+                now,
+            },
+        )
+        .unwrap();
+
+        cleanup_session_keychain_entries(&cleanup_target, "user_revoked");
+        assert_session_key_not_found(
+            &outcome.session.surface_client_id,
+            &outcome.session.session_id,
+        );
+        let second = cleanup_session_keychain_entries(&cleanup_target, "user_revoked");
+        assert!(second
+            .iter()
+            .all(|event| event.event_kind == "pairing.session.key_cleaned"));
+        assert_session_key_not_found(
+            &outcome.session.surface_client_id,
+            &outcome.session.session_id,
         );
     }
 
@@ -3077,7 +3641,8 @@ mod tests {
                     now: now + Duration::seconds(offset),
                 },
             )
-            .unwrap();
+            .unwrap()
+            .events;
         }
         assert!(throttle_events
             .iter()
@@ -3106,7 +3671,8 @@ mod tests {
                     now: now + Duration::seconds(120 + offset),
                 },
             )
-            .unwrap();
+            .unwrap()
+            .events;
         }
         assert!(revoke_events
             .iter()
@@ -3119,6 +3685,49 @@ mod tests {
             )
             .unwrap_err(),
             SurfacePairingError::PairingRevoked
+        );
+    }
+
+    #[test]
+    fn dos674_suspicious_replay_deletes_session_key() {
+        allow_surface_scopes();
+        let keychain = Arc::new(MockKeychain::new());
+        let _guard = set_keychain_for_tests(keychain);
+        let db = db();
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let now = Utc::now();
+        let outcome =
+            complete_test_handshake(&ctx, &db, now, issue_code(&ctx, &db, now).pairing_string);
+        let mut failure_outcome = SignedTransportFailureOutcome {
+            events: Vec::new(),
+            cleanup_target: None,
+        };
+        for offset in 0..5 {
+            failure_outcome = record_signed_transport_failure(
+                &ctx,
+                &db,
+                SignedTransportFailureInput {
+                    session_id: outcome.session.session_id.clone(),
+                    surface_client_id: Some(outcome.session.surface_client_id.clone()),
+                    failure_code: "nonce_replay".to_string(),
+                    now: now + Duration::seconds(offset),
+                },
+            )
+            .unwrap();
+        }
+
+        let cleanup_target = failure_outcome
+            .cleanup_target
+            .expect("suspicious replay revoke returns cleanup target");
+        assert!(failure_outcome
+            .events
+            .iter()
+            .any(|event| event.event_kind == "pairing_revoked"));
+        cleanup_session_keychain_entries(&cleanup_target, "suspicious_replay");
+        assert_session_key_not_found(
+            &outcome.session.surface_client_id,
+            &outcome.session.session_id,
         );
     }
 
@@ -3371,6 +3980,7 @@ mod tests {
             (SignedSessionFailure::UnknownRuntimeAnchor, false),
             (
                 SignedSessionFailure::SessionExpired {
+                    surface_client_id: dummy_client.clone(),
                     session_id: dummy_session.clone(),
                 },
                 true,
