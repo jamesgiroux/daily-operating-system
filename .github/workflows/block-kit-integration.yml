@@ -154,3 +154,45 @@ jobs:
         run: |
           set -euo pipefail
           node wp/dailyos/scripts/generate-theme-json.mjs --check
+
+      # §9 invariant #8 / V1.4 AC #15 — chrome service state-branch test coverage.
+      # Runs the Rust + PHPUnit fixtures + grep-gates render-functions.php
+      # files (scoped to existing block dirs only per V1.4 §5.8 — does not
+      # fail PR-D1 for absent dirs).
+      - name: Chrome service coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test \
+            --manifest-path src-tauri/Cargo.toml \
+            -p abilities-runtime \
+            --test chrome_service_integration_fixture \
+            -- --nocapture
+
+          if [ -d wp/dailyos/tests/blocks/chrome ]; then
+            # PHPUnit available when WP test runtime is installed; CI image
+            # may need composer install at the wp/dailyos root first.
+            if command -v phpunit >/dev/null 2>&1; then
+              phpunit wp/dailyos/tests/blocks/chrome/
+            else
+              echo "phpunit not available; relying on Rust chrome fixture coverage only on this runner."
+            fi
+          fi
+
+          # Grep gate: every render-functions.php that handles an empty / loading
+          # / error state MUST require_once the shared chrome partial. Scoped to
+          # existing block dirs only (does not fail PR-D1 when zero block dirs
+          # exist; PR-D2/D3/D4 add them).
+          while IFS= read -r -d '' rfp; do
+            for state in empty loading error; do
+              # Heuristic: if the file mentions the state branch (e.g.,
+              # `// chrome:empty` marker or `data-chrome="$state"`), it MUST
+              # require_once the matching partial.
+              if grep -qE "chrome:${state}|data-chrome=\"${state}\"" "$rfp" 2>/dev/null; then
+                if ! grep -qE "require_once.*_shared/chrome/render-${state}\.php" "$rfp"; then
+                  echo "FAIL: ${rfp} references chrome:${state} but does not require_once _shared/chrome/render-${state}.php" >&2
+                  exit 1
+                fi
+              fi
+            done
+          done < <(find wp/dailyos/blocks -name render-functions.php -print0 2>/dev/null)
