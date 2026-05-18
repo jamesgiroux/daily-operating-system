@@ -14,6 +14,10 @@ use super::MigrationError;
 const LINEAR_ISSUES_TABLE: &str = "linear_issues";
 
 pub(super) fn migrate_v178(conn: &Connection) -> Result<(), MigrationError> {
+    if !table_exists(conn, LINEAR_ISSUES_TABLE)? {
+        return Ok(());
+    }
+
     add_column_if_missing(conn, "linear_updated_at", "TEXT")?;
     add_column_if_missing(conn, "assignee_id", "TEXT")?;
     add_column_if_missing(conn, "assignee_name", "TEXT")?;
@@ -27,6 +31,19 @@ pub(super) fn migrate_v178(conn: &Connection) -> Result<(), MigrationError> {
     Ok(())
 }
 
+fn table_exists(conn: &Connection, table_name: &str) -> Result<bool, MigrationError> {
+    let exists: i64 = conn
+        .query_row(
+            "SELECT COUNT(*)
+             FROM sqlite_master
+             WHERE type = 'table' AND name = ?1",
+            [table_name],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("query table existence for {table_name}: {e}"))?;
+    Ok(exists > 0)
+}
+
 fn add_column_if_missing(
     conn: &Connection,
     column_name: &str,
@@ -36,9 +53,7 @@ fn add_column_if_missing(
         return Ok(());
     }
     conn.execute(
-        &format!(
-            "ALTER TABLE {LINEAR_ISSUES_TABLE} ADD COLUMN {column_name} {column_type}"
-        ),
+        &format!("ALTER TABLE {LINEAR_ISSUES_TABLE} ADD COLUMN {column_name} {column_type}"),
         [],
     )
     .map_err(|e| format!("add {LINEAR_ISSUES_TABLE}.{column_name}: {e}"))?;

@@ -76,6 +76,7 @@ pub struct SubjectSignalRef {
 }
 
 pub fn emit_issue_change_signals(
+    ctx: &crate::services::context::ServiceContext<'_>,
     db: &ActionDb,
     engine: &PropagationEngine,
     issue: &LinearIssue,
@@ -125,7 +126,8 @@ pub fn emit_issue_change_signals(
         };
 
         for signal_type in &signal_types {
-            if let Err(error) = crate::signals::bus::emit_signal_and_propagate(
+            if let Err(error) = crate::services::signals::emit_and_propagate(
+                ctx,
                 db,
                 engine,
                 &entity_type,

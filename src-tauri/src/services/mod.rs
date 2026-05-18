@@ -50,6 +50,9 @@ pub mod user_entity;
 pub mod version_dispatcher;
 pub mod versioning;
 
+#[cfg(test)]
+mod tests;
+
 /// Command-facing service boundary for mutation workflows.
 ///
 /// Background processors may still use owned `ActionDb` handles, but should call
