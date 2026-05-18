@@ -1,0 +1,14 @@
+[
+	{
+		"source_token": "--color-paper-linen",
+		"target_token": "wp--preset--color--paper-linen"
+	},
+	{
+		"source_token": "--color-text-tertiary",
+		"target_token": "wp--preset--color--text-tertiary"
+	},
+	{
+		"source_token": "--font-sans",
+		"target_token": "wp--custom--dailyos--tokens--font-sans"
+	}
+]

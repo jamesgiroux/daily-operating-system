@@ -1456,7 +1456,13 @@ const HEALTH_BADGE_FIELDS: &[FieldPolicy] = &[
     text_field("/divergence/severity", ClaimSensitivity::Internal),
     bool_field("/divergence/leadingIndicator", ClaimSensitivity::Internal),
 ];
-const AVATAR_FIELDS: &[FieldPolicy] = &[text_field("/payload/text", ClaimSensitivity::Internal)];
+const AVATAR_FIELDS: &[FieldPolicy] = &[
+    text_field("/name", ClaimSensitivity::Internal),
+    text_field("/personId", ClaimSensitivity::Internal),
+    text_field("/photoUrl", ClaimSensitivity::Internal),
+    number_field("/size", ClaimSensitivity::Internal),
+    text_field("/className", ClaimSensitivity::Internal),
+];
 const FRESHNESS_INDICATOR_FIELDS: &[FieldPolicy] =
     &[text_field("/payload/text", ClaimSensitivity::Internal)];
 const TRUST_BAND_BADGE_FIELDS: &[FieldPolicy] =
