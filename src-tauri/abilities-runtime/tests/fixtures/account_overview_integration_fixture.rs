@@ -75,7 +75,7 @@ pub fn account_overview_fixture() -> BlockIntegrationFixture {
                 required: true,
             },
             BindingExpectation {
-                pointer: "/blocks/0/payload/counts_by_trust_band".to_string(),
+                pointer: "/blocks/0/payload/account".to_string(),
                 value_kind: ValueKind::Object,
                 required: true,
             },

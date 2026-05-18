@@ -1,0 +1,71 @@
+name: Block Kit Integration
+
+on:
+  pull_request:
+    branches:
+      - dev
+      - trunk
+    paths:
+      - 'wp/dailyos/blocks/**'
+      - 'src-tauri/abilities-runtime/**'
+      - 'wp/dailyos/tests/blocks/StarterKitIntegrationTest.php'
+      - '.github/workflows/block-kit-integration.yml'
+
+concurrency:
+  group: block-kit-integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  block-kit-integration:
+    name: Block kit integration fixtures
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup PHP 8.4
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          coverage: none
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: block-kit-cargo-${{ runner.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            block-kit-cargo-${{ runner.os }}-
+
+      - name: Run block integration fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t block_files < <(find wp/dailyos/blocks -mindepth 2 -maxdepth 2 -name block.json | sort)
+          if [ "${#block_files[@]}" -eq 0 ]; then
+            echo "No WordPress block metadata files found under wp/dailyos/blocks." >&2
+            exit 1
+          fi
+
+          for block_file in "${block_files[@]}"; do
+            block_slug="$(basename "$(dirname "$block_file")")"
+            fixture_name="${block_slug//-/_}_integration_fixture.rs"
+            fixture_path="src-tauri/abilities-runtime/tests/fixtures/${fixture_name}"
+            if [ ! -f "$fixture_path" ]; then
+              echo "Missing block integration fixture for ${block_file}: expected ${fixture_path}" >&2
+              exit 1
+            fi
+
+            DAILYOS_BLOCK_SLUG="$block_slug" cargo test \
+              --manifest-path src-tauri/Cargo.toml \
+              -p abilities-runtime \
+              --test block_kit_integration_harness \
+              -- --nocapture
+          done
