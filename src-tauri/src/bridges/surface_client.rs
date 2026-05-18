@@ -270,6 +270,24 @@ impl SurfaceClientBridge {
             session,
             ability_name,
             request_id,
+            true,
+        )
+    }
+
+    pub fn authorize_local_render(
+        &self,
+        registry: &AbilityRegistry,
+        session: &ValidatedSurfaceSession,
+        ability_name: &str,
+        request_id: &str,
+    ) -> Result<SurfaceClientAuthorization, SurfaceClientBridgeError> {
+        self.authorize_for_path(
+            SurfaceClientInvocationPath::SignedServer,
+            registry,
+            session,
+            ability_name,
+            request_id,
+            false,
         )
     }
 
@@ -286,6 +304,7 @@ impl SurfaceClientBridge {
             session,
             ability_name,
             request_id,
+            true,
         )
     }
 
@@ -296,6 +315,7 @@ impl SurfaceClientBridge {
         session: &ValidatedSurfaceSession,
         ability_name: &str,
         request_id: &str,
+        charge_ability_scope: bool,
     ) -> Result<SurfaceClientAuthorization, SurfaceClientBridgeError> {
         let audit_hash_secret = format!("{}:{}", session.session_id, session.site_nonce);
         let Some(descriptor) = registry
@@ -406,7 +426,7 @@ impl SurfaceClientBridge {
                 policy_rate_limit: descriptor.policy.rate_limit,
                 wp_user_id: session.wp_user_id,
                 actor_scopes: session.granted_scopes.clone(),
-                charge_ability_scope: true,
+                charge_ability_scope,
             }) {
             RateLimitOutcome::Allowed { audit_events } => Ok(SurfaceClientAuthorization {
                 canonical_ability_name: descriptor.name.to_string(),
@@ -1113,14 +1133,21 @@ fn duration_ms(duration: Duration) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::abilities::provenance::CompositionId;
     use crate::abilities::registry::{
-        AbilityContext, AbilityPolicy, ErasedAbilityFuture, McpExposure, ScopeSet, SignalPolicy,
-        SurfaceClientId,
+        AbilityContext, AbilityPolicy, ComposesEntry, ErasedAbilityFuture, McpExposure, ScopeSet,
+        SignalPolicy, SurfaceClientId,
     };
     use crate::abilities::ActorKind;
     use serde_json::json;
     use std::sync::Barrier;
     use std::thread;
+
+    static GET_ACCOUNT_CONTEXT_COMPOSES: [ComposesEntry; 1] = [ComposesEntry {
+        id: CompositionId::from_static("dailyos/get-account-context"),
+        ability: "dailyos/get-account-context",
+        optional: false,
+    }];
 
     #[derive(Clone)]
     struct FixedClock {
@@ -1535,6 +1562,97 @@ mod tests {
             "dailyos/account-overview"
         );
         assert_eq!(authorization.request_class, SurfaceClientRequestClass::Read);
+    }
+
+    #[test]
+    fn authorize_local_render_enforces_required_scope() {
+        let clock = FixedClock::new(Instant::now());
+        let bridge = bridge_with(test_config(), clock);
+        let registry =
+            AbilityRegistry::from_descriptors_unchecked_for_runtime_validation_tests(vec![
+                descriptor(
+                    "dailyos/account-overview",
+                    AbilityCategory::Read,
+                    &["read.account_overview"],
+                    None,
+                ),
+            ]);
+        let session = session(&["submit.feedback"]);
+
+        assert!(matches!(
+            bridge
+                .authorize_local_render(&registry, &session, "dailyos/account-overview", "req_1")
+                .unwrap_err(),
+            SurfaceClientBridgeError::ScopeDenied
+        ));
+    }
+
+    #[test]
+    fn authorize_local_render_does_not_charge_ability_or_scope_buckets() {
+        let clock = FixedClock::new(Instant::now());
+        let mut config = test_config();
+        let one_per_second = SurfaceClientRateLimitBudget::new(60, 1);
+        config.scope.read = one_per_second;
+        config.ability.standard_read_composition = one_per_second;
+        let bridge = bridge_with(config, clock);
+        let mut overview = descriptor(
+            "dailyos/account-overview",
+            AbilityCategory::Read,
+            &["read.account_overview"],
+            None,
+        );
+        overview.composes = &GET_ACCOUNT_CONTEXT_COMPOSES;
+        let registry =
+            AbilityRegistry::from_descriptors_unchecked_for_runtime_validation_tests(vec![
+                overview,
+            ]);
+        let session = session(&["read.account_overview"]);
+
+        assert!(bridge
+            .authorize_local_render(&registry, &session, "dailyos/account-overview", "req_1")
+            .is_ok());
+        assert!(bridge
+            .authorize_local_render(&registry, &session, "dailyos/account-overview", "req_2")
+            .is_ok());
+        assert!(bridge
+            .authorize(&registry, &session, "dailyos/account-overview", "req_3")
+            .is_ok());
+        assert!(matches!(
+            bridge
+                .authorize(&registry, &session, "dailyos/account-overview", "req_4")
+                .unwrap_err(),
+            SurfaceClientBridgeError::RateLimited(rejection)
+                if rejection.axis == SurfaceClientRateLimitAxis::Scope
+        ));
+    }
+
+    #[test]
+    fn authorize_local_render_still_charges_identity_buckets() {
+        let clock = FixedClock::new(Instant::now());
+        let mut config = test_config();
+        config.surface_client.read = SurfaceClientRateLimitBudget::new(60, 1);
+        let bridge = bridge_with(config, clock);
+        let registry =
+            AbilityRegistry::from_descriptors_unchecked_for_runtime_validation_tests(vec![
+                descriptor(
+                    "dailyos/account-overview",
+                    AbilityCategory::Read,
+                    &["read.account_overview"],
+                    None,
+                ),
+            ]);
+        let session = session(&["read.account_overview"]);
+
+        assert!(bridge
+            .authorize_local_render(&registry, &session, "dailyos/account-overview", "req_1")
+            .is_ok());
+        assert!(matches!(
+            bridge
+                .authorize_local_render(&registry, &session, "dailyos/account-overview", "req_2")
+                .unwrap_err(),
+            SurfaceClientBridgeError::RateLimited(rejection)
+                if rejection.axis == SurfaceClientRateLimitAxis::SurfaceClient
+        ));
     }
 
     #[test]
