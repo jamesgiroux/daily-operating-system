@@ -24,6 +24,7 @@
 declare(strict_types=1);
 
 use DailyOS\DailyOS_Plugin;
+use DailyOS\Transport\DailyOS_Credential_Store;
 use DailyOS\Transport\DailyOS_Runtime_Client;
 use PHPUnit\Framework\TestCase;
 
@@ -75,21 +76,7 @@ final class DailyOS_AccountOverviewBlockTest extends TestCase {
 	 */
 	public function test_render_emits_trust_band_data_attrs_per_design_system(): void {
 		$client = $this->fake_runtime_client_with_response(
-			[
-				'projection'       => [
-					'composition_id'      => 'dailyos/account-overview:account:acct-test-001',
-					'composition_version' => 1,
-					'blocks'              => [
-						[
-							'block_type' => 'risk',
-							'trust_band' => 'likely_current',
-							'title'      => 'Risk overview',
-							'summary'    => 'Sample summary.',
-						],
-					],
-				],
-				'cache_hint_token' => 'token-abc',
-			]
+			$this->projection_response( 1, 'token-abc' )
 		);
 		$this->register_runtime_client_filter( $client );
 
@@ -104,6 +91,77 @@ final class DailyOS_AccountOverviewBlockTest extends TestCase {
 		$this->assertStringContainsString( 'data-ds-name="TrustBandBadge"', $html );
 		$this->assertStringContainsString( 'data-ds-trust-band="likely_current"', $html );
 		$this->assertStringContainsString( 'Likely current', $html );
+		$this->assertSame( 1, $client->calls );
+		$this->assertSame(
+			[
+				[
+					'composition_id'      => 'dailyos/account-overview:account:acct-test-001',
+					'composition_version' => 1,
+					'cache_hint_token'    => null,
+				],
+			],
+			$client->requests
+		);
+	}
+
+	/**
+	 * Asserts the wrapper still performs exactly one runtime fetch.
+	 */
+	public function test_wrapper_preserves_single_fetch_behavior(): void {
+		$client = $this->fake_runtime_client_with_response( $this->projection_response( 3, 'token-single-fetch' ) );
+		$this->register_runtime_client_filter( $client );
+
+		$html = dailyos_account_overview_render(
+			[
+				'composition_id'      => 'dailyos/account-overview:account:acct-test-001',
+				'composition_version' => 2,
+				'cache_hint_token'    => 'token-old',
+			]
+		);
+
+		$this->assertStringContainsString( '<article', $html );
+		$this->assertSame( 1, $client->calls );
+		$this->assertSame(
+			[
+				[
+					'composition_id'      => 'dailyos/account-overview:account:acct-test-001',
+					'composition_version' => 2,
+					'cache_hint_token'    => 'token-old',
+				],
+			],
+			$client->requests
+		);
+	}
+
+	/**
+	 * Asserts the preview route renders from its first runtime response.
+	 */
+	public function test_preview_route_uses_single_runtime_request(): void {
+		$GLOBALS['dailyos_test_current_user_id']      = 42;
+		$GLOBALS['dailyos_test_remote_post_response'] = [
+			'response' => [
+				'code' => 200,
+			],
+			'body'     => wp_json_encode( $this->projection_response( 5, 'token-preview' ) ),
+		];
+		$this->save_pairing_marker();
+		$this->add_session_key_filter();
+
+		$result = DailyOS_Plugin::instance()->account_overview_preview(
+			[
+				'composition_id'      => 'dailyos/account-overview:account:acct-test-001',
+				'composition_version' => 4,
+				'cache_hint_token'    => 'token-stale',
+			]
+		);
+
+		$this->assertFalse( is_wp_error( $result ) );
+		$this->assertCount( 1, $GLOBALS['dailyos_test_remote_post_calls'] );
+		$this->assertSame( 'http://127.0.0.1:54321/v1/surface/project-composition', $GLOBALS['dailyos_test_remote_post_calls'][0]['url'] );
+		$this->assertSame( 5, $result['attributes']['composition_version'] );
+		$this->assertSame( 'token-preview', $result['attributes']['cache_hint_token'] );
+		$this->assertStringContainsString( '<article', $result['html'] );
+		$this->assertStringNotContainsString( 'ConsistencyFindingBanner', $result['html'] );
 	}
 
 	/**
@@ -178,9 +236,9 @@ final class DailyOS_AccountOverviewBlockTest extends TestCase {
 	}
 
 	/**
-	 * Asserts runtime errors render a verification banner without raw details.
+	 * Asserts transport errors render a retryable notice without raw details.
 	 */
-	public function test_runtime_wp_error_renders_verification_banner_no_raw_exception(): void {
+	public function test_runtime_wp_error_renders_runtime_unavailable_notice_no_raw_exception(): void {
 		$client = $this->fake_runtime_client_with_error(
 			new \WP_Error( 'dailyos_projection_failed', 'raw runtime exception body that must not leak' )
 		);
@@ -193,10 +251,62 @@ final class DailyOS_AccountOverviewBlockTest extends TestCase {
 			]
 		);
 
-		$this->assertStringContainsString( 'data-ds-name="ConsistencyFindingBanner"', $html );
-		$this->assertStringContainsString( 'line up', $html );
+		$this->assertStringContainsString( 'data-ds-name="RuntimeUnavailableNotice"', $html );
+		$this->assertStringContainsString( 'Runtime unavailable; retry.', $html );
 		$this->assertStringNotContainsString( 'raw runtime exception', $html );
 		$this->assertStringNotContainsString( 'dailyos_projection_failed', $html );
+	}
+
+	/**
+	 * Asserts typed runtime error envelopes map to distinct notices.
+	 *
+	 * @dataProvider typed_error_mapping_provider
+	 *
+	 * @param string $code          Runtime error code.
+	 * @param string $expected_text Expected notice text.
+	 * @param string $expected_name Expected design-system notice name.
+	 */
+	public function test_typed_error_mapping( string $code, string $expected_text, string $expected_name ): void {
+		$html = dailyos_account_overview_render_from_projection(
+			[
+				'ok'    => false,
+				'error' => [
+					'code'    => $code,
+					'message' => 'raw runtime detail must not leak',
+				],
+			],
+			[
+				'composition_id'      => 'dailyos/account-overview:account:acct-test-001',
+				'composition_version' => 1,
+			]
+		);
+
+		$this->assertStringContainsString( 'data-ds-name="' . $expected_name . '"', $html );
+		$this->assertStringContainsString( $expected_text, $html );
+		$this->assertStringNotContainsString( 'raw runtime detail', $html );
+	}
+
+	/**
+	 * Asserts unknown typed errors fail closed to the verification banner.
+	 */
+	public function test_unknown_typed_error_fails_safe_to_verification_banner(): void {
+		$html = dailyos_account_overview_render_from_projection(
+			[
+				'ok'    => false,
+				'error' => [
+					'code'    => 'unknown_xyz',
+					'message' => 'raw runtime detail must not leak',
+				],
+			],
+			[
+				'composition_id'      => 'dailyos/account-overview:account:acct-test-001',
+				'composition_version' => 1,
+			]
+		);
+
+		$this->assertStringContainsString( 'data-ds-name="ConsistencyFindingBanner"', $html );
+		$this->assertStringContainsString( 'line up', $html );
+		$this->assertStringNotContainsString( 'raw runtime detail', $html );
 	}
 
 	/**
@@ -285,6 +395,148 @@ final class DailyOS_AccountOverviewBlockTest extends TestCase {
 		$this->assertStringNotContainsString( 'curl_exec', $render_fns );
 	}
 
+
+	/**
+	 * Typed error mapping provider.
+	 *
+	 * @return array<string, array{0: string, 1: string, 2: string}>
+	 */
+	public static function typed_error_mapping_provider(): array {
+		$cases = [];
+		foreach ( [ 'rate_limited' ] as $code ) {
+			$cases[ $code ] = [ $code, 'Runtime is throttling; retry shortly.', 'RuntimeThrottledNotice' ];
+		}
+		foreach ( [
+			'session_requires_repair',
+			'session_not_found',
+			'session_expired',
+			'session_throttled',
+			'identity_mismatch',
+			'wp_user_mismatch',
+			'pairing_code_invalid',
+			'pairing_code_expired',
+			'pairing_code_consumed',
+			'pairing_code_limited',
+			'pairing_suspended',
+			'pairing_revoked',
+			'pairing_expired',
+			'site_binding_mismatch',
+			'restored_stale_pairing',
+			'scope_denied',
+			'auth_missing',
+		] as $code ) {
+			$cases[ $code ] = [ $code, 'Surface session needs repair; reconnect from DailyOS settings.', 'SurfaceSessionRepairNotice' ];
+		}
+		foreach ( [
+			'runtime_unavailable',
+			'runtime_request_failed',
+			'runtime_invalid_json',
+			'runtime_http_error',
+			'host_invalid',
+			'browser_origin_forbidden',
+			'route_not_found',
+		] as $code ) {
+			$cases[ $code ] = [ $code, 'Runtime unavailable; retry.', 'RuntimeUnavailableNotice' ];
+		}
+		foreach ( [
+			'request_body_too_large',
+			'request_body_unreadable',
+			'handshake_body_invalid',
+			'session_refresh_body_invalid',
+			'surface_invoke_invalid',
+			'event_log_id_invalid',
+		] as $code ) {
+			$cases[ $code ] = [ $code, "Editor sent a request the runtime couldn't process. Reload the editor.", 'InvalidRuntimeRequestNotice' ];
+		}
+		foreach ( [
+			'projection_tampered',
+			'projection_version_rollback',
+			'stale_composition_watermark',
+			'missing_expected_claim_version',
+			'mid_flight_mutation',
+		] as $code ) {
+			$cases[ $code ] = [ $code, 'line up', 'ConsistencyFindingBanner' ];
+		}
+
+		return $cases;
+	}
+
+	/**
+	 * Build a successful projection response fixture.
+	 *
+	 * @param int    $version          Composition version.
+	 * @param string $cache_hint_token Cache hint token.
+	 * @return array<string, mixed>
+	 */
+	private function projection_response( int $version, string $cache_hint_token = '' ): array {
+		return [
+			'ok'               => true,
+			'projection'       => [
+				'composition_id'      => 'dailyos/account-overview:account:acct-test-001',
+				'composition_version' => $version,
+				'blocks'              => [
+					[
+						'selected_known_type_id' => 'dailyos/account_overview',
+						'trust_band'             => 'likely_current',
+						'payload'                => [
+							'title'   => 'Account overview',
+							'context' => [
+								[
+									'text' => 'Sample account context.',
+								],
+							],
+						],
+					],
+				],
+			],
+			'cache_hint_token' => $cache_hint_token,
+		];
+	}
+
+	/**
+	 * Save a complete test pairing marker.
+	 */
+	private function save_pairing_marker(): void {
+		( new DailyOS_Credential_Store() )->save_marker(
+			[
+				'runtime_instance_id'  => 'runtime-123',
+				'surface_client_id'    => 'surface-client-123',
+				'runtime_url'          => 'http://127.0.0.1:54321',
+				'site_nonce_hash'      => hash( 'sha256', 'siteNonceAlpha123' ),
+				'site_nonce_full'      => 'siteNonceAlpha123',
+				'site_binding_digest'  => str_repeat( 'a', 64 ),
+				'wp_site_id'           => 'install-1:1',
+				'wp_install_uuid'      => 'install-1',
+				'plugin_instance_uuid' => 'plugin-1',
+				'projection_version'   => '2026.05.13',
+				'instance_id'          => 'runtime-123',
+				'session_id'           => 'session-123',
+				'granted_scopes'       => [ 'read.account_overview' ],
+				'endpoint_version'     => 'v1',
+				'paired_at_gmt'        => '2026-05-13 00:00:00',
+				'last_use_gmt'         => '2026-05-13 00:00:00',
+				'paired_wp_user_id'    => '42',
+			]
+		);
+	}
+
+	/**
+	 * Add a valid test session key filter.
+	 */
+	private function add_session_key_filter(): void {
+		add_filter(
+			'dailyos_wp_bridge_session_key',
+			static function (): array {
+				return [
+					'hmac_key'   => str_repeat( "\x02", 32 ),
+					'session_id' => 'surface-session-id',
+				];
+			},
+			10,
+			1
+		);
+	}
+
 	/**
 	 * Build a fake runtime client that returns a canned successful response
 	 * from `project_composition_for_surface`. Wraps an anonymous class so
@@ -301,6 +553,18 @@ final class DailyOS_AccountOverviewBlockTest extends TestCase {
 			 * @var array
 			 */
 			public array $response;
+			/**
+			 * Number of fake runtime calls.
+			 *
+			 * @var int
+			 */
+			public int $calls = 0;
+			/**
+			 * Captured fake runtime requests.
+			 *
+			 * @var array<int, array<string, mixed>>
+			 */
+			public array $requests = [];
 			/**
 			 * Initializes the fake runtime response.
 			 *
@@ -322,6 +586,12 @@ final class DailyOS_AccountOverviewBlockTest extends TestCase {
 				int $composition_version,
 				?string $cache_hint_token = null
 			): array {
+				++$this->calls;
+				$this->requests[] = [
+					'composition_id'      => $composition_id,
+					'composition_version' => $composition_version,
+					'cache_hint_token'    => $cache_hint_token,
+				];
 				return $this->response;
 			}
 		};
@@ -329,7 +599,7 @@ final class DailyOS_AccountOverviewBlockTest extends TestCase {
 
 	/**
 	 * Build a fake runtime client that returns a `WP_Error` from
-	 * `project_composition_for_surface`. Used to drive the verification-banner
+	 * `project_composition_for_surface`. Used to drive the transport-error
 	 * render path.
 	 *
 	 * @param \WP_Error $error Error to return.
@@ -343,6 +613,18 @@ final class DailyOS_AccountOverviewBlockTest extends TestCase {
 			 * @var \WP_Error
 			 */
 			public \WP_Error $error;
+			/**
+			 * Number of fake runtime calls.
+			 *
+			 * @var int
+			 */
+			public int $calls = 0;
+			/**
+			 * Captured fake runtime requests.
+			 *
+			 * @var array<int, array<string, mixed>>
+			 */
+			public array $requests = [];
 			/**
 			 * Initializes the fake runtime error.
 			 *
@@ -364,6 +646,12 @@ final class DailyOS_AccountOverviewBlockTest extends TestCase {
 				int $composition_version,
 				?string $cache_hint_token = null
 			): \WP_Error {
+				++$this->calls;
+				$this->requests[] = [
+					'composition_id'      => $composition_id,
+					'composition_version' => $composition_version,
+					'cache_hint_token'    => $cache_hint_token,
+				];
 				return $this->error;
 			}
 		};

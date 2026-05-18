@@ -7,7 +7,7 @@
 //! v162 repair regression tests) can re-apply v178 without tripping
 //! `duplicate column name`.
 
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 
 use super::MigrationError;
 
@@ -58,6 +58,17 @@ fn add_column_if_missing(
     )
     .map_err(|e| format!("add {LINEAR_ISSUES_TABLE}.{column_name}: {e}"))?;
     Ok(())
+}
+
+fn table_exists(conn: &Connection, table_name: &str) -> Result<bool, MigrationError> {
+    conn.query_row(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1",
+        [table_name],
+        |_| Ok(()),
+    )
+    .optional()
+    .map(|row| row.is_some())
+    .map_err(|e| format!("check table {table_name}: {e}"))
 }
 
 fn column_exists(

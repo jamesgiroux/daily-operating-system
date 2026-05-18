@@ -589,27 +589,37 @@ final class DailyOS_Plugin {
 			$composition_version,
 			$cache_hint_token
 		);
-		if ( is_wp_error( $response ) ) {
-			return $response;
+
+		if ( ! function_exists( 'dailyos_account_overview_render_from_projection' ) ) {
+			require_once DAILYOS_PLUGIN_DIR . 'blocks/account-overview/render-functions.php';
 		}
 
-		// Render the projection through the same render path to keep
-		// preview parity with front-end.
 		$attributes = [
 			'composition_id'      => $composition_id,
-			'composition_version' => isset( $response['projection']['composition_version'] )
+			'composition_version' => is_array( $response ) && isset( $response['projection']['composition_version'] )
 				? (int) $response['projection']['composition_version']
 				: $composition_version,
-			'watermarks'          => isset( $response['projection']['watermarks'] )
+			'watermarks'          => is_array( $response ) && isset( $response['projection']['watermarks'] )
 				? (array) $response['projection']['watermarks']
 				: [],
-			'cache_hint_token'    => isset( $response['cache_hint_token'] )
+			'cache_hint_token'    => is_array( $response ) && isset( $response['cache_hint_token'] )
 				? (string) $response['cache_hint_token']
 				: '',
 		];
-		// Render via the block.json render callback by calling render.php
-		// with the attributes — same code path as the front end.
-		$html = self::render_block_with_filter( $attributes, $client );
+
+		$html = dailyos_account_overview_render_from_projection( $response, $attributes );
+		if ( is_wp_error( $response ) ) {
+			return [
+				'ok'         => false,
+				'error'      => [
+					'code'    => $response->get_error_code(),
+					'message' => $response->get_error_message(),
+				],
+				'html'       => $html,
+				'attributes' => $attributes,
+			];
+		}
+
 		return array_merge(
 			$response,
 			[
