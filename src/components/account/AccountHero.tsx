@@ -3,13 +3,13 @@
  * Mockup: h1 76px serif, 2-3 sentence italic lede from intelligence,
  * hero-date line, watermark asterisk, health/lifecycle badges, and meta row.
  */
-import React, { useState, useRef, useEffect } from "react";
+import React from "react";
 import { Link } from "@tanstack/react-router";
 import type { AccountDetail, EntityIntelligence } from "@/types";
 import { formatRelativeDate as formatRelativeDateShort } from "@/lib/utils";
 import { IntelligenceQualityBadge } from "@/components/entity/IntelligenceQualityBadge";
 import { EditableText } from "@/components/ui/EditableText";
-import { ChevronDown } from "lucide-react";
+import { TypeBadge } from "@/components/ui/TypeBadge";
 import styles from "./AccountHero.module.css";
 
 interface AccountHeroProps {
@@ -80,7 +80,7 @@ export function AccountHero({
           return "";
         })()}
         {onSaveField && (
-          <AccountTypeBadge
+          <TypeBadge
             value={detail.accountType}
             onChange={(v) => onSaveField("account_type", v)}
           />
@@ -110,63 +110,3 @@ export function AccountHero({
   );
 }
 
-// ─── Account Type Badge (inline dropdown) ──────────────────────────────────
-
-const ACCOUNT_TYPES: { value: "customer" | "internal" | "partner"; label: string; badgeClass: string; optionActiveClass: string }[] = [
-  { value: "customer", label: "Customer", badgeClass: "customerBadge", optionActiveClass: "typeBadgeOptionCustomer" },
-  { value: "internal", label: "Internal", badgeClass: "internalBadge", optionActiveClass: "typeBadgeOptionInternal" },
-  { value: "partner", label: "Partner", badgeClass: "partnerBadge", optionActiveClass: "typeBadgeOptionPartner" },
-];
-
-function AccountTypeBadge({
-  value,
-  onChange,
-}: {
-  value: "customer" | "internal" | "partner";
-  onChange: (v: "customer" | "internal" | "partner") => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [open]);
-
-  const current = ACCOUNT_TYPES.find((t) => t.value === value) ?? ACCOUNT_TYPES[0];
-
-  return (
-    <div
-      ref={ref}
-      className={styles.typeBadgeWrapper}
-      data-ds-name="TypeBadge"
-      data-ds-tier="primitive"
-      data-ds-spec="primitives/TypeBadge.md"
-    >
-      <button
-        className={`${styles.badge} ${styles[current.badgeClass]} ${styles.typeBadgeButton}`}
-        onClick={() => setOpen(!open)}
-      >
-        {current.label}
-        <ChevronDown size={10} strokeWidth={2} className={styles.typeBadgeChevron} />
-      </button>
-      {open && (
-        <div className={styles.typeBadgeDropdown}>
-          {ACCOUNT_TYPES.map((opt) => (
-            <button
-              key={opt.value}
-              onClick={() => { onChange(opt.value); setOpen(false); }}
-              className={`${styles.typeBadgeOption} ${opt.value === value ? `${styles.typeBadgeOptionActive} ${styles[opt.optionActiveClass]}` : ""}`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}

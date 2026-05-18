@@ -44,21 +44,6 @@
   color: var(--color-text-secondary);
 }
 
-.customerBadge {
-  background: var(--color-account-12);
-  color: var(--color-account);
-}
-
-.internalBadge {
-  background: var(--color-garden-larkspur-15);
-  color: var(--color-garden-larkspur);
-}
-
-.partnerBadge {
-  background: var(--color-garden-rosemary-12);
-  color: var(--color-garden-rosemary);
-}
-
 .archivedBanner {
   composes: heroArchivedBanner from "../entity/EntityHeroBase.module.css";
 }
@@ -137,67 +122,3 @@
   max-width: 720px;
 }
 
-/* ── Account Type Badge ── */
-
-.typeBadgeWrapper {
-  position: relative;
-  display: inline-flex;
-}
-
-.typeBadgeButton {
-  cursor: pointer;
-  border: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-}
-
-.typeBadgeChevron {
-  opacity: 0.5;
-}
-
-.typeBadgeDropdown {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  background: var(--color-paper-cream);
-  border: 1px solid var(--color-rule-light);
-  border-radius: 4px;
-  box-shadow: var(--shadow-lg);
-  z-index: 50;
-  min-width: 120px;
-  padding: 4px 0;
-}
-
-.typeBadgeOption {
-  display: block;
-  width: 100%;
-  text-align: left;
-  padding: 6px 12px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 400;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--color-text-tertiary);
-  background: transparent;
-  border: none;
-  cursor: pointer;
-}
-
-.typeBadgeOptionActive {
-  font-weight: 600;
-  background: var(--color-desk-charcoal-4);
-}
-
-.typeBadgeOptionCustomer {
-  color: var(--color-account);
-}
-
-.typeBadgeOptionInternal {
-  color: var(--color-garden-larkspur);
-}
-
-.typeBadgeOptionPartner {
-  color: var(--color-garden-rosemary);
-}
