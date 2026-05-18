@@ -1479,8 +1479,14 @@ const TRUST_BAND_BADGE_FIELDS: &[FieldPolicy] = &[
     bool_field("/compact", ClaimSensitivity::Internal),
     text_field("/label", ClaimSensitivity::Internal),
 ];
-const INTELLIGENCE_QUALITY_BADGE_FIELDS: &[FieldPolicy] =
-    &[text_field("/payload/text", ClaimSensitivity::Internal)];
+const INTELLIGENCE_QUALITY_BADGE_FIELDS: &[FieldPolicy] = &[
+    number_field("/qualityScore", ClaimSensitivity::Internal),
+    bool_field("/hasNewSignals", ClaimSensitivity::Internal),
+    text_field("/lastEnriched", ClaimSensitivity::Internal),
+    text_field("/enrichedAt", ClaimSensitivity::Internal),
+    bool_field("/showLabel", ClaimSensitivity::Internal),
+    bool_field("/showTooltip", ClaimSensitivity::Internal),
+];
 const ENTITY_CHIP_FIELDS: &[FieldPolicy] =
     &[text_field("/payload/text", ClaimSensitivity::Internal)];
 const TYPE_BADGE_FIELDS: &[FieldPolicy] =
