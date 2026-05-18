@@ -447,14 +447,20 @@ final class DailyOS_AccountOverviewBlockTest extends TestCase {
 	 */
 	public static function typed_error_mapping_provider(): array {
 		$cases = [];
-		foreach ( [ 'rate_limited' ] as $code ) {
+		foreach ( [ 'rate_limited', 'transport_abuse_limited' ] as $code ) {
 			$cases[ $code ] = [ $code, 'Runtime is throttling; retry shortly.', 'RuntimeThrottledNotice' ];
 		}
+		// Session/pairing-repair-shaped codes — extended in L2 cycle 2 to cover
+		// every signed-runtime / pairing / signed-transport code emittable per
+		// surface_runtime/hmac.rs, surface_pairing.rs, and surface_runtime/mod.rs
+		// constructors. Verification banner is reserved for true projection-
+		// consistency failures + unknown-code fail-safe.
 		foreach ( [
 			'session_requires_repair',
 			'session_not_found',
 			'session_expired',
 			'session_throttled',
+			'session_invalid',
 			'identity_mismatch',
 			'wp_user_mismatch',
 			'pairing_code_invalid',
@@ -464,10 +470,20 @@ final class DailyOS_AccountOverviewBlockTest extends TestCase {
 			'pairing_suspended',
 			'pairing_revoked',
 			'pairing_expired',
+			'pairing_authority_unavailable',
 			'site_binding_mismatch',
 			'restored_stale_pairing',
+			'unknown_runtime_anchor',
 			'scope_denied',
 			'auth_missing',
+			'signature_invalid',
+			'canonicalization_mismatch',
+			'timestamp_stale',
+			'timestamp_future',
+			'key_not_found',
+			'key_rotated',
+			'token_invalid',
+			'nonce_replay',
 		] as $code ) {
 			$cases[ $code ] = [ $code, 'Surface session needs repair; reconnect from DailyOS settings.', 'SurfaceSessionRepairNotice' ];
 		}
@@ -489,6 +505,9 @@ final class DailyOS_AccountOverviewBlockTest extends TestCase {
 			'session_refresh_body_invalid',
 			'surface_invoke_invalid',
 			'event_log_id_invalid',
+			'project_composition_invalid',
+			'project_composition_unknown_producer',
+			'project_composition_invalid_id',
 		] as $code ) {
 			$cases[ $code ] = [ $code, "Editor sent a request the runtime couldn't process. Reload the editor.", 'InvalidRuntimeRequestNotice' ];
 		}
@@ -498,6 +517,7 @@ final class DailyOS_AccountOverviewBlockTest extends TestCase {
 			'stale_composition_watermark',
 			'missing_expected_claim_version',
 			'mid_flight_mutation',
+			'composition_version_overflow',
 		] as $code ) {
 			$cases[ $code ] = [ $code, 'line up', 'ConsistencyFindingBanner' ];
 		}

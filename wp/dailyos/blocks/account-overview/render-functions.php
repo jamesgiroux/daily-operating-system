@@ -91,11 +91,14 @@ if ( ! function_exists( 'dailyos_account_overview_render' ) ) {
 			$code = isset( $response['error']['code'] ) ? (string) $response['error']['code'] : 'runtime_request_failed';
 			switch ( $code ) {
 				case 'rate_limited':
+				case 'transport_abuse_limited':
 					return dailyos_account_overview_render_throttled_notice();
+				// Session/pairing-repair-shaped codes — user reconnects from settings.
 				case 'session_requires_repair':
 				case 'session_not_found':
 				case 'session_expired':
 				case 'session_throttled':
+				case 'session_invalid':
 				case 'identity_mismatch':
 				case 'wp_user_mismatch':
 				case 'pairing_code_invalid':
@@ -105,11 +108,22 @@ if ( ! function_exists( 'dailyos_account_overview_render' ) ) {
 				case 'pairing_suspended':
 				case 'pairing_revoked':
 				case 'pairing_expired':
+				case 'pairing_authority_unavailable':
 				case 'site_binding_mismatch':
 				case 'restored_stale_pairing':
+				case 'unknown_runtime_anchor':
 				case 'scope_denied':
 				case 'auth_missing':
+				case 'signature_invalid':
+				case 'canonicalization_mismatch':
+				case 'timestamp_stale':
+				case 'timestamp_future':
+				case 'key_not_found':
+				case 'key_rotated':
+				case 'token_invalid':
+				case 'nonce_replay':
 					return dailyos_account_overview_render_session_repair_notice();
+				// Runtime-unavailable: transient infrastructure problem; retry.
 				case 'runtime_unavailable':
 				case 'runtime_request_failed':
 				case 'runtime_invalid_json':
@@ -118,20 +132,28 @@ if ( ! function_exists( 'dailyos_account_overview_render' ) ) {
 				case 'browser_origin_forbidden':
 				case 'route_not_found':
 					return dailyos_account_overview_render_runtime_unavailable_notice();
+				// Renderer-input-invalid: defensive — runtime can't process the request shape.
 				case 'request_body_too_large':
 				case 'request_body_unreadable':
 				case 'handshake_body_invalid':
 				case 'session_refresh_body_invalid':
 				case 'surface_invoke_invalid':
 				case 'event_log_id_invalid':
+				case 'project_composition_invalid':
+				case 'project_composition_unknown_producer':
+				case 'project_composition_invalid_id':
 					return dailyos_account_overview_render_invalid_request_notice();
+				// Projection-consistency failures — verification banner correct.
 				case 'projection_tampered':
 				case 'projection_version_rollback':
 				case 'stale_composition_watermark':
 				case 'missing_expected_claim_version':
 				case 'mid_flight_mutation':
+				case 'composition_version_overflow':
 					return dailyos_account_overview_render_verification_banner();
 				default:
+					// Fail-safe — unknown code → verification banner. Operator
+					// adds a typed mapping when a new code appears.
 					return dailyos_account_overview_render_verification_banner();
 			}
 		}
