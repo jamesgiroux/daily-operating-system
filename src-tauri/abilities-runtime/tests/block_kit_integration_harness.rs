@@ -478,6 +478,8 @@ fn escape_pointer_segment(segment: &str) -> String {
 mod account_overview_integration_fixture;
 #[path = "fixtures/avatar_integration_fixture.rs"]
 mod avatar_integration_fixture;
+#[path = "fixtures/freshness_indicator_integration_fixture.rs"]
+mod freshness_indicator_integration_fixture;
 #[path = "fixtures/health_badge_integration_fixture.rs"]
 mod health_badge_integration_fixture;
 
@@ -494,6 +496,7 @@ fn expected_block_fixtures_cover_requested_ci_block() {
         account_overview_integration_fixture::account_overview_fixture(),
         health_badge_integration_fixture::health_badge_fixture(),
         avatar_integration_fixture::avatar_fixture(),
+        freshness_indicator_integration_fixture::freshness_indicator_fixture(),
     ];
     assert!(
         known.iter().any(block_fixture_selected),

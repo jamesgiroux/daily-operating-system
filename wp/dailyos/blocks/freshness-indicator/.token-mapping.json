@@ -1,0 +1,26 @@
+[
+	{
+		"source_token": "--space-xs",
+		"target_token": "wp--preset--spacing--xs"
+	},
+	{
+		"source_token": "--color-text-tertiary",
+		"target_token": "wp--preset--color--text-tertiary"
+	},
+	{
+		"source_token": "--font-mono",
+		"target_token": "wp--custom--dailyos--tokens--font-mono"
+	},
+	{
+		"source_token": "--color-desk-charcoal-4",
+		"target_token": "wp--preset--color--desk-charcoal-4"
+	},
+	{
+		"source_token": "--color-text-quaternary",
+		"target_token": "wp--preset--color--text-quaternary"
+	},
+	{
+		"source_token": "--color-spice-saffron",
+		"target_token": "wp--preset--color--spice-saffron"
+	}
+]
