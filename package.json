@@ -31,6 +31,7 @@
     "wave8:smoke": "pnpm evidence:validate .docs/evals/examples && pnpm evidence:lint && pnpm evidence:contract-smoke -- --out src-tauri/target/evidence/contract/stage8a-smoke/record.json --run-id stage8a-smoke --scope v1.4.1-W8 && pnpm evidence:validate src-tauri/target/evidence/contract/stage8a-smoke/record.json && pnpm evidence:negative-probes",
     "build:mcp": "bash src-tauri/scripts/build-mcp.sh",
     "build:mcp:stub": "bash src-tauri/scripts/build-mcp.sh --stub",
+    "dailyos:new-block": "node wp/dailyos/scripts/new-block.mjs",
     "postinstall": "bash src-tauri/scripts/build-mcp.sh --stub && bash scripts/install-hooks.sh",
     "lint": "pnpm lint:eslint && pnpm lint:stylelint",
     "lint:eslint": "eslint src --max-warnings 9999 --cache --cache-location node_modules/.cache/eslint/",
