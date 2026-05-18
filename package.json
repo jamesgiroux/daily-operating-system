@@ -32,6 +32,8 @@
     "build:mcp": "bash src-tauri/scripts/build-mcp.sh",
     "build:mcp:stub": "bash src-tauri/scripts/build-mcp.sh --stub",
     "dailyos:new-block": "node wp/dailyos/scripts/new-block.mjs",
+    "dailyos:generate-theme-json": "node wp/dailyos/scripts/generate-theme-json.mjs",
+    "dailyos:translate-tauri": "node wp/dailyos/scripts/translate-tauri.mjs",
     "postinstall": "bash src-tauri/scripts/build-mcp.sh --stub && bash scripts/install-hooks.sh",
     "lint": "pnpm lint:eslint && pnpm lint:stylelint",
     "lint:eslint": "eslint src --max-warnings 9999 --cache --cache-location node_modules/.cache/eslint/",

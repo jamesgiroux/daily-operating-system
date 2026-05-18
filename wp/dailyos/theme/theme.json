@@ -1,0 +1,714 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/theme.json",
+	"version": 3,
+	"settings": {
+		"color": {
+			"palette": [
+				{
+					"slug": "account",
+					"name": "Account",
+					"color": "#c9a227"
+				},
+				{
+					"slug": "account-10",
+					"name": "Account 10",
+					"color": "rgba(201, 162, 39, 0.10)"
+				},
+				{
+					"slug": "account-12",
+					"name": "Account 12",
+					"color": "rgba(201, 162, 39, 0.12)"
+				},
+				{
+					"slug": "account-15",
+					"name": "Account 15",
+					"color": "rgba(201, 162, 39, 0.15)"
+				},
+				{
+					"slug": "account-18",
+					"name": "Account 18",
+					"color": "rgba(201, 162, 39, 0.18)"
+				},
+				{
+					"slug": "account-30",
+					"name": "Account 30",
+					"color": "rgba(201, 162, 39, 0.30)"
+				},
+				{
+					"slug": "account-4",
+					"name": "Account 4",
+					"color": "rgba(201, 162, 39, 0.04)"
+				},
+				{
+					"slug": "account-5",
+					"name": "Account 5",
+					"color": "rgba(201, 162, 39, 0.05)"
+				},
+				{
+					"slug": "account-6",
+					"name": "Account 6",
+					"color": "rgba(201, 162, 39, 0.06)"
+				},
+				{
+					"slug": "account-60",
+					"name": "Account 60",
+					"color": "rgba(201, 162, 39, 0.60)"
+				},
+				{
+					"slug": "account-7",
+					"name": "Account 7",
+					"color": "rgba(201, 162, 39, 0.07)"
+				},
+				{
+					"slug": "account-8",
+					"name": "Account 8",
+					"color": "rgba(201, 162, 39, 0.08)"
+				},
+				{
+					"slug": "action",
+					"name": "Action",
+					"color": "#c4654a"
+				},
+				{
+					"slug": "action-10",
+					"name": "Action 10",
+					"color": "rgba(196, 101, 74, 0.10)"
+				},
+				{
+					"slug": "action-12",
+					"name": "Action 12",
+					"color": "rgba(196, 101, 74, 0.12)"
+				},
+				{
+					"slug": "action-15",
+					"name": "Action 15",
+					"color": "rgba(196, 101, 74, 0.15)"
+				},
+				{
+					"slug": "action-20",
+					"name": "Action 20",
+					"color": "rgba(196, 101, 74, 0.20)"
+				},
+				{
+					"slug": "action-8",
+					"name": "Action 8",
+					"color": "rgba(196, 101, 74, 0.08)"
+				},
+				{
+					"slug": "black-2",
+					"name": "Black 2",
+					"color": "rgba(0, 0, 0, 0.02)"
+				},
+				{
+					"slug": "black-3",
+					"name": "Black 3",
+					"color": "rgba(0, 0, 0, 0.03)"
+				},
+				{
+					"slug": "black-4",
+					"name": "Black 4",
+					"color": "rgba(0, 0, 0, 0.04)"
+				},
+				{
+					"slug": "black-8",
+					"name": "Black 8",
+					"color": "rgba(0, 0, 0, 0.08)"
+				},
+				{
+					"slug": "desk-charcoal",
+					"name": "Desk Charcoal",
+					"color": "#1e2530"
+				},
+				{
+					"slug": "desk-charcoal-15",
+					"name": "Desk Charcoal 15",
+					"color": "rgba(30, 37, 48, 0.015)"
+				},
+				{
+					"slug": "desk-charcoal-25",
+					"name": "Desk Charcoal 25",
+					"color": "rgba(30, 37, 48, 0.25)"
+				},
+				{
+					"slug": "desk-charcoal-4",
+					"name": "Desk Charcoal 4",
+					"color": "rgba(30, 37, 48, 0.04)"
+				},
+				{
+					"slug": "desk-charcoal-40",
+					"name": "Desk Charcoal 40",
+					"color": "rgba(30, 37, 48, 0.40)"
+				},
+				{
+					"slug": "desk-charcoal-5",
+					"name": "Desk Charcoal 5",
+					"color": "rgba(30, 37, 48, 0.05)"
+				},
+				{
+					"slug": "desk-charcoal-8",
+					"name": "Desk Charcoal 8",
+					"color": "rgba(30, 37, 48, 0.08)"
+				},
+				{
+					"slug": "desk-ink",
+					"name": "Desk Ink",
+					"color": "#2a2b3d"
+				},
+				{
+					"slug": "garden-eucalyptus",
+					"name": "Garden Eucalyptus",
+					"color": "#6ba8a4"
+				},
+				{
+					"slug": "garden-eucalyptus-10",
+					"name": "Garden Eucalyptus 10",
+					"color": "rgba(107, 168, 164, 0.10)"
+				},
+				{
+					"slug": "garden-eucalyptus-6",
+					"name": "Garden Eucalyptus 6",
+					"color": "rgba(107, 168, 164, 0.06)"
+				},
+				{
+					"slug": "garden-larkspur",
+					"name": "Garden Larkspur",
+					"color": "#8fa3c4"
+				},
+				{
+					"slug": "garden-larkspur-10",
+					"name": "Garden Larkspur 10",
+					"color": "rgba(143, 163, 196, 0.10)"
+				},
+				{
+					"slug": "garden-larkspur-12",
+					"name": "Garden Larkspur 12",
+					"color": "rgba(143, 163, 196, 0.12)"
+				},
+				{
+					"slug": "garden-larkspur-14",
+					"name": "Garden Larkspur 14",
+					"color": "rgba(143, 163, 196, 0.14)"
+				},
+				{
+					"slug": "garden-larkspur-15",
+					"name": "Garden Larkspur 15",
+					"color": "rgba(143, 163, 196, 0.15)"
+				},
+				{
+					"slug": "garden-larkspur-8",
+					"name": "Garden Larkspur 8",
+					"color": "rgba(143, 163, 196, 0.08)"
+				},
+				{
+					"slug": "garden-olive",
+					"name": "Garden Olive",
+					"color": "#6b7c52"
+				},
+				{
+					"slug": "garden-olive-10",
+					"name": "Garden Olive 10",
+					"color": "rgba(107, 124, 82, 0.10)"
+				},
+				{
+					"slug": "garden-olive-6",
+					"name": "Garden Olive 6",
+					"color": "rgba(107, 124, 82, 0.06)"
+				},
+				{
+					"slug": "garden-olive-8",
+					"name": "Garden Olive 8",
+					"color": "rgba(107, 124, 82, 0.08)"
+				},
+				{
+					"slug": "garden-rosemary",
+					"name": "Garden Rosemary",
+					"color": "#4a6741"
+				},
+				{
+					"slug": "garden-rosemary-12",
+					"name": "Garden Rosemary 12",
+					"color": "rgba(74, 103, 65, 0.12)"
+				},
+				{
+					"slug": "garden-rosemary-14",
+					"name": "Garden Rosemary 14",
+					"color": "rgba(74, 103, 65, 0.14)"
+				},
+				{
+					"slug": "garden-sage",
+					"name": "Garden Sage",
+					"color": "#7eaa7b"
+				},
+				{
+					"slug": "garden-sage-10",
+					"name": "Garden Sage 10",
+					"color": "rgba(126, 170, 123, 0.10)"
+				},
+				{
+					"slug": "garden-sage-12",
+					"name": "Garden Sage 12",
+					"color": "rgba(126, 170, 123, 0.12)"
+				},
+				{
+					"slug": "garden-sage-14",
+					"name": "Garden Sage 14",
+					"color": "rgba(126, 170, 123, 0.14)"
+				},
+				{
+					"slug": "garden-sage-15",
+					"name": "Garden Sage 15",
+					"color": "rgba(126, 170, 123, 0.15)"
+				},
+				{
+					"slug": "garden-sage-20",
+					"name": "Garden Sage 20",
+					"color": "rgba(126, 170, 123, 0.20)"
+				},
+				{
+					"slug": "garden-sage-8",
+					"name": "Garden Sage 8",
+					"color": "rgba(126, 170, 123, 0.08)"
+				},
+				{
+					"slug": "overlay-light",
+					"name": "Overlay Light",
+					"color": "rgba(0, 0, 0, 0.4)"
+				},
+				{
+					"slug": "overlay-medium",
+					"name": "Overlay Medium",
+					"color": "rgba(0, 0, 0, 0.5)"
+				},
+				{
+					"slug": "paper-cream",
+					"name": "Paper Cream",
+					"color": "#f5f2ef"
+				},
+				{
+					"slug": "paper-linen",
+					"name": "Paper Linen",
+					"color": "#e8e2d9"
+				},
+				{
+					"slug": "paper-warm-white",
+					"name": "Paper Warm White",
+					"color": "#faf8f6"
+				},
+				{
+					"slug": "person",
+					"name": "Person",
+					"color": "#8fa3c4"
+				},
+				{
+					"slug": "person-10",
+					"name": "Person 10",
+					"color": "rgba(143, 163, 196, 0.10)"
+				},
+				{
+					"slug": "person-12",
+					"name": "Person 12",
+					"color": "rgba(143, 163, 196, 0.12)"
+				},
+				{
+					"slug": "person-14",
+					"name": "Person 14",
+					"color": "rgba(143, 163, 196, 0.14)"
+				},
+				{
+					"slug": "person-15",
+					"name": "Person 15",
+					"color": "rgba(143, 163, 196, 0.15)"
+				},
+				{
+					"slug": "person-8",
+					"name": "Person 8",
+					"color": "rgba(143, 163, 196, 0.08)"
+				},
+				{
+					"slug": "project",
+					"name": "Project",
+					"color": "#6b7c52"
+				},
+				{
+					"slug": "project-10",
+					"name": "Project 10",
+					"color": "rgba(107, 124, 82, 0.10)"
+				},
+				{
+					"slug": "project-6",
+					"name": "Project 6",
+					"color": "rgba(107, 124, 82, 0.06)"
+				},
+				{
+					"slug": "project-8",
+					"name": "Project 8",
+					"color": "rgba(107, 124, 82, 0.08)"
+				},
+				{
+					"slug": "rule-heavy",
+					"name": "Rule Heavy",
+					"color": "rgba(30, 37, 48, 0.12)"
+				},
+				{
+					"slug": "rule-light",
+					"name": "Rule Light",
+					"color": "rgba(30, 37, 48, 0.06)"
+				},
+				{
+					"slug": "self",
+					"name": "Self",
+					"color": "#6ba8a4"
+				},
+				{
+					"slug": "self-10",
+					"name": "Self 10",
+					"color": "rgba(107, 168, 164, 0.10)"
+				},
+				{
+					"slug": "self-6",
+					"name": "Self 6",
+					"color": "rgba(107, 168, 164, 0.06)"
+				},
+				{
+					"slug": "spice-chili",
+					"name": "Spice Chili",
+					"color": "#9b3a2a"
+				},
+				{
+					"slug": "spice-saffron",
+					"name": "Spice Saffron",
+					"color": "#deb841"
+				},
+				{
+					"slug": "spice-saffron-10",
+					"name": "Spice Saffron 10",
+					"color": "rgba(222, 184, 65, 0.10)"
+				},
+				{
+					"slug": "spice-saffron-12",
+					"name": "Spice Saffron 12",
+					"color": "rgba(222, 184, 65, 0.12)"
+				},
+				{
+					"slug": "spice-saffron-15",
+					"name": "Spice Saffron 15",
+					"color": "rgba(222, 184, 65, 0.15)"
+				},
+				{
+					"slug": "spice-saffron-8",
+					"name": "Spice Saffron 8",
+					"color": "rgba(222, 184, 65, 0.08)"
+				},
+				{
+					"slug": "spice-terracotta",
+					"name": "Spice Terracotta",
+					"color": "#c4654a"
+				},
+				{
+					"slug": "spice-terracotta-10",
+					"name": "Spice Terracotta 10",
+					"color": "rgba(196, 101, 74, 0.10)"
+				},
+				{
+					"slug": "spice-terracotta-12",
+					"name": "Spice Terracotta 12",
+					"color": "rgba(196, 101, 74, 0.12)"
+				},
+				{
+					"slug": "spice-terracotta-15",
+					"name": "Spice Terracotta 15",
+					"color": "rgba(196, 101, 74, 0.15)"
+				},
+				{
+					"slug": "spice-terracotta-20",
+					"name": "Spice Terracotta 20",
+					"color": "rgba(196, 101, 74, 0.20)"
+				},
+				{
+					"slug": "spice-terracotta-8",
+					"name": "Spice Terracotta 8",
+					"color": "rgba(196, 101, 74, 0.08)"
+				},
+				{
+					"slug": "spice-turmeric",
+					"name": "Spice Turmeric",
+					"color": "#c9a227"
+				},
+				{
+					"slug": "spice-turmeric-10",
+					"name": "Spice Turmeric 10",
+					"color": "rgba(201, 162, 39, 0.10)"
+				},
+				{
+					"slug": "spice-turmeric-12",
+					"name": "Spice Turmeric 12",
+					"color": "rgba(201, 162, 39, 0.12)"
+				},
+				{
+					"slug": "spice-turmeric-15",
+					"name": "Spice Turmeric 15",
+					"color": "rgba(201, 162, 39, 0.15)"
+				},
+				{
+					"slug": "spice-turmeric-18",
+					"name": "Spice Turmeric 18",
+					"color": "rgba(201, 162, 39, 0.18)"
+				},
+				{
+					"slug": "spice-turmeric-30",
+					"name": "Spice Turmeric 30",
+					"color": "rgba(201, 162, 39, 0.30)"
+				},
+				{
+					"slug": "spice-turmeric-4",
+					"name": "Spice Turmeric 4",
+					"color": "rgba(201, 162, 39, 0.04)"
+				},
+				{
+					"slug": "spice-turmeric-5",
+					"name": "Spice Turmeric 5",
+					"color": "rgba(201, 162, 39, 0.05)"
+				},
+				{
+					"slug": "spice-turmeric-6",
+					"name": "Spice Turmeric 6",
+					"color": "rgba(201, 162, 39, 0.06)"
+				},
+				{
+					"slug": "spice-turmeric-60",
+					"name": "Spice Turmeric 60",
+					"color": "rgba(201, 162, 39, 0.60)"
+				},
+				{
+					"slug": "spice-turmeric-7",
+					"name": "Spice Turmeric 7",
+					"color": "rgba(201, 162, 39, 0.07)"
+				},
+				{
+					"slug": "spice-turmeric-8",
+					"name": "Spice Turmeric 8",
+					"color": "rgba(201, 162, 39, 0.08)"
+				},
+				{
+					"slug": "surface",
+					"name": "Surface",
+					"color": "#f5f2ef"
+				},
+				{
+					"slug": "surface-inset",
+					"name": "Surface Inset",
+					"color": "rgba(30, 37, 48, 0.04)"
+				},
+				{
+					"slug": "surface-primary",
+					"name": "Surface Primary",
+					"color": "#faf8f6"
+				},
+				{
+					"slug": "surface-secondary",
+					"name": "Surface Secondary",
+					"color": "#e8e2d9"
+				},
+				{
+					"slug": "surface-subtle",
+					"name": "Surface Subtle",
+					"color": "rgba(0, 0, 0, 0.04)"
+				},
+				{
+					"slug": "text-primary",
+					"name": "Text Primary",
+					"color": "#1e2530"
+				},
+				{
+					"slug": "text-secondary",
+					"name": "Text Secondary",
+					"color": "#5a6370"
+				},
+				{
+					"slug": "text-tertiary",
+					"name": "Text Tertiary",
+					"color": "#6b7280"
+				},
+				{
+					"slug": "trust-likely-current",
+					"name": "Trust Likely Current",
+					"color": "#7eaa7b"
+				},
+				{
+					"slug": "trust-likely-current-10",
+					"name": "Trust Likely Current 10",
+					"color": "rgba(126, 170, 123, 0.10)"
+				},
+				{
+					"slug": "trust-likely-current-12",
+					"name": "Trust Likely Current 12",
+					"color": "rgba(126, 170, 123, 0.12)"
+				},
+				{
+					"slug": "trust-likely-current-15",
+					"name": "Trust Likely Current 15",
+					"color": "rgba(126, 170, 123, 0.15)"
+				},
+				{
+					"slug": "trust-likely-current-8",
+					"name": "Trust Likely Current 8",
+					"color": "rgba(126, 170, 123, 0.08)"
+				},
+				{
+					"slug": "trust-needs-verification",
+					"name": "Trust Needs Verification",
+					"color": "#c4654a"
+				},
+				{
+					"slug": "trust-needs-verification-10",
+					"name": "Trust Needs Verification 10",
+					"color": "rgba(196, 101, 74, 0.10)"
+				},
+				{
+					"slug": "trust-needs-verification-12",
+					"name": "Trust Needs Verification 12",
+					"color": "rgba(196, 101, 74, 0.12)"
+				},
+				{
+					"slug": "trust-needs-verification-15",
+					"name": "Trust Needs Verification 15",
+					"color": "rgba(196, 101, 74, 0.15)"
+				},
+				{
+					"slug": "trust-needs-verification-8",
+					"name": "Trust Needs Verification 8",
+					"color": "rgba(196, 101, 74, 0.08)"
+				},
+				{
+					"slug": "trust-use-with-caution",
+					"name": "Trust Use With Caution",
+					"color": "#deb841"
+				},
+				{
+					"slug": "trust-use-with-caution-10",
+					"name": "Trust Use With Caution 10",
+					"color": "rgba(222, 184, 65, 0.10)"
+				},
+				{
+					"slug": "trust-use-with-caution-12",
+					"name": "Trust Use With Caution 12",
+					"color": "rgba(222, 184, 65, 0.12)"
+				},
+				{
+					"slug": "trust-use-with-caution-15",
+					"name": "Trust Use With Caution 15",
+					"color": "rgba(222, 184, 65, 0.15)"
+				},
+				{
+					"slug": "trust-use-with-caution-8",
+					"name": "Trust Use With Caution 8",
+					"color": "rgba(222, 184, 65, 0.08)"
+				}
+			],
+			"custom": true,
+			"customDuotone": false,
+			"customGradient": false,
+			"defaultPalette": false,
+			"link": true
+		},
+		"spacing": {
+			"spacingSizes": [
+				{
+					"slug": "2xl",
+					"name": "2xl",
+					"size": "48px"
+				},
+				{
+					"slug": "3xl",
+					"name": "3xl",
+					"size": "56px"
+				},
+				{
+					"slug": "4xl",
+					"name": "4xl",
+					"size": "72px"
+				},
+				{
+					"slug": "5xl",
+					"name": "5xl",
+					"size": "80px"
+				},
+				{
+					"slug": "lg",
+					"name": "Lg",
+					"size": "24px"
+				},
+				{
+					"slug": "md",
+					"name": "Md",
+					"size": "16px"
+				},
+				{
+					"slug": "sm",
+					"name": "Sm",
+					"size": "8px"
+				},
+				{
+					"slug": "xl",
+					"name": "Xl",
+					"size": "32px"
+				},
+				{
+					"slug": "xs",
+					"name": "Xs",
+					"size": "4px"
+				}
+			],
+			"units": [
+				"px",
+				"rem",
+				"em",
+				"%"
+			]
+		},
+		"custom": {
+			"dailyos": {
+				"generator": "wp/dailyos/scripts/generate-theme-json.mjs",
+				"source": "src/styles/design-tokens.css",
+				"tokens": {
+					"backdrop-blur": "blur(12px)",
+					"folio-height": "40px",
+					"folio-padding-bottom": "10px",
+					"folio-padding-left": "80px",
+					"folio-padding-right": "48px",
+					"folio-padding-top": "10px",
+					"font-mark": "'Montserrat', sans-serif",
+					"font-mono": "'JetBrains Mono', ui-monospace, monospace",
+					"font-sans": "'DM Sans', -apple-system, sans-serif",
+					"font-serif": "'Newsreader', Georgia, serif",
+					"frosted-glass-background": "rgba(245, 242, 239, 0.85)",
+					"frosted-glass-nav": "rgba(250, 248, 246, 0.8)",
+					"nav-island-right": "28px",
+					"page-content-width-reading": "760px",
+					"page-content-width-standard": "900px",
+					"page-margin-top": "40px",
+					"page-max-width": "1180px",
+					"page-padding-bottom": "160px",
+					"page-padding-horizontal": "120px",
+					"radius-editorial-lg": "12px",
+					"radius-editorial-md": "10px",
+					"radius-editorial-sm": "4px",
+					"radius-editorial-xl": "16px",
+					"shadow-2xl": "0 8px 32px rgba(0, 0, 0, 0.12)",
+					"shadow-dropdown": "0 4px 24px rgba(0, 0, 0, 0.08)",
+					"shadow-lg": "0 4px 12px rgba(0, 0, 0, 0.08)",
+					"shadow-md": "0 2px 12px rgba(30, 37, 48, 0.06), 0 0 0 1px rgba(30, 37, 48, 0.04)",
+					"shadow-modal": "0 20px 60px rgba(30, 37, 48, 0.15)",
+					"shadow-sm": "0 2px 8px rgba(30, 37, 48, 0.1)",
+					"shadow-xl": "0 4px 16px rgba(0, 0, 0, 0.12)",
+					"transition-fast": "0.12s ease",
+					"transition-normal": "0.15s ease",
+					"z-app-shell": "100",
+					"z-atmosphere": "0",
+					"z-lock": "1000",
+					"z-page-content": "1"
+				}
+			}
+		}
+	}
+}
