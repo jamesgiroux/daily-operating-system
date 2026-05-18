@@ -1,6 +1,6 @@
 # L0 Packet C — C1 Starter Kit
 
-**Current revision: V1.0 (initial draft, 2026-05-18). See §2 Changelog.**
+**Current revision: V1.1 (cycle-1 fold + critical-rewrite, 2026-05-18). See §2 Changelog.**
 
 ## 1. Header
 
@@ -28,6 +28,146 @@ This packet ships the v1.4.3 execution-constraint-C1 deliverable: the block auth
 **Intelligence Loop integration check — exempt.** No claim/table/surface added; the kit is a code-generation toolchain over existing substrate primitives. No provenance/trust impact; no signal change; no runtime context surface consumes new state; no feedback loop change. CLAUDE.md §"Critical Rules — Intelligence Loop integration check" does not apply.
 
 ## 2. Changelog
+
+- **V1.1 (2026-05-18, cycle-1 critical-rewrite):** 4 of 5 cycle-1 reviewers
+  returned non-BLOCK (CSO CA, DX CA, code-reviewer CA, codex challenge BLOCK).
+  Codex consult R1 died silently; re-dispatched for R2 against V1.1.
+
+  Codex challenge BLOCK + code-reviewer's 3 mis-citations + CSO's factual
+  amendment triangulated on **three load-bearing substrate-reuse errors** in
+  V1.0 that would have derailed implementation. Folded inline:
+
+  - **§5.1 + §5.4 drop the "CLI modifies class-dailyos-plugin.php" scope.**
+    CSO + code-reviewer + codex challenge C2 all confirm: the existing
+    `register_blocks()` at `wp/dailyos/includes/class-dailyos-plugin.php:149-163`
+    is a `glob('blocks/*/block.json')` directory scan. There is no enumeration
+    to insert into, and the CLI shouldn't fight glob registration. **V1.1
+    simplifies dramatically: CLI just drops the block.json + supporting files
+    into `wp/dailyos/blocks/<name>/`; glob auto-registers on next request.**
+    Removes the largest automated-mutation surface from the kit.
+  - **§5.4 projection rule template completely rewritten** (codex challenge C1).
+    V1.0 templated `register_custom_block_schema(CustomBlockSchema::new(...))`
+    with `BindingRole::Title/Text` — but `register_custom_block_schema` is
+    only called in tests (`tests/dos570_fallback_projection.rs:101`), and the
+    `BindingRole` enum doesn't have `Title`/`Text` variants (real:
+    `Source | ComputedFrom | DisplayOnly | FeedbackTarget` at
+    `composition.rs:175`). `FieldPath::new` also requires `/`-prefixed JSON
+    pointers (`provenance/field.rs:20`), so `payload.text` is invalid syntax.
+    Production projection dispatches through the `BlockType` enum
+    (`composition.rs:330+`) and `known_projection_rules()` Vec at
+    `fallback_projection.rs:1236-1252,1415-1423`. V1.1 either (a) templates
+    against the real flow (BlockType + known_projection_rules + concrete
+    rule constructor like `account_overview_rule()`) OR (b) promotes
+    `register_custom_block_schema` from test-only to production as net-new
+    substrate work in scope. V1.1 picks (a) — extends `BlockType` enum +
+    `known_projection_rules()` per new block, no net-new substrate.
+  - **§5.5 harness fixture schema-rewritten** (codex challenge C3). V1.0
+    fixture was substring-based (`expected_projection_keys` +
+    `expected_renderer_html_contains`) which can catch gross missing keys
+    but NOT the subtle DOS-670 drift class (value-kind mismatch, optional vs
+    required drift, nesting drift, payload.text→payload.body, etc).
+    V1.1 fixture is schema-based: JSON pointer + `ValueKind` + `required` vs
+    `optional` per binding + expected diagnostics + expected renderer branch
+    + exact block wrapper/data attributes. Adds explicit negative-fixture
+    classes for field rename, type drift, required-to-optional drift,
+    optional-to-required drift, payload nesting drift. DOS-670-style
+    diagnostic gets a 4-field shape: location, declared, actual, did-you-mean
+    (via edit-distance) — per DX F4.
+  - **§5.6 token source paths corrected** (code-reviewer + codex challenge
+    H3). V1.0 cited `src/styles/tokens.css` — actual file is
+    `src/styles/design-tokens.css` (`.docs/design/tokens/color.md:137`).
+    V1.0 cited `wp/dailyos/theme/theme.json` as canonical source — that
+    file doesn't exist; theme.json is W3-owned generated OUTPUT. V1.1
+    treats theme.json as generated output (kit's generator produces it,
+    W3 ships the finalized version), not input. Token graph normalization
+    added so semantic aliases like `--color-account → --color-spice-turmeric`
+    don't false-conflict.
+  - **§5.7 translator scope matrix replaces "90% scaffold" prose** (codex
+    challenge H1 + DX F5). V1.0's "90% scaffold" was hand-wavy and overclaimed.
+    V1.1 enumerates a 4-row support matrix:
+    - **Supported (static render-only, TSX + CSS Module):** Pill, HealthBadge, StatusDot, Avatar, IntelligenceQualityBadge, FreshnessIndicator, ProvenanceTag, TrustBandBadge (post-promotion)
+    - **Supported with promotion (proposed → integrated source-only):** TrustBandBadge (currently proposed)
+    - **Supported with inline-style adaptation:** FolioRefreshButton (no CSS module today — translator extracts inline styles)
+    - **NOT supported (interactive — manual template):** InlineInput, EditableText, Switch, Segmented, RemovableChip, EntityChip editable variants, TypeBadge editable mode
+    Translator exits 1 with actionable diagnostic on unsupported input (NOT a partial scaffold a dev might trust).
+  - **§5.2 add 3rd template shape "typed-display"** (codex challenge H2 +
+    DX F3). V1.0 simple+composite isn't enough for Wave 1 primitives with
+    multiple typed attrs (HealthBadge score/band/size/insufficient-data,
+    Avatar photo-url/cache/initials/size, FreshnessIndicator timestamp/staleness,
+    EntityChip type/name/icon, TypeBadge account-type). V1.1 adds typed-display:
+    multiple typed attrs, variant enum validation, optional asset URL,
+    deterministic PHP formatter, harness assertions per-attr type/requiredness.
+  - **§5.1 CLI hybrid pattern** (DX F1). V1.1 spec: flag-only when all flags
+    provided (scriptable for codex agents); interactive fallback via
+    `prompts` or `enquirer` (NOT `inquirer` v9 which is ESM-only and breaks
+    Tauri build scripts) when invoked bare. Splits `--ability <name>` (link
+    existing) from `--new-ability <name>` (scaffold producer).
+  - **§5.3 producer template adds a worked `prepare_` body** (DX F3). V1.0
+    template scaffolded around `prepare_*` but punted on what it actually
+    does — the hard part of producer authoring. V1.1 ships a complete
+    simple-shape prepare body so bare scaffold passes the harness without
+    further edits.
+  - **§6.1 allow ONE templates/README.md ≤50 lines** (DX F2). V1.0's
+    "CLI --help-as-documentation" absolutism fails first-time author path.
+    V1.1 allows a single ≤50-line `wp/dailyos/scripts/templates/README.md`
+    with structural pointers (invocation + reference block + harness fixture
+    example), CI-gated for path resolution. Anti-drift principle intact;
+    the launch checklist isn't drift-prone.
+  - **§6.6 REMOVED.** V1.0 §6.6 justified "explicit allowlist over directory
+    scan" citing a fictional W4-F precedent. The actual existing pattern IS
+    glob; V1.1 keeps glob. Section removed entirely; CLI no longer modifies
+    plugin core.
+  - **§5.5 harness PHP shell-out generic-not-account-specific** (codex
+    challenge M1). V1.0 said harness reuses existing `render_block_with_filter`
+    — that helper is account-overview-specific (`class-dailyos-plugin.php:675-690`).
+    V1.1 spec: a generic PHP test entrypoint that registers target block
+    metadata, injects fake runtime client, calls WordPress
+    `render_block`/metadata render callback. (Path-α maintenance: extract
+    account-overview's helper into public test helper.)
+  - **§5.5 + §9 invariant #2 harden against template drift** (CSO L-4):
+    require `esc_html` / `esc_attr` / `wp_kses_post` wrapping in translator
+    output; add `php -l` validation + grep gate to invariant set; PHP harness
+    input contract restricted to (projection-path under fixtures/, allowlisted
+    ability name, sibling expected.json); no eval/include/exec of argv-derived
+    paths.
+  - **§5.6 token generator atomicity** (CSO L-2): tmpfile+rename atomic
+    write; validate JSON before swap; rollback on validation failure.
+  - **§10 landing shape restructured** (codex challenge H4). V1.0 split
+    delayed the CI gate that C1 says is load-bearing. V1.1 split (if needed):
+    harness + CI workflow + first integration fixture vs `account-overview`
+    LAND TOGETHER FIRST → then CLI + templates → then translator + theme
+    generator (separately, different dep graphs per codex challenge M3).
+  - **§7 AC #1 tagged L4-hands-on** (code-reviewer #6). The "produces a
+    working block in <5 minutes" criterion is hands-on, not unit-testable.
+    V1.1 marks it explicitly for L4 batch validation.
+  - **§7 AC #6 redefined** (code-reviewer #4). V1.0 "byte-equal (modulo
+    timestamps + IDs)" was squishy. V1.1: replace AccountOverview parity
+    target — there's no Tauri `AccountOverview.tsx` source to feed the
+    translator (codex challenge H5). New AC #6: translator + harness pass
+    on a 2-primitive fixture set: Pill (simple-shape) + HealthBadge
+    (typed-display shape).
+  - **§11 block-name conflict policy added** (code-reviewer #5): CLI
+    enumerates existing `wp/dailyos/blocks/*/block.json` slugs + errors out
+    if `<name>` collides. Documents the conflict-resolution decision tree.
+  - **§11 BlockType enum extension story added** (code-reviewer #5):
+    every new block requires a corresponding `BlockType` variant addition
+    + `<name>_rule()` constructor + `known_projection_rules()` registration.
+    CLI generates the Rust scaffold stub; developer adds the actual
+    rule logic. Tagged in AC #1b.
+  - **§1.4.3-waves.md:75 token source naming fix** (code-reviewer + codex
+    challenge H3): change `src/styles/tokens.css` → `src/styles/design-tokens.css`
+    in the wave plan invariants table.
+  - **DEFERRED to v1.x maintenance backlog** (DOS-684 already filed):
+    - Repo-wide token source-name cleanup pass
+    - Design inventory render-only-vs-interactive flag (interaction column)
+    - Extract account-overview's private renderer into public test helper
+
+  V1.1 LINE COUNT EXPECTED: ~700 lines (was 370). Substantial growth reflects
+  the rewritten §5.4 + §5.5 + §5.7 with the actual substrate APIs + concrete
+  schema-based contracts. The architectural shape (extract W4-F into kit
+  templates + integration harness + token/translator utilities) is UNCHANGED;
+  V1.1 corrects the substrate-reuse citations + concrete API signatures + scope
+  boundaries to match repo ground truth.
 
 - **V1.0 (2026-05-18):** Initial L0 draft. Authored against `.docs/plans/v1.4.3-waves.md` §W1 + Linear DOS-678 + v1.4.2 W4-F reference implementation. Reviewer panel set to codex challenge + codex consult + code-reviewer + DX review. CSO advisory only — no new trust boundaries.
 
@@ -67,16 +207,22 @@ No DB schema changes. No new claim model. No new signal types. No new ability ca
 
 ### 5.1 CLI scaffold tool (`wp/dailyos/scripts/new-block.mjs`)
 
-A Node.js (or Bash) CLI invoked as `pnpm dailyos:new-block <block-name> [--payload-shape simple|composite] [--ability <producer-name>]`. Default: simple Pill-shape (single payload field, e.g., `text`). `composite` shape gets the AccountOverview-style multi-block scaffold.
+A Node.js CLI invoked as `pnpm dailyos:new-block <block-name> [--template simple|typed-display|composite] [--ability <existing-ability-name>] [--new-ability <new-ability-name>]`. Defaults: `--template simple`, no ability flag (block consumes existing producer or is a pure-render placeholder).
+
+**Hybrid invocation pattern (V1.1 per DX F1):** flag-only when all required flags
+provided (scriptable for codex agents); interactive fallback via `prompts` or
+`enquirer` (NOT `inquirer` v9 which is ESM-only and breaks Tauri build scripts)
+when invoked bare.
 
 Responsibilities:
 1. Validate `<block-name>` matches `[a-z][a-z0-9-]+` (Gutenberg block name slug rules).
-2. Copy templates from `wp/dailyos/scripts/templates/<shape>/` into `wp/dailyos/blocks/<block-name>/` with name interpolation (`{{BLOCK_NAME}}`, `{{ABILITY_NAME}}`, `{{PHP_FUNCTION_PREFIX}}`).
-3. Update `wp/dailyos/includes/class-dailyos-plugin.php` to register the new block (insert into the block-metadata enumeration at `:154-170`).
-4. If `--ability` flag is provided AND the ability doesn't exist, copy the producer template into `src-tauri/abilities-runtime/src/abilities/<ability-name>.rs` and register in the ability registry.
-5. Print the next steps: edit X, edit Y, run the kit integration fixture to verify.
+2. Enumerate existing `wp/dailyos/blocks/*/block.json` slugs; error out if `<block-name>` collides (V1.1 block-name conflict policy per code-reviewer #5).
+3. Copy templates from `wp/dailyos/scripts/templates/<template>/` into `wp/dailyos/blocks/<block-name>/` with name interpolation (`{{BLOCK_NAME}}`, `{{ABILITY_NAME}}`, `{{PHP_FUNCTION_PREFIX}}`, `{{BlockType}}`).
+4. **NO modification of `wp/dailyos/includes/class-dailyos-plugin.php`** (V1.1 critical correction per CSO + code-reviewer + codex challenge triangulation). The existing `register_blocks()` at `class-dailyos-plugin.php:149-163` uses `glob('blocks/*/block.json')` — dropping a new `block.json` into the right directory is sufficient; glob picks it up automatically on next request.
+5. If `--new-ability` is provided: copy producer template into `src-tauri/abilities-runtime/src/abilities/<ability-name>.rs`, generate the BlockType enum variant + `<name>_rule()` constructor + `known_projection_rules()` registration stub (Rust scaffold the developer fills in per AC #1b). If `--ability` (link existing) is provided: validate the named ability exists in the registry; do NOT touch ability/registration files.
+6. Print the next steps: edit X (TODO regions in producer + projection rule), run `pnpm dailyos:test-block <name>` to invoke the kit's integration fixture, run `pnpm dev` to view in WordPress editor.
 
-CLI errors out on existing block name (no overwrite). Exit codes: 0 success, 1 validation error, 2 partial state (manual cleanup needed).
+CLI errors out on existing block-name collision (no overwrite). Exit codes: 0 success, 1 validation error (bad name, collision, missing dep), 2 partial state (template copy + ability scaffold succeeded; registration stub failed → emits an exact cleanup manifest per L3 fix). `--keep-partial` overrides the cleanup-on-failure behavior for debugging.
 
 ### 5.2 Block scaffold templates (`wp/dailyos/scripts/templates/{simple,composite}/`)
 
@@ -160,60 +306,167 @@ pub async fn {{ability_fn_name}}(
 // TODO: implement normalize_input, prepare_{{ability_fn_name}}, helper types
 ```
 
-### 5.4 Projection rule template (`src-tauri/abilities-runtime/src/abilities/templates/projection_rule_template.rs.tmpl`)
+### 5.4 Projection rule template (rewritten V1.1 — real API)
 
-Rust snippet to be inserted into `fallback_projection.rs` registry. Template:
+V1.0 templated `register_custom_block_schema(...).with_field_binding(BindingRole::Title, ...)` — **but that API doesn't exist in production** (codex challenge C1):
+- `register_custom_block_schema` is test-only (`tests/dos570_fallback_projection.rs:101`).
+- `CustomBlockSchema` exposes `type_id`, `composition_kind`, `required_pointers`, `optional_pointers`, `render_annotations` — no `with_field_binding` (`fallback_projection.rs:211`).
+- The real `BindingRole` enum is `Source | ComputedFrom | DisplayOnly | FeedbackTarget` (`composition.rs:175`) — no `Title`/`Text` variants.
+- `FieldPath::new` requires `/`-prefixed JSON pointers (`provenance/field.rs:20`) — `payload.text` is invalid syntax.
+
+**V1.1 templates against the real flow:** production projection dispatches through the `BlockType` enum (`composition.rs:330+`) + `known_projection_rules()` Vec + concrete `<block>_rule()` constructor at `fallback_projection.rs:1236-1252,1415-1423`.
+
+CLI emits three Rust scaffold pieces (developer fills the TODO regions):
+
+**1. New BlockType enum variant** (insert into `src-tauri/abilities-runtime/src/abilities/composition.rs` `BlockType` enum):
 
 ```rust
-// Registered by `pnpm dailyos:new-block` for the {{ABILITY_NAME}} producer.
-register_custom_block_schema(CustomBlockSchema::new("dailyos/{{ABILITY_NAME_KEBAB}}")
-    .with_field_binding(BindingRole::Title, FieldPath::new("payload.title"))
-    .with_field_binding(BindingRole::Text, FieldPath::new("payload.text"))
-    // TODO: declare additional field bindings for this block's payload shape
-);
+// Inserted by `pnpm dailyos:new-block` for the {{ABILITY_NAME}} producer.
+#[serde(rename = "dailyos/{{ABILITY_NAME_KEBAB}}")]
+{{BlockType}},
 ```
+
+**2. Rule constructor function** (new file `src-tauri/abilities-runtime/src/abilities/{{ability_name}}_rule.rs`):
+
+```rust
+use crate::abilities::composition::BlockType;
+use crate::abilities::fallback_projection::{KnownProjectionRule, ProjectionRuleResult};
+
+pub fn {{ability_name}}_rule() -> KnownProjectionRule {
+    KnownProjectionRule::for_block(BlockType::{{BlockType}}, |block, ctx| {
+        // TODO: extract payload fields with required_pointer / optional_pointer
+        // (see account_overview_rule at fallback_projection.rs:1236-1252 for
+        // reference). Required pointers MUST use /-prefixed JSON pointer
+        // syntax: "/payload/text" not "payload.text".
+        ProjectionRuleResult::ok(/* projected fields */)
+    })
+}
+```
+
+**3. Registration into `known_projection_rules()` Vec** (insert into `fallback_projection.rs:1415-1423`):
+
+```rust
+{{ability_name}}_rule(),
+```
+
+The integration test harness (§5.5) exercises producer → projection → renderer end-to-end and fails fast if the developer's TODO regions yield mismatched payload shapes — that's the DOS-670 catch.
+
+**Note on alternative path:** V1.0's `register_custom_block_schema` could be promoted from test-only to production as net-new substrate work. V1.1 rejects this option as scope expansion — the existing `BlockType` + `known_projection_rules()` flow is what production already uses, and templating against it costs zero new substrate. The dynamic `CustomBlockSchema` registration belongs in v1.x maintenance if a real consumer emerges.
 
 ### 5.5 Shared integration test harness (`src-tauri/abilities-runtime/src/abilities/integration_test_harness.rs`)
 
 **Load-bearing primitive.** Exercises producer → projection → renderer end-to-end against a substrate test DB. Modeled on the v1.4.2 W4-F retrofit that DOS-670 forced.
 
-Shape:
+V1.0 fixture was substring-based (`expected_projection_keys` +
+`expected_renderer_html_contains`) — codex challenge C3 found this WON'T catch
+the subtle DOS-670 drift class (value-kind mismatch, optional vs required
+drift, payload nesting drift like `payload.text` → `payload.body`).
+
+**V1.1 schema-based fixture shape:**
 
 ```rust
 pub struct BlockIntegrationFixture {
     pub ability_name: String,           // e.g. "dailyos/account-overview"
     pub composition_id: String,         // synthetic, generated per test
     pub input_json: serde_json::Value,  // producer input
-    pub expected_projection_keys: Vec<String>,  // ProjectedBlock keys the projection should emit
-    pub expected_renderer_html_contains: Vec<String>,  // PHP renderer output assertions
+
+    /// Schema-based assertions per binding (NOT substring-based).
+    /// Each entry: JSON pointer (/-prefixed) + ValueKind + required-vs-optional.
+    pub expected_bindings: Vec<BindingExpectation>,
+
+    /// Expected diagnostics (e.g., warnings the projection rule should emit).
+    pub expected_diagnostics: Vec<ProjectionDiagnostic>,
+
+    /// Renderer branch coverage assertions (which switch arms must fire).
+    pub expected_renderer_branches: Vec<RendererBranchAssertion>,
+
+    /// Exact block wrapper element + data attributes the PHP renderer outputs.
+    pub expected_wrapper: BlockWrapperAssertion,
 }
 
-/// Runs the full producer → projection → renderer pipeline for a block.
-/// Caller passes a fixture; harness builds a substrate test DB, invokes the
-/// producer, runs `project_from_ability_data` against the result, then
-/// shells out to a PHP test harness (StarterKitIntegrationTest.php) to
-/// render the projection and assert HTML shape.
-///
-/// Returns the rendered HTML on success; panics with a diagnostic on
-/// contract mismatch (the kind that DOS-670 found).
-pub async fn run_block_integration_fixture(fixture: BlockIntegrationFixture) -> String;
+pub struct BindingExpectation {
+    pub pointer: String,           // e.g. "/payload/text" — /-prefixed JSON pointer
+    pub value_kind: ValueKind,     // String | Number | Bool | Array | Object | Null
+    pub required: bool,            // missing required → harness fails with DOS-670 diagnostic
+}
+
+pub struct RendererBranchAssertion {
+    pub branch_label: String,      // e.g. "single-claim-text"
+    pub expected_html_pattern: String, // exact pattern, anchored
+}
+
+/// Runs the full producer → projection → renderer pipeline.
+/// On contract mismatch, panics with a 4-field DOS-670-style diagnostic
+/// (per DX F4): { location, declared, actual, did_you_mean (edit-distance) }.
+pub async fn run_block_integration_fixture(fixture: BlockIntegrationFixture) -> RenderedHtml;
 
 /// Convenience macro for new-block authors:
 ///
 /// ```rust
-/// integration_test_block!(my_block, BlockIntegrationFixture { ... });
+/// integration_test_block!(
+///     my_block,
+///     BlockIntegrationFixture {
+///         ability_name: "dailyos/my-block".into(),
+///         composition_id: "test:cmp:1".into(),
+///         input_json: json!({ "schema_version": 1, "key": "value" }),
+///         expected_bindings: vec![
+///             BindingExpectation { pointer: "/payload/text".into(), value_kind: ValueKind::String, required: true },
+///             BindingExpectation { pointer: "/payload/subtitle".into(), value_kind: ValueKind::String, required: false },
+///         ],
+///         expected_diagnostics: vec![],
+///         expected_renderer_branches: vec![RendererBranchAssertion {
+///             branch_label: "single-claim-text".into(),
+///             expected_html_pattern: r#"<article class="dailyos-block dailyos-block-my-block">"#.into(),
+///         }],
+///         expected_wrapper: BlockWrapperAssertion { tag: "section", class: "wp-block-dailyos-my-block", data_attrs: vec![...] },
+///     }
+/// );
 /// ```
 #[macro_export]
-macro_rules! integration_test_block { ... }
+macro_rules! integration_test_block { /* generates a #[tokio::test] fn */ }
 ```
 
-The PHP-side harness at `wp/dailyos/tests/blocks/StarterKitIntegrationTest.php` accepts a projection JSON file path + ability name + expected HTML substring list, renders via the existing `render_block_with_filter` infrastructure (with a fake runtime client returning the projection), asserts substring presence, exit-codes 0 on success.
+**Negative fixture classes required (V1.1 per codex challenge C3):**
+- Field rename: producer emits `payload.text`; rule binds `payload.body` → harness fails with DOS-670 diagnostic (`location: "/payload/body"`, `declared: required-string`, `actual: missing`, `did_you_mean: "/payload/text" (edit_distance=2)`)
+- Type drift: producer emits `payload.count: "5"` (string); rule binds `Number` → harness fails with `location: "/payload/count"`, `declared: Number`, `actual: String`, `did_you_mean: null`
+- Required-to-optional drift: existing fixture says `required: true`; producer made it optional → harness fails on shape change
+- Optional-to-required drift: existing fixture says `required: false`; producer made it required without notice → harness fails on contract narrowing
+- Payload nesting drift: producer emits `payload.summary.text`; rule binds `payload.text` → harness diagnostic flags the nesting collapse
 
-### 5.6 Token-to-theme.json generator (`wp/dailyos/scripts/generate-theme-json.mjs`)
+**Generic PHP shell-out path (V1.1 per codex challenge M1):**
+`wp/dailyos/tests/blocks/StarterKitIntegrationTest.php` is a generic block-render entrypoint (NOT the account-overview-specific `render_block_with_filter` at `class-dailyos-plugin.php:675-690`). It:
+1. Registers the target block's `block.json` metadata at test-setup time.
+2. Injects a fake runtime client that returns the provided projection JSON.
+3. Calls WordPress `render_block()` / metadata-driven render callback for the requested block name.
+4. Asserts wrapper element shape + data attributes + renderer-branch presence + expected-binding values.
+5. **Input contract** (V1.1 per CSO L-3): only accepts (projection-JSON-path under `tests/fixtures/blocks/`, allowlisted ability name from `BlockType` enum, sibling `expected.json` schema file). No `eval()` / `include()` / `exec()` of argv-derived paths.
 
-Reads the three canonical token sources (`.docs/design/tokens/`, `src/styles/tokens.css`, `wp/dailyos/theme/theme.json`), merges per a documented precedence order (theme.json > tokens.css > design/tokens for runtime overrides; design/tokens > tokens.css > theme.json for canonical definitions — explicit pick in §6.5), produces a synced `wp/dailyos/theme/theme.json` with all token settings under `settings.color.palette`, `settings.typography.fontSizes`, `settings.spacing.spacingSizes`, etc.
+Rust harness shells out via `std::process::Command` with PHP CLI; PHP exit-codes 0 on success, 1 on contract violation (with the 4-field diagnostic on stderr).
 
-Idempotent: re-running with no token changes produces zero diff. Validates that no two sources define the same token with different values; errors out with a conflict report if so.
+### 5.6 Token-to-theme.json generator (V1.1 — corrected paths)
+
+V1.0 cited `src/styles/tokens.css` and treated `wp/dailyos/theme/theme.json` as input — **both wrong** (code-reviewer + codex challenge H3):
+- Actual canonical CSS source: `src/styles/design-tokens.css` (`.docs/design/tokens/color.md:137`)
+- `wp/dailyos/theme/theme.json` doesn't exist yet — it's W3-owned generated **output**, not input.
+
+**V1.1 canonical sources (input):**
+- `.docs/design/tokens/` (design-system contract — canonical authoring source for semantic aliases)
+- `src/styles/design-tokens.css` (runtime CSS source — declares CSS custom properties)
+
+**V1.1 generated output:**
+- `wp/dailyos/theme/theme.json` — kit's generator produces this; W3 magazine theme ships the finalized version. The kit's output IS the seed for W3.
+
+**Token graph normalization (V1.1 per codex challenge H3):**
+Token docs define semantic aliases like `--color-account` → `--color-spice-turmeric` (`.docs/design/tokens/color.md:70`); CSS stores `--color-account: var(--color-spice-turmeric)` (`design-tokens.css:86`). Generator builds a token graph, resolves aliases to terminal values, then compares for conflicts — prevents false-conflict on alias re-declarations.
+
+**Precedence rules (V1.1 §6.5 reconciled):**
+- For CSS custom-property terminal values: `.docs/design/tokens/` wins (design system is the contract).
+- For WP-runtime knobs (slug names in `settings.color.palette`, `settings.spacing.spacingSizes`): `theme.json` (when it exists post-generation) is the runtime contract — but during initial generation, the kit derives these directly from `design-tokens.css` + the design-tokens docs.
+- Generator errors loudly on same-token-name-different-value conflicts that can't be resolved by alias normalization.
+
+**Atomicity (V1.1 per CSO L-2):** generator writes to `theme.json.tmp`, validates the result is valid JSON + parses to a `theme.json` schema, then atomic-renames to `theme.json`. On validation failure: delete tmpfile, error out, leave existing `theme.json` (if any) untouched.
+
+**Idempotency:** re-running with no token-source changes produces zero diff. CI gate runs the generator with `--check` flag (verifies idempotency); fails CI on diff.
 
 ### 5.7 Translation utility (`wp/dailyos/scripts/translate-tauri-to-block.mjs`)
 
@@ -259,9 +512,9 @@ When the generator detects conflicts:
 
 Generator errors loudly on conflicts that can't be resolved by precedence (e.g., same token name in both sources with different non-WP-runtime values).
 
-### 6.6 CLI scaffold updates `class-dailyos-plugin.php` in place
+### 6.6 (REMOVED in V1.1)
 
-The CLI inserts the new block's metadata-registration call into the existing enumeration. Alternative considered: scan the `blocks/` directory at PHP runtime instead of explicit registration. Rejected because the explicit registration is the v1.4.2 W4-F precedent and reviewers (CSO+code-reviewer) at W4-F preferred explicit-allowlist over directory-scan.
+V1.0 §6.6 justified "explicit allowlist over directory scan" citing a fictional W4-F precedent. The actual existing pattern at `class-dailyos-plugin.php:149-163` is `glob('blocks/*/block.json')` (directory scan). V1.1 keeps glob — CLI no longer modifies plugin core. See V1.1 §5.1 for the simplified flow.
 
 ## 7. Acceptance criteria
 
