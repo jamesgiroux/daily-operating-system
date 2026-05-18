@@ -11,7 +11,7 @@
 // supported primitives scaffold cleanly; their JSX-to-PHP body translation
 // is filed per-primitive in W2 (the Wave 1 primitive translation batch).
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, resolve as resolvePath, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
@@ -21,6 +21,15 @@ const REPO_ROOT = resolvePath(SCRIPT_DIR, '..', '..', '..');
 const PRIMITIVES_README = resolvePath(REPO_ROOT, '.docs', 'design', 'primitives', 'README.md');
 const BLOCKS_DIR = resolvePath(REPO_ROOT, 'wp', 'dailyos', 'blocks');
 const NEW_BLOCK = resolvePath(SCRIPT_DIR, 'new-block.mjs');
+const TOKEN_ALIAS_MAP = new Map([
+	['--color-text', '--color-text-primary'],
+	['--color-text-muted', '--color-text-tertiary'],
+	['--color-warning', '--color-trust-use-with-caution'],
+	['--color-error', '--color-trust-needs-verification'],
+	['--color-border', '--color-rule-heavy'],
+	['--color-surface-muted', '--color-surface-subtle'],
+	['--radius-md', '--radius-editorial-md'],
+]);
 
 // Authoritative scope matrix from packet §5.7. Categories drive scaffold
 // behavior; new primitives must be added here before translation succeeds.
@@ -425,6 +434,127 @@ function applyBodyTranslation(primitive, slug) {
 	);
 }
 
+function normalizeSourceToken(sourceToken) {
+	return TOKEN_ALIAS_MAP.get(sourceToken) || sourceToken;
+}
+
+function wpTokenForSourceToken(sourceToken) {
+	const normalized = normalizeSourceToken(sourceToken);
+	if (normalized.startsWith('--color-')) {
+		return {
+			sourceToken: normalized,
+			targetToken: `wp--preset--color--${normalized.slice('--color-'.length)}`,
+		};
+	}
+	if (normalized.startsWith('--space-')) {
+		return {
+			sourceToken: normalized,
+			targetToken: `wp--preset--spacing--${normalized.slice('--space-'.length)}`,
+		};
+	}
+	if (
+		normalized.startsWith('--font-') ||
+		normalized.startsWith('--radius-') ||
+		normalized.startsWith('--shadow-') ||
+		normalized.startsWith('--transition-') ||
+		normalized.startsWith('--border-') ||
+		normalized.startsWith('--backdrop-') ||
+		normalized.startsWith('--frosted-')
+	) {
+		return {
+			sourceToken: normalized,
+			targetToken: `wp--custom--dailyos--tokens--${normalized.slice(2)}`,
+		};
+	}
+	return null;
+}
+
+function splitVarArgs(inner) {
+	let depth = 0;
+	for (let i = 0; i < inner.length; i++) {
+		const ch = inner[i];
+		if (ch === '(') depth++;
+		else if (ch === ')') depth = Math.max(0, depth - 1);
+		else if (ch === ',' && depth === 0) {
+			return [inner.slice(0, i).trim(), inner.slice(i + 1).trim()];
+		}
+	}
+	return [inner.trim(), ''];
+}
+
+function replaceTokenVars(css) {
+	const mappings = new Map();
+	let out = '';
+	let cursor = 0;
+	while (cursor < css.length) {
+		const start = css.indexOf('var(', cursor);
+		if (start === -1) {
+			out += css.slice(cursor);
+			break;
+		}
+		out += css.slice(cursor, start);
+		let depth = 0;
+		let end = start;
+		for (; end < css.length; end++) {
+			const ch = css[end];
+			if (ch === '(') depth++;
+			else if (ch === ')') {
+				depth--;
+				if (depth === 0) {
+					end++;
+					break;
+				}
+			}
+		}
+		if (depth !== 0) {
+			out += css.slice(start);
+			break;
+		}
+		const original = css.slice(start, end);
+		const inner = css.slice(start + 'var('.length, end - 1);
+		const [rawToken] = splitVarArgs(inner);
+		const mapped = wpTokenForSourceToken(rawToken);
+		if (!mapped) {
+			out += original;
+			cursor = end;
+			continue;
+		}
+		mappings.set(`${mapped.sourceToken}→${mapped.targetToken}`, mapped);
+		out += `var(--${mapped.targetToken})`;
+		cursor = end;
+	}
+	return { css: out, mappings: [...mappings.values()] };
+}
+
+function sortManifestEntries(entries) {
+	return entries
+		.map((entry) => ({
+			source_token: entry.sourceToken,
+			target_token: entry.targetToken,
+		}))
+		.sort((a, b) => a.target_token.localeCompare(b.target_token) || a.source_token.localeCompare(b.source_token));
+}
+
+function emitTokenMappingManifest(primitive, slug, cssPath) {
+	const blockDir = resolvePath(BLOCKS_DIR, slug);
+	const styleCssPath = resolvePath(blockDir, 'style.css');
+	const manifestPath = resolvePath(blockDir, '.token-mapping.json');
+	if (!existsSync(styleCssPath)) {
+		writeFileSync(manifestPath, '[]\n');
+		process.stdout.write(`[translate-tauri] ${primitive}: wrote empty token manifest (style.css missing)\n`);
+		return;
+	}
+	const styleCss = readFileSync(styleCssPath, 'utf8');
+	const translated = replaceTokenVars(styleCss);
+	writeFileSync(styleCssPath, translated.css);
+	const manifest = sortManifestEntries(translated.mappings);
+	writeFileSync(manifestPath, `${JSON.stringify(manifest, null, '\t')}\n`);
+	process.stdout.write(
+		`[translate-tauri] ${primitive}: token mapping manifest written\n` +
+		`  - ${manifestPath} (${manifest.length} mapped token${manifest.length === 1 ? '' : 's'} from ${cssPath || 'scaffold style.css'})\n`
+	);
+}
+
 function emitFollowups(primitive, slug, category) {
 	const blockDir = resolvePath(BLOCKS_DIR, slug);
 	process.stdout.write(`
@@ -486,6 +616,7 @@ function main() {
 
 	runScaffold(flags.primitive, entry.shape, slug);
 	applyBodyTranslation(flags.primitive, slug);
+	emitTokenMappingManifest(flags.primitive, slug, cssPath);
 	emitFollowups(flags.primitive, slug, entry.category);
 }
 
