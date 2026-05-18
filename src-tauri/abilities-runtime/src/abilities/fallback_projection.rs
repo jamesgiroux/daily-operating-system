@@ -1243,6 +1243,18 @@ fn rule_for_block_type(block_type: &BlockType) -> Option<BlockProjectionRule> {
         BlockType::RiskCallout => Some(risk_callout_rule()),
         BlockType::ActionList => Some(action_list_rule()),
         BlockType::MarkdownDocument => Some(markdown_document_rule()),
+        // v1.4.3 W2 Wave 1 primitive blocks (DOS-682).
+        BlockType::Pill => Some(pill_rule()),
+        BlockType::StatusDot => Some(status_dot_rule()),
+        BlockType::ProvenanceTag => Some(provenance_tag_rule()),
+        BlockType::HealthBadge => Some(health_badge_rule()),
+        BlockType::Avatar => Some(avatar_rule()),
+        BlockType::FreshnessIndicator => Some(freshness_indicator_rule()),
+        BlockType::TrustBandBadge => Some(trust_band_badge_rule()),
+        BlockType::IntelligenceQualityBadge => Some(intelligence_quality_badge_rule()),
+        BlockType::EntityChip => Some(entity_chip_rule()),
+        BlockType::TypeBadge => Some(type_badge_rule()),
+        BlockType::ScoreBand => Some(score_band_rule()),
         BlockType::Custom { .. } => None,
     }
 }
@@ -1257,6 +1269,18 @@ fn known_projection_rules() -> Vec<BlockProjectionRule> {
         risk_callout_rule(),
         action_list_rule(),
         markdown_document_rule(),
+        // v1.4.3 W2 Wave 1 primitive blocks (DOS-682).
+        pill_rule(),
+        status_dot_rule(),
+        provenance_tag_rule(),
+        health_badge_rule(),
+        avatar_rule(),
+        freshness_indicator_rule(),
+        trust_band_badge_rule(),
+        intelligence_quality_badge_rule(),
+        entity_chip_rule(),
+        type_badge_rule(),
+        score_band_rule(),
     ]
 }
 
@@ -1412,6 +1436,29 @@ const MARKDOWN_DOCUMENT_FIELDS: &[FieldPolicy] = &[
     text_field("/sections/*/body", ClaimSensitivity::Internal),
 ];
 
+// v1.4.3 W2 Wave 1 primitive block field policies (DOS-682). Placeholder
+// `/payload/text` entries — per-primitive field structure lands in PR-D2/D3/D4
+// when each block's payload contract is finalized.
+const PILL_FIELDS: &[FieldPolicy] = &[text_field("/payload/text", ClaimSensitivity::Internal)];
+const STATUS_DOT_FIELDS: &[FieldPolicy] = &[text_field("/payload/text", ClaimSensitivity::Internal)];
+const PROVENANCE_TAG_FIELDS: &[FieldPolicy] =
+    &[text_field("/payload/text", ClaimSensitivity::Internal)];
+const HEALTH_BADGE_FIELDS: &[FieldPolicy] =
+    &[text_field("/payload/text", ClaimSensitivity::Internal)];
+const AVATAR_FIELDS: &[FieldPolicy] = &[text_field("/payload/text", ClaimSensitivity::Internal)];
+const FRESHNESS_INDICATOR_FIELDS: &[FieldPolicy] =
+    &[text_field("/payload/text", ClaimSensitivity::Internal)];
+const TRUST_BAND_BADGE_FIELDS: &[FieldPolicy] =
+    &[text_field("/payload/text", ClaimSensitivity::Internal)];
+const INTELLIGENCE_QUALITY_BADGE_FIELDS: &[FieldPolicy] =
+    &[text_field("/payload/text", ClaimSensitivity::Internal)];
+const ENTITY_CHIP_FIELDS: &[FieldPolicy] =
+    &[text_field("/payload/text", ClaimSensitivity::Internal)];
+const TYPE_BADGE_FIELDS: &[FieldPolicy] =
+    &[text_field("/payload/text", ClaimSensitivity::Internal)];
+const SCORE_BAND_FIELDS: &[FieldPolicy] =
+    &[text_field("/payload/text", ClaimSensitivity::Internal)];
+
 fn account_overview_rule() -> BlockProjectionRule {
     BlockProjectionRule {
         block_type: BlockType::AccountOverview,
@@ -1489,6 +1536,122 @@ fn markdown_document_rule() -> BlockProjectionRule {
         type_namespace: Some("dailyos/markdown"),
         render_annotations: &["document", "markdown"],
         fields: MARKDOWN_DOCUMENT_FIELDS,
+        default_trust_band: TrustBand::UseWithCaution,
+    }
+}
+
+// v1.4.3 W2 Wave 1 primitive block projection rules (DOS-682). Each rule is
+// the substrate-side stub that pairs the BlockType variant with its
+// `dailyos/<kebab>` type_namespace + placeholder field policy. Per-primitive
+// field policies + render annotations land in PR-D2/D3/D4 alongside each
+// `wp/dailyos/blocks/<slug>/` directory.
+fn pill_rule() -> BlockProjectionRule {
+    BlockProjectionRule {
+        block_type: BlockType::Pill,
+        composition_kind: Some("entity_page"),
+        type_namespace: Some("dailyos/pill"),
+        render_annotations: &["pill"],
+        fields: PILL_FIELDS,
+        default_trust_band: TrustBand::UseWithCaution,
+    }
+}
+fn status_dot_rule() -> BlockProjectionRule {
+    BlockProjectionRule {
+        block_type: BlockType::StatusDot,
+        composition_kind: Some("entity_page"),
+        type_namespace: Some("dailyos/status-dot"),
+        render_annotations: &["status-dot"],
+        fields: STATUS_DOT_FIELDS,
+        default_trust_band: TrustBand::UseWithCaution,
+    }
+}
+fn provenance_tag_rule() -> BlockProjectionRule {
+    BlockProjectionRule {
+        block_type: BlockType::ProvenanceTag,
+        composition_kind: Some("entity_page"),
+        type_namespace: Some("dailyos/provenance-tag"),
+        render_annotations: &["provenance-tag"],
+        fields: PROVENANCE_TAG_FIELDS,
+        default_trust_band: TrustBand::UseWithCaution,
+    }
+}
+fn health_badge_rule() -> BlockProjectionRule {
+    BlockProjectionRule {
+        block_type: BlockType::HealthBadge,
+        composition_kind: Some("entity_page"),
+        type_namespace: Some("dailyos/health-badge"),
+        render_annotations: &["health-badge"],
+        fields: HEALTH_BADGE_FIELDS,
+        default_trust_band: TrustBand::UseWithCaution,
+    }
+}
+fn avatar_rule() -> BlockProjectionRule {
+    BlockProjectionRule {
+        block_type: BlockType::Avatar,
+        composition_kind: Some("entity_page"),
+        type_namespace: Some("dailyos/avatar"),
+        render_annotations: &["avatar"],
+        fields: AVATAR_FIELDS,
+        default_trust_band: TrustBand::UseWithCaution,
+    }
+}
+fn freshness_indicator_rule() -> BlockProjectionRule {
+    BlockProjectionRule {
+        block_type: BlockType::FreshnessIndicator,
+        composition_kind: Some("entity_page"),
+        type_namespace: Some("dailyos/freshness-indicator"),
+        render_annotations: &["freshness-indicator"],
+        fields: FRESHNESS_INDICATOR_FIELDS,
+        default_trust_band: TrustBand::UseWithCaution,
+    }
+}
+fn trust_band_badge_rule() -> BlockProjectionRule {
+    BlockProjectionRule {
+        block_type: BlockType::TrustBandBadge,
+        composition_kind: Some("entity_page"),
+        type_namespace: Some("dailyos/trust-band-badge"),
+        render_annotations: &["trust-band-badge"],
+        fields: TRUST_BAND_BADGE_FIELDS,
+        default_trust_band: TrustBand::UseWithCaution,
+    }
+}
+fn intelligence_quality_badge_rule() -> BlockProjectionRule {
+    BlockProjectionRule {
+        block_type: BlockType::IntelligenceQualityBadge,
+        composition_kind: Some("entity_page"),
+        type_namespace: Some("dailyos/intelligence-quality-badge"),
+        render_annotations: &["intelligence-quality-badge"],
+        fields: INTELLIGENCE_QUALITY_BADGE_FIELDS,
+        default_trust_band: TrustBand::UseWithCaution,
+    }
+}
+fn entity_chip_rule() -> BlockProjectionRule {
+    BlockProjectionRule {
+        block_type: BlockType::EntityChip,
+        composition_kind: Some("entity_page"),
+        type_namespace: Some("dailyos/entity-chip"),
+        render_annotations: &["entity-chip"],
+        fields: ENTITY_CHIP_FIELDS,
+        default_trust_band: TrustBand::UseWithCaution,
+    }
+}
+fn type_badge_rule() -> BlockProjectionRule {
+    BlockProjectionRule {
+        block_type: BlockType::TypeBadge,
+        composition_kind: Some("entity_page"),
+        type_namespace: Some("dailyos/type-badge"),
+        render_annotations: &["type-badge"],
+        fields: TYPE_BADGE_FIELDS,
+        default_trust_band: TrustBand::UseWithCaution,
+    }
+}
+fn score_band_rule() -> BlockProjectionRule {
+    BlockProjectionRule {
+        block_type: BlockType::ScoreBand,
+        composition_kind: Some("entity_page"),
+        type_namespace: Some("dailyos/score-band"),
+        render_annotations: &["score-band"],
+        fields: SCORE_BAND_FIELDS,
         default_trust_band: TrustBand::UseWithCaution,
     }
 }
