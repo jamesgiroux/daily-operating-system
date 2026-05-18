@@ -1,0 +1,53 @@
+<!--
+  Pattern: k-channel-diagram
+  Use: two-zone feedback-loop visualization. Originally for the Knowledge Channel
+  (K-in / K-out), but the shape generalizes to any "store + flows" diagram —
+  e.g., signals → handlers, claims → derived state, telemetry → dashboards.
+
+  Layout: store on left (single zone), flows on right (two stacked half-cards
+  showing inbound and outbound directions).
+-->
+<div class="k-diagram">
+
+  <!-- Left zone: the durable store -->
+  <div class="k-store">
+    <div class="k-store-header">&lt;Store name&gt;</div>
+    <ul class="k-store-items">
+      <li>
+        <code>&lt;store path 1&gt;</code>
+        <span class="k-store-detail">&lt;what lives here&gt;</span>
+      </li>
+      <li>
+        <code>&lt;store path 2&gt;</code>
+        <span class="k-store-detail">&lt;what lives here&gt;</span>
+      </li>
+    </ul>
+  </div>
+
+  <!-- Right zone: the two flows -->
+  <div class="k-flows">
+
+    <!-- Inbound flow (consume) -->
+    <div class="k-flow k-flow-in">
+      <div class="k-flow-arrow" aria-hidden="true">↑</div>
+      <div class="k-flow-label">&lt;Inbound flow name, e.g. K-in&gt;</div>
+      <p class="k-flow-prose">&lt;What triggers the inbound flow and what it does.&gt;</p>
+      <div class="k-flow-rungs">
+        <span class="k-flow-rung">&lt;primary consumer&gt;</span>
+        <span class="k-flow-rung k-flow-rung-soft">&lt;secondary consumer&gt;</span>
+      </div>
+    </div>
+
+    <!-- Outbound flow (produce) -->
+    <div class="k-flow k-flow-out">
+      <div class="k-flow-arrow" aria-hidden="true">↓</div>
+      <div class="k-flow-label">&lt;Outbound flow name, e.g. K-out&gt;</div>
+      <p class="k-flow-prose">&lt;What triggers the outbound flow and what it captures.&gt;</p>
+      <div class="k-flow-rungs">
+        <span class="k-flow-rung">&lt;primary producer&gt;</span>
+        <span class="k-flow-rung k-flow-rung-soft">&lt;secondary producer&gt;</span>
+      </div>
+    </div>
+
+  </div>
+</div>

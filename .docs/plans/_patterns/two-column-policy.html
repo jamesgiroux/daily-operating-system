@@ -1,0 +1,36 @@
+<!--
+  Pattern: two-column-policy
+  Use: side-by-side MUST / MUST NOT (or DO / DON'T, KEEP / DROP, INVEST / DEFER) lists
+  with header pills marking each column.
+
+  Originally for L6 escalation policy; generalizes to any binary-policy doc.
+-->
+<div class="l6-grid">
+
+  <!-- Left column: positive list -->
+  <article class="l6-list l6-list-must">
+    <header class="l6-list-header">
+      <span class="l6-list-pill l6-list-pill-must">&lt;LEFT LABEL, e.g. MUST&gt;</span>
+      <p class="l6-list-blurb">&lt;One-line description of what this column covers.&gt;</p>
+    </header>
+    <ol class="l6-list-items">
+      <li>&lt;Item 1&gt;</li>
+      <li>&lt;Item 2&gt;</li>
+      <li>&lt;Item 3&gt;</li>
+    </ol>
+  </article>
+
+  <!-- Right column: negative list -->
+  <article class="l6-list l6-list-mustnot">
+    <header class="l6-list-header">
+      <span class="l6-list-pill l6-list-pill-mustnot">&lt;RIGHT LABEL, e.g. MUST NOT&gt;</span>
+      <p class="l6-list-blurb">&lt;One-line description of what this column covers.&gt;</p>
+    </header>
+    <ol class="l6-list-items">
+      <li>&lt;Item 1&gt;</li>
+      <li>&lt;Item 2&gt;</li>
+      <li>&lt;Item 3&gt;</li>
+    </ol>
+  </article>
+
+</div>
