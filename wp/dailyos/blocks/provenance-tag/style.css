@@ -1,0 +1,43 @@
+/* ProvenanceTag (translated from src/components/ui/ProvenanceTag.module.css).
+ * Front-end styles for the dailyos/provenance-tag block. Token-only - values
+ * via .docs/design/tokens/ + src/styles/design-tokens.css. */
+
+.dailyos-provenance-tag {
+	display: inline-flex;
+	align-items: baseline;
+	gap: var(--wp--preset--spacing--xs);
+	color: var(--wp--preset--color--text-tertiary);
+	font-family: var(--wp--custom--dailyos--tokens--font-mono);
+	font-size: 10px;
+	font-weight: 400;
+	line-height: 1.2;
+	letter-spacing: 0;
+	vertical-align: baseline;
+}
+
+.dailyos-provenance-tag.is-empty {
+	display: none;
+}
+
+.dailyos-provenance-tag__age {
+	color: var(--wp--preset--color--text-secondary);
+}
+
+.dailyos-provenance-tag__separator {
+	color: var(--wp--preset--color--text-tertiary);
+}
+
+.dailyos-provenance-tag--discrepancy,
+.dailyos-provenance-tag__discrepancy-marker {
+	color: var(--wp--preset--color--spice-terracotta);
+	font-weight: 600;
+}
+
+.dailyos-provenance-tag--synthesis-suppressed {
+	font-style: italic;
+}
+
+.dailyos-provenance-tag.dailyos-notice {
+	color: var(--wp--preset--color--text-tertiary);
+	font-style: italic;
+}

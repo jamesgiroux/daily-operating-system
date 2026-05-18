@@ -480,6 +480,8 @@ mod account_overview_integration_fixture;
 mod pill_integration_fixture;
 #[path = "fixtures/status_dot_integration_fixture.rs"]
 mod status_dot_integration_fixture;
+#[path = "fixtures/provenance_tag_integration_fixture.rs"]
+mod provenance_tag_integration_fixture;
 
 #[test]
 fn expected_block_fixtures_cover_requested_ci_block() {
@@ -494,6 +496,7 @@ fn expected_block_fixtures_cover_requested_ci_block() {
         account_overview_integration_fixture::account_overview_fixture(),
         pill_integration_fixture::pill_fixture(),
         status_dot_integration_fixture::status_dot_fixture(),
+        provenance_tag_integration_fixture::provenance_tag_fixture(),
     ];
     assert!(
         known.iter().any(block_fixture_selected),

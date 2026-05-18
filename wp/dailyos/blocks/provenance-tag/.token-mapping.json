@@ -1,0 +1,22 @@
+[
+	{
+		"source_token": "--font-mono",
+		"target_token": "wp--custom--dailyos--tokens--font-mono"
+	},
+	{
+		"source_token": "--color-spice-terracotta",
+		"target_token": "wp--preset--color--spice-terracotta"
+	},
+	{
+		"source_token": "--color-text-secondary",
+		"target_token": "wp--preset--color--text-secondary"
+	},
+	{
+		"source_token": "--color-text-tertiary",
+		"target_token": "wp--preset--color--text-tertiary"
+	},
+	{
+		"source_token": "--space-xs",
+		"target_token": "wp--preset--spacing--xs"
+	}
+]

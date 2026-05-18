@@ -1441,8 +1441,30 @@ const MARKDOWN_DOCUMENT_FIELDS: &[FieldPolicy] = &[
 // when each block's payload contract is finalized.
 const PILL_FIELDS: &[FieldPolicy] = &[text_field("/payload/text", ClaimSensitivity::Internal)];
 const STATUS_DOT_FIELDS: &[FieldPolicy] = &[text_field("/payload/text", ClaimSensitivity::Internal)];
-const PROVENANCE_TAG_FIELDS: &[FieldPolicy] =
-    &[text_field("/payload/text", ClaimSensitivity::Internal)];
+const PROVENANCE_TAG_FIELDS: &[FieldPolicy] = &[
+    text_field("/payload/text", ClaimSensitivity::Internal),
+    text_field("/payload/source", ClaimSensitivity::Internal),
+    text_field("/payload/dataSource", ClaimSensitivity::Internal),
+    text_field("/payload/data_source", ClaimSensitivity::Internal),
+    text_field("/payload/itemSource", ClaimSensitivity::Internal),
+    text_field("/payload/item_source", ClaimSensitivity::Internal),
+    text_field("/payload/sourceLabel", ClaimSensitivity::Internal),
+    text_field("/payload/source_label", ClaimSensitivity::Internal),
+    text_field("/payload/label", ClaimSensitivity::Internal),
+    text_field("/payload/age", ClaimSensitivity::Internal),
+    text_field("/payload/asOf", ClaimSensitivity::Internal),
+    text_field("/payload/as_of", ClaimSensitivity::Internal),
+    text_field("/payload/sourceAsof", ClaimSensitivity::Internal),
+    text_field("/payload/source_asof", ClaimSensitivity::Internal),
+    text_field("/payload/sourcedAt", ClaimSensitivity::Internal),
+    text_field("/payload/sourced_at", ClaimSensitivity::Internal),
+    text_field("/payload/observedAt", ClaimSensitivity::Internal),
+    text_field("/payload/observed_at", ClaimSensitivity::Internal),
+    text_field("/payload/capturedAt", ClaimSensitivity::Internal),
+    text_field("/payload/captured_at", ClaimSensitivity::Internal),
+    text_field("/payload/variant", ClaimSensitivity::Internal),
+    bool_field("/payload/discrepancy", ClaimSensitivity::Internal),
+];
 const HEALTH_BADGE_FIELDS: &[FieldPolicy] =
     &[text_field("/payload/text", ClaimSensitivity::Internal)];
 const AVATAR_FIELDS: &[FieldPolicy] = &[text_field("/payload/text", ClaimSensitivity::Internal)];
