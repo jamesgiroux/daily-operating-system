@@ -355,7 +355,7 @@ fn assert_binding_contracts(fixture: &BlockIntegrationFixture, projection: &Proj
 }
 
 fn runtime_diagnostic_reason(diagnostic: &RuntimeProjectionDiagnostic) -> String {
-    serde_json::to_value(&diagnostic.reason)
+    serde_json::to_value(diagnostic.reason)
         .ok()
         .and_then(|value| value.as_str().map(ToOwned::to_owned))
         .unwrap_or_else(|| format!("{:?}", diagnostic.reason))
@@ -488,7 +488,7 @@ fn expected_block_fixtures_cover_requested_ci_block() {
     }
     let known = [account_overview_integration_fixture::account_overview_fixture()];
     assert!(
-        known.iter().any(|fixture| block_fixture_selected(fixture)),
+        known.iter().any(block_fixture_selected),
         "missing block integration fixture for wp/dailyos/blocks/{requested}/block.json"
     );
 }
