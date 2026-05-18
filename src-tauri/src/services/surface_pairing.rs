@@ -2248,12 +2248,11 @@ fn mark_pairing_expired(
     surface_client_id: &str,
     now: &str,
 ) -> Result<Option<KeychainCleanupTarget>, SurfacePairingError> {
-    // Per L0 Packet A V1.1.1 AC #16 + cycle-2 codex challenge HIGH:
-    // collect the cleanup target via an in-transaction snapshot BEFORE the
-    // expiry UPDATE, all inside a single db.with_transaction boundary.
+    // Collect the cleanup target via an in-transaction snapshot BEFORE
+    // the expiry UPDATE, all inside a single db.with_transaction boundary.
     // A direct conn_ref()-based sequence is not atomic against concurrent
-    // revoke paths and violates the AC's "in-tx SELECT before mark expired"
-    // requirement.
+    // revoke paths — the cleanup-target session id set must reflect the
+    // exact rows the UPDATE will affect.
     db.with_transaction(|tx| {
         let pairing_epoch = tx
             .conn_ref()
