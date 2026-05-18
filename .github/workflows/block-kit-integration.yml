@@ -9,7 +9,7 @@ on:
       - 'wp/dailyos/blocks/**'
       - 'wp/dailyos/scripts/**'
       - 'wp/dailyos/theme/**'
-      - 'wp/dailyos/tests/blocks/StarterKitIntegrationTest.php'
+      - 'wp/dailyos/tests/**'
       - 'src-tauri/abilities-runtime/**'
       - 'src/styles/design-tokens.css'
       - '.docs/design/tokens/**'
@@ -146,6 +146,12 @@ jobs:
             echo "FAIL: translator accepted NotSupported primitive 'Switch'" >&2
             exit 1
           fi
+
+      - name: Token-mapping manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash wp/dailyos/tests/token-mapping-manifest-gate.sh
 
       # §9 invariant #4 — token-to-theme.json generator MUST run cleanly via --check.
       # Fails CI on drift between canonical CSS sources and committed wp/dailyos/theme/theme.json.
