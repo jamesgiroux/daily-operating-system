@@ -48,7 +48,7 @@ if [[ -n "$matches" ]]; then
   echo "  - src-tauri/src/migrations/{129,130,131}_dos_7_*.sql"
   echo "  - src-tauri/tests/dos7_d{1,3a1,3a2}_*.rs (test seeding via execute_batch)"
   echo "  - src-tauri/tests/fixtures/bundle-N/state.sql (DOS-384 adversarial bundle fixtures)"
-  echo "  - src-tauri/tests/fixtures/W6-A-meta-N/state.sql (DOS-567 metadata fixtures)"
+  echo "  - src-tauri/tests/fixtures/W6-A-meta-N/state.sql (W6 metadata eval fixtures)"
   echo
   echo "$matches"
   exit 1

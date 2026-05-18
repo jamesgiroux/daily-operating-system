@@ -52,7 +52,6 @@ use crate::services::surface_pairing::{
     SignedTransportFailureInput, SurfacePairingAuditEvent, SurfacePairingError,
     SurfaceSessionRefreshIdentity, SurfaceSessionRefreshInput, ValidatedSurfaceSession,
 };
-use crate::services::surface_session_keychain::SessionKeyLookup;
 use crate::state::AppState;
 use abilities_runtime::abilities::registry::{Actor, ScopeSet, SurfaceClientId};
 
@@ -328,7 +327,7 @@ impl SurfaceEndpointState {
                         run_listener(listener, runtime, shutdown_rx).await;
                         // Remove the runtime sentinel on shutdown so a stale
                         // port doesn't redirect WP after restart.
-                        explicit_sentinel_cleanup();
+                        remove_runtime_sentinel();
                         // Lazy-flush last_seen_at + last_used_at on graceful
                         // shutdown. Coalesced UPDATE — sets all non-revoked
                         // sessions' last_seen_at and their pairings'
@@ -412,7 +411,6 @@ impl SurfaceEndpointState {
         };
 
         if let Some(endpoint) = running {
-            explicit_sentinel_cleanup();
             if endpoint.shutdown.send(true).is_err() {
                 log::debug!("surface endpoint shutdown signal had no active listener");
             }
@@ -469,7 +467,6 @@ impl Drop for SurfaceEndpointState {
     fn drop(&mut self) {
         let running = self.inner.get_mut().running.take();
         if let Some(endpoint) = running {
-            explicit_sentinel_cleanup();
             if endpoint.shutdown.send(true).is_err() {
                 log::debug!("surface endpoint drop found no active listener");
             }
@@ -664,13 +661,12 @@ async fn rehydrate_sessions_from_keychain(
     // Step 2-4: per-row keychain load + register-or-revoke.
     let mut rehydrated = 0usize;
     let mut missing = Vec::new();
-    let mut unavailable = Vec::new();
     for row in rows {
         match crate::services::surface_session_keychain::load_session_master_key(
             &row.surface_client_id,
             &row.session_id,
         ) {
-            SessionKeyLookup::Found(master_key) => {
+            Some(master_key) => {
                 let session = hmac::SignedSurfaceSession::new_active(
                     row.session_id.clone(),
                     row.surface_client_id.clone(),
@@ -682,40 +678,14 @@ async fn rehydrate_sessions_from_keychain(
                 }
                 rehydrated += 1;
             }
-            SessionKeyLookup::NotFound => {
+            None => {
                 missing.push(row);
-            }
-            SessionKeyLookup::Unavailable { reason } => {
-                unavailable.push((row, reason));
             }
         }
     }
     if rehydrated > 0 {
         log::info!(
             "surface session rehydrate: {rehydrated} active sessions restored from keychain"
-        );
-    }
-    if !unavailable.is_empty() {
-        for (row, reason) in &unavailable {
-            let event = surface_pairing::SurfacePairingAuditEvent {
-                event_kind: "pairing.session.key_unavailable",
-                category: "surface_pairing",
-                actor: abilities_runtime::abilities::registry::Actor::System,
-                wp_user_id: None,
-                wp_user_hash: None,
-                detail: serde_json::json!({
-                    "session_id": row.session_id,
-                    "surface_client_id": row.surface_client_id,
-                    "reason": reason,
-                    "decision": "left_active",
-                    "remediation": "retry_rehydrate_or_repair",
-                }),
-            };
-            emit_pairing_audit_event(app_state, &event);
-        }
-        log::warn!(
-            "surface session rehydrate: {} sessions left active because keychain was unavailable",
-            unavailable.len()
         );
     }
 
@@ -823,37 +793,12 @@ fn stable_hash_for_audit(value: &str) -> String {
 /// `~/.dailyos/runtime-endpoint.json` — written on bind, removed on shutdown.
 /// Parent dir is ensured at `0700`, sentinel at `0600`.
 fn runtime_sentinel_path() -> io::Result<PathBuf> {
-    #[cfg(test)]
-    if let Some(path) = RUNTIME_SENTINEL_PATH_FOR_TESTS.lock().unwrap().clone() {
-        return Ok(path);
-    }
-
     let home = std::env::var_os("HOME")
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "HOME unset"))?;
     let mut path = PathBuf::from(home);
     path.push(".dailyos");
     path.push("runtime-endpoint.json");
     Ok(path)
-}
-
-#[cfg(test)]
-static RUNTIME_SENTINEL_PATH_FOR_TESTS: std::sync::Mutex<Option<PathBuf>> =
-    std::sync::Mutex::new(None);
-
-#[cfg(test)]
-struct RuntimeSentinelPathGuard;
-
-#[cfg(test)]
-impl Drop for RuntimeSentinelPathGuard {
-    fn drop(&mut self) {
-        *RUNTIME_SENTINEL_PATH_FOR_TESTS.lock().unwrap() = None;
-    }
-}
-
-#[cfg(test)]
-fn set_runtime_sentinel_path_for_tests(path: PathBuf) -> RuntimeSentinelPathGuard {
-    *RUNTIME_SENTINEL_PATH_FOR_TESTS.lock().unwrap() = Some(path);
-    RuntimeSentinelPathGuard
 }
 
 /// Write the runtime sentinel after a successful bind.
@@ -943,10 +888,6 @@ fn remove_runtime_sentinel() {
         )]
         let _ = fs::remove_file(path);
     }
-}
-
-fn explicit_sentinel_cleanup() {
-    remove_runtime_sentinel();
 }
 
 async fn run_listener(
@@ -1173,9 +1114,12 @@ async fn signed_transport_response(
             // return directly.
             if let Some(action) = failure.write_action() {
                 let now = Utc::now();
-                let cleanup_reason = action.cleanup_reason();
                 let action_for_closure = action.clone();
-                let cleanup_target = app_state
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "quarantine write best-effort; rejection response is the meaningful outcome"
+                )]
+                let _ = app_state
                     .db_write(move |db| {
                         surface_pairing::apply_signed_session_write_action(
                             db,
@@ -1185,15 +1129,6 @@ async fn signed_transport_response(
                         .map_err(|e| e.to_string())
                     })
                     .await;
-                if let Ok(Some(target)) = cleanup_target {
-                    if let Some(reason) = cleanup_reason {
-                        for event in
-                            surface_pairing::cleanup_session_keychain_entries(&target, reason)
-                        {
-                            emit_pairing_audit_event(&app_state, &event);
-                        }
-                    }
-                }
                 // Quarantine write best-effort: even if the writer-mutex acquisition
                 // fails (e.g., flooding rejection attempts), the request is being
                 // rejected anyway. Rate-limit gate at surface_client_bridge.authorize
@@ -1471,9 +1406,6 @@ async fn pairing_handshake_response(
     if let Some(origin) = normalize_origin(&outcome.paired_origin) {
         runtime.paired_site_origins.write().insert(origin);
     }
-    for event in &outcome.keychain_cleanup_audits {
-        emit_pairing_audit_event(&app_state, event);
-    }
     if let Some(event) = outcome.revocation_audit.as_ref() {
         emit_pairing_audit_event(&app_state, event);
     }
@@ -1587,7 +1519,7 @@ async fn record_signed_transport_failure(
         failure_code: error.code().to_string(),
         now: Utc::now(),
     };
-    let outcome = match app_state
+    let events = match app_state
         .db_write(move |db| {
             let clock = crate::services::context::SystemClock;
             let rng = crate::services::context::SystemRng;
@@ -1612,16 +1544,10 @@ async fn record_signed_transport_failure(
             return;
         }
     };
-    if let Some(target) = outcome.cleanup_target.as_ref() {
-        for event in surface_pairing::cleanup_session_keychain_entries(target, "suspicious_replay")
-        {
-            emit_pairing_audit_event(&app_state, &event);
-        }
-    }
     if let Some(event) = direct_event {
         emit_pairing_audit_event(&app_state, &event);
     }
-    for event in outcome.events {
+    for event in events {
         if event.event_kind == "pairing_revoked" {
             if let Some(surface_client_id) = event
                 .detail
@@ -1658,15 +1584,7 @@ async fn compensate_failed_session_registration(
         })
         .await
     {
-        Ok(Ok((event, cleanup_target))) => {
-            for cleanup_event in surface_pairing::cleanup_session_keychain_entries(
-                &cleanup_target,
-                "session_registration_failed",
-            ) {
-                emit_pairing_audit_event(app_state, &cleanup_event);
-            }
-            emit_pairing_audit_event(app_state, &event);
-        }
+        Ok(Ok(event)) => emit_pairing_audit_event(app_state, &event),
         Ok(Err(error)) => {
             log::warn!(
                 "surface pairing compensation failed after session registration error: {}",
@@ -2358,6 +2276,22 @@ async fn surface_project_composition_response(
         );
     };
 
+    #[cfg(test)]
+    let registry_override = runtime.ability_registry_override.clone();
+    #[cfg(test)]
+    let registry = if let Some(registry) = registry_override.as_deref() {
+        registry
+    } else {
+        match crate::abilities::AbilityRegistry::global_checked() {
+            Ok(registry) => registry,
+            Err(_) => {
+                return error_response(
+                    SurfaceHttpError::runtime_unavailable().with_request_id(request_id),
+                );
+            }
+        }
+    };
+    #[cfg(not(test))]
     let registry = match crate::abilities::AbilityRegistry::global_checked() {
         Ok(registry) => registry,
         Err(_) => {
@@ -2367,7 +2301,7 @@ async fn surface_project_composition_response(
         }
     };
 
-    let authorization = match runtime.surface_client_bridge.authorize(
+    let authorization = match runtime.surface_client_bridge.authorize_local_render(
         registry,
         &validated,
         ability_name,
@@ -2392,12 +2326,39 @@ async fn surface_project_composition_response(
         }
     };
 
+    // The producer always advances composition_version monotonically and
+    // commits unconditionally. The surface's previously-rendered version is
+    // structurally meaningless as an OCC token because the surface has no
+    // write path — only the producer mutates compositions. Read the current
+    // substrate version before cache lookup so stale surface watermarks do
+    // not force a miss and re-run the producer.
+    let composition_id_for_lookup = request.composition_id.clone();
+    let current_db_version_for_producer = app_state
+        .db_read(move |db| {
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let external = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &external);
+            crate::services::compositions::current_composition_version_for_composition_id(
+                &ctx,
+                db,
+                &composition_id_for_lookup,
+            )
+            .map_err(|e| e.to_string())
+        })
+        .await
+        .ok()
+        .unwrap_or(0);
+    let current_db_version = i64::try_from(current_db_version_for_producer).unwrap_or(i64::MAX);
+
     // After authorization succeeds, check the cache. Cache key includes the
-    // scopes-canonical id, so a different actor with different scopes will
-    // miss naturally; authorization above gates the allowed_actors/required_
-    // scopes/rate-limit policy that the cache key alone doesn't enforce.
+    // current DB composition version plus the scopes-canonical id, so stale
+    // client watermarks do not force misses and a different actor with
+    // different scopes will miss naturally; authorization above gates the
+    // allowed_actors/required_scopes/rate-limit policy that the cache key
+    // alone doesn't enforce.
     if let Some(cached) =
-        orchestrator.cache_lookup(&actor, &request.composition_id, request.composition_version)
+        orchestrator.cache_lookup(&actor, &request.composition_id, current_db_version)
     {
         let projection_json = match serde_json::to_value(&cached.projection) {
             Ok(value) => value,
@@ -2425,30 +2386,7 @@ async fn surface_project_composition_response(
         .live_service_context()
         .with_actor("surface_client");
 
-    // The producer always advances composition_version monotonically and
-    // commits unconditionally. The surface's previously-rendered version is
-    // structurally meaningless as an OCC token because the surface has no
-    // write path — only the producer mutates compositions. Forward the
-    // current substrate version on every render so the producer's commit
-    // step never trips its own watermark check on stale surface claims.
-    let composition_id_for_lookup = request.composition_id.clone();
-    let current_db_version = app_state
-        .db_read(move |db| {
-            let clock = crate::services::context::SystemClock;
-            let rng = crate::services::context::SystemRng;
-            let external = crate::services::context::ExternalClients::default();
-            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &external);
-            crate::services::compositions::current_composition_version_for_composition_id(
-                &ctx,
-                db,
-                &composition_id_for_lookup,
-            )
-            .map_err(|e| e.to_string())
-        })
-        .await
-        .ok()
-        .unwrap_or(0);
-    let expected_version_for_producer: u64 = current_db_version;
+    let expected_version_for_producer: u64 = current_db_version_for_producer;
     let input = json!({
         "account_id": account_id,
         "composition_id": request.composition_id,
@@ -2502,11 +2440,15 @@ async fn surface_project_composition_response(
     // substrate audit-logger drain is intentionally not wired in this
     // commit; see the v1.4.2 wave maintenance backlog for the
     // audit-emission interlock.
+    let projection_cache_version = projection
+        .composition_version
+        .unwrap_or(current_db_version_for_producer);
+    let projection_cache_version = i64::try_from(projection_cache_version).unwrap_or(i64::MAX);
     let cache_hint_token = orchestrator
         .cache_store(
             &validated.actor,
             &request.composition_id,
-            request.composition_version,
+            projection_cache_version,
             projection.clone(),
         )
         .unwrap_or_default();
@@ -3837,9 +3779,10 @@ impl PairingAttemptDecision {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::abilities::provenance::CompositionId;
     use crate::abilities::registry::{
-        AbilityContext, AbilityDescriptor, AbilityPolicy, McpExposure, ScopeSet, SignalPolicy,
-        SurfaceClientId, SurfaceScope,
+        AbilityContext, AbilityDescriptor, AbilityPolicy, ComposesEntry, McpExposure, ScopeSet,
+        SignalPolicy, SurfaceClientId, SurfaceScope,
     };
     use crate::abilities::{AbilityCategory, AbilityError, Actor, ActorKind};
     use std::future::Future;
@@ -3849,6 +3792,12 @@ mod tests {
 
     static SURFACE_ROUTE_DISPATCH_COUNT: AtomicUsize = AtomicUsize::new(0);
     static SURFACE_ROUTE_LIMIT_COUNT: AtomicUsize = AtomicUsize::new(0);
+    static PROJECT_COMPOSITION_PRODUCER_COUNT: AtomicUsize = AtomicUsize::new(0);
+    static GET_ACCOUNT_CONTEXT_COMPOSES: [ComposesEntry; 1] = [ComposesEntry {
+        id: CompositionId::from_static("dailyos/get-account-context"),
+        ability: "dailyos/get-account-context",
+        optional: false,
+    }];
 
     /// Tests using SURFACE_ROUTE_{DISPATCH,LIMIT}_COUNT share a
     /// process-global counter. Under parallel test execution (cargo test
@@ -3856,7 +3805,6 @@ mod tests {
     /// producing assertion failures like `left=2 right=1`. Serialize
     /// affected tests via this lock.
     static SURFACE_ROUTE_COUNTER_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    static RUNTIME_SENTINEL_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     type ErasedFuture<'a> =
         Pin<Box<dyn Future<Output = Result<serde_json::Value, AbilityError>> + Send + 'a>>;
@@ -3875,6 +3823,44 @@ mod tests {
     ) -> ErasedFuture<'a> {
         SURFACE_ROUTE_LIMIT_COUNT.fetch_add(1, Ordering::SeqCst);
         surface_route_output(ctx, input, "surface_route_limited_test")
+    }
+
+    fn project_composition_erased<'a>(
+        _ctx: &'a AbilityContext<'a>,
+        input: serde_json::Value,
+    ) -> ErasedFuture<'a> {
+        PROJECT_COMPOSITION_PRODUCER_COUNT.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async move {
+            let composition_id = input
+                .get("composition_id")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("dailyos/account-overview:account:acct-cache");
+            let projected_version = input
+                .get("expected_composition_version")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0)
+                .saturating_add(1);
+            let composition = abilities_runtime::abilities::composition::Composition::empty(
+                abilities_runtime::abilities::composition::CompositionDocId::new(composition_id),
+                abilities_runtime::abilities::composition::CompositionVersion::new(
+                    projected_version,
+                ),
+                Utc::now(),
+            );
+            Ok(json!({
+                "data": composition,
+                "provenance": {
+                    "invocation_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                    "ability_name": "dailyos/account-overview",
+                    "ability_version": { "major": 1, "minor": 0 },
+                    "ability_schema_version": 1,
+                    "actor": "surface_client",
+                    "mode": "live",
+                    "warnings": []
+                },
+                "diagnostics": { "warnings": [] }
+            }))
+        })
     }
 
     fn surface_route_output<'a>(
@@ -3903,32 +3889,6 @@ mod tests {
         })
     }
 
-    fn install_fake_running_endpoint(endpoint: &SurfaceEndpointState) {
-        let (shutdown, _shutdown_rx) = watch::channel(false);
-        let join = tokio::spawn(async {
-            std::future::pending::<()>().await;
-        });
-        let abort = join.abort_handle();
-        drop(join);
-
-        let mut inner = endpoint.inner.lock();
-        inner.availability = Some(SurfaceEndpointAvailability::Running);
-        inner.running = Some(RunningEndpoint {
-            startup_id: Uuid::new_v4(),
-            bound_port: 4411,
-            runtime_anchor_id: "anchor_test".to_string(),
-            shutdown,
-            abort,
-        });
-    }
-
-    fn install_test_sentinel_path() -> (tempfile::TempDir, PathBuf, RuntimeSentinelPathGuard) {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("runtime-endpoint.json");
-        let guard = set_runtime_sentinel_path_for_tests(path.clone());
-        (dir, path, guard)
-    }
-
     fn surface_route_schema() -> serde_json::Value {
         json!({
             "type": "object",
@@ -3936,6 +3896,20 @@ mod tests {
             "properties": {
                 "value": { "type": "number" }
             }
+        })
+    }
+
+    fn project_composition_schema() -> serde_json::Value {
+        json!({
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "account_id": { "type": "string" },
+                "composition_id": { "type": "string" },
+                "expected_composition_version": { "type": "number" },
+                "schema_version": { "type": "number" }
+            },
+            "required": ["account_id", "composition_id", "schema_version"]
         })
     }
 
@@ -3963,97 +3937,6 @@ mod tests {
             ability_registry_override: None,
             app_state: None,
         })
-    }
-
-    async fn app_state_with_rehydrate_rows(
-        rows: &[(&str, &str)],
-    ) -> (Arc<AppState>, tempfile::TempDir) {
-        let tempdir = tempfile::tempdir().expect("tempdir");
-        let db_path = tempdir.path().join("surface-runtime-test.db");
-        let db_service = crate::db_service::DbService::open_at_unencrypted(db_path)
-            .await
-            .expect("open test db service");
-        let app_state = Arc::new(AppState::test_with_db_service(db_service));
-        let rows = rows
-            .iter()
-            .map(|(surface_client_id, session_id)| {
-                ((*surface_client_id).to_string(), (*session_id).to_string())
-            })
-            .collect::<Vec<_>>();
-        app_state
-            .db_write(move |db| {
-                let issued_at = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
-                let expires_at = (Utc::now() + chrono::Duration::days(1))
-                    .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
-                for (idx, (surface_client_id, session_id)) in rows.into_iter().enumerate() {
-                    let site_binding_digest = format!("site_digest_{idx}");
-                    let scope_digest = format!("scope_digest_{idx}");
-                    db.conn_ref()
-                        .execute(
-                            "INSERT INTO surface_client_pairings (
-                                pairing_id, surface_client_id, runtime_anchor_id, pairing_epoch,
-                                lifecycle_state, site_binding_digest, wp_install_uuid_hash,
-                                plugin_instance_uuid_hash, site_nonce, scopes_json, scope_digest,
-                                endpoint_version, ability_projection_json, created_at, activated_at,
-                                last_used_at, expires_at, audit_id
-                            ) VALUES (?1, ?2, 'runtime_test', 1, 'active', ?3, 'install_hash',
-                                'plugin_hash', 'site_nonce', '[]', ?4, 'v1', '[]', ?5, ?5, ?5, ?6, ?7)",
-                            rusqlite::params![
-                                format!("pairing_{idx}"),
-                                surface_client_id,
-                                site_binding_digest,
-                                scope_digest,
-                                issued_at,
-                                expires_at,
-                                format!("audit_{idx}")
-                            ],
-                        )
-                        .map_err(|error| error.to_string())?;
-                    db.conn_ref()
-                        .execute(
-                            "INSERT INTO surface_client_sessions (
-                                session_id, surface_client_id, pairing_epoch, hmac_key_id,
-                                issued_at, last_seen_at, inactive_expires_at, absolute_expires_at,
-                                scope_digest, site_binding_digest, wp_user_hash
-                            ) VALUES (?1, ?2, 1, ?3, ?4, ?4, ?5, ?5, ?6, ?7, 'wp_user_hash')",
-                            rusqlite::params![
-                                session_id,
-                                surface_client_id,
-                                format!("hmac_key_{idx}"),
-                                issued_at,
-                                expires_at,
-                                scope_digest,
-                                site_binding_digest
-                            ],
-                        )
-                        .map_err(|error| error.to_string())?;
-                }
-                Ok::<_, String>(())
-            })
-            .await
-            .expect("seed rehydrate rows");
-        (app_state, tempdir)
-    }
-
-    async fn session_revoked_reason(app_state: &Arc<AppState>, session_id: &str) -> Option<String> {
-        let session_id = session_id.to_string();
-        app_state
-            .db_read(move |db| {
-                db.conn_ref()
-                    .query_row(
-                        "SELECT revoked_reason FROM surface_client_sessions WHERE session_id = ?1",
-                        rusqlite::params![session_id],
-                        |row| row.get::<_, Option<String>>(0),
-                    )
-                    .map_err(|error| error.to_string())
-            })
-            .await
-            .expect("read revoked reason")
-    }
-
-    fn audit_log_text(app_state: &AppState) -> String {
-        let path = app_state.audit_log.lock().path().to_path_buf();
-        std::fs::read_to_string(path).unwrap_or_default()
     }
 
     fn surface_route_descriptor(
@@ -4157,6 +4040,158 @@ mod tests {
                     surface_route_limit_erased,
                 )],
             ),
+        )
+    }
+
+    fn project_composition_descriptor() -> AbilityDescriptor {
+        AbilityDescriptor {
+            name: "dailyos/account-overview",
+            version: "1.0.0",
+            schema_version: 1,
+            category: AbilityCategory::Read,
+            policy: AbilityPolicy {
+                allowed_actors: &[ActorKind::SurfaceClient],
+                allowed_modes: &[crate::services::context::ExecutionMode::Live],
+                requires_confirmation: false,
+                may_publish: false,
+                required_scopes: &["read.account_overview"],
+                mcp_exposure: McpExposure::None,
+                client_side_executable: false,
+                rate_limit: None,
+            },
+            composes: &GET_ACCOUNT_CONTEXT_COMPOSES,
+            mutates: &[],
+            experimental: false,
+            registered_at: None,
+            signal_policy: SignalPolicy::default(),
+            invoke_erased: project_composition_erased,
+            input_schema: project_composition_schema,
+            output_schema: project_composition_schema,
+        }
+    }
+
+    fn project_composition_registry() -> Arc<crate::abilities::AbilityRegistry> {
+        PROJECT_COMPOSITION_PRODUCER_COUNT.store(0, Ordering::SeqCst);
+        Arc::new(
+            crate::abilities::AbilityRegistry::from_descriptors_unchecked_for_runtime_validation_tests(
+                vec![project_composition_descriptor()],
+            ),
+        )
+    }
+
+    async fn runtime_for_project_composition_tests(
+        registry: Arc<crate::abilities::AbilityRegistry>,
+        bridge_config: SurfaceClientBridgeConfig,
+    ) -> Arc<EndpointRuntime> {
+        let db_path = std::env::temp_dir().join(format!(
+            "dailyos-project-composition-{}.sqlite",
+            Uuid::new_v4()
+        ));
+        let db_service = crate::db_service::DbService::open_at_unencrypted(db_path)
+            .await
+            .expect("test db service opens");
+        let app_state = Arc::new(AppState::test_with_db_service(db_service));
+        Arc::new(EndpointRuntime {
+            startup_id: Uuid::new_v4(),
+            bound_port: 49152,
+            runtime_anchor_id: "test_runtime_anchor".to_string(),
+            loopback_bucket: Mutex::new(TokenBucket::new(TokenBucketConfig {
+                capacity: 100,
+                refill_per_second: 100.0,
+            })),
+            pairing_attempts: Arc::new(Mutex::new(PairingAttemptLimiter {
+                config: PairingAttemptConfig {
+                    max_failed_attempts_per_code: 5,
+                },
+                attempts_by_code: HashMap::new(),
+            })),
+            paired_site_origins: Arc::new(RwLock::new(HashSet::new())),
+            signed_transport: hmac::SignedTransportState::default(),
+            signed_request_max_body_bytes: DEFAULT_SIGNED_REQUEST_MAX_BODY_BYTES,
+            surface_client_bridge: SurfaceClientBridge::new(bridge_config),
+            surface_nonce: SurfaceNonceService::new_from_w2b_secret([7_u8; 32])
+                .expect("nonce service"),
+            ability_registry_override: Some(registry),
+            app_state: Some(app_state),
+        })
+    }
+
+    async fn commit_composition_version_for_tests(
+        app_state: &Arc<AppState>,
+        composition_id: &str,
+        expected_version: u64,
+    ) {
+        let composition_id = composition_id.to_string();
+        app_state
+            .db_write(move |db| {
+                let clock = crate::services::context::SystemClock;
+                let rng = crate::services::context::SystemRng;
+                let external = crate::services::context::ExternalClients::default();
+                let ctx =
+                    crate::services::context::ServiceContext::new_live(&clock, &rng, &external)
+                        .with_actor("surface_runtime_test");
+                crate::services::compositions::commit_composition(
+                    &ctx,
+                    db,
+                    crate::services::compositions::CompositionProposal {
+                        composition_id:
+                            abilities_runtime::abilities::composition::CompositionDocId::new(
+                                composition_id.clone(),
+                            ),
+                        expected_composition_version: expected_version,
+                        composition: abilities_runtime::abilities::composition::Composition::empty(
+                            abilities_runtime::abilities::composition::CompositionDocId::new(
+                                composition_id,
+                            ),
+                            abilities_runtime::abilities::composition::CompositionVersion::new(
+                                expected_version,
+                            ),
+                            Utc::now(),
+                        ),
+                    },
+                )
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+            })
+            .await
+            .expect("composition version commits");
+    }
+
+    async fn seed_composition_version_for_tests(
+        app_state: &Arc<AppState>,
+        composition_id: &str,
+        version: u64,
+    ) {
+        for expected in 0..version {
+            commit_composition_version_for_tests(app_state, composition_id, expected).await;
+        }
+    }
+
+    fn projected_composition_for_tests(
+        composition_id: &str,
+        composition_version: u64,
+    ) -> abilities_runtime::abilities::ProjectedComposition {
+        serde_json::from_value(json!({
+            "composition_id": composition_id,
+            "composition_version": composition_version,
+            "fallback_policy_version": 1,
+            "blocks": [],
+            "diagnostics": [],
+            "unknown_block_count": 0,
+            "unknown_block_cap": 4,
+            "dropped_unknown_block_count": 0
+        }))
+        .expect("projection fixture deserializes")
+    }
+
+    fn project_composition_body(composition_id: &str, composition_version: i64) -> Bytes {
+        Bytes::from(
+            serde_json::to_vec(&json!({
+                "composition_id": composition_id,
+                "composition_version": composition_version,
+                "cache_hint_token": "stale-token"
+            }))
+            .expect("project-composition request serializes"),
         )
     }
 
@@ -4885,85 +4920,6 @@ mod tests {
         assert!(validate_origin(&headers, &endpoint.paired_site_origins.read()).is_err());
     }
 
-    #[tokio::test(flavor = "current_thread")]
-    async fn dos673_rehydration_revokes_only_not_found() {
-        let (app_state, _tempdir) = app_state_with_rehydrate_rows(&[
-            ("surface_found", "session_found"),
-            ("surface_missing", "session_missing"),
-            ("surface_unavailable", "session_unavailable"),
-        ])
-        .await;
-        let keychain = Arc::new(crate::services::surface_session_keychain::MockKeychain::new());
-        keychain.set_session_lookup(
-            "surface_found",
-            "session_found",
-            SessionKeyLookup::Found([7u8; 32]),
-        );
-        keychain.set_session_lookup(
-            "surface_missing",
-            "session_missing",
-            SessionKeyLookup::NotFound,
-        );
-        keychain.set_session_lookup(
-            "surface_unavailable",
-            "session_unavailable",
-            SessionKeyLookup::Unavailable {
-                reason: "keychain_locked".to_string(),
-            },
-        );
-        let _keychain_guard =
-            crate::services::surface_session_keychain::set_keychain_for_tests(keychain);
-        let signed_transport = hmac::SignedTransportState::default();
-
-        rehydrate_sessions_from_keychain(&app_state, &signed_transport)
-            .await
-            .expect("rehydrate should succeed");
-
-        assert!(signed_transport
-            .derive_active_session_key("session_found")
-            .is_some());
-        assert_eq!(
-            session_revoked_reason(&app_state, "session_missing").await,
-            Some("keychain_entry_missing".to_string())
-        );
-        assert_eq!(
-            session_revoked_reason(&app_state, "session_unavailable").await,
-            None
-        );
-        assert_eq!(
-            session_revoked_reason(&app_state, "session_found").await,
-            None
-        );
-    }
-
-    #[tokio::test(flavor = "current_thread")]
-    async fn dos673_unavailable_emits_audit_diagnostic() {
-        let (app_state, _tempdir) =
-            app_state_with_rehydrate_rows(&[("surface_unavailable", "session_unavailable")]).await;
-        let keychain = Arc::new(crate::services::surface_session_keychain::MockKeychain::new());
-        keychain.set_session_lookup(
-            "surface_unavailable",
-            "session_unavailable",
-            SessionKeyLookup::Unavailable {
-                reason: "corrupt_payload".to_string(),
-            },
-        );
-        let _keychain_guard =
-            crate::services::surface_session_keychain::set_keychain_for_tests(keychain);
-
-        rehydrate_sessions_from_keychain(&app_state, &hmac::SignedTransportState::default())
-            .await
-            .expect("rehydrate should succeed");
-
-        assert_eq!(
-            session_revoked_reason(&app_state, "session_unavailable").await,
-            None
-        );
-        let audit = audit_log_text(&app_state);
-        assert_eq!(audit.matches("pairing.session.key_unavailable").count(), 1);
-        assert!(audit.contains("\"reason\":\"corrupt_payload\""));
-    }
-
     #[test]
     fn typed_error_envelope_supports_409_shape() {
         let response =
@@ -5216,6 +5172,347 @@ mod tests {
     }
 
     #[test]
+    fn dos671_cache_key_uses_current_db_version() {
+        let _counter_guard = SURFACE_ROUTE_COUNTER_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let tokio_runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let composition_id = "dailyos/account-overview:account:acct-cache";
+        let runtime = tokio_runtime.block_on(runtime_for_project_composition_tests(
+            project_composition_registry(),
+            SurfaceClientBridgeConfig::default(),
+        ));
+        let app_state = runtime.app_state.as_ref().expect("test app state");
+        tokio_runtime.block_on(seed_composition_version_for_tests(
+            app_state,
+            composition_id,
+            5,
+        ));
+        let session = validated_surface_session_for_tests();
+        app_state
+            .composition_render_orchestrator
+            .cache_store(
+                &session.actor,
+                composition_id,
+                5,
+                projected_composition_for_tests(composition_id, 5),
+            )
+            .expect("cache stores projection at current DB version");
+
+        let response = tokio_runtime.block_on(surface_project_composition_response(
+            runtime.as_ref(),
+            session,
+            project_composition_body(composition_id, 1),
+            "req_project_cache_hit".to_string(),
+        ));
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = body_json(response);
+        assert_eq!(body["ok"], true);
+        assert_eq!(body["served_from_cache"], true);
+        assert_eq!(body["projection"]["composition_version"], 5);
+        assert_eq!(PROJECT_COMPOSITION_PRODUCER_COUNT.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn dos671_cache_hit_avoids_producer() {
+        let _counter_guard = SURFACE_ROUTE_COUNTER_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let tokio_runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let composition_id = "dailyos/account-overview:account:acct-cache-hit";
+        let runtime = tokio_runtime.block_on(runtime_for_project_composition_tests(
+            project_composition_registry(),
+            SurfaceClientBridgeConfig::default(),
+        ));
+        let app_state = runtime.app_state.as_ref().expect("test app state");
+        tokio_runtime.block_on(seed_composition_version_for_tests(
+            app_state,
+            composition_id,
+            5,
+        ));
+        let session = validated_surface_session_for_tests();
+        app_state
+            .composition_render_orchestrator
+            .cache_store(
+                &session.actor,
+                composition_id,
+                5,
+                projected_composition_for_tests(composition_id, 5),
+            )
+            .expect("cache stores projection at current DB version");
+
+        let response = tokio_runtime.block_on(surface_project_composition_response(
+            runtime.as_ref(),
+            session,
+            project_composition_body(composition_id, 1),
+            "req_project_cache_hit_avoids_producer".to_string(),
+        ));
+
+        let status = response.status();
+        let body = body_json(response);
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["served_from_cache"], true);
+        assert_eq!(PROJECT_COMPOSITION_PRODUCER_COUNT.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn dos671_cache_miss_invokes_producer_and_commits() {
+        let _counter_guard = SURFACE_ROUTE_COUNTER_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let tokio_runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let composition_id = "dailyos/account-overview:account:acct-store";
+        let runtime = tokio_runtime.block_on(runtime_for_project_composition_tests(
+            project_composition_registry(),
+            SurfaceClientBridgeConfig::default(),
+        ));
+        let app_state = runtime.app_state.as_ref().expect("test app state");
+        tokio_runtime.block_on(seed_composition_version_for_tests(
+            app_state,
+            composition_id,
+            5,
+        ));
+        let session = validated_surface_session_for_tests();
+        let actor = session.actor.clone();
+
+        let response = tokio_runtime.block_on(surface_project_composition_response(
+            runtime.as_ref(),
+            session,
+            project_composition_body(composition_id, 1),
+            "req_project_cache_store".to_string(),
+        ));
+
+        let status = response.status();
+        let body = body_json(response);
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "{body}; count={}",
+            PROJECT_COMPOSITION_PRODUCER_COUNT.load(Ordering::SeqCst)
+        );
+        assert_eq!(body["served_from_cache"], false);
+        assert_eq!(body["projection"]["composition_version"], 6);
+        assert_eq!(PROJECT_COMPOSITION_PRODUCER_COUNT.load(Ordering::SeqCst), 1);
+        assert!(app_state
+            .composition_render_orchestrator
+            .cache_lookup(&actor, composition_id, 1)
+            .is_none());
+        assert!(app_state
+            .composition_render_orchestrator
+            .cache_lookup(&actor, composition_id, 6)
+            .is_some());
+    }
+
+    #[test]
+    fn dos671_external_version_advance_invalidates_cache() {
+        let _counter_guard = SURFACE_ROUTE_COUNTER_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let tokio_runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let composition_id = "dailyos/account-overview:account:acct-external";
+        let runtime = tokio_runtime.block_on(runtime_for_project_composition_tests(
+            project_composition_registry(),
+            SurfaceClientBridgeConfig::default(),
+        ));
+        let app_state = runtime.app_state.as_ref().expect("test app state");
+        tokio_runtime.block_on(seed_composition_version_for_tests(
+            app_state,
+            composition_id,
+            5,
+        ));
+        let session = validated_surface_session_for_tests();
+        let actor = session.actor.clone();
+        app_state
+            .composition_render_orchestrator
+            .cache_store(
+                &actor,
+                composition_id,
+                5,
+                projected_composition_for_tests(composition_id, 5),
+            )
+            .expect("cache stores old projection");
+        tokio_runtime.block_on(commit_composition_version_for_tests(
+            app_state,
+            composition_id,
+            5,
+        ));
+
+        let response = tokio_runtime.block_on(surface_project_composition_response(
+            runtime.as_ref(),
+            session,
+            project_composition_body(composition_id, 5),
+            "req_project_external_advance".to_string(),
+        ));
+
+        let status = response.status();
+        let body = body_json(response);
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "{body}; count={}",
+            PROJECT_COMPOSITION_PRODUCER_COUNT.load(Ordering::SeqCst)
+        );
+        assert_eq!(body["served_from_cache"], false);
+        assert_eq!(body["projection"]["composition_version"], 7);
+        assert_eq!(PROJECT_COMPOSITION_PRODUCER_COUNT.load(Ordering::SeqCst), 1);
+        assert!(app_state
+            .composition_render_orchestrator
+            .cache_lookup(&actor, composition_id, 5)
+            .is_some());
+        assert!(app_state
+            .composition_render_orchestrator
+            .cache_lookup(&actor, composition_id, 7)
+            .is_some());
+
+        // The fake producer returns the committed version in its payload; mirror
+        // the real producer's DB advancement before proving the next render hits.
+        tokio_runtime.block_on(commit_composition_version_for_tests(
+            app_state,
+            composition_id,
+            6,
+        ));
+        let response = tokio_runtime.block_on(surface_project_composition_response(
+            runtime.as_ref(),
+            validated_surface_session_for_tests(),
+            project_composition_body(composition_id, 5),
+            "req_project_external_advance_cached".to_string(),
+        ));
+
+        let status = response.status();
+        let body = body_json(response);
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["served_from_cache"], true);
+        assert_eq!(body["projection"]["composition_version"], 7);
+        assert_eq!(PROJECT_COMPOSITION_PRODUCER_COUNT.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn dos672_project_composition_local_render_decharges_ability_and_scope_buckets() {
+        let _counter_guard = SURFACE_ROUTE_COUNTER_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let tokio_runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let composition_id = "dailyos/account-overview:account:acct-local-render";
+        let mut bridge_config = SurfaceClientBridgeConfig::default();
+        let one_per_second = SurfaceClientRateLimitBudget {
+            requests_per_minute: 60,
+            burst_per_second: 1,
+        };
+        bridge_config.scope.read = one_per_second;
+        bridge_config.ability.standard_read_composition = one_per_second;
+        let runtime = tokio_runtime.block_on(runtime_for_project_composition_tests(
+            project_composition_registry(),
+            bridge_config,
+        ));
+        let app_state = runtime.app_state.as_ref().expect("test app state");
+        tokio_runtime.block_on(seed_composition_version_for_tests(
+            app_state,
+            composition_id,
+            5,
+        ));
+        let session = validated_surface_session_for_tests();
+        app_state
+            .composition_render_orchestrator
+            .cache_store(
+                &session.actor,
+                composition_id,
+                5,
+                projected_composition_for_tests(composition_id, 5),
+            )
+            .expect("cache stores projection at current DB version");
+
+        let first = tokio_runtime.block_on(surface_project_composition_response(
+            runtime.as_ref(),
+            session.clone(),
+            project_composition_body(composition_id, 1),
+            "req_project_local_render_decharge_first".to_string(),
+        ));
+        let second = tokio_runtime.block_on(surface_project_composition_response(
+            runtime.as_ref(),
+            session,
+            project_composition_body(composition_id, 1),
+            "req_project_local_render_decharge_second".to_string(),
+        ));
+
+        let first_status = first.status();
+        let first_body = body_json(first);
+        assert_eq!(first_status, StatusCode::OK, "{first_body}");
+        assert_eq!(first_body["served_from_cache"], true);
+        let second_status = second.status();
+        let second_body = body_json(second);
+        assert_eq!(second_status, StatusCode::OK, "{second_body}");
+        assert_eq!(second_body["served_from_cache"], true);
+        assert_eq!(PROJECT_COMPOSITION_PRODUCER_COUNT.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn dos671_project_composition_cache_lookup_current_db_version_grep_gate() {
+        let source = std::fs::read_to_string(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/surface_runtime/mod.rs"),
+        )
+        .expect("surface runtime source is readable");
+        let production_source = source
+            .split("#[cfg(test)]\nmod tests")
+            .next()
+            .expect("production source precedes test module");
+        let normalized = production_source.split_whitespace().collect::<String>();
+
+        assert!(
+            normalized.contains(
+                "orchestrator.cache_lookup(&actor,&request.composition_id,current_db_version)"
+            ),
+            "project_composition cache lookup must use current_db_version"
+        );
+        assert!(
+            !normalized.contains(
+                "orchestrator.cache_lookup(&actor,&request.composition_id,request.composition_version)"
+            ),
+            "project_composition cache lookup must not use request.composition_version"
+        );
+    }
+
+    #[test]
+    fn dos672_project_composition_route_uses_local_render_authorization_grep_gate() {
+        let source = std::fs::read_to_string(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/surface_runtime/mod.rs"),
+        )
+        .expect("surface runtime source is readable");
+        let start = source
+            .find("async fn surface_project_composition_response")
+            .expect("project composition route exists");
+        let end = source[start..]
+            .find("async fn surface_nonce_verify_response")
+            .map(|offset| start + offset)
+            .expect("project composition route end exists");
+        let normalized = source[start..end].split_whitespace().collect::<String>();
+
+        assert!(
+            normalized.contains("surface_client_bridge.authorize_local_render("),
+            "project_composition route must use authorize_local_render"
+        );
+        assert!(
+            !normalized.contains("surface_client_bridge.authorize("),
+            "project_composition route must not charge standard authorize"
+        );
+    }
+
+    #[test]
     fn account_overview_success_audit_carries_composition_fields_and_writes() {
         let session = validated_surface_session_for_tests();
         let ability: AbilityResponseJson = serde_json::from_value(json!({
@@ -5386,67 +5683,6 @@ mod tests {
         let body = response.into_body().collect().await.unwrap().to_bytes();
         let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(body["error"]["code"], "request_body_too_large");
-    }
-
-    #[tokio::test]
-    async fn dos675_sentinel_cleaned_on_stop() {
-        let _lock = RUNTIME_SENTINEL_TEST_LOCK.lock().unwrap();
-        let (_dir, path, _guard) = install_test_sentinel_path();
-        write_runtime_sentinel(4411, "test").unwrap();
-        assert!(path.exists());
-
-        let endpoint = SurfaceEndpointState::default();
-        install_fake_running_endpoint(&endpoint);
-        endpoint.stop();
-
-        assert!(!path.exists(), "stop should remove runtime sentinel");
-    }
-
-    #[tokio::test]
-    async fn dos675_sentinel_cleaned_on_drop() {
-        let _lock = RUNTIME_SENTINEL_TEST_LOCK.lock().unwrap();
-        let (_dir, path, _guard) = install_test_sentinel_path();
-        write_runtime_sentinel(4411, "test").unwrap();
-        assert!(path.exists());
-
-        {
-            let endpoint = SurfaceEndpointState::default();
-            install_fake_running_endpoint(&endpoint);
-        }
-
-        assert!(!path.exists(), "drop should remove runtime sentinel");
-    }
-
-    #[tokio::test]
-    async fn dos675_repeated_stop_is_idempotent() {
-        let _lock = RUNTIME_SENTINEL_TEST_LOCK.lock().unwrap();
-        let (_dir, path, _guard) = install_test_sentinel_path();
-        write_runtime_sentinel(4411, "test").unwrap();
-        let endpoint = SurfaceEndpointState::default();
-        install_fake_running_endpoint(&endpoint);
-
-        endpoint.stop();
-        endpoint.stop();
-
-        assert!(!path.exists(), "repeated stop should leave sentinel absent");
-    }
-
-    #[tokio::test]
-    async fn dos675_drop_no_async_flush() {
-        let _lock = RUNTIME_SENTINEL_TEST_LOCK.lock().unwrap();
-        let (_dir, path, _guard) = install_test_sentinel_path();
-        write_runtime_sentinel(4411, "test").unwrap();
-        let started = Instant::now();
-        {
-            let endpoint = SurfaceEndpointState::default();
-            install_fake_running_endpoint(&endpoint);
-        }
-
-        assert!(started.elapsed() < Duration::from_millis(50));
-        assert!(
-            !path.exists(),
-            "drop should only perform sync sentinel cleanup"
-        );
     }
 
     #[tokio::test]
