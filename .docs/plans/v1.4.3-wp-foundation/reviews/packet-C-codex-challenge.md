@@ -1,6 +1,6 @@
 # Verdict
 
-BLOCK. Packet C V1.0 is not implementation-ready. The core kit claims are stronger than the current contracts support: the projection template does not match the Rust API, the CLI registration step targets a PHP anchor that does not exist, the harness can still miss the subtle DOS-670-shaped drift class, and the translator/template scope overclaims against the primitive inventory.
+APPROVE after cycle 4 targeted re-verify. Packet C V1.3 resolves the cycle-3 blockers: §5.4 now matches the real `BlockProjectionRule` shape and paste-point coverage, and §8 fixtures #8/#10 now target HealthBadge and token graph alias normalization.
 
 # Critical
 
@@ -99,3 +99,159 @@ BLOCK. Packet C V1.0 is not implementation-ready. The core kit claims are strong
 - → Linear maintenance: Add a repo-wide token source-name cleanup. Location: wave invariant `.docs/plans/v1.4.3-waves.md:75`; token docs `.docs/design/tokens/color.md:137`. Observation: planning docs still say `src/styles/tokens.css`; recommendation: standardize all docs on `src/styles/design-tokens.css`.
 - → Linear maintenance: Add a design inventory flag for primitives that are render-only vs interactive. Location: `.docs/design/primitives/README.md:58`; examples `Switch` at `.docs/design/primitives/Switch.md:14` and `Pill` at `.docs/design/primitives/Pill.md:14`. Observation: translator scope decisions require this classification; recommendation: add an `interaction` column to the primitive index.
 - → Linear maintenance: Consider extracting account-overview's private block render helper into a public test helper after W1. Location: `wp/dailyos/includes/class-dailyos-plugin.php:675`. Observation: useful beyond Packet C but not necessary if StarterKitIntegrationTest owns a fresh generic path.
+
+## Cycle 2 re-verify
+
+Scope: targeted V1.1 re-verify only for DOS-678, per requested questions 1-6.
+
+Direct check answers: §5.1/§6.6 drop PHP mutation yes (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:221`, `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:517`).
+Direct check answers: §5.4 real API no (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:332`, `src-tauri/abilities-runtime/src/abilities/fallback_projection.rs:255`).
+Direct check answers: §5.5 DOS-670 fixture coverage yes as specified (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:387`, `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:429`).
+Direct check answers: §5.6 token path yes in body, with stale CI residue below (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:454`, `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:554`).
+
+Cycle-1 CRITICAL verdicts:
+
+- C1 — STILL-BLOCKING: §5.4 still emits non-repo Rust API despite naming the right production flow.
+  V1.1 drops the old fake `register_custom_block_schema(...).with_field_binding(...)` path and names `BlockType` + `known_projection_rules()` (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:311`, `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:317`).
+  But the emitted snippet imports `KnownProjectionRule` / `ProjectionRuleResult` and calls `KnownProjectionRule::for_block(...)` (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:332`, `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:336`, `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:341`).
+  The actual repo API is private `struct BlockProjectionRule` (`src-tauri/abilities-runtime/src/abilities/fallback_projection.rs:255`) and private `fn known_projection_rules() -> Vec<BlockProjectionRule>` (`src-tauri/abilities-runtime/src/abilities/fallback_projection.rs:1250`).
+  Existing constructors are in-file functions like `fn account_overview_rule() -> BlockProjectionRule` (`src-tauri/abilities-runtime/src/abilities/fallback_projection.rs:1415`), so the proposed new `{{ability_name}}_rule.rs` file (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:329`) cannot return that private type.
+- C2 — RESOLVED: §5.1 now explicitly drops plugin-core mutation.
+  It says "**NO modification of `wp/dailyos/includes/class-dailyos-plugin.php`**" and relies on glob registration (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:221`).
+  §6.6 says V1.1 keeps glob and no longer modifies plugin core (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:517`).
+  The repo confirms `blocks/*/block.json` registration via `glob(...)` (`wp/dailyos/includes/class-dailyos-plugin.php:154`).
+- C3 — RESOLVED: §5.5 now specifies a schema-based harness.
+  It uses `BindingExpectation` pointer + `ValueKind` + `required` (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:367`, `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:387`) plus diagnostics, renderer branches, and wrapper assertions (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:377`, `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:380`, `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:383`).
+  The required negative classes cover field rename, type drift, required/optional drift, and payload nesting drift (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:429`, `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:431`, `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:432`, `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:434`).
+  This matches the risk because runtime projection payloads are untyped JSON (`src-tauri/abilities-runtime/src/abilities/fallback_projection.rs:46`) and projection type filtering is kind-based (`src-tauri/abilities-runtime/src/abilities/fallback_projection.rs:897`).
+
+Cycle-1 HIGH verdicts claimed by the V1.1 changelog:
+
+- H1 — STILL-HIGH: changelog claims a support matrix (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:85`), but §5.7 still says event handlers become data attributes and complex output is a "90% scaffold" (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:474`, `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:477`).
+- H2 — STILL-HIGH: changelog says V1.1 adds `typed-display` (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:93`) and §5.1 includes it in the CLI signature (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:210`).
+  But §5.2 still defines only simple/composite templates (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:227`) and §6.2 still says two shapes only (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:487`).
+- H3 — RESOLVED: §5.6 names `src/styles/design-tokens.css` as canonical runtime CSS input (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:449`, `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:454`), treats `wp/dailyos/theme/theme.json` as generated output (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:456`), and the referenced CSS file exists (`src/styles/design-tokens.css:1`).
+- H4 — STILL-HIGH: changelog says harness + CI land together first (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:135`), but §10 still says group 4 is CI and PR-C2 is translator + theme generator + CI (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:566`, `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:568`).
+- H5 — STILL-HIGH: changelog says AC #6 was replaced with Pill + HealthBadge (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:143`), but §5.7 still tests AccountOverview from TSX source (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:479`) and AC #6 still requires byte-equal AccountOverview regeneration (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:526`).
+
+New V1.1 findings:
+
+- HIGH: The body/acceptance/fixture/CI sections still encode old V1.0 work.
+  §5.1 drops plugin-core mutation (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:221`), but AC #3 and fixture #3 still require a `class-dailyos-plugin.php` enumeration update (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:523`, `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:536`).
+- HIGH: The stale-contract gap also affects token and translator gates.
+  §5.6 corrects the input path to `src/styles/design-tokens.css` (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:454`), but CI invariant #4 still watches `src/styles/tokens.css` (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:554`).
+  Changelog H5 says Pill + HealthBadge (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:146`), but CI invariant #6 still uses Pill + AccountOverview (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:556`).
+- MEDIUM: §6.4 still describes old substrate reuse.
+  It names `CustomBlockSchema` registration and `render_block_with_filter` (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:497`, `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:502`), while §5.4 rejects the dynamic custom-schema path (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:354`) and §5.5 rejects the account-overview-specific render helper (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:437`).
+
+Acceptability call on changelog deferrals:
+
+- Acceptable as non-blocking: path-alpha residuals already filed to DOS-684 remain out of this cycle-2 scope; I did not re-litigate the repo-wide token-name cleanup, primitive inventory interaction column, or public helper extraction.
+- Not acceptable as closure: typed-display, worked prepare body, translator scope matrix, landing split, and AC #6 can be body-edits-to-follow only if this packet remains BLOCK.
+  They cannot count as resolved while body and AC/CI still instruct old work (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:477`, `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:487`, `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:526`, `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:568`).
+
+Final cycle-2 verdict: BLOCK. C2 and C3 are resolved, but C1 remains a compile-shape blocker against the real projection API, and several changelog-claimed HIGH fixes are not yet propagated into the implementation contract.
+
+## Cycle 3 re-verify
+
+Verdict: BLOCK. Targeted V1.2 re-check for DOS-678 finds the V1.1 `KnownProjectionRule::for_block` issue is gone, but the replacement paste-not-template snippet still does not match the private Rust projection API.
+
+1. §5.4 paste-not-template API check: still blocking.
+
+- The V1.2 approach correctly stops generating a separate Rust module and instead asks the developer to paste an in-file rule function into `src-tauri/abilities-runtime/src/abilities/fallback_projection.rs` (§5.4, `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:319`, `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:324`).
+- That resolves the cycle-2 privacy/scope mismatch: `fallback_projection::BlockProjectionRule` is private (`src-tauri/abilities-runtime/src/abilities/fallback_projection.rs:255`) and `fallback_projection::known_projection_rules()` is private (`src-tauri/abilities-runtime/src/abilities/fallback_projection.rs:1250`), so same-file paste is the only zero-substrate-change route.
+- The emitted function body is still not compile-shaped. Packet §5.4 emits `BlockProjectionRule { block_type, required_pointers, optional_pointers, render_annotations }` with `FieldPath::new(...)` values (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:342`, `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:345`).
+- The real `fallback_projection::BlockProjectionRule` fields are `block_type`, `composition_kind`, `type_namespace`, `render_annotations`, `fields`, and `default_trust_band` (`src-tauri/abilities-runtime/src/abilities/fallback_projection.rs:255`). There are no `required_pointers` or `optional_pointers` fields on the production rule.
+- The real rule payload path is `fields: &'static [FieldPolicy]`; `FieldPolicy` is private and created through in-file helpers like `text_field`, `number_field`, `object_field`, `bool_field`, and `array_field` (`src-tauri/abilities-runtime/src/abilities/fallback_projection.rs:237`, `src-tauri/abilities-runtime/src/abilities/fallback_projection.rs:1273`).
+- Existing valid rule shape is `account_overview_rule() -> BlockProjectionRule`, which supplies `composition_kind`, `type_namespace`, `render_annotations`, `fields`, and `default_trust_band` (`src-tauri/abilities-runtime/src/abilities/fallback_projection.rs:1415`).
+- `FieldPath::new("/payload/text")` is valid JSON-pointer syntax, but it returns `Result<FieldPath, FieldAttributionError>` (`src-tauri/abilities-runtime/src/abilities/provenance/field.rs:20`), so it would not type-check inside a direct `vec![FieldPath::new(...)]` field even if the omitted fields existed.
+- Packet step [1] also points at the wrong source anchor: it says "BlockType enum at composition.rs:175" (§5.4, `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:334`), but line 175 is `BindingRole`; the `composition::BlockType` enum starts at `composition.rs:330`.
+- Adding a new `BlockType` variant also requires updating `BlockType::type_id()`'s exhaustive match (`src-tauri/abilities-runtime/src/abilities/composition.rs:350`) and `rule_for_block_type()` (`src-tauri/abilities-runtime/src/abilities/fallback_projection.rs:1236`); §5.4 only mentions the enum variant and `known_projection_rules()` (§5.4, `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:334`, `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:353`).
+- Compile-shaped §5.4 output needs a same-file `const {{BLOCK_TYPE}}_FIELDS: &[FieldPolicy] = &[...]`, using the existing helper constructors rather than `FieldPath` vectors (`src-tauri/abilities-runtime/src/abilities/fallback_projection.rs:1330`).
+- It needs to choose `text_field`, `number_field`, `object_field`, `bool_field`, or `array_field` per binding value kind (`src-tauri/abilities-runtime/src/abilities/fallback_projection.rs:1273`, `src-tauri/abilities-runtime/src/abilities/fallback_projection.rs:1294`).
+- It needs `ClaimSensitivity` per field; that type is already in-scope inside `fallback_projection.rs` (`src-tauri/abilities-runtime/src/abilities/fallback_projection.rs:19`).
+- It needs `default_trust_band: TrustBand::...`, because that field is mandatory on `BlockProjectionRule` (`src-tauri/abilities-runtime/src/abilities/fallback_projection.rs:261`).
+- It needs `composition_kind` and `type_namespace` policy decisions, even when they are `None`, because both fields are mandatory (`src-tauri/abilities-runtime/src/abilities/fallback_projection.rs:257`).
+
+2. V1.1 changelog-body propagation: partially fixed, not complete.
+
+- Fixed: §5.2 now has the typed-display template body and examples (§5.2, `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:227`).
+- Fixed: §5.7 now has a four-category translator scope matrix and Pill + HealthBadge parity targets (§5.7, `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:483`, `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:503`).
+- Fixed: §6.2 and §6.4 now name three template shapes and the real reuse list (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:511`, `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:519`).
+- Fixed: §7 AC #3, #5, and #6 now use glob registration, Pill, and HealthBadge instead of plugin-core enum edits or AccountOverview parity (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:548`, `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:550`).
+- Fixed: §8 fixture #3 now asserts glob auto-registration and no `class-dailyos-plugin.php` mutation (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:561`).
+- Fixed: §9 invariants #4 and #6 now watch `src/styles/design-tokens.css` and Pill + HealthBadge (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:579`, `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:581`).
+- Still stale: §8 fixture #8 still requires "Translator on AccountOverview source" byte parity (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:566`), contradicting §5.7's statement that AccountOverview is not a translator target (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:503`).
+- Still stale: §8 fixture #10 still names `tokens.css` and `theme.json` as competing sources (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:568`), contradicting §5.6's canonical input/output split (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:464`, `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:468`).
+- No remaining stale-body issue found in §7 acceptance criteria after the V1.2 edits (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:546`).
+- No remaining stale-body issue found in §9 CI invariants after the V1.2 edits (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:572`).
+- The remaining propagation gap is confined to §8 fixture rows, not the main body/AC/CI sections.
+
+3. New paste-not-template architectural concerns.
+
+- The approach is directionally defensible because it avoids making private projection internals public just to satisfy a scaffold tool (§5.4, `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:366`; `fallback_projection::BlockProjectionRule`, `src-tauri/abilities-runtime/src/abilities/fallback_projection.rs:255`).
+- The concern is enforcement: §5.4 says the CLI prints snippets and does not edit Rust files (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:324`, `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:364`), but no compile fixture/snapshot gate proves those emitted snippets still match the private in-file shape.
+- That risk has already materialized in V1.2: the pasted snippet copies `CustomBlockSchema`-style required/optional pointers into `BlockProjectionRule`, whose production contract is `fields: &'static [FieldPolicy]` plus trust/scope metadata (`src-tauri/abilities-runtime/src/abilities/fallback_projection.rs:210`, `src-tauri/abilities-runtime/src/abilities/fallback_projection.rs:255`).
+
+4. Commit-group structure and split policy.
+
+- §10 is structurally clean: CI workflow ships in group 1 with the harness and first fixture, so the "no block without fixture" gate exists before templates/CLI land (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:587`).
+- §10 also cleanly separates templates/CLI, token generator, and translator into groups 2-4 (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:589`).
+- The split policy is clean: PR-C1 keeps groups 1+2 together and is independently mergeable, while token generator and translator split into PR-C2/PR-C3; it explicitly says not to split groups 1+2 (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:593`).
+- This structure does not rescue C1: group 2 would still ship invalid projection snippets unless §5.4 is corrected to the actual `FieldPolicy`/`BlockProjectionRule` shape.
+- The split policy is otherwise no longer carrying the cycle-2 H4 problem: CI is in group 1, not delayed to the translator/theme group (`.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:587`, `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:599`).
+
+Bottom line: keep BLOCK. To approve, §5.4 must emit a same-file snippet shaped like the existing `*_FIELDS` const + `*_rule() -> BlockProjectionRule` pattern, including `composition_kind`, `type_namespace`, `fields`, `default_trust_band`, `BlockType::type_id()`, and `rule_for_block_type()` updates; §8 must replace fixture #8 and fixture #10 with the V1.2 Pill/HealthBadge and `design-tokens.css` contracts.
+
+## Cycle 4 re-verify
+
+Scope: targeted V1.3 re-verify only for DOS-678 cycle-3 blockers. Not a full cycle-3 rerun.
+
+1. PASS — §5.4 paste snippet matches the real `BlockProjectionRule` struct shape.
+
+- Evidence: `src-tauri/abilities-runtime/src/abilities/fallback_projection.rs:255-262` defines `BlockProjectionRule { block_type, composition_kind, type_namespace, render_annotations, fields, default_trust_band }`.
+- Evidence: `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:358-366` emits those same six fields in `fn {{ability_name}}_rule() -> BlockProjectionRule`.
+- Evidence: `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:350-356` emits `const {{ABILITY_NAME_UPPER}}_FIELDS: &[FieldPolicy] = &[ text_field("/payload/text", ClaimSensitivity::Internal), ... ];`.
+- Evidence: `src-tauri/abilities-runtime/src/abilities/fallback_projection.rs:1273-1279` confirms `text_field(pointer, sensitivity)` returns a `FieldPolicy`.
+- Evidence: `src-tauri/abilities-runtime/src/abilities/fallback_projection.rs:1415-1423` confirms the `account_overview_rule()` pattern: same struct fields, `fields: ACCOUNT_OVERVIEW_FIELDS`, and `default_trust_band`.
+- Evidence: `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:388` explicitly says `required_pointers` / `optional_pointers` were the V1.1/V1.2 wrong shape, not the V1.3 emitted snippet.
+
+2. PASS — §5.4 paste-point coverage includes the full required set.
+
+- Evidence: `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:334-338` covers the `BlockType` variant addition.
+- Evidence: `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:340-343` covers the `BlockType::type_id()` exhaustive match arm.
+- Evidence: `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:345-367` covers the `FIELDS` const plus the rule function.
+- Evidence: `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:369-372` covers the `rule_for_block_type()` match arm.
+- Evidence: `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:374-378` covers the `known_projection_rules()` Vec registration.
+- Evidence: `src-tauri/abilities-runtime/src/abilities/fallback_projection.rs:1236-1247` and `:1250-1260` confirm those two paste targets are distinct required functions in the real source.
+
+3. PASS — source anchors for paste targets point at the right code.
+
+- Evidence: `src-tauri/abilities-runtime/src/abilities/composition.rs:330` is `pub enum BlockType`, matching packet step [1] at `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:334`.
+- Evidence: `src-tauri/abilities-runtime/src/abilities/composition.rs:350` is `pub fn type_id(&self) -> &str`, matching packet step [2] at `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:340-343`.
+- Evidence: `src-tauri/abilities-runtime/src/abilities/fallback_projection.rs:1236` is `fn rule_for_block_type(block_type: &BlockType) -> Option<BlockProjectionRule>`, matching packet step [4] at `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:369-372`.
+- Evidence: `src-tauri/abilities-runtime/src/abilities/fallback_projection.rs:1250` is `fn known_projection_rules() -> Vec<BlockProjectionRule>`, matching packet step [5] at `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:374-378`.
+- Evidence: `src-tauri/abilities-runtime/src/abilities/fallback_projection.rs:1415` is `fn account_overview_rule() -> BlockProjectionRule`, matching the packet's canonical pattern reference at `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:322`.
+- Note: all requested anchors are exact in the current source; no minor line-drift callout needed.
+
+4. PASS — §8 fixture #8 now references HealthBadge translator parity, not AccountOverview as the target.
+
+- Evidence: `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:602` defines fixture #8 as `c1_translator_typed_display_healthbadge`.
+- Evidence: `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:602` targets `src/components/shared/HealthBadge.tsx` and generated `wp/dailyos/blocks/health-badge/`.
+- Evidence: `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:539` names Pill + HealthBadge as translator parity targets and says AccountOverview is not a translator target.
+- Evidence: `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:587` AC #6 also targets `src/components/shared/HealthBadge.tsx`.
+- Note: the fixture row mentions AccountOverview only as the replaced V1.0 claim, not as the V1.3 fixture target.
+
+5. PASS — §8 fixture #10 now references token graph alias normalization with paths consistent with §5.6.
+
+- Evidence: `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:604` defines fixture #10 as `c1_theme_json_alias_normalization`.
+- Evidence: `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:604` references `.docs/design/tokens/color.md:70` and `src/styles/design-tokens.css:86`.
+- Evidence: `.docs/design/tokens/color.md:70` defines `--color-account` as an alias to `--color-spice-turmeric`.
+- Evidence: `src/styles/design-tokens.css:86` defines `--color-account: var(--color-spice-turmeric);`.
+- Evidence: `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:500-508` names `.docs/design/tokens/` + `src/styles/design-tokens.css` as canonical inputs and describes token graph normalization.
+- Evidence: `.docs/plans/v1.4.3-wp-foundation/L0-packet-C-starter-kit.md:504-505` keeps `wp/dailyos/theme/theme.json` as generated output, consistent with fixture #10's V1.3 correction note at line 604.
+
+Final targeted verdict: APPROVE.
+All five requested items pass against the current packet and source anchors.
+No cycle-3 passed items were re-verified beyond source reads needed for the five targeted questions.
+No BLOCK or MINOR findings remain in this targeted scope.
