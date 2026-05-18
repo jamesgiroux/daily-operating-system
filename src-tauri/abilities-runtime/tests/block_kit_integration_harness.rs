@@ -478,6 +478,8 @@ fn escape_pointer_segment(segment: &str) -> String {
 mod account_overview_integration_fixture;
 #[path = "fixtures/entity_chip_integration_fixture.rs"]
 mod entity_chip_integration_fixture;
+#[path = "fixtures/type_badge_integration_fixture.rs"]
+mod type_badge_integration_fixture;
 
 #[test]
 fn expected_block_fixtures_cover_requested_ci_block() {
@@ -491,6 +493,7 @@ fn expected_block_fixtures_cover_requested_ci_block() {
     let known = [
         account_overview_integration_fixture::account_overview_fixture(),
         entity_chip_integration_fixture::entity_chip_fixture(),
+        type_badge_integration_fixture::type_badge_fixture(),
     ];
     assert!(
         known.iter().any(block_fixture_selected),
