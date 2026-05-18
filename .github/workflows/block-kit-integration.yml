@@ -7,8 +7,12 @@ on:
       - main
     paths:
       - 'wp/dailyos/blocks/**'
-      - 'src-tauri/abilities-runtime/**'
+      - 'wp/dailyos/scripts/**'
+      - 'wp/dailyos/theme/**'
       - 'wp/dailyos/tests/blocks/StarterKitIntegrationTest.php'
+      - 'src-tauri/abilities-runtime/**'
+      - 'src/styles/design-tokens.css'
+      - '.docs/design/tokens/**'
       - '.github/workflows/block-kit-integration.yml'
 
 concurrency:
@@ -19,7 +23,7 @@ jobs:
   block-kit-integration:
     name: Block kit integration fixtures
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -33,6 +37,11 @@ jobs:
           php-version: '8.4'
           coverage: none
 
+      - name: Setup Node + pnpm
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
       - name: Cache Rust dependencies
         uses: actions/cache@v4
         with:
@@ -44,7 +53,9 @@ jobs:
           restore-keys: |
             block-kit-cargo-${{ runner.os }}-
 
-      - name: Run block integration fixtures
+      # §9 invariant #1 — every wp/dailyos/blocks/<slug>/ MUST have a matching
+      # Rust integration fixture; harness must pass per block.
+      - name: Run block integration fixtures (per-block invariant)
         shell: bash
         run: |
           set -euo pipefail
@@ -69,3 +80,77 @@ jobs:
               --test block_kit_integration_harness \
               -- --nocapture
           done
+
+      # §9 invariant #5 — CLI scaffold MUST exit 0 on a valid name + exit 1 on invalid.
+      - name: CLI scaffold exit-code gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmp_slug="ci-smoke-$(date +%s)"
+
+          # Valid name → exit 0.
+          node wp/dailyos/scripts/new-block.mjs "$tmp_slug"
+
+          # Invalid name (uppercase) → exit 1.
+          if node wp/dailyos/scripts/new-block.mjs FOO 2>/dev/null; then
+            echo "FAIL: scaffold accepted invalid uppercase name 'FOO'" >&2
+            exit 1
+          fi
+
+          # Existing name → exit 1 (collision check).
+          if node wp/dailyos/scripts/new-block.mjs "$tmp_slug" 2>/dev/null; then
+            echo "FAIL: scaffold accepted colliding name '$tmp_slug'" >&2
+            rm -rf "wp/dailyos/blocks/$tmp_slug"
+            exit 1
+          fi
+
+          # Cleanup smoke scaffold so the per-block invariant doesn't see it next step.
+          rm -rf "wp/dailyos/blocks/$tmp_slug"
+
+      # §9 invariant #6 — translator MUST produce kit-passing output on Pill + HealthBadge.
+      # Generated fixtures are co-located by W2; W1 ships scaffold only. Run translator,
+      # confirm exit 0 + scaffold dir + render-function name collision-free, then clean up.
+      - name: Translator parity gate (Pill + HealthBadge)
+        shell: bash
+        run: |
+          set -euo pipefail
+          for primitive in Pill HealthBadge; do
+            slug=$(echo "$primitive" | sed -E 's/([a-z0-9])([A-Z])/\1-\2/g' | tr '[:upper:]' '[:lower:]')
+
+            # Don't collide with W2-shipped block dirs once they land.
+            if [ -d "wp/dailyos/blocks/$slug" ]; then
+              echo "Skipping $primitive — wp/dailyos/blocks/$slug already exists (W2 owns)."
+              continue
+            fi
+
+            node wp/dailyos/scripts/translate-tauri.mjs --primitive "$primitive"
+
+            php_fn="dailyos_${slug//-/_}_render"
+            if ! grep -q "function ${php_fn}(" "wp/dailyos/blocks/$slug/render-functions.php"; then
+              echo "FAIL: translator output missing expected render function '${php_fn}' for $primitive" >&2
+              rm -rf "wp/dailyos/blocks/$slug"
+              exit 1
+            fi
+            if ! grep -q "dailyos_.*_render( \$attributes" "wp/dailyos/blocks/$slug/render.php" \
+                && ! grep -q "dailyos_${slug//-/_}_render( \$attributes" "wp/dailyos/blocks/$slug/render.php"; then
+              echo "FAIL: scaffold render.php for $primitive doesn't call any render-fn" >&2
+              rm -rf "wp/dailyos/blocks/$slug"
+              exit 1
+            fi
+
+            rm -rf "wp/dailyos/blocks/$slug"
+          done
+
+          # NotSupported diagnostic must exit 1.
+          if node wp/dailyos/scripts/translate-tauri.mjs --primitive Switch 2>/dev/null; then
+            echo "FAIL: translator accepted NotSupported primitive 'Switch'" >&2
+            exit 1
+          fi
+
+      # §9 invariant #4 — token-to-theme.json generator MUST run cleanly via --check.
+      # Fails CI on drift between canonical CSS sources and committed wp/dailyos/theme/theme.json.
+      - name: Theme.json idempotency gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          node wp/dailyos/scripts/generate-theme-json.mjs --check

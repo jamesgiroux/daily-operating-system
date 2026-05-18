@@ -171,7 +171,7 @@ const BODY_TRANSLATIONS = {
 
 declare(strict_types=1);
 
-function dailyos_block_pill_render(array $attributes): string {
+function dailyos_pill_render(array $attributes): string {
 	$tone = isset($attributes['tone']) ? (string) $attributes['tone'] : 'neutral';
 	$size = isset($attributes['size']) ? (string) $attributes['size'] : 'standard';
 	$dot = !empty($attributes['dot']);
@@ -212,7 +212,7 @@ function dailyos_block_pill_render(array $attributes): string {
 
 declare(strict_types=1);
 
-function dailyos_block_health_badge_render(array $attributes): string {
+function dailyos_health_badge_render(array $attributes): string {
 	$size = isset($attributes['size']) ? (string) $attributes['size'] : 'standard';
 	$band = isset($attributes['band']) ? (string) $attributes['band'] : 'green';
 	$score = isset($attributes['score']) ? (int) $attributes['score'] : 0;
