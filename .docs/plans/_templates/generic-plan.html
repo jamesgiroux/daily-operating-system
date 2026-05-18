@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>&lt;DOC TITLE&gt; · DailyOS Planning</title>
+  <link rel="stylesheet" href="../design/reference/_shared/fonts.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/design-tokens.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/MagazinePageLayout.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/chrome.css">
+  <link rel="stylesheet" href="plans.css">
+</head>
+<body
+  data-tint="eucalyptus"
+  data-active-page="planning">
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+<div class="plans-shell">
+
+<!-- TOPNAV — see _patterns/topnav.html -->
+<nav class="plans-topnav" aria-label="Planning surface">
+  <a class="plans-mark" href="index.html">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="16" height="16" aria-hidden="true">
+      <path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/>
+    </svg>
+    DailyOS · Planning
+  </a>
+  <div class="plans-topnav-links">
+    <a href="engineering-ladder.html">Engineering Ladder</a>
+    <a href="&lt;CURRENT_DOC&gt;.html" data-active="true">&lt;Doc name&gt;</a>
+    <a href="AUTHORING.md">Authoring Ruleset</a>
+  </div>
+</nav>
+
+<!-- COVER — see _patterns/cover-section.html -->
+<section class="plans-cover">
+  <p class="plans-eyebrow">DailyOS · &lt;Surface name&gt;</p>
+  <h1 class="plans-title">&lt;The one-sentence promise of this doc.&gt;</h1>
+  <p class="plans-kicker">&lt;The subtitle in italic serif.&gt;</p>
+  <p class="plans-lede">
+    &lt;Two to four sentences of context.&gt;
+  </p>
+  <div class="plans-meta">
+    <span>&lt;Adopted date&gt;</span>
+    <span>&lt;Key fact 1&gt;</span>
+    <span>&lt;Key fact 2&gt;</span>
+  </div>
+</section>
+
+<!-- ============================================================
+     SECTION 1 — duplicate this block per top-level section
+     ============================================================ -->
+<section class="plans-section" aria-labelledby="section-1">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">&lt;Section eyebrow&gt;</p>
+    <h2 id="section-1" class="plans-section-title">&lt;Section title.&gt;</h2>
+    <p class="plans-section-lede">
+      &lt;Section lede — two-sentence intro to what follows.&gt;
+    </p>
+  </header>
+
+  <!-- Section body — compose from patterns or write inline content -->
+  <p>&lt;Body content.&gt;</p>
+</section>
+
+<!-- ============================================================
+     SECTION 2 — example using callout grid
+     ============================================================ -->
+<section class="plans-section plans-section-callouts" aria-label="&lt;label&gt;">
+  <div class="callout-grid">
+    <article class="callout">
+      <h3 class="callout-title">&lt;Callout 1&gt;</h3>
+      <p class="callout-prose">&lt;Body.&gt;</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">&lt;Callout 2&gt;</h3>
+      <p class="callout-prose">&lt;Body.&gt;</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">&lt;Callout 3&gt;</h3>
+      <p class="callout-prose">&lt;Body.&gt;</p>
+    </article>
+  </div>
+</section>
+
+<!-- ============================================================
+     RELATED / FOOTER — cross-reference other docs
+     ============================================================ -->
+<section class="plans-section plans-section-footer">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Related</p>
+    <h2 class="plans-section-title">How this doc relates to others.</h2>
+  </header>
+  <ul class="plans-related">
+    <li>
+      <strong>&lt;Other doc&gt;</strong>
+      &lt;One-line description of relationship.&gt;
+    </li>
+  </ul>
+</section>
+
+<!-- FINIS — close marker -->
+<div class="finis">
+  <div class="finis-mark">&lt;IDENTIFIER STRIP&gt;</div>
+  <div class="finis-date">&lt;Doc name · YYYY-MM-DD&gt;</div>
+  <div class="finis-caption">&lt;One-line closing principle.&gt;</div>
+</div>
+
+</div>
+</main>
+</div>
+</body>
+</html>
