@@ -39,10 +39,10 @@ pub fn score_band_fixture() -> BlockIntegrationFixture {
             expected_html_pattern: "data-ds-name=\"ScoreBand\"".to_string(),
         }],
         expected_wrapper: BlockWrapperAssertion {
-            tag: "section".to_string(),
+            tag: "span".to_string(),
             class: "wp-block-dailyos-score-band".to_string(),
             data_attrs: vec![
-                ("data-ds-tier".to_string(), "pattern".to_string()),
+                ("data-ds-tier".to_string(), "primitive".to_string()),
                 ("data-ds-name".to_string(), "ScoreBand".to_string()),
             ],
         },
