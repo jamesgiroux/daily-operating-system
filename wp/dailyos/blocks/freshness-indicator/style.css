@@ -1,0 +1,46 @@
+.dailyos-freshness-indicator {
+	display: inline-flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 0 var(--wp--preset--spacing--xs);
+	color: var(--wp--preset--color--text-tertiary);
+	font-family: var(--wp--custom--dailyos--tokens--font-mono);
+	font-size: 10px;
+	line-height: 1.2;
+	letter-spacing: 0;
+}
+
+.dailyos-freshness-indicator--inline {
+	width: fit-content;
+	padding: 2px 8px;
+	border-radius: 999px;
+	background: var(--wp--preset--color--desk-charcoal-4);
+	white-space: nowrap;
+}
+
+.dailyos-freshness-indicator--strip {
+	display: flex;
+	margin: 6px 0 32px;
+	text-transform: uppercase;
+}
+
+.dailyos-freshness-indicator__part {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--wp--preset--spacing--xs);
+}
+
+.dailyos-freshness-indicator__separator,
+.dailyos-freshness-indicator__text,
+.dailyos-freshness-indicator__timeText {
+	color: inherit;
+}
+
+.dailyos-freshness-indicator[data-staleness="aging"] .dailyos-freshness-indicator__timeText {
+	color: var(--wp--preset--color--text-quaternary);
+}
+
+.dailyos-freshness-indicator[data-staleness="stale"] .dailyos-freshness-indicator__timeText,
+.dailyos-freshness-indicator__part[data-stale="true"] .dailyos-freshness-indicator__text {
+	color: var(--wp--preset--color--spice-saffron);
+}

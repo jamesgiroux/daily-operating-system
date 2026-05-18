@@ -1443,15 +1443,50 @@ const PILL_FIELDS: &[FieldPolicy] = &[text_field("/payload/text", ClaimSensitivi
 const STATUS_DOT_FIELDS: &[FieldPolicy] = &[text_field("/payload/text", ClaimSensitivity::Internal)];
 const PROVENANCE_TAG_FIELDS: &[FieldPolicy] =
     &[text_field("/payload/text", ClaimSensitivity::Internal)];
-const HEALTH_BADGE_FIELDS: &[FieldPolicy] =
-    &[text_field("/payload/text", ClaimSensitivity::Internal)];
-const AVATAR_FIELDS: &[FieldPolicy] = &[text_field("/payload/text", ClaimSensitivity::Internal)];
-const FRESHNESS_INDICATOR_FIELDS: &[FieldPolicy] =
-    &[text_field("/payload/text", ClaimSensitivity::Internal)];
-const TRUST_BAND_BADGE_FIELDS: &[FieldPolicy] =
-    &[text_field("/payload/text", ClaimSensitivity::Internal)];
-const INTELLIGENCE_QUALITY_BADGE_FIELDS: &[FieldPolicy] =
-    &[text_field("/payload/text", ClaimSensitivity::Internal)];
+const HEALTH_BADGE_FIELDS: &[FieldPolicy] = &[
+    number_field("/score", ClaimSensitivity::Internal),
+    text_field("/band", ClaimSensitivity::Internal),
+    text_field("/trend/direction", ClaimSensitivity::Internal),
+    text_field("/trend/rationale", ClaimSensitivity::Internal),
+    number_field("/confidence", ClaimSensitivity::Internal),
+    bool_field("/sufficientData", ClaimSensitivity::Internal),
+    bool_field("/showScore", ClaimSensitivity::Internal),
+    text_field("/size", ClaimSensitivity::Internal),
+    text_field("/source", ClaimSensitivity::Internal),
+    text_field("/divergence/severity", ClaimSensitivity::Internal),
+    bool_field("/divergence/leadingIndicator", ClaimSensitivity::Internal),
+];
+const AVATAR_FIELDS: &[FieldPolicy] = &[
+    text_field("/name", ClaimSensitivity::Internal),
+    text_field("/personId", ClaimSensitivity::Internal),
+    text_field("/photoUrl", ClaimSensitivity::Internal),
+    number_field("/size", ClaimSensitivity::Internal),
+    text_field("/className", ClaimSensitivity::Internal),
+];
+const FRESHNESS_INDICATOR_FIELDS: &[FieldPolicy] = &[
+    text_field("/at", ClaimSensitivity::Internal),
+    text_field("/enrichedAt", ClaimSensitivity::Internal),
+    text_field("/format", ClaimSensitivity::Internal),
+    text_field("/dateFormat", ClaimSensitivity::Internal),
+    number_field("/stalenessThreshold", ClaimSensitivity::Internal),
+    text_field("/verb", ClaimSensitivity::Internal),
+    array_field("/fragments", ClaimSensitivity::Internal),
+    text_field("/variant", ClaimSensitivity::Internal),
+    text_field("/className", ClaimSensitivity::Internal),
+];
+const TRUST_BAND_BADGE_FIELDS: &[FieldPolicy] = &[
+    text_field("/band", ClaimSensitivity::Internal),
+    bool_field("/compact", ClaimSensitivity::Internal),
+    text_field("/label", ClaimSensitivity::Internal),
+];
+const INTELLIGENCE_QUALITY_BADGE_FIELDS: &[FieldPolicy] = &[
+    number_field("/qualityScore", ClaimSensitivity::Internal),
+    bool_field("/hasNewSignals", ClaimSensitivity::Internal),
+    text_field("/lastEnriched", ClaimSensitivity::Internal),
+    text_field("/enrichedAt", ClaimSensitivity::Internal),
+    bool_field("/showLabel", ClaimSensitivity::Internal),
+    bool_field("/showTooltip", ClaimSensitivity::Internal),
+];
 const ENTITY_CHIP_FIELDS: &[FieldPolicy] =
     &[text_field("/payload/text", ClaimSensitivity::Internal)];
 const TYPE_BADGE_FIELDS: &[FieldPolicy] =

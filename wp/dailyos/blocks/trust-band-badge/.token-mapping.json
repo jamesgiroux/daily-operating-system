@@ -1,0 +1,50 @@
+[
+	{
+		"source_token": "--font-mono",
+		"target_token": "wp--custom--dailyos--tokens--font-mono"
+	},
+	{
+		"source_token": "--space-xs",
+		"target_token": "wp--preset--spacing--xs"
+	},
+	{
+		"source_token": "--border-width",
+		"target_token": "wp--custom--dailyos--tokens--border-width"
+	},
+	{
+		"source_token": "--color-trust-likely-current-15",
+		"target_token": "wp--preset--color--trust-likely-current-15"
+	},
+	{
+		"source_token": "--color-trust-likely-current",
+		"target_token": "wp--preset--color--trust-likely-current"
+	},
+	{
+		"source_token": "--color-trust-likely-current-12",
+		"target_token": "wp--preset--color--trust-likely-current-12"
+	},
+	{
+		"source_token": "--color-trust-use-with-caution-15",
+		"target_token": "wp--preset--color--trust-use-with-caution-15"
+	},
+	{
+		"source_token": "--color-trust-use-with-caution",
+		"target_token": "wp--preset--color--trust-use-with-caution"
+	},
+	{
+		"source_token": "--color-trust-use-with-caution-12",
+		"target_token": "wp--preset--color--trust-use-with-caution-12"
+	},
+	{
+		"source_token": "--color-trust-needs-verification-15",
+		"target_token": "wp--preset--color--trust-needs-verification-15"
+	},
+	{
+		"source_token": "--color-trust-needs-verification",
+		"target_token": "wp--preset--color--trust-needs-verification"
+	},
+	{
+		"source_token": "--color-trust-needs-verification-12",
+		"target_token": "wp--preset--color--trust-needs-verification-12"
+	}
+]
