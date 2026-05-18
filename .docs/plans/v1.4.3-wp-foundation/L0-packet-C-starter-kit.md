@@ -323,7 +323,7 @@ V1.0 templated `register_custom_block_schema(...).with_field_binding(BindingRole
 
 **V1.2 approach: CLI generates code snippets the developer pastes IN-FILE.** No new template module file (would need pub-exposing private types). The kit's CLI prints exact patch instructions; the developer applies them with one paste each. No automated file edits to Rust source — that's the boundary the kit respects (CLI does NOT modify any `.rs` file beyond creating the new ability scaffold).
 
-**CLI output for `pnpm dailyos:new-block <name> --new-ability <ability-name>`:**
+**CLI output for `pnpm dailyos:new-block <name> --new-ability <ability-name>`** (V1.3 — matches the real `BlockProjectionRule` shape per codex challenge cycle-3):
 
 ```
 Block scaffold created at wp/dailyos/blocks/<name>/
@@ -331,35 +331,71 @@ Producer ability scaffold created at src-tauri/abilities-runtime/src/abilities/<
 
 Manual steps required (paste these into the named files):
 
-[1] Add to BlockType enum at src-tauri/abilities-runtime/src/abilities/composition.rs:175:
+[1] Add a BlockType variant to src-tauri/abilities-runtime/src/abilities/composition.rs:330
+    (the BlockType enum — NOT line 175 which is BindingRole):
 
     #[serde(rename = "dailyos/<ability-name-kebab>")]
     {{BlockType}},
 
-[2] Add the rule fn to src-tauri/abilities-runtime/src/abilities/fallback_projection.rs
-    (paste below account_overview_rule at line ~1415):
+[2] Add the variant to BlockType::type_id() exhaustive match at
+    src-tauri/abilities-runtime/src/abilities/composition.rs:350:
+
+    BlockType::{{BlockType}} => "dailyos/<ability-name-kebab>",
+
+[3] Add the field-policy const + rule fn IN-FILE to
+    src-tauri/abilities-runtime/src/abilities/fallback_projection.rs
+    (paste alongside ACCOUNT_OVERVIEW_FIELDS at line ~1409 + account_overview_rule
+    at line ~1415):
+
+    const {{ABILITY_NAME_UPPER}}_FIELDS: &[FieldPolicy] = &[
+        text_field("/payload/text", ClaimSensitivity::Internal),
+        // TODO: add per-binding field policies. Choose helper per value
+        // kind: text_field / number_field / bool_field / object_field /
+        // array_field. ClaimSensitivity options: Public, Internal,
+        // Confidential, Restricted.
+    ];
 
     fn {{ability_name}}_rule() -> BlockProjectionRule {
         BlockProjectionRule {
             block_type: BlockType::{{BlockType}},
-            required_pointers: vec![FieldPath::new("/payload/text")],
-            optional_pointers: vec![FieldPath::new("/payload/subtitle")],
-            render_annotations: Vec::new(),
-            // TODO: extract per-binding projector fns here (mirror
-            // account_overview_rule structure)
+            composition_kind: Some("entity_page"),  // or None — see existing rules
+            type_namespace: Some("dailyos/<ability-name-kebab>"),
+            render_annotations: &["<name>", "<descriptor>"],
+            fields: {{ABILITY_NAME_UPPER}}_FIELDS,
+            default_trust_band: TrustBand::UseWithCaution,
         }
     }
 
-[3] Add to known_projection_rules() at fallback_projection.rs:1250 (inside the Vec literal):
+[4] Add the rule to rule_for_block_type() at
+    src-tauri/abilities-runtime/src/abilities/fallback_projection.rs:1236 (match arm):
+
+    BlockType::{{BlockType}} => Some({{ability_name}}_rule()),
+
+[5] Add the rule to known_projection_rules() at
+    src-tauri/abilities-runtime/src/abilities/fallback_projection.rs:1250
+    (inside the Vec literal):
 
     {{ability_name}}_rule(),
 
-[4] Run the kit integration fixture:
+[6] Run the kit integration fixture:
     pnpm dailyos:test-block <name>
 
 The harness fails fast if the producer's payload shape doesn't match the
-required/optional pointers in your rule — that's the DOS-670 catch.
+field-policy declarations in your rule — that's the DOS-670 catch.
 ```
+
+**Key API references** (V1.3 — verified against `src-tauri/abilities-runtime/src/abilities/fallback_projection.rs`):
+- `BlockProjectionRule` (private struct at `:255`): fields = `block_type`, `composition_kind`, `type_namespace`, `render_annotations`, `fields`, `default_trust_band`. NOT `required_pointers` / `optional_pointers` (V1.1/V1.2 wrong).
+- `FieldPolicy` (private at `:237`): created via in-file helpers `text_field`, `number_field`, `object_field`, `bool_field`, `array_field` at `:1273+`. Each takes `(pointer, ClaimSensitivity)`.
+- `ClaimSensitivity` imported at `:19` — variants `Public`, `Internal`, `Confidential`, `Restricted`.
+- `TrustBand` — variants per `abilities-runtime` crate (see `account_overview_rule` for `UseWithCaution` default).
+- Production rule pattern: see `account_overview_rule()` at `:1415` as the canonical reference.
+
+**Rationale for the paste-not-edit approach (V1.2 vs V1.1):** Automated Rust file editing is brittle (formatting, import collisions, comment markers). The CLI's job is generating correct snippets; the developer's job is applying them. This is consistent with §5.1 V1.1's "CLI does NOT modify `class-dailyos-plugin.php`" decision — the kit respects file boundaries and emits snippets-for-paste.
+
+**Note on the alternative substrate-extension path:** Making `BlockProjectionRule` + `known_projection_rules()` `pub` + adding a registration helper would let the kit templatize as a separate file. V1.3 rejects this as scope expansion — the in-file paste pattern works against the existing API surface with zero substrate change. The pub-exposure work belongs in v1.x maintenance if/when a real consumer emerges.
+
+**Snippet-shape compile gate (V1.3 enforcement per codex challenge cycle-3 concern #3):** §9 invariant set adds a CI step that takes the CLI's snippet output for a synthetic block name, applies it to fallback_projection.rs in a sandbox copy, runs `cargo check`. CI fails if the emitted snippets don't compile.
 
 **Rationale for the paste-not-edit approach (V1.2 vs V1.1):** Automated Rust file editing is brittle (formatting, import collisions, comment markers). The CLI's job is generating correct snippets; the developer's job is applying them. This is consistent with §5.1 V1.1's "CLI does NOT modify `class-dailyos-plugin.php`" decision — the kit respects file boundaries and emits snippets-for-paste.
 
@@ -563,9 +599,9 @@ V1.0 §6.6 justified "explicit allowlist over directory scan" citing a fictional
 | 5 | `c1_integration_harness_detects_contract_mismatch` | Producer emits `payload.text`; projection rule binds `payload.body` → harness emits DOS-670-style diagnostic; exit code 1 |
 | 6 | `c1_integration_harness_passes_account_overview` | Existing `dailyos/account-overview` block passes the harness (regression guard — proves the harness is calibrated correctly) |
 | 7 | `c1_translator_simple_primitive` | Translator on `src/components/ui/Pill.tsx` produces a `wp/dailyos/blocks/pill-test/` that passes harness |
-| 8 | `c1_translator_composite_byte_parity` | Translator on AccountOverview source produces output byte-equal (modulo timestamps + IDs) to existing live block |
+| 8 | `c1_translator_typed_display_healthbadge` | Translator on `src/components/shared/HealthBadge.tsx` produces a `wp/dailyos/blocks/health-badge/` directory that passes the integration test harness fixture (V1.3: replaces V1.0's AccountOverview byte-parity claim — there's no Tauri AccountOverview.tsx to feed the translator) |
 | 9 | `c1_theme_json_idempotent` | Two consecutive `pnpm dailyos:generate-theme-json` runs produce zero diff (when token sources unchanged) |
-| 10 | `c1_theme_json_conflict_errors` | When `tokens.css` and `theme.json` define same token with different non-WP-runtime values → generator errors with conflict report; exit code 1 |
+| 10 | `c1_theme_json_alias_normalization` | Token graph correctly resolves semantic aliases like `--color-account → --color-spice-turmeric` (per `.docs/design/tokens/color.md:70` ↔ `src/styles/design-tokens.css:86`) without false-conflict. When the same terminal-value token is declared differently across `.docs/design/tokens/` and `src/styles/design-tokens.css` → generator errors with conflict report; exit code 1 (V1.3: replaces V1.0 fixture that named non-existent `tokens.css` and treated `theme.json` as input; theme.json is generated output per §5.6) |
 | 11 | `c1_render_functions_typed_error_inherited` | Generated render-functions.php contains the Packet B §5.6 switch table verbatim (grep-gate on the 5 switch arms) |
 | 12 | `c1_ci_workflow_present` | `.github/workflows/block-kit-integration.yml` exists; CI matrix includes all `wp/dailyos/blocks/*` directories |
 
@@ -579,6 +615,7 @@ V1.0 §6.6 justified "explicit allowlist over directory scan" citing a fictional
 | 4 | Token-to-theme.json generator MUST run cleanly on every PR touching `.docs/design/tokens/`, `src/styles/design-tokens.css`, or `wp/dailyos/theme/theme.json`. | CI step runs generator with `--check` flag (verifies idempotency); fails CI on diff |
 | 5 | CLI scaffold MUST exit 0 on a valid block name + exit 1 on invalid names. | CI runs scaffold with fixture inputs and asserts exit codes |
 | 6 | Translator MUST produce kit-passing output on the 2 reference primitives (Pill simple-shape + HealthBadge typed-display shape). | CI runs translator + harness on each (V1.2: replaces V1.0's AccountOverview target which lacks a Tauri TSX source) |
+| 7 | Projection-rule paste snippet MUST compile against the real `BlockProjectionRule` shape | CI sandbox: take CLI snippet output for synthetic block name + paste into a sandbox copy of `fallback_projection.rs` + run `cargo check`. Fails CI on compile error (V1.3 — gates §5.4 paste pattern against silent API drift) |
 
 ## 10. Interlocks
 
