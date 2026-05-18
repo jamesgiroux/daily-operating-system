@@ -1,0 +1,50 @@
+[
+	{
+		"source_token": "--color-account",
+		"target_token": "wp--preset--color--account"
+	},
+	{
+		"source_token": "--color-account-8",
+		"target_token": "wp--preset--color--account-8"
+	},
+	{
+		"source_token": "--color-desk-charcoal-4",
+		"target_token": "wp--preset--color--desk-charcoal-4"
+	},
+	{
+		"source_token": "--color-meeting",
+		"target_token": "wp--preset--color--meeting"
+	},
+	{
+		"source_token": "--color-meeting-8",
+		"target_token": "wp--preset--color--meeting-8"
+	},
+	{
+		"source_token": "--color-person",
+		"target_token": "wp--preset--color--person"
+	},
+	{
+		"source_token": "--color-person-8",
+		"target_token": "wp--preset--color--person-8"
+	},
+	{
+		"source_token": "--color-project",
+		"target_token": "wp--preset--color--project"
+	},
+	{
+		"source_token": "--color-project-8",
+		"target_token": "wp--preset--color--project-8"
+	},
+	{
+		"source_token": "--color-text-secondary",
+		"target_token": "wp--preset--color--text-secondary"
+	},
+	{
+		"source_token": "--font-mono",
+		"target_token": "wp--custom--dailyos--tokens--font-mono"
+	},
+	{
+		"source_token": "--space-xs",
+		"target_token": "wp--preset--spacing--xs"
+	}
+]

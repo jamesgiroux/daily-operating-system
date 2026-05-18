@@ -17,9 +17,11 @@
 		"watermarks": { "type": "object", "default": {} },
 		"cache_hint_token": { "type": "string", "default": "" },
 		"block_instance_id": { "type": "string" },
-		"size": { "type": "string", "default": "md" },
-		"variant": { "type": "string", "default": "default" },
-		"label": { "type": "string", "default": "" }
+		"entityType": {
+			"type": "string",
+			"enum": ["account", "project", "person", "meeting", "unknown"],
+			"default": "unknown"
+		}
 	},
 	"render": "file:./render.php",
 	"editorScript": "file:./edit.js",
