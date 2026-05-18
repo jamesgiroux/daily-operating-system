@@ -52,6 +52,7 @@ use crate::services::surface_pairing::{
     SignedTransportFailureInput, SurfacePairingAuditEvent, SurfacePairingError,
     SurfaceSessionRefreshIdentity, SurfaceSessionRefreshInput, ValidatedSurfaceSession,
 };
+use crate::services::surface_session_keychain::SessionKeyLookup;
 use crate::state::AppState;
 use abilities_runtime::abilities::registry::{Actor, ScopeSet, SurfaceClientId};
 
@@ -327,7 +328,7 @@ impl SurfaceEndpointState {
                         run_listener(listener, runtime, shutdown_rx).await;
                         // Remove the runtime sentinel on shutdown so a stale
                         // port doesn't redirect WP after restart.
-                        remove_runtime_sentinel();
+                        explicit_sentinel_cleanup();
                         // Lazy-flush last_seen_at + last_used_at on graceful
                         // shutdown. Coalesced UPDATE — sets all non-revoked
                         // sessions' last_seen_at and their pairings'
@@ -411,6 +412,7 @@ impl SurfaceEndpointState {
         };
 
         if let Some(endpoint) = running {
+            explicit_sentinel_cleanup();
             if endpoint.shutdown.send(true).is_err() {
                 log::debug!("surface endpoint shutdown signal had no active listener");
             }
@@ -467,6 +469,7 @@ impl Drop for SurfaceEndpointState {
     fn drop(&mut self) {
         let running = self.inner.get_mut().running.take();
         if let Some(endpoint) = running {
+            explicit_sentinel_cleanup();
             if endpoint.shutdown.send(true).is_err() {
                 log::debug!("surface endpoint drop found no active listener");
             }
@@ -661,12 +664,13 @@ async fn rehydrate_sessions_from_keychain(
     // Step 2-4: per-row keychain load + register-or-revoke.
     let mut rehydrated = 0usize;
     let mut missing = Vec::new();
+    let mut unavailable = Vec::new();
     for row in rows {
         match crate::services::surface_session_keychain::load_session_master_key(
             &row.surface_client_id,
             &row.session_id,
         ) {
-            Some(master_key) => {
+            SessionKeyLookup::Found(master_key) => {
                 let session = hmac::SignedSurfaceSession::new_active(
                     row.session_id.clone(),
                     row.surface_client_id.clone(),
@@ -678,14 +682,40 @@ async fn rehydrate_sessions_from_keychain(
                 }
                 rehydrated += 1;
             }
-            None => {
+            SessionKeyLookup::NotFound => {
                 missing.push(row);
+            }
+            SessionKeyLookup::Unavailable { reason } => {
+                unavailable.push((row, reason));
             }
         }
     }
     if rehydrated > 0 {
         log::info!(
             "surface session rehydrate: {rehydrated} active sessions restored from keychain"
+        );
+    }
+    if !unavailable.is_empty() {
+        for (row, reason) in &unavailable {
+            let event = surface_pairing::SurfacePairingAuditEvent {
+                event_kind: "pairing.session.key_unavailable",
+                category: "surface_pairing",
+                actor: abilities_runtime::abilities::registry::Actor::System,
+                wp_user_id: None,
+                wp_user_hash: None,
+                detail: serde_json::json!({
+                    "session_id": row.session_id,
+                    "surface_client_id": row.surface_client_id,
+                    "reason": reason,
+                    "decision": "left_active",
+                    "remediation": "retry_rehydrate_or_repair",
+                }),
+            };
+            emit_pairing_audit_event(app_state, &event);
+        }
+        log::warn!(
+            "surface session rehydrate: {} sessions left active because keychain was unavailable",
+            unavailable.len()
         );
     }
 
@@ -793,12 +823,37 @@ fn stable_hash_for_audit(value: &str) -> String {
 /// `~/.dailyos/runtime-endpoint.json` — written on bind, removed on shutdown.
 /// Parent dir is ensured at `0700`, sentinel at `0600`.
 fn runtime_sentinel_path() -> io::Result<PathBuf> {
+    #[cfg(test)]
+    if let Some(path) = RUNTIME_SENTINEL_PATH_FOR_TESTS.lock().unwrap().clone() {
+        return Ok(path);
+    }
+
     let home = std::env::var_os("HOME")
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "HOME unset"))?;
     let mut path = PathBuf::from(home);
     path.push(".dailyos");
     path.push("runtime-endpoint.json");
     Ok(path)
+}
+
+#[cfg(test)]
+static RUNTIME_SENTINEL_PATH_FOR_TESTS: std::sync::Mutex<Option<PathBuf>> =
+    std::sync::Mutex::new(None);
+
+#[cfg(test)]
+struct RuntimeSentinelPathGuard;
+
+#[cfg(test)]
+impl Drop for RuntimeSentinelPathGuard {
+    fn drop(&mut self) {
+        *RUNTIME_SENTINEL_PATH_FOR_TESTS.lock().unwrap() = None;
+    }
+}
+
+#[cfg(test)]
+fn set_runtime_sentinel_path_for_tests(path: PathBuf) -> RuntimeSentinelPathGuard {
+    *RUNTIME_SENTINEL_PATH_FOR_TESTS.lock().unwrap() = Some(path);
+    RuntimeSentinelPathGuard
 }
 
 /// Write the runtime sentinel after a successful bind.
@@ -888,6 +943,10 @@ fn remove_runtime_sentinel() {
         )]
         let _ = fs::remove_file(path);
     }
+}
+
+fn explicit_sentinel_cleanup() {
+    remove_runtime_sentinel();
 }
 
 async fn run_listener(
@@ -1114,12 +1173,9 @@ async fn signed_transport_response(
             // return directly.
             if let Some(action) = failure.write_action() {
                 let now = Utc::now();
+                let cleanup_reason = action.cleanup_reason();
                 let action_for_closure = action.clone();
-                #[allow(
-                    clippy::let_underscore_must_use,
-                    reason = "quarantine write best-effort; rejection response is the meaningful outcome"
-                )]
-                let _ = app_state
+                let cleanup_target = app_state
                     .db_write(move |db| {
                         surface_pairing::apply_signed_session_write_action(
                             db,
@@ -1129,6 +1185,15 @@ async fn signed_transport_response(
                         .map_err(|e| e.to_string())
                     })
                     .await;
+                if let Ok(Some(target)) = cleanup_target {
+                    if let Some(reason) = cleanup_reason {
+                        for event in
+                            surface_pairing::cleanup_session_keychain_entries(&target, reason)
+                        {
+                            emit_pairing_audit_event(&app_state, &event);
+                        }
+                    }
+                }
                 // Quarantine write best-effort: even if the writer-mutex acquisition
                 // fails (e.g., flooding rejection attempts), the request is being
                 // rejected anyway. Rate-limit gate at surface_client_bridge.authorize
@@ -1406,6 +1471,9 @@ async fn pairing_handshake_response(
     if let Some(origin) = normalize_origin(&outcome.paired_origin) {
         runtime.paired_site_origins.write().insert(origin);
     }
+    for event in &outcome.keychain_cleanup_audits {
+        emit_pairing_audit_event(&app_state, event);
+    }
     if let Some(event) = outcome.revocation_audit.as_ref() {
         emit_pairing_audit_event(&app_state, event);
     }
@@ -1519,7 +1587,7 @@ async fn record_signed_transport_failure(
         failure_code: error.code().to_string(),
         now: Utc::now(),
     };
-    let events = match app_state
+    let outcome = match app_state
         .db_write(move |db| {
             let clock = crate::services::context::SystemClock;
             let rng = crate::services::context::SystemRng;
@@ -1531,7 +1599,7 @@ async fn record_signed_transport_failure(
         })
         .await
     {
-        Ok(Ok(events)) => events,
+        Ok(Ok(outcome)) => outcome,
         Ok(Err(error)) => {
             log::warn!(
                 "surface signing failure audit unavailable: {}",
@@ -1544,10 +1612,16 @@ async fn record_signed_transport_failure(
             return;
         }
     };
+    if let Some(target) = outcome.cleanup_target.as_ref() {
+        for event in surface_pairing::cleanup_session_keychain_entries(target, "suspicious_replay")
+        {
+            emit_pairing_audit_event(&app_state, &event);
+        }
+    }
     if let Some(event) = direct_event {
         emit_pairing_audit_event(&app_state, &event);
     }
-    for event in events {
+    for event in outcome.events {
         if event.event_kind == "pairing_revoked" {
             if let Some(surface_client_id) = event
                 .detail
@@ -1584,7 +1658,15 @@ async fn compensate_failed_session_registration(
         })
         .await
     {
-        Ok(Ok(event)) => emit_pairing_audit_event(app_state, &event),
+        Ok(Ok((event, cleanup_target))) => {
+            for cleanup_event in surface_pairing::cleanup_session_keychain_entries(
+                &cleanup_target,
+                "session_registration_failed",
+            ) {
+                emit_pairing_audit_event(app_state, &cleanup_event);
+            }
+            emit_pairing_audit_event(app_state, &event);
+        }
         Ok(Err(error)) => {
             log::warn!(
                 "surface pairing compensation failed after session registration error: {}",
@@ -3805,6 +3887,7 @@ mod tests {
     /// producing assertion failures like `left=2 right=1`. Serialize
     /// affected tests via this lock.
     static SURFACE_ROUTE_COUNTER_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    static RUNTIME_SENTINEL_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     type ErasedFuture<'a> =
         Pin<Box<dyn Future<Output = Result<serde_json::Value, AbilityError>> + Send + 'a>>;
@@ -3889,6 +3972,32 @@ mod tests {
         })
     }
 
+    fn install_fake_running_endpoint(endpoint: &SurfaceEndpointState) {
+        let (shutdown, _shutdown_rx) = watch::channel(false);
+        let join = tokio::spawn(async {
+            std::future::pending::<()>().await;
+        });
+        let abort = join.abort_handle();
+        drop(join);
+
+        let mut inner = endpoint.inner.lock();
+        inner.availability = Some(SurfaceEndpointAvailability::Running);
+        inner.running = Some(RunningEndpoint {
+            startup_id: Uuid::new_v4(),
+            bound_port: 4411,
+            runtime_anchor_id: "anchor_test".to_string(),
+            shutdown,
+            abort,
+        });
+    }
+
+    fn install_test_sentinel_path() -> (tempfile::TempDir, PathBuf, RuntimeSentinelPathGuard) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("runtime-endpoint.json");
+        let guard = set_runtime_sentinel_path_for_tests(path.clone());
+        (dir, path, guard)
+    }
+
     fn surface_route_schema() -> serde_json::Value {
         json!({
             "type": "object",
@@ -3937,6 +4046,97 @@ mod tests {
             ability_registry_override: None,
             app_state: None,
         })
+    }
+
+    async fn app_state_with_rehydrate_rows(
+        rows: &[(&str, &str)],
+    ) -> (Arc<AppState>, tempfile::TempDir) {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let db_path = tempdir.path().join("surface-runtime-test.db");
+        let db_service = crate::db_service::DbService::open_at_unencrypted(db_path)
+            .await
+            .expect("open test db service");
+        let app_state = Arc::new(AppState::test_with_db_service(db_service));
+        let rows = rows
+            .iter()
+            .map(|(surface_client_id, session_id)| {
+                ((*surface_client_id).to_string(), (*session_id).to_string())
+            })
+            .collect::<Vec<_>>();
+        app_state
+            .db_write(move |db| {
+                let issued_at = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+                let expires_at = (Utc::now() + chrono::Duration::days(1))
+                    .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+                for (idx, (surface_client_id, session_id)) in rows.into_iter().enumerate() {
+                    let site_binding_digest = format!("site_digest_{idx}");
+                    let scope_digest = format!("scope_digest_{idx}");
+                    db.conn_ref()
+                        .execute(
+                            "INSERT INTO surface_client_pairings (
+                                pairing_id, surface_client_id, runtime_anchor_id, pairing_epoch,
+                                lifecycle_state, site_binding_digest, wp_install_uuid_hash,
+                                plugin_instance_uuid_hash, site_nonce, scopes_json, scope_digest,
+                                endpoint_version, ability_projection_json, created_at, activated_at,
+                                last_used_at, expires_at, audit_id
+                            ) VALUES (?1, ?2, 'runtime_test', 1, 'active', ?3, 'install_hash',
+                                'plugin_hash', 'site_nonce', '[]', ?4, 'v1', '[]', ?5, ?5, ?5, ?6, ?7)",
+                            rusqlite::params![
+                                format!("pairing_{idx}"),
+                                surface_client_id,
+                                site_binding_digest,
+                                scope_digest,
+                                issued_at,
+                                expires_at,
+                                format!("audit_{idx}")
+                            ],
+                        )
+                        .map_err(|error| error.to_string())?;
+                    db.conn_ref()
+                        .execute(
+                            "INSERT INTO surface_client_sessions (
+                                session_id, surface_client_id, pairing_epoch, hmac_key_id,
+                                issued_at, last_seen_at, inactive_expires_at, absolute_expires_at,
+                                scope_digest, site_binding_digest, wp_user_hash
+                            ) VALUES (?1, ?2, 1, ?3, ?4, ?4, ?5, ?5, ?6, ?7, 'wp_user_hash')",
+                            rusqlite::params![
+                                session_id,
+                                surface_client_id,
+                                format!("hmac_key_{idx}"),
+                                issued_at,
+                                expires_at,
+                                scope_digest,
+                                site_binding_digest
+                            ],
+                        )
+                        .map_err(|error| error.to_string())?;
+                }
+                Ok::<_, String>(())
+            })
+            .await
+            .expect("seed rehydrate rows");
+        (app_state, tempdir)
+    }
+
+    async fn session_revoked_reason(app_state: &Arc<AppState>, session_id: &str) -> Option<String> {
+        let session_id = session_id.to_string();
+        app_state
+            .db_read(move |db| {
+                db.conn_ref()
+                    .query_row(
+                        "SELECT revoked_reason FROM surface_client_sessions WHERE session_id = ?1",
+                        rusqlite::params![session_id],
+                        |row| row.get::<_, Option<String>>(0),
+                    )
+                    .map_err(|error| error.to_string())
+            })
+            .await
+            .expect("read revoked reason")
+    }
+
+    fn audit_log_text(app_state: &AppState) -> String {
+        let path = app_state.audit_log.lock().path().to_path_buf();
+        std::fs::read_to_string(path).unwrap_or_default()
     }
 
     fn surface_route_descriptor(
@@ -4920,6 +5120,85 @@ mod tests {
         assert!(validate_origin(&headers, &endpoint.paired_site_origins.read()).is_err());
     }
 
+    #[tokio::test(flavor = "current_thread")]
+    async fn dos673_rehydration_revokes_only_not_found() {
+        let (app_state, _tempdir) = app_state_with_rehydrate_rows(&[
+            ("surface_found", "session_found"),
+            ("surface_missing", "session_missing"),
+            ("surface_unavailable", "session_unavailable"),
+        ])
+        .await;
+        let keychain = Arc::new(crate::services::surface_session_keychain::MockKeychain::new());
+        keychain.set_session_lookup(
+            "surface_found",
+            "session_found",
+            SessionKeyLookup::Found([7u8; 32]),
+        );
+        keychain.set_session_lookup(
+            "surface_missing",
+            "session_missing",
+            SessionKeyLookup::NotFound,
+        );
+        keychain.set_session_lookup(
+            "surface_unavailable",
+            "session_unavailable",
+            SessionKeyLookup::Unavailable {
+                reason: "keychain_locked".to_string(),
+            },
+        );
+        let _keychain_guard =
+            crate::services::surface_session_keychain::set_keychain_for_tests(keychain);
+        let signed_transport = hmac::SignedTransportState::default();
+
+        rehydrate_sessions_from_keychain(&app_state, &signed_transport)
+            .await
+            .expect("rehydrate should succeed");
+
+        assert!(signed_transport
+            .derive_active_session_key("session_found")
+            .is_some());
+        assert_eq!(
+            session_revoked_reason(&app_state, "session_missing").await,
+            Some("keychain_entry_missing".to_string())
+        );
+        assert_eq!(
+            session_revoked_reason(&app_state, "session_unavailable").await,
+            None
+        );
+        assert_eq!(
+            session_revoked_reason(&app_state, "session_found").await,
+            None
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn dos673_unavailable_emits_audit_diagnostic() {
+        let (app_state, _tempdir) =
+            app_state_with_rehydrate_rows(&[("surface_unavailable", "session_unavailable")]).await;
+        let keychain = Arc::new(crate::services::surface_session_keychain::MockKeychain::new());
+        keychain.set_session_lookup(
+            "surface_unavailable",
+            "session_unavailable",
+            SessionKeyLookup::Unavailable {
+                reason: "corrupt_payload".to_string(),
+            },
+        );
+        let _keychain_guard =
+            crate::services::surface_session_keychain::set_keychain_for_tests(keychain);
+
+        rehydrate_sessions_from_keychain(&app_state, &hmac::SignedTransportState::default())
+            .await
+            .expect("rehydrate should succeed");
+
+        assert_eq!(
+            session_revoked_reason(&app_state, "session_unavailable").await,
+            None
+        );
+        let audit = audit_log_text(&app_state);
+        assert_eq!(audit.matches("pairing.session.key_unavailable").count(), 1);
+        assert!(audit.contains("\"reason\":\"corrupt_payload\""));
+    }
+
     #[test]
     fn typed_error_envelope_supports_409_shape() {
         let response =
@@ -5683,6 +5962,67 @@ mod tests {
         let body = response.into_body().collect().await.unwrap().to_bytes();
         let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(body["error"]["code"], "request_body_too_large");
+    }
+
+    #[tokio::test]
+    async fn dos675_sentinel_cleaned_on_stop() {
+        let _lock = RUNTIME_SENTINEL_TEST_LOCK.lock().unwrap();
+        let (_dir, path, _guard) = install_test_sentinel_path();
+        write_runtime_sentinel(4411, "test").unwrap();
+        assert!(path.exists());
+
+        let endpoint = SurfaceEndpointState::default();
+        install_fake_running_endpoint(&endpoint);
+        endpoint.stop();
+
+        assert!(!path.exists(), "stop should remove runtime sentinel");
+    }
+
+    #[tokio::test]
+    async fn dos675_sentinel_cleaned_on_drop() {
+        let _lock = RUNTIME_SENTINEL_TEST_LOCK.lock().unwrap();
+        let (_dir, path, _guard) = install_test_sentinel_path();
+        write_runtime_sentinel(4411, "test").unwrap();
+        assert!(path.exists());
+
+        {
+            let endpoint = SurfaceEndpointState::default();
+            install_fake_running_endpoint(&endpoint);
+        }
+
+        assert!(!path.exists(), "drop should remove runtime sentinel");
+    }
+
+    #[tokio::test]
+    async fn dos675_repeated_stop_is_idempotent() {
+        let _lock = RUNTIME_SENTINEL_TEST_LOCK.lock().unwrap();
+        let (_dir, path, _guard) = install_test_sentinel_path();
+        write_runtime_sentinel(4411, "test").unwrap();
+        let endpoint = SurfaceEndpointState::default();
+        install_fake_running_endpoint(&endpoint);
+
+        endpoint.stop();
+        endpoint.stop();
+
+        assert!(!path.exists(), "repeated stop should leave sentinel absent");
+    }
+
+    #[tokio::test]
+    async fn dos675_drop_no_async_flush() {
+        let _lock = RUNTIME_SENTINEL_TEST_LOCK.lock().unwrap();
+        let (_dir, path, _guard) = install_test_sentinel_path();
+        write_runtime_sentinel(4411, "test").unwrap();
+        let started = Instant::now();
+        {
+            let endpoint = SurfaceEndpointState::default();
+            install_fake_running_endpoint(&endpoint);
+        }
+
+        assert!(started.elapsed() < Duration::from_millis(50));
+        assert!(
+            !path.exists(),
+            "drop should only perform sync sentinel cleanup"
+        );
     }
 
     #[tokio::test]
