@@ -480,6 +480,8 @@ mod account_overview_integration_fixture;
 mod entity_chip_integration_fixture;
 #[path = "fixtures/type_badge_integration_fixture.rs"]
 mod type_badge_integration_fixture;
+#[path = "fixtures/score_band_integration_fixture.rs"]
+mod score_band_integration_fixture;
 
 #[test]
 fn expected_block_fixtures_cover_requested_ci_block() {
@@ -494,6 +496,7 @@ fn expected_block_fixtures_cover_requested_ci_block() {
         account_overview_integration_fixture::account_overview_fixture(),
         entity_chip_integration_fixture::entity_chip_fixture(),
         type_badge_integration_fixture::type_badge_fixture(),
+        score_band_integration_fixture::score_band_fixture(),
     ];
     assert!(
         known.iter().any(block_fixture_selected),
