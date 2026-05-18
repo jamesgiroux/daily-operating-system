@@ -9,6 +9,7 @@
 	const { registerBlockType } = wp.blocks;
 	const { useBlockProps } = wp.blockEditor;
 	const { useState, useEffect, useCallback } = wp.element;
+	const { __ } = wp.i18n;
 	const apiFetch = wp.apiFetch;
 
 	const BLOCK_NAME = 'dailyos/{{BLOCK_NAME}}';

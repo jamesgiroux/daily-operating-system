@@ -415,7 +415,7 @@ fn panic_contract_mismatch(
         .filter(|value| !value.is_empty())
         .unwrap_or("n/a");
     panic!(
-        "DOS-670 contract mismatch\nlocation: {location}\ndeclared: {declared}\nactual: {actual}\ndid_you_mean: {suggestion}"
+        "block contract mismatch\nlocation: {location}\ndeclared: {declared}\nactual: {actual}\ndid_you_mean: {suggestion}"
     );
 }
 

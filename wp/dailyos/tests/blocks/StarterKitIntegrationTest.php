@@ -502,7 +502,7 @@ function dailyos_starter_kit_escape_attr( string $value ): string {
 
 function dailyos_starter_kit_fail( string $location, ?string $declared, ?string $actual, string $did_you_mean = 'n/a' ): never {
 	throw new RuntimeException(
-		'DOS-670 contract mismatch' . "\n"
+		'block contract mismatch' . "\n"
 		. 'location: ' . $location . "\n"
 		. 'declared: ' . ( $declared ?? 'n/a' ) . "\n"
 		. 'actual: ' . ( $actual ?? 'n/a' ) . "\n"
