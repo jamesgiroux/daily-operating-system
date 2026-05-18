@@ -6,8 +6,8 @@ A pattern knows about a domain concept (a claim, a trust state, a briefing, a me
 
 ## Status vocabulary
 
-- **proposed** — WIP, prototype, roadmap, reference-only, or source-only work that is not yet used by routed app UI.
-- **integrated** — real app code exists and is used in the product, including shared components, page-local classes, or extracted components.
+- **proposed** — WIP, prototype, roadmap, reference-only, or source-only work that is not yet used by one of DailyOS's primary surfaces.
+- **integrated** — real app code exists and is consumed by at least one of DailyOS's primary surfaces. Per ADR-0129 the primary surfaces are **WordPress Studio** (the leading primary surface as of 2026-05-15) and the Tauri React app (in stasis per the reorientation but still primary until WP parity ships). A WordPress block under `wp/dailyos/blocks/<name>/` consuming this pattern counts as integrated. Likewise a Tauri React surface consumer counts as integrated regardless of WordPress block status. The bar is: a primary surface routes or renders this pattern against real substrate data.
 - **production** — integrated and included in a tagged release. Move a pattern here only after the release tag exists.
 
 ## Index
