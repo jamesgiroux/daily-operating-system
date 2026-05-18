@@ -14,14 +14,20 @@ This file is the pick-up-where-we-left-off doc.
 
 ## L0 packet — final V1.3 status
 
-5-reviewer panel:
+5-reviewer panel — **all 5 non-BLOCK**:
 - code-reviewer cycle 1: CONDITIONAL APPROVE (folded into V1.1)
 - CSO cycle 1: CONDITIONAL APPROVE (folded into V1.1)
 - DX cycle 1: CONDITIONAL APPROVE (folded into V1.1)
 - codex challenge: cycle 1 BLOCK → cycle 2 BLOCK → cycle 3 BLOCK → **cycle 4 APPROVE**
-- codex consult: R1 + R2 + R3 all died silently (codex companion stability issue — see `feedback_codex_rescue_stuck_after_research_phase` memory note)
+- codex consult: R1 + R2 died silently; **R3 CONDITIONAL APPROVE (late landing)** — 3 implementation refinements documented below
 
-Implementation cleared on 4/5 reviewers (toughest reviewer cleared on cycle 4). If codex consult R3 lands during morning work with substantive findings, fold as a hotfix during impl.
+## Codex consult R3 findings to apply during implementation
+
+1. **ClaimSensitivity enum variants** — real enum at `src-tauri/abilities-runtime/src/types.rs:37` is `Public | Internal | Confidential | UserOnly`. V1.3 §5.4 snippet incorrectly says `Restricted`. **Implementation correction:** use `UserOnly` for highest-restriction binding; `Internal` for normal substrate content.
+
+2. **§5.5 PHP harness needs net-new WP block test infrastructure** — `wp/dailyos/tests/blocks/` today is account-overview-specific PHPUnit-with-stubs, NOT a WP block test suite. Composer dev deps include phpunit but no WP test-suite package (`composer.json:16`). The plugin helper `render_block_with_filter` (`class-dailyos-plugin.php:682`) is private + account-specific. **Implementation correction:** Group 1 must explicitly build the generic block-render test infrastructure — either (a) add a WP test-suite package to composer dev deps + use WP's `wp-content/plugins/tests/test-runner.php` pattern, OR (b) write a minimal generic harness with stubs that registers the target block's metadata + injects a fake runtime client + calls the metadata render callback directly.
+
+3. **§5.6 token parser handles markdown, not CSS** — `.docs/design/tokens/color.md` uses backtick'd markdown bullets with `->` arrow syntax (`:47, :60, :70`) for semantic aliases, plus brace shorthand for alpha families (`:96`). The `src/styles/design-tokens.css` file has the simple `var()` graph. **Implementation correction:** token generator's input is TWO source formats: (a) `src/styles/design-tokens.css` for terminal values + var-references, (b) `.docs/design/tokens/*.md` for semantic alias documentation (parse markdown bullets with `->` arrow handling + brace shorthand expansion). The cross-source conflict detection runs after both are parsed into the unified token graph.
 
 ## V1.3 §10 — commit-group ordering (load-bearing)
 
