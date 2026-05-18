@@ -7,7 +7,7 @@
  * - Interactive fallback via `prompts` when invoked bare
  *
  * USAGE:
- *   pnpm dailyos:new-block <block-name> [--template simple|typed-display|composite] [--ability <existing-ability-name>] [--new-ability <new-ability-name>] [--keep-partial]
+ *   pnpm dailyos:new-block <block-name> [--template simple|typed-display|composite] [--ability <existing-ability-name>] [--keep-partial]
  *
  * Per L0 Packet C V1.3 §5.1 + §6.6: CLI does NOT modify
  * `wp/dailyos/includes/class-dailyos-plugin.php`. The existing
@@ -94,7 +94,6 @@ USAGE
   pnpm dailyos:new-block <block-name>
       [--template simple|typed-display|composite]   default: simple
       [--ability <existing-ability-name>]           link to existing producer
-      [--new-ability <new-ability-name>]            scaffold new producer
       [--keep-partial]                              don't clean up on partial failure
       [-h|--help]
 
@@ -114,7 +113,9 @@ EXIT CODES
 
 OUTPUT
   Creates wp/dailyos/blocks/<block-name>/ with templated files.
-  If --new-ability: also creates src-tauri/abilities-runtime/src/abilities/<ability-name>.rs.
+  Authoring a new ability (the producer side) is hand-authored under
+  src-tauri/abilities-runtime/src/abilities/ — automated producer scaffold
+  deferred to v1.4.3 W7.
 
   PRINTS 5 paste snippets for the developer to apply manually:
     [1] BlockType variant → composition.rs:330
@@ -293,21 +294,22 @@ async function main() {
 		process.exit( EXIT_VALIDATION );
 	}
 
-	// 4. Validate ability flags.
-	if ( args.ability && args.newAbility ) {
-		console.error( 'error: --ability and --new-ability are mutually exclusive' );
+	// 4. Validate ability flag.
+	if ( args.newAbility ) {
+		console.error(
+			'error: --new-ability is not implemented in v1.4.3 W1 (producer scaffold deferred to W7).\n' +
+			'       Use --ability <existing-ability-name> to link to an already-authored ability,\n' +
+			'       or hand-author a new ability under src-tauri/abilities-runtime/src/abilities/\n' +
+			'       modeled on a small existing file (e.g. tracer.rs).'
+		);
 		process.exit( EXIT_VALIDATION );
 	}
 	if ( args.ability && ! ABILITY_NAME_RE.test( args.ability ) ) {
 		console.error( `error: --ability "${ args.ability }" must match ${ ABILITY_NAME_RE.source }` );
 		process.exit( EXIT_VALIDATION );
 	}
-	if ( args.newAbility && ! ABILITY_NAME_RE.test( args.newAbility ) ) {
-		console.error( `error: --new-ability "${ args.newAbility }" must match ${ ABILITY_NAME_RE.source }` );
-		process.exit( EXIT_VALIDATION );
-	}
 
-	const abilityName = args.newAbility || args.ability || args.blockName.replace( /-/g, '_' );
+	const abilityName = args.ability || args.blockName.replace( /-/g, '_' );
 	const vars = {
 		BLOCK_NAME: args.blockName,
 		BLOCK_TITLE: args.blockName
@@ -340,18 +342,21 @@ async function main() {
 
 	console.log( `Block scaffold created at wp/dailyos/blocks/${ args.blockName }/` );
 
-	if ( args.newAbility ) {
-		console.log( `\nNote: --new-ability ${ args.newAbility } would create a producer scaffold.` );
-		console.log( `      (Producer template generation is part of Group 2 follow-on work; for now,` );
-		console.log( `      copy account_overview.rs as a starting point and adapt to your ability.)` );
-	}
-
-	if ( args.newAbility || args.ability ) {
+	if ( args.ability ) {
 		console.log( pasteSnippets( args.blockName, abilityName ) );
+	} else {
+		console.log(
+			`\n(no --ability: skipping projection paste snippets;\n` +
+			` block is render-only over an existing ability or a substrate composition.\n` +
+			` if you need a NEW ability, hand-author one under src-tauri/abilities-runtime/src/abilities/\n` +
+			` modeled on a small existing ability — producer scaffold automation deferred to v1.4.3 W7.)`
+		);
 	}
 
-	console.log( `\nNext: drop a producer (if --new-ability), apply paste snippets, then run:` );
-	console.log( `  pnpm dailyos:test-block ${ args.blockName }` );
+	console.log( `\nNext: apply paste snippets, drop a Rust integration fixture at` );
+	console.log( `  src-tauri/abilities-runtime/tests/fixtures/${ args.blockName.replace( /-/g, '_' ) }_integration_fixture.rs,` );
+	console.log( `  then run:` );
+	console.log( `  cargo test -p abilities-runtime --test block_kit_integration_harness` );
 
 	process.exit( EXIT_OK );
 }

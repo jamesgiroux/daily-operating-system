@@ -33,7 +33,7 @@ const SCOPE_MATRIX = {
 	FreshnessIndicator:         { category: 'Supported',                          shape: 'typed-display' },
 	ProvenanceTag:              { category: 'Supported',                          shape: 'simple' },
 	TrustBandBadge:             { category: 'SupportedWithSourcePromotion',       shape: 'typed-display' },
-	FolioRefreshButton:         { category: 'SupportedWithInlineStyleAdaptation', shape: 'typed-display' },
+	FolioRefreshButton:         { category: 'NotSupported',                       interactive: 'onClick handler bound to refresh action; inline-style extraction also deferred to v1.4.3 W7' },
 	InlineInput:                { category: 'NotSupported',                       interactive: 'onChange handler bound to live value' },
 	EditableText:               { category: 'NotSupported',                       interactive: 'click-to-edit + onSubmit handler' },
 	Switch:                     { category: 'NotSupported',                       interactive: 'onCheckedChange handler' },

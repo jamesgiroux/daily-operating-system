@@ -29,6 +29,30 @@ This packet ships the v1.4.3 execution-constraint-C1 deliverable: the block auth
 
 ## 2. Changelog
 
+- **V1.3.1 (2026-05-18, L2 cycle-1 fold):** L2 reviewers (DX + code-reviewer)
+  returned CONDITIONAL APPROVE bounded by AC §7. Two MEDIUM findings folded
+  as honest scope narrowing rather than feature expansion:
+
+  - **M1 fold:** `--new-ability` CLI flag stripped. Now exits 1 with deferral
+    diagnostic pointing at hand-authoring under
+    `src-tauri/abilities-runtime/src/abilities/` (modeled on a small existing
+    ability like `tracer.rs`). The §5.3 producer template + CLI scaffold of
+    `.rs` files defers to W7. Rationale: AC #1 doesn't mention `--new-ability`;
+    the flag was an over-promise in §5.1 step 5 + `--help` text that the V1.3
+    CLI did not implement. Cleaner to remove than to half-ship.
+  - **M2 fold:** `FolioRefreshButton` reclassified from
+    `SupportedWithInlineStyleAdaptation` to `NotSupported` in §5.7 scope
+    matrix. Reason: V1.3 translator does not actually extract inline styles;
+    matrix promise outran implementation. Reclassification preserves AC
+    parity (Pill + HealthBadge — the named parity targets — still translate
+    end-to-end); inline-style extraction defers to W7 alongside the producer
+    scaffold.
+
+  All other L2 findings (DX P1–P6, code-reviewer P1–P8) filed as path-α to
+  DailyOS Codebase Maintenance & Production Quality
+  (`b8e6aea4-d47e-4f3a-b03d-a05bec914aeb`) per
+  CLAUDE.md \"Path-α L2 findings go to maintenance, not cycle-N+1\".
+
 - **V1.1 (2026-05-18, cycle-1 critical-rewrite):** 4 of 5 cycle-1 reviewers
   returned non-BLOCK (CSO CA, DX CA, code-reviewer CA, codex challenge BLOCK).
   Codex consult R1 died silently; re-dispatched for R2 against V1.1.
@@ -524,8 +548,8 @@ V1.0/V1.1 "90% scaffold" was overclaimed (codex challenge H1). V1.2 enumerates a
 |---|---|---|---|
 | **Supported (static render-only, TSX + CSS Module)** | `*.tsx` + `*.module.css` | Full scaffold: `block.json`, `render.php`, `render-functions.php`, `style.css`, `edit.js` | Pill, HealthBadge, StatusDot, Avatar, IntelligenceQualityBadge, FreshnessIndicator, ProvenanceTag |
 | **Supported with source promotion (proposed → integrated)** | `*.tsx` (TBD source) + design-system spec | Full scaffold + reminder to promote source-only entry to integrated | TrustBandBadge |
-| **Supported with inline-style adaptation** | `*.tsx` + inline-style extraction | Full scaffold, inline styles extracted to `style.css` | FolioRefreshButton |
-| **NOT supported (interactive — manual template)** | — | Translator exits 1 with diagnostic | InlineInput, EditableText, Switch, Segmented, RemovableChip, EntityChip editable variants, TypeBadge editable mode |
+| **Supported with inline-style adaptation** | `*.tsx` + inline-style extraction | Full scaffold, inline styles extracted to `style.css` | *(none in V1.3.1 — V1.3 had FolioRefreshButton here; reclassified NotSupported per L2 cycle-1 M2 fold pending extraction support in W7)* |
+| **NOT supported (interactive — manual template)** | — | Translator exits 1 with diagnostic | InlineInput, EditableText, Switch, Segmented, RemovableChip, EntityChip editable variants, TypeBadge editable mode, FolioRefreshButton (onClick + inline-style; W7 extraction may promote) |
 
 For NOT-supported primitives, translator emits actionable diagnostic:
 ```
