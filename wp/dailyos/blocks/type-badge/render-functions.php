@@ -137,29 +137,50 @@ if ( ! function_exists( 'dailyos_type_badge_render' ) ) {
 			? $projection['blocks']
 			: [];
 
-		$wrapper_attrs = function_exists( 'get_block_wrapper_attributes' )
-			? get_block_wrapper_attributes(
-				[
-					'class'        => 'wp-block-dailyos-type-badge dailyos-primitive-inline',
-					'data-ds-tier' => 'primitive',
-					'data-ds-name' => 'TypeBadge',
-					'data-ds-spec' => 'primitives/TypeBadge.md',
-				]
-			)
-			: 'class="wp-block-dailyos-type-badge dailyos-primitive-inline" data-ds-tier="primitive" data-ds-name="TypeBadge" data-ds-spec="primitives/TypeBadge.md"';
+		// TypeBadgeDisplay parity (src/components/ui/TypeBadgeDisplay.tsx):
+		// fixed three account types with canonical labels; raw payload text is
+		// rejected because the primitive renders the label its own table maps to.
+		$type_badge_options = [
+			'customer' => 'Customer',
+			'internal' => 'Internal',
+			'partner'  => 'Partner',
+		];
 
-		$parts = [];
+		$attr_account_type = isset( $attributes['accountType'] ) && isset( $type_badge_options[ (string) $attributes['accountType'] ] )
+			? (string) $attributes['accountType']
+			: 'customer';
+
+		$account_type = $attr_account_type;
 		foreach ( $blocks as $block ) {
 			if ( ! is_array( $block ) ) {
 				continue;
 			}
 			$payload = isset( $block['payload'] ) && is_array( $block['payload'] ) ? $block['payload'] : [];
-			if ( isset( $payload['text'] ) && is_string( $payload['text'] ) && '' !== $payload['text'] ) {
-				$parts[] = esc_html( (string) $payload['text'] );
+			if ( isset( $payload['account_type'] ) && isset( $type_badge_options[ (string) $payload['account_type'] ] ) ) {
+				$account_type = (string) $payload['account_type'];
+				break;
 			}
 		}
 
-		return '<span ' . $wrapper_attrs . '>' . implode( ' ', $parts ) . '</span>';
+		$label = $type_badge_options[ $account_type ];
+		$wrapper_class = 'wp-block-dailyos-type-badge dailyos-primitive-inline dailyos-type-badge dailyos-type-badge--' . $account_type;
+		$wrapper_attrs = function_exists( 'get_block_wrapper_attributes' )
+			? get_block_wrapper_attributes(
+				[
+					'class'             => $wrapper_class,
+					'data-ds-tier'      => 'primitive',
+					'data-ds-name'      => 'TypeBadge',
+					'data-ds-spec'      => 'primitives/TypeBadge.md',
+					'data-account-type' => $account_type,
+				]
+			)
+			: sprintf(
+				'class="%s" data-ds-tier="primitive" data-ds-name="TypeBadge" data-ds-spec="primitives/TypeBadge.md" data-account-type="%s"',
+				esc_attr( $wrapper_class ),
+				esc_attr( $account_type )
+			);
+
+		return '<span ' . $wrapper_attrs . '>' . esc_html( $label ) . '</span>';
 	}
 
 	function dailyos_type_badge_render_empty_primitive(): string {

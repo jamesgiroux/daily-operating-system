@@ -1,0 +1,42 @@
+[
+	{
+		"source_token": "--color-account",
+		"target_token": "wp--preset--color--account"
+	},
+	{
+		"source_token": "--color-account-12",
+		"target_token": "wp--preset--color--account-12"
+	},
+	{
+		"source_token": "--color-desk-charcoal-4",
+		"target_token": "wp--preset--color--desk-charcoal-4"
+	},
+	{
+		"source_token": "--color-garden-larkspur",
+		"target_token": "wp--preset--color--garden-larkspur"
+	},
+	{
+		"source_token": "--color-garden-larkspur-15",
+		"target_token": "wp--preset--color--garden-larkspur-15"
+	},
+	{
+		"source_token": "--color-garden-rosemary",
+		"target_token": "wp--preset--color--garden-rosemary"
+	},
+	{
+		"source_token": "--color-garden-rosemary-12",
+		"target_token": "wp--preset--color--garden-rosemary-12"
+	},
+	{
+		"source_token": "--color-text-secondary",
+		"target_token": "wp--preset--color--text-secondary"
+	},
+	{
+		"source_token": "--color-text-tertiary",
+		"target_token": "wp--preset--color--text-tertiary"
+	},
+	{
+		"source_token": "--font-mono",
+		"target_token": "wp--custom--dailyos--tokens--font-mono"
+	}
+]

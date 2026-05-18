@@ -137,29 +137,52 @@ if ( ! function_exists( 'dailyos_score_band_render' ) ) {
 			? $projection['blocks']
 			: [];
 
-		$wrapper_attrs = function_exists( 'get_block_wrapper_attributes' )
-			? get_block_wrapper_attributes(
-				[
-					'class'        => 'wp-block-dailyos-score-band dailyos-primitive-inline',
-					'data-ds-tier' => 'primitive',
-					'data-ds-name' => 'ScoreBand',
-					'data-ds-spec' => 'primitives/ScoreBand.md',
-				]
-			)
-			: 'class="wp-block-dailyos-score-band dailyos-primitive-inline" data-ds-tier="primitive" data-ds-name="ScoreBand" data-ds-spec="primitives/ScoreBand.md"';
+		// ScoreBand canonical-label discipline per .docs/design/primitives/
+		// ScoreBand.md + DOS-325 voice rule. Renderer maps a discrete `value`
+		// to a plain-language headline; payload.text is REJECTED if it would
+		// place a raw number in the headline.
+		$score_band_labels = [
+			'on-track'      => 'On Track',
+			'watching'      => 'Watching',
+			'action-needed' => 'Action Needed',
+			'no-read'       => 'No Read',
+		];
 
-		$parts = [];
+		$attr_value = isset( $attributes['value'] ) && isset( $score_band_labels[ (string) $attributes['value'] ] )
+			? (string) $attributes['value']
+			: 'no-read';
+
+		$value = $attr_value;
 		foreach ( $blocks as $block ) {
 			if ( ! is_array( $block ) ) {
 				continue;
 			}
 			$payload = isset( $block['payload'] ) && is_array( $block['payload'] ) ? $block['payload'] : [];
-			if ( isset( $payload['text'] ) && is_string( $payload['text'] ) && '' !== $payload['text'] ) {
-				$parts[] = esc_html( (string) $payload['text'] );
+			if ( isset( $payload['value'] ) && isset( $score_band_labels[ (string) $payload['value'] ] ) ) {
+				$value = (string) $payload['value'];
+				break;
 			}
 		}
 
-		return '<span ' . $wrapper_attrs . '>' . implode( ' ', $parts ) . '</span>';
+		$label = $score_band_labels[ $value ];
+		$wrapper_class = 'wp-block-dailyos-score-band dailyos-primitive-inline dailyos-score-band dailyos-score-band--' . $value;
+		$wrapper_attrs = function_exists( 'get_block_wrapper_attributes' )
+			? get_block_wrapper_attributes(
+				[
+					'class'        => $wrapper_class,
+					'data-ds-tier' => 'primitive',
+					'data-ds-name' => 'ScoreBand',
+					'data-ds-spec' => 'primitives/ScoreBand.md',
+					'data-value'   => $value,
+				]
+			)
+			: sprintf(
+				'class="%s" data-ds-tier="primitive" data-ds-name="ScoreBand" data-ds-spec="primitives/ScoreBand.md" data-value="%s"',
+				esc_attr( $wrapper_class ),
+				esc_attr( $value )
+			);
+
+		return '<span ' . $wrapper_attrs . '>' . esc_html( $label ) . '</span>';
 	}
 
 	function dailyos_score_band_render_empty_primitive(): string {
