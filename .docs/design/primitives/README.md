@@ -25,7 +25,8 @@ A primitive is *not* a primitive if it knows about claims, trust, briefings, or 
 | [`FreshnessIndicator`](./FreshnessIndicator.md) | integrated | Raw recency timestamp + relative age | `src/components/ui/FreshnessIndicator.tsx` |
 | [`ProvenanceTag`](./ProvenanceTag.md) | integrated | Source attribution label, suppresses synthesized | `src/components/ui/` |
 | [`EntityChip`](./EntityChip.md) | integrated | Entity reference with entity-type color | `src/components/ui/EntityChip.tsx` |
-| [`TypeBadge`](./TypeBadge.md) | integrated | Account-type categorical (Customer / Internal / Partner) | `_shared/.type-badge` + AccountHero |
+| [`TypeBadge`](./TypeBadge.md) | integrated | Account-type categorical (Customer / Internal / Partner) | `src/components/ui/TypeBadge.tsx` |
+| [`ScoreBand`](./ScoreBand.md) | proposed | DOS-325 band-label score (`on-track` / `watching` / `action-needed` / `no-read`) | `src/components/ui/ScoreBand.tsx` |
 
 ### Wave 2 (v1.4.4 trust UI, 0.2.0)
 
