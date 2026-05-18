@@ -114,7 +114,8 @@ function extractPropTypes(tsx, primitive) {
 	const m = tsx.match(ifaceRe);
 	if (!m) return [];
 	const body = m[2];
-	const propRe = /^\s*(?:\/\*\*[\s\S]*?\*\/\s*)?([A-Za-z_][A-Za-z0-9_]*)\?\s*:\s*([^;\n]+);?/gm;
+	// Match both optional (`name?: type`) and required (`name: type`) props.
+	const propRe = /^\s*(?:\/\*\*[\s\S]*?\*\/\s*)?([A-Za-z_][A-Za-z0-9_]*)\??\s*:\s*([^;\n]+);?/gm;
 	const props = [];
 	let pm;
 	while ((pm = propRe.exec(body)) !== null) {
@@ -155,13 +156,105 @@ function runScaffold(primitive, shape, slug) {
 	}
 }
 
-// Hand-coded body translations for AC §5.7 parity targets (Pill + HealthBadge).
-// These overwrite the scaffold's render-functions.php body with primitive-faithful
-// PHP that mirrors the TSX. All other primitives ship with the scaffold's TODO body;
-// W2 (Wave 1 primitive translation batch) lands per-primitive body translations.
+// Standard composition attributes every block.json declares (per CI invariant #3:
+// composition_id, composition_version, block_id, cache_hint_token, block_instance_id).
+// Hand-coded primitive block.json files merge these with primitive-specific attrs.
+const STANDARD_COMPOSITION_ATTRS = {
+	composition_id: { type: 'string' },
+	composition_version: { type: 'integer', default: 0 },
+	block_id: { type: 'string' },
+	watermarks: { type: 'object', default: {} },
+	cache_hint_token: { type: 'string', default: '' },
+	block_instance_id: { type: 'string' },
+};
+
+function primitiveBlockJson({ name, title, description, attributes }) {
+	return JSON.stringify(
+		{
+			$schema: 'https://schemas.wp.org/trunk/block.json',
+			apiVersion: 3,
+			name: `dailyos/${name}`,
+			title,
+			category: 'dailyos',
+			description,
+			supports: { html: false, reusable: false, inserter: true },
+			attributes: { ...STANDARD_COMPOSITION_ATTRS, ...attributes },
+			render: 'file:./render.php',
+			editorScript: 'file:./edit.js',
+			style: 'file:./style.css',
+			editorStyle: 'file:./editor.css',
+		},
+		null,
+		'\t'
+	) + '\n';
+}
+
+// Hand-coded translations for AC §5.7 parity targets (Pill + HealthBadge).
+// Overrides the scaffold's block.json + render-functions.php + style.css with
+// primitive-faithful output that mirrors the TSX + CSS Module sources.
+// All other primitives ship with scaffold defaults; W2 (Wave 1 primitive
+// translation batch) lands per-primitive translations for the remaining 8.
 const BODY_TRANSLATIONS = {
 	Pill: {
-		'block.json': null, // use scaffold default
+		blockJson: primitiveBlockJson({
+			name: 'pill',
+			title: 'Pill',
+			description: 'DailyOS Pill primitive — inline status / label / category badge.',
+			attributes: {
+				label: { type: 'string', default: '' },
+				tone: { type: 'string', default: 'neutral', enum: ['sage', 'turmeric', 'terracotta', 'larkspur', 'olive', 'eucalyptus', 'neutral'] },
+				size: { type: 'string', default: 'standard', enum: ['standard', 'compact'] },
+				dot: { type: 'boolean', default: false },
+				interactive: { type: 'boolean', default: false },
+			},
+		}),
+		styleCss: `/* Pill (translated from src/components/ui/Pill.module.css).
+ * Front-end styles for the dailyos/pill block. Token-only — values via
+ * .docs/design/tokens/ + src/styles/design-tokens.css. */
+
+.wp-block-dailyos-pill .dailyos-pill,
+.dailyos-pill {
+	--pill-background: var(--color-desk-charcoal-4);
+	--pill-color: var(--color-text-secondary);
+	--pill-dot-color: var(--color-text-tertiary);
+	--pill-border: transparent;
+
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: var(--space-xs);
+	width: fit-content;
+	border: 1px solid var(--pill-border);
+	border-radius: 999px;
+	background: var(--pill-background);
+	color: var(--pill-color);
+	font-family: var(--font-sans);
+	font-weight: 500;
+	line-height: 1;
+	white-space: nowrap;
+	vertical-align: middle;
+}
+
+.dailyos-pill--size-standard { padding: 5px 14px; font-size: 12px; }
+.dailyos-pill--size-compact { padding: 2px 8px; font-size: 11px; }
+.dailyos-pill--interactive { cursor: pointer; }
+
+.dailyos-pill__dot {
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--pill-dot-color);
+	flex-shrink: 0;
+}
+
+.dailyos-pill--tone-sage         { --pill-background: var(--color-garden-sage); --pill-color: var(--color-text-primary); }
+.dailyos-pill--tone-turmeric     { --pill-background: var(--color-spice-turmeric); --pill-color: var(--color-text-primary); }
+.dailyos-pill--tone-terracotta   { --pill-background: var(--color-spice-terracotta); --pill-color: var(--color-paper-warm-white); }
+.dailyos-pill--tone-larkspur     { --pill-background: var(--color-garden-larkspur); --pill-color: var(--color-text-primary); }
+.dailyos-pill--tone-olive        { --pill-background: var(--color-garden-olive); --pill-color: var(--color-paper-warm-white); }
+.dailyos-pill--tone-eucalyptus   { --pill-background: var(--color-garden-eucalyptus); --pill-color: var(--color-paper-warm-white); }
+.dailyos-pill--tone-neutral      { --pill-background: var(--color-desk-charcoal-4); --pill-color: var(--color-text-secondary); }
+`,
 		renderBody: `<?php
 /**
  * Pill (translated from src/components/ui/Pill.tsx).
@@ -201,7 +294,62 @@ function dailyos_pill_render(array $attributes): string {
 `,
 	},
 	HealthBadge: {
-		'block.json': null,
+		blockJson: primitiveBlockJson({
+			name: 'health-badge',
+			title: 'Health Badge',
+			description: 'DailyOS HealthBadge primitive — health score dot + score + trend visual.',
+			attributes: {
+				score: { type: 'number', default: 0 },
+				band: { type: 'string', default: 'green', enum: ['green', 'yellow', 'red'] },
+				trend: { type: 'object', default: { direction: 'stable' } },
+				confidence: { type: 'number', default: 1 },
+				sufficientData: { type: 'boolean', default: true },
+				showScore: { type: 'boolean', default: true },
+				size: { type: 'string', default: 'standard', enum: ['compact', 'standard', 'hero'] },
+				source: { type: 'string', default: '' },
+			},
+		}),
+		styleCss: `/* HealthBadge (translated from src/components/shared/HealthBadge.module.css).
+ * Front-end styles for the dailyos/health-badge block. Token-only. */
+
+.wp-block-dailyos-health-badge .dailyos-health-badge,
+.dailyos-health-badge {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--space-xs);
+	font-family: var(--font-sans);
+	font-weight: 500;
+	line-height: 1;
+	white-space: nowrap;
+}
+
+.dailyos-health-badge--compact  { font-size: 11px; }
+.dailyos-health-badge--standard { font-size: 13px; gap: var(--space-sm); }
+.dailyos-health-badge--hero     { font-size: 24px; gap: var(--space-md); padding: var(--space-md) var(--space-lg); border-radius: var(--radius-editorial-md); }
+
+.dailyos-health-badge__dot {
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	flex-shrink: 0;
+}
+.dailyos-health-badge__dot--green  { background: var(--color-garden-sage); }
+.dailyos-health-badge__dot--yellow { background: var(--color-spice-saffron); }
+.dailyos-health-badge__dot--red    { background: var(--color-spice-terracotta); }
+
+.dailyos-health-badge__score        { font-variant-numeric: tabular-nums; color: var(--color-text-primary); }
+.dailyos-health-badge__insufficient { color: var(--color-text-tertiary); font-style: italic; }
+
+.dailyos-health-badge__trend                 { color: var(--color-text-tertiary); }
+.dailyos-health-badge__trend--improving      { color: var(--color-garden-sage); }
+.dailyos-health-badge__trend--declining      { color: var(--color-spice-terracotta); }
+.dailyos-health-badge__trend--stable         { color: var(--color-text-tertiary); }
+.dailyos-health-badge__trend--volatile       { color: var(--color-spice-saffron); }
+
+.dailyos-health-badge--hero.dailyos-health-badge--band-green  { background: var(--color-garden-sage-10, rgba(126, 170, 123, 0.10)); }
+.dailyos-health-badge--hero.dailyos-health-badge--band-yellow { background: var(--color-spice-saffron-10, rgba(222, 184, 65, 0.10)); }
+.dailyos-health-badge--hero.dailyos-health-badge--band-red    { background: var(--color-spice-terracotta-10, rgba(196, 101, 74, 0.10)); }
+`,
 		renderBody: `<?php
 /**
  * HealthBadge (translated from src/components/shared/HealthBadge.tsx).
@@ -257,14 +405,24 @@ function applyBodyTranslation(primitive, slug) {
 	const translation = BODY_TRANSLATIONS[primitive];
 	if (!translation) {
 		process.stdout.write(
-			`[translate-tauri] ${primitive}: scaffold-only (no hand-coded body in W1).\n` +
-			`  Render body TODO at wp/dailyos/blocks/${slug}/render-functions.php — translate in W2.\n`
+			`[translate-tauri] ${primitive}: scaffold-only (no hand-coded block.json/render/CSS in W1).\n` +
+			`  Block.json attrs, render body, and style.css all carry scaffold defaults at\n` +
+			`  wp/dailyos/blocks/${slug}/ — per-primitive translation lands in W2.\n`
 		);
 		return;
 	}
+	const blockJsonPath = resolvePath(BLOCKS_DIR, slug, 'block.json');
 	const renderFnsPath = resolvePath(BLOCKS_DIR, slug, 'render-functions.php');
+	const styleCssPath = resolvePath(BLOCKS_DIR, slug, 'style.css');
+	if (translation.blockJson) writeFileSync(blockJsonPath, translation.blockJson);
 	writeFileSync(renderFnsPath, translation.renderBody);
-	process.stdout.write(`[translate-tauri] ${primitive}: hand-coded body written to ${renderFnsPath}\n`);
+	if (translation.styleCss) writeFileSync(styleCssPath, translation.styleCss);
+	process.stdout.write(
+		`[translate-tauri] ${primitive}: hand-coded translation written\n` +
+		(translation.blockJson ? `  - ${blockJsonPath} (block.json with primitive-specific attrs + enums)\n` : '') +
+		`  - ${renderFnsPath} (PHP render fn faithful to TSX)\n` +
+		(translation.styleCss ? `  - ${styleCssPath} (CSS translated from .module.css source)\n` : '')
+	);
 }
 
 function emitFollowups(primitive, slug, category) {
