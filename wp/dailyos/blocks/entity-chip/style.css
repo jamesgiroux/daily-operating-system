@@ -20,11 +20,19 @@
 	vertical-align: baseline;
 }
 
-.dailyos-entity-chip--account  { background: var(--wp--preset--color--account-8);  color: var(--wp--preset--color--account); }
-.dailyos-entity-chip--project  { background: var(--wp--preset--color--project-8);  color: var(--wp--preset--color--project); }
-.dailyos-entity-chip--person   { background: var(--wp--preset--color--person-8);   color: var(--wp--preset--color--person); }
-.dailyos-entity-chip--meeting  { background: var(--wp--preset--color--meeting-8);  color: var(--wp--preset--color--meeting); }
-.dailyos-entity-chip--unknown  { background: var(--wp--preset--color--desk-charcoal-4); color: var(--wp--preset--color--text-secondary); }
+/* Variant selectors chain on both base classes to match the compound-base
+ * specificity (0,2,0) — otherwise single-class variants lose to the base
+ * selector and the entity-derived tokens never apply. */
+.wp-block-dailyos-entity-chip.dailyos-entity-chip--account,
+.dailyos-entity-chip.dailyos-entity-chip--account  { background: var(--wp--preset--color--account-8);  color: var(--wp--preset--color--account); }
+.wp-block-dailyos-entity-chip.dailyos-entity-chip--project,
+.dailyos-entity-chip.dailyos-entity-chip--project  { background: var(--wp--preset--color--project-8);  color: var(--wp--preset--color--project); }
+.wp-block-dailyos-entity-chip.dailyos-entity-chip--person,
+.dailyos-entity-chip.dailyos-entity-chip--person   { background: var(--wp--preset--color--person-8);   color: var(--wp--preset--color--person); }
+.wp-block-dailyos-entity-chip.dailyos-entity-chip--meeting,
+.dailyos-entity-chip.dailyos-entity-chip--meeting  { background: var(--wp--preset--color--meeting-8);  color: var(--wp--preset--color--meeting); }
+.wp-block-dailyos-entity-chip.dailyos-entity-chip--unknown,
+.dailyos-entity-chip.dailyos-entity-chip--unknown  { background: var(--wp--preset--color--desk-charcoal-4); color: var(--wp--preset--color--text-secondary); }
 
 .wp-block-dailyos-entity-chip.is-empty { display: none; }
 

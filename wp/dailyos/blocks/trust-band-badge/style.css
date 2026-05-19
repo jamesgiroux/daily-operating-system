@@ -12,14 +12,14 @@
 	font-weight: 700;
 	line-height: 1;
 	letter-spacing: 0;
-	padding: 4px 8px;
+	padding: 5px 14px;
 	text-transform: uppercase;
 	white-space: nowrap;
 }
 
 .dailyos-trust-band-badge--compact {
 	font-size: 10px;
-	padding: 3px 7px;
+	padding: 3px 10px;
 }
 
 .dailyos-trust-band-badge__dot {
