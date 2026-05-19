@@ -1,0 +1,4 @@
+source: .docs/design/reference/_shared/chrome.js
+sha: 9a1dbafc760ef9b0ce6a521f565e3ec6df78acc5
+synced_at: 2026-05-19T23:36:56Z
+patches_applied: 1,2,3,4,5,6,7,8,9a
