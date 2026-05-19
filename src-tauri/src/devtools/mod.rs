@@ -6534,11 +6534,18 @@ fn seed_claim_review_deferrals(db: &ActionDb) -> Result<(), String> {
 
     let conn = db.conn_ref();
     let now = chrono::Utc::now();
-    let now_iso = now.to_rfc3339();
     let snooze_iso = (now + chrono::Duration::days(3)).to_rfc3339();
+
+    // Distinct created_at values so the active-list ORDER BY created_at DESC
+    // gives a deterministic order in dev, and the resolved row's
+    // created_at precedes its resolved_at.
+    let active_3 = now.to_rfc3339();
+    let active_2 = (now - chrono::Duration::minutes(5)).to_rfc3339();
+    let active_1 = (now - chrono::Duration::minutes(10)).to_rfc3339();
+    let resolved_created = (now - chrono::Duration::hours(4)).to_rfc3339();
     let resolved_iso = (now - chrono::Duration::hours(2)).to_rfc3339();
 
-    let rows: [(&str, &str, &str, Option<&str>, Option<&str>, Option<&str>, Option<&str>, &str); 4] = [
+    let rows: [(&str, &str, &str, Option<&str>, Option<&str>, Option<&str>, &str, Option<&str>, &str); 4] = [
         (
             "mock-deferral-claim-1",
             "claim",
@@ -6546,6 +6553,7 @@ fn seed_claim_review_deferrals(db: &ActionDb) -> Result<(), String> {
             Some("actions_work"),
             Some("waiting on stakeholder confirmation"),
             None,
+            active_1.as_str(),
             None,
             "user:demo",
         ),
@@ -6556,6 +6564,7 @@ fn seed_claim_review_deferrals(db: &ActionDb) -> Result<(), String> {
             Some("daily_briefing"),
             Some("needs finance review"),
             Some(snooze_iso.as_str()),
+            active_2.as_str(),
             None,
             "user:demo",
         ),
@@ -6566,6 +6575,7 @@ fn seed_claim_review_deferrals(db: &ActionDb) -> Result<(), String> {
             Some("entity_detail"),
             Some("low-confidence signal — defer for evidence"),
             None,
+            active_3.as_str(),
             None,
             "agent:salience",
         ),
@@ -6576,18 +6586,19 @@ fn seed_claim_review_deferrals(db: &ActionDb) -> Result<(), String> {
             Some("actions_work"),
             Some("answered out-of-band"),
             None,
+            resolved_created.as_str(),
             Some(resolved_iso.as_str()),
             "user:demo",
         ),
     ];
 
-    for (id, kind, target, surface, reason, snooze, resolved, actor) in rows {
+    for (id, kind, target, surface, reason, snooze, created, resolved, actor) in rows {
         conn.execute(
             "INSERT OR IGNORE INTO claim_review_deferrals (
                 id, target_kind, target_id, surface, reason, snoozed_until,
                 created_at, updated_at, resolved_at, actor
             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8, ?9)",
-            rusqlite::params![id, kind, target, surface, reason, snooze, now_iso, resolved, actor],
+            rusqlite::params![id, kind, target, surface, reason, snooze, created, resolved, actor],
         )
         .map_err(|e| format!("Seed claim_review_deferrals row {id}: {e}"))?;
     }
