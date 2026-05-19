@@ -5,6 +5,7 @@
 **Amended:** 2026-05-10 — extended `AbilityPolicy.allowed_actors` to include `SurfaceClient` (defined in [ADR-0111](0111-surface-independent-ability-invocation.md) §8); added §7.6 specifying SurfaceClient policy and introspection semantics. Per the formal L0 panel on [DOS-546](https://linear.app/a8c/issue/DOS-546).
 **Amended (later same day):** 2026-05-10 — extended `AbilityPolicy` schema with `required_scopes: Vec<SurfaceClientScope>` and `mcp_exposure: bool` as first-class fields per the formal L0 Cycle 2 unanimous finding. Two-level SurfaceClient enforcement is now substrate-enforceable from the canonical policy, not just prose in §7.6. Default policy expanded: `required_scopes = vec![]`, `mcp_exposure = false`.
 **Amended (later same day):** 2026-05-10 — promoted `mcp_exposure` from `bool` to tri-state `McpExposure { None | MetadataOnly | Invocable }` enum per Phase 0 artifact 05 lines 383-412; retained `client_side_executable: bool` as an orthogonal separate field for the WordPress 7.0 client-side `executeAbility()` JS path. The two fields govern different trust boundaries — `mcp_exposure` controls the network-facing MCP tool surface (discovery + invocation), `client_side_executable` controls whether a trusted in-product SurfaceClient may invoke the ability after WordPress capability + runtime scope + actor checks pass. The fields are independent; either may be true while the other is false. Default policy is `mcp_exposure = McpExposure::None` + `client_side_executable = false`, opt-in per ability. This cycle-3 reversal of the cycle-2 collapse was made after re-reading artifact 05's explicit warning against the symmetric `client_side_exposure` framing.  
+**Amended:** 2026-05-19 — added `Actor::McpClient` actor variant + `ActorKind::McpClient` discriminator for MCP-originated calls; pinned MCP client authentication + session contract; froze the v1.4.7 scope namespace convention. See §"Amendment 2026-05-19 — `Actor::McpClient` + MCP client trust boundary + scope namespace" appended at end of doc. Companion ADR-0128 amendment of the same date documents the headless-head consequences (tool description as product copy, cross-conversation continuity, displacement-use-case framing applied to v1.4.7 W5 eval).
 **Target:** v1.4.0  
 **Extends:** [ADR-0101](0101-service-boundary-enforcement.md), [ADR-0091](0091-intelligence-provider-abstraction.md), [ADR-0082](0082-entity-generic-prep-pipeline.md)  
 **Related:** [ADR-0080](0080-signal-intelligence-architecture.md), [ADR-0097](0097-account-health-scoring-architecture.md), [ADR-0098](0098-data-governance-source-aware-lifecycle.md), [ADR-0100](0100-glean-first-intelligence-architecture.md), [ADR-0111](0111-surface-independent-ability-invocation.md), [ADR-0129](0129-composable-surfaces-wordpress-studio-as-primary-surface.md), [ADR-0130](0130-surface-independent-composition-contract.md) §2 (block-level `ProvenanceRef` preserves the ADR-0105 §8 lives-once invariant and avoids payload-cap blowups when ability outputs are composed into surface-rendered blocks)
@@ -572,3 +573,109 @@ Rationale: exploration needs a fast path. Discipline comes from graduation (prom
 The combined effect: an experimental ability that hasn't been graduated or removed within one cycle **breaks the build**. There's no quiet persistence. Codex adversarial review correctly flagged the original "flagged for graduation-or-removal review" language as soft — this amendment makes it hard.
 
 **Override for genuinely long-running experiments:** a `registered_at` bump (re-registering with today's date) gives another cycle. Bumping requires a PR that explicitly justifies the extension in the commit message. Audit trail exists in git.
+
+---
+
+## Amendment 2026-05-19 — `Actor::McpClient` + MCP client trust boundary + scope namespace
+
+**Origin:** v1.4.7 W0 (MCP Server v2, Abilities-First). Drafted as the substantive design output of v1.4.7's cycle-2 Class S finding ("MCP client trust boundary"). Cycles 2–5 polished the contract; this amendment lands the final shape.
+
+**Scope:** the abilities runtime contract for MCP-originated invocations. Wire-level transport, pairing handshake server impl, per-tool grant manifest format, and gateway impl are W1-A scope and not codified by this amendment — only the actor-class contract and namespace freeze are.
+
+### A. `Actor::McpClient` variant
+
+A fifth `Actor` variant joins `User`, `Agent`, `Admin`, `System`, `SurfaceClient`:
+
+```rust
+pub enum Actor {
+    Agent,
+    User,
+    Admin,
+    System,
+    SurfaceClient { instance: SurfaceClientId, scopes: ScopeSet },
+    McpClient {
+        client_id: McpClientId,
+        conversation_handle: Option<OpaqueConversationHandle>,
+    },
+}
+```
+
+`McpClientId` is a server-minted opaque handle issued during the MCP client pairing handshake (§C). Newtype lives at the abilities-runtime layer alongside `SurfaceClientId`; non-PII, non-enumerable, stable for the life of the pairing.
+
+`OpaqueConversationHandle` is a server-minted, non-PII, non-enumerable token that tracks cross-conversation continuity (§D). `Option<…>` because the handle is absent on the very first MCP call in a fresh conversation — the gateway mints one transparently per §D.
+
+The corresponding `ActorKind::McpClient` discriminator joins the existing four kinds and is the const-friendly token used in `AbilityPolicy.allowed_actors`. `Actor::kind()` gains a `McpClient { .. } => ActorKind::McpClient` arm.
+
+### B. Gateway-mediated scope enforcement (asymmetry with `SurfaceClient`)
+
+`Actor::McpClient` carries **no** scopes on the variant. This is an intentional asymmetry with `Actor::SurfaceClient { .. scopes: ScopeSet }`:
+
+- **SurfaceClient** carries `ScopeSet` on the variant because scopes are bridge-time material — the bridge (per ADR-0111 §8) reads `actor.scopes` directly to enforce `AbilityPolicy.required_scopes` before registry lookup. The scope grant rides with the invocation.
+- **McpClient** does not carry scopes because the MCP gateway (v1.4.7 `services/mcp_v2/gateway.rs`) enforces scope authorization against a **server-side per-client manifest** loaded by `services/mcp_v2/auth.rs` from the pairing record (§C). Caller-provided scope claims are rejected on principle; the gateway is the single source of truth. Once the gateway admits the call, the abilities runtime trusts the gateway's check and gates only on `AbilityPolicy.allowed_actors.contains(&ActorKind::McpClient)`.
+
+This preserves the v1.4.2 SurfaceClient bridge contract verbatim while introducing a strictly distinct trust path for MCP-originated calls — different attribution semantics, different audit shape, different rate-limit budget (§C). `AbilityPolicy.required_scopes` remains a SurfaceClient-only enforcement field; W0 ships no new field on `AbilityPolicy`.
+
+### C. MCP client authentication + session contract
+
+Every MCP-originated invocation must pass through these four gates before reaching an ability:
+
+1. **Pairing handshake.** First contact from a new MCP client issues an `McpClientId` after a server-side handshake (W1-A `auth::pair_client(handshake) -> McpClientId`). The handshake binds the client to a server-stored manifest of granted scopes + per-tool rate limits + per-tool exposure tier. Manifest content is set by the operator (DailyOS-as-product owner) at pairing time, not negotiated by the caller. Mirrors the v1.4.2 `SurfaceClient` pairing shape (`services::surface_pairing`, `services::surface_session_keychain`, `bridges::surface_client`) — the SurfaceClient pattern is the precedent and the same operator/audit ergonomics apply.
+2. **Transport signing (HMAC-SHA256).** All stdio and HTTP transports MUST present a per-message HMAC-SHA256 signature derived from the pairing-time shared key. Unsigned or invalid-signature messages are rejected at the transport layer before any `Actor::McpClient` is constructed. (Local STDIO MCP processes share the key out-of-band via the pairing record; loopback HTTP carries it as a request header.)
+3. **Scope manifest authorization.** Gateway loads the server-side scope manifest for the `McpClientId` and verifies `tool.description().scopes_required.is_subset(manifest.granted_scopes)` BEFORE handler invocation. Caller-provided scope assertions in tool params are rejected with `ToolError::BadParams`.
+4. **Per-actor × per-client × per-tool rate limits.** Gateway maintains a rate-limit registry keyed on `(ActorKind::McpClient, McpClientId, ScopedName)`. Limits are loaded from the pairing manifest; bursts exceeding them return `ToolError::RateLimited { retry_after_seconds }`. Independent of `AbilityRateLimit` (which remains a per-ability ceiling).
+
+**Revocation.** Server-side admin API (W1-A scope) can revoke an `McpClientId`. Subsequent invocations from a revoked client fail the manifest-load step and return `ToolError::PairingRevoked`. Revocation propagates within one in-flight call; in-progress invocations are not interrupted but their audit row records the revoked state if revocation happens mid-call. (`PairingRevoked` is a dedicated `ToolError` variant rather than `Unauthorized` with a sentinel `missing_scope` because the `Scope` newtype is reserved for `<namespace>.<verb>.<noun>` / substrate-shipped values per §E — auth-state revocation is not a scope-deficit case.)
+
+**Audit attribution.** Every ability invocation with `Actor::McpClient` records `(client_id, conversation_handle, tool_name, params_hash, response_hash, timestamp)` in the audit log. `params_hash` and `response_hash` are keyed HMAC-SHA256 over canonical JSON with a per-install audit key (per cycle 2 CSO MED #2) — raw param / response data never lands in audit storage.
+
+### D. `OpaqueConversationHandle` lifecycle
+
+Host-model conversations are stateless; DailyOS is not. Cross-conversation continuity (per ADR-0128 §6) is implemented via a server-minted opaque token:
+
+- **Mint trigger.** Server mints on the first MCP call from a client that does not present an existing handle. The new handle is returned in the response envelope's top-level `conversation_handle` field (separate from the tool's typed payload).
+- **Echo.** Subsequent calls in the same conversation pass the handle in the request envelope's top-level `conversation_handle` field.
+- **Expiry.** 24 hours from last touch (refreshed on every call). Post-expiry the server mints a new handle on the next call (transparent to caller). Server may proactively rotate before 24h on operator action.
+- **First-write behavior.** If a `Side::Write` tool is the first call in a conversation (no prior handle), the gateway mints a fresh handle, performs the write, and returns the handle. No `ConversationRequired` error path — first-write is transparent.
+- **Revocation.** Server-side admin API can revoke a handle; subsequent presentations return `ToolError::ConversationRevoked`. Caller must restart with a new conversation. (Dedicated variant for the same reason as `PairingRevoked` above — `Scope` does not encode auth-state sentinels.)
+- **No raw conversation IDs accepted.** Any client-asserted `conversation_id` in tool params is rejected with `ToolError::BadParams { detail: "use envelope conversation_handle" }`. Audit + signal payloads carry `conversation_handle` exclusively; raw IDs are never logged.
+
+### E. Scope namespace freeze (v1.4.7 onward)
+
+Canonical convention for new MCP tool scopes:
+
+```
+dailyos.<verb>.<noun>
+```
+
+- **Verbs.** `read` (default for queries) and `write` (system/AI-attributable creations) are core. `submit` is the verb for user-attributable corrections. For action-shaped reads, the verb-prefix vocabulary admits `search`, `list`, `get`, and `prepare` in addition to bare `read`.
+- **Examples.** `dailyos.read.account_status`, `dailyos.read.daily_briefing`, `dailyos.read.portfolio_attention`, `dailyos.search.workspace_memory`, `dailyos.write.place_document`, `dailyos.submit.note`, `dailyos.submit.action`.
+- **v1.4.5-reused scopes stay unprefixed.** Scopes shipped by v1.4.5 substrate (e.g. `write.workspace_place_document`, `read.workspace_graph`, `read.entity_names`) are kept verbatim. v1.4.7 MCP tools that reuse them present the unprefixed scope to the manifest. The manifest validation logic accepts both forms but rejects any scope outside the canonical allowlist.
+- **Encoding.** The convention is encoded both in this ADR amendment (canonical text) and in the v1.4.7 W0 `services/mcp_v2/contracts.rs` `Scope` newtype + `ScopedName` newtype, with a load-time validation pass in W1-B's `taxonomy.rs` that rejects out-of-allowlist tool names at registry boot.
+
+### F. `AbilityPolicy.allowed_actors`
+
+`AbilityPolicy.allowed_actors` may now include `ActorKind::McpClient` alongside the existing four kinds. Defaults are unchanged (`&[ActorKind::User]`, least-privilege floor); abilities opt in to MCP exposure by adding `ActorKind::McpClient` to their `allowed_actors` slice.
+
+The proc macro emitting `AbilityDescriptor` (per `abilities-macro/src/lib.rs`) gains a `McpClient` arm in the `ActorArg` parser. `inventory.rs` `AbilityActor::project(ActorKind, McpExposure)` gains the same arm.
+
+### G. `McpExposure` tri-state remains sufficient
+
+No new variants are added to `McpExposure { None | MetadataOnly | Invocable }`. The tri-state continues to govern MCP introspection behavior verbatim for v1.4.7 — `None` hides the ability from the v1.4.7 gateway's `list_tools` and `list_abilities`, `MetadataOnly` exposes name + description without invoke schema, `Invocable` exposes full schema.
+
+### H. Non-goals (v1.4.7 W0 scope discipline)
+
+This amendment **does not** ship:
+
+- The MCP gateway implementation (`services/mcp_v2/gateway.rs` body) — that is W1-A (DOS-168).
+- The pairing handshake server implementation (`services/mcp_v2/auth.rs::pair_client` body) — W1-A.
+- The per-tool grant manifest schema — W1-A defines the format; this amendment only fixes that there IS a server-side manifest.
+- HMAC-SHA256 transport-layer signing implementation — W1-A scope.
+- New `SignalType::McpToolInvoked` variant — W1-A registers it in `signals/policy_registry.rs`.
+- Tool descriptions or the YAML catalog — W1-B (DOS-478).
+- Any actual MCP tool handler logic — W2/W3/W4.
+
+W0 ships only: the actor-class contract (this amendment), the Rust enum variants + newtypes, the `services/mcp_v2/` module skeleton with shared contract types, and golden Rust/TS parity fixtures for the wire-shape types.
+
+### I. Companion ADR-0128 amendment
+
+ADR-0128 receives a same-date amendment recording the v1.4.7-specific consequences of this trust-boundary contract: tool description as product copy with eval coverage (DOS-481), cross-conversation continuity surfaced as a named affordance per ADR-0128 §6 with the wire-level shape defined here in §D, and extension of the displacement-use-case framing to v1.4.7 W5 host-selection evaluation. ADR-0128 §5 ("Feedback is the only write") narrows in v1.4.7's headless head: writes are restricted to the v1.4.7 W4 surface (note/observation, create_action, update_action_status), all routed through approved `services::*` per ADR-0101.

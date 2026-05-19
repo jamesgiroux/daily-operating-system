@@ -2060,6 +2060,7 @@ fn render_actor_for_context(ctx: &AbilityContext<'_>) -> RenderActor {
             user_id: None,
         },
         RegistryActor::SurfaceClient { .. } => todo!("W1-B+ wiring for Actor::SurfaceClient"),
+        RegistryActor::McpClient { .. } => todo!("McpClient invocation routing pending"),
     }
 }
 
@@ -2154,6 +2155,9 @@ fn provenance_actor(actor: RegistryActor) -> crate::abilities::provenance::Actor
         },
         RegistryActor::SurfaceClient { .. } => {
             todo!("W1-B+ wiring for Actor::SurfaceClient")
+        }
+        RegistryActor::McpClient { .. } => {
+            todo!("McpClient invocation routing pending")
         }
     }
 }

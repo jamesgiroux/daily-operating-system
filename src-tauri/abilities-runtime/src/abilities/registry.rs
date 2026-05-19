@@ -103,6 +103,79 @@ impl std::fmt::Display for SurfaceScope {
     }
 }
 
+/// Stable, non-PII identifier for a paired [`Actor::McpClient`] instance.
+///
+/// Issued server-side by the MCP gateway pairing handshake per ADR-0102
+/// §C ("MCP client authentication + session contract", 2026-05-19
+/// amendment). Mirrors [`SurfaceClientId`] from ADR-0111 §8: opaque to
+/// the substrate, audit-stable across calls, rotated only via the
+/// operator-facing pairing admin path.
+///
+/// Unlike [`Actor::SurfaceClient`], the [`Actor::McpClient`] variant
+/// carries no [`ScopeSet`] — the gateway enforces scopes against a
+/// server-side per-client manifest before invocation per the ADR-0102
+/// 2026-05-19 amendment §B asymmetry note.
+///
+/// `Display` / `Debug` produce the raw inner string. Callers are
+/// expected not to embed PII in the identifier itself; the type does
+/// no scrubbing.
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(transparent)]
+pub struct McpClientId(String);
+
+impl McpClientId {
+    /// Construct a new identifier from an owned string.
+    pub fn new(id: impl Into<String>) -> Self {
+        Self(id.into())
+    }
+
+    /// Borrow the inner string slice.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for McpClientId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+/// Server-minted, non-PII, non-enumerable token tracking cross-
+/// conversation continuity for an [`Actor::McpClient`] invocation path.
+///
+/// Per ADR-0102 §D ("`OpaqueConversationHandle` lifecycle", 2026-05-19
+/// amendment): minted on first call (transparent to caller), echoed
+/// in subsequent requests, 24h expiry from last touch, revocable, and
+/// never derived from caller-provided conversation IDs (those are
+/// rejected at the gateway with `BadParams`).
+///
+/// The corresponding field on [`Actor::McpClient`] is `Option<_>`
+/// because the handle is absent on the very first MCP call in a fresh
+/// conversation; the gateway mints transparently per the lifecycle
+/// contract.
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(transparent)]
+pub struct OpaqueConversationHandle(String);
+
+impl OpaqueConversationHandle {
+    /// Construct a new handle from an owned string.
+    pub fn new(handle: impl Into<String>) -> Self {
+        Self(handle.into())
+    }
+
+    /// Borrow the inner string slice.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for OpaqueConversationHandle {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
 /// Construction / deserialization errors for [`ScopeSet`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ScopeSetError {
@@ -356,6 +429,25 @@ pub enum Actor {
         /// `actor_scopes` field.
         scopes: ScopeSet,
     },
+    /// MCP-originated invocation per the ADR-0102 2026-05-19 amendment §A.
+    ///
+    /// Server-issued [`McpClientId`] after a pairing handshake; per-call
+    /// continuity tracked via the optional [`OpaqueConversationHandle`].
+    /// Authorization is gateway-mediated against a server-side per-client
+    /// scope manifest (see amendment §B for the asymmetry with
+    /// [`Actor::SurfaceClient`]); this variant intentionally carries no
+    /// [`ScopeSet`] — the gateway is the source of truth for what scopes a
+    /// given `client_id` may exercise.
+    McpClient {
+        /// Stable, server-issued instance identity. Surfaces audit
+        /// emission's `actor_instance` field.
+        client_id: McpClientId,
+        /// Per-call cross-conversation continuity token. `None` on the
+        /// very first MCP call in a fresh conversation; the gateway
+        /// transparently mints a fresh handle and returns it in the
+        /// response envelope per the amendment §D lifecycle.
+        conversation_handle: Option<OpaqueConversationHandle>,
+    },
 }
 
 /// Discriminator over [`Actor`] variants — the "kind" of actor, without
@@ -385,6 +477,12 @@ pub enum ActorKind {
     /// Mirrors [`Actor::SurfaceClient`]. Per-invocation instance and scope
     /// data live on the runtime variant; only the kind appears in the policy.
     SurfaceClient,
+    /// Mirrors [`Actor::McpClient`]. Per-invocation client identity and
+    /// conversation handle live on the runtime variant; only the kind
+    /// appears in policy. Per the ADR-0102 2026-05-19 amendment §B,
+    /// scopes for `McpClient` are gateway-enforced from a server-side
+    /// per-client manifest and do not ride on the variant.
+    McpClient,
 }
 
 impl Actor {
@@ -399,6 +497,7 @@ impl Actor {
             Actor::Admin => ActorKind::Admin,
             Actor::System => ActorKind::System,
             Actor::SurfaceClient { .. } => ActorKind::SurfaceClient,
+            Actor::McpClient { .. } => ActorKind::McpClient,
         }
     }
 }
@@ -2328,6 +2427,138 @@ mod tests {
         set.insert(SurfaceScope::new("write.y"));
         set.insert(SurfaceScope::new("read.x")); // dup
         assert_eq!(set.len(), 2);
+    }
+
+    // -------------------------------------------------------------------
+    // McpClient actor class — identity / handle newtype + Actor::McpClient
+    // tests. ADR-0102 §A–§D (2026-05-19 amendment): server-issued
+    // `McpClientId` after pairing; opaque conversation handle; gateway-
+    // mediated scope enforcement (no scopes on the variant per §B).
+    // Golden Rust JSON parity fixtures for the wire shape.
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn mcp_client_id_round_trip_preserves_value() {
+        let id = McpClientId::new("mcp-client-alpha");
+        assert_eq!(id.as_str(), "mcp-client-alpha");
+        assert_eq!(format!("{id}"), "mcp-client-alpha");
+        assert_eq!(format!("{id:?}"), "McpClientId(\"mcp-client-alpha\")");
+    }
+
+    #[test]
+    fn mcp_client_id_serde_round_trip_is_transparent() {
+        let id = McpClientId::new("mcp-client-alpha");
+        let encoded = serde_json::to_string(&id).expect("serializes");
+        // `#[serde(transparent)]` — the wire form is the inner string only.
+        assert_eq!(encoded, "\"mcp-client-alpha\"");
+        let decoded: McpClientId = serde_json::from_str(&encoded).expect("deserializes");
+        assert_eq!(decoded, id);
+    }
+
+    #[test]
+    fn mcp_client_id_hash_eq_match_inner_string() {
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        set.insert(McpClientId::new("alpha"));
+        set.insert(McpClientId::new("beta"));
+        set.insert(McpClientId::new("alpha")); // dup
+        assert_eq!(set.len(), 2);
+        assert!(set.contains(&McpClientId::new("alpha")));
+        assert!(set.contains(&McpClientId::new("beta")));
+        assert!(!set.contains(&McpClientId::new("gamma")));
+    }
+
+    #[test]
+    fn opaque_conversation_handle_round_trip_preserves_value() {
+        let handle = OpaqueConversationHandle::new("conv-abc-123");
+        assert_eq!(handle.as_str(), "conv-abc-123");
+        assert_eq!(format!("{handle}"), "conv-abc-123");
+        assert_eq!(
+            format!("{handle:?}"),
+            "OpaqueConversationHandle(\"conv-abc-123\")"
+        );
+    }
+
+    #[test]
+    fn opaque_conversation_handle_serde_round_trip_is_transparent() {
+        let handle = OpaqueConversationHandle::new("conv-abc-123");
+        let encoded = serde_json::to_string(&handle).expect("serializes");
+        assert_eq!(encoded, "\"conv-abc-123\"");
+        let decoded: OpaqueConversationHandle =
+            serde_json::from_str(&encoded).expect("deserializes");
+        assert_eq!(decoded, handle);
+    }
+
+    #[test]
+    fn opaque_conversation_handle_hash_eq_match_inner_string() {
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        set.insert(OpaqueConversationHandle::new("alpha"));
+        set.insert(OpaqueConversationHandle::new("beta"));
+        set.insert(OpaqueConversationHandle::new("alpha")); // dup
+        assert_eq!(set.len(), 2);
+    }
+
+    #[test]
+    fn actor_mcp_client_projects_to_mcp_client_kind() {
+        let actor = Actor::McpClient {
+            client_id: McpClientId::new("mcp-client-alpha"),
+            conversation_handle: None,
+        };
+        assert_eq!(actor.kind(), ActorKind::McpClient);
+    }
+
+    #[test]
+    fn actor_mcp_client_with_handle_projects_to_mcp_client_kind() {
+        let actor = Actor::McpClient {
+            client_id: McpClientId::new("mcp-client-alpha"),
+            conversation_handle: Some(OpaqueConversationHandle::new("conv-abc-123")),
+        };
+        assert_eq!(actor.kind(), ActorKind::McpClient);
+    }
+
+    #[test]
+    fn actor_mcp_client_serde_wire_shape_is_canonical() {
+        // Locks the JSON wire shape of `Actor::McpClient` so any future
+        // serde rename / variant reordering is caught by this test.
+        // Canonical wire: externally-tagged variant with `client_id`
+        // (transparent) + `conversation_handle` (transparent, optional).
+        let actor = Actor::McpClient {
+            client_id: McpClientId::new("mcp-client-alpha"),
+            conversation_handle: Some(OpaqueConversationHandle::new("conv-abc-123")),
+        };
+        let encoded = serde_json::to_value(&actor).expect("serializes");
+        assert_eq!(
+            encoded,
+            serde_json::json!({
+                "McpClient": {
+                    "client_id": "mcp-client-alpha",
+                    "conversation_handle": "conv-abc-123",
+                }
+            })
+        );
+        let decoded: Actor = serde_json::from_value(encoded).expect("deserializes");
+        assert_eq!(decoded, actor);
+    }
+
+    #[test]
+    fn actor_mcp_client_serde_with_absent_handle_round_trips() {
+        let actor = Actor::McpClient {
+            client_id: McpClientId::new("mcp-client-alpha"),
+            conversation_handle: None,
+        };
+        let encoded = serde_json::to_value(&actor).expect("serializes");
+        assert_eq!(
+            encoded,
+            serde_json::json!({
+                "McpClient": {
+                    "client_id": "mcp-client-alpha",
+                    "conversation_handle": null,
+                }
+            })
+        );
+        let decoded: Actor = serde_json::from_value(encoded).expect("deserializes");
+        assert_eq!(decoded, actor);
     }
 
     /// Test helper: build a non-empty [`ScopeSet`] from string slices.

@@ -3,6 +3,7 @@
 **Status:** Accepted
 **Date:** 2026-05-03
 **Amended:** 2026-05-04 — added §7 (CLI as a third head, mediated by MCP)
+**Amended:** 2026-05-19 — same-date companion amendment to ADR-0102; codifies tool description as product copy (DOS-481 eval coverage), cross-conversation continuity wire shape (defers to ADR-0102 §D OpaqueConversationHandle lifecycle), restated v1.4.7 W4 write surface, displacement-use-case framing extended to v1.4.7 W5 host-selection eval, and Linear link refresh to the post-renumber v1.4.7 project. See section appended at end of doc.
 **Authors:** James Giroux, Claude
 **Relates to:** [ADR-0027](0027-mcp-dual-mode.md), [ADR-0083](0083-product-vocabulary.md), [ADR-0102](0102-abilities-as-runtime-contract.md), [ADR-0105](0105-provenance-as-first-class-output.md), [ADR-0111](0111-surface-independent-ability-invocation.md), [ADR-0113](0113-human-and-agent-analysis-as-first-class-claim-sources.md), [ADR-0118](0118-dailyos-as-ai-harness-principles-and-residual-gaps.md)
 **Linear:** [v1.5.0 — MCP Server v2 (Abilities-First)](https://linear.app/a8c/project/v150-mcp-server-v2-abilities-first-6e12027c36c9)
@@ -185,3 +186,45 @@ Internal:
 External:
 
 - [Anthropic — Model Context Protocol](https://modelcontextprotocol.io/) — tool description as model-facing affordance
+
+## Amendment 2026-05-19 — v1.4.7 operationalization + Linear refresh
+
+This amendment records the v1.4.7 operational consequences of the same-date [ADR-0102](0102-abilities-as-runtime-contract.md) amendment. It does not reopen the architecture. ADR-0128 remains the product-surface frame for headless DailyOS; ADR-0102 remains the runtime contract for MCP-originated ability invocation.
+
+### §A. Linear citation refresh
+
+The top-of-file `Linear:` citation still points to the historical v1.5.0 project. Per the 2026-05-17 renumber, the canonical project for this work is now v1.4.7. The historical header is left intact for traceability; the post-renumber canonical project is [v1.4.7 — MCP Server v2 (Abilities-First)](https://linear.app/a8c/project/v147-mcp-server-v2-abilities-first-6e12027c36c9).
+
+### §B. Tool description as product copy — operationalized
+
+Section 3 says "Tool descriptions are UI copy." v1.4.7 turns that posture into a versioned artifact and an eval gate. W1-A defines a typed `ToolDescription` struct in `services/mcp_v2/contracts.rs`; W1-B owns the tool-description YAML catalog at `src-tauri/resources/mcp_v2/tool_descriptions.yaml` as the version-controlled source.
+
+The host-selection eval in DOS-481, scheduled for v1.4.7 W5-A, is the product-copy acceptance test. Each tool ships with at least two positive fixtures and at least two negative fixtures: one broad-corpus negative where DailyOS should yield to enterprise or web search, and one adjacent-DailyOS-but-wrong-tool negative where another DailyOS tool is the right choice. The `when_NOT_to_call` field is mandatory and explicit because avoiding DailyOS for the wrong ask is part of the product surface, not merely an eval trick.
+
+### §C. Cross-conversation continuity — wire shape
+
+Section 6 names continuity as a headless-head affordance: host-model conversations are stateless, DailyOS is not. v1.4.7 pins the wire shape for that affordance to a server-minted `OpaqueConversationHandle`. The handle is required on writes, with the gateway minting one transparently if absent on a first write, and is optional but recommended on reads.
+
+The lifecycle is intentionally not restated here. Expiry is 24 hours from last touch, revocation is server-side, and raw caller-provided conversation IDs are rejected; the authoritative mint, echo, expiry, first-write, revocation, and "no raw IDs" contract lives in [ADR-0102](0102-abilities-as-runtime-contract.md) §D.
+
+### §D. v1.4.7 W4 write surface — narrowed
+
+Section 5 originally said "feedback is the only write." v1.4.7 preserves the consumption-first spirit while naming the W4 submit surface precisely: `dailyos.submit.note` in W4-A, `dailyos.submit.action` in W4-B, and `dailyos.submit.action_status` in W4-C.
+
+All three writes route through approved `services::*` boundaries per ADR-0101. Notes and observations flow through the claim/source services; actions and action-status updates flow through `services::actions`. The MCP head still does not expose claim creation or direct edit, file generation, calendar mutation, message composition, or external-system writes. Submit-class corrections and lightweight action tracking are the only mutations.
+
+### §E. Displacement framing extended to W5 eval
+
+The displacement use case remains the governing design check: DailyOS should win for the user's working understanding, and broad-corpus systems should win for broad enterprise or web retrieval. v1.4.7 carries that distinction into DOS-481 rather than leaving it as prose.
+
+Every v1.4.7 tool description therefore ships with positive host-selection fixtures where the model should pick DailyOS for the right personal-working-context ask, and negative fixtures where the model should avoid DailyOS for either broad-corpus questions or adjacent-DailyOS-but-wrong-tool questions. The eval is a product-strategy artifact as much as a regression test.
+
+### §F. Trust boundary — defer to ADR-0102 amendment
+
+The MCP client trust boundary is codified in the same-date [ADR-0102](0102-abilities-as-runtime-contract.md) amendment, especially §C: MCP client authentication, transport HMAC signing, server-side scope manifest authorization, per-actor × per-client × per-tool rate limits, revocation, and audit attribution with keyed HMAC parameter and response hashes. This ADR cites that contract because ADR-0128 is the product-surface frame, not the transport or authorization spec.
+
+### §G. Non-goals (v1.4.7-specific)
+
+The v1.4.7 headless head is not a Glean replacement; broad-corpus retrieval remains Glean's domain. It is not a wrapper for Claude, because DailyOS does not host the conversation. It is not a write layer beyond the W4 submit surface, and it is not a parallel feature surface beside the Tauri app.
+
+Tools are still not added for completeness. If a tool does not exercise an ability and strengthen the headless-head consumption surface, it does not belong in v1.4.7.

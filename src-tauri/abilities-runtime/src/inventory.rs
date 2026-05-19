@@ -422,6 +422,10 @@ impl AbilityActor {
         match kind {
             ActorKind::User => Self::User,
             ActorKind::SurfaceClient => Self::SurfaceClient,
+            // First-class MCP client kind (ADR-0102 §A, 2026-05-19
+            // amendment). Projects to `Self::McpClient` regardless of
+            // exposure: the actor IS an MCP client by construction.
+            ActorKind::McpClient => Self::McpClient,
             ActorKind::Agent => match exposure {
                 McpExposure::Invocable => Self::McpClient,
                 McpExposure::None | McpExposure::MetadataOnly => Self::Runtime,

@@ -1849,6 +1849,9 @@ fn provenance_actor(actor: RegistryActor) -> crate::abilities::provenance::Actor
         RegistryActor::SurfaceClient { .. } => {
             todo!("W1-B+ wiring for Actor::SurfaceClient")
         }
+        RegistryActor::McpClient { .. } => {
+            todo!("McpClient invocation routing pending")
+        }
     }
 }
 

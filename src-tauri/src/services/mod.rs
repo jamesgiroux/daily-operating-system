@@ -28,6 +28,7 @@ pub mod intelligence;
 pub mod invalidation_jobs;
 pub mod linear;
 pub mod linear_issue_signals;
+pub mod mcp_v2;
 pub mod meetings;
 pub mod mutations;
 pub mod people;

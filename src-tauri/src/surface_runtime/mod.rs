@@ -1933,7 +1933,11 @@ fn surface_client_can_read_keyring(actor: &Actor) -> bool {
             .iter()
             .any(|scope| scope.as_str().starts_with("read.") || scope.as_str() == "manage.pairing"),
         Actor::Admin | Actor::System => true,
-        Actor::Agent | Actor::User => false,
+        // McpClient invocations never read the SurfaceClient pairing
+        // keyring. The MCP head has its own pairing path (per ADR-0102
+        // §C, 2026-05-19 amendment) — surface keyring access is the
+        // bridge-side concern.
+        Actor::Agent | Actor::User | Actor::McpClient { .. } => false,
     }
 }
 
