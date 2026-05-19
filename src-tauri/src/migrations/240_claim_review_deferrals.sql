@@ -19,7 +19,7 @@ CREATE INDEX IF NOT EXISTS idx_claim_review_deferrals_target
     ON claim_review_deferrals (target_kind, target_id);
 
 CREATE INDEX IF NOT EXISTS idx_claim_review_deferrals_active
-    ON claim_review_deferrals (snoozed_until)
+    ON claim_review_deferrals (created_at DESC)
     WHERE resolved_at IS NULL;
 
 CREATE INDEX IF NOT EXISTS idx_claim_review_deferrals_actor
