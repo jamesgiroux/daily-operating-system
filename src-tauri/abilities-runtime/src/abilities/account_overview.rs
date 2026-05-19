@@ -313,7 +313,8 @@ fn placement_for_claim_type(kind: ClaimType) -> ClaimPlacement {
         | ClaimType::MeetingEventNote
         | ClaimType::AttendeeContext
         | ClaimType::MeetingChangeMarker
-        | ClaimType::SuggestedOutcome => ClaimPlacement::Ignored,
+        | ClaimType::SuggestedOutcome
+        | ClaimType::Recommendation => ClaimPlacement::Ignored,
     }
 }
 
