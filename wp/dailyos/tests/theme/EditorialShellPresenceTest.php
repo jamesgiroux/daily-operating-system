@@ -103,8 +103,8 @@ final class DailyOS_EditorialShellPresenceTest extends TestCase {
 	 * @return void
 	 */
 	public function test_single_account_includes_editorial_shell_and_sidebar(): void {
-		$template = (string) file_get_contents( $this->theme_dir . '/templates/single-dailyos-account.html' );
-		$composed = $this->compose_surface( 'single-dailyos-account.html' );
+		$template = (string) file_get_contents( $this->theme_dir . '/templates/single-dailyos_account.html' );
+		$composed = $this->compose_surface( 'single-dailyos_account.html' );
 
 		$this->assertStringContainsString( 'dailyos-folio-bar', $composed, 'Missing dailyos-folio-bar header shell.' );
 		$this->assertStringContainsString( 'dailyos-atmosphere', $composed, 'Missing dailyos-atmosphere body wrapper.' );

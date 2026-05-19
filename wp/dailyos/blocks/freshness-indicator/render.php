@@ -22,4 +22,4 @@ if ( ! function_exists( 'dailyos_freshness_indicator_render' ) ) {
 }
 
 $attributes = isset( $attributes ) && is_array( $attributes ) ? $attributes : [];
-return dailyos_freshness_indicator_render( $attributes );
+echo dailyos_freshness_indicator_render( $attributes );

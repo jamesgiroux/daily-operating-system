@@ -6,8 +6,11 @@
  * the three required template parts (header, footer, sidebar-account-summary)
  * are present, and that theme.json keeps the `customTemplates` array empty —
  * per L0 Packet E §5.2 / §14 AC N. Custom templates are CPT-bound via
- * `single-dailyos-account.html`, `archive-dailyos-account.html`, and
- * `single-dailyos-briefing.html` filenames, not via `customTemplates` entries.
+ * `single-dailyos_account.html`, `archive-dailyos_account.html`, and
+ * `single-dailyos_briefing.html` filenames (underscore matches the
+ * `dailyos_account` / `dailyos_briefing` post_type slug — WP template
+ * hierarchy uses the literal post_type, not a hyphenated alias), not via
+ * `customTemplates` entries.
  *
  * @package DailyOS
  */
@@ -40,9 +43,9 @@ final class DailyOS_TemplateRegistrationTest extends TestCase {
 		$templates = [
 			'index.html',
 			'front-page.html',
-			'single-dailyos-account.html',
-			'archive-dailyos-account.html',
-			'single-dailyos-briefing.html',
+			'single-dailyos_account.html',
+			'archive-dailyos_account.html',
+			'single-dailyos_briefing.html',
 		];
 
 		foreach ( $templates as $template ) {

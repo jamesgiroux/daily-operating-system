@@ -22,4 +22,4 @@ if ( ! function_exists( 'dailyos_provenance_tag_render' ) ) {
 }
 
 $attributes = isset( $attributes ) && is_array( $attributes ) ? $attributes : [];
-return dailyos_provenance_tag_render( $attributes );
+echo dailyos_provenance_tag_render( $attributes );

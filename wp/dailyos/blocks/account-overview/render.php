@@ -22,4 +22,4 @@ if ( ! function_exists( 'dailyos_account_overview_render' ) ) {
 }
 
 $attributes = isset( $attributes ) && is_array( $attributes ) ? $attributes : [];
-return dailyos_account_overview_render( $attributes );
+echo dailyos_account_overview_render( $attributes );

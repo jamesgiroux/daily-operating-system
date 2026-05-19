@@ -22,4 +22,4 @@ if ( ! function_exists( 'dailyos_pill_render' ) ) {
 }
 
 $attributes = isset( $attributes ) && is_array( $attributes ) ? $attributes : [];
-return dailyos_pill_render( $attributes );
+echo dailyos_pill_render( $attributes );

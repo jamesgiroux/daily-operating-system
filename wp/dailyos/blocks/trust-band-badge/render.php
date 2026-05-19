@@ -22,4 +22,4 @@ if ( ! function_exists( 'dailyos_trust_band_badge_render' ) ) {
 }
 
 $attributes = isset( $attributes ) && is_array( $attributes ) ? $attributes : [];
-return dailyos_trust_band_badge_render( $attributes );
+echo dailyos_trust_band_badge_render( $attributes );

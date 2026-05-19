@@ -22,4 +22,4 @@ if ( ! function_exists( 'dailyos_score_band_render' ) ) {
 }
 
 $attributes = isset( $attributes ) && is_array( $attributes ) ? $attributes : [];
-return dailyos_score_band_render( $attributes );
+echo dailyos_score_band_render( $attributes );

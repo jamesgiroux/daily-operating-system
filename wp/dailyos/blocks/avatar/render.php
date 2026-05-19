@@ -22,4 +22,4 @@ if ( ! function_exists( 'dailyos_avatar_render' ) ) {
 }
 
 $attributes = isset( $attributes ) && is_array( $attributes ) ? $attributes : [];
-return dailyos_avatar_render( $attributes );
+echo dailyos_avatar_render( $attributes );

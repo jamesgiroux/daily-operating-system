@@ -22,4 +22,4 @@ if ( ! function_exists( 'dailyos_intelligence_quality_badge_render' ) ) {
 }
 
 $attributes = isset( $attributes ) && is_array( $attributes ) ? $attributes : [];
-return dailyos_intelligence_quality_badge_render( $attributes );
+echo dailyos_intelligence_quality_badge_render( $attributes );

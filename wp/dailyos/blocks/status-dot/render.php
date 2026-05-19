@@ -22,4 +22,4 @@ if ( ! function_exists( 'dailyos_status_dot_render' ) ) {
 }
 
 $attributes = isset( $attributes ) && is_array( $attributes ) ? $attributes : [];
-return dailyos_status_dot_render( $attributes );
+echo dailyos_status_dot_render( $attributes );

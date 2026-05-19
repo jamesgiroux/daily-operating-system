@@ -22,4 +22,4 @@ if ( ! function_exists( 'dailyos_health_badge_render' ) ) {
 }
 
 $attributes = isset( $attributes ) && is_array( $attributes ) ? $attributes : [];
-return dailyos_health_badge_render( $attributes );
+echo dailyos_health_badge_render( $attributes );
