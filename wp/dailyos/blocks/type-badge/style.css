@@ -1,0 +1,31 @@
+/* TypeBadge primitive — account-type colored badge per
+ * .docs/design/primitives/TypeBadge.md. Translation of src/components/ui/
+ * TypeBadge.module.css. Token-only; primitive-tier styling. */
+
+.wp-block-dailyos-type-badge.dailyos-type-badge,
+.dailyos-type-badge {
+	display: inline-flex;
+	align-items: center;
+	width: fit-content;
+	padding: 3px 10px;
+	border-radius: 3px;
+	font-family: var(--wp--custom--dailyos--tokens--font-mono);
+	font-size: 10px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	background: var(--wp--preset--color--desk-charcoal-4);
+	color: var(--wp--preset--color--text-secondary);
+	vertical-align: baseline;
+}
+
+.dailyos-type-badge--customer { background: var(--wp--preset--color--account-12);          color: var(--wp--preset--color--account); }
+.dailyos-type-badge--internal { background: var(--wp--preset--color--garden-larkspur-15);  color: var(--wp--preset--color--garden-larkspur); }
+.dailyos-type-badge--partner  { background: var(--wp--preset--color--garden-rosemary-12); color: var(--wp--preset--color--garden-rosemary); }
+
+.wp-block-dailyos-type-badge.is-empty { display: none; }
+
+.wp-block-dailyos-type-badge.dailyos-notice {
+	color: var(--wp--preset--color--text-tertiary);
+	font-style: italic;
+}
