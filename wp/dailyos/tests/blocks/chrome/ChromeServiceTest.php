@@ -20,9 +20,9 @@ declare(strict_types=1);
 
 use PHPUnit\Framework\TestCase;
 
-require_once dirname( __DIR__, 4 ) . '/blocks/_shared/chrome/render-empty.php';
-require_once dirname( __DIR__, 4 ) . '/blocks/_shared/chrome/render-loading.php';
-require_once dirname( __DIR__, 4 ) . '/blocks/_shared/chrome/render-error.php';
+require_once dirname( __DIR__, 3 ) . '/blocks/_shared/chrome/render-empty.php';
+require_once dirname( __DIR__, 3 ) . '/blocks/_shared/chrome/render-loading.php';
+require_once dirname( __DIR__, 3 ) . '/blocks/_shared/chrome/render-error.php';
 
 /**
  * Cover all three chrome partials + the no-inline-style invariant.
