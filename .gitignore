@@ -1,6 +1,16 @@
-# Claude Code
-.claude
-.claude/
+# Claude Code — track only DailyOS-specific config (settings.json + hooks/).
+# Anything PII-bearing or machine-local stays out.
+.claude/pii-blocklist.txt
+.claude/settings.local.json
+.claude/skills/
+.claude/.DS_Store
+.claude/backups/
+.claude/projects/
+.claude/file-history/
+.claude/paste-cache/
+.claude/cache/
+.claude/debug/
+.claude/.claude
 CLAUDE.md
 AGENTS.md
 
