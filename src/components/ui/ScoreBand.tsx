@@ -1,15 +1,11 @@
 /**
  * ScoreBand — band-label primitive for entity-intelligence score rendering.
  *
- * Per DOS-325 voice rule (issue body §"What good looks like"):
+ * Band labels per voice rule (see ADR-0083 product vocabulary):
  *   "Renders a plain-language band label. No raw number in the headline."
  *
  * Display-only. The caller decides which band to render; the primitive
  * itself has no knowledge of claims, trust factors, or substrate.
- * Editable variants + the EvidenceDrawer integration ship in v1.4.4
- * (see DOS-689 + DOS-690 + DOS-693).
- *
- * v1.4.3 W2 L0 Packet D §6.4 (DOS-682 + DOS-325).
  */
 import styles from "./ScoreBand.module.css";
 
@@ -31,7 +27,7 @@ const SCORE_BAND_CLASSES: Record<ScoreBandValue, string> = {
 
 export interface ScoreBandProps {
   value: ScoreBandValue;
-  /** Optional label override; defaults to the canonical DOS-325 vocabulary. */
+  /** Optional label override; defaults to the canonical product vocabulary (ADR-0083). */
   label?: string;
 }
 

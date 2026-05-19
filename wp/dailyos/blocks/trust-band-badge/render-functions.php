@@ -106,14 +106,14 @@ if ( ! function_exists( 'dailyos_trust_band_badge_render' ) ) {
 			$band = 'needs_verification';
 		}
 
-		$labels = [
+		$labels  = [
 			'likely_current'     => esc_html__( 'Likely current', 'dailyos' ),
 			'use_with_caution'   => esc_html__( 'Use with caution', 'dailyos' ),
 			'needs_verification' => esc_html__( 'Needs verification', 'dailyos' ),
 		];
-		$label = isset( $payload['label'] ) && '' !== (string) $payload['label'] ? (string) $payload['label'] : $labels[ $band ];
+		$label   = isset( $payload['label'] ) && '' !== (string) $payload['label'] ? (string) $payload['label'] : $labels[ $band ];
 		$compact = ! empty( $payload['compact'] );
-		$class = 'dailyos-trust-band-badge' . ( $compact ? ' dailyos-trust-band-badge--compact' : '' );
+		$class   = 'dailyos-trust-band-badge' . ( $compact ? ' dailyos-trust-band-badge--compact' : '' );
 
 		return sprintf(
 			'<span class="%s" data-band="%s" data-ds-name="TrustBandBadge" data-ds-tier="primitive" data-ds-spec="primitives/TrustBandBadge.md"><span class="dailyos-trust-band-badge__dot" aria-hidden="true"></span>%s</span>',

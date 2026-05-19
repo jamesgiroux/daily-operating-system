@@ -2,8 +2,6 @@
  * TypeBadgeDisplay — display-only TypeBadge primitive.
  * No state, no events. Renders the labeled account-type badge for the
  * given value. Editable variant (with dropdown) lives in TypeBadge.tsx.
- *
- * v1.4.3 W2 L0 Packet D §5.10 (DOS-682) split.
  */
 import styles from "./TypeBadge.module.css";
 

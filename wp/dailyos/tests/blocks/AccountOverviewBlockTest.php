@@ -528,11 +528,9 @@ final class DailyOS_AccountOverviewBlockTest extends TestCase {
 	}
 
 	/**
-	 * Build a successful projection response fixture.
+	 * Read the account-overview block editor source.
 	 *
-	 * @param int    $version          Composition version.
-	 * @param string $cache_hint_token Cache hint token.
-	 * @return array<string, mixed>
+	 * @return string
 	 */
 	private function account_overview_editor_source(): string {
 		$source = file_get_contents( __DIR__ . '/../../blocks/account-overview/edit.js' );
@@ -540,6 +538,13 @@ final class DailyOS_AccountOverviewBlockTest extends TestCase {
 		return $source;
 	}
 
+	/**
+	 * Build a successful projection response fixture.
+	 *
+	 * @param int    $version          Composition version.
+	 * @param string $cache_hint_token Cache hint token.
+	 * @return array<string, mixed>
+	 */
 	private function projection_response( int $version, string $cache_hint_token = '' ): array {
 		return [
 			'ok'               => true,

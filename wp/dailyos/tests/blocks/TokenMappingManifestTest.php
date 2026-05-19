@@ -44,7 +44,7 @@ final class DailyOS_TokenMappingManifestTest extends TestCase {
 		}
 
 		$this->created_paths[] = $block_dir;
-		$result = $this->run_command(
+		$result                = $this->run_command(
 			[
 				'node',
 				'wp/dailyos/scripts/translate-tauri.mjs',
@@ -96,7 +96,7 @@ final class DailyOS_TokenMappingManifestTest extends TestCase {
 			. 'color: var(--wp--preset--color--spice-turmeric); '
 			. 'gap: var(--wp--preset--spacing--sm); '
 			. '}';
-		$root = $this->create_gate_fixture(
+		$root  = $this->create_gate_fixture(
 			[
 				[
 					'source_token' => '--color-spice-turmeric',
@@ -126,7 +126,7 @@ final class DailyOS_TokenMappingManifestTest extends TestCase {
 		$style = '.wp-block-dailyos-token-fixture { '
 			. 'color: var(--wp--preset--color--missing); '
 			. '}';
-		$root = $this->create_gate_fixture(
+		$root  = $this->create_gate_fixture(
 			[
 				[
 					'source_token' => '--color-spice-turmeric',
@@ -150,7 +150,7 @@ final class DailyOS_TokenMappingManifestTest extends TestCase {
 			. 'color: var(--wp--preset--color--spice-turmeric); '
 			. 'background: var(--wp--preset--color--garden-larkspur); '
 			. '}';
-		$root = $this->create_gate_fixture(
+		$root  = $this->create_gate_fixture(
 			[
 				[
 					'source_token' => '--color-spice-turmeric',
@@ -174,7 +174,7 @@ final class DailyOS_TokenMappingManifestTest extends TestCase {
 			. 'color: var(--wp--preset--color--spice-turmeric); '
 			. 'border-color: #ffffff; '
 			. '}';
-		$root = $this->create_gate_fixture(
+		$root  = $this->create_gate_fixture(
 			[
 				[
 					'source_token' => '--color-spice-turmeric',
@@ -194,13 +194,13 @@ final class DailyOS_TokenMappingManifestTest extends TestCase {
 	 * Creates a temporary repo-shaped fixture for the bash gate.
 	 *
 	 * @param array<int, array{source_token: string, target_token: string}> $manifest Manifest entries.
-	 * @param string                                                       $style    style.css contents.
-	 * @param array<int, string>                                           $palette  Theme color slugs.
+	 * @param string                                                        $style    style.css contents.
+	 * @param array<int, string>                                            $palette  Theme color slugs.
 	 */
 	private function create_gate_fixture( array $manifest, string $style, array $palette ): string {
 		$this->require_command( 'bash' );
 		$this->require_command( 'jq' );
-		$root = sys_get_temp_dir() . '/dailyos-token-map-' . bin2hex( random_bytes( 6 ) );
+		$root                  = sys_get_temp_dir() . '/dailyos-token-map-' . bin2hex( random_bytes( 6 ) );
 		$this->created_paths[] = $root;
 
 		$block_dir = $root . '/wp/dailyos/blocks/token-fixture';
@@ -279,8 +279,8 @@ final class DailyOS_TokenMappingManifestTest extends TestCase {
 	/**
 	 * Runs a command and captures stdout/stderr.
 	 *
-	 * @param array<int, string>       $command Command argv.
-	 * @param array<string, string>    $env     Extra environment.
+	 * @param array<int, string>    $command Command argv.
+	 * @param array<string, string> $env     Extra environment.
 	 * @return array{code: int, stdout: string, stderr: string}
 	 */
 	private function run_command( array $command, string $cwd, array $env = [] ): array {

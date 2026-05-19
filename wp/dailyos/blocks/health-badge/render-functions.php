@@ -119,7 +119,7 @@ if ( ! function_exists( 'dailyos_health_badge_render' ) ) {
 			$direction = 'stable';
 		}
 
-		$dot_class = 'dailyos-health-badge__dot dailyos-health-badge__dot--' . $band;
+		$dot_class  = 'dailyos-health-badge__dot dailyos-health-badge__dot--' . $band;
 		$score_html = $sufficient && $show_score
 			? sprintf( '<span class="dailyos-health-badge__score">%d</span>', $score )
 			: '<span class="dailyos-health-badge__insufficient">' . esc_html__( 'Insufficient Data', 'dailyos' ) . '</span>';
@@ -130,7 +130,7 @@ if ( ! function_exists( 'dailyos_health_badge_render' ) ) {
 			'stable'    => '&minus;',
 			'volatile'  => '~',
 		];
-		$trend_html = 'compact' !== $size
+		$trend_html   = 'compact' !== $size
 			? sprintf(
 				'<span class="dailyos-health-badge__trend dailyos-health-badge__trend--%s" aria-label="%s">%s</span>',
 				esc_attr( $direction ),

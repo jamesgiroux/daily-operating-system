@@ -215,38 +215,65 @@ if ( ! function_exists( 'dailyos_status_dot_render' ) ) {
 		return isset( $values[ $key ] ) && is_string( $values[ $key ] ) ? trim( $values[ $key ] ) : $default;
 	}
 
+	/**
+	 * Coerce arbitrary state string to a supported status-dot state value.
+	 *
+	 * @param string $state Raw state string from payload.
+	 * @return string
+	 */
 	function dailyos_status_dot_normalize_state( string $state ): string {
 		return in_array( $state, [ 'connected', 'disconnected', 'loading', 'error' ], true ) ? $state : 'connected';
 	}
 
+	/**
+	 * Coerce arbitrary size string to a supported status-dot size token.
+	 *
+	 * @param string $size Raw size string from payload.
+	 * @return string
+	 */
 	function dailyos_status_dot_normalize_size( string $size ): string {
 		return in_array( $size, [ 'sm', 'md' ], true ) ? $size : 'md';
 	}
 
+	/**
+	 * Render the throttled-runtime notice fragment for the status-dot block.
+	 */
 	function dailyos_status_dot_render_throttled_notice(): string {
 		return '<aside class="dailyos-notice dailyos-throttled">'
 			. '<p>' . esc_html__( 'Runtime is throttling; retry shortly.', 'dailyos' ) . '</p>'
 			. '</aside>';
 	}
 
+	/**
+	 * Render the session-repair notice fragment for the status-dot block.
+	 */
 	function dailyos_status_dot_render_session_repair_notice(): string {
 		return '<aside class="dailyos-notice dailyos-session-repair">'
 			. '<p>' . esc_html__( 'Surface session needs repair; reconnect from DailyOS settings.', 'dailyos' ) . '</p>'
 			. '</aside>';
 	}
 
+	/**
+	 * Render the runtime-unavailable notice fragment for the status-dot block.
+	 */
 	function dailyos_status_dot_render_runtime_unavailable_notice(): string {
 		return '<aside class="dailyos-notice dailyos-runtime-unavailable">'
 			. '<p>' . esc_html__( 'Runtime unavailable; retry.', 'dailyos' ) . '</p>'
 			. '</aside>';
 	}
 
+	/**
+	 * Render the invalid-request notice fragment for the status-dot block.
+	 */
 	function dailyos_status_dot_render_invalid_request_notice(): string {
 		return '<aside class="dailyos-notice dailyos-invalid-request">'
 			. '<p>' . esc_html__( "Editor sent a request the runtime couldn't process. Reload the editor.", 'dailyos' ) . '</p>'
 			. '</aside>';
 	}
 
+	/**
+	 * Render the consistency-finding verification banner for the status-dot block.
+	 */
 	function dailyos_status_dot_render_verification_banner(): string {
 		return '<aside data-ds-tier="pattern" data-ds-name="ConsistencyFindingBanner" class="dailyos-verification-banner">'
 			. '<p>' . esc_html__( "Something about this content doesn't line up. Verify before acting.", 'dailyos' ) . '</p>'

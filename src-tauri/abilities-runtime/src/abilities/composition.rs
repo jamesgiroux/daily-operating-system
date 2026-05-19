@@ -336,9 +336,9 @@ pub enum BlockType {
     RiskCallout,
     ActionList,
     MarkdownDocument,
-    // v1.4.3 W2 Wave 1 primitive blocks (DOS-682). Each variant carries an
-    // explicit `dailyos/<kebab>` serde rename matching its WP block.json
-    // name, per the W1 starter-kit paste-snippet contract.
+    // Wave 1 primitive blocks — each variant carries an explicit
+    // `dailyos/<kebab>` serde rename matching its WP block.json name, per the
+    // W1 starter-kit paste-snippet contract.
     #[serde(rename = "dailyos/pill")]
     Pill,
     #[serde(rename = "dailyos/status-dot")]
@@ -382,8 +382,8 @@ impl BlockType {
             Self::RiskCallout => "risk_callout",
             Self::ActionList => "action_list",
             Self::MarkdownDocument => "markdown_document",
-            // v1.4.3 W2 Wave 1 primitive blocks (DOS-682) — type_id matches the
-            // serde rename and the WP block.json name.
+            // Wave 1 primitive blocks — type_id matches the serde rename and
+            // the WP block.json name.
             Self::Pill => "dailyos/pill",
             Self::StatusDot => "dailyos/status-dot",
             Self::ProvenanceTag => "dailyos/provenance-tag",

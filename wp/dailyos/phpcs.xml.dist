@@ -7,6 +7,9 @@
 	<exclude-pattern>vendor/*</exclude-pattern>
 	<exclude-pattern>node_modules/*</exclude-pattern>
 	<exclude-pattern>build/*</exclude-pattern>
+	<!-- Block-kit scaffold templates contain {{PLACEHOLDER}} substitution
+	     syntax that's not valid PHP until the kit substitutes it. -->
+	<exclude-pattern>scripts/templates/*</exclude-pattern>
 
 	<arg name="extensions" value="php"/>
 	<arg value="p"/>
@@ -90,9 +93,13 @@
 	</rule>
 
 	<!-- Gutenberg block asset manifests use the *.asset.php convention; this
-	     is the shape @wordpress/scripts auto-generates and core looks for. -->
+	     is the shape @wordpress/scripts auto-generates and core looks for.
+	     StarterKitIntegrationTest.php is a CLI helper script (excluded from
+	     phpunit suite); its filename mirrors the function it represents, not
+	     WP class-file conventions. -->
 	<rule ref="WordPress.Files.FileName">
 		<exclude-pattern>blocks/*/*.asset.php</exclude-pattern>
+		<exclude-pattern>tests/blocks/StarterKitIntegrationTest.php</exclude-pattern>
 	</rule>
 
 	<!-- FSE pattern PHP files use the WP-defined Title:/Slug:/Categories: header

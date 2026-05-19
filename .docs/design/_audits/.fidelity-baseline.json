@@ -17,7 +17,7 @@
   ".docs/design/reference/surfaces/onboarding/role.html": "clean",
   ".docs/design/reference/surfaces/onboarding/welcome.html": "clean",
   ".docs/design/reference/surfaces/onboarding/youcard.html": "clean",
-  ".docs/design/reference/surfaces/people.html": "clean",
+  ".docs/design/reference/surfaces/people.html": "critical",
   ".docs/design/reference/surfaces/person.html": "major",
   ".docs/design/reference/surfaces/project.html": "critical",
   ".docs/design/reference/surfaces/projects.html": "clean",
