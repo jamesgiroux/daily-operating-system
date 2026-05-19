@@ -22,4 +22,5 @@ if ( ! function_exists( 'dailyos_avatar_render' ) ) {
 }
 
 $attributes = isset( $attributes ) && is_array( $attributes ) ? $attributes : [];
+// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- render functions escape output internally via esc_html / esc_attr / wp_kses (W3 contract).
 echo dailyos_avatar_render( $attributes );

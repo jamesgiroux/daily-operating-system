@@ -33,18 +33,57 @@ final class DailyOS_BlockPipelineRenderTest extends TestCase {
 	 */
 	public static function block_render_provider(): array {
 		return [
-			'account-overview'            => [ 'dailyos/account-overview', [] ],
-			'avatar'                      => [ 'dailyos/avatar', [] ],
-			'entity-chip'                 => [ 'dailyos/entity-chip', [ 'entityType' => 'account' ] ],
-			'freshness-indicator'         => [ 'dailyos/freshness-indicator', [] ],
-			'health-badge'                => [ 'dailyos/health-badge', [ 'score' => 0, 'band' => 'green' ] ],
-			'intelligence-quality-badge'  => [ 'dailyos/intelligence-quality-badge', [] ],
-			'pill'                        => [ 'dailyos/pill', [] ],
-			'provenance-tag'              => [ 'dailyos/provenance-tag', [] ],
-			'score-band'                  => [ 'dailyos/score-band', [] ],
-			'status-dot'                  => [ 'dailyos/status-dot', [] ],
-			'trust-band-badge'            => [ 'dailyos/trust-band-badge', [] ],
-			'type-badge'                  => [ 'dailyos/type-badge', [ 'accountType' => 'customer' ] ],
+			'account-overview'           => [
+				'dailyos/account-overview',
+				[],
+			],
+			'avatar'                     => [
+				'dailyos/avatar',
+				[],
+			],
+			'entity-chip'                => [
+				'dailyos/entity-chip',
+				[ 'entityType' => 'account' ],
+			],
+			'freshness-indicator'        => [
+				'dailyos/freshness-indicator',
+				[],
+			],
+			'health-badge'               => [
+				'dailyos/health-badge',
+				[
+					'score' => 0,
+					'band'  => 'green',
+				],
+			],
+			'intelligence-quality-badge' => [
+				'dailyos/intelligence-quality-badge',
+				[],
+			],
+			'pill'                       => [
+				'dailyos/pill',
+				[],
+			],
+			'provenance-tag'             => [
+				'dailyos/provenance-tag',
+				[],
+			],
+			'score-band'                 => [
+				'dailyos/score-band',
+				[],
+			],
+			'status-dot'                 => [
+				'dailyos/status-dot',
+				[],
+			],
+			'trust-band-badge'           => [
+				'dailyos/trust-band-badge',
+				[],
+			],
+			'type-badge'                 => [
+				'dailyos/type-badge',
+				[ 'accountType' => 'customer' ],
+			],
 		];
 	}
 
@@ -56,8 +95,8 @@ final class DailyOS_BlockPipelineRenderTest extends TestCase {
 	 *
 	 * @dataProvider block_render_provider
 	 *
-	 * @param string                $block_name Block name (e.g. dailyos/pill).
-	 * @param array<string, mixed>  $attributes Block attributes.
+	 * @param string               $block_name Block name (e.g. dailyos/pill).
+	 * @param array<string, mixed> $attributes Block attributes.
 	 *
 	 * @return void
 	 */
@@ -73,12 +112,11 @@ final class DailyOS_BlockPipelineRenderTest extends TestCase {
 		$this->assertNotNull( $registered, "Block not registered: {$block_name}" );
 		$this->assertIsCallable( $registered->render_callback, "Block has no render callback: {$block_name}" );
 
-		$markup = '<!-- wp:' . substr( $block_name, strlen( 'dailyos/' ) ) . ' ' . wp_json_encode( (object) $attributes ) . ' /-->';
-		// dailyos blocks are namespaced; build raw block markup with the dailyos namespace.
-		$markup = sprintf(
+		$attrs_json = wp_json_encode( $attributes );
+		$markup     = sprintf(
 			'<!-- wp:%s %s /-->',
 			$block_name,
-			'' === wp_json_encode( $attributes ) ? '' : wp_json_encode( $attributes )
+			false === $attrs_json ? '{}' : $attrs_json
 		);
 
 		$rendered = do_blocks( $markup );

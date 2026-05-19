@@ -260,8 +260,13 @@ function dailyos_starter_kit_resolve_metadata_file( string $block_dir, string $m
  */
 function dailyos_starter_kit_include_render_file( string $render_file, array $attributes, string $content = '', ?WP_Block $block = null ): string {
 	unset( $content, $block );
-	$result = require $render_file;
-	return is_string( $result ) ? $result : '';
+	// Match real WP core's render closure pattern (wp-includes/blocks.php:569):
+	// ob_start(); require $template_path; return ob_get_clean();
+	// Captures echo'd output. Block render.php files MUST echo, not return.
+	// The grep-gate block_render_return_not_echo enforces this contract on disk.
+	ob_start();
+	require $render_file;
+	return (string) ob_get_clean();
 }
 
 /**
