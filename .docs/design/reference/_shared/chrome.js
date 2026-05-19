@@ -199,7 +199,7 @@
           actWrap.append(el('button', {
             type: 'button',
             title: refreshTitle,
-            style: "font-family:var(--font-mono); font-size:11px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:var(--color-text-tertiary); background:none; border:1px solid var(--color-rule-heavy); border-radius:4px; padding:2px 10px; cursor:pointer; transition: color 150ms, border-color 150ms;",
+            class: F('folioRefreshButton'),
           }, 'Refresh'));
         } else if (a === 'archive') {
           actWrap.append(el('button', {
