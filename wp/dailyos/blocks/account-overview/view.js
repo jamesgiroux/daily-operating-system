@@ -140,6 +140,10 @@
 
 	function FeedbackAffordance( props ) {
 		const claimId = props.claimId || '';
+		const claimVersion = Number( props.claimVersion || 0 );
+		const fieldPath = props.fieldPath || '';
+		const compositionId = props.compositionId || '';
+		const compositionVersion = Number( props.compositionVersion || 0 );
 		const sources = Array.isArray( props.sources ) ? props.sources : [];
 		const currentSurface = props.currentSurface || 'account_overview';
 		const currentInvocationId = props.currentInvocationId || '';
@@ -234,29 +238,45 @@
 
 			try {
 				const payload = buildPayload();
+				// V4-W4: every nonce mint requires the full binding tuple
+				// (claim_id + field_path + claim_version + composition_id +
+				// composition_version). action_kind is the canonical key the
+				// WP feedback path uses; the WP plugin maps it to `action`
+				// when forwarding to the runtime.
+				const bindingTuple = {
+					claim_id: claimId,
+					field_path: fieldPath,
+					claim_version: claimVersion,
+					composition_id: compositionId,
+					composition_version: compositionVersion,
+				};
 				const nonceResponse = await apiFetch( {
 					path: '/dailyos/v1/nonce',
 					method: 'POST',
 					data: {
-						claim_id: claimId,
+						...bindingTuple,
 						action_kind: selectedAction.kind,
-						...( payload ? { payload_json: JSON.stringify( payload ) } : {} ),
+						...( payload ? { payload_json: payload } : {} ),
 					},
 				} );
-				const nonceDigest =
+				const presenceNonce =
 					nonceResponse &&
-					( nonceResponse.nonce_digest ||
-						nonceResponse.presence_nonce ||
-						nonceResponse.nonce );
+					( nonceResponse.presence_nonce ||
+						nonceResponse.nonce ||
+						nonceResponse.nonce_digest );
 
-				if ( typeof nonceDigest !== 'string' || ! nonceDigest.trim() ) {
-					throw new Error( 'Runtime did not return a nonce digest.' );
+				if ( typeof presenceNonce !== 'string' || ! presenceNonce.trim() ) {
+					throw new Error( 'Runtime did not return a presence nonce.' );
 				}
 
 				const verifyResponse = await apiFetch( {
 					path: '/dailyos/v1/nonce/verify',
 					method: 'POST',
-					data: { nonce_digest: nonceDigest },
+					data: {
+						...bindingTuple,
+						action_kind: selectedAction.kind,
+						presence_nonce: presenceNonce,
+					},
 				} );
 
 				if ( verifyResponse && verifyResponse.ok === false ) {
@@ -481,6 +501,14 @@
 			const encodedProps = readJsonAttribute( slot, 'data-dailyos-feedback-props', null ) || {};
 			const props = {
 				claimId: encodedProps.claimId || slot.getAttribute( 'data-claim-id' ) || '',
+				// V4-W4 binding tuple: required at issue + verify so the runtime
+				// can build PresenceNonceBindingFields + compare_binding_tuple.
+				// Without these the runtime returns MalformedRequest before
+				// reaching any feedback logic.
+				claimVersion: Number( encodedProps.claimVersion || slot.getAttribute( 'data-claim-version' ) || 0 ),
+				fieldPath: encodedProps.fieldPath || slot.getAttribute( 'data-field-path' ) || '',
+				compositionId: encodedProps.compositionId || slot.getAttribute( 'data-composition-id' ) || '',
+				compositionVersion: Number( encodedProps.compositionVersion || slot.getAttribute( 'data-composition-version' ) || 0 ),
 				sources: Array.isArray( encodedProps.sources )
 					? encodedProps.sources
 					: readJsonAttribute( slot, 'data-sources', [] ),

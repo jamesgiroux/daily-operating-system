@@ -84,14 +84,25 @@ final class DailyOS_SurfaceNonceFeedbackEndpointTest extends TestCase {
 		$this->assertSame( 'http://127.0.0.1:54321/v1/surface/nonce/verify', $call['url'] );
 		$this->assertSame( 42, $payload['wp_user_id'], 'wp_user_id MUST be server-derived, never trusted from request body (packet F decision §6 #8).' );
 		$this->assertSame( 'surface-session-id', $payload['session_id'] );
-		$this->assertSame( 'nonce-digest-token', $payload['nonce_digest'] );
+		$this->assertSame( 'nonce-token-value', $payload['presence_nonce'] );
+		$this->assertSame( 'claim-test-001', $payload['claim_id'] );
+		$this->assertSame( 'confirm_current', $payload['action'] );
+		$this->assertSame( 7, $payload['claim_version'] );
+		$this->assertSame( 'composition-test-001', $payload['composition_id'] );
+		$this->assertSame( 17, $payload['composition_version'] );
 	}
 
 	private function verify_request( array $overrides = [] ): object {
 		$params = array_merge(
 			[
-				'nonce_digest' => 'nonce-digest-token',
-				'post_id'      => 123,
+				'presence_nonce'      => 'nonce-token-value',
+				'claim_id'            => 'claim-test-001',
+				'action_kind'         => 'confirm_current',
+				'field_path'          => 'claims[0].summary',
+				'claim_version'       => 7,
+				'composition_id'      => 'composition-test-001',
+				'composition_version' => 17,
+				'post_id'             => 123,
 			],
 			$overrides
 		);

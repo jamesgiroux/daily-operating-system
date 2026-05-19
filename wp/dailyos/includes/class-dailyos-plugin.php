@@ -840,11 +840,25 @@ final class DailyOS_Plugin {
 	 * @return array<string, mixed>|\WP_Error Runtime verify response or validation error.
 	 */
 	public function verify_presence_nonce( mixed $request ): array|\WP_Error {
-		$params        = self::rest_request_params( $request );
-		$nonce_digest  = self::required_string_param( $params, 'nonce_digest' );
+		// V4-W4: verify forwards the full binding tuple per the runtime's
+		// VerifyNonceRequest::parse contract — compare_binding_tuple uses
+		// these to validate the verify request matches the issue binding
+		// before consuming the nonce. Accept presence_nonce (canonical) or
+		// nonce_digest (legacy alias) at the WP boundary; forward as
+		// presence_nonce which is the runtime's required key name.
+		$params              = self::rest_request_params( $request );
+		$presence_nonce      = self::required_string_param( $params, isset( $params['presence_nonce'] ) ? 'presence_nonce' : 'nonce_digest' );
+		$claim_id            = self::required_string_param( $params, 'claim_id' );
+		$action              = self::required_string_param( $params, isset( $params['action_kind'] ) ? 'action_kind' : 'action' );
+		$field_path          = self::required_string_param( $params, 'field_path' );
+		$composition_id      = self::required_string_param( $params, 'composition_id' );
+		$claim_version       = self::required_u64_param( $params, 'claim_version', 'malformed_claim_version' );
+		$composition_version = self::required_u64_param( $params, 'composition_version', 'malformed_request' );
 
-		if ( is_wp_error( $nonce_digest ) ) {
-			return $nonce_digest;
+		foreach ( [ $presence_nonce, $claim_id, $action, $field_path, $composition_id, $claim_version, $composition_version ] as $candidate ) {
+			if ( is_wp_error( $candidate ) ) {
+				return $candidate;
+			}
 		}
 
 		$current_user_id = function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0;
@@ -873,15 +887,21 @@ final class DailyOS_Plugin {
 		}
 
 		$payload = [
-			'nonce_digest' => $nonce_digest,
-			'session_id'   => $credential->session_id(),
-			'wp_user_id'   => $current_user_id,
+			'presence_nonce'      => $presence_nonce,
+			'session_id'          => $credential->session_id(),
+			'wp_user_id'          => $current_user_id,
+			'claim_id'            => $claim_id,
+			'field_path'          => $field_path,
+			'action'              => $action,
+			'claim_version'       => $claim_version,
+			'composition_id'      => $composition_id,
+			'composition_version' => $composition_version,
 		];
 
 		$request_id = self::optional_string_param( $params, 'request_id' );
 
 		if ( null !== $request_id ) {
-			$payload['request_id'] = $request_id;
+			$payload['feedback_request_id'] = $request_id;
 		}
 
 		$client = new DailyOS_Runtime_Client( new DailyOS_Credential_Store(), new DailyOS_Hmac_Signer() );
@@ -966,108 +986,17 @@ final class DailyOS_Plugin {
 	 * @return array<string, mixed>|\WP_Error Runtime nonce payload or validation error.
 	 */
 	private function presence_nonce_payload( mixed $request ): array|\WP_Error {
+		// V4-W4: presence_nonce_payload always routes through
+		// feedback_presence_nonce_payload now that PresenceNonceAction is the
+		// 9-variant FeedbackAction set. The pre-W4 4-variant legacy branch
+		// (correct/dismiss/corroborate/contradict) has been removed —
+		// PresenceNonceAction no longer accepts those strings, and keeping
+		// the branch alive would let a request bypass the 9-variant allowlist.
 		$params = self::rest_request_params( $request );
-		if ( isset( $params['action_kind'] ) ) {
-			return $this->feedback_presence_nonce_payload( $params );
-		}
-		if ( isset( $params['action'] ) && is_string( $params['action'] ) && in_array(
-			$params['action'],
-			[
-				'confirm_current',
-				'mark_outdated',
-				'mark_false',
-				'wrong_subject',
-				'wrong_source',
-				'cannot_verify',
-				'needs_nuance',
-				'surface_inappropriate',
-				'not_relevant_here',
-			],
-			true
-		) ) {
+		if ( isset( $params['action'] ) && is_string( $params['action'] ) && ! isset( $params['action_kind'] ) ) {
 			$params['action_kind'] = $params['action'];
-			return $this->feedback_presence_nonce_payload( $params );
 		}
-
-		$claim_version = self::required_u64_param( $params, 'claim_version', 'malformed_claim_version' );
-
-		if ( is_wp_error( $claim_version ) ) {
-			return $claim_version;
-		}
-
-		$composition_version = self::required_u64_param( $params, 'composition_version', 'malformed_request' );
-
-		if ( is_wp_error( $composition_version ) ) {
-			return $composition_version;
-		}
-
-		$claim_id       = self::required_string_param( $params, 'claim_id' );
-		$field_path     = self::required_string_param( $params, 'field_path' );
-		$action         = self::required_string_param( $params, 'action' );
-		$composition_id = self::required_string_param( $params, 'composition_id' );
-
-		foreach ( [ $claim_id, $field_path, $action, $composition_id ] as $candidate ) {
-			if ( is_wp_error( $candidate ) ) {
-				return $candidate;
-			}
-		}
-
-		if ( ! in_array(
-			$action,
-			[
-				'correct',
-				'dismiss',
-				'corroborate',
-				'contradict',
-			],
-			true
-		) ) {
-			return self::nonce_payload_error( 'malformed_request', 400 );
-		}
-
-		$current_user_id = function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0;
-
-		if ( 0 >= $current_user_id ) {
-			return new \WP_Error( 'dailyos_nonce_unauthenticated', __( 'Sign in before requesting a DailyOS nonce.', 'dailyos' ), [ 'status' => 401 ] );
-		}
-
-		$credential_store = new DailyOS_Credential_Store();
-		$marker           = $credential_store->get_marker();
-
-		if ( null === $marker ) {
-			return new \WP_Error( 'dailyos_not_paired', __( 'DailyOS is not paired with an active loopback runtime.', 'dailyos' ), [ 'status' => 403 ] );
-		}
-
-		$paired_wp_user_id = self::paired_wp_user_id( $marker, $current_user_id );
-
-		if ( $paired_wp_user_id !== $current_user_id ) {
-			return new \WP_Error( 'dailyos_nonce_wrong_user', __( 'This DailyOS session is paired to another WordPress user.', 'dailyos' ), [ 'status' => 403 ] );
-		}
-
-		$credential = $credential_store->retrieve_session_key();
-
-		if ( null === $credential ) {
-			return new \WP_Error( 'missing_session_key', __( 'DailyOS is not paired with an active runtime session.', 'dailyos' ), [ 'status' => 403 ] );
-		}
-
-		$payload = [
-			'session_id'          => $credential->session_id(),
-			'wp_user_id'          => $current_user_id,
-			'claim_id'            => $claim_id,
-			'field_path'          => $field_path,
-			'action'              => $action,
-			'claim_version'       => $claim_version,
-			'composition_id'      => $composition_id,
-			'composition_version' => $composition_version,
-		];
-
-		$request_id = self::optional_string_param( $params, 'request_id' );
-
-		if ( null !== $request_id ) {
-			$payload['request_id'] = $request_id;
-		}
-
-		return $payload;
+		return $this->feedback_presence_nonce_payload( $params );
 	}
 
 	/**
@@ -1077,10 +1006,18 @@ final class DailyOS_Plugin {
 	 * @return array<string, mixed>|\WP_Error Runtime nonce payload or validation error.
 	 */
 	private function feedback_presence_nonce_payload( array $params ): array|\WP_Error {
-		$claim_id = self::required_string_param( $params, 'claim_id' );
-		$action   = self::required_string_param( $params, isset( $params['action_kind'] ) ? 'action_kind' : 'action' );
+		// V4-W4: every nonce mint requires the full binding tuple per the
+		// runtime's IssueNonceRequest::parse contract. action_kind is the
+		// canonical name the WP feedback path uses; the runtime expects
+		// `action`, so we rename at the boundary.
+		$claim_id            = self::required_string_param( $params, 'claim_id' );
+		$action              = self::required_string_param( $params, isset( $params['action_kind'] ) ? 'action_kind' : 'action' );
+		$field_path          = self::required_string_param( $params, 'field_path' );
+		$composition_id      = self::required_string_param( $params, 'composition_id' );
+		$claim_version       = self::required_u64_param( $params, 'claim_version', 'malformed_claim_version' );
+		$composition_version = self::required_u64_param( $params, 'composition_version', 'malformed_request' );
 
-		foreach ( [ $claim_id, $action ] as $candidate ) {
+		foreach ( [ $claim_id, $action, $field_path, $composition_id, $claim_version, $composition_version ] as $candidate ) {
 			if ( is_wp_error( $candidate ) ) {
 				return $candidate;
 			}
@@ -1135,10 +1072,14 @@ final class DailyOS_Plugin {
 		}
 
 		$payload = [
-			'session_id'   => $credential->session_id(),
-			'wp_user_id'   => $current_user_id,
-			'claim_id'     => $claim_id,
-			'action_kind'  => $action,
+			'session_id'          => $credential->session_id(),
+			'wp_user_id'          => $current_user_id,
+			'claim_id'             => $claim_id,
+			'field_path'           => $field_path,
+			'action'               => $action,
+			'claim_version'        => $claim_version,
+			'composition_id'       => $composition_id,
+			'composition_version'  => $composition_version,
 		];
 
 		if ( null !== $payload_json ) {

@@ -105,8 +105,14 @@ final class DailyOS_FeedbackPayloadRedactionTest extends TestCase {
 	private function verify_request( array $overrides = [] ): object {
 		$params = array_merge(
 			[
-				'nonce_digest' => 'nonce-digest-token',
-				'post_id'      => 123,
+				'presence_nonce'      => 'nonce-token-value',
+				'claim_id'            => 'claim-test-001',
+				'action_kind'         => 'confirm_current',
+				'field_path'          => 'claims[0].summary',
+				'claim_version'       => 7,
+				'composition_id'      => 'composition-test-001',
+				'composition_version' => 17,
+				'post_id'             => 123,
 			],
 			$overrides
 		);

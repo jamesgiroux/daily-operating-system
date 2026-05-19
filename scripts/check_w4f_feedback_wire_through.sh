@@ -45,10 +45,16 @@ for variant in confirm_current mark_outdated mark_false wrong_subject wrong_sour
   fi
 done
 
-# Defensive: the canonical legacy-allowlist line MUST be gone.
-if grep -qE "\[ 'correct', 'dismiss', 'corroborate', 'contradict' \]" "$PLUGIN_PHP"; then
-  fail "inv #9: WP allowlist still has the pre-W4 4-variant literal"
-fi
+# Defensive: the four legacy strings MUST NOT appear in any allowlist literal,
+# multi-line or single-line, anywhere in the WP plugin. Cycle-2 L2 codex
+# challenge MEDIUM: the previous one-line regex missed multi-line literals.
+for legacy in correct dismiss corroborate contradict; do
+  # Look for the legacy string as a quoted PHP literal followed by a comma —
+  # the array-element shape. Excludes phpdoc / human-readable English usage.
+  if grep -nE "'${legacy}'\s*," "$PLUGIN_PHP" | grep -v "phpcs:" | head -1 | grep -q .; then
+    fail "inv #9: WP plugin still has '${legacy}' as a PHP allowlist literal"
+  fi
+done
 
 # ----- inv #10: NonceAuditContext forensic slots -----
 NONCE_RS="$ROOT_DIR/src-tauri/src/services/surface_nonce.rs"

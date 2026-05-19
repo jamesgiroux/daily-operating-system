@@ -363,14 +363,31 @@ if ( ! function_exists( 'dailyos_account_overview_render' ) ) {
 				? (string) $row['invocation_id']
 				: ( $invocation_ids[0] ?? '' );
 
+			// V4-W4 binding tuple: the runtime's IssueNonceRequest::parse
+			// requires field_path + claim_version + composition_id +
+			// composition_version on every nonce mint. claim_ref carries
+			// per-claim values; composition_* comes from render_context.
+			$claim_version       = isset( $claim_ref['claim_version'] ) ? (int) $claim_ref['claim_version'] : 0;
+			$field_path          = isset( $row['field_path'] ) && is_string( $row['field_path'] )
+				? (string) $row['field_path']
+				: ( isset( $claim_ref['field_path'] ) && is_string( $claim_ref['field_path'] ) ? (string) $claim_ref['field_path'] : '' );
+			$composition_id      = isset( $render_context['composition_id'] ) && is_string( $render_context['composition_id'] )
+				? (string) $render_context['composition_id']
+				: '';
+			$composition_version = isset( $render_context['composition_version'] ) ? (int) $render_context['composition_version'] : 0;
+
 			$out .= '<span class="dailyos-claim-feedback">';
 			$out .= dailyos_account_overview_feedback_mount(
 				[
-					'claimId'       => $claim_id,
-					'sources'       => isset( $row['sources'] ) && is_array( $row['sources'] ) ? $row['sources'] : [],
-					'surface'       => isset( $render_context['surface'] ) && is_string( $render_context['surface'] ) ? (string) $render_context['surface'] : 'account_overview',
-					'invocationId'  => $invocation_id,
-					'invocationIds' => $invocation_ids,
+					'claimId'            => $claim_id,
+					'claimVersion'       => $claim_version,
+					'fieldPath'          => $field_path,
+					'compositionId'      => $composition_id,
+					'compositionVersion' => $composition_version,
+					'sources'            => isset( $row['sources'] ) && is_array( $row['sources'] ) ? $row['sources'] : [],
+					'surface'            => isset( $render_context['surface'] ) && is_string( $render_context['surface'] ) ? (string) $render_context['surface'] : 'account_overview',
+					'invocationId'       => $invocation_id,
+					'invocationIds'      => $invocation_ids,
 				]
 			);
 			$out .= '</span>';

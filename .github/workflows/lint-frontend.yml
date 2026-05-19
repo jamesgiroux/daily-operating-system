@@ -98,6 +98,9 @@ jobs:
       - name: Enforce W4-A account-overview block boundaries
         run: ./scripts/check_w4a_account_overview_block.sh
 
+      - name: Enforce W4-F feedback wire-through invariants
+        run: ./scripts/check_w4f_feedback_wire_through.sh
+
       - name: Enforce DOS-589 dispatcher module boundaries
         run: ./scripts/check_version_dispatcher_boundaries.sh
 
