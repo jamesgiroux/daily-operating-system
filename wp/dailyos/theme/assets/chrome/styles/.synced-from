@@ -1,7 +1,12 @@
 # Source-of-truth pin for chrome module lift.
-# Format: <repo-relative path>: <git rev-parse HEAD:path> @ <UTC ISO 8601>
+# Format: <repo-relative path>: <git rev-parse HEAD:path>
 
 source_root: .docs/design/reference/_shared/styles/
-synced_at: 2026-05-19T23:37:22Z
+synced_at: 2026-05-19T23:38:47Z
 
 design-tokens.css: 490230aa8a0b93ba332cb933924081d6c425ff47
+AtmosphereLayer.module.css: a8b53b0e064b4972255a80059d76b946b4e6da30
+FloatingNavIsland.module.css: 740271896f2a2cdbb7497b501ef4b572ee28105d
+FolioBar.module.css: 27161adac294ef1e79035a20dad6e04444615069
+MagazinePageLayout.module.css: b9deabc0105b3c7483c98f0f48dce530e1d5c114
+Pill.module.css: 7baf2a06fdfe93c977fd934883366739c19231b1
