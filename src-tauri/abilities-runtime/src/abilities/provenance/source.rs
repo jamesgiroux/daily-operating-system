@@ -78,6 +78,7 @@ pub enum DataSource {
     Ai,
     CoAttendance,
     LocalEnrichment,
+    WorkspaceFile { kind: WorkspaceFileKind },
     Other(SourceName),
     LegacyUnattributed,
 }
@@ -102,6 +103,7 @@ impl DataSource {
             } => ScoringClass::Context,
             DataSource::Glean { .. }
             | DataSource::Ai
+            | DataSource::WorkspaceFile { .. }
             | DataSource::Other(_)
             | DataSource::LegacyUnattributed => ScoringClass::Reference,
         }
@@ -130,7 +132,8 @@ impl DataSource {
             DataSource::Google
             | DataSource::Clay
             | DataSource::CoAttendance
-            | DataSource::LocalEnrichment => LifecycleBehavior::Purge,
+            | DataSource::LocalEnrichment
+            | DataSource::WorkspaceFile { .. } => LifecycleBehavior::Purge,
             DataSource::Glean { .. } | DataSource::Other(_) => LifecycleBehavior::Mask,
             DataSource::Ai | DataSource::LegacyUnattributed => {
                 LifecycleBehavior::FlagForReEnrichment
@@ -147,6 +150,7 @@ impl DataSource {
             DataSource::Ai => "AI".to_string(),
             DataSource::CoAttendance => "Co-attendance".to_string(),
             DataSource::LocalEnrichment => "Local enrichment".to_string(),
+            DataSource::WorkspaceFile { kind } => format!("Workspace file ({})", kind.display_name()),
             DataSource::Other(name) => name.as_str().to_string(),
             DataSource::LegacyUnattributed => "Legacy unattributed".to_string(),
         }
@@ -179,6 +183,37 @@ impl GleanDownstream {
             GleanDownstream::OrgDirectory => "org directory",
             GleanDownstream::Documents => "documents",
             GleanDownstream::Unknown => "unknown",
+        }
+    }
+}
+
+/// Kind of workspace file source for `DataSource::WorkspaceFile`.
+///
+/// Lifecycle and trust treatment are identical across kinds (Reference scoring,
+/// Purge lifecycle), but the kind carries provenance for downstream rendering
+/// and per-kind freshness decay rules in `services::trust::freshness_decay`.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceFileKind {
+    Inbox,
+    EntityDoc,
+    DriveSync,
+    UserAttachment,
+    GranolaTranscript,
+    QuillTranscript,
+    McpPlacement,
+}
+
+impl WorkspaceFileKind {
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            WorkspaceFileKind::Inbox => "inbox",
+            WorkspaceFileKind::EntityDoc => "entity document",
+            WorkspaceFileKind::DriveSync => "drive sync",
+            WorkspaceFileKind::UserAttachment => "user attachment",
+            WorkspaceFileKind::GranolaTranscript => "Granola transcript",
+            WorkspaceFileKind::QuillTranscript => "Quill transcript",
+            WorkspaceFileKind::McpPlacement => "MCP placement",
         }
     }
 }
@@ -370,6 +405,38 @@ mod tests {
             DataSource::Ai.lifecycle_behavior(),
             LifecycleBehavior::FlagForReEnrichment
         );
+    }
+
+    #[test]
+    fn workspace_file_variant_serializes_with_kind_and_taxonomy_holds() {
+        let source = DataSource::WorkspaceFile {
+            kind: WorkspaceFileKind::McpPlacement,
+        };
+
+        let encoded = serde_json::to_string(&source).unwrap();
+        let decoded: DataSource = serde_json::from_str(&encoded).unwrap();
+
+        assert_eq!(decoded, source);
+        assert_eq!(decoded.scoring_class(), ScoringClass::Reference);
+        assert_eq!(decoded.lifecycle_behavior(), LifecycleBehavior::Purge);
+        assert_eq!(decoded.display_name(), "Workspace file (MCP placement)");
+        assert!(!decoded.is_structured_trusted_source());
+
+        for kind in [
+            WorkspaceFileKind::Inbox,
+            WorkspaceFileKind::EntityDoc,
+            WorkspaceFileKind::DriveSync,
+            WorkspaceFileKind::UserAttachment,
+            WorkspaceFileKind::GranolaTranscript,
+            WorkspaceFileKind::QuillTranscript,
+            WorkspaceFileKind::McpPlacement,
+        ] {
+            let ds = DataSource::WorkspaceFile { kind: kind.clone() };
+            assert_eq!(ds.scoring_class(), ScoringClass::Reference);
+            assert_eq!(ds.lifecycle_behavior(), LifecycleBehavior::Purge);
+            assert!(!ds.is_structured_trusted_source());
+            assert!(ds.display_name().starts_with("Workspace file ("));
+        }
     }
 
     #[test]
