@@ -1,7 +1,8 @@
 <?php
 /**
  * Primitive chrome service — PHPUnit coverage per v1.4.3 W2 L0
- * Packet D §5.8 + AC #15 (DOS-682).
+ * Verifies the shared chrome service state branches (empty/loading/error)
+ * across all 11 Wave 1 primitives.
  *
  * Asserts each chrome partial:
  *  - renders a `data-chrome="<state>"` marker matching the partial name

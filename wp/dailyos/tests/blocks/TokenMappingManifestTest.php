@@ -10,7 +10,7 @@ declare(strict_types=1);
 use PHPUnit\Framework\TestCase;
 
 /**
- * Covers DOS-685 token-mapping manifest emission and CI gate failure modes.
+ * Covers token-mapping manifest emission and CI gate failure modes.
  */
 final class DailyOS_TokenMappingManifestTest extends TestCase {
 	/**
