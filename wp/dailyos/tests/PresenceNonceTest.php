@@ -141,7 +141,7 @@ final class DailyOS_PresenceNonceTest extends TestCase {
 				'wp_user_id'          => 42,
 				'claim_id'            => 'claim-1',
 				'field_path'          => 'claims[0].summary',
-				'action'              => 'correct',
+				'action'              => 'confirm_current',
 				'claim_version'       => 7,
 				'composition_id'      => 'composition-1',
 				'composition_version' => 17,
@@ -163,7 +163,7 @@ final class DailyOS_PresenceNonceTest extends TestCase {
 			[
 				'claim_id'            => 'claim-1',
 				'field_path'          => 'claims[0].summary',
-				'action'              => 'correct',
+				'action'              => 'confirm_current',
 				'claim_version'       => 7,
 				'composition_id'      => 'composition-1',
 				'composition_version' => 17,
