@@ -1155,8 +1155,15 @@ final class DailyOS_Plugin {
 
 		switch ( $action ) {
 			case 'wrong_source':
-				$shape_ok = ( isset( $payload_json['source_ref'] ) && is_string( $payload_json['source_ref'] ) && '' !== trim( $payload_json['source_ref'] ) )
-					|| ( isset( $payload_json['source_index'] ) && is_int( $payload_json['source_index'] ) );
+				// Rust record_claim_feedback requires source_ref (string) per
+				// claims.rs:5185 validate_feedback_action_metadata.
+				// source_index is an optional companion that helps the JS
+				// affordance render the selection but the runtime never reads
+				// it. The previous OR-shape would accept source_index alone
+				// and fail at the runtime — cycle-3 codex challenge BLOCK.
+				$shape_ok = isset( $payload_json['source_ref'] )
+					&& is_string( $payload_json['source_ref'] )
+					&& '' !== trim( $payload_json['source_ref'] );
 				break;
 			case 'needs_nuance':
 				$shape_ok = isset( $payload_json['corrected_text'] ) && is_string( $payload_json['corrected_text'] ) && '' !== trim( $payload_json['corrected_text'] );

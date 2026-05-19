@@ -152,11 +152,14 @@ final class DailyOS_SurfaceNonceFeedbackInputTest extends TestCase {
 		$this->assertFalse( is_wp_error( $result ) );
 	}
 
-	public function test_payload_json_wrong_source_requires_int_source_index(): void {
+	public function test_payload_json_wrong_source_requires_source_ref_string(): void {
+		// Source_index alone is rejected — record_claim_feedback requires
+		// source_ref (string) per claims.rs:5185. Cycle-3 codex challenge
+		// caught WP previously accepting source_index alone.
 		$result = DailyOS_Plugin::instance()->issue_presence_nonce(
 			$this->nonce_request( [
 				'action'       => 'wrong_source',
-				'payload_json' => [ 'source_index' => '2' ],
+				'payload_json' => [ 'source_index' => 2 ],
 			] )
 		);
 
@@ -164,9 +167,20 @@ final class DailyOS_SurfaceNonceFeedbackInputTest extends TestCase {
 		$this->assertSame( 'malformed_request', $result->get_error_code() );
 	}
 
+	public function test_payload_json_wrong_source_accepts_source_ref_string(): void {
+		$result = DailyOS_Plugin::instance()->issue_presence_nonce(
+			$this->nonce_request( [
+				'action'       => 'wrong_source',
+				'payload_json' => [ 'source_ref' => 'source-test-001' ],
+			] )
+		);
+
+		$this->assertFalse( is_wp_error( $result ) );
+	}
+
 	private function payload_for( string $action ): array {
 		return match ( $action ) {
-			'wrong_source'          => [ 'payload_json' => [ 'source_index' => 0 ] ],
+			'wrong_source'          => [ 'payload_json' => [ 'source_ref' => 'source-test-001', 'source_index' => 0 ] ],
 			'needs_nuance'          => [ 'payload_json' => [ 'corrected_text' => 'short correction' ] ],
 			'surface_inappropriate' => [ 'payload_json' => [ 'surface' => 'briefing' ] ],
 			'not_relevant_here'     => [ 'payload_json' => [ 'invocation_id' => 'inv-1' ] ],
