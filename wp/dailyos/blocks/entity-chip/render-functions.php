@@ -142,7 +142,7 @@ if ( ! function_exists( 'dailyos_entity_chip_render' ) ) {
 			? (string) $attributes['entityType']
 			: 'unknown';
 
-		$parts = [];
+		$parts               = [];
 		$payload_entity_type = $entity_type_attr;
 		foreach ( $blocks as $block ) {
 			if ( ! is_array( $block ) ) {
@@ -177,16 +177,29 @@ if ( ! function_exists( 'dailyos_entity_chip_render' ) ) {
 		return '<span ' . $wrapper_attrs . '>' . implode( ' ', $parts ) . '</span>';
 	}
 
+	/**
+	 * Render the empty-state inline primitive shell for the entity-chip block.
+	 */
 	function dailyos_entity_chip_render_empty_primitive(): string {
 		return '<span class="wp-block-dailyos-entity-chip dailyos-primitive-inline is-empty" data-ds-tier="primitive" data-ds-name="EntityChip" data-ds-spec="primitives/EntityChip.md"></span>';
 	}
 
+	/**
+	 * Render a generic inline notice span for the entity-chip block.
+	 *
+	 * @param string $class   Notice class suffix.
+	 * @param string $message Localized notice message.
+	 * @return string
+	 */
 	function dailyos_entity_chip_render_inline_notice( string $class, string $message ): string {
 		return '<span class="wp-block-dailyos-entity-chip dailyos-primitive-inline dailyos-notice ' . esc_attr( $class ) . '" data-ds-tier="primitive" data-ds-name="EntityChip" data-ds-spec="primitives/EntityChip.md" role="status">'
 			. esc_html( $message )
 			. '</span>';
 	}
 
+	/**
+	 * Render the throttled-runtime inline notice for the entity-chip block.
+	 */
 	function dailyos_entity_chip_render_throttled_notice(): string {
 		return dailyos_entity_chip_render_inline_notice(
 			'dailyos-throttled',
@@ -194,6 +207,9 @@ if ( ! function_exists( 'dailyos_entity_chip_render' ) ) {
 		);
 	}
 
+	/**
+	 * Render the session-repair inline notice for the entity-chip block.
+	 */
 	function dailyos_entity_chip_render_session_repair_notice(): string {
 		return dailyos_entity_chip_render_inline_notice(
 			'dailyos-session-repair',
@@ -201,6 +217,9 @@ if ( ! function_exists( 'dailyos_entity_chip_render' ) ) {
 		);
 	}
 
+	/**
+	 * Render the runtime-unavailable inline notice for the entity-chip block.
+	 */
 	function dailyos_entity_chip_render_runtime_unavailable_notice(): string {
 		return dailyos_entity_chip_render_inline_notice(
 			'dailyos-runtime-unavailable',
@@ -208,6 +227,9 @@ if ( ! function_exists( 'dailyos_entity_chip_render' ) ) {
 		);
 	}
 
+	/**
+	 * Render the invalid-request inline notice for the entity-chip block.
+	 */
 	function dailyos_entity_chip_render_invalid_request_notice(): string {
 		return dailyos_entity_chip_render_inline_notice(
 			'dailyos-invalid-request',
@@ -215,6 +237,9 @@ if ( ! function_exists( 'dailyos_entity_chip_render' ) ) {
 		);
 	}
 
+	/**
+	 * Render the consistency-finding verification banner for the entity-chip block.
+	 */
 	function dailyos_entity_chip_render_verification_banner(): string {
 		return dailyos_entity_chip_render_inline_notice(
 			'dailyos-verification-banner',

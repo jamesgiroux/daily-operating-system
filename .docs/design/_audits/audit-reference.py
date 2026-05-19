@@ -1073,9 +1073,11 @@ def load_baseline() -> dict[str, str]:
     return json.loads(BASELINE.read_text())
 
 
-def write_baseline(findings: list[dict[str, Any]]) -> None:
-    """Snapshot current severity per surface."""
-    snapshot = {f["html"]: severity(f) for f in findings}
+def write_baseline(findings: list[dict[str, Any]], global_findings: dict[str, Any] | None = None) -> None:
+    """Snapshot current severity per surface (+ optional global severity)."""
+    snapshot: dict[str, str] = {f["html"]: severity(f) for f in findings}
+    if global_findings is not None:
+        snapshot["__global__"] = global_severity(global_findings)
     BASELINE.write_text(json.dumps(snapshot, indent=2, sort_keys=True) + "\n")
 
 
@@ -1102,7 +1104,7 @@ def main() -> int:
     global_findings = None if args.surface else audit_global(manifest)
 
     if args.write_baseline:
-        write_baseline(all_findings)
+        write_baseline(all_findings, global_findings)
         print(f"Baseline written: {BASELINE.relative_to(REPO)}")
         return 0
 
@@ -1132,7 +1134,11 @@ def main() -> int:
 
         if global_findings is not None:
             sev = global_severity(global_findings)
-            if sev in ("critical", "major"):
+            baseline_global = baseline.get("__global__", "clean")
+            # Block only if global severity REGRESSED above baseline. Honoring
+            # a global-severity baseline mirrors the per-surface baseline so
+            # known pre-existing drift doesn't block new work.
+            if SEVERITY_RANK[sev] > SEVERITY_RANK[baseline_global]:
                 metadata = global_findings["reference_metadata"]
                 system_totals = system_coverage_totals(global_findings["system_reference_coverage"])
                 assets = global_findings["reference_asset_links"]

@@ -3,7 +3,7 @@
  * FreshnessIndicator block server-side render.
  *
  * Relative/absolute labels are computed at render time so client markup never
- * carries raw timestamps unless a future DOS-477 policy explicitly permits it.
+ * carries raw timestamps unless a future display-safe policy explicitly permits it.
  *
  * @package DailyOS
  */
@@ -133,14 +133,28 @@ if ( ! function_exists( 'dailyos_freshness_indicator_render' ) ) {
 		);
 	}
 
+	/**
+	 * Render the multi-part strip variant for the freshness-indicator block.
+	 *
+	 * @param array<string, mixed> $payload   Block payload.
+	 * @param int                  $timestamp Source timestamp.
+	 * @param string               $staleness Resolved staleness token.
+	 * @return string
+	 */
 	function dailyos_freshness_indicator_render_strip( array $payload, int $timestamp, string $staleness ): string {
-		$parts = [];
+		$parts     = [];
 		$fragments = isset( $payload['fragments'] ) && is_array( $payload['fragments'] ) ? $payload['fragments'] : [];
 		foreach ( $fragments as $fragment ) {
 			if ( is_string( $fragment ) && '' !== $fragment ) {
-				$parts[] = [ 'text' => $fragment, 'stale' => false ];
+				$parts[] = [
+					'text'  => $fragment,
+					'stale' => false,
+				];
 			} elseif ( is_array( $fragment ) && isset( $fragment['text'] ) && '' !== (string) $fragment['text'] ) {
-				$parts[] = [ 'text' => (string) $fragment['text'], 'stale' => ! empty( $fragment['stale'] ) ];
+				$parts[] = [
+					'text'  => (string) $fragment['text'],
+					'stale' => ! empty( $fragment['stale'] ),
+				];
 			}
 		}
 
@@ -149,7 +163,10 @@ if ( ! function_exists( 'dailyos_freshness_indicator_render' ) ) {
 		$time_label  = 'relative' === $date_format
 			? $verb . ' ' . dailyos_freshness_indicator_relative_age( $timestamp )
 			: $verb . ' ' . gmdate( 'M j', $timestamp );
-		$parts[] = [ 'text' => $time_label, 'stale' => 'stale' === $staleness ];
+		$parts[]     = [
+			'text'  => $time_label,
+			'stale' => 'stale' === $staleness,
+		];
 
 		$out = sprintf(
 			'<span class="dailyos-freshness-indicator dailyos-freshness-indicator--strip" data-staleness="%s" data-ds-name="FreshnessIndicator" data-ds-tier="primitive" data-ds-spec="primitives/FreshnessIndicator.md">',
@@ -160,15 +177,23 @@ if ( ! function_exists( 'dailyos_freshness_indicator_render' ) ) {
 			if ( $index > 0 ) {
 				$out .= '<span class="dailyos-freshness-indicator__separator" aria-hidden="true">&middot;</span>';
 			}
-			$out .= '<span class="dailyos-freshness-indicator__text' . ( $index === count( $parts ) - 1 ? ' dailyos-freshness-indicator__timeText' : '' ) . '">' . esc_html( (string) $part['text'] ) . '</span>';
+			$out .= '<span class="dailyos-freshness-indicator__text' . ( count( $parts ) - 1 === $index ? ' dailyos-freshness-indicator__timeText' : '' ) . '">' . esc_html( (string) $part['text'] ) . '</span>';
 			$out .= '</span>';
 		}
 		$out .= '</span>';
 		return $out;
 	}
 
+	/**
+	 * Compose the inline label for the freshness-indicator block based on format.
+	 *
+	 * @param int    $timestamp Source timestamp.
+	 * @param string $format    Date format token (relative|absolute|both).
+	 * @param string $staleness Resolved staleness token.
+	 * @return string
+	 */
 	function dailyos_freshness_indicator_inline_label( int $timestamp, string $format, string $staleness ): string {
-		$relative = dailyos_freshness_indicator_relative_age( $timestamp );
+		$relative       = dailyos_freshness_indicator_relative_age( $timestamp );
 		$relative_label = 'stale' === $staleness
 			? 'stale ' . preg_replace( '/\s+ago$/', '', $relative )
 			: $relative;
@@ -182,6 +207,12 @@ if ( ! function_exists( 'dailyos_freshness_indicator_render' ) ) {
 		return $relative_label;
 	}
 
+	/**
+	 * Compute a short relative-age label (e.g. "5m ago", "2h ago") from a timestamp.
+	 *
+	 * @param int $timestamp Source timestamp.
+	 * @return string
+	 */
 	function dailyos_freshness_indicator_relative_age( int $timestamp ): string {
 		$diff_minutes = (int) floor( max( 0, time() - $timestamp ) / 60 );
 		$diff_hours   = (int) floor( $diff_minutes / 60 );
@@ -205,6 +236,13 @@ if ( ! function_exists( 'dailyos_freshness_indicator_render' ) ) {
 		return (int) floor( $diff_days / 30 ) . 'mo';
 	}
 
+	/**
+	 * Classify content staleness as fresh/aging/stale relative to a threshold.
+	 *
+	 * @param int   $timestamp       Source timestamp.
+	 * @param float $threshold_hours Aging threshold in hours.
+	 * @return string
+	 */
 	function dailyos_freshness_indicator_staleness( int $timestamp, float $threshold_hours ): string {
 		$age_hours = max( 0, time() - $timestamp ) / 3600;
 		if ( $age_hours < $threshold_hours ) {

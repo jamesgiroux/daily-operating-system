@@ -326,7 +326,9 @@ final class DailyOS_AccountOverviewBlockTest extends TestCase {
 		);
 
 		$this->assertStringContainsString( 'data-ds-name="' . $expected_name . '"', $html );
-		$this->assertStringContainsString( $expected_text, $html );
+		// Decode HTML entities so the assertion matches user-visible text
+		// regardless of esc_html() apostrophe encoding (couldn't → couldn&#039;t).
+		$this->assertStringContainsString( $expected_text, html_entity_decode( $html, ENT_QUOTES | ENT_HTML5 ) );
 		$this->assertStringNotContainsString( 'raw runtime detail', $html );
 	}
 
@@ -526,11 +528,9 @@ final class DailyOS_AccountOverviewBlockTest extends TestCase {
 	}
 
 	/**
-	 * Build a successful projection response fixture.
+	 * Read the account-overview block editor source.
 	 *
-	 * @param int    $version          Composition version.
-	 * @param string $cache_hint_token Cache hint token.
-	 * @return array<string, mixed>
+	 * @return string
 	 */
 	private function account_overview_editor_source(): string {
 		$source = file_get_contents( __DIR__ . '/../../blocks/account-overview/edit.js' );
@@ -538,6 +538,13 @@ final class DailyOS_AccountOverviewBlockTest extends TestCase {
 		return $source;
 	}
 
+	/**
+	 * Build a successful projection response fixture.
+	 *
+	 * @param int    $version          Composition version.
+	 * @param string $cache_hint_token Cache hint token.
+	 * @return array<string, mixed>
+	 */
 	private function projection_response( int $version, string $cache_hint_token = '' ): array {
 		return [
 			'ok'               => true,

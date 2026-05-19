@@ -7,6 +7,9 @@
 	<exclude-pattern>vendor/*</exclude-pattern>
 	<exclude-pattern>node_modules/*</exclude-pattern>
 	<exclude-pattern>build/*</exclude-pattern>
+	<!-- Block-kit scaffold templates contain {{PLACEHOLDER}} substitution
+	     syntax that's not valid PHP until the kit substitutes it. -->
+	<exclude-pattern>scripts/templates/*</exclude-pattern>
 
 	<arg name="extensions" value="php"/>
 	<arg value="p"/>
@@ -24,9 +27,59 @@
 		<exclude name="Universal.Arrays.DisallowShortArraySyntax"/>
 	</rule>
 
-	<!-- Test bootstrap stubs core WordPress functions for unit tests; docblocks not required. -->
+	<!-- Test bootstrap stubs core WordPress functions for unit tests; docblocks not required.
+	     Tests broadly exempt from function-/parameter-/short-description requirements:
+	     unit tests are local fixtures, not public APIs. -->
 	<rule ref="Squiz.Commenting.FunctionComment.Missing">
-		<exclude-pattern>tests/bootstrap.php</exclude-pattern>
+		<exclude-pattern>tests/*</exclude-pattern>
+	</rule>
+	<rule ref="Squiz.Commenting.FunctionComment.MissingParamComment">
+		<exclude-pattern>tests/*</exclude-pattern>
+	</rule>
+	<rule ref="Squiz.Commenting.FunctionComment.MissingParamTag">
+		<exclude-pattern>tests/*</exclude-pattern>
+	</rule>
+	<rule ref="Squiz.Commenting.FunctionComment.MissingShort">
+		<exclude-pattern>tests/*</exclude-pattern>
+	</rule>
+	<rule ref="Squiz.Commenting.FunctionComment.MissingThrowsTag">
+		<exclude-pattern>tests/*</exclude-pattern>
+	</rule>
+	<rule ref="Squiz.Commenting.FileComment.Missing">
+		<exclude-pattern>tests/*</exclude-pattern>
+	</rule>
+	<rule ref="Squiz.Commenting.FileComment.MissingPackageTag">
+		<exclude-pattern>tests/*</exclude-pattern>
+	</rule>
+	<rule ref="WordPress.Security.EscapeOutput.OutputNotEscaped">
+		<exclude-pattern>tests/*</exclude-pattern>
+	</rule>
+	<rule ref="Squiz.Commenting.VariableComment.Missing">
+		<exclude-pattern>tests/*</exclude-pattern>
+	</rule>
+	<rule ref="Universal.Files.SeparateFunctionsFromOO.Mixed">
+		<exclude-pattern>tests/*</exclude-pattern>
+	</rule>
+	<rule ref="Squiz.Commenting.FunctionComment.ParamCommentNotCapital">
+		<exclude-pattern>tests/*</exclude-pattern>
+	</rule>
+	<rule ref="Squiz.Commenting.FunctionComment.ParamNameNoMatch">
+		<exclude-pattern>tests/*</exclude-pattern>
+	</rule>
+	<rule ref="Squiz.Commenting.FunctionComment.IncorrectTypeHint">
+		<exclude-pattern>tests/*</exclude-pattern>
+	</rule>
+	<rule ref="WordPress.Security.ValidatedSanitizedInput">
+		<exclude-pattern>tests/*</exclude-pattern>
+	</rule>
+	<rule ref="Generic.Commenting.DocComment.MissingShort">
+		<exclude-pattern>tests/*</exclude-pattern>
+	</rule>
+	<rule ref="Squiz.Commenting.FunctionCommentThrowTag.Missing">
+		<exclude-pattern>tests/*</exclude-pattern>
+	</rule>
+	<rule ref="WordPress.Security.EscapeOutput.ExceptionNotEscaped">
+		<exclude-pattern>tests/*</exclude-pattern>
 	</rule>
 
 	<!-- Tests legitimately read local fixture files (JSON snapshots, expected
@@ -40,8 +93,19 @@
 	</rule>
 
 	<!-- Gutenberg block asset manifests use the *.asset.php convention; this
-	     is the shape @wordpress/scripts auto-generates and core looks for. -->
+	     is the shape @wordpress/scripts auto-generates and core looks for.
+	     StarterKitIntegrationTest.php is a CLI helper script (excluded from
+	     phpunit suite); its filename mirrors the function it represents, not
+	     WP class-file conventions. -->
 	<rule ref="WordPress.Files.FileName">
 		<exclude-pattern>blocks/*/*.asset.php</exclude-pattern>
+		<exclude-pattern>tests/blocks/StarterKitIntegrationTest.php</exclude-pattern>
+	</rule>
+
+	<!-- FSE pattern PHP files use the WP-defined Title:/Slug:/Categories: header
+	     docblock (https://developer.wordpress.org/themes/features/block-patterns/);
+	     WPCS misreads them as missing @package. Exempt the pattern dir. -->
+	<rule ref="Squiz.Commenting.FileComment">
+		<exclude-pattern>theme/patterns/*</exclude-pattern>
 	</rule>
 </ruleset>

@@ -138,7 +138,7 @@ if ( ! function_exists( 'dailyos_score_band_render' ) ) {
 			: [];
 
 		// ScoreBand canonical-label discipline per .docs/design/primitives/
-		// ScoreBand.md + DOS-325 voice rule. Renderer maps a discrete `value`
+		// ScoreBand.md (product vocabulary). Renderer maps a discrete `value`
 		// to a plain-language headline; payload.text is REJECTED if it would
 		// place a raw number in the headline.
 		$score_band_labels = [
@@ -164,7 +164,7 @@ if ( ! function_exists( 'dailyos_score_band_render' ) ) {
 			}
 		}
 
-		$label = $score_band_labels[ $value ];
+		$label         = $score_band_labels[ $value ];
 		$wrapper_class = 'wp-block-dailyos-score-band dailyos-primitive-inline dailyos-score-band dailyos-score-band--' . $value;
 		$wrapper_attrs = function_exists( 'get_block_wrapper_attributes' )
 			? get_block_wrapper_attributes(
@@ -185,16 +185,29 @@ if ( ! function_exists( 'dailyos_score_band_render' ) ) {
 		return '<span ' . $wrapper_attrs . '>' . esc_html( $label ) . '</span>';
 	}
 
+	/**
+	 * Render the empty-state inline primitive shell for the score-band block.
+	 */
 	function dailyos_score_band_render_empty_primitive(): string {
 		return '<span class="wp-block-dailyos-score-band dailyos-primitive-inline is-empty" data-ds-tier="primitive" data-ds-name="ScoreBand" data-ds-spec="primitives/ScoreBand.md"></span>';
 	}
 
+	/**
+	 * Render a generic inline notice span for the score-band block.
+	 *
+	 * @param string $class   Notice class suffix.
+	 * @param string $message Localized notice message.
+	 * @return string
+	 */
 	function dailyos_score_band_render_inline_notice( string $class, string $message ): string {
 		return '<span class="wp-block-dailyos-score-band dailyos-primitive-inline dailyos-notice ' . esc_attr( $class ) . '" data-ds-tier="primitive" data-ds-name="ScoreBand" data-ds-spec="primitives/ScoreBand.md" role="status">'
 			. esc_html( $message )
 			. '</span>';
 	}
 
+	/**
+	 * Render the throttled-runtime inline notice for the score-band block.
+	 */
 	function dailyos_score_band_render_throttled_notice(): string {
 		return dailyos_score_band_render_inline_notice(
 			'dailyos-throttled',
@@ -202,6 +215,9 @@ if ( ! function_exists( 'dailyos_score_band_render' ) ) {
 		);
 	}
 
+	/**
+	 * Render the session-repair inline notice for the score-band block.
+	 */
 	function dailyos_score_band_render_session_repair_notice(): string {
 		return dailyos_score_band_render_inline_notice(
 			'dailyos-session-repair',
@@ -209,6 +225,9 @@ if ( ! function_exists( 'dailyos_score_band_render' ) ) {
 		);
 	}
 
+	/**
+	 * Render the runtime-unavailable inline notice for the score-band block.
+	 */
 	function dailyos_score_band_render_runtime_unavailable_notice(): string {
 		return dailyos_score_band_render_inline_notice(
 			'dailyos-runtime-unavailable',
@@ -216,6 +235,9 @@ if ( ! function_exists( 'dailyos_score_band_render' ) ) {
 		);
 	}
 
+	/**
+	 * Render the invalid-request inline notice for the score-band block.
+	 */
 	function dailyos_score_band_render_invalid_request_notice(): string {
 		return dailyos_score_band_render_inline_notice(
 			'dailyos-invalid-request',
@@ -223,6 +245,9 @@ if ( ! function_exists( 'dailyos_score_band_render' ) ) {
 		);
 	}
 
+	/**
+	 * Render the consistency-finding verification banner for the score-band block.
+	 */
 	function dailyos_score_band_render_verification_banner(): string {
 		return dailyos_score_band_render_inline_notice(
 			'dailyos-verification-banner',

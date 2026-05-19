@@ -1,7 +1,6 @@
 /* TypeBadge primitive — shared module CSS for TypeBadge + TypeBadgeDisplay.
- * Extracted from AccountHero.module.css (lines 23-59 + 142-203) per
- * v1.4.3 W2 L0 Packet D §5.10 (DOS-682). Self-contained — does not
- * compose from pattern-tier layers (per primitives README discipline).
+ * Self-contained — does not compose from pattern-tier layers (per primitives
+ * README discipline).
  */
 
 /* Base badge — same shape as heroBadge from EntityHeroBase but owned
