@@ -71,6 +71,32 @@
 
   **Locked V1.2 (no more reviewer calls):** §5.1 extend-to-9; §12 #1 channels=9 + add WpBlockRenders; §5.2 in-memory-store-isolation framing; ip_hash via pairing-root HKDF.
 
+- **V1.3 (2026-05-19):** Folded L0 cycle 3 reviewer findings. Cycle-3 verdicts: 3 APPROVE (code-reviewer, /cso, security-auditor) + 2 CONDITIONAL APPROVE (codex consult LOW; codex challenge 2 HIGH + 1 MEDIUM + 2 LOW). Per `feedback_reviewer_dissent_is_signal.md`: 1/5 dissent on HIGH is signal — investigate, validate, fold. Codex challenge findings validated against substrate; all real.
+
+  **V1.3 folds:**
+
+  1. **(codex challenge HIGH #1)** §5.4 pseudocode named `try_mark_consumed(&request)` — that signature does NOT exist on the service. The real consume orchestration is `SurfaceNonceStore::verify_and_consume` at `surface_nonce.rs:640` returning `VerifiedNonce { consumed_at, nonce_digest, expected_claim_version, expected_composition_version }` at `:583`. The binding's `claim_id` / `action` / `payload_json` / `wp_user_id` are consumed inside `verify_and_consume` and NOT carried out via `VerifiedNonce`. Plus `actor: "wp_user:{}"` fails `validate_feedback_actor` at `claims.rs:5131`: `actor_class_for_actor` at `:5121` splits on `:`/`/`/`@`; head `"wp_user"` is NOT in the user allowlist (`"user"` or `"human"`). V1.3 §5.4 REWRITES the pseudocode against the real API + extends `VerifiedNonce` to carry the binding fields W4 needs + fixes actor format to `"user:wp:{wp_user_id}"` (head = `"user"`, passes the allowlist).
+
+  2. **(codex challenge HIGH #2)** §6 #11 + §3 substrate table + AC F claimed 3 `PresenceNonceRejectReason` variants cover all W4 paths. **False** — the enum at `surface_nonce.rs:1067-1085` has 17 variants in active use (`MalformedRequest`, `MissingNonce`, `MalformedClaimVersion`, `UnauthenticatedSurface`, `WrongActor`, `ScopeDenied`, `WrongSession`, `WrongUser`, `WrongClaim`, `WrongField`, `MismatchedAction`, `Expired`, `Replayed`, `Invalidated`, `ClaimVersionStale`, `CompositionVersionStale`, `RateLimited`). The W4 path emits subset that includes at minimum `Invalidated`, `Replayed`, `Expired`, `WrongUser`, `WrongClaim`, `ClaimVersionStale`, `CompositionVersionStale`, plus the `MalformedRequest` / `MissingNonce` / `WrongActor` / etc. that come from earlier validation gates. V1.3 §3 substrate table + §6 #11 + AC F enumerate the full enum + note W4 paths use the existing emit set verbatim (no new variants, no renaming).
+
+  3. **(codex challenge MEDIUM #3)** §5.9 + invariant #11 + AC J leaned on a W6-E `#[non_exhaustive]` channel-sweep gate that does **not exist in the tree today**. `RenderPolicyChannel` at `bridges/types.rs:82-94` is plain `#[derive]`, NOT `#[non_exhaustive]`. `ALL` at `:97` is `[Self; 9]` fixed-size; zero non-definition consumers (`grep -r "RenderPolicyChannel::ALL"` returns 0 hits outside the definition site). W6-E packet at `.docs/plans/v1.4.1-waves/W6-E-L0-packet.md:189` planned the gate; the gate was never built. V1.3 drops the auto-application claim; §5.9 specifies a manual test in `wp/dailyos/tests/blocks/FeedbackPayloadRedactionTest.php` (§8.9) that asserts `WpBlockRenders` is included in the leak-guard projection sweep; files the W6-E gate backfill as a maintenance follow-up (DOS-### TBD — not in W4 scope).
+
+  4. **(codex challenge LOW #4)** §3 + §5.5 + §10 + inv #10 cited `NonceAuditContext` at `:1235`. Actual location is `:1158`. `:1235` is `audit_event`. V1.3 fixes citations.
+
+  5. **(codex challenge LOW #5)** §3 + AC K + §5.6 step 4 cited `submit_feedback()` at `runtime-client.php:163`. Actual definition is at `:149`; `:163` is an internal path-call line. V1.3 fixes citations to avoid partial-deletion footgun at L1.
+
+  6. **(codex consult LOW)** §5.8 step 5 and §8.10 asserted audit event order `presence_nonce_issued → claim_feedback_recorded → presence_nonce_verified`, but §5.4 (correctly) asserts `presence_nonce_issued → presence_nonce_verified → claim_feedback_recorded`. `presence_nonce_verified` fires inside `verify_and_consume`'s Mutex-guarded HashMap mutation, BEFORE `record_claim_feedback` is called. V1.3 strikes the §5.8 parenthetical + corrects §8.10.
+
+  **L1 implementation notes** (cycle-3 reviewer FYIs that don't change packet text but L1 needs) captured in NEW §16 appendix:
+  - §5.4 noun chain — `verify_and_consume` is on `SurfaceNonceStore` not `SurfaceNonceService` (code-reviewer)
+  - §5.9 fixed-size array `[Self; 9]` → `[Self; 10]` size annotation (code-reviewer)
+  - `From<PresenceNonceAction> for FeedbackAction` crosses crate boundary (`src-tauri` → `src-tauri/abilities-runtime`); needs `pub` promotion or different impl site (code-reviewer)
+  - Deployment ordering window for orphan retirement — runtime + WP retirement should land together or in tight sequence; out-of-sync deploys cause silent feedback loss (/cso)
+  - Phase-3 `record_claim_feedback` failure should charge `failure_budget_per_minute` at `surface_nonce.rs:30-52` (/cso)
+  - HKDF `info` parameter for `ip_hash` MUST be distinct from `PRESENCE_NONCE_KEY_INFO` (e.g., `AUDIT_IP_HASH_KEY_INFO = b"dailyos.surface.audit.ip_hash.v1"`) to prevent purpose-binding collision (security-auditor)
+  - `/dailyos/v1/nonce/verify` permission callback should BE `can_issue_presence_nonce` (literal reuse), not `-equivalent logic` (security-auditor)
+  - WP `payload_json` validation should reject non-plain-object values (no arrays, no deep nesting) — defensive measure (security-auditor)
+
 ## 3. Status Snapshot
 
 - Linear ticket: DOS-683 (Backlog, v1.4.3 — WordPress Foundation, priority High).
@@ -88,15 +114,18 @@
 | Runtime route `POST /v1/surface/feedback` (allowlist entry) | `surface_runtime/mod.rs:1243, 4730, 4755` — allowlist + signed-route registration; **no handler match block** | orphan — **W4 retires** (path is nonce-based) |
 | WP transport `issue_nonce()` | `wp/dailyos/includes/transport/class-dailyos-runtime-client.php:172` | live |
 | WP transport `verify_nonce()` | `wp/dailyos/includes/transport/class-dailyos-runtime-client.php:188` | live |
-| WP transport `submit_feedback()` | `runtime-client.php:163` — posts to orphan `/v1/surface/feedback` | dead path — **W4 retires** |
+| WP transport `submit_feedback()` | `runtime-client.php:149` (def); `:163` is internal path-call | dead path — **W4 retires** |
 | WP REST `/dailyos/v1/nonce` (issue side) | `wp/dailyos/includes/class-dailyos-plugin.php:573-601` | live |
 | WP REST `/dailyos/v1/nonce/verify` | NOT REGISTERED | **W4 registers** (signs `/v1/surface/nonce/verify` runtime call) |
 | WP-side `action` allowlist (presence_nonce_payload) | `class-dailyos-plugin.php:907` hardcoded `['correct', 'dismiss', 'corroborate', 'contradict']` | **W4 expands to 9 variants** |
 | `wp_user_id` binding storage | `surface_nonce.rs:485` (`PresenceNonceBindingFields`) | live — **already bound** |
 | `wp_user_id` verify cross-check | `surface_nonce.rs:1339` (`compare_binding_tuple`) | live — **already cross-checks** |
-| `PresenceNonceRejectReason::{Replayed, WrongUser, MalformedRequest}` | `surface_nonce.rs:670` etc. | live — **W4 reuses; does NOT invent new reason strings** |
-| `NonceAuditContext` (audit-event builder) | `surface_nonce.rs:1235` | live — **W4 extends** with `attempted_wp_user_id`, `attempted_surface_client_id`, `ip_hash`, `user_agent_hash` slots |
-| `try_mark_consumed` (atomicity primitive) | `surface_nonce.rs:518` (Mutex-guarded HashMap mutation) | live — **W4 calls this; the Mutex IS the atomicity boundary** |
+| `PresenceNonceRejectReason` enum (17 variants — V1.3 correction) | `surface_nonce.rs:1067-1085` (`MalformedRequest`, `MissingNonce`, `MalformedClaimVersion`, `UnauthenticatedSurface`, `WrongActor`, `ScopeDenied`, `WrongSession`, `WrongUser`, `WrongClaim`, `WrongField`, `MismatchedAction`, `Expired`, `Replayed`, `Invalidated`, `ClaimVersionStale`, `CompositionVersionStale`, `RateLimited`) | live — **W4 reuses verbatim; does NOT invent new reason strings; does NOT add variants** |
+| `NonceAuditContext` (audit-event builder) | `surface_nonce.rs:1158` (V1.3 correction; V1.2 cited `:1235` which is `audit_event`) | live — **W4 extends** with `attempted_wp_user_id`, `attempted_surface_client_id`, `ip_hash`, `user_agent_hash` slots |
+| `SurfaceNonceStore::verify_and_consume` (consume orchestration) | `surface_nonce.rs:640` — takes `(ctx, db, digest, request, now, audit)`, returns `Result<VerifiedNonce, SurfaceNonceError>` | live — **W4 wraps this in a service-layer method that ALSO returns the binding fields W4 needs** (see §5.4) |
+| `try_mark_consumed` (atomicity primitive — called inside `verify_and_consume`) | `surface_nonce.rs:518` | live — internal; W4 reaches it through `verify_and_consume` |
+| `VerifiedNonce { consumed_at, nonce_digest, expected_claim_version, expected_composition_version }` | `surface_nonce.rs:583` | live — **W4 extends** with the binding-derived fields needed for `record_claim_feedback` (`claim_id`, `action`, `payload_json`, `wp_user_id`, `session_id`) |
+| `validate_feedback_actor` + `actor_class_for_actor` (actor allowlist) | `claims.rs:5131` + `:5111` — head split on `:`/`/`/`@`; user allowlist is `"user"` or `"human"` | live — **W4 actor format = `"user:wp:{wp_user_id}"`** (head = `"user"`, passes allowlist) |
 | `RenderPolicyChannel::ALL` (channel registry) | `src-tauri/src/bridges/types.rs:84-126` (9 variants) | live — **W4 adds `WpBlockRenders` as the 10th** |
 | `record_claim_feedback` | `src-tauri/src/services/claims.rs:6700` | live — takes `&ActionDb`, opens own tx via `with_claim_transaction:6717` |
 | `ClaimFeedbackInput { claim_id, action, actor, actor_id, payload_json }` | `claims.rs:228` | live — **payload_json field exists; W4 wires through** |
@@ -225,46 +254,92 @@ File: `src-tauri/src/surface_runtime/mod.rs:2019` (the existing route handler) a
 - `record_claim_feedback` at `claims.rs:6700` takes `&ActionDb` (not `&Tx`) and opens its own `with_claim_transaction` at `:6717`. Cannot be wrapped.
 - The existing handler at `surface_runtime/mod.rs:2570` uses `app_state.db_read(...)` — incompatible with `record_claim_feedback`'s write requirement.
 
-**V1.2 atomicity model — consume-then-record with fail-closed semantics:**
+**V1.3 atomicity model — consume-then-record with fail-closed semantics, grounded against the real substrate:**
 
-The atomicity primitive is the **Mutex on the in-memory nonce store** (not a SQL transaction). The flow:
+The atomicity primitive is the **Mutex on the in-memory nonce store** (not a SQL transaction). V1.3 grounds the pseudocode against the actual `verify_and_consume` API at `surface_nonce.rs:640` (V1.2 named a non-existent `try_mark_consumed(&request)` signature — cycle-3 codex challenge finding):
+
+**Step 1 — extend `VerifiedNonce` to carry the binding fields W4 needs.**
+
+The existing `VerifiedNonce` at `surface_nonce.rs:583` carries only consume-success metadata (`consumed_at`, `nonce_digest`, version watermarks). V1.3 commit 3 extends it to also carry the binding fields needed for `record_claim_feedback`:
 
 ```rust
-// Pseudocode — V1.2 actual mechanism.
-fn verify_nonce_and_record_feedback(
-    ctx: &ServiceContext<'_>,
-    db: &ActionDb,
-    request: VerifyNonceRequest,
-) -> Result<VerifyNonceOutcome, SurfaceNonceError> {
-    // Phase 1 (existing substrate, called via SurfaceNonceService::verify_nonce
-    // at surface_nonce.rs:218): try_mark_consumed at :518 — Mutex-guarded;
-    // checks not-consumed + not-expired + wp_user_id match + action_kind valid;
-    // atomically mutates the HashMap to set consumed=true; returns the binding
-    // or PresenceNonceRejectReason. Emits presence_nonce_rejected internally
-    // on failure; presence_nonce_verified internally on success.
-    let binding = surface_nonce_service.try_mark_consumed(&request)?;
-
-    // Phase 2 (NEW W4 path): server reads action_kind + payload_json from the
-    // stored binding (NEVER from the request body — closes security-auditor
-    // cycle-1 finding #5).
-    let action: FeedbackAction = binding.action.into();
-    let input = ClaimFeedbackInput {
-        claim_id: binding.claim_id.clone(),
-        action,
-        actor: format!("wp_user:{}", binding.wp_user_id),
-        actor_id: Some(binding.session_id.clone()),
-        payload_json: binding.payload_json.clone(),
-    };
-
-    // Phase 3: record_claim_feedback opens its own tx + reserves MutationGuard;
-    // we just call it. Note: app_state.db_write at the route handler level
-    // (NOT db_read — V1.2 §5.4 + §10 commit 3 change this).
-    record_claim_feedback(ctx, db, input)
-        .map_err(SurfaceNonceError::Mutation)
+// surface_nonce.rs:583 — V1.3 extension
+struct VerifiedNonce {
+    // Existing fields:
+    consumed_at: DateTime<Utc>,
+    nonce_digest: NonceDigest,
+    expected_claim_version: u64,
+    expected_composition_version: u64,
+    // V1.3 additions (captured from binding before consume completes):
+    claim_id: String,
+    action: PresenceNonceAction,
+    payload_json: Option<String>,
+    wp_user_id: u64,
+    session_id: String,
 }
 ```
 
-**Mutex IS the atomicity boundary.** Concurrent verify requests for the same nonce race on the `try_mark_consumed` lock; exactly one wins (returns `Ok(binding)`), the rest return `Err(PresenceNonceRejectReason::Replayed)`. No SQL tx needed for the consume step.
+`verify_and_consume` at `:640` is the only writer; it reads the binding for the validity checks; V1.3 captures these fields into the `VerifiedNonce` return value in the same function body (before `binding.try_mark_consumed(now)` is called). No new lock-acquisition.
+
+**Step 2 — handler-level orchestration:**
+
+```rust
+// Pseudocode for the surface_runtime/mod.rs:2570 handler — V1.3 grounded
+// against the real verify_and_consume API.
+fn surface_nonce_verify_response(
+    app_state: &AppState,
+    request: VerifyNonceRequest,
+) -> Result<VerifyNonceResponse, SurfaceNonceError> {
+    // V1.3 §10 commit 3 change: db_read → db_write (record_claim_feedback
+    // needs a write connection).
+    app_state.db_write(|db, ctx| {
+        let now = ctx.clock.now();
+        let audit = NonceAuditContext::from_request(&request);
+        let digest = NonceDigest::from_request_bytes(&request)?;
+
+        // SurfaceNonceStore::verify_and_consume at :640.
+        // - Mutex-guarded HashMap mutation (atomicity primitive).
+        // - Internal validations: wp_user_id match, action_kind match,
+        //   expiry, claim_version, composition_version.
+        // - Captures binding fields into VerifiedNonce before consume.
+        // - Calls binding.try_mark_consumed(now) at :725 (the Mutex-guarded
+        //   HashMap mutation).
+        // - Emits presence_nonce_verified internally on success;
+        //   presence_nonce_rejected with the appropriate
+        //   PresenceNonceRejectReason variant on failure.
+        let verified = app_state
+            .surface_nonce_store
+            .verify_and_consume(ctx, db, digest, &request, now, audit)?;
+
+        // W4 NEW: translate to ClaimFeedbackInput using fields captured into
+        // the extended VerifiedNonce.
+        let action: FeedbackAction = verified.action.into();
+        let input = ClaimFeedbackInput {
+            claim_id: verified.claim_id.clone(),
+            action,
+            // Actor format MUST pass validate_feedback_actor at claims.rs:5131.
+            // actor_class_for_actor at :5111 splits on `:` / `/` / `@`; head
+            // must be "user" or "human" for the user class. V1.3: head=user.
+            actor: format!("user:wp:{}", verified.wp_user_id),
+            actor_id: Some(verified.session_id.clone()),
+            payload_json: verified.payload_json.clone(),
+        };
+
+        // record_claim_feedback at claims.rs:6700 — takes &ActionDb, opens
+        // its own with_claim_transaction at :6717, reserves MutationGuard at
+        // :6714.
+        let outcome = record_claim_feedback(ctx, db, input)
+            .map_err(SurfaceNonceError::Mutation)?;
+
+        Ok(VerifyNonceResponse {
+            feedback_id: outcome.feedback_id,
+            new_verification_state: outcome.new_verification_state,
+        })
+    })
+}
+```
+
+**Mutex IS the atomicity boundary.** Concurrent verify requests for the same nonce race on `verify_and_consume`'s `blocking_lock()` at `:649`; exactly one wins (returns `Ok(VerifiedNonce)`), the rest return `Err(SurfaceNonceError::rejected(PresenceNonceRejectReason::Replayed, ...))` per the existing logic at `:670`.
 
 **Fail-closed for the consume-succeeded-record-failed path:**
 - If `try_mark_consumed` succeeds but `record_claim_feedback` fails (DB error, MutationGuard rejection, validation rejection), the nonce stays consumed. Audit trail records: `presence_nonce_verified` (from `try_mark_consumed`) followed by a `record_claim_feedback` error.
@@ -280,14 +355,22 @@ The existing verify handler wraps work in `app_state.db_read(...)`. W4 commit 3 
 - `claim_feedback_recorded` (emitted inside `record_claim_feedback`) lands inside the claims tx.
 - Audit order on the happy path: `presence_nonce_issued` (phase 1) → `presence_nonce_verified` (phase 2 consume) → `claim_feedback_recorded` (phase 3 substrate write). On the consume-succeeded-record-failed path: `presence_nonce_issued` → `presence_nonce_verified` → `record_claim_feedback` error log (no `claim_feedback_recorded`).
 
-**Rejection reason names — use the existing enum** (cycle-2 code-reviewer finding #2):
-| Failure mode | `PresenceNonceRejectReason` variant | Existing location |
-|---|---|---|
-| Nonce already consumed | `Replayed` | `surface_nonce.rs:670` |
-| `wp_user_id` mismatch | `WrongUser` | `surface_nonce.rs:1313` / `:1341` |
-| Malformed request (bad action_kind, expired, missing field) | `MalformedRequest` | `surface_nonce.rs:856` |
+**Rejection reason names — use the existing `PresenceNonceRejectReason` enum verbatim** (cycle-3 codex challenge HIGH #2 correction; V1.2's "3 variants cover all paths" was wrong — the enum has 17). W4 paths emit the existing subset; no new variants, no renaming.
 
-W4 does NOT invent new rejection strings. All ACs reference these existing variants.
+| Failure mode (W4-emit subset) | `PresenceNonceRejectReason` variant | Where emitted (existing) |
+|---|---|---|
+| Digest not found in store (nonce invalidated) | `Invalidated` | `surface_nonce.rs:652` |
+| Binding tuple mismatch (`compare_binding_tuple`) — wrong session, wrong claim, wrong field, wrong actor, action mismatch | `WrongSession`, `WrongClaim`, `WrongField`, `WrongActor`, `MismatchedAction` | inside `compare_binding_tuple` at `:1313`/`:1339`/`:1341`/etc. |
+| Nonce already consumed | `Replayed` | `surface_nonce.rs:670` + `:728` |
+| Nonce past TTL | `Expired` | `surface_nonce.rs:680` + `:736` |
+| `wp_user_id` mismatch | `WrongUser` | inside `compare_binding_tuple` |
+| Composition version stale | `CompositionVersionStale` | `surface_nonce.rs:712` + `:744` |
+| Claim version stale | `ClaimVersionStale` | `surface_nonce.rs:696` |
+| Malformed request envelope (bad action_kind parse, missing nonce digest, bad claim version JSON, unauthenticated, scope denied, rate-limited) | `MalformedRequest`, `MissingNonce`, `MalformedClaimVersion`, `UnauthenticatedSurface`, `ScopeDenied`, `RateLimited` | upstream of `verify_and_consume` in the route handler |
+
+**Full enum, for AC F + §9 inv #10 enumeration:** `MalformedRequest`, `MissingNonce`, `MalformedClaimVersion`, `UnauthenticatedSurface`, `WrongActor`, `ScopeDenied`, `WrongSession`, `WrongUser`, `WrongClaim`, `WrongField`, `MismatchedAction`, `Expired`, `Replayed`, `Invalidated`, `ClaimVersionStale`, `CompositionVersionStale`, `RateLimited`. Defined at `surface_nonce.rs:1067-1085`.
+
+W4 does NOT add variants; does NOT remove variants; does NOT rename variants. The "rejection reason naming alignment" guarantee is "use the existing names verbatim, with the full enum surface exposed in the audit event payload."
 
 ### 5.5 Audit events — align with existing `presence_nonce_*` names
 
@@ -304,7 +387,7 @@ W4 does NOT invent new rejection strings. All ACs reference these existing varia
 | `presence_nonce_verified` | `wp_user_id`, `ip_hash`, `user_agent_hash`, `claim_id`, `action_kind`, `claim_feedback_id` (from `record_claim_feedback` outcome) | Correlate the verify → record_feedback chain. |
 | `presence_nonce_rejected` | `wp_user_id`, `attempted_wp_user_id`, `attempted_surface_client_id`, `rejection_reason` (one of `Replayed`, `WrongUser`, `MalformedRequest` — the existing `PresenceNonceRejectReason` enum variants) | Replay-rejection forensic completeness per cycle-1 security-auditor finding #4. |
 
-**`NonceAuditContext` extension** (cycle-2 security-auditor finding #3): the existing struct at `surface_nonce.rs:1235` plumbs only the issued-nonce fields. V1.2 commit 2 adds slots: `attempted_wp_user_id: Option<u64>`, `attempted_surface_client_id: Option<String>`, `ip_hash: Option<String>`, `user_agent_hash: Option<String>`. The handler at `surface_runtime/mod.rs:2016/2019` reads `ip_hash` + `user_agent_hash` from request headers; the `try_mark_consumed` path captures `attempted_*` from the verify request before rejecting.
+**`NonceAuditContext` extension** (cycle-2 security-auditor finding #3): the existing struct at `surface_nonce.rs:1158` (V1.3 correction — V1.2 cited `:1235` which is `audit_event`, the event constructor) plumbs only the issued-nonce fields. V1.2 commit 2 adds slots: `attempted_wp_user_id: Option<u64>`, `attempted_surface_client_id: Option<String>`, `ip_hash: Option<String>`, `user_agent_hash: Option<String>`. The handler at `surface_runtime/mod.rs:2016/2019` reads `ip_hash` + `user_agent_hash` from request headers; the `try_mark_consumed` path captures `attempted_*` from the verify request before rejecting.
 
 **`ip_hash` HMAC key — LOCKED V1.2** (cycle-2 CSO finding #2): derive via HKDF from the existing pairing root stored in the keychain (same key family as `PresenceNonceDigestKey` at `surface_nonce.rs:421`). Survives process restart (per CSO finding's requirement for forensic correlation across sessions). No new key-management infrastructure. L1 task: factor the HKDF derivation into a helper (e.g., `derive_audit_subkey("ip_hash")`) so future audit fields can reuse the same root without duplicating key plumbing.
 
@@ -328,7 +411,7 @@ W4 does NOT invent new rejection strings. All ACs reference these existing varia
 
 4. **Retire the orphan `/v1/surface/feedback` runtime route + WP `submit_feedback()` transport method.** Three actions:
    - Remove `/v1/surface/feedback` from `surface_runtime/mod.rs:1243, 4730, 4755` allowlist entries.
-   - Remove `submit_feedback()` from `runtime-client.php:163`.
+   - Remove `submit_feedback()` from `runtime-client.php:149` (V1.3 correction — V1.2 cited `:163` which is an internal path-call line, not the def; L1 partial-deletion footgun avoided).
    - Add a CI grep gate against `/v1/surface/feedback` to prevent reintroduction (§9 invariant #12 NEW).
 
 **JS affordance call sequence** (unchanged shape; corrected routes):
@@ -364,7 +447,7 @@ CSS: per-block `style.css` + plugin-owned baseline tokens (no inline CSS per mem
 2. Simulate JS phase 1: HTTP POST `/v1/surface/nonce/issue` with `{ surface_client_id, session_id, claim_id, action_kind: "mark_outdated" }`. Receive `nonce_digest`.
 3. Simulate JS phase 2: HTTP POST `/v1/surface/nonce/verify` with `{ nonce_digest }`. Runtime executes §5.4.
 4. Re-render: claim now shows `superseded` lifecycle + `UseWithCaution` (or `NeedsVerification`) trust band per ADR-0123 §1.
-5. Audit log contains: `presence_nonce_issued → claim_feedback_recorded → presence_nonce_verified` (in that order — the claim_feedback row commits inside the tx, the verified event emits post-commit).
+5. Audit log contains: `presence_nonce_issued → presence_nonce_verified → claim_feedback_recorded` (V1.3 correction — V1.2 had the order reversed; `presence_nonce_verified` fires inside `verify_and_consume`'s Mutex-guarded HashMap mutation BEFORE `record_claim_feedback` is called).
 6. Replay: HTTP POST `/wp-json/dailyos/v1/nonce/verify` with the same `nonce_digest`. Runtime rejects + emits `presence_nonce_rejected` with `PresenceNonceRejectReason::Replayed` + `attempted_wp_user_id` + `attempted_surface_client_id`. Re-render unchanged.
 
 ### 5.9 `RenderPolicyChannel` extension — add `WpBlockRenders` — V1.2 NEW
@@ -390,9 +473,13 @@ impl RenderPolicyChannel {
 }
 ```
 
-The W6-E `#[non_exhaustive]` channel-sweep gate (per `.docs/plans/v1.4.1-waves/W6-E-L0-packet.md`) will then cover WP block-rendered claim payloads. The W2 DOS-477 leak-guard machinery applies automatically — `payload_json` user-authored fields are filtered through the same actor-projection layer that filters every other channel's sensitive content.
+**V1.3 correction (cycle-3 codex challenge MEDIUM #3):** the W6-E `#[non_exhaustive]` channel-sweep gate was **planned** in `.docs/plans/v1.4.1-waves/W6-E-L0-packet.md:189` but **never built**. `RenderPolicyChannel` at `bridges/types.rs:82-94` is plain `#[derive]`, not `#[non_exhaustive]`. `ALL` has zero non-definition consumers. The "auto-application" claim was wrong.
 
-Closes V1.1 §12 open question #1.
+**W4 disposition:** §8.9 (`FeedbackPayloadRedactionTest.php`) is the **manual** redaction-coverage gate for V1.4.3: a PHPUnit assertion that the WP block-render output for a feedback projection contains the appropriate redactions for `payload_json` user-authored fields. The test enumerates the channel explicitly (`WpBlockRenders`) and asserts redaction is applied via the W2 DOS-477 leak-guards.
+
+**W6-E gate backfill:** filed as a separate maintenance ticket (DOS-### TBD in `Codebase Maintenance & Production Quality`) — add `#[non_exhaustive]` to `RenderPolicyChannel` + author the W6-E compile-time exhaustiveness check that iterates `ALL` at every test site. Not in W4 scope per `feedback_l2_path_alpha_to_maintenance_project.md`.
+
+Closes V1.1 §12 open question #1 (channel count = 9 today; `WpBlockRenders` becomes the 10th in W4).
 
 ## 6. Decisions to lock at L0
 
@@ -406,7 +493,7 @@ Closes V1.1 §12 open question #1.
 8. **`wp_user_id` is canonical and server-derived.** Stored in the presence-nonce binding at issue; cross-checked at verify; rejected with `wp_user_mismatch` on any disagreement. Never trust JS-supplied `wp_user_id`.
 9. **NEW: feedback flow has no migrations.** The existing nonce store is in-memory with 60s TTL. If a feedback flow ever needs durability beyond 60s (offline retry, audit forensics), that's an ADR amendment requiring explicit `/cso` sign-off — NOT a packet decision. (V1.0 proposed migrations v181/v182/v183 — DELETED in V1.1.)
 10. **NEW: replay rejection is fail-closed.** Any ambiguous state (concurrent verify race, partial-commit mid-flight, stored nonce row corruption) MUST reject with `presence_nonce_rejected` rather than silently succeed.
-11. **V1.2 NEW: rejection_reason names use the existing `PresenceNonceRejectReason` enum.** No invented strings. The 3 existing variants (`Replayed`, `WrongUser`, `MalformedRequest`) cover all W4 reject paths. AC E, F, §8.3, §8.4 reference these.
+11. **V1.2 NEW + V1.3 corrected: rejection_reason names use the existing `PresenceNonceRejectReason` enum verbatim.** No invented strings; no new variants; no renames. V1.2 incorrectly claimed only 3 variants cover all W4 paths — the enum has 17 (per §3 substrate table + §5.4 table). W4 emits the existing subset that `verify_and_consume` already produces (`Invalidated`, `Replayed`, `Expired`, `WrongUser`, `WrongClaim`, `WrongField`, `MismatchedAction`, `ClaimVersionStale`, `CompositionVersionStale`, plus upstream `MalformedRequest`, `MissingNonce`, `MalformedClaimVersion`, `UnauthenticatedSurface`, `ScopeDenied`, `WrongActor`, `WrongSession`, `RateLimited`). AC E, F, §8.3, §8.4 reference the enum surface, not a 3-variant subset.
 12. **V1.2 NEW: forward-constraint for LLM-injection on `corrected_text`.** Current state: `validate_feedback_payload` at `claims.rs:5150` normalizes `payload_json` but does NOT pass into agent context. **Constraint for future work** (any v1.4.4+ repair ability consuming `corrected_text` into an LLM prompt): the sensitivity=User filter (per ADR-0108) MUST apply BEFORE prompt construction; the filter implementation lives at the projection layer that already exists for W2 DOS-477 channels. This is a constraint, not an implementation; the constraint goes in §9 invariants as a regression-prevention test scaffold.
 13. **V1.2 NEW: consume-succeeded-record-failed is a real path, not a TODO.** The fail-closed atomicity model (§5.4) means the nonce stays consumed even if `record_claim_feedback` rejects. The user-facing affordance receives an error; the user retries with a NEW nonce. No rollback of the consume. No retry of the same nonce. Per `feedback_no_deferrals_period.md`.
 
@@ -444,7 +531,7 @@ L4 captures: 9 affordance states (one per `FeedbackAction` variant) + 3 chrome s
 `wp/dailyos/tests/FeedbackPayloadRedactionTest.php` — user-authored fields in `payload_json` NEVER returned to a non-originating actor. Cross-references the W2 DOS-477 channel list (V1.1 cycle-2 verifies the channel-count baseline).
 
 ### 8.10 Audit log forensic test
-`src-tauri/abilities-runtime/tests/surface_nonce_audit_correlation.rs` — for a happy-path feedback, verify the chain `presence_nonce_issued → claim_feedback_recorded → presence_nonce_verified` lands with consistent `request_id` correlation + the audit payload extensions from §5.5 are present.
+`src-tauri/abilities-runtime/tests/surface_nonce_audit_correlation.rs` — for a happy-path feedback, verify the chain `presence_nonce_issued → presence_nonce_verified → claim_feedback_recorded` (V1.3 correction — `presence_nonce_verified` fires inside `verify_and_consume` BEFORE `record_claim_feedback`) lands with consistent `request_id` correlation + the audit payload extensions from §5.5 are present.
 
 ## 9. Invariants (CI-enforced)
 
@@ -526,7 +613,7 @@ D. **`verify_nonce` → `record_claim_feedback` wire-through.** Successful verif
 
 E. **Replay rejection atomic via Mutex.** Two concurrent verify calls with the same nonce: exactly one's `try_mark_consumed` returns `Ok(binding)`, the rest return `PresenceNonceRejectReason::Replayed`. Verified by §8.3.
 
-F. **Audit payload extensions land.** `presence_nonce_issued` / `_verified` / `_rejected` carry `wp_user_id` + `ip_hash` + `user_agent_hash` (+ correlation-specific fields per §5.5). `presence_nonce_rejected` carries `attempted_wp_user_id` + `attempted_surface_client_id` + `rejection_reason` (one of `Replayed` / `WrongUser` / `MalformedRequest`). `NonceAuditContext` struct at `surface_nonce.rs:1235` extended with the new slots. User-authored `payload_json` content NEVER in audit payloads.
+F. **Audit payload extensions land.** `presence_nonce_issued` / `_verified` / `_rejected` carry `wp_user_id` + `ip_hash` + `user_agent_hash` (+ correlation-specific fields per §5.5). `presence_nonce_rejected` carries `attempted_wp_user_id` + `attempted_surface_client_id` + `rejection_reason` — accepts ANY `PresenceNonceRejectReason` variant from the full enum at `surface_nonce.rs:1067-1085` (17 variants; V1.3 correction). `NonceAuditContext` struct at `surface_nonce.rs:1158` (V1.3 correction) extended with the new slots. User-authored `payload_json` content NEVER in audit payloads.
 
 G. **WP REST works for both phases.** `/dailyos/v1/nonce` (issue) + `/dailyos/v1/nonce/verify` (NEW, registered in V1.2 §5.6) both work. WP-side `action` allowlist at `class-dailyos-plugin.php:907` updated to 9 variants. `payload_json` validates per variant.
 
@@ -534,7 +621,7 @@ H. **JS feedback affordance renders on `dailyos/account-overview`.** All 9 actio
 
 I. **End-to-end fixture passes for 4 representative variants** (`MarkOutdated`, `MarkFalse`, `WrongSubject` with payload, `NeedsNuance` with payload).
 
-J. **`payload_json` user-authored fields never leak to non-originating actors.** PHPUnit at §8.9. `RenderPolicyChannel::WpBlockRenders` (V1.2 §5.9) is included in the W6-E channel-sweep gate.
+J. **`payload_json` user-authored fields never leak to non-originating actors.** PHPUnit at §8.9 asserts redaction is applied on the WP block-render surface (`WpBlockRenders` channel — V1.2 §5.9). V1.3 correction: the W6-E `#[non_exhaustive]` channel-sweep auto-gate doesn't exist today (W6-E planned but not built); §8.9 is the manual coverage gate for v1.4.3. W6-E backfill filed as maintenance.
 
 K. **`/v1/surface/feedback` orphan is retired.** Removed from `surface_runtime/mod.rs:1243, 4730, 4755` allowlist. `runtime-client.php:163` `submit_feedback()` deleted. §9 invariant #12 grep gate prevents reintroduction.
 
@@ -565,3 +652,23 @@ Pack locks when:
 - §12 open question #1 resolved with a verified channel count (read the registry, don't claim).
 
 Per `feedback_review_loop_l6_policy.md`: 15-cycle hard cap; class-pattern sweeps at 2-similar-findings; convergence rule allows surgical CONDITIONALs to lock.
+
+## 16. L1 implementation notes (V1.3 appendix)
+
+Captured from cycle-3 reviewer FYIs that don't change packet text but are load-bearing for L1 authoring:
+
+1. **§5.4 noun chain.** `verify_and_consume` is on `SurfaceNonceStore` (private struct) at `surface_nonce.rs:640`, not directly on `SurfaceNonceService`. L1 reaches it through `app_state.surface_nonce_store` or a service-level wrapper. The W4 changes are in commit 3 scope. (code-reviewer cycle-3 FYI #1)
+
+2. **§5.9 fixed-size array.** Existing `ALL: [Self; 9]` is `[Self; N]` with explicit `N = 9`. Adding `WpBlockRenders` requires `[Self; 10]` (or a refactor to a slice). L1 picks the smallest change; keep fixed-size for `len()` const evaluation. (code-reviewer cycle-3 FYI #2)
+
+3. **`From<PresenceNonceAction> for FeedbackAction` crate boundary.** `PresenceNonceAction` is crate-private in `src-tauri`; `FeedbackAction` is in `src-tauri/abilities-runtime` (a separate crate). The `From` impl needs either a `pub` promotion of `PresenceNonceAction` OR the impl lives in a third crate that depends on both OR the impl lives in `surface_nonce.rs` using a re-exported type. L1 picks the smallest visibility change. (code-reviewer cycle-3 FYI #3)
+
+4. **Deployment ordering for orphan retirement.** §5.6 step 4 retires `/v1/surface/feedback` allowlist + `submit_feedback()` in the same commit (commit 3 + commit 4 atomic-ish). If the macOS runtime build and the WP plugin build ship at different times in production, a window exists where old WP code POSTs to the dead route → silent feedback loss. For local-to-local dev (the current model) this is moot; for any future remote deployment it's a real coordination concern. L1 notes for ops. (/cso cycle-3 advisory)
+
+5. **Phase-3 `record_claim_feedback` failure charging.** The existing rate-limit budget `failure_budget_per_minute: 240` at `surface_nonce.rs:30-52` is charged by `charge_failure_best_effort` at `:273` when nonce-issue or verify fails. Phase-3 (record_claim_feedback failure after a successful consume) is NOT currently charged. An attacker could intentionally exhaust nonces by triggering record_claim_feedback failures (e.g., via malformed `payload_json` that passes WP shape check but fails Rust `validate_feedback_payload`). L1 adds the failure charge on the phase-3 Err path. (/cso cycle-3 advisory)
+
+6. **HKDF `info` parameter for `ip_hash` MUST be purpose-distinct.** The existing `PRESENCE_NONCE_KEY_INFO = b"dailyos.surface.presence_nonce.digest.v1"` is the info bytes for the nonce-digest key. The `ip_hash` derivation MUST use a different info string (suggested: `AUDIT_IP_HASH_KEY_INFO = b"dailyos.surface.audit.ip_hash.v1"`) so the two keys are cryptographically isolated. Single-constant decision; L1. (security-auditor cycle-3 advisory)
+
+7. **`/dailyos/v1/nonce/verify` permission callback — literal reuse, not "equivalent".** §5.6 step 1 says "reuses `can_issue_presence_nonce`-equivalent logic". L1 SHOULD use the existing `can_issue_presence_nonce` callback directly to prevent drift between the two endpoints' permission semantics. (security-auditor cycle-3 advisory)
+
+8. **WP `payload_json` validation — reject non-plain-object values.** §5.6 step 3 says variant-specific shape validation. L1 should additionally reject arrays, deeply-nested objects, or values that aren't plain key-value maps before forwarding to runtime. Defensive measure against JSON injection / shape-confusion attacks. (security-auditor cycle-3 advisory)
