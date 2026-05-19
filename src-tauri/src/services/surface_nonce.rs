@@ -2562,4 +2562,241 @@ mod tests {
         assert_eq!(event.detail["attempted_surface_client_id"], "attacker-client");
         assert_eq!(event.detail["reason"], "wrong_user");
     }
+
+    // DOS-683 W4 end-to-end fixture per packet F §5.8 + §8.6 + AC E + I.
+    //
+    // Exercises the full issue → verify-wire-through → record_claim_feedback
+    // chain for four representative FeedbackAction variants. The HTTP routing
+    // layer above the service is covered by other tests; this fixture pins
+    // the substrate behavior the verify handler depends on.
+    fn run_e2e_for_variant(
+        action_kind: &str,
+        payload_json: Option<Value>,
+    ) -> (
+        crate::services::claims::ClaimFeedbackOutcome,
+        crate::db::claims::IntelligenceClaim,
+    ) {
+        use crate::services::claims;
+
+        let service = service(SurfaceNonceConfig::default());
+        let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 19, 12, 0, 0).unwrap());
+        let rng = SeedableRng::new(7);
+        let external = ExternalClients::default();
+        let context = ctx(&clock, &rng, &external);
+        let db = db();
+        let session = session("session-1", 42);
+
+        // Issue with action_kind + optional payload.
+        let mut issue = json!({
+            "session_id": "session-1",
+            "wp_user_id": 42,
+            "claim_id": "claim-1",
+            "field_path": "claims[0].summary",
+            "action": action_kind,
+            "claim_version": 7,
+            "composition_id": "composition-1",
+            "composition_version": 17,
+            "request_id": "e2e-issue",
+        });
+        if let Some(payload) = payload_json.as_ref() {
+            issue["payload_json"] = payload.clone();
+        }
+        let issued = service
+            .issue_nonce(
+                &context,
+                &db,
+                &session,
+                issue,
+                "e2e-issue",
+                PresenceNonceRequestMeta::default(),
+            )
+            .expect("issue ok");
+        assert!(
+            issued
+                .audit_events
+                .iter()
+                .any(|e| e.event_kind == "presence_nonce_issued"),
+            "presence_nonce_issued event missing"
+        );
+
+        // Verify same nonce.
+        let verify = json!({
+            "presence_nonce": issued.presence_nonce,
+            "session_id": "session-1",
+            "wp_user_id": 42,
+            "claim_id": "claim-1",
+            "field_path": "claims[0].summary",
+            "action": action_kind,
+            "claim_version": 7,
+            "composition_id": "composition-1",
+            "composition_version": 17,
+            "feedback_request_id": "e2e-verify",
+        });
+        let verified = service
+            .verify_nonce(
+                &context,
+                &db,
+                &session,
+                verify,
+                "e2e-verify",
+                PresenceNonceRequestMeta::default(),
+            )
+            .expect("verify ok");
+        assert_eq!(verified.claim_id, "claim-1");
+        assert_eq!(verified.wp_user_id, 42);
+        assert!(
+            verified
+                .audit_events
+                .iter()
+                .any(|e| e.event_kind == "presence_nonce_verified"),
+            "presence_nonce_verified event missing"
+        );
+
+        // Translate to ClaimFeedbackInput and record. Mirrors the
+        // wire-through in src/surface_runtime/mod.rs::surface_nonce_verify_response.
+        let action: FeedbackAction = verified.action.into();
+        let input = claims::ClaimFeedbackInput {
+            claim_id: verified.claim_id.clone(),
+            action,
+            actor: format!("user:wp:{}", verified.wp_user_id),
+            actor_id: Some(verified.session_id.clone()),
+            payload_json: verified.payload_json.clone(),
+        };
+        let outcome = claims::record_claim_feedback(&context, &db, input).expect("record ok");
+
+        // Confirm the substrate write — claim row updated with the new
+        // verification_state matching the FeedbackAction semantics.
+        let claim = claims::load_claim_by_id(db.conn_ref(), "claim-1")
+            .expect("load")
+            .expect("claim row present");
+        assert_eq!(claim.verification_state, outcome.new_verification_state);
+
+        (outcome, claim)
+    }
+
+    #[test]
+    fn dos683_e2e_mark_outdated_round_trip() {
+        let (outcome, claim) = run_e2e_for_variant("mark_outdated", None);
+        assert_eq!(claim.id, "claim-1");
+        assert_eq!(
+            outcome.action,
+            FeedbackAction::MarkOutdated,
+            "outcome action mirrors the issued PresenceNonceAction"
+        );
+    }
+
+    #[test]
+    fn dos683_e2e_mark_false_round_trip() {
+        let (outcome, _) = run_e2e_for_variant("mark_false", None);
+        assert_eq!(outcome.action, FeedbackAction::MarkFalse);
+    }
+
+    #[test]
+    fn dos683_e2e_wrong_subject_with_payload_round_trip() {
+        let (outcome, _) = run_e2e_for_variant(
+            "wrong_subject",
+            Some(json!({ "corrected_to": { "kind": "account", "id": "acct-test-002" } })),
+        );
+        assert_eq!(outcome.action, FeedbackAction::WrongSubject);
+    }
+
+    #[test]
+    fn dos683_e2e_needs_nuance_with_payload_round_trip() {
+        let (outcome, _) = run_e2e_for_variant(
+            "needs_nuance",
+            Some(json!({ "corrected_text": "renewal is October not November" })),
+        );
+        assert_eq!(outcome.action, FeedbackAction::NeedsNuance);
+    }
+
+    #[test]
+    fn dos683_e2e_replay_rejection_after_verify() {
+        use crate::services::claims;
+
+        let service = service(SurfaceNonceConfig::default());
+        let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 19, 12, 0, 0).unwrap());
+        let rng = SeedableRng::new(11);
+        let external = ExternalClients::default();
+        let context = ctx(&clock, &rng, &external);
+        let db = db();
+        let session = session("session-1", 42);
+
+        let issue = json!({
+            "session_id": "session-1",
+            "wp_user_id": 42,
+            "claim_id": "claim-1",
+            "field_path": "claims[0].summary",
+            "action": "mark_outdated",
+            "claim_version": 7,
+            "composition_id": "composition-1",
+            "composition_version": 17,
+            "request_id": "replay-issue",
+        });
+        let issued = service
+            .issue_nonce(
+                &context,
+                &db,
+                &session,
+                issue,
+                "replay-issue",
+                PresenceNonceRequestMeta::default(),
+            )
+            .expect("issue");
+
+        let build_verify = |label: &str| {
+            json!({
+                "presence_nonce": issued.presence_nonce,
+                "session_id": "session-1",
+                "wp_user_id": 42,
+                "claim_id": "claim-1",
+                "field_path": "claims[0].summary",
+                "action": "mark_outdated",
+                "claim_version": 7,
+                "composition_id": "composition-1",
+                "composition_version": 17,
+                "feedback_request_id": label,
+            })
+        };
+
+        // First verify: succeeds, record_claim_feedback writes a row.
+        let verified = service
+            .verify_nonce(
+                &context,
+                &db,
+                &session,
+                build_verify("first"),
+                "first",
+                PresenceNonceRequestMeta::default(),
+            )
+            .expect("first verify ok");
+        let input = claims::ClaimFeedbackInput {
+            claim_id: verified.claim_id.clone(),
+            action: verified.action.into(),
+            actor: format!("user:wp:{}", verified.wp_user_id),
+            actor_id: Some(verified.session_id.clone()),
+            payload_json: None,
+        };
+        claims::record_claim_feedback(&context, &db, input).expect("first feedback ok");
+
+        // Second verify: nonce already consumed → Replayed rejection. The
+        // audit event MUST be a presence_nonce_rejected with reason=replayed
+        // per packet F §6 #4 invariant.
+        let replayed = service
+            .verify_nonce(
+                &context,
+                &db,
+                &session,
+                build_verify("second"),
+                "second",
+                PresenceNonceRequestMeta::default(),
+            )
+            .expect_err("replay rejected");
+        assert_eq!(replayed.reason, PresenceNonceRejectReason::Replayed);
+        let rejected_event = replayed
+            .audit_events
+            .iter()
+            .find(|e| e.event_kind == "presence_nonce_rejected")
+            .expect("rejection event present");
+        assert_eq!(rejected_event.detail["reason"], "replayed");
+    }
 }
