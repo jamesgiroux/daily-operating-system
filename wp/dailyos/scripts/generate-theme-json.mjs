@@ -123,7 +123,19 @@ function humanize(slug) {
 }
 
 // Build theme.json document. WordPress block theme schema v3.
-function buildThemeJson({ palette, spacing, custom }) {
+//
+// V1.4 magazine-theme extensions (L0 Packet E §5.1):
+//   - `customTemplates`: empty array — W3 has no assignable custom templates;
+//     all front-of-site routing uses standard `single-*.html` / `archive-*.html`
+//     templates registered via the WordPress template hierarchy.
+//   - `templateParts`: declares header / footer / sidebar-account-summary so the
+//     Site Editor recognizes them as reusable parts (matches files in `parts/`).
+//   - `styles.blocks`: per-block style overrides. Empty in W3 — W4 surface
+//     migration will add overrides only where the magazine layout demands them.
+//
+// Insertion order is FIXED for diff stability:
+//   $schema → version → settings → customTemplates → templateParts → styles.
+function buildThemeJson({ palette, spacing, custom, blockOverrides = {} }) {
 	return {
 		$schema: 'https://schemas.wp.org/trunk/theme.json',
 		version: 3,
@@ -147,6 +159,15 @@ function buildThemeJson({ palette, spacing, custom }) {
 					tokens: custom,
 				},
 			},
+		},
+		customTemplates: [],
+		templateParts: [
+			{ name: 'header', area: 'header', title: 'Header' },
+			{ name: 'footer', area: 'footer', title: 'Footer' },
+			{ name: 'sidebar-account-summary', area: 'uncategorized', title: 'Sidebar — Account Summary' },
+		],
+		styles: {
+			blocks: blockOverrides,
 		},
 	};
 }
