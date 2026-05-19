@@ -15,11 +15,11 @@ declare(strict_types=1);
 use PHPUnit\Framework\TestCase;
 
 /**
- * Covers DOS-698 W3 style variation schema and token-discipline gates.
+ * Covers W3 style variation schema and token-discipline gates.
  */
 final class DailyOS_StyleVariationSchemaTest extends TestCase {
 	/**
-	 * Variation slugs shipped in W3 (editorial-dark deferred to DOS-699).
+	 * Variation slugs shipped in W3 (editorial-dark deferred to design-system backlog).
 	 *
 	 * @return array<int, array{0: string}>
 	 */

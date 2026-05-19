@@ -3,7 +3,7 @@
  * FreshnessIndicator block server-side render.
  *
  * Relative/absolute labels are computed at render time so client markup never
- * carries raw timestamps unless a future DOS-477 policy explicitly permits it.
+ * carries raw timestamps unless a future display-safe policy explicitly permits it.
  *
  * @package DailyOS
  */

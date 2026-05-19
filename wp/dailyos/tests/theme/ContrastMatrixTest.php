@@ -18,7 +18,7 @@ declare(strict_types=1);
 use PHPUnit\Framework\TestCase;
 
 /**
- * Covers DOS-698 W3 contrast-matrix invariant for editorial-light and
+ * Covers W3 contrast-matrix invariant for editorial-light and
  * high-contrast variations.
  */
 final class DailyOS_ContrastMatrixTest extends TestCase {

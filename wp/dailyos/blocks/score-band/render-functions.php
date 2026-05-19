@@ -138,7 +138,7 @@ if ( ! function_exists( 'dailyos_score_band_render' ) ) {
 			: [];
 
 		// ScoreBand canonical-label discipline per .docs/design/primitives/
-		// ScoreBand.md + DOS-325 voice rule. Renderer maps a discrete `value`
+		// ScoreBand.md (product vocabulary). Renderer maps a discrete `value`
 		// to a plain-language headline; payload.text is REJECTED if it would
 		// place a raw number in the headline.
 		$score_band_labels = [

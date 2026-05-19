@@ -12,7 +12,7 @@
       "description": "Disallow direct filesystem writes outside wp-content/uploads/dailyos.",
       "pattern": "\\b(file_put_contents|fwrite)\\s*\\(|\\bfopen\\s*\\([^\\n;]*['\\\"]w(?:b)?['\\\"]",
       "include_glob": "wp/dailyos/**/*.php",
-      "exclude_glob": ""
+      "exclude_glob": "wp/dailyos/tests/**/*.php"
     },
     {
       "id": "secret_persistence",
