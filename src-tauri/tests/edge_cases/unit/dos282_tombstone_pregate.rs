@@ -15,7 +15,10 @@ fn user_tombstone_blocks_ai_reassertion_before_render() {
     assert_eq!(superseded["surfacing_state"], "dormant");
     assert_eq!(superseded["demotion_reason"], "superseded");
     assert!(
-        !json_contains_token(&state["rendered_current_topics"], "claim-b14-superseded-open-risk"),
+        !json_contains_token(
+            &state["rendered_current_topics"],
+            "claim-b14-superseded-open-risk"
+        ),
         "tombstoned/superseded stale claim must not be reasserted into current topics"
     );
 }

@@ -20,10 +20,10 @@
 //!   transport HMAC verification; conversation handle minting.
 //! - audit — audit log writer with keyed HMAC parameter/response hashes.
 
+pub mod actor_policy;
+pub mod audit;
+pub mod auth;
 pub mod contracts;
 pub mod gateway;
 pub mod handlers;
 pub mod taxonomy;
-pub mod actor_policy;
-pub mod auth;
-pub mod audit;

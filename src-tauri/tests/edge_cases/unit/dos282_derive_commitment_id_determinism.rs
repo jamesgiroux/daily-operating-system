@@ -24,8 +24,12 @@ fn derive_commitment_id_separates_near_collision_inputs() {
     let base = derive_commitment_id("Send renewal deck", "account-example", None, Some("Alex"));
     let changed_owner =
         derive_commitment_id("Send renewal deck", "account-example", None, Some("Jamie"));
-    let changed_subject =
-        derive_commitment_id("Send renewal deck", "other-account-example", None, Some("Alex"));
+    let changed_subject = derive_commitment_id(
+        "Send renewal deck",
+        "other-account-example",
+        None,
+        Some("Alex"),
+    );
 
     assert_ne!(base, changed_owner);
     assert_ne!(base, changed_subject);

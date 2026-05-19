@@ -13,7 +13,8 @@ fn old_surface_paths_and_new_ability_outputs_remain_in_field_parity() {
         "trust_band",
     ] {
         assert_eq!(
-            matrix_row(&output, field)["equal"], true,
+            matrix_row(&output, field)["equal"],
+            true,
             "{field} must remain in old-path/new-ability parity until cutover"
         );
     }

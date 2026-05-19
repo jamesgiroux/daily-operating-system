@@ -64,8 +64,8 @@ fn proposal(account_id: &str, label: &str) -> ClaimProposal {
 }
 
 fn surface_client() -> Actor {
-    let scope_set = ScopeSet::new([SurfaceScope::new("read.account_overview")])
-        .expect("scope non-empty");
+    let scope_set =
+        ScopeSet::new([SurfaceScope::new("read.account_overview")]).expect("scope non-empty");
     Actor::SurfaceClient {
         instance: SurfaceClientId::new("sc-replay"),
         scopes: scope_set,
@@ -88,8 +88,8 @@ fn dos589_replay_cursor_orders_by_event_seq_and_dedupes() {
     // Seed 4 committed claims → 4 version_events rows in event_seq order.
     let mut cursors_in_order: Vec<String> = Vec::new();
     for i in 0..4 {
-        let inserted = commit_claim(&ctx, db, proposal("acct-589r", &format!("c{i}")))
-            .expect("commit claim");
+        let inserted =
+            commit_claim(&ctx, db, proposal("acct-589r", &format!("c{i}"))).expect("commit claim");
         let claim_id = match inserted {
             CommittedClaim::Inserted { claim } => claim.id,
             other => panic!("expected Inserted at {i}, got {other:?}"),
@@ -126,7 +126,8 @@ fn dos589_replay_cursor_orders_by_event_seq_and_dedupes() {
     let local_key = __test_load_local_key(db, &ack.subscription_id)
         .expect("checkpoint load")
         .expect("subscription_id has a checkpoint row");
-    let from_envelope = __test_encode_cursor(&cursors_in_order[1], &ack.subscription_id, &local_key);
+    let from_envelope =
+        __test_encode_cursor(&cursors_in_order[1], &ack.subscription_id, &local_key);
 
     let replay = ReplayRequest {
         subscription_id: ack.subscription_id.clone(),

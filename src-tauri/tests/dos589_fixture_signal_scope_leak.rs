@@ -181,7 +181,11 @@ fn dos589_foreign_actor_cannot_replay_captured_envelope() {
     let conn = fresh_full_db();
     conn.execute(
         "INSERT INTO accounts (id, name, updated_at) VALUES (?1, ?2, ?3)",
-        params!["acct-589-bind", "DOS589 Actor Binding", "2026-05-15T12:00:00Z"],
+        params![
+            "acct-589-bind",
+            "DOS589 Actor Binding",
+            "2026-05-15T12:00:00Z"
+        ],
     )
     .expect("seed account");
     let (clock, rng, external) = ctx_parts();
@@ -219,8 +223,7 @@ fn dos589_foreign_actor_cannot_replay_captured_envelope() {
     let local_key = __test_load_local_key(db, &owner_ack.subscription_id)
         .unwrap()
         .unwrap();
-    let captured_envelope =
-        __test_encode_cursor(&cursor, &owner_ack.subscription_id, &local_key);
+    let captured_envelope = __test_encode_cursor(&cursor, &owner_ack.subscription_id, &local_key);
 
     // Foreign actor — same scope set, different instance — tries to use
     // the captured envelope against owner's subscription_id. The actor-

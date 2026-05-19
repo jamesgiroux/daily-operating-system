@@ -8,6 +8,7 @@
     "prep_outputs",
     "mcp_responses",
     "tauri_renders",
+    "wp_block_renders",
     "signal_payloads",
     "telemetry",
     "eval_fixtures",

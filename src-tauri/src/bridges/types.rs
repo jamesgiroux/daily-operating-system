@@ -91,6 +91,7 @@ pub enum RenderPolicyChannel {
     PrepOutputs,
     McpResponses,
     TauriRenders,
+    WpBlockRenders,
     SignalPayloads,
     Telemetry,
     EvalFixtures,
@@ -99,11 +100,12 @@ pub enum RenderPolicyChannel {
 }
 
 impl RenderPolicyChannel {
-    const ALL: [Self; 9] = [
+    const ALL: [Self; 10] = [
         Self::Callouts,
         Self::PrepOutputs,
         Self::McpResponses,
         Self::TauriRenders,
+        Self::WpBlockRenders,
         Self::SignalPayloads,
         Self::Telemetry,
         Self::EvalFixtures,
@@ -121,6 +123,7 @@ impl RenderPolicyChannel {
             Self::PrepOutputs => "prep_outputs",
             Self::McpResponses => "mcp_responses",
             Self::TauriRenders => "tauri_renders",
+            Self::WpBlockRenders => "wp_block_renders",
             Self::SignalPayloads => "signal_payloads",
             Self::Telemetry => "telemetry",
             Self::EvalFixtures => "eval_fixtures",

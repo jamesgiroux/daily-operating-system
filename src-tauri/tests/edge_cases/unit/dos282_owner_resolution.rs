@@ -32,10 +32,15 @@ fn owner_resolution_covers_exact_alias_fuzzy_ambiguous_and_unassigned() {
 
     let db = action_db(&conn);
     assert_eq!(
-        resolve_owner(db, "account-example", "commitment-1", Some("alex@example.com"))
-            .expect("exact email")
-            .owner_entity_id
-            .as_deref(),
+        resolve_owner(
+            db,
+            "account-example",
+            "commitment-1",
+            Some("alex@example.com")
+        )
+        .expect("exact email")
+        .owner_entity_id
+        .as_deref(),
         Some("person-alex")
     );
     assert_eq!(

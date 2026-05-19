@@ -99,8 +99,9 @@ fn dos589_backpressure_marks_replay_required_without_blocking_mutation() {
     // Seed three claims. Each commit_claim writes a version_events row,
     // and crucially each must succeed irrespective of dispatcher state.
     for i in 0..3 {
-        commit_claim(&ctx, db, proposal("acct-589-bp", &format!("c{i}")))
-            .unwrap_or_else(|_| panic!("commit claim {i} (mutation path independent of dispatcher)"));
+        commit_claim(&ctx, db, proposal("acct-589-bp", &format!("c{i}"))).unwrap_or_else(|_| {
+            panic!("commit claim {i} (mutation path independent of dispatcher)")
+        });
     }
 
     // Confirm W4-B did its work despite the slow subscriber.
@@ -113,7 +114,10 @@ fn dos589_backpressure_marks_replay_required_without_blocking_mutation() {
             |row| row.get(0),
         )
         .expect("count events");
-    assert!(event_rows >= 3, "W4-B commit path is not blocked by backpressure (got {event_rows})");
+    assert!(
+        event_rows >= 3,
+        "W4-B commit path is not blocked by backpressure (got {event_rows})"
+    );
 
     // Drive a dispatch cycle. The 3rd push should overflow → mark replay-required.
     dispatcher

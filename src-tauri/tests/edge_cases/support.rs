@@ -54,7 +54,10 @@ pub fn matrix_row<'a>(output: &'a Value, field: &str) -> &'a Value {
         .unwrap_or_else(|| panic!("missing matrix row {field}"))
 }
 
-pub fn trust_factor_value(computation: &dailyos_lib::abilities::trust::TrustComputation, name: &str) -> f64 {
+pub fn trust_factor_value(
+    computation: &dailyos_lib::abilities::trust::TrustComputation,
+    name: &str,
+) -> f64 {
     computation
         .evidence
         .factor_breakdown
@@ -64,7 +67,9 @@ pub fn trust_factor_value(computation: &dailyos_lib::abilities::trust::TrustComp
         .raw_value
 }
 
-pub fn compile_test_trust(inputs: TrustFactorInputs) -> dailyos_lib::abilities::trust::TrustComputation {
+pub fn compile_test_trust(
+    inputs: TrustFactorInputs,
+) -> dailyos_lib::abilities::trust::TrustComputation {
     compile_trust(
         &test_claim("Account health is at risk"),
         TrustContext {

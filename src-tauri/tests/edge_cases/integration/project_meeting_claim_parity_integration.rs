@@ -10,7 +10,9 @@ fn project_context_matches_project_claim_used_by_meeting_prep() {
         .as_array()
         .expect("topic source claims");
 
-    assert!(topic_claims.iter().any(|claim| claim.as_str() == Some(project_claim)));
+    assert!(topic_claims
+        .iter()
+        .any(|claim| claim.as_str() == Some(project_claim)));
     assert_eq!(
         output["project_page_surface_pinned"]["account_page_project_section"]["claim_id"],
         project_claim

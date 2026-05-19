@@ -278,6 +278,7 @@ VALUES
     ('prep_outputs', 1, 1, 1, 1, 0),
     ('mcp_responses', 1, 1, 1, 1, 0),
     ('tauri_renders', 1, 1, 1, 1, 0),
+    ('wp_block_renders', 1, 1, 1, 1, 0),
     ('signal_payloads', 1, 1, 1, 1, 1),
     ('telemetry', 1, 1, 1, 1, 1),
     ('eval_fixtures', 1, 1, 1, 1, 1),

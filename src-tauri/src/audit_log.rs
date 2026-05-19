@@ -328,11 +328,9 @@ impl AuditLogger {
             // identity: its attribution is `client_id` + `conversation_handle`
             // recorded via the MCP gateway's audit path, not the WP-paired
             // user-id channel.
-            Actor::Agent
-            | Actor::User
-            | Actor::Admin
-            | Actor::System
-            | Actor::McpClient { .. } => (None, None, None),
+            Actor::Agent | Actor::User | Actor::Admin | Actor::System | Actor::McpClient { .. } => {
+                (None, None, None)
+            }
         };
 
         self.write_record(

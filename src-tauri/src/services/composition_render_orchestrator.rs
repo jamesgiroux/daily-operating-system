@@ -178,11 +178,8 @@ pub fn project_from_ability_data(
 ) -> Result<(ProjectedComposition, Vec<AuditIntent>), OrchestratorError> {
     let composition: Composition = serde_json::from_value(data.clone())
         .map_err(|e| OrchestratorError::CompositionDeserialize(e.to_string()))?;
-    let ctx = FallbackProjectionContext::new(
-        actor,
-        SurfaceKind::SurfaceClient,
-        fallback_policy_version,
-    );
+    let ctx =
+        FallbackProjectionContext::new(actor, SurfaceKind::SurfaceClient, fallback_policy_version);
     project_for_surface_fn(&composition, &ctx)
         .map_err(|e| OrchestratorError::ProjectionFailed(format!("{e:?}")))
 }
@@ -242,12 +239,18 @@ mod tests {
             "unknown_block_count": 0,
             "unknown_block_cap": 4,
             "dropped_unknown_block_count": 0
-        })).expect("projection deserialize");
+        }))
+        .expect("projection deserialize");
 
         let orchestrator = Arc::new(CompositionRenderOrchestrator::new());
         let actor = surface_actor();
         let token = orchestrator
-            .cache_store(&actor, "dailyos/account-overview:account:acct-1", 1, projection)
+            .cache_store(
+                &actor,
+                "dailyos/account-overview:account:acct-1",
+                1,
+                projection,
+            )
             .expect("cache_store with SurfaceClient");
         assert!(!token.is_empty(), "non-empty cache_hint_token");
 
@@ -268,11 +271,16 @@ mod tests {
             "unknown_block_count": 0,
             "unknown_block_cap": 4,
             "dropped_unknown_block_count": 0
-        })).expect("projection deserialize");
+        }))
+        .expect("projection deserialize");
         let orchestrator = Arc::new(CompositionRenderOrchestrator::new());
         let actor_a = surface_actor();
-        let _ = orchestrator
-            .cache_store(&actor_a, "dailyos/account-overview:account:acct-2", 1, projection);
+        let _ = orchestrator.cache_store(
+            &actor_a,
+            "dailyos/account-overview:account:acct-2",
+            1,
+            projection,
+        );
 
         // Different scope set → different canonical id → miss.
         let scopes_b = ScopeSet::new([
@@ -300,9 +308,7 @@ mod tests {
     #[test]
     fn account_id_extracts() {
         assert_eq!(
-            extract_account_id_from_composition_id(
-                "dailyos/account-overview:account:acct-42"
-            ),
+            extract_account_id_from_composition_id("dailyos/account-overview:account:acct-42"),
             Some("acct-42")
         );
         assert!(extract_account_id_from_composition_id("dailyos/other:foo").is_none());

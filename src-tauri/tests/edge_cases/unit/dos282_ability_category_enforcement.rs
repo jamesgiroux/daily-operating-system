@@ -31,7 +31,12 @@ fn read_and_transform_categories_cannot_mutate_directly_or_transitively() {
     )));
 
     let transitive = AbilityRegistry::from_descriptors_checked(vec![
-        descriptor("transform_parent", AbilityCategory::Transform, &["publisher"], &[]),
+        descriptor(
+            "transform_parent",
+            AbilityCategory::Transform,
+            &["publisher"],
+            &[],
+        ),
         descriptor("publisher", AbilityCategory::Publish, &[], &["actions"]),
     ])
     .unwrap_err();
