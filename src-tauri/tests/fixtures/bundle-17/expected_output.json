@@ -46,6 +46,13 @@
       "restricted_source_detail_visible_when_authorized": true,
       "revoked_source_detail_visible": false
     },
+    "wp_block_renders": {
+      "actor": "system",
+      "restricted_source_summary_visible": true,
+      "restricted_source_detail_visible": false,
+      "revoked_source_detail_visible": false,
+      "redaction_target_gate": true
+    },
     "signal_payloads": {
       "event": "source_lifecycle_changed",
       "claim_ids": [
@@ -113,6 +120,14 @@
     },
     {
       "channel": "tauri_renders",
+      "revoked_source_rejected": true,
+      "restricted_source_rejected": true,
+      "internal_only_rejected": true,
+      "safe_summary_retained": true,
+      "low_detail_only": false
+    },
+    {
+      "channel": "wp_block_renders",
       "revoked_source_rejected": true,
       "restricted_source_rejected": true,
       "internal_only_rejected": true,

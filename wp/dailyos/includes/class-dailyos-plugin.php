@@ -582,6 +582,16 @@ final class DailyOS_Plugin {
 
 		register_rest_route(
 			'dailyos/v1',
+			'/nonce/verify',
+			[
+				'methods'             => 'POST',
+				'callback'            => [ $this, 'verify_presence_nonce' ],
+				'permission_callback' => [ $this, 'can_issue_presence_nonce' ],
+			]
+		);
+
+		register_rest_route(
+			'dailyos/v1',
 			'/account-overview/preview',
 			[
 				'methods'             => 'POST',
@@ -813,7 +823,103 @@ final class DailyOS_Plugin {
 
 		$client = new DailyOS_Runtime_Client( new DailyOS_Credential_Store(), new DailyOS_Hmac_Signer() );
 
-		return $client->issue_nonce( $payload );
+		$response = $client->issue_nonce( $payload );
+		if ( is_array( $response ) && ! isset( $response['nonce_digest'] ) && isset( $response['presence_nonce'] ) ) {
+			$response['nonce_digest'] = $response['presence_nonce'];
+		}
+		return self::sanitize_presence_nonce_response( $response );
+	}
+
+	/**
+	 * Verify and consume a user-presence nonce through the paired runtime.
+	 *
+	 * Consume side of the two-call feedback affordance. Body shape: { nonce_digest }.
+	 * wp_user_id is server-derived from the authenticated WP session — never trusted from the request body.
+	 *
+	 * @param mixed $request REST request object or payload array.
+	 * @return array<string, mixed>|\WP_Error Runtime verify response or validation error.
+	 */
+	public function verify_presence_nonce( mixed $request ): array|\WP_Error {
+		// V4-W4: verify forwards the full binding tuple per the runtime's
+		// VerifyNonceRequest::parse contract — compare_binding_tuple uses
+		// these to validate the verify request matches the issue binding
+		// before consuming the nonce. Accept presence_nonce (canonical) or
+		// nonce_digest (legacy alias) at the WP boundary; forward as
+		// presence_nonce which is the runtime's required key name.
+		$params              = self::rest_request_params( $request );
+		$presence_nonce      = self::required_string_param( $params, isset( $params['presence_nonce'] ) ? 'presence_nonce' : 'nonce_digest' );
+		$claim_id            = self::required_string_param( $params, 'claim_id' );
+		$action              = self::required_string_param( $params, isset( $params['action_kind'] ) ? 'action_kind' : 'action' );
+		$field_path          = self::required_string_param( $params, 'field_path' );
+		$composition_id      = self::required_string_param( $params, 'composition_id' );
+		$claim_version       = self::required_u64_param( $params, 'claim_version', 'malformed_claim_version' );
+		$composition_version = self::required_u64_param( $params, 'composition_version', 'malformed_request' );
+
+		foreach ( [ $presence_nonce, $claim_id, $action, $field_path, $composition_id, $claim_version, $composition_version ] as $candidate ) {
+			if ( is_wp_error( $candidate ) ) {
+				return $candidate;
+			}
+		}
+
+		$current_user_id = function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0;
+
+		if ( 0 >= $current_user_id ) {
+			return new \WP_Error( 'dailyos_nonce_unauthenticated', __( 'Sign in before verifying a DailyOS nonce.', 'dailyos' ), [ 'status' => 401 ] );
+		}
+
+		$credential_store = new DailyOS_Credential_Store();
+		$marker           = $credential_store->get_marker();
+
+		if ( null === $marker ) {
+			return new \WP_Error( 'dailyos_not_paired', __( 'DailyOS is not paired with an active loopback runtime.', 'dailyos' ), [ 'status' => 403 ] );
+		}
+
+		$paired_wp_user_id = self::paired_wp_user_id( $marker, $current_user_id );
+
+		if ( $paired_wp_user_id !== $current_user_id ) {
+			return new \WP_Error( 'dailyos_nonce_wrong_user', __( 'This DailyOS session is paired to another WordPress user.', 'dailyos' ), [ 'status' => 403 ] );
+		}
+
+		$credential = $credential_store->retrieve_session_key();
+
+		if ( null === $credential ) {
+			return new \WP_Error( 'missing_session_key', __( 'DailyOS is not paired with an active runtime session.', 'dailyos' ), [ 'status' => 403 ] );
+		}
+
+		$payload = [
+			'presence_nonce'      => $presence_nonce,
+			'session_id'          => $credential->session_id(),
+			'wp_user_id'          => $current_user_id,
+			'claim_id'            => $claim_id,
+			'field_path'          => $field_path,
+			'action'              => $action,
+			'claim_version'       => $claim_version,
+			'composition_id'      => $composition_id,
+			'composition_version' => $composition_version,
+		];
+
+		$request_id = self::optional_string_param( $params, 'request_id' );
+
+		if ( null !== $request_id ) {
+			$payload['feedback_request_id'] = $request_id;
+		}
+
+		$client = new DailyOS_Runtime_Client( new DailyOS_Credential_Store(), new DailyOS_Hmac_Signer() );
+
+		return self::sanitize_presence_nonce_response( $client->verify_nonce( $payload ) );
+	}
+
+	/**
+	 * Strip user-authored feedback payload echoes from nonce bridge responses.
+	 *
+	 * @param array<string, mixed>|\WP_Error $response Runtime response.
+	 * @return array<string, mixed>|\WP_Error Sanitized response.
+	 */
+	private static function sanitize_presence_nonce_response( array|\WP_Error $response ): array|\WP_Error {
+		if ( is_array( $response ) ) {
+			unset( $response['payload_json'] );
+		}
+		return $response;
 	}
 
 	/**
@@ -880,32 +986,64 @@ final class DailyOS_Plugin {
 	 * @return array<string, mixed>|\WP_Error Runtime nonce payload or validation error.
 	 */
 	private function presence_nonce_payload( mixed $request ): array|\WP_Error {
-		$params        = self::rest_request_params( $request );
-		$claim_version = self::required_u64_param( $params, 'claim_version', 'malformed_claim_version' );
-
-		if ( is_wp_error( $claim_version ) ) {
-			return $claim_version;
+		// V4-W4: presence_nonce_payload always routes through
+		// feedback_presence_nonce_payload now that PresenceNonceAction is the
+		// 9-variant FeedbackAction set. The pre-W4 4-variant legacy branch
+		// (correct/dismiss/corroborate/contradict) has been removed —
+		// PresenceNonceAction no longer accepts those strings, and keeping
+		// the branch alive would let a request bypass the 9-variant allowlist.
+		$params = self::rest_request_params( $request );
+		if ( isset( $params['action'] ) && is_string( $params['action'] ) && ! isset( $params['action_kind'] ) ) {
+			$params['action_kind'] = $params['action'];
 		}
+		return $this->feedback_presence_nonce_payload( $params );
+	}
 
+	/**
+	 * Build the runtime nonce issue payload for the feedback affordance contract.
+	 *
+	 * @param array<string, mixed> $params Request params.
+	 * @return array<string, mixed>|\WP_Error Runtime nonce payload or validation error.
+	 */
+	private function feedback_presence_nonce_payload( array $params ): array|\WP_Error {
+		// V4-W4: every nonce mint requires the full binding tuple per the
+		// runtime's IssueNonceRequest::parse contract. action_kind is the
+		// canonical name the WP feedback path uses; the runtime expects
+		// `action`, so we rename at the boundary.
+		$claim_id            = self::required_string_param( $params, 'claim_id' );
+		$action              = self::required_string_param( $params, isset( $params['action_kind'] ) ? 'action_kind' : 'action' );
+		$field_path          = self::required_string_param( $params, 'field_path' );
+		$composition_id      = self::required_string_param( $params, 'composition_id' );
+		$claim_version       = self::required_u64_param( $params, 'claim_version', 'malformed_claim_version' );
 		$composition_version = self::required_u64_param( $params, 'composition_version', 'malformed_request' );
 
-		if ( is_wp_error( $composition_version ) ) {
-			return $composition_version;
-		}
-
-		$claim_id       = self::required_string_param( $params, 'claim_id' );
-		$field_path     = self::required_string_param( $params, 'field_path' );
-		$action         = self::required_string_param( $params, 'action' );
-		$composition_id = self::required_string_param( $params, 'composition_id' );
-
-		foreach ( [ $claim_id, $field_path, $action, $composition_id ] as $candidate ) {
+		foreach ( [ $claim_id, $action, $field_path, $composition_id, $claim_version, $composition_version ] as $candidate ) {
 			if ( is_wp_error( $candidate ) ) {
 				return $candidate;
 			}
 		}
 
-		if ( ! in_array( $action, [ 'correct', 'dismiss', 'corroborate', 'contradict' ], true ) ) {
+		if ( ! in_array(
+			$action,
+			[
+				'confirm_current',
+				'mark_outdated',
+				'mark_false',
+				'wrong_subject',
+				'wrong_source',
+				'cannot_verify',
+				'needs_nuance',
+				'surface_inappropriate',
+				'not_relevant_here',
+			],
+			true
+		) ) {
 			return self::nonce_payload_error( 'malformed_request', 400 );
+		}
+
+		$payload_json = self::validate_payload_json( $params, $action );
+		if ( is_wp_error( $payload_json ) ) {
+			return $payload_json;
 		}
 
 		$current_user_id = function_exists( 'get_current_user_id' ) ? (int) get_current_user_id() : 0;
@@ -944,6 +1082,10 @@ final class DailyOS_Plugin {
 			'composition_version' => $composition_version,
 		];
 
+		if ( null !== $payload_json ) {
+			$payload['payload_json'] = $payload_json;
+		}
+
 		$request_id = self::optional_string_param( $params, 'request_id' );
 
 		if ( null !== $request_id ) {
@@ -951,6 +1093,118 @@ final class DailyOS_Plugin {
 		}
 
 		return $payload;
+	}
+
+	/**
+	 * Validate the optional payload_json field per FeedbackAction variant shape.
+	 *
+	 * Variants that REQUIRE payload_json: wrong_source, needs_nuance, surface_inappropriate, not_relevant_here.
+	 * Variants where it is OPTIONAL: wrong_subject.
+	 * Variants where it MUST be absent or null: confirm_current, mark_outdated, mark_false, cannot_verify.
+	 *
+	 * Rejects arrays, deeply-nested objects, and non-plain-object values. Caps user-authored strings at 500 chars.
+	 *
+	 * @param array<string, mixed> $params Request params.
+	 * @param string               $action FeedbackAction variant.
+	 * @return array<string, mixed>|null|\WP_Error Validated payload (associative array — encoded as a JSON object by the runtime transport), null if absent, or WP_Error on invalid shape.
+	 */
+	private static function validate_payload_json( array $params, string $action ): array|null|\WP_Error {
+		$raw_payload = $params['payload_json'] ?? null;
+		$max_chars   = 500;
+
+		$variants_required_payload = [ 'wrong_source', 'needs_nuance', 'surface_inappropriate', 'not_relevant_here' ];
+		$variants_optional_payload = [ 'wrong_subject' ];
+
+		if ( null === $raw_payload ) {
+			if ( in_array( $action, $variants_required_payload, true ) ) {
+				return self::nonce_payload_error( 'malformed_request', 400 );
+			}
+			return null;
+		}
+
+		if ( is_string( $raw_payload ) ) {
+			$payload_json = json_decode( $raw_payload, true );
+			if ( ! is_array( $payload_json ) ) {
+				return self::nonce_payload_error( 'malformed_request', 400 );
+			}
+		} elseif ( is_array( $raw_payload ) ) {
+			$payload_json = $raw_payload;
+		} else {
+			return self::nonce_payload_error( 'malformed_request', 400 );
+		}
+
+		if ( self::is_list_array( $payload_json ) ) {
+			return self::nonce_payload_error( 'malformed_request', 400 );
+		}
+
+		if ( ! in_array( $action, array_merge( $variants_required_payload, $variants_optional_payload ), true ) ) {
+			return self::nonce_payload_error( 'malformed_request', 400 );
+		}
+
+		foreach ( $payload_json as $key => $value ) {
+			if ( ! is_string( $key ) ) {
+				return self::nonce_payload_error( 'malformed_request', 400 );
+			}
+			if ( is_array( $value ) ) {
+				return self::nonce_payload_error( 'malformed_request', 400 );
+			}
+			if ( is_string( $value ) && strlen( $value ) > $max_chars ) {
+				return self::nonce_payload_error( 'malformed_request', 400 );
+			}
+		}
+
+		switch ( $action ) {
+			case 'wrong_source':
+				// Rust record_claim_feedback requires source_ref (string) per
+				// claims.rs:5185 validate_feedback_action_metadata.
+				// source_index is an optional companion that helps the JS
+				// affordance render the selection but the runtime never reads
+				// it. The previous OR-shape would accept source_index alone
+				// and fail at the runtime.
+				$shape_ok = isset( $payload_json['source_ref'] )
+					&& is_string( $payload_json['source_ref'] )
+					&& '' !== trim( $payload_json['source_ref'] );
+				break;
+			case 'needs_nuance':
+				$shape_ok = isset( $payload_json['corrected_text'] ) && is_string( $payload_json['corrected_text'] ) && '' !== trim( $payload_json['corrected_text'] );
+				break;
+			case 'surface_inappropriate':
+				$shape_ok = isset( $payload_json['surface'] ) && is_string( $payload_json['surface'] ) && '' !== trim( $payload_json['surface'] );
+				break;
+			case 'not_relevant_here':
+				$shape_ok = isset( $payload_json['invocation_id'] ) && is_string( $payload_json['invocation_id'] ) && '' !== trim( $payload_json['invocation_id'] );
+				break;
+			case 'wrong_subject':
+				$shape_ok = true;
+				break;
+			default:
+				$shape_ok = false;
+				break;
+		}
+
+		if ( ! $shape_ok ) {
+			return self::nonce_payload_error( 'malformed_request', 400 );
+		}
+
+		// Return as associative array. The runtime transport JSON-encodes the
+		// full outbound body, so payload_json lands as a JSON OBJECT on the
+		// wire — which is what surface_nonce::optional_payload_json requires
+		// (it drops non-object values silently). Cycle-2 L2 codex challenge
+		// caught the prior wp_json_encode→string forwarding bug.
+		return $payload_json;
+	}
+
+	/**
+	 * Portable array-list check for PHP 7.2+.
+	 *
+	 * @param array<mixed> $value Candidate array.
+	 * @return bool
+	 */
+	private static function is_list_array( array $value ): bool {
+		if ( [] === $value ) {
+			return true;
+		}
+		return array_keys( $value ) === range( 0, count( $value ) - 1 );
 	}
 
 	/**

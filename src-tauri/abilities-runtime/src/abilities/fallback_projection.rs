@@ -440,8 +440,7 @@ fn project_known_block(
         ctx,
         &mut diagnostics,
     );
-    let trust_band =
-        trust_band_from_attributes(block).unwrap_or(rule.default_trust_band);
+    let trust_band = trust_band_from_attributes(block).unwrap_or(rule.default_trust_band);
     Ok((
         ProjectedBlock {
             block_id: block.id.clone(),
@@ -1443,7 +1442,8 @@ const MARKDOWN_DOCUMENT_FIELDS: &[FieldPolicy] = &[
 // — per-primitive field structure is finalized alongside each block's
 // payload contract.
 const PILL_FIELDS: &[FieldPolicy] = &[text_field("/payload/text", ClaimSensitivity::Internal)];
-const STATUS_DOT_FIELDS: &[FieldPolicy] = &[text_field("/payload/text", ClaimSensitivity::Internal)];
+const STATUS_DOT_FIELDS: &[FieldPolicy] =
+    &[text_field("/payload/text", ClaimSensitivity::Internal)];
 const PROVENANCE_TAG_FIELDS: &[FieldPolicy] = &[
     text_field("/payload/text", ClaimSensitivity::Internal),
     text_field("/payload/source", ClaimSensitivity::Internal),

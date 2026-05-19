@@ -92,13 +92,23 @@ impl std::fmt::Display for Verb {
 /// Compose a canonical [`ScopedName`] from the namespace prefix, a verb,
 /// and a noun per ADR-0102 §E. Equivalent to `format!("{}.{}.{}", ...)`.
 pub fn compose_scoped_name(verb: Verb, noun: &str) -> ScopedName {
-    ScopedName::new(format!("{}.{}.{}", CANONICAL_NAMESPACE, verb.as_str(), noun))
+    ScopedName::new(format!(
+        "{}.{}.{}",
+        CANONICAL_NAMESPACE,
+        verb.as_str(),
+        noun
+    ))
 }
 
 /// Compose a canonical [`Scope`] from the namespace prefix, a verb,
 /// and a noun per ADR-0102 §E. Equivalent to `format!("{}.{}.{}", ...)`.
 pub fn compose_scope(verb: Verb, noun: &str) -> Scope {
-    Scope::new(format!("{}.{}.{}", CANONICAL_NAMESPACE, verb.as_str(), noun))
+    Scope::new(format!(
+        "{}.{}.{}",
+        CANONICAL_NAMESPACE,
+        verb.as_str(),
+        noun
+    ))
 }
 
 /// canonical form dailyos.<verb>.<noun> per ADR-0102 amendment §E.
@@ -308,13 +318,21 @@ pub trait McpToolHandler: Send + Sync {
 /// substrate) values per §E, so auth-state sentinels do not belong on
 /// that field.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
 pub enum ToolError {
-    BadParams { detail: String },
+    BadParams {
+        detail: String,
+    },
     /// Scope-deficit authorization failure — the caller's manifest grant
     /// did not include a required scope. The named `missing_scope` is a
     /// canonical or substrate-shipped [`Scope`] per ADR-0102 §E.
-    Unauthorized { missing_scope: Scope },
+    Unauthorized {
+        missing_scope: Scope,
+    },
     /// MCP client pairing was revoked (per ADR-0102 §C). The caller must
     /// re-pair before further invocations succeed.
     PairingRevoked,
@@ -322,10 +340,18 @@ pub enum ToolError {
     /// caller must restart with a fresh conversation (the gateway will
     /// mint a new handle on the next call).
     ConversationRevoked,
-    NotFound { resource: String },
-    RateLimited { retry_after_seconds: u32 },
-    UpstreamFailure { detail: String },
-    Internal { trace_id: String },
+    NotFound {
+        resource: String,
+    },
+    RateLimited {
+        retry_after_seconds: u32,
+    },
+    UpstreamFailure {
+        detail: String,
+    },
+    Internal {
+        trace_id: String,
+    },
 }
 
 #[cfg(test)]

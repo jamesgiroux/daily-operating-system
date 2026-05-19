@@ -10,9 +10,8 @@ fn account_context_and_meeting_briefing_share_claim_refs() {
         .as_array()
         .expect("meeting source claims");
 
-    assert!(meeting_claims.iter().any(|claim| claim.as_str() == Some(account_claim)));
-    assert_eq!(
-        matrix_row(&output, "primary_account_id")["equal"],
-        true
-    );
+    assert!(meeting_claims
+        .iter()
+        .any(|claim| claim.as_str() == Some(account_claim)));
+    assert_eq!(matrix_row(&output, "primary_account_id")["equal"], true);
 }

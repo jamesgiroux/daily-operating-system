@@ -582,10 +582,7 @@ fn build_claim_block(
                     }],
                     "claim_type": projection.claim.claim_type,
                 }),
-                source_feedback_computed_bindings(
-                    "/items/0/text",
-                    "/items/0/trust_band",
-                )?,
+                source_feedback_computed_bindings("/items/0/text", "/items/0/trust_band")?,
                 0.78,
                 SalienceBand::Important,
                 "commitment claim",
@@ -601,10 +598,7 @@ fn build_claim_block(
                     }],
                     "claim_type": projection.claim.claim_type,
                 }),
-                source_feedback_computed_bindings(
-                    "/nodes/0/text",
-                    "/nodes/0/trust_band",
-                )?,
+                source_feedback_computed_bindings("/nodes/0/text", "/nodes/0/trust_band")?,
                 0.62,
                 SalienceBand::Contextual,
                 "relationship claim",

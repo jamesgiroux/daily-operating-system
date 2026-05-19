@@ -1,7 +1,9 @@
-use dailyos_lib::abilities::trust::{FreshnessContext, SourceLifecycleState, TrustBand, UserFeedbackSignal};
+use dailyos_lib::abilities::trust::{
+    FreshnessContext, SourceLifecycleState, TrustBand, UserFeedbackSignal,
+};
 
 use crate::support::{
-    baseline_trust_inputs, band_of, compile_test_trust, corroborator, score_of, trust_factor_value,
+    band_of, baseline_trust_inputs, compile_test_trust, corroborator, score_of, trust_factor_value,
 };
 
 #[test]

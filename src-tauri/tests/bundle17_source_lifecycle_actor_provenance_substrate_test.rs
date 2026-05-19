@@ -97,7 +97,7 @@ fn bundle17_is_present_and_mandatory() {
 
     let state = expected_post_action_state(&fixture);
     assert_eq!(state["channel_policy"]["all_channels_classified"], true);
-    assert_eq!(state["channel_policy"]["expected_channel_count"], 9);
+    assert_eq!(state["channel_policy"]["expected_channel_count"], 10);
 }
 
 #[test]
@@ -345,7 +345,7 @@ fn internal_only_content_cannot_become_customer_facing() {
 }
 
 #[test]
-fn all_nine_adr0108_channels_are_enumerated() {
+fn all_ten_adr0108_channels_are_enumerated() {
     let fixture = bundle17();
     let expected = channel_names_from_enum();
     let metadata = fixture
@@ -356,13 +356,13 @@ fn all_nine_adr0108_channels_are_enumerated() {
         .collect::<BTreeSet<_>>();
     let matrix = matrix_channel_names(&fixture);
 
-    assert_eq!(RenderPolicyChannel::all().len(), 9);
+    assert_eq!(RenderPolicyChannel::all().len(), 10);
     assert_eq!(metadata, expected);
     assert_eq!(matrix, expected);
 }
 
 #[test]
-fn nine_channel_gate_is_parameterized_by_render_policy_channel_all() {
+fn ten_channel_gate_is_parameterized_by_render_policy_channel_all() {
     let fixture = bundle17();
     let expected = channel_names_from_enum();
     let rows = channel_matrix(&fixture);

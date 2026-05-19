@@ -157,7 +157,7 @@
       "source": "RenderPolicyChannel::all",
       "all_channels_classified": true,
       "revoked_or_restricted_rejection_green": true,
-      "expected_channel_count": 9
+      "expected_channel_count": 10
     },
     "no_leak_outcomes": {
       "restricted_provenance_no_hidden_ids": true,

@@ -1742,7 +1742,7 @@ mod tests {
         );
 
         let state = state_with_session();
-        let sent_uri = "/v1/surface/feedback?a=1&a=2".parse::<Uri>().unwrap();
+        let sent_uri = "/v1/surface/nonce/verify?a=1&a=2".parse::<Uri>().unwrap();
         let path_error = verify(&state, &method, &sent_uri, &headers, BODY).unwrap_err();
         assert_eq!(path_error.kind, SignedTransportErrorKind::SignatureInvalid);
 

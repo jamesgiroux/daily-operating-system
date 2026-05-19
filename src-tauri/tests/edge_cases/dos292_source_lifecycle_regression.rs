@@ -7,7 +7,11 @@ fn revoked_glean_content_does_not_leak_through_any_channel() {
         .as_array()
         .expect("bundle-17 channel matrix");
 
-    assert_eq!(matrix.len(), 9, "ADR-0108 channel matrix must keep 9 channels");
+    assert_eq!(
+        matrix.len(),
+        9,
+        "ADR-0108 channel matrix must keep 9 channels"
+    );
     for rendered in matrix {
         let channel = rendered["channel"].as_str().expect("channel name");
         assert_eq!(rendered["revoked_source_rejected"], true, "{channel}");

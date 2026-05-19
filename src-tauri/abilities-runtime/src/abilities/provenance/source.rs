@@ -150,7 +150,9 @@ impl DataSource {
             DataSource::Ai => "AI".to_string(),
             DataSource::CoAttendance => "Co-attendance".to_string(),
             DataSource::LocalEnrichment => "Local enrichment".to_string(),
-            DataSource::WorkspaceFile { kind } => format!("Workspace file ({})", kind.display_name()),
+            DataSource::WorkspaceFile { kind } => {
+                format!("Workspace file ({})", kind.display_name())
+            }
             DataSource::Other(name) => name.as_str().to_string(),
             DataSource::LegacyUnattributed => "Legacy unattributed".to_string(),
         }
@@ -192,7 +194,9 @@ impl GleanDownstream {
 /// Lifecycle and trust treatment are identical across kinds (Reference scoring,
 /// Purge lifecycle), but the kind carries provenance for downstream rendering
 /// and per-kind freshness decay rules in `services::trust::freshness_decay`.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum WorkspaceFileKind {
     Inbox,

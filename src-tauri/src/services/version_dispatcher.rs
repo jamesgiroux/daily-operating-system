@@ -26,9 +26,9 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine as _;
 use chrono::Utc;
 use dashmap::DashMap;
-use rusqlite::{params, OptionalExtension};
 use ring::hmac;
 use ring::rand::{SecureRandom, SystemRandom};
+use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::sync::mpsc;
@@ -460,11 +460,7 @@ fn resolve_cursor_to_event_seq(
 /// the existing bridge projection so live, replay, and correction-fetch
 /// paths all share one decision rule. Out-of-scope ⇒ `false` ⇒ zero delivery
 /// (no redacted notification; existence-oracle defense per §4).
-pub fn scope_permits_claim_read(
-    db: &ActionDb,
-    actor: &Actor,
-    claim_id: &str,
-) -> bool {
+pub fn scope_permits_claim_read(db: &ActionDb, actor: &Actor, claim_id: &str) -> bool {
     let Some(payload) = project_claim_for_scope(db, claim_id, actor) else {
         // Claim not found ⇒ nothing to deliver. Treat as out-of-scope from the
         // subscriber's perspective so dispatch never emits a "you missed an
@@ -480,11 +476,7 @@ pub fn scope_permits_claim_read(
 /// This predicate therefore authorizes against the current composition row.
 /// Per-version-frozen authorization is filed as a substrate follow-up in
 /// the v1.4.2 wave maintenance backlog.
-pub fn scope_permits_composition_read(
-    db: &ActionDb,
-    actor: &Actor,
-    composition_id: &str,
-) -> bool {
+pub fn scope_permits_composition_read(db: &ActionDb, actor: &Actor, composition_id: &str) -> bool {
     use crate::bridges::project_composition_for_scope;
     let Some(payload) = project_composition_for_scope(db, composition_id, actor) else {
         return false;
@@ -571,7 +563,11 @@ impl VersionDispatcher {
             self.current_subscriber_visible_cursor(&checkpoint, &request.subjects)?;
         let replay_from = if checkpoint.replay_required {
             checkpoint.last_acked_cursor_uuid.as_ref().map(|uuid| {
-                CursorEnvelope::encode(uuid, &checkpoint.subscription_id, &checkpoint.subscriber_local_key)
+                CursorEnvelope::encode(
+                    uuid,
+                    &checkpoint.subscription_id,
+                    &checkpoint.subscriber_local_key,
+                )
             })
         } else {
             None
@@ -643,7 +639,11 @@ impl VersionDispatcher {
 
         let replay_from = if checkpoint.replay_required {
             checkpoint.last_acked_cursor_uuid.as_ref().map(|uuid| {
-                CursorEnvelope::encode(uuid, &checkpoint.subscription_id, &checkpoint.subscriber_local_key)
+                CursorEnvelope::encode(
+                    uuid,
+                    &checkpoint.subscription_id,
+                    &checkpoint.subscriber_local_key,
+                )
             })
         } else {
             None
@@ -881,11 +881,8 @@ impl VersionDispatcher {
                 continue;
             }
 
-            let rows = read_version_events_after(
-                db,
-                checkpoint.last_scanned_event_seq,
-                MAX_REPLAY_BATCH,
-            )?;
+            let rows =
+                read_version_events_after(db, checkpoint.last_scanned_event_seq, MAX_REPLAY_BATCH)?;
             if rows.is_empty() {
                 continue;
             }
@@ -1077,29 +1074,29 @@ impl VersionDispatcher {
             .map_err(|e| DispatcherError::Internal(format!("rng failed: {e}")))?;
 
         db.with_transaction(|tx| {
-                tx.conn_ref()
-                    .execute(
-                        "INSERT INTO subscription_checkpoints (\
+            tx.conn_ref()
+                .execute(
+                    "INSERT INTO subscription_checkpoints (\
                             subscription_id, actor_kind, actor_instance, scopes_digest, \
                             subject_filter_digest, subscriber_local_key, \
                             last_acked_event_seq, last_acked_cursor_uuid, \
                             last_scanned_event_seq, replay_required, \
                             created_at, updated_at\
                         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, NULL, 0, 0, ?7, ?7)",
-                        params![
-                            &subscription_id,
-                            actor_kind,
-                            actor_instance,
-                            scopes_d,
-                            filter_d,
-                            &local_key,
-                            now,
-                        ],
-                    )
-                    .map_err(|e| e.to_string())?;
-                Ok(())
-            })
-            .map_err(DispatcherError::Internal)?;
+                    params![
+                        &subscription_id,
+                        actor_kind,
+                        actor_instance,
+                        scopes_d,
+                        filter_d,
+                        &local_key,
+                        now,
+                    ],
+                )
+                .map_err(|e| e.to_string())?;
+            Ok(())
+        })
+        .map_err(DispatcherError::Internal)?;
 
         Ok(SubscriptionCheckpoint {
             subscription_id,
@@ -1123,25 +1120,25 @@ impl VersionDispatcher {
         event_seq: i64,
     ) -> Result<(), DispatcherError> {
         db.with_transaction(|tx| {
-                tx.conn_ref()
-                    .execute(
-                        "UPDATE subscription_checkpoints \
+            tx.conn_ref()
+                .execute(
+                    "UPDATE subscription_checkpoints \
                          SET last_acked_event_seq = ?2, \
                              last_acked_cursor_uuid = ?3, \
                              updated_at = ?4 \
                          WHERE subscription_id = ?1 \
                            AND last_acked_event_seq <= ?2",
-                        params![
-                            subscription_id,
-                            event_seq,
-                            cursor_uuid,
-                            Utc::now().to_rfc3339()
-                        ],
-                    )
-                    .map_err(|e| e.to_string())?;
-                Ok(())
-            })
-            .map_err(DispatcherError::Internal)
+                    params![
+                        subscription_id,
+                        event_seq,
+                        cursor_uuid,
+                        Utc::now().to_rfc3339()
+                    ],
+                )
+                .map_err(|e| e.to_string())?;
+            Ok(())
+        })
+        .map_err(DispatcherError::Internal)
     }
 
     fn advance_last_scanned(
@@ -1151,18 +1148,18 @@ impl VersionDispatcher {
         event_seq: i64,
     ) -> Result<(), DispatcherError> {
         db.with_transaction(|tx| {
-                tx.conn_ref()
-                    .execute(
-                        "UPDATE subscription_checkpoints \
+            tx.conn_ref()
+                .execute(
+                    "UPDATE subscription_checkpoints \
                          SET last_scanned_event_seq = MAX(last_scanned_event_seq, ?2), \
                              updated_at = ?3 \
                          WHERE subscription_id = ?1",
-                        params![subscription_id, event_seq, Utc::now().to_rfc3339()],
-                    )
-                    .map_err(|e| e.to_string())?;
-                Ok(())
-            })
-            .map_err(DispatcherError::Internal)
+                    params![subscription_id, event_seq, Utc::now().to_rfc3339()],
+                )
+                .map_err(|e| e.to_string())?;
+            Ok(())
+        })
+        .map_err(DispatcherError::Internal)
     }
 
     fn mark_replay_required(
@@ -1171,17 +1168,17 @@ impl VersionDispatcher {
         subscription_id: &str,
     ) -> Result<(), DispatcherError> {
         db.with_transaction(|tx| {
-                tx.conn_ref()
-                    .execute(
-                        "UPDATE subscription_checkpoints \
+            tx.conn_ref()
+                .execute(
+                    "UPDATE subscription_checkpoints \
                          SET replay_required = 1, updated_at = ?2 \
                          WHERE subscription_id = ?1",
-                        params![subscription_id, Utc::now().to_rfc3339()],
-                    )
-                    .map_err(|e| e.to_string())?;
-                Ok(())
-            })
-            .map_err(DispatcherError::Internal)
+                    params![subscription_id, Utc::now().to_rfc3339()],
+                )
+                .map_err(|e| e.to_string())?;
+            Ok(())
+        })
+        .map_err(DispatcherError::Internal)
     }
 }
 
@@ -1312,4 +1309,3 @@ pub fn __test_load_local_key(
         )
         .optional()
 }
-

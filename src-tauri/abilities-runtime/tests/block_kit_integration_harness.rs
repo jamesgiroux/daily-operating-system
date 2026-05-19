@@ -476,28 +476,28 @@ fn escape_pointer_segment(segment: &str) -> String {
 
 #[path = "fixtures/account_overview_integration_fixture.rs"]
 mod account_overview_integration_fixture;
-#[path = "fixtures/entity_chip_integration_fixture.rs"]
-mod entity_chip_integration_fixture;
-#[path = "fixtures/type_badge_integration_fixture.rs"]
-mod type_badge_integration_fixture;
-#[path = "fixtures/score_band_integration_fixture.rs"]
-mod score_band_integration_fixture;
-#[path = "fixtures/pill_integration_fixture.rs"]
-mod pill_integration_fixture;
-#[path = "fixtures/status_dot_integration_fixture.rs"]
-mod status_dot_integration_fixture;
-#[path = "fixtures/provenance_tag_integration_fixture.rs"]
-mod provenance_tag_integration_fixture;
 #[path = "fixtures/avatar_integration_fixture.rs"]
 mod avatar_integration_fixture;
+#[path = "fixtures/entity_chip_integration_fixture.rs"]
+mod entity_chip_integration_fixture;
 #[path = "fixtures/freshness_indicator_integration_fixture.rs"]
 mod freshness_indicator_integration_fixture;
 #[path = "fixtures/health_badge_integration_fixture.rs"]
 mod health_badge_integration_fixture;
 #[path = "fixtures/intelligence_quality_badge_integration_fixture.rs"]
 mod intelligence_quality_badge_integration_fixture;
+#[path = "fixtures/pill_integration_fixture.rs"]
+mod pill_integration_fixture;
+#[path = "fixtures/provenance_tag_integration_fixture.rs"]
+mod provenance_tag_integration_fixture;
+#[path = "fixtures/score_band_integration_fixture.rs"]
+mod score_band_integration_fixture;
+#[path = "fixtures/status_dot_integration_fixture.rs"]
+mod status_dot_integration_fixture;
 #[path = "fixtures/trust_band_badge_integration_fixture.rs"]
 mod trust_band_badge_integration_fixture;
+#[path = "fixtures/type_badge_integration_fixture.rs"]
+mod type_badge_integration_fixture;
 
 #[test]
 fn expected_block_fixtures_cover_requested_ci_block() {

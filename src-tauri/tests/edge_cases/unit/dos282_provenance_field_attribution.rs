@@ -7,7 +7,8 @@ use dailyos_lib::abilities::provenance::{
 #[test]
 fn provenance_builder_requires_every_material_field_to_have_attribution() {
     let produced_at = Utc.with_ymd_and_hms(2026, 5, 15, 12, 0, 0).unwrap();
-    let subject = SubjectAttribution::direct_confident(SubjectRef::Account("account-example".into()));
+    let subject =
+        SubjectAttribution::direct_confident(SubjectRef::Account("account-example".into()));
     let mut builder = ProvenanceBuilder::new(ProvenanceBuilderConfig::new(
         "dos282_field_attribution",
         produced_at,
