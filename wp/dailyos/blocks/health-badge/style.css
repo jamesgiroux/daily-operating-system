@@ -1,0 +1,40 @@
+/* HealthBadge (translated from src/components/shared/HealthBadge.module.css).
+ * Front-end styles for the dailyos/health-badge block. Token-only. */
+
+.wp-block-dailyos-health-badge .dailyos-health-badge,
+.dailyos-health-badge {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--wp--preset--spacing--xs);
+	font-family: var(--wp--custom--dailyos--tokens--font-sans);
+	font-weight: 500;
+	line-height: 1;
+	white-space: nowrap;
+}
+
+.dailyos-health-badge--compact  { font-size: 11px; }
+.dailyos-health-badge--standard { font-size: 13px; gap: var(--wp--preset--spacing--sm); }
+.dailyos-health-badge--hero     { font-size: 24px; gap: var(--wp--preset--spacing--md); padding: var(--wp--preset--spacing--md) var(--wp--preset--spacing--lg); border-radius: var(--wp--custom--dailyos--tokens--radius-editorial-md); }
+
+.dailyos-health-badge__dot {
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	flex-shrink: 0;
+}
+.dailyos-health-badge__dot--green  { background: var(--wp--preset--color--garden-sage); }
+.dailyos-health-badge__dot--yellow { background: var(--wp--preset--color--spice-saffron); }
+.dailyos-health-badge__dot--red    { background: var(--wp--preset--color--spice-terracotta); }
+
+.dailyos-health-badge__score        { font-variant-numeric: tabular-nums; color: var(--wp--preset--color--text-primary); }
+.dailyos-health-badge__insufficient { color: var(--wp--preset--color--text-tertiary); font-style: italic; }
+
+.dailyos-health-badge__trend                 { color: var(--wp--preset--color--text-tertiary); }
+.dailyos-health-badge__trend--improving      { color: var(--wp--preset--color--garden-sage); }
+.dailyos-health-badge__trend--declining      { color: var(--wp--preset--color--spice-terracotta); }
+.dailyos-health-badge__trend--stable         { color: var(--wp--preset--color--text-tertiary); }
+.dailyos-health-badge__trend--volatile       { color: var(--wp--preset--color--spice-saffron); }
+
+.dailyos-health-badge--hero.dailyos-health-badge--band-green  { background: var(--wp--preset--color--garden-sage-10); }
+.dailyos-health-badge--hero.dailyos-health-badge--band-yellow { background: var(--wp--preset--color--spice-saffron-10); }
+.dailyos-health-badge--hero.dailyos-health-badge--band-red    { background: var(--wp--preset--color--spice-terracotta-10); }

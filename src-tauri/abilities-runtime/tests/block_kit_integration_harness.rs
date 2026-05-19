@@ -482,6 +482,22 @@ mod entity_chip_integration_fixture;
 mod type_badge_integration_fixture;
 #[path = "fixtures/score_band_integration_fixture.rs"]
 mod score_band_integration_fixture;
+#[path = "fixtures/pill_integration_fixture.rs"]
+mod pill_integration_fixture;
+#[path = "fixtures/status_dot_integration_fixture.rs"]
+mod status_dot_integration_fixture;
+#[path = "fixtures/provenance_tag_integration_fixture.rs"]
+mod provenance_tag_integration_fixture;
+#[path = "fixtures/avatar_integration_fixture.rs"]
+mod avatar_integration_fixture;
+#[path = "fixtures/freshness_indicator_integration_fixture.rs"]
+mod freshness_indicator_integration_fixture;
+#[path = "fixtures/health_badge_integration_fixture.rs"]
+mod health_badge_integration_fixture;
+#[path = "fixtures/intelligence_quality_badge_integration_fixture.rs"]
+mod intelligence_quality_badge_integration_fixture;
+#[path = "fixtures/trust_band_badge_integration_fixture.rs"]
+mod trust_band_badge_integration_fixture;
 
 #[test]
 fn expected_block_fixtures_cover_requested_ci_block() {
@@ -497,6 +513,14 @@ fn expected_block_fixtures_cover_requested_ci_block() {
         entity_chip_integration_fixture::entity_chip_fixture(),
         type_badge_integration_fixture::type_badge_fixture(),
         score_band_integration_fixture::score_band_fixture(),
+        pill_integration_fixture::pill_fixture(),
+        status_dot_integration_fixture::status_dot_fixture(),
+        provenance_tag_integration_fixture::provenance_tag_fixture(),
+        health_badge_integration_fixture::health_badge_fixture(),
+        avatar_integration_fixture::avatar_fixture(),
+        freshness_indicator_integration_fixture::freshness_indicator_fixture(),
+        trust_band_badge_integration_fixture::trust_band_badge_fixture(),
+        intelligence_quality_badge_integration_fixture::intelligence_quality_badge_fixture(),
     ];
     assert!(
         known.iter().any(block_fixture_selected),

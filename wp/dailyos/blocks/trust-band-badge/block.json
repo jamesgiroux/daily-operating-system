@@ -1,0 +1,57 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "dailyos/trust-band-badge",
+	"title": "Trust Band Badge",
+	"category": "dailyos",
+	"description": "DailyOS TrustBandBadge primitive \u2014 canonical trust-band label chip.",
+	"supports": {
+		"html": false,
+		"reusable": false,
+		"inserter": true
+	},
+	"attributes": {
+		"composition_id": {
+			"type": "string"
+		},
+		"composition_version": {
+			"type": "integer",
+			"default": 0
+		},
+		"block_id": {
+			"type": "string"
+		},
+		"watermarks": {
+			"type": "object",
+			"default": {}
+		},
+		"cache_hint_token": {
+			"type": "string",
+			"default": ""
+		},
+		"block_instance_id": {
+			"type": "string"
+		},
+		"band": {
+			"type": "string",
+			"default": "use_with_caution",
+			"enum": [
+				"likely_current",
+				"use_with_caution",
+				"needs_verification"
+			]
+		},
+		"compact": {
+			"type": "boolean",
+			"default": false
+		},
+		"label": {
+			"type": "string",
+			"default": ""
+		}
+	},
+	"render": "file:./render.php",
+	"editorScript": "file:./edit.js",
+	"style": "file:./style.css",
+	"editorStyle": "file:./editor.css"
+}

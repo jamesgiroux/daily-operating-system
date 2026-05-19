@@ -20,7 +20,7 @@ A primitive is *not* a primitive if it knows about claims, trust, briefings, or 
 | [`HealthBadge`](./HealthBadge.md) | integrated | Shared health score dot/score/trend visual | `src/components/shared/HealthBadge.tsx` |
 | [`StatusDot`](./StatusDot.md) | integrated | Connector/system status dot with optional label | `src/components/shared/StatusDot.tsx` |
 | [`Avatar`](./Avatar.md) | integrated | Person photo/initial fallback avatar | `src/components/ui/Avatar.tsx` |
-| [`TrustBandBadge`](./TrustBandBadge.md) | proposed | v1.4.0 surface trust band (`likely_current` / `use_with_caution` / `needs_verification`) | `src/components/ui/TrustBandBadge.tsx` |
+| [`TrustBandBadge`](./TrustBandBadge.md) | integrated | v1.4.0 surface trust band (`likely_current` / `use_with_caution` / `needs_verification`) | `src/components/ui/TrustBandBadge.tsx` |
 | [`IntelligenceQualityBadge`](./IntelligenceQualityBadge.md) | integrated | Intelligence completeness (`sparse` / `developing` / `ready` / `fresh`) | `src/components/entity/` |
 | [`FreshnessIndicator`](./FreshnessIndicator.md) | integrated | Raw recency timestamp + relative age | `src/components/ui/FreshnessIndicator.tsx` |
 | [`ProvenanceTag`](./ProvenanceTag.md) | integrated | Source attribution label, suppresses synthesized | `src/components/ui/` |
