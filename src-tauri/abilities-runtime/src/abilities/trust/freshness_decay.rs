@@ -6,7 +6,7 @@ use parking_lot::Mutex;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::abilities::provenance::{DataSource, GleanDownstream, SourceName};
+use crate::abilities::provenance::{DataSource, GleanDownstream, SourceName, WorkspaceFileKind};
 use crate::services::context::Clock;
 use crate::types::{ClaimState, TemporalScope};
 
@@ -40,6 +40,7 @@ const CLAY_ENRICHMENT: &str = "clay_enrichment";
 const AI: &str = "ai";
 const CO_ATTENDANCE: &str = "co_attendance";
 const LOCAL_ENRICHMENT: &str = "local_enrichment";
+const WORKSPACE_FILE: &str = "workspace_file";
 const LEGACY_UNATTRIBUTED: &str = "legacy_unattributed";
 const USER_CORRECTION: &str = "user_correction";
 const RENEWAL_NOTES: &str = "renewal_notes";
@@ -66,6 +67,7 @@ const REQUIRED_CONFIG_KEYS: &[&str] = &[
     AI,
     CO_ATTENDANCE,
     LOCAL_ENRICHMENT,
+    WORKSPACE_FILE,
     LEGACY_UNATTRIBUTED,
     USER_CORRECTION,
     RENEWAL_NOTES_IMMINENT,
@@ -436,6 +438,27 @@ fn representative_data_sources() -> Vec<DataSource> {
         DataSource::Ai,
         DataSource::CoAttendance,
         DataSource::LocalEnrichment,
+        DataSource::WorkspaceFile {
+            kind: WorkspaceFileKind::Inbox,
+        },
+        DataSource::WorkspaceFile {
+            kind: WorkspaceFileKind::EntityDoc,
+        },
+        DataSource::WorkspaceFile {
+            kind: WorkspaceFileKind::DriveSync,
+        },
+        DataSource::WorkspaceFile {
+            kind: WorkspaceFileKind::UserAttachment,
+        },
+        DataSource::WorkspaceFile {
+            kind: WorkspaceFileKind::GranolaTranscript,
+        },
+        DataSource::WorkspaceFile {
+            kind: WorkspaceFileKind::QuillTranscript,
+        },
+        DataSource::WorkspaceFile {
+            kind: WorkspaceFileKind::McpPlacement,
+        },
         DataSource::Other(SourceName::new(LINEAR_ISSUE)),
         DataSource::Other(SourceName::new(RENEWAL_NOTES)),
         DataSource::LegacyUnattributed,
@@ -494,6 +517,7 @@ fn rule_for_freshness_data_source(
         DataSource::Ai => configured_rule(AI),
         DataSource::CoAttendance => configured_rule(CO_ATTENDANCE),
         DataSource::LocalEnrichment => configured_rule(LOCAL_ENRICHMENT),
+        DataSource::WorkspaceFile { .. } => configured_rule(WORKSPACE_FILE),
         DataSource::LegacyUnattributed => configured_rule(LEGACY_UNATTRIBUTED),
     }
 }

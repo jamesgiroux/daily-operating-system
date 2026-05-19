@@ -17,6 +17,7 @@ clay_enrichment = 90
 ai = 21
 co_attendance = 21
 local_enrichment = 21
+workspace_file = 21
 legacy_unattributed = 21
 user_correction = 365
 renewal_notes_with_imminent_renewal = 400

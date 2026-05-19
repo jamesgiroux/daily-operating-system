@@ -251,3 +251,74 @@ pub enum DataSource {
 - DOS-299 — backfill writes `LegacyUnattributed` for legacy items; preserves trust band parity.
 - DOS-300 — `CLAIM_TYPE_REGISTRY` does NOT include `legacy_unattributed`; that was a category error in the earlier writeup.
 - DOS-7 — backfill migration depends on this variant existing.
+
+---
+
+## Amendment — 2026-05-19 — WorkspaceFile DataSource variant
+
+### Why
+
+v1.4.5 Workspace Memory introduces ingestion of local workspace files into the claim store. Per ADR-0107 §1, adding a new `DataSource` variant requires an amendment, not the `Other` escape hatch. This amendment defines the typed variant plus its scoring/lifecycle posture so v1.4.5 W1+ lanes can freeze their lifecycle records and W4-C MCP placement can build against a stable contract. Triggered by v1.4.5 W0 close gate per `.docs/plans/v1.4.5-waves.md` §'Cycle 2 amendments' #4 and §'W0 close gate'.
+
+### What
+
+Add to the `DataSource` enum:
+
+```rust
+DataSource::WorkspaceFile { kind: WorkspaceFileKind }
+
+pub enum WorkspaceFileKind {
+    Inbox,
+    EntityDoc,
+    DriveSync,
+    UserAttachment,
+    GranolaTranscript,
+    QuillTranscript,
+    McpPlacement,
+}
+```
+
+Per-kind semantics:
+
+| Kind | Meaning |
+|------|---------|
+| `Inbox` | user-placed files in the workspace inbox awaiting categorization |
+| `EntityDoc` | files already linked to a specific entity in the workspace |
+| `DriveSync` | files synced from a connected drive source under workspace ownership |
+| `UserAttachment` | files attached directly by the user via the Tauri or WordPress surfaces |
+| `GranolaTranscript` | meeting transcripts ingested from Granola |
+| `QuillTranscript` | meeting transcripts ingested from Quill |
+| `McpPlacement` | files placed by an AI agent via the MCP `workspace_place_document` ability |
+
+### Properties
+
+- **`ScoringClass`:** `Reference` (conservative default per ADR-0107 §Risks; file-derived facts cite, they do not score directly).
+- **`LifecycleBehavior`:** `Purge` (workspace files are local storage; removing the source file removes derived claims).
+- **Default `confidence`:** not pinned by this amendment — `abilities-runtime` computes per-claim confidence from freshness + corroboration.
+
+The §4 scoring class table extension is:
+
+| DataSource | ScoringClass | Reasoning |
+|------------|--------------|-----------|
+| `WorkspaceFile { kind: Inbox }` | Reference | user-staged; awaiting categorization, no scoring weight until linked |
+| `WorkspaceFile { kind: EntityDoc }` | Reference | derived from linked file; cites the entity context |
+| `WorkspaceFile { kind: DriveSync }` | Reference | derived from drive file; same cite-only posture |
+| `WorkspaceFile { kind: UserAttachment }` | Reference | user-supplied evidence; trust set by user attestation, not by the file alone |
+| `WorkspaceFile { kind: GranolaTranscript }` | Reference | meeting transcript; cites speakers and topics, doesn't score |
+| `WorkspaceFile { kind: QuillTranscript }` | Reference | meeting transcript; same as Granola |
+| `WorkspaceFile { kind: McpPlacement }` | Reference | AI-placed evidence; reference until corroborated by a scoring source |
+
+### Lifecycle
+
+The §5 lifecycle table extension is:
+
+| DataSource | LifecycleBehavior |
+|------------|-------------------|
+| `WorkspaceFile { kind }` | Purge (file removal triggers cascade) |
+
+### Consumer issues affected
+
+- v1.4.5 W1-A DOS-463: lifecycle record's `data_source` field types as `WorkspaceFile { kind }`.
+- v1.4.5 W4-C DOS-474: MCP `place_document` ability writes claims with `kind=McpPlacement`.
+- Trust freshness decay: per-kind half-life rules added in `services::trust::freshness_decay` cascade (separate code change, not this ADR).
+- Known follow-up: a separate DB-level `DataSource` enum exists at `src-tauri/src/db/data_lifecycle.rs:315`. Dual-enum reconciliation is filed as a path-α maintenance ticket.
