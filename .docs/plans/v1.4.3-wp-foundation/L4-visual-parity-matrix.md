@@ -100,6 +100,12 @@ W3 shipped template filenames using hyphens, but the `dailyos_account` CPT slug 
 
 Reviewers across 4 L0 cycles + L2 unanimous APPROVE missed this. The L0 plan itself used the hyphenated names (`L0-packet-E-magazine-theme.md` §5.1.b, §6, §7).
 
+### Finding 1b — `page.html` template missing (same class)
+
+Surfaced while building the block showcase page. The theme shipped 5 templates (`index`, `front-page`, `single-dailyos_account`, `archive-dailyos_account`, `single-dailyos_briefing`) but no `page.html` or `singular.html`. WP's template hierarchy for a regular WP Page falls back to `index.html`, which injects the `dailyos/account-overview-page` pattern instead of pulling `core/post-content` — so **any regular Page renders as if it were the front page** with no actual content.
+
+**Fix** (commit alongside this proof bundle): added `wp/dailyos/theme/templates/page.html` with `core/post-content` inside the magazine-page wrapper. Same editorial chrome as other templates; renders the post's actual content.
+
 ### Finding 2 — All 12 dailyos/\* blocks rendered empty server-side (class pattern, 12 files)
 
 Every block's `render.php` ended with `return dailyos_*_render( $attributes );`. WP core's render callback (`register_block_type_from_metadata` at `wp-includes/blocks.php:569`) builds:
@@ -178,6 +184,7 @@ Each block requires `composition_id` set manually as a block attribute, and no m
 | `proof/screenshots/w3-front.png` | `/` front page with empty-state account-overview |
 | `proof/screenshots/w3-admin-accounts.png` | `/wp-admin/edit.php?post_type=dailyos_account` admin list |
 | `proof/screenshots/w3-admin-edit.png` | Block editor for Acme Corporation post (Template field shows `single-dailyos_account`) |
+| `proof/screenshots/w3-block-showcase.png` | `/block-showcase/` page exercising every `dailyos/*` block via canned projections from a dev-only mu-plugin (mu-plugin lives in Studio site, not in the repo) |
 
 ## L4 verdict
 
