@@ -101,13 +101,13 @@ tempfile = "3"
 
 # MCP Server (ADR-0075) + Quill MCP client
 rmcp = { version = "0.1", features = ["server", "client", "transport-io", "transport-child-process", "macros"] }
-schemars = "0.8.22"
+schemars = { version = "0.8.22", features = ["chrono"] }
 inventory = "0.3"
 dailyos-abilities-macro = { path = "abilities-macro" }
 abilities-runtime = { path = "abilities-runtime" }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-anyhow = { version = "1", optional = true }
+anyhow = "1"
 
 [dev-dependencies]
 criterion = "0.8.2"
@@ -126,7 +126,7 @@ test-harness = []
 bench-harness = []
 release-gate = []
 debug-telemetry-override = []
-mcp = ["dep:anyhow"]
+mcp = []
 load-test = ["test-harness"]
 
 [[bin]]
