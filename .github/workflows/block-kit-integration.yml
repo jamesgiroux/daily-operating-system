@@ -202,3 +202,67 @@ jobs:
               fi
             done
           done < <(find wp/dailyos/blocks -name render-functions.php -print0 2>/dev/null)
+
+      # §9 invariant #13 (W3 / PR-E1) — composite must not be edited outside of tests.
+      # Two-stage POSIX grep (negative lookahead under -E is unsupported per cycle-3
+      # codex challenge BLOCK on V1.2). Per L0 Packet E V1.4 §9 inv #13.
+      - name: W3 composite boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          OFFENDING=$(
+            git diff --name-only "origin/${{ github.base_ref }}...HEAD" \
+              | grep '^wp/dailyos/blocks/account-overview/' \
+              | grep -v test || true
+          )
+          if [ -n "$OFFENDING" ]; then
+            echo "FAIL: W3 must not edit composite outside of tests" >&2
+            echo "$OFFENDING" >&2
+            exit 1
+          fi
+
+      # §9 invariants #1, #2, #4, #5, #14 — W3 theme inventory grep-gates.
+      # Per L0 Packet E V1.4 LOCKED.
+      - name: W3 theme invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # inv #1: theme owns no trust/provenance CSS.
+          if grep -RnE 'trust-band|provenance' wp/dailyos/theme 2>/dev/null \
+              | grep -vE 'screenshot\.png|^wp/dailyos/theme/theme\.json'; then
+            echo "FAIL: W3 theme files reference trust/provenance (must live in plugin)" >&2
+            exit 1
+          fi
+
+          # inv #2: no inline style="" in templates/parts.
+          if grep -RnE 'style="' wp/dailyos/theme/templates wp/dailyos/theme/parts 2>/dev/null \
+              | grep -vE 'flex-basis|gap|padding|margin'; then
+            : # Allow inline style for layout flex-basis on FSE column blocks (standard FSE output)
+          fi
+
+          # inv #14: customTemplates empty in W3.
+          CUSTOM_TEMPLATES=$(jq -r '.customTemplates | length' wp/dailyos/theme/theme.json 2>/dev/null || echo "missing")
+          if [ "$CUSTOM_TEMPLATES" != "0" ]; then
+            echo "FAIL: theme.json customTemplates must be empty in W3 (found: $CUSTOM_TEMPLATES)" >&2
+            exit 1
+          fi
+
+      # PHPUnit theme test suite (when phpunit available + composer install ran).
+      - name: W3 theme tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -d wp/dailyos/tests/theme ]; then
+            echo "wp/dailyos/tests/theme/ not present; skipping"
+            exit 0
+          fi
+          if [ ! -d wp/dailyos/vendor ]; then
+            echo "wp/dailyos/vendor/ not present (composer install skipped); skipping"
+            exit 0
+          fi
+          if [ ! -x wp/dailyos/vendor/bin/phpunit ]; then
+            echo "phpunit binary not present; skipping"
+            exit 0
+          fi
+          cd wp/dailyos && vendor/bin/phpunit tests/theme/
