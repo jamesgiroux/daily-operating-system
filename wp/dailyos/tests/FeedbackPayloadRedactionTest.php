@@ -1,6 +1,6 @@
 <?php
 /**
- * payload_json sensitivity=User redaction tests.
+ * Payload_json sensitivity=User redaction tests.
  *
  * Per packet F §5.5 + §6 decision #5: user-authored payload_json fields
  * (`corrected_text`, `corrected_to`, `surface`, `invocation_id`) carry
@@ -20,6 +20,9 @@ use DailyOS\DailyOS_Plugin;
 use DailyOS\Transport\DailyOS_Credential_Store;
 use PHPUnit\Framework\TestCase;
 
+/**
+ * Asserts WP-side surface never echoes user-authored payload_json content.
+ */
 final class DailyOS_FeedbackPayloadRedactionTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
@@ -35,12 +38,14 @@ final class DailyOS_FeedbackPayloadRedactionTest extends TestCase {
 	public function test_verify_response_does_not_echo_payload_json_back_to_caller(): void {
 		$GLOBALS['dailyos_test_remote_post_response'] = [
 			'response' => [ 'code' => 200 ],
-			'body'     => json_encode( [
-				'ok'                       => true,
-				'feedback_id'              => 'feedback-1',
-				'new_verification_state'   => 'superseded',
-				'payload_json'             => [ 'corrected_text' => 'leaked user text' ],
-			] ),
+			'body'     => json_encode(
+				[
+					'ok'                     => true,
+					'feedback_id'            => 'feedback-1',
+					'new_verification_state' => 'superseded',
+					'payload_json'           => [ 'corrected_text' => 'leaked user text' ],
+				]
+			),
 		];
 
 		$result = DailyOS_Plugin::instance()->verify_presence_nonce(
@@ -59,19 +64,23 @@ final class DailyOS_FeedbackPayloadRedactionTest extends TestCase {
 	public function test_issue_response_does_not_echo_payload_json_back_to_caller(): void {
 		$GLOBALS['dailyos_test_remote_post_response'] = [
 			'response' => [ 'code' => 200 ],
-			'body'     => json_encode( [
-				'ok'             => true,
-				'presence_nonce' => 'nonce-token',
-				'nonce_digest'   => 'nonce-digest-token',
-				'payload_json'   => [ 'corrected_text' => 'leaked echo' ],
-			] ),
+			'body'     => json_encode(
+				[
+					'ok'             => true,
+					'presence_nonce' => 'nonce-token',
+					'nonce_digest'   => 'nonce-digest-token',
+					'payload_json'   => [ 'corrected_text' => 'leaked echo' ],
+				]
+			),
 		];
 
 		$result = DailyOS_Plugin::instance()->issue_presence_nonce(
-			$this->nonce_request( [
-				'action'       => 'needs_nuance',
-				'payload_json' => [ 'corrected_text' => 'original user text' ],
-			] )
+			$this->nonce_request(
+				[
+					'action'       => 'needs_nuance',
+					'payload_json' => [ 'corrected_text' => 'original user text' ],
+				]
+			)
 		);
 
 		$serialized = json_encode( $result );

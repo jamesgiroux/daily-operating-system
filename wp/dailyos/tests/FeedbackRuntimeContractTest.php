@@ -30,20 +30,25 @@ use DailyOS\DailyOS_Plugin;
 use DailyOS\Transport\DailyOS_Credential_Store;
 use PHPUnit\Framework\TestCase;
 
+/**
+ * Asserts WP outbound payloads structurally satisfy the runtime's
+ * IssueNonceRequest / VerifyNonceRequest / record_claim_feedback contracts
+ * for all 9 FeedbackAction variants across both issue + verify directions.
+ */
 final class DailyOS_FeedbackRuntimeContractTest extends TestCase {
 	/**
 	 * Required keys per IssueNonceRequest::parse. Types are PHP-shape:
 	 * string|int for u64 fields.
 	 */
 	private const ISSUE_REQUIRED_KEYS = [
-		'session_id'           => 'string',
-		'wp_user_id'           => 'integer',
-		'claim_id'             => 'string',
-		'field_path'           => 'string',
-		'action'               => 'string',
-		'claim_version'        => 'integer',
-		'composition_id'       => 'string',
-		'composition_version'  => 'integer',
+		'session_id'          => 'string',
+		'wp_user_id'          => 'integer',
+		'claim_id'            => 'string',
+		'field_path'          => 'string',
+		'action'              => 'string',
+		'claim_version'       => 'integer',
+		'composition_id'      => 'string',
+		'composition_version' => 'integer',
 	];
 
 	/**
@@ -51,15 +56,15 @@ final class DailyOS_FeedbackRuntimeContractTest extends TestCase {
 	 * presence_nonce.
 	 */
 	private const VERIFY_REQUIRED_KEYS = [
-		'presence_nonce'       => 'string',
-		'session_id'           => 'string',
-		'wp_user_id'           => 'integer',
-		'claim_id'             => 'string',
-		'field_path'           => 'string',
-		'action'               => 'string',
-		'claim_version'        => 'integer',
-		'composition_id'       => 'string',
-		'composition_version'  => 'integer',
+		'presence_nonce'      => 'string',
+		'session_id'          => 'string',
+		'wp_user_id'          => 'integer',
+		'claim_id'            => 'string',
+		'field_path'          => 'string',
+		'action'              => 'string',
+		'claim_version'       => 'integer',
+		'composition_id'      => 'string',
+		'composition_version' => 'integer',
 	];
 
 	/**
@@ -99,14 +104,14 @@ final class DailyOS_FeedbackRuntimeContractTest extends TestCase {
 	 */
 	public function test_issue_outbound_payload_satisfies_runtime_contract( string $action ): void {
 		$payload_for_variant = $this->payload_for_variant( $action );
-		$result = DailyOS_Plugin::instance()->issue_presence_nonce(
+		$result              = DailyOS_Plugin::instance()->issue_presence_nonce(
 			$this->nonce_request( [ 'action' => $action ] + $payload_for_variant )
 		);
 
 		$this->assertFalse( is_wp_error( $result ), "issue must not error for variant '{$action}'" );
 		$this->assertCount( 1, $GLOBALS['dailyos_test_remote_post_calls'] );
 
-		$call = $GLOBALS['dailyos_test_remote_post_calls'][0];
+		$call     = $GLOBALS['dailyos_test_remote_post_calls'][0];
 		$outbound = json_decode( $call['args']['body'], true );
 
 		$this->assertIsArray( $outbound, 'outbound body MUST be a JSON object' );
@@ -127,14 +132,14 @@ final class DailyOS_FeedbackRuntimeContractTest extends TestCase {
 	 */
 	public function test_verify_outbound_payload_satisfies_runtime_contract( string $action ): void {
 		$payload_for_variant = $this->payload_for_variant( $action );
-		$result = DailyOS_Plugin::instance()->verify_presence_nonce(
+		$result              = DailyOS_Plugin::instance()->verify_presence_nonce(
 			$this->verify_request( [ 'action_kind' => $action ] + $payload_for_variant )
 		);
 
 		$this->assertFalse( is_wp_error( $result ), "verify must not error for variant '{$action}'" );
 		$this->assertCount( 1, $GLOBALS['dailyos_test_remote_post_calls'] );
 
-		$call = $GLOBALS['dailyos_test_remote_post_calls'][0];
+		$call     = $GLOBALS['dailyos_test_remote_post_calls'][0];
 		$outbound = json_decode( $call['args']['body'], true );
 
 		$this->assertIsArray( $outbound, 'outbound body MUST be a JSON object' );
@@ -172,7 +177,7 @@ final class DailyOS_FeedbackRuntimeContractTest extends TestCase {
 		}
 
 		$this->assertArrayHasKey( 'payload_json', $outbound, "variant '{$action}' MUST carry payload_json" );
-		$this->assertIsArray( $outbound['payload_json'], "payload_json MUST be a JSON object on the wire (not a string) — runtime optional_payload_json drops non-objects" );
+		$this->assertIsArray( $outbound['payload_json'], 'payload_json MUST be a JSON object on the wire (not a string) — runtime optional_payload_json drops non-objects' );
 		$this->assertArrayHasKey( $rule, $outbound['payload_json'], "variant '{$action}' payload_json MUST contain '{$rule}' per record_claim_feedback contract" );
 		$this->assertIsString( $outbound['payload_json'][ $rule ], "payload_json['{$rule}'] MUST be string per validate_feedback_action_metadata" );
 	}

@@ -95,10 +95,12 @@ final class DailyOS_SurfaceNonceFeedbackInputTest extends TestCase {
 
 	public function test_payload_json_rejected_for_variants_that_should_have_none(): void {
 		$result = DailyOS_Plugin::instance()->issue_presence_nonce(
-			$this->nonce_request( [
-				'action'       => 'confirm_current',
-				'payload_json' => [ 'extra' => 'not allowed' ],
-			] )
+			$this->nonce_request(
+				[
+					'action'       => 'confirm_current',
+					'payload_json' => [ 'extra' => 'not allowed' ],
+				]
+			)
 		);
 
 		$this->assertTrue( is_wp_error( $result ) );
@@ -107,10 +109,12 @@ final class DailyOS_SurfaceNonceFeedbackInputTest extends TestCase {
 
 	public function test_payload_json_rejects_arrays(): void {
 		$result = DailyOS_Plugin::instance()->issue_presence_nonce(
-			$this->nonce_request( [
-				'action'       => 'needs_nuance',
-				'payload_json' => [ 'a', 'b', 'c' ],
-			] )
+			$this->nonce_request(
+				[
+					'action'       => 'needs_nuance',
+					'payload_json' => [ 'a', 'b', 'c' ],
+				]
+			)
 		);
 
 		$this->assertTrue( is_wp_error( $result ) );
@@ -119,10 +123,12 @@ final class DailyOS_SurfaceNonceFeedbackInputTest extends TestCase {
 
 	public function test_payload_json_rejects_nested_objects(): void {
 		$result = DailyOS_Plugin::instance()->issue_presence_nonce(
-			$this->nonce_request( [
-				'action'       => 'needs_nuance',
-				'payload_json' => [ 'corrected_text' => [ 'nested' => 'object' ] ],
-			] )
+			$this->nonce_request(
+				[
+					'action'       => 'needs_nuance',
+					'payload_json' => [ 'corrected_text' => [ 'nested' => 'object' ] ],
+				]
+			)
 		);
 
 		$this->assertTrue( is_wp_error( $result ) );
@@ -131,10 +137,12 @@ final class DailyOS_SurfaceNonceFeedbackInputTest extends TestCase {
 
 	public function test_payload_json_caps_corrected_text_at_500_chars(): void {
 		$result = DailyOS_Plugin::instance()->issue_presence_nonce(
-			$this->nonce_request( [
-				'action'       => 'needs_nuance',
-				'payload_json' => [ 'corrected_text' => str_repeat( 'x', 501 ) ],
-			] )
+			$this->nonce_request(
+				[
+					'action'       => 'needs_nuance',
+					'payload_json' => [ 'corrected_text' => str_repeat( 'x', 501 ) ],
+				]
+			)
 		);
 
 		$this->assertTrue( is_wp_error( $result ) );
@@ -143,10 +151,12 @@ final class DailyOS_SurfaceNonceFeedbackInputTest extends TestCase {
 
 	public function test_payload_json_accepts_valid_needs_nuance(): void {
 		$result = DailyOS_Plugin::instance()->issue_presence_nonce(
-			$this->nonce_request( [
-				'action'       => 'needs_nuance',
-				'payload_json' => [ 'corrected_text' => 'The claim missed the new acquisition date.' ],
-			] )
+			$this->nonce_request(
+				[
+					'action'       => 'needs_nuance',
+					'payload_json' => [ 'corrected_text' => 'The claim missed the new acquisition date.' ],
+				]
+			)
 		);
 
 		$this->assertFalse( is_wp_error( $result ) );
@@ -157,10 +167,12 @@ final class DailyOS_SurfaceNonceFeedbackInputTest extends TestCase {
 		// source_ref (string) per claims.rs:5185. Cycle-3 codex challenge
 		// caught WP previously accepting source_index alone.
 		$result = DailyOS_Plugin::instance()->issue_presence_nonce(
-			$this->nonce_request( [
-				'action'       => 'wrong_source',
-				'payload_json' => [ 'source_index' => 2 ],
-			] )
+			$this->nonce_request(
+				[
+					'action'       => 'wrong_source',
+					'payload_json' => [ 'source_index' => 2 ],
+				]
+			)
 		);
 
 		$this->assertTrue( is_wp_error( $result ) );
@@ -169,10 +181,12 @@ final class DailyOS_SurfaceNonceFeedbackInputTest extends TestCase {
 
 	public function test_payload_json_wrong_source_accepts_source_ref_string(): void {
 		$result = DailyOS_Plugin::instance()->issue_presence_nonce(
-			$this->nonce_request( [
-				'action'       => 'wrong_source',
-				'payload_json' => [ 'source_ref' => 'source-test-001' ],
-			] )
+			$this->nonce_request(
+				[
+					'action'       => 'wrong_source',
+					'payload_json' => [ 'source_ref' => 'source-test-001' ],
+				]
+			)
 		);
 
 		$this->assertFalse( is_wp_error( $result ) );
@@ -180,7 +194,12 @@ final class DailyOS_SurfaceNonceFeedbackInputTest extends TestCase {
 
 	private function payload_for( string $action ): array {
 		return match ( $action ) {
-			'wrong_source'          => [ 'payload_json' => [ 'source_ref' => 'source-test-001', 'source_index' => 0 ] ],
+			'wrong_source'          => [
+				'payload_json' => [
+					'source_ref'   => 'source-test-001',
+					'source_index' => 0,
+				],
+			],
 			'needs_nuance'          => [ 'payload_json' => [ 'corrected_text' => 'short correction' ] ],
 			'surface_inappropriate' => [ 'payload_json' => [ 'surface' => 'briefing' ] ],
 			'not_relevant_here'     => [ 'payload_json' => [ 'invocation_id' => 'inv-1' ] ],

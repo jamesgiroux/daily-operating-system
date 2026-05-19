@@ -70,9 +70,11 @@ final class DailyOS_SurfaceNonceFeedbackEndpointTest extends TestCase {
 		];
 
 		$result = DailyOS_Plugin::instance()->verify_presence_nonce(
-			$this->verify_request( [
-				'wp_user_id' => 999,
-			] )
+			$this->verify_request(
+				[
+					'wp_user_id' => 999,
+				]
+			)
 		);
 
 		$this->assertTrue( $result['ok'] );

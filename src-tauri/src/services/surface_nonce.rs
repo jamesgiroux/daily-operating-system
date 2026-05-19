@@ -371,7 +371,7 @@ impl SurfaceNonceService {
 
     /// Charge the failure budget for a phase-3 `record_claim_feedback` error.
     ///
-    /// Per packet F §16 #5 (cycle-3 CSO advisory): consume succeeded, but the
+    /// Per packet F §16 #5: consume succeeded, but the
     /// downstream substrate write rejected. The nonce stays consumed
     /// (fail-closed per decision #13), but an attacker could mint and exhaust
     /// nonces by forcing phase-3 failures. Charge the failure budget so the
@@ -489,7 +489,7 @@ impl PresenceNonceDigestKey {
 // Audit subkey for IP / UA hashing in forensic audit payloads. Derived from the
 // same w2b root secret as PresenceNonceDigestKey, but via a distinct HKDF info
 // per packet F §16 #6 so the keys are cryptographically isolated. Survives
-// process restart for cross-session correlation per cycle-1 CSO finding.
+// process restart for cross-session correlation.
 #[derive(Clone)]
 struct AuditSubkey([u8; AUDIT_KEY_LEN]);
 
@@ -1356,7 +1356,7 @@ struct NonceAuditContext {
     action: Option<PresenceNonceAction>,
     current_claim_version: Option<u64>,
     current_composition_version: Option<u64>,
-    // V4-W4 forensic slots per packet F §5.5 + cycle-1 security-auditor finding #4.
+    // Forensic slots per packet F §5.5.
     // attempted_* capture the request-supplied values when they DIFFER from the
     // session-derived values, so a rejected event records the would-be mismatch
     // for incident response.
@@ -2563,7 +2563,7 @@ mod tests {
         assert_eq!(event.detail["reason"], "wrong_user");
     }
 
-    // DOS-683 W4 end-to-end fixture per packet F §5.8 + §8.6 + AC E + I.
+    // W4 end-to-end fixture per packet F §5.8 + §8.6 + AC E + I.
     //
     // Exercises the full issue → verify-wire-through → record_claim_feedback
     // chain for four representative FeedbackAction variants. The HTTP routing

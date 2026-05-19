@@ -1074,12 +1074,12 @@ final class DailyOS_Plugin {
 		$payload = [
 			'session_id'          => $credential->session_id(),
 			'wp_user_id'          => $current_user_id,
-			'claim_id'             => $claim_id,
-			'field_path'           => $field_path,
-			'action'               => $action,
-			'claim_version'        => $claim_version,
-			'composition_id'       => $composition_id,
-			'composition_version'  => $composition_version,
+			'claim_id'            => $claim_id,
+			'field_path'          => $field_path,
+			'action'              => $action,
+			'claim_version'       => $claim_version,
+			'composition_id'      => $composition_id,
+			'composition_version' => $composition_version,
 		];
 
 		if ( null !== $payload_json ) {
@@ -1160,7 +1160,7 @@ final class DailyOS_Plugin {
 				// source_index is an optional companion that helps the JS
 				// affordance render the selection but the runtime never reads
 				// it. The previous OR-shape would accept source_index alone
-				// and fail at the runtime — cycle-3 codex challenge BLOCK.
+				// and fail at the runtime.
 				$shape_ok = isset( $payload_json['source_ref'] )
 					&& is_string( $payload_json['source_ref'] )
 					&& '' !== trim( $payload_json['source_ref'] );

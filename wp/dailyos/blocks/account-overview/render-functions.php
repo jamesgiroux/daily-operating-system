@@ -178,9 +178,9 @@ if ( ! function_exists( 'dailyos_account_overview_render' ) ) {
 		$wrapper_attrs = function_exists( 'get_block_wrapper_attributes' )
 			? get_block_wrapper_attributes(
 				[
-					'class'        => 'wp-block-dailyos-account-overview',
-					'data-ds-tier' => 'pattern',
-					'data-ds-name' => 'AccountOverview',
+					'class'                => 'wp-block-dailyos-account-overview',
+					'data-ds-tier'         => 'pattern',
+					'data-ds-name'         => 'AccountOverview',
 					'data-dailyos-surface' => 'account_overview',
 				]
 			)
@@ -224,6 +224,7 @@ if ( ! function_exists( 'dailyos_account_overview_render' ) ) {
 	 * Render a single projected block.
 	 *
 	 * @param array<string, mixed> $block Projected block payload.
+	 * @param array<string, mixed> $render_context Optional render context carrying composition_id / composition_version / surface for feedback affordance mounting.
 	 * @return string Rendered HTML.
 	 */
 	function dailyos_account_overview_render_block( array $block, array $render_context = [] ): string {
@@ -354,7 +355,7 @@ if ( ! function_exists( 'dailyos_account_overview_render' ) ) {
 			$claim_id = (string) $claim_ref['claim_id'];
 		}
 
-		$out = '<div class="dailyos-claim-row">';
+		$out  = '<div class="dailyos-claim-row">';
 		$out .= '<p class="dailyos-claim-text">' . esc_html( $text ) . '</p>';
 
 		if ( '' !== $claim_id ) {
@@ -409,7 +410,7 @@ if ( ! function_exists( 'dailyos_account_overview_render' ) ) {
 		$claim_refs = isset( $block['claim_refs'] ) && is_array( $block['claim_refs'] ) ? $block['claim_refs'] : [];
 
 		foreach ( $claim_refs as $claim_ref ) {
-			if ( is_array( $claim_ref ) && $claim_id !== '' && isset( $claim_ref['claim_id'] ) && $claim_id === (string) $claim_ref['claim_id'] ) {
+			if ( is_array( $claim_ref ) && '' !== $claim_id && isset( $claim_ref['claim_id'] ) && $claim_id === (string) $claim_ref['claim_id'] ) {
 				return $claim_ref;
 			}
 		}
