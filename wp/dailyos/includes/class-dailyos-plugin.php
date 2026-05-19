@@ -1106,9 +1106,9 @@ final class DailyOS_Plugin {
 	 *
 	 * @param array<string, mixed> $params Request params.
 	 * @param string               $action FeedbackAction variant.
-	 * @return string|null|\WP_Error Validated JSON payload, null if absent, or WP_Error on invalid shape.
+	 * @return array<string, mixed>|null|\WP_Error Validated payload (associative array — encoded as a JSON object by the runtime transport), null if absent, or WP_Error on invalid shape.
 	 */
-	private static function validate_payload_json( array $params, string $action ): string|null|\WP_Error {
+	private static function validate_payload_json( array $params, string $action ): array|null|\WP_Error {
 		$raw_payload = $params['payload_json'] ?? null;
 		$max_chars   = 500;
 
@@ -1179,10 +1179,12 @@ final class DailyOS_Plugin {
 			return self::nonce_payload_error( 'malformed_request', 400 );
 		}
 
-		$encoded = function_exists( 'wp_json_encode' )
-			? wp_json_encode( $payload_json, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE )
-			: json_encode( $payload_json, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
-		return is_string( $encoded ) ? $encoded : self::nonce_payload_error( 'malformed_request', 400 );
+		// Return as associative array. The runtime transport JSON-encodes the
+		// full outbound body, so payload_json lands as a JSON OBJECT on the
+		// wire — which is what surface_nonce::optional_payload_json requires
+		// (it drops non-object values silently). Cycle-2 L2 codex challenge
+		// caught the prior wp_json_encode→string forwarding bug.
+		return $payload_json;
 	}
 
 	/**

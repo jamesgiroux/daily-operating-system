@@ -39,6 +39,14 @@ export type FeedbackRecordedDetail = FeedbackRecordedResult;
 
 export interface FeedbackAffordanceProps {
 	claimId: string;
+	// V4-W4 binding tuple: required by the runtime's IssueNonceRequest +
+	// VerifyNonceRequest parsers. Without these every WP-originated nonce
+	// mint becomes HTTP 400 MalformedRequest. Source: rendered by
+	// render-functions.php into the data-dailyos-feedback-props JSON.
+	claimVersion: number;
+	fieldPath: string;
+	compositionId: string;
+	compositionVersion: number;
 	sources?: FeedbackSource[];
 	currentSurface?: string;
 	currentInvocationId?: string;
@@ -173,6 +181,10 @@ function errorMessage(error: unknown): string {
 
 export function FeedbackAffordance({
 	claimId,
+	claimVersion,
+	fieldPath,
+	compositionId,
+	compositionVersion,
 	sources = [],
 	currentSurface,
 	currentInvocationId,
@@ -282,28 +294,42 @@ export function FeedbackAffordance({
 
 		try {
 			const payload = buildPayload();
+			// V4-W4: every nonce mint requires the full binding tuple. action_kind
+			// is the canonical key the WP feedback path uses; the WP plugin
+			// renames it to `action` when forwarding to the runtime.
+			const bindingTuple = {
+				claim_id: claimId,
+				field_path: fieldPath,
+				claim_version: claimVersion,
+				composition_id: compositionId,
+				composition_version: compositionVersion,
+			};
 			const nonceResponse = await apiFetch<Record<string, unknown>>({
 				path: "/dailyos/v1/nonce",
 				method: "POST",
 				data: {
-					claim_id: claimId,
+					...bindingTuple,
 					action_kind: selectedAction.kind,
-					...(payload ? { payload_json: JSON.stringify(payload) } : {}),
+					...(payload ? { payload_json: payload } : {}),
 				},
 			});
-			const nonceDigest =
-				nonceResponse.nonce_digest ??
+			const presenceNonce =
 				nonceResponse.presence_nonce ??
-				nonceResponse.nonce;
+				nonceResponse.nonce ??
+				nonceResponse.nonce_digest;
 
-			if (typeof nonceDigest !== "string" || !nonceDigest.trim()) {
-				throw new Error("Runtime did not return a nonce digest.");
+			if (typeof presenceNonce !== "string" || !presenceNonce.trim()) {
+				throw new Error("Runtime did not return a presence nonce.");
 			}
 
 			const verifyResponse = await apiFetch<Record<string, unknown>>({
 				path: "/dailyos/v1/nonce/verify",
 				method: "POST",
-				data: { nonce_digest: nonceDigest },
+				data: {
+					...bindingTuple,
+					action_kind: selectedAction.kind,
+					presence_nonce: presenceNonce,
+				},
 			});
 
 			if (verifyResponse.ok === false) {
