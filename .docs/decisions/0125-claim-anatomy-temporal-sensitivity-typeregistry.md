@@ -2,7 +2,8 @@
 
 **Status:** Accepted (substrate primitives for v1.4.0 spine; downstream enforcement in v1.4.1+)
 **Date:** 2026-04-24
-**Target:** v1.4.0 (schema + enums + registry); v1.4.1 (DOS-10 freshness + DOS-214 render policy); v1.4.2/3 (per-surface enforcement)
+**Amended:** 2026-05-19 — added §5 `RecommendationClaim` variant for v1.4.6 Salience & Recommendations. Registers `ClaimType::Recommendation` in `CLAIM_TYPE_REGISTRY` (canonical persisted name `"recommendation"`) with `State` temporal scope, `Internal` sensitivity, `Medium` freshness decay, `Replace` commit policy, agent-only authorship, attaches to `Account` / `Project` / `Person` subjects. Salience factors, user-feedback state (`Accepted` / `Dismissed` / `NotUseful` / `TooNoisy` / `Converted`), conversion state, and supersession + dismissal lifecycle are declared at the substrate level; concrete DTOs land in v1.4.6 W1-A `services/recommendations/contracts.rs`. Per the v1.4.6 W0 hardening cycle in [`.docs/plans/v1.4.6-waves.md`](../plans/v1.4.6-waves.md).
+**Target:** v1.4.0 (schema + enums + registry); v1.4.1 (DOS-10 freshness + DOS-214 render policy); v1.4.2/3 (per-surface enforcement); v1.4.6 (Recommendation variant)
 **Extends:** [ADR-0113](0113-human-and-agent-analysis-as-first-class-claim-sources.md), [ADR-0105](0105-provenance-as-first-class-output.md), [ADR-0114](0114-scoring-unification.md)
 **Pattern parallel:** [ADR-0115](0115-signal-granularity-audit.md) Signal Policy Registry
 
@@ -153,11 +154,52 @@ v1.4.0 spine ships the registry mechanism + initial set covering the two pilot a
 
 ### 4. Per-dimension downstream landing
 
-| Dimension | v1.4.0 spine | v1.4.1 | v1.4.2 | v1.4.3 |
-|---|---|---|---|---|
-| Temporal scope | column + enum + serde | DOS-10 freshness consults it; supersession semantics | — | — |
-| Sensitivity | column + enum + serde | DOS-214 render layer enforces | entity surfaces enforce ceiling | briefing surfaces enforce ceiling |
-| Claim type registry | mechanism + initial set + CI lint | extensions as new abilities ship | extensions | extensions |
+| Dimension | v1.4.0 spine | v1.4.1 | v1.4.2 | v1.4.3 | v1.4.6 |
+|---|---|---|---|---|---|
+| Temporal scope | column + enum + serde | DOS-10 freshness consults it; supersession semantics | — | — | `Recommendation` uses `State` |
+| Sensitivity | column + enum + serde | DOS-214 render layer enforces | entity surfaces enforce ceiling | briefing surfaces enforce ceiling | `Recommendation` defaults `Internal` |
+| Claim type registry | mechanism + initial set + CI lint | extensions as new abilities ship | extensions | extensions | `Recommendation` variant added (W0) |
+
+### 5. RecommendationClaim variant (v1.4.6 amendment)
+
+**Decision (2026-05-19, W0 of v1.4.6 Salience & Recommendations).** Recommendations are first-class claims, not a parallel substrate. They register in `CLAIM_TYPE_REGISTRY` and ride the same provenance, trust, supersession, and sensitivity primitives every other claim type already inherits from this ADR. The W0 amendment fixes the substrate-level shape; concrete DTOs land in v1.4.6 W1-A `services/recommendations/contracts.rs`.
+
+**Why a claim-type, not a separate table.** A recommendation says *"this action is recommended for this subject as of this moment, with this evidence and this expected impact"* — that is a claim. Trust band, freshness decay, contradiction handling, and the existing claim lifecycle (assert → corroborate → contradict → supersede → retract) already apply. Making it a claim means every existing intelligence-loop surface (entity context, briefing prep, surface render) consumes recommendations through the same render path as every other claim, with the same provenance receipt and the same trust signaling. A parallel `recommendation_claims` table would have re-invented all of that.
+
+**Registry entry.** `ClaimType::Recommendation` is added with canonical persisted name `"recommendation"`. Metadata:
+
+| Field | Value | Rationale |
+|---|---|---|
+| `default_temporal_scope` | `State` | A recommendation persists as the *current* recommendation for its subject until accepted, dismissed, or superseded. Not a `PointInTime` event; not a `Trend`. |
+| `default_sensitivity` | `Internal` | Recommendations are derived intelligence. They reference upstream evidence whose own sensitivity may be higher; render-time masking still consults the upstream evidence's sensitivity (per §2). |
+| `freshness_decay_class` | `Medium` | Weeks-scale half-life. The recommendation's evidence ages out on its own freshness clock; the recommendation itself decays alongside. W1-B salience re-scoring rebuilds candidacy continuously on signal arrival, so the freshness class governs how long a *quiet* recommendation remains valid before W4-B deviation detection re-evaluates. |
+| `commit_policy_class` | `Replace` | A newer same-subject recommendation supersedes the older one. Recommendations are uniquely identified by `(subject, recommended_action_kind)`; corroboration semantics (`Reinforce`) don't apply because two distinct agent runs producing the same recommendation should *replace* (newer evidence wins), not stack confidence. Contradiction (`Fork`) is handled at the salience layer (W1-B): mutually-contradictory recommendations on the same subject lower each other's salience score and surface as a triage decision, not as parallel claim rows. |
+| `allowed_actor_classes` | `[Agent]` | Recommendations are agent-generated. User feedback (Accepted / Dismissed / NotUseful / TooNoisy / Converted) flows through `services::claims::record_claim_feedback` and emits `ClaimFeedbackRecorded` signals — it does *not* write a separate user-authored Recommendation claim. |
+| `canonical_subject_types` | `[Account, Project, Person]` | Recommendations attach to entities. Meeting-scoped recommendations attach to the meeting's containing entity (per the v1.4.6 W3 cross-surface render contract); they don't get their own meeting subject. Email subjects are excluded — the email is evidence, not the recommendation target. |
+
+**Lifecycle additions beyond the base claim envelope.** Recommendations carry three substrate fields above what other claim types use, declared at the ADR level here and frozen as wire format in W1-A `contracts.rs`:
+
+- **Salience factors.** Inspectable per-factor scoring (trust, novelty, freshness, urgency, similarity, fit). One row per factor at write time; the salience score is the deterministic combination, not an LLM judgment. ADR-0115 Signal Policy Registry exhaustiveness pattern applies: factor kinds are a closed enum. See [ADR-0114](0114-scoring-unification.md) for the underlying scoring composition.
+- **User-feedback state.** Closed enum `{ Accepted | Dismissed | NotUseful | TooNoisy | Converted }`. Default `None` (no feedback yet). State transitions are append-only at the `claim_feedback` level (per existing v1.4.0 substrate); the denormalized current-state field on the recommendation claim row is rebuilt from the feedback log by the W4-A feedback loop on each `ClaimFeedbackRecorded` signal.
+- **Conversion state.** Closed enum `{ NotConverted | InProgress | Converted | Abandoned }`. Default `NotConverted`. Updated when a downstream action (commitment, meeting outcome, account event) is causally linked back to the recommendation. v1.4.6 W4-A wires the link; v1.5.x causal-lineage substrate (deferred per §"Non-goals", anatomy review §14) makes the link first-class.
+
+**Supersession + dismissal.** Standard claim lifecycle applies:
+- *Supersession*: a newer recommendation on the same `(subject, recommended_action_kind)` writes a `supersedes` reference to the older claim's id and the older claim's `verification_state` transitions to `Superseded`.
+- *Dismissal*: `record_claim_feedback` with action `Dismissed` flips the user-feedback state to `Dismissed` and emits `ClaimFeedbackRecorded`. The W2-A surfacing policy treats `Dismissed` as a hard suppression for the recommendation's lifetime (with a configurable cooldown); W4-A feedback weights downgrade the source factors that contributed to the dismissed recommendation, so future similar candidates score lower.
+- *Retraction*: agents may retract their own recommendations (e.g. when upstream evidence is contradicted). Standard `ClaimRetracted` flow applies; W2-A removes from surface immediately on signal receipt.
+
+**Surface render contract (v1.4.6 W3 consumers).** The `Recommendation` claim's render output goes through the same Shared Receipt DTO (`services::claim_receipt::contracts::ClaimReceipt`) every other claim uses. Per the v1.4.6 W0 close gate cross-version row, this ADR amendment is unblocked only after v1.4.4 W1-A ships the `ClaimReceipt` substrate.
+
+**Out of scope at the ADR level.** Per `.docs/plans/v1.4.6-waves.md` line 213 owner table:
+- `RecommendationClaim` DTO struct + serde encoding → W1-A (`services/recommendations/contracts.rs`)
+- `recommendation_claims` table vs `intelligence_claims` extension → W1-A migration choice (slot range v260–v279)
+- Salience scoring engine → W1-B (`services/recommendations/salience.rs`)
+- Surfacing policy → W2-A (`services/recommendations/surfacing.rs`)
+- Trigger policy → W2-B (`services/recommendations/triggers.rs`)
+- Feedback wiring → W4-A (`services/recommendations/feedback.rs`)
+- Cross-surface rendering → W3 (consumes `claim_receipt::contracts::ClaimReceipt`)
+
+**ADR-0102 (abilities runtime) assessment.** v1.4.6's `recommend_for_entity` ability targets the existing `mcp_exposure: McpExposure::MetadataOnly` tri-state value (added in the 2026-05-10 amendment). No further ADR-0102 amendment needed for v1.4.6 W0. v1.4.7 may amend ADR-0102 to flip `mcp_exposure` to `Invocable` once the MCP `dailyos.read.portfolio_attention` consumer ships.
 
 ## Non-goals for spine
 

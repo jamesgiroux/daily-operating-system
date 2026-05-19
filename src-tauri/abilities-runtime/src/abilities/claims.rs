@@ -169,6 +169,13 @@ pub enum ClaimType {
     MeetingChangeMarker,
     SuggestedOutcome,
     UserNote,
+    // --- Recommendations (salience subsystem) -----------------------
+    /// Agent-generated recommendation for an action against an entity
+    /// subject. Carries salience-factor evidence, user-feedback state
+    /// (accepted / dismissed / not-useful / too-noisy / converted) and
+    /// conversion lifecycle. Subject is the entity the recommendation
+    /// targets. See ADR-0125 §5.
+    Recommendation,
 }
 
 impl ClaimType {
@@ -265,6 +272,7 @@ pub const fn metadata_for_claim_type(kind: ClaimType) -> &'static ClaimTypeMetad
         ClaimType::MeetingChangeMarker => &MEETING_CHANGE_MARKER_META,
         ClaimType::SuggestedOutcome => &SUGGESTED_OUTCOME_META,
         ClaimType::UserNote => &USER_NOTE_META,
+        ClaimType::Recommendation => &RECOMMENDATION_META,
     }
 }
 
@@ -684,6 +692,17 @@ claim_meta!(
     SUBJECTS_ANY_ENTITY,
     ACTORS_USER_OR_SYSTEM
 );
+claim_meta!(
+    RECOMMENDATION_META,
+    Recommendation,
+    "recommendation",
+    State,
+    Internal,
+    Medium,
+    Replace,
+    SUBJECTS_ANY_ENTITY,
+    ACTORS_AGENT
+);
 
 /// Closed registry of claim types for name-based traversal paths.
 /// `metadata_for_claim_type` is independently exhaustive; this slice
@@ -720,6 +739,7 @@ pub const CLAIM_TYPE_REGISTRY: &[&ClaimTypeMetadata] = &[
     &MEETING_CHANGE_MARKER_META,
     &SUGGESTED_OUTCOME_META,
     &USER_NOTE_META,
+    &RECOMMENDATION_META,
 ];
 
 /// Look up a metadata row by canonical persisted name. Returns `None`
@@ -768,7 +788,8 @@ mod tests {
             | ClaimType::StakeholderEngagement
             | ClaimType::StakeholderAssessment
             | ClaimType::Commitment
-            | ClaimType::OpenLoop => FreshnessDecayClass::Medium,
+            | ClaimType::OpenLoop
+            | ClaimType::Recommendation => FreshnessDecayClass::Medium,
             ClaimType::MeetingReadiness => FreshnessDecayClass::Fast,
             ClaimType::TriageSnooze
             | ClaimType::MeetingTopic
@@ -788,7 +809,8 @@ mod tests {
             | ClaimType::EntitySummary
             | ClaimType::EntityCurrentState
             | ClaimType::MeetingReadiness
-            | ClaimType::SuggestedOutcome => CommitPolicyClass::Replace,
+            | ClaimType::SuggestedOutcome
+            | ClaimType::Recommendation => CommitPolicyClass::Replace,
             ClaimType::Win
             | ClaimType::LinkingDismissed
             | ClaimType::EmailDismissed
@@ -879,6 +901,7 @@ mod tests {
             (ClaimType::MeetingChangeMarker, "meeting_change_marker"),
             (ClaimType::SuggestedOutcome, "suggested_outcome"),
             (ClaimType::UserNote, "user_note"),
+            (ClaimType::Recommendation, "recommendation"),
         ];
         for (idx, (kind, expected)) in cases.iter().copied().enumerate() {
             let m = &CLAIM_TYPE_REGISTRY[idx];
@@ -994,6 +1017,7 @@ mod tests {
             ClaimType::AttendeeContext,
             ClaimType::MeetingChangeMarker,
             ClaimType::SuggestedOutcome,
+            ClaimType::Recommendation,
         ];
         for kind in agent_only {
             let actors = metadata_for_claim_type(kind).allowed_actor_classes;

@@ -97,6 +97,10 @@ pub enum SignalType {
     RenewalProximity,
     RenewalRiskEscalation,
     RenewalStageUpdated,
+    /// Trigger policy event: upstream change indicates a recommendation
+    /// candidate needs re-scoring. Emitted from the recommendations
+    /// trigger module; coalesced invalidation policy.
+    SalienceCandidateRefreshTriggered,
     SourceRestricted,
     SourceRevoked,
     SourceWithdrawn,
@@ -107,6 +111,10 @@ pub enum SignalType {
     StakeholdersChanged,
     StakeholdersUpdated,
     SupportHealthUpdated,
+    /// Surfacing policy event: audit row written for every recommendation
+    /// surface / defer / suppress decision. Emitted from the recommendations
+    /// surfacing module; coalesced invalidation policy.
+    SurfacingDecisionMade,
     TechnicalFootprintUpdated,
     ThreadPosition,
     TitleChange,
@@ -215,6 +223,7 @@ impl SignalType {
             "renewal_proximity" => Self::RenewalProximity,
             "renewal_risk_escalation" => Self::RenewalRiskEscalation,
             "renewal_stage_updated" => Self::RenewalStageUpdated,
+            "salience_candidate_refresh_triggered" => Self::SalienceCandidateRefreshTriggered,
             "source_restricted" => Self::SourceRestricted,
             "source_revoked" => Self::SourceRevoked,
             "source_withdrawn" => Self::SourceWithdrawn,
@@ -225,6 +234,7 @@ impl SignalType {
             "stakeholders_changed" => Self::StakeholdersChanged,
             "stakeholders_updated" => Self::StakeholdersUpdated,
             "support_health_updated" => Self::SupportHealthUpdated,
+            "surfacing_decision_made" => Self::SurfacingDecisionMade,
             "technical_footprint_updated" => Self::TechnicalFootprintUpdated,
             "thread_position" => Self::ThreadPosition,
             "title_change" => Self::TitleChange,
@@ -330,6 +340,7 @@ impl SignalType {
             Self::RenewalProximity => "renewal_proximity",
             Self::RenewalRiskEscalation => "renewal_risk_escalation",
             Self::RenewalStageUpdated => "renewal_stage_updated",
+            Self::SalienceCandidateRefreshTriggered => "salience_candidate_refresh_triggered",
             Self::SourceRestricted => "source_restricted",
             Self::SourceRevoked => "source_revoked",
             Self::SourceWithdrawn => "source_withdrawn",
@@ -340,6 +351,7 @@ impl SignalType {
             Self::StakeholdersChanged => "stakeholders_changed",
             Self::StakeholdersUpdated => "stakeholders_updated",
             Self::SupportHealthUpdated => "support_health_updated",
+            Self::SurfacingDecisionMade => "surfacing_decision_made",
             Self::TechnicalFootprintUpdated => "technical_footprint_updated",
             Self::ThreadPosition => "thread_position",
             Self::TitleChange => "title_change",
@@ -459,6 +471,7 @@ pub fn known_signal_type_names() -> &'static [&'static str] {
         "renewal_proximity",
         "renewal_risk_escalation",
         "renewal_stage_updated",
+        "salience_candidate_refresh_triggered",
         "source_restricted",
         "source_revoked",
         "source_withdrawn",
@@ -469,6 +482,7 @@ pub fn known_signal_type_names() -> &'static [&'static str] {
         "stakeholders_changed",
         "stakeholders_updated",
         "support_health_updated",
+        "surfacing_decision_made",
         "technical_footprint_updated",
         "thread_position",
         "title_change",
@@ -695,6 +709,7 @@ pub fn policy_for(signal: &SignalType) -> SignalPolicy {
         | RenewalProximity
         | RenewalRiskEscalation
         | RenewalStageUpdated
+        | SalienceCandidateRefreshTriggered
         | StakeholderChange
         | StakeholderDisengagement
         | StakeholderUnverified
@@ -702,6 +717,7 @@ pub fn policy_for(signal: &SignalType) -> SignalPolicy {
         | StakeholdersChanged
         | StakeholdersUpdated
         | SupportHealthUpdated
+        | SurfacingDecisionMade
         | TechnicalFootprintUpdated
         | ThreadPosition
         | TitleChange

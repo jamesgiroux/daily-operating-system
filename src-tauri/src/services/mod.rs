@@ -36,6 +36,7 @@ pub mod mutations;
 pub mod people;
 pub mod projection_signing;
 pub mod projects;
+pub mod recommendations;
 pub mod reports;
 pub mod sensitivity;
 pub mod settings;
