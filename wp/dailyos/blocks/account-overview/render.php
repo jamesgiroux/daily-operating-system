@@ -22,4 +22,5 @@ if ( ! function_exists( 'dailyos_account_overview_render' ) ) {
 }
 
 $attributes = isset( $attributes ) && is_array( $attributes ) ? $attributes : [];
-return dailyos_account_overview_render( $attributes );
+// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- render functions escape output internally via esc_html / esc_attr / wp_kses (W3 contract).
+echo dailyos_account_overview_render( $attributes );

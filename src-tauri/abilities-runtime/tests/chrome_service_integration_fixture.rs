@@ -1,10 +1,8 @@
-//! Primitive chrome service — state-branch coverage per v1.4.3 W2 L0
-//! Packet D §5.8 + AC #15 (DOS-682).
+//! Primitive chrome service — state-branch coverage.
 //!
 //! Exercises the chrome state-branch logic using **mock primitive fixtures
 //! the test owns** — does NOT depend on per-primitive `wp/dailyos/blocks/
-//! <slug>/` outputs from PR-D2/D3/D4 per V1.4 §5.8 surgical fold (cycle-4
-//! consult condition).
+//! <slug>/` outputs.
 //!
 //! For each of the 11 Wave 1 primitives, asserts the 4 chrome state branches
 //! resolve to the expected `data-chrome` marker classification:

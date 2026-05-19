@@ -1,0 +1,12 @@
+/*
+Theme Name: DailyOS Magazine
+Theme URI: https://dailyos.app
+Description: Editorial magazine theme for DailyOS — translates the Tauri React magazine layout into a WordPress block theme. Consumes the DailyOS plugin's W2 primitive blocks + account-overview composite. Magazine chrome + token-driven typography; no trust/provenance styling (lives in plugin per ADR-0129).
+Version: 0.1.0
+Requires at least: 6.5
+Requires PHP: 8.0
+License: GPLv2 or later
+License URI: https://www.gnu.org/licenses/gpl-2.0.html
+Text Domain: dailyos-magazine
+Tags: full-site-editing, block-theme, magazine, editorial
+*/

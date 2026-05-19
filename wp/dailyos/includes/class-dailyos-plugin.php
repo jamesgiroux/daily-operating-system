@@ -70,11 +70,14 @@ final class DailyOS_Plugin {
 		add_action( 'wp_abilities_api_categories_init', [ $this, 'register_ability_categories' ], 10 );
 		add_action( 'wp_abilities_api_init', [ $this, 'register_abilities' ], 10 );
 		add_action( 'init', [ $this, 'register_blocks' ], 11 );
+		add_action( 'init', [ $this, 'register_post_types' ], 11 );
 		add_filter( 'block_categories_all', [ $this, 'register_block_category' ], 10, 1 );
 		add_action( 'init', [ $this, 'register_mcp_server_config' ], 12 );
 		add_action( 'init', [ $this, 'register_save_hooks' ], 13 );
 		add_action( 'admin_menu', [ $this, 'register_admin_pages' ], 10 );
 		add_action( 'rest_api_init', [ $this, 'register_rest_routes' ], 10 );
+		add_action( 'wp_enqueue_scripts', [ $this, 'enqueue_baseline_tokens' ], 9 );
+		add_action( 'enqueue_block_editor_assets', [ $this, 'enqueue_baseline_tokens' ], 9 );
 
 		add_action( 'dailyos_nonce_sweep', [ $this, 'sweep_presence_nonces' ] );
 
@@ -160,6 +163,61 @@ final class DailyOS_Plugin {
 		foreach ( $block_files as $block_file ) {
 			register_block_type_from_metadata( dirname( $block_file ) );
 		}
+	}
+
+	/**
+	 * Register DailyOS custom post types.
+	 *
+	 * `dailyos_account` is the substrate-backed account post type the W3 magazine
+	 * theme attaches templates to. Additional CPTs (e.g. `dailyos_briefing`) follow
+	 * in v1.4.4 W (briefing surface migration).
+	 */
+	public function register_post_types(): void {
+		if ( ! function_exists( 'register_post_type' ) ) {
+			return;
+		}
+
+		register_post_type(
+			'dailyos_account',
+			[
+				'labels'        => [
+					'name'          => __( 'Accounts', 'dailyos' ),
+					'singular_name' => __( 'Account', 'dailyos' ),
+				],
+				'public'        => true,
+				'has_archive'   => true,
+				'rewrite'       => [ 'slug' => 'accounts' ],
+				'show_in_rest'  => true,
+				'rest_base'     => 'accounts',
+				'supports'      => [ 'title', 'editor', 'custom-fields' ],
+				'template_lock' => false,
+				'menu_icon'     => 'dashicons-businessperson',
+			]
+		);
+	}
+
+	/**
+	 * Enqueue plugin-owned baseline token shim.
+	 *
+	 * Block CSS depends on var(--wp--preset--color--*) custom properties that come
+	 * from the DailyOS theme.json. Under any non-DailyOS theme (TwentyTwentyFive
+	 * etc), those vars don't resolve and trust/provenance rendering breaks. The
+	 * shim defines all DailyOS preset vars on :root so block CSS works regardless
+	 * of active theme.
+	 *
+	 * Per L0 Packet E V1.4 §5.7 + invariant #7.
+	 */
+	public function enqueue_baseline_tokens(): void {
+		if ( ! function_exists( 'wp_enqueue_style' ) ) {
+			return;
+		}
+
+		wp_enqueue_style(
+			'dailyos-baseline-tokens',
+			DAILYOS_PLUGIN_URL . 'assets/dailyos-baseline-tokens.css',
+			[],
+			DAILYOS_PLUGIN_VERSION
+		);
 	}
 
 	/**

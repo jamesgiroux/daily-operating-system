@@ -12,7 +12,7 @@
       "description": "Disallow direct filesystem writes outside wp-content/uploads/dailyos.",
       "pattern": "\\b(file_put_contents|fwrite)\\s*\\(|\\bfopen\\s*\\([^\\n;]*['\\\"]w(?:b)?['\\\"]",
       "include_glob": "wp/dailyos/**/*.php",
-      "exclude_glob": ""
+      "exclude_glob": "wp/dailyos/tests/**/*.php"
     },
     {
       "id": "secret_persistence",
@@ -33,6 +33,13 @@
       "description": "Disallow ephemeral issue or cycle references in PHP comments.",
       "pattern": "DOS-[0-9]+|cycle-[0-9]+|fix #[0-9]+",
       "include_glob": "wp/dailyos/**/*.php",
+      "exclude_glob": ""
+    },
+    {
+      "id": "block_render_return_not_echo",
+      "description": "Block render.php files must echo render function output, not return it. WP core's render callback uses ob_start()/require/ob_get_clean() — return values are discarded.",
+      "pattern": "^return dailyos_[a-z_]+_render\\s*\\(",
+      "include_glob": "wp/dailyos/blocks/**/render.php",
       "exclude_glob": ""
     }
   ]

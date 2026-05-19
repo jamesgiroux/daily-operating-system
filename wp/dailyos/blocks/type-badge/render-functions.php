@@ -162,7 +162,7 @@ if ( ! function_exists( 'dailyos_type_badge_render' ) ) {
 			}
 		}
 
-		$label = $type_badge_options[ $account_type ];
+		$label         = $type_badge_options[ $account_type ];
 		$wrapper_class = 'wp-block-dailyos-type-badge dailyos-primitive-inline dailyos-type-badge dailyos-type-badge--' . $account_type;
 		$wrapper_attrs = function_exists( 'get_block_wrapper_attributes' )
 			? get_block_wrapper_attributes(
@@ -183,16 +183,29 @@ if ( ! function_exists( 'dailyos_type_badge_render' ) ) {
 		return '<span ' . $wrapper_attrs . '>' . esc_html( $label ) . '</span>';
 	}
 
+	/**
+	 * Render the empty-state inline primitive shell for the type-badge block.
+	 */
 	function dailyos_type_badge_render_empty_primitive(): string {
 		return '<span class="wp-block-dailyos-type-badge dailyos-primitive-inline is-empty" data-ds-tier="primitive" data-ds-name="TypeBadge" data-ds-spec="primitives/TypeBadge.md"></span>';
 	}
 
+	/**
+	 * Render a generic inline notice span for the type-badge block.
+	 *
+	 * @param string $class   Notice class suffix.
+	 * @param string $message Localized notice message.
+	 * @return string
+	 */
 	function dailyos_type_badge_render_inline_notice( string $class, string $message ): string {
 		return '<span class="wp-block-dailyos-type-badge dailyos-primitive-inline dailyos-notice ' . esc_attr( $class ) . '" data-ds-tier="primitive" data-ds-name="TypeBadge" data-ds-spec="primitives/TypeBadge.md" role="status">'
 			. esc_html( $message )
 			. '</span>';
 	}
 
+	/**
+	 * Render the throttled-runtime inline notice for the type-badge block.
+	 */
 	function dailyos_type_badge_render_throttled_notice(): string {
 		return dailyos_type_badge_render_inline_notice(
 			'dailyos-throttled',
@@ -200,6 +213,9 @@ if ( ! function_exists( 'dailyos_type_badge_render' ) ) {
 		);
 	}
 
+	/**
+	 * Render the session-repair inline notice for the type-badge block.
+	 */
 	function dailyos_type_badge_render_session_repair_notice(): string {
 		return dailyos_type_badge_render_inline_notice(
 			'dailyos-session-repair',
@@ -207,6 +223,9 @@ if ( ! function_exists( 'dailyos_type_badge_render' ) ) {
 		);
 	}
 
+	/**
+	 * Render the runtime-unavailable inline notice for the type-badge block.
+	 */
 	function dailyos_type_badge_render_runtime_unavailable_notice(): string {
 		return dailyos_type_badge_render_inline_notice(
 			'dailyos-runtime-unavailable',
@@ -214,6 +233,9 @@ if ( ! function_exists( 'dailyos_type_badge_render' ) ) {
 		);
 	}
 
+	/**
+	 * Render the invalid-request inline notice for the type-badge block.
+	 */
 	function dailyos_type_badge_render_invalid_request_notice(): string {
 		return dailyos_type_badge_render_inline_notice(
 			'dailyos-invalid-request',
@@ -221,6 +243,9 @@ if ( ! function_exists( 'dailyos_type_badge_render' ) ) {
 		);
 	}
 
+	/**
+	 * Render the consistency-finding verification banner for the type-badge block.
+	 */
 	function dailyos_type_badge_render_verification_banner(): string {
 		return dailyos_type_badge_render_inline_notice(
 			'dailyos-verification-banner',

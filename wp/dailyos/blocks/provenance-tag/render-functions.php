@@ -216,6 +216,8 @@ if ( ! function_exists( 'dailyos_provenance_tag_render' ) ) {
 	}
 
 	/**
+	 * Return the first non-empty value from the payload across candidate field names.
+	 *
 	 * @param array<string, mixed> $values Payload values.
 	 * @param array<int, string>   $keys   Candidate field names.
 	 * @return mixed|null
@@ -263,6 +265,8 @@ if ( ! function_exists( 'dailyos_provenance_tag_render' ) ) {
 	}
 
 	/**
+	 * Resolve a human-readable source label from raw payload source/label fields.
+	 *
 	 * @param mixed|null $source_value Raw source enum/object.
 	 * @param mixed|null $label_value  Human-readable source label.
 	 * @return string
@@ -287,6 +291,12 @@ if ( ! function_exists( 'dailyos_provenance_tag_render' ) ) {
 		return is_string( $source_value ) ? dailyos_provenance_tag_format_source_name( trim( $source_value ) ) : '';
 	}
 
+	/**
+	 * Format a source enum value into a "from <Vendor>" human-readable label.
+	 *
+	 * @param string $source Raw source enum string.
+	 * @return string
+	 */
 	function dailyos_provenance_tag_format_source_name( string $source ): string {
 		if ( '' === $source ) {
 			return '';
@@ -320,8 +330,15 @@ if ( ! function_exists( 'dailyos_provenance_tag_render' ) ) {
 		}
 	}
 
+	/**
+	 * Title-case a snake/space/hyphen-separated source name for fallback labels.
+	 *
+	 * @param string $source Raw source name.
+	 * @return string
+	 */
 	function dailyos_provenance_tag_title_case_source( string $source ): string {
-		$parts = preg_split( '/[_\s-]+/', trim( $source ) ) ?: [];
+		$split = preg_split( '/[_\s-]+/', trim( $source ) );
+		$parts = false !== $split ? $split : [];
 		$out   = [];
 		foreach ( $parts as $part ) {
 			if ( '' !== $part ) {
@@ -332,6 +349,8 @@ if ( ! function_exists( 'dailyos_provenance_tag_render' ) ) {
 	}
 
 	/**
+	 * Detect whether a raw source candidate represents Pretty synthesis output.
+	 *
 	 * @param mixed|null $value Raw source candidate.
 	 * @return bool
 	 */
@@ -347,6 +366,8 @@ if ( ! function_exists( 'dailyos_provenance_tag_render' ) ) {
 	}
 
 	/**
+	 * Format a timestamp or age duration as a relative age label (e.g. "3d ago").
+	 *
 	 * @param mixed|null $value Timestamp or age duration.
 	 * @return string
 	 */
@@ -371,7 +392,7 @@ if ( ! function_exists( 'dailyos_provenance_tag_render' ) ) {
 		}
 
 		if ( is_numeric( $trimmed ) ) {
-			$numeric  = (float) $trimmed;
+			$numeric = (float) $trimmed;
 			$seconds = $numeric > 1000000000 ? $now - (int) $numeric : (int) $numeric;
 			return dailyos_provenance_tag_format_duration( $seconds );
 		}
@@ -384,6 +405,12 @@ if ( ! function_exists( 'dailyos_provenance_tag_render' ) ) {
 		return dailyos_provenance_tag_format_duration( $now - $timestamp );
 	}
 
+	/**
+	 * Format an absolute duration in seconds as a short relative label.
+	 *
+	 * @param int $seconds Signed duration in seconds.
+	 * @return string
+	 */
 	function dailyos_provenance_tag_format_duration( int $seconds ): string {
 		$future = $seconds < 0;
 		$abs    = abs( $seconds );
@@ -412,11 +439,26 @@ if ( ! function_exists( 'dailyos_provenance_tag_render' ) ) {
 		return '';
 	}
 
+	/**
+	 * Normalize an explicit variant attribute to a supported provenance-tag variant.
+	 *
+	 * @param string $variant Raw variant attribute.
+	 * @return string
+	 */
 	function dailyos_provenance_tag_normalize_variant( string $variant ): string {
 		$normalized = strtolower( str_replace( '_', '-', trim( $variant ) ) );
 		return in_array( $normalized, [ 'with-source', 'age-only', 'discrepancy' ], true ) ? $normalized : '';
 	}
 
+	/**
+	 * Resolve the rendered variant from explicit hint plus payload signals.
+	 *
+	 * @param string $explicit_variant Variant override from attributes.
+	 * @param string $source_label     Resolved source label.
+	 * @param string $age_label        Resolved age label.
+	 * @param bool   $discrepancy      Whether payload signals a discrepancy.
+	 * @return string
+	 */
 	function dailyos_provenance_tag_resolve_variant( string $explicit_variant, string $source_label, string $age_label, bool $discrepancy ): string {
 		if ( $discrepancy ) {
 			return 'discrepancy';
@@ -430,12 +472,21 @@ if ( ! function_exists( 'dailyos_provenance_tag_render' ) ) {
 		return 'with-source';
 	}
 
+	/**
+	 * Render the resolved provenance-tag HTML for the given labels and variant.
+	 *
+	 * @param string $source_label Resolved source label.
+	 * @param string $age_label    Resolved age label.
+	 * @param string $variant      Resolved variant token.
+	 * @param bool   $discrepancy  Whether payload signals a discrepancy.
+	 * @return string
+	 */
 	function dailyos_provenance_tag_render_tag( string $source_label, string $age_label, string $variant, bool $discrepancy ): string {
 		$classes = [
 			'dailyos-provenance-tag',
 			'dailyos-provenance-tag--' . $variant,
 		];
-		$pieces = [];
+		$pieces  = [];
 
 		if ( $discrepancy ) {
 			$pieces[] = '<span class="dailyos-provenance-tag__discrepancy-marker" aria-hidden="true">!</span>';
@@ -454,6 +505,12 @@ if ( ! function_exists( 'dailyos_provenance_tag_render' ) ) {
 		);
 	}
 
+	/**
+	 * Render the empty-state primitive shell for the provenance-tag block.
+	 *
+	 * @param string $extra_class Optional extra class appended to the wrapper.
+	 * @return string
+	 */
 	function dailyos_provenance_tag_render_empty_primitive( string $extra_class = '' ): string {
 		$classes = 'dailyos-provenance-tag dailyos-provenance-tag--with-source is-empty';
 		if ( '' !== $extra_class ) {
@@ -462,12 +519,22 @@ if ( ! function_exists( 'dailyos_provenance_tag_render' ) ) {
 		return '<span class="' . esc_attr( $classes ) . '" data-ds-tier="primitive" data-ds-name="ProvenanceTag" data-ds-spec="primitives/ProvenanceTag.md"></span>';
 	}
 
+	/**
+	 * Render a generic inline notice span for the provenance-tag block.
+	 *
+	 * @param string $class   Notice class suffix.
+	 * @param string $message Localized notice message.
+	 * @return string
+	 */
 	function dailyos_provenance_tag_render_inline_notice( string $class, string $message ): string {
 		return '<span class="dailyos-provenance-tag dailyos-provenance-tag--with-source dailyos-notice ' . esc_attr( $class ) . '" data-ds-tier="primitive" data-ds-name="ProvenanceTag" data-ds-spec="primitives/ProvenanceTag.md" role="status">'
 			. esc_html( $message )
 			. '</span>';
 	}
 
+	/**
+	 * Render the throttled-runtime inline notice for the provenance-tag block.
+	 */
 	function dailyos_provenance_tag_render_throttled_notice(): string {
 		return dailyos_provenance_tag_render_inline_notice(
 			'dailyos-throttled',
@@ -475,6 +542,9 @@ if ( ! function_exists( 'dailyos_provenance_tag_render' ) ) {
 		);
 	}
 
+	/**
+	 * Render the session-repair inline notice for the provenance-tag block.
+	 */
 	function dailyos_provenance_tag_render_session_repair_notice(): string {
 		return dailyos_provenance_tag_render_inline_notice(
 			'dailyos-session-repair',
@@ -482,6 +552,9 @@ if ( ! function_exists( 'dailyos_provenance_tag_render' ) ) {
 		);
 	}
 
+	/**
+	 * Render the runtime-unavailable inline notice for the provenance-tag block.
+	 */
 	function dailyos_provenance_tag_render_runtime_unavailable_notice(): string {
 		return dailyos_provenance_tag_render_inline_notice(
 			'dailyos-runtime-unavailable',
@@ -489,6 +562,9 @@ if ( ! function_exists( 'dailyos_provenance_tag_render' ) ) {
 		);
 	}
 
+	/**
+	 * Render the invalid-request inline notice for the provenance-tag block.
+	 */
 	function dailyos_provenance_tag_render_invalid_request_notice(): string {
 		return dailyos_provenance_tag_render_inline_notice(
 			'dailyos-invalid-request',
@@ -496,6 +572,9 @@ if ( ! function_exists( 'dailyos_provenance_tag_render' ) ) {
 		);
 	}
 
+	/**
+	 * Render the consistency-finding verification banner for the provenance-tag block.
+	 */
 	function dailyos_provenance_tag_render_verification_banner(): string {
 		return dailyos_provenance_tag_render_inline_notice(
 			'dailyos-verification-banner',

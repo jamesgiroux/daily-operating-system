@@ -270,6 +270,16 @@
 					"color": "rgba(126, 170, 123, 0.08)"
 				},
 				{
+					"slug": "meeting",
+					"name": "Meeting",
+					"color": "#4a6741"
+				},
+				{
+					"slug": "meeting-8",
+					"name": "Meeting 8",
+					"color": "rgba(74, 103, 65, 0.08)"
+				},
+				{
 					"slug": "overlay-light",
 					"name": "Overlay Light",
 					"color": "rgba(0, 0, 0, 0.4)"
@@ -520,6 +530,11 @@
 					"color": "#1e2530"
 				},
 				{
+					"slug": "text-quaternary",
+					"name": "Text Quaternary",
+					"color": "#8a93a0"
+				},
+				{
 					"slug": "text-secondary",
 					"name": "Text Secondary",
 					"color": "#5a6370"
@@ -710,5 +725,26 @@
 				}
 			}
 		}
+	},
+	"customTemplates": [],
+	"templateParts": [
+		{
+			"name": "header",
+			"area": "header",
+			"title": "Header"
+		},
+		{
+			"name": "footer",
+			"area": "footer",
+			"title": "Footer"
+		},
+		{
+			"name": "sidebar-account-summary",
+			"area": "uncategorized",
+			"title": "Sidebar — Account Summary"
+		}
+	],
+	"styles": {
+		"blocks": {}
 	}
 }

@@ -137,6 +137,12 @@ if ( ! function_exists( 'dailyos_avatar_render' ) ) {
 		);
 	}
 
+	/**
+	 * Derive a single uppercase initial from a label for avatar rendering.
+	 *
+	 * @param string $label Source label (person/account name).
+	 * @return string
+	 */
 	function dailyos_avatar_initials( string $label ): string {
 		$label = trim( $label );
 		if ( '' === $label ) {
@@ -147,11 +153,23 @@ if ( ! function_exists( 'dailyos_avatar_render' ) ) {
 		return '' !== $upper ? $upper : '?';
 	}
 
+	/**
+	 * Format a numeric avatar value, trimming trailing zeros and decimal noise.
+	 *
+	 * @param float $value Raw numeric avatar value.
+	 * @return string
+	 */
 	function dailyos_avatar_number( float $value ): string {
 		$formatted = rtrim( rtrim( sprintf( '%.2F', $value ), '0' ), '.' );
 		return '' !== $formatted ? $formatted : '0';
 	}
 
+	/**
+	 * Sanitize and wrap a URL for safe use inside a CSS url() value.
+	 *
+	 * @param string $url Source image URL.
+	 * @return string
+	 */
 	function dailyos_avatar_css_url_value( string $url ): string {
 		if ( '' === $url ) {
 			return '';

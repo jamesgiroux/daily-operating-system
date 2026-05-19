@@ -40,6 +40,10 @@
 		"target_token": "wp--preset--color--text-secondary"
 	},
 	{
+		"source_token": "--color-text-tertiary",
+		"target_token": "wp--preset--color--text-tertiary"
+	},
+	{
 		"source_token": "--font-mono",
 		"target_token": "wp--custom--dailyos--tokens--font-mono"
 	},

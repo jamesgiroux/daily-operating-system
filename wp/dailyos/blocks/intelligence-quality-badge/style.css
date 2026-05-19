@@ -2,6 +2,7 @@
 	display: inline-flex;
 	align-items: center;
 	gap: 6px;
+	padding: 3px 8px;
 	--dailyos-quality-color: var(--wp--preset--color--text-tertiary);
 }
 

@@ -1243,7 +1243,7 @@ fn rule_for_block_type(block_type: &BlockType) -> Option<BlockProjectionRule> {
         BlockType::RiskCallout => Some(risk_callout_rule()),
         BlockType::ActionList => Some(action_list_rule()),
         BlockType::MarkdownDocument => Some(markdown_document_rule()),
-        // v1.4.3 W2 Wave 1 primitive blocks (DOS-682).
+        // Wave 1 primitive blocks.
         BlockType::Pill => Some(pill_rule()),
         BlockType::StatusDot => Some(status_dot_rule()),
         BlockType::ProvenanceTag => Some(provenance_tag_rule()),
@@ -1269,7 +1269,7 @@ fn known_projection_rules() -> Vec<BlockProjectionRule> {
         risk_callout_rule(),
         action_list_rule(),
         markdown_document_rule(),
-        // v1.4.3 W2 Wave 1 primitive blocks (DOS-682).
+        // Wave 1 primitive blocks.
         pill_rule(),
         status_dot_rule(),
         provenance_tag_rule(),
@@ -1436,9 +1436,9 @@ const MARKDOWN_DOCUMENT_FIELDS: &[FieldPolicy] = &[
     text_field("/sections/*/body", ClaimSensitivity::Internal),
 ];
 
-// v1.4.3 W2 Wave 1 primitive block field policies (DOS-682). Placeholder
-// `/payload/text` entries — per-primitive field structure lands in PR-D2/D3/D4
-// when each block's payload contract is finalized.
+// Wave 1 primitive block field policies. Placeholder `/payload/text` entries
+// — per-primitive field structure is finalized alongside each block's
+// payload contract.
 const PILL_FIELDS: &[FieldPolicy] = &[text_field("/payload/text", ClaimSensitivity::Internal)];
 const STATUS_DOT_FIELDS: &[FieldPolicy] = &[text_field("/payload/text", ClaimSensitivity::Internal)];
 const PROVENANCE_TAG_FIELDS: &[FieldPolicy] = &[
@@ -1597,11 +1597,10 @@ fn markdown_document_rule() -> BlockProjectionRule {
     }
 }
 
-// v1.4.3 W2 Wave 1 primitive block projection rules (DOS-682). Each rule is
-// the substrate-side stub that pairs the BlockType variant with its
-// `dailyos/<kebab>` type_namespace + placeholder field policy. Per-primitive
-// field policies + render annotations land in PR-D2/D3/D4 alongside each
-// `wp/dailyos/blocks/<slug>/` directory.
+// Wave 1 primitive block projection rules. Each rule is the substrate-side
+// scaffold that pairs the BlockType variant with its `dailyos/<kebab>`
+// type_namespace + placeholder field policy. Per-primitive field policies +
+// render annotations land alongside each `wp/dailyos/blocks/<slug>/` directory.
 fn pill_rule() -> BlockProjectionRule {
     BlockProjectionRule {
         block_type: BlockType::Pill,

@@ -165,8 +165,8 @@ if ( ! function_exists( 'dailyos_account_overview_render' ) ) {
 			return dailyos_account_overview_render_verification_banner();
 		}
 
-		$composition_id      = isset( $attributes['composition_id'] ) ? (string) $attributes['composition_id'] : '';
-		$composition_version = isset( $attributes['composition_version'] ) ? (int) $attributes['composition_version'] : 0;
+		$composition_id          = isset( $attributes['composition_id'] ) ? (string) $attributes['composition_id'] : '';
+		$composition_version     = isset( $attributes['composition_version'] ) ? (int) $attributes['composition_version'] : 0;
 		$delivered_state         = function_exists( 'get_option' )
 			? get_option( 'dailyos_composition_versions', [] )
 			: [];

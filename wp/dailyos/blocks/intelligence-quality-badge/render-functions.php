@@ -101,24 +101,24 @@ if ( ! function_exists( 'dailyos_intelligence_quality_badge_render' ) ) {
 	 * @return string
 	 */
 	function dailyos_intelligence_quality_badge_render_payload( array $payload ): string {
-		$score = isset( $payload['qualityScore'] ) ? (float) $payload['qualityScore'] : 0.0;
-		$score = max( 0.0, min( 1.0, $score ) );
-		$level = dailyos_intelligence_quality_badge_level( $score );
-		$labels = [
+		$score           = isset( $payload['qualityScore'] ) ? (float) $payload['qualityScore'] : 0.0;
+		$score           = max( 0.0, min( 1.0, $score ) );
+		$level           = dailyos_intelligence_quality_badge_level( $score );
+		$labels          = [
 			'sparse'     => esc_html__( 'Sparse', 'dailyos' ),
 			'developing' => esc_html__( 'Limited', 'dailyos' ),
 			'ready'      => esc_html__( 'Ready', 'dailyos' ),
 			'fresh'      => esc_html__( 'Fresh', 'dailyos' ),
 		];
-		$label = $labels[ $level ];
-		$show_label = ! empty( $payload['showLabel'] );
+		$label           = $labels[ $level ];
+		$show_label      = ! empty( $payload['showLabel'] );
 		$has_new_signals = ! empty( $payload['hasNewSignals'] );
-		$title_attr = '';
+		$title_attr      = '';
 		if ( ! empty( $payload['showTooltip'] ) ) {
 			$title_attr = ' title="' . esc_attr( dailyos_intelligence_quality_badge_tooltip( $label, $payload ) ) . '"';
 		}
 
-		$out = sprintf(
+		$out  = sprintf(
 			'<span class="dailyos-intelligence-quality-badge" data-quality-level="%s" data-ds-name="IntelligenceQualityBadge" data-ds-tier="primitive" data-ds-spec="primitives/IntelligenceQualityBadge.md"%s>',
 			esc_attr( $level ),
 			$title_attr
@@ -136,6 +136,12 @@ if ( ! function_exists( 'dailyos_intelligence_quality_badge_render' ) ) {
 		return $out;
 	}
 
+	/**
+	 * Map a numeric quality score to a discrete intelligence-quality level token.
+	 *
+	 * @param float $score Quality score in [0,1].
+	 * @return string
+	 */
 	function dailyos_intelligence_quality_badge_level( float $score ): string {
 		if ( $score < 0.25 ) {
 			return 'sparse';
@@ -149,8 +155,15 @@ if ( ! function_exists( 'dailyos_intelligence_quality_badge_render' ) ) {
 		return 'fresh';
 	}
 
+	/**
+	 * Build the tooltip text for the intelligence-quality badge, including last-update time.
+	 *
+	 * @param string               $label   Level label shown in the badge.
+	 * @param array<string, mixed> $payload Block payload.
+	 * @return string
+	 */
 	function dailyos_intelligence_quality_badge_tooltip( string $label, array $payload ): string {
-		$raw_time = isset( $payload['lastEnriched'] ) && '' !== (string) $payload['lastEnriched'] ? (string) $payload['lastEnriched'] : (string) ( $payload['enrichedAt'] ?? '' );
+		$raw_time  = isset( $payload['lastEnriched'] ) && '' !== (string) $payload['lastEnriched'] ? (string) $payload['lastEnriched'] : (string) ( $payload['enrichedAt'] ?? '' );
 		$timestamp = '' !== $raw_time ? strtotime( $raw_time ) : false;
 		if ( false === $timestamp ) {
 			return $label . ' - Not yet updated';

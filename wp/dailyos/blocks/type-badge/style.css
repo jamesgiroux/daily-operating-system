@@ -19,9 +19,15 @@
 	vertical-align: baseline;
 }
 
-.dailyos-type-badge--customer { background: var(--wp--preset--color--account-12);          color: var(--wp--preset--color--account); }
-.dailyos-type-badge--internal { background: var(--wp--preset--color--garden-larkspur-15);  color: var(--wp--preset--color--garden-larkspur); }
-.dailyos-type-badge--partner  { background: var(--wp--preset--color--garden-rosemary-12); color: var(--wp--preset--color--garden-rosemary); }
+/* Variant selectors chain on both base classes to match the compound-base
+ * specificity (0,2,0) — otherwise single-class variants lose to the base
+ * selector and the account-type tokens never apply. */
+.wp-block-dailyos-type-badge.dailyos-type-badge--customer,
+.dailyos-type-badge.dailyos-type-badge--customer { background: var(--wp--preset--color--account-12);          color: var(--wp--preset--color--account); }
+.wp-block-dailyos-type-badge.dailyos-type-badge--internal,
+.dailyos-type-badge.dailyos-type-badge--internal { background: var(--wp--preset--color--garden-larkspur-15);  color: var(--wp--preset--color--garden-larkspur); }
+.wp-block-dailyos-type-badge.dailyos-type-badge--partner,
+.dailyos-type-badge.dailyos-type-badge--partner  { background: var(--wp--preset--color--garden-rosemary-12); color: var(--wp--preset--color--garden-rosemary); }
 
 .wp-block-dailyos-type-badge.is-empty { display: none; }
 

@@ -20,10 +20,17 @@
 	vertical-align: baseline;
 }
 
-.dailyos-score-band--on-track      { background: var(--wp--preset--color--garden-sage-15);     color: var(--wp--preset--color--garden-sage); }
-.dailyos-score-band--watching      { background: var(--wp--preset--color--spice-turmeric-15);  color: var(--wp--preset--color--spice-turmeric); }
-.dailyos-score-band--action-needed { background: var(--wp--preset--color--spice-terracotta-15); color: var(--wp--preset--color--spice-terracotta); }
-.dailyos-score-band--no-read       { background: var(--wp--preset--color--desk-charcoal-4);    color: var(--wp--preset--color--text-tertiary); }
+/* Variant selectors chain on both base classes to match the compound-base
+ * specificity (0,2,0) — otherwise single-class variants lose to the base
+ * selector and the value-keyed tokens never apply. */
+.wp-block-dailyos-score-band.dailyos-score-band--on-track,
+.dailyos-score-band.dailyos-score-band--on-track      { background: var(--wp--preset--color--garden-sage-15);     color: var(--wp--preset--color--garden-sage); }
+.wp-block-dailyos-score-band.dailyos-score-band--watching,
+.dailyos-score-band.dailyos-score-band--watching      { background: var(--wp--preset--color--spice-turmeric-15);  color: var(--wp--preset--color--spice-turmeric); }
+.wp-block-dailyos-score-band.dailyos-score-band--action-needed,
+.dailyos-score-band.dailyos-score-band--action-needed { background: var(--wp--preset--color--spice-terracotta-15); color: var(--wp--preset--color--spice-terracotta); }
+.wp-block-dailyos-score-band.dailyos-score-band--no-read,
+.dailyos-score-band.dailyos-score-band--no-read       { background: var(--wp--preset--color--desk-charcoal-4);    color: var(--wp--preset--color--text-tertiary); }
 
 .wp-block-dailyos-score-band.is-empty { display: none; }
 

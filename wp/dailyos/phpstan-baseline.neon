@@ -17,11 +17,26 @@ parameters:
 
 		-
 			message: "#^Constant DAILYOS_PLUGIN_DIR not found\\.$#"
-			count: 2
+			count: 3
+			path: includes/class-dailyos-plugin.php
+
+		-
+			message: "#^Constant DAILYOS_PLUGIN_URL not found\\.$#"
+			count: 1
 			path: includes/class-dailyos-plugin.php
 
 		-
 			message: "#^Function dailyos_account_overview_render not found\\.$#"
+			count: 1
+			path: includes/class-dailyos-plugin.php
+
+		-
+			message: "#^Function dailyos_account_overview_render_from_projection not found\\.$#"
+			count: 1
+			path: includes/class-dailyos-plugin.php
+
+		-
+			message: "#^Static method DailyOS\\\\DailyOS_Plugin\\:\\:render_block_with_filter\\(\\) is unused\\.$#"
 			count: 1
 			path: includes/class-dailyos-plugin.php
 

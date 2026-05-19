@@ -2,10 +2,8 @@
  * TypeBadge — editable account-type badge with inline dropdown.
  * Composes TypeBadgeDisplay's badge classes and overlays dropdown state.
  *
- * v1.4.3 W2 L0 Packet D §5.10 (DOS-682) split: editable variant
- * extracted from AccountHero.tsx:113-172 into the canonical primitive
- * location. Display-only variant lives in TypeBadgeDisplay.tsx and is
- * what the W2 PR-D4 WP block translates.
+ * Display-only variant lives in TypeBadgeDisplay.tsx and is what the
+ * corresponding WP block translates.
  */
 import { useState, useRef, useEffect } from "react";
 import { ChevronDown } from "lucide-react";

@@ -1,7 +1,8 @@
 <?php
 /**
  * Primitive chrome service — PHPUnit coverage per v1.4.3 W2 L0
- * Packet D §5.8 + AC #15 (DOS-682).
+ * Verifies the shared chrome service state branches (empty/loading/error)
+ * across all 11 Wave 1 primitives.
  *
  * Asserts each chrome partial:
  *  - renders a `data-chrome="<state>"` marker matching the partial name
@@ -20,9 +21,9 @@ declare(strict_types=1);
 
 use PHPUnit\Framework\TestCase;
 
-require_once dirname( __DIR__, 4 ) . '/blocks/_shared/chrome/render-empty.php';
-require_once dirname( __DIR__, 4 ) . '/blocks/_shared/chrome/render-loading.php';
-require_once dirname( __DIR__, 4 ) . '/blocks/_shared/chrome/render-error.php';
+require_once dirname( __DIR__, 3 ) . '/blocks/_shared/chrome/render-empty.php';
+require_once dirname( __DIR__, 3 ) . '/blocks/_shared/chrome/render-loading.php';
+require_once dirname( __DIR__, 3 ) . '/blocks/_shared/chrome/render-error.php';
 
 /**
  * Cover all three chrome partials + the no-inline-style invariant.

@@ -22,4 +22,5 @@ if ( ! function_exists( 'dailyos_provenance_tag_render' ) ) {
 }
 
 $attributes = isset( $attributes ) && is_array( $attributes ) ? $attributes : [];
-return dailyos_provenance_tag_render( $attributes );
+// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- render functions escape output internally via esc_html / esc_attr / wp_kses (W3 contract).
+echo dailyos_provenance_tag_render( $attributes );
