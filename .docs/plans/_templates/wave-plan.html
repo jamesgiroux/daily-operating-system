@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>&lt;VERSION&gt; Wave Plan · DailyOS Planning</title>
+  <link rel="stylesheet" href="../design/reference/_shared/fonts.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/design-tokens.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/MagazinePageLayout.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/chrome.css">
+  <link rel="stylesheet" href="plans.css">
+</head>
+<body data-tint="turmeric">
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+<div class="plans-shell">
+
+<!-- TOPNAV -->
+<nav class="plans-topnav" aria-label="Planning surface">
+  <a class="plans-mark" href="index.html">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="16" height="16" aria-hidden="true">
+      <path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/>
+    </svg>
+    DailyOS · Planning
+  </a>
+  <div class="plans-topnav-links">
+    <a href="engineering-ladder.html">Engineering Ladder</a>
+    <a href="&lt;VERSION&gt;-waves.html" data-active="true">&lt;Version&gt; Waves</a>
+    <a href="AUTHORING.md">Authoring Ruleset</a>
+  </div>
+</nav>
+
+<!-- COVER -->
+<section class="plans-cover">
+  <p class="plans-eyebrow">DailyOS · &lt;Version&gt; · Wave Plan</p>
+  <h1 class="plans-title">&lt;Version one-line outcome.&gt;</h1>
+  <p class="plans-kicker">&lt;Subtitle — the central promise of this version.&gt;</p>
+  <p class="plans-lede">
+    &lt;Two to four sentences setting context: what this version delivers, why the waves are shaped the way they are, what gates this version.&gt;
+  </p>
+  <div class="plans-meta">
+    <span>Target: &lt;date&gt;</span>
+    <span>Waves: &lt;N&gt;</span>
+    <span>Parallel agents: &lt;peak&gt;</span>
+    <span>Source: Linear &lt;project link&gt;</span>
+  </div>
+</section>
+
+<!-- ============================================================
+     WAVE OVERVIEW — table or card grid showing W0..WN
+     TODO(ds): if used in 2+ wave plans, extract to _patterns/wave-overview-grid.html
+     ============================================================ -->
+<section class="plans-section" aria-labelledby="wave-overview">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Wave shape</p>
+    <h2 id="wave-overview" class="plans-section-title">&lt;N&gt; waves, hard ordering across, parallel within.</h2>
+    <p class="plans-section-lede">
+      &lt;Short framing of how the waves chain. Mention the wave gate is L3 + L5.&gt;
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Wave</th>
+        <th>Issues</th>
+        <th>Parallel agents</th>
+        <th>Target</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>W0 — &lt;name&gt;</td>
+        <td>&lt;DOS-###&gt;, &lt;DOS-###&gt;</td>
+        <td>&lt;count&gt;</td>
+        <td>&lt;wall-clock target&gt;</td>
+      </tr>
+      <!-- Add rows per wave -->
+    </tbody>
+  </table>
+</section>
+
+<!-- ============================================================
+     REVIEWER MATRIX — domain reviewers per agent profile
+     ============================================================ -->
+<section class="plans-section" aria-labelledby="reviewer-matrix">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Reviewer matrix</p>
+    <h2 id="reviewer-matrix" class="plans-section-title">Domain reviewer per L0 / L2 risk profile.</h2>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Agent profile</th>
+        <th>Domain reviewer</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Substrate / schema</td>
+        <td><code>architect-reviewer</code></td>
+      </tr>
+      <tr>
+        <td>New SQL write path</td>
+        <td><code>security-auditor</code></td>
+      </tr>
+      <tr>
+        <td>Hot-path / migration</td>
+        <td><code>performance-engineer</code></td>
+      </tr>
+      <tr>
+        <td>User-facing surface</td>
+        <td><code>accessibility-tester</code></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============================================================
+     SUITE CARDS — S / P / E
+     ============================================================ -->
+<section class="plans-section" aria-labelledby="suites">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Test suites</p>
+    <h2 id="suites" class="plans-section-title">S, P, E feed into L3.</h2>
+  </header>
+
+  <div class="suite-grid">
+    <article class="suite-card" data-suite="s">
+      <span class="suite-letter">S</span>
+      <h3 class="suite-name">Security</h3>
+      <p class="suite-prose">&lt;What S covers for this version.&gt;</p>
+      <p class="suite-owner"><span class="suite-owner-label">Owner</span> <code>security-auditor</code></p>
+      <p class="suite-pass-rule"><span class="suite-pass-label">Pass</span> zero Critical/High</p>
+    </article>
+    <article class="suite-card" data-suite="p">
+      <span class="suite-letter">P</span>
+      <h3 class="suite-name">Performance</h3>
+      <p class="suite-prose">&lt;What P covers.&gt;</p>
+      <p class="suite-owner"><span class="suite-owner-label">Owner</span> <code>performance-engineer</code></p>
+      <p class="suite-pass-rule"><span class="suite-pass-label">Pass</span> no regression vs baseline</p>
+    </article>
+    <article class="suite-card" data-suite="e">
+      <span class="suite-letter">E</span>
+      <h3 class="suite-name">Edge cases</h3>
+      <p class="suite-prose">&lt;What E covers — property tests, fuzz, bundles.&gt;</p>
+      <p class="suite-owner"><span class="suite-owner-label">Owner</span> <code>qa-expert</code></p>
+      <p class="suite-pass-rule"><span class="suite-pass-label">Pass</span> bundles + property tests green</p>
+    </article>
+  </div>
+</section>
+
+<!-- ============================================================
+     PACING + BOUNDING CALLOUTS
+     ============================================================ -->
+<section class="plans-section plans-section-callouts">
+  <div class="callout-grid">
+    <article class="callout">
+      <h3 class="callout-title">Pacing</h3>
+      <p class="callout-prose">No wave starts until prior wave clears L3 + L5. No agent codes before L0 clears unanimously. Two revision cycles → L6 escalation.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Bounding</h3>
+      <p class="callout-prose">L2 bounded by acceptance criteria. Path-α findings → maintenance project. Substrate PRs unblock once AC violations are closed.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Migration slots</h3>
+      <p class="callout-prose">Claim non-overlapping slot blocks per parallel agent. E.g., W4-A = v160–v169, W4-B = v170–v179.</p>
+    </article>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<section class="plans-section plans-section-footer">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Related</p>
+    <h2 class="plans-section-title">Cross-references.</h2>
+  </header>
+  <ul class="plans-related">
+    <li><strong>engineering-ladder.html</strong> Engineering Ladder L0–L6 + K-channel + skill matrix per rung.</li>
+    <li><strong>Linear project</strong> &lt;link to source-of-truth project&gt;</li>
+  </ul>
+</section>
+
+<!-- FINIS -->
+<div class="finis">
+  <div class="finis-mark">W0 · W1 · W2 · W3 · W4 · W5 · W6</div>
+  <div class="finis-date">&lt;Version&gt; Wave Plan · YYYY-MM-DD</div>
+  <div class="finis-caption">Skipping a wave gate is what produces the Codex round 1+2 findings; the cost is weeks.</div>
+</div>
+
+</div>
+</main>
+</div>
+</body>
+</html>

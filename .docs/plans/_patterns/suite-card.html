@@ -1,0 +1,25 @@
+<!--
+  Pattern: suite-card
+  Use: test suite or named-category card with large letter mark, prose, owner, pass rule.
+  Generalizes beyond test suites — any "named category with definition + owner + pass criterion."
+
+  Variants via data-suite attribute:
+    s — chili tone (security)
+    p — turmeric tone (performance)
+    e — olive tone (edge cases)
+  Add more in plans.css if needed.
+-->
+<div class="suite-grid">
+  <article class="suite-card" data-suite="s">
+    <span class="suite-letter">S</span>
+    <h3 class="suite-name">&lt;Suite name&gt;</h3>
+    <p class="suite-prose">&lt;What the suite covers — one or two sentences.&gt;</p>
+    <p class="suite-owner">
+      <span class="suite-owner-label">Owner</span> <code>&lt;owner-agent&gt;</code>
+    </p>
+    <p class="suite-pass-rule">
+      <span class="suite-pass-label">Pass</span> &lt;pass condition&gt;
+    </p>
+  </article>
+  <!-- Add additional suite-card articles inside .suite-grid as needed. -->
+</div>

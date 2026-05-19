@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Engineering Ladder L0–L6 · DailyOS Planning</title>
+  <link rel="stylesheet" href="../design/reference/_shared/fonts.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/design-tokens.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/MagazinePageLayout.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/chrome.css">
+  <link rel="stylesheet" href="plans.css">
+</head>
+<body
+  data-tint="eucalyptus"
+  data-active-page="planning">
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+<div class="plans-shell">
+
+<!-- ============================================================
+     TOP NAV — copies foundation-topnav pattern from product surface
+     TODO(ds): needs pattern — consider .docs/plans/_patterns/topnav.html if reused 2+ times
+     ============================================================ -->
+<nav class="plans-topnav" aria-label="Planning surface">
+  <a class="plans-mark" href="index.html">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="16" height="16" aria-hidden="true">
+      <path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/>
+    </svg>
+    DailyOS · Planning
+  </a>
+  <div class="plans-topnav-links">
+    <a href="engineering-ladder.html" data-active="true">Engineering Ladder</a>
+    <a href="v1.4.0-waves.md">Wave Protocol</a>
+    <a href="AUTHORING.md">Authoring Ruleset</a>
+  </div>
+</nav>
+
+<!-- ============================================================
+     COVER — hero / lede / meta
+     Reusing foundation-cover pattern; if it appears in 2+ plan docs, extract to _patterns/cover.html
+     ============================================================ -->
+<section class="plans-cover">
+  <p class="plans-eyebrow">DailyOS · Engineering Ladder</p>
+  <h1 class="plans-title">From plan to merge, in seven gates.</h1>
+  <p class="plans-kicker">L0–L6 with Plan, Implement, Review, and Capture roles per rung.</p>
+  <p class="plans-lede">
+    The Engineering Ladder is how work moves from intake to merge. Each rung names the skills that apply at that phase — not just review. A continuous Knowledge Channel feeds findings into L0 and captures findings out of L3 / L5 so the same drift doesn't surface twice.
+  </p>
+  <div class="plans-meta">
+    <span>Adopted 2026-05-18</span>
+    <span>L0–L6 numbering preserved</span>
+    <span>Plan / Implement / Review / Capture per rung</span>
+    <span>K-channel: docs/solutions/ + .docs/decisions/</span>
+  </div>
+</section>
+
+<!-- ============================================================
+     SKILL MATRIX — the heart of the ladder
+     Each rung is a card with 4 role quadrants: Plan / Implement / Review / Capture
+     TODO(ds): needs pattern — ladder-rung-card with role quadrants. First use; consider promoting to _patterns/ if used in wave dashboards.
+     ============================================================ -->
+<section class="plans-section" aria-labelledby="skill-matrix">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Skill matrix</p>
+    <h2 id="skill-matrix" class="plans-section-title">Each rung, four roles.</h2>
+    <p class="plans-section-lede">
+      Plan, Implement, Review, and Capture skills per rung. <strong>K-in</strong> (substrate-grep at L0) and <strong>K-out</strong> (`/ce-compound` capture at L3 retro) are mandatory.
+    </p>
+  </header>
+
+  <div class="ladder-grid">
+
+    <!-- L0 Prep -->
+    <article class="ladder-rung" data-rung="l0-prep" data-tone="larkspur">
+      <div class="ladder-rung-header">
+        <span class="ladder-rung-id">L0 Prep</span>
+        <h3 class="ladder-rung-title">Plan hardening</h3>
+        <p class="ladder-rung-blurb">Turn the Linear ticket into a reviewable plan. Not an approval gate — hardens the ticket so L0 review has something concrete.</p>
+      </div>
+      <div class="ladder-rung-roles">
+        <div class="ladder-role" data-role="plan">
+          <span class="ladder-role-label">Plan</span>
+          <ul class="ladder-role-skills">
+            <li><code>/plan-eng-review</code> <em>always</em></li>
+            <li><code>/plan-ceo-review</code> when product/domain</li>
+            <li><code>/plan-design-review</code> when UI/workflow</li>
+            <li><code>/plan-devex-review</code> when MCP/API/DX</li>
+            <li><code>/ce-plan</code> structure + open-question surfacing</li>
+            <li><code>/ce-strategy</code> only when no STRATEGY exists</li>
+          </ul>
+        </div>
+        <div class="ladder-role ladder-role-empty" data-role="implement">
+          <span class="ladder-role-label">Implement</span>
+          <span class="ladder-role-na">n/a</span>
+        </div>
+        <div class="ladder-role ladder-role-empty" data-role="review">
+          <span class="ladder-role-label">Review</span>
+          <span class="ladder-role-na">n/a</span>
+        </div>
+        <div class="ladder-role" data-role="capture">
+          <span class="ladder-role-label">Capture</span>
+          <ul class="ladder-role-skills">
+            <li><code>/ce-sessions</code> — pull prior-session findings into the plan</li>
+          </ul>
+        </div>
+      </div>
+    </article>
+
+    <!-- L0 Plan -->
+    <article class="ladder-rung" data-rung="l0-plan" data-tone="saffron">
+      <div class="ladder-rung-header">
+        <span class="ladder-rung-id">L0 Plan</span>
+        <h3 class="ladder-rung-title">Plan review (gate)</h3>
+        <p class="ladder-rung-blurb">Pre-code review of the hardened plan. K-in mandatory: reviewers grep <code>docs/solutions/</code> + <code>.docs/decisions/</code> before scoring.</p>
+        <div class="ladder-rung-pass-rule">
+          <span class="pass-rule-label">Pass rule</span>
+          <span class="pass-rule-badge pass-rule-unanimous">Unanimous required</span>
+        </div>
+      </div>
+      <div class="ladder-rung-roles">
+        <div class="ladder-role ladder-role-empty" data-role="plan">
+          <span class="ladder-role-label">Plan</span>
+          <span class="ladder-role-na">n/a</span>
+        </div>
+        <div class="ladder-role ladder-role-empty" data-role="implement">
+          <span class="ladder-role-label">Implement</span>
+          <span class="ladder-role-na">n/a</span>
+        </div>
+        <div class="ladder-role" data-role="review">
+          <span class="ladder-role-label">Review</span>
+          <ul class="ladder-role-skills">
+            <li><code>/codex challenge</code></li>
+            <li><code>architect-reviewer</code> (default domain)</li>
+            <li><code>security-auditor</code> when paths match Amendment 3</li>
+            <li><code>/codex consult</code></li>
+            <li><code>/ce-doc-review</code> optional fifth opinion</li>
+          </ul>
+        </div>
+        <div class="ladder-role ladder-role-kin" data-role="capture">
+          <span class="ladder-role-label">Capture <span class="role-tag role-tag-kin">K-in</span></span>
+          <p class="ladder-role-prose">Each L0 reviewer greps <code>docs/solutions/</code> + <code>.docs/decisions/</code> for substrate the plan claims is net new. Cite hits in verdict. <strong>Reinvented documented substrate = BLOCKED.</strong></p>
+        </div>
+      </div>
+    </article>
+
+    <!-- L1 Implementation -->
+    <article class="ladder-rung" data-rung="l1-implementation" data-tone="turmeric">
+      <div class="ladder-rung-header">
+        <span class="ladder-rung-id">L1 Implementation</span>
+        <h3 class="ladder-rung-title">Build the work, then validate</h3>
+        <p class="ladder-rung-blurb">The implementing agent codes against the plan, runs tests, captures proof artifacts before opening the PR. Self-validation lives in the Review column — tests pass, proof artifacts captured, demo evidence captured.</p>
+      </div>
+      <div class="ladder-rung-roles">
+        <div class="ladder-role ladder-role-empty" data-role="plan">
+          <span class="ladder-role-label">Plan</span>
+          <span class="ladder-role-na">n/a</span>
+        </div>
+        <div class="ladder-role" data-role="implement">
+          <span class="ladder-role-label">Implement</span>
+          <ul class="ladder-role-skills">
+            <li><code>/ce-work</code> executes against plan</li>
+            <li><code>/ce-debug</code> root-cause when stuck</li>
+            <li><code>/ce-simplify-code</code> pre-PR polish</li>
+            <li>Manual editing</li>
+          </ul>
+        </div>
+        <div class="ladder-role" data-role="review">
+          <span class="ladder-role-label">Review</span>
+          <p class="ladder-role-prose">Self-validation: tests pass, proof artifacts captured, demo evidence captured before opening the PR.</p>
+        </div>
+        <div class="ladder-role" data-role="capture">
+          <span class="ladder-role-label">Capture</span>
+          <ul class="ladder-role-skills">
+            <li><code>/ce-sessions</code> when picking up mid-task across sessions</li>
+          </ul>
+        </div>
+      </div>
+    </article>
+
+    <!-- L2 Diff -->
+    <article class="ladder-rung" data-rung="l2-diff" data-tone="sage">
+      <div class="ladder-rung-header">
+        <span class="ladder-rung-id">L2 Diff</span>
+        <h3 class="ladder-rung-title">PR review (gate)</h3>
+        <p class="ladder-rung-blurb">Pre-merge review of the PR. Bounded by acceptance criteria; runs locally before pushing the PR. Path-α findings → maintenance project, not cycle-N+1.</p>
+        <div class="ladder-rung-pass-rule">
+          <span class="pass-rule-label">Pass rule</span>
+          <span class="pass-rule-badge pass-rule-unanimous">All three approve</span>
+        </div>
+      </div>
+      <div class="ladder-rung-roles">
+        <div class="ladder-role ladder-role-empty" data-role="plan">
+          <span class="ladder-role-label">Plan</span>
+          <span class="ladder-role-na">n/a</span>
+        </div>
+        <div class="ladder-role ladder-role-empty" data-role="implement">
+          <span class="ladder-role-label">Implement</span>
+          <span class="ladder-role-na">n/a</span>
+        </div>
+        <div class="ladder-role" data-role="review">
+          <span class="ladder-role-label">Review</span>
+          <ul class="ladder-role-skills">
+            <li><code>/review</code> (gstack pre-landing)</li>
+            <li><code>/codex review</code></li>
+            <li><code>code-reviewer</code> subagent</li>
+            <li>Domain reviewer per matrix</li>
+            <li><code>/ce-resolve-pr-feedback</code> for review-thread loop</li>
+          </ul>
+        </div>
+        <div class="ladder-role ladder-role-kin" data-role="capture">
+          <span class="ladder-role-label">Capture <span class="role-tag role-tag-kin">K-in</span></span>
+          <p class="ladder-role-prose">Domain reviewer cites matching <code>docs/solutions/</code> entries when a finding repeats a known class.</p>
+        </div>
+      </div>
+    </article>
+
+    <!-- L3 Wave -->
+    <article class="ladder-rung" data-rung="l3-wave" data-tone="eucalyptus">
+      <div class="ladder-rung-header">
+        <span class="ladder-rung-id">L3 Wave</span>
+        <h3 class="ladder-rung-title">Integrated review (gate)</h3>
+        <p class="ladder-rung-blurb">After all wave PRs merge: codex challenge against integrated diff + ADRs, architect-reviewer on integrated state, Suites S / P / E.</p>
+        <div class="ladder-rung-pass-rule">
+          <span class="pass-rule-label">Pass rule</span>
+          <span class="pass-rule-badge pass-rule-unanimous">All approve + suites green</span>
+        </div>
+      </div>
+      <div class="ladder-rung-roles">
+        <div class="ladder-role ladder-role-empty" data-role="plan">
+          <span class="ladder-role-label">Plan</span>
+          <span class="ladder-role-na">n/a</span>
+        </div>
+        <div class="ladder-role ladder-role-empty" data-role="implement">
+          <span class="ladder-role-label">Implement</span>
+          <span class="ladder-role-na">n/a</span>
+        </div>
+        <div class="ladder-role" data-role="review">
+          <span class="ladder-role-label">Review</span>
+          <ul class="ladder-role-skills">
+            <li><code>/codex challenge</code> against integrated wave + ADRs</li>
+            <li><code>architect-reviewer</code> on integrated state</li>
+            <li>Suite S / P / E</li>
+          </ul>
+        </div>
+        <div class="ladder-role ladder-role-kout" data-role="capture">
+          <span class="ladder-role-label">Capture <span class="role-tag role-tag-kout">K-out</span></span>
+          <p class="ladder-role-prose">At retro close, run <code>/ce-compound</code> for each class-pattern finding and each substrate-already-existed finding. Output committed to <code>docs/solutions/&lt;category&gt;/</code>.</p>
+        </div>
+      </div>
+    </article>
+
+    <!-- L4 Surface -->
+    <article class="ladder-rung" data-rung="l4-surface" data-tone="terracotta">
+      <div class="ladder-rung-header">
+        <span class="ladder-rung-id">L4 Surface</span>
+        <h3 class="ladder-rung-title">User-facing QA</h3>
+        <p class="ladder-rung-blurb">User-facing change QA. L4 hands-on BEFORE L2 for UI-changing fixes — never commit a UI fix without confirming it renders.</p>
+        <div class="ladder-rung-pass-rule">
+          <span class="pass-rule-label">Pass rule</span>
+          <span class="pass-rule-badge pass-rule-blockers">Zero blockers</span>
+        </div>
+      </div>
+      <div class="ladder-rung-roles">
+        <div class="ladder-role ladder-role-empty" data-role="plan">
+          <span class="ladder-role-label">Plan</span>
+          <span class="ladder-role-na">n/a</span>
+        </div>
+        <div class="ladder-role ladder-role-empty" data-role="implement">
+          <span class="ladder-role-label">Implement</span>
+          <span class="ladder-role-na">n/a</span>
+        </div>
+        <div class="ladder-role" data-role="review">
+          <span class="ladder-role-label">Review</span>
+          <ul class="ladder-role-skills">
+            <li><code>/qa-only</code> first</li>
+            <li><code>/qa</code> if remediation needed</li>
+            <li><code>accessibility-tester</code> for user-facing</li>
+            <li><code>/ce-test-browser</code> if no <code>/qa</code> config</li>
+          </ul>
+        </div>
+        <div class="ladder-role ladder-role-kout" data-role="capture">
+          <span class="ladder-role-label">Capture <span class="role-tag role-tag-kout">K-out</span></span>
+          <p class="ladder-role-prose">Capture surface bugs that recur across waves via <code>/ce-compound</code>.</p>
+        </div>
+      </div>
+    </article>
+
+    <!-- L5 Drift -->
+    <article class="ladder-rung" data-rung="l5-drift" data-tone="olive">
+      <div class="ladder-rung-header">
+        <span class="ladder-rung-id">L5 Drift</span>
+        <h3 class="ladder-rung-title">Architecture drift</h3>
+        <p class="ladder-rung-blurb">Compare integrated state to planned end-state. Runs at checkpoints named in the wave plan and before release for multi-wave projects.</p>
+        <div class="ladder-rung-pass-rule">
+          <span class="pass-rule-label">Pass rule</span>
+          <span class="pass-rule-badge pass-rule-drift">No drift</span>
+        </div>
+      </div>
+      <div class="ladder-rung-roles">
+        <div class="ladder-role ladder-role-empty" data-role="plan">
+          <span class="ladder-role-label">Plan</span>
+          <span class="ladder-role-na">n/a</span>
+        </div>
+        <div class="ladder-role ladder-role-empty" data-role="implement">
+          <span class="ladder-role-label">Implement</span>
+          <span class="ladder-role-na">n/a</span>
+        </div>
+        <div class="ladder-role" data-role="review">
+          <span class="ladder-role-label">Review</span>
+          <ul class="ladder-role-skills">
+            <li><code>/plan-eng-review</code></li>
+            <li><code>architect-reviewer</code> comparing integrated state to planned end-state</li>
+          </ul>
+        </div>
+        <div class="ladder-role ladder-role-kout" data-role="capture">
+          <span class="ladder-role-label">Capture <span class="role-tag role-tag-kout">K-out</span></span>
+          <p class="ladder-role-prose">Run <code>/ce-compound-refresh</code> on stale <code>.docs/decisions/</code> and <code>docs/solutions/</code> entries the drift sweep surfaces.</p>
+        </div>
+      </div>
+    </article>
+
+    <!-- L6 Human -->
+    <article class="ladder-rung ladder-rung-human" data-rung="l6-human" data-tone="chili">
+      <div class="ladder-rung-header">
+        <span class="ladder-rung-id">L6 Human</span>
+        <h3 class="ladder-rung-title">Escalation</h3>
+        <p class="ladder-rung-blurb">James's call when the system can't resolve. Decision posted as Linear comment on the affected ticket. Used sparingly — see MUST / MUST NOT below.</p>
+        <div class="ladder-rung-pass-rule">
+          <span class="pass-rule-label">Trigger</span>
+          <span class="pass-rule-badge pass-rule-escalate">Specific structural question</span>
+        </div>
+      </div>
+      <div class="ladder-rung-roles">
+        <div class="ladder-role ladder-role-empty" data-role="plan">
+          <span class="ladder-role-label">Plan</span>
+          <span class="ladder-role-na">n/a</span>
+        </div>
+        <div class="ladder-role ladder-role-empty" data-role="implement">
+          <span class="ladder-role-label">Implement</span>
+          <span class="ladder-role-na">n/a</span>
+        </div>
+        <div class="ladder-role" data-role="review">
+          <span class="ladder-role-label">Review</span>
+          <p class="ladder-role-prose">James — decision posted as a Linear comment on the affected ticket.</p>
+        </div>
+        <div class="ladder-role ladder-role-kout" data-role="capture">
+          <span class="ladder-role-label">Capture <span class="role-tag role-tag-kout">K-out</span></span>
+          <p class="ladder-role-prose">L6 decisions captured as Linear comments (existing); add ADR if the decision is architecturally durable.</p>
+        </div>
+      </div>
+    </article>
+
+  </div>
+</section>
+
+<!-- ============================================================
+     KNOWLEDGE CHANNEL — visual diagram
+     Two-zone: knowledge store (left) flowing both directions to ladder rungs (right)
+     TODO(ds): needs pattern — k-channel-diagram. Composed of zones + arrows + labels. Likely reusable for any "feedback loop" visualization.
+     ============================================================ -->
+<section class="plans-section" aria-labelledby="k-channel">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Knowledge Channel</p>
+    <h2 id="k-channel" class="plans-section-title">Drift can't be prevented at the gate — it has to be prevented at authoring.</h2>
+    <p class="plans-section-lede">
+      The Knowledge Channel <strong>K</strong> is a continuous feedback loop parallel to L0–L6 — <em>not</em> a rung. Findings flow out of L3 / L5 into the knowledge store, and back into L0 / L1 / L2 as substrate-grep obligations.
+    </p>
+  </header>
+
+  <div class="k-diagram">
+    <div class="k-store">
+      <div class="k-store-header">Knowledge store</div>
+      <ul class="k-store-items">
+        <li>
+          <code>docs/solutions/</code>
+          <span class="k-store-detail">problem→fix entries + class-pattern learnings, organized by category</span>
+        </li>
+        <li>
+          <code>.docs/decisions/</code>
+          <span class="k-store-detail">ADRs — durable architectural decisions</span>
+        </li>
+      </ul>
+    </div>
+
+    <div class="k-flows">
+      <div class="k-flow k-flow-in">
+        <div class="k-flow-arrow" aria-hidden="true">↑</div>
+        <div class="k-flow-label">K-in</div>
+        <p class="k-flow-prose">L0 reviewer obligation: grep before scoring. Reinvented substrate = BLOCKED.</p>
+        <div class="k-flow-rungs">
+          <span class="k-flow-rung">L0</span>
+          <span class="k-flow-rung k-flow-rung-soft">L1</span>
+          <span class="k-flow-rung k-flow-rung-soft">L2</span>
+        </div>
+      </div>
+      <div class="k-flow k-flow-out">
+        <div class="k-flow-arrow" aria-hidden="true">↓</div>
+        <div class="k-flow-label">K-out</div>
+        <p class="k-flow-prose"><code>/ce-compound</code> captures class-pattern + substrate-already-existed findings at retro close. Output: one doc per finding to <code>docs/solutions/&lt;category&gt;/</code>.</p>
+        <div class="k-flow-rungs">
+          <span class="k-flow-rung">L3</span>
+          <span class="k-flow-rung">L5</span>
+          <span class="k-flow-rung k-flow-rung-soft">L4</span>
+          <span class="k-flow-rung k-flow-rung-soft">L6</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- K-out automation tiers — three-layer defense-in-depth -->
+  <div class="k-tiers" aria-label="K-out automation tiers">
+    <h3 class="plans-subhead">K-out automation — three tiers, defense-in-depth</h3>
+    <div class="k-tier-grid">
+      <article class="k-tier" data-tier="1">
+        <span class="k-tier-id">Tier 1</span>
+        <h4 class="k-tier-name">Autonomous</h4>
+        <p class="k-tier-prose">Claude runs <code>/ce-compound mode:headless</code> for each qualifying finding as part of L3 retro work. Same set-and-forget authorization as impl→L1→commit→L2→fix→retro→tag.</p>
+        <span class="k-tier-coverage">Handles ~90% silently</span>
+      </article>
+      <article class="k-tier" data-tier="2">
+        <span class="k-tier-id">Tier 2</span>
+        <h4 class="k-tier-name">Reminder hook</h4>
+        <p class="k-tier-prose"><code>.claude/hooks/k-out-reminder.sh</code> (Stop hook) scans the last assistant turn for trigger phrases — <em>class-pattern finding</em>, <em>same-shape twice</em>, <em>substrate already existed</em>, <em>L3 retro complete</em> — and prints a one-line nudge.</p>
+        <span class="k-tier-coverage">Catches mid-conversation surfacing</span>
+      </article>
+      <article class="k-tier" data-tier="3">
+        <span class="k-tier-id">Tier 3</span>
+        <h4 class="k-tier-name">Retro template gate</h4>
+        <p class="k-tier-prose">Proof-bundle template includes a <strong>K-out captures</strong> section that must be filled before retro-close. Blocks retro-close with the list of <code>/ce-compound</code> docs created.</p>
+        <span class="k-tier-coverage">Audit trail; can't ship without filling it</span>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     REVIEWER MATRIX — domain specialist by agent profile
+     TODO(ds): needs pattern — domain-reviewer-grid. Likely useful for wave plans too.
+     ============================================================ -->
+<section class="plans-section" aria-labelledby="reviewer-matrix">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Reviewer matrix</p>
+    <h2 id="reviewer-matrix" class="plans-section-title">Third slot at L0 / L2 is a domain specialist.</h2>
+    <p class="plans-section-lede">
+      Keyed to the agent's risk profile. Slots stack — a single agent can pull multiple domain reviewers if it touches multiple risk dimensions.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Agent profile</th>
+        <th>Domain reviewer</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Substrate / schema</td>
+        <td><code>architect-reviewer</code></td>
+      </tr>
+      <tr>
+        <td>New SQL write path or Tauri command</td>
+        <td><code>security-auditor</code></td>
+      </tr>
+      <tr>
+        <td>Migration / projection / hot-path</td>
+        <td><code>performance-engineer</code></td>
+      </tr>
+      <tr>
+        <td>User-facing surface</td>
+        <td><code>accessibility-tester</code></td>
+      </tr>
+      <tr>
+        <td>Test infrastructure</td>
+        <td><code>qa-expert</code></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p class="plans-footnote">
+    L0 panel becomes a quartet (codex challenge + architect + <code>security-auditor</code> + codex consult) when Amendment 3 paths are touched: <code>services/**</code>, <code>abilities/**</code>, <code>intelligence/**</code>, schema, prompt templates, MCP configs, gate workflows, wave-protocol docs, orchestration docs.
+  </p>
+</section>
+
+<!-- ============================================================
+     TEST SUITES S / P / E — three cards
+     ============================================================ -->
+<section class="plans-section" aria-labelledby="suites">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Test suites</p>
+    <h2 id="suites" class="plans-section-title">S, P, E feed into L3.</h2>
+    <p class="plans-section-lede">
+      Three dedicated suites run at specified gates. Each has an owner agent separate from the implementing agent.
+    </p>
+  </header>
+
+  <div class="suite-grid">
+    <article class="suite-card" data-suite="s">
+      <span class="suite-letter">S</span>
+      <h3 class="suite-name">Security</h3>
+      <p class="suite-prose">SQL injection on new write sites, cross-tenant exposure, PII / secrets in logs, immutability-allowlist bypass.</p>
+      <p class="suite-owner"><span class="suite-owner-label">Owner</span> <code>penetration-tester</code> + <code>security-auditor</code></p>
+      <p class="suite-pass-rule"><span class="suite-pass-label">Pass</span> zero unaddressed Critical / High</p>
+    </article>
+    <article class="suite-card" data-suite="p">
+      <span class="suite-letter">P</span>
+      <h3 class="suite-name">Performance</h3>
+      <p class="suite-prose">Migration overhead, projection latency, backfill scale, hot-path budgets. Budgets locked at end of W1 baseline.</p>
+      <p class="suite-owner"><span class="suite-owner-label">Owner</span> <code>performance-engineer</code> + benchmarks</p>
+      <p class="suite-pass-rule"><span class="suite-pass-label">Pass</span> no regression vs. baseline</p>
+    </article>
+    <article class="suite-card" data-suite="e">
+      <span class="suite-letter">E</span>
+      <h3 class="suite-name">Edge cases</h3>
+      <p class="suite-prose">Property tests on invariants; fuzz on validators; adversarial bundle coverage.</p>
+      <p class="suite-owner"><span class="suite-owner-label">Owner</span> <code>qa-expert</code> + harness</p>
+      <p class="suite-pass-rule"><span class="suite-pass-label">Pass</span> bundles + property tests green</p>
+    </article>
+  </div>
+</section>
+
+<!-- ============================================================
+     L6 ESCALATION POLICY — two-column MUST / MUST NOT
+     TODO(ds): needs pattern — must-list / must-not-list two-column layout. Useful anywhere policy is binary.
+     ============================================================ -->
+<section class="plans-section" aria-labelledby="l6-policy">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">L6 escalation policy</p>
+    <h2 id="l6-policy" class="plans-section-title">When to pull James in, and when not to.</h2>
+    <p class="plans-section-lede">
+      L6 is expensive — every escalation is a context-switch. The orchestration handles as much as possible downstream so L6 is reserved for genuine human-judgment calls.
+    </p>
+  </header>
+
+  <div class="l6-grid">
+    <article class="l6-list l6-list-must">
+      <header class="l6-list-header">
+        <span class="l6-list-pill l6-list-pill-must">MUST escalate</span>
+        <p class="l6-list-blurb">Objective triggers — agents do not get to skip these.</p>
+      </header>
+      <ol class="l6-list-items">
+        <li>Cycle cap exceeded (Amendment 1)</li>
+        <li>Reviewer flags "needs human judgment" with a specific structural question</li>
+        <li>L5 drift detected without remediation path</li>
+        <li>Suite gate failure requiring regression acceptance or budget relaxation</li>
+        <li>Reviewer infrastructure failure (codex outage after 3 retries)</li>
+        <li>Net new scope expansion (NOT scope discovery within the agreed outcome)</li>
+        <li>Contract amendment — plan needs fundamental change</li>
+      </ol>
+    </article>
+
+    <article class="l6-list l6-list-mustnot">
+      <header class="l6-list-header">
+        <span class="l6-list-pill l6-list-pill-mustnot">MUST NOT escalate</span>
+        <p class="l6-list-blurb">Handle downstream. These are the orchestrator's remit.</p>
+      </header>
+      <ol class="l6-list-items">
+        <li>Routine review iteration within cycle cap — read findings, fix, resubmit</li>
+        <li>Single flaky codex output — retry per Amendment 2</li>
+        <li>Lint, type-check, test failures — fix them</li>
+        <li>Reviewer dissent (1/3 or 2/3 against) — investigate the dissenter, don't break the tie</li>
+        <li>Same finding class repeats twice — class-level sweep, file new tickets on the wave</li>
+        <li>Scope discovery within DoD — create tickets, attach to wave, continue</li>
+        <li>Choice between equivalent implementations — pick the more complete option</li>
+        <li>"I don't know what to do" without a specific structural question</li>
+        <li>Deferral requests — "park for v1.4.x" is not a valid escape valve</li>
+        <li>Half-finished implementations — finish or escalate as net-new-scope</li>
+        <li>Asking for context already in codebase, memory, or plan</li>
+        <li>Tool choice when codebase has a convention</li>
+      </ol>
+    </article>
+  </div>
+</section>
+
+<!-- ============================================================
+     PACING + BOUNDING — small callout strip
+     ============================================================ -->
+<section class="plans-section plans-section-callouts" aria-label="Operational rules">
+  <div class="callout-grid">
+    <article class="callout">
+      <h3 class="callout-title">Pacing</h3>
+      <p class="callout-prose">No wave starts until the prior wave clears L3 <em>and</em> L5 (where applicable). No agent codes before L0 clears unanimously. <strong>Two revision cycles</strong> on the same plan or PR without convergence → L6 escalation.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Bounding</h3>
+      <p class="callout-prose">L2 reviews are bounded by acceptance criteria. Path-α findings (theoretical hardening beyond AC) file to the <strong>maintenance project</strong>, not cycle-N+1. Substrate PRs unblock once AC violations are closed.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Wave</h3>
+      <p class="callout-prose">Wave is the project-management primitive for big version programs. Parallel agents fan out within a wave; hard ordering across waves. Smaller versions collapse to L0 → code → L2 → ship.</p>
+    </article>
+  </div>
+</section>
+
+<!-- ============================================================
+     RELATED DOCS — footer with cross-references
+     ============================================================ -->
+<section class="plans-section plans-section-footer">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Related</p>
+    <h2 class="plans-section-title">How this doc relates to others.</h2>
+  </header>
+  <ul class="plans-related">
+    <li>
+      <strong>CLAUDE.md</strong> — keeps a stub section pointing here for the matrix.
+    </li>
+    <li>
+      <strong>.docs/plans/v1.4.0-waves.md</strong> — wave protocol + reviewer matrix; references this doc for the skill assignments per rung.
+    </li>
+    <li>
+      <strong>docs/solutions/README.md</strong> — knowledge store structure and K-in / K-out flow from the consumer side.
+    </li>
+    <li>
+      <strong>.docs/plans/AUTHORING.md</strong> — three-tier doc ruleset (HTML-first / markdown+render / markdown-only); this doc is the first Tier 1 pilot.
+    </li>
+    <li>
+      <strong>.docs/plans/orchestration/v1-lite.md</strong> — async orchestration design (cloud routines, claudebot, daily digest). Design archive — none of it has shipped; local invocation is the operating model.
+    </li>
+  </ul>
+</section>
+
+<!-- ============================================================
+     FINIS — close marker
+     ============================================================ -->
+<div class="finis">
+  <div class="finis-mark">L0 · L1 · L2 · L3 · L4 · L5 · L6</div>
+  <div class="finis-date">Engineering Ladder · 2026-05-18</div>
+  <div class="finis-caption">The bar is methodical, not fast. Human review is the last layer, never the first.</div>
+</div>
+
+</div><!-- /.plans-shell -->
+</main>
+</div><!-- /.MagazinePageLayout_magazinePage -->
+</body>
+</html>

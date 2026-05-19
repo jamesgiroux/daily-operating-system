@@ -1,0 +1,31 @@
+<!--
+  Pattern: reviewer-matrix
+  Use: two-column table mapping agent profile / scope → domain reviewer.
+  Works for any "if X then Y" lookup where Y is a code reference.
+
+  Generic enough to use for: reviewer matrices, role assignments,
+  trigger paths → handler tables.
+-->
+<table class="reviewer-matrix">
+  <thead>
+    <tr>
+      <th>&lt;Lookup key column header&gt;</th>
+      <th>&lt;Value column header&gt;</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>&lt;Agent profile / scope description&gt;</td>
+      <td><code>&lt;domain-reviewer / handler-name&gt;</code></td>
+    </tr>
+    <tr>
+      <td>&lt;Next row&gt;</td>
+      <td><code>&lt;reviewer&gt;</code></td>
+    </tr>
+    <!-- Add rows as needed. Keep first column human-readable, second column code/identifier. -->
+  </tbody>
+</table>
+
+<p class="plans-footnote">
+  &lt;Optional footnote — clarifies edge cases, amendment triggers, when the table extends.&gt;
+</p>

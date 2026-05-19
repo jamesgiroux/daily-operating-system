@@ -1,0 +1,36 @@
+<!--
+  Pattern: pass-rule-badge
+  Use: gate-state indicator. Inline next to a "Pass rule" label.
+  Variants:
+    pass-rule-unanimous  — green (approved / unanimous)
+    pass-rule-blockers   — saffron / terracotta (zero-blockers required)
+    pass-rule-drift      — olive (no-drift required)
+    pass-rule-escalate   — chili (escalation trigger / critical)
+
+  TODO(ds): consider promoting to .module.css if same shape is needed in
+  product surfaces (e.g., wave-dashboard cells, PR status displays).
+-->
+
+<!-- Variant: unanimous -->
+<div class="ladder-rung-pass-rule">
+  <span class="pass-rule-label">Pass rule</span>
+  <span class="pass-rule-badge pass-rule-unanimous">Unanimous required</span>
+</div>
+
+<!-- Variant: zero blockers -->
+<div class="ladder-rung-pass-rule">
+  <span class="pass-rule-label">Pass rule</span>
+  <span class="pass-rule-badge pass-rule-blockers">Zero blockers</span>
+</div>
+
+<!-- Variant: no drift -->
+<div class="ladder-rung-pass-rule">
+  <span class="pass-rule-label">Pass rule</span>
+  <span class="pass-rule-badge pass-rule-drift">No drift</span>
+</div>
+
+<!-- Variant: escalation trigger -->
+<div class="ladder-rung-pass-rule">
+  <span class="pass-rule-label">Trigger</span>
+  <span class="pass-rule-badge pass-rule-escalate">Specific structural question</span>
+</div>
