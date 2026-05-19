@@ -32,5 +32,6 @@
   ".docs/design/reference/surfaces/settings.html": "major",
   ".docs/design/reference/surfaces/splash/progress.html": "clean",
   ".docs/design/reference/surfaces/splash/splash.html": "clean",
-  ".docs/design/reference/surfaces/week.html": "clean"
+  ".docs/design/reference/surfaces/week.html": "clean",
+  "__global__": "major"
 }
