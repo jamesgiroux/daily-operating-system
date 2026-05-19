@@ -1,0 +1,97 @@
+/*
+ * DailyOS baseline token shim.
+ *
+ * Defines every `--wp--preset--color--*` custom property referenced by the
+ * plugin's block CSS, so blocks render correctly under any active theme
+ * (including stock TwentyTwentyFive). The DailyOS Magazine theme provides
+ * the same vars via its theme.json; this file is the fallback that keeps
+ * trust / provenance / entity rendering visually intact when a non-DailyOS
+ * theme is active.
+ *
+ * Source of truth for hex/alpha values:
+ *   - src/styles/design-tokens.css (canonical Tauri-side tokens)
+ *   - wp/dailyos/theme/theme.json (Magazine theme palette)
+ *
+ * Per L0 Packet E V1.4 §5.7 + invariant #7. Computed-style fidelity is
+ * verified hands-on in L4.
+ */
+
+:root {
+	/* ─────────────────────────────────────────────────────────────────────
+	   Paper neutrals (grounds + backgrounds)
+	   ───────────────────────────────────────────────────────────────────── */
+	--wp--preset--color--paper-cream: #f5f2ef;
+	--wp--preset--color--paper-linen: #e8e2d9;
+	--wp--preset--color--paper-warm-white: #faf8f6;
+
+	/* ─────────────────────────────────────────────────────────────────────
+	   Desk inks (frame + primary text)
+	   ───────────────────────────────────────────────────────────────────── */
+	--wp--preset--color--desk-charcoal: #1e2530;
+	--wp--preset--color--desk-charcoal-4: rgba(30, 37, 48, 0.04);
+	--wp--preset--color--desk-ink: #2a2b3d;
+
+	/* ─────────────────────────────────────────────────────────────────────
+	   Semantic text
+	   --color-text-quaternary is referenced by Tauri React but not yet in
+	   theme.json — alias to text-tertiary so the shim never resolves to an
+	   undefined var (theme.json gap tracked separately).
+	   ───────────────────────────────────────────────────────────────────── */
+	--wp--preset--color--text-primary: #1e2530;
+	--wp--preset--color--text-secondary: #5a6370;
+	--wp--preset--color--text-tertiary: #6b7280;
+	--wp--preset--color--text-quaternary: #8a93a0;
+
+	/* ─────────────────────────────────────────────────────────────────────
+	   Spice palette (warm accents — accounts, urgency)
+	   ───────────────────────────────────────────────────────────────────── */
+	--wp--preset--color--spice-turmeric: #c9a227;
+	--wp--preset--color--spice-turmeric-10: rgba(201, 162, 39, 0.10);
+	--wp--preset--color--spice-turmeric-15: rgba(201, 162, 39, 0.15);
+	--wp--preset--color--spice-saffron: #deb841;
+	--wp--preset--color--spice-saffron-10: rgba(222, 184, 65, 0.10);
+	--wp--preset--color--spice-terracotta: #c4654a;
+	--wp--preset--color--spice-terracotta-10: rgba(196, 101, 74, 0.10);
+	--wp--preset--color--spice-terracotta-15: rgba(196, 101, 74, 0.15);
+	--wp--preset--color--spice-chili: #9b3a2a;
+
+	/* ─────────────────────────────────────────────────────────────────────
+	   Garden palette (cool accents — people, success)
+	   ───────────────────────────────────────────────────────────────────── */
+	--wp--preset--color--garden-sage: #7eaa7b;
+	--wp--preset--color--garden-sage-10: rgba(126, 170, 123, 0.10);
+	--wp--preset--color--garden-sage-15: rgba(126, 170, 123, 0.15);
+	--wp--preset--color--garden-rosemary: #4a6741;
+	--wp--preset--color--garden-rosemary-12: rgba(74, 103, 65, 0.12);
+	--wp--preset--color--garden-larkspur: #8fa3c4;
+	--wp--preset--color--garden-larkspur-15: rgba(143, 163, 196, 0.15);
+
+	/* ─────────────────────────────────────────────────────────────────────
+	   Entity semantic aliases (ADR-0076)
+	   ───────────────────────────────────────────────────────────────────── */
+	--wp--preset--color--account: #c9a227;
+	--wp--preset--color--account-8: rgba(201, 162, 39, 0.08);
+	--wp--preset--color--account-12: rgba(201, 162, 39, 0.12);
+	--wp--preset--color--project: #6b7c52;
+	--wp--preset--color--project-8: rgba(107, 124, 82, 0.08);
+	--wp--preset--color--person: #8fa3c4;
+	--wp--preset--color--person-8: rgba(143, 163, 196, 0.08);
+	/* meeting entity color is not yet declared in design-tokens.css; aliased
+	   here to garden-rosemary so the shim resolves cleanly. Theme.json gap
+	   tracked as a follow-up for v1.4.3 W3 polish. */
+	--wp--preset--color--meeting: #4a6741;
+	--wp--preset--color--meeting-8: rgba(74, 103, 65, 0.08);
+
+	/* ─────────────────────────────────────────────────────────────────────
+	   Trust band semantic aliases (v1.4.0 user-facing trust render bands)
+	   ───────────────────────────────────────────────────────────────────── */
+	--wp--preset--color--trust-likely-current: #7eaa7b;
+	--wp--preset--color--trust-likely-current-12: rgba(126, 170, 123, 0.12);
+	--wp--preset--color--trust-likely-current-15: rgba(126, 170, 123, 0.15);
+	--wp--preset--color--trust-use-with-caution: #deb841;
+	--wp--preset--color--trust-use-with-caution-12: rgba(222, 184, 65, 0.12);
+	--wp--preset--color--trust-use-with-caution-15: rgba(222, 184, 65, 0.15);
+	--wp--preset--color--trust-needs-verification: #c4654a;
+	--wp--preset--color--trust-needs-verification-12: rgba(196, 101, 74, 0.12);
+	--wp--preset--color--trust-needs-verification-15: rgba(196, 101, 74, 0.15);
+}
