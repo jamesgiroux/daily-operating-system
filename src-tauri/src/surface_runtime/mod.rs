@@ -45,7 +45,9 @@ use crate::bridges::types::{
 };
 use crate::bridges::BridgeSurfaceError;
 use crate::services::context::ClaimDismissalSurface;
-use crate::services::surface_nonce::{SurfaceNonceError, SurfaceNonceService};
+use crate::services::surface_nonce::{
+    PresenceNonceRequestMeta, SurfaceNonceError, SurfaceNonceService,
+};
 use crate::services::surface_pairing::{
     self, PairingCodeFailureInput, PairingHandshakeCapacityInput, PairingHandshakeInput,
     PairingHandshakeRequest, SignedSessionValidationInput, SignedSiteClaimsInput,
@@ -1240,7 +1242,6 @@ fn is_supported_signed_route(method: &Method, path: &str) -> bool {
         (method, path),
         (&Method::GET, "/v1/pairing/status")
             | (&Method::POST, "/v1/surface/invoke")
-            | (&Method::POST, "/v1/surface/feedback")
             | (&Method::GET, "/v1/surface/abilities")
             | (&Method::GET, "/v1/surface/keyring")
             | (&Method::POST, "/v1/surface/project-composition")
@@ -2018,11 +2019,26 @@ async fn signed_route_response(
             }
         }
         (Method::POST, "/v1/surface/nonce/issue") => {
-            surface_nonce_issue_response(runtime, validated, request.body.clone(), request_id).await
+            let request_meta = extract_nonce_request_meta(&runtime.surface_nonce, &request.headers);
+            surface_nonce_issue_response(
+                runtime,
+                validated,
+                request.body.clone(),
+                request_id,
+                request_meta,
+            )
+            .await
         }
         (Method::POST, "/v1/surface/nonce/verify") => {
-            surface_nonce_verify_response(runtime, validated, request.body.clone(), request_id)
-                .await
+            let request_meta = extract_nonce_request_meta(&runtime.surface_nonce, &request.headers);
+            surface_nonce_verify_response(
+                runtime,
+                validated,
+                request.body.clone(),
+                request_id,
+                request_meta,
+            )
+            .await
         }
         (Method::POST, "/v1/surface/project-composition") => {
             surface_project_composition_response(
@@ -2258,11 +2274,43 @@ async fn surface_replay_response(
     }
 }
 
+/// Extract IP + User-Agent strings from request headers and hash them via the
+/// nonce service's audit subkey. Loopback IPs are still useful — they enable
+/// same-client correlation across the v1.4.3 local-to-local plane.
+fn extract_nonce_request_meta(
+    service: &SurfaceNonceService,
+    headers: &HeaderMap,
+) -> PresenceNonceRequestMeta {
+    // Prefer X-Forwarded-For (first hop) then X-Real-IP; final fallback is the
+    // bound loopback address. WP-side runtime client forwards these on signed
+    // calls.
+    let ip = headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|raw| raw.split(',').next())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .or_else(|| headers.get("x-real-ip").and_then(|v| v.to_str().ok()))
+        .map(str::to_owned)
+        .unwrap_or_else(|| "127.0.0.1".to_string());
+
+    let user_agent = headers
+        .get(header::USER_AGENT)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_owned);
+
+    PresenceNonceRequestMeta {
+        ip_hash: service.hash_audit_ip(Some(&ip)),
+        user_agent_hash: service.hash_audit_user_agent(user_agent.as_deref()),
+    }
+}
+
 async fn surface_nonce_issue_response(
     runtime: &EndpointRuntime,
     validated: ValidatedSurfaceSession,
     body: Bytes,
     request_id: String,
+    request_meta: PresenceNonceRequestMeta,
 ) -> Response<ResponseBody> {
     let Some(app_state) = runtime.app_state.as_ref().cloned() else {
         return error_response(SurfaceHttpError::runtime_unavailable().with_request_id(request_id));
@@ -2278,7 +2326,14 @@ async fn surface_nonce_issue_response(
             let external = crate::services::context::ExternalClients::default();
             let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &external)
                 .with_actor("surface_client");
-            Ok(service.issue_nonce(&ctx, db, &session_for_work, payload, &request_id_for_work))
+            Ok(service.issue_nonce(
+                &ctx,
+                db,
+                &session_for_work,
+                payload,
+                &request_id_for_work,
+                request_meta,
+            ))
         })
         .await;
 
@@ -2558,11 +2613,27 @@ async fn surface_project_composition_response(
     )
 }
 
+/// Outcome of the verify wire-through. Either the nonce verified AND
+/// record_claim_feedback succeeded (`Recorded`), or the nonce verified but the
+/// downstream substrate write failed — the nonce stays consumed per packet F
+/// §6 decision #13 fail-closed semantics.
+enum VerifyWireThroughOutcome {
+    Recorded {
+        verify: crate::services::surface_nonce::SurfaceNonceVerify,
+        feedback: crate::services::claims::ClaimFeedbackOutcome,
+    },
+    PhaseThreeFailed {
+        verify: crate::services::surface_nonce::SurfaceNonceVerify,
+        claim_error: crate::services::claims::ClaimError,
+    },
+}
+
 async fn surface_nonce_verify_response(
     runtime: &EndpointRuntime,
     validated: ValidatedSurfaceSession,
     body: Bytes,
     request_id: String,
+    request_meta: PresenceNonceRequestMeta,
 ) -> Response<ResponseBody> {
     let Some(app_state) = runtime.app_state.as_ref().cloned() else {
         return error_response(SurfaceHttpError::runtime_unavailable().with_request_id(request_id));
@@ -2570,20 +2641,61 @@ async fn surface_nonce_verify_response(
     let payload = serde_json::from_slice::<Value>(&body).unwrap_or(Value::Null);
     let service = runtime.surface_nonce.clone();
     let request_id_for_work = request_id.clone();
-    let session_for_work = validated;
+    let session_for_work = validated.clone();
+    let meta_for_verify = request_meta.clone();
+    // db_write upgrade (was db_read) so record_claim_feedback can open its own
+    // with_claim_transaction inside this closure. The verify step is logically
+    // a read of the nonce store + a write of the consumed flag (in-memory
+    // Mutex), but record_claim_feedback requires the writer connection.
     let result = app_state
-        .db_read(move |db| {
+        .db_write(move |db| {
             let clock = crate::services::context::SystemClock;
             let rng = crate::services::context::SystemRng;
             let external = crate::services::context::ExternalClients::default();
             let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &external)
                 .with_actor("surface_client");
-            Ok(service.verify_nonce(&ctx, db, &session_for_work, payload, &request_id_for_work))
+
+            let verified = match service.verify_nonce(
+                &ctx,
+                db,
+                &session_for_work,
+                payload,
+                &request_id_for_work,
+                meta_for_verify,
+            ) {
+                Ok(v) => v,
+                Err(error) => return Ok(Err(error)),
+            };
+
+            // Translate VerifiedNonce → ClaimFeedbackInput per packet F §5.4.
+            // actor format MUST pass validate_feedback_actor at claims.rs:5131
+            // (actor_class_for_actor splits on `:` / `/` / `@`; head must be
+            // "user" or "human" for the user class).
+            let action: abilities_runtime::abilities::FeedbackAction =
+                verified.action.into();
+            let input = crate::services::claims::ClaimFeedbackInput {
+                claim_id: verified.claim_id.clone(),
+                action,
+                actor: format!("user:wp:{}", verified.wp_user_id),
+                actor_id: Some(verified.session_id.clone()),
+                payload_json: verified.payload_json.clone(),
+            };
+
+            match crate::services::claims::record_claim_feedback(&ctx, db, input) {
+                Ok(feedback) => Ok(Ok(VerifyWireThroughOutcome::Recorded {
+                    verify: verified,
+                    feedback,
+                })),
+                Err(claim_error) => Ok(Ok(VerifyWireThroughOutcome::PhaseThreeFailed {
+                    verify: verified,
+                    claim_error,
+                })),
+            }
         })
         .await;
 
     match result {
-        Ok(Ok(verify)) => {
+        Ok(Ok(VerifyWireThroughOutcome::Recorded { verify, feedback })) => {
             emit_surface_nonce_audit_events(&app_state, &verify.audit_events);
             json_response(
                 StatusCode::OK,
@@ -2596,6 +2708,48 @@ async fn surface_nonce_verify_response(
                         "claim_version": verify.expected_claim_version,
                         "composition_version": verify.expected_composition_version,
                     },
+                    "feedback": {
+                        "feedback_id": feedback.feedback_id,
+                        "claim_id": feedback.claim_id,
+                        "action": feedback.action.as_str(),
+                        "new_verification_state": format!("{:?}", feedback.new_verification_state),
+                        "applied_at_pending": feedback.applied_at_pending,
+                        "repair_job_id": feedback.repair_job_id,
+                    },
+                }),
+            )
+        }
+        Ok(Ok(VerifyWireThroughOutcome::PhaseThreeFailed {
+            verify,
+            claim_error,
+        })) => {
+            // Fail-closed per packet F §6 decision #13: the nonce stays
+            // consumed (no rollback of try_mark_consumed). User must mint a
+            // fresh nonce to retry. Charge the failure budget so an attacker
+            // can't loop nonce-mint → phase-3 fail to exhaust resources
+            // (packet F §16 #5 — cycle-3 CSO advisory).
+            emit_surface_nonce_audit_events(&app_state, &verify.audit_events);
+            runtime.surface_nonce.charge_phase_three_failure(
+                &validated,
+                request_meta,
+                &verify.request_id,
+            );
+            log::warn!(
+                "surface nonce verify consumed but record_claim_feedback failed: \
+                 claim_id={} request_id={} error={}",
+                verify.claim_id,
+                verify.request_id,
+                claim_error,
+            );
+            json_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                json!({
+                    "ok": false,
+                    "verified": true,
+                    "error": "feedback_write_failed",
+                    "reason": "consume_succeeded_record_failed",
+                    "message": "Refresh this block and try again.",
+                    "request_id": verify.request_id,
                 }),
             )
         }
@@ -4731,7 +4885,6 @@ mod tests {
         for (method, path) in [
             (Method::GET, "/v1/pairing/status"),
             (Method::POST, "/v1/surface/invoke"),
-            (Method::POST, "/v1/surface/feedback"),
             (Method::POST, "/v1/surface/nonce/issue"),
             (Method::POST, "/v1/surface/nonce/verify"),
             (Method::GET, "/v1/surface/abilities"),
@@ -4756,7 +4909,6 @@ mod tests {
         for path in [
             "/v1/pairing/status/",
             "/v1/surface/invoke/",
-            "/v1/surface/feedback/",
             "/v1/surface/nonce/issue/",
             "/v1/surface/nonce/verify/",
             "/v1/surface/abilities/",

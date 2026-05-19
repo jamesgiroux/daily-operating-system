@@ -138,32 +138,6 @@ final class DailyOS_Runtime_Client {
 	}
 
 	/**
-	 * Submit feedback for a runtime surface claim.
-	 *
-	 * @param string $claim_id Claim id.
-	 * @param string $field Field name.
-	 * @param string $action Feedback action.
-	 * @param string $presence_nonce User-presence nonce.
-	 * @return array<string, mixed>|\WP_Error Runtime response envelope or typed pairing error.
-	 */
-	public function submit_feedback( string $claim_id, string $field, string $action, string $presence_nonce ): array|\WP_Error {
-		$body_bytes = $this->encode_json(
-			[
-				'claim_id'       => $claim_id,
-				'field'          => $field,
-				'action'         => $action,
-				'presence_nonce' => $presence_nonce,
-			]
-		);
-
-		if ( null === $body_bytes ) {
-			return $this->error_response( 'json_encode_failed', 'DailyOS feedback request could not be encoded.' );
-		}
-
-		return $this->signed_post( '/v1/surface/feedback', $body_bytes );
-	}
-
-	/**
 	 * Request a runtime-issued user-presence nonce.
 	 *
 	 * @param array<string, mixed> $payload Nonce binding tuple.

@@ -118,11 +118,13 @@ impl SurfaceNonceService {
         session: &ValidatedSurfaceSession,
         payload: Value,
         fallback_request_id: &str,
+        request_meta: PresenceNonceRequestMeta,
     ) -> Result<SurfaceNonceIssue, SurfaceNonceError> {
         ensure_surface_client(session, fallback_request_id)?;
         let request = IssueNonceRequest::parse(payload, fallback_request_id)
-            .map_err(|error| self.shape_error(session, error))?;
-        let audit = NonceAuditContext::from_issue(session, &request);
+            .map_err(|error| self.shape_error(session, error, request_meta.clone()))?;
+        let audit = NonceAuditContext::from_issue(session, &request)
+            .with_request_meta(request_meta.ip_hash.clone(), request_meta.user_agent_hash.clone());
         ensure_session_tuple(session, &request.session_id, request.wp_user_id, &audit)?;
 
         let issue_budget_key =
@@ -231,11 +233,13 @@ impl SurfaceNonceService {
         session: &ValidatedSurfaceSession,
         payload: Value,
         fallback_request_id: &str,
+        request_meta: PresenceNonceRequestMeta,
     ) -> Result<SurfaceNonceVerify, SurfaceNonceError> {
         ensure_surface_client(session, fallback_request_id)?;
         let request = VerifyNonceRequest::parse(payload, fallback_request_id)
-            .map_err(|error| self.shape_error(session, error))?;
-        let audit = NonceAuditContext::from_verify(session, &request);
+            .map_err(|error| self.shape_error(session, error, request_meta.clone()))?;
+        let audit = NonceAuditContext::from_verify(session, &request)
+            .with_request_meta(request_meta.ip_hash.clone(), request_meta.user_agent_hash.clone());
         ensure_session_tuple(session, &request.session_id, request.wp_user_id, &audit)?;
         let verify_budget_key =
             request.budget_key(&session.surface_client_id, NonceBudgetClass::Verify);
@@ -276,6 +280,11 @@ impl SurfaceNonceService {
                     expected_claim_version: verified.expected_claim_version,
                     expected_composition_version: verified.expected_composition_version,
                     audit_events,
+                    claim_id: verified.claim_id,
+                    action: verified.action,
+                    payload_json: verified.payload_json,
+                    wp_user_id: verified.wp_user_id,
+                    session_id: verified.session_id,
                 })
             }
             Err(mut error) => {
@@ -352,10 +361,30 @@ impl SurfaceNonceService {
         &self,
         session: &ValidatedSurfaceSession,
         error: RequestShapeError,
+        request_meta: PresenceNonceRequestMeta,
     ) -> SurfaceNonceError {
-        let audit = NonceAuditContext::from_session(session, &error.request_id);
+        let audit = NonceAuditContext::from_session(session, &error.request_id)
+            .with_request_meta(request_meta.ip_hash, request_meta.user_agent_hash);
         self.charge_failure_best_effort(session, None, &audit);
         SurfaceNonceError::rejected(error.reason, audit)
+    }
+
+    /// Charge the failure budget for a phase-3 `record_claim_feedback` error.
+    ///
+    /// Per packet F §16 #5 (cycle-3 CSO advisory): consume succeeded, but the
+    /// downstream substrate write rejected. The nonce stays consumed
+    /// (fail-closed per decision #13), but an attacker could mint and exhaust
+    /// nonces by forcing phase-3 failures. Charge the failure budget so the
+    /// existing rate-limiter catches that loop.
+    pub fn charge_phase_three_failure(
+        &self,
+        session: &ValidatedSurfaceSession,
+        request_meta: PresenceNonceRequestMeta,
+        request_id: &str,
+    ) {
+        let audit = NonceAuditContext::from_session(session, request_id)
+            .with_request_meta(request_meta.ip_hash, request_meta.user_agent_hash);
+        self.charge_failure_best_effort(session, None, &audit);
     }
 
     fn charge_budget(
@@ -695,6 +724,14 @@ struct VerifiedNonce {
     nonce_digest: NonceDigest,
     expected_claim_version: u64,
     expected_composition_version: u64,
+    // V4-W4 additions per packet F §5.4 — captured from the consumed binding
+    // BEFORE the Mutex guard is released, so the verify wire-through can
+    // forward them to record_claim_feedback without re-reading the store.
+    claim_id: String,
+    action: PresenceNonceAction,
+    payload_json: Option<String>,
+    wp_user_id: u64,
+    session_id: String,
 }
 
 impl SurfaceNonceStore {
@@ -848,6 +885,11 @@ impl SurfaceNonceStore {
             nonce_digest: digest,
             expected_claim_version: binding.fields.claim_version,
             expected_composition_version: binding.fields.composition_version,
+            claim_id: binding.fields.claim_id.clone(),
+            action: binding.fields.action,
+            payload_json: binding.fields.payload_json.clone(),
+            wp_user_id: binding.fields.wp_user_id,
+            session_id: binding.fields.session_id.clone(),
         })
     }
 
@@ -1141,6 +1183,23 @@ pub struct SurfaceNonceVerify {
     pub expected_claim_version: u64,
     pub expected_composition_version: u64,
     pub audit_events: Vec<SurfaceNonceAuditEvent>,
+    // V4-W4 additions per packet F §5.4. Mapped from VerifiedNonce by the
+    // service wrapper so the runtime handler can build ClaimFeedbackInput
+    // without reaching into the in-memory store.
+    pub claim_id: String,
+    pub action: PresenceNonceAction,
+    pub payload_json: Option<String>,
+    pub wp_user_id: u64,
+    pub session_id: String,
+}
+
+/// Per-request audit metadata supplied by the handler at REST entry. The
+/// service methods plumb these into NonceAuditContext so audit events carry
+/// keyed-HMAC IP / UA fingerprints for forensic correlation across sessions.
+#[derive(Clone, Debug, Default)]
+pub struct PresenceNonceRequestMeta {
+    pub ip_hash: Option<String>,
+    pub user_agent_hash: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -1911,7 +1970,7 @@ mod tests {
         let mut payload = issue_payload();
         payload["request_id"] = json!(request_id);
         service
-            .issue_nonce(ctx, db, session, payload, request_id)
+            .issue_nonce(ctx, db, session, payload, request_id, PresenceNonceRequestMeta::default())
             .expect("issue")
             .presence_nonce
     }
@@ -1925,7 +1984,7 @@ mod tests {
         expected_reason: PresenceNonceRejectReason,
     ) -> SurfaceNonceError {
         let error = service
-            .verify_nonce(ctx, db, session, payload, "request-reject")
+            .verify_nonce(ctx, db, session, payload, "request-reject", PresenceNonceRequestMeta::default())
             .expect_err("verify rejection");
         assert_eq!(error.reason, expected_reason);
         error
@@ -1969,7 +2028,7 @@ mod tests {
         let session = session("session-1", 42);
 
         let issued = service
-            .issue_nonce(&ctx, &db, &session, issue_payload(), "request-1")
+            .issue_nonce(&ctx, &db, &session, issue_payload(), "request-1", PresenceNonceRequestMeta::default())
             .expect("issue");
         let verified = service
             .verify_nonce(
@@ -1978,6 +2037,7 @@ mod tests {
                 &session,
                 verify_payload(&issued.presence_nonce),
                 "request-2",
+                PresenceNonceRequestMeta::default(),
             )
             .expect("verify");
         assert_eq!(verified.expected_claim_version, 7);
@@ -1990,6 +2050,7 @@ mod tests {
                 &session,
                 verify_payload(&issued.presence_nonce),
                 "request-3",
+                PresenceNonceRequestMeta::default(),
             )
             .expect_err("replay");
         assert_eq!(replay.reason, PresenceNonceRejectReason::Replayed);
@@ -2253,7 +2314,7 @@ mod tests {
         for attempt in 0..1000 {
             let mut payload = issue_payload();
             payload["request_id"] = json!(format!("request-{attempt}"));
-            match service.issue_nonce(&ctx, &db, &session, payload, "request") {
+            match service.issue_nonce(&ctx, &db, &session, payload, "request", PresenceNonceRequestMeta::default()) {
                 Ok(_) => {}
                 Err(error) => {
                     assert_eq!(error.reason, PresenceNonceRejectReason::RateLimited);
@@ -2279,12 +2340,12 @@ mod tests {
         });
         let session = session("session-1", 42);
         let first = service
-            .issue_nonce(&ctx, &db, &session, issue_payload(), "request-1")
+            .issue_nonce(&ctx, &db, &session, issue_payload(), "request-1", PresenceNonceRequestMeta::default())
             .expect("first");
         let mut second_payload = issue_payload();
         second_payload["request_id"] = json!("request-2");
         let second = service
-            .issue_nonce(&ctx, &db, &session, second_payload, "request-2")
+            .issue_nonce(&ctx, &db, &session, second_payload, "request-2", PresenceNonceRequestMeta::default())
             .expect("second");
         assert!(second.audit_events.iter().any(|event| {
             event.event_kind == "presence_nonce_invalidated"
@@ -2297,6 +2358,7 @@ mod tests {
                 &session,
                 verify_payload(&first.presence_nonce),
                 "request-3",
+                PresenceNonceRequestMeta::default(),
             )
             .expect_err("evicted");
         assert_eq!(error.reason, PresenceNonceRejectReason::Invalidated);
@@ -2312,7 +2374,7 @@ mod tests {
         let service = service(SurfaceNonceConfig::default());
         let session = session("session-1", 42);
         let issued = service
-            .issue_nonce(&ctx, &db, &session, issue_payload(), "request-1")
+            .issue_nonce(&ctx, &db, &session, issue_payload(), "request-1", PresenceNonceRequestMeta::default())
             .expect("issue");
         reinforce_claim_to_version(&db, 8);
         let error = service
@@ -2322,6 +2384,7 @@ mod tests {
                 &session,
                 verify_payload(&issued.presence_nonce),
                 "request-2",
+                PresenceNonceRequestMeta::default(),
             )
             .expect_err("stale");
         assert_eq!(error.reason, PresenceNonceRejectReason::ClaimVersionStale);
@@ -2338,7 +2401,7 @@ mod tests {
         let service = service(SurfaceNonceConfig::default());
         let session = session("session-1", 42);
         let issued = service
-            .issue_nonce(&ctx, &db, &session, issue_payload(), "request-1")
+            .issue_nonce(&ctx, &db, &session, issue_payload(), "request-1", PresenceNonceRequestMeta::default())
             .expect("issue");
         db.conn_ref().execute("UPDATE composition_versions SET composition_version = 18 WHERE composition_id = 'composition-1'", []).expect("bump");
         let error = service
@@ -2348,6 +2411,7 @@ mod tests {
                 &session,
                 verify_payload(&issued.presence_nonce),
                 "request-2",
+                PresenceNonceRequestMeta::default(),
             )
             .expect_err("stale");
         assert_eq!(
@@ -2369,12 +2433,19 @@ mod tests {
         bad_session.actor = Actor::System;
 
         let error = service
-            .issue_nonce(&ctx, &db, &bad_session, issue_payload(), "request")
+            .issue_nonce(&ctx, &db, &bad_session, issue_payload(), "request", PresenceNonceRequestMeta::default())
             .expect_err("wrong actor issue");
         assert_eq!(error.reason, PresenceNonceRejectReason::WrongActor);
 
         let error = service
-            .verify_nonce(&ctx, &db, &bad_session, verify_payload("token"), "request")
+            .verify_nonce(
+                &ctx,
+                &db,
+                &bad_session,
+                verify_payload("token"),
+                "request",
+                PresenceNonceRequestMeta::default(),
+            )
             .expect_err("wrong actor verify");
         assert_eq!(error.reason, PresenceNonceRejectReason::WrongActor);
     }
@@ -2433,7 +2504,7 @@ mod tests {
         });
 
         let issued = service
-            .issue_nonce(&context, &db, &session, payload, "request")
+            .issue_nonce(&context, &db, &session, payload, "request", PresenceNonceRequestMeta::default())
             .expect("issue ok");
 
         // Round-trip via store inspection: the stored binding's payload_json
