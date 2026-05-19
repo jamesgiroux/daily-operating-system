@@ -4,6 +4,8 @@ use crate::state::AppState;
 
 pub mod accounts;
 pub mod actions;
+pub mod claim_receipt;
+pub mod claim_review_queue;
 pub mod claims;
 pub mod claims_backfill;
 pub mod commitment_bridge;

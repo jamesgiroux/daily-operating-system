@@ -6521,6 +6521,77 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
     )
     .map_err(|e| format!("Seed health_recompute_pending: {}", e))?;
 
+    seed_claim_review_deferrals(db)?;
+
+    Ok(())
+}
+
+/// Seed a few representative review-queue deferral rows so the queue substrate
+/// has data to exercise in dev mode. Covers one of each target_kind plus a
+/// resolved row so the active-list filter has something to filter out.
+fn seed_claim_review_deferrals(db: &ActionDb) -> Result<(), String> {
+    assert_dev_db_connection(db)?;
+
+    let conn = db.conn_ref();
+    let now = chrono::Utc::now();
+    let now_iso = now.to_rfc3339();
+    let snooze_iso = (now + chrono::Duration::days(3)).to_rfc3339();
+    let resolved_iso = (now - chrono::Duration::hours(2)).to_rfc3339();
+
+    let rows: [(&str, &str, &str, Option<&str>, Option<&str>, Option<&str>, Option<&str>, &str); 4] = [
+        (
+            "mock-deferral-claim-1",
+            "claim",
+            "mock-claim-renewal-risk",
+            Some("actions_work"),
+            Some("waiting on stakeholder confirmation"),
+            None,
+            None,
+            "user:demo",
+        ),
+        (
+            "mock-deferral-proposal-1",
+            "proposal",
+            "mock-proposal-pricing-adjust",
+            Some("daily_briefing"),
+            Some("needs finance review"),
+            Some(snooze_iso.as_str()),
+            None,
+            "user:demo",
+        ),
+        (
+            "mock-deferral-candidate-1",
+            "candidate",
+            "mock-candidate-expansion-signal",
+            Some("entity_detail"),
+            Some("low-confidence signal — defer for evidence"),
+            None,
+            None,
+            "agent:salience",
+        ),
+        (
+            "mock-deferral-claim-resolved",
+            "claim",
+            "mock-claim-old-question",
+            Some("actions_work"),
+            Some("answered out-of-band"),
+            None,
+            Some(resolved_iso.as_str()),
+            "user:demo",
+        ),
+    ];
+
+    for (id, kind, target, surface, reason, snooze, resolved, actor) in rows {
+        conn.execute(
+            "INSERT OR IGNORE INTO claim_review_deferrals (
+                id, target_kind, target_id, surface, reason, snoozed_until,
+                created_at, updated_at, resolved_at, actor
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8, ?9)",
+            rusqlite::params![id, kind, target, surface, reason, snooze, now_iso, resolved, actor],
+        )
+        .map_err(|e| format!("Seed claim_review_deferrals row {id}: {e}"))?;
+    }
+
     Ok(())
 }
 

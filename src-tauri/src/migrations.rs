@@ -923,6 +923,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 180,
         sql: include_str!("migrations/180_local_to_local_read_path.sql"),
     },
+    Migration::Sql {
+        version: 240,
+        sql: include_str!("migrations/240_claim_review_deferrals.sql"),
+    },
 ];
 
 const V155_SHADOW_TRUST_VERSION: i64 = 1_401_003;
@@ -4570,7 +4574,7 @@ mod tests {
         let applied = run_migrations(&conn).expect("v157+ migrations should succeed");
         assert_eq!(
             applied,
-            (MIGRATIONS.last().unwrap().version() - 156) as usize,
+            MIGRATIONS.iter().filter(|m| m.version() > 156).count(),
             "v157+ should be pending after rollback to v156"
         );
         assert_eq!(
@@ -4645,7 +4649,7 @@ mod tests {
         let applied = run_migrations(&conn).expect("v157+ migrations should succeed");
         assert_eq!(
             applied,
-            (MIGRATIONS.last().unwrap().version() - 156) as usize,
+            MIGRATIONS.iter().filter(|m| m.version() > 156).count(),
             "v157+ should be pending after rollback to v156"
         );
         assert_eq!(
@@ -4725,7 +4729,7 @@ mod tests {
         let applied = run_migrations(&conn).expect("v156+ migrations should succeed");
         assert_eq!(
             applied,
-            (MIGRATIONS.last().unwrap().version() - 155) as usize,
+            MIGRATIONS.iter().filter(|m| m.version() > 155).count(),
             "v156+ should be pending after rollback to v155"
         );
         assert_eq!(
