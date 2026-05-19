@@ -66,6 +66,10 @@ final class DailyOS_Activation {
 
 		$store = new DailyOS_Namespace_Store();
 		$store->delete_dailyos_transients();
+
+		if ( function_exists( 'flush_rewrite_rules' ) ) {
+			flush_rewrite_rules();
+		}
 	}
 
 	/**
@@ -306,6 +310,16 @@ final class DailyOS_Activation {
 		}
 
 		self::schedule_nonce_sweep();
+
+		// Register CPTs once before flushing rewrite rules so /accounts/<slug>/
+		// URLs resolve immediately after activation rather than after the next
+		// `init` request. The plugin instance hooks CPT registration on `init`
+		// for steady-state requests; this call is the activation-time bootstrap.
+		DailyOS_Plugin::instance()->register_post_types();
+
+		if ( function_exists( 'flush_rewrite_rules' ) ) {
+			flush_rewrite_rules();
+		}
 	}
 
 	/**
