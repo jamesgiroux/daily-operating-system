@@ -27,7 +27,7 @@
 	// which is sufficient for the L4 render proof. Re-promote to combobox
 	// once the discovery endpoint is wired.
 	const { PanelBody, TextControl, Button, Spinner, Notice } = wp.components;
-	const { useState, useEffect, useCallback } = wp.element;
+	const { useState, useEffect, useCallback, useRef } = wp.element;
 	const apiFetch = wp.apiFetch;
 
 	const BLOCK_NAME = 'dailyos/account-overview';
@@ -39,6 +39,7 @@
 		const [ isLoading, setIsLoading ] = useState( false );
 		const [ error, setError ] = useState( null );
 		const [ accounts, setAccounts ] = useState( [] );
+		const previewRef = useRef( null );
 
 		const reload = useCallback( () => {
 			if ( ! attributes.composition_id ) {
@@ -116,6 +117,19 @@
 				.catch( () => {} );
 		}, [] );
 
+		useEffect( () => {
+			if (
+				previewRef.current &&
+				window.DailyOSFeedbackAffordance &&
+				window.DailyOSFeedbackAffordance.mountFeedbackAffordances
+			) {
+				window.DailyOSFeedbackAffordance.mountFeedbackAffordances(
+					previewRef.current,
+					{ onFeedbackRecorded: reload }
+				);
+			}
+		}, [ preview, reload ] );
+
 		const onAccountChange = ( accountId ) => {
 			if ( ! accountId ) {
 				return;
@@ -169,6 +183,7 @@
 				preview &&
 					preview.projection &&
 					wp.element.createElement( 'div', {
+						ref: previewRef,
 						dangerouslySetInnerHTML: { __html: preview.html || '' },
 					} )
 			)

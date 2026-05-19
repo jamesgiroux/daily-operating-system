@@ -1,0 +1,187 @@
+.feedbackAffordance {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	gap: 0.5rem;
+	font-family: var( --font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif );
+}
+
+.feedbackAffordance .trigger,
+.feedbackAffordance .menuItem,
+.feedbackAffordance .button,
+.feedbackAffordance .dismiss {
+	border: 1px solid var( --wp--preset--color--desk-charcoal-25, rgba( 30, 37, 48, 0.25 ) );
+	border-radius: 0.25rem;
+	background: var( --wp--preset--color--paper-warm-white, #faf8f6 );
+	color: var( --wp--preset--color--desk-charcoal, #1e2530 );
+	cursor: pointer;
+	font: inherit;
+	line-height: 1.2;
+}
+
+.feedbackAffordance .trigger {
+	padding: 0.35rem 0.55rem;
+	font-size: 0.75rem;
+}
+
+.feedbackAffordance .trigger:hover,
+.feedbackAffordance .trigger:focus-visible,
+.feedbackAffordance .menuItem:hover,
+.feedbackAffordance .menuItem:focus-visible,
+.feedbackAffordance .button:hover,
+.feedbackAffordance .button:focus-visible,
+.feedbackAffordance .dismiss:hover,
+.feedbackAffordance .dismiss:focus-visible {
+	border-color: var( --wp--preset--color--spice-turmeric, #c9a227 );
+	background: var( --wp--preset--color--spice-turmeric-10, rgba( 201, 162, 39, 0.10 ) );
+	outline: none;
+}
+
+.feedbackAffordance .trigger:disabled,
+.feedbackAffordance .button:disabled {
+	cursor: not-allowed;
+	opacity: 0.55;
+}
+
+.feedbackAffordance .menu,
+.feedbackAffordance .panel {
+	position: absolute;
+	z-index: 20;
+	top: calc( 100% + 0.35rem );
+	right: 0;
+	width: min( 22rem, 82vw );
+	border: 1px solid var( --wp--preset--color--paper-linen, #e8e2d9 );
+	border-radius: 0.375rem;
+	background: var( --wp--preset--color--paper-warm-white, #faf8f6 );
+	box-shadow: 0 0.75rem 2rem rgba( 30, 37, 48, 0.16 );
+	color: var( --wp--preset--color--text-primary, #1e2530 );
+}
+
+.feedbackAffordance .menu {
+	display: grid;
+	gap: 0.2rem;
+	padding: 0.35rem;
+}
+
+.feedbackAffordance .menuItem {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 0.15rem;
+	padding: 0.5rem 0.6rem;
+	text-align: left;
+	border-color: transparent;
+	background: transparent;
+}
+
+.feedbackAffordance .menuItemTitle {
+	font-size: 0.78rem;
+	font-weight: 600;
+}
+
+.feedbackAffordance .menuItemDescription {
+	color: var( --wp--preset--color--text-secondary, #5a6370 );
+	font-size: 0.72rem;
+}
+
+.feedbackAffordance .panel {
+	display: grid;
+	gap: 0.75rem;
+	padding: 0.85rem;
+}
+
+.feedbackAffordance .panelHeader {
+	display: grid;
+	gap: 0.2rem;
+}
+
+.feedbackAffordance .panelTitle {
+	margin: 0;
+	font-size: 0.85rem;
+	font-weight: 700;
+}
+
+.feedbackAffordance .panelCopy {
+	margin: 0;
+	color: var( --wp--preset--color--text-secondary, #5a6370 );
+	font-size: 0.76rem;
+}
+
+.feedbackAffordance .field {
+	display: grid;
+	gap: 0.3rem;
+}
+
+.feedbackAffordance .label {
+	color: var( --wp--preset--color--text-secondary, #5a6370 );
+	font-size: 0.72rem;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+}
+
+.feedbackAffordance .textarea,
+.feedbackAffordance .select {
+	width: 100%;
+	box-sizing: border-box;
+	border: 1px solid var( --wp--preset--color--paper-linen, #e8e2d9 );
+	border-radius: 0.25rem;
+	background: var( --wp--preset--color--paper-cream, #f5f2ef );
+	color: var( --wp--preset--color--text-primary, #1e2530 );
+	font: inherit;
+	font-size: 0.82rem;
+}
+
+.feedbackAffordance .textarea {
+	min-height: 5rem;
+	resize: vertical;
+	padding: 0.5rem;
+}
+
+.feedbackAffordance .select {
+	padding: 0.45rem 0.5rem;
+}
+
+.feedbackAffordance .textarea:focus,
+.feedbackAffordance .select:focus {
+	border-color: var( --wp--preset--color--spice-turmeric, #c9a227 );
+	outline: 2px solid var( --wp--preset--color--spice-turmeric-10, rgba( 201, 162, 39, 0.10 ) );
+}
+
+.feedbackAffordance .meta {
+	color: var( --wp--preset--color--text-tertiary, #6b7280 );
+	font-size: 0.7rem;
+	text-align: right;
+}
+
+.feedbackAffordance .actions {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 0.45rem;
+}
+
+.feedbackAffordance .button,
+.feedbackAffordance .dismiss {
+	padding: 0.4rem 0.6rem;
+	font-size: 0.76rem;
+}
+
+.feedbackAffordance .confirm {
+	border-color: var( --wp--preset--color--spice-turmeric, #c9a227 );
+	background: var( --wp--preset--color--spice-turmeric-15, rgba( 201, 162, 39, 0.15 ) );
+}
+
+.feedbackAffordance .status {
+	margin: 0;
+	color: var( --wp--preset--color--text-secondary, #5a6370 );
+	font-size: 0.76rem;
+}
+
+.feedbackAffordance .success {
+	color: var( --wp--preset--color--garden-rosemary, #4a6741 );
+}
+
+.feedbackAffordance .error {
+	color: var( --wp--preset--color--spice-chili, #9b3a2a );
+}
