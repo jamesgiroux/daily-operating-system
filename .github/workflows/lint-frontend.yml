@@ -103,6 +103,9 @@ jobs:
       - name: Enforce W4-F feedback wire-through invariants
         run: ./scripts/check_w4f_feedback_wire_through.sh
 
+      - name: Enforce DOS-733 runtime-client filter registration
+        run: ./scripts/check_runtime_client_filter_registered.sh
+
       - name: Enforce DOS-589 dispatcher module boundaries
         run: ./scripts/check_version_dispatcher_boundaries.sh
 

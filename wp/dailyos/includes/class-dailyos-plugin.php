@@ -74,6 +74,7 @@ final class DailyOS_Plugin {
 		add_filter( 'block_categories_all', [ $this, 'register_block_category' ], 10, 1 );
 		add_action( 'init', [ $this, 'register_mcp_server_config' ], 12 );
 		add_action( 'init', [ $this, 'register_save_hooks' ], 13 );
+		add_filter( 'dailyos_runtime_client_for_block', [ $this, 'default_runtime_client_for_block' ], 5, 1 );
 		add_action( 'admin_menu', [ $this, 'register_admin_pages' ], 10 );
 		add_action( 'rest_api_init', [ $this, 'register_rest_routes' ], 10 );
 		add_action( 'wp_enqueue_scripts', [ $this, 'enqueue_baseline_tokens' ], 9 );
@@ -731,6 +732,38 @@ final class DailyOS_Plugin {
 		}
 		$signer = new \DailyOS\Transport\DailyOS_Hmac_Signer( $store );
 		return new \DailyOS\Transport\DailyOS_Runtime_Client( $store, $signer );
+	}
+
+	/**
+	 * Default provider for the dailyos_runtime_client_for_block filter.
+	 *
+	 * Registered at priority 5 in init() so the WP block-registration render
+	 * path (render.php → dailyos_account_overview_render → apply_filters) always
+	 * resolves to a real transport client when paired. Without this default,
+	 * apply_filters returns null and every block short-circuits to is-empty
+	 * regardless of runtime state.
+	 *
+	 * Per-render overrides at priority 10 (render_block_with_filter for REST
+	 * preview, test fixtures) run after this and win — preserving the existing
+	 * test seam and editor-preview path.
+	 *
+	 * When unpaired, returns the existing filter value (null by default) so the
+	 * renderer short-circuits to its is-empty fallback. When paired but transport
+	 * is unreachable, the client's request() returns WP_Error and the renderer
+	 * routes to runtime_unavailable_notice downstream.
+	 *
+	 * @param mixed $existing Existing filter value from prior callbacks.
+	 * @return mixed Runtime client when paired and no override; $existing otherwise.
+	 */
+	public function default_runtime_client_for_block( mixed $existing ): mixed {
+		if ( $existing instanceof DailyOS_Runtime_Client ) {
+			return $existing;
+		}
+		$store = new DailyOS_Credential_Store();
+		if ( ! $store->is_paired() ) {
+			return $existing;
+		}
+		return new DailyOS_Runtime_Client( $store, new DailyOS_Hmac_Signer( $store ) );
 	}
 
 	/**

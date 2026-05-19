@@ -210,6 +210,29 @@ final class DailyOS_ActivationTest extends TestCase {
 	}
 
 	/**
+	 * Plugin init registers the default dailyos_runtime_client_for_block filter so
+	 * the WP block-registration render path resolves to a real transport client
+	 * when paired. Regression guard for DOS-733: without this registration every
+	 * dailyos/* block renders is-empty regardless of runtime state, masking
+	 * transport failures and pre-empting the typed runtime_unavailable_notice.
+	 */
+	public function test_plugin_init_registers_default_runtime_client_filter(): void {
+		$this->reset_plugin_init_state();
+
+		DailyOS_Plugin::instance()->init();
+
+		$this->assertNotEmpty(
+			$GLOBALS['dailyos_test_filters']['dailyos_runtime_client_for_block'] ?? [],
+			'init() must register the default dailyos_runtime_client_for_block filter so the live render path can reach the typed runtime_unavailable_notice when transport is unreachable'
+		);
+		$this->assertArrayHasKey(
+			5,
+			$GLOBALS['dailyos_test_filters']['dailyos_runtime_client_for_block'],
+			'default filter must register at priority 5 so per-render overrides at priority 10 (REST preview, test fixtures) continue to win'
+		);
+	}
+
+	/**
 	 * Malformed markers never match prior pairing.
 	 *
 	 * @dataProvider malformed_marker_provider

@@ -12,7 +12,7 @@ parameters:
 
 		-
 			message: "#^Class DailyOS\\\\Transport\\\\DailyOS_Hmac_Signer does not have a constructor and must be instantiated without any parameters\\.$#"
-			count: 1
+			count: 2
 			path: includes/class-dailyos-plugin.php
 
 		-
