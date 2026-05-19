@@ -138,6 +138,38 @@
   -webkit-app-region: no-drag;
 }
 
+/* Refresh button — mirrors src/components/ui/folio-refresh-button.tsx parity */
+.FolioBar_folioRefreshButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: 1px solid var(--color-rule-heavy);
+  border-radius: 4px;
+  padding: 2px 10px;
+  cursor: pointer;
+  transition: color 150ms, border-color 150ms, opacity 150ms;
+  -webkit-app-region: no-drag;
+}
+
+.FolioBar_folioRefreshButton:not(:disabled):hover {
+  color: var(--color-text-secondary);
+  border-color: var(--color-text-tertiary);
+}
+
+.FolioBar_folioRefreshButton:focus-visible {
+  outline: none;
+  border-color: var(--color-spice-turmeric);
+}
+
+.FolioBar_folioRefreshButton:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 /* ─────────────────────────────────────────────────────────────────────────
    CENTER SECTION — Date (absolutely positioned)
    ───────────────────────────────────────────────────────────────────────── */
