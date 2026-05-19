@@ -1,0 +1,33 @@
+<!-- wp:template-part {"slug":"header","tagName":"header"} /-->
+<!-- wp:group {"className":"dailyos-atmosphere","layout":{"type":"constrained"}} -->
+<div class="wp-block-group dailyos-atmosphere">
+	<!-- wp:heading {"level":1} --><h1>Accounts</h1><!-- /wp:heading -->
+	<!-- wp:query {"query":{"perPage":12,"postType":"dailyos_account","order":"asc","orderBy":"title"},"className":"dailyos-account-archive"} -->
+	<div class="wp-block-query dailyos-account-archive">
+		<!-- wp:post-template -->
+			<!-- wp:group {"className":"dailyos-account-card","layout":{"type":"flex","orientation":"vertical"}} -->
+			<div class="wp-block-group dailyos-account-card">
+				<!-- wp:dailyos/entity-chip /-->
+				<!-- wp:group {"className":"dailyos-account-card__meta","layout":{"type":"flex","flexWrap":"wrap"}} -->
+				<div class="wp-block-group dailyos-account-card__meta">
+					<!-- wp:dailyos/type-badge /-->
+					<!-- wp:dailyos/health-badge /-->
+					<!-- wp:dailyos/freshness-indicator /-->
+				</div>
+				<!-- /wp:group -->
+			</div>
+			<!-- /wp:group -->
+		<!-- /wp:post-template -->
+		<!-- wp:query-pagination -->
+			<!-- wp:query-pagination-previous /-->
+			<!-- wp:query-pagination-numbers /-->
+			<!-- wp:query-pagination-next /-->
+		<!-- /wp:query-pagination -->
+		<!-- wp:query-no-results -->
+			<!-- wp:paragraph --><p>No accounts yet.</p><!-- /wp:paragraph -->
+		<!-- /wp:query-no-results -->
+	</div>
+	<!-- /wp:query -->
+</div>
+<!-- /wp:group -->
+<!-- wp:template-part {"slug":"footer","tagName":"footer"} /-->
