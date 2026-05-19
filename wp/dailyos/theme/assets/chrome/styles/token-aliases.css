@@ -1,0 +1,124 @@
+/* =============================================================================
+   DailyOS chrome token aliases — Option C bridge layer
+   -----------------------------------------------------------------------------
+   Chrome CSS modules (FolioBar / FloatingNavIsland / AtmosphereLayer /
+   MagazinePageLayout / Pill) consume raw `--color-*`, `--folio-*`, `--space-*`
+   etc. design-token names. theme.json emits the same values as
+   `--wp--preset--*` and `--wp--custom--dailyos--tokens--*`. This file bridges
+   the two so the modules render correctly under WP cascade.
+
+   Cascade contract:
+     baseline-tokens.css (plugin, priority 9)
+        → design-tokens.css (raw values as fallback)
+        → token-aliases.css (THIS FILE — bridges raw → WP preset/custom)
+        → chrome modules
+   Aliases live in `:root` last-declaration-wins; enqueue order enforced via
+   `wp_enqueue_style` dependency graph in functions.php (AC #15).
+
+   Per L0 Packet W3 §5.1 + AC #2 + AC #3 + AC #30. Names extracted via
+   `grep -hoE 'var\(--[A-Za-z0-9_-]+(,[^)]+)?\)' <chrome modules>` and
+   classified as alias-required (cross-module) vs module-local (skipped here).
+   ============================================================================= */
+
+:root {
+	/* ─────────────────────────────────────────────────────────────────────
+	   COLOR TOKENS — bridge to --wp--preset--color--*
+	   ───────────────────────────────────────────────────────────────────── */
+
+	/* Paper neutrals */
+	--color-paper-cream: var(--wp--preset--color--paper-cream);
+	--color-paper-warm-white: var(--wp--preset--color--paper-warm-white);
+
+	/* Desk inks */
+	--color-desk-charcoal-4: var(--wp--preset--color--desk-charcoal-4);
+	--color-desk-charcoal-8: var(--wp--preset--color--desk-charcoal-8);
+	--color-desk-charcoal-25: var(--wp--preset--color--desk-charcoal-25);
+
+	/* Rule lines */
+	--color-rule-heavy: var(--wp--preset--color--rule-heavy);
+	--color-rule-light: var(--wp--preset--color--rule-light);
+
+	/* Text inks */
+	--color-text-primary: var(--wp--preset--color--text-primary);
+	--color-text-secondary: var(--wp--preset--color--text-secondary);
+	--color-text-tertiary: var(--wp--preset--color--text-tertiary);
+
+	/* Spice palette */
+	--color-spice-chili: var(--wp--preset--color--spice-chili);
+	--color-spice-saffron: var(--wp--preset--color--spice-saffron);
+	--color-spice-terracotta: var(--wp--preset--color--spice-terracotta);
+	--color-spice-terracotta-10: var(--wp--preset--color--spice-terracotta-10);
+	--color-spice-terracotta-15: var(--wp--preset--color--spice-terracotta-15);
+	--color-spice-turmeric: var(--wp--preset--color--spice-turmeric);
+	--color-spice-turmeric-10: var(--wp--preset--color--spice-turmeric-10);
+	--color-spice-turmeric-15: var(--wp--preset--color--spice-turmeric-15);
+
+	/* Garden palette */
+	--color-garden-eucalyptus: var(--wp--preset--color--garden-eucalyptus);
+	--color-garden-eucalyptus-10: var(--wp--preset--color--garden-eucalyptus-10);
+	--color-garden-larkspur: var(--wp--preset--color--garden-larkspur);
+	--color-garden-larkspur-10: var(--wp--preset--color--garden-larkspur-10);
+	--color-garden-larkspur-15: var(--wp--preset--color--garden-larkspur-15);
+	--color-garden-olive: var(--wp--preset--color--garden-olive);
+	--color-garden-olive-10: var(--wp--preset--color--garden-olive-10);
+	--color-garden-rosemary: var(--wp--preset--color--garden-rosemary);
+	--color-garden-sage: var(--wp--preset--color--garden-sage);
+	--color-garden-sage-15: var(--wp--preset--color--garden-sage-15);
+
+	/* AC #30 V1.3 special case: --color-alert-red maps to spice-chili
+	   (alert-red is NOT in design-tokens.css; chili is the semantic
+	   substitute. Canonical fallback `#dc2626` in module CSS is a
+	   non-load-bearing safety net for stock-theme contexts.) */
+	--color-alert-red: var(--wp--preset--color--spice-chili);
+
+	/* ─────────────────────────────────────────────────────────────────────
+	   SPACING — bridge to --wp--preset--spacing--*
+	   ───────────────────────────────────────────────────────────────────── */
+	--space-lg: var(--wp--preset--spacing--lg);
+
+	/* ─────────────────────────────────────────────────────────────────────
+	   CUSTOM DAILYOS TOKENS — bridge to --wp--custom--dailyos--tokens--*
+	   ───────────────────────────────────────────────────────────────────── */
+
+	/* Typography */
+	--font-sans: var(--wp--custom--dailyos--tokens--font-sans);
+	--font-mono: var(--wp--custom--dailyos--tokens--font-mono);
+
+	/* Folio bar geometry */
+	--folio-height: var(--wp--custom--dailyos--tokens--folio-height);
+	--folio-padding-top: var(--wp--custom--dailyos--tokens--folio-padding-top);
+	--folio-padding-right: var(--wp--custom--dailyos--tokens--folio-padding-right);
+	--folio-padding-bottom: var(--wp--custom--dailyos--tokens--folio-padding-bottom);
+	--folio-padding-left: var(--wp--custom--dailyos--tokens--folio-padding-left);
+
+	/* Floating nav island geometry */
+	--nav-island-right: var(--wp--custom--dailyos--tokens--nav-island-right);
+
+	/* Page layout geometry */
+	--page-margin-top: var(--wp--custom--dailyos--tokens--page-margin-top);
+	--page-max-width: var(--wp--custom--dailyos--tokens--page-max-width);
+	--page-padding-bottom: var(--wp--custom--dailyos--tokens--page-padding-bottom);
+	--page-padding-horizontal: var(--wp--custom--dailyos--tokens--page-padding-horizontal);
+
+	/* Editorial radii */
+	--radius-editorial-sm: var(--wp--custom--dailyos--tokens--radius-editorial-sm);
+	--radius-editorial-md: var(--wp--custom--dailyos--tokens--radius-editorial-md);
+	--radius-editorial-xl: var(--wp--custom--dailyos--tokens--radius-editorial-xl);
+
+	/* Editorial shadows */
+	--shadow-sm: var(--wp--custom--dailyos--tokens--shadow-sm);
+	--shadow-md: var(--wp--custom--dailyos--tokens--shadow-md);
+
+	/* Transitions */
+	--transition-normal: var(--wp--custom--dailyos--tokens--transition-normal);
+
+	/* Backdrop + frosted glass */
+	--backdrop-blur: var(--wp--custom--dailyos--tokens--backdrop-blur);
+	--frosted-glass-background: var(--wp--custom--dailyos--tokens--frosted-glass-background);
+	--frosted-glass-nav: var(--wp--custom--dailyos--tokens--frosted-glass-nav);
+
+	/* Z-index ladder */
+	--z-app-shell: var(--wp--custom--dailyos--tokens--z-app-shell);
+	--z-atmosphere: var(--wp--custom--dailyos--tokens--z-atmosphere);
+	--z-page-content: var(--wp--custom--dailyos--tokens--z-page-content);
+}
