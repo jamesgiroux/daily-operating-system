@@ -197,6 +197,7 @@ fn actor_kind_tag(actor: &Actor) -> &'static str {
         Actor::Admin => "admin",
         Actor::System => "system",
         Actor::SurfaceClient { .. } => "surface_client",
+        Actor::McpClient { .. } => "mcp_client",
     }
 }
 
@@ -323,8 +324,15 @@ impl AuditLogger {
             // Per AC line 293, `wp_user_id` is SurfaceClient-only: even if
             // the caller supplied one in `AuditFields` for a non-SurfaceClient
             // actor, we drop it so the schema cannot be misused as a generic
-            // user-id channel for non-paired actors.
-            Actor::Agent | Actor::User | Actor::Admin | Actor::System => (None, None, None),
+            // user-id channel for non-paired actors. McpClient also has no WP
+            // identity: its attribution is `client_id` + `conversation_handle`
+            // recorded via the MCP gateway's audit path, not the WP-paired
+            // user-id channel.
+            Actor::Agent
+            | Actor::User
+            | Actor::Admin
+            | Actor::System
+            | Actor::McpClient { .. } => (None, None, None),
         };
 
         self.write_record(

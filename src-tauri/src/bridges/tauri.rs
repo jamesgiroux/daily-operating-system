@@ -418,6 +418,7 @@ fn service_actor_label(actor: BridgeActor) -> &'static str {
         BridgeActor::Admin => "admin",
         BridgeActor::System => "system",
         BridgeActor::SurfaceClient => "surface_client",
+        BridgeActor::McpClient => "mcp_client",
     }
 }
 
@@ -635,6 +636,7 @@ mod tests {
             // TODO: W1-B+ wiring — SurfaceClient provenance fixture lands
             // with the SurfaceClientBridge plumbing.
             Actor::SurfaceClient { .. } => todo!("W1-B+ wiring for Actor::SurfaceClient"),
+            Actor::McpClient { .. } => todo!("McpClient invocation routing pending"),
         }
     }
 

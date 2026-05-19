@@ -41,6 +41,7 @@ pub enum BridgeActor {
     Admin,
     System,
     SurfaceClient,
+    McpClient,
 }
 
 impl BridgeActor {
@@ -53,6 +54,9 @@ impl BridgeActor {
             Self::SurfaceClient => {
                 panic!("BridgeActor::SurfaceClient requires request-scoped Actor::SurfaceClient")
             }
+            Self::McpClient => {
+                panic!("BridgeActor::McpClient requires request-scoped Actor::McpClient")
+            }
         }
     }
 
@@ -63,6 +67,7 @@ impl BridgeActor {
             Actor::Admin => Self::Admin,
             Actor::System => Self::System,
             Actor::SurfaceClient { .. } => Self::SurfaceClient,
+            Actor::McpClient { .. } => Self::McpClient,
         }
     }
 }
@@ -829,6 +834,7 @@ fn bridge_actor_label(actor: BridgeActor) -> &'static str {
         BridgeActor::Admin => "admin",
         BridgeActor::System => "system",
         BridgeActor::SurfaceClient => "surface_client",
+        BridgeActor::McpClient => "mcp_client",
     }
 }
 
@@ -940,6 +946,9 @@ fn provenance_actor_for_bridge(actor: BridgeActor) -> ProvenanceActor {
         },
         BridgeActor::SurfaceClient => ProvenanceActor::External {
             source: "surface_client".to_string(),
+        },
+        BridgeActor::McpClient => ProvenanceActor::External {
+            source: "mcp_client".to_string(),
         },
     }
 }

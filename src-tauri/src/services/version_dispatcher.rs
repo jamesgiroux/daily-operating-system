@@ -285,6 +285,7 @@ fn actor_kind_str(actor: &Actor) -> &'static str {
         Actor::Admin => "admin",
         Actor::System => "system",
         Actor::SurfaceClient { .. } => "surface_client",
+        Actor::McpClient { .. } => "mcp_client",
     }
 }
 
