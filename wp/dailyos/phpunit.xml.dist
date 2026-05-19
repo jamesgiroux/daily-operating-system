@@ -11,6 +11,10 @@
         <testsuite name="DailyOS">
             <directory>tests/</directory>
             <exclude>tests/bootstrap.php</exclude>
+            <!-- StarterKitIntegrationTest.php is a CLI helper script (not a PHPUnit
+                 class) that the W1 kit invokes from outside PHPUnit. failOnWarning
+                 + class-name mismatch surfaces this on every run. -->
+            <exclude>tests/blocks/StarterKitIntegrationTest.php</exclude>
         </testsuite>
     </testsuites>
 </phpunit>

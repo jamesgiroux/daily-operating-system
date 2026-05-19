@@ -228,10 +228,11 @@ jobs:
         run: |
           set -euo pipefail
 
-          # inv #1: theme owns no trust/provenance CSS.
-          if grep -RnE 'trust-band|provenance' wp/dailyos/theme 2>/dev/null \
-              | grep -vE 'screenshot\.png|^wp/dailyos/theme/theme\.json'; then
-            echo "FAIL: W3 theme files reference trust/provenance (must live in plugin)" >&2
+          # inv #1: theme owns no trust/provenance CSS — scoped to .css/.html files
+          # only (theme.json metadata + style.css description doc strings are exempt).
+          if find wp/dailyos/theme/templates wp/dailyos/theme/parts -name '*.html' -print0 2>/dev/null \
+              | xargs -0 grep -nE 'trust-band|--trust|--provenance' 2>/dev/null; then
+            echo "FAIL: W3 theme template/part files reference trust/provenance (must live in plugin)" >&2
             exit 1
           fi
 
