@@ -310,6 +310,13 @@ pub fn db_file_size_bytes() -> u64 {
 }
 
 /// Provenance source for persisted data with purge semantics.
+///
+/// This is the DB-level mirror used by `purge_source`. The authoritative,
+/// richer `DataSource` enum lives in `abilities-runtime` provenance and carries
+/// nested variants (e.g. `Glean { downstream }`, `WorkspaceFile { kind }`).
+/// The DB enum collapses those to flat category markers for the purge SQL
+/// `WHERE data_source = ?` paths. Reconciliation of the two enums is tracked
+/// as a maintenance follow-up.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DataSource {
@@ -319,6 +326,7 @@ pub enum DataSource {
     Gravatar,
     Google,
     Ai,
+    WorkspaceFile,
 }
 
 impl DataSource {
@@ -330,6 +338,7 @@ impl DataSource {
             DataSource::Gravatar => "gravatar",
             DataSource::Google => "google",
             DataSource::Ai => "ai",
+            DataSource::WorkspaceFile => "workspace_file",
         }
     }
 }

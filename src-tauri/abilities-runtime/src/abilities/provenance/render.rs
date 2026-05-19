@@ -2221,6 +2221,7 @@ fn canonical_data_source_class(data_source: &DataSource) -> String {
         DataSource::Ai => "ai".to_string(),
         DataSource::CoAttendance => "co_attendance".to_string(),
         DataSource::LocalEnrichment => "local_enrichment".to_string(),
+        DataSource::WorkspaceFile { .. } => "workspace_file".to_string(),
         DataSource::Other(_) => "extracted".to_string(),
         DataSource::LegacyUnattributed => "legacy_unattributed".to_string(),
     }
