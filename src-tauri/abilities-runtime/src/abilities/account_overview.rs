@@ -1013,6 +1013,9 @@ fn provenance_actor(actor: Actor) -> crate::abilities::provenance::Actor {
         Actor::SurfaceClient { instance, .. } => crate::abilities::provenance::Actor::External {
             source: format!("surface_client:{}", instance.as_str()),
         },
+        Actor::McpClient { client_id, .. } => crate::abilities::provenance::Actor::External {
+            source: format!("mcp_client:{}", client_id.as_str()),
+        },
     }
 }
 

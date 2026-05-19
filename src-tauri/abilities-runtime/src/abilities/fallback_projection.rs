@@ -949,6 +949,9 @@ fn render_actor(ctx: &FallbackProjectionContext) -> RenderActor {
         Actor::SurfaceClient { instance, .. } => {
             RenderActor::agent(format!("surface_client:{}", instance.as_str()))
         }
+        Actor::McpClient { client_id, .. } => {
+            RenderActor::agent(format!("mcp_client:{}", client_id.as_str()))
+        }
         Actor::Agent => RenderActor::agent("agent"),
         Actor::Admin => RenderActor::agent("admin"),
         Actor::System => RenderActor::agent("system"),

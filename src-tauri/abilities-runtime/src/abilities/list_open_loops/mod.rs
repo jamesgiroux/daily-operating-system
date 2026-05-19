@@ -318,6 +318,7 @@ fn render_actor_for_context(ctx: &AbilityContext<'_>) -> RenderActor {
             user_id: None,
         },
         Actor::SurfaceClient { .. } => todo!("W1-B+ wiring for Actor::SurfaceClient"),
+        Actor::McpClient { .. } => todo!("McpClient invocation routing pending"),
     }
 }
 
@@ -582,6 +583,7 @@ fn provenance_actor(actor: Actor) -> crate::abilities::provenance::Actor {
             component: "dailyos".to_string(),
         },
         Actor::SurfaceClient { .. } => todo!("W1-B+ wiring for Actor::SurfaceClient"),
+        Actor::McpClient { .. } => todo!("McpClient invocation routing pending"),
     }
 }
 

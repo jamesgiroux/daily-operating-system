@@ -913,6 +913,13 @@ enum ActorArg {
     /// at runtime; the macro records membership in `allowed_actors` here
     /// to drive the W1-B compile-error gate.
     SurfaceClient,
+    /// ADR-0102 §A–§B (2026-05-19 amendment): MCP-originated invocation.
+    /// Per the §B asymmetry, scope authorization for `McpClient` happens
+    /// at the gateway against a server-side per-client manifest, so the
+    /// `required_scopes` compile-error gate (which fires for SurfaceClient)
+    /// does NOT fire for McpClient — manifest-driven scope enforcement is
+    /// the rationale anchor.
+    McpClient,
 }
 
 impl ActorArg {
@@ -936,6 +943,9 @@ impl ActorArg {
             Self::SurfaceClient => {
                 quote! { crate::abilities::registry::ActorKind::SurfaceClient }
             }
+            Self::McpClient => {
+                quote! { crate::abilities::registry::ActorKind::McpClient }
+            }
         }
     }
 }
@@ -952,6 +962,7 @@ fn parse_actor_array(input: ParseStream<'_>) -> syn::Result<Vec<ActorArg>> {
             "Admin" => Ok(ActorArg::Admin),
             "System" => Ok(ActorArg::System),
             "SurfaceClient" => Ok(ActorArg::SurfaceClient),
+            "McpClient" => Ok(ActorArg::McpClient),
             other => Err(syn::Error::new(
                 ident.span(),
                 format!("unknown actor `{other}`"),

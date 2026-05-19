@@ -433,6 +433,7 @@ pub(crate) fn provenance_actor(actor: Actor) -> crate::abilities::provenance::Ac
         // stage-1a landing only ships the actor variant; no current invocation
         // path constructs Actor::SurfaceClient.
         Actor::SurfaceClient { .. } => todo!("W1-B+ wiring for Actor::SurfaceClient"),
+        Actor::McpClient { .. } => todo!("McpClient invocation routing pending"),
     }
 }
 
@@ -471,6 +472,7 @@ fn render_actor_for_context(ctx: &AbilityContext<'_>) -> RenderActor {
         // TODO: W1-B+ wiring — SurfaceClient render actor mapping (per ADR-0108
         // sensitivity rules) lands with the SurfaceClientBridge plumbing.
         Actor::SurfaceClient { .. } => todo!("W1-B+ wiring for Actor::SurfaceClient"),
+        Actor::McpClient { .. } => todo!("McpClient invocation routing pending"),
     }
 }
 
