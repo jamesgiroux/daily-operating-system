@@ -53,6 +53,7 @@
   --color-text-primary: var(--color-desk-charcoal); /* Primary text, headlines */
   --color-text-secondary: #5a6370; /* Body text, secondary content */
   --color-text-tertiary: #6b7280; /* Labels, hints, tertiary content (WCAG AA compliant) */
+  --color-text-quaternary: #8a93a0; /* Softest text — meta, freshness chips, peripheral labels */
 
   /* ─────────────────────────────────────────────────────────────────────────
      RULE COLORS — Dividers, Borders, Grid Lines
@@ -88,6 +89,7 @@
   --color-person:  var(--color-garden-larkspur);
   --color-action:  var(--color-spice-terracotta);
   --color-self:    var(--color-garden-eucalyptus);
+  --color-meeting: var(--color-garden-rosemary);
 
   /* Alpha variants for the named tokens — point to the same alpha values as
      the underlying paint tokens so tints stay in lockstep. */
@@ -172,6 +174,7 @@
   --color-garden-larkspur-14: rgba(143, 163, 196, 0.14);
   --color-garden-rosemary-12: rgba(74, 103, 65, 0.12);
   --color-garden-rosemary-14: rgba(74, 103, 65, 0.14);
+  --color-meeting-8: rgba(74, 103, 65, 0.08);
   --color-spice-turmeric-4: rgba(201, 162, 39, 0.04);
   --color-spice-turmeric-5: rgba(201, 162, 39, 0.05);
   --color-spice-turmeric-6: rgba(201, 162, 39, 0.06);

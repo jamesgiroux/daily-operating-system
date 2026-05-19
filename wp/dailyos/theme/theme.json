@@ -270,6 +270,16 @@
 					"color": "rgba(126, 170, 123, 0.08)"
 				},
 				{
+					"slug": "meeting",
+					"name": "Meeting",
+					"color": "#4a6741"
+				},
+				{
+					"slug": "meeting-8",
+					"name": "Meeting 8",
+					"color": "rgba(74, 103, 65, 0.08)"
+				},
+				{
 					"slug": "overlay-light",
 					"name": "Overlay Light",
 					"color": "rgba(0, 0, 0, 0.4)"
@@ -518,6 +528,11 @@
 					"slug": "text-primary",
 					"name": "Text Primary",
 					"color": "#1e2530"
+				},
+				{
+					"slug": "text-quaternary",
+					"name": "Text Quaternary",
+					"color": "#8a93a0"
 				},
 				{
 					"slug": "text-secondary",

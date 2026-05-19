@@ -326,7 +326,9 @@ final class DailyOS_AccountOverviewBlockTest extends TestCase {
 		);
 
 		$this->assertStringContainsString( 'data-ds-name="' . $expected_name . '"', $html );
-		$this->assertStringContainsString( $expected_text, $html );
+		// Decode HTML entities so the assertion matches user-visible text
+		// regardless of esc_html() apostrophe encoding (couldn't → couldn&#039;t).
+		$this->assertStringContainsString( $expected_text, html_entity_decode( $html, ENT_QUOTES | ENT_HTML5 ) );
 		$this->assertStringNotContainsString( 'raw runtime detail', $html );
 	}
 

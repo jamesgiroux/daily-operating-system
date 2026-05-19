@@ -33,9 +33,6 @@
 
 	/* ─────────────────────────────────────────────────────────────────────
 	   Semantic text
-	   --color-text-quaternary is referenced by Tauri React but not yet in
-	   theme.json — alias to text-tertiary so the shim never resolves to an
-	   undefined var (theme.json gap tracked separately).
 	   ───────────────────────────────────────────────────────────────────── */
 	--wp--preset--color--text-primary: #1e2530;
 	--wp--preset--color--text-secondary: #5a6370;
@@ -76,9 +73,6 @@
 	--wp--preset--color--project-8: rgba(107, 124, 82, 0.08);
 	--wp--preset--color--person: #8fa3c4;
 	--wp--preset--color--person-8: rgba(143, 163, 196, 0.08);
-	/* meeting entity color is not yet declared in design-tokens.css; aliased
-	   here to garden-rosemary so the shim resolves cleanly. Theme.json gap
-	   tracked as a follow-up for v1.4.3 W3 polish. */
 	--wp--preset--color--meeting: #4a6741;
 	--wp--preset--color--meeting-8: rgba(74, 103, 65, 0.08);
 
