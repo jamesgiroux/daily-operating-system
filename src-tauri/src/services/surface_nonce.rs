@@ -14,7 +14,7 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 use tokio::sync::Mutex;
 
-use abilities_runtime::abilities::registry::Actor;
+use abilities_runtime::abilities::{registry::Actor, FeedbackAction};
 
 use crate::audit_log::{emit_surface_audit, AuditError, AuditFields, AuditLogger};
 use crate::db::ActionDb;
@@ -443,29 +443,60 @@ impl PresenceNonceRandom for SystemPresenceNonceRandom {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PresenceNonceAction {
-    Correct,
-    Dismiss,
-    Corroborate,
-    Contradict,
+    ConfirmCurrent,
+    MarkOutdated,
+    MarkFalse,
+    WrongSubject,
+    WrongSource,
+    CannotVerify,
+    NeedsNuance,
+    SurfaceInappropriate,
+    NotRelevantHere,
 }
 
 impl PresenceNonceAction {
     fn as_str(self) -> &'static str {
         match self {
-            Self::Correct => "correct",
-            Self::Dismiss => "dismiss",
-            Self::Corroborate => "corroborate",
-            Self::Contradict => "contradict",
+            Self::ConfirmCurrent => "confirm_current",
+            Self::MarkOutdated => "mark_outdated",
+            Self::MarkFalse => "mark_false",
+            Self::WrongSubject => "wrong_subject",
+            Self::WrongSource => "wrong_source",
+            Self::CannotVerify => "cannot_verify",
+            Self::NeedsNuance => "needs_nuance",
+            Self::SurfaceInappropriate => "surface_inappropriate",
+            Self::NotRelevantHere => "not_relevant_here",
         }
     }
 
     fn parse(value: &str) -> Option<Self> {
         match value {
-            "correct" => Some(Self::Correct),
-            "dismiss" => Some(Self::Dismiss),
-            "corroborate" => Some(Self::Corroborate),
-            "contradict" => Some(Self::Contradict),
+            "confirm_current" => Some(Self::ConfirmCurrent),
+            "mark_outdated" => Some(Self::MarkOutdated),
+            "mark_false" => Some(Self::MarkFalse),
+            "wrong_subject" => Some(Self::WrongSubject),
+            "wrong_source" => Some(Self::WrongSource),
+            "cannot_verify" => Some(Self::CannotVerify),
+            "needs_nuance" => Some(Self::NeedsNuance),
+            "surface_inappropriate" => Some(Self::SurfaceInappropriate),
+            "not_relevant_here" => Some(Self::NotRelevantHere),
             _ => None,
+        }
+    }
+}
+
+impl From<PresenceNonceAction> for FeedbackAction {
+    fn from(action: PresenceNonceAction) -> Self {
+        match action {
+            PresenceNonceAction::ConfirmCurrent => Self::ConfirmCurrent,
+            PresenceNonceAction::MarkOutdated => Self::MarkOutdated,
+            PresenceNonceAction::MarkFalse => Self::MarkFalse,
+            PresenceNonceAction::WrongSubject => Self::WrongSubject,
+            PresenceNonceAction::WrongSource => Self::WrongSource,
+            PresenceNonceAction::CannotVerify => Self::CannotVerify,
+            PresenceNonceAction::NeedsNuance => Self::NeedsNuance,
+            PresenceNonceAction::SurfaceInappropriate => Self::SurfaceInappropriate,
+            PresenceNonceAction::NotRelevantHere => Self::NotRelevantHere,
         }
     }
 }
@@ -1619,13 +1650,78 @@ mod tests {
         }
     }
 
+    #[test]
+    fn surface_nonce_action_round_trips_as_str_parse() {
+        let cases = [
+            (
+                PresenceNonceAction::ConfirmCurrent,
+                "confirm_current",
+                FeedbackAction::ConfirmCurrent,
+            ),
+            (
+                PresenceNonceAction::MarkOutdated,
+                "mark_outdated",
+                FeedbackAction::MarkOutdated,
+            ),
+            (
+                PresenceNonceAction::MarkFalse,
+                "mark_false",
+                FeedbackAction::MarkFalse,
+            ),
+            (
+                PresenceNonceAction::WrongSubject,
+                "wrong_subject",
+                FeedbackAction::WrongSubject,
+            ),
+            (
+                PresenceNonceAction::WrongSource,
+                "wrong_source",
+                FeedbackAction::WrongSource,
+            ),
+            (
+                PresenceNonceAction::CannotVerify,
+                "cannot_verify",
+                FeedbackAction::CannotVerify,
+            ),
+            (
+                PresenceNonceAction::NeedsNuance,
+                "needs_nuance",
+                FeedbackAction::NeedsNuance,
+            ),
+            (
+                PresenceNonceAction::SurfaceInappropriate,
+                "surface_inappropriate",
+                FeedbackAction::SurfaceInappropriate,
+            ),
+            (
+                PresenceNonceAction::NotRelevantHere,
+                "not_relevant_here",
+                FeedbackAction::NotRelevantHere,
+            ),
+        ];
+
+        for (action, expected, feedback_action) in cases {
+            assert_eq!(action.as_str(), expected);
+            assert_eq!(PresenceNonceAction::parse(expected), Some(action));
+            assert_eq!(FeedbackAction::from(action), feedback_action);
+            assert_eq!(FeedbackAction::from(action).as_str(), expected);
+        }
+    }
+
+    #[test]
+    fn surface_nonce_action_parse_rejects_unknown() {
+        for value in ["", "unknown", "correct", "dismiss", "confirm-current"] {
+            assert_eq!(PresenceNonceAction::parse(value), None);
+        }
+    }
+
     fn issue_payload() -> Value {
         json!({
             "session_id": "session-1",
             "wp_user_id": 42,
             "claim_id": "claim-1",
             "field_path": "claims[0].summary",
-            "action": "correct",
+            "action": "confirm_current",
             "claim_version": 7,
             "composition_id": "composition-1",
             "composition_version": 17,
@@ -1640,7 +1736,7 @@ mod tests {
             "wp_user_id": 42,
             "claim_id": "claim-1",
             "field_path": "claims[0].summary",
-            "action": "correct",
+            "action": "confirm_current",
             "claim_version": 7,
             "composition_id": "composition-1",
             "composition_version": 17,
@@ -1687,7 +1783,7 @@ mod tests {
                 wp_user_id: 1,
                 claim_id: "claim".into(),
                 field_path: "field".into(),
-                action: PresenceNonceAction::Correct,
+                action: PresenceNonceAction::ConfirmCurrent,
                 claim_version: 1,
                 composition_id: "composition".into(),
                 composition_version: 1,
@@ -1805,7 +1901,7 @@ mod tests {
 
         let token = issue_token(&service, &ctx, &db, &session, "request-wrong-action");
         let mut payload = verify_payload(&token);
-        payload["action"] = json!("dismiss");
+        payload["action"] = json!("mark_false");
         assert_verify_rejects(
             &service,
             &ctx,
@@ -1931,7 +2027,7 @@ mod tests {
         let session = session("session-1", 42);
         let token = issue_token(&service, &ctx, &db, &session, "request-audit");
         let mut payload = verify_payload(&token);
-        payload["action"] = json!("dismiss");
+        payload["action"] = json!("mark_false");
 
         let error = assert_verify_rejects(
             &service,
