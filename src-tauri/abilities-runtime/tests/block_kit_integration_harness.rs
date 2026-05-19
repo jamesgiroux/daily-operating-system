@@ -476,6 +476,12 @@ fn escape_pointer_segment(segment: &str) -> String {
 
 #[path = "fixtures/account_overview_integration_fixture.rs"]
 mod account_overview_integration_fixture;
+#[path = "fixtures/pill_integration_fixture.rs"]
+mod pill_integration_fixture;
+#[path = "fixtures/status_dot_integration_fixture.rs"]
+mod status_dot_integration_fixture;
+#[path = "fixtures/provenance_tag_integration_fixture.rs"]
+mod provenance_tag_integration_fixture;
 #[path = "fixtures/avatar_integration_fixture.rs"]
 mod avatar_integration_fixture;
 #[path = "fixtures/freshness_indicator_integration_fixture.rs"]
@@ -498,6 +504,9 @@ fn expected_block_fixtures_cover_requested_ci_block() {
     }
     let known = [
         account_overview_integration_fixture::account_overview_fixture(),
+        pill_integration_fixture::pill_fixture(),
+        status_dot_integration_fixture::status_dot_fixture(),
+        provenance_tag_integration_fixture::provenance_tag_fixture(),
         health_badge_integration_fixture::health_badge_fixture(),
         avatar_integration_fixture::avatar_fixture(),
         freshness_indicator_integration_fixture::freshness_indicator_fixture(),

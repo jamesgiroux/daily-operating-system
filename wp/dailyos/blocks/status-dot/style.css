@@ -1,0 +1,55 @@
+/* StatusDot (translated from src/components/shared/StatusDot.module.css). */
+
+.dailyos-status-dot {
+	display: inline-block;
+	border-radius: 50%;
+	background: var(--dailyos-status-dot-color);
+	flex-shrink: 0;
+	vertical-align: middle;
+}
+
+.dailyos-status-dot--size-sm {
+	width: 6px;
+	height: 6px;
+}
+
+.dailyos-status-dot--size-md {
+	width: 8px;
+	height: 8px;
+}
+
+.dailyos-status-dot--connected {
+	--dailyos-status-dot-color: var(--wp--preset--color--garden-sage);
+}
+
+.dailyos-status-dot--disconnected {
+	--dailyos-status-dot-color: var(--wp--preset--color--spice-terracotta);
+}
+
+.dailyos-status-dot--loading {
+	--dailyos-status-dot-color: var(--wp--preset--color--spice-saffron);
+	animation: dailyos-status-dot-pulse 1.5s ease-in-out infinite;
+}
+
+.dailyos-status-dot--error {
+	--dailyos-status-dot-color: var(--wp--preset--color--spice-chili);
+}
+
+.dailyos-status-dot__label {
+	margin-inline-start: var(--wp--preset--spacing--sm);
+	color: var(--wp--preset--color--text-secondary);
+	font-family: var(--wp--custom--dailyos--tokens--font-sans);
+	font-size: 13px;
+	vertical-align: middle;
+}
+
+@keyframes dailyos-status-dot-pulse {
+	0%,
+	100% {
+		opacity: 1;
+	}
+
+	50% {
+		opacity: 0.4;
+	}
+}

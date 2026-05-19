@@ -1,0 +1,54 @@
+[
+	{
+		"source_token": "--color-desk-charcoal-4",
+		"target_token": "wp--preset--color--desk-charcoal-4"
+	},
+	{
+		"source_token": "--color-garden-larkspur",
+		"target_token": "wp--preset--color--garden-larkspur"
+	},
+	{
+		"source_token": "--color-garden-larkspur-15",
+		"target_token": "wp--preset--color--garden-larkspur-15"
+	},
+	{
+		"source_token": "--color-garden-rosemary",
+		"target_token": "wp--preset--color--garden-rosemary"
+	},
+	{
+		"source_token": "--color-garden-sage-15",
+		"target_token": "wp--preset--color--garden-sage-15"
+	},
+	{
+		"source_token": "--color-spice-chili",
+		"target_token": "wp--preset--color--spice-chili"
+	},
+	{
+		"source_token": "--color-spice-terracotta-15",
+		"target_token": "wp--preset--color--spice-terracotta-15"
+	},
+	{
+		"source_token": "--color-spice-turmeric",
+		"target_token": "wp--preset--color--spice-turmeric"
+	},
+	{
+		"source_token": "--color-spice-turmeric-15",
+		"target_token": "wp--preset--color--spice-turmeric-15"
+	},
+	{
+		"source_token": "--color-text-secondary",
+		"target_token": "wp--preset--color--text-secondary"
+	},
+	{
+		"source_token": "--color-text-tertiary",
+		"target_token": "wp--preset--color--text-tertiary"
+	},
+	{
+		"source_token": "--font-sans",
+		"target_token": "wp--custom--dailyos--tokens--font-sans"
+	},
+	{
+		"source_token": "--space-xs",
+		"target_token": "wp--preset--spacing--xs"
+	}
+]
