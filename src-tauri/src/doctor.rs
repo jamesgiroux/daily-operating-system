@@ -1,7 +1,9 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use chrono::{Duration, Utc};
 use rusqlite::params;
+use serde::Deserialize;
 
 use crate::db::{ActionDb, LocalKeychain};
 
@@ -33,16 +35,31 @@ where
         return None;
     }
 
-    let subcommand = args.get(2).map(String::as_str).unwrap_or("watermarks");
-    if subcommand != "watermarks" {
-        eprintln!("unknown doctor subcommand `{subcommand}`; expected `watermarks`");
-        return Some(2);
+    let subcommand = args.get(2).map(String::as_str).unwrap_or("all");
+    match subcommand {
+        "watermarks" => Some(run_watermarks_cli()),
+        "pairing" => Some(run_pairing_cli()),
+        "all" => {
+            let watermarks = run_watermarks_cli();
+            println!();
+            let pairing = run_pairing_cli();
+            // Combined exit code: max-of-any so callers see failure if anything failed.
+            Some(watermarks.max(pairing))
+        }
+        other => {
+            eprintln!(
+                "unknown doctor subcommand `{other}`; expected `watermarks`, `pairing`, or `all`"
+            );
+            Some(2)
+        }
     }
+}
 
+fn run_watermarks_cli() -> i32 {
     match run_watermark_doctor() {
         Ok(report) if report.is_clean() => {
             println!("dailyos doctor watermarks: ok");
-            Some(0)
+            0
         }
         Ok(report) => {
             println!("dailyos doctor watermarks: failed");
@@ -57,12 +74,33 @@ where
                 "compositions_missing_outbox={}",
                 report.compositions_missing_outbox
             );
-            Some(1)
+            1
         }
         Err(error) => {
             eprintln!("dailyos doctor watermarks failed to run: {error}");
-            Some(1)
+            1
         }
+    }
+}
+
+fn run_pairing_cli() -> i32 {
+    let report = inspect_pairing();
+    if report.is_clean() {
+        println!("dailyos doctor pairing: ok");
+        println!("runtime_endpoint={}", report.runtime_endpoint_summary());
+        println!("audit_log={}", report.audit_log_summary());
+        0
+    } else {
+        println!("dailyos doctor pairing: needs attention");
+        for issue in &report.issues {
+            println!("issue: {issue}");
+        }
+        println!("runtime_endpoint={}", report.runtime_endpoint_summary());
+        println!("audit_log={}", report.audit_log_summary());
+        for remediation in &report.remediations {
+            println!("remediation: {remediation}");
+        }
+        1
     }
 }
 
@@ -144,9 +182,168 @@ where
         .map_err(|error| error.to_string())
 }
 
+/// Sentinel file contract — kept in sync with `surface_runtime::runtime_sentinel_path`.
+/// Doctor mirrors the path computation rather than depending on the module to keep the
+/// doctor CLI usable when the surface_runtime isn't fully bootable (the user is running
+/// `dailyos doctor` precisely because the runtime can't pair).
+fn doctor_runtime_sentinel_path() -> Option<PathBuf> {
+    std::env::var_os("HOME").map(|home| {
+        let mut path = PathBuf::from(home);
+        path.push(".dailyos");
+        path.push("runtime-endpoint.json");
+        path
+    })
+}
+
+#[derive(Debug, Deserialize)]
+struct SentinelPayload {
+    #[serde(default)]
+    port: Option<u16>,
+    #[serde(default)]
+    runtime_version: Option<String>,
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct PairingDoctorReport {
+    pub sentinel_present: bool,
+    pub sentinel_path_known: bool,
+    pub sentinel_port: Option<u16>,
+    pub sentinel_runtime_version: Option<String>,
+    pub audit_log_writable: bool,
+    pub issues: Vec<String>,
+    pub remediations: Vec<String>,
+}
+
+impl PairingDoctorReport {
+    pub fn is_clean(&self) -> bool {
+        self.issues.is_empty()
+    }
+
+    pub fn runtime_endpoint_summary(&self) -> String {
+        match (self.sentinel_present, self.sentinel_port) {
+            (true, Some(port)) => format!(
+                "present (port={port}, runtime_version={})",
+                self.sentinel_runtime_version
+                    .as_deref()
+                    .unwrap_or("unknown")
+            ),
+            (true, None) => "present-but-unparseable".to_string(),
+            (false, _) => "absent".to_string(),
+        }
+    }
+
+    pub fn audit_log_summary(&self) -> &'static str {
+        if self.audit_log_writable {
+            "writable"
+        } else {
+            "not-writable"
+        }
+    }
+}
+
+/// Inspect pairing-adjacent state without leaking secrets. Reports:
+/// - Runtime sentinel file presence + parsed shape (port + runtime_version only)
+/// - Audit log writeability (basic IO sanity)
+///
+/// Notes on what's NOT here:
+/// - WP-side pairing marker lives in WordPress wp_options, which Tauri can't read directly.
+///   For end-to-end pairing diagnosis, this doctor is paired with the Studio-side runbook
+///   that walks the user through inspecting wp_options via WP-CLI or browser devtools.
+/// - HMAC session keys live in keychain. The doctor MUST NOT print them; it only reports
+///   "present" / "absent" if a keychain probe is added in a follow-up.
+pub fn inspect_pairing() -> PairingDoctorReport {
+    let mut report = PairingDoctorReport::default();
+
+    match doctor_runtime_sentinel_path() {
+        Some(path) => {
+            report.sentinel_path_known = true;
+            match std::fs::read_to_string(&path) {
+                Ok(contents) => {
+                    report.sentinel_present = true;
+                    match serde_json::from_str::<SentinelPayload>(&contents) {
+                        Ok(parsed) => {
+                            report.sentinel_port = parsed.port;
+                            report.sentinel_runtime_version = parsed.runtime_version;
+                            if parsed.port.is_none() {
+                                report.issues.push(
+                                    "sentinel file present but `port` field is missing or invalid"
+                                        .to_string(),
+                                );
+                                report.remediations.push(
+                                    "Restart the DailyOS app to rewrite the sentinel file."
+                                        .to_string(),
+                                );
+                            }
+                        }
+                        Err(_) => {
+                            report.issues.push(
+                                "sentinel file present but JSON parse failed".to_string(),
+                            );
+                            report.remediations.push(
+                                "Delete ~/.dailyos/runtime-endpoint.json and restart the DailyOS app.".to_string(),
+                            );
+                        }
+                    }
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    report.sentinel_present = false;
+                    report.issues.push(
+                        "sentinel file absent — DailyOS runtime is not running".to_string(),
+                    );
+                    report.remediations.push(
+                        "Launch the DailyOS app. The sentinel file is written on bind.".to_string(),
+                    );
+                }
+                Err(error) => {
+                    report.issues.push(format!("sentinel read error: {error}"));
+                    report.remediations.push(
+                        "Check ~/.dailyos/ permissions; parent dir must be 0700 owned by you."
+                            .to_string(),
+                    );
+                }
+            }
+        }
+        None => {
+            report.issues.push(
+                "HOME env var unset; cannot derive sentinel path".to_string(),
+            );
+            report.remediations.push(
+                "Set HOME or run dailyos doctor from a user shell.".to_string(),
+            );
+        }
+    }
+
+    // Audit log writeability: try to open ~/.dailyos/audit.log with append; the audit
+    // logger uses 0600 perms via O_APPEND. The doctor probe just opens for-append to confirm
+    // the runtime would be able to emit audit rows; it does NOT write a probe record.
+    if let Some(home) = std::env::var_os("HOME") {
+        let mut audit_path = PathBuf::from(home);
+        audit_path.push(".dailyos");
+        audit_path.push("audit.log");
+        report.audit_log_writable = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&audit_path)
+            .is_ok();
+        if !report.audit_log_writable {
+            report.issues.push(
+                "audit log file at ~/.dailyos/audit.log cannot be opened for append".to_string(),
+            );
+            report.remediations.push(
+                "Check ~/.dailyos/ permissions and disk space.".to_string(),
+            );
+        }
+    }
+
+    report
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    static HOME_ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn clean_empty_watermark_schema_passes() {
@@ -154,5 +351,105 @@ mod tests {
         let db = ActionDb::open_at_unencrypted(dir.path().join("doctor.sqlite")).expect("db");
         let report = inspect_watermarks(&db).expect("inspect");
         assert!(report.is_clean(), "unexpected report: {report:?}");
+    }
+
+    #[test]
+    fn pairing_doctor_reports_absent_sentinel_with_remediation() {
+        let _guard = HOME_ENV_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().expect("tempdir");
+        // Point HOME at a fresh empty dir; sentinel path resolves to <home>/.dailyos/runtime-endpoint.json
+        // which doesn't exist → "absent" branch.
+        let prior_home = std::env::var_os("HOME");
+        // SAFETY: protected by HOME_ENV_LOCK; restored at end of test.
+        unsafe {
+            std::env::set_var("HOME", dir.path());
+        }
+
+        let report = inspect_pairing();
+
+        // Restore HOME before assertions so a failing assert doesn't poison the global env.
+        unsafe {
+            match prior_home {
+                Some(value) => std::env::set_var("HOME", value),
+                None => std::env::remove_var("HOME"),
+            }
+        }
+
+        assert!(report.sentinel_path_known);
+        assert!(!report.sentinel_present);
+        assert!(!report.is_clean());
+        assert!(report.issues.iter().any(|i| i.contains("absent")));
+        assert!(report.remediations.iter().any(|r| r.contains("Launch")));
+        assert_eq!(report.runtime_endpoint_summary(), "absent");
+    }
+
+    #[test]
+    fn pairing_doctor_parses_valid_sentinel() {
+        let _guard = HOME_ENV_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().expect("tempdir");
+        let dailyos_dir = dir.path().join(".dailyos");
+        std::fs::create_dir_all(&dailyos_dir).expect("mkdir");
+        std::fs::write(
+            dailyos_dir.join("runtime-endpoint.json"),
+            r#"{"port":54321,"runtime_version":"1.4.3"}"#,
+        )
+        .expect("write sentinel");
+
+        let prior_home = std::env::var_os("HOME");
+        unsafe {
+            std::env::set_var("HOME", dir.path());
+        }
+
+        let report = inspect_pairing();
+
+        unsafe {
+            match prior_home {
+                Some(value) => std::env::set_var("HOME", value),
+                None => std::env::remove_var("HOME"),
+            }
+        }
+
+        assert!(report.sentinel_present);
+        assert_eq!(report.sentinel_port, Some(54321));
+        assert_eq!(report.sentinel_runtime_version.as_deref(), Some("1.4.3"));
+        // No issues from sentinel parsing; audit_log writeability may or may not pass
+        // depending on temp dir permissions but the sentinel parse path is what we're asserting.
+        assert!(
+            report
+                .issues
+                .iter()
+                .all(|i| !i.contains("sentinel")),
+            "unexpected sentinel issue: {:?}",
+            report.issues
+        );
+    }
+
+    #[test]
+    fn pairing_doctor_flags_unparseable_sentinel() {
+        let _guard = HOME_ENV_LOCK.lock().unwrap();
+        let dir = tempfile::tempdir().expect("tempdir");
+        let dailyos_dir = dir.path().join(".dailyos");
+        std::fs::create_dir_all(&dailyos_dir).expect("mkdir");
+        std::fs::write(dailyos_dir.join("runtime-endpoint.json"), "not json")
+            .expect("write sentinel");
+
+        let prior_home = std::env::var_os("HOME");
+        unsafe {
+            std::env::set_var("HOME", dir.path());
+        }
+
+        let report = inspect_pairing();
+
+        unsafe {
+            match prior_home {
+                Some(value) => std::env::set_var("HOME", value),
+                None => std::env::remove_var("HOME"),
+            }
+        }
+
+        assert!(report.sentinel_present);
+        assert!(report.sentinel_port.is_none());
+        assert!(report.issues.iter().any(|i| i.contains("JSON parse failed")));
+        assert!(report.remediations.iter().any(|r| r.contains("Delete")));
     }
 }
