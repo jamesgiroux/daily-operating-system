@@ -64,6 +64,14 @@ pub enum SignalType {
     IntelligenceRejected,
     MeetingFrequency,
     MeetingFrequencyDrop,
+    /// DOS-335 (v1.4.4 W1): meeting prep status transitioned from one
+    /// `PrepStatus` to another (e.g., Ready → Stale, Queued → Running,
+    /// PrepNeeded → UserSuppressed). Emitted from
+    /// `services::meeting_prep_status::write` after any successful
+    /// transition. Consumers (FolioBar readiness chrome, Meeting
+    /// Briefing block, Daily Briefing rollup) subscribe so they
+    /// re-render without poll-on-render drift.
+    MeetingPrepStatusChanged,
     NegativeSentiment,
     ObjectiveCompleted,
     ObjectiveCreated,
@@ -190,6 +198,7 @@ impl SignalType {
             "intelligence_rejected" => Self::IntelligenceRejected,
             "meeting_frequency" => Self::MeetingFrequency,
             "meeting_frequency_drop" => Self::MeetingFrequencyDrop,
+            "meeting_prep_status_changed" => Self::MeetingPrepStatusChanged,
             "negative_sentiment" => Self::NegativeSentiment,
             "objective_completed" => Self::ObjectiveCompleted,
             "objective_created" => Self::ObjectiveCreated,
@@ -307,6 +316,7 @@ impl SignalType {
             Self::IntelligenceRejected => "intelligence_rejected",
             Self::MeetingFrequency => "meeting_frequency",
             Self::MeetingFrequencyDrop => "meeting_frequency_drop",
+            Self::MeetingPrepStatusChanged => "meeting_prep_status_changed",
             Self::NegativeSentiment => "negative_sentiment",
             Self::ObjectiveCompleted => "objective_completed",
             Self::ObjectiveCreated => "objective_created",
@@ -438,6 +448,7 @@ pub fn known_signal_type_names() -> &'static [&'static str] {
         "intelligence_rejected",
         "meeting_frequency",
         "meeting_frequency_drop",
+        "meeting_prep_status_changed",
         "negative_sentiment",
         "objective_completed",
         "objective_created",
@@ -649,6 +660,7 @@ pub fn policy_for(signal: &SignalType) -> SignalPolicy {
         ReadModelMaterialized | PrepInvalidated | IntelligenceRefreshed | EnrichmentComplete => {
             read_model_materialized_policy()
         }
+        MeetingPrepStatusChanged => meeting_prep_status_changed_policy(),
         AccountCreated
         | AccountDomainsUpdated
         | AccountEventRecorded
@@ -833,6 +845,29 @@ fn read_model_materialized_policy() -> SignalPolicy {
         target_resolver: TargetResolver::ReadModel,
         retry_class: RetryClass::None,
         stale_marker: StaleMarkerBehavior::None,
+        await_timeout: None,
+        payload_privacy: PayloadPrivacy::NonPiiMetadata,
+        channel_eligibility: ChannelEligibility::AnyBus,
+    }
+}
+
+/// DOS-335 (v1.4.4 W1): MeetingPrepStatusChanged policy.
+///
+/// Async coalesced propagation keyed on the meeting (entity) so
+/// rapid transitions (Queued → Running → Ready) within the 500ms
+/// window collapse to a single downstream re-render. Local audit row
+/// is durable so reconnecting surfaces can detect a missed transition.
+fn meeting_prep_status_changed_policy() -> SignalPolicy {
+    SignalPolicy {
+        durability: DurabilityClass::CoalescedDurablePropagation,
+        role: SignalRole::Invalidation,
+        execution_mode: ExecutionModeBehavior::PersistInLive,
+        propagation: PropagationPolicy::PropagateAsync {
+            coalesce: Some(COALESCE_ENTITY_500MS),
+        },
+        target_resolver: TargetResolver::MeetingPrep,
+        retry_class: RetryClass::Invalidation,
+        stale_marker: StaleMarkerBehavior::MarkAffectedOutputsStale,
         await_timeout: None,
         payload_privacy: PayloadPrivacy::NonPiiMetadata,
         channel_eligibility: ChannelEligibility::AnyBus,

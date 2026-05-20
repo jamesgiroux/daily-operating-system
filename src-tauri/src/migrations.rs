@@ -927,6 +927,17 @@ const MIGRATIONS: &[Migration] = &[
         version: 240,
         sql: include_str!("migrations/240_claim_review_deferrals.sql"),
     },
+    // DOS-335 (v1.4.4 W1): indexed view + dismissals table for the
+    // meeting prep status read service. See
+    // `services/meeting_prep_status/` and L0 packet §5.5.
+    Migration::Sql {
+        version: 241,
+        sql: include_str!("migrations/241_meeting_prep_status_indexed_view.sql"),
+    },
+    Migration::Sql {
+        version: 242,
+        sql: include_str!("migrations/242_meeting_prep_status_dismissals.sql"),
+    },
 ];
 
 const V155_SHADOW_TRUST_VERSION: i64 = 1_401_003;
