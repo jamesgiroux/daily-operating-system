@@ -428,6 +428,116 @@ final class DailyOS_AccountOverviewBlockTest extends TestCase {
 	}
 
 	/**
+	 * Asserts the feedback affordance emits the substrate-authoritative
+	 * field_path from claim_refs, not the payload-inferred path.
+	 *
+	 * Regression coverage: when the runtime's claim projection
+	 * normalizes claim.field_path (see claim_field_path() in
+	 * abilities-runtime/src/abilities/account_overview.rs) to a value that
+	 * differs from the WP-side inference (`/text` for top-level, `/items/N/text`
+	 * for collections), the rendered feedback props MUST forward the
+	 * projection's value so IssueNonceRequest::parse does not reject with
+	 * reason: wrong_field / rejection_class: binding.
+	 */
+	public function test_feedback_props_use_claim_ref_field_path_over_inferred_payload_path(): void {
+		$client = $this->fake_runtime_client_with_response(
+			[
+				'projection' => [
+					'composition_id'      => 'dailyos/account-overview:account:acct-test-001',
+					'composition_version' => 9,
+					'blocks'              => [
+						[
+							'block_type' => 'account_overview',
+							'trust_band' => 'likely_current',
+							'payload'    => [
+								'title'    => 'Account overview',
+								'text'     => 'Substrate-authoritative summary.',
+								'claim_id' => 'claim-divergent-001',
+							],
+							'claim_refs' => [
+								[
+									'claim_id'      => 'claim-divergent-001',
+									'claim_version' => 4,
+									'field_path'    => '/answer',
+								],
+							],
+						],
+					],
+				],
+			]
+		);
+		$this->register_runtime_client_filter( $client );
+
+		$html = dailyos_account_overview_render(
+			[
+				'composition_id'      => 'dailyos/account-overview:account:acct-test-001',
+				'composition_version' => 9,
+			]
+		);
+
+		$this->assertStringContainsString( 'data-dailyos-feedback-affordance', $html );
+		$this->assertMatchesRegularExpression(
+			'/data-dailyos-feedback-props="([^"]+)"/',
+			$html,
+			'rendered HTML must carry the feedback mount with serialized props'
+		);
+
+		preg_match( '/data-dailyos-feedback-props="([^"]+)"/', $html, $matches );
+		$props = json_decode( html_entity_decode( $matches[1], ENT_QUOTES | ENT_HTML5 ), true );
+
+		$this->assertIsArray( $props );
+		$this->assertSame(
+			'/answer',
+			$props['fieldPath'] ?? null,
+			'feedback affordance MUST forward claim_ref.field_path (substrate truth), not the payload-shape inferred path (/text)'
+		);
+		$this->assertSame( 'claim-divergent-001', $props['claimId'] ?? null );
+		$this->assertSame( 4, $props['claimVersion'] ?? null );
+	}
+
+	/**
+	 * Asserts the inferred payload path is used as a fallback when no
+	 * claim_ref is present — only the substrate-truth supersedes inference,
+	 * never replaces fallback behavior.
+	 */
+	public function test_feedback_props_fall_back_to_inferred_payload_path_when_claim_ref_absent(): void {
+		$client = $this->fake_runtime_client_with_response(
+			[
+				'projection' => [
+					'composition_id'      => 'dailyos/account-overview:account:acct-test-001',
+					'composition_version' => 9,
+					'blocks'              => [
+						[
+							'block_type' => 'account_overview',
+							'trust_band' => 'likely_current',
+							'payload'    => [
+								'title'    => 'Account overview',
+								'text'     => 'Inferred path renders when no claim_ref attached.',
+								'claim_id' => 'claim-no-ref-001',
+							],
+							'claim_refs' => [],
+						],
+					],
+				],
+			]
+		);
+		$this->register_runtime_client_filter( $client );
+
+		$html = dailyos_account_overview_render(
+			[
+				'composition_id'      => 'dailyos/account-overview:account:acct-test-001',
+				'composition_version' => 9,
+			]
+		);
+
+		preg_match( '/data-dailyos-feedback-props="([^"]+)"/', $html, $matches );
+		$this->assertNotEmpty( $matches, 'feedback mount must still render when claim_ref is absent' );
+		$props = json_decode( html_entity_decode( $matches[1], ENT_QUOTES | ENT_HTML5 ), true );
+
+		$this->assertSame( '/text', $props['fieldPath'] ?? null );
+	}
+
+	/**
 	 * Asserts render PHP never calls the W4-D projector directly.
 	 */
 	public function test_render_php_never_calls_w4d_projector_directly(): void {

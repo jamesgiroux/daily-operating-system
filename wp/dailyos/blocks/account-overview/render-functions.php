@@ -367,11 +367,17 @@ if ( ! function_exists( 'dailyos_account_overview_render' ) ) {
 			// V4-W4 binding tuple: the runtime's IssueNonceRequest::parse
 			// requires field_path + claim_version + composition_id +
 			// composition_version on every nonce mint. claim_ref carries
-			// per-claim values; composition_* comes from render_context.
+			// substrate-authoritative values (the projection normalizes
+			// the claim's stored field_path via claim_field_path() in
+			// abilities-runtime); $row['field_path'] is inferred from
+			// payload shape and is a fallback when no claim_ref matches.
+			// Sending the inferred path when the projection normalized
+			// to a different one causes runtime to reject the nonce
+			// with reason: wrong_field.
 			$claim_version       = isset( $claim_ref['claim_version'] ) ? (int) $claim_ref['claim_version'] : 0;
-			$field_path          = isset( $row['field_path'] ) && is_string( $row['field_path'] )
-				? (string) $row['field_path']
-				: ( isset( $claim_ref['field_path'] ) && is_string( $claim_ref['field_path'] ) ? (string) $claim_ref['field_path'] : '' );
+			$field_path          = isset( $claim_ref['field_path'] ) && is_string( $claim_ref['field_path'] ) && '' !== $claim_ref['field_path']
+				? (string) $claim_ref['field_path']
+				: ( isset( $row['field_path'] ) && is_string( $row['field_path'] ) ? (string) $row['field_path'] : '' );
 			$composition_id      = isset( $render_context['composition_id'] ) && is_string( $render_context['composition_id'] )
 				? (string) $render_context['composition_id']
 				: '';
