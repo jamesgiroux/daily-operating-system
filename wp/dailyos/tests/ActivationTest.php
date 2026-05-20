@@ -210,6 +210,79 @@ final class DailyOS_ActivationTest extends TestCase {
 	}
 
 	/**
+	 * Plugin init registers the default dailyos_runtime_client_for_block filter so
+	 * the WP block-registration render path resolves to a real transport client
+	 * when paired. Without this registration every dailyos/* block renders
+	 * is-empty regardless of runtime state, masking transport failures and
+	 * pre-empting the typed runtime_unavailable_notice infrastructure.
+	 *
+	 * Asserts registration metadata (priority, callback identity, accepted_args)
+	 * rather than just slot presence — a future refactor that re-registers
+	 * under priority 5 with the wrong callback would still leave the live
+	 * render path broken; this guard catches that.
+	 */
+	public function test_plugin_init_registers_default_runtime_client_filter(): void {
+		$this->reset_plugin_init_state();
+
+		DailyOS_Plugin::instance()->init();
+
+		$this->assertNotEmpty(
+			$GLOBALS['dailyos_test_filters']['dailyos_runtime_client_for_block'] ?? [],
+			'init() must register the default dailyos_runtime_client_for_block filter so the live render path can reach the typed runtime_unavailable_notice when transport is unreachable'
+		);
+		$this->assertArrayHasKey(
+			5,
+			$GLOBALS['dailyos_test_filters']['dailyos_runtime_client_for_block'],
+			'default filter must register at priority 5 so per-render overrides at priority 10 (REST preview, test fixtures) continue to win'
+		);
+		[ $callback, $accepted_args ] = $GLOBALS['dailyos_test_filters']['dailyos_runtime_client_for_block'][5][0];
+		$this->assertIsArray( $callback, 'callback must be an instance-method tuple [ $plugin, method_name ]' );
+		$this->assertSame( DailyOS_Plugin::instance(), $callback[0], 'callback must dispatch to the plugin singleton' );
+		$this->assertSame( 'default_runtime_client_for_block', $callback[1], 'callback must point at default_runtime_client_for_block' );
+		$this->assertSame( 1, $accepted_args, 'callback must accept the existing filter value to preserve per-render overrides' );
+	}
+
+	/**
+	 * Default provider has three behavioral branches — a future refactor that
+	 * drops the override-preservation short-circuit would silently break the
+	 * REST preview + test seam. Pin each branch directly.
+	 */
+	public function test_default_runtime_client_for_block_returns_existing_when_already_a_client(): void {
+		$store        = new \DailyOS\Transport\DailyOS_Credential_Store();
+		$signer       = new \DailyOS\Transport\DailyOS_Hmac_Signer( $store );
+		$pre_existing = new \DailyOS\Transport\DailyOS_Runtime_Client( $store, $signer );
+
+		$result = DailyOS_Plugin::instance()->default_runtime_client_for_block( $pre_existing );
+
+		$this->assertSame( $pre_existing, $result, 'default provider must defer to a priority-10 override that already supplied a client (REST preview + test seam)' );
+	}
+
+	public function test_default_runtime_client_for_block_returns_existing_when_unpaired(): void {
+		// Test bootstrap leaves the credential store unpaired (no options seeded).
+		$result = DailyOS_Plugin::instance()->default_runtime_client_for_block( null );
+
+		$this->assertNull( $result, 'unpaired state must surface as null so the renderer falls through to its is-empty path; runtime-unavailable diagnostics fire post-pair when transport itself fails' );
+	}
+
+	/**
+	 * End-to-end linkage: after init() runs, apply_filters from a block render
+	 * resolves through the default provider. Regression guard for the bug
+	 * shape where registration without resolution would not surface in unit
+	 * tests that exercise either init() or render in isolation.
+	 */
+	public function test_init_to_render_filter_resolution_invokes_default_provider(): void {
+		$this->reset_plugin_init_state();
+		DailyOS_Plugin::instance()->init();
+
+		// With no per-render override stacked on top, the priority-5 default
+		// provider is the only callback in the chain. Unpaired state returns
+		// null (same shape the renderer's no-client branch handles).
+		$result = apply_filters( 'dailyos_runtime_client_for_block', null );
+
+		$this->assertNull( $result, 'init() → apply_filters must reach the default provider; an unpaired store returns null, which the renderer routes to is-empty (separate from the runtime-unavailable case)' );
+	}
+
+	/**
 	 * Malformed markers never match prior pairing.
 	 *
 	 * @dataProvider malformed_marker_provider
