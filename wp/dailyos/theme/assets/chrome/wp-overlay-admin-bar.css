@@ -1,0 +1,25 @@
+/* =============================================================================
+   WP-only chrome overlay: admin-bar offset for FolioBar
+   -----------------------------------------------------------------------------
+   `#wpadminbar` has z-index: 99999 in WordPress core. The canonical FolioBar
+   sits at --z-app-shell (100), which is correct for the Tauri app context
+   but loses the stacking fight under WP when an admin is logged in.
+
+   Per L0 packet §10 "WP-only deviation" escape hatch (Pill chrome lane
+   invariant — non-canonical overrides go in wp-overlay-*.css with documented
+   purpose). This file is INTENTIONALLY not synced from canonical.
+
+   Solution: drop the FolioBar BELOW the WP admin bar instead of fighting it
+   on z-index. Matches WP convention (most themes push their fixed headers
+   down by `top: 32px` for the admin bar at desktop, `top: 46px` mobile).
+   ============================================================================= */
+
+body.admin-bar .FolioBar_folio {
+	top: 32px;
+}
+
+@media screen and (max-width: 782px) {
+	body.admin-bar .FolioBar_folio {
+		top: 46px;
+	}
+}

@@ -1,0 +1,59 @@
+.GlanceCell_cell {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 128px;
+  gap: var(--space-xs);
+}
+
+.GlanceCell_label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.GlanceCell_valueRow {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: var(--space-sm);
+}
+
+.GlanceCell_dot {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--color-text-tertiary);
+}
+
+.GlanceCell_healthy {
+  background: var(--color-garden-sage);
+}
+
+.GlanceCell_warn {
+  background: var(--color-spice-terracotta);
+}
+
+.GlanceCell_error {
+  background: var(--color-spice-chili);
+}
+
+.GlanceCell_neutral {
+  background: var(--color-text-tertiary);
+}
+
+.GlanceCell_value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: 0;
+  color: var(--color-text-primary);
+}

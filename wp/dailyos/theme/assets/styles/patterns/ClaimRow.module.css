@@ -1,0 +1,208 @@
+.ClaimRow_row {
+  border-bottom: 1px solid var(--color-rule-light);
+  color: var(--color-text-primary);
+}
+
+.ClaimRow_row[data-state="flagged"] {
+  border-left: 3px solid var(--color-trust-needs-verification);
+  padding-left: var(--space-md);
+}
+
+.ClaimRow_row[data-state="dismissed"] {
+  opacity: 0.45;
+}
+
+.ClaimRow_shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-md) 0;
+}
+
+.ClaimRow_row[data-density="compact"] .ClaimRow_shell {
+  padding: var(--space-sm) 0;
+}
+
+.ClaimRow_row[data-density="rich"] .ClaimRow_shell {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: flex-start;
+  padding: var(--space-lg) 0;
+}
+
+.ClaimRow_body {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.ClaimRow_claimLine {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: var(--space-xs);
+}
+
+.ClaimRow_row[data-density="rich"] .ClaimRow_claimLine {
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.ClaimRow_subject {
+  flex-shrink: 0;
+  max-width: 180px;
+}
+
+.ClaimRow_field {
+  flex-shrink: 0;
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.ClaimRow_dash {
+  flex-shrink: 0;
+  color: var(--color-text-tertiary);
+}
+
+.ClaimRow_value {
+  min-width: 0;
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.ClaimRow_row[data-density="rich"] .ClaimRow_value {
+  flex-basis: 100%;
+  font-family: var(--font-serif);
+  font-size: 18px;
+  line-height: 1.35;
+}
+
+.ClaimRow_row[data-state="dismissed"] .ClaimRow_value {
+  text-decoration: line-through;
+}
+
+.ClaimRow_trust,
+.ClaimRow_richTrust {
+  min-width: 0;
+}
+
+.ClaimRow_stateBanner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  padding-top: var(--space-md);
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.ClaimRow_correctionPair {
+  display: inline-flex;
+  min-width: 0;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.ClaimRow_previousValue {
+  color: var(--color-text-tertiary);
+  text-decoration: line-through;
+}
+
+.ClaimRow_correctedValue {
+  color: var(--color-text-primary);
+}
+
+.ClaimRow_correctionMeta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.3;
+}
+
+.ClaimRow_dismissedFlag {
+  opacity: 1;
+}
+
+.ClaimRow_actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+}
+
+.ClaimRow_expandButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial-sm);
+  background: var(--color-paper-warm-white);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition:
+    border-color var(--transition-normal),
+    color var(--transition-normal),
+    background var(--transition-normal);
+}
+
+.ClaimRow_expandButton:hover {
+  border-color: var(--color-rule-heavy);
+  color: var(--color-text-primary);
+}
+
+.ClaimRow_expandButton:focus-visible {
+  outline: 2px solid var(--color-trust-use-with-caution);
+  outline-offset: 2px;
+}
+
+.ClaimRow_chevron {
+  width: 14px;
+  height: 14px;
+  transition: transform var(--transition-normal);
+}
+
+.ClaimRow_expandButton[aria-expanded="true"] .ClaimRow_chevron {
+  transform: rotate(180deg);
+}
+
+.ClaimRow_expanded {
+  padding: 0 0 var(--space-md);
+}
+
+.ClaimRow_error {
+  color: var(--color-trust-needs-verification);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.ClaimRow_row[data-loading="true"] .ClaimRow_value {
+  color: var(--color-text-tertiary);
+}
+
+@media (max-width: 720px) {
+  .ClaimRow_shell,
+  .ClaimRow_row[data-density="rich"] .ClaimRow_shell {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .ClaimRow_trust {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+}

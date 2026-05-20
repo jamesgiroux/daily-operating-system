@@ -1,0 +1,129 @@
+/*
+ * EntityLinkPicker — Lane G
+ *
+ * "Which account is this about?" picker for the P9 ambiguous case where
+ * the link engine found multiple related entities but could not elect a
+ * primary (no attendee-domain or calendar-identity signal strong enough).
+ *
+ * Design tokens from design-tokens.css only — no new design system.
+ * Visual language: saffron accent (needs review), editorial typography.
+ */
+
+
+/* ═════════ CONTAINER ═════════ */
+
+.EntityLinkPicker_picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  padding: var(--space-md) var(--space-lg);
+  background: var(--color-spice-saffron-10);
+  border-left: 2px solid var(--color-spice-saffron);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+/* ═════════ HEADING ═════════ */
+
+.EntityLinkPicker_heading {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+/* ═════════ CHIP LIST ═════════ */
+
+.EntityLinkPicker_chipList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  align-items: center;
+}
+
+/* ═════════ ACCOUNT CHIP BUTTON ═════════ */
+
+.EntityLinkPicker_chipBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--color-spice-turmeric);
+  background: var(--color-spice-turmeric-8);
+  border: 1px solid transparent;
+  padding: 3px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  line-height: 1.3;
+  transition: border-color 0.1s, background 0.1s;
+}
+
+.EntityLinkPicker_chipBtn:not(:disabled):hover {
+  border-color: var(--color-spice-turmeric);
+  background: var(--color-spice-turmeric-12, var(--color-spice-turmeric-8));
+}
+
+.EntityLinkPicker_chipBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.EntityLinkPicker_chipIcon {
+  width: 11px;
+  height: 11px;
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+/* ═════════ "SET AS PRIMARY" LABEL (screen reader + hover reveal) ═════════ */
+
+.EntityLinkPicker_chipLabel {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  margin-left: 4px;
+  opacity: 0;
+  transition: opacity 0.1s;
+  white-space: nowrap;
+}
+
+.EntityLinkPicker_chipBtn:hover .EntityLinkPicker_chipLabel,
+.EntityLinkPicker_chipBtn:focus-visible .EntityLinkPicker_chipLabel {
+  opacity: 1;
+}
+
+/* ═════════ P5 TITLE-ONLY BANNER ═════════ */
+
+.EntityLinkPicker_titleOnlyBanner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+}
+
+.EntityLinkPicker_undoBtn {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: color 0.1s;
+}
+
+.EntityLinkPicker_undoBtn:hover {
+  color: var(--color-text-secondary);
+}

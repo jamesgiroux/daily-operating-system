@@ -1,0 +1,561 @@
+/**
+ * Health & Outlook chapter styles.
+ *
+ * Mirrors `.docs/mockups/account-health-outlook-globex.html` and
+ * `.docs/mockups/account-health-fine-globex.html`.
+ *
+ * Uses existing design tokens from design-tokens.css; no new tokens.
+ */
+
+/* ═════════ BLOCK HEADER ═════════
+   Editorial chapter header inside the content column: horizontal rule
+   + 28px serif h2 + right-aligned mono count chip. Visually distinct
+   from the MarginSection gutter label (small mono, tertiary) — the
+   gutter is the orientation marker, this is the chapter title. */
+.health_blockHeader {
+  padding-bottom: var(--space-lg, 24px);
+  margin-bottom: var(--space-lg, 24px);
+}
+.health_blockHeaderRule {
+  border: none;
+  border-top: 1px solid var(--color-rule-heavy);
+  margin: 0 0 var(--space-md, 16px);
+}
+.health_blockHeaderTitleRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-md, 16px);
+}
+.health_blockHeaderTitle {
+  font-family: var(--font-serif);
+  font-size: 28px;
+  font-weight: 400;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+.health_blockHeaderCount {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.health_blockHeaderCountTerracotta {
+  color: var(--color-spice-terracotta);
+}
+
+/* ═════════ DIVERGENCE SUB-BLOCK HEADER ═════════
+   Divergences is a sub-block *inside* the "Needs attention" chapter —
+   the gutter already carries the chapter name, so the sub-block uses the
+   mockup's compact saffron label + italic note treatment rather than a
+   second 28px serif title competing with the gutter. */
+.health_divergenceHeader {
+  padding-top: var(--space-2xl, 48px);
+  padding-bottom: var(--space-md, 16px);
+  margin-top: var(--space-2xl, 48px);
+  border-top: 1px solid var(--color-rule-heavy);
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-md, 16px);
+  flex-wrap: wrap;
+}
+.health_divergenceLabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-spice-saffron);
+  font-weight: 600;
+}
+.health_divergenceNote {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-style: italic;
+  line-height: 1.55;
+  color: var(--color-text-tertiary);
+}
+
+/* ═════════ TRIAGE CARD ═════════ */
+.health_triageCard {
+  display: grid;
+  grid-template-columns: 3px 1fr auto;
+  gap: var(--space-xl, 32px);
+  padding: var(--space-xl, 32px) 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  align-items: start;
+}
+.health_triageCard:last-child { border-bottom: none; }
+
+.health_triageSpine { width: 3px; align-self: stretch; border-radius: 2px; }
+.health_spineUrgent { background: var(--color-spice-terracotta); }
+.health_spineSoon { background: var(--color-spice-turmeric); }
+.health_spineGap { background: var(--color-garden-larkspur); }
+.health_spineDivergence { background: var(--color-spice-saffron); }
+.health_spineMeta { background: var(--color-text-tertiary); opacity: 0.5; }
+
+.health_triageBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md, 16px);
+  min-width: 0;
+}
+.health_triageKind {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.health_kindUrgent { color: var(--color-spice-terracotta); }
+.health_kindSoon { color: var(--color-spice-turmeric); }
+.health_kindGap { color: var(--color-garden-larkspur); }
+.health_kindDivergence { color: var(--color-spice-saffron); }
+.health_kindMeta { color: var(--color-text-tertiary); }
+
+.health_triageHeadline {
+  font-family: var(--font-serif);
+  font-size: 21px;
+  font-weight: 400;
+  line-height: 1.3;
+  color: var(--color-text-primary);
+}
+.health_triageEvidence {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--color-text-secondary);
+  max-width: 620px;
+}
+.health_triageEvidence strong { color: var(--color-text-primary); font-weight: 500; }
+
+.health_triageSources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  padding-top: var(--space-sm, 8px);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.04em;
+  align-items: center;
+}
+.health_sourceTagLocal {
+  background: var(--color-desk-charcoal-4);
+  color: var(--color-text-secondary);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.health_sourceTagGlean {
+  background: var(--color-spice-turmeric-12);
+  color: var(--color-spice-turmeric);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+/* Source-origin tag + label cluster — mockup renders the pill and the
+   dated label inline with a small gap. Uses a flow utility rather than
+   inline styles so TriageCard stays CSS-module-only. */
+.health_sourceTagCluster {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm, 8px);
+}
+
+/* Dated citation link rendered beside source tags (mockup convention). */
+.health_triageCitation {
+  color: var(--color-text-tertiary);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  background: none;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+  padding: 0;
+}
+.health_triageCitation:hover {
+  color: var(--color-spice-turmeric);
+  border-bottom-color: var(--color-spice-turmeric);
+}
+/* Plain (non-link) citation label — same typography, no dotted underline. */
+.health_triageCitationPlain {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+}
+
+/* Action column — primary + secondary pill buttons per mockup. */
+.health_triageActions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-sm, 8px);
+  min-width: 0;
+}
+.health_triageActionsRow {
+  display: flex;
+  gap: var(--space-sm, 8px);
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.health_triageBtn {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  background: none;
+  border: 1px solid var(--color-rule-heavy);
+  color: var(--color-text-secondary);
+  padding: 8px 14px;
+  border-radius: 100px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+/*  CSS de-conflict: scope the default hover to non-primary buttons so
+   it doesn't fight the primary hover rule below (previously the generic
+   `color: var(--color-text-primary)` override was winning for primary buttons
+   and painting the label black on hover). Specificity now matches; primary
+   hover stays cream-on-ink, secondary hover stays dark-on-cream. */
+.health_triageBtn:not(.health_triageBtnPrimary):hover {
+  border-color: var(--color-text-tertiary);
+  color: var(--color-text-primary);
+}
+.health_triageBtnPrimary {
+  background: var(--color-desk-charcoal);
+  color: var(--color-paper-cream);
+  border-color: var(--color-desk-charcoal);
+}
+.health_triageBtnPrimary:hover {
+  background: var(--color-desk-ink);
+  border-color: var(--color-desk-ink);
+  color: var(--color-paper-cream);
+}
+
+/* "Still accurate?" confirm-feedback link on triage / divergence
+   cards. Mono uppercase matches the mockup's per-card feedback row. */
+.health_triageConfirmLink {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+.health_triageConfirmLink:hover:not(:disabled) {
+  color: var(--color-text-secondary);
+}
+.health_triageConfirmLink:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+.health_triageConfirmed {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-health-good, var(--color-text-secondary));
+}
+
+/* Per-card IntelligenceCorrection slot — pinned under the action buttons. */
+.health_triageFeedback {
+  display: flex;
+  justify-content: flex-end;
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+/* Divergence sub-header now uses the shared .blockHeader / .blockHeaderRule /
+   .blockHeaderTitle / .blockHeaderCount (with .blockHeaderCountSaffron) +
+   .blockHeaderNote classes — design-system parity with "Needs attention".
+   The old .divergenceHeader / .divergenceLabel / .divergenceNote rules were
+   removed so the two sections can't drift apart. */
+
+/* ═════════ OUTLOOK CHAPTER ═════════
+   Chapter heading rendered by the shared ChapterHeading component (28px
+   serif h2 + rule) — the gutter label "Outlook" is small mono uppercase
+   via MarginSection. Together they read as title + orientation marker,
+   not two competing labels. */
+
+.health_outlookGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-2xl, 48px);
+  padding: var(--space-xl, 32px);
+  background: var(--color-paper-warm-white, #faf8f6);
+  border-radius: var(--radius-xl, 16px);
+  box-shadow: var(--shadow-md);
+  margin-top: var(--space-lg, 24px);
+}
+/* 2-col fallback while the Benchmark cohort is unwired. Swap out
+   the CSSProperties inline style previously doing this; CSS-module only. */
+.health_outlookGridTwoCol {
+  grid-template-columns: repeat(2, 1fr);
+}
+.health_outlookBlockLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-xs, 4px);
+}
+.health_outlookBlockValue {
+  font-family: var(--font-serif);
+  font-size: 32px;
+  font-weight: 400;
+  line-height: 1.1;
+  color: var(--color-text-primary);
+  margin-bottom: var(--space-sm, 8px);
+  letter-spacing: -0.015em;
+}
+.health_outlookValueLow { color: var(--color-spice-terracotta); }
+.health_outlookValueHigh { color: var(--color-garden-sage); }
+.health_outlookValueNeutral { color: var(--color-spice-saffron); }
+.health_outlookValuePrep { color: var(--color-spice-turmeric); }
+.health_outlookBlockDetail {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+}
+
+@media (max-width: 900px) {
+  .health_outlookGrid { grid-template-columns: 1fr; }
+}
+
+/* ═════════ SUPPORTING TENSION ═════════ */
+.health_supportingTension {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2xl, 48px);
+  padding-bottom: var(--space-2xl, 48px);
+  border-bottom: 1px solid var(--color-rule-light);
+  padding-top: var(--space-lg, 24px);
+}
+.health_tensionBlockLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-xs, 4px);
+}
+.health_tensionBlockValue {
+  font-family: var(--font-serif);
+  font-size: 36px;
+  font-weight: 400;
+  line-height: 1;
+  margin-bottom: var(--space-xs, 4px);
+}
+.health_tensionValueGreen { color: var(--color-garden-sage); }
+.health_tensionValueYellow { color: var(--color-spice-saffron); }
+.health_tensionValueRed { color: var(--color-spice-terracotta); }
+.health_tensionValueNeutral { color: var(--color-text-secondary); }
+.health_tensionBlockMeta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+}
+.health_tensionNote {
+  padding-top: var(--space-lg, 24px);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-style: italic;
+  line-height: 1.65;
+  color: var(--color-text-secondary);
+  max-width: 620px;
+}
+
+@media (max-width: 720px) {
+  .health_supportingTension { grid-template-columns: 1fr; }
+}
+
+/* ═════════ SUPPORTING: dimension bars ═════════ */
+.health_dimensions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-lg, 24px) var(--space-xl, 32px);
+  padding-top: var(--space-2xl, 48px);
+}
+.health_dim {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.health_dimName {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  display: flex;
+  justify-content: space-between;
+}
+.health_dimScore {
+  font-family: var(--font-mono);
+  color: var(--color-text-secondary);
+}
+.health_dimBar {
+  height: 4px;
+  background: var(--color-rule-light);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.health_dimFill {
+  height: 100%;
+  border-radius: 2px;
+  /* Data-driven width set by caller via the --dim-fill custom property
+     (e.g. `style={{ "--dim-fill": "72%" }}`). Default to 0 if unset. */
+  width: var(--dim-fill, 0);
+}
+.health_dimFillGreen { background: var(--color-garden-sage); }
+.health_dimFillYellow { background: var(--color-spice-turmeric); }
+.health_dimFillRed { background: var(--color-spice-terracotta); }
+.health_dimEvidence {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  line-height: 1.4;
+}
+
+@media (max-width: 900px) {
+  .health_dimensions { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 560px) {
+  .health_dimensions { grid-template-columns: 1fr; }
+}
+
+/* ═════════ META: About this intelligence ═════════ */
+.health_metaCard {
+  background: rgba(30, 37, 48, 0.04);
+  border-left: 2px solid var(--color-text-tertiary);
+  border-radius: 0 10px 10px 0;
+  padding: var(--space-lg, 24px) var(--space-xl, 32px);
+  margin-top: var(--space-md, 16px);
+}
+.health_metaCardLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-xs, 4px);
+}
+.health_metaCardText {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+  max-width: 680px;
+}
+.health_metaCardProse {
+  font-family: var(--font-serif);
+  font-size: 15px;
+  font-style: italic;
+  line-height: 1.65;
+  color: var(--color-text-secondary);
+  max-width: 680px;
+}
+.health_metaCardSubsection {
+  margin-top: var(--space-md, 16px);
+  padding-top: var(--space-md, 16px);
+  border-top: 1px solid var(--color-rule-light);
+}
+.health_metaCardSubLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-spice-turmeric);
+  margin-bottom: var(--space-xs, 4px);
+  font-weight: 600;
+}
+
+/* ═════════ ON-TRACK (fine state) ═════════ */
+.health_ontrackBody {
+  font-family: var(--font-serif);
+  font-size: 21px;
+  font-style: italic;
+  font-weight: 400;
+  line-height: 1.55;
+  color: var(--color-text-primary);
+  max-width: 720px;
+  margin-top: var(--space-lg, 24px);
+  margin-bottom: var(--space-3xl, 56px);
+}
+.health_peerStrip {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: var(--space-xl, 32px);
+  align-items: center;
+  padding: var(--space-xl, 32px) 0;
+  border-top: 1px solid var(--color-rule-light);
+  border-bottom: 1px solid var(--color-rule-light);
+  margin-top: var(--space-2xl, 48px);
+}
+.health_peerNumber {
+  font-family: var(--font-serif);
+  font-size: 72px;
+  font-weight: 400;
+  color: var(--color-garden-sage);
+  letter-spacing: -0.025em;
+  line-height: 1;
+}
+.health_peerLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-tertiary);
+  max-width: 160px;
+  line-height: 1.5;
+}
+.health_peerContext {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--color-text-secondary);
+  max-width: 560px;
+}
+.health_peerContext strong { color: var(--color-text-primary); font-weight: 500; }
+
+@media (max-width: 720px) {
+  .health_peerStrip { grid-template-columns: 1fr; text-align: left; }
+}
+
+/* ═════════ OUTLOOK PULL-QUOTE ═════════ */
+.health_outlookPullQuote {
+  margin: var(--space-xl, 32px) 0 var(--space-lg, 24px);
+  padding: var(--space-lg, 24px) var(--space-xl, 32px);
+  background: rgba(201, 162, 39, 0.08);
+  border-left: 3px solid var(--color-spice-turmeric);
+  border-radius: 0 10px 10px 0;
+  font-family: var(--font-serif);
+  font-size: 17px;
+  font-style: italic;
+  line-height: 1.65;
+  color: var(--color-text-primary);
+  max-width: 680px;
+}
+.health_outlookPullQuote strong { font-style: normal; font-weight: 500; }

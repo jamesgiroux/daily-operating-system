@@ -679,7 +679,12 @@
 				"rem",
 				"em",
 				"%"
-			]
+			],
+			"padding": true
+		},
+		"layout": {
+			"contentSize": "900px",
+			"wideSize": "1180px"
 		},
 		"custom": {
 			"dailyos": {
@@ -745,6 +750,14 @@
 		}
 	],
 	"styles": {
+		"spacing": {
+			"padding": {
+				"top": "var(--wp--custom--dailyos--tokens--page-margin-top)",
+				"right": "var(--wp--custom--dailyos--tokens--page-padding-horizontal)",
+				"bottom": "var(--wp--custom--dailyos--tokens--page-padding-bottom)",
+				"left": "var(--wp--custom--dailyos--tokens--page-padding-horizontal)"
+			}
+		},
 		"blocks": {}
 	}
 }

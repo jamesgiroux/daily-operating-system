@@ -151,6 +151,16 @@ function buildThemeJson({ palette, spacing, custom, blockOverrides = {} }) {
 			spacing: {
 				spacingSizes: spacing,
 				units: ['px', 'rem', 'em', '%'],
+				padding: true,
+			},
+			// Layout — contentSize / wideSize source the canonical page-width
+			// tokens so post-content groups (default `layout: constrained`)
+			// inherit the magazine page width, not stretch edge-to-edge.
+			// Values mirror `--page-content-width-standard` (900px) and
+			// `--page-max-width` (1180px).
+			layout: {
+				contentSize: '900px',
+				wideSize: '1180px',
 			},
 			custom: {
 				dailyos: {
@@ -167,6 +177,20 @@ function buildThemeJson({ palette, spacing, custom, blockOverrides = {} }) {
 			{ name: 'sidebar-account-summary', area: 'uncategorized', title: 'Sidebar — Account Summary' },
 		],
 		styles: {
+			// Global spacing.padding wires the WP top-level container to the
+			// canonical magazine page-padding tokens so content gets the
+			// editorial gutter rather than going edge-to-edge. References
+			// the WP-emitted `--wp--custom--dailyos--tokens--page-padding-*`
+			// custom properties (sourced from src/styles/design-tokens.css
+			// via the generator's `custom` map above).
+			spacing: {
+				padding: {
+					top: 'var(--wp--custom--dailyos--tokens--page-margin-top)',
+					right: 'var(--wp--custom--dailyos--tokens--page-padding-horizontal)',
+					bottom: 'var(--wp--custom--dailyos--tokens--page-padding-bottom)',
+					left: 'var(--wp--custom--dailyos--tokens--page-padding-horizontal)',
+				},
+			},
 			blocks: blockOverrides,
 		},
 	};

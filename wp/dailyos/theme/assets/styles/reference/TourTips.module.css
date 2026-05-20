@@ -1,0 +1,103 @@
+/* TourTips.module.css — Floating corner card for post-wizard tips  */
+
+.TourTips_card {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 320px;
+  background: var(--color-paper-warm-white);
+  border: 1px solid var(--color-rule-light);
+  border-radius: 8px;
+  padding: 20px;
+  z-index: var(--z-modal, 50);
+  box-shadow: var(--shadow-dropdown);
+}
+
+.TourTips_label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-tertiary);
+  margin-bottom: 8px;
+}
+
+.TourTips_title {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0 0 8px;
+}
+
+.TourTips_body {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+.TourTips_footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 16px;
+}
+
+.TourTips_dots {
+  display: flex;
+  gap: 6px;
+}
+
+.TourTips_dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-rule-light);
+  transition: background 0.15s ease;
+}
+
+.TourTips_dotActive {
+  background: var(--color-spice-turmeric);
+}
+
+.TourTips_actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.TourTips_navButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 8px;
+  color: var(--color-text-tertiary);
+  transition: color 0.15s ease;
+}
+
+.TourTips_navButton:hover {
+  color: var(--color-text-primary);
+}
+
+.TourTips_doneButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  background: var(--color-spice-turmeric);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 4px 12px;
+  transition: opacity 0.15s ease;
+}
+
+.TourTips_doneButton:hover {
+  opacity: 0.85;
+}

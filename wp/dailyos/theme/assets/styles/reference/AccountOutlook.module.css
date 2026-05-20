@@ -1,0 +1,251 @@
+/* =============================================================================
+   ACCOUNT OUTLOOK — Three-section editorial chapter (I650)
+   Section 1: Renewal · Section 2: Growth Opportunities · Section 3: Commercial Reality
+   Each section breathes with generous whitespace and distinct headings.
+   ============================================================================= */
+
+.AccountOutlook_section {
+  scroll-margin-top: 60px;
+}
+
+/* ── Shared: section rule + heading ── */
+
+.AccountOutlook_sectionRule {
+  width: 100%;
+  height: 1px;
+  background: var(--color-rule-light);
+  margin-bottom: var(--space-lg, 24px);
+}
+
+.AccountOutlook_sectionHeading {
+  font-family: var(--font-serif);
+  font-size: 22px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  color: var(--color-text-primary);
+  margin: 0 0 var(--space-lg, 24px);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SECTION 1 — Renewal
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.AccountOutlook_renewalSection {
+  margin-bottom: 56px;
+}
+
+.AccountOutlook_statement {
+  font-family: var(--font-serif);
+  font-size: 32px;
+  font-weight: 300;
+  line-height: 1.35;
+  letter-spacing: -0.02em;
+  max-width: 640px;
+  margin: 0 0 var(--space-md, 16px);
+}
+
+.AccountOutlook_confidenceHigh {
+  color: var(--color-garden-sage);
+}
+
+.AccountOutlook_confidenceModerate {
+  color: var(--color-spice-turmeric);
+}
+
+.AccountOutlook_confidenceLow {
+  color: var(--color-spice-terracotta);
+}
+
+/* Risk factors as flowing editorial prose */
+.AccountOutlook_renewalProse {
+  font-family: var(--font-serif);
+  font-size: 17px;
+  font-weight: 300;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  max-width: 600px;
+  margin: 0 0 var(--space-md, 16px);
+}
+
+.AccountOutlook_renewalStart {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  margin: var(--space-md, 16px) 0 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SECTION 2 — Growth Opportunities
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.AccountOutlook_growthSection {
+  margin-bottom: 56px;
+}
+
+.AccountOutlook_signalList {
+  display: flex;
+  flex-direction: column;
+}
+
+.AccountOutlook_signalItem {
+  display: flex;
+  gap: var(--space-md, 16px);
+  align-items: flex-start;
+  padding: 20px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.AccountOutlook_signalItem:last-child {
+  border-bottom: none;
+}
+
+.AccountOutlook_signalBody {
+  flex: 1;
+  min-width: 0;
+}
+
+.AccountOutlook_signalText {
+  font-family: var(--font-serif);
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.AccountOutlook_signalMeta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.04em;
+  margin-top: 8px;
+  display: flex;
+  gap: var(--space-md, 16px);
+  align-items: center;
+}
+
+.AccountOutlook_arrImpact {
+  font-weight: 600;
+  color: var(--color-spice-turmeric);
+}
+
+/* Stage badges */
+.AccountOutlook_badge {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 8px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.AccountOutlook_badgeSage {
+  background: var(--color-garden-sage-12, rgba(126, 170, 123, 0.12));
+  color: var(--color-garden-sage);
+}
+
+.AccountOutlook_badgeTurmeric {
+  background: var(--color-spice-turmeric-12, rgba(201, 162, 39, 0.12));
+  color: var(--color-spice-turmeric);
+}
+
+.AccountOutlook_badgeTerracotta {
+  background: var(--color-spice-terracotta-12, rgba(196, 101, 74, 0.12));
+  color: var(--color-spice-terracotta);
+}
+
+.AccountOutlook_badgeNeutral {
+  background: var(--color-desk-charcoal-4);
+  color: var(--color-text-tertiary);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SECTION 3 — Commercial Reality
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.AccountOutlook_commercialSection {
+  margin-bottom: 0;
+}
+
+.AccountOutlook_contractGrid {
+  display: flex;
+  align-items: baseline;
+  gap: 0;
+}
+
+.AccountOutlook_contractCell {
+  padding: 0 24px;
+  border-right: 1px solid var(--color-rule-light);
+}
+
+.AccountOutlook_contractCell:first-child {
+  padding-left: 0;
+}
+
+.AccountOutlook_contractCell:last-child {
+  border-right: none;
+}
+
+.AccountOutlook_contractLabel {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  margin-bottom: 4px;
+}
+
+.AccountOutlook_contractValue {
+  font-family: var(--font-serif);
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--color-text-primary);
+}
+
+.AccountOutlook_contractValueHighlight {
+  font-family: var(--font-serif);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-spice-turmeric);
+}
+
+/* ── Hover-reveal item actions  ── */
+
+.AccountOutlook_itemActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  margin-left: 6px;
+}
+
+.AccountOutlook_renewalProse:hover .AccountOutlook_itemActions,
+.AccountOutlook_signalItem:hover .AccountOutlook_itemActions,
+.AccountOutlook_itemActions:focus-within {
+  opacity: 1;
+}
+
+.AccountOutlook_dismissButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+}
+
+.AccountOutlook_dismissButton:hover {
+  color: var(--color-spice-terracotta);
+}

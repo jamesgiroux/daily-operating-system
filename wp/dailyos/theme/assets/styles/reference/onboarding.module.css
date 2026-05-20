@@ -1,0 +1,1598 @@
+/* =============================================================================
+   ONBOARDING CSS MODULE — Shared styles for all onboarding chapters
+
+   Migrated from inline styles per I453 (Editorial Standards).
+   Uses design tokens exclusively — no hardcoded values.
+   ============================================================================= */
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   LAYOUT — Wrapper, containers, columns
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.onboarding_wrapper {
+  min-height: 100vh;
+  background: var(--color-paper-cream);
+  position: relative;
+}
+
+.onboarding_contentColumn {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding-top: 80px;
+  padding-bottom: 120px;
+  padding-left: var(--page-padding-horizontal);
+  padding-right: var(--page-padding-horizontal);
+  position: relative;
+  z-index: var(--z-page-content);
+}
+
+.onboarding_chapterContainer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xl);
+}
+
+.onboarding_chapterContainerLg {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xl);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TYPOGRAPHY — Headlines, labels, body text
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.onboarding_heroHeadline {
+  font-family: var(--font-serif);
+  font-size: 32px;
+  font-weight: 400;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.onboarding_serifTitle {
+  font-family: var(--font-serif);
+  font-size: 22px;
+  font-weight: 400;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.onboarding_dateHeadline {
+  font-family: var(--font-serif);
+  font-size: 24px;
+  font-weight: 400;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.onboarding_bodyText {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+.onboarding_bodyTextConstrained {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  margin: 0;
+  max-width: 480px;
+}
+
+.onboarding_tagline {
+  font-family: var(--font-serif);
+  font-size: 17px;
+  font-style: italic;
+  font-weight: 300;
+  line-height: 1.55;
+  color: var(--color-text-tertiary);
+  margin: 0;
+}
+
+.onboarding_sectionLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-xs);
+}
+
+.onboarding_sectionLabelLg {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  margin: 0 0 var(--space-sm) 0;
+}
+
+.onboarding_fieldLabel {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  display: block;
+  margin-bottom: 6px;
+}
+
+.onboarding_helperText {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  margin: var(--space-xs) 0 0;
+}
+
+.onboarding_hintText {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+.onboarding_accentText {
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.onboarding_tertiaryText {
+  color: var(--color-text-tertiary);
+}
+
+.onboarding_secondaryText {
+  color: var(--color-text-secondary);
+}
+
+.onboarding_primaryText {
+  color: var(--color-text-primary);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   SECTIONS — Rule-separated content blocks
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.onboarding_ruleSection {
+  border-top: 1px solid var(--color-rule-light);
+  padding-top: 20px;
+}
+
+.onboarding_ruleSectionAccent {
+  border-top: 2px solid var(--color-spice-turmeric);
+  padding-top: 20px;
+}
+
+.onboarding_ruleSectionBottom {
+  border-top: 1px solid var(--color-rule-light);
+  padding-top: var(--space-md);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   FLEX LAYOUTS — Common patterns
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.onboarding_flexCol {
+  display: flex;
+  flex-direction: column;
+}
+
+.onboarding_flexColSm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.onboarding_flexColMd {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.onboarding_flexColLg {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.onboarding_flexColXl {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.onboarding_flexColXxl {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xl);
+}
+
+.onboarding_flexRow {
+  display: flex;
+  align-items: center;
+}
+
+.onboarding_flexRowSm {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.onboarding_flexRowMd {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.onboarding_flexRowLg {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.onboarding_flexRowStart {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+}
+
+.onboarding_flexRowBaseline {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-md);
+}
+
+.onboarding_flexWrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+}
+
+.onboarding_flexCenter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.onboarding_flexBetween {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.onboarding_flexEnd {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.onboarding_flexCenterCol {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.onboarding_gap4 {
+  gap: var(--space-xs);
+}
+
+.onboarding_gap6 {
+  gap: 6px;
+}
+
+.onboarding_gap8 {
+  gap: var(--space-xs);
+}
+
+.onboarding_gap12 {
+  gap: var(--space-sm);
+}
+
+.onboarding_gap16 {
+  gap: var(--space-md);
+}
+
+.onboarding_gap20 {
+  gap: 20px;
+}
+
+.onboarding_gap24 {
+  gap: var(--space-xl);
+}
+
+.onboarding_gap32 {
+  gap: var(--space-2xl);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   MONO TEXT — Code blocks, timestamps, paths
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.onboarding_monoPath {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-spice-turmeric);
+}
+
+.onboarding_monoText {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--color-text-primary);
+}
+
+.onboarding_monoSmall {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.onboarding_monoSmallTertiary {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+.onboarding_monoTiny {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+.onboarding_monoTinyPath {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  opacity: 0.7;
+  color: var(--color-text-tertiary);
+}
+
+.onboarding_monoAccent {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-spice-turmeric);
+}
+
+.onboarding_codeBlock {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--color-paper-linen);
+  border-radius: var(--radius-editorial-sm);
+  padding: var(--space-xs) var(--space-sm);
+  margin-top: var(--space-xs);
+  color: var(--color-text-primary);
+  white-space: pre;
+}
+
+.onboarding_timestamp {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+  width: 56px;
+}
+
+.onboarding_timestampAccent {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-spice-turmeric);
+  flex-shrink: 0;
+  width: 56px;
+}
+
+.onboarding_monoTimestamp {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+}
+
+.onboarding_monoTimestampFaded {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  opacity: 0.7;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   CHIPS & TAGS
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.onboarding_chip {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  border: 1px solid var(--color-rule-heavy);
+  border-radius: var(--radius-editorial-sm);
+  padding: 2px var(--space-xs);
+  color: var(--color-text-secondary);
+}
+
+.onboarding_domainChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  border: 1px solid var(--color-rule-heavy);
+  border-radius: var(--radius-editorial-sm);
+  padding: var(--space-xs) 10px;
+  color: var(--color-text-primary);
+}
+
+.onboarding_accountChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--color-spice-turmeric);
+  border-radius: var(--radius-editorial-sm);
+  padding: var(--space-xs) 10px;
+  font-size: 13px;
+  color: var(--color-text-primary);
+}
+
+.onboarding_projectChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--color-garden-olive);
+  border-radius: var(--radius-editorial-sm);
+  padding: var(--space-xs) 10px;
+  font-size: 13px;
+  color: var(--color-text-primary);
+}
+
+.onboarding_suggestionChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  border: 1px solid var(--color-spice-turmeric);
+  border-radius: var(--radius-editorial-sm);
+  padding: var(--space-xs) 10px;
+  background: none;
+  cursor: pointer;
+  color: var(--color-text-primary);
+}
+
+.onboarding_linkedPersonChip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  border: 1px solid var(--color-rule-heavy);
+  border-radius: var(--radius-editorial-sm);
+  padding: 2px 10px;
+  font-size: 12px;
+  background: none;
+  cursor: pointer;
+}
+
+.onboarding_accountChipSimple {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--color-paper-linen);
+  border-radius: var(--radius-editorial-sm);
+  padding: var(--space-xs) var(--space-xs);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   BUTTONS — Ghost, skip, remove
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.onboarding_ghostButton {
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+.onboarding_skipButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.onboarding_textLink {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+  transition: color var(--transition-fast);
+}
+
+.onboarding_textLink:hover {
+  color: var(--color-text-primary);
+}
+
+.onboarding_removeButton {
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: var(--space-xs);
+  flex-shrink: 0;
+}
+
+.onboarding_chipRemoveButton {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-tertiary);
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   FORM INPUTS
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.onboarding_editorialInput {
+  background: var(--color-paper-warm-white);
+  border: 1px solid var(--color-desk-charcoal);
+  border-radius: var(--radius-editorial-sm);
+}
+
+.onboarding_editorialTextarea {
+  width: 100%;
+  min-height: 80px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  background: var(--color-paper-warm-white);
+  border: 1px solid var(--color-desk-charcoal);
+  border-radius: var(--radius-editorial-sm);
+  padding: var(--space-xs) var(--space-sm);
+  color: var(--color-text-primary);
+  resize: vertical;
+  outline: none;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   STATUS INDICATORS
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.onboarding_statusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-garden-sage);
+  flex-shrink: 0;
+}
+
+.onboarding_bulletDot {
+  margin-top: 6px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-text-primary);
+  flex-shrink: 0;
+}
+
+.onboarding_bulletDotAccent {
+  margin-top: 6px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-spice-turmeric);
+  flex-shrink: 0;
+}
+
+.onboarding_bulletDotDanger {
+  margin-top: 6px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-spice-terracotta);
+  flex-shrink: 0;
+}
+
+.onboarding_bulletDotMuted {
+  margin-top: 6px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+.onboarding_pendingDot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid var(--color-rule-heavy);
+  flex-shrink: 0;
+}
+
+.onboarding_overdueBadge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--color-spice-terracotta);
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   CONNECTED STATUS
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.onboarding_connectedLabel {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.onboarding_connectedEmail {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  margin: 2px 0 0;
+}
+
+.onboarding_privacyNote {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TIMELINE
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.onboarding_timelineEntry {
+  font-size: 14px;
+  color: var(--color-text-secondary);
+}
+
+.onboarding_timelineHighlight {
+  font-size: 14px;
+  color: var(--color-text-primary);
+  font-weight: 500;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   BRAND MARK
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.onboarding_brandMark {
+  color: var(--color-spice-turmeric);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TOUR HIGHLIGHT
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.onboarding_tourHighlight {
+  position: relative;
+  padding-left: var(--space-md);
+  transition: all 0.3s ease;
+}
+
+.onboarding_tourHighlightActive {
+  border-left: 3px solid var(--color-spice-turmeric);
+  opacity: 1;
+}
+
+.onboarding_tourHighlightInactive {
+  border-left: 3px solid transparent;
+  opacity: 0.4;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   FOLDER TREE
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.onboarding_folderTreeRoot {
+  padding-top: 20px;
+}
+
+.onboarding_folderTreeInner {
+  border-top: 1px solid var(--color-rule-light);
+  padding-top: var(--space-md);
+}
+
+.onboarding_folderTreeHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-md);
+}
+
+.onboarding_folderTreeList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding-left: var(--space-xl);
+}
+
+.onboarding_folderEntry {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+}
+
+.onboarding_folderIcon {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.onboarding_folderAnnotation {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  margin: 2px 0 0;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ENTITY MODE — Role preset cards
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.onboarding_presetGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-sm);
+}
+
+.onboarding_presetCard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--space-md);
+  text-align: left;
+  background: none;
+  border: 1px solid var(--color-rule-light);
+  border-radius: 6px;
+  cursor: pointer;
+  opacity: 1;
+  transition: all var(--transition-fast);
+}
+
+.onboarding_presetCardSelected {
+  background: var(--color-paper-warm-white);
+  border: 2px solid var(--color-spice-turmeric);
+}
+
+.onboarding_presetCardDisabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.onboarding_presetName {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.onboarding_presetDesc {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  line-height: 1.4;
+}
+
+.onboarding_loadingText {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  text-align: center;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   INTERNAL TEAM SETUP
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.onboarding_stepLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-tertiary);
+}
+
+.onboarding_domainButton {
+  border: 1px solid var(--color-rule-heavy);
+  border-radius: var(--radius-editorial-sm);
+  padding: 2px var(--space-xs);
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  background: none;
+  cursor: pointer;
+}
+
+.onboarding_searchResultButton {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-xs) var(--space-sm);
+  font-size: 14px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--color-rule-light);
+  cursor: pointer;
+  text-align: left;
+}
+
+.onboarding_searchResultsContainer {
+  max-height: 144px;
+  overflow-y: auto;
+}
+
+.onboarding_emptyTeamText {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+  margin: 0;
+}
+
+.onboarding_colleagueRow {
+  border-top: 1px solid var(--color-rule-light);
+  padding-top: var(--space-sm);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-xs);
+}
+
+.onboarding_summarySection {
+  border-top: 1px solid var(--color-rule-light);
+  padding-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  font-size: 14px;
+}
+
+.onboarding_loadingPlaceholder {
+  height: 224px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   MEETING DEEP DIVE
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.onboarding_meetingHeader {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  margin-bottom: 20px;
+}
+
+.onboarding_accentEntityLabel {
+  font-size: 14px;
+  color: var(--color-spice-turmeric);
+}
+
+.onboarding_attendeeName {
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.onboarding_attendeeRole {
+  font-size: 12px;
+  color: var(--color-spice-turmeric);
+}
+
+.onboarding_attendeeText {
+  margin: 0;
+  color: var(--color-text-secondary);
+}
+
+.onboarding_listItem {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-xs);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.onboarding_plainList {
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.onboarding_twoColGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-xl);
+}
+
+.onboarding_sectionWithRule {
+  border-top: 1px solid var(--color-rule-light);
+  padding-top: var(--space-md);
+}
+
+.onboarding_postMeetingNote {
+  border-top: 1px solid var(--color-rule-light);
+  padding-top: 20px;
+  font-size: 14px;
+  color: var(--color-text-secondary);
+}
+
+.onboarding_dashSeparator {
+  color: var(--color-text-tertiary);
+  opacity: 0.5;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   PRIME BRIEFING — Drop zone, file feedback, sources
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.onboarding_dropZone {
+  border: 2px dashed var(--color-rule-heavy);
+  border-radius: var(--radius-editorial-md);
+  padding: var(--space-2xl);
+  text-align: center;
+  background: transparent;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.onboarding_dropZoneActive {
+  border-color: var(--color-spice-turmeric);
+  background: var(--color-spice-turmeric-8);
+}
+
+.onboarding_dropZoneLabel {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  margin: 0 0 var(--space-xs);
+}
+
+.onboarding_dropZoneHint {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  margin: 0;
+}
+
+.onboarding_processingIndicator {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+}
+
+.onboarding_fileAddedName {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.onboarding_fileAddedMessage {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-garden-sage);
+  margin: var(--space-xs) 0 0;
+}
+
+.onboarding_sourceCard {
+  flex: 1 1 140px;
+  padding: var(--space-md);
+  border-top: 1px solid var(--color-rule-light);
+  opacity: 0.5;
+}
+
+.onboarding_sourceHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-xs);
+  color: var(--color-text-tertiary);
+}
+
+.onboarding_sourceName {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.onboarding_sourceDesc {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  margin: 0;
+}
+
+.onboarding_sourceComingSoon {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  margin: var(--space-xs) 0 0;
+  letter-spacing: 0.04em;
+}
+
+.onboarding_settingsHint {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  margin-top: var(--space-xs);
+}
+
+.onboarding_skipLink {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   DASHBOARD TOUR — Floating card, tour progress
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.onboarding_tourLoadingContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-md);
+  padding: 64px 0;
+}
+
+.onboarding_tourEmptyContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-2xl) 0;
+}
+
+.onboarding_tourCard {
+  position: fixed;
+  bottom: var(--space-xl);
+  right: var(--space-xl);
+  z-index: 50;
+  width: 320px;
+  background: var(--color-paper-warm-white);
+  border: 1px solid var(--color-rule-heavy);
+  border-radius: var(--radius-editorial-lg);
+  padding: 20px;
+  box-shadow: var(--shadow-md);
+}
+
+.onboarding_tourProgress {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+.onboarding_tourDots {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+}
+
+.onboarding_tourDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+  padding: 0;
+}
+
+.onboarding_tourDotActive {
+  background: var(--color-spice-turmeric);
+}
+
+.onboarding_tourDotVisited {
+  background: var(--color-spice-turmeric-30);
+}
+
+.onboarding_tourDotPending {
+  background: var(--color-rule-light);
+}
+
+.onboarding_tourTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.onboarding_tourBody {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  margin-top: var(--space-xs);
+  margin-bottom: 0;
+  line-height: 1.5;
+}
+
+.onboarding_tourNav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: var(--space-xs);
+}
+
+.onboarding_tourSkipButton {
+  width: 100%;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+
+/* Focus accent strip */
+.onboarding_focusStrip {
+  border-left: 3px solid var(--color-garden-sage);
+  padding-left: var(--space-md);
+  padding-top: var(--space-sm);
+  padding-bottom: var(--space-sm);
+}
+
+.onboarding_focusLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-garden-sage);
+}
+
+.onboarding_focusText {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* Meeting/action/email cards in tour */
+.onboarding_tourMeetingCard {
+  border-top: 1px solid var(--color-rule-light);
+  padding-top: var(--space-sm);
+}
+
+.onboarding_tourItemTitle {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.onboarding_tourItemMeta {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  margin: 2px 0 0;
+}
+
+.onboarding_tourCountLabel {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   INBOX TRAINING
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.onboarding_dropArea {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  border-top: 1px solid var(--color-rule-light);
+  border-bottom: 1px solid var(--color-rule-light);
+  padding: var(--space-2xl) 0;
+  transition: all var(--transition-fast);
+}
+
+.onboarding_dropAreaActive {
+  border-top-color: var(--color-spice-turmeric);
+  border-bottom-color: var(--color-spice-turmeric);
+  background: var(--color-paper-warm-white);
+}
+
+.onboarding_dropAreaIcon {
+  color: var(--color-text-tertiary);
+  opacity: 0.4;
+}
+
+.onboarding_dropAreaText {
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+  margin: 0;
+}
+
+.onboarding_fileProgressItem {
+  border-top: 1px solid var(--color-rule-light);
+  padding-top: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.onboarding_fileName {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.onboarding_stepIndicator {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: 12px;
+}
+
+.onboarding_flexShrink0 {
+  flex-shrink: 0;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   READY PAGE — Config rows, summary
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.onboarding_configRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.onboarding_configLabel {
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.onboarding_configLabelDone {
+  color: var(--color-text-primary);
+}
+
+.onboarding_configLabelPending {
+  color: var(--color-text-tertiary);
+}
+
+.onboarding_configDash {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+}
+
+.onboarding_nextStepText {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+}
+
+.onboarding_nextStepReminder {
+  margin-top: var(--space-sm);
+  margin-bottom: 0;
+}
+
+.onboarding_inboxReminder {
+  border-top: 1px solid var(--color-rule-light);
+  padding-top: 20px;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+}
+
+.onboarding_inboxReminderText {
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+.onboarding_inboxFolder {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+.onboarding_configSummary {
+  border-top: 1px solid var(--color-rule-light);
+  padding-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.onboarding_inboxSummary {
+  border-top: 1px solid var(--color-rule-light);
+  padding-top: 20px;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+}
+
+.onboarding_resultText {
+  font-size: 14px;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.onboarding_backgroundHint {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  margin: 0;
+}
+
+.onboarding_ctaCenter {
+  display: flex;
+  justify-content: center;
+  padding-top: var(--space-xs);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   WORKSPACE — Or divider, path display
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.onboarding_orDivider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  padding: var(--space-xs) 0;
+}
+
+.onboarding_orDividerRule {
+  width: 40px;
+  border-top: 1px solid var(--color-rule-light);
+}
+
+.onboarding_orDividerText {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+.onboarding_workspaceHint {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  text-align: center;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   CLAUDE CODE — Action needed sections
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.onboarding_actionText {
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  margin: 0;
+  margin-bottom: var(--space-xs);
+}
+
+.onboarding_installHint {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  margin: var(--space-xs) 0 0;
+}
+
+.onboarding_installLink {
+  color: var(--color-sky-larkspur);
+  text-decoration: underline;
+}
+
+.onboarding_iconInline {
+  display: inline;
+  vertical-align: -1px;
+  margin-right: 6px;
+}
+
+.onboarding_accentColor {
+  color: var(--color-spice-turmeric);
+}
+
+.onboarding_dangerColor {
+  color: var(--color-spice-terracotta);
+}
+
+.onboarding_sageColor {
+  color: var(--color-garden-sage);
+}
+
+.onboarding_mt2 {
+  margin-top: 2px;
+}
+
+.onboarding_pt8 {
+  padding-top: var(--space-xs);
+}
+
+.onboarding_mb4 {
+  margin-bottom: var(--space-xs);
+}
+
+.onboarding_mb8 {
+  margin-bottom: var(--space-xs);
+}
+
+.onboarding_mb12 {
+  margin-bottom: var(--space-sm);
+}
+
+.onboarding_mb16 {
+  margin-bottom: var(--space-md);
+}
+
+.onboarding_mt8 {
+  margin-top: var(--space-xs);
+}
+
+.onboarding_mt12 {
+  margin-top: var(--space-sm);
+}
+
+.onboarding_selfStart {
+  align-self: flex-start;
+}
+
+.onboarding_noMargin {
+  margin: 0;
+}
+
+/* Toggle button row (teammates expand/collapse) */
+.onboarding_toggleButton {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+/* Teammates heading label row  */
+.onboarding_labelIcon {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ADDITIONAL UTILITIES
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.onboarding_flex1 {
+  flex: 1;
+}
+
+.onboarding_pb32 {
+  padding-bottom: var(--space-2xl);
+}
+
+.onboarding_pl24 {
+  padding-left: var(--space-xl);
+}
+
+.onboarding_textCenter {
+  text-align: center;
+}
+
+.onboarding_flexWrapRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+}
+
+.onboarding_uploadIcon {
+  color: var(--color-text-tertiary);
+  margin: 0 auto var(--space-xs);
+}
+
+.onboarding_chipSage {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  border: 1px solid var(--color-rule-heavy);
+  border-radius: var(--radius-editorial-sm);
+  padding: 2px var(--space-xs);
+  color: var(--color-garden-sage);
+}
+
+.onboarding_nextStepSection {
+  border-top: 1px solid var(--color-rule-light);
+  padding-top: 20px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.onboarding_attendeesBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  font-size: 14px;
+}
+
+.onboarding_flexCenterGap8 {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+}
+
+.onboarding_oliveColor {
+  color: var(--color-garden-olive);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   I561 — DISCOVERY ROWS (Glean account discovery)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.onboarding_discoveryRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-xs) var(--space-sm);
+  border-bottom: 1px solid var(--color-rule-light);
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.onboarding_discoveryRow:last-child {
+  border-bottom: none;
+}
+
+.onboarding_discoveryRow:hover {
+  background: var(--color-paper-warm-white);
+}
+
+.onboarding_discoveryEvidence {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+.onboarding_alreadyAddedBadge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--color-garden-sage);
+  flex-shrink: 0;
+  width: 44px;
+  text-align: center;
+}

@@ -1,0 +1,24 @@
+# Source-of-truth pin for lifted design-system primitives modules.
+# Format: <basename>: <git rev-parse HEAD:.docs/design/reference/_shared/styles/<basename>>
+
+source_root: .docs/design/reference/_shared/styles/
+synced_at: 2026-05-20T01:48:03Z
+
+AsOfTimestamp.module.css: 142b513ab93fba04fbbd214b28d70cad82bbbddd
+ConfidenceScoreChip.module.css: 6da7f63b46461a7a3e04f5fb2f05e4687784397c
+DataGapNotice.module.css: dd73ad57007ff9d1c3527ac3a5c6d11d6783f383
+EditableText.module.css: 5983682f5508063d3b241c5284e3bf3bfe053d8b
+EntityChip.module.css: cf63d2c059e8f7322bf627df72b9313fbaa69965
+FreshnessIndicator.module.css: 16d17f1c260b3d12e4abca9f284181a0f1b9277a
+GlanceCell.module.css: c1e3bf47f978f09755cd22fabec7ca0e6225b3f1
+HealthBadge.module.css: b92cda9c3b108e6d4448168992ddf00728b704cb
+IntelligenceQualityBadge.module.css: 4fc6cd33bf44868b06c63d94339fa25d7ff2d6c8
+MeetingStatusPill.module.css: c7dad19c951967651825b57f3212cc39c37d59cc
+ProvenanceTag.module.css: e8f2e60ac039b5daeaccd20c984ca7ed6fd1134e
+RemovableChip.module.css: 6968ff5f185fab6b3e2a69adefaec427f9042804
+Segmented.module.css: 27f9161621d5f7894a299212082e640a328d0e7d
+SourceCoverageLine.module.css: 39aa4a1e9d75bf5705406e4191283e14e63bfc7f
+StatusDot.module.css: f9fda29e95b31dd24c5c549652b641003ff019d5
+Switch.module.css: d3b9e5ea15368752364c44b5add5ddb7f1c4d0fe
+TrustBandBadge.module.css: d10388309e1664595dce29abec67822883f56a25
+VerificationStatusFlag.module.css: e084350c0db19fe5404605926747023985e7e4dd
