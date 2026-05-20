@@ -74,6 +74,21 @@ function enqueue_chrome_assets(): void {
 	// from canonical.
 	wp_enqueue_style( 'dailyos-chrome-wp-overlay', $base . '/wp-overlay-admin-bar.css', array( 'dailyos-folio' ), VERSION );
 
+	// 4b-i. Global baseline overlay — box-sizing: border-box reset + body font
+	// + cream background that canonical chrome.css provides for reference
+	// surfaces but the chrome lane lift skipped (lifted only *.module.css).
+	// Without box-sizing reset, FolioBar height computes wrong (40px height
+	// + 20px padding = 60px instead of canonical 40px). Without body font,
+	// non-block content falls back to UA defaults outside MagazinePageLayout.
+	// Also breaks MagazinePageLayout_magazinePage out of WP's contentSize
+	// constraint so cream paper fills the viewport.
+	wp_enqueue_style(
+		'dailyos-chrome-wp-overlay-globals',
+		$base . '/wp-overlay-globals.css',
+		array( 'dailyos-aliases' ),
+		VERSION
+	);
+
 	// 4b-ii. DayStrip-aware pageContainer offset overlay. Briefing surfaces
 	// add a fixed DayStrip below the FolioBar; the page container below
 	// needs `+ 72px` margin-top to clear both bars. Mirrors the canonical
