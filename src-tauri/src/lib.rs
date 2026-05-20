@@ -674,6 +674,8 @@ pub fn run() {
             operations::invoke_operation,
             // sensitivity reveal audit
             commands::reveal_sensitive_claim_text,
+            // claim receipt rendering (DOS-339 / DOS-701 substrate)
+            commands::render_claim_receipt,
             // Core
             commands::get_surface_runtime_pairing_status,
             commands::list_surface_client_pairings,
