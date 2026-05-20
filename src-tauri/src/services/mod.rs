@@ -19,6 +19,7 @@ pub mod derived_state;
 pub mod emails;
 pub mod entities;
 pub mod entity_context;
+pub mod entity_intelligence;
 pub mod entity_linking;
 pub mod external_replay;
 pub mod fail_improve;
