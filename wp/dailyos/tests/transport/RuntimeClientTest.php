@@ -66,7 +66,8 @@ final class DailyOS_RuntimeClientTest extends TestCase {
 			$args['body'],
 			$this->canonical_identity(),
 			$headers['X-DailyOS-Nonce'],
-			$headers['X-DailyOS-Timestamp']
+			$headers['X-DailyOS-Timestamp'],
+			$headers['X-DailyOS-Request-Id']
 		);
 
 		$this->assertSame( $expected_signature, $headers['X-DailyOS-Signature'] );

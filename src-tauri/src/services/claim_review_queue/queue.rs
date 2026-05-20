@@ -186,22 +186,35 @@ pub async fn list_active_deferrals(state: &AppState) -> Result<Vec<DeferralRow>,
         .map_err(|message| QueueError::Storage(anyhow::anyhow!(message)))?;
 
     rows.into_iter()
-        .map(|(id, kind_str, target_id, surface, reason, snoozed, resolved, actor, created, updated)| {
-            let kind = QueueTargetKind::from_storage_str(&kind_str)
-                .ok_or_else(|| QueueError::UnknownTargetKind(kind_str.clone()))?;
-            Ok(DeferralRow {
+        .map(
+            |(
                 id,
-                kind,
+                kind_str,
                 target_id,
                 surface,
                 reason,
-                snoozed_until: parse_optional_ts(snoozed.as_deref())?,
-                resolved_at: parse_optional_ts(resolved.as_deref())?,
+                snoozed,
+                resolved,
                 actor,
-                created_at: parse_required_ts(&created)?,
-                updated_at: parse_required_ts(&updated)?,
-            })
-        })
+                created,
+                updated,
+            )| {
+                let kind = QueueTargetKind::from_storage_str(&kind_str)
+                    .ok_or_else(|| QueueError::UnknownTargetKind(kind_str.clone()))?;
+                Ok(DeferralRow {
+                    id,
+                    kind,
+                    target_id,
+                    surface,
+                    reason,
+                    snoozed_until: parse_optional_ts(snoozed.as_deref())?,
+                    resolved_at: parse_optional_ts(resolved.as_deref())?,
+                    actor,
+                    created_at: parse_required_ts(&created)?,
+                    updated_at: parse_required_ts(&updated)?,
+                })
+            },
+        )
         .collect()
 }
 
@@ -301,7 +314,10 @@ mod tests {
             QueueTargetKind::Proposal,
             QueueTargetKind::Candidate,
         ] {
-            assert_eq!(QueueTargetKind::from_storage_str(k.as_storage_str()), Some(k));
+            assert_eq!(
+                QueueTargetKind::from_storage_str(k.as_storage_str()),
+                Some(k)
+            );
         }
         assert_eq!(QueueTargetKind::from_storage_str("nonsense"), None);
     }

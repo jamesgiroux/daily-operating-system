@@ -26,6 +26,7 @@ use std::path::{Path, PathBuf};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use uuid::Uuid;
 
 use abilities_runtime::abilities::registry::{Actor, ScopeSet, SurfaceClientId};
 
@@ -56,6 +57,11 @@ pub struct AuditRecord {
     pub detail: serde_json::Value,
     /// SHA-256 hex of the previous record's line (null for first record).
     pub prev_hash: Option<String>,
+    /// Server-generated request correlation id for actor-attributed surface
+    /// emissions. `None` for legacy agent/system append sites that have not
+    /// entered the surface audit path.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
 
     // --- W1-A0 actor attribution (ADR-0102 §7.6, ADR-0111 §8) ---
     /// Kind tag for the invoking [`Actor`]: `"agent"`, `"user"`, `"admin"`,
@@ -155,6 +161,9 @@ pub struct AuditFields {
     /// audit boundary cannot derive a brute-forceable fallback from serialized
     /// actor fields plus a low-entropy WP id.
     pub wp_user_hash: Option<String>,
+    /// Server-generated request correlation id. Required by the surface audit
+    /// migration for user-initiated Tauri command emissions.
+    pub request_id: Option<String>,
 }
 
 impl AuditFields {
@@ -167,6 +176,7 @@ impl AuditFields {
             detail,
             wp_user_id: None,
             wp_user_hash: None,
+            request_id: None,
         }
     }
 
@@ -185,6 +195,18 @@ impl AuditFields {
         self.wp_user_hash = Some(wp_user_hash.into());
         self
     }
+
+    /// Attach a server-generated request correlation id.
+    #[must_use]
+    pub fn with_request_id(mut self, request_id: impl Into<String>) -> Self {
+        self.request_id = Some(request_id.into());
+        self
+    }
+}
+
+/// Generate a server-side request correlation id for audit emissions.
+pub fn new_request_id() -> String {
+    Uuid::new_v4().to_string()
 }
 
 /// Canonical kind tag for an [`Actor`] variant. Stable wire string — written
@@ -277,7 +299,7 @@ impl AuditLogger {
         event: &str,
         detail: serde_json::Value,
     ) -> Result<(), String> {
-        self.write_record(category, event, detail, None, None, None, None)
+        self.write_record(category, event, detail, None, None, None, None, None)
             .map_err(|err| match err {
                 AuditError::Write(msg) => msg,
                 AuditError::SurfaceClientMissingWpUserId => {
@@ -341,6 +363,7 @@ impl AuditLogger {
             actor_instance,
             wp_user_hash,
             actor_scopes,
+            fields.request_id,
         )
     }
 
@@ -358,6 +381,7 @@ impl AuditLogger {
         actor_instance: Option<SurfaceClientId>,
         wp_user_hash: Option<String>,
         actor_scopes: Option<Vec<String>>,
+        request_id: Option<String>,
     ) -> Result<(), AuditError> {
         let record = AuditRecord {
             ts: Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
@@ -366,6 +390,7 @@ impl AuditLogger {
             event: event.to_string(),
             detail,
             prev_hash: self.last_hash.clone(),
+            request_id,
             actor_kind,
             actor_instance,
             wp_user_id: None,
@@ -661,6 +686,7 @@ mod tests {
                 event: format!("old_{i}"),
                 detail: serde_json::json!({}),
                 prev_hash: logger.last_hash.clone(),
+                request_id: None,
                 actor_kind: None,
                 actor_instance: None,
                 wp_user_id: None,

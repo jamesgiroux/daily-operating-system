@@ -89,3 +89,17 @@ fn log_command_latency(command: &str, started: std::time::Instant, budget_ms: u1
         log::debug!("{} completed in {}ms", command, elapsed_ms);
     }
 }
+
+fn emit_user_audit(
+    audit: &mut crate::audit_log::AuditLogger,
+    event_kind: &str,
+    category: &str,
+    detail: serde_json::Value,
+    request_id: &str,
+) -> Result<(), String> {
+    let actor = abilities_runtime::abilities::registry::Actor::User;
+    let fields = crate::audit_log::AuditFields::new(category, detail)
+        .with_request_id(request_id.to_string());
+    crate::audit_log::emit_surface_audit(audit, event_kind, &actor, fields)
+        .map_err(|error| error.to_string())
+}

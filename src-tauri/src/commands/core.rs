@@ -218,6 +218,7 @@ pub async fn refresh_meeting_briefing(
     app_handle: tauri::AppHandle,
     meeting_id: String,
 ) -> Result<crate::services::meetings::MeetingBriefingRefreshResult, String> {
+    let request_id = crate::audit_log::new_request_id();
     let app_state = state.inner().clone();
     let ctx = app_state.live_service_context();
     let result = crate::services::meetings::refresh_meeting_briefing_full(
@@ -225,6 +226,7 @@ pub async fn refresh_meeting_briefing(
         &app_state,
         &meeting_id,
         Some(&app_handle),
+        &request_id,
     )
     .await?;
     #[allow(
@@ -248,6 +250,7 @@ pub async fn generate_meeting_intelligence(
     meeting_id: String,
     force: Option<bool>,
 ) -> Result<crate::types::IntelligenceQuality, String> {
+    let request_id = crate::audit_log::new_request_id();
     let force_full = force.unwrap_or(false);
     if force_full {
         let app_state = state.inner().clone();
@@ -257,6 +260,7 @@ pub async fn generate_meeting_intelligence(
             &app_state,
             &meeting_id,
             Some(&app_handle),
+            &request_id,
         )
         .await?;
         #[allow(

@@ -136,6 +136,9 @@ jobs:
       - name: Enforce account overview surface claim loading
         run: ./scripts/check_account_overview_surface_loader.sh
 
+      - name: Enforce surface audit append migration
+        run: ./scripts/check_audit_append_in_surface_paths.sh
+
       - name: Enforce must_use on DB mutation methods
         run: ./scripts/check_db_mutator_must_use.sh
 

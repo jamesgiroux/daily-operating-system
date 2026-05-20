@@ -174,6 +174,7 @@ pub async fn enrich_project(
     project_id: String,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<crate::intelligence::IntelligenceJson, String> {
+    let request_id = crate::audit_log::new_request_id();
     let app_state = state.inner().clone();
     let ctx = app_state.live_service_context();
     crate::services::intelligence::enrich_entity(
@@ -182,6 +183,7 @@ pub async fn enrich_project(
         "project".to_string(),
         &app_state,
         Some(&app_handle),
+        &request_id,
     )
     .await
 }

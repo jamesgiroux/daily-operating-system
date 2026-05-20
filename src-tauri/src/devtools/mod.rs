@@ -6545,7 +6545,17 @@ fn seed_claim_review_deferrals(db: &ActionDb) -> Result<(), String> {
     let resolved_created = (now - chrono::Duration::hours(4)).to_rfc3339();
     let resolved_iso = (now - chrono::Duration::hours(2)).to_rfc3339();
 
-    let rows: [(&str, &str, &str, Option<&str>, Option<&str>, Option<&str>, &str, Option<&str>, &str); 4] = [
+    let rows: [(
+        &str,
+        &str,
+        &str,
+        Option<&str>,
+        Option<&str>,
+        Option<&str>,
+        &str,
+        Option<&str>,
+        &str,
+    ); 4] = [
         (
             "mock-deferral-claim-1",
             "claim",
