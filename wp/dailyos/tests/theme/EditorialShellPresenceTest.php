@@ -89,16 +89,29 @@ final class DailyOS_EditorialShellPresenceTest extends TestCase {
 	public function test_front_page_includes_editorial_shell_classes(): void {
 		$composed = $this->compose_surface( 'front-page.html' );
 
+		// FolioBar mount header (canonical class is `dailyos-folio-bar-mount` post chrome lane W3-4;
+		// `dailyos-folio-bar` matches as a prefix substring).
 		$this->assertStringContainsString( 'dailyos-folio-bar', $composed, 'Missing dailyos-folio-bar header shell.' );
-		$this->assertStringContainsString( 'dailyos-atmosphere', $composed, 'Missing dailyos-atmosphere body wrapper.' );
-		$this->assertStringContainsString( 'dailyos-magazine-page', $composed, 'Missing dailyos-magazine-page layout class.' );
+		// Canonical MagazinePageLayout classes (lifted from .docs/design/reference/_shared/styles/
+		// per the chrome lane). Previously these were parallel WP-side `dailyos-atmosphere` /
+		// `dailyos-magazine-page` kebab names that didn't match any canonical CSS — the post-merge
+		// chrome refinement PR aligned the WP templates to the canonical names so the lifted
+		// MagazinePageLayout.module.css actually reaches the WP DOM.
+		$this->assertStringContainsString( 'MagazinePageLayout_magazinePage', $composed, 'Missing MagazinePageLayout_magazinePage root container.' );
+		$this->assertStringContainsString( 'MagazinePageLayout_pageContainer', $composed, 'Missing MagazinePageLayout_pageContainer content wrap.' );
+		// account-overview-page pattern still uses dailyos-end-mark + literal `* * *` as an
+		// in-pattern section separator (separate concern from the end-of-page FinisMarker
+		// rendered by the footer template part).
 		$this->assertStringContainsString( 'dailyos-end-mark', $composed, 'Missing dailyos-end-mark separator.' );
 		$this->assertStringContainsString( '* * *', $composed, 'Missing literal end-mark glyph.' );
+		// End-of-page FinisMarker is rendered by the footer template part; assert the canonical
+		// FinisMarker root class (pattern spec at .docs/design/patterns/FinisMarker.md).
+		$this->assertStringContainsString( 'FinisMarker_root', $composed, 'Missing FinisMarker_root end-of-page finis.' );
 	}
 
 	/**
-	 * Single-account template composes the folio bar + atmosphere +
-	 * magazine page + end-mark AND mounts the account summary sidebar.
+	 * Single-account template composes the folio bar + magazine page wraps
+	 * + footer FinisMarker AND mounts the account summary sidebar.
 	 *
 	 * @return void
 	 */
@@ -107,8 +120,9 @@ final class DailyOS_EditorialShellPresenceTest extends TestCase {
 		$composed = $this->compose_surface( 'single-dailyos_account.html' );
 
 		$this->assertStringContainsString( 'dailyos-folio-bar', $composed, 'Missing dailyos-folio-bar header shell.' );
-		$this->assertStringContainsString( 'dailyos-atmosphere', $composed, 'Missing dailyos-atmosphere body wrapper.' );
-		$this->assertStringContainsString( 'dailyos-magazine-page', $composed, 'Missing dailyos-magazine-page layout class.' );
+		$this->assertStringContainsString( 'MagazinePageLayout_magazinePage', $composed, 'Missing MagazinePageLayout_magazinePage root container.' );
+		$this->assertStringContainsString( 'MagazinePageLayout_pageContainer', $composed, 'Missing MagazinePageLayout_pageContainer content wrap.' );
+		$this->assertStringContainsString( 'FinisMarker_root', $composed, 'Missing FinisMarker_root end-of-page finis.' );
 		$this->assertStringContainsString( 'dailyos-end-mark', $composed, 'Missing dailyos-end-mark separator.' );
 		$this->assertStringContainsString(
 			'template-part {"slug":"sidebar-account-summary"}',

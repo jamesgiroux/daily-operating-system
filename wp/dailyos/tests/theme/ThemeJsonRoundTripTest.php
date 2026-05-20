@@ -66,19 +66,21 @@ final class DailyOS_ThemeJsonRoundTripTest extends TestCase {
 		$this->assertIsArray( $decoded['customTemplates'] );
 		$this->assertSame( [], $decoded['customTemplates'] );
 
-		// templateParts: 3 entries matching W3 parts/.
+		// templateParts: 4 entries — header, footer, sidebar-account-summary (W3)
+		// + day-strip (chrome refinement: briefing surfaces register a secondary
+		// chrome bar as a template part per single-dailyos_briefing.html).
 		$this->assertArrayHasKey( 'templateParts', $decoded );
 		$this->assertIsArray( $decoded['templateParts'] );
-		$this->assertCount( 3, $decoded['templateParts'] );
+		$this->assertCount( 4, $decoded['templateParts'] );
 
 		$names = array_map(
 			static fn ( array $part ): string => (string) ( $part['name'] ?? '' ),
 			$decoded['templateParts']
 		);
 		$this->assertSame(
-			[ 'header', 'footer', 'sidebar-account-summary' ],
+			[ 'header', 'footer', 'sidebar-account-summary', 'day-strip' ],
 			$names,
-			'templateParts must declare header, footer, sidebar-account-summary in that order.'
+			'templateParts must declare header, footer, sidebar-account-summary, day-strip in that order.'
 		);
 
 		// styles.blocks: present (empty in W3; W4 will populate).

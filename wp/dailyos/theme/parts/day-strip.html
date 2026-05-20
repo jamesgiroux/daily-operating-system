@@ -1,0 +1,27 @@
+<!--
+	DayStrip — secondary chrome bar for Daily Briefing surfaces.
+	Pattern: .docs/design/patterns/DayStrip.md
+	Markup mirrors .docs/design/reference/surfaces/briefing-d-spine.html
+	Fixed beneath the FolioBar at top: var(--folio-height).
+
+	v1.4.4 W3 stub: previews are static placeholders. v1.4.5+ wave wires
+	previous/next briefing-day data + previews via chrome_config().
+-->
+<!-- wp:html -->
+<nav class="DayStrip_strip" aria-label="Briefing days" data-ds-tier="pattern" data-ds-name="DayStrip" data-ds-spec="patterns/DayStrip.md">
+	<a class="DayStrip_side" href="#" title="Yesterday">
+		<span class="DayStrip_direction" aria-hidden="true">&larr;</span>
+		<span class="DayStrip_label">Yesterday</span>
+		<span class="DayStrip_preview">Previous briefing preview</span>
+	</a>
+	<div class="DayStrip_current" aria-current="date" aria-label="Today">
+		<span class="DayStrip_mark" aria-hidden="true"></span>
+		Today
+	</div>
+	<a class="DayStrip_side DayStrip_sideRight" href="#" title="Tomorrow">
+		<span class="DayStrip_preview">Next briefing preview</span>
+		<span class="DayStrip_label">Tomorrow</span>
+		<span class="DayStrip_direction" aria-hidden="true">&rarr;</span>
+	</a>
+</nav>
+<!-- /wp:html -->

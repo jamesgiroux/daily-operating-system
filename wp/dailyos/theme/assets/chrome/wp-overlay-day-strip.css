@@ -1,0 +1,35 @@
+/* =============================================================================
+   WP-only chrome overlay: DayStrip-aware pageContainer offset
+   -----------------------------------------------------------------------------
+   The canonical DayStrip pattern sits fixed below the FolioBar at
+   `top: var(--folio-height)` (40px) and is 36px tall. When a briefing
+   surface includes the DayStrip template part, the page container below
+   needs an extra 72px of margin-top to clear both bars + their padding.
+
+   Per the canonical `briefing-d-spine.html` surface-local override
+   (`.MagazinePageLayout_pageContainer { margin-top: calc(var(--page-margin-top) + 72px); }`),
+   this overlay scopes the same rule to the
+   `.MagazinePageLayout_pageContainerWithDayStrip` modifier class so
+   non-briefing surfaces get the base 40px margin and briefings get 112px.
+
+   Per L0 packet §10 WP-only deviation exception; not synced from canonical.
+   The canonical app handles this via React layout composition; WP composes
+   via template parts, so the modifier-class approach is the WP-native form.
+   ============================================================================= */
+
+.MagazinePageLayout_pageContainer.MagazinePageLayout_pageContainerWithDayStrip {
+	margin-top: calc(var(--page-margin-top) + 72px);
+}
+
+/* Future overlay slots — pattern-setting for the next WP-only override.
+   When the design system specifies dark or reduced-motion states for the
+   FolioBar / DayStrip / chrome overlays, fill these media blocks; do not
+   add a fourth flat `body.* .X {}` rule next to admin-bar / day-strip. */
+
+/*
+@media (prefers-color-scheme: dark) {
+}
+
+@media (prefers-reduced-motion: reduce) {
+}
+*/
