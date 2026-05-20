@@ -1,9 +1,4 @@
-# Source-of-truth pin for chrome asset lift.
-# Format: <repo-relative path>: <git rev-parse HEAD:path>
-
-source_root: .docs/design/reference/_shared/
-synced_at: 2026-05-19T23:38:47Z
-
-fonts.css: 1f0ffecc9cd5ae639a0c5d43a825bc3746f55725
-chrome.js: 9a1dbafc760ef9b0ce6a521f565e3ec6df78acc5
+source: .docs/design/reference/_shared/chrome.js
+sha: 9a1dbafc760ef9b0ce6a521f565e3ec6df78acc5
+synced_at: 2026-05-20T00:23:11Z
 patches_applied: 1,2,3,4,5,6,7,8,9a

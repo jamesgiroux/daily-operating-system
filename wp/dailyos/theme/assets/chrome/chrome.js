@@ -396,6 +396,7 @@
         title: c.label,
         'data-label': c.label,
         'aria-label': c.label,
+        'data-chapter-id': c.id,
       });
       node.append(lucide(c.icon, { size: 18, weight: 1.5 }));
       localPill.append(node);
@@ -496,6 +497,83 @@
     });
   }
 
+  // ── Chapter scroll-spy ──
+  // Mirrors FloatingNavIsland.tsx scroll-spy behavior. For surfaces that declare
+  // `data-chapters` on <body> and provide matching section ids, swap the active
+  // class on the local-pill item as the user scrolls. Click handlers smooth-
+  // scroll to the target (honoring prefers-reduced-motion). Skips chapters-only
+  // mode (onboarding) where the local pill targets sibling pages, not sections.
+  function attachChapterScrollSpy(navContainer, body) {
+    if (!('IntersectionObserver' in window)) return;
+    if ((body.dataset.navMode || '') === 'chapters-only') return;
+
+    const items = navContainer.querySelectorAll('[data-chapter-id]');
+    if (items.length === 0) return;
+
+    // Match the per-tint active class buildNav emits at line ~279
+    // (`FloatingNavIsland_activeTurmeric` etc.) so scroll-spy swaps the
+    // correct highlight color.
+    const tint = body.dataset.tint || 'turmeric';
+    const activeClass = N('active' + capitalize(tint));
+
+    const sections = [];
+    const byId = new Map();
+    items.forEach(item => {
+      const id = item.getAttribute('data-chapter-id');
+      const section = id ? document.getElementById(id) : null;
+      if (section) {
+        sections.push(section);
+        byId.set(id, item);
+      }
+    });
+    if (sections.length === 0) return;
+
+    const setActive = (id) => {
+      items.forEach(item => {
+        if (item.getAttribute('data-chapter-id') === id) {
+          item.classList.add(activeClass);
+        } else {
+          item.classList.remove(activeClass);
+        }
+      });
+    };
+
+    // rootMargin biases activation toward the "leading" section — fires when
+    // a section's top crosses the upper-third of the viewport so the highlight
+    // jumps before the section dominates the screen.
+    const observer = new IntersectionObserver((entries) => {
+      const visible = entries
+        .filter(e => e.isIntersecting)
+        .sort((a, b) => b.intersectionRatio - a.intersectionRatio);
+      if (visible.length > 0) {
+        setActive(visible[0].target.id);
+      }
+    }, { rootMargin: '-30% 0% -60% 0%', threshold: [0, 0.1, 0.25, 0.5, 1] });
+
+    sections.forEach(s => observer.observe(s));
+
+    // Smooth-scroll click handler. Honors prefers-reduced-motion: instant
+    // jumps for users who opted out of motion.
+    const reduceMotion = window.matchMedia &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    items.forEach(item => {
+      item.addEventListener('click', (event) => {
+        const id = item.getAttribute('data-chapter-id');
+        const target = id ? document.getElementById(id) : null;
+        if (!target) return;
+        event.preventDefault();
+        target.scrollIntoView({
+          behavior: reduceMotion ? 'auto' : 'smooth',
+          block: 'start',
+        });
+        setActive(id);
+        if (history.replaceState) {
+          history.replaceState(null, '', '#' + id);
+        }
+      });
+    });
+  }
+
   function inject() {
     const body = document.body;
     if (body.querySelector('.FolioBar_folio, .FloatingNavIsland_navIslandContainer, .AtmosphereLayer_atmosphere')) return;
@@ -524,9 +602,11 @@
     // Folio bar + nav island are position:fixed so DOM placement is mostly
     // about stacking context. Putting them inside magazinePage matches TSX.
     target.prepend(buildFolio(body));
-    target.append(buildNav(body));
+    const navContainer = buildNav(body);
+    target.append(navContainer);
 
     // [WP override] Reference controls + onboarding nav stripped at sync.
+    attachChapterScrollSpy(navContainer, body);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', inject);
