@@ -676,6 +676,8 @@ pub fn run() {
             commands::reveal_sensitive_claim_text,
             // claim receipt rendering (DOS-339 / DOS-701 substrate)
             commands::render_claim_receipt,
+            // semantic claim feedback (DOS-8)
+            commands::submit_claim_feedback_command,
             // Core
             commands::get_surface_runtime_pairing_status,
             commands::list_surface_client_pairings,

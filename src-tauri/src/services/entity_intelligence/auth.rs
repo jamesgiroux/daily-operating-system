@@ -65,7 +65,7 @@ impl EnvelopeOrigin {
 ///
 /// `claim_ids`/`proposal_ids` MUST enumerate every claim_id/proposal_id appearing
 /// across `facts`, `metadata_proposals`, `open_loops`, and `record_entries`.
-pub trait EnvelopeView {
+pub trait EnvelopeView: Send + Sync {
     fn ability(&self) -> &str;
     fn claim_ids(&self) -> BTreeSet<String>;
     fn proposal_ids(&self) -> BTreeSet<String>;
