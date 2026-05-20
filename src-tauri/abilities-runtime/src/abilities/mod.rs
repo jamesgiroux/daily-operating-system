@@ -7,6 +7,7 @@ pub mod detect_risk_shift;
 pub mod extractors;
 pub mod fallback_projection;
 pub mod feedback;
+pub mod get_daily_briefing;
 pub mod get_daily_readiness;
 pub mod get_entity_context;
 pub mod get_entity_intelligence;

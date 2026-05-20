@@ -48,6 +48,9 @@ pub struct LiveEntityContextClaimReader;
 pub struct LivePrepareMeetingContextReader;
 pub struct LiveTemporalWorkspaceReader;
 pub struct LiveCompositionCommitter;
+/// DOS-507 — live adapter projecting `services::meeting_prep_status::read`
+/// into the abilities-runtime crate's narrow `MeetingPrepStatusReadHandle`.
+pub struct LiveMeetingPrepStatusReader;
 
 pub fn attach_live_workspace_readers(ctx: ServiceContext<'_>) -> ServiceContext<'_> {
     ctx.with_entity_context_reader(Arc::new(LiveEntityContextReader))
@@ -59,6 +62,7 @@ pub fn attach_live_workspace_readers(ctx: ServiceContext<'_>) -> ServiceContext<
         .with_entity_touchpoints_reader(Arc::new(
             crate::services::entity_intelligence::touchpoints::LiveEntityTouchpointsReader,
         ))
+        .with_meeting_prep_status_reader(Arc::new(LiveMeetingPrepStatusReader))
 }
 
 impl EntityContextReadHandle for LiveEntityContextReader {
@@ -206,6 +210,109 @@ impl PrepareMeetingContextReadHandle for LivePrepareMeetingContextReader {
             .map_err(|error| format!("prepare_meeting context read task failed: {error}"))?
         })
     }
+}
+
+impl MeetingPrepStatusReadHandle for LiveMeetingPrepStatusReader {
+    fn read_meeting_prep_status<'a>(
+        &'a self,
+        meeting_id: String,
+    ) -> MeetingPrepStatusReadFuture<'a> {
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                let db =
+                    crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                        .map_err(|error| {
+                            MeetingPrepStatusReadError::ReadFailed(format!(
+                                "Database unavailable: {error}"
+                            ))
+                        })?;
+                project_meeting_prep_status_snapshot(&db, &meeting_id)
+            })
+            .await
+            .map_err(|error| {
+                MeetingPrepStatusReadError::ReadFailed(format!(
+                    "meeting_prep_status read task failed: {error}"
+                ))
+            })?
+        })
+    }
+}
+
+fn project_meeting_prep_status_snapshot(
+    db: &crate::db::ActionDb,
+    meeting_id: &str,
+) -> Result<MeetingPrepStatusSnapshot, MeetingPrepStatusReadError> {
+    use crate::services::meeting_prep_status::{read::compute_status, PrepStatusError};
+    match compute_status(meeting_id, db) {
+        Ok(snapshot) => Ok(MeetingPrepStatusSnapshot {
+            meeting_id: snapshot.meeting_id,
+            event_id: snapshot.event_id,
+            linked_entity_type: snapshot
+                .linked_entity
+                .as_ref()
+                .map(|binding| binding.entity_type.clone()),
+            linked_entity_id: snapshot
+                .linked_entity
+                .as_ref()
+                .map(|binding| binding.entity_id.clone()),
+            status: prep_status_to_str(snapshot.status).to_string(),
+            blocking_reason: snapshot.blocking_reason.map(blocking_reason_to_str),
+            stale_reason: snapshot.stale_reason.map(stale_reason_to_str),
+            last_prepared_at: snapshot.last_prepared_at,
+            source_asof_inputs: snapshot
+                .source_asof_inputs
+                .into_iter()
+                .map(|input| MeetingPrepSourceAsofRef {
+                    source: input.source,
+                    as_of: input.as_of,
+                })
+                .collect(),
+        }),
+        Err(PrepStatusError::MeetingNotFound(id)) => {
+            Err(MeetingPrepStatusReadError::MeetingNotFound(id))
+        }
+        Err(other) => Err(MeetingPrepStatusReadError::ReadFailed(other.to_string())),
+    }
+}
+
+fn prep_status_to_str(status: crate::services::meeting_prep_status::PrepStatus) -> &'static str {
+    use crate::services::meeting_prep_status::PrepStatus::*;
+    match status {
+        BlockedNoEntity => "blocked_no_entity",
+        PrepNeeded => "prep_needed",
+        Queued => "queued",
+        Running => "running",
+        Ready => "ready",
+        Limited => "limited",
+        Stale => "stale",
+        Failed => "failed",
+        UserSuppressed => "user_suppressed",
+        UserDismissed => "user_dismissed",
+    }
+}
+
+fn blocking_reason_to_str(
+    reason: crate::services::meeting_prep_status::BlockingReason,
+) -> String {
+    use crate::services::meeting_prep_status::BlockingReason::*;
+    match reason {
+        NoLinkedEntity => "no_linked_entity",
+        AmbiguousAttendeeMatch => "ambiguous_attendee_match",
+        SourceRevoked => "source_revoked",
+        PolicyForbidden => "policy_forbidden",
+    }
+    .to_string()
+}
+
+fn stale_reason_to_str(reason: crate::services::meeting_prep_status::StaleReason) -> String {
+    use crate::services::meeting_prep_status::StaleReason::*;
+    match reason {
+        EntityContextStale => "entity_context_stale",
+        RecentCorrection => "recent_correction",
+        SourceAsofOlderThanThreshold => "source_asof_older_than_threshold",
+        ContradictedClaimUpstream => "contradicted_claim_upstream",
+    }
+    .to_string()
 }
 
 impl TrajectoryReadHandle for LiveTemporalWorkspaceReader {

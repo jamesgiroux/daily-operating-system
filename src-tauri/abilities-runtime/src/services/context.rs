@@ -844,6 +844,7 @@ pub struct ServiceContext<'a> {
     temporal_maintenance: Option<Arc<dyn TemporalMaintenanceHandle>>,
     composition_commit: Option<Arc<dyn CompositionCommitHandle>>,
     entity_touchpoints_reader: Option<Arc<dyn EntityTouchpointsReadHandle>>,
+    meeting_prep_status_reader: Option<Arc<dyn MeetingPrepStatusReadHandle>>,
 }
 
 pub type EntityContextReadFuture<'a> =
@@ -1231,6 +1232,68 @@ pub trait DailyReadinessContextReadHandle: Send + Sync {
     ) -> DailyReadinessContextReadFuture<'a>;
 }
 
+// -----------------------------------------------------------------------------
+// DOS-507 — meeting prep status read handle
+// -----------------------------------------------------------------------------
+
+/// Service-owned status describing whether a meeting's prep is ready, blocked,
+/// stale, failed, or user-suppressed. The richer DTO lives in the app crate
+/// (`services::meeting_prep_status`); this mirror is the narrow shape the
+/// `get_daily_briefing` Read ability consumes through a read handle.
+///
+/// Stays a string-typed projection on the abilities-runtime side so the crate
+/// boundary doesn't force a circular dependency — the app crate's adapter
+/// stringifies `PrepStatus` / `BlockingReason` / `StaleReason` enums when
+/// projecting into this snapshot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MeetingPrepStatusSnapshot {
+    pub meeting_id: String,
+    pub event_id: Option<String>,
+    pub linked_entity_type: Option<String>,
+    pub linked_entity_id: Option<String>,
+    /// Lower-snake_case PrepStatus discriminant: `ready` | `prep_needed` |
+    /// `queued` | `running` | `limited` | `stale` | `failed` |
+    /// `blocked_no_entity` | `user_suppressed` | `user_dismissed`.
+    pub status: String,
+    pub blocking_reason: Option<String>,
+    pub stale_reason: Option<String>,
+    pub last_prepared_at: Option<String>,
+    pub source_asof_inputs: Vec<MeetingPrepSourceAsofRef>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MeetingPrepSourceAsofRef {
+    pub source: String,
+    pub as_of: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum MeetingPrepStatusReadError {
+    #[error("meeting prep status read failed: {0}")]
+    ReadFailed(String),
+    #[error("meeting not found: {0}")]
+    MeetingNotFound(String),
+}
+
+pub type MeetingPrepStatusReadFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<MeetingPrepStatusSnapshot, MeetingPrepStatusReadError>>
+            + Send
+            + 'a,
+    >,
+>;
+
+/// Narrow read handle attached by the app crate so the `get_daily_briefing`
+/// ability can compose per-meeting prep status into its envelope. AC-507.2 /
+/// AC-507.7 — the handle is read-only by contract; the adapter must not
+/// perform any mutation.
+pub trait MeetingPrepStatusReadHandle: Send + Sync {
+    fn read_meeting_prep_status<'a>(
+        &'a self,
+        meeting_id: String,
+    ) -> MeetingPrepStatusReadFuture<'a>;
+}
+
 /// Transaction-scoped context exposed to `with_transaction_*` closures.
 ///
 /// Same `mode`/`clock`/`rng` as the parent `ServiceContext` plus a
@@ -1289,6 +1352,7 @@ impl<'a> ServiceContext<'a> {
             temporal_maintenance: None,
             composition_commit: None,
             entity_touchpoints_reader: None,
+            meeting_prep_status_reader: None,
         }
     }
 
@@ -1316,6 +1380,7 @@ impl<'a> ServiceContext<'a> {
             temporal_maintenance: None,
             composition_commit: None,
             entity_touchpoints_reader: None,
+            meeting_prep_status_reader: None,
         }
     }
 
@@ -1354,6 +1419,7 @@ impl<'a> ServiceContext<'a> {
             temporal_maintenance: None,
             composition_commit: None,
             entity_touchpoints_reader: None,
+            meeting_prep_status_reader: None,
         }
     }
 
@@ -1440,6 +1506,14 @@ impl<'a> ServiceContext<'a> {
         self
     }
 
+    pub fn with_meeting_prep_status_reader(
+        mut self,
+        reader: Arc<dyn MeetingPrepStatusReadHandle>,
+    ) -> Self {
+        self.meeting_prep_status_reader = Some(reader);
+        self
+    }
+
     /// Reader-backed touchpoint composition (DOS-460). When no reader is
     /// attached (test contexts, evaluate mode without fixtures) the caller
     /// receives a typed `ReadFailed` error and the producer falls back to a
@@ -1456,6 +1530,23 @@ impl<'a> ServiceContext<'a> {
             ));
         };
         reader.read_entity_touchpoints(query).await
+    }
+
+    /// DOS-507 — read per-meeting prep status. Returns
+    /// `MeetingPrepStatusReadError::ReadFailed` with a typed missing-reader
+    /// message when no adapter is attached (test contexts without fixtures);
+    /// the briefing producer projects that into a typed `NeedsPreparation`
+    /// state rather than failing the envelope.
+    pub async fn read_meeting_prep_status(
+        &self,
+        meeting_id: String,
+    ) -> Result<MeetingPrepStatusSnapshot, MeetingPrepStatusReadError> {
+        let Some(reader) = &self.meeting_prep_status_reader else {
+            return Err(MeetingPrepStatusReadError::ReadFailed(
+                self.missing_reader_error("meeting_prep_status_reader"),
+            ));
+        };
+        reader.read_meeting_prep_status(meeting_id).await
     }
 
     pub async fn commit_composition(
