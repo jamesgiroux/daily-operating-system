@@ -1,0 +1,423 @@
+/* ActionDetailPage — editorial action detail layout */
+
+/* ── Layout ── */
+
+.ActionDetailPage_container {
+  padding: 120px 120px 80px;
+  max-width: 680px;
+  margin: 0 auto;
+}
+
+/* ── Loading skeleton ── */
+
+.ActionDetailPage_loadingSkeleton {
+  padding: 120px 120px 80px;
+  max-width: 680px;
+  margin: 0 auto;
+}
+
+.ActionDetailPage_skeletonBar {
+  background: var(--color-rule-light);
+  border-radius: 2px;
+}
+
+.ActionDetailPage_skeletonTitle {
+  height: 16px;
+  width: 96px;
+  margin-bottom: 16px;
+}
+
+.ActionDetailPage_skeletonHeadline {
+  height: 40px;
+  width: 384px;
+  margin-bottom: 8px;
+}
+
+.ActionDetailPage_skeletonSubhead {
+  height: 16px;
+  width: 192px;
+  margin-bottom: 24px;
+}
+
+.ActionDetailPage_skeletonRule {
+  height: 1px;
+  width: 100%;
+  background: var(--color-rule-heavy);
+}
+
+.ActionDetailPage_skeletonBody {
+  margin-top: 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.ActionDetailPage_skeletonBlock {
+  width: 100%;
+  border-radius: 2px;
+  background: var(--color-rule-light);
+}
+
+.ActionDetailPage_skeletonBlockSmall {
+  height: 80px;
+}
+
+.ActionDetailPage_skeletonBlockLarge {
+  height: 128px;
+}
+
+/* ── Error state ── */
+
+.ActionDetailPage_errorState {
+  padding: 120px 120px 80px;
+  max-width: 680px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.ActionDetailPage_errorTitle {
+  font-family: var(--font-serif);
+  font-size: 24px;
+  color: var(--color-text-primary);
+  margin-bottom: 16px;
+}
+
+.ActionDetailPage_errorMessage {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  margin-bottom: 24px;
+}
+
+.ActionDetailPage_retryButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 8px 20px;
+  border: 1px solid var(--color-rule-light);
+  border-radius: 4px;
+  background: none;
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+
+/* ── Title band ── */
+
+.ActionDetailPage_titleBand {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 8px;
+}
+
+.ActionDetailPage_toggleButton {
+  margin-top: 6px;
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  transition: color 0.15s, opacity 0.15s;
+}
+
+.ActionDetailPage_titleWrapper {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── Title typography (applied to EditableText) ── */
+
+.ActionDetailPage_titleEditable {
+  font-family: var(--font-serif);
+  font-size: 28px;
+  font-weight: 400;
+  line-height: 1.2;
+  color: var(--color-text-primary);
+}
+
+.ActionDetailPage_titleCompleted {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+
+/* ── Status strip ── */
+
+.ActionDetailPage_statusStrip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 24px;
+  padding-left: 36px;
+  flex-wrap: wrap;
+}
+
+.ActionDetailPage_priorityPill {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.ActionDetailPage_priorityP1 {
+  background: rgba(196, 101, 74, 0.10);
+  color: var(--color-spice-terracotta);
+}
+
+.ActionDetailPage_priorityP2 {
+  background: rgba(201, 162, 39, 0.10);
+  color: var(--color-spice-turmeric);
+}
+
+.ActionDetailPage_priorityP3 {
+  background: var(--color-garden-larkspur-12);
+  color: var(--color-garden-larkspur);
+}
+
+.ActionDetailPage_monoBadge {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  border-radius: 3px;
+  background: rgba(30, 37, 48, 0.06);
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
+
+.ActionDetailPage_monoBadgeLink {
+  composes: monoBadge;
+  text-decoration: none;
+}
+
+.ActionDetailPage_monoLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-tertiary);
+}
+
+.ActionDetailPage_statusText {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+}
+
+/* ── Priority picker row ── */
+
+.ActionDetailPage_priorityPickerRow {
+  padding-left: 36px;
+  margin-bottom: 24px;
+}
+
+/* ── Separator ── */
+
+.ActionDetailPage_separator {
+  height: 1px;
+  background: var(--color-rule-light);
+  margin-bottom: 40px;
+}
+
+/* ── Sections ── */
+
+.ActionDetailPage_section {
+  margin-bottom: 40px;
+}
+
+.ActionDetailPage_sectionLabel {
+  composes: monoLabel;
+  margin-bottom: 12px;
+}
+
+.ActionDetailPage_sectionLabelWide {
+  composes: monoLabel;
+  margin-bottom: 16px;
+}
+
+.ActionDetailPage_autoNote {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-style: italic;
+  color: var(--color-text-tertiary);
+  margin-top: 8px;
+}
+
+/* ── Reference section ── */
+
+.ActionDetailPage_refSection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ActionDetailPage_refRow {
+  display: flex;
+  align-items: flex-start;
+}
+
+.ActionDetailPage_refKey {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  width: 100px;
+  flex-shrink: 0;
+  padding-top: 3px;
+}
+
+.ActionDetailPage_refValue {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-primary);
+  flex: 1;
+  min-width: 0;
+}
+
+.ActionDetailPage_accountDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-spice-turmeric);
+  flex-shrink: 0;
+}
+
+.ActionDetailPage_accountLink {
+  color: var(--color-text-primary);
+  text-decoration: none;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.ActionDetailPage_removeButton {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+  padding: 0 2px;
+  line-height: 1;
+}
+
+.ActionDetailPage_accountChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ── Local EditableText (title editor) ── */
+
+.ActionDetailPage_titleInput {
+  width: 100%;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--color-rule-light);
+  outline: none;
+  padding: 0;
+}
+
+.ActionDetailPage_titleDisplay {
+  cursor: pointer;
+}
+
+/* ── Action bar ── */
+
+.ActionDetailPage_actionBar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+}
+
+.ActionDetailPage_saveStatus {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  transition: opacity 0.3s;
+}
+
+.ActionDetailPage_actionButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 8px 20px;
+  border: 1px solid var(--color-rule-light);
+  border-radius: 4px;
+  background: none;
+  color: var(--color-text-primary);
+  transition: opacity 0.15s;
+}
+
+/* ── Linear section ── */
+
+.ActionDetailPage_linearPushRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ActionDetailPage_linearSelect {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-primary);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--color-rule-light);
+  padding: 2px 0;
+  outline: none;
+  cursor: pointer;
+  flex: 1;
+  min-width: 0;
+}
+
+.ActionDetailPage_linearPushReady {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 8px 20px;
+  border: 1px solid var(--color-text-primary);
+  border-radius: 4px;
+  background: var(--color-text-primary);
+  color: var(--color-paper-warm-white);
+  cursor: pointer;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+}
+
+.ActionDetailPage_linearPushReady:hover {
+  opacity: 0.85;
+}
+
+.ActionDetailPage_linearPushDisabled {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 8px 20px;
+  border: 1px solid var(--color-rule-light);
+  border-radius: 4px;
+  background: none;
+  color: var(--color-text-tertiary);
+  cursor: not-allowed;
+  flex-shrink: 0;
+}

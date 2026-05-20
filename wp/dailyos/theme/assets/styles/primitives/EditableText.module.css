@@ -1,0 +1,11 @@
+/* EditableText — hover affordance for click-to-edit text */
+
+.EditableText_editable {
+  cursor: text;
+  border-radius: 2px;
+  transition: background 0.15s ease;
+}
+
+.EditableText_editable:hover {
+  background: var(--color-desk-charcoal-5);
+}

@@ -1,0 +1,147 @@
+.TemplatePreview_panel {
+  margin-bottom: var(--space-xl, 28px);
+  padding: var(--space-lg, 18px);
+  border: 1px solid var(--color-rule-light);
+}
+
+.TemplatePreview_panelHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-md, 12px);
+  margin-bottom: var(--space-md, 12px);
+}
+
+.TemplatePreview_panelTitle {
+  font-family: var(--font-serif);
+  font-size: 20px;
+  font-weight: 400;
+  color: var(--color-text-primary);
+}
+
+.TemplatePreview_closeButton {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0;
+  color: var(--color-text-tertiary);
+}
+
+.TemplatePreview_templateCard {
+  border-top: 1px solid var(--color-rule-light);
+  padding-top: var(--space-lg, 18px);
+  margin-top: var(--space-lg, 18px);
+}
+
+.TemplatePreview_templateCard:first-of-type {
+  border-top: none;
+  padding-top: 0;
+  margin-top: 0;
+}
+
+.TemplatePreview_templateHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-md, 12px);
+}
+
+.TemplatePreview_templateName {
+  font-family: var(--font-serif);
+  font-size: 22px;
+  font-weight: 400;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.TemplatePreview_templateDescription {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  margin-top: 4px;
+}
+
+.TemplatePreview_templateApply {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0;
+  color: var(--color-spice-turmeric);
+  flex-shrink: 0;
+}
+
+.TemplatePreview_objectivesList {
+  margin: var(--space-md, 12px) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.TemplatePreview_objectiveItem {
+  padding: var(--space-sm, 8px) 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.TemplatePreview_objectiveItem:last-child {
+  border-bottom: none;
+}
+
+.TemplatePreview_objectiveTitle {
+  font-family: var(--font-serif);
+  font-size: 16px;
+  font-weight: 400;
+  color: var(--color-text-primary);
+  display: block;
+}
+
+.TemplatePreview_objectiveDescription {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  margin-top: 2px;
+  display: block;
+}
+
+.TemplatePreview_milestonesList {
+  margin: var(--space-xs, 6px) 0 0;
+  padding: 0 0 0 var(--space-lg, 18px);
+  list-style: none;
+}
+
+.TemplatePreview_milestoneItem {
+  padding: 4px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.TemplatePreview_milestoneTitle {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-primary);
+}
+
+.TemplatePreview_milestoneMeta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+}
+
+.TemplatePreview_autoDetectLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--color-garden-sage);
+}

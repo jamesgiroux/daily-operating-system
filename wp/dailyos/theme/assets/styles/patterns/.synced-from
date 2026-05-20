@@ -1,0 +1,30 @@
+# Source-of-truth pin for lifted design-system patterns modules.
+# Format: <basename>: <git rev-parse HEAD:.docs/design/reference/_shared/styles/<basename>>
+
+source_root: .docs/design/reference/_shared/styles/
+synced_at: 2026-05-20T01:48:03Z
+
+AccountViewSwitcher.module.css: a65447146a9740ab5da7d62e6a42d7ef78aebddf
+ActivityLogSection.module.css: df4eb99b60a466bf9b8ff5addd1951a3806df7e6
+ChapterHeading.module.css: bd804682f4258fd0b8d42f7ab833ac34c2198e86
+ClaimRow.module.css: 5aa18e916b34646c850f48e28348113c30b4abd6
+DayChart.module.css: 208af51a6226ea837f11604a0e5ab58b1018d569
+DayStrip.module.css: 721092ade274256dc6800cfc9f541ddb9da44c0d
+DiagnosticsSection.module.css: f56f90b4eeab746c94f68e3f5d0cf5f498e20c44
+EntityListShell.module.css: bc0f1689fec3b89924e4b0b7397eaa81ce669c05
+EntityRow.module.css: ed5d80089a3ce972245bdff106e8f823182777df
+FinisMarker.module.css: 99cc5fbb366f35b888bb884fe2d0bafd9626ed6e
+FormRow.module.css: 153dfef9fa070c462a287cd871e2318b00a3731f
+GlanceRow.module.css: 37e8d73fbe03f574ff23ecf9054faa032b08437c
+InferredActionSelector.module.css: 37f591d415356a34d6b95b884f7086928b222842
+IntelligenceFeedback.module.css: 1efc0dc8a07f61a063a2b8a0116d1a018eb33410
+MeetingCard.module.css: 9aeb4edb95c5d208a8eebd393a201f5e9fdc2739
+MeetingSpineItem.module.css: fc4ec8563a3f588a12853661289446cfc0d424ed
+PostMeetingIntelligence.module.css: c532844e8abc2dd7e15f6e2dd839c16a2935a1ac
+ReceiptCallout.module.css: e9d547a3accd4ff78a514aa8c689aa59ba7f1ec5
+SurfaceMasthead.module.css: db118e51feea61c4205300da050eff27dfd3bee4
+TalkBalanceBar.module.css: d95d414f356a6afee60bdeaa8070025a47834adb
+TrustBand.module.css: 47649c94da28907371e40d5f37686f326ae7d86d
+VitalsStrip.module.css: 06991063f43c2bc762de46c1e9df3e5c62548bf6
+WorkSurface.module.css: ff085a5743e60e6d0fc108f23ee0d18e9e2571ea
+YouCard.module.css: 8511fd65907d034e93894f645e39e0b64596b319

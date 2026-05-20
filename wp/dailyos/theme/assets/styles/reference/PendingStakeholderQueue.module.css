@@ -1,0 +1,153 @@
+/*
+ * PendingStakeholderQueue — Lane F
+ *
+ * Review queue for account_stakeholders rows with status='pending_review'.
+ * Saffron accent ("needs review") matches the SuggestionsQueue pattern in
+ * StakeholderGrid.module.css. Design tokens from design-tokens.css only.
+ */
+
+
+/* ═════════ SECTION ═════════ */
+
+.PendingStakeholderQueue_section {
+  margin-top: var(--space-2xl);
+  padding-top: var(--space-lg);
+  border-top: 1px dashed var(--color-rule-light);
+}
+
+/* ═════════ HEADER LABEL ═════════ */
+
+.PendingStakeholderQueue_label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-spice-saffron);
+  margin-bottom: var(--space-md);
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.PendingStakeholderQueue_labelHint {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--color-text-tertiary);
+  text-transform: none;
+  letter-spacing: 0;
+  font-style: italic;
+}
+
+/* ═════════ CARD LIST ═════════ */
+
+.PendingStakeholderQueue_list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+/* ═════════ INDIVIDUAL CARD ═════════ */
+
+.PendingStakeholderQueue_card {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-lg);
+  align-items: center;
+  padding: var(--space-md) var(--space-lg);
+  background: var(--color-spice-saffron-10);
+  border-left: 2px solid var(--color-spice-saffron);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.PendingStakeholderQueue_cardBody {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.PendingStakeholderQueue_name {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.PendingStakeholderQueue_meta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+/* AC#13 multi-BU sibling hint */
+.PendingStakeholderQueue_siblingHint {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  font-style: italic;
+  margin-top: var(--space-xs);
+}
+
+/* ═════════ ACTION BUTTONS ═════════ */
+
+.PendingStakeholderQueue_actions {
+  display: flex;
+  gap: var(--space-sm);
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* Shared button base — matches .suggestionBtn in StakeholderGrid.module.css */
+.PendingStakeholderQueue_btnDismiss,
+.PendingStakeholderQueue_btnConfirm {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 100px;
+  cursor: pointer;
+  white-space: nowrap;
+  line-height: 1;
+  transition: background-color 0.1s, border-color 0.1s, color 0.1s;
+}
+
+.PendingStakeholderQueue_btnDismiss:disabled,
+.PendingStakeholderQueue_btnConfirm:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Dismiss — ghost/muted (destructive but secondary) */
+.PendingStakeholderQueue_btnDismiss {
+  background: none;
+  border: 1px solid var(--color-rule-heavy);
+  color: var(--color-text-secondary);
+}
+.PendingStakeholderQueue_btnDismiss:not(:disabled):hover {
+  border-color: var(--color-text-tertiary);
+  color: var(--color-text-primary);
+}
+
+/* Confirm — filled charcoal (primary action) */
+.PendingStakeholderQueue_btnConfirm {
+  background: var(--color-desk-charcoal);
+  color: var(--color-paper-cream);
+  border: 1px solid var(--color-desk-charcoal);
+}
+.PendingStakeholderQueue_btnConfirm:not(:disabled):hover {
+  background: var(--color-desk-ink);
+  border-color: var(--color-desk-ink);
+}

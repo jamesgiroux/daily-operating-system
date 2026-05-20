@@ -68,6 +68,21 @@ function enqueue_chrome_assets(): void {
 	wp_enqueue_style( 'dailyos-nav', $base . '/styles/FloatingNavIsland.module.css', array( 'dailyos-aliases' ), VERSION );
 	wp_enqueue_style( 'dailyos-pill', $base . '/styles/Pill.module.css', array( 'dailyos-aliases' ), VERSION );
 
+	// 4b. WP-only chrome overlay — admin-bar offset for FolioBar. Drops the
+	// folio bar below #wpadminbar (z-index 99999) instead of fighting on
+	// z-index. Per L0 packet §10 WP-only overlay exception; not synced
+	// from canonical.
+	wp_enqueue_style( 'dailyos-chrome-wp-overlay', $base . '/wp-overlay-admin-bar.css', array( 'dailyos-folio' ), VERSION );
+
+	// 4c. Design-system primitives + patterns + reference modules. Lifted
+	// verbatim from .docs/design/reference/_shared/styles/ so blocks (and
+	// future render paths) have the full canonical scaffold available.
+	// Auto-enqueued via the helper below so dropping a new file in those
+	// dirs needs no functions.php edit.
+	enqueue_styles_dir( 'dailyos-primitive', '/styles/primitives/', array( 'dailyos-aliases' ) );
+	enqueue_styles_dir( 'dailyos-pattern', '/styles/patterns/', array( 'dailyos-aliases' ) );
+	enqueue_styles_dir( 'dailyos-ref', '/styles/reference/', array( 'dailyos-aliases' ) );
+
 	// 5. Chrome injector — emits FolioBar / NavIsland / Atmosphere from
 	// body.dataset.* attributes. Includes Patch 9a DOM idempotency guard
 	// so duplicate inject() calls (preview reload, partial refresh) only
@@ -87,6 +102,49 @@ function enqueue_chrome_assets(): void {
 	wp_enqueue_script( 'dailyos-chrome' );
 }
 add_action( 'wp_enqueue_scripts', __NAMESPACE__ . '\enqueue_chrome_assets' );
+
+/**
+ * Enqueue every `*.module.css` (and bare `*.css`) under a sub-path of
+ * `assets/` as its own stylesheet handle, keyed by lowercased base name.
+ *
+ * Used to wire the lifted design-system primitives + patterns + reference
+ * modules in bulk without listing each in `functions.php`. Drop a new
+ * `<Name>.module.css` into the target dir and it auto-enqueues on next
+ * page load (no PHP edit required).
+ *
+ * Handle format: `<prefix>-<lowercased-basename>`. E.g.
+ * `EntityChip.module.css` under `styles/primitives/` with prefix
+ * `dailyos-primitive` enqueues as `dailyos-primitive-entitychip`.
+ *
+ * Dev-time tradeoff: one HTTP request per module file. Acceptable for the
+ * scaffold stage. Future work (build-time concat, conditional per-block
+ * enqueue) lands when bandwidth becomes the cost driver.
+ *
+ * @param string              $prefix      Handle prefix (e.g. `dailyos-primitive`).
+ * @param string              $relative    Path under `assets/`, leading + trailing slash.
+ * @param array<string,mixed> $deps        Enqueue dependencies (each file inherits the same).
+ * @return void
+ */
+function enqueue_styles_dir( string $prefix, string $relative, array $deps ): void {
+	$theme_dir = get_stylesheet_directory();
+	$theme_uri = get_stylesheet_directory_uri();
+	$abs_dir   = $theme_dir . '/assets' . $relative;
+	if ( ! is_dir( $abs_dir ) ) {
+		return;
+	}
+	$files = glob( $abs_dir . '*.css' );
+	if ( false === $files || empty( $files ) ) {
+		return;
+	}
+	sort( $files, SORT_STRING );
+	foreach ( $files as $abs_file ) {
+		$basename = basename( $abs_file );
+		$slug     = strtolower( preg_replace( '/\.module\.css$|\.css$/', '', $basename ) );
+		$handle   = $prefix . '-' . $slug;
+		$src      = $theme_uri . '/assets' . $relative . $basename;
+		wp_enqueue_style( $handle, $src, $deps, VERSION );
+	}
+}
 
 /**
  * Per-surface chrome config — emitted as `window.dailyosChrome` and merged

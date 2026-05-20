@@ -679,7 +679,8 @@
 				"rem",
 				"em",
 				"%"
-			]
+			],
+			"padding": true
 		},
 		"custom": {
 			"dailyos": {
@@ -724,6 +725,10 @@
 					"z-page-content": "1"
 				}
 			}
+		},
+		"layout": {
+			"contentSize": "900px",
+			"wideSize": "1180px"
 		}
 	},
 	"customTemplates": [],
@@ -741,10 +746,18 @@
 		{
 			"name": "sidebar-account-summary",
 			"area": "uncategorized",
-			"title": "Sidebar — Account Summary"
+			"title": "Sidebar \u2014 Account Summary"
 		}
 	],
 	"styles": {
-		"blocks": {}
+		"blocks": {},
+		"spacing": {
+			"padding": {
+				"top": "var(--wp--custom--dailyos--tokens--page-margin-top)",
+				"bottom": "var(--wp--custom--dailyos--tokens--page-padding-bottom)",
+				"left": "var(--wp--custom--dailyos--tokens--page-padding-horizontal)",
+				"right": "var(--wp--custom--dailyos--tokens--page-padding-horizontal)"
+			}
+		}
 	}
 }

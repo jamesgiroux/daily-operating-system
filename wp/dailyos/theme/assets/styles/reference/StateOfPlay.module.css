@@ -1,0 +1,33 @@
+/* =============================================================================
+   STATE OF PLAY — Two-column layout for Working/Struggling blocks
+   ============================================================================= */
+
+.StateOfPlay_stateColumns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 40px;
+}
+
+@media (max-width: 680px) {
+  .StateOfPlay_stateColumns {
+    grid-template-columns: 1fr;
+  }
+}
+
+.StateOfPlay_stateColumn {}
+
+.StateOfPlay_sectionWithScrollMargin {
+  scroll-margin-top: 60px;
+}
+
+.StateOfPlay_showMoreButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px 0 0;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}

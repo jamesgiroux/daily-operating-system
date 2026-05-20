@@ -1,0 +1,208 @@
+/* ActivityLogSection — Audit log viewer  */
+
+.ActivityLogSection_container {
+  margin-top: var(--space-lg);
+}
+
+.ActivityLogSection_filterBar {
+  display: flex;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-lg);
+  flex-wrap: wrap;
+}
+
+.ActivityLogSection_filterChip {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 5px 14px;
+  border-radius: 100px;
+  border: 1px solid var(--color-rule-heavy);
+  background: none;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.ActivityLogSection_filterChip:hover {
+  border-color: var(--color-text-secondary);
+  color: var(--color-text-secondary);
+}
+
+.ActivityLogSection_filterChipActive {
+  border-color: var(--color-garden-olive);
+  color: var(--color-garden-olive);
+  background: var(--color-garden-olive-6);
+}
+
+.ActivityLogSection_dayGroup {
+  margin-bottom: var(--space-lg);
+}
+
+.ActivityLogSection_dayLabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  margin: 0 0 var(--space-sm) 0;
+}
+
+.ActivityLogSection_record {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-md);
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.ActivityLogSection_record:hover {
+  background: var(--color-black-2);
+}
+
+.ActivityLogSection_recordAnomaly {
+  border-left: 3px solid var(--color-spice-turmeric);
+  padding-left: var(--space-sm);
+}
+
+.ActivityLogSection_timestamp {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+  min-width: 72px;
+}
+
+.ActivityLogSection_categoryChip {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.ActivityLogSection_categorySecurity {
+  color: var(--color-spice-terracotta);
+  background: var(--color-spice-terracotta-8);
+}
+
+.ActivityLogSection_categoryDataAccess {
+  color: var(--color-garden-sage);
+  background: var(--color-garden-sage-8);
+}
+
+.ActivityLogSection_categoryAi {
+  color: var(--color-garden-larkspur);
+  background: var(--color-garden-larkspur-8);
+}
+
+.ActivityLogSection_categoryAnomaly {
+  color: var(--color-spice-turmeric);
+  background: var(--color-spice-turmeric-12);
+}
+
+.ActivityLogSection_categoryConfig {
+  color: var(--color-garden-olive);
+  background: var(--color-garden-olive-8);
+}
+
+.ActivityLogSection_categorySystem {
+  color: var(--color-text-tertiary);
+  background: var(--color-black-4);
+}
+
+.ActivityLogSection_eventName {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-primary);
+  flex: 1;
+}
+
+.ActivityLogSection_detail {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  line-height: 1.6;
+  padding: 8px 0 8px 88px;
+  border-bottom: 1px solid var(--color-rule-light);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* ── Pagination ── */
+
+.ActivityLogSection_pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-md) 0;
+  border-top: 1px solid var(--color-rule-light);
+  margin-top: var(--space-sm);
+}
+
+.ActivityLogSection_paginationCount {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+}
+
+.ActivityLogSection_loadMoreButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 0;
+  transition: color 0.15s ease;
+}
+
+.ActivityLogSection_loadMoreButton:hover {
+  color: var(--color-text-primary);
+}
+
+.ActivityLogSection_actions {
+  display: flex;
+  gap: var(--space-md);
+  margin-top: var(--space-lg);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--color-rule-heavy);
+}
+
+.ActivityLogSection_emptyState {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+  text-align: center;
+  padding: var(--space-xl) 0;
+}
+
+.ActivityLogSection_integrityResult {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  margin-top: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: 4px;
+}
+
+.ActivityLogSection_integritySuccess {
+  color: var(--color-garden-sage);
+  background: var(--color-garden-sage-8);
+}
+
+.ActivityLogSection_integrityFailure {
+  color: var(--color-spice-terracotta);
+  background: var(--color-spice-terracotta-8);
+}

@@ -1,0 +1,41 @@
+.ConfidenceScoreChip_chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  min-width: 42px;
+  padding: 2px 8px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.ConfidenceScoreChip_chip[data-band="likely_current"] {
+  border-color: var(--color-trust-likely-current-12);
+  background: var(--color-trust-likely-current-15);
+  color: var(--color-trust-likely-current);
+}
+
+.ConfidenceScoreChip_chip[data-band="use_with_caution"] {
+  border-color: var(--color-trust-use-with-caution-12);
+  background: var(--color-trust-use-with-caution-15);
+  color: var(--color-trust-use-with-caution);
+}
+
+.ConfidenceScoreChip_chip[data-band="needs_verification"] {
+  border-color: var(--color-trust-needs-verification-12);
+  background: var(--color-trust-needs-verification-15);
+  color: var(--color-trust-needs-verification);
+}
+
+.ConfidenceScoreChip_chip[data-state="unavailable"] {
+  border-color: transparent;
+  background: var(--color-desk-charcoal-4);
+  color: var(--color-text-tertiary);
+}

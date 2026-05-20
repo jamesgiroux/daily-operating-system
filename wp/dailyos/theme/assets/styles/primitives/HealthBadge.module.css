@@ -1,0 +1,197 @@
+/* HealthBadge — health score visualization across compact/standard/hero sizes */
+
+.HealthBadge_badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ─── Dot ─────────────────────────────────────────────────────────────── */
+
+.HealthBadge_dot {
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.HealthBadge_dotCompact {
+  width: 8px;
+  height: 8px;
+}
+
+.HealthBadge_dotStandard {
+  width: 8px;
+  height: 8px;
+}
+
+.HealthBadge_dotHero {
+  width: 10px;
+  height: 10px;
+}
+
+/* Muted dot for insufficient data */
+.HealthBadge_dotMuted {
+  background: var(--color-text-quaternary, #ccc);
+  opacity: 0.5;
+}
+
+.HealthBadge_dotGreen {
+  background: var(--color-garden-sage);
+}
+
+.HealthBadge_dotYellow {
+  background: var(--color-spice-saffron);
+}
+
+.HealthBadge_dotRed {
+  background: var(--color-spice-terracotta);
+}
+
+/* ─── Score ────────────────────────────────────────────────────────────── */
+
+.HealthBadge_score {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--color-text-primary);
+}
+
+/* Muted score for insufficient data */
+.HealthBadge_scoreMuted {
+  color: var(--color-text-tertiary);
+  opacity: 0.6;
+}
+
+.HealthBadge_scoreCompact {
+  font-size: 12px;
+}
+
+.HealthBadge_scoreStandard {
+  font-size: 13px;
+}
+
+.HealthBadge_scoreHero {
+  font-size: 32px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+/* ─── Trend arrow ──────────────────────────────────────────────────────── */
+
+.HealthBadge_trend {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.HealthBadge_trendImproving {
+  color: var(--color-garden-sage);
+}
+
+.HealthBadge_trendStable {
+  color: var(--color-text-tertiary);
+}
+
+.HealthBadge_trendDeclining {
+  color: var(--color-spice-terracotta);
+}
+
+.HealthBadge_trendVolatile {
+  color: var(--color-spice-saffron);
+}
+
+/* ─── Hero layout ──────────────────────────────────────────────────────── */
+
+.HealthBadge_hero {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.HealthBadge_heroRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.HealthBadge_heroTint {
+  padding: 16px 20px;
+  border-radius: var(--radius-editorial-sm);
+}
+
+.HealthBadge_heroTintGreen {
+  background: var(--color-garden-sage-10);
+}
+
+.HealthBadge_heroTintYellow {
+  background: var(--color-spice-saffron-10);
+}
+
+.HealthBadge_heroTintRed {
+  background: var(--color-spice-terracotta-10);
+}
+
+.HealthBadge_heroRationale {
+  font-family: var(--font-serif);
+  font-size: 15px;
+  font-weight: 300;
+  font-style: italic;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  margin: 0;
+  max-width: 480px;
+}
+
+.HealthBadge_heroMeta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.HealthBadge_confidenceQualifier {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.HealthBadge_sourceLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+/* ─── Divergence badge ─────────────────────────────────────────────────── */
+
+.HealthBadge_divergence {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 3px;
+}
+
+.HealthBadge_divergenceMinor {
+  background: var(--color-spice-saffron-10);
+  color: var(--color-spice-saffron);
+}
+
+.HealthBadge_divergenceNotable {
+  background: var(--color-spice-terracotta-10);
+  color: var(--color-spice-terracotta);
+}
+
+.HealthBadge_divergenceCritical {
+  background: var(--color-spice-terracotta-20);
+  color: var(--color-spice-terracotta);
+}

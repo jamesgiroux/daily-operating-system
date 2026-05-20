@@ -1,0 +1,260 @@
+.ReceiptCallout_root {
+  color: var(--color-text-primary);
+}
+
+.ReceiptCallout_root[data-position="drawer"] {
+  display: block;
+  max-width: 440px;
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial-md);
+  background: var(--color-paper-warm-white);
+  box-shadow: var(--shadow-sm);
+}
+
+.ReceiptCallout_receipt {
+  margin-top: var(--space-sm);
+  border: 1px solid var(--color-rule-light);
+  border-left: 3px solid var(--color-rule-heavy);
+  border-radius: var(--radius-editorial-md);
+  background: var(--color-paper-warm-white);
+  transition:
+    border-color var(--transition-normal),
+    box-shadow var(--transition-normal);
+}
+
+.ReceiptCallout_root[data-position="drawer"] .ReceiptCallout_receipt {
+  margin: 0;
+  border-right: 0;
+  border-bottom: 0;
+  border-left-width: 3px;
+  border-radius: 0 0 var(--radius-editorial-md) var(--radius-editorial-md);
+  box-shadow: none;
+}
+
+.ReceiptCallout_root[data-band="likely_current"] .ReceiptCallout_receipt {
+  border-left-color: var(--color-trust-likely-current);
+}
+
+.ReceiptCallout_root[data-band="use_with_caution"] .ReceiptCallout_receipt {
+  border-left-color: var(--color-trust-use-with-caution);
+}
+
+.ReceiptCallout_root[data-band="needs_verification"] .ReceiptCallout_receipt {
+  border-left-color: var(--color-trust-needs-verification);
+}
+
+.ReceiptCallout_resolverBand,
+.ReceiptCallout_consistency,
+.ReceiptCallout_section,
+.ReceiptCallout_actions,
+.ReceiptCallout_loading,
+.ReceiptCallout_error {
+  padding: var(--space-md);
+}
+
+.ReceiptCallout_resolverBand {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.ReceiptCallout_resolverCopy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.ReceiptCallout_kicker,
+.ReceiptCallout_sectionTitle,
+.ReceiptCallout_sourceLabel,
+.ReceiptCallout_freshnessLabel {
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.ReceiptCallout_resolverLabel {
+  color: var(--color-text-primary);
+  font-family: var(--font-serif);
+  font-size: 18px;
+  line-height: 1.25;
+}
+
+.ReceiptCallout_resolverSignals {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+}
+
+.ReceiptCallout_consistency {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  border-top: 1px solid var(--color-rule-light);
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.ReceiptCallout_section {
+  border-top: 1px solid var(--color-rule-light);
+}
+
+.ReceiptCallout_sectionTitle {
+  margin: 0 0 var(--space-sm);
+}
+
+.ReceiptCallout_sourceList,
+.ReceiptCallout_freshnessList,
+.ReceiptCallout_findingList,
+.ReceiptCallout_correctionList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ReceiptCallout_sourceItem,
+.ReceiptCallout_freshnessItem,
+.ReceiptCallout_findingItem,
+.ReceiptCallout_correctionItem {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.ReceiptCallout_sourceHeader {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+}
+
+.ReceiptCallout_sourceMeta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.ReceiptCallout_sourceLink {
+  color: var(--color-text-secondary);
+  text-decoration: underline;
+  text-decoration-color: var(--color-rule-heavy);
+  text-underline-offset: 2px;
+}
+
+.ReceiptCallout_rawValue {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-family: var(--font-serif);
+  font-size: 15px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.ReceiptCallout_freshnessItem {
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.ReceiptCallout_freshnessDetail {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.ReceiptCallout_findingItem {
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.ReceiptCallout_findingItem[data-severity="high"] {
+  color: var(--color-trust-needs-verification);
+}
+
+.ReceiptCallout_findingItem[data-severity="medium"] {
+  color: var(--color-trust-use-with-caution);
+}
+
+.ReceiptCallout_correctionValues {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.ReceiptCallout_previousValue {
+  color: var(--color-text-tertiary);
+  text-decoration: line-through;
+}
+
+.ReceiptCallout_correctedValue {
+  color: var(--color-text-primary);
+}
+
+.ReceiptCallout_actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  border-top: 1px solid var(--color-rule-light);
+}
+
+.ReceiptCallout_loading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.ReceiptCallout_skeletonLine,
+.ReceiptCallout_skeletonShort {
+  display: block;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--color-desk-charcoal-4);
+}
+
+.ReceiptCallout_skeletonLine {
+  width: 100%;
+}
+
+.ReceiptCallout_skeletonShort {
+  width: 40%;
+}
+
+.ReceiptCallout_error {
+  color: var(--color-trust-needs-verification);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+@media (max-width: 720px) {
+  .ReceiptCallout_resolverBand {
+    flex-direction: column;
+  }
+
+  .ReceiptCallout_resolverSignals {
+    justify-content: flex-start;
+  }
+}

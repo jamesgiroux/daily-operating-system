@@ -1,0 +1,125 @@
+
+.EditorialPageHeader_header {
+  --editorial-header-width: var(--page-content-width-standard);
+  --editorial-header-rule-color: var(--color-desk-charcoal);
+  --editorial-header-rule-height: 2px;
+  max-width: var(--editorial-header-width);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.EditorialPageHeader_widthStandard {
+  --editorial-header-width: var(--page-content-width-standard);
+}
+
+.EditorialPageHeader_widthReading {
+  --editorial-header-width: var(--page-content-width-reading);
+}
+
+.EditorialPageHeader_scaleStandard {
+  padding-top: var(--space-5xl);
+  padding-bottom: var(--space-lg);
+}
+
+.EditorialPageHeader_scalePage {
+  padding-top: var(--space-5xl);
+  padding-bottom: 40px;
+}
+
+.EditorialPageHeader_scaleProfile {
+  padding-top: var(--space-5xl);
+  padding-bottom: var(--space-2xl);
+}
+
+.EditorialPageHeader_ruleStandard {
+  --editorial-header-rule-height: 2px;
+}
+
+.EditorialPageHeader_ruleSubtle {
+  --editorial-header-rule-color: var(--color-rule-heavy);
+  --editorial-header-rule-height: 1px;
+}
+
+.EditorialPageHeader_topRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-lg);
+}
+
+.EditorialPageHeader_titleBlock {
+  min-width: 0;
+  flex: 1;
+}
+
+.EditorialPageHeader_title {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  color: var(--color-text-primary);
+}
+
+.EditorialPageHeader_scaleStandard .EditorialPageHeader_title {
+  font-size: 36px;
+}
+
+.EditorialPageHeader_scalePage .EditorialPageHeader_title {
+  font-size: 42px;
+}
+
+.EditorialPageHeader_scaleProfile .EditorialPageHeader_title {
+  font-size: 52px;
+  line-height: 1.06;
+}
+
+.EditorialPageHeader_subtitle {
+  margin: var(--space-sm) 0 0;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 300;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+}
+
+.EditorialPageHeader_meta {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
+
+.EditorialPageHeader_rule {
+  height: var(--editorial-header-rule-height);
+  margin-top: var(--space-md);
+  background: var(--editorial-header-rule-color);
+}
+
+.EditorialPageHeader_after {
+  margin-top: var(--space-md);
+}
+
+@media (max-width: 768px) {
+  .EditorialPageHeader_topRow {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-sm);
+  }
+
+  .EditorialPageHeader_meta {
+    white-space: normal;
+  }
+
+  .EditorialPageHeader_scaleStandard .EditorialPageHeader_title {
+    font-size: 32px;
+  }
+
+  .EditorialPageHeader_scalePage .EditorialPageHeader_title {
+    font-size: 38px;
+  }
+
+  .EditorialPageHeader_scaleProfile .EditorialPageHeader_title {
+    font-size: 44px;
+  }
+}
