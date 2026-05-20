@@ -68,6 +68,9 @@ jobs:
       - name: Grep gates (secret-persistence + L0 invariants)
         run: bash scripts/run-grep-gates.sh
 
+      - name: Chrome/block collision gate (ADR 0132 — Pill duality invariant)
+        run: bash scripts/check-chrome-block-collision.sh
+
   phpunit:
     name: PHPUnit (PHP ${{ matrix.php }})
     runs-on: ubuntu-latest
