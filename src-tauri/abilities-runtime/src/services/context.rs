@@ -843,6 +843,7 @@ pub struct ServiceContext<'a> {
     trajectory_reader: Option<Arc<dyn TrajectoryReadHandle>>,
     temporal_maintenance: Option<Arc<dyn TemporalMaintenanceHandle>>,
     composition_commit: Option<Arc<dyn CompositionCommitHandle>>,
+    entity_touchpoints_reader: Option<Arc<dyn EntityTouchpointsReadHandle>>,
 }
 
 pub type EntityContextReadFuture<'a> =
@@ -969,6 +970,104 @@ pub type ListOpenLoopsReadFuture<'a> = Pin<
 
 pub trait ListOpenLoopsReadHandle: Send + Sync {
     fn read_open_loops<'a>(&'a self, query: ListOpenLoopsQuery) -> ListOpenLoopsReadFuture<'a>;
+}
+
+// -----------------------------------------------------------------------------
+// DOS-460 — canonical entity touchpoints read seam.
+//
+// Narrow read handle for entity-scoped touchpoint composition: the producer
+// asks for upcoming + recent meeting-shaped interactions for a subject; the
+// app-side reader resolves those out of `meeting_entities` + parent/child
+// account expansion + attendee-match fallback. Subject isolation lives in the
+// reader's filter — the reader returns each candidate with an explicit
+// `inclusion_reason`, never a raw join soup.
+// -----------------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EntityTouchpointsQuery {
+    pub entity_type: String,
+    pub entity_id: String,
+    pub now: DateTime<Utc>,
+    /// Days into the future considered "upcoming".
+    pub upcoming_window_days: u16,
+    /// Days into the past considered "recent".
+    pub recent_window_days: u16,
+    /// Hard cap per side (upcoming/recent) to bound the reader.
+    pub per_side_cap: usize,
+}
+
+/// Why a touchpoint belongs to this subject — surfaced verbatim to the
+/// envelope so callers can debug subject bleed without re-querying.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TouchpointInclusionReason {
+    /// Direct row in `meeting_entities` for this subject.
+    SubjectMatch,
+    /// Inherited via parent/child account or related entity link.
+    EntityLink,
+    /// Person subject found as attendee of the meeting.
+    AttendeeMatch,
+    /// Domain match (e.g., attendee email domain matches account).
+    DomainMatch,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EntityTouchpointSnapshot {
+    pub meeting_id: String,
+    pub title: String,
+    pub kind: String,
+    pub starts_at: Option<String>,
+    pub ends_at: Option<String>,
+    /// Echo of the requesting subject in `kind:id` form so a downstream
+    /// composer can re-render `SubjectRef` without re-parsing IDs.
+    pub subject_entity_type: String,
+    pub subject_entity_id: String,
+    pub inclusion_reason: TouchpointInclusionReason,
+    /// Populated only when the candidate set was over capacity OR the reader
+    /// dropped a row for a typed reason (low confidence, suppressed, etc.).
+    pub exclusion_reason: Option<String>,
+    pub source_asof: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EntityTouchpointsSnapshot {
+    pub subject_entity_type: String,
+    pub subject_entity_id: String,
+    pub upcoming: Vec<EntityTouchpointSnapshot>,
+    pub recent: Vec<EntityTouchpointSnapshot>,
+    /// Additional subject IDs whose touchpoints were also pulled in via
+    /// parent/child link or related-entity expansion. The composer uses this
+    /// to populate `SubjectScope::also_includes` so downstream surfaces can
+    /// show "scope includes child accounts X, Y".
+    pub also_includes: Vec<(String, String)>,
+    /// Filter description for `CandidateSetRef::filter_description` — explains
+    /// how the candidate set was assembled, in plain English.
+    pub filter_description: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum EntityTouchpointsReadError {
+    #[error("subject is not owned by this workspace: {entity_type}:{entity_id}")]
+    SubjectNotOwned {
+        entity_type: String,
+        entity_id: String,
+    },
+    #[error("{0}")]
+    ReadFailed(String),
+}
+
+pub type EntityTouchpointsReadFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<EntityTouchpointsSnapshot, EntityTouchpointsReadError>>
+            + Send
+            + 'a,
+    >,
+>;
+
+pub trait EntityTouchpointsReadHandle: Send + Sync {
+    fn read_entity_touchpoints<'a>(
+        &'a self,
+        query: EntityTouchpointsQuery,
+    ) -> EntityTouchpointsReadFuture<'a>;
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1189,6 +1288,7 @@ impl<'a> ServiceContext<'a> {
             trajectory_reader: None,
             temporal_maintenance: None,
             composition_commit: None,
+            entity_touchpoints_reader: None,
         }
     }
 
@@ -1215,6 +1315,7 @@ impl<'a> ServiceContext<'a> {
             trajectory_reader: None,
             temporal_maintenance: None,
             composition_commit: None,
+            entity_touchpoints_reader: None,
         }
     }
 
@@ -1252,6 +1353,7 @@ impl<'a> ServiceContext<'a> {
             trajectory_reader: None,
             temporal_maintenance: None,
             composition_commit: None,
+            entity_touchpoints_reader: None,
         }
     }
 
@@ -1328,6 +1430,32 @@ impl<'a> ServiceContext<'a> {
     ) -> Self {
         self.composition_commit = Some(finalizer);
         self
+    }
+
+    pub fn with_entity_touchpoints_reader(
+        mut self,
+        reader: Arc<dyn EntityTouchpointsReadHandle>,
+    ) -> Self {
+        self.entity_touchpoints_reader = Some(reader);
+        self
+    }
+
+    /// Reader-backed touchpoint composition (DOS-460). When no reader is
+    /// attached (test contexts, evaluate mode without fixtures) the caller
+    /// receives a typed `ReadFailed` error and the producer falls back to a
+    /// typed empty bundle. Subject isolation is the reader's responsibility —
+    /// each returned snapshot carries `inclusion_reason` so the producer can
+    /// project verbatim without recomputing the filter.
+    pub async fn read_entity_touchpoints(
+        &self,
+        query: EntityTouchpointsQuery,
+    ) -> Result<EntityTouchpointsSnapshot, EntityTouchpointsReadError> {
+        let Some(reader) = &self.entity_touchpoints_reader else {
+            return Err(EntityTouchpointsReadError::ReadFailed(
+                self.missing_reader_error("entity_touchpoints_reader"),
+            ));
+        };
+        reader.read_entity_touchpoints(query).await
     }
 
     pub async fn commit_composition(

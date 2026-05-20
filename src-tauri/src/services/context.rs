@@ -56,6 +56,9 @@ pub fn attach_live_workspace_readers(ctx: ServiceContext<'_>) -> ServiceContext<
         .with_trajectory_reader(Arc::new(LiveTemporalWorkspaceReader))
         .with_temporal_maintenance(Arc::new(LiveTemporalWorkspaceReader))
         .with_composition_commit_handle(Arc::new(LiveCompositionCommitter))
+        .with_entity_touchpoints_reader(Arc::new(
+            crate::services::entity_intelligence::touchpoints::LiveEntityTouchpointsReader,
+        ))
 }
 
 impl EntityContextReadHandle for LiveEntityContextReader {
