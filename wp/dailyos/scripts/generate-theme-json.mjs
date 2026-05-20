@@ -175,6 +175,7 @@ function buildThemeJson({ palette, spacing, custom, blockOverrides = {} }) {
 			{ name: 'header', area: 'header', title: 'Header' },
 			{ name: 'footer', area: 'footer', title: 'Footer' },
 			{ name: 'sidebar-account-summary', area: 'uncategorized', title: 'Sidebar — Account Summary' },
+			{ name: 'day-strip', area: 'uncategorized', title: 'DayStrip — Briefing day navigation' },
 		],
 		styles: {
 			// Global spacing.padding wires the WP top-level container to the

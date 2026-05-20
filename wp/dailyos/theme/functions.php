@@ -74,6 +74,18 @@ function enqueue_chrome_assets(): void {
 	// from canonical.
 	wp_enqueue_style( 'dailyos-chrome-wp-overlay', $base . '/wp-overlay-admin-bar.css', array( 'dailyos-folio' ), VERSION );
 
+	// 4b-ii. DayStrip-aware pageContainer offset overlay. Briefing surfaces
+	// add a fixed DayStrip below the FolioBar; the page container below
+	// needs `+ 72px` margin-top to clear both bars. Mirrors the canonical
+	// briefing-d-spine surface override; pattern-class scoped via the
+	// `MagazinePageLayout_pageContainerWithDayStrip` modifier.
+	wp_enqueue_style(
+		'dailyos-chrome-wp-overlay-day-strip',
+		$base . '/wp-overlay-day-strip.css',
+		array( 'dailyos-magazine' ),
+		VERSION
+	);
+
 	// 4c. Design-system primitives + patterns + reference modules. Lifted
 	// verbatim from .docs/design/reference/_shared/styles/ so blocks (and
 	// future render paths) have the full canonical scaffold available.
@@ -202,11 +214,22 @@ function chrome_config(): array {
 	// Stub branches for W2 entity CPTs — neutral defaults until W2 ships.
 	// Project surface gets its tint resolved at W2 L0 alongside the other entity tints.
 	if ( is_singular( 'dailyos_briefing' ) ) {
+		// Match the canonical DailyBriefingDSpine reference (briefing-d-spine.html):
+		// FolioBar carries date + actions + chapters; DayStrip renders as a
+		// secondary chrome bar via the briefing template part. Readiness pills
+		// stay omitted until W2 wires real briefing claim data — the FolioBar
+		// renders readiness only when `folio-readiness` is populated.
 		return array_merge(
 			$base,
 			array(
-				'active-page' => 'briefings',
-				'folio-label' => 'Briefing',
+				'active-page'         => 'today',
+				'tint'                => 'turmeric',
+				'folio-label'         => 'Daily Briefing',
+				'folio-crumbs'        => 'Today',
+				'folio-date'          => strtoupper( wp_date( 'l, F j, Y' ) ),
+				'folio-actions'       => 'refresh',
+				'folio-refresh-title' => 'Refresh briefing',
+				'chapters'            => 'lead:alignleft:Lead|schedule:calendar:Today|moving:activity:Moving|watch:eye:Watch',
 			)
 		);
 	}

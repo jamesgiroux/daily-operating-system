@@ -747,6 +747,11 @@
 			"name": "sidebar-account-summary",
 			"area": "uncategorized",
 			"title": "Sidebar — Account Summary"
+		},
+		{
+			"name": "day-strip",
+			"area": "uncategorized",
+			"title": "DayStrip — Briefing day navigation"
 		}
 	],
 	"styles": {
