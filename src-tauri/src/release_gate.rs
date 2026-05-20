@@ -68,6 +68,7 @@ const DOS288_SELECTORS: &[&str] = &[
 const DOS288_OUTPUT_CAPTURE_CAP_BYTES: usize = 64 * 1024;
 const DOS288_OUTPUT_CAPTURE_EDGE_BYTES: usize = DOS288_OUTPUT_CAPTURE_CAP_BYTES / 2;
 const DOS288_SELECTOR_TIMEOUT_SUMMARY: &str = "dos288-selector-timeout-exceeded";
+const W6_FIXTURE_REPORT_NAME: &str = "w6-fixtures.json";
 
 const SUBSTRATE_ONLY_BUNDLES: &[&str] = &[
     "bundle-14",
@@ -128,6 +129,69 @@ const BUNDLE_INVARIANT_SPECS: &[BundleInvariantSpec] = &[
     },
 ];
 
+const W6_FIXTURE_SPECS: &[W6FixtureSpec] = &[
+    W6FixtureSpec {
+        id: "w6-01-default-wp-mcp-no-dailyos",
+        surface: "wp_mcp",
+    },
+    W6FixtureSpec {
+        id: "w6-02-mcp-exposure-none-hidden",
+        surface: "wp_mcp",
+    },
+    W6FixtureSpec {
+        id: "w6-03-frontend-js-no-dailyos-secrets",
+        surface: "frontend_js",
+    },
+    W6FixtureSpec {
+        id: "w6-04-gutenberg-rejects-raw-runtime-payloads",
+        surface: "gutenberg_save",
+    },
+    W6FixtureSpec {
+        id: "w6-05-projection-tampered-typed-error",
+        surface: "projection_bridge",
+    },
+    W6FixtureSpec {
+        id: "w6-06-stale-claim-version-feedback-409",
+        surface: "presence_nonce",
+    },
+    W6FixtureSpec {
+        id: "w6-07-cross-user-presence-nonce",
+        surface: "presence_nonce",
+    },
+    W6FixtureSpec {
+        id: "w6-08-presence-nonce-replay-rejected",
+        surface: "presence_nonce",
+    },
+    W6FixtureSpec {
+        id: "w6-09-phase3-budget-charge-fail-closed",
+        surface: "feedback_budget",
+    },
+    W6FixtureSpec {
+        id: "w6-10-direct-plugin-claim-table-write-lint",
+        surface: "plugin_storage",
+    },
+    W6FixtureSpec {
+        id: "w6-11-payload-json-redaction",
+        surface: "presence_nonce",
+    },
+    W6FixtureSpec {
+        id: "w6-12-stock-theme-account-overview-render",
+        surface: "wp_theme_render",
+    },
+    W6FixtureSpec {
+        id: "w6-13-cold-start-stale-marker-notice",
+        surface: "runtime_lifecycle",
+    },
+    W6FixtureSpec {
+        id: "w6-14-hot-tauri-restart-sentinel-discovery",
+        surface: "runtime_lifecycle",
+    },
+    W6FixtureSpec {
+        id: "w6-15-hot-studio-restart-first-render",
+        surface: "studio_lifecycle",
+    },
+];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct BundleInvariantSpec {
     id: &'static str,
@@ -140,6 +204,12 @@ struct BundleInvariantSpec {
 enum BundleInvariantEvaluator {
     HarnessReport,
     FixtureContract,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct W6FixtureSpec {
+    id: &'static str,
+    surface: &'static str,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ValueEnum)]
@@ -497,12 +567,12 @@ pub fn exit_code_for_evidence(evidence: &GateEvidenceV1) -> u8 {
         .suites
         .iter()
         .filter(|suite| suite.mandatory)
-        .any(|suite| suite.status == GateStatus::Fail)
+        .any(|suite| matches!(suite.status, GateStatus::Fail | GateStatus::Skipped))
         || evidence
             .invariants
             .iter()
             .filter(|invariant| invariant.mandatory)
-            .any(|invariant| invariant.status == GateStatus::Fail);
+            .any(|invariant| matches!(invariant.status, GateStatus::Fail | GateStatus::Skipped));
     if mandatory_failed {
         EXIT_MANDATORY_FAILURE
     } else {
@@ -640,6 +710,8 @@ fn build_hermetic_evidence(config: &GateConfig) -> Result<GateEvidenceV1, GateEr
     };
 
     suites.extend(dos288_suite_results(config, &binding));
+    let w6_results = w6_fixture_results(config, &binding);
+    suites.push(w6_results.suite);
 
     let mut invariants = Vec::new();
     invariants.extend(bundle_invariants(report.as_ref(), config, &loader));
@@ -649,6 +721,7 @@ fn build_hermetic_evidence(config: &GateConfig) -> Result<GateEvidenceV1, GateEr
         &loader,
     ));
     invariants.extend(dos288_invariants(&suites));
+    invariants.extend(w6_results.invariants);
 
     let latency = report
         .as_ref()
@@ -1141,6 +1214,262 @@ fn bind_evidence_to_commit(
             "harness-report-stale: report bound to {report_git_sha} fixtures {report_fixtures_hash} but current state is {} {}",
             binding.git_sha, binding.fixtures_hash
         )))
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct W6FixtureReport {
+    status: String,
+    #[serde(default)]
+    git_sha: Option<String>,
+    #[serde(default)]
+    fixtures_hash: Option<String>,
+    fixtures: Vec<W6FixtureEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct W6FixtureEntry {
+    id: String,
+    status: String,
+}
+
+struct W6FixtureGateResult {
+    suite: SuiteResult,
+    invariants: Vec<InvariantResult>,
+}
+
+fn w6_fixture_results(config: &GateConfig, binding: &EvidenceBinding) -> W6FixtureGateResult {
+    let started = Instant::now();
+    let path = config.output_dir.join(W6_FIXTURE_REPORT_NAME);
+    let command_or_report = if config.run_tests {
+        "bash scripts/release-gate/run-w6-fixtures.sh".to_string()
+    } else {
+        path.display().to_string()
+    };
+    let read_result = if config.run_tests {
+        run_w6_fixture_runner(config, binding, &path).and_then(|runner_success| {
+            read_w6_fixture_report(&path, binding).map(|report| (report, Some(runner_success)))
+        })
+    } else {
+        read_w6_fixture_report(&path, binding).map(|report| (report, None))
+    };
+
+    let (status, failure_summary, failures, report) = match read_result {
+        Ok((report, runner_success)) => {
+            let report_status = w6_report_status(&report, runner_success);
+            let failures = w6_report_failures(&report, report_status);
+            let failure_summary = if report_status == GateStatus::Pass {
+                None
+            } else {
+                Some(failures.join(";"))
+            };
+            (report_status, failure_summary, failures, Some(report))
+        }
+        Err(error) => {
+            let summary = error.to_string();
+            (
+                GateStatus::InfraFailure,
+                Some(summary.clone()),
+                vec![summary],
+                None,
+            )
+        }
+    };
+
+    let suite = SuiteResult {
+        name: "w6_negative_fixture_catalog".to_string(),
+        source: if config.run_tests {
+            "w6_fixture_runner".to_string()
+        } else {
+            "w6_fixture_report".to_string()
+        },
+        command_or_report,
+        status,
+        mandatory: true,
+        duration_ms: config
+            .run_tests
+            .then_some(started.elapsed().as_millis() as u64),
+        failure_summary,
+        failures,
+    };
+
+    let invariants = w6_fixture_invariants(report.as_ref(), &path);
+    W6FixtureGateResult { suite, invariants }
+}
+
+fn run_w6_fixture_runner(
+    config: &GateConfig,
+    binding: &EvidenceBinding,
+    path: &Path,
+) -> Result<bool, GateError> {
+    let script = repo_root().join("scripts/release-gate/run-w6-fixtures.sh");
+    if !script.is_file() {
+        return Err(GateError::infra(format!(
+            "w6-fixture-runner-missing:{}",
+            script.display()
+        )));
+    }
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            GateError::infra(format!(
+                "failed to create W6 fixture output directory {}: {error}",
+                parent.display()
+            ))
+        })?;
+    }
+    let output = Command::new("bash")
+        .current_dir(repo_root())
+        .arg(&script)
+        .env("W6_FIXTURE_OUTPUT_DIR", &config.output_dir)
+        .env("W6_FIXTURE_GIT_SHA", &binding.git_sha)
+        .env("W6_FIXTURE_FIXTURES_HASH", &binding.fixtures_hash)
+        .output()
+        .map_err(|error| GateError::infra(format!("w6-fixture-runner-spawn:{error}")))?;
+
+    if output.status.success() || path.is_file() {
+        return Ok(output.status.success());
+    }
+
+    Err(GateError::infra(format!(
+        "w6-fixture-runner-failed-without-report:{}:{}",
+        output.status.code().unwrap_or(-1),
+        hash_prefix(&String::from_utf8_lossy(&output.stderr))
+    )))
+}
+
+fn read_w6_fixture_report(
+    path: &Path,
+    binding: &EvidenceBinding,
+) -> Result<W6FixtureReport, GateError> {
+    let contents = fs::read_to_string(path).map_err(|error| {
+        GateError::infra(format!(
+            "failed to read W6 fixture report {}: {error}",
+            path.display()
+        ))
+    })?;
+    let report: W6FixtureReport = serde_json::from_str(&contents).map_err(|error| {
+        GateError::infra(format!(
+            "failed to parse W6 fixture report {}: {error}",
+            path.display()
+        ))
+    })?;
+    bind_evidence_to_commit(
+        report.git_sha.as_deref(),
+        report.fixtures_hash.as_deref(),
+        binding,
+    )?;
+    Ok(report)
+}
+
+fn w6_report_status(report: &W6FixtureReport, runner_success: Option<bool>) -> GateStatus {
+    if runner_success == Some(false) && w6_declared_status(&report.status) == GateStatus::Pass {
+        return GateStatus::InfraFailure;
+    }
+    if W6_FIXTURE_SPECS
+        .iter()
+        .any(|spec| w6_fixture_entry(report, spec.id).is_none())
+    {
+        return GateStatus::InfraFailure;
+    }
+    let fixture_statuses = W6_FIXTURE_SPECS
+        .iter()
+        .map(|spec| {
+            w6_fixture_entry(report, spec.id)
+                .map(|entry| w6_fixture_status(&entry.status))
+                .unwrap_or(GateStatus::InfraFailure)
+        })
+        .collect::<Vec<_>>();
+    if fixture_statuses
+        .iter()
+        .any(|status| *status == GateStatus::InfraFailure)
+    {
+        return GateStatus::InfraFailure;
+    }
+    if fixture_statuses
+        .iter()
+        .any(|status| matches!(status, GateStatus::Fail | GateStatus::Skipped))
+        || w6_declared_status(&report.status) != GateStatus::Pass
+    {
+        return GateStatus::Fail;
+    }
+    GateStatus::Pass
+}
+
+fn w6_report_failures(report: &W6FixtureReport, suite_status: GateStatus) -> Vec<String> {
+    if suite_status == GateStatus::Pass {
+        return Vec::new();
+    }
+
+    let mut failures = Vec::new();
+    for spec in W6_FIXTURE_SPECS {
+        match w6_fixture_entry(report, spec.id) {
+            Some(entry) => {
+                let status = w6_fixture_status(&entry.status);
+                if status != GateStatus::Pass {
+                    failures.push(format!("w6_fixture_{}:{}", entry.status, spec.id));
+                }
+            }
+            None => failures.push(format!("w6_fixture_missing:{}", spec.id)),
+        }
+    }
+    if w6_declared_status(&report.status) != GateStatus::Pass {
+        failures.push(format!("w6_report_status:{}", report.status));
+    }
+    failures
+}
+
+fn w6_fixture_invariants(
+    report: Option<&W6FixtureReport>,
+    report_path: &Path,
+) -> Vec<InvariantResult> {
+    W6_FIXTURE_SPECS
+        .iter()
+        .map(|spec| {
+            let (status, failure_summary) =
+                match report.and_then(|report| w6_fixture_entry(report, spec.id)) {
+                    Some(entry) => {
+                        let status = w6_fixture_status(&entry.status);
+                        (
+                            status,
+                            (status != GateStatus::Pass)
+                                .then(|| format!("w6_fixture_{}:{}", entry.status, spec.id)),
+                        )
+                    }
+                    None => (
+                        GateStatus::InfraFailure,
+                        Some(format!("w6_fixture_missing:{}", spec.id)),
+                    ),
+                };
+            InvariantResult {
+                id: spec.id.to_string(),
+                bundle: None,
+                surface: spec.surface.to_string(),
+                status,
+                mandatory: true,
+                evidence_ref: report_path.display().to_string(),
+                failure_summary,
+            }
+        })
+        .collect()
+}
+
+fn w6_fixture_entry<'a>(report: &'a W6FixtureReport, id: &str) -> Option<&'a W6FixtureEntry> {
+    report.fixtures.iter().find(|entry| entry.id == id)
+}
+
+fn w6_declared_status(status: &str) -> GateStatus {
+    match status {
+        "pass" | "passed" | "green" => GateStatus::Pass,
+        "fail" | "failed" | "red" | "skipped" | "skip" => GateStatus::Fail,
+        _ => GateStatus::InfraFailure,
+    }
+}
+
+fn w6_fixture_status(status: &str) -> GateStatus {
+    match status {
+        "pass" | "passed" | "green" => GateStatus::Pass,
+        "fail" | "failed" | "red" | "skipped" | "skip" => GateStatus::Fail,
+        _ => GateStatus::InfraFailure,
     }
 }
 

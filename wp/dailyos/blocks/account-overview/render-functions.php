@@ -356,7 +356,12 @@ if ( ! function_exists( 'dailyos_account_overview_render' ) ) {
 		}
 
 		$out  = '<div class="dailyos-claim-row">';
+		$out .= '<div class="dailyos-claim-copy">';
 		$out .= '<p class="dailyos-claim-text">' . esc_html( $text ) . '</p>';
+		$out .= dailyos_account_overview_render_source_list(
+			isset( $row['sources'] ) && is_array( $row['sources'] ) ? $row['sources'] : []
+		);
+		$out .= '</div>';
 
 		if ( '' !== $claim_id ) {
 			$invocation_ids = dailyos_account_overview_invocation_ids_for_block( $block );
@@ -401,6 +406,39 @@ if ( ! function_exists( 'dailyos_account_overview_render' ) ) {
 		}
 
 		$out .= '</div>';
+		return $out;
+	}
+
+	/**
+	 * Render source labels carried by the projection as visible provenance.
+	 *
+	 * @param array<int, array<string, string>> $sources Normalized source rows.
+	 * @return string Rendered source list.
+	 */
+	function dailyos_account_overview_render_source_list( array $sources ): string {
+		if ( empty( $sources ) ) {
+			return '';
+		}
+
+		$out = '<ul class="dailyos-provenance-list" data-ds-tier="primitive" data-ds-name="ProvenanceList" aria-label="' . esc_attr( __( 'Sources', 'dailyos' ) ) . '">';
+		foreach ( $sources as $source ) {
+			if ( ! is_array( $source ) ) {
+				continue;
+			}
+			$label = isset( $source['label'] ) && is_string( $source['label'] ) ? trim( $source['label'] ) : '';
+			$ref   = isset( $source['source_ref'] ) && is_string( $source['source_ref'] ) ? trim( $source['source_ref'] ) : '';
+			if ( '' === $label && '' === $ref ) {
+				continue;
+			}
+			$out .= '<li>';
+			$out .= esc_html( '' !== $label ? $label : $ref );
+			if ( '' !== $label && '' !== $ref && $label !== $ref ) {
+				$out .= ' <span class="dailyos-provenance-ref">' . esc_html( $ref ) . '</span>';
+			}
+			$out .= '</li>';
+		}
+		$out .= '</ul>';
+
 		return $out;
 	}
 

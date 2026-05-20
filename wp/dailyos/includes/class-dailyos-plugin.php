@@ -37,6 +37,37 @@ final class DailyOS_Plugin {
 	private bool $initialized = false;
 
 	/**
+	 * Block attributes that may contain raw runtime payloads or trust-boundary
+	 * metadata and must never be persisted into Gutenberg post content.
+	 */
+	private const UNSAFE_BLOCK_ATTRIBUTE_KEYS = [
+		'presence_nonce',
+		'presenceNonce',
+		'dailyos_presence_nonce',
+		'dailyosPresenceNonce',
+		'payload_json',
+		'payloadJson',
+		'dailyos_payload_json',
+		'dailyosPayloadJson',
+		'ability_payload',
+		'abilityPayload',
+		'dailyos_ability_payload',
+		'dailyosAbilityPayload',
+		'provenance',
+		'provenance_json',
+		'provenanceJson',
+		'raw_provenance',
+		'rawProvenance',
+		'rendered_provenance',
+		'renderedProvenance',
+		'sensitivity',
+		'sensitivity_label',
+		'sensitivityLabel',
+		'unknown_sensitive_shape',
+		'unknownSensitiveShape',
+	];
+
+	/**
 	 * Constructor.
 	 */
 	private function __construct() {}
@@ -960,7 +991,7 @@ final class DailyOS_Plugin {
 	}
 
 	/**
-	 * Strip ephemeral presence nonce attributes before post content is saved.
+	 * Strip unsafe DailyOS runtime attributes before post content is saved.
 	 *
 	 * @param array<string, mixed> $data Post data.
 	 * @param array<string, mixed> $postarr Raw post array.
@@ -977,7 +1008,7 @@ final class DailyOS_Plugin {
 	}
 
 	/**
-	 * Strip ephemeral presence nonce attributes from serialized block content.
+	 * Strip unsafe DailyOS runtime attributes from serialized block content.
 	 *
 	 * @param string $content Serialized block content.
 	 */
@@ -1437,7 +1468,7 @@ final class DailyOS_Plugin {
 	}
 
 	/**
-	 * Strip nonce keys from one parsed block.
+	 * Strip unsafe DailyOS runtime keys from one parsed block.
 	 *
 	 * @param array<string, mixed> $block Parsed block.
 	 * @param bool                 $changed Change flag.
@@ -1461,7 +1492,7 @@ final class DailyOS_Plugin {
 	}
 
 	/**
-	 * Strip nonce keys from arbitrary block attribute values.
+	 * Strip unsafe DailyOS runtime keys from arbitrary block attribute values.
 	 *
 	 * @param mixed $value Attribute value.
 	 * @param bool  $changed Change flag.
@@ -1472,9 +1503,9 @@ final class DailyOS_Plugin {
 			return $value;
 		}
 
-		foreach ( [ 'presence_nonce', 'presenceNonce', 'dailyos_presence_nonce', 'dailyosPresenceNonce' ] as $nonce_key ) {
-			if ( array_key_exists( $nonce_key, $value ) ) {
-				unset( $value[ $nonce_key ] );
+		foreach ( self::UNSAFE_BLOCK_ATTRIBUTE_KEYS as $unsafe_key ) {
+			if ( array_key_exists( $unsafe_key, $value ) ) {
+				unset( $value[ $unsafe_key ] );
 				$changed = true;
 			}
 		}
