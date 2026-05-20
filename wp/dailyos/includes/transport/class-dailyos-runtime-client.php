@@ -179,6 +179,25 @@ final class DailyOS_Runtime_Client {
 		return $this->issue_nonce( $payload );
 	}
 
+	/**
+	 * Re-grant scopes (union with the runtime's current DEFAULT_GRANTED_SCOPES)
+	 * to this paired SurfaceClient without rotating the HMAC session key or
+	 * forcing a re-pair .
+	 *
+	 * @return array<string, mixed>|\WP_Error Refresh envelope or typed pairing error.
+	 */
+	public function refresh_pairing_scopes(): array|\WP_Error {
+		$body_bytes = $this->encode_json( [ 'request_id' => wp_generate_uuid4() ] );
+		if ( null === $body_bytes ) {
+			return $this->error_response(
+				'json_encode_failed',
+				'DailyOS refresh-scopes request could not be encoded.'
+			);
+		}
+
+		return $this->signed_post( '/v1/surface/pairing/refresh-scopes', $body_bytes );
+	}
+
 
 	/**
 	 * Send an HMAC-signed JSON POST request.

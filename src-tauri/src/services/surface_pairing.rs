@@ -1178,6 +1178,180 @@ pub fn apply_signed_session_write_action(
     }
 }
 
+/// Input for the pairing-scope refresh path .
+#[derive(Debug, Clone)]
+pub struct RefreshScopesInput {
+    pub session_id: String,
+    pub surface_client_id: String,
+    pub site_binding_digest: String,
+    pub now: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RefreshScopesResponse {
+    pub surface_client_id: String,
+    pub session_id: String,
+    pub granted_scopes: Vec<String>,
+    pub scope_digest: String,
+    pub previous_scope_digest: String,
+    pub changed: bool,
+    pub ability_projection: Vec<SurfaceAbilityProjection>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RefreshScopesOutcome {
+    pub response: RefreshScopesResponse,
+    pub audit: SurfacePairingAuditEvent,
+}
+
+/// Re-grant scopes to an existing SurfaceClient without revoking its HMAC
+/// session key or pairing row .
+///
+/// Never-narrow rule: target = union(stored, default). Refresh only adds
+/// scopes; never removes. Audit detail classifies the diff into
+/// `added_scopes` + `removed_from_default_but_retained`.
+///
+/// Site-binding digest is re-verified inside the writer transaction.
+pub fn refresh_pairing_scopes(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    input: RefreshScopesInput,
+) -> Result<RefreshScopesOutcome, SurfacePairingError> {
+    ctx.check_mutation_allowed()
+        .map_err(|error| SurfacePairingError::Write(error.to_string()))?;
+
+    let default_scopes = default_granted_scopes();
+    let now_ts = format_ts(input.now);
+
+    let outcome = db
+        .with_transaction(|tx| {
+            let row = match load_session_pairing(tx, &input.session_id, &input.surface_client_id)
+                .map_err(|e| e.to_string())?
+            {
+                Some(row) => row,
+                None => return Ok(Err(SurfacePairingError::SessionInvalid)),
+            };
+
+            if row.site_binding_digest != input.site_binding_digest {
+                return Ok(Err(SurfacePairingError::SiteBindingMismatch));
+            }
+
+            let stored_scopes = scopes_from_json(&row.scopes_json).unwrap_or_default();
+            let stored_set: BTreeSet<String> = stored_scopes.iter().cloned().collect();
+            let default_set: BTreeSet<String> = default_scopes.iter().cloned().collect();
+            let union_set: BTreeSet<String> =
+                stored_set.union(&default_set).cloned().collect();
+            let target_scopes: Vec<String> = union_set.iter().cloned().collect();
+            let target_scope_digest = scope_digest(&target_scopes);
+
+            let added_scopes: Vec<String> =
+                default_set.difference(&stored_set).cloned().collect();
+            let removed_from_default_but_retained: Vec<String> =
+                stored_set.difference(&default_set).cloned().collect();
+
+            let previous_digest = row.scope_digest.clone();
+            let changed = previous_digest != target_scope_digest;
+
+            if changed {
+                let target_scopes_json =
+                    serde_json::to_string(&target_scopes).map_err(|e| e.to_string())?;
+                tx.conn_ref()
+                    .execute(
+                        "UPDATE surface_client_pairings
+                         SET scopes_json = ?1, scope_digest = ?2, last_used_at = ?3
+                         WHERE surface_client_id = ?4",
+                        params![
+                            target_scopes_json,
+                            target_scope_digest,
+                            now_ts,
+                            row.surface_client_id
+                        ],
+                    )
+                    .map_err(|e| e.to_string())?;
+                tx.conn_ref()
+                    .execute(
+                        "UPDATE surface_client_sessions
+                         SET scope_digest = ?1, last_seen_at = ?2
+                         WHERE session_id = ?3",
+                        params![target_scope_digest, now_ts, input.session_id],
+                    )
+                    .map_err(|e| e.to_string())?;
+            } else {
+                tx.conn_ref()
+                    .execute(
+                        "UPDATE surface_client_pairings
+                         SET last_used_at = ?1
+                         WHERE surface_client_id = ?2",
+                        params![now_ts, row.surface_client_id],
+                    )
+                    .map_err(|e| e.to_string())?;
+            }
+
+            Ok(Ok((
+                row,
+                previous_digest,
+                changed,
+                target_scopes,
+                target_scope_digest,
+                added_scopes,
+                removed_from_default_but_retained,
+            )))
+        })
+        .map_err(SurfacePairingError::Write)?;
+
+    let (
+        row,
+        previous_digest,
+        changed,
+        target_scopes,
+        target_scope_digest,
+        added_scopes,
+        removed_from_default_but_retained,
+    ) = outcome?;
+
+    let scope_set = scope_set_from_strings(&target_scopes)?;
+    let actor = Actor::SurfaceClient {
+        instance: SurfaceClientId::new(row.surface_client_id.clone()),
+        scopes: scope_set.clone(),
+    };
+    let ability_projection = ability_projection_for_scopes(&scope_set);
+
+    let response = RefreshScopesResponse {
+        surface_client_id: row.surface_client_id.clone(),
+        session_id: input.session_id.clone(),
+        granted_scopes: target_scopes,
+        scope_digest: target_scope_digest.clone(),
+        previous_scope_digest: previous_digest.clone(),
+        changed,
+        ability_projection,
+    };
+
+    let audit = SurfacePairingAuditEvent {
+        event_kind: if changed {
+            "pairing_scopes_widened"
+        } else {
+            "pairing_scopes_unchanged"
+        },
+        category: "pairing_lifecycle",
+        actor,
+        wp_user_id: None,
+        wp_user_hash: None,
+        request_id: None,
+        detail: json!({
+            "surface_client_id": row.surface_client_id,
+            "session_id": input.session_id,
+            "scope_digest_before": previous_digest,
+            "scope_digest_after": target_scope_digest,
+            "changed": changed,
+            "added_scopes": added_scopes,
+            "removed_from_default_but_retained": removed_from_default_but_retained,
+        }),
+    };
+
+    Ok(RefreshScopesOutcome { response, audit })
+}
+
 /// Look up the scope set granted to a paired surface_client for audit attribution.
 ///
 /// Used by transport-layer rejection paths that have an HMAC-verified request
@@ -4045,5 +4219,189 @@ mod tests {
                 "variant {variant:?} write_action() mismatch — expected {expected_write}, got {has_writer}"
             );
         }
+    }
+
+    #[test]
+    fn refresh_pairing_scopes_is_idempotent_when_digest_already_matches() {
+        allow_surface_scopes();
+        let _kc_guard = set_keychain_for_tests(Arc::new(MockKeychain::default()));
+        let db = db();
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let now = Utc::now();
+        let code = issue_code(&ctx, &db, now).pairing_string;
+        let outcome = complete_test_handshake(&ctx, &db, now, code);
+
+        let refresh = refresh_pairing_scopes(
+            &ctx,
+            &db,
+            RefreshScopesInput {
+                session_id: outcome.response.session_id.clone(),
+                surface_client_id: outcome.response.surface_client_id.clone(),
+                site_binding_digest: outcome.response.site_binding_digest.clone(),
+                now: now + Duration::seconds(1),
+            },
+        )
+        .expect("refresh succeeds on matching digest");
+
+        assert!(!refresh.response.changed);
+        assert_eq!(refresh.audit.event_kind, "pairing_scopes_unchanged");
+    }
+
+    #[test]
+    fn refresh_pairing_scopes_rewrites_pairing_and_session_when_digest_diverges() {
+        allow_surface_scopes();
+        let _kc_guard = set_keychain_for_tests(Arc::new(MockKeychain::default()));
+        let db = db();
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let now = Utc::now();
+        let code = issue_code(&ctx, &db, now).pairing_string;
+        let outcome = complete_test_handshake(&ctx, &db, now, code);
+        let surface_client_id = outcome.response.surface_client_id.clone();
+        let session_id = outcome.response.session_id.clone();
+
+        let narrow_scopes = vec!["submit.feedback".to_string()];
+        let narrow_digest = scope_digest(&narrow_scopes);
+        let narrow_json = serde_json::to_string(&narrow_scopes).unwrap();
+        db.conn_ref()
+            .execute(
+                "UPDATE surface_client_pairings SET scopes_json = ?1, scope_digest = ?2 WHERE surface_client_id = ?3",
+                params![narrow_json, narrow_digest, surface_client_id],
+            )
+            .unwrap();
+        db.conn_ref()
+            .execute(
+                "UPDATE surface_client_sessions SET scope_digest = ?1 WHERE session_id = ?2",
+                params![narrow_digest, session_id],
+            )
+            .unwrap();
+
+        let refresh = refresh_pairing_scopes(
+            &ctx,
+            &db,
+            RefreshScopesInput {
+                session_id: session_id.clone(),
+                surface_client_id: surface_client_id.clone(),
+                site_binding_digest: outcome.response.site_binding_digest.clone(),
+                now: now + Duration::seconds(1),
+            },
+        )
+        .expect("refresh widens narrow stored scopes");
+
+        assert!(refresh.response.changed);
+        assert_eq!(refresh.response.previous_scope_digest, narrow_digest);
+        assert_eq!(refresh.response.granted_scopes, default_granted_scopes());
+        assert_eq!(refresh.audit.event_kind, "pairing_scopes_widened");
+        assert_session_key_found(&surface_client_id, &session_id);
+    }
+
+    #[test]
+    fn refresh_pairing_scopes_rejects_site_binding_mismatch() {
+        allow_surface_scopes();
+        let _kc_guard = set_keychain_for_tests(Arc::new(MockKeychain::default()));
+        let db = db();
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let now = Utc::now();
+        let code = issue_code(&ctx, &db, now).pairing_string;
+        let outcome = complete_test_handshake(&ctx, &db, now, code);
+
+        let err = refresh_pairing_scopes(
+            &ctx,
+            &db,
+            RefreshScopesInput {
+                session_id: outcome.response.session_id.clone(),
+                surface_client_id: outcome.response.surface_client_id.clone(),
+                site_binding_digest: "deadbeef".to_string(),
+                now: now + Duration::seconds(1),
+            },
+        )
+        .expect_err("refresh rejects mismatched site_binding_digest");
+
+        assert_eq!(err, SurfacePairingError::SiteBindingMismatch);
+    }
+
+    #[test]
+    fn refresh_pairing_scopes_never_narrows_when_stored_exceeds_default() {
+        allow_surface_scopes();
+        let _kc_guard = set_keychain_for_tests(Arc::new(MockKeychain::default()));
+        let db = db();
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let now = Utc::now();
+        let code = issue_code(&ctx, &db, now).pairing_string;
+        let outcome = complete_test_handshake(&ctx, &db, now, code);
+        let surface_client_id = outcome.response.surface_client_id.clone();
+        let session_id = outcome.response.session_id.clone();
+
+        let broader_scopes = vec![
+            "read.account_overview".to_string(),
+            "read.composition".to_string(),
+            "submit.feedback".to_string(),
+        ];
+        let broader_digest = scope_digest(&broader_scopes);
+        let broader_json = serde_json::to_string(&broader_scopes).unwrap();
+        db.conn_ref()
+            .execute(
+                "UPDATE surface_client_pairings SET scopes_json = ?1, scope_digest = ?2 WHERE surface_client_id = ?3",
+                params![broader_json, broader_digest, surface_client_id],
+            )
+            .unwrap();
+        db.conn_ref()
+            .execute(
+                "UPDATE surface_client_sessions SET scope_digest = ?1 WHERE session_id = ?2",
+                params![broader_digest, session_id],
+            )
+            .unwrap();
+
+        let refresh = refresh_pairing_scopes(
+            &ctx,
+            &db,
+            RefreshScopesInput {
+                session_id: session_id.clone(),
+                surface_client_id: surface_client_id.clone(),
+                site_binding_digest: outcome.response.site_binding_digest.clone(),
+                now: now + Duration::seconds(1),
+            },
+        )
+        .expect("refresh succeeds even when stored is broader than default");
+
+        assert!(!refresh.response.changed);
+        assert_eq!(refresh.response.scope_digest, broader_digest);
+        assert_eq!(refresh.response.granted_scopes, broader_scopes);
+        assert_eq!(refresh.audit.event_kind, "pairing_scopes_unchanged");
+
+        let retained = refresh
+            .audit
+            .detail
+            .get("removed_from_default_but_retained")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>())
+            .unwrap_or_default();
+        assert_eq!(retained, vec!["read.composition"]);
+    }
+
+    #[test]
+    fn refresh_pairing_scopes_rejects_unknown_session() {
+        allow_surface_scopes();
+        let _kc_guard = set_keychain_for_tests(Arc::new(MockKeychain::default()));
+        let db = db();
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let err = refresh_pairing_scopes(
+            &ctx,
+            &db,
+            RefreshScopesInput {
+                session_id: "sess_does_not_exist".to_string(),
+                surface_client_id: "sc_does_not_exist".to_string(),
+                site_binding_digest: "deadbeef".to_string(),
+                now: Utc::now(),
+            },
+        )
+        .expect_err("refresh rejects unknown session");
+
+        assert_eq!(err, SurfacePairingError::SessionInvalid);
     }
 }
