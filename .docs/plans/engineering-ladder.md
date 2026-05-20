@@ -32,7 +32,28 @@ Used in chat: "L2 looks good." Used in docs/headings: "L2 (Diff) review verdict:
 
 **Pacing rule.** No wave starts until prior wave clears L3 *and* L5 (where applicable). No agent codes before L0 clears unanimously. 2 revision cycles on the same plan or PR without convergence ⇒ L6 escalation.
 
-**Bounding.** L2 reviews are bounded by acceptance criteria (memory `feedback_l2_must_review_against_acceptance_criteria`). Path-α findings (theoretical hardening beyond AC) → file in the maintenance project, not cycle-N+1.
+**Bounding.** L2 reviews are bounded by acceptance criteria (memory `feedback_l2_must_review_against_acceptance_criteria`).
+
+**Path-α** — what it is, what it isn't.
+
+The path-α maintenance channel exists for one purpose: prevent L2-cycle token loss on findings that surface during review but aren't part of the PR's acceptance contract. A finding qualifies as path-α when **all** of these are true:
+
+1. Surfaced by an L2 reviewer during a review cycle (codex, code-reviewer, domain reviewer).
+2. **Not** a literal acceptance-criterion violation from the ticket.
+3. **Not** an ADR-named contract violation introduced by this PR.
+4. **Not** a regression in PR-touched code (touching code makes its existing behavior fair game).
+5. Theoretical hardening, dormant edge case, latent risk, or generic codebase improvement.
+
+A qualifying finding files to the Codebase Maintenance & Production Quality project (`b8e6aea4-d47e-4f3a-b03d-a05bec914aeb`) with priority reflecting impact + likelihood, and the substrate PR unblocks. The mechanism is a stop-loss on cycle-N+1 review attention, not a parking lot.
+
+**What path-α is NOT for:**
+
+- **Original-spec scope.** If a deliverable is named in the ticket, wave plan, or L0 packet, finishing it is part of L1, not a path-α candidate. "We didn't get to X" → reopen the cycle or expand the wave, never park as maintenance.
+- **Scope reduction that isn't acknowledged.** Cutting scope is a deliberate decision posted to Linear as a scope amendment, not a quiet "file as path-α and move on."
+- **Punting hard problems.** A finding that's hard to fix is still in-scope if it meets the criteria above. Path-α status reflects relevance to *this PR's acceptance contract*, not difficulty.
+- **Tracking debt accumulation.** Memory `feedback_no_deferrals_period` applies: once scope is agreed, finish it. Path-α exists to keep the L2 loop bounded, not to enable structural deferrals.
+
+When in doubt: if removing the finding from this PR would change whether the PR delivers what was agreed, it isn't path-α.
 
 ## The Knowledge Channel (K)
 
