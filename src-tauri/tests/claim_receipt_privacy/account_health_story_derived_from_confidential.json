@@ -1,0 +1,19 @@
+{
+  "_doc": "Composed-claim drop scenario. A Public 'account health story' claim whose derived_from chain includes a Confidential parent. On the AgentMcp audience (RenderSurface::McpTool), build_receipt_for_audience MUST return PrivacyError::ComposedClaimDropped — the chain max is Confidential, McpTool drops Confidential, and the derivation chain means a partial render would leak via inference.",
+  "inputs": {
+    "parent_claim": {
+      "id": "parent-confidential-1",
+      "sensitivity": "confidential",
+      "claim_type": "account_summary"
+    },
+    "composed_claim": {
+      "id": "composed-account-health-1",
+      "sensitivity": "public",
+      "claim_type": "account_health_story",
+      "metadata_json": "{\"derived_from\":[\"parent-confidential-1\"]}"
+    }
+  },
+  "expected_error": "ComposedClaimDropped",
+  "expected_receipt": null,
+  "rationale_acceptance_criterion": "AC-341.10 mixed-sensitivity composed claims: sensitivity = max(inputs); if max exceeds surface, drop the entire composed claim (no partial render — prevents inference leaks)."
+}
