@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# DOS-733 CI invariant — dailyos_runtime_client_for_block filter must be
-# registered globally at plugin init, not only in scoped REST/test contexts.
+# CI invariant — dailyos_runtime_client_for_block filter must be registered
+# globally at plugin init, not only in scoped REST/test contexts.
 #
 # Without the global registration, every dailyos/* block render path
 # short-circuits to is-empty regardless of runtime state, masking transport
@@ -55,8 +55,8 @@ fi
 
 if [ "$failures" -gt 0 ]; then
   echo "" >&2
-  echo "DOS-733 invariant gate failed ($failures issue(s))." >&2
+  echo "runtime-client filter gate failed ($failures issue(s))." >&2
   exit 1
 fi
 
-echo "DOS-733 invariant gate: PASS"
+echo "runtime-client filter gate: PASS"

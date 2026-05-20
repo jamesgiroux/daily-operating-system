@@ -212,9 +212,9 @@ final class DailyOS_ActivationTest extends TestCase {
 	/**
 	 * Plugin init registers the default dailyos_runtime_client_for_block filter so
 	 * the WP block-registration render path resolves to a real transport client
-	 * when paired. Regression guard for DOS-733: without this registration every
-	 * dailyos/* block renders is-empty regardless of runtime state, masking
-	 * transport failures and pre-empting the typed runtime_unavailable_notice.
+	 * when paired. Without this registration every dailyos/* block renders
+	 * is-empty regardless of runtime state, masking transport failures and
+	 * pre-empting the typed runtime_unavailable_notice infrastructure.
 	 *
 	 * Asserts registration metadata (priority, callback identity, accepted_args)
 	 * rather than just slot presence — a future refactor that re-registers
@@ -266,9 +266,9 @@ final class DailyOS_ActivationTest extends TestCase {
 
 	/**
 	 * End-to-end linkage: after init() runs, apply_filters from a block render
-	 * resolves through the default provider. Regression guard for the exact
-	 * bug shape DOS-733 fixed — registration-without-resolution would not
-	 * surface in unit tests that exercise either init() or render in isolation.
+	 * resolves through the default provider. Regression guard for the bug
+	 * shape where registration without resolution would not surface in unit
+	 * tests that exercise either init() or render in isolation.
 	 */
 	public function test_init_to_render_filter_resolution_invokes_default_provider(): void {
 		$this->reset_plugin_init_state();
