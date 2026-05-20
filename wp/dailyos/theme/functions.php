@@ -89,6 +89,16 @@ function enqueue_chrome_assets(): void {
 		VERSION
 	);
 
+	// 4b-iii. Editorial colophon below the FinisMarker. WP-specific sign-off
+	// the canonical Tauri surfaces don't need (macOS title bar handles it).
+	// Styled like the FinisMarker_timestamp slot: mono uppercase tertiary.
+	wp_enqueue_style(
+		'dailyos-chrome-wp-overlay-colophon',
+		$base . '/wp-overlay-colophon.css',
+		array( 'dailyos-pattern-finismarker' ),
+		VERSION
+	);
+
 	// 4b-ii. DayStrip-aware pageContainer offset overlay. Briefing surfaces
 	// add a fixed DayStrip below the FolioBar; the page container below
 	// needs `+ 72px` margin-top to clear both bars. Mirrors the canonical
