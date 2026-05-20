@@ -153,6 +153,37 @@ function buildThemeJson({ palette, spacing, custom, blockOverrides = {} }) {
 				units: ['px', 'rem', 'em', '%'],
 				padding: true,
 			},
+			// Typography font families — register the 4 DailyOS families with
+			// the editor + emit `--wp--preset--font-family--*` for use in
+			// theme.json `styles` blocks below. Slugs match the canonical
+			// `--font-{sans,serif,mono,mark}` token names so the values flow
+			// from src/styles/design-tokens.css via the generator's custom map.
+			// Per .docs/design/tokens/typography.md (ADR-0073): serif = display,
+			// sans = body/UI, mono = timestamps/eyebrow/code, mark = brand only.
+			typography: {
+				fontFamilies: [
+					{
+						slug: 'sans',
+						name: 'DM Sans (body / UI)',
+						fontFamily: "'DM Sans', -apple-system, sans-serif",
+					},
+					{
+						slug: 'serif',
+						name: 'Newsreader (display / headlines)',
+						fontFamily: "'Newsreader', Georgia, serif",
+					},
+					{
+						slug: 'mono',
+						name: 'JetBrains Mono (time / eyebrow / code)',
+						fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+					},
+					{
+						slug: 'mark',
+						name: 'Montserrat (brand mark only)',
+						fontFamily: "'Montserrat', sans-serif",
+					},
+				],
+			},
 			// Layout — contentSize / wideSize source the canonical page-width
 			// tokens so post-content groups (default `layout: constrained`)
 			// inherit the magazine page width, not stretch edge-to-edge.
@@ -178,6 +209,59 @@ function buildThemeJson({ palette, spacing, custom, blockOverrides = {} }) {
 			{ name: 'day-strip', area: 'uncategorized', title: 'DayStrip — Briefing day navigation' },
 		],
 		styles: {
+			// Body default — DM Sans per ADR-0073 typography contract.
+			typography: {
+				fontFamily: 'var(--wp--preset--font-family--sans)',
+			},
+			// Heading defaults — Newsreader serif, weight 400 (mid of the
+			// 300-500 spec range). Per .docs/design/tokens/typography.md:
+			// "Display — serif, font-size 26-76px, font-weight 300-500".
+			// The default WP rendering inherits bold from <h1>...<h6>; this
+			// explicitly resets weight to the editorial range so headings
+			// don't read as too heavy.
+			elements: {
+				heading: {
+					typography: {
+						fontFamily: 'var(--wp--preset--font-family--serif)',
+						fontWeight: '400',
+						lineHeight: '1.15',
+						letterSpacing: '-0.01em',
+					},
+				},
+				h1: {
+					typography: {
+						fontSize: '40px',
+						fontWeight: '400',
+						lineHeight: '1.06',
+					},
+				},
+				h2: {
+					typography: {
+						fontSize: '32px',
+						fontWeight: '400',
+					},
+				},
+				h3: {
+					typography: {
+						fontSize: '24px',
+						fontWeight: '500',
+					},
+				},
+			},
+			blocks: {
+				// Code / preformatted blocks use the mono family per ADR-0073.
+				'core/code': {
+					typography: {
+						fontFamily: 'var(--wp--preset--font-family--mono)',
+						fontSize: '13px',
+					},
+				},
+				'core/preformatted': {
+					typography: {
+						fontFamily: 'var(--wp--preset--font-family--mono)',
+					},
+				},
+			},
 			// Global spacing.padding wires the WP top-level container to the
 			// canonical magazine page-padding tokens so content gets the
 			// editorial gutter rather than going edge-to-edge. References
@@ -192,7 +276,6 @@ function buildThemeJson({ palette, spacing, custom, blockOverrides = {} }) {
 					left: 'var(--wp--custom--dailyos--tokens--page-padding-horizontal)',
 				},
 			},
-			blocks: blockOverrides,
 		},
 	};
 }
