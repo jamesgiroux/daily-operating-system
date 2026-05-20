@@ -12,4 +12,5 @@
 //! panics on unknown field names (fail-loud per Rule 11).
 
 pub mod auth;
+pub mod envelope_cache;
 pub mod touchpoints;

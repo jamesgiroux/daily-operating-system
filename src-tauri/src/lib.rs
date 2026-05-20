@@ -167,6 +167,11 @@ pub fn run() {
             // Create shared state
             let state = Arc::new(AppState::new());
             state.set_app_handle(app.handle().clone());
+            // DOS-339 cycle-2 fix: install the Tauri AppHandle into the
+            // claim_receipt event-bridge so `ClaimVerificationStateChanged`
+            // signals fan out to the `claim_receipt:invalidated` Tauri event
+            // consumed by `useClaimReceiptSubscription`.
+            crate::services::claim_receipt::event_bridge::set_app_handle(app.handle().clone());
             {
                 let telemetry = Arc::clone(&state.aggregate_telemetry);
                 tauri::async_runtime::spawn(async move {
