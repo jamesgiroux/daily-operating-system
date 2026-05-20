@@ -243,7 +243,7 @@ pub struct SurfacePairingAuditEvent {
     pub actor: Actor,
     pub wp_user_id: Option<u64>,
     pub wp_user_hash: Option<String>,
-    /// End-to-end correlation identifier (DOS-743). When `Some`, threads
+    /// End-to-end correlation identifier. When `Some`, threads
     /// into the top-level `AuditRecord.request_id` JSONL key via
     /// `AuditFields::with_request_id` in `emit_pairing_audit`.
     pub request_id: Option<String>,

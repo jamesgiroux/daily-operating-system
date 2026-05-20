@@ -662,7 +662,7 @@ struct ParsedSigningHeaders<'a> {
     wp_install_uuid: &'a str,
     plugin_instance_uuid: &'a str,
     multisite_blog_id: &'a str,
-    /// `x-dailyos-request-id` raw header value (post-DOS-742).
+    /// `x-dailyos-request-id` raw header value (post-cutover).
     /// Empty string when absent; canonicalization includes it as a signed field
     /// so mid-flight header mutation invalidates the signature.
     request_id: &'a str,
@@ -696,9 +696,9 @@ impl<'a> ParsedSigningHeaders<'a> {
             .map(parse_claim_identifier)
             .transpose()?
             .unwrap_or("");
-        // DOS-742: X-DailyOS-Request-Id is signed into canonical bytes so
+        // X-DailyOS-Request-Id is signed into canonical bytes so
         // tampering is detected. Header is optional at parse time (legacy
-        // pre-DOS-741 clients won't send it; canonical includes empty string
+        // pre-cutover clients won't send it; canonical includes empty string
         // for backward compat). The runtime-side `is_safe_request_id` check
         // at the request boundary rejects empty values on signed routes that
         // require correlation.
@@ -854,7 +854,7 @@ pub(super) struct CanonicalRequest<'a> {
     pub nonce: &'a str,
     pub timestamp: &'a str,
     /// `x-dailyos-request-id` header value. End-to-end correlation identifier
-    /// added by DOS-742 to the HMAC canonical signing input so a buggy
+    /// added by the to the HMAC canonical signing input so a buggy
     /// intermediary cannot mutate the header in flight without invalidating
     /// the signature. Empty string means absent; runtime rejects empty for
     /// signed routes per `is_safe_request_id` validation at the request

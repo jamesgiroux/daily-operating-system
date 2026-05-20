@@ -38,7 +38,7 @@ final class DailyOS_Hmac_Signer {
 	 * @param array<string, string> $identity Canonical identity fields.
 	 * @param string                $nonce X-DailyOS-Nonce header value.
 	 * @param string                $timestamp X-DailyOS-Timestamp header value.
-	 * @param string                $request_id X-DailyOS-Request-Id header value (DOS-742; empty string when absent).
+	 * @param string                $request_id X-DailyOS-Request-Id header value (empty string when absent).
 	 * @return string Canonical request bytes.
 	 */
 	public function canonical_bytes(
@@ -91,7 +91,7 @@ final class DailyOS_Hmac_Signer {
 	 * @param array<string, string> $identity Canonical identity fields.
 	 * @param string                $nonce X-DailyOS-Nonce header value.
 	 * @param string                $timestamp X-DailyOS-Timestamp header value.
-	 * @param string                $request_id X-DailyOS-Request-Id header value (DOS-742; empty string when absent).
+	 * @param string                $request_id X-DailyOS-Request-Id header value (empty string when absent).
 	 * @return string Header value in v1=<lowercase-hex> form.
 	 */
 	public function sign_request(

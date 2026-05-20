@@ -88,7 +88,8 @@ final class DailyOS_HmacSignerTest extends TestCase {
 			. "plugin_instance_uuid:0\n\n"
 			. "multisite_blog_id:0\n\n"
 			. "nonce:1\nn\n"
-			. "timestamp:1\n1\n";
+			. "timestamp:1\n1\n"
+			. "request_id:0\n\n";
 
 		$this->assertSame(
 			$expected,
