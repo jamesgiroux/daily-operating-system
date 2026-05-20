@@ -1,6 +1,6 @@
 <?php
 /**
- * Auto scope-refresh hook tests (DOS-746 mechanism #2).
+ * Auto scope-refresh hook tests.
  *
  * The plugin auto-calls the runtime's POST /v1/surface/pairing/refresh-scopes
  * endpoint on admin_init, throttled to once per 24h via a transient. A
@@ -49,7 +49,7 @@ if ( ! function_exists( 'set_transient' ) ) {
 }
 
 /**
- * Asserts DOS-746 mechanism #2 — auto scope refresh — gates correctly on
+ * Asserts mechanism #2 of the scope-refresh design — auto scope refresh — gates correctly on
  * the transient throttle, forces refresh on endpoint_version change, and
  * only writes the marker when the runtime reports `changed: true`.
  */

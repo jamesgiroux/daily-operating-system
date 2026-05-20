@@ -1178,7 +1178,7 @@ pub fn apply_signed_session_write_action(
     }
 }
 
-/// Input for the pairing-scope refresh path (DOS-746 mechanism #2).
+/// Input for the pairing-scope refresh path .
 #[derive(Debug, Clone)]
 pub struct RefreshScopesInput {
     pub session_id: String,
@@ -1206,7 +1206,7 @@ pub struct RefreshScopesOutcome {
 }
 
 /// Re-grant scopes to an existing SurfaceClient without revoking its HMAC
-/// session key or pairing row (DOS-746 mechanism #2).
+/// session key or pairing row .
 ///
 /// Never-narrow rule: target = union(stored, default). Refresh only adds
 /// scopes; never removes. Audit detail classifies the diff into

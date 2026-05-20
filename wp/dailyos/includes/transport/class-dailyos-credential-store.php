@@ -117,7 +117,7 @@ final class DailyOS_Credential_Store {
 
 	/**
 	 * Update the marker's stored granted_scopes after a successful scope
-	 * refresh (DOS-746 mechanism #2). The HMAC session key and pairing
+	 * refresh . The HMAC session key and pairing
 	 * identity are unchanged; only the recorded scope grant moves.
 	 *
 	 * @param array<int, string> $granted_scopes Scope strings returned by the runtime refresh response.

@@ -182,7 +182,7 @@ final class DailyOS_Runtime_Client {
 	/**
 	 * Re-grant scopes (union with the runtime's current DEFAULT_GRANTED_SCOPES)
 	 * to this paired SurfaceClient without rotating the HMAC session key or
-	 * forcing a re-pair (DOS-746 mechanism #2).
+	 * forcing a re-pair .
 	 *
 	 * @return array<string, mixed>|\WP_Error Refresh envelope or typed pairing error.
 	 */

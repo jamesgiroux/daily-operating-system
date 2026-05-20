@@ -82,7 +82,7 @@ final class DailyOS_Plugin {
 
 		add_action( 'dailyos_nonce_sweep', [ $this, 'sweep_presence_nonces' ] );
 
-		// DOS-746 mechanism #2: auto-refresh stored granted_scopes against the
+		// mechanism #2 of the scope-refresh design: auto-refresh stored granted_scopes against the
 		// runtime's current DEFAULT_GRANTED_SCOPES without forcing a re-pair.
 		add_action( 'admin_init', [ $this, 'maybe_refresh_pairing_scopes' ], 20 );
 
@@ -1018,7 +1018,7 @@ final class DailyOS_Plugin {
 
 	/**
 	 * Auto-refresh stored granted_scopes against the runtime's current
-	 * DEFAULT_GRANTED_SCOPES catalog (DOS-746 mechanism #2).
+	 * DEFAULT_GRANTED_SCOPES catalog .
 	 *
 	 * Throttled to once per 24h via transient `dailyos_last_scope_refresh_at`.
 	 * Forces a refresh when the marker's `endpoint_version` differs from
