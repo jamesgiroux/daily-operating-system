@@ -1,0 +1,60 @@
+74:    DataSource, SourceAttribution, SourceIdentifier, WorkspaceFileKind,
+147:    /// `SourceAttribution::new(DataSource::WorkspaceFile{kind}, vec![SourceIdentifier::Document{
+150:    /// Workspace-specific run linkage (NOT a SourceIdentifier — separate concept).
+221:- `WorkspaceFileLifecycle` struct mirroring the v250 row shape with cycle 8's `category: Option<WorkspaceCategory>` column.
+223:- `escalate_to_pending(file_id: &str, actor: &str) -> Result<(), LifecycleError>` API stub (W4-A wires later).
+224:- Trybuild-protected constructor enforcing the four required fields (`source_type`, `source_asof`, `data_source`, `lifecycle_state`).
+235:- **`abilities-runtime/src/abilities/provenance/**` (W1-A consumes `SourceAttribution`, `SourceIdentifier`, `WorkspaceFileKind`, `DataSource`, `SubjectRef`, `ClaimType`, `ClaimSensitivity`; never modifies)**
+254:| **`SourceIdentifier::Document { document_id, chunk_id }`** | `…/provenance/source.rs:244` | **consumes** (W3-A constructs workspace-file attribution via this variant) |
+311:- **Trybuild test:** omitting `source_type` / `source_asof` / `data_source` / `lifecycle_state` from `WorkspaceFileLifecycle` constructor fails to compile.
+313:- **`WorkspaceClaimProposal` shape:** trybuild asserts constructor enforces all 9 fields including `source_attribution: SourceAttribution` (canonical), `ingestion_run_id: String`, `lifecycle_state`, `initial_source_reliability: f64`.
+314:- **`SourceAttribution` construction sanity:** test that `SourceAttribution::new(DataSource::WorkspaceFile{kind: Inbox}, vec![SourceIdentifier::Document{document_id: DocumentId(...), chunk_id: None}], now, Some(file_mtime), 0.5, None)` succeeds (verifies the canonical substrate accepts the workspace-shape inputs W3-A will produce).
+321:  ! grep -rE '^pub (struct|enum|trait) (SourceAttribution|SourceType|TrustFactorInput|SourceIdentifier|ClaimProposal|Provenance)\b' src-tauri/src/services/workspace_ingestion/
+336:- `LifecycleState` enum (7 variants with canonical serde strings) + `WorkspaceFileLifecycle` struct present.
+354:No lane touches `mod.rs` after W1-A creates it. No lane creates a new file in `services/workspace_ingestion/` beyond placeholders. **No lane reinvents `SourceAttribution`, `SourceType`, `TrustFactorInput`, `SourceIdentifier`, `ClaimProposal`, or `Provenance` — the CI grep gate at §8 enforces this structurally.**
+
+exec
+/bin/zsh -lc "rg -n \"\\bLifecycleError\\b|enum LifecycleError|struct LifecycleError|type LifecycleError\" src-tauri/abilities-runtime/src src-tauri/src -g '*.rs'" in /private/tmp/dailyos-v145-w1a
+ exited 1 in 0ms:
+exec
+/bin/zsh -lc 'rg -n "''^'"\\s*pub\\s+(struct|enum)\\s+(LifecycleState|WorkspaceFileLifecycle|UserOverride|WorkspaceCategory|FileIdentity|RejectionReason|WorkspaceClaimProposal|LifecycleError)\\b\" src-tauri -g '*.rs'" in /private/tmp/dailyos-v145-w1a
+ exited 1 in 0ms:
+exec
+/bin/zsh -lc "find src-tauri/src/services -maxdepth 2 -type d -name workspace_ingestion -o -path 'src-tauri/src/services/workspace_ingestion/*'" in /private/tmp/dailyos-v145-w1a
+ succeeded in 0ms:
+exec
+/bin/zsh -lc "ls tests 2>/dev/null | sed -n '1,80p'; find src-tauri/tests -maxdepth 1 -type f -name '*substrate*' -o -name 'no_substrate_reinvention.rs' 2>/dev/null" in /private/tmp/dailyos-v145-w1a
+ succeeded in 0ms:
+test_deliver_today.py
+test_email_classification.py
+test_meeting_prep.py
+src-tauri/tests/bundle2_provider_hallucination_substrate_test.rs
+src-tauri/tests/bundle18_sync_refresh_concurrency_substrate_test.rs
+src-tauri/tests/bundle14_stale_current_contradiction_substrate_test.rs
+src-tauri/tests/bundle8_sensitivity_class_leak_substrate_test.rs
+src-tauri/tests/dos287_substrate_bundle1_reproduction.rs
+src-tauri/tests/bundle15_cross_surface_consistency_substrate_test.rs
+src-tauri/tests/bundle16_ambiguous_identity_substrate_test.rs
+src-tauri/tests/bundle17_source_lifecycle_actor_provenance_substrate_test.rs
+src-tauri/tests/bundle6_corroboration_spam_substrate_test.rs
+src-tauri/tests/bundle4_cross_entity_person_ambiguity_substrate_test.rs
+src-tauri/tests/bundle3_stale_source_resurrection_substrate_test.rs
+src-tauri/tests/bundle7_temporal_scope_violation_substrate_test.rs
+
+codex
+VERDICT: BLOCK
+
+1. Implementability: §4 references `LifecycleError` but does not define/import it; grep found no existing `LifecycleError`, so a fresh agent must invent the error shape.
+2. Implementability: §4 imports `SourceIdentifier` in `contracts.rs` but only uses it in doc comments; with §8 requiring `cargo clippy -- -D warnings`, exact implementation fails unless the agent changes the frozen snippet.
+3. Consistency: §8 says `WorkspaceClaimProposal` has “all 9 fields,” but §4 defines 10 fields.
+4. Faithfulness: §2 changelog accurately describes the V1.3 folds.
+5. Substrate check: no `pub struct/enum` collisions in `src-tauri/abilities-runtime/src/abilities/` for `LifecycleState`, `UserOverride`, `WorkspaceCategory`, `FileIdentity`, `RejectionReason`, `WorkspaceFileLifecycle`, or `WorkspaceClaimProposal`; only expected canonical `SourceAttribution` exists.
+tokens used
+44,912
+VERDICT: BLOCK
+
+1. Implementability: §4 references `LifecycleError` but does not define/import it; grep found no existing `LifecycleError`, so a fresh agent must invent the error shape.
+2. Implementability: §4 imports `SourceIdentifier` in `contracts.rs` but only uses it in doc comments; with §8 requiring `cargo clippy -- -D warnings`, exact implementation fails unless the agent changes the frozen snippet.
+3. Consistency: §8 says `WorkspaceClaimProposal` has “all 9 fields,” but §4 defines 10 fields.
+4. Faithfulness: §2 changelog accurately describes the V1.3 folds.
+5. Substrate check: no `pub struct/enum` collisions in `src-tauri/abilities-runtime/src/abilities/` for `LifecycleState`, `UserOverride`, `WorkspaceCategory`, `FileIdentity`, `RejectionReason`, `WorkspaceFileLifecycle`, or `WorkspaceClaimProposal`; only expected canonical `SourceAttribution` exists.

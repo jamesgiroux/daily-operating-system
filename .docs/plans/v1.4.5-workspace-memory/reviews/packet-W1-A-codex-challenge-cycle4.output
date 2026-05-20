@@ -1,0 +1,60 @@
+src-tauri/abilities-runtime/src/abilities/get_daily_readiness/synthesis.rs:885:        let source = SourceAttribution::new(
+src-tauri/abilities-runtime/src/abilities/get_daily_readiness/synthesis.rs:1629:    SourceAttribution::new(
+src-tauri/abilities-runtime/src/abilities/get_entity_context.rs:339:        } => SourceAttribution::new(
+src-tauri/abilities-runtime/src/abilities/get_entity_context.rs:531:    SourceAttribution::new(
+src-tauri/abilities-runtime/src/abilities/get_entity_context.rs:568:        "glean" => SourceIdentifier::Document {
+src-tauri/abilities-runtime/src/abilities/get_entity_context.rs:569:            document_id: DocumentId::new(source_ref.unwrap_or(&claim.id).to_string()),
+src-tauri/abilities-runtime/src/abilities/provenance/builder.rs:601:        SourceAttribution::new(
+src-tauri/abilities-runtime/src/abilities/provenance/trust.rs:197:        SourceAttribution::new(
+src-tauri/abilities-runtime/src/abilities/provenance/trust.rs:255:        let source = SourceAttribution::new(
+src-tauri/abilities-runtime/src/abilities/provenance/render.rs:2471:        SourceAttribution::new(
+src-tauri/abilities-runtime/src/abilities/provenance/render.rs:2497:        SourceAttribution::new(
+src-tauri/abilities-runtime/src/abilities/prepare_meeting/synthesis.rs:945:        SourceAttribution::new(
+src-tauri/abilities-runtime/src/abilities/prepare_meeting/synthesis.rs:1156:        let source = SourceAttribution::new(
+src-tauri/abilities-runtime/src/abilities/prepare_meeting/synthesis.rs:1196:        let source = SourceAttribution::new(
+src-tauri/abilities-runtime/src/abilities/prepare_meeting/synthesis.rs:1788:        "glean" => SourceIdentifier::Document {
+src-tauri/abilities-runtime/src/abilities/prepare_meeting/synthesis.rs:1789:            document_id: crate::abilities::provenance::DocumentId::new(evidence.id.clone()),
+src-tauri/src/operations/mod.rs:759:                SourceAttribution::new(
+src-tauri/src/operations/mod.rs:808:            SourceAttribution::new(
+src-tauri/abilities-runtime/src/abilities/provenance/source.rs:264:        document_id: DocumentId,
+src-tauri/abilities-runtime/src/abilities/provenance/source.rs:380:        let source = SourceAttribution::new(
+src-tauri/abilities-runtime/src/abilities/provenance/source.rs:449:        let known = SourceAttribution::new(
+src-tauri/abilities-runtime/src/abilities/provenance/ownership.rs:637:        | SourceIdentifier::Document { .. }
+src-tauri/abilities-runtime/src/abilities/provenance/ownership.rs:654:        | SourceIdentifier::Document { .. }
+src-tauri/abilities-runtime/src/abilities/provenance/ownership.rs:898:            | SourceIdentifier::Document { .. }
+src-tauri/abilities-runtime/src/abilities/list_open_loops/mod.rs:470:    SourceAttribution::new(
+src-tauri/abilities-runtime/src/abilities/list_open_loops/mod.rs:507:        "glean" => SourceIdentifier::Document {
+src-tauri/abilities-runtime/src/abilities/list_open_loops/mod.rs:508:            document_id: DocumentId::new(source_ref.unwrap_or(&claim.id).to_string()),
+src-tauri/abilities-runtime/src/abilities/detect_risk_shift/synthesis.rs:988:        SourceIdentifier::Document {
+src-tauri/abilities-runtime/src/abilities/detect_risk_shift/synthesis.rs:1186:    SourceAttribution::new(
+src-tauri/abilities-runtime/src/abilities/detect_risk_shift/synthesis.rs:1202:        "glean" => SourceIdentifier::Document {
+src-tauri/abilities-runtime/src/abilities/detect_risk_shift/synthesis.rs:1203:            document_id: crate::abilities::provenance::DocumentId::new(claim.id.clone()),
+src-tauri/abilities-runtime/src/abilities/account_overview.rs:907:    SourceAttribution::new(
+src-tauri/src/db/data_lifecycle.rs:808:                identifier: crate::abilities::provenance::SourceIdentifier::Document {
+src-tauri/src/db/data_lifecycle.rs:809:                    document_id: crate::abilities::provenance::DocumentId::new("doc-glean"),
+
+codex
+VERDICT: BLOCK
+
+1. Inside the V1.3 packet, the three cycle-3 reinventions are materially fixed: canonical `SourceAttribution` is consumed, `WorkspaceFileKind` replaces `SourceType`, and `WorkspaceClaimProposal -> services::claims::ClaimProposal` is documented as W3-A’s `into_commit`.
+
+2. Blocking: §4’s `SourceAttribution::new(...)` doc-comment is not compile-shape correct. Canonical `new` takes `source_asof: Option<DateTime<Utc>>`, but the packet passes bare `source_asof` while `WorkspaceClaimProposal.source_asof` is `DateTime<Utc>`; it must be `Some(source_asof)`. `document_id: file_id` also needs canonical `DocumentId`.
+
+3. Blocking: `contracts.rs` imports `SourceIdentifier` only for a doc-comment. With §8’s `cargo clippy -- -D warnings`, that is an `unused_imports` failure unless the code actually uses it or the doc fully qualifies it.
+
+4. Blocking: declared authority `.docs/plans/v1.4.5-waves.md` still contains the old `SourceType` contract (`:431`, `:436`, `:470`, `:615`). The L0 packet is fixed, but the authoritative downstream plan can still reintroduce the reinvention.
+
+5. Gate gap: §8 grep catches exact `pub struct|enum|trait` reinventions, but misses `pub(crate)`, `pub type`, and same-shape renamed clones. That is not strong enough for the packet’s “structural prevention” claim.
+tokens used
+49,860
+VERDICT: BLOCK
+
+1. Inside the V1.3 packet, the three cycle-3 reinventions are materially fixed: canonical `SourceAttribution` is consumed, `WorkspaceFileKind` replaces `SourceType`, and `WorkspaceClaimProposal -> services::claims::ClaimProposal` is documented as W3-A’s `into_commit`.
+
+2. Blocking: §4’s `SourceAttribution::new(...)` doc-comment is not compile-shape correct. Canonical `new` takes `source_asof: Option<DateTime<Utc>>`, but the packet passes bare `source_asof` while `WorkspaceClaimProposal.source_asof` is `DateTime<Utc>`; it must be `Some(source_asof)`. `document_id: file_id` also needs canonical `DocumentId`.
+
+3. Blocking: `contracts.rs` imports `SourceIdentifier` only for a doc-comment. With §8’s `cargo clippy -- -D warnings`, that is an `unused_imports` failure unless the code actually uses it or the doc fully qualifies it.
+
+4. Blocking: declared authority `.docs/plans/v1.4.5-waves.md` still contains the old `SourceType` contract (`:431`, `:436`, `:470`, `:615`). The L0 packet is fixed, but the authoritative downstream plan can still reintroduce the reinvention.
+
+5. Gate gap: §8 grep catches exact `pub struct|enum|trait` reinventions, but misses `pub(crate)`, `pub type`, and same-shape renamed clones. That is not strong enough for the packet’s “structural prevention” claim.

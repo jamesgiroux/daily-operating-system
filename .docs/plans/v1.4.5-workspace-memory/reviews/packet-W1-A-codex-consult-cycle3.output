@@ -1,0 +1,80 @@
+   133	    /// feedback, source weights) failed. Triggers the IndeterminateReadState
+   134	    /// gate so the recompute fails closed instead of scoring on a partial
+   135	    /// picture. Defaults to false; producers explicitly opt in when they
+   136	    /// detected a read error.
+   137	    #[serde(default)]
+   138	    pub read_state_indeterminate: bool,
+   139	}
+   140	
+   141	#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+   142	pub struct LinearIssueStateContext {
+   143	    #[serde(default)]
+   144	    pub signal: LinearIssueStateSignal,
+   145	    #[serde(default = "default_subject_matches")]
+   146	    pub subject_matches: bool,
+   147	}
+   148	
+   149	impl Default for LinearIssueStateContext {
+   150	    fn default() -> Self {
+   151	        Self {
+   152	            signal: LinearIssueStateSignal::None,
+   153	            subject_matches: true,
+   154	        }
+   155	    }
+   156	}
+   157	
+   158	fn default_subject_matches() -> bool {
+   159	    true
+   160	}
+   161	
+   162	#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+   163	#[serde(rename_all = "snake_case")]
+   164	pub enum LinearIssueStateSignal {
+   165	    #[default]
+   166	    None,
+   167	    UncategorizedIssue,
+   168	    StateChangedToInProgress,
+   169	    StateChangedToBlocked,
+   170	    StateChangedToDone,
+   171	    AssigneeChanged,
+   172	    PriorityChangedToUrgent,
+   173	}
+   174	
+   175	#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+   176	pub struct SourceReliabilityInput {
+   177	    pub corroborators: Vec<CorroboratorWeight>,
+   178	}
+   179	
+   180	#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+   181	pub struct CorroboratorWeight {
+   182	    pub evidence_weight: f64,
+   183	    pub confirms: bool,
+   184	}
+   185	
+   186	#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+   187	#[serde(rename_all = "snake_case")]
+   188	pub enum SourceLifecycleState {
+   189	    Active,
+   190	    Withdrawn,
+
+codex
+VERDICT: BLOCK
+
+1. BLOCK: `SourceAttribution` is reinvented in §4. The packet defines local `SourceAttribution { file_id, ingestion_run_id }` and uses it in `WorkspaceClaimProposal` (`L0-packet...md:124`, `:138`), while substrate already has `abilities_runtime::abilities::provenance::source::SourceAttribution` at `src-tauri/abilities-runtime/src/abilities/provenance/source.rs:303`.
+
+2. BLOCK: Substrate-grep concern is only resolved for `TrustFactorInput`. §6 cites `DataSource`/`SourceIdentifier` substrate but omits `SourceAttribution`, and the K-in grep list also omits it (`L0-packet...md:232-249`).
+
+3. PASS: `initial_source_reliability: f64` boundary is sane. No new `TrustFactorInput` surface remains; it seeds existing `TrustFactorInputs` rather than replacing it.
+
+4. MINOR: Changelog says “Two classes” but lists five items (`L0-packet...md:19-24`). The actual listed changes otherwise match the V1.2 packet text.
+tokens used
+87,092
+VERDICT: BLOCK
+
+1. BLOCK: `SourceAttribution` is reinvented in §4. The packet defines local `SourceAttribution { file_id, ingestion_run_id }` and uses it in `WorkspaceClaimProposal` (`L0-packet...md:124`, `:138`), while substrate already has `abilities_runtime::abilities::provenance::source::SourceAttribution` at `src-tauri/abilities-runtime/src/abilities/provenance/source.rs:303`.
+
+2. BLOCK: Substrate-grep concern is only resolved for `TrustFactorInput`. §6 cites `DataSource`/`SourceIdentifier` substrate but omits `SourceAttribution`, and the K-in grep list also omits it (`L0-packet...md:232-249`).
+
+3. PASS: `initial_source_reliability: f64` boundary is sane. No new `TrustFactorInput` surface remains; it seeds existing `TrustFactorInputs` rather than replacing it.
+
+4. MINOR: Changelog says “Two classes” but lists five items (`L0-packet...md:19-24`). The actual listed changes otherwise match the V1.2 packet text.

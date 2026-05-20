@@ -1,0 +1,40 @@
+ succeeded in 648ms:
+157:- Local `SourceAttribution { file_id, ingestion_run_id }` dropped from `contracts.rs`. `WorkspaceClaimProposal` carries `source_attribution: abilities_runtime::abilities::provenance::source::SourceAttribution` (the canonical 7-field struct). Workspace-specific run linkage moves to a separate top-level `ingestion_run_id: String` field on `WorkspaceClaimProposal`.
+362:| All untrusted input (markdown content, MCP write payloads, attachment file paths) passes through validation before service entry — no raw content reaches `commit_claim` without sanitization | Suite S test at W2 gate; explicit lint script `check_workspace_path_validation.sh` (W1-B owns) forbids `std::fs::File::open` / `tokio::fs::File::open` on workspace-rooted paths outside `registry::open_validated` | W1-B merge → W2-A merge |
+455:    // Cycle 12 substrate-consumption: SourceType + local SourceAttribution dropped;
+500:        fn emit_file_ingested(&self, file_id: &str, file_hash: &str, ingestion_run_id: &str, entity_id: Option<&str>);
+502:        fn emit_file_pending_entity_assignment(&self, file_id: &str, ingestion_run_id: &str);
+539:- **Security gate:** DOS-464 is security-annotated. The registry validates that file paths are within the workspace root before any ingestion proceeds. The path validation logic is a trust boundary: a malformed or traversal path must be rejected before any file content is read, AND the validation result must be unforgeable across a TOCTOU window between validate and read. `/cso` at L0 plan AND L2 diff.
+666:- **Goal:** Ship a Gutenberg block (`dailyos/entity-intake`) that allows a user to associate a workspace document with an entity, trigger ingestion, and see the resulting claim proposals with trust-band rendering. Producer/renderer split per ADR-0130: the block stores `entity_id` + `file_path` as attributes, re-renders by invoking the intake ability on read.
+730:  2. *Provenance + trust:* Each proposal carries `source_asof` (file mtime), `data_source` (ADR-0107 variant from the source registry), `source_attribution` (canonical 7-field `abilities_runtime::abilities::provenance::source::SourceAttribution` from `:303` — cycle 12 amendment; W3-A constructs via `SourceAttribution::new(...)` with `SourceIdentifier::Document { document_id: DocumentId::new(file_id), chunk_id }`), and separate `ingestion_run_id: String` for workspace-specific run linkage. The trust computation uses the v1.4.1 freshness decay table for the `DataSource` variant via the existing `TrustFactorInputs` substrate.
+753:  2. *Provenance + trust:* Signal payloads for `WorkspaceFileIngested` carry `file_id`, `file_hash`, `ingestion_run_id`, and `entity_id` (when known) — **no raw file content, no file path, no claim text** in signal payloads (Suite S check, enforced by serde-derive on a typed payload struct, not free-form JSON).
+811:  - **Sensitivity rendering (per ADR-0108):** file paths NEVER returned (only `file_id`); entity names redacted to null unless caller has `read.entity_names` scope; raw claim text NEVER returned (use `claim_summary` aggregates only — full claim text requires the existing claim ability with its own scopes).
+824:- **Tests required:** Graph projection produces correct (entity, file, claim) triples for a fixture workspace; pagination round-trips; cursor opacity (server-rotation-safe); sensitivity redaction (entity_name null without scope; file paths absent always; raw claim text never present); `if_modified_since_version` returns NotModified shape; audit binary produces stable JSON conforming to schema; audit exit code matches gap count; graph rebuilds after each of the three triggering signals; `cargo test` + `cargo clippy -D warnings` clean.
+985:  - Resumable: backfill records a cursor (`last_processed_file_path`) in a `backfill_state` row updated atomically with each file processed.
+1189:| 9 | Does the `workspace_graph` ability (DOS-489) expose PII in its MCP response? | W3 | **Resolved (cycle 2)** — W3-C frozen API specifies: file paths NEVER returned (only `file_id`); entity names redacted to null unless caller has `read.entity_names` scope; raw claim text NEVER returned (use `claim_summary` aggregates only); per ADR-0108 sensitivity rendering |
+
+ exited 1 in 619ms:
+ exited 1 in 628ms:
+ succeeded in 633ms:
+28:  1. **`SourceAttribution` reinvention removed.** `WorkspaceClaimProposal` now carries `source_attribution: abilities_runtime::abilities::provenance::source::SourceAttribution` (the canonical 7-field struct: `data_source`, `identifiers: Vec<SourceIdentifier>`, `observed_at`, `source_asof`, `evidence_weight`, `scoring_class`, `synthesis_marker`). W3-A's extractor constructs via `SourceAttribution::new(...)` with workspace-file-shape `SourceIdentifier::Document { document_id: file_id, chunk_id: None }`. The ingestion-run linkage moves to a separate top-level `WorkspaceClaimProposal.ingestion_run_id: String` field — different concept from source identification. Closes architect cycle 3 #1 + consult cycle 3 #1+#2.
+208:    fn emit_file_pending_entity_assignment(&self, file_id: &str, ingestion_run_id: &str);
+281:| **`SourceAttribution` (7-field canonical)** | `…/provenance/source.rs:303` | **consumes** (V1.2 had a reinvented 2-field local struct; V1.3 sweep dropped it. Used by 15+ abilities including `account_overview.rs:21`, `get_entity_context.rs:12`, `prepare_meeting/synthesis.rs:16`) |
+306:- `source_type TEXT NOT NULL` — serde-tag of `WorkspaceFileKind` (V1.3 sweep: stores the canonical `WorkspaceFileKind` snake_case string, not a mirror enum's serialization)
+
+codex
+VERDICT: APPROVE.
+
+Cycle 5 findings are resolved: [v1.4.5-waves.md](/private/tmp/dailyos-v145-w1a/.docs/plans/v1.4.5-waves.md:488) has the 10-field shape, and [v1.4.5-waves.md](/private/tmp/dailyos-v145-w1a/.docs/plans/v1.4.5-waves.md:730) now uses canonical 7-field `SourceAttribution` plus separate `ingestion_run_id`.
+
+Final sweep found no active old `SourceType`, local `SourceAttribution { file_id, ingestion_run_id }`, or “file path + ingestion run ID” attribution contract.
+
+Remaining hits are historical/corrective text: cycle-12 decision notes, CI grep gates, and explicit “NOT mirror/reinvention” language. No BLOCK findings.
+tokens used
+66,215
+VERDICT: APPROVE.
+
+Cycle 5 findings are resolved: [v1.4.5-waves.md](/private/tmp/dailyos-v145-w1a/.docs/plans/v1.4.5-waves.md:488) has the 10-field shape, and [v1.4.5-waves.md](/private/tmp/dailyos-v145-w1a/.docs/plans/v1.4.5-waves.md:730) now uses canonical 7-field `SourceAttribution` plus separate `ingestion_run_id`.
+
+Final sweep found no active old `SourceType`, local `SourceAttribution { file_id, ingestion_run_id }`, or “file path + ingestion run ID” attribution contract.
+
+Remaining hits are historical/corrective text: cycle-12 decision notes, CI grep gates, and explicit “NOT mirror/reinvention” language. No BLOCK findings.
