@@ -5389,6 +5389,29 @@ mod tests {
     }
 
     #[test]
+    fn dos575_projection_tampered_maps_to_typed_http_error() {
+        let error = BridgeSurfaceError::ProjectionTampered {
+            projection_id: "projection-1".to_string(),
+            signature_id: "signature-1".to_string(),
+            key_id: "key-1".to_string(),
+            observed_signature_status: "mismatch".to_string(),
+            quarantine_id: "quarantine-1".to_string(),
+        };
+
+        let response =
+            error_response(bridge_surface_error(error).with_request_id("req_tampered".into()));
+
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let body = body_json(response);
+        assert_eq!(body["error"]["code"], "projection_tampered");
+        assert_eq!(body["error"]["request_id"], "req_tampered");
+        assert!(body["error"]["remediation"]
+            .as_str()
+            .unwrap()
+            .contains("Refresh"));
+    }
+
+    #[test]
     fn token_bucket_exhaustion_returns_retry_after() {
         let mut bucket = TokenBucket::new(TokenBucketConfig {
             capacity: 1,

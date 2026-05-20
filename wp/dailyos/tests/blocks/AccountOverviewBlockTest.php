@@ -105,6 +105,53 @@ final class DailyOS_AccountOverviewBlockTest extends TestCase {
 	}
 
 	/**
+	 * Asserts stock-theme rendering keeps trust and provenance readable.
+	 */
+	public function test_stock_theme_account_overview_renders_trust_band_and_provenance_markup(): void {
+		$response = $this->projection_response( 1, 'token-stock-theme' );
+		$response['projection']['blocks'][0]['payload']['context'][0] = [
+			'text'          => 'Customer health is improving.',
+			'claim_id'      => 'claim-1',
+			'sources'       => [
+				[
+					'label'      => 'CRM summary',
+					'source_ref' => 'source-crm-1',
+				],
+			],
+			'invocation_id' => 'invocation-1',
+		];
+		$response['projection']['blocks'][0]['claim_refs']            = [
+			[
+				'claim_id'      => 'claim-1',
+				'claim_version' => 7,
+				'field_path'    => '/context/0/text',
+			],
+		];
+		$response['projection']['blocks'][0]['provenance']            = [
+			[
+				'invocation_id' => 'invocation-1',
+			],
+		];
+		$client = $this->fake_runtime_client_with_response( $response );
+		$this->register_runtime_client_filter( $client );
+
+		$html = dailyos_account_overview_render(
+			[
+				'composition_id'      => 'dailyos/account-overview:account:acct-test-001',
+				'composition_version' => 1,
+			]
+		);
+
+		$this->assertStringContainsString( '<article', $html );
+		$this->assertStringContainsString( 'data-ds-name="TrustBandBadge"', $html );
+		$this->assertStringContainsString( 'Likely current', $html );
+		$this->assertStringContainsString( 'data-ds-name="ProvenanceList"', $html );
+		$this->assertStringContainsString( 'CRM summary', $html );
+		$this->assertStringContainsString( 'source-crm-1', $html );
+		$this->assertStringNotContainsString( 'is-empty', $html );
+	}
+
+	/**
 	 * Asserts the wrapper still performs exactly one runtime fetch.
 	 */
 	public function test_wrapper_preserves_single_fetch_behavior(): void {
@@ -299,6 +346,50 @@ final class DailyOS_AccountOverviewBlockTest extends TestCase {
 		$this->assertStringContainsString( 'Runtime unavailable; retry.', $html );
 		$this->assertStringNotContainsString( 'raw runtime exception', $html );
 		$this->assertStringNotContainsString( 'dailyos_projection_failed', $html );
+	}
+
+	/**
+	 * Stale marker transport failure renders a typed notice, never empty state.
+	 */
+	public function test_stale_marker_transport_error_renders_runtime_unavailable_notice_not_empty_state(): void {
+		$client = $this->fake_runtime_client_with_error(
+			new \WP_Error( 'runtime_request_failed', 'connection refused on stale marker port' )
+		);
+		$this->register_runtime_client_filter( $client );
+
+		$html = dailyos_account_overview_render(
+			[
+				'composition_id'      => 'dailyos/account-overview:account:acct-test-001',
+				'composition_version' => 8,
+				'cache_hint_token'    => 'stale-marker-token',
+			]
+		);
+
+		$this->assertStringContainsString( 'data-ds-name="RuntimeUnavailableNotice"', $html );
+		$this->assertStringContainsString( 'Runtime unavailable; retry.', $html );
+		$this->assertStringNotContainsString( 'is-empty', $html );
+		$this->assertStringNotContainsString( 'connection refused', $html );
+		$this->assertSame( 1, $client->calls );
+	}
+
+	/**
+	 * Hot Studio boot path renders successfully on the first runtime response.
+	 */
+	public function test_hot_studio_restart_first_render_after_boot_succeeds(): void {
+		$client = $this->fake_runtime_client_with_response( $this->projection_response( 9, 'token-studio-boot' ) );
+		$this->register_runtime_client_filter( $client );
+
+		$html = dailyos_account_overview_render(
+			[
+				'composition_id'      => 'dailyos/account-overview:account:acct-test-001',
+				'composition_version' => 9,
+			]
+		);
+
+		$this->assertStringContainsString( '<article', $html );
+		$this->assertStringContainsString( 'Account overview', $html );
+		$this->assertStringNotContainsString( 'RuntimeUnavailableNotice', $html );
+		$this->assertSame( 1, $client->calls );
 	}
 
 	/**
