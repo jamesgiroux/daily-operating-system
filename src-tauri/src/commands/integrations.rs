@@ -2992,6 +2992,7 @@ pub async fn set_context_mode(
     mode: serde_json::Value,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
+    let request_id = crate::audit_log::new_request_id();
     let parsed: crate::context_provider::ContextMode =
         serde_json::from_value(mode).map_err(|e| format!("Invalid context mode: {}", e))?;
 
@@ -3015,18 +3016,16 @@ pub async fn set_context_mode(
     };
     {
         let mut audit = state.audit_log.lock();
-        #[allow(
-            clippy::let_underscore_must_use,
-            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-        )]
-        let _ = audit.append(
-            "config",
+        emit_user_audit(
+            &mut audit,
             "context_mode_changed",
+            "config",
             serde_json::json!({
                 "from": mode_name(&previous_mode),
                 "to": mode_name(&parsed),
             }),
-        );
+            &request_id,
+        )?;
     }
 
     //  `build_context_provider` already installs
@@ -3092,6 +3091,8 @@ pub async fn start_glean_auth(
 ) -> Result<crate::glean::GleanAuthStatus, String> {
     use crate::glean;
 
+    let request_id = crate::audit_log::new_request_id();
+
     match glean::oauth::run_glean_consent_flow(&endpoint).await {
         Ok(result) => {
             let status = glean::GleanAuthStatus::Authenticated {
@@ -3102,15 +3103,13 @@ pub async fn start_glean_auth(
             // Audit: oauth_connected
             {
                 let mut audit = state.audit_log.lock();
-                #[allow(
-                    clippy::let_underscore_must_use,
-                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-                )]
-                let _ = audit.append(
-                    "security",
+                emit_user_audit(
+                    &mut audit,
                     "oauth_connected",
+                    "security",
                     serde_json::json!({"provider": "glean"}),
-                );
+                    &request_id,
+                )?;
             }
 
             // Auto-set context mode to Glean (Blockers 1 & 3).
@@ -3135,15 +3134,13 @@ pub async fn start_glean_auth(
             // Audit: context mode auto-set
             {
                 let mut audit = state.audit_log.lock();
-                #[allow(
-                    clippy::let_underscore_must_use,
-                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-                )]
-                let _ = audit.append(
-                    "config",
+                emit_user_audit(
+                    &mut audit,
                     "context_mode_changed",
+                    "config",
                     serde_json::json!({"from": "local", "to": "glean", "trigger": "glean_auth"}),
-                );
+                    &request_id,
+                )?;
             }
 
             // Enqueue all entities for re-enrichment — use db_read to avoid blocking Tokio.
@@ -3227,6 +3224,8 @@ pub async fn disconnect_glean(
     state: State<'_, Arc<AppState>>,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
+    let request_id = crate::audit_log::new_request_id();
+
     crate::glean::token_store::delete_token().map_err(|e| format!("{}", e))?;
 
     let purge_report = state
@@ -3242,15 +3241,13 @@ pub async fn disconnect_glean(
     // Audit: oauth_revoked
     {
         let mut audit = state.audit_log.lock();
-        #[allow(
-            clippy::let_underscore_must_use,
-            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-        )]
-        let _ = audit.append(
-            "security",
+        emit_user_audit(
+            &mut audit,
             "oauth_revoked",
+            "security",
             serde_json::json!({"provider": "glean", "purge": purge_report}),
-        );
+            &request_id,
+        )?;
     }
 
     // Revert context mode to Local and hot-swap provider.
@@ -3269,15 +3266,13 @@ pub async fn disconnect_glean(
     // Audit: context mode reverted
     {
         let mut audit = state.audit_log.lock();
-        #[allow(
-            clippy::let_underscore_must_use,
-            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-        )]
-        let _ = audit.append(
-            "config",
+        emit_user_audit(
+            &mut audit,
             "context_mode_changed",
+            "config",
             serde_json::json!({"from": "glean", "to": "local", "trigger": "glean_disconnect"}),
-        );
+            &request_id,
+        )?;
     }
 
     let status = crate::glean::GleanAuthStatus::NotConfigured;

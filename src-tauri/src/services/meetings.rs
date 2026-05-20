@@ -4382,6 +4382,7 @@ pub async fn refresh_meeting_briefing_full(
     state: &std::sync::Arc<AppState>,
     meeting_id: &str,
     app_handle: Option<&tauri::AppHandle>,
+    request_id: &str,
 ) -> Result<MeetingBriefingRefreshResult, String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let meeting_id_owned = meeting_id.to_string();
@@ -4505,6 +4506,7 @@ pub async fn refresh_meeting_briefing_full(
             entity_type.clone(),
             state,
             app_handle,
+            request_id,
         )
         .await
         {
@@ -5585,18 +5587,26 @@ mod tests {
         let off_rng = SeedableRng::new(911);
         let off_ext = ExternalClients::default();
         let off_ctx = test_ctx(&off_clock, &off_rng, &off_ext);
+        let baseline_request_id = crate::audit_log::new_request_id();
         let baseline_start = Instant::now();
-        refresh_meeting_briefing_full(&off_ctx, &off_state, off_meeting_id, None)
-            .await
-            .expect("flag-off refresh");
+        refresh_meeting_briefing_full(
+            &off_ctx,
+            &off_state,
+            off_meeting_id,
+            None,
+            &baseline_request_id,
+        )
+        .await
+        .expect("flag-off refresh");
         let baseline = baseline_start.elapsed();
 
         let on_clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 5, 9, 0, 0).unwrap());
         let on_rng = SeedableRng::new(912);
         let on_ext = ExternalClients::default();
         let on_ctx = test_ctx(&on_clock, &on_rng, &on_ext);
+        let shadow_request_id = crate::audit_log::new_request_id();
         let shadow_start = Instant::now();
-        refresh_meeting_briefing_full(&on_ctx, &on_state, on_meeting_id, None)
+        refresh_meeting_briefing_full(&on_ctx, &on_state, on_meeting_id, None, &shadow_request_id)
             .await
             .expect("flag-on refresh");
         let shadow_enabled = shadow_start.elapsed();

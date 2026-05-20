@@ -243,6 +243,10 @@ pub struct SurfacePairingAuditEvent {
     pub actor: Actor,
     pub wp_user_id: Option<u64>,
     pub wp_user_hash: Option<String>,
+    /// End-to-end correlation identifier (DOS-743). When `Some`, threads
+    /// into the top-level `AuditRecord.request_id` JSONL key via
+    /// `AuditFields::with_request_id` in `emit_pairing_audit`.
+    pub request_id: Option<String>,
     pub detail: serde_json::Value,
 }
 
@@ -457,6 +461,7 @@ pub fn pairing_code_failure_audit_event(
         actor: Actor::System,
         wp_user_id: None,
         wp_user_hash: None,
+        request_id: None,
         detail: json!({
             "pairing_code_hash": pairing_code_hash,
             "endpoint_startup_id_hash": stable_hash("endpoint_startup_id", &input.endpoint_startup_id),
@@ -701,6 +706,7 @@ pub fn complete_handshake(
         actor,
         wp_user_id: Some(input.request.wp_user_id),
         wp_user_hash: Some(wp_user_hash.clone()),
+        request_id: input.request.request_id.clone(),
         detail: json!({
             "surface_client_id": surface_client_id,
             "site_binding_digest": site_binding_digest,
@@ -1412,6 +1418,7 @@ pub fn record_signed_transport_failure(
                     actor: Actor::System,
                     wp_user_id: None,
                     wp_user_hash: None,
+                    request_id: None,
                     detail: json!({
                         "surface_client_id": row.surface_client_id,
                         "site_binding_digest": row.site_binding_digest,
@@ -1485,6 +1492,9 @@ pub fn emit_pairing_audit(
     if let Some(wp_user_hash) = event.wp_user_hash.as_ref() {
         fields = fields.with_wp_user_hash(wp_user_hash.clone());
     }
+    if let Some(request_id) = event.request_id.as_ref() {
+        fields = fields.with_request_id(request_id.clone());
+    }
     emit_surface_audit(logger, event.event_kind, &event.actor, fields)
         .map_err(|error| error.to_string())
 }
@@ -1507,6 +1517,7 @@ pub fn cleanup_session_keychain_entries(
                     actor: Actor::System,
                     wp_user_id: None,
                     wp_user_hash: None,
+                    request_id: None,
                     detail: json!({
                         "surface_client_id": target.surface_client_id,
                         "session_id": session_id,
@@ -1527,6 +1538,7 @@ pub fn cleanup_session_keychain_entries(
                         actor: Actor::System,
                         wp_user_id: None,
                         wp_user_hash: None,
+                        request_id: None,
                         detail: json!({
                             "surface_client_id": target.surface_client_id,
                             "session_id": session_id,
@@ -1578,6 +1590,7 @@ fn pairing_revoked_audit_event(
         actor,
         wp_user_id,
         wp_user_hash,
+        request_id: None,
         detail,
     }
 }
@@ -3789,6 +3802,7 @@ mod tests {
             },
             wp_user_id: Some(42),
             wp_user_hash: Some(wp_user_hash),
+            request_id: None,
             detail: json!({
                 "surface_client_id": "surface_test",
                 "site_binding_digest": "site_digest"

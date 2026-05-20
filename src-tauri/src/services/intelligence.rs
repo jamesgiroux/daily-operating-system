@@ -417,6 +417,7 @@ pub async fn enrich_entity(
     entity_type: String,
     state: &std::sync::Arc<AppState>,
     app_handle: Option<&tauri::AppHandle>,
+    request_id: &str,
 ) -> Result<crate::intelligence::IntelligenceJson, String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
 
@@ -603,19 +604,24 @@ pub async fn enrich_entity(
                         // signal that Glean enrichment couldn't complete.
                         {
                             let mut audit = state.audit_log.lock();
-                            if let Err(audit_error) = audit.append(
+                            let actor = abilities_runtime::abilities::registry::Actor::User;
+                            let fields = crate::audit_log::AuditFields::new(
                                 "data_access",
-                                "glean_enrichment_fellback_to_pty",
                                 serde_json::json!({
                                     "entity_id": input.entity_id,
                                     "entity_type": input.entity_type,
                                     "entity_name": input.entity_name,
                                     "reason": e.to_string(),
                                 }),
+                            )
+                            .with_request_id(request_id.to_string());
+                            if let Err(audit_error) = crate::audit_log::emit_surface_audit(
+                                &mut audit,
+                                "glean_enrichment_fellback_to_pty",
+                                &actor,
+                                fields,
                             ) {
-                                log::warn!(
-                                    "append Glean fallback audit entry failed: {audit_error}"
-                                );
+                                log::warn!("emit Glean fallback audit entry failed: {audit_error}");
                             }
                         }
                         if let Some(handle) = app_handle {
@@ -3991,9 +3997,17 @@ mod live_acceptance_tests {
         // End-to-end path: gather context -> AI enrichment -> deterministic consistency pass ->
         // write intelligence.json + DB cache.
         let ctx = state.live_service_context();
-        let intel = enrich_entity(&ctx, entity_id.clone(), entity_type.clone(), &state, None)
-            .await
-            .expect("manual enrich_entity failed");
+        let request_id = crate::audit_log::new_request_id();
+        let intel = enrich_entity(
+            &ctx,
+            entity_id.clone(),
+            entity_type.clone(),
+            &state,
+            None,
+            &request_id,
+        )
+        .await
+        .expect("manual enrich_entity failed");
 
         assert!(
             intel.consistency_status.is_some(),
@@ -4045,11 +4059,13 @@ mod live_acceptance_tests {
             .expect("meeting lookup query failed")
             .expect("no linked meeting found for entity");
 
+        let request_id = crate::audit_log::new_request_id();
         let refresh = crate::services::meetings::refresh_meeting_briefing_full(
             &ctx,
             &state,
             &meeting_id,
             None,
+            &request_id,
         )
         .await
         .expect("refresh_meeting_briefing_full failed");
@@ -5047,12 +5063,14 @@ mod live_acceptance_tests {
             .expect("read i504 pre-state failed");
 
         let ctx = state.live_service_context();
+        let first_request_id = crate::audit_log::new_request_id();
         let _ = enrich_entity(
             &ctx,
             account_id.clone(),
             "account".to_string(),
             &state,
             None,
+            &first_request_id,
         )
         .await
         .expect("manual enrich_entity for i504 validation failed");
@@ -5184,12 +5202,14 @@ mod live_acceptance_tests {
             );
         }
 
+        let second_request_id = crate::audit_log::new_request_id();
         let _ = enrich_entity(
             &ctx,
             account_id.clone(),
             "account".to_string(),
             &state,
             None,
+            &second_request_id,
         )
         .await
         .expect("second enrich_entity for i504 validation failed");

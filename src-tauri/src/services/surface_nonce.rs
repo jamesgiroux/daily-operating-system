@@ -123,8 +123,10 @@ impl SurfaceNonceService {
         ensure_surface_client(session, fallback_request_id)?;
         let request = IssueNonceRequest::parse(payload, fallback_request_id)
             .map_err(|error| self.shape_error(session, error, request_meta.clone()))?;
-        let audit = NonceAuditContext::from_issue(session, &request)
-            .with_request_meta(request_meta.ip_hash.clone(), request_meta.user_agent_hash.clone());
+        let audit = NonceAuditContext::from_issue(session, &request).with_request_meta(
+            request_meta.ip_hash.clone(),
+            request_meta.user_agent_hash.clone(),
+        );
         ensure_session_tuple(session, &request.session_id, request.wp_user_id, &audit)?;
 
         let issue_budget_key =
@@ -238,8 +240,10 @@ impl SurfaceNonceService {
         ensure_surface_client(session, fallback_request_id)?;
         let request = VerifyNonceRequest::parse(payload, fallback_request_id)
             .map_err(|error| self.shape_error(session, error, request_meta.clone()))?;
-        let audit = NonceAuditContext::from_verify(session, &request)
-            .with_request_meta(request_meta.ip_hash.clone(), request_meta.user_agent_hash.clone());
+        let audit = NonceAuditContext::from_verify(session, &request).with_request_meta(
+            request_meta.ip_hash.clone(),
+            request_meta.user_agent_hash.clone(),
+        );
         ensure_session_tuple(session, &request.session_id, request.wp_user_id, &audit)?;
         let verify_budget_key =
             request.budget_key(&session.surface_client_id, NonceBudgetClass::Verify);
@@ -1390,7 +1394,11 @@ impl NonceAuditContext {
         }
     }
 
-    fn with_request_meta(mut self, ip_hash: Option<String>, user_agent_hash: Option<String>) -> Self {
+    fn with_request_meta(
+        mut self,
+        ip_hash: Option<String>,
+        user_agent_hash: Option<String>,
+    ) -> Self {
         self.ip_hash = ip_hash;
         self.user_agent_hash = user_agent_hash;
         self
@@ -1970,7 +1978,14 @@ mod tests {
         let mut payload = issue_payload();
         payload["request_id"] = json!(request_id);
         service
-            .issue_nonce(ctx, db, session, payload, request_id, PresenceNonceRequestMeta::default())
+            .issue_nonce(
+                ctx,
+                db,
+                session,
+                payload,
+                request_id,
+                PresenceNonceRequestMeta::default(),
+            )
             .expect("issue")
             .presence_nonce
     }
@@ -1984,7 +1999,14 @@ mod tests {
         expected_reason: PresenceNonceRejectReason,
     ) -> SurfaceNonceError {
         let error = service
-            .verify_nonce(ctx, db, session, payload, "request-reject", PresenceNonceRequestMeta::default())
+            .verify_nonce(
+                ctx,
+                db,
+                session,
+                payload,
+                "request-reject",
+                PresenceNonceRequestMeta::default(),
+            )
             .expect_err("verify rejection");
         assert_eq!(error.reason, expected_reason);
         error
@@ -2028,7 +2050,14 @@ mod tests {
         let session = session("session-1", 42);
 
         let issued = service
-            .issue_nonce(&ctx, &db, &session, issue_payload(), "request-1", PresenceNonceRequestMeta::default())
+            .issue_nonce(
+                &ctx,
+                &db,
+                &session,
+                issue_payload(),
+                "request-1",
+                PresenceNonceRequestMeta::default(),
+            )
             .expect("issue");
         let verified = service
             .verify_nonce(
@@ -2314,7 +2343,14 @@ mod tests {
         for attempt in 0..1000 {
             let mut payload = issue_payload();
             payload["request_id"] = json!(format!("request-{attempt}"));
-            match service.issue_nonce(&ctx, &db, &session, payload, "request", PresenceNonceRequestMeta::default()) {
+            match service.issue_nonce(
+                &ctx,
+                &db,
+                &session,
+                payload,
+                "request",
+                PresenceNonceRequestMeta::default(),
+            ) {
                 Ok(_) => {}
                 Err(error) => {
                     assert_eq!(error.reason, PresenceNonceRejectReason::RateLimited);
@@ -2340,12 +2376,26 @@ mod tests {
         });
         let session = session("session-1", 42);
         let first = service
-            .issue_nonce(&ctx, &db, &session, issue_payload(), "request-1", PresenceNonceRequestMeta::default())
+            .issue_nonce(
+                &ctx,
+                &db,
+                &session,
+                issue_payload(),
+                "request-1",
+                PresenceNonceRequestMeta::default(),
+            )
             .expect("first");
         let mut second_payload = issue_payload();
         second_payload["request_id"] = json!("request-2");
         let second = service
-            .issue_nonce(&ctx, &db, &session, second_payload, "request-2", PresenceNonceRequestMeta::default())
+            .issue_nonce(
+                &ctx,
+                &db,
+                &session,
+                second_payload,
+                "request-2",
+                PresenceNonceRequestMeta::default(),
+            )
             .expect("second");
         assert!(second.audit_events.iter().any(|event| {
             event.event_kind == "presence_nonce_invalidated"
@@ -2374,7 +2424,14 @@ mod tests {
         let service = service(SurfaceNonceConfig::default());
         let session = session("session-1", 42);
         let issued = service
-            .issue_nonce(&ctx, &db, &session, issue_payload(), "request-1", PresenceNonceRequestMeta::default())
+            .issue_nonce(
+                &ctx,
+                &db,
+                &session,
+                issue_payload(),
+                "request-1",
+                PresenceNonceRequestMeta::default(),
+            )
             .expect("issue");
         reinforce_claim_to_version(&db, 8);
         let error = service
@@ -2401,7 +2458,14 @@ mod tests {
         let service = service(SurfaceNonceConfig::default());
         let session = session("session-1", 42);
         let issued = service
-            .issue_nonce(&ctx, &db, &session, issue_payload(), "request-1", PresenceNonceRequestMeta::default())
+            .issue_nonce(
+                &ctx,
+                &db,
+                &session,
+                issue_payload(),
+                "request-1",
+                PresenceNonceRequestMeta::default(),
+            )
             .expect("issue");
         db.conn_ref().execute("UPDATE composition_versions SET composition_version = 18 WHERE composition_id = 'composition-1'", []).expect("bump");
         let error = service
@@ -2433,7 +2497,14 @@ mod tests {
         bad_session.actor = Actor::System;
 
         let error = service
-            .issue_nonce(&ctx, &db, &bad_session, issue_payload(), "request", PresenceNonceRequestMeta::default())
+            .issue_nonce(
+                &ctx,
+                &db,
+                &bad_session,
+                issue_payload(),
+                "request",
+                PresenceNonceRequestMeta::default(),
+            )
             .expect_err("wrong actor issue");
         assert_eq!(error.reason, PresenceNonceRejectReason::WrongActor);
 
@@ -2470,9 +2541,15 @@ mod tests {
         let h1 = key.hash_ip("127.0.0.1");
         let h2 = key.hash_ip("127.0.0.1");
         let h3 = key.hash_ip("10.0.0.1");
-        assert_eq!(h1, h2, "ip_hash MUST be deterministic per IP for forensic correlation");
+        assert_eq!(
+            h1, h2,
+            "ip_hash MUST be deterministic per IP for forensic correlation"
+        );
         assert_ne!(h1, h3);
-        assert!(h1.starts_with("ip_hash:"), "ip_hash MUST carry the ip_hash: prefix");
+        assert!(
+            h1.starts_with("ip_hash:"),
+            "ip_hash MUST carry the ip_hash: prefix"
+        );
         // Domain-separation: hashing the same string via the UA path MUST NOT
         // collide with the IP-path hash even though the key is shared.
         let ua = key.hash_user_agent("127.0.0.1");
@@ -2504,7 +2581,14 @@ mod tests {
         });
 
         let issued = service
-            .issue_nonce(&context, &db, &session, payload, "request", PresenceNonceRequestMeta::default())
+            .issue_nonce(
+                &context,
+                &db,
+                &session,
+                payload,
+                "request",
+                PresenceNonceRequestMeta::default(),
+            )
             .expect("issue ok");
 
         // Round-trip via store inspection: the stored binding's payload_json
@@ -2530,13 +2614,7 @@ mod tests {
             .with_request_meta(Some("ip_hash:abc".into()), Some("ua_hash:def".into()));
         audit.action = Some(PresenceNonceAction::NeedsNuance);
 
-        let event = audit_event(
-            "presence_nonce_issued",
-            &session,
-            audit,
-            "issued",
-            None,
-        );
+        let event = audit_event("presence_nonce_issued", &session, audit, "issued", None);
 
         assert_eq!(event.detail["ip_hash"], "ip_hash:abc");
         assert_eq!(event.detail["user_agent_hash"], "ua_hash:def");
@@ -2559,7 +2637,10 @@ mod tests {
         );
 
         assert_eq!(event.detail["attempted_wp_user_id"], 999);
-        assert_eq!(event.detail["attempted_surface_client_id"], "attacker-client");
+        assert_eq!(
+            event.detail["attempted_surface_client_id"],
+            "attacker-client"
+        );
         assert_eq!(event.detail["reason"], "wrong_user");
     }
 

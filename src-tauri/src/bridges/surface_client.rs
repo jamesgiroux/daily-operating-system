@@ -1122,6 +1122,7 @@ fn rate_limit_audit_event(
         },
         wp_user_id: request.wp_user_id,
         wp_user_hash: request.wp_user_hash.clone(),
+        request_id: Some(request.request_id.clone()),
         detail,
     }
 }

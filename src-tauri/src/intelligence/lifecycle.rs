@@ -57,10 +57,16 @@ async fn refresh_meeting_briefing_from_state<S: MeetingIntelligenceState + ?Size
         )
     })?;
     let ctx = app_state.live_service_context();
-    let refreshed =
-        crate::services::meetings::refresh_meeting_briefing_full(&ctx, state_arc, meeting_id, None)
-            .await
-            .map_err(ExecutionError::ConfigurationError)?;
+    let request_id = crate::audit_log::new_request_id();
+    let refreshed = crate::services::meetings::refresh_meeting_briefing_full(
+        &ctx,
+        state_arc,
+        meeting_id,
+        None,
+        &request_id,
+    )
+    .await
+    .map_err(ExecutionError::ConfigurationError)?;
     Ok(refreshed.quality)
 }
 

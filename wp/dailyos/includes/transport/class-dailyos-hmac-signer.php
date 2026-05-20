@@ -38,6 +38,7 @@ final class DailyOS_Hmac_Signer {
 	 * @param array<string, string> $identity Canonical identity fields.
 	 * @param string                $nonce X-DailyOS-Nonce header value.
 	 * @param string                $timestamp X-DailyOS-Timestamp header value.
+	 * @param string                $request_id X-DailyOS-Request-Id header value (DOS-742; empty string when absent).
 	 * @return string Canonical request bytes.
 	 */
 	public function canonical_bytes(
@@ -47,7 +48,8 @@ final class DailyOS_Hmac_Signer {
 		string $body_bytes,
 		array $identity,
 		string $nonce,
-		string $timestamp
+		string $timestamp,
+		string $request_id = ''
 	): string {
 		$normalized_method       = strtoupper( $method );
 		$normalized_content_type = trim( $content_type, " \t\n\r\0\x0B" );
@@ -58,6 +60,7 @@ final class DailyOS_Hmac_Signer {
 		$this->assert_ascii( 'method', $normalized_method );
 		$this->assert_utf8( 'nonce', $nonce );
 		$this->assert_utf8( 'timestamp', $timestamp );
+		$this->assert_utf8( 'request_id', $request_id );
 
 		$canonical_bytes = self::DOMAIN_SEPARATOR . "\n"
 			. $this->canonical_field( 'method', $normalized_method )
@@ -73,7 +76,8 @@ final class DailyOS_Hmac_Signer {
 
 		return $canonical_bytes
 			. $this->canonical_field( 'nonce', $nonce )
-			. $this->canonical_field( 'timestamp', $timestamp );
+			. $this->canonical_field( 'timestamp', $timestamp )
+			. $this->canonical_field( 'request_id', $request_id );
 	}
 
 	/**
@@ -87,6 +91,7 @@ final class DailyOS_Hmac_Signer {
 	 * @param array<string, string> $identity Canonical identity fields.
 	 * @param string                $nonce X-DailyOS-Nonce header value.
 	 * @param string                $timestamp X-DailyOS-Timestamp header value.
+	 * @param string                $request_id X-DailyOS-Request-Id header value (DOS-742; empty string when absent).
 	 * @return string Header value in v1=<lowercase-hex> form.
 	 */
 	public function sign_request(
@@ -97,7 +102,8 @@ final class DailyOS_Hmac_Signer {
 		string $body_bytes,
 		array $identity,
 		string $nonce,
-		string $timestamp
+		string $timestamp,
+		string $request_id = ''
 	): string {
 		$canonical_bytes = $this->canonical_bytes(
 			$method,
@@ -106,7 +112,8 @@ final class DailyOS_Hmac_Signer {
 			$body_bytes,
 			$identity,
 			$nonce,
-			$timestamp
+			$timestamp,
+			$request_id
 		);
 
 		return 'v1=' . $key->hmac_sha256( $canonical_bytes );

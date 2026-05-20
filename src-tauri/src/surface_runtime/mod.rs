@@ -705,6 +705,7 @@ async fn rehydrate_sessions_from_keychain(
                 actor: abilities_runtime::abilities::registry::Actor::System,
                 wp_user_id: None,
                 wp_user_hash: None,
+                request_id: None,
                 detail: serde_json::json!({
                     "session_id": row.session_id,
                     "surface_client_id": row.surface_client_id,
@@ -758,6 +759,7 @@ async fn rehydrate_sessions_from_keychain(
                 actor: abilities_runtime::abilities::registry::Actor::System,
                 wp_user_id: None,
                 wp_user_hash: None,
+                request_id: None,
                 detail: serde_json::json!({
                     "session_id_hash": stable_hash_for_audit(&row.session_id),
                     "surface_client_id_hash": stable_hash_for_audit(&row.surface_client_id),
@@ -1115,7 +1117,7 @@ async fn signed_transport_response(
         Ok(verified) => verified,
         Err(error) => {
             log_signing_failure(&request, &request_id, &error);
-            record_signed_transport_failure(&runtime, &request, &error).await;
+            record_signed_transport_failure(&runtime, &request, &error, &request_id).await;
             return error_response(
                 SurfaceHttpError::from_signed_transport(error).with_request_id(request_id),
             );
@@ -1202,9 +1204,12 @@ async fn signed_transport_response(
                 // catches flood attacks before the writer-mutex hot path.
             }
             let pairing_error = failure.to_pairing_error();
-            for event in
-                validation_rejection_events(&verified, &pairing_error, scopes_for_audit.as_ref())
-            {
+            for event in validation_rejection_events(
+                &verified,
+                &pairing_error,
+                scopes_for_audit.as_ref(),
+                &request_id,
+            ) {
                 emit_pairing_audit_event(&app_state, &event);
             }
             evict_cached_session_after_validation_error(
@@ -1568,6 +1573,7 @@ async fn record_signed_transport_failure(
     runtime: &EndpointRuntime,
     request: &SurfaceHttpRequest,
     error: &hmac::SignedTransportError,
+    request_id: &str,
 ) {
     let Some(app_state) = runtime.app_state.as_ref().cloned() else {
         return;
@@ -1579,8 +1585,12 @@ async fn record_signed_transport_failure(
         return;
     };
     let surface_client_id = safe_header_value(&request.headers, "x-dailyos-surfaceclient").ok();
-    let direct_event =
-        signed_transport_failure_event(&session_id, surface_client_id.as_deref(), error.code());
+    let direct_event = signed_transport_failure_event(
+        &session_id,
+        surface_client_id.as_deref(),
+        error.code(),
+        request_id,
+    );
     let presented_surface_client_id = surface_client_id.clone();
     let input = SignedTransportFailureInput {
         session_id,
@@ -1870,6 +1880,7 @@ async fn surface_keyring_response(
                     actor: validated.actor.clone(),
                     wp_user_id: validated.wp_user_id,
                     wp_user_hash: validated.wp_user_hash.clone(),
+                    request_id: Some(request_id.clone()),
                     detail: json!({
                         "surface_client_id": validated.surface_client_id,
                         "decision": "rejected",
@@ -1904,6 +1915,7 @@ async fn surface_keyring_response(
                     actor: validated.actor.clone(),
                     wp_user_id: validated.wp_user_id,
                     wp_user_hash: validated.wp_user_hash.clone(),
+                    request_id: Some(request_id.clone()),
                     detail: json!({
                         "surface_client_id": validated.surface_client_id,
                         "scope_digest": validated.scope_digest,
@@ -1969,6 +1981,7 @@ async fn signed_route_response(
                     actor: validated.actor.clone(),
                     wp_user_id: validated.wp_user_id,
                     wp_user_hash: validated.wp_user_hash.clone(),
+                    request_id: Some(request_id.clone()),
                     detail: json!({
                         "surface_client_id": rejection.surface_client_id,
                         "session_wp_user_id": rejection.session_wp_user_id,
@@ -2671,8 +2684,7 @@ async fn surface_nonce_verify_response(
             // actor format MUST pass validate_feedback_actor at claims.rs:5131
             // (actor_class_for_actor splits on `:` / `/` / `@`; head must be
             // "user" or "human" for the user class).
-            let action: abilities_runtime::abilities::FeedbackAction =
-                verified.action.into();
+            let action: abilities_runtime::abilities::FeedbackAction = verified.action.into();
             let input = crate::services::claims::ClaimFeedbackInput {
                 claim_id: verified.claim_id.clone(),
                 action,
@@ -2958,7 +2970,7 @@ async fn bridge_surface_error_response(
     // carries a watermark-class signature per packet §6.5 + ac §34.
     // Inline 409 stale_watermark callers also emit a domain-specific row;
     // this is the cross-class audit channel.
-    emit_bridge_rejection_audit(app_state, session, &error);
+    emit_bridge_rejection_audit(app_state, session, &error, &request_id);
     match error {
         BridgeSurfaceError::StaleVersion {
             claim_id,
@@ -3046,6 +3058,7 @@ fn emit_bridge_rejection_audit(
     app_state: &AppState,
     session: &ValidatedSurfaceSession,
     error: &BridgeSurfaceError,
+    request_id: &str,
 ) {
     let (event_kind, detail) = match error {
         BridgeSurfaceError::StaleVersion {
@@ -3180,6 +3193,7 @@ fn emit_bridge_rejection_audit(
             actor: session.actor.clone(),
             wp_user_id: session.wp_user_id,
             wp_user_hash: session.wp_user_hash.clone(),
+            request_id: Some(request_id.to_string()),
             detail,
         },
     );
@@ -3366,6 +3380,7 @@ fn validation_rejection_events(
     verified: &hmac::VerifiedSignedRequest,
     error: &SurfacePairingError,
     scopes_for_audit: Option<&ScopeSet>,
+    request_id: &str,
 ) -> Vec<SurfacePairingAuditEvent> {
     let mut event_kinds: Vec<&'static str> = match error {
         SurfacePairingError::UnknownRuntimeAnchor => {
@@ -3416,6 +3431,7 @@ fn validation_rejection_events(
             actor: actor.clone(),
             wp_user_id,
             wp_user_hash: wp_user_hash.clone(),
+            request_id: Some(request_id.to_string()),
             detail: json!({
                 "surface_client_id": verified.surface_client_id,
                 "session_id_hash": hmac::hash_prefix(&verified.session_id),
@@ -3432,6 +3448,7 @@ fn signed_transport_failure_event(
     verified_session_id: &str,
     surface_client_id: Option<&str>,
     failure_code: &str,
+    request_id: &str,
 ) -> Option<SurfacePairingAuditEvent> {
     (failure_code == "nonce_replay").then(|| SurfacePairingAuditEvent {
         event_kind: "pairing.exfiltration.nonce_replay",
@@ -3439,6 +3456,7 @@ fn signed_transport_failure_event(
         actor: abilities_runtime::abilities::registry::Actor::System,
         wp_user_id: None,
         wp_user_hash: None,
+        request_id: Some(request_id.to_string()),
         detail: json!({
             "surface_client_id": surface_client_id,
             "session_id_hash": hmac::hash_prefix(verified_session_id),
@@ -3460,7 +3478,6 @@ fn successful_surface_invocation_audit_event(
         "ability_name": &ability.ability_name,
         "ability_version": &ability.ability_version,
         "schema_version": ability.schema_version,
-        "request_id": request_id,
         "claim_ref_count": composition_claim_ref_count(&ability.data),
     });
     if let Some(account_id) = input
@@ -3488,6 +3505,7 @@ fn successful_surface_invocation_audit_event(
         actor: session.actor.clone(),
         wp_user_id: session.wp_user_id,
         wp_user_hash: session.wp_user_hash.clone(),
+        request_id: Some(request_id.to_string()),
         detail,
     }
 }
@@ -4768,6 +4786,7 @@ mod tests {
                 },
                 nonce,
                 timestamp,
+                request_id: "",
             },
         );
         let mut headers = HeaderMap::new();
@@ -6328,6 +6347,7 @@ mod tests {
             &verified,
             &SurfacePairingError::SiteBindingMismatch,
             Some(&scopes),
+            "req_validation_recovered",
         );
 
         assert!(
@@ -6378,6 +6398,7 @@ mod tests {
             &verified,
             &SurfacePairingError::UnknownRuntimeAnchor,
             None,
+            "req_validation_system",
         );
 
         assert!(!events.is_empty(), "expected at least one event");

@@ -819,6 +819,7 @@ pub async fn set_workspace_path(
     path: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Config, String> {
+    let request_id = crate::audit_log::new_request_id();
     let ctx = state.live_service_context();
     let result = crate::services::settings::set_workspace_path(&ctx, &path, &state).await;
     if result.is_ok() {
@@ -835,15 +836,13 @@ pub async fn set_workspace_path(
                 "custom"
             }
         };
-        #[allow(
-            clippy::let_underscore_must_use,
-            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-        )]
-        let _ = audit.append(
-            "config",
+        emit_user_audit(
+            &mut audit,
             "workspace_path_changed",
+            "config",
             serde_json::json!({"category": category}),
-        );
+            &request_id,
+        )?;
     }
     result
 }
@@ -960,6 +959,8 @@ pub async fn unlock_app(
     state: State<'_, Arc<AppState>>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
+    let request_id = crate::audit_log::new_request_id();
+
     // All lock state operations go through a single mutex acquisition.
     // Check cooldown: 30s after 3 consecutive failures
     {
@@ -990,11 +991,13 @@ pub async fn unlock_app(
             }
             {
                 let mut audit = state.audit_log.lock();
-                #[allow(
-                    clippy::let_underscore_must_use,
-                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-                )]
-                let _ = audit.append("security", "app_unlock_succeeded", serde_json::json!({}));
+                emit_user_audit(
+                    &mut audit,
+                    "app_unlock_succeeded",
+                    "security",
+                    serde_json::json!({}),
+                    &request_id,
+                )?;
             }
             #[allow(
                 clippy::let_underscore_must_use,
@@ -1013,15 +1016,13 @@ pub async fn unlock_app(
             }
             {
                 let mut audit = state.audit_log.lock();
-                #[allow(
-                    clippy::let_underscore_must_use,
-                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-                )]
-                let _ = audit.append(
-                    "security",
+                emit_user_audit(
+                    &mut audit,
                     "app_unlock_failed",
+                    "security",
                     serde_json::json!({"consecutive_failures": new_count}),
-                );
+                    &request_id,
+                )?;
             }
             if new_count >= 3 {
                 Err(

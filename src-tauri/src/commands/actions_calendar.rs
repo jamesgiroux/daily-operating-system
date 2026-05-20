@@ -717,6 +717,8 @@ pub async fn start_google_auth(
     state: State<'_, Arc<AppState>>,
     app_handle: tauri::AppHandle,
 ) -> Result<GoogleAuthStatus, String> {
+    let request_id = crate::audit_log::new_request_id();
+
     // Dev override: skip real OAuth flow when auth is mocked
     if cfg!(debug_assertions) {
         let ov = DEV_GOOGLE_OVERRIDE.load(Ordering::Relaxed);
@@ -769,15 +771,13 @@ pub async fn start_google_auth(
     // Audit: oauth_connected
     {
         let mut audit = state.audit_log.lock();
-        #[allow(
-            clippy::let_underscore_must_use,
-            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-        )]
-        let _ = audit.append(
-            "security",
+        emit_user_audit(
+            &mut audit,
             "oauth_connected",
+            "security",
             serde_json::json!({"provider": "google"}),
-        );
+            &request_id,
+        )?;
     }
 
     // Update state
@@ -813,6 +813,8 @@ pub fn disconnect_google(
     state: State<'_, Arc<AppState>>,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
+    let request_id = crate::audit_log::new_request_id();
+
     crate::google::disconnect()?;
 
     let purge_report = state.with_db(|db| {
@@ -823,15 +825,13 @@ pub fn disconnect_google(
     // Audit: oauth_revoked
     {
         let mut audit = state.audit_log.lock();
-        #[allow(
-            clippy::let_underscore_must_use,
-            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-        )]
-        let _ = audit.append(
-            "security",
+        emit_user_audit(
+            &mut audit,
             "oauth_revoked",
+            "security",
             serde_json::json!({"provider": "google", "purge": purge_report}),
-        );
+            &request_id,
+        )?;
     }
 
     let new_status = GoogleAuthStatus::NotConfigured;

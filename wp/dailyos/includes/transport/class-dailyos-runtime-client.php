@@ -215,6 +215,7 @@ final class DailyOS_Runtime_Client {
 
 		$nonce      = $this->signer->generate_nonce();
 		$timestamp  = $this->signer->current_timestamp();
+		$request_id = wp_generate_uuid4();
 		$signature  = $this->signer->sign_request(
 			$hmac_key,
 			'POST',
@@ -223,7 +224,8 @@ final class DailyOS_Runtime_Client {
 			$body_bytes,
 			$identity,
 			$nonce,
-			$timestamp
+			$timestamp,
+			$request_id
 		);
 		$session_id = $credential->session_id();
 		$url        = $this->runtime_url( $runtime_base_url, $path );
@@ -236,6 +238,7 @@ final class DailyOS_Runtime_Client {
 			'X-DailyOS-Signature'            => $signature,
 			'X-DailyOS-Timestamp'            => $timestamp,
 			'X-DailyOS-Nonce'                => $nonce,
+			'X-DailyOS-Request-Id'           => $request_id,
 			'X-DailyOS-Site-Binding-Digest'  => $identity['site_binding_digest'],
 			'X-DailyOS-Site-Nonce'           => $identity['site_nonce'],
 			'X-DailyOS-WP-User-Id'           => $identity['wp_user_id'],

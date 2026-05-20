@@ -25,6 +25,7 @@ pub(super) const HEADER_SESSION_ID: &str = "x-dailyos-session-id";
 const HEADER_SIGNATURE: &str = "x-dailyos-signature";
 const HEADER_TIMESTAMP: &str = "x-dailyos-timestamp";
 const HEADER_NONCE: &str = "x-dailyos-nonce";
+pub(super) const HEADER_REQUEST_ID: &str = "x-dailyos-request-id";
 pub(super) const HEADER_SITE_BINDING_DIGEST: &str = "x-dailyos-site-binding-digest";
 pub(super) const HEADER_SITE_NONCE: &str = "x-dailyos-site-nonce";
 pub(super) const HEADER_WP_USER_ID: &str = "x-dailyos-wp-user-id";
@@ -527,6 +528,7 @@ fn canonicalize_signed_request(
         },
         nonce: headers.nonce,
         timestamp: headers.timestamp_raw,
+        request_id: headers.request_id,
     })
 }
 
@@ -660,6 +662,10 @@ struct ParsedSigningHeaders<'a> {
     wp_install_uuid: &'a str,
     plugin_instance_uuid: &'a str,
     multisite_blog_id: &'a str,
+    /// `x-dailyos-request-id` raw header value (post-DOS-742).
+    /// Empty string when absent; canonicalization includes it as a signed field
+    /// so mid-flight header mutation invalidates the signature.
+    request_id: &'a str,
 }
 
 impl<'a> ParsedSigningHeaders<'a> {
@@ -690,6 +696,13 @@ impl<'a> ParsedSigningHeaders<'a> {
             .map(parse_claim_identifier)
             .transpose()?
             .unwrap_or("");
+        // DOS-742: X-DailyOS-Request-Id is signed into canonical bytes so
+        // tampering is detected. Header is optional at parse time (legacy
+        // pre-DOS-741 clients won't send it; canonical includes empty string
+        // for backward compat). The runtime-side `is_safe_request_id` check
+        // at the request boundary rejects empty values on signed routes that
+        // require correlation.
+        let request_id = optional_single_header(headers, HEADER_REQUEST_ID)?.unwrap_or("");
 
         Ok(Self {
             surface_client_id,
@@ -707,6 +720,7 @@ impl<'a> ParsedSigningHeaders<'a> {
             wp_install_uuid,
             plugin_instance_uuid,
             multisite_blog_id,
+            request_id,
         })
     }
 }
@@ -839,6 +853,13 @@ pub(super) struct CanonicalRequest<'a> {
     pub identity: CanonicalIdentity<'a>,
     pub nonce: &'a str,
     pub timestamp: &'a str,
+    /// `x-dailyos-request-id` header value. End-to-end correlation identifier
+    /// added by DOS-742 to the HMAC canonical signing input so a buggy
+    /// intermediary cannot mutate the header in flight without invalidating
+    /// the signature. Empty string means absent; runtime rejects empty for
+    /// signed routes per `is_safe_request_id` validation at the request
+    /// boundary.
+    pub request_id: &'a str,
 }
 
 pub(super) fn canonical_request_bytes(
@@ -902,6 +923,7 @@ pub(super) fn canonical_request_bytes(
     );
     append_canonical_field(&mut bytes, "nonce", request.nonce.as_bytes());
     append_canonical_field(&mut bytes, "timestamp", request.timestamp.as_bytes());
+    append_canonical_field(&mut bytes, "request_id", request.request_id.as_bytes());
     Ok(bytes)
 }
 
@@ -1502,6 +1524,7 @@ mod tests {
             identity: test_identity(),
             nonce,
             timestamp,
+            request_id: "",
         }
     }
 
@@ -1624,6 +1647,8 @@ mod tests {
             "0123456789abcdef0123456789abcdef\n",
             "timestamp:20\n",
             "2026-05-10T17:20:31Z\n",
+            "request_id:0\n",
+            "\n",
         );
         assert_eq!(canonical, expected.as_bytes());
         assert_eq!(
