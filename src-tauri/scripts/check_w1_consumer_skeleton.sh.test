@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+#
+# Negative-fixture self-test for check_w1_consumer_skeleton.sh.
+#
+# Builds a temp directory containing a single WP block render-functions.php
+# that exercises ONLY one producer (get_entity_intelligence) and asserts the
+# lint fails by naming the four missing producers
+# (get_daily_briefing, claim_receipt, meeting_prep_status, record_claim_feedback).
+#
+# Mirrors the DOS-340 .test pattern (check_audit_disclosure_allowlist.sh.test).
+#
+# Invocation: bash src-tauri/scripts/check_w1_consumer_skeleton.sh.test
+
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+script="$repo_root/src-tauri/scripts/check_w1_consumer_skeleton.sh"
+
+if [[ ! -f "$script" ]]; then
+  echo "FAIL: lint script missing: $script" >&2
+  exit 1
+fi
+
+# ---- Case 1: incomplete consumer set should FAIL ----
+tmp_fail="$(mktemp -d)"
+trap 'rm -rf "$tmp_fail" "$tmp_pass"' EXIT
+mkdir -p "$tmp_fail/wp/dailyos/blocks/partial-consumer"
+cat > "$tmp_fail/wp/dailyos/blocks/partial-consumer/render-functions.php" <<'PHP'
+<?php
+// Negative fixture: invokes only ONE W1 producer; lint must catch the rest.
+$response = $runtime_client->invoke_ability(
+  'get_entity_intelligence',
+  [ 'entity_type' => 'account', 'entity_id' => 'acct-1' ]
+);
+PHP
+
+if DAILYOS_W1_CONSUMER_ROOT="$tmp_fail" bash "$script" >/dev/null 2>&1; then
+  echo "FAIL: lint passed against a consumer set missing 4 of 5 W1 producers" >&2
+  exit 1
+fi
+
+# ---- Case 2: complete consumer set should PASS ----
+tmp_pass="$(mktemp -d)"
+mkdir -p "$tmp_pass/wp/dailyos/blocks/full-consumer"
+cat > "$tmp_pass/wp/dailyos/blocks/full-consumer/render-functions.php" <<'PHP'
+<?php
+// Positive fixture: every W1 producer referenced by identifier.
+// get_entity_intelligence
+// get_daily_briefing
+// claim_receipt
+// meeting_prep_status
+// record_claim_feedback
+PHP
+
+if ! DAILYOS_W1_CONSUMER_ROOT="$tmp_pass" bash "$script" >/dev/null 2>&1; then
+  echo "FAIL: lint failed against a consumer set covering all 5 W1 producers" >&2
+  exit 1
+fi
+
+echo "AC-W1.9 consumer-skeleton lint negative-fixture self-test: PASS."

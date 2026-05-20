@@ -1,0 +1,23 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "dailyos/project-detail",
+	"title": "Project Detail",
+	"category": "dailyos",
+	"description": "Outer block for a Project entity surface — consumes get_entity_intelligence and hosts inner blocks for typed slices.",
+	"supports": {
+		"html": false,
+		"reusable": false,
+		"inserter": true
+	},
+	"attributes": {
+		"project_id": { "type": "string" },
+		"block_instance_id": { "type": "string" }
+	},
+	"providesContext": {
+		"dailyos/entityType": "entity_type",
+		"dailyos/entityId": "project_id"
+	},
+	"parent": null,
+	"render": "file:./render.php"
+}
