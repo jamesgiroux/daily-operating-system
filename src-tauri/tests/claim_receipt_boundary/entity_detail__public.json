@@ -1,0 +1,11 @@
+{
+  "evidence_summary": "...redacted...",
+  "field_path": "status",
+  "freshness": "current",
+  "lifecycle_state": "active",
+  "source_asof": "2026-05-15T12:00:00Z",
+  "source_label": "subsidiary.com",
+  "source_type": "salesforce",
+  "trust_band": "likely_current",
+  "verification_state": "unverified"
+}

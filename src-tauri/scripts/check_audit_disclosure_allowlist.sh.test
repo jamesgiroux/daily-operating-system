@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+#
+# Negative-fixture self-test for check_audit_disclosure_allowlist.sh.
+# Copies the negative fixture into a *forbidden* path under a temp clone
+# of the source tree and asserts the lint fails.
+#
+# Invocation: bash src-tauri/scripts/check_audit_disclosure_allowlist.sh.test
+
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+fixture="$repo_root/src-tauri/tests/audit_disclosure_negative/disclosure_attempt.sql.fixture"
+script="$repo_root/src-tauri/scripts/check_audit_disclosure_allowlist.sh"
+
+if [[ ! -f "$fixture" ]]; then
+  echo "fixture missing: $fixture" >&2
+  exit 1
+fi
+
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+
+# Build a minimal mirror of src-tauri/src under the temp dir, with the
+# disclosure attempt landed at a forbidden path.
+mkdir -p "$tmp/src-tauri/src/services/claim_receipt"
+cp "$fixture" "$tmp/src-tauri/src/services/claim_receipt/disclosure_attempt.rs"
+
+# Run the lint against the staged tree. Expect failure.
+pushd "$tmp" >/dev/null
+if bash "$script" >/dev/null 2>&1; then
+  echo "FAIL: lint passed against a disclosure attempt under services/claim_receipt/" >&2
+  popd >/dev/null
+  exit 1
+fi
+popd >/dev/null
+
+echo "DOS-340 disclosure-lint negative fixture: PASS (lint caught disclosure attempt)."
