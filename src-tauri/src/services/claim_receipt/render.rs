@@ -1,10 +1,12 @@
-use abilities_runtime::abilities::provenance::claim_trust_band_from_score;
 use abilities_runtime::sensitivity::{
     renderable_claim_text_with_value, RenderActor, RenderSurface,
 };
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 
 use crate::services::claim_receipt::contracts::*;
+use crate::services::claim_receipt::privacy::{
+    build_receipt_for_audience, Audience, PrivacyError,
+};
 use crate::state::AppState;
 
 #[derive(Debug, thiserror::Error)]
@@ -13,9 +15,39 @@ pub enum RenderError {
     TargetNotFound,
     #[error("storage error: {0}")]
     Storage(#[from] anyhow::Error),
+    #[error("privacy gate dropped the claim for this audience")]
+    PrivacyDrop,
+}
+
+/// Map a [`SurfaceContext`] to the [`Audience`] that constructs its receipt.
+///
+/// Tauri surfaces (ActionsWork / EntityDetail / DailyBriefing / MeetingDetail)
+/// share the local-to-local trust boundary per ADR-0129 and therefore map to
+/// [`Audience::UserTauri`]. The Mcp surface routes through
+/// [`Audience::AgentMcp`] which strips claim IDs, subject IDs, source labels,
+/// and source_asof timing oracles (CSO cycle-1 F12).
+///
+/// AC-341.4: this mapping is the production wiring that ensures the Mcp render
+/// path goes through the AgentMcp allowlist + denylist rather than emitting
+/// raw claim fields.
+pub fn audience_for_surface(surface: SurfaceContext) -> Audience {
+    match surface {
+        SurfaceContext::ActionsWork
+        | SurfaceContext::EntityDetail
+        | SurfaceContext::DailyBriefing
+        | SurfaceContext::MeetingDetail => Audience::UserTauri,
+        SurfaceContext::Mcp => Audience::AgentMcp,
+    }
 }
 
 /// Render the receipt projection for a target on a given surface.
+///
+/// **DOS-341 wiring (cycle-2 fix):** dispatches through
+/// [`build_receipt_for_audience`] with an [`Audience`] derived from the
+/// supplied `surface`. This is the production path that ensures the audience
+/// allowlist (USER_TAURI_ALLOWED_FIELDS / AGENT_MCP_ALLOWED_FIELDS) governs
+/// every field rather than being a test-only primitive
+/// (cycle-1 code-reviewer F1).
 ///
 /// **Proposal-receipt deferral** (per L0-W1 §5.6 + cycle-1 codex-consult F3):
 /// only the `Claim` arm of [`ReceiptTarget`] resolves. `Proposal` and
@@ -29,25 +61,107 @@ pub async fn render_receipt_for(
     target: ReceiptTarget,
     surface: SurfaceContext,
 ) -> Result<ClaimReceipt, RenderError> {
-    let (claim_id, target_field_path) = match &target {
-        ReceiptTarget::Claim {
-            claim_id,
-            field_path,
-            ..
-        } => (claim_id.clone(), field_path.clone()),
-        // Proposal/WorkItem deferred to v1.4.4 W4 — see doc comment above.
+    // Reject non-claim targets up front so DB roundtrips are cheap for the
+    // deferral cases.
+    match &target {
+        ReceiptTarget::Claim { .. } => {}
         ReceiptTarget::Proposal { .. } | ReceiptTarget::WorkItem { .. } => {
             return Err(RenderError::TargetNotFound);
         }
-    };
+    }
 
+    let audience = audience_for_surface(surface);
+    let target_for_db = target.clone();
+
+    // Build the per-audience receipt under a read connection. The privacy
+    // module owns audience-specific construction; we re-attach the
+    // surface-specific rendered_text projection afterward for UserTauri
+    // surfaces (AgentMcp deliberately keeps rendered_text = None).
+    //
+    // `db_read` requires `Result<T, String>`, so we encode the typed privacy
+    // error variants as discriminated strings and re-type them at the
+    // boundary.
+    let build_result: Result<ClaimReceipt, String> = state
+        .db_read(move |db| {
+            Ok(
+                build_receipt_for_audience(&target_for_db, audience, db.conn_ref())
+                    .map_err(privacy_error_tag),
+            )
+        })
+        .await
+        .map_err(|message| RenderError::Storage(anyhow::anyhow!(message)))?;
+    let mut receipt = build_result.map_err(render_error_from_tagged)?;
+
+    // Preserve the caller-requested surface context on the receipt; the
+    // privacy builders use canonical defaults (EntityDetail / Mcp /
+    // ActionsWork) which the Tauri command boundary needs to override so the
+    // round-trip back to the TS hook is structurally identical.
+    receipt.surface_context = surface;
+
+    // For UserTauri-class surfaces, attach the surface-policy-resolved
+    // rendered text (the privacy module sets this to None to keep the
+    // builder pure; rendering text is a sensitivity-policy call that we
+    // make here against the actual SurfaceContext).
+    if matches!(audience, Audience::UserTauri) {
+        if let Some(rendered_text) =
+            render_text_for_user_tauri_surface(state, &target, surface).await?
+        {
+            receipt.rendered_text = Some(rendered_text);
+        }
+    }
+
+    Ok(receipt)
+}
+
+/// Discriminator prefixes for [`PrivacyError`] → [`RenderError`] transport
+/// across the `db_read` boundary (which insists on `Result<T, String>`).
+const PRIVACY_TAG_NOT_FOUND: &str = "privacy/not_found:";
+const PRIVACY_TAG_DROP: &str = "privacy/drop:";
+const PRIVACY_TAG_STORAGE: &str = "privacy/storage:";
+
+fn privacy_error_tag(err: PrivacyError) -> String {
+    match err {
+        PrivacyError::ClaimNotFound(id) => format!("{PRIVACY_TAG_NOT_FOUND}{id}"),
+        PrivacyError::NonDisclosureAudience => {
+            format!("{PRIVACY_TAG_DROP}operational_audit_storage")
+        }
+        PrivacyError::ComposedClaimDropped => format!("{PRIVACY_TAG_DROP}composed_claim_dropped"),
+        PrivacyError::SurfaceDrop => format!("{PRIVACY_TAG_DROP}surface_drop"),
+        PrivacyError::Storage(e) => format!("{PRIVACY_TAG_STORAGE}{e}"),
+        PrivacyError::InvalidMetadata(m) => format!("{PRIVACY_TAG_STORAGE}invalid metadata: {m}"),
+    }
+}
+
+fn render_error_from_tagged(tag: String) -> RenderError {
+    if let Some(rest) = tag.strip_prefix(PRIVACY_TAG_NOT_FOUND) {
+        let _ = rest;
+        RenderError::TargetNotFound
+    } else if tag.starts_with(PRIVACY_TAG_DROP) {
+        RenderError::PrivacyDrop
+    } else {
+        RenderError::Storage(anyhow::anyhow!(tag))
+    }
+}
+
+/// Resolve the policy-aware rendered text for a Tauri-class surface. We
+/// re-load the claim under a fresh read connection to keep the privacy module
+/// pure (it does not surface rendered_text).
+async fn render_text_for_user_tauri_surface(
+    state: &AppState,
+    target: &ReceiptTarget,
+    surface: SurfaceContext,
+) -> Result<Option<abilities_runtime::sensitivity::RenderableClaimText>, RenderError> {
+    let claim_id = match target {
+        ReceiptTarget::Claim { claim_id, .. } => claim_id.clone(),
+        _ => return Ok(None),
+    };
     let claim = state
         .db_read(move |db| {
             crate::services::claims::load_claim_by_id(db.conn_ref(), &claim_id)
                 .map_err(|error| error.to_string())
         })
         .await
-        .map_err(|message| RenderError::Storage(anyhow::anyhow!(message)))?
+        .map_err(|m| RenderError::Storage(anyhow::anyhow!(m)))?
         .ok_or(RenderError::TargetNotFound)?;
 
     let render_surface = render_surface_for(surface);
@@ -55,47 +169,12 @@ pub async fn render_receipt_for(
         actor: "user".to_string(),
         user_id: None,
     };
-    let rendered_text =
-        renderable_claim_text_with_value(&claim, &claim.text, render_surface, &actor);
-
-    let source_asof = claim.source_asof.as_deref().and_then(parse_claim_timestamp);
-    let freshness = freshness_for(source_asof, Utc::now());
-
-    Ok(ClaimReceipt {
-        target,
-        surface_context: surface,
-        rendered_text,
-        trust: ReceiptTrust {
-            band: claim_trust_band_from_score(claim.trust_score),
-            source_asof,
-            freshness,
-            caveat: None,
-            rationale: None,
-        },
-        lifecycle: ReceiptLifecycle {
-            claim_state: claim.claim_state,
-            surfacing_state: claim.surfacing_state,
-            verification_state: claim.verification_state,
-            updated_at: claim
-                .reactivated_at
-                .as_deref()
-                .and_then(parse_claim_timestamp)
-                .or_else(|| parse_claim_timestamp(&claim.created_at)),
-        },
-        provenance: ReceiptProvenance {
-            sources: vec![ProvenanceSource {
-                label: "primary source".to_string(),
-                source_type: Some(claim.data_source),
-                as_of: source_asof,
-                href: None,
-                redacted: false,
-            }],
-            field_path: target_field_path.or(claim.field_path),
-            evidence_summary: None,
-            redaction: RedactionLevel::None,
-        },
-        actions: Vec::new(),
-    })
+    Ok(renderable_claim_text_with_value(
+        &claim,
+        &claim.text,
+        render_surface,
+        &actor,
+    ))
 }
 
 fn render_surface_for(surface: SurfaceContext) -> RenderSurface {
@@ -260,6 +339,128 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn ac_341_4_mcp_surface_routes_through_agent_mcp_audience() {
+        // Cycle-2 fix for code-reviewer F1: render_receipt_for must dispatch
+        // through Audience::AgentMcp when surface == Mcp. This is the canonical
+        // production wiring assertion — the receipt MUST NOT carry the
+        // source_type / source_asof / claim_id timing-oracle fields when
+        // emitted to the MCP surface.
+        let (state, _tempdir) = test_state().await;
+        let source_asof = Utc::now() - Duration::days(3);
+        seed_claim(&state, "claim-mcp-1", Some(source_asof)).await;
+
+        let target = ReceiptTarget::Claim {
+            claim_id: "claim-mcp-1".to_string(),
+            subject: SubjectRef::Account("acct-1".to_string()),
+            field_path: Some("health.risk".to_string()),
+        };
+        let receipt = render_receipt_for(&state, target, SurfaceContext::Mcp)
+            .await
+            .expect("mcp render should succeed for internal-sensitivity claim");
+
+        // AgentMcp denylist: no source labels, no source_asof, no field_path.
+        assert!(
+            receipt.provenance.sources.is_empty(),
+            "AgentMcp must not emit source labels (timing oracle)"
+        );
+        assert!(
+            receipt.trust.source_asof.is_none(),
+            "AgentMcp must not emit source_asof (timing oracle)"
+        );
+        assert!(
+            receipt.lifecycle.updated_at.is_none(),
+            "AgentMcp must not emit updated_at (graph timing leak)"
+        );
+        assert!(
+            receipt.provenance.field_path.is_none(),
+            "AgentMcp must not emit field_path (graph leak)"
+        );
+        assert!(
+            receipt.rendered_text.is_none(),
+            "AgentMcp must not pre-render text — consumer renders its own"
+        );
+
+        // Surface context override: the receipt MUST carry the caller-
+        // requested surface, not the privacy builder's canonical default.
+        assert_eq!(receipt.surface_context, SurfaceContext::Mcp);
+
+        // Claim id + subject id must be scrubbed.
+        match &receipt.target {
+            ReceiptTarget::Claim {
+                claim_id, subject, ..
+            } => {
+                assert!(claim_id.is_empty(), "AgentMcp must strip claim_id");
+                match subject {
+                    SubjectRef::Account(id) => {
+                        assert!(id.is_empty(), "AgentMcp must strip subject_id");
+                    }
+                    other => panic!("expected Account subject type, got {other:?}"),
+                }
+            }
+            other => panic!("expected Claim target, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn ac_341_4_tauri_surface_routes_through_user_tauri_audience() {
+        // Companion to the Mcp test: confirm Tauri-class surfaces (ActionsWork
+        // / EntityDetail / DailyBriefing / MeetingDetail) all dispatch through
+        // Audience::UserTauri and therefore see source labels + source_asof.
+        let (state, _tempdir) = test_state().await;
+        let source_asof = Utc::now() - Duration::days(3);
+        seed_claim(&state, "claim-tauri-mix-1", Some(source_asof)).await;
+
+        for surface in [
+            SurfaceContext::ActionsWork,
+            SurfaceContext::EntityDetail,
+            SurfaceContext::DailyBriefing,
+            SurfaceContext::MeetingDetail,
+        ] {
+            let target = ReceiptTarget::Claim {
+                claim_id: "claim-tauri-mix-1".to_string(),
+                subject: SubjectRef::Account("acct-1".to_string()),
+                field_path: Some("health.risk".to_string()),
+            };
+            let receipt = render_receipt_for(&state, target, surface)
+                .await
+                .expect("Tauri surface render");
+            assert_eq!(
+                receipt.surface_context, surface,
+                "render_receipt_for must echo caller surface back"
+            );
+            assert_eq!(
+                receipt.provenance.sources.len(),
+                1,
+                "UserTauri must surface exactly one provenance source"
+            );
+            assert!(
+                receipt.trust.source_asof.is_some(),
+                "UserTauri must carry source_asof"
+            );
+        }
+    }
+
+    #[test]
+    fn audience_for_surface_mapping() {
+        // Lock the cycle-2 wiring contract: Mcp → AgentMcp, all Tauri-class
+        // surfaces → UserTauri. A future regression that broadens the Mcp
+        // surface back to UserTauri (the cycle-1 F1 leak) fails this test.
+        assert_eq!(audience_for_surface(SurfaceContext::Mcp), Audience::AgentMcp);
+        for tauri_surface in [
+            SurfaceContext::ActionsWork,
+            SurfaceContext::EntityDetail,
+            SurfaceContext::DailyBriefing,
+            SurfaceContext::MeetingDetail,
+        ] {
+            assert_eq!(
+                audience_for_surface(tauri_surface),
+                Audience::UserTauri,
+                "{tauri_surface:?} must route through UserTauri"
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn unknown_claim_id_returns_target_not_found() {
         let (state, _tempdir) = test_state().await;
         let target = ReceiptTarget::Claim {
@@ -274,7 +475,6 @@ mod tests {
 
         assert!(matches!(error, RenderError::TargetNotFound));
     }
-
     #[test]
     fn freshness_boundaries_are_inclusive() {
         let now = Utc.with_ymd_and_hms(2026, 5, 19, 12, 0, 0).unwrap();

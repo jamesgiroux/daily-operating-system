@@ -8734,6 +8734,17 @@ fn emit_claim_feedback_signals(
                 write.outcome.claim_id
             );
         }
+
+        // DOS-339 cycle-2 fix (codex review P1): bridge the signal to the
+        // `claim_receipt:invalidated` Tauri event so `useClaimReceiptSubscription`
+        // can re-fetch its receipt projection. Best-effort: the bridge is a
+        // no-op in test / headless contexts.
+        crate::services::claim_receipt::event_bridge::emit_claim_receipt_invalidated(
+            "claim_verification_state_changed",
+            &write.outcome.claim_id,
+            Some(&write.verification_state_before),
+            Some(&write.verification_state_after),
+        );
     }
 }
 

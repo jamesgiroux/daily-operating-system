@@ -938,6 +938,15 @@ const MIGRATIONS: &[Migration] = &[
         version: 242,
         sql: include_str!("migrations/242_meeting_prep_status_dismissals.sql"),
     },
+    // DOS-335 cycle-2 fix (codex review P2): rebuild
+    // `meeting_prep_status_view` so `meeting_entities` rows are
+    // deterministically aggregated to one entity per meeting. v241's
+    // unaggregated LEFT JOIN produced non-deterministic LIMIT 1 reads in
+    // `compute_status`. See migration body for the aggregation strategy.
+    Migration::Sql {
+        version: 243,
+        sql: include_str!("migrations/243_meeting_prep_status_indexed_view_deterministic.sql"),
+    },
 ];
 
 const V155_SHADOW_TRUST_VERSION: i64 = 1_401_003;

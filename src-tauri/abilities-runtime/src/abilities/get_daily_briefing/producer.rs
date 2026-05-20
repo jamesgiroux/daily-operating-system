@@ -125,8 +125,16 @@ pub async fn build_daily_briefing(
         .iter()
         .map(|meeting| project_meeting_brief(meeting, prep_snapshots.get(&meeting.id)))
         .collect();
-    // Sort by starts_at (None last) to give a stable cursor order.
-    meeting_refs.sort_by(|a, b| a.starts_at.cmp(&b.starts_at));
+    // Sort by starts_at with undated meetings (None) sorted AFTER dated
+    // ones (cycle-2 fix for codex P3 — `Option::cmp` defaults to None < Some
+    // which pushed undated meetings to the FRONT of the cursor, contradicting
+    // the comment + AC-507.6 stable-cursor expectation).
+    meeting_refs.sort_by(|a, b| match (a.starts_at.as_ref(), b.starts_at.as_ref()) {
+        (Some(left), Some(right)) => left.cmp(right),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => std::cmp::Ordering::Equal,
+    });
 
     // ---- compose: per-linked-entity envelopes -----------------------------
     // The L0 contract calls for per-subject `get_entity_intelligence`
