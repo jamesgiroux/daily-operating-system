@@ -1,0 +1,11 @@
+{
+  "evidence_summary": "...redacted...",
+  "field_path": "status",
+  "freshness": "current",
+  "lifecycle_state": "active",
+  "source_asof": "2026-05-15T12:00:00Z",
+  "source_label": "internal note",
+  "source_type": "user_note",
+  "trust_band": "needs_verification",
+  "verification_state": "unverified"
+}
