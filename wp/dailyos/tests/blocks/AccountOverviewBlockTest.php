@@ -431,7 +431,7 @@ final class DailyOS_AccountOverviewBlockTest extends TestCase {
 	 * Asserts the feedback affordance emits the substrate-authoritative
 	 * field_path from claim_refs, not the payload-inferred path.
 	 *
-	 * Regression coverage for DOS-745: when the runtime's claim projection
+	 * Regression coverage: when the runtime's claim projection
 	 * normalizes claim.field_path (see claim_field_path() in
 	 * abilities-runtime/src/abilities/account_overview.rs) to a value that
 	 * differs from the WP-side inference (`/text` for top-level, `/items/N/text`

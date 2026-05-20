@@ -373,7 +373,7 @@ if ( ! function_exists( 'dailyos_account_overview_render' ) ) {
 			// payload shape and is a fallback when no claim_ref matches.
 			// Sending the inferred path when the projection normalized
 			// to a different one causes runtime to reject the nonce
-			// with reason: wrong_field (DOS-745).
+			// with reason: wrong_field.
 			$claim_version       = isset( $claim_ref['claim_version'] ) ? (int) $claim_ref['claim_version'] : 0;
 			$field_path          = isset( $claim_ref['field_path'] ) && is_string( $claim_ref['field_path'] ) && '' !== $claim_ref['field_path']
 				? (string) $claim_ref['field_path']
