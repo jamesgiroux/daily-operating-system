@@ -82,6 +82,10 @@ final class DailyOS_Plugin {
 
 		add_action( 'dailyos_nonce_sweep', [ $this, 'sweep_presence_nonces' ] );
 
+		// DOS-746 mechanism #2: auto-refresh stored granted_scopes against the
+		// runtime's current DEFAULT_GRANTED_SCOPES without forcing a re-pair.
+		add_action( 'admin_init', [ $this, 'maybe_refresh_pairing_scopes' ], 20 );
+
 		if ( defined( 'WP_CLI' ) && WP_CLI ) {
 			DailyOS_CLI::register();
 		}
@@ -1011,6 +1015,77 @@ final class DailyOS_Plugin {
 	 * Handle the scheduled nonce sweep hook.
 	 */
 	public function sweep_presence_nonces(): void {}
+
+	/**
+	 * Auto-refresh stored granted_scopes against the runtime's current
+	 * DEFAULT_GRANTED_SCOPES catalog (DOS-746 mechanism #2).
+	 *
+	 * Throttled to once per 24h via transient `dailyos_last_scope_refresh_at`.
+	 * Forces a refresh when the marker's `endpoint_version` differs from
+	 * the version observed at last refresh.
+	 *
+	 * @return void
+	 */
+	public function maybe_refresh_pairing_scopes(): void {
+		$credential_store = new DailyOS_Credential_Store();
+		$marker           = $credential_store->get_marker();
+		if ( null === $marker ) {
+			return;
+		}
+
+		$current_endpoint_version = isset( $marker['endpoint_version'] ) ? (string) $marker['endpoint_version'] : '';
+		$throttle                 = get_transient( 'dailyos_last_scope_refresh_at' );
+		$throttle_at              = is_array( $throttle ) && isset( $throttle['at'] ) ? (int) $throttle['at'] : 0;
+		$throttle_version         = is_array( $throttle ) && isset( $throttle['endpoint_version'] )
+			? (string) $throttle['endpoint_version']
+			: '';
+
+		$within_window           = ( time() - $throttle_at ) < DAY_IN_SECONDS;
+		$endpoint_version_stable = '' !== $throttle_version && $throttle_version === $current_endpoint_version;
+		if ( $within_window && $endpoint_version_stable ) {
+			return;
+		}
+
+		$client   = new DailyOS_Runtime_Client( $credential_store, new DailyOS_Hmac_Signer() );
+		$response = $client->refresh_pairing_scopes();
+
+		if ( is_wp_error( $response ) ) {
+			if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+				error_log( '[dailyos] scope refresh transport error: ' . $response->get_error_code() );
+			}
+			return;
+		}
+
+		if ( ! is_array( $response ) || true !== ( $response['ok'] ?? false ) ) {
+			if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+				error_log( '[dailyos] scope refresh returned non-ok envelope' );
+			}
+			return;
+		}
+
+		$refresh = isset( $response['refresh'] ) && is_array( $response['refresh'] ) ? $response['refresh'] : [];
+		$changed = isset( $refresh['changed'] ) ? (bool) $refresh['changed'] : false;
+		$scopes  = isset( $refresh['granted_scopes'] ) && is_array( $refresh['granted_scopes'] )
+			? array_values( array_filter( $refresh['granted_scopes'], 'is_string' ) )
+			: null;
+
+		if ( $changed && null !== $scopes ) {
+			$credential_store->update_granted_scopes( $scopes );
+		}
+
+		$observed_endpoint_version = isset( $response['endpoint_version'] )
+			? (string) $response['endpoint_version']
+			: $current_endpoint_version;
+
+		set_transient(
+			'dailyos_last_scope_refresh_at',
+			[
+				'at'               => time(),
+				'endpoint_version' => $observed_endpoint_version,
+			],
+			DAY_IN_SECONDS
+		);
+	}
 
 	/**
 	 * Build the runtime nonce issue payload from a REST request.

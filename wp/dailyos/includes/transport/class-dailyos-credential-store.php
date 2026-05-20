@@ -116,6 +116,27 @@ final class DailyOS_Credential_Store {
 	}
 
 	/**
+	 * Update the marker's stored granted_scopes after a successful scope
+	 * refresh (DOS-746 mechanism #2). The HMAC session key and pairing
+	 * identity are unchanged; only the recorded scope grant moves.
+	 *
+	 * @param array<int, string> $granted_scopes Scope strings returned by the runtime refresh response.
+	 * @return void
+	 */
+	public function update_granted_scopes( array $granted_scopes ): void {
+		$marker = $this->get_marker();
+
+		if ( null === $marker ) {
+			return;
+		}
+
+		$marker['granted_scopes'] = $this->normalize_scopes( $granted_scopes );
+		$marker['last_use_gmt']   = gmdate( 'Y-m-d H:i:s', time() );
+
+		update_option( self::PAIRING_MARKER_OPTION, $marker, false );
+	}
+
+	/**
 	 * Clear the stored non-secret pairing marker.
 	 *
 	 * @return void
