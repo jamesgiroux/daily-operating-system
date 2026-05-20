@@ -17,10 +17,15 @@ use chrono::{DateTime, Utc};
 use super::contracts::{
     CandidateSetRef, ContextDepth as EnvelopeContextDepth, Cursor, CursorState, EmptyReason,
     EntityFact, EntityIntelligenceEnvelope, EntityIntelligenceInput, EntityKind,
-    EnvelopeProvenance, EnvelopeProvenanceSource, EnvelopeSection, EnvelopeTrustSummary, Freshness,
-    HealthStory, MetadataProposal, NormalizedSubject, OpenLoopWithReceipt, Paginated,
-    ProvenanceRef, ReceiptTargetRef, RecordEntry, SectionState, SubjectScope, ThreadSummary,
-    TouchpointBundle, ENVELOPE_SCHEMA_VERSION,
+    EnvelopeProvenance, EnvelopeProvenanceSource, EnvelopeSection, EnvelopeTrustSummary,
+    ExclusionReason, Freshness, HealthStory, InclusionReason, MetadataProposal, NormalizedSubject,
+    OpenLoopWithReceipt, Paginated, ProvenanceRef, ReceiptTargetRef, RecordEntry, SectionState,
+    SubjectScope, ThreadSummary, Touchpoint, TouchpointBundle, TouchpointKind,
+    ENVELOPE_SCHEMA_VERSION,
+};
+use crate::services::context::{
+    EntityTouchpointSnapshot, EntityTouchpointsQuery, EntityTouchpointsReadError,
+    EntityTouchpointsSnapshot, TouchpointInclusionReason,
 };
 use crate::abilities::list_open_loops::{ListOpenLoopsInput, OpenLoopSubject, OpenLoopsResult};
 use crate::abilities::provenance::source_time::{parse_source_timestamp, SourceTimestampStatus};
@@ -98,9 +103,22 @@ pub async fn build_entity_intelligence(
         Paginated::empty_stable()
     };
 
+    // ---- compose: touchpoints (DOS-460) ------------------------------------
+    let touchpoints = if active_sections.contains(&EnvelopeSection::Touchpoints) {
+        compose_touchpoints(
+            ctx,
+            &input.entity_type,
+            entity_id,
+            &subject_ref,
+            &mut envelope_provenance,
+        )
+        .await?
+    } else {
+        not_requested_touchpoints_bundle(&subject_ref)
+    };
+
     // ---- sections without producers yet — typed empties --------------------
     let metadata_proposals = empty_paginated_metadata_proposals();
-    let touchpoints = empty_touchpoints_bundle(&subject_ref);
     let threads = Paginated::<ThreadSummary>::empty_stable();
     let health_story: Option<HealthStory> = None;
 
@@ -417,23 +435,270 @@ fn empty_paginated_metadata_proposals() -> Paginated<MetadataProposal> {
     Paginated::empty_stable()
 }
 
-fn empty_touchpoints_bundle(subject_ref: &SubjectRef) -> Paginated<TouchpointBundle> {
+fn not_requested_touchpoints_bundle(subject_ref: &SubjectRef) -> Paginated<TouchpointBundle> {
     let bundle = TouchpointBundle {
         upcoming: Paginated::empty_stable(),
         recent: Paginated::empty_stable(),
         candidate_set: CandidateSetRef {
             window_start: None,
             window_end: None,
-            filter_description:
-                "no candidate set yet — DOS-460 producer not wired in this substrate slot".to_string(),
+            filter_description: "touchpoints section not requested".to_string(),
         },
-        empty_reason: Some(EmptyReason::NoRelevantTouchpoints),
+        empty_reason: Some(EmptyReason::NotRequested),
         subject_scope: SubjectScope {
             primary: subject_ref.clone(),
             also_includes: Vec::new(),
         },
     };
     Paginated::stable(vec![bundle])
+}
+
+// ---- touchpoints (DOS-460) -----------------------------------------------
+
+/// Default upcoming window in days. Matches the `today + horizon` convention
+/// used by daily briefing readiness — long enough to surface the next-week
+/// cadence touchpoint, short enough to keep the bundle bounded.
+const TOUCHPOINTS_UPCOMING_WINDOW_DAYS: u16 = 14;
+/// Default recent window in days. Matches the "what happened recently" surface
+/// expectation used by entity-detail blocks.
+const TOUCHPOINTS_RECENT_WINDOW_DAYS: u16 = 30;
+const TOUCHPOINTS_PER_SIDE_CAP: usize = 25;
+
+async fn compose_touchpoints(
+    ctx: &AbilityContext<'_>,
+    entity_type: &EntityKind,
+    entity_id: &str,
+    subject_ref: &SubjectRef,
+    provenance: &mut EnvelopeProvenance,
+) -> Result<Paginated<TouchpointBundle>, AbilityError> {
+    let now = ctx.services().clock.now();
+    let query = EntityTouchpointsQuery {
+        entity_type: entity_type.as_lower_str().to_string(),
+        entity_id: entity_id.to_string(),
+        now,
+        upcoming_window_days: TOUCHPOINTS_UPCOMING_WINDOW_DAYS,
+        recent_window_days: TOUCHPOINTS_RECENT_WINDOW_DAYS,
+        per_side_cap: TOUCHPOINTS_PER_SIDE_CAP,
+    };
+
+    let snapshot = match ctx.services().read_entity_touchpoints(query).await {
+        Ok(snapshot) => snapshot,
+        Err(EntityTouchpointsReadError::SubjectNotOwned { .. }) => {
+            return Ok(Paginated::stable(vec![filtered_out_touchpoints_bundle(
+                subject_ref,
+                &now,
+            )]));
+        }
+        Err(EntityTouchpointsReadError::ReadFailed(message)) => {
+            return Ok(Paginated::stable(vec![read_failed_touchpoints_bundle(
+                subject_ref,
+                &now,
+                message,
+            )]));
+        }
+    };
+
+    let bundle = project_touchpoints_bundle(&snapshot, subject_ref, &now, provenance);
+    Ok(Paginated::stable(vec![bundle]))
+}
+
+fn project_touchpoints_bundle(
+    snapshot: &EntityTouchpointsSnapshot,
+    subject_ref: &SubjectRef,
+    now: &DateTime<Utc>,
+    provenance: &mut EnvelopeProvenance,
+) -> TouchpointBundle {
+    let upcoming_items: Vec<Touchpoint> = snapshot
+        .upcoming
+        .iter()
+        .map(|raw| project_touchpoint(raw, now, provenance))
+        .collect();
+    let recent_items: Vec<Touchpoint> = snapshot
+        .recent
+        .iter()
+        .map(|raw| project_touchpoint(raw, now, provenance))
+        .collect();
+
+    let upcoming = Paginated::stable(upcoming_items);
+    let recent = Paginated::stable(recent_items);
+
+    let window_start =
+        Some(*now - chrono::Duration::days(i64::from(TOUCHPOINTS_RECENT_WINDOW_DAYS)));
+    let window_end =
+        Some(*now + chrono::Duration::days(i64::from(TOUCHPOINTS_UPCOMING_WINDOW_DAYS)));
+
+    let candidate_set = CandidateSetRef {
+        window_start,
+        window_end,
+        filter_description: snapshot.filter_description.clone(),
+    };
+
+    let also_includes = snapshot
+        .also_includes
+        .iter()
+        .map(|(ty, id)| subject_ref_from_pair(ty, id))
+        .collect::<Vec<_>>();
+
+    let empty_reason = if upcoming.items.is_empty() && recent.items.is_empty() {
+        Some(EmptyReason::NoRelevantTouchpoints)
+    } else {
+        None
+    };
+
+    TouchpointBundle {
+        upcoming,
+        recent,
+        candidate_set,
+        empty_reason,
+        subject_scope: SubjectScope {
+            primary: subject_ref.clone(),
+            also_includes,
+        },
+    }
+}
+
+fn project_touchpoint(
+    raw: &EntityTouchpointSnapshot,
+    now: &DateTime<Utc>,
+    provenance: &mut EnvelopeProvenance,
+) -> Touchpoint {
+    let when = parse_optional_timestamp(raw.starts_at.as_deref()).unwrap_or(*now);
+    let label = format!("meeting:{}", raw.meeting_id);
+    let source_id = upsert_static_provenance_source(
+        provenance,
+        EnvelopeProvenanceSource {
+            id: label,
+            label: raw.title.clone(),
+            source_type: Some("meeting".to_string()),
+            as_of: parse_optional_timestamp(raw.source_asof.as_deref()),
+            redacted: false,
+        },
+    );
+    let inclusion_reason = match raw.inclusion_reason {
+        TouchpointInclusionReason::SubjectMatch => InclusionReason::SubjectMatch,
+        TouchpointInclusionReason::EntityLink => InclusionReason::EntityLink,
+        TouchpointInclusionReason::AttendeeMatch => InclusionReason::AttendeeMatch,
+        TouchpointInclusionReason::DomainMatch => InclusionReason::DomainMatch,
+    };
+    let exclusion_reason = raw
+        .exclusion_reason
+        .as_deref()
+        .and_then(parse_exclusion_reason);
+    Touchpoint {
+        meeting_id: Some(raw.meeting_id.clone()),
+        kind: classify_touchpoint_kind(&raw.kind),
+        when,
+        subject_ref: subject_ref_from_pair(&raw.subject_entity_type, &raw.subject_entity_id),
+        inclusion_reason,
+        exclusion_reason,
+        trust_band: TrustBand::Unscored,
+        freshness: freshness_for_meeting(raw, now),
+        provenance: ProvenanceRef::from_ids([source_id]),
+    }
+}
+
+fn classify_touchpoint_kind(raw: &str) -> TouchpointKind {
+    let lowered = raw.to_ascii_lowercase();
+    if lowered.contains("email") {
+        TouchpointKind::EmailThread
+    } else if lowered.contains("salesforce") {
+        TouchpointKind::Salesforce
+    } else if lowered.contains("linear") {
+        TouchpointKind::Linear
+    } else if lowered.contains("doc") {
+        TouchpointKind::Document
+    } else {
+        TouchpointKind::Meeting
+    }
+}
+
+fn parse_exclusion_reason(raw: &str) -> Option<ExclusionReason> {
+    match raw {
+        "subject_mismatch" => Some(ExclusionReason::SubjectMismatch),
+        "outside_window" => Some(ExclusionReason::OutsideWindow),
+        "low_confidence" => Some(ExclusionReason::LowConfidence),
+        "suppressed" => Some(ExclusionReason::Suppressed),
+        _ => None,
+    }
+}
+
+fn freshness_for_meeting(raw: &EntityTouchpointSnapshot, now: &DateTime<Utc>) -> Freshness {
+    let Some(when) = parse_optional_timestamp(raw.starts_at.as_deref()) else {
+        return Freshness::Unknown;
+    };
+    if when > *now {
+        Freshness::Current
+    } else {
+        let age = now.signed_duration_since(when);
+        if age.num_days() < 7 {
+            Freshness::Current
+        } else if age.num_days() < 30 {
+            Freshness::Aging
+        } else {
+            Freshness::Stale
+        }
+    }
+}
+
+fn subject_ref_from_pair(entity_type: &str, entity_id: &str) -> SubjectRef {
+    match entity_type {
+        "account" => SubjectRef::Account(entity_id.to_string()),
+        "project" => SubjectRef::Project(entity_id.to_string()),
+        "person" => SubjectRef::Person(entity_id.to_string()),
+        "meeting" => SubjectRef::Meeting(entity_id.to_string()),
+        _ => SubjectRef::Unknown,
+    }
+}
+
+fn filtered_out_touchpoints_bundle(
+    subject_ref: &SubjectRef,
+    now: &DateTime<Utc>,
+) -> TouchpointBundle {
+    TouchpointBundle {
+        upcoming: Paginated::empty_stable(),
+        recent: Paginated::empty_stable(),
+        candidate_set: CandidateSetRef {
+            window_start: Some(
+                *now - chrono::Duration::days(i64::from(TOUCHPOINTS_RECENT_WINDOW_DAYS)),
+            ),
+            window_end: Some(
+                *now + chrono::Duration::days(i64::from(TOUCHPOINTS_UPCOMING_WINDOW_DAYS)),
+            ),
+            filter_description: "subject filtered out by workspace scope".to_string(),
+        },
+        empty_reason: Some(EmptyReason::FilteredOutBySubject),
+        subject_scope: SubjectScope {
+            primary: subject_ref.clone(),
+            also_includes: Vec::new(),
+        },
+    }
+}
+
+fn read_failed_touchpoints_bundle(
+    subject_ref: &SubjectRef,
+    now: &DateTime<Utc>,
+    message: String,
+) -> TouchpointBundle {
+    TouchpointBundle {
+        upcoming: Paginated::empty_stable(),
+        recent: Paginated::empty_stable(),
+        candidate_set: CandidateSetRef {
+            window_start: Some(
+                *now - chrono::Duration::days(i64::from(TOUCHPOINTS_RECENT_WINDOW_DAYS)),
+            ),
+            window_end: Some(
+                *now + chrono::Duration::days(i64::from(TOUCHPOINTS_UPCOMING_WINDOW_DAYS)),
+            ),
+            filter_description: message,
+        },
+        empty_reason: Some(EmptyReason::PartialFailure {
+            advisory: "touchpoints reader unavailable".to_string(),
+        }),
+        subject_scope: SubjectScope {
+            primary: subject_ref.clone(),
+            also_includes: Vec::new(),
+        },
+    }
 }
 
 fn count_touchpoints(touchpoints: &Paginated<TouchpointBundle>) -> u64 {
@@ -847,5 +1112,311 @@ mod tests {
         assert_eq!(EntityKind::Account.as_lower_str(), "account");
         assert_eq!(EntityKind::Project.as_lower_str(), "project");
         assert_eq!(EntityKind::Person.as_lower_str(), "person");
+    }
+
+    // ---- DOS-460 — touchpoint projection + subject-isolation tests --------
+
+    fn fake_snapshot(
+        entity_type: &str,
+        entity_id: &str,
+        upcoming: Vec<EntityTouchpointSnapshot>,
+        recent: Vec<EntityTouchpointSnapshot>,
+        also_includes: Vec<(String, String)>,
+    ) -> EntityTouchpointsSnapshot {
+        EntityTouchpointsSnapshot {
+            subject_entity_type: entity_type.to_string(),
+            subject_entity_id: entity_id.to_string(),
+            upcoming,
+            recent,
+            also_includes,
+            filter_description: format!("{entity_type}:{entity_id} test fixture"),
+        }
+    }
+
+    fn fake_touchpoint(
+        meeting_id: &str,
+        entity_type: &str,
+        entity_id: &str,
+        inclusion: TouchpointInclusionReason,
+        when: chrono::DateTime<chrono::Utc>,
+    ) -> EntityTouchpointSnapshot {
+        EntityTouchpointSnapshot {
+            meeting_id: meeting_id.to_string(),
+            title: format!("Meeting {meeting_id}"),
+            kind: "internal".to_string(),
+            starts_at: Some(when.to_rfc3339()),
+            ends_at: None,
+            subject_entity_type: entity_type.to_string(),
+            subject_entity_id: entity_id.to_string(),
+            inclusion_reason: inclusion,
+            exclusion_reason: None,
+            source_asof: Some(when.to_rfc3339()),
+        }
+    }
+
+    #[test]
+    fn project_touchpoints_empty_snapshot_emits_no_relevant_touchpoints() {
+        let snapshot = fake_snapshot("account", "acc-1", vec![], vec![], vec![]);
+        let mut prov = EnvelopeProvenance::empty();
+        let bundle = project_touchpoints_bundle(
+            &snapshot,
+            &SubjectRef::Account("acc-1".to_string()),
+            &chrono::Utc::now(),
+            &mut prov,
+        );
+        assert_eq!(bundle.empty_reason, Some(EmptyReason::NoRelevantTouchpoints));
+        assert!(bundle.upcoming.items.is_empty());
+        assert!(bundle.recent.items.is_empty());
+        assert!(bundle.subject_scope.also_includes.is_empty());
+    }
+
+    #[test]
+    fn project_touchpoints_parent_child_account_scope_appears_in_also_includes() {
+        // Parent account "acc-parent" pulled in via scope expansion includes a
+        // child-account meeting tagged EntityLink — projection must reflect that
+        // scope expansion in `subject_scope.also_includes` so consumers can
+        // render "scope includes child accounts".
+        let now = chrono::Utc::now();
+        let snapshot = fake_snapshot(
+            "account",
+            "acc-parent",
+            vec![fake_touchpoint(
+                "m-1",
+                "account",
+                "acc-child",
+                TouchpointInclusionReason::EntityLink,
+                now + chrono::Duration::days(2),
+            )],
+            vec![],
+            vec![("account".to_string(), "acc-child".to_string())],
+        );
+        let mut prov = EnvelopeProvenance::empty();
+        let bundle = project_touchpoints_bundle(
+            &snapshot,
+            &SubjectRef::Account("acc-parent".to_string()),
+            &now,
+            &mut prov,
+        );
+        assert!(bundle.empty_reason.is_none());
+        assert_eq!(bundle.upcoming.items.len(), 1);
+        let tp = &bundle.upcoming.items[0];
+        assert_eq!(tp.inclusion_reason, InclusionReason::EntityLink);
+        assert_eq!(tp.subject_ref, SubjectRef::Account("acc-child".to_string()));
+        assert_eq!(
+            bundle.subject_scope.also_includes,
+            vec![SubjectRef::Account("acc-child".to_string())]
+        );
+        // Primary remains the requested subject — no bleed.
+        assert_eq!(
+            bundle.subject_scope.primary,
+            SubjectRef::Account("acc-parent".to_string())
+        );
+    }
+
+    #[test]
+    fn project_touchpoints_person_attendee_match_preserves_inclusion_reason() {
+        // Person subject found as attendee of an internal multi-account meeting —
+        // the AttendeeMatch reason must survive projection so the renderer can
+        // distinguish "this person attended" from "this person was the meeting subject".
+        let now = chrono::Utc::now();
+        let snapshot = fake_snapshot(
+            "person",
+            "p-1",
+            vec![],
+            vec![fake_touchpoint(
+                "m-2",
+                "person",
+                "p-1",
+                TouchpointInclusionReason::AttendeeMatch,
+                now - chrono::Duration::days(3),
+            )],
+            vec![],
+        );
+        let mut prov = EnvelopeProvenance::empty();
+        let bundle = project_touchpoints_bundle(
+            &snapshot,
+            &SubjectRef::Person("p-1".to_string()),
+            &now,
+            &mut prov,
+        );
+        assert_eq!(bundle.recent.items.len(), 1);
+        assert_eq!(
+            bundle.recent.items[0].inclusion_reason,
+            InclusionReason::AttendeeMatch
+        );
+    }
+
+    #[test]
+    fn project_touchpoints_multi_account_meeting_no_subject_bleed() {
+        // A meeting tagged with both acc-a and acc-b. The acc-a envelope should
+        // only see the acc-a row; subject_ref echoes the matched id, not the
+        // requesting id. The fake reader stage guarantees this; this test
+        // verifies the projection doesn't accidentally rewrite subject_ref.
+        let now = chrono::Utc::now();
+        let snapshot = fake_snapshot(
+            "account",
+            "acc-a",
+            vec![fake_touchpoint(
+                "m-shared",
+                "account",
+                "acc-a",
+                TouchpointInclusionReason::SubjectMatch,
+                now + chrono::Duration::days(1),
+            )],
+            vec![],
+            vec![],
+        );
+        let mut prov = EnvelopeProvenance::empty();
+        let bundle = project_touchpoints_bundle(
+            &snapshot,
+            &SubjectRef::Account("acc-a".to_string()),
+            &now,
+            &mut prov,
+        );
+        let tp = &bundle.upcoming.items[0];
+        assert_eq!(tp.subject_ref, SubjectRef::Account("acc-a".to_string()));
+        // SubjectMatch (not EntityLink) — direct match, not inherited.
+        assert_eq!(tp.inclusion_reason, InclusionReason::SubjectMatch);
+    }
+
+    #[test]
+    fn project_touchpoints_freshness_classification_by_age() {
+        let now = chrono::Utc::now();
+        // Future meeting = Current; recent meeting = Current; aging = Aging; stale = Stale.
+        let snapshot = fake_snapshot(
+            "account",
+            "acc-1",
+            vec![fake_touchpoint(
+                "m-future",
+                "account",
+                "acc-1",
+                TouchpointInclusionReason::SubjectMatch,
+                now + chrono::Duration::days(7),
+            )],
+            vec![
+                fake_touchpoint(
+                    "m-recent",
+                    "account",
+                    "acc-1",
+                    TouchpointInclusionReason::SubjectMatch,
+                    now - chrono::Duration::days(3),
+                ),
+                fake_touchpoint(
+                    "m-aging",
+                    "account",
+                    "acc-1",
+                    TouchpointInclusionReason::SubjectMatch,
+                    now - chrono::Duration::days(14),
+                ),
+                fake_touchpoint(
+                    "m-stale",
+                    "account",
+                    "acc-1",
+                    TouchpointInclusionReason::SubjectMatch,
+                    now - chrono::Duration::days(60),
+                ),
+            ],
+            vec![],
+        );
+        let mut prov = EnvelopeProvenance::empty();
+        let bundle = project_touchpoints_bundle(
+            &snapshot,
+            &SubjectRef::Account("acc-1".to_string()),
+            &now,
+            &mut prov,
+        );
+        assert_eq!(bundle.upcoming.items[0].freshness, Freshness::Current);
+        assert_eq!(bundle.recent.items[0].freshness, Freshness::Current);
+        assert_eq!(bundle.recent.items[1].freshness, Freshness::Aging);
+        assert_eq!(bundle.recent.items[2].freshness, Freshness::Stale);
+    }
+
+    #[test]
+    fn classify_touchpoint_kind_falls_back_to_meeting_for_unknown_strings() {
+        assert_eq!(classify_touchpoint_kind("internal"), TouchpointKind::Meeting);
+        assert_eq!(classify_touchpoint_kind("team_sync"), TouchpointKind::Meeting);
+        assert_eq!(classify_touchpoint_kind("email_thread"), TouchpointKind::EmailThread);
+        assert_eq!(classify_touchpoint_kind("salesforce_call"), TouchpointKind::Salesforce);
+        assert_eq!(classify_touchpoint_kind("linear_update"), TouchpointKind::Linear);
+        assert_eq!(classify_touchpoint_kind("google_doc"), TouchpointKind::Document);
+        // Defensive: empty + garbage strings → Meeting, never panic.
+        assert_eq!(classify_touchpoint_kind(""), TouchpointKind::Meeting);
+        assert_eq!(classify_touchpoint_kind("???"), TouchpointKind::Meeting);
+    }
+
+    #[test]
+    fn parse_exclusion_reason_strict_allowlist() {
+        assert_eq!(parse_exclusion_reason("subject_mismatch"), Some(ExclusionReason::SubjectMismatch));
+        assert_eq!(parse_exclusion_reason("outside_window"), Some(ExclusionReason::OutsideWindow));
+        assert_eq!(parse_exclusion_reason("low_confidence"), Some(ExclusionReason::LowConfidence));
+        assert_eq!(parse_exclusion_reason("suppressed"), Some(ExclusionReason::Suppressed));
+        // Unknown values must NOT round-trip to a fake reason.
+        assert_eq!(parse_exclusion_reason("unknown"), None);
+        assert_eq!(parse_exclusion_reason(""), None);
+    }
+
+    #[test]
+    fn subject_ref_from_pair_known_kinds_round_trip() {
+        assert_eq!(
+            subject_ref_from_pair("account", "a-1"),
+            SubjectRef::Account("a-1".to_string())
+        );
+        assert_eq!(
+            subject_ref_from_pair("project", "p-1"),
+            SubjectRef::Project("p-1".to_string())
+        );
+        assert_eq!(
+            subject_ref_from_pair("person", "u-1"),
+            SubjectRef::Person("u-1".to_string())
+        );
+        assert_eq!(
+            subject_ref_from_pair("meeting", "m-1"),
+            SubjectRef::Meeting("m-1".to_string())
+        );
+        // Unknown kind → Unknown, never a wildcard subject id.
+        assert!(matches!(
+            subject_ref_from_pair("bogus", "x"),
+            SubjectRef::Unknown
+        ));
+    }
+
+    #[test]
+    fn read_failed_bundle_carries_partial_failure_reason() {
+        // When the reader is unavailable, the producer surfaces typed
+        // PartialFailure — not a null, not a generic "empty", and not a hard
+        // envelope error. Consumers can distinguish "no touchpoints" from
+        // "couldn't read touchpoints" by checking empty_reason.
+        let bundle = read_failed_touchpoints_bundle(
+            &SubjectRef::Account("acc-1".to_string()),
+            &chrono::Utc::now(),
+            "reader unavailable in test context".to_string(),
+        );
+        assert!(matches!(
+            bundle.empty_reason,
+            Some(EmptyReason::PartialFailure { .. })
+        ));
+        assert!(bundle.candidate_set.filter_description.contains("reader unavailable"));
+    }
+
+    #[test]
+    fn filtered_out_bundle_marks_subject_filtered_not_no_touchpoints() {
+        // SubjectNotOwned must surface as FilteredOutBySubject, not
+        // NoRelevantTouchpoints — these are semantically distinct outcomes
+        // (workspace boundary vs no data in window).
+        let bundle = filtered_out_touchpoints_bundle(
+            &SubjectRef::Person("p-1".to_string()),
+            &chrono::Utc::now(),
+        );
+        assert_eq!(bundle.empty_reason, Some(EmptyReason::FilteredOutBySubject));
+    }
+
+    #[test]
+    fn not_requested_bundle_marks_section_explicitly() {
+        // When the caller filters Touchpoints out of the requested sections,
+        // the bundle returns NotRequested (not NoRelevantTouchpoints), so the
+        // renderer can hide the section vs render "no touchpoints in window".
+        let bundle = not_requested_touchpoints_bundle(&SubjectRef::Account("a".to_string()));
+        let inner = &bundle.items[0];
+        assert_eq!(inner.empty_reason, Some(EmptyReason::NotRequested));
     }
 }
