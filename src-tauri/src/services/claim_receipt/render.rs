@@ -15,6 +15,15 @@ pub enum RenderError {
     Storage(#[from] anyhow::Error),
 }
 
+/// Render the receipt projection for a target on a given surface.
+///
+/// **Proposal-receipt deferral** (per L0-W1 §5.6 + cycle-1 codex-consult F3):
+/// only the `Claim` arm of [`ReceiptTarget`] resolves. `Proposal` and
+/// `WorkItem` arms return [`RenderError::TargetNotFound`]. The DTO ships all
+/// three variants so consumers compile, but receipt rendering for
+/// proposal/work-item targets is W4 (Actions/Work) territory — NOT in v1.4.4
+/// W1 scope. `submit_claim_feedback` on a Proposal target returns a typed
+/// "no receipt yet, target-only" response per §5.7.
 pub async fn render_receipt_for(
     state: &AppState,
     target: ReceiptTarget,
@@ -26,6 +35,7 @@ pub async fn render_receipt_for(
             field_path,
             ..
         } => (claim_id.clone(), field_path.clone()),
+        // Proposal/WorkItem deferred to v1.4.4 W4 — see doc comment above.
         ReceiptTarget::Proposal { .. } | ReceiptTarget::WorkItem { .. } => {
             return Err(RenderError::TargetNotFound);
         }
