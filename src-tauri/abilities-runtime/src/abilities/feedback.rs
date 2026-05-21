@@ -1,10 +1,18 @@
 //! Typed claim feedback substrate per ADR-0123.
 //!
-//! Nine closed actions describe every kind of judgment a user can pass
+//! Ten closed actions describe every kind of judgment a user can pass
 //! on a rendered claim. Each maps to a typed effect tuple — claim
 //! lifecycle, trust factor, reliability impact, repair queue, and
 //! render policy — that downstream consumers (Trust Compiler, repair
 //! workers, render filters) read deterministically.
+//!
+//! `MergeIntent` (10th variant; ADR-0123 V1.1 amendment) supports the
+//! Person Detail merge picker (v1.4.4 W2 §5.3): the user nominates a
+//! canonical merge target for an ambiguous person entity. It is a typed
+//! proposal — it does NOT mutate claim verification or lifecycle state;
+//! the merge execution flow (DOS-484) reads the typed payload and runs
+//! the actual subject rebind. User-only action (Agent denied per
+//! AC-8.13).
 //!
 //! This module is the pure semantic contract: the enum, the matrix,
 //! and the verification-state machine. The service-level entry that
@@ -59,6 +67,17 @@ pub enum FeedbackAction {
     /// "Not in the right place." Context/relevance hint only;
     /// no trust effect.
     NotRelevantHere,
+    /// "Merge this entity into another." User-only typed proposal that
+    /// nominates a canonical merge target (per Person Detail merge
+    /// picker, v1.4.4 W2 §5.3). Carries `merge_target: SubjectRef` +
+    /// optional `supporting_evidence: String` in `payload_json`.
+    ///
+    /// MergeIntent does NOT mutate claim verification or lifecycle
+    /// state — it persists a typed proposal row that the downstream
+    /// merge execution service (DOS-484) consumes to run the actual
+    /// subject rebind. Agent actor is denied at every surface
+    /// (AC-8.13).
+    MergeIntent,
 }
 
 impl FeedbackAction {
@@ -75,6 +94,7 @@ impl FeedbackAction {
             Self::NeedsNuance => "needs_nuance",
             Self::SurfaceInappropriate => "surface_inappropriate",
             Self::NotRelevantHere => "not_relevant_here",
+            Self::MergeIntent => "merge_intent",
         }
     }
 }
@@ -336,6 +356,25 @@ pub const fn feedback_semantics(action: FeedbackAction) -> ClaimFeedbackMetadata
             requires_action_metadata: true,
             is_truth_feedback: false,
         },
+        FeedbackAction::MergeIntent => ClaimFeedbackMetadata {
+            action,
+            // MergeIntent is a typed proposal — it does NOT raise the
+            // verification ratchet on the source claim. Merge execution
+            // (DOS-484) is a separate service flow that runs after the
+            // user reviews the proposal.
+            verification_state: ClaimVerificationState::Active,
+            trust_effect: TrustEffect::NONE,
+            repair: RepairAction::None,
+            // Render policy is Default: the source claim continues to
+            // render normally while a merge proposal exists. The
+            // Person Detail merge picker reads the proposal row
+            // separately.
+            render: ClaimRenderPolicy::Default,
+            // Requires `merge_target` in payload metadata.
+            requires_action_metadata: true,
+            // Subject-attribution feedback, not truth feedback.
+            is_truth_feedback: false,
+        },
     }
 }
 
@@ -375,7 +414,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn feedback_action_serializes_only_nine_closed_values() {
+    fn feedback_action_serializes_only_ten_closed_values() {
         let names: Vec<&str> = [
             FeedbackAction::ConfirmCurrent,
             FeedbackAction::MarkOutdated,
@@ -386,19 +425,31 @@ mod tests {
             FeedbackAction::NeedsNuance,
             FeedbackAction::SurfaceInappropriate,
             FeedbackAction::NotRelevantHere,
+            FeedbackAction::MergeIntent,
         ]
         .iter()
         .map(|a| a.as_str())
         .collect();
-        assert_eq!(names.len(), 9);
+        assert_eq!(names.len(), 10);
         let unique: std::collections::HashSet<_> = names.iter().collect();
-        assert_eq!(unique.len(), 9, "wire-format strings must be unique");
+        assert_eq!(unique.len(), 10, "wire-format strings must be unique");
         for n in &names {
             // Round-trip through serde to catch a rename mismatch.
             let json = format!("\"{n}\"");
             let parsed: FeedbackAction = serde_json::from_str(&json).unwrap();
             assert_eq!(parsed.as_str(), *n);
         }
+    }
+
+    #[test]
+    fn merge_intent_round_trips_through_json() {
+        // Property: 10-variant FeedbackAction enum parses cleanly from
+        // JSON metadata. Catches drift between serde rename + as_str.
+        let json = serde_json::to_string(&FeedbackAction::MergeIntent).unwrap();
+        assert_eq!(json, "\"merge_intent\"");
+        let parsed: FeedbackAction = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, FeedbackAction::MergeIntent);
+        assert_eq!(parsed.as_str(), "merge_intent");
     }
 
     #[test]
@@ -425,10 +476,24 @@ mod tests {
             FeedbackAction::NeedsNuance,
             FeedbackAction::SurfaceInappropriate,
             FeedbackAction::NotRelevantHere,
+            FeedbackAction::MergeIntent,
         ] {
             let meta = feedback_semantics(action);
             assert_eq!(meta.action, action);
         }
+    }
+
+    #[test]
+    fn merge_intent_is_typed_proposal_no_lifecycle_or_trust_change() {
+        // ADR-0123 V1.1: MergeIntent persists a typed proposal row only.
+        // No verification ratchet, no trust effect, no repair queue.
+        let meta = feedback_semantics(FeedbackAction::MergeIntent);
+        assert_eq!(meta.verification_state, ClaimVerificationState::Active);
+        assert_eq!(meta.trust_effect, TrustEffect::NONE);
+        assert_eq!(meta.repair, RepairAction::None);
+        assert_eq!(meta.render, ClaimRenderPolicy::Default);
+        assert!(meta.requires_action_metadata);
+        assert!(!meta.is_truth_feedback);
     }
 
     #[test]
@@ -535,6 +600,7 @@ mod tests {
             FeedbackAction::SurfaceInappropriate,
             FeedbackAction::NotRelevantHere,
             FeedbackAction::WrongSubject,
+            FeedbackAction::MergeIntent,
         ] {
             let next = transition_for_feedback(s0, action);
             assert_eq!(
@@ -562,18 +628,23 @@ mod tests {
             FeedbackAction::NeedsNuance,
             FeedbackAction::SurfaceInappropriate,
             FeedbackAction::NotRelevantHere,
+            FeedbackAction::MergeIntent,
         ] {
             let render = feedback_semantics(action).render;
-            // Multiple actions may produce the same render policy
-            // (Default is shared by ConfirmCurrent). What we want
-            // here is: every action's render is a deliberate pick,
-            // not a fallback.
             seen.entry(render).or_insert_with(Vec::new).push(action);
         }
+        // Every action's render is a deliberate pick, not a fallback.
+        // MergeIntent picks the bare `Default` policy because the source
+        // claim continues to render normally while the merge proposal
+        // is pending — the picker reads the proposal row separately.
         assert_eq!(
             seen.len(),
-            9,
-            "each feedback action has a distinct render policy"
+            10,
+            "each feedback action has a distinct render policy (including MergeIntent → Default)"
         );
+        let default_bucket = seen
+            .get(&ClaimRenderPolicy::Default)
+            .expect("Default policy bucket");
+        assert_eq!(default_bucket, &vec![FeedbackAction::MergeIntent]);
     }
 }

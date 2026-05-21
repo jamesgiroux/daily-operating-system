@@ -959,6 +959,14 @@ const MIGRATIONS: &[Migration] = &[
         version: 244,
         sql: include_str!("migrations/244_meeting_prep_status_view_transactional.sql"),
     },
+    // ADR-0123 V1.1 (v1.4.4 W2 §5.3 / DOS-484): widen
+    // `claim_feedback.feedback_type` CHECK to include the 10th typed
+    // variant, `merge_intent`. See migration body for the rebuild
+    // strategy.
+    Migration::Sql {
+        version: 245,
+        sql: include_str!("migrations/245_dos_484_feedback_merge_intent.sql"),
+    },
 ];
 
 const V155_SHADOW_TRUST_VERSION: i64 = 1_401_003;

@@ -60,7 +60,8 @@ export type FeedbackAction =
   | "cannot_verify"
   | "needs_nuance"
   | "surface_inappropriate"
-  | "not_relevant_here";
+  | "not_relevant_here"
+  | "merge_intent";
 
 export type ClaimSensitivity = "public" | "internal" | "confidential" | "user_only";
 
