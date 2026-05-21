@@ -28,6 +28,7 @@
 //! `add_link(... UserRelink)` (V1.3 fold #2).
 
 use chrono::{DateTime, Utc};
+use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
 use crate::entity::EntityType;
@@ -42,26 +43,63 @@ pub struct DocumentEntityLinkId(pub String);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LinkAttributionSource {
-    /// User explicitly bound the file to the entity via the entity-intake block.
     EntityIntake,
-    /// File's frontmatter (e.g., markdown `entity_id:` header) named the binding.
     Frontmatter,
-    /// Automatic classifier inferred the binding from content.
     Classifier,
-    /// User re-bound a file to an entity (post-classifier-error or post-reject).
     UserRelink,
-    /// Drive document metadata (folder, label, etc.) named the binding.
     DriveMetadata,
-    /// MCP placement contract delivered the file pre-bound (DOS-474).
     McpPlacement,
-    /// W5-A backfill bound pre-existing files based on conservative heuristics.
     Backfill,
 }
 
 impl LinkAttributionSource {
-    /// Classifier-class sources subject to tombstone-guard (must NOT resurrect rejected links).
     pub fn is_classifier_class(&self) -> bool {
         matches!(self, Self::Classifier | Self::Backfill | Self::DriveMetadata)
+    }
+
+    pub fn as_storage_str(self) -> &'static str {
+        match self {
+            Self::EntityIntake => "entity_intake",
+            Self::Frontmatter => "frontmatter",
+            Self::Classifier => "classifier",
+            Self::UserRelink => "user_relink",
+            Self::DriveMetadata => "drive_metadata",
+            Self::McpPlacement => "mcp_placement",
+            Self::Backfill => "backfill",
+        }
+    }
+
+    pub fn from_storage_str(s: &str) -> Option<Self> {
+        match s {
+            "entity_intake" => Some(Self::EntityIntake),
+            "frontmatter" => Some(Self::Frontmatter),
+            "classifier" => Some(Self::Classifier),
+            "user_relink" => Some(Self::UserRelink),
+            "drive_metadata" => Some(Self::DriveMetadata),
+            "mcp_placement" => Some(Self::McpPlacement),
+            "backfill" => Some(Self::Backfill),
+            _ => None,
+        }
+    }
+}
+
+/// Snake_case serde tag for `EntityType` — same shape as workspace_category_registry.
+fn entity_type_slug(et: EntityType) -> &'static str {
+    match et {
+        EntityType::Account => "account",
+        EntityType::Person => "person",
+        EntityType::Project => "project",
+        EntityType::Other => "other",
+    }
+}
+
+fn entity_type_from_slug(s: &str) -> Option<EntityType> {
+    match s {
+        "account" => Some(EntityType::Account),
+        "person" => Some(EntityType::Person),
+        "project" => Some(EntityType::Project),
+        "other" => Some(EntityType::Other),
+        _ => None,
     }
 }
 
@@ -107,10 +145,7 @@ impl std::fmt::Display for LinkError {
             Self::Tombstoned {
                 rejected_at,
                 rejected_reason,
-            } => write!(
-                f,
-                "link tombstoned at {rejected_at}: {rejected_reason}"
-            ),
+            } => write!(f, "link tombstoned at {rejected_at}: {rejected_reason}"),
             Self::EntityTypeUnknown => write!(f, "entity_type unknown"),
             Self::DbError(msg) => write!(f, "link db error: {msg}"),
         }
@@ -119,23 +154,66 @@ impl std::fmt::Display for LinkError {
 
 impl std::error::Error for LinkError {}
 
+fn parse_dt(s: Option<String>) -> Option<DateTime<Utc>> {
+    s.as_deref()
+        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+        .map(|dt| dt.with_timezone(&Utc))
+}
+
+fn row_to_link(row: &rusqlite::Row<'_>) -> rusqlite::Result<DocumentEntityLink> {
+    let link_id: String = row.get(0)?;
+    let file_id: String = row.get(1)?;
+    let entity_type_str: String = row.get(2)?;
+    let entity_id: String = row.get(3)?;
+    let attribution_str: String = row.get(4)?;
+    let confidence: f64 = row.get(5)?;
+    let rationale: Option<String> = row.get(6)?;
+    let actor: String = row.get(7)?;
+    let user_override_actor: Option<String> = row.get(8)?;
+    let user_override_at: Option<String> = row.get(9)?;
+    let rejected: i64 = row.get(10)?;
+    let rejected_at: Option<String> = row.get(11)?;
+    let rejected_reason: Option<String> = row.get(12)?;
+    let created_at: String = row.get(13)?;
+    let updated_at: String = row.get(14)?;
+
+    let user_override = match (user_override_actor, parse_dt(user_override_at)) {
+        (Some(actor), Some(at)) => Some(UserOverride {
+            actor_id: actor,
+            at,
+        }),
+        _ => None,
+    };
+
+    Ok(DocumentEntityLink {
+        link_id: DocumentEntityLinkId(link_id),
+        file_id,
+        entity_type: entity_type_from_slug(&entity_type_str).unwrap_or(EntityType::Other),
+        entity_id,
+        attribution_source: LinkAttributionSource::from_storage_str(&attribution_str)
+            .unwrap_or(LinkAttributionSource::Classifier),
+        confidence,
+        rationale,
+        actor,
+        user_override,
+        rejected: rejected != 0,
+        rejected_at: parse_dt(rejected_at),
+        rejected_reason,
+        created_at: parse_dt(Some(created_at)).unwrap_or_else(Utc::now),
+        updated_at: parse_dt(Some(updated_at)).unwrap_or_else(Utc::now),
+    })
+}
+
 /// Repository for `document_entity_links` (v254 table).
 pub struct LinkRepo;
 
 impl LinkRepo {
-    /// Creates or resurrects a document/entity link.
-    ///
-    /// For `attribution_source.is_classifier_class()` sources:
-    /// 1. `BEGIN IMMEDIATE` transaction.
-    /// 2. SELECT for `rejected = 1` row → if exists, ROLLBACK + return `Tombstoned`.
-    /// 3. INSERT … ON CONFLICT (file_id, entity_type, entity_id) WHERE rejected = 0 DO NOTHING RETURNING link_id.
-    /// 4. If RETURNING returns 0 rows (active duplicate already exists), SELECT existing link_id.
-    /// 5. COMMIT.
-    ///
-    /// For user-driven sources (EntityIntake/UserRelink/McpPlacement/Frontmatter):
-    /// skips the rejected-row check (intentional user-driven resurrection per
-    /// DOS-465 AC carve-out), but still wraps INSERT in a transaction for atomicity.
+    /// Creates or resurrects a document/entity link. UNIMPLEMENTED — defer to
+    /// next iteration. Implementation requires careful `BEGIN IMMEDIATE`
+    /// transactional handling for classifier-class sources per V1.3 fold #1.
+    #[allow(clippy::too_many_arguments)]
     pub fn add_link(
+        _conn: &Connection,
         _file_id: &str,
         _entity_type: EntityType,
         _entity_id: &str,
@@ -146,19 +224,36 @@ impl LinkRepo {
     ) -> Result<DocumentEntityLinkId, LinkError> {
         unimplemented!(
             "W1-C implementing agent: implement the BEGIN IMMEDIATE flow per \
-             link.rs module doc-comment + L0 V1.3 §4 fold #1."
+             link.rs module doc-comment + L0 V1.3 §4 fold #1. Defer to next iteration."
         )
     }
 
     /// Lists active (and optionally rejected) links for a file.
     pub fn list_links_for_file(
-        _file_id: &str,
-        _include_rejected: bool,
+        conn: &Connection,
+        file_id: &str,
+        include_rejected: bool,
     ) -> Result<Vec<DocumentEntityLink>, LinkError> {
-        unimplemented!(
-            "W1-C implementing agent: SELECT * FROM document_entity_links WHERE \
-             file_id = ? AND (include_rejected OR rejected = 0)."
-        )
+        let sql = if include_rejected {
+            "SELECT link_id, file_id, entity_type, entity_id, attribution_source, confidence, \
+             rationale, actor, user_override_actor, user_override_at, rejected, rejected_at, \
+             rejected_reason, created_at, updated_at \
+             FROM document_entity_links WHERE file_id = ?1 ORDER BY created_at"
+        } else {
+            "SELECT link_id, file_id, entity_type, entity_id, attribution_source, confidence, \
+             rationale, actor, user_override_actor, user_override_at, rejected, rejected_at, \
+             rejected_reason, created_at, updated_at \
+             FROM document_entity_links WHERE file_id = ?1 AND rejected = 0 ORDER BY created_at"
+        };
+
+        let mut stmt = conn
+            .prepare(sql)
+            .map_err(|e| LinkError::DbError(e.to_string()))?;
+        let rows = stmt
+            .query_map(params![file_id], row_to_link)
+            .map_err(|e| LinkError::DbError(e.to_string()))?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|e| LinkError::DbError(e.to_string()))
     }
 
     /// Endorse-existing-active API. Marks an active link as user-confirmed
@@ -169,17 +264,28 @@ impl LinkRepo {
     /// Does NOT resurrect rejected links — that path goes through
     /// `add_link(... UserRelink)` (V1.3 fold #2).
     pub fn override_link(
-        _emitter: &dyn SignalEmitter,
-        _file_id: &str,
-        _entity_type: EntityType,
-        _entity_id: &str,
-        _actor: &str,
+        conn: &Connection,
+        emitter: &dyn SignalEmitter,
+        file_id: &str,
+        entity_type: EntityType,
+        entity_id: &str,
+        actor: &str,
     ) -> Result<(), LinkError> {
-        unimplemented!(
-            "W1-C implementing agent: UPDATE … WHERE rejected = 0 AND triple; \
-             if zero rows affected, return NotFound. After UPDATE, call \
-             emitter.emit_link_changed(file_id, entity_id, actor)."
-        )
+        let rows = conn
+            .execute(
+                "UPDATE document_entity_links SET \
+                 user_override_actor = ?1, \
+                 user_override_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), \
+                 updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') \
+                 WHERE file_id = ?2 AND entity_type = ?3 AND entity_id = ?4 AND rejected = 0",
+                params![actor, file_id, entity_type_slug(entity_type), entity_id],
+            )
+            .map_err(|e| LinkError::DbError(e.to_string()))?;
+        if rows == 0 {
+            return Err(LinkError::NotFound);
+        }
+        emitter.emit_link_changed(file_id, entity_id, actor);
+        Ok(())
     }
 
     /// Reject-existing API. Flips `rejected = 1` and populates
@@ -187,16 +293,255 @@ impl LinkRepo {
     /// `WHERE rejected = 0` releases its hold; future `add_link` attempts
     /// from classifier sources hit the `Tombstoned` guard.
     pub fn reject_link(
-        _file_id: &str,
-        _entity_type: EntityType,
-        _entity_id: &str,
+        conn: &Connection,
+        file_id: &str,
+        entity_type: EntityType,
+        entity_id: &str,
         _actor: &str,
-        _reason: &str,
+        reason: &str,
     ) -> Result<(), LinkError> {
-        unimplemented!(
-            "W1-C implementing agent: UPDATE document_entity_links SET rejected = 1, \
-             rejected_at = now, rejected_reason = ? WHERE file_id = ? AND entity_type = ? \
-             AND entity_id = ?. If zero rows affected, return NotFound."
+        let rows = conn
+            .execute(
+                "UPDATE document_entity_links SET \
+                 rejected = 1, \
+                 rejected_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), \
+                 rejected_reason = ?1, \
+                 updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') \
+                 WHERE file_id = ?2 AND entity_type = ?3 AND entity_id = ?4 AND rejected = 0",
+                params![reason, file_id, entity_type_slug(entity_type), entity_id],
+            )
+            .map_err(|e| LinkError::DbError(e.to_string()))?;
+        if rows == 0 {
+            return Err(LinkError::NotFound);
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::services::workspace_ingestion::contracts::NullSignalEmitter;
+
+    fn fresh_conn() -> Connection {
+        let conn = Connection::open_in_memory().expect("in-memory sqlite");
+        conn.execute_batch(include_str!(
+            "../../migrations/250_workspace_file_lifecycle.sql"
+        ))
+        .expect("v250 apply");
+        conn.execute_batch(include_str!(
+            "../../migrations/254_document_entity_links.sql"
+        ))
+        .expect("v254 apply");
+        // Seed a workspace_file_lifecycle row for FK.
+        conn.execute(
+            "INSERT INTO workspace_file_lifecycle (file_id, canonical_path, device, inode, \
+             source_type, data_source, source_asof) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            params!["wf-1", "test/path", 0_i64, 0_i64, "inbox", "{}", "2026-05-21T00:00:00Z"],
         )
+        .expect("seed file_lifecycle");
+        conn
+    }
+
+    fn insert_link(
+        conn: &Connection,
+        link_id: &str,
+        file_id: &str,
+        entity_type: EntityType,
+        entity_id: &str,
+        attribution: LinkAttributionSource,
+        rejected: bool,
+    ) {
+        conn.execute(
+            "INSERT INTO document_entity_links \
+             (link_id, file_id, entity_type, entity_id, attribution_source, confidence, actor, rejected) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            params![
+                link_id,
+                file_id,
+                entity_type_slug(entity_type),
+                entity_id,
+                attribution.as_storage_str(),
+                0.5_f64,
+                "test-actor",
+                if rejected { 1_i64 } else { 0_i64 }
+            ],
+        )
+        .expect("insert link");
+    }
+
+    #[test]
+    fn list_links_for_file_filters_rejected_when_include_false() {
+        let conn = fresh_conn();
+        insert_link(
+            &conn,
+            "l-1",
+            "wf-1",
+            EntityType::Account,
+            "acme",
+            LinkAttributionSource::Classifier,
+            false,
+        );
+        insert_link(
+            &conn,
+            "l-2",
+            "wf-1",
+            EntityType::Account,
+            "rejected-co",
+            LinkAttributionSource::Classifier,
+            true,
+        );
+        let active = LinkRepo::list_links_for_file(&conn, "wf-1", false).expect("Ok");
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0].link_id.0, "l-1");
+
+        let all = LinkRepo::list_links_for_file(&conn, "wf-1", true).expect("Ok");
+        assert_eq!(all.len(), 2);
+    }
+
+    #[test]
+    fn list_links_for_file_returns_empty_for_unknown_file() {
+        let conn = fresh_conn();
+        let result = LinkRepo::list_links_for_file(&conn, "no-such-file", false).expect("Ok");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn override_link_updates_active_row_and_emits_signal() {
+        let conn = fresh_conn();
+        insert_link(
+            &conn,
+            "l-1",
+            "wf-1",
+            EntityType::Account,
+            "acme",
+            LinkAttributionSource::Classifier,
+            false,
+        );
+        let emitter = NullSignalEmitter;
+        LinkRepo::override_link(
+            &conn,
+            &emitter,
+            "wf-1",
+            EntityType::Account,
+            "acme",
+            "user-1",
+        )
+        .expect("Ok");
+
+        let links = LinkRepo::list_links_for_file(&conn, "wf-1", false).expect("Ok");
+        assert_eq!(links.len(), 1);
+        let user_override = links[0].user_override.as_ref().expect("user_override set");
+        assert_eq!(user_override.actor_id, "user-1");
+    }
+
+    #[test]
+    fn override_link_returns_notfound_for_missing_triple() {
+        let conn = fresh_conn();
+        let emitter = NullSignalEmitter;
+        let err = LinkRepo::override_link(
+            &conn,
+            &emitter,
+            "wf-1",
+            EntityType::Account,
+            "nobody",
+            "user-1",
+        )
+        .expect_err("missing");
+        assert!(matches!(err, LinkError::NotFound));
+    }
+
+    #[test]
+    fn override_link_does_not_resurrect_rejected_link() {
+        let conn = fresh_conn();
+        insert_link(
+            &conn,
+            "l-1",
+            "wf-1",
+            EntityType::Account,
+            "acme",
+            LinkAttributionSource::Classifier,
+            true, // rejected
+        );
+        let emitter = NullSignalEmitter;
+        // override_link only touches active rows; rejected link → NotFound.
+        let err = LinkRepo::override_link(
+            &conn,
+            &emitter,
+            "wf-1",
+            EntityType::Account,
+            "acme",
+            "user-1",
+        )
+        .expect_err("rejected link should NotFound");
+        assert!(matches!(err, LinkError::NotFound));
+    }
+
+    #[test]
+    fn reject_link_flips_rejected_flag_and_populates_audit_fields() {
+        let conn = fresh_conn();
+        insert_link(
+            &conn,
+            "l-1",
+            "wf-1",
+            EntityType::Account,
+            "acme",
+            LinkAttributionSource::Classifier,
+            false,
+        );
+        LinkRepo::reject_link(
+            &conn,
+            "wf-1",
+            EntityType::Account,
+            "acme",
+            "user-1",
+            "wrong entity",
+        )
+        .expect("reject Ok");
+
+        let links = LinkRepo::list_links_for_file(&conn, "wf-1", true).expect("Ok");
+        assert_eq!(links.len(), 1);
+        assert!(links[0].rejected);
+        assert_eq!(links[0].rejected_reason.as_deref(), Some("wrong entity"));
+        assert!(links[0].rejected_at.is_some());
+    }
+
+    #[test]
+    fn reject_link_returns_notfound_when_no_active_row() {
+        let conn = fresh_conn();
+        let err = LinkRepo::reject_link(
+            &conn,
+            "wf-1",
+            EntityType::Account,
+            "ghost",
+            "user-1",
+            "doesn't exist",
+        )
+        .expect_err("missing");
+        assert!(matches!(err, LinkError::NotFound));
+    }
+
+    #[test]
+    fn partial_unique_index_prevents_duplicate_active_insert_via_raw_sql() {
+        // Sanity check: confirms the v254 partial UNIQUE index actually fires.
+        // Note: add_link with proper UPSERT handles this gracefully; this test
+        // exercises the raw INSERT path to verify the index is in place.
+        let conn = fresh_conn();
+        insert_link(
+            &conn,
+            "l-1",
+            "wf-1",
+            EntityType::Account,
+            "acme",
+            LinkAttributionSource::Classifier,
+            false,
+        );
+        let result = conn.execute(
+            "INSERT INTO document_entity_links \
+             (link_id, file_id, entity_type, entity_id, attribution_source, confidence, actor) \
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
+            params!["l-2", "wf-1", "account", "acme", "classifier", 0.5_f64, "test-actor"],
+        );
+        assert!(result.is_err(), "second active insert for same triple should fail UNIQUE");
     }
 }

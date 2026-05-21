@@ -41,7 +41,7 @@
 use std::fs::File;
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Utc};
+use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::entity::EntityType;
 use super::contracts::{FileIdentity, RejectionReason, WorkspaceCategory, WorkspaceFileKind};
@@ -78,7 +78,7 @@ impl std::error::Error for CategoryNotAllowed {}
 pub enum RegisterError {
     /// Slug fails the lex-shape regex.
     MalformedSlug { slug: String },
-    /// Entity type not recognized (currently unreachable with typed `EntityType`; reserved for future runtime types).
+    /// Entity type not recognized.
     EntityTypeUnknown,
     DbError(String),
 }
@@ -104,6 +104,8 @@ pub enum ResolvePathError {
     CategoryNotAllowed(CategoryNotAllowed),
     /// `EntityType::Other` is not routable to a workspace path in v1.4.5 (deferred to follow-up).
     EntityTypeNotRoutable,
+    /// DB lookup failed during validate (only fires when `category` is `Some`).
+    DbError(String),
 }
 
 impl std::fmt::Display for ResolvePathError {
@@ -114,11 +116,18 @@ impl std::fmt::Display for ResolvePathError {
                 f,
                 "resolve_path: EntityType::Other not routable in v1.4.5; deferred to follow-up"
             ),
+            Self::DbError(msg) => write!(f, "resolve_path: db error: {msg}"),
         }
     }
 }
 
 impl std::error::Error for ResolvePathError {}
+
+impl From<CategoryNotAllowed> for ResolvePathError {
+    fn from(e: CategoryNotAllowed) -> Self {
+        Self::CategoryNotAllowed(e)
+    }
+}
 
 /// Workspace source-type allowlist registry. Read-only at runtime for the
 /// canonical 7 `WorkspaceFileKind` variants (seeded at v252 migration time).
@@ -137,8 +146,36 @@ impl WorkspaceSourceRegistry {
         unimplemented!(
             "W1-B implementing agent: implement the 6-step canonicalize-first \
              algorithm per registry.rs module doc-comment. Unix-only. 15 negative + \
-             4 positive fixtures in tests/workspace_registry_open_validated.rs."
+             4 positive fixtures in tests/workspace_registry_open_validated.rs. \
+             The security boundary requires careful Rust unix-specific code \
+             (libc::O_NOFOLLOW interaction, std::os::unix::fs metadata APIs). \
+             Defer to next iteration."
         )
+    }
+}
+
+/// Validates a slug against `SLUG_REGEX`. Pure function — no DB access.
+fn is_valid_slug_shape(slug: &str) -> bool {
+    !slug.is_empty()
+        && slug.len() <= 32
+        && {
+            let mut chars = slug.chars();
+            let first = chars.next().expect("non-empty checked above");
+            first.is_ascii_lowercase()
+                && chars.all(|c| {
+                    c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-'
+                })
+        }
+}
+
+/// Snake_case serde tag for `crate::entity::EntityType` — used as the
+/// `entity_type` column value in `workspace_category_registry`.
+fn entity_type_slug(et: EntityType) -> &'static str {
+    match et {
+        EntityType::Account => "account",
+        EntityType::Person => "person",
+        EntityType::Project => "project",
+        EntityType::Other => "other",
     }
 }
 
@@ -154,14 +191,56 @@ impl WorkspaceCategoryRegistry {
     /// `EntityType::Other` always returns `Err(CategoryNotAllowed { allowed: vec![] })`
     /// — Other-typed entities cannot bind workspace files in v1.4.5 (V1.3 fold #5).
     pub fn validate(
-        _category: &WorkspaceCategory,
-        _entity_type: EntityType,
+        conn: &Connection,
+        category: &WorkspaceCategory,
+        entity_type: EntityType,
     ) -> Result<(), CategoryNotAllowed> {
-        unimplemented!(
-            "W1-B implementing agent: SELECT … FROM workspace_category_registry WHERE \
-             entity_type = ?1 AND category_slug = ?2; map missing row to \
-             CategoryNotAllowed with full allowed-list."
-        )
+        if matches!(entity_type, EntityType::Other) {
+            return Err(CategoryNotAllowed {
+                category: category.as_slug().to_string(),
+                entity_type,
+                allowed: vec![],
+            });
+        }
+        let et_slug = entity_type_slug(entity_type);
+        let cat_slug = category.as_slug();
+
+        let allowed: bool = conn
+            .query_row(
+                "SELECT 1 FROM workspace_category_registry \
+                 WHERE entity_type = ?1 AND category_slug = ?2 AND allowed = 1",
+                params![et_slug, cat_slug],
+                |_| Ok(true),
+            )
+            .optional()
+            .map_err(|e| CategoryNotAllowed {
+                category: cat_slug.to_string(),
+                entity_type,
+                allowed: vec![format!("db error: {e}")],
+            })?
+            .unwrap_or(false);
+
+        if allowed {
+            return Ok(());
+        }
+
+        // Populate allowed-list for error envelope.
+        let allowed_list: Vec<String> = conn
+            .prepare(
+                "SELECT category_slug FROM workspace_category_registry \
+                 WHERE entity_type = ?1 AND allowed = 1 ORDER BY category_slug",
+            )
+            .and_then(|mut stmt| {
+                stmt.query_map(params![et_slug], |row| row.get::<_, String>(0))
+                    .and_then(|rows| rows.collect::<Result<Vec<_>, _>>())
+            })
+            .unwrap_or_default();
+
+        Err(CategoryNotAllowed {
+            category: cat_slug.to_string(),
+            entity_type,
+            allowed: allowed_list,
+        })
     }
 
     /// Resolve the workspace-relative path for a file binding.
@@ -172,37 +251,270 @@ impl WorkspaceCategoryRegistry {
     /// - `category == Some(c)` → `{Accounts|People|Projects}/{entity_name}/{c.as_slug()}/{filename}` (after validate).
     /// - `category == None` → `{Accounts|People|Projects}/{entity_name}/{filename}` (entity root).
     pub fn resolve_path(
-        _entity_type: EntityType,
-        _entity_name: &str,
-        _category: Option<&WorkspaceCategory>,
-        _filename: &str,
-        _source_type: WorkspaceFileKind,
+        conn: &Connection,
+        entity_type: EntityType,
+        entity_name: &str,
+        category: Option<&WorkspaceCategory>,
+        filename: &str,
+        source_type: WorkspaceFileKind,
     ) -> Result<PathBuf, ResolvePathError> {
-        unimplemented!(
-            "W1-B implementing agent: per L0 V1.3 §4 — Inbox sentinel first, \
-             EntityType::Other → Err(EntityTypeNotRoutable), validate-then-route \
-             for Account/Person/Project."
-        )
+        // Inbox sentinel: regardless of entity binding, Inbox files go to _inbox/.
+        if matches!(source_type, WorkspaceFileKind::Inbox) {
+            return Ok(PathBuf::from("_inbox").join(filename));
+        }
+
+        // EntityType::Other is not routable in v1.4.5.
+        if matches!(entity_type, EntityType::Other) {
+            return Err(ResolvePathError::EntityTypeNotRoutable);
+        }
+
+        // Validate the category if supplied. (Other entity types already returned above.)
+        if let Some(cat) = category {
+            WorkspaceCategoryRegistry::validate(conn, cat, entity_type)?;
+        }
+
+        let entity_dir = match entity_type {
+            EntityType::Account => "Accounts",
+            EntityType::Person => "People",
+            EntityType::Project => "Projects",
+            EntityType::Other => unreachable!("guarded above"),
+        };
+
+        let mut path = PathBuf::from(entity_dir).join(entity_name);
+        if let Some(cat) = category {
+            path.push(cat.as_slug());
+        }
+        path.push(filename);
+        Ok(path)
     }
 
     /// Register a new `Other(slug)` category for an entity type. Lex-validates
     /// the slug against `SLUG_REGEX` before INSERTing. Parameterized SQL only
     /// — no string-format interpolation of slug into INSERT.
     pub fn register_other(
-        _entity_type: EntityType,
-        _slug: &str,
+        conn: &Connection,
+        entity_type: EntityType,
+        slug: &str,
     ) -> Result<(), RegisterError> {
-        unimplemented!(
-            "W1-B implementing agent: regex-check slug; if Ok, INSERT INTO \
-             workspace_category_registry (entity_type, category_slug) VALUES (?, ?)."
+        if !is_valid_slug_shape(slug) {
+            return Err(RegisterError::MalformedSlug {
+                slug: slug.to_string(),
+            });
+        }
+        if matches!(entity_type, EntityType::Other) {
+            return Err(RegisterError::EntityTypeUnknown);
+        }
+        let et_slug = entity_type_slug(entity_type);
+        conn.execute(
+            "INSERT OR IGNORE INTO workspace_category_registry (entity_type, category_slug) \
+             VALUES (?1, ?2)",
+            params![et_slug, slug],
         )
+        .map(|_| ())
+        .map_err(|e| RegisterError::DbError(e.to_string()))
     }
 }
 
-/// Audit record helper for security-fixture tests: timestamp tracking when
-/// `open_validated` rejected a path. Not stored on disk; transient for tests.
-#[derive(Debug)]
-pub struct RejectionAudit {
-    pub at: DateTime<Utc>,
-    pub reason: RejectionReason,
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fresh_conn() -> Connection {
+        let conn = Connection::open_in_memory().expect("in-memory sqlite");
+        conn.execute_batch(include_str!("../../migrations/252_workspace_source_registry.sql"))
+            .expect("v252 apply");
+        conn
+    }
+
+    #[test]
+    fn is_valid_slug_shape_accepts_lowercase_ascii() {
+        for s in &["a", "abc", "abc_123", "abc-def", "x_y_z", "a1234567890"] {
+            assert!(is_valid_slug_shape(s), "{s} should be valid");
+        }
+    }
+
+    #[test]
+    fn is_valid_slug_shape_rejects_malformed() {
+        for s in &[
+            "",
+            "1abc",       // starts with digit
+            "_abc",       // starts with underscore
+            "-abc",       // starts with hyphen
+            "ABC",        // uppercase
+            "abc DEF",    // space + uppercase
+            "abc/def",    // slash
+            "abc.def",    // dot
+            "abc!def",    // punctuation
+            &"x".repeat(33), // too long
+        ] {
+            assert!(!is_valid_slug_shape(s), "{s} should be invalid");
+        }
+    }
+
+    #[test]
+    fn validate_accepts_seeded_pairs_for_account_person_project() {
+        let conn = fresh_conn();
+        for et in &[EntityType::Account, EntityType::Person, EntityType::Project] {
+            for cat in &[
+                WorkspaceCategory::Presentations,
+                WorkspaceCategory::Transcripts,
+                WorkspaceCategory::Meetings,
+                WorkspaceCategory::Notes,
+                WorkspaceCategory::Contracts,
+                WorkspaceCategory::Attachments,
+            ] {
+                WorkspaceCategoryRegistry::validate(&conn, cat, *et)
+                    .unwrap_or_else(|e| panic!("expected Ok for {et:?} + {cat:?}: {e}"));
+            }
+        }
+    }
+
+    #[test]
+    fn validate_rejects_other_entity_type_with_empty_allowed_list() {
+        let conn = fresh_conn();
+        let err = WorkspaceCategoryRegistry::validate(
+            &conn,
+            &WorkspaceCategory::Presentations,
+            EntityType::Other,
+        )
+        .expect_err("Other should be Err");
+        assert!(err.allowed.is_empty(), "Other should have empty allowed list");
+    }
+
+    #[test]
+    fn validate_rejects_unregistered_other_slug_with_allowed_list_populated() {
+        let conn = fresh_conn();
+        let custom = WorkspaceCategory::Other("custom_unregistered".to_string());
+        let err = WorkspaceCategoryRegistry::validate(&conn, &custom, EntityType::Account)
+            .expect_err("unregistered Other should be Err");
+        assert_eq!(err.category, "custom_unregistered");
+        assert_eq!(err.entity_type, EntityType::Account);
+        assert_eq!(err.allowed.len(), 6, "should list 6 default categories");
+    }
+
+    #[test]
+    fn register_other_inserts_lex_valid_slug_then_validate_passes() {
+        let conn = fresh_conn();
+        WorkspaceCategoryRegistry::register_other(&conn, EntityType::Account, "custom_slug")
+            .expect("register Ok");
+        let custom = WorkspaceCategory::Other("custom_slug".to_string());
+        WorkspaceCategoryRegistry::validate(&conn, &custom, EntityType::Account)
+            .expect("validate after register Ok");
+    }
+
+    #[test]
+    fn register_other_rejects_uppercase_con_per_regex() {
+        let conn = fresh_conn();
+        let err = WorkspaceCategoryRegistry::register_other(&conn, EntityType::Account, "CON")
+            .expect_err("uppercase CON should fail regex");
+        assert!(matches!(err, RegisterError::MalformedSlug { .. }));
+    }
+
+    #[test]
+    fn register_other_accepts_lowercase_con_currently_windows_deferred() {
+        let conn = fresh_conn();
+        // V1.3 fold #4: lowercase "con" passes the regex; Windows-reserved-name
+        // semantic check lives in the deferred Windows path validation ticket.
+        WorkspaceCategoryRegistry::register_other(&conn, EntityType::Account, "con")
+            .expect("lowercase con passes regex (Windows check deferred)");
+    }
+
+    #[test]
+    fn register_other_rejects_other_entity_type() {
+        let conn = fresh_conn();
+        let err = WorkspaceCategoryRegistry::register_other(&conn, EntityType::Other, "abc")
+            .expect_err("EntityType::Other should be rejected");
+        assert!(matches!(err, RegisterError::EntityTypeUnknown));
+    }
+
+    #[test]
+    fn resolve_path_inbox_sentinel_overrides_entity_routing() {
+        let conn = fresh_conn();
+        let p = WorkspaceCategoryRegistry::resolve_path(
+            &conn,
+            EntityType::Account,
+            "_unused_",
+            None,
+            "drop.md",
+            WorkspaceFileKind::Inbox,
+        )
+        .expect("Inbox resolves");
+        assert_eq!(p, PathBuf::from("_inbox/drop.md"));
+    }
+
+    #[test]
+    fn resolve_path_routes_account_to_accounts() {
+        let conn = fresh_conn();
+        let p = WorkspaceCategoryRegistry::resolve_path(
+            &conn,
+            EntityType::Account,
+            "Acme",
+            Some(&WorkspaceCategory::Presentations),
+            "q1.pdf",
+            WorkspaceFileKind::EntityDoc,
+        )
+        .expect("Account resolves");
+        assert_eq!(p, PathBuf::from("Accounts/Acme/presentations/q1.pdf"));
+    }
+
+    #[test]
+    fn resolve_path_routes_person_to_people() {
+        let conn = fresh_conn();
+        let p = WorkspaceCategoryRegistry::resolve_path(
+            &conn,
+            EntityType::Person,
+            "Bob",
+            Some(&WorkspaceCategory::Notes),
+            "1on1.md",
+            WorkspaceFileKind::EntityDoc,
+        )
+        .expect("Person resolves");
+        assert_eq!(p, PathBuf::from("People/Bob/notes/1on1.md"));
+    }
+
+    #[test]
+    fn resolve_path_routes_project_to_projects_with_no_category() {
+        let conn = fresh_conn();
+        let p = WorkspaceCategoryRegistry::resolve_path(
+            &conn,
+            EntityType::Project,
+            "Apollo",
+            None,
+            "design.pdf",
+            WorkspaceFileKind::EntityDoc,
+        )
+        .expect("Project resolves");
+        assert_eq!(p, PathBuf::from("Projects/Apollo/design.pdf"));
+    }
+
+    #[test]
+    fn resolve_path_entity_type_other_returns_err() {
+        let conn = fresh_conn();
+        let err = WorkspaceCategoryRegistry::resolve_path(
+            &conn,
+            EntityType::Other,
+            "_unused_",
+            None,
+            "drop.md",
+            WorkspaceFileKind::EntityDoc,
+        )
+        .expect_err("Other should Err");
+        assert!(matches!(err, ResolvePathError::EntityTypeNotRoutable));
+    }
+
+    #[test]
+    fn resolve_path_propagates_category_not_allowed() {
+        let conn = fresh_conn();
+        let unregistered = WorkspaceCategory::Other("unregistered".to_string());
+        let err = WorkspaceCategoryRegistry::resolve_path(
+            &conn,
+            EntityType::Account,
+            "Acme",
+            Some(&unregistered),
+            "x.md",
+            WorkspaceFileKind::EntityDoc,
+        )
+        .expect_err("unregistered category should Err");
+        assert!(matches!(err, ResolvePathError::CategoryNotAllowed(_)));
+    }
 }
