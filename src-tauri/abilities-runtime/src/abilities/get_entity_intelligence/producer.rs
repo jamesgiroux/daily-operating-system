@@ -725,8 +725,18 @@ fn build_sections_map(
     requested: &Option<Vec<EnvelopeSection>>,
     fill: SectionFill,
 ) -> BTreeMap<EnvelopeSection, SectionState> {
+    // Normalize the requested list to match `active_section_set()` semantics:
+    // both `None` and `Some(empty)` mean "all sections" — never "none requested".
+    // Without this, callers that pass `sections: []` get every entry marked
+    // `NotRequested` here even though `active_section_set()` populates them.
     let requested_set: Option<std::collections::BTreeSet<EnvelopeSection>> =
-        requested.as_ref().map(|list| list.iter().copied().collect());
+        requested.as_ref().and_then(|list| {
+            if list.is_empty() {
+                None
+            } else {
+                Some(list.iter().copied().collect())
+            }
+        });
     let mut sections = BTreeMap::new();
     for section in EnvelopeSection::ALL {
         let state = if let Some(set) = requested_set.as_ref() {
@@ -1032,6 +1042,33 @@ mod tests {
                 reason: EmptyReason::NotRequested
             })
         ));
+    }
+
+    #[test]
+    fn empty_sections_list_treated_as_all_sections() {
+        // Regression: `sections: Some(vec![])` must match `active_section_set()`
+        // semantics — both `None` and `Some(empty)` mean "all sections". Without
+        // this, callers asking for "all" via empty list see every section
+        // marked `NotRequested` here while `active_section_set()` happily
+        // populates the corresponding fields, causing producer/consumer drift.
+        let map_empty = build_sections_map(&Some(vec![]), fill(3, 0));
+        let map_none = build_sections_map(&None, fill(3, 0));
+        assert_eq!(map_empty, map_none, "empty list must equal None semantics");
+        // Facts has count=3, so it should be Present (not NotRequested) when
+        // caller passes the empty-list form.
+        assert!(matches!(
+            map_empty.get(&EnvelopeSection::Facts),
+            Some(SectionState::Present { item_count: 3 })
+        ));
+        // None of the variants should be `NotRequested` in the empty-list case.
+        for (section, state) in &map_empty {
+            if let SectionState::Empty {
+                reason: EmptyReason::NotRequested,
+            } = state
+            {
+                panic!("section {section:?} marked NotRequested for empty-list input");
+            }
+        }
     }
 
     #[test]

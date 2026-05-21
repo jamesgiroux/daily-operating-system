@@ -360,7 +360,10 @@ pub fn redact_provenance_for_surface(
         RenderDecision::Render => source,
         RenderDecision::RenderRedacted { affordance } => ProvenanceSource {
             label: affordance.label().to_string(),
-            source_type: source.source_type,
+            // Strip source_type alongside href: the boundary contract above
+            // (`href`/`source_type` stripped) prevents the redacted chip from
+            // revealing the connector/source class on a confidential claim.
+            source_type: None,
             as_of: source.as_of,
             href: None,
             redacted: true,
@@ -797,6 +800,32 @@ mod tests {
         assert!(redacted.href.is_none());
         // Label is replaced with the affordance label.
         assert_ne!(redacted.label, "Glean doc: customer-roadmap-2026.docx");
+    }
+
+    #[test]
+    fn redacted_branch_strips_source_type_alongside_href() {
+        // Regression: the RenderRedacted branch must strip both `href` AND
+        // `source_type` to prevent the redacted chip from leaking the
+        // connector/source class of a confidential claim. The boundary
+        // contract in the function doc comment names both fields.
+        let actor = RenderActor::agent("agent:test");
+        let claim = ProvenanceClaimView {
+            claim_id: "c-1",
+            actor: "agent:test",
+            sensitivity: ClaimSensitivity::Confidential,
+        };
+        let redacted = redact_provenance_for_surface(
+            fixture_source(),
+            RenderSurface::TauriEntityDetail,
+            &actor,
+            &claim,
+        );
+        assert!(redacted.redacted);
+        assert!(redacted.href.is_none(), "href must be stripped");
+        assert!(
+            redacted.source_type.is_none(),
+            "source_type must be stripped alongside href"
+        );
     }
 
     #[test]
