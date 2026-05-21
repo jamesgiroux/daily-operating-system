@@ -45,6 +45,27 @@ if ( ! function_exists( 'dailyos_person_detail_render' ) ) {
 	function dailyos_person_detail_render( array $attributes, string $content = '' ): string {
 		$person_id = isset( $attributes['person_id'] ) ? (string) $attributes['person_id'] : '';
 
+		// Auto-fill from post context when attribute is empty AND we're
+		// rendering inside the matching CPT. L4 quick-setup path: create a
+		// `dailyos_person` post, set the `dailyos_entity_id` post-meta (or
+		// fall back to post slug), and the W2 surface composes automatically.
+		if ( '' === $person_id && function_exists( 'get_the_ID' ) && function_exists( 'get_post_type' ) ) {
+			$post_id = get_the_ID();
+			if ( $post_id && 'dailyos_person' === get_post_type( $post_id ) ) {
+				$meta_id = function_exists( 'get_post_meta' )
+					? get_post_meta( $post_id, 'dailyos_entity_id', true )
+					: '';
+				if ( is_string( $meta_id ) && '' !== $meta_id ) {
+					$person_id = $meta_id;
+				} else {
+					$post_obj = function_exists( 'get_post' ) ? get_post( $post_id ) : null;
+					if ( $post_obj && is_object( $post_obj ) && isset( $post_obj->post_name ) ) {
+						$person_id = (string) $post_obj->post_name;
+					}
+				}
+			}
+		}
+
 		if ( '' === $person_id ) {
 			return '<div class="wp-block-dailyos-person-detail is-empty">'
 				. esc_html__( 'No person to show here.', 'dailyos' )

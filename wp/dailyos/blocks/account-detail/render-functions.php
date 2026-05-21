@@ -43,6 +43,28 @@ if ( ! function_exists( 'dailyos_account_detail_render' ) ) {
 	function dailyos_account_detail_render( array $attributes, string $content = '' ): string {
 		$account_id = isset( $attributes['account_id'] ) ? (string) $attributes['account_id'] : '';
 
+		// Auto-fill from post context when attribute is empty AND we're
+		// rendering inside the matching CPT. L4 quick-setup path: create a
+		// `dailyos_account` post, set the `dailyos_entity_id` post-meta (or
+		// fall back to post slug), and the W2 surface composes automatically
+		// without editor-side block-attribute wiring.
+		if ( '' === $account_id && function_exists( 'get_the_ID' ) && function_exists( 'get_post_type' ) ) {
+			$post_id = get_the_ID();
+			if ( $post_id && 'dailyos_account' === get_post_type( $post_id ) ) {
+				$meta_id = function_exists( 'get_post_meta' )
+					? get_post_meta( $post_id, 'dailyos_entity_id', true )
+					: '';
+				if ( is_string( $meta_id ) && '' !== $meta_id ) {
+					$account_id = $meta_id;
+				} else {
+					$post_obj = function_exists( 'get_post' ) ? get_post( $post_id ) : null;
+					if ( $post_obj && is_object( $post_obj ) && isset( $post_obj->post_name ) ) {
+						$account_id = (string) $post_obj->post_name;
+					}
+				}
+			}
+		}
+
 		if ( '' === $account_id ) {
 			return dailyos_empty_chip(
 				'no_account_id',

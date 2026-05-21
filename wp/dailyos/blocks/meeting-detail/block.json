@@ -33,5 +33,6 @@
 		[ "dailyos/meeting-recommended-actions" ]
 	],
 	"parent": null,
-	"render": "file:./render.php"
+	"render": "file:./render.php",
+	"editorScript": "file:./edit.js"
 }
