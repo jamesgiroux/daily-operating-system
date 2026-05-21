@@ -31,9 +31,9 @@ use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
-use crate::entity::EntityType;
 use super::contracts::SignalEmitter;
 use super::lifecycle::UserOverride;
+use crate::entity::EntityType;
 
 /// Opaque UUID4 identifier for a document/entity link row.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -54,7 +54,10 @@ pub enum LinkAttributionSource {
 
 impl LinkAttributionSource {
     pub fn is_classifier_class(&self) -> bool {
-        matches!(self, Self::Classifier | Self::Backfill | Self::DriveMetadata)
+        matches!(
+            self,
+            Self::Classifier | Self::Backfill | Self::DriveMetadata
+        )
     }
 
     pub fn as_storage_str(self) -> &'static str {
@@ -208,9 +211,8 @@ fn row_to_link(row: &rusqlite::Row<'_>) -> rusqlite::Result<DocumentEntityLink> 
 pub struct LinkRepo;
 
 impl LinkRepo {
-    /// Creates or resurrects a document/entity link. UNIMPLEMENTED — defer to
-    /// next iteration. Implementation requires careful `BEGIN IMMEDIATE`
-    /// transactional handling for classifier-class sources per V1.3 fold #1.
+    /// Creates or resurrects a document/entity link. Opens its own
+    /// `BEGIN IMMEDIATE` boundary, then delegates to `add_link_in_tx`.
     #[allow(clippy::too_many_arguments)]
     pub fn add_link(
         conn: &Connection,
@@ -222,14 +224,46 @@ impl LinkRepo {
         rationale: Option<&str>,
         actor: &str,
     ) -> Result<DocumentEntityLinkId, LinkError> {
-        let et_slug = entity_type_slug(entity_type);
-        // Open BEGIN IMMEDIATE transaction to serialize the (optional)
-        // tombstone-check + INSERT atomically. This closes the V1.2 race
-        // where a concurrent reject_link between SELECT and INSERT could
-        // let a classifier source create an active row after tombstone.
         conn.execute("BEGIN IMMEDIATE", [])
             .map_err(|e| LinkError::DbError(e.to_string()))?;
 
+        let result = Self::add_link_in_tx(
+            conn,
+            file_id,
+            entity_type,
+            entity_id,
+            attribution_source,
+            confidence,
+            rationale,
+            actor,
+        );
+        match result {
+            Ok(id) => {
+                conn.execute("COMMIT", [])
+                    .map_err(|e| LinkError::DbError(e.to_string()))?;
+                Ok(id)
+            }
+            Err(err) => {
+                drop(conn.execute("ROLLBACK", []));
+                Err(err)
+            }
+        }
+    }
+
+    /// Creates or resurrects a document/entity link using an existing
+    /// transaction connection. The caller owns commit/rollback.
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_link_in_tx(
+        conn: &Connection,
+        file_id: &str,
+        entity_type: EntityType,
+        entity_id: &str,
+        attribution_source: LinkAttributionSource,
+        confidence: f64,
+        rationale: Option<&str>,
+        actor: &str,
+    ) -> Result<DocumentEntityLinkId, LinkError> {
+        let et_slug = entity_type_slug(entity_type);
         // Tombstone guard for classifier-class sources only.
         if attribution_source.is_classifier_class() {
             let tombstoned: Option<(String, String)> = conn
@@ -241,12 +275,8 @@ impl LinkRepo {
                     |row| Ok((row.get(0)?, row.get(1)?)),
                 )
                 .optional()
-                .map_err(|e| {
-                    drop(conn.execute("ROLLBACK", []));
-                    LinkError::DbError(e.to_string())
-                })?;
+                .map_err(|e| LinkError::DbError(e.to_string()))?;
             if let Some((rejected_at_raw, rejected_reason)) = tombstoned {
-                drop(conn.execute("ROLLBACK", []));
                 let rejected_at = parse_dt(Some(rejected_at_raw)).unwrap_or_else(Utc::now);
                 return Err(LinkError::Tombstoned {
                     rejected_at,
@@ -281,10 +311,7 @@ impl LinkRepo {
                 |row| row.get(0),
             )
             .optional()
-            .map_err(|e| {
-                drop(conn.execute("ROLLBACK", []));
-                LinkError::DbError(e.to_string())
-            })?;
+            .map_err(|e| LinkError::DbError(e.to_string()))?;
 
         let final_id = match inserted_id {
             Some(id) => id,
@@ -297,14 +324,9 @@ impl LinkRepo {
                     params![file_id, et_slug, entity_id],
                     |row| row.get(0),
                 )
-                .map_err(|e| {
-                    drop(conn.execute("ROLLBACK", []));
-                    LinkError::DbError(e.to_string())
-                })?
+                .map_err(|e| LinkError::DbError(e.to_string()))?
             }
         };
-        conn.execute("COMMIT", [])
-            .map_err(|e| LinkError::DbError(e.to_string()))?;
         Ok(DocumentEntityLinkId(final_id))
     }
 
@@ -417,7 +439,15 @@ mod tests {
         conn.execute(
             "INSERT INTO workspace_file_lifecycle (file_id, canonical_path, device, inode, \
              source_type, data_source, source_asof) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            params!["wf-1", "test/path", 0_i64, 0_i64, "inbox", "{}", "2026-05-21T00:00:00Z"],
+            params![
+                "wf-1",
+                "test/path",
+                0_i64,
+                0_i64,
+                "inbox",
+                "{}",
+                "2026-05-21T00:00:00Z"
+            ],
         )
         .expect("seed file_lifecycle");
         conn
@@ -647,7 +677,10 @@ mod tests {
             "agent-2",
         )
         .expect("second Ok");
-        assert_eq!(id1, id2, "duplicate add_link should return existing link_id");
+        assert_eq!(
+            id1, id2,
+            "duplicate add_link should return existing link_id"
+        );
         let links = LinkRepo::list_links_for_file(&conn, "wf-1", false).expect("Ok");
         assert_eq!(links.len(), 1, "no new row created");
         // Original values preserved (DO NOTHING semantics).
@@ -700,7 +733,10 @@ mod tests {
         }
         // No new active link created.
         let active = LinkRepo::list_links_for_file(&conn, "wf-1", false).expect("Ok");
-        assert!(active.is_empty(), "rejected link must NOT resurrect via classifier");
+        assert!(
+            active.is_empty(),
+            "rejected link must NOT resurrect via classifier"
+        );
         // But the rejected row still exists.
         let all = LinkRepo::list_links_for_file(&conn, "wf-1", true).expect("Ok");
         assert_eq!(all.len(), 1);
@@ -787,6 +823,44 @@ mod tests {
     }
 
     #[test]
+    fn add_link_in_tx_returns_id_and_is_idempotent_on_conflict() {
+        let conn = fresh_conn();
+        conn.execute("BEGIN IMMEDIATE", []).expect("begin");
+        let id1 = LinkRepo::add_link_in_tx(
+            &conn,
+            "wf-1",
+            EntityType::Account,
+            "acme",
+            LinkAttributionSource::UserRelink,
+            1.0,
+            Some("user assigned inbox file"),
+            "user",
+        )
+        .expect("first add");
+        let id2 = LinkRepo::add_link_in_tx(
+            &conn,
+            "wf-1",
+            EntityType::Account,
+            "acme",
+            LinkAttributionSource::UserRelink,
+            1.0,
+            Some("duplicate user assignment"),
+            "user",
+        )
+        .expect("duplicate add");
+        conn.execute("COMMIT", []).expect("commit");
+
+        assert_eq!(id1, id2);
+        let links = LinkRepo::list_links_for_file(&conn, "wf-1", false).expect("links");
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].link_id, id1);
+        assert!(matches!(
+            links[0].attribution_source,
+            LinkAttributionSource::UserRelink
+        ));
+    }
+
+    #[test]
     fn partial_unique_index_prevents_duplicate_active_insert_via_raw_sql() {
         // Sanity check: confirms the v254 partial UNIQUE index actually fires.
         // Note: add_link with proper UPSERT handles this gracefully; this test
@@ -805,8 +879,19 @@ mod tests {
             "INSERT INTO document_entity_links \
              (link_id, file_id, entity_type, entity_id, attribution_source, confidence, actor) \
              VALUES (?, ?, ?, ?, ?, ?, ?)",
-            params!["l-2", "wf-1", "account", "acme", "classifier", 0.5_f64, "test-actor"],
+            params![
+                "l-2",
+                "wf-1",
+                "account",
+                "acme",
+                "classifier",
+                0.5_f64,
+                "test-actor"
+            ],
         );
-        assert!(result.is_err(), "second active insert for same triple should fail UNIQUE");
+        assert!(
+            result.is_err(),
+            "second active insert for same triple should fail UNIQUE"
+        );
     }
 }

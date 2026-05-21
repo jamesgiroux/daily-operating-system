@@ -371,6 +371,10 @@ fn is_valid_transition(from: LifecycleState, to: LifecycleState) -> bool {
                 LifecycleState::Ingesting,
                 LifecycleState::PendingEntityAssignment
             )
+            | (
+                LifecycleState::PendingEntityAssignment,
+                LifecycleState::Pending
+            )
             | (LifecycleState::Ingested, LifecycleState::Superseded)
             | (_, LifecycleState::Quarantined)
             | (LifecycleState::Rejected, LifecycleState::Pending)

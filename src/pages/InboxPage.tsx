@@ -110,6 +110,23 @@ function humanizeFilename(filename: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+function entityNameSlug(name: string, fallback: string): string {
+  const slug = name
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 32);
+
+  if (slug && /^[a-z]/.test(slug)) return slug;
+
+  return fallback
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^[^a-z]+/, "")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 32) || "account";
+}
+
 function formatModified(isoDate: string): string {
   try {
     const date = new Date(isoDate);
@@ -381,7 +398,6 @@ export default function InboxPage() {
       try {
         const result = await invoke<ProcessingResultPayload>("process_inbox_file", {
           filename,
-          entityId,
         });
 
         if (cancelledRef.current.has(filename)) {
@@ -786,10 +802,19 @@ export default function InboxPage() {
               onToggleExpand={() => toggleExpand(file.filename)}
               onProcess={() => processFile(file.filename)}
               onCancel={() => cancelFile(file.filename)}
-              onAssignEntity={async (entityId: string) => {
+              onAssignEntity={async (account: PickerAccount) => {
                 updateFileState(file.filename, { status: "processing" });
                 try {
-                  await invoke("process_inbox_file", { filename: file.filename, entityId });
+                  if (!file.fileId) {
+                    throw new Error("Missing lifecycle file id");
+                  }
+                  await invoke("assign_inbox_entity", {
+                    fileId: file.fileId,
+                    entityTypeSlug: "account",
+                    entityId: account.id,
+                    entityName: entityNameSlug(account.name, account.id),
+                    sourceTypeSlug: "inbox",
+                  });
                   updateFileState(file.filename, { status: "processed" });
                   setTimeout(() => refresh(), 500);
                 } catch {
@@ -873,7 +898,7 @@ function InboxRow({
   onToggleExpand: () => void;
   onProcess: () => void;
   onCancel: () => void;
-  onAssignEntity: (entityId: string) => void;
+  onAssignEntity: (account: PickerAccount) => void;
 }) {
   const [hovered, setHovered] = useState(false);
   const [accounts, setAccounts] = useState<PickerAccount[]>([]);
@@ -1001,7 +1026,8 @@ function InboxRow({
           <select
             defaultValue=""
             onChange={(e) => {
-              if (e.target.value) onAssignEntity(e.target.value);
+              const account = accounts.find((a) => a.id === e.target.value);
+              if (account) onAssignEntity(account);
             }}
             className={styles.entityPickerSelect}
           >

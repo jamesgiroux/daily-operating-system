@@ -855,6 +855,7 @@ pub fn list_inbox_files(workspace: &Path) -> Vec<InboxFile> {
             };
 
             Some(InboxFile {
+                file_id: None,
                 filename,
                 path: path.to_string_lossy().to_string(),
                 size_bytes: metadata.len(),

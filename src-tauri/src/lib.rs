@@ -67,8 +67,9 @@ pub mod substrate_test_api {
 #[doc(hidden)]
 pub mod command_test_api {
     pub use crate::commands::{
-        assign_inbox_entity_for_tests, create_entity_context_entry, delete_entity_context_entry,
-        get_entity_context_entries, reveal_sensitive_claim_text, update_entity_context_entry,
+        assign_inbox_entity_for_tests, copy_to_inbox_for_tests, create_entity_context_entry,
+        delete_entity_context_entry, get_entity_context_entries, get_inbox_files_for_tests,
+        process_inbox_file_for_tests, reveal_sensitive_claim_text, update_entity_context_entry,
     };
 }
 #[cfg(any(feature = "test-harness", feature = "bench-harness", debug_assertions))]

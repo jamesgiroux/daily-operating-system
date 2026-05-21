@@ -12,12 +12,11 @@ use tauri::{Emitter, Manager, State};
 
 use crate::executor::request_workflow_execution;
 use crate::hygiene::{build_intelligence_hygiene_status, HygieneStatusView};
-use crate::parser::list_inbox_files;
 use crate::scheduler::get_next_run_time as scheduler_get_next_run_time;
 use crate::state::{reload_config, AppState};
 use crate::types::{
     CalendarEvent, CapturedOutcome, Config, EmailBriefingData, ExecutionRecord, FullMeetingPrep,
-    GoogleAuthStatus, InboxFile, LiveProactiveSuggestion, MeetingIntelligence,
+    GoogleAuthStatus, InboxFile, InboxFileType, LiveProactiveSuggestion, MeetingIntelligence,
     PostMeetingCaptureConfig, SourceReference, WorkflowId, WorkflowStatus,
 };
 use crate::SchedulerSender;

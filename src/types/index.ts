@@ -533,6 +533,7 @@ export type InboxFileType =
   | "other";
 
 export interface InboxFile {
+  fileId?: string;
   filename: string;
   path: string;
   sizeBytes: number;

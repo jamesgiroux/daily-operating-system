@@ -10,8 +10,9 @@ use rusqlite::{params, OptionalExtension};
 
 use crate::entity::EntityType;
 use crate::services::workspace_ingestion::lifecycle::{LifecycleRepo, LifecycleState};
+use crate::services::workspace_ingestion::link::{LinkAttributionSource, LinkError, LinkRepo};
 use crate::services::workspace_ingestion::pipeline::{
-    file_id_from_identity, EntityRef, IngestRequest,
+    file_id_from_identity, EntityRef, IngestError, IngestReceipt, IngestRequest,
 };
 use crate::services::workspace_ingestion::registry::WorkspaceSourceRegistry;
 use crate::services::workspace_ingestion::runs::IngestionMode;
@@ -58,7 +59,160 @@ pub enum InboxResult {
     },
 }
 
-/// Get files from the _inbox/ directory
+#[cfg(any(test, debug_assertions, feature = "test-harness"))]
+#[doc(hidden)]
+pub fn get_inbox_files_for_tests(
+    db: &crate::db::ActionDb,
+    workspace_root: &std::path::Path,
+) -> Result<Vec<InboxFile>, String> {
+    inbox_files_from_lifecycle(db.conn_ref(), workspace_root)
+}
+
+fn inbox_files_from_lifecycle(
+    conn: &rusqlite::Connection,
+    workspace_root: &std::path::Path,
+) -> Result<Vec<InboxFile>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT file_id, canonical_path, lifecycle_state, updated_at \
+             FROM workspace_file_lifecycle \
+             WHERE source_type = 'inbox' \
+               AND lifecycle_state IN (\
+                   'pending_entity_assignment', 'pending', 'ingesting', 'rejected'\
+               ) \
+             ORDER BY updated_at DESC",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })
+        .map_err(|e| e.to_string())?;
+
+    let mut files = Vec::new();
+    for row in rows {
+        let (file_id, canonical_path, lifecycle_state, updated_at) =
+            row.map_err(|e| e.to_string())?;
+        let path = std::path::PathBuf::from(&canonical_path);
+        let filename = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("workspace-file")
+            .to_string();
+        let metadata = std::fs::metadata(&path).ok();
+        let size_bytes = metadata.as_ref().map(std::fs::Metadata::len).unwrap_or(0);
+        let modified = metadata
+            .as_ref()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .and_then(|duration| chrono::DateTime::from_timestamp(duration.as_secs() as i64, 0))
+            .map(|dt| dt.to_rfc3339())
+            .unwrap_or(updated_at);
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        let file_type = inbox_file_type_from_ext(ext);
+        let preview = inbox_file_preview(&path, &file_type, size_bytes);
+        let processing_status = match lifecycle_state.as_str() {
+            "pending_entity_assignment" => Some("needs_entity".to_string()),
+            "ingesting" => Some("processing".to_string()),
+            "rejected" => Some("error".to_string()),
+            _ => None,
+        };
+        let processing_error = if lifecycle_state == "rejected" {
+            Some("File rejected during ingestion".to_string())
+        } else {
+            None
+        };
+        let suggested_entity_name = if lifecycle_state == "pending_entity_assignment" {
+            Some(suggested_entity_name_from_filename(&filename))
+        } else {
+            None
+        };
+
+        let display_path = path
+            .strip_prefix(workspace_root)
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| canonical_path.clone());
+
+        files.push(InboxFile {
+            file_id: Some(file_id),
+            filename,
+            path: display_path,
+            size_bytes,
+            modified,
+            preview,
+            file_type,
+            processing_status,
+            processing_error,
+            suggested_entity_name,
+        });
+    }
+    Ok(files)
+}
+
+fn inbox_file_type_from_ext(ext: &str) -> InboxFileType {
+    match ext.to_lowercase().as_str() {
+        "md" | "markdown" => InboxFileType::Markdown,
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "bmp" | "ico" | "heic" => {
+            InboxFileType::Image
+        }
+        "xlsx" | "xls" | "numbers" | "ods" => InboxFileType::Spreadsheet,
+        "docx" | "doc" | "pages" | "odt" | "rtf" | "pdf" => InboxFileType::Document,
+        "csv" | "tsv" | "json" | "yaml" | "yml" | "xml" | "toml" => InboxFileType::Data,
+        "txt" | "log" | "text" => InboxFileType::Text,
+        _ => InboxFileType::Other,
+    }
+}
+
+fn inbox_file_preview(
+    path: &std::path::Path,
+    file_type: &InboxFileType,
+    size_bytes: u64,
+) -> Option<String> {
+    if matches!(
+        file_type,
+        InboxFileType::Markdown | InboxFileType::Data | InboxFileType::Text
+    ) {
+        let content = std::fs::read_to_string(path).ok()?;
+        let mut text = content
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty() && !line.starts_with('#') && *line != "---")
+            .take(6)
+            .collect::<Vec<_>>()
+            .join(" ");
+        if text.len() > 200 {
+            let mut end = 200;
+            while !text.is_char_boundary(end) {
+                end -= 1;
+            }
+            text.truncate(end);
+            text.push_str("...");
+        }
+        return (!text.is_empty()).then_some(text);
+    }
+
+    let size_label = if size_bytes < 1024 {
+        format!("{size_bytes} B")
+    } else if size_bytes < 1024 * 1024 {
+        format!("{:.1} KB", size_bytes as f64 / 1024.0)
+    } else {
+        format!("{:.1} MB", size_bytes as f64 / (1024.0 * 1024.0))
+    };
+    match file_type {
+        InboxFileType::Image => Some(format!("Image file - {size_label}")),
+        InboxFileType::Spreadsheet => Some(format!("Spreadsheet - {size_label}")),
+        InboxFileType::Document => Some(format!("Document - {size_label}")),
+        InboxFileType::Other => Some(format!("File - {size_label}")),
+        _ => None,
+    }
+}
+
+/// Get unresolved inbox files from lifecycle rows.
 #[allow(
     clippy::let_underscore_must_use,
     reason = "tauri::command macro emits internal Result glue that discards generated metadata"
@@ -76,27 +230,11 @@ pub async fn get_inbox_files(state: State<'_, Arc<AppState>>) -> Result<InboxRes
         }
     };
 
-    let workspace = Path::new(&config.workspace_path);
-    let mut files = list_inbox_files(workspace);
+    let workspace_root = std::path::PathBuf::from(config.workspace_path);
+    let files = state
+        .db_read(move |db| inbox_files_from_lifecycle(db.conn_ref(), &workspace_root))
+        .await?;
     let count = files.len();
-
-    // Enrich files with persistent processing status from DB
-    if let Ok(status_map) = state
-        .db_read(|db| db.get_latest_processing_status().map_err(|e| e.to_string()))
-        .await
-    {
-        for file in &mut files {
-            if let Some((status, error)) = status_map.get(&file.filename) {
-                file.processing_status = Some(status.clone());
-                // For needs_entity, error_message stores the suggested name
-                if status == "needs_entity" {
-                    file.suggested_entity_name = error.clone();
-                } else {
-                    file.processing_error = error.clone();
-                }
-            }
-        }
-    }
 
     if files.is_empty() {
         Ok(InboxResult::Empty {
@@ -119,7 +257,6 @@ pub async fn get_inbox_files(state: State<'_, Arc<AppState>>) -> Result<InboxRes
 #[tauri::command]
 pub async fn process_inbox_file(
     filename: String,
-    entity_id: Option<String>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<crate::processor::ProcessingResult, String> {
     let config = state
@@ -128,36 +265,186 @@ pub async fn process_inbox_file(
         .clone()
         .ok_or("No configuration loaded")?;
 
-    let workspace_path = config.workspace_path.clone();
-    let profile = config.profile.clone();
-    let entity_id = entity_id.clone();
+    let workspace_root = std::path::PathBuf::from(config.workspace_path)
+        .canonicalize()
+        .map_err(|e| format!("workspace_root: {e}"))?;
 
     // Validate filename before processing (path traversal guard)
-    let workspace = Path::new(&workspace_path);
-    crate::util::validate_inbox_path(workspace, &filename)?;
+    crate::util::validate_inbox_path(&workspace_root, &filename)?;
 
-    tauri::async_runtime::spawn_blocking(move || {
-        let workspace = Path::new(&workspace_path);
-        // Open a dedicated connection instead of holding the shared mutex
-        // for the entire duration of process_file (which can take seconds).
-        let db =
-            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())).ok();
-        let db_ref = db.as_ref();
-        let entity_tracker_path = entity_id.as_deref().and_then(|eid| {
-            db_ref
-                .and_then(|db| db.get_entity(eid).ok().flatten())
-                .and_then(|e| e.tracker_path)
-        });
-        crate::processor::process_file(
-            workspace,
-            &filename,
-            db_ref,
-            &profile,
-            entity_tracker_path.as_deref(),
-        )
-    })
-    .await
-    .map_err(|e| format!("Processing task failed: {}", e))
+    state
+        .db_write(move |db| process_inbox_file_in_db(db, &workspace_root, &filename))
+        .await
+}
+
+#[cfg(any(test, debug_assertions, feature = "test-harness"))]
+#[doc(hidden)]
+pub fn process_inbox_file_for_tests(
+    db: &crate::db::ActionDb,
+    workspace_root: &std::path::Path,
+    filename: &str,
+) -> Result<serde_json::Value, String> {
+    serde_json::to_value(process_inbox_file_in_db(db, workspace_root, filename)?)
+        .map_err(|e| e.to_string())
+}
+
+fn process_inbox_file_in_db(
+    db: &crate::db::ActionDb,
+    workspace_root: &std::path::Path,
+    filename: &str,
+) -> Result<crate::processor::ProcessingResult, String> {
+    let inbox_path = crate::util::validate_inbox_path(workspace_root, filename)?;
+    let existing_file_id = lifecycle_file_id_for_path(db.conn_ref(), &inbox_path)?;
+    if let Some(file_id) = existing_file_id.as_deref() {
+        if let Some(row) =
+            LifecycleRepo::get(db.conn_ref(), file_id).map_err(|e| format!("lifecycle_get: {e}"))?
+        {
+            if row.lifecycle_state == LifecycleState::PendingEntityAssignment {
+                return Ok(processing_result_for_lifecycle(&row));
+            }
+        }
+    }
+
+    match run_staged_inbox_ingestion(db.conn_ref(), workspace_root, &inbox_path) {
+        Ok(receipt) => Ok(processing_result_for_receipt(&receipt, filename)),
+        Err(IngestError::AlreadyProcessed { .. }) => {
+            let file_id = existing_file_id
+                .or_else(|| {
+                    lifecycle_file_id_for_path(db.conn_ref(), &inbox_path)
+                        .ok()
+                        .flatten()
+                })
+                .ok_or_else(|| "already_processed_without_lifecycle_row".to_string())?;
+            let row = LifecycleRepo::get(db.conn_ref(), &file_id)
+                .map_err(|e| format!("lifecycle_get: {e}"))?
+                .ok_or_else(|| "not_found".to_string())?;
+            Ok(processing_result_for_lifecycle(&row))
+        }
+        Err(error) => Ok(crate::processor::ProcessingResult::Error {
+            message: format!("pipeline: {error}"),
+        }),
+    }
+}
+
+fn lifecycle_file_id_for_path(
+    conn: &rusqlite::Connection,
+    path: &std::path::Path,
+) -> Result<Option<String>, String> {
+    let canonical_path = path
+        .canonicalize()
+        .unwrap_or_else(|_| path.to_path_buf())
+        .to_string_lossy()
+        .to_string();
+    conn.query_row(
+        "SELECT file_id FROM workspace_file_lifecycle WHERE canonical_path = ?1",
+        params![canonical_path],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(|e| e.to_string())
+}
+
+fn run_staged_inbox_ingestion(
+    conn: &rusqlite::Connection,
+    workspace_root: &std::path::Path,
+    inbox_path: &std::path::Path,
+) -> Result<IngestReceipt, IngestError> {
+    let (file, identity) = WorkspaceSourceRegistry::open_validated(workspace_root, inbox_path)
+        .map_err(|e| IngestError::DbError(format!("open_validated: {e:?}")))?;
+    let source_asof: DateTime<Utc> = identity
+        .canonical_path
+        .metadata()
+        .and_then(|metadata| metadata.modified())
+        .map_err(IngestError::Io)?
+        .into();
+    let file_id = file_id_from_identity(&identity, workspace_root)
+        .map_err(|e| IngestError::DbError(format!("file_id: {e:?}")))?;
+    let pipeline = wiring::build_pipeline(workspace_root.to_path_buf());
+    pipeline.run(
+        conn,
+        IngestRequest {
+            file,
+            identity,
+            file_id,
+            source_asof,
+            source_type: WorkspaceFileKind::Inbox,
+            entity: None,
+            mode: IngestionMode::Realtime,
+            category_hint: None,
+        },
+    )
+}
+
+fn processing_result_for_receipt(
+    receipt: &IngestReceipt,
+    filename: &str,
+) -> crate::processor::ProcessingResult {
+    match receipt.lifecycle_state_after {
+        LifecycleState::Ingested => crate::processor::ProcessingResult::Routed {
+            classification: "workspace_file".to_string(),
+            destination: receipt
+                .resolved_path
+                .clone()
+                .unwrap_or_else(|| filename.to_string()),
+        },
+        LifecycleState::PendingEntityAssignment => {
+            crate::processor::ProcessingResult::NeedsEntity {
+                classification: "workspace_file".to_string(),
+                suggested_name: suggested_entity_name_from_filename(filename),
+            }
+        }
+        LifecycleState::Rejected => crate::processor::ProcessingResult::Error {
+            message: "File rejected during ingestion".to_string(),
+        },
+        other => crate::processor::ProcessingResult::Error {
+            message: format!("Unexpected lifecycle state after ingestion: {other:?}"),
+        },
+    }
+}
+
+fn processing_result_for_lifecycle(
+    row: &crate::services::workspace_ingestion::lifecycle::WorkspaceFileLifecycle,
+) -> crate::processor::ProcessingResult {
+    let filename = std::path::Path::new(&row.canonical_path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("workspace-file");
+    match row.lifecycle_state {
+        LifecycleState::Ingested => crate::processor::ProcessingResult::Routed {
+            classification: "workspace_file".to_string(),
+            destination: row.canonical_path.clone(),
+        },
+        LifecycleState::PendingEntityAssignment => {
+            crate::processor::ProcessingResult::NeedsEntity {
+                classification: "workspace_file".to_string(),
+                suggested_name: suggested_entity_name_from_filename(filename),
+            }
+        }
+        LifecycleState::Rejected => crate::processor::ProcessingResult::Error {
+            message: "File rejected during ingestion".to_string(),
+        },
+        _ => crate::processor::ProcessingResult::NeedsEnrichment,
+    }
+}
+
+fn suggested_entity_name_from_filename(filename: &str) -> String {
+    std::path::Path::new(filename)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or(filename)
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .trim_matches('-')
+        .chars()
+        .take(32)
+        .collect::<String>()
 }
 
 /// Process all inbox files (batch).
@@ -322,14 +609,9 @@ pub fn copy_to_inbox(
         .clone()
         .ok_or("No configuration loaded")?;
 
-    let workspace = Path::new(&config.workspace_path);
-    let inbox_dir = workspace.join("_inbox");
-
-    // Ensure _inbox/ exists
-    if !inbox_dir.exists() {
-        std::fs::create_dir_all(&inbox_dir)
-            .map_err(|e| format!("Failed to create _inbox: {}", e))?;
-    }
+    let workspace_root = std::path::PathBuf::from(config.workspace_path)
+        .canonicalize()
+        .map_err(|e| format!("workspace_root: {e}"))?;
 
     // Build allowlist of source directories
     let home = dirs::home_dir().ok_or("Cannot determine home directory")?;
@@ -338,6 +620,34 @@ pub fn copy_to_inbox(
         home.join("Desktop"),
         home.join("Downloads"),
     ];
+
+    state.with_db(|db| copy_to_inbox_in_db(db, &workspace_root, paths, &allowed_source_dirs))
+}
+
+#[cfg(any(test, debug_assertions, feature = "test-harness"))]
+#[doc(hidden)]
+pub fn copy_to_inbox_for_tests(
+    db: &crate::db::ActionDb,
+    workspace_root: &std::path::Path,
+    paths: Vec<String>,
+    allowed_source_dirs: &[std::path::PathBuf],
+) -> Result<CopyToInboxReport, String> {
+    copy_to_inbox_in_db(db, workspace_root, paths, allowed_source_dirs)
+}
+
+fn copy_to_inbox_in_db(
+    db: &crate::db::ActionDb,
+    workspace_root: &std::path::Path,
+    paths: Vec<String>,
+    allowed_source_dirs: &[std::path::PathBuf],
+) -> Result<CopyToInboxReport, String> {
+    let inbox_dir = workspace_root.join("_inbox");
+
+    // Ensure _inbox/ exists
+    if !inbox_dir.exists() {
+        std::fs::create_dir_all(&inbox_dir)
+            .map_err(|e| format!("Failed to create _inbox: {}", e))?;
+    }
 
     let mut copied_filenames = Vec::new();
 
@@ -403,6 +713,7 @@ pub fn copy_to_inbox(
         match std::fs::copy(source, &dest) {
             Ok(_) => {
                 log::info!("Copied '{}' to inbox", filename.to_string_lossy());
+                stage_copied_inbox_file(db, workspace_root, &dest)?;
                 copied_filenames.push(
                     dest.file_name()
                         .and_then(|name| name.to_str())
@@ -420,6 +731,17 @@ pub fn copy_to_inbox(
         copied_count: copied_filenames.len(),
         copied_filenames,
     })
+}
+
+fn stage_copied_inbox_file(
+    db: &crate::db::ActionDb,
+    workspace_root: &std::path::Path,
+    dest: &std::path::Path,
+) -> Result<(), String> {
+    match run_staged_inbox_ingestion(db.conn_ref(), workspace_root, dest) {
+        Ok(_) | Err(IngestError::AlreadyProcessed { .. }) | Err(IngestError::Rejected(_)) => Ok(()),
+        Err(error) => Err(format!("pipeline: {error}")),
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -546,16 +868,25 @@ fn assign_inbox_entity_in_db(
 
         LifecycleRepo::set_entity(conn, &file_id, entity_type, &entity_id, Some(&entity_name))
             .map_err(|e| format!("set_entity: {e}"))?;
-        add_user_relink_link(conn, &file_id, entity_type, &entity_id)
-            .map_err(|e| format!("add_link: {e}"))?;
+        LinkRepo::add_link_in_tx(
+            conn,
+            &file_id,
+            entity_type,
+            &entity_id,
+            LinkAttributionSource::UserRelink,
+            1.0,
+            Some("User assigned inbox file to entity"),
+            "user",
+        )
+        .map_err(map_link_error_for_assign)?;
 
         // The live W2-A pipeline re-enters from `pending`; keep this state
         // change inside the same command transaction so failures roll back.
-        conn.execute(
-            "UPDATE workspace_file_lifecycle SET lifecycle_state = 'pending', \
-             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') \
-             WHERE file_id = ?1 AND lifecycle_state = 'pending_entity_assignment'",
-            params![file_id],
+        LifecycleRepo::transition(
+            conn,
+            &file_id,
+            LifecycleState::PendingEntityAssignment,
+            LifecycleState::Pending,
         )
         .map_err(|e| format!("prepare_pipeline: {e}"))?;
 
@@ -591,35 +922,14 @@ fn assign_inbox_entity_in_db(
     })
 }
 
-fn add_user_relink_link(
-    conn: &rusqlite::Connection,
-    file_id: &str,
-    entity_type: EntityType,
-    entity_id: &str,
-) -> rusqlite::Result<String> {
-    let link_id = uuid::Uuid::new_v4().to_string();
-    let inserted_id: Option<String> = conn
-        .query_row(
-            "INSERT INTO document_entity_links \
-             (link_id, file_id, entity_type, entity_id, attribution_source, \
-              confidence, rationale, actor) \
-             VALUES (?1, ?2, ?3, ?4, 'user_relink', 1.0, \
-                     'User assigned inbox file to entity', 'user') \
-             ON CONFLICT (file_id, entity_type, entity_id) WHERE rejected = 0 \
-             DO NOTHING RETURNING link_id",
-            params![link_id, file_id, entity_type.as_str(), entity_id],
-            |row| row.get(0),
-        )
-        .optional()?;
-
-    match inserted_id {
-        Some(id) => Ok(id),
-        None => conn.query_row(
-            "SELECT link_id FROM document_entity_links \
-             WHERE file_id = ?1 AND entity_type = ?2 AND entity_id = ?3 AND rejected = 0",
-            params![file_id, entity_type.as_str(), entity_id],
-            |row| row.get(0),
-        ),
+fn map_link_error_for_assign(error: LinkError) -> String {
+    match error {
+        LinkError::NotFound => "link_not_found".to_string(),
+        LinkError::DuplicateActive => "duplicate_active_link".to_string(),
+        LinkError::AlreadyRejected => "link_already_rejected".to_string(),
+        LinkError::Tombstoned { .. } => "link_tombstoned".to_string(),
+        LinkError::EntityTypeUnknown => "invalid_entity_type".to_string(),
+        LinkError::DbError(message) => format!("link_db_error: {message}"),
     }
 }
 
