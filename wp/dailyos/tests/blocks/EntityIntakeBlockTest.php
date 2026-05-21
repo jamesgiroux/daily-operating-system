@@ -11,6 +11,9 @@ use PHPUnit\Framework\TestCase;
 
 require_once __DIR__ . '/../../blocks/entity-intake/render-functions.php';
 
+/**
+ * Tests for the dailyos/entity-intake WP block render path.
+ */
 final class DailyOS_EntityIntakeBlockTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();

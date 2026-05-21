@@ -16,7 +16,10 @@
  * Empty `project_id` keeps the pattern preview safe in the editor — the
  * outer block renders an "is-empty" notice rather than invoking the
  * runtime against an unknown subject.
+ *
+ * @package DailyOS
  */
+
 ?>
 <!-- wp:dailyos/project-detail -->
 <!-- wp:dailyos/project-hero /-->
