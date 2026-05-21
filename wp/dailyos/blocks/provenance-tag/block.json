@@ -18,6 +18,11 @@
 		"cache_hint_token": { "type": "string", "default": "" },
 		"block_instance_id": { "type": "string" }
 	},
+	"usesContext": [
+		"dailyos/entityType",
+		"dailyos/entityId",
+		"dailyos/envelopeHandle"
+	],
 	"render": "file:./render.php",
 	"editorScript": "file:./edit.js",
 	"style": "file:./style.css",

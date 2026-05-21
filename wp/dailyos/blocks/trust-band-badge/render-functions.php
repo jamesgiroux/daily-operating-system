@@ -115,10 +115,28 @@ if ( ! function_exists( 'dailyos_trust_band_badge_render' ) ) {
 		$compact = ! empty( $payload['compact'] );
 		$class   = 'dailyos-trust-band-badge' . ( $compact ? ' dailyos-trust-band-badge--compact' : '' );
 
+		// DOS-692 a11y: aria-label per band + screen-reader announcement of
+		// band transitions via aria-live. The rationale tooltip (if provided
+		// by surface composition) is referenced via aria-describedby. The
+		// badge is keyboard-focusable so screen-reader users can land on it
+		// and announce the band state.
+		$aria_labels   = [
+			'likely_current'     => __( 'Trust band: likely current', 'dailyos' ),
+			'use_with_caution'   => __( 'Trust band: use with caution', 'dailyos' ),
+			'needs_verification' => __( 'Trust band: needs verification', 'dailyos' ),
+		];
+		$aria_label    = $aria_labels[ $band ];
+		$rationale_id  = isset( $payload['rationale_id'] ) && is_string( $payload['rationale_id'] )
+			? trim( $payload['rationale_id'] )
+			: '';
+		$describedby   = '' !== $rationale_id ? sprintf( ' aria-describedby="%s"', esc_attr( $rationale_id ) ) : '';
+
 		return sprintf(
-			'<span class="%s" data-band="%s" data-ds-name="TrustBandBadge" data-ds-tier="primitive" data-ds-spec="primitives/TrustBandBadge.md"><span class="dailyos-trust-band-badge__dot" aria-hidden="true"></span>%s</span>',
+			'<span class="%s" data-band="%s" data-ds-name="TrustBandBadge" data-ds-tier="primitive" data-ds-spec="primitives/TrustBandBadge.md" role="status" tabindex="0" aria-label="%s" aria-live="polite"%s><span class="dailyos-trust-band-badge__dot" aria-hidden="true"></span>%s</span>',
 			esc_attr( $class ),
 			esc_attr( $band ),
+			esc_attr( $aria_label ),
+			$describedby,
 			esc_html( $label )
 		);
 	}
