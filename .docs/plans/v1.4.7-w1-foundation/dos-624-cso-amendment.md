@@ -3,79 +3,130 @@
 **Type:** L0 amendment (security-annotated)
 **Wave:** v1.4.7 W2-A predecessor (gates DOS-175 implementation)
 **Lane spec:** [DOS-624](https://linear.app/a8c/issue/DOS-624)
-**Origin:** v1.4.3 carve-out per Linear project description — `get_daily_briefing` ability shipped as Read-only with **User actor only**. **No Agent/MCP exposure without a separate CSO-approved L0 amendment.** This is that amendment.
-**Wave plan reference:** `.docs/plans/v1.4.7-waves.md` §"Reorientation" + §"Agent W2-A — DOS-175".
+**Origin:** v1.4.3 carve-out — `get_daily_briefing` shipped as Read-only User actor only. No Agent/MCP exposure without separate CSO-approved L0 amendment. This is that amendment.
 
-## 1. What this amendment unblocks
+## Cycle-2 changelog (2026-05-20)
 
-v1.4.7 W2-A (DOS-175) ships two MCP tools that wrap the v1.4.3 `get_daily_briefing` ability:
-- `dailyos.read.daily_briefing` — host-model invocation returning the user's current-day briefing
-- `dailyos.read.meeting_briefing(meeting_id)` — host-model invocation returning the prep briefing for a specific meeting
+Cycle-1 verdicts: all 4 NEEDS-CHANGES. **Convergent (2+ reviewers):**
+- **meeting_briefing existence oracle / enumeration** (CSO + challenge)
+- **W3-C two-paths actor_kind tagging is factually wrong** (architect + challenge + devex)
 
-Both surface the same intelligence the Tauri app's briefing surface consumes. The v1.4.3 carve-out blocks them pending this amendment.
+Cycle-2 fixes:
 
-## 2. Why MCP exposure is appropriate now
+1. **Architect §4 rewrite — actor_kind correctly distinguishes paths** (architect HIGH + challenge + devex convergent). The cycle-1 amendment claimed "both paths write via Actor::McpClient variants distinguishable by actor_kind." Architect correctly flagged: there's only ONE `Actor::McpClient { client_id, conversation_handle }` variant; `audit_log.rs:215` collapses all McpClient invocations to `actor_kind = "mcp_client"`. The W3-C WordPress MCP Adapter path uses `Actor::SurfaceClient { instance, scopes }` per ADR-0111 §8 + ADR-0129 — audit tags `actor_kind = "surface_client"`. So the two paths ARE distinguishable, just by `surface_client` vs `mcp_client`, not by two McpClient variants. §4 corrected.
 
-The v1.4.3 carve-out predates the v1.4.7 W1-A MCP trust contract. The carve-out was correct at the time: pre-W1-A, MCP exposure meant unauthenticated, unsigned, unbounded ability invocation. v1.4.7 W1-A changes that. Per the now-merged ADR-0102 §C/§D/§E + §C.bis.replay/refresh/schema/fail-closed (cycle-7/8/9 amendments) every MCP-originated invocation passes through:
+2. **§4 W3-C policy store correction** (architect HIGH). ADR-0129 §4: WP uses WP capability + WP MCP Adapter allowlist + `SurfaceClient` scopes per ADR-0111 §8. Not `mcp_client_manifest` / `mcp_tool_grant` (which is W1-A direct-path-only). §4 specifies independent policy stores per path; operator grants briefing access in BOTH places independently. No shared manifest schema.
 
-1. **Pairing handshake** (`auth::pair_client`) — operator-set per-client manifest of scopes + per-tool exposure tier + per-tool rate limits. Server-issued `McpClientId` is non-spoofable.
-2. **Transport HMAC-SHA256 signing** over the canonical-JSON bytes of the WHOLE envelope including `request_nonce`. Key material is `Zeroizing`-wrapped end-to-end (W1-A AC-11).
-3. **Server-side nonce ledger** (`mcp_transport_nonce_ledger`) per ADR-0102 §C.bis.replay — atomic consume-once + fail-closed; nonce stays consumed even on downstream failure (TCP-reset replay defense).
-4. **Server-side scope manifest authorization** — caller-asserted scopes/conversation_id REJECTED; gateway enforces against `mcp_tool_grant` rows loaded per-dispatch (no cache; revocation propagates within 1 call).
-5. **Per-tool exposure tier** (`McpExposure::None | MetadataOnly | Invocable`) — operator-set at pairing; non-Invocable → `ExposureForbidden` dedicated variant. Default tier is `None` (deny).
-6. **Per `(McpClientId, ScopedName)` rate limit** with atomic `BEGIN IMMEDIATE` reservation.
-7. **Audit attribution** (`mcp.tool_invoked` event in `audit_log`) with keyed HMAC-SHA256 hashes of params + response (no raw payloads). Audit double-failure surfaces `ToolError::Internal` + Suite-S alert.
-8. **Signal emission** (`SignalType::McpToolInvoked` + `McpInvocationRejected` registered at 5 sites per ADR-0115; NonPiiMetadata payloads).
+3. **§3 sensitivity gate composition** (architect MED). The cycle-1 §3.1 protection said "Handler MUST filter to caller's read.entity_names scope." Architect correctly flagged this should COMPOSE the existing centralized claim sensitivity gate (ADR-0125 + per-call ClaimSensitivity render in services::claims::render), NOT copy redaction logic. §3.1 rewritten to require DOS-175 handler routes briefing output through the centralized sensitivity render with caller's manifest scopes; no parallel redaction.
 
-The pre-v1.4.7 carve-out's threat model (unauthenticated MCP exposure of personal briefing intelligence) no longer applies. The post-v1.4.7 MCP path is more strictly gated than any other DailyOS substrate consumer.
+4. **meeting_briefing uniform unavailable response in DOS-175 AC** (CSO HIGH + challenge HIGH convergent). Existence-oracle defense: DOS-175 W2-A must include `dailyos.read.meeting_briefing(meeting_id)` returning a uniform `{status: "unavailable"}` typed result for ALL of: nonexistent meeting_id, manifest scope insufficient for entity_names, filtered by sensitivity, stale beyond freshness threshold. This pushes the "object resolution hygiene" into W2-A AC explicitly. CSO Q2 conditional sign-off requires this.
 
-## 3. Specific protections for daily/meeting briefing
+5. **CSO #2 audit coverage for unavailable responses** — DOS-175 makes unavailable responses successful typed results (per #4), so the W1-A success-path audit (`audit::write` with `event="mcp.tool_invoked"`) covers them naturally. `params_hash` over `(meeting_id)` fingerprints probing patterns; operator detects via duplicate `params_hash` across many `conversation_handle`s.
 
-Beyond the gateway's universal gates, this amendment names the briefing-specific protections W2-A (DOS-175) MUST honor:
+6. **Q1 sign-off folded — per-pairing only** (CSO + devex confirm). Default-denied per-pairing grants + revocation are sufficient for v1.4.7. Global policy registry remains path-α (separate ticket: "DOS-? v1.4.7+ MCP global briefing policy registry").
 
-- **Sensitivity rendering at handler boundary.** The briefing payload includes claims with `ClaimSensitivity` per ADR-0125. Handler MUST filter to the caller's `read.entity_names` scope grant; PII-tier claims (file paths, raw entity names, raw claim text in aggregates) must be redacted when the caller's manifest does not grant the corresponding read scope. Same redaction rules as v1.4.5 `WorkspaceGraphProjection v1`.
-- **Per-pairing tool grant default = denied.** New pairings do NOT auto-receive briefing access. The operator (pairing manifest editor) must explicitly grant `dailyos.read.daily_briefing` and `dailyos.read.meeting_briefing` scopes + Invocable exposure tier at pairing time.
-- **Per-invocation rate limit budget = conservative.** Operator-tunable, but the recommended default for briefing tools is `60 calls / hour` per `(McpClientId, ScopedName)` — substantially lower than read-tool defaults — to reduce inference-attack surface.
-- **Audit detail includes briefing fingerprint.** The audit row's `params_hash` covers the briefing date / meeting_id; response_hash covers the rendered output. Operators can detect anomalous briefing-replay patterns by grepping audit log for `event="mcp.tool_invoked"` + `detail.tool_name="dailyos.read.daily_briefing"` + abnormal cadence.
+7. **Q2 sign-off folded — manifest scope authorization + uniform unavailable response** (CSO conditional sign-off). Combined gate.
 
-## 4. Coordination with v1.4.2 W3-C WordPress MCP adapter
+8. **Singleton substrate hardening filed as separate tickets, NOT folded into this amendment** (per `feedback_review_loop_diminishing_returns_means_scope_is_wrong` + `feedback_l2_path_alpha_to_maintenance_project`):
+   - **DOS-? "MCP pairing credential-theft defense"** (challenge #1) — host/client-key binding, one-time pairing codes, short pairing TTL, operator-visible device identity. Real substrate work for v1.4.7+; not blocking this amendment because the post-pairing trust contract already covers replay (per ADR-0102 §C.bis.replay/refresh/schema/fail-closed which CSO independently verified holds).
+   - **DOS-? "MCP per-user global briefing rate-limit budget"** (challenge #4) — path-coalesced anomaly detection across W1-A direct + W3-C WP paths. Substrate work for v1.4.7+.
+   - **DOS-? "MCP scope grant UI: no glob, explicit briefing scope, confirmation copy"** (challenge #5) — operator UI work, post-v1.4.7.
+   - **DOS-? "MCP response_hash side-channel mitigation"** (challenge #2) — per-row salt or security-admin-only fingerprint querying. Substrate work for v1.4.7+.
+   - **DOS-? "MCP operator pairing UX: briefing intelligence section"** (devex #1) — operator-facing docs + manifest UI changes. Post-v1.4.7.
+   - **DOS-? "MCP rate-limit config keys + retry-after surfacing"** (devex #2) — DOS-175 should make `rate_limit_max=60`, `rate_limit_window_secs=3600` discoverable; gateway's `ToolError::RateLimited { retry_after_seconds }` already exists in W1-A so this is documentation + config wiring, not substrate.
+   - **DOS-? "MCP audit dashboard query for briefing replay anomaly detection"** (devex #3) — explicit SQL query schema for operator dashboards.
+   - **DOS-? "MCP two-paths-one-ability operator runbook"** (devex #4) — pre-W2-A docs work; how to grant/revoke each path independently; how to audit both sources via `actor_kind` filter.
 
-Per wave plan reorientation (2026-05-15), v1.4.2 W3-C already ships a WordPress-mediated MCP server via the WP MCP Adapter with a DailyOS ability allowlist + dedicated low-cap WP user + read-mostly defaults. v1.4.7 is the **second MCP path** — direct headless MCP from runtime to Claude Desktop / Cursor / other agents.
+   These are real, named, scoped — filed in this amendment rather than folded keeps the amendment as a policy decision (its proper shape) rather than turning it into a substrate-hardening initiative.
 
-This amendment specifies the coexistence:
+---
 
-- **Both paths consume the SAME ability** (`get_daily_briefing`). Producer/renderer split per ADR-0130 already supports surface-agnostic producer abilities.
-- **Per-tool exposure tier is per-pairing** — a single operator might grant briefing access to the WP user (W3-C path) but deny it to a Claude Desktop pairing (W1-A direct path), or vice versa. The manifest schema supports this naturally; no new substrate.
-- **No duplicate audit rows.** Each invocation through either path writes ONE audit row attributed to its respective `Actor::McpClient` variant; the audit log tags the invocation source via the existing `actor_kind` audit field (see audit_log.rs:38 + W1-A audit.rs).
-- **Operator runbook** (path-α maintenance ticket, NOT blocking W2-A): document the two-paths-one-ability model for downstream operator dashboards. Cross-link to ADR-0129 (composable surfaces) + ADR-0130 (composition contract).
+## 1. What this amendment unblocks (unchanged from cycle 1)
 
-## 5. Audit + signal payload changes (NONE required)
+v1.4.7 W2-A (DOS-175) ships two MCP tools wrapping the v1.4.3 `get_daily_briefing` ability:
+- `dailyos.read.daily_briefing` — current-day briefing
+- `dailyos.read.meeting_briefing(meeting_id)` — prep briefing for a specific meeting
 
-This amendment adds no new audit event types, no new signal types, no new claim types. The W1-A substrate (audit.rs `event="mcp.tool_invoked"` + SignalType::McpToolInvoked) handles briefing invocations identically to any other tool. The amendment is a scope decision, not a substrate change.
+The v1.4.3 carve-out blocks them pending this amendment.
+
+## 2. Why MCP exposure is appropriate now (unchanged + CSO verified)
+
+The v1.4.3 carve-out predates v1.4.7 W1-A's MCP trust contract. Pre-W1-A, MCP exposure meant unauthenticated unbounded ability invocation. v1.4.7 W1-A landed (commits `45b3f53d`..`3e5d7155` on `v1.4.7-w1-foundation`; L2 unanimous APPROVE; CSO confirmed in this cycle's review: "No new transport replay vector found. ADR-0102 nonce consume + per-response refresh + fail-closed semantics are implemented in `auth.rs`/`gateway.rs` as described.") Every MCP-originated invocation now passes through:
+
+1. Pairing handshake → server-issued `McpClientId` + operator-set manifest
+2. Transport HMAC-SHA256 signing over canonical-JSON envelope including `request_nonce`; key wrapped in `Zeroizing`
+3. Server-side nonce ledger consume-once + fail-closed (per ADR-0102 §C.bis.replay/refresh/schema/fail-closed)
+4. Server-side manifest scope authorization (caller-asserted scopes rejected)
+5. Per-tool exposure tier (None / MetadataOnly / Invocable; default None)
+6. Per `(McpClientId, ScopedName)` rate limit with atomic BEGIN IMMEDIATE
+7. Audit attribution with keyed HMAC-SHA256 hashes (no raw payloads)
+8. Signal emission via `McpToolInvoked` / `McpInvocationRejected` (NonPiiMetadata)
+
+Pre-W1-A threat model (unauthenticated MCP exposure of personal briefing intelligence) no longer applies.
+
+## 3. Briefing-specific protections (cycle-2 sensitivity gate composed)
+
+Beyond W1-A's universal gates, DOS-175 (W2-A) MUST honor these briefing-specific ACs:
+
+1. **Sensitivity rendering composes the centralized claim sensitivity gate** (cycle-2 fix #3 per architect MED). DOS-175 handler routes briefing output through `services::claims::render` (or the equivalent centralized sensitivity rendering path per ADR-0125 + ADR-0108) using the caller's manifest-resolved scopes. PII-tier claims (file paths, raw entity names, raw claim text in aggregates) redact when caller's manifest does not grant the corresponding read scope (`read.entity_names`). NO parallel redaction logic in the handler.
+
+2. **Per-pairing tool grant default = denied** (unchanged). New pairings receive no briefing access by default. Operator must explicitly grant `dailyos.read.daily_briefing` and `dailyos.read.meeting_briefing` scopes + Invocable exposure tier at pairing time.
+
+3. **Per-invocation rate limit default = 60 calls/hour** (unchanged from cycle 1). Operator-tunable.
+
+4. **Uniform unavailable response for meeting_briefing(meeting_id)** (cycle-2 fix #4 per CSO HIGH + challenge HIGH). DOS-175 handler returns `{status: "unavailable", reason_class: "unavailable"}` (NOT distinguishing nonexistent / scope-insufficient / sensitivity-filtered / stale-beyond-freshness — uniform shape) for ALL of:
+   - meeting_id not in caller's accessible meeting set
+   - meeting exists but scope insufficient for entity_names disclosure
+   - meeting exists, accessible, but ClaimSensitivity gate filters all surfaceable claims
+   - meeting exists but briefing freshness exceeds operator-configured threshold (stale)
+   
+   No timing distinction either (10ms floor from W1-A AC-12 applies). Existence oracle defense.
+
+5. **Audit covers unavailable responses** (cycle-2 fix #5 per CSO #2). Because unavailable is a successful typed result, W1-A's success-path audit naturally fingerprints it via `params_hash` over `(meeting_id)`. Operators detect probing via duplicate `params_hash` across many `conversation_handle`s. No new audit substrate needed.
+
+## 4. Coordination with v1.4.2 W3-C WordPress MCP Adapter (cycle-2 corrected)
+
+Per cycle-2 fix #1 + #2 (architect HIGH convergent):
+
+- **Both paths consume the SAME ability** (`get_daily_briefing`). Producer/renderer split per ADR-0130 supports surface-agnostic producer abilities.
+- **Different actor classes, distinguishable in audit**:
+  - W1-A direct path (Claude Desktop / Cursor / other agents over loopback HTTP or stdio MCP) → `Actor::McpClient { client_id, conversation_handle }` → audit `actor_kind = "mcp_client"`
+  - W3-C WP MCP Adapter path (WordPress block + adapter) → `Actor::SurfaceClient { instance, scopes }` per ADR-0111 §8 + ADR-0129 §4 → audit `actor_kind = "surface_client"`
+- **Different policy stores per path** (cycle-2 fix #2):
+  - W1-A direct: `mcp_client_manifest` + `mcp_tool_grant` rows (v241 migration; loaded by `services::mcp_v2::auth`)
+  - W3-C WP: WP capability + WP MCP Adapter allowlist + `SurfaceClient` scope grants per ADR-0111 §8
+  - Operator MUST grant briefing access in BOTH places independently — no shared manifest schema, no implicit propagation.
+- **No duplicate audit rows** — each invocation through either path writes ONE audit row attributed to its respective Actor variant; the audit log's `actor_kind` field distinguishes the source.
+- **Operator runbook for two-paths coordination** filed as separate ticket (cycle-2 fix #8 — "DOS-? MCP two-paths-one-ability operator runbook").
+
+## 5. Audit + signal payload changes (NONE required) (unchanged)
+
+This amendment adds no new audit event types, no new signal types, no new claim types. The W1-A substrate handles briefing invocations identically to any other tool. The amendment is a scope decision, not a substrate change.
 
 ## 6. Acceptance
 
-- **CSO L0 sign-off** on this amendment (mandatory; this whole document is the artifact).
-- **No code changes** — this is a scope/policy amendment that unblocks W2-A. Implementation lands in DOS-175 (W2-A).
-- **W2-A DOS-175 L0 packet** (separate) MUST cite this amendment as predecessor + enumerate the §3 briefing-specific protections in its AC.
+- **CSO L0 sign-off** on this amendment (Q1 + Q2 cycle-1 sign-offs folded per cycle-2 fix #6 + #7).
+- **No code changes in this amendment** — scope/policy only. Implementation lands in DOS-175 (W2-A).
+- **W2-A DOS-175 L0 packet** (separate) MUST cite this amendment as predecessor + enumerate §3 ACs in its own AC (especially #1 sensitivity-gate composition + #4 uniform unavailable response + #5 audit fingerprinting).
 
-## 7. Path-α (file as Maintenance, not blocking this amendment)
+## 7. Spinoff Linear tickets (cycle-2 fix #8 filed list)
 
-- Operator runbook for two-paths-one-ability briefing exposure (§4 final bullet) — DX docs work, ship with W3-C/W2-A operator-facing guidance.
-- Per-tool rate-limit policy registry (recommended defaults across all v1.4.7 tools, not just briefing) — substrate hardening for v1.4.7+.
+Filed to DailyOS Maintenance project (`b8e6aea4-d47e-4f3a-b03d-a05bec914aeb`) per path-α discipline:
 
-## 8. Open questions
+- "MCP pairing credential-theft defense" (challenge #1; substrate)
+- "MCP per-user global briefing rate-limit budget" (challenge #4; substrate)
+- "MCP scope grant UI: no glob, explicit briefing scope, confirmation copy" (challenge #5; UX)
+- "MCP response_hash side-channel mitigation" (challenge #2; substrate)
+- "MCP operator pairing UX: briefing intelligence section" (devex #1; docs + UI)
+- "MCP rate-limit config keys + retry-after surfacing" (devex #2; docs + DOS-175 AC reference)
+- "MCP audit dashboard query for briefing replay anomaly detection" (devex #3; ops dashboards)
+- "MCP two-paths-one-ability operator runbook" (devex #4; pre-W2-A docs)
 
-| # | Question | Default | Resolution path |
-|---|---|---|---|
-| Q1 | Should briefing-tool exposure be opt-in-per-pairing OR opt-in-per-tool-globally-then-per-pairing? | per-pairing only (operator decides at pairing handshake; no global toggle) | CSO at L0 sign-off |
-| Q2 | Should `meeting_briefing(meeting_id)` validate the caller's user-context implicit access to the meeting OR rely solely on the manifest scope grant? | manifest scope grant ONLY (W1-A trust model is gateway-mediated; ability-internal user-context checks would re-introduce the layered-auth pattern the trust contract was designed to remove) | CSO at L0 sign-off |
-| Q3 | Should the v1.4.2 W3-C WP MCP adapter need a parallel amendment for its briefing exposure? | Yes, separate amendment specific to W3-C path; not blocking this one | filed as DOS-625 (suggested) |
+## 8. Open questions — none remaining (CSO Q1 + Q2 signed off in cycle 1+2; cycle-2 folded)
 
-## 9. Reviewer dispatch
+## 9. Reviewer dispatch (cycle 2)
 
-This amendment IS a CSO L0 review artifact. Dispatch:
-- **CSO** (mandatory primary) — security threat-model review per ADR-0102 §C four-gate trust contract; verify briefing-specific protections in §3 are sufficient; sign off on §8 Q1+Q2 defaults.
-- **/codex challenge** (adversarial) — try to break the amendment: missing threat-model angles, attribution gaps, replay/enumeration vectors specific to briefing intelligence.
-- **architect-reviewer** (substrate) — verify §4 coexistence story holds against ADR-0129/ADR-0130 + audit_log.rs actor_kind tagging.
-- **/plan-devex-review** (DX) — verify operator pairing experience (Q1 default).
+- **CSO** (mandatory primary) — verify Q1 + Q2 sign-offs folded correctly + new §3 #4 uniform unavailable response is sufficient existence-oracle defense
+- **/codex challenge** (adversarial) — verify the 8 spinoff tickets actually capture the cycle-1 findings adequately; nothing dropped that should block
+- **architect-reviewer** (substrate) — verify cycle-2 fix #1+#2 actor_kind framing + #3 sensitivity composition match ADR-0111/0125/0129/0130
+- **/plan-devex-review** (DX) — verify cycle-2 fix #8 ticket-filing-vs-folding split is the right call vs cycle-1 ask
