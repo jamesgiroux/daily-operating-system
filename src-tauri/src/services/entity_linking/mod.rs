@@ -62,6 +62,7 @@ pub async fn evaluate(
             phases::run_phases(&service_ctx, &ctx, db)
         })
         .await
+        .map_err(String::from)
 }
 
 // ---------------------------------------------------------------------------
@@ -250,6 +251,7 @@ pub async fn manual_set_primary(
             phases::run_phases(&service_ctx, &ctx, db)
         })
         .await
+        .map_err(String::from)
 }
 
 pub async fn manual_dismiss(
@@ -337,6 +339,7 @@ pub async fn manual_dismiss(
             phases::run_phases(&service_ctx, &ctx, db)
         })
         .await
+        .map_err(String::from)
 }
 
 pub async fn manual_undismiss(
@@ -410,6 +413,7 @@ pub async fn manual_undismiss(
             phases::run_phases(&service_ctx, &ctx, db)
         })
         .await
+        .map_err(String::from)
 }
 
 // ---------------------------------------------------------------------------
@@ -447,6 +451,7 @@ pub async fn confirm_stakeholder_suggestion(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 pub(crate) fn confirm_stakeholder_suggestion_inner(
@@ -496,6 +501,7 @@ pub async fn dismiss_stakeholder_suggestion(
             dismiss_stakeholder_suggestion_inner(&service_ctx, db, &account_id, &person_id)
         })
         .await
+        .map_err(String::from)
 }
 
 pub(crate) fn dismiss_stakeholder_suggestion_inner(

@@ -877,6 +877,7 @@ pub async fn enrich_entity(
             Ok(())
         })
         .await
+        .map_err(String::from)
     {
         log::warn!("reset circuit breaker before manual refresh failed: {e}");
     }
@@ -1773,6 +1774,7 @@ pub async fn update_intelligence_field(
             Ok(())
         })
         .await
+        .map_err(String::from)
 }
 
 /// Bulk-replace the stakeholder list in an entity's intelligence.json.
@@ -1955,6 +1957,7 @@ pub async fn update_stakeholders(
             Ok(())
         })
         .await
+        .map_err(String::from)
 }
 
 /// Dismiss an intelligence item, creating a tombstone to prevent re-creation.
@@ -2177,6 +2180,7 @@ pub async fn dismiss_intelligence_item(
             Ok(())
         })
         .await
+        .map_err(String::from)
 }
 
 /// Recompute health dimensions for an account without full re-enrichment.
@@ -2477,6 +2481,7 @@ pub async fn track_recommendation(
             Ok(id)
         })
         .await
+        .map_err(String::from)
 }
 
 /// Dismiss a recommended action — removes it from intelligence and
@@ -2588,6 +2593,7 @@ pub async fn dismiss_recommendation(
             Ok(())
         })
         .await
+        .map_err(String::from)
 }
 
 ///  / Wave 0e: Mark an open commitment as done.
@@ -2730,6 +2736,7 @@ pub async fn mark_commitment_done(
             Ok(())
         })
         .await
+        .map_err(String::from)
 }
 
 /// Get recommended actions for all entities (for use in the actions page).
@@ -4989,7 +4996,8 @@ mod live_acceptance_tests {
                         db.upsert_entity_intelligence(&prev)
                             .map_err(|e| e.to_string())
                     })
-                    .await;
+                    .await
+                    .map_err(String::from);
             }
             None => {
                 let entity_id_for_delete = entity_id.clone();
@@ -4998,7 +5006,8 @@ mod live_acceptance_tests {
                         db.delete_entity_intelligence(&entity_id_for_delete)
                             .map_err(|e| e.to_string())
                     })
-                    .await;
+                    .await
+                    .map_err(String::from);
             }
         }
 

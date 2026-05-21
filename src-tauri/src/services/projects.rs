@@ -58,6 +58,7 @@ pub async fn get_projects_list(state: &AppState) -> Result<Vec<ProjectListItem>,
             Ok(items)
         })
         .await
+        .map_err(String::from)
 }
 
 /// Get child projects for a parent project.
@@ -108,6 +109,7 @@ pub async fn get_child_projects_list(
             Ok(items)
         })
         .await
+        .map_err(String::from)
 }
 
 /// Get full detail for a project by ID.
@@ -230,6 +232,7 @@ pub async fn get_project_detail(
             })
         })
         .await
+        .map_err(String::from)
 }
 
 /// Create a new project with workspace files.
@@ -292,7 +295,7 @@ pub async fn create_project(
 
             Ok(id_clone)
         })
-        .await
+        .await.map_err(String::from)
 }
 
 /// Update a single structured field on a project.
@@ -389,7 +392,7 @@ pub async fn update_project_field(
 
             Ok(())
         })
-        .await
+        .await.map_err(String::from)
 }
 
 /// Update the notes field on a project.
@@ -457,6 +460,7 @@ pub async fn update_project_notes(
             Ok(())
         })
         .await
+        .map_err(String::from)
 }
 
 /// Bulk-create projects from a list of names.

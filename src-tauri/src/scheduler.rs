@@ -657,7 +657,8 @@ impl Scheduler {
                     Some("scheduler_task"),
                 )
             })
-            .await;
+            .await
+            .map_err(String::from);
     }
 
     async fn schedule_scheduler_retry(
@@ -691,7 +692,8 @@ impl Scheduler {
                     attempt,
                 )
             })
-            .await;
+            .await
+            .map_err(String::from);
 
         if retry_attempt >= MAX_SCHEDULED_RETRIES_PER_DAY {
             log::error!(

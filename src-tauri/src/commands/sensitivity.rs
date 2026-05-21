@@ -34,4 +34,5 @@ pub async fn reveal_sensitive_claim_text(
             )
         })
         .await
+        .map_err(String::from)
 }

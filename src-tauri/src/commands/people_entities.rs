@@ -20,6 +20,7 @@ pub async fn get_people(
                 .map_err(|e| e.to_string())
         })
         .await
+        .map_err(String::from)
 }
 
 /// Person detail result including signals, linked entities, and recent meetings.
@@ -94,6 +95,7 @@ pub async fn search_people(
     state
         .db_read(move |db| db.search_people(&query, 50).map_err(|e| e.to_string()))
         .await
+        .map_err(String::from)
 }
 
 /// Update a single field on a person (role, organization, notes, relationship).
@@ -119,6 +121,7 @@ pub async fn update_person(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 /// Link a person to an entity (account/project).
@@ -149,6 +152,7 @@ pub async fn link_person_entity(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 /// Unlink a person from an entity.
@@ -173,6 +177,7 @@ pub async fn unlink_person_entity(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 /// Get people linked to an entity.
@@ -191,6 +196,7 @@ pub async fn get_people_for_entity(
                 .map_err(|e| e.to_string())
         })
         .await
+        .map_err(String::from)
 }
 
 /// Get people who attended a specific meeting.
@@ -209,6 +215,7 @@ pub async fn get_meeting_attendees(
                 .map_err(|e| e.to_string())
         })
         .await
+        .map_err(String::from)
 }
 
 // =========================================================================
@@ -433,6 +440,7 @@ pub async fn get_meeting_entities(
                 .map_err(|e| e.to_string())
         })
         .await
+        .map_err(String::from)
 }
 
 /// Reassign a meeting's entity with full cascade to actions, captures, and intelligence.
@@ -562,6 +570,7 @@ pub async fn remove_project_keyword(
             crate::services::mutations::remove_project_keyword(&ctx, db, &project_id, &keyword)
         })
         .await
+        .map_err(String::from)
 }
 
 /// Remove a keyword from an account's auto-extracted keyword list.
@@ -582,6 +591,7 @@ pub async fn remove_account_keyword(
             crate::services::mutations::remove_account_keyword(&ctx, db, &account_id, &keyword)
         })
         .await
+        .map_err(String::from)
 }
 
 // =========================================================================
@@ -620,6 +630,7 @@ pub async fn create_person(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 /// Merge two people: transfer all references from `remove_id` to `keep_id`, then delete the removed person.
@@ -642,6 +653,7 @@ pub async fn merge_people(
             crate::services::people::merge_people(&ctx, db, &app_state, &keep_id, &remove_id)
         })
         .await
+        .map_err(String::from)
 }
 
 /// Delete a person and all their references. Also removes their filesystem directory.
@@ -662,6 +674,7 @@ pub async fn delete_person(
             crate::services::people::delete_person(&ctx, db, &app_state, &person_id)
         })
         .await
+        .map_err(String::from)
 }
 
 /// Enrich a person with intelligence assessment (relationship intelligence).
@@ -726,6 +739,7 @@ pub async fn submit_intelligence_feedback(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 /// Submit a consolidated intelligence correction.
@@ -782,6 +796,7 @@ pub async fn submit_intelligence_correction(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 /// Get all feedback records for an entity.
@@ -798,6 +813,7 @@ pub async fn get_entity_feedback(
     state
         .db_read(move |db| db.get_entity_feedback(&entity_id, &entity_type))
         .await
+        .map_err(String::from)
 }
 
 // =========================================================================
@@ -872,6 +888,7 @@ pub async fn get_linked_entities_for_owner(
             Ok(results)
         })
         .await
+        .map_err(String::from)
 }
 
 /// Purge inferred account_domains before  flag flip (admin/devtools).
@@ -892,6 +909,7 @@ pub async fn rebuild_account_domains(state: State<'_, Arc<AppState>>) -> Result<
                 .map(|_| "account_domains rebuild complete".to_string())
         })
         .await
+        .map_err(String::from)
 }
 
 /// Get all active suppression tombstones for an entity.
@@ -910,4 +928,5 @@ pub async fn get_entity_suppressions(
                 .map_err(|e| e.to_string())
         })
         .await
+        .map_err(String::from)
 }

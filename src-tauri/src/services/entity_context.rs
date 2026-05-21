@@ -61,6 +61,7 @@ pub async fn get_entries(
                 .collect()
         })
         .await
+        .map_err(String::from)
 }
 
 /// Create a new user-authored entity context note.
@@ -119,6 +120,7 @@ pub async fn create_entry(
             entity_context_entry_for_claim(claim)
         })
         .await
+        .map_err(String::from)
 }
 
 /// Update an existing user note by superseding the old immutable claim.
@@ -179,6 +181,7 @@ pub async fn update_entry(
             Ok(())
         })
         .await
+        .map_err(String::from)
 }
 
 /// Delete an entity context note by withdrawing its claim.
@@ -221,6 +224,7 @@ pub async fn delete_entry(
             Ok(())
         })
         .await
+        .map_err(String::from)
 }
 
 /// Migrate legacy notes from the people table into user_note claims.

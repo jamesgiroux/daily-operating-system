@@ -11,6 +11,7 @@ use chrono::{DateTime, Utc};
 use crate::bridges::{
     AttestationDecision, AttestationRequestId, BridgeSurfaceError, UserAttestationRequest,
 };
+use crate::db_service::DbAccessError;
 use crate::types::{
     CalendarEvent, Config, ExecutionRecord, ExecutionTrigger, GoogleAuthStatus, TranscriptRecord,
     WorkflowId, WorkflowStatus,
@@ -1450,7 +1451,7 @@ impl AppState {
     ///
     /// The closure receives `&ActionDb` and runs on a dedicated OS thread —
     /// it never blocks the Tokio runtime.
-    pub async fn db_read<T, F>(&self, f: F) -> Result<T, String>
+    pub async fn db_read<T, F>(&self, f: F) -> Result<T, DbAccessError>
     where
         F: FnOnce(&crate::db::ActionDb) -> Result<T, String> + Send + 'static,
         T: Send + 'static,
@@ -1476,23 +1477,25 @@ impl AppState {
                     .reader()
                     .call(move |conn| {
                         let db = crate::db::ActionDb::from_conn(conn);
-                        Ok(f(db))
+                        Ok(f(db).map_err(DbAccessError::from))
                     })
                     .await
-                    .map_err(|e| format!("DB read error: {e}"))?;
+                    .map_err(DbAccessError::db_read)?;
             }
         }
 
         // Startup fallback: DbService not yet initialized. Open a fresh
         // connection directly (- no persistent sync handle).
         let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-            .map_err(|e| format!("Database unavailable: failed to open DB ({e})"))?;
-        f(&db)
+            .map_err(|e| {
+                DbAccessError::from(format!("Database unavailable: failed to open DB ({e})"))
+            })?;
+        f(&db).map_err(DbAccessError::from)
     }
 
     /// Run a mutating closure on the writer connection. Serialized -- only one
     /// write runs at a time, preventing WAL contention.
-    pub async fn db_write<T, F>(&self, f: F) -> Result<T, String>
+    pub async fn db_write<T, F>(&self, f: F) -> Result<T, DbAccessError>
     where
         F: FnOnce(&crate::db::ActionDb) -> Result<T, String> + Send + 'static,
         T: Send + 'static,
@@ -1518,18 +1521,20 @@ impl AppState {
                     .writer()
                     .call(move |conn| {
                         let db = crate::db::ActionDb::from_conn(conn);
-                        Ok(f(db))
+                        Ok(f(db).map_err(DbAccessError::from))
                     })
                     .await
-                    .map_err(|e| format!("DB write error: {e}"))?;
+                    .map_err(DbAccessError::db_write)?;
             }
         }
 
         // Startup fallback: DbService not yet initialized. Open a fresh
         // connection directly (- no persistent sync handle).
         let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-            .map_err(|e| format!("Database unavailable: failed to open DB ({e})"))?;
-        f(&db)
+            .map_err(|e| {
+                DbAccessError::from(format!("Database unavailable: failed to open DB ({e})"))
+            })?;
+        f(&db).map_err(DbAccessError::from)
     }
 
     /// Save execution history to disk

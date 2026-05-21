@@ -263,7 +263,7 @@ pub fn run() {
                                                 )
                                                 .map_err(|e| format!("DOS-7 cutover: {e}"))
                                             })
-                                            .await
+                                            .await.map_err(String::from)
                                     }
                                 }
                             };
@@ -511,7 +511,7 @@ pub fn run() {
                         db.reclassify_meeting_types_from_attendees()
                             .map_err(|e| e.to_string())
                     })
-                    .await;
+                    .await.map_err(String::from);
                 match result {
                     Ok(n) if n > 0 => log::info!(
                         "reclassify_meeting_types_from_attendees: re-labelled {n} meetings"
@@ -539,7 +539,7 @@ pub fn run() {
                             &user_domains,
                         )
                     })
-                    .await;
+                    .await.map_err(String::from);
                 match result {
                     Ok((touched, new)) if new > 0 => log::info!(
                         "stakeholder_domains boot sweep: {} new domains across {} accounts",

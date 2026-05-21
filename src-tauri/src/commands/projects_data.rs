@@ -116,6 +116,7 @@ pub async fn get_project_ancestors(
                 .map_err(|e| e.to_string())
         })
         .await
+        .map_err(String::from)
 }
 
 /// Create a new project.
@@ -196,7 +197,10 @@ pub async fn enrich_project(
 )]
 #[tauri::command]
 pub async fn backup_database(state: tauri::State<'_, Arc<AppState>>) -> Result<String, String> {
-    state.db_read(crate::db_backup::backup_database).await
+    state
+        .db_read(crate::db_backup::backup_database)
+        .await
+        .map_err(String::from)
 }
 
 #[tauri::command]
@@ -309,6 +313,7 @@ pub async fn rebuild_database(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 /// Get the latest hygiene scan report
@@ -413,7 +418,10 @@ pub fn run_hygiene_scan_now(state: State<'_, Arc<AppState>>) -> Result<HygieneSt
 pub async fn get_duplicate_people(
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::hygiene::DuplicateCandidate>, String> {
-    state.db_read(crate::hygiene::detect_duplicate_people).await
+    state
+        .db_read(crate::hygiene::detect_duplicate_people)
+        .await
+        .map_err(String::from)
 }
 
 /// Detect potential duplicate people for a specific person.
@@ -435,6 +443,7 @@ pub async fn get_duplicate_people_for_person(
                 .collect())
         })
         .await
+        .map_err(String::from)
 }
 
 // =============================================================================
@@ -460,6 +469,7 @@ pub async fn archive_account(
             crate::services::accounts::archive_account(&ctx, db, &app_state, &id, archived)
         })
         .await
+        .map_err(String::from)
 }
 
 /// Merge source account into target account.
@@ -481,6 +491,7 @@ pub async fn merge_accounts(
             crate::services::accounts::merge_accounts(&ctx, db, &app_state, &from_id, &into_id)
         })
         .await
+        .map_err(String::from)
 }
 
 /// Archive or unarchive a project.
@@ -502,6 +513,7 @@ pub async fn archive_project(
             crate::services::projects::archive_project(&ctx, db, &app_state, &id, archived)
         })
         .await
+        .map_err(String::from)
 }
 
 /// Archive or unarchive a person.
@@ -523,6 +535,7 @@ pub async fn archive_person(
             crate::services::people::archive_person(&ctx, db, &app_state, &id, archived)
         })
         .await
+        .map_err(String::from)
 }
 
 /// Get archived accounts.
@@ -537,6 +550,7 @@ pub async fn get_archived_accounts(
     state
         .db_read(|db| db.get_archived_accounts().map_err(|e| e.to_string()))
         .await
+        .map_err(String::from)
 }
 
 /// Get archived projects.
@@ -551,6 +565,7 @@ pub async fn get_archived_projects(
     state
         .db_read(|db| db.get_archived_projects().map_err(|e| e.to_string()))
         .await
+        .map_err(String::from)
 }
 
 /// Get archived people with signals.
@@ -568,6 +583,7 @@ pub async fn get_archived_people(
                 .map_err(|e| e.to_string())
         })
         .await
+        .map_err(String::from)
 }
 
 /// Restore an archived account with optional child restoration.
@@ -589,6 +605,7 @@ pub async fn restore_account(
             crate::services::accounts::restore_account(&ctx, db, &account_id, restore_children)
         })
         .await
+        .map_err(String::from)
 }
 
 // =============================================================================
@@ -639,6 +656,7 @@ pub async fn bulk_create_accounts(
             crate::services::accounts::bulk_create_accounts(&ctx, db, workspace, &names)
         })
         .await
+        .map_err(String::from)
 }
 
 /// Bulk-create projects from a list of names. Returns created project IDs.
@@ -666,6 +684,7 @@ pub async fn bulk_create_projects(
             crate::services::projects::bulk_create_projects(&ctx, db, workspace, &names)
         })
         .await
+        .map_err(String::from)
 }
 
 // =============================================================================
@@ -703,6 +722,7 @@ pub async fn record_account_event(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 /// Get account events for a given account.
@@ -721,4 +741,5 @@ pub async fn get_account_events(
                 .map_err(|e| e.to_string())
         })
         .await
+        .map_err(String::from)
 }

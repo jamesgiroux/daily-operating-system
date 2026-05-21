@@ -57,6 +57,7 @@ pub async fn get_processing_history(
     state
         .db_read(move |db| db.get_processing_log(lim).map_err(|e| e.to_string()))
         .await
+        .map_err(String::from)
 }
 
 // =============================================================================
@@ -121,7 +122,10 @@ pub async fn clear_demo_data(state: State<'_, Arc<AppState>>) -> Result<String, 
 pub async fn get_app_state(
     state: State<'_, Arc<AppState>>,
 ) -> Result<crate::demo::AppStateRow, String> {
-    state.db_read(crate::demo::get_app_state).await
+    state
+        .db_read(crate::demo::get_app_state)
+        .await
+        .map_err(String::from)
 }
 
 /// Mark the post-wizard tour as completed.
@@ -678,6 +682,7 @@ pub async fn get_ai_usage_diagnostics(
             })
         })
         .await
+        .map_err(String::from)
 }
 
 #[tauri::command]
@@ -1412,6 +1417,7 @@ pub async fn search_global(
                 .map_err(|e| e.to_string())
         })
         .await
+        .map_err(String::from)
 }
 
 #[allow(
@@ -1428,6 +1434,7 @@ pub async fn rebuild_search_index(state: State<'_, Arc<AppState>>) -> Result<usi
                 .map_err(|e| e.to_string())
         })
         .await
+        .map_err(String::from)
 }
 
 // =============================================================================
@@ -1445,6 +1452,7 @@ pub async fn get_sync_freshness(
     state
         .db_read(|db| crate::connectivity::get_sync_freshness(db.conn_ref()))
         .await
+        .map_err(String::from)
 }
 
 // =============================================================================
@@ -1464,6 +1472,7 @@ pub async fn export_all_data(
     state
         .db_read(move |db| crate::export::export_data_zip(db, &path))
         .await
+        .map_err(String::from)
 }
 
 // =============================================================================
@@ -1478,7 +1487,10 @@ pub async fn export_all_data(
 pub async fn get_data_summary(
     state: State<'_, Arc<AppState>>,
 ) -> Result<crate::privacy::DataSummary, String> {
-    state.db_read(crate::privacy::get_data_summary).await
+    state
+        .db_read(crate::privacy::get_data_summary)
+        .await
+        .map_err(String::from)
 }
 
 #[allow(
@@ -1489,7 +1501,10 @@ pub async fn get_data_summary(
 pub async fn clear_intelligence(
     state: State<'_, Arc<AppState>>,
 ) -> Result<crate::privacy::ClearReport, String> {
-    state.db_write(crate::privacy::clear_intelligence).await
+    state
+        .db_write(crate::privacy::clear_intelligence)
+        .await
+        .map_err(String::from)
 }
 
 #[allow(
@@ -1593,6 +1608,7 @@ pub async fn get_db_growth_report(
     state
         .db_read(|db| Ok(crate::db::data_lifecycle::db_growth_report(db)))
         .await
+        .map_err(String::from)
 }
 
 // =============================================================================
@@ -1649,6 +1665,7 @@ pub async fn get_feedback_diagnostics(
             })
         })
         .await
+        .map_err(String::from)
 }
 
 // =============================================================================
@@ -1665,6 +1682,7 @@ pub async fn bulk_recompute_health(state: State<'_, Arc<AppState>>) -> Result<us
     state
         .db_write(crate::services::intelligence::bulk_recompute_health)
         .await
+        .map_err(String::from)
 }
 
 // =============================================================================

@@ -155,6 +155,7 @@ pub async fn get_accounts_list(
     state
         .db_read(crate::services::accounts::get_accounts_list)
         .await
+        .map_err(String::from)
 }
 
 /// Lightweight list of ALL accounts (parents + children) for entity pickers.
@@ -178,6 +179,7 @@ pub async fn get_accounts_for_picker(
     state
         .db_read(crate::services::accounts::get_accounts_for_picker)
         .await
+        .map_err(String::from)
 }
 
 /// Get child accounts for a parent.
@@ -193,6 +195,7 @@ pub async fn get_child_accounts_list(
     state
         .db_read(move |db| crate::services::accounts::get_child_accounts_list(db, &parent_id))
         .await
+        .map_err(String::from)
 }
 
 /// Get ancestor accounts for breadcrumb navigation.
@@ -211,6 +214,7 @@ pub async fn get_account_ancestors(
                 .map_err(|e| e.to_string())
         })
         .await
+        .map_err(String::from)
 }
 
 /// Get all descendant accounts for a given ancestor.
@@ -229,6 +233,7 @@ pub async fn get_descendant_accounts(
                 .map_err(|e| e.to_string())
         })
         .await
+        .map_err(String::from)
 }
 
 /// Convert a DbAccount to an AccountListItem with computed signals.
@@ -268,6 +273,7 @@ pub async fn get_account_team(
     state
         .db_read(move |db| db.get_account_team(&account_id).map_err(|e| e.to_string()))
         .await
+        .map_err(String::from)
 }
 
 /// Add a person-role pair to an account team.
@@ -297,6 +303,7 @@ pub async fn add_account_team_member(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 /// Replace all roles for a team member (single-select role change).
@@ -326,6 +333,7 @@ pub async fn set_team_member_role(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 /// Remove a person-role pair from an account team.
@@ -355,6 +363,7 @@ pub async fn remove_account_team_member(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 /// Update a single structured field on an account.
@@ -385,6 +394,7 @@ pub async fn update_account_field(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 /// persist a single gap-row field on
@@ -416,6 +426,7 @@ pub async fn update_technical_footprint_field(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 //: Set the user's manual health sentiment on an account,
@@ -446,6 +457,7 @@ pub async fn set_user_health_sentiment(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 /// Update the note on the latest sentiment journal row for an
@@ -477,6 +489,7 @@ pub async fn update_latest_sentiment_note(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 /// Persist a triage-card snooze. `triage_key` is the frontend's
@@ -509,6 +522,7 @@ pub async fn snooze_triage_item(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 /// Mark a triage card resolved. Permanent for the lifetime of the
@@ -539,6 +553,7 @@ pub async fn resolve_triage_item(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 /// Return the active snooze/resolution rows for an entity so the
@@ -558,6 +573,7 @@ pub async fn list_triage_snoozes(
             crate::services::accounts::list_triage_snoozes(db, &entity_type, &entity_id)
         })
         .await
+        .map_err(String::from)
 }
 
 /// Regression guard: Retry a failed (or re-run a prior) risk-briefing job.
@@ -638,6 +654,7 @@ pub async fn correct_account_product(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 #[allow(
@@ -707,6 +724,7 @@ pub async fn accept_account_field_conflict(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 #[allow(
@@ -739,6 +757,7 @@ pub async fn dismiss_account_field_conflict(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 /// Update account notes (narrative field — JSON only, not SQLite).
@@ -767,6 +786,7 @@ pub async fn update_account_notes(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 /// Update account strategic programs (narrative field — JSON only).
@@ -795,6 +815,7 @@ pub async fn update_account_programs(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 /// Create a new account. Creates SQLite record + workspace files.
@@ -828,6 +849,7 @@ pub async fn create_account(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -1015,6 +1037,7 @@ pub async fn backfill_internal_meeting_associations(
             crate::services::accounts::backfill_internal_meeting_associations(&ctx, db)
         })
         .await
+        .map_err(String::from)
 }
 
 // =============================================================================
@@ -1048,6 +1071,7 @@ pub async fn update_stakeholder_engagement(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 /// Update assessment text for a stakeholder.
@@ -1077,6 +1101,7 @@ pub async fn update_stakeholder_assessment(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 /// Get all stakeholder roles for a person across all their linked accounts.
@@ -1095,6 +1120,7 @@ pub async fn get_person_stakeholder_roles(
                 .map_err(|e| e.to_string())
         })
         .await
+        .map_err(String::from)
 }
 
 /// Add a role to a stakeholder (multi-role).
@@ -1124,6 +1150,7 @@ pub async fn add_stakeholder_role(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 /// Remove a specific role from a stakeholder.
@@ -1153,6 +1180,7 @@ pub async fn remove_stakeholder_role(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 /// Get pending stakeholder suggestions for an account.
@@ -1171,6 +1199,7 @@ pub async fn get_stakeholder_suggestions(
                 .map_err(|e| e.to_string())
         })
         .await
+        .map_err(String::from)
 }
 
 /// Accept a stakeholder suggestion.
@@ -1196,6 +1225,7 @@ pub async fn accept_stakeholder_suggestion(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 /// Dismiss a stakeholder suggestion.
@@ -1221,6 +1251,7 @@ pub async fn dismiss_stakeholder_suggestion(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 // =============================================================================
@@ -1269,6 +1300,7 @@ pub async fn get_pending_stakeholder_suggestions(
                 .collect())
         })
         .await
+        .map_err(String::from)
 }
 
 /// Confirm a pending_review stakeholder: promotes status to 'active'.
@@ -1332,6 +1364,7 @@ pub async fn get_entity_files(
     state
         .db_read(move |db| db.get_entity_files(&entity_id).map_err(|e| e.to_string()))
         .await
+        .map_err(String::from)
 }
 
 /// Re-scan an entity's directory and return the updated file list.
@@ -1690,6 +1723,7 @@ pub async fn chat_search_content(
             Ok(matches)
         })
         .await
+        .map_err(String::from)
 }
 
 #[allow(
@@ -1803,6 +1837,7 @@ pub async fn chat_query_entity(
             Ok(response)
         })
         .await
+        .map_err(String::from)
 }
 
 #[allow(
@@ -1842,6 +1877,7 @@ pub async fn chat_get_briefing(
             Ok(response)
         })
         .await
+        .map_err(String::from)
 }
 
 #[allow(
@@ -1910,6 +1946,7 @@ pub async fn chat_list_entities(
             Ok(items)
         })
         .await
+        .map_err(String::from)
 }
 
 // ──: Entity Intelligence Enrichment via Claude Code ────────

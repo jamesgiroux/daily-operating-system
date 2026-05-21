@@ -751,7 +751,7 @@ async fn rehydrate_sessions_from_keychain(
                 }
                 Ok::<_, String>(())
             })
-            .await;
+            .await.map_err(String::from);
         // Audit emission. The audit log is file-based (JSONL via
         // app_state.audit_log) and does NOT contend with the SQLite writer
         // mutex, safe to emit in tight loop.
@@ -812,7 +812,8 @@ async fn flush_session_activity_on_shutdown(app_state: &Arc<AppState>) {
                 .map_err(|e| e.to_string())?;
             Ok::<_, String>(())
         })
-        .await;
+        .await
+        .map_err(String::from);
 }
 
 /// SHA256 hex hash for audit emission. Prevents raw session_id /
@@ -1194,7 +1195,8 @@ async fn signed_transport_response(
             };
             Ok::<_, String>((result, scopes_for_audit))
         })
-        .await;
+        .await
+        .map_err(String::from);
 
     let validated = match readonly_outcome {
         Ok((Ok(validated), _)) => validated,
@@ -1216,7 +1218,8 @@ async fn signed_transport_response(
                         )
                         .map_err(|e| e.to_string())
                     })
-                    .await;
+                    .await
+                    .map_err(String::from);
                 if let Ok(Some(target)) = cleanup_target {
                     if let Some(reason) = cleanup_reason {
                         for event in
@@ -1358,6 +1361,7 @@ async fn pairing_handshake_response(
                             .map_err(|error| error.to_string())
                     })
                     .await
+                    .map_err(String::from)
                 {
                     Ok(outcome) => {
                         emit_pairing_audit_event(&app_state, &outcome.audit);
@@ -1416,6 +1420,7 @@ async fn pairing_handshake_response(
             )
         })
         .await
+        .map_err(String::from)
     {
         Ok(Ok(ids)) => Some(ids),
         Ok(Err(SurfacePairingError::BadRequest(_))) => None,
@@ -1465,6 +1470,7 @@ async fn pairing_handshake_response(
             Ok(surface_pairing::complete_handshake(&ctx, db, input))
         })
         .await
+        .map_err(String::from)
     {
         Ok(Ok(outcome)) => outcome,
         Ok(Err(error)) => {
@@ -1564,6 +1570,7 @@ async fn surface_session_refresh_response(
                 .map_err(|error| error.to_string())
         })
         .await
+        .map_err(String::from)
     {
         Ok(identity) => identity,
         Err(error) => {
@@ -1646,6 +1653,7 @@ async fn record_signed_transport_failure(
             ))
         })
         .await
+        .map_err(String::from)
     {
         Ok(Ok(outcome)) => outcome,
         Ok(Err(error)) => {
@@ -1705,6 +1713,7 @@ async fn compensate_failed_session_registration(
             Ok(surface_pairing::revoke_pairing(&ctx, db, input))
         })
         .await
+        .map_err(String::from)
     {
         Ok(Ok((event, cleanup_target))) => {
             for cleanup_event in surface_pairing::cleanup_session_keychain_entries(
@@ -1879,6 +1888,7 @@ async fn surface_event_log_response(
             Ok(Some((event, correction)))
         })
         .await
+        .map_err(String::from)
     {
         Ok(projection) => projection,
         Err(error) => {
@@ -1942,6 +1952,7 @@ async fn surface_keyring_response(
                 .map_err(|error| error.to_string())
         })
         .await
+        .map_err(String::from)
     {
         Ok(keyring) => {
             emit_pairing_audit_event(
@@ -2563,7 +2574,8 @@ async fn surface_subscribe_response(
                 .subscribe_stateless(db, &request, actor)
                 .map_err(|e| e.to_string())
         })
-        .await;
+        .await
+        .map_err(String::from);
     match result {
         Ok(ack) => json_response(
             StatusCode::OK,
@@ -2611,7 +2623,8 @@ async fn surface_pairing_refresh_scopes_response(
             let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &external);
             Ok::<_, String>(surface_pairing::refresh_pairing_scopes(&ctx, db, input))
         })
-        .await;
+        .await
+        .map_err(String::from);
 
     match result {
         Ok(Ok(outcome)) => {
@@ -2671,7 +2684,8 @@ async fn surface_replay_response(
                 .replay_stateless(db, &wire.replay, &actor, &wire.subjects)
                 .map_err(|e| e.to_string())
         })
-        .await;
+        .await
+        .map_err(String::from);
     match result {
         Ok(response) => json_response(
             StatusCode::OK,
@@ -2745,7 +2759,8 @@ async fn surface_nonce_issue_response(
                 request_meta,
             ))
         })
-        .await;
+        .await
+        .map_err(String::from);
 
     match result {
         Ok(Ok(issue)) => {
@@ -3101,7 +3116,8 @@ async fn surface_nonce_verify_response(
                 })),
             }
         })
-        .await;
+        .await
+        .map_err(String::from);
 
     match result {
         Ok(Ok(VerifyWireThroughOutcome::Recorded { verify, feedback })) => {
@@ -3297,7 +3313,9 @@ async fn surface_projection_preflight_response(
             Ok((mode, Some(outcome)))
         })
         .await
-        .map_err(|error| SurfaceHttpError::from_pairing_error(SurfacePairingError::Write(error)))?;
+        .map_err(|error| {
+            SurfaceHttpError::from_pairing_error(SurfacePairingError::Write(error.to_string()))
+        })?;
 
     let (mode, Some(outcome)) = verification else {
         return Ok(None);
@@ -3614,6 +3632,7 @@ async fn stale_version_error_response(
             Ok((correction, cursor))
         })
         .await
+        .map_err(String::from)
     {
         Ok(projection) => projection,
         Err(error) => {

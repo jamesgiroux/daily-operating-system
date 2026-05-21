@@ -365,7 +365,7 @@ async fn process_gravatar_queue(state: &AppState) -> u32 {
 
                 Ok(())
             })
-            .await;
+            .await.map_err(String::from);
 
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
@@ -452,7 +452,7 @@ async fn insert_clay_sync(state: &AppState, person_id: &str) {
             ).map_err(|e| format!("insert_clay_sync failed: {}", e))?;
             Ok(())
         })
-        .await;
+        .await.map_err(String::from);
 }
 
 async fn mark_clay_completed(state: &AppState, person_id: &str) {
@@ -471,7 +471,8 @@ async fn mark_clay_completed(state: &AppState, person_id: &str) {
             ).map_err(|e| format!("mark_clay_completed failed: {}", e))?;
             Ok(())
         })
-        .await;
+        .await
+        .map_err(String::from);
 }
 
 async fn mark_clay_failed(state: &AppState, person_id: &str, error: &str) {
@@ -490,5 +491,5 @@ async fn mark_clay_failed(state: &AppState, person_id: &str, error: &str) {
             ).map_err(|e| format!("mark_clay_failed failed: {}", e))?;
             Ok(())
         })
-        .await;
+        .await.map_err(String::from);
 }

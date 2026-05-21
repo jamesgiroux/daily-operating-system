@@ -258,7 +258,7 @@ pub async fn update_user_entity_field(
 
             Ok(())
         })
-        .await
+        .await.map_err(String::from)
 }
 
 /// Get all user context entries.
@@ -291,6 +291,7 @@ pub async fn get_user_context_entries(state: &AppState) -> Result<Vec<UserContex
             Ok(entries)
         })
         .await
+        .map_err(String::from)
 }
 
 /// Create a new user context entry and generate its embedding.
@@ -340,6 +341,7 @@ pub async fn create_user_context_entry(
             Ok(entry)
         })
         .await
+        .map_err(String::from)
 }
 
 /// Update an existing user context entry and regenerate its embedding.
@@ -373,7 +375,7 @@ pub async fn update_user_context_entry(
         }
 
         Ok(())
-    }).await
+    }).await.map_err(String::from)
 }
 
 /// Delete a user context entry and its associated embedding.
@@ -422,6 +424,7 @@ pub async fn delete_user_context_entry(
             Ok(())
         })
         .await
+        .map_err(String::from)
 }
 
 /// Embed context entry text using the document prefix for asymmetric retrieval.

@@ -289,7 +289,8 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
             let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
             crate::services::accounts::refresh_lifecycle_states_for_dashboard(&ctx, db, &engine)
         })
-        .await;
+        .await
+        .map_err(String::from);
 
     let tz_for_live: chrono_tz::Tz = state
         .config
@@ -393,6 +394,7 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
             }))
         })
         .await
+        .map_err(String::from)
     {
         Ok(Some(snap)) => snap,
         _ => return None,
@@ -615,7 +617,8 @@ pub async fn get_dashboard_data(state: &AppState) -> DashboardResult {
             let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
             crate::services::accounts::refresh_lifecycle_states_for_dashboard(&ctx, db, &engine)
         })
-        .await;
+        .await
+        .map_err(String::from);
 
     let started = std::time::Instant::now();
     let mut db_busy = false;
@@ -733,6 +736,7 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
                 .collect())
         })
         .await
+        .map_err(String::from)
     {
         Ok(meetings) => meetings,
         Err(e) => {
@@ -843,6 +847,7 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
             })
         })
         .await
+        .map_err(String::from)
     {
         Ok(snap) => Some(snap),
         Err(_) => {
@@ -1239,6 +1244,7 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
             }
         })
         .await
+        .map_err(String::from)
     {
         Ok(f) => f,
         Err(_) => DataFreshness::Unknown,
@@ -1320,6 +1326,7 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
         match state
             .db_read(|db| db.get_email_sync_stats().map_err(|e| e.to_string()))
             .await
+            .map_err(String::from)
         {
             Ok(stats) => stats.last_fetch_at.as_ref().map(|last| EmailSyncStatus {
                 state: if stats.failed > 0 {

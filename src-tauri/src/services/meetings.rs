@@ -1652,6 +1652,7 @@ pub async fn get_meeting_history_detail(
             })
         })
         .await
+        .map_err(String::from)
 }
 
 /// Search meetings by title, summary, or prep context.
@@ -1736,6 +1737,7 @@ pub async fn search_meetings(
             Ok(results)
         })
         .await
+        .map_err(String::from)
 }
 
 /// Capture meeting outcomes (actions, wins, risks) from post-meeting capture UI.
@@ -1876,7 +1878,7 @@ pub async fn capture_meeting_outcome(
             }
             Ok(())
         })
-        .await;
+        .await.map_err(String::from);
 
     // Append wins to impact log
     let impact_log = workspace.join("_today").join("90-impact-log.md");
@@ -2105,6 +2107,7 @@ pub async fn get_meeting_timeline(
             Ok(result)
         })
         .await
+        .map_err(String::from)
 }
 
 /// Find the most recent past meeting that shares at least one entity with the current meeting.
@@ -2316,7 +2319,8 @@ pub async fn get_meeting_intelligence(
                     .map_err(|e| e.to_string())?;
                     Ok(())
                 })
-                .await;
+                .await
+                .map_err(String::from);
             log::info!(
                 "Auto-persisted meeting from live calendar cache: {}",
                 meeting_id
@@ -2510,7 +2514,8 @@ pub async fn get_meeting_intelligence(
             let _ = db.clear_meeting_new_signals(&write_meeting_id);
             Ok::<(), String>(())
         })
-        .await;
+        .await
+        .map_err(String::from);
 
     Ok(intel)
 }
@@ -5009,7 +5014,8 @@ pub async fn attach_meeting_transcript(
                     }
                     Ok(())
                 })
-                .await;
+                .await
+                .map_err(String::from);
         }
 
         if has_outcomes {
@@ -5253,7 +5259,7 @@ pub async fn attach_meeting_transcript(
 
                         Ok(())
                     })
-                    .await;
+                    .await.map_err(String::from);
             }
         } else {
             // No outcomes extracted — remove from guard so the user can retry.

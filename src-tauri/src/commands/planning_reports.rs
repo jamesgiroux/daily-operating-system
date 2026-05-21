@@ -335,6 +335,7 @@ pub async fn generate_meeting_agenda_message_draft(
             ))
         })
         .await
+        .map_err(String::from)
 }
 
 /// Update user-authored agenda items on a meeting prep file.
@@ -365,6 +366,7 @@ pub async fn update_meeting_user_agenda(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 /// Update user-authored notes on a meeting prep file.
@@ -391,6 +393,7 @@ pub async fn update_meeting_user_notes(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 /// Update a single field in a meeting's frozen prep JSON (user correction).
@@ -421,6 +424,7 @@ pub async fn update_meeting_prep_field(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 /// Resolve the on-disk path for a meeting's prep JSON file.
@@ -898,6 +902,7 @@ pub async fn backfill_historical_meetings(
     state
         .db_write(move |db| crate::backfill_meetings::backfill_historical_meetings(db, &config))
         .await
+        .map_err(String::from)
 }
 
 // ==================== Domain Backfill ====================
@@ -975,6 +980,7 @@ pub async fn backfill_account_domains(
             Ok((accounts_populated.len(), domains_added, errors))
         })
         .await
+        .map_err(String::from)
 }
 
 // ==================== Archive Recovery ====================
@@ -1003,6 +1009,7 @@ pub async fn recover_archived_transcripts(
             crate::workflow::recover::recover_archived_transcripts(&workspace, db, &user_domains)
         })
         .await
+        .map_err(String::from)
 }
 
 // ==================== Risk Briefing ====================
@@ -1045,6 +1052,7 @@ pub async fn get_risk_briefing(
             crate::services::intelligence::get_risk_briefing(db, &app_state, &account_id)
         })
         .await
+        .map_err(String::from)
 }
 
 // =============================================================================
@@ -1096,6 +1104,7 @@ pub async fn get_report(
             crate::services::reports::get_report_cached(db, &entity_id, &entity_type, &report_type)
         })
         .await
+        .map_err(String::from)
 }
 
 /// Save user edits to a report (persists content_json back to DB).
@@ -1125,6 +1134,7 @@ pub async fn save_report(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 /// Fetch all reports for an entity.
@@ -1143,4 +1153,5 @@ pub async fn get_reports_for_entity(
             crate::services::reports::get_all_reports_for_entity(db, &entity_id, &entity_type)
         })
         .await
+        .map_err(String::from)
 }

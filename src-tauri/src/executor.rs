@@ -472,7 +472,8 @@ impl Executor {
                     Some("workflow"),
                 )
             })
-            .await;
+            .await
+            .map_err(String::from);
     }
 
     async fn handle_scheduled_workflow_failure(&self, msg: &SchedulerMessage, error: &str) {
@@ -501,7 +502,8 @@ impl Executor {
                     attempt,
                 )
             })
-            .await;
+            .await
+            .map_err(String::from);
 
         if msg.retry_attempt >= MAX_SCHEDULED_WORKFLOW_RETRIES {
             log::error!(

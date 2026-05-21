@@ -20,6 +20,7 @@
 //!   SQLCipher WAL read-verify races on `Connection::open()` verification.
 
 use std::any::Any;
+use std::fmt;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -63,6 +64,118 @@ pub enum PooledCallError {
     Closed,
     #[error("pooled call panicked: {0}")]
     Panic(String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DbAccessErrorClass {
+    Retryable,
+    Other,
+}
+
+#[derive(Debug)]
+pub enum DbAccessError {
+    Sqlite {
+        context: Option<&'static str>,
+        source: rusqlite::Error,
+    },
+    Other(String),
+}
+
+impl DbAccessError {
+    pub fn db_read(error: PooledCallError) -> Self {
+        Self::from_pooled_call("DB read error", error)
+    }
+
+    pub fn db_write(error: PooledCallError) -> Self {
+        Self::from_pooled_call("DB write error", error)
+    }
+
+    fn from_pooled_call(context: &'static str, error: PooledCallError) -> Self {
+        match error {
+            PooledCallError::Rusqlite(source) => Self::Sqlite {
+                context: Some(context),
+                source,
+            },
+            other => Self::Other(format!("{context}: {other}")),
+        }
+    }
+
+    pub fn class(&self) -> DbAccessErrorClass {
+        match self.rusqlite_error() {
+            Some(rusqlite::Error::SqliteFailure(sqlite_error, _))
+                if matches!(
+                    sqlite_error.code,
+                    rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
+                ) =>
+            {
+                DbAccessErrorClass::Retryable
+            }
+            _ => DbAccessErrorClass::Other,
+        }
+    }
+
+    pub fn is_retryable(&self) -> bool {
+        self.class() == DbAccessErrorClass::Retryable
+    }
+
+    pub fn rusqlite_error(&self) -> Option<&rusqlite::Error> {
+        match self {
+            Self::Sqlite { source, .. } => Some(source),
+            Self::Other(_) => None,
+        }
+    }
+}
+
+impl fmt::Display for DbAccessError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Sqlite {
+                context: Some(context),
+                source,
+            } => write!(f, "{context}: {source}"),
+            Self::Sqlite {
+                context: None,
+                source,
+            } => write!(f, "{source}"),
+            Self::Other(message) => f.write_str(message),
+        }
+    }
+}
+
+impl std::error::Error for DbAccessError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Sqlite { source, .. } => Some(source),
+            Self::Other(_) => None,
+        }
+    }
+}
+
+impl From<rusqlite::Error> for DbAccessError {
+    fn from(source: rusqlite::Error) -> Self {
+        Self::Sqlite {
+            context: None,
+            source,
+        }
+    }
+}
+
+impl From<String> for DbAccessError {
+    fn from(message: String) -> Self {
+        Self::Other(message)
+    }
+}
+
+impl From<&str> for DbAccessError {
+    fn from(message: &str) -> Self {
+        Self::Other(message.to_string())
+    }
+}
+
+impl From<DbAccessError> for String {
+    fn from(error: DbAccessError) -> Self {
+        error.to_string()
+    }
 }
 
 /// Shared worker internals.
@@ -677,6 +790,35 @@ mod tests {
         fn drop(&mut self) {
             uninstall_global();
         }
+    }
+
+    fn sqlite_error(code: std::os::raw::c_int, message: &str) -> rusqlite::Error {
+        rusqlite::Error::SqliteFailure(rusqlite::ffi::Error::new(code), Some(message.to_string()))
+    }
+
+    #[test]
+    fn db_access_error_classifies_database_busy_as_retryable() {
+        let error = DbAccessError::from(sqlite_error(rusqlite::ffi::SQLITE_BUSY, "busy"));
+
+        assert_eq!(error.class(), DbAccessErrorClass::Retryable);
+        assert!(error.is_retryable());
+    }
+
+    #[test]
+    fn db_access_error_classifies_database_locked_as_retryable() {
+        let error = DbAccessError::from(sqlite_error(rusqlite::ffi::SQLITE_LOCKED, "locked"));
+
+        assert_eq!(error.class(), DbAccessErrorClass::Retryable);
+        assert!(error.is_retryable());
+    }
+
+    #[test]
+    fn db_access_error_classifies_constraint_violation_as_other() {
+        let error =
+            DbAccessError::from(sqlite_error(rusqlite::ffi::SQLITE_CONSTRAINT, "constraint"));
+
+        assert_eq!(error.class(), DbAccessErrorClass::Other);
+        assert!(!error.is_retryable());
     }
 
     fn encrypted_db_can_read(path: &std::path::Path, key: &EncryptionKey) -> bool {
