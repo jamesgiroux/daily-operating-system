@@ -1,6 +1,6 @@
 # L0 Packet — v1.4.5 W1-B — DOS-464 Workspace Source Registry + Path Validation
 
-**Current revision:** V1.1 (cycle 1 fold, 2026-05-20). See §2 Changelog.
+**Current revision:** V1.2 (cycle 2 fold, 2026-05-20). See §2 Changelog.
 
 ## 1. Header
 
@@ -14,6 +14,22 @@
 - **L2 reviewer matrix:** codex review + code-reviewer + architect-reviewer + **`/cso` re-review**
 
 ## 2. Changelog
+
+- **V1.2 (2026-05-20 — cycle 2 fold):** Cycle 2 returned architect APPROVE (clean) + `/cso` CONDITIONAL APPROVE (3 new LOW/MEDIUM nits → path-α) + codex challenge BLOCK (4 substantive: hardlink defense FALSE, symlink fixture conflicts algorithm, CI lint unscoped, reserved-name regex inconsistent) + codex consult BLOCK (5 substantive, 4 overlap). The class is genuine security architecture — codex reviewers correctly identified that V1.1's hardlink defense was overclaim, and the symlink algorithm + fixture had a logical contradiction. Per memory `feedback_reviewer_dissent_is_signal`, dissent wins. Folds:
+  1. **Hardlink defense corrected via `st_nlink > 1 → SymlinkRefused`** (challenge #1 + consult #1): cycle-1 fold #7 incorrectly claimed `fstat.dev == workspace_root_dev` caught same-device hardlinks-into-workspace. Codex correctly noted: an in-workspace path that is a hardlink to outside same-device content has in-workspace `canonical_path`, identical lstat/fstat dev+ino (the inode is shared), and passes ALL V1.1 checks while serving outside content. The actual defense is to refuse files with `st_nlink > 1` in the workspace at validation time — any hardlinked file in the workspace is suspect. Trade-off: legitimate hardlinks (rare in modern document workflows) are rejected. §7 step 5 adds: `if fstat.nlink > 1 → SymlinkRefused` (named broadly to capture the path-aliasing class; future variant rename to `HardLinkRefused` filed as Codebase Maintenance per architect F5/V1.1).
+  2. **Symlink algorithm + fixture reconciliation** (challenge #2 + consult #2): cycle-1 V1.1 algorithm (canonicalize FIRST then `O_NOFOLLOW`) makes `O_NOFOLLOW` vacuous because `canonicalize`/`realpath` already resolves all symlinks. After canonicalize, no symlinks remain to refuse. V1.2 keeps the canonicalize-first approach (simpler, matches POSIX best practice) and **removes `O_NOFOLLOW` from step 4** (no longer load-bearing). Fixture expectations corrected: outside-symlink (fixture #5) → `OutsideWorkspace` (canonicalize catches; not `SymlinkRefused`); symlink chain >1 hop (fixture #13) → `OutsideWorkspace` at canonicalize (chain resolves to outside target). The `SymlinkRefused` variant is repurposed for the V1.2 fold #1 hardlink rejection only.
+  3. **CI lint gate scoped to ingestion-call-site files** (challenge #3 + consult #5): cycle-1 V1.1 made the gate repo-wide which would trip existing non-ingestion callsites. V1.2 scopes the gate to a positive allowlist:
+     - **Forbidden in:** `src-tauri/src/services/workspace_ingestion/{pipeline,extract,registry}.rs`, `src-tauri/src/processor/**`, `src-tauri/src/watcher.rs`, `src-tauri/src/google_drive/poller.rs` + `sync.rs`, `src-tauri/src/granola/poller.rs`, `src-tauri/src/quill/poller.rs` — these are the ingestion code paths the wave plan §Architecture invariants identifies.
+     - **Allowed entry point:** `services::workspace_ingestion::registry::open_validated` only.
+     - Existing pre-v1.4.5 `fs::File::open` callsites elsewhere in the repo are grandfathered (not in scope).
+     - Allowlist marker: `// workspace-path-allowed: <one-line rationale>` (V1.1 fold #10 retained).
+  4. **Reserved-name regex inconsistency reconciled** (challenge #4 + consult #3): the slug regex `^[a-z][a-z0-9_-]{0,31}$` accepts lowercase `"con"` which is a Windows reserved name. Since Windows path validation is deferred to follow-up ticket (V1.1 fold #19), the Windows-reserved-name slug check is also deferred. V1.2 §8 explicitly notes: the test asserting `register_other(Account, "CON") → MalformedSlug` rejects on the uppercase regex constraint, NOT on Windows-reserved-name semantics. The case-INSENSITIVE Windows-reserved check lands in the Windows follow-up ticket together with the path validation work.
+  5. **EntityType::Other explicit handling** (consult #4): V1.2 §4 + §6 + §8 document that `crate::entity::EntityType::Other` is intentionally non-canonical for workspace category routing. `validate(category, EntityType::Other) → Err(CategoryNotAllowed { allowed: vec![] })` — Other-typed entities cannot bind workspace files in v1.4.5 (deferred to follow-up). `resolve_path(EntityType::Other, …)` returns Err via the validate gate. V1.2 §8 adds `entity_type_other_rejects_category_validation` test.
+  6. **§7 fixtures #10-13 (NAME_MAX, trailing-dot, ADS) explicitly enumerated** (consult #3): V1.1 changelog claimed them but the fixture list collapsed. V1.2 §7 enumerates each with expected `RejectionReason` variant per platform.
+  7. **NFKC normalization for registry-key/slug** (security SEC-W1B-010 from /cso cycle 2): V1.2 §7 specifies NFKC for path-component registry-key normalization (collapses compatibility-equivalent forms like fullwidth → ASCII); NFC retained for file-content paths. The `unicode-normalization` crate supports both.
+  8. **Adversarial concurrency fixture** (security SEC-W1B-011): V1.2 §7 adds fixture #14b — 1 attacker thread renaming target symlink in tight loop while N=8 readers call `open_validated`; every result is `Ok(identical FileIdentity)` or `Err(SymlinkRaced)`, never `Ok` with swapped inode.
+  9. **Btrfs subvolume / APFS firmlink residual** (security SEC-W1B-009): filed as Codebase Maintenance follow-up (V1.2 doesn't change the algorithm; just documents the cross-device check is load-bearing, not the hardlink-impossibility claim).
+  10. **Changelog overstatement** (consult #3): V1.1 fold #12 claimed fixtures that V1.2 now actually enumerates in §7 (fold #6 above).
 
 - **V1.1 (2026-05-20 — cycle 1 fold):** Cycle 1 returned architect CONDITIONAL APPROVE (4 findings), `/cso` BLOCK (2 HIGH + 4 MEDIUM + 2 LOW = 8 findings), codex challenge BLOCK (5 findings), codex consult BLOCK (6 findings). After dedup, ~20 unique findings across 4 classes. Per memory `feedback_zoom_out_for_class_pattern_in_l2_loop` the security-architecture class fires across 3 reviewers — V1.1 rewrites §7 from first principles rather than patching. Folds:
   1. **`data_source_json` seed serde shape corrected** (challenge #1 + consult #1 + bg-grep): canonical externally-tagged enum produces `{"workspace_file":{"kind":"inbox"}}`, NOT `{"kind":"workspace_file","name":{"kind":"inbox"}}`. §6 seed INSERT statements rewritten to canonical shape; §8 adds explicit serde-round-trip test against the live `DataSource` enum for every seeded row.
@@ -147,53 +163,78 @@ CREATE INDEX IF NOT EXISTS idx_wcr_entity_type ON workspace_category_registry (e
 
 ```rust
 pub fn open_validated(path: &Path) -> Result<(File, contracts::FileIdentity), contracts::RejectionReason> {
+    // V1.2 algorithm — canonicalize-first; O_NOFOLLOW removed (vacuous post-canonicalize);
+    // hardlink defense via st_nlink>1 refusal at fstat time.
+    //
     // Step 1: per-component rejection of `..` BEFORE canonicalize (defense in depth against
-    // canonicalize bugs + per-component validation closes URL-encoded variants like %2e%2e and
-    // NFC/NFD Unicode equivalents — the unicode-normalization crate is applied at this step).
-    // Step 2: canonicalize path; assert it is a strict child of WORKSPACE_ROOT (no equality with
-    // root; no escape). Equality with root → OutsideWorkspace (V1.1 fold #13 fixture).
+    //         canonicalize bugs + per-component validation closes URL-encoded variants like
+    //         %2e%2e and Unicode equivalents). For path components used as registry keys,
+    //         apply NFKC normalization via `unicode-normalization` crate (V1.2 fold #7 per
+    //         /cso SEC-W1B-010). For file-content path bytes, NFC only.
+    // Step 2: canonicalize path; assert it is a strict child of WORKSPACE_ROOT (no equality
+    //         with root; no escape). Equality with root → OutsideWorkspace. If canonicalize
+    //         resolves through a symlink chain to outside workspace → OutsideWorkspace.
+    //         (canonicalize/realpath resolves all symlinks; after this step no symlinks
+    //         remain in the path. V1.2 fold #2 removes the V1.1 O_NOFOLLOW open since it
+    //         is vacuous after canonicalize.)
     // Step 3: lstat the canonical path; record (lstat.dev, lstat.ino).
-    //         Assert lstat.dev == workspace_root_dev (cross-device escape rejection; covers
-    //         hardlinks-into-workspace from another mount AND bind-mounts over a subdir).
-    // Step 4: open the canonical path with O_NOFOLLOW (Unix:
-    //         std::os::unix::fs::OpenOptionsExt::custom_flags(libc::O_NOFOLLOW)). If the final
-    //         component is a symlink, open fails → return SymlinkRefused. If a directory
-    //         component is a symlink, the open follows it; the post-open fstat check below
-    //         catches that case.
-    // Step 5: fstat the open File handle; assert (fstat.dev, fstat.ino) == (lstat.dev, lstat.ino)
-    //         from step 3. If different → return SymlinkRaced (an attacker swapped between
-    //         canonicalize/lstat and open; race window closed by the post-open inode check).
-    //         Also assert fstat.dev == workspace_root_dev (V1.1 fold #7 hardlink + #8 bind-mount).
+    //         Assert lstat.dev == workspace_root_dev (cross-device escape: bind-mount over
+    //         subdir, or hardlink-into-workspace from another mount, both rejected here).
+    //         Per /cso SEC-W1B-009: the cross-device check is the load-bearing primitive;
+    //         hardlink-impossibility is a corollary, not the gate.
+    // Step 4: open the canonical path (plain open(2); no O_NOFOLLOW since canonicalize has
+    //         already resolved all symlinks).
+    // Step 5: fstat the open File handle.
+    //         (a) Assert (fstat.dev, fstat.ino) == (lstat.dev, lstat.ino) from step 3.
+    //             Mismatch → SymlinkRaced (TOCTOU race: attacker swapped target between
+    //             lstat and open; the post-open inode check closes the window).
+    //         (b) Assert fstat.dev == workspace_root_dev (defense in depth against step 3
+    //             lstat race; cross-device fail-safe).
+    //         (c) V1.2 fold #1: assert fstat.nlink == 1.
+    //             nlink > 1 means the inode has another directory entry somewhere — that
+    //             entry might be outside the workspace with arbitrary content. Refuse all
+    //             multi-link files in workspace as SymlinkRefused (variant repurposed for
+    //             the path-aliasing class; future rename to HardLinkRefused is path-α
+    //             Maintenance). Trade-off: legitimate hardlinks rejected; DailyOS workspace
+    //             documents don't use hardlinks in normal workflows.
     // Step 6: return (File, FileIdentity { canonical_path, device: fstat.dev, inode: fstat.ino }).
     // Windows: returns RejectionReason::OutsideWorkspace with a "platform not supported" log
-    // until follow-up ticket (V1.1 fold #19).
+    // until follow-up ticket (V1.1 fold #19). The follow-up will also cover the Windows
+    // case-INSENSITIVE reserved-name slug check (V1.2 fold #4).
 }
 ```
 
-### Negative fixture suite (V1.1 — 13 fixtures, all return typed `RejectionReason` with zero bytes read)
+### Negative fixture suite (V1.2 — 17 fixtures, all return typed `RejectionReason` with zero bytes read)
 
 1. **TOCTOU race**: validate → atomically swap symlink target between lstat and open → `SymlinkRaced`.
 2. **URL-encoded path traversal**: `%2e%2e/escape` → `PathTraversalAttempt`.
 3. **NFC/NFD Unicode normalization**: `\u{30CF}\u{309A}/../escape` equivalents → `PathTraversalAttempt`.
 4. **Absolute path**: `/etc/passwd` → `OutsideWorkspace`.
-5. **Symlink final-component pointing outside workspace**: → `SymlinkRefused` (`O_NOFOLLOW` refuses).
+5. **V1.2 — Symlink final-component pointing outside workspace**: → `OutsideWorkspace` (canonicalize resolves and catches; V1.2 corrects V1.1's `SymlinkRefused` claim).
 6. **Bare `..` component**: `notes/../escape` → `PathTraversalAttempt`.
-7. **V1.1 #7 — hardlink to `/etc/passwd`**: in-workspace path that is a hardlink to outside → `SymlinkRefused` (`fstat.dev != workspace_root_dev`).
-8. **V1.1 #8 — bind-mount tmpfs over workspace subdir**: workspace-relative path inside the bind mount → `SymlinkRefused` (cross-dev).
-9. **V1.1 #9 — case-insensitive lookup**: `Accounts/Acme/Presentations/x` vs `…/presentations/x` on case-insensitive FS → both succeed via lowercase normalization at the registry-key layer; explicitly tested.
-10. **V1.1 #12 — NUL byte in path**: `foo\0bar` → kernel-level rejection mapped to `PathTraversalAttempt`.
-11. **V1.1 #12 — PATH_MAX overflow**: path >4096 bytes → `PathTraversalAttempt`.
-12. **V1.1 #13 — strict-child root equality**: `canonical_path == WORKSPACE_ROOT` → `OutsideWorkspace`.
-13. **V1.1 #13 — symlink chain >1 hop**: A → B → outside → `SymlinkRefused` at A (`O_NOFOLLOW`).
-14. **V1.1 — concurrency positive**: N=8 parallel `open_validated` calls on same valid path return identical `FileIdentity`.
-15. **Positive**: valid workspace-relative path returns `(File, FileIdentity)` with `fstat`-derived device+inode.
+7. **V1.2 — hardlink to `/etc/passwd`**: in-workspace path that is a hardlink to outside (or to any other file regardless of device) → `SymlinkRefused` (`fstat.nlink > 1` per V1.2 fold #1).
+8. **V1.2 — bind-mount tmpfs over workspace subdir**: workspace-relative path inside the bind mount → `OutsideWorkspace` (canonicalize on the bind-mount path returns the bind-mount root which fails strict-child OR lstat.dev mismatch fires).
+9. **Case-insensitive lookup**: `Accounts/Acme/Presentations/x` vs `…/presentations/x` on case-insensitive FS → both succeed via NFKC + lowercase normalization at the registry-key layer.
+10. **NUL byte in path**: `foo\0bar` → kernel-level rejection mapped to `PathTraversalAttempt`.
+11. **V1.2 — NAME_MAX per-component overflow**: any single component >255 bytes → `PathTraversalAttempt`.
+12. **PATH_MAX overflow**: total path >4096 bytes → `PathTraversalAttempt`.
+13. **V1.2 — trailing-dot / trailing-space component**: `foo./bar` / `foo /bar` → `PathTraversalAttempt` (Windows-context attack; Unix-test gated as defense-in-depth even on Unix).
+14. **V1.2 — NTFS ADS (`file.txt:hidden`)**: → `PathTraversalAttempt` (Unix-test asserts the `:` character is rejected at lex stage; Windows-specific handling deferred to follow-up).
+15. **Strict-child root equality**: `canonical_path == WORKSPACE_ROOT` → `OutsideWorkspace`.
+16. **V1.2 — symlink chain >1 hop**: A → B → outside → `OutsideWorkspace` at canonicalize (chain resolves to outside target; V1.2 corrects V1.1's `SymlinkRefused` claim).
+17. **V1.2 — concurrency adversarial (security SEC-W1B-011)**: 1 attacker thread renaming target symlink in a tight loop while N=8 readers call `open_validated`; every result is either `Ok(identical FileIdentity)` or `Err(SymlinkRaced)`, never `Ok` with a swapped inode.
+18. **Concurrency positive**: N=8 parallel `open_validated` calls on same valid path return identical `FileIdentity`.
+19. **Positive**: valid workspace-relative path returns `(File, FileIdentity)` with `fstat`-derived device+inode + `fstat.nlink == 1`.
 
-### CI lint gate (V1.1 broadened per security SEC-005)
+### CI lint gate (V1.2 fold #3 — scoped to ingestion-call-site files only)
 
-`src-tauri/scripts/check_workspace_path_validation.sh` enforces a positive allowlist:
-- Forbidden: `std::fs::File::open`, `std::fs::OpenOptions::*::open`, `std::fs::read*`, `std::fs::metadata`, `std::fs::symlink_metadata`, `std::fs::read_link`, `std::fs::read_dir`, `tokio::fs::*`, `tokio::fs::OpenOptions::*`, `memmap2::Mmap::map`, any `BufReader::new(File::open(...))`/`BufReader::new(OpenOptions::*...)`.
-- Allowed entry point: `services::workspace_ingestion::registry::open_validated` only.
-- Allowlist marker (V1.1 fold #10 — replaces stale `dos-146-allowed`): `// workspace-path-allowed: <one-line rationale>`.
+`src-tauri/scripts/check_workspace_path_validation.sh` enforces a positive allowlist within an explicit file-path scope (V1.1's repo-wide scope would trip pre-existing non-ingestion callsites):
+
+- **Scope (forbidden patterns checked only in these files):** `src-tauri/src/services/workspace_ingestion/{pipeline,extract,registry}.rs`, `src-tauri/src/processor/**`, `src-tauri/src/watcher.rs`, `src-tauri/src/google_drive/{poller,sync}.rs`, `src-tauri/src/granola/poller.rs`, `src-tauri/src/quill/poller.rs` (the wave-plan §Architecture-invariants enumerated ingestion code paths).
+- **Forbidden patterns:** `std::fs::File::open`, `std::fs::OpenOptions::*::open`, `std::fs::read*`, `std::fs::metadata`, `std::fs::symlink_metadata`, `std::fs::read_link`, `std::fs::read_dir`, `tokio::fs::*`, `tokio::fs::OpenOptions::*`, `memmap2::Mmap::map`, any `BufReader::new(File::open(...))` / `BufReader::new(OpenOptions::*...)`.
+- **Allowed entry point:** `services::workspace_ingestion::registry::open_validated` only.
+- **Allowlist marker:** `// workspace-path-allowed: <one-line rationale>`.
+- Existing pre-v1.4.5 `fs::*::open` callsites in non-ingestion code (e.g., backup utilities, signing key reads, MCP transport) are out of scope; they are explicitly grandfathered. New code in those areas is unconstrained by this gate.
 
 ### Sensitivity
 

@@ -1,6 +1,6 @@
 # L0 Packet — v1.4.5 W1-C — DOS-465 Document/Entity Links + Ingestion Run Tracking
 
-**Current revision:** V1.1 (cycle 1 fold, 2026-05-20). See §2 Changelog.
+**Current revision:** V1.2 (cycle 2 fold, 2026-05-20). See §2 Changelog.
 
 ## 1. Header
 
@@ -14,6 +14,16 @@
 - **L2 reviewer matrix:** codex review + code-reviewer + architect-reviewer.
 
 ## 2. Changelog
+
+- **V1.2 (2026-05-20 — cycle 2 fold):** Cycle 2 returned architect CONDITIONAL APPROVE (2 SQL-spec tightening conditions) + codex challenge BLOCK (3 substantive — partial-unique doesn't enforce post-rejection, idempotency weaker than wave, service guard underspecified) + codex consult BLOCK (3 substantive — override_link/reject_link missing entity_type, UPSERT syntax wrong, test gap). Folds:
+  1. **`override_link` + `reject_link` take `entity_type`** (consult #1 + architect #1): both APIs now signature `(emitter: &dyn SignalEmitter, file_id: &str, entity_type: crate::entity::EntityType, entity_id: &str, actor: &str, …) -> Result<(), LinkError>`. The unique key is the `(file_id, entity_type, entity_id)` triple, so every link-mutation API must carry all three. Reuses `crate::entity::EntityType` (canonical per W1-B V1.1 fold #2; no reinvention).
+  2. **UPSERT syntax corrected** (architect #1 + consult #2): `INSERT INTO document_entity_links (...) VALUES (...) ON CONFLICT (file_id, entity_type, entity_id) WHERE rejected = 0 DO NOTHING RETURNING link_id`. The `WHERE rejected = 0` lives in the **conflict target**, not the action — SQLite UPSERT for partial unique indexes requires matching the partial predicate. §6 SQL block updated with the literal-correct form so the implementer doesn't relitigate.
+  3. **Service-layer tombstone guard** (challenge #1 + #2 + consult #2): partial unique on `WHERE rejected = 0` correctly prevents duplicate ACTIVE rows but does NOT prevent a NEW active row after a previous row flips `rejected = 1`. V1.2 adds explicit pre-insert tombstone lookup in `add_link`:
+     - For `attribution_source ∈ {Classifier, Backfill, DriveMetadata}`: pre-check `SELECT 1 FROM document_entity_links WHERE (file_id, entity_type, entity_id) = (?, ?, ?) AND rejected = 1` → if exists, return `LinkError::Tombstoned { rejected_at, rejected_reason }` without insert. Satisfies the Linear DOS-465 AC.
+     - For `attribution_source ∈ {EntityIntake, UserRelink, McpPlacement, Frontmatter}`: bypass the tombstone check — user/MCP/explicit-attribution sources can intentionally resurrect a previously rejected link. `LinkError` adds `Tombstoned { rejected_at, rejected_reason }` variant.
+  4. **Idempotency hardened with UNIQUE constraint** (challenge #3): v253 partial unique index `UNIQUE (file_id, content_sha256, mode) WHERE status = 'success'` replaces the V1.1 non-unique idempotency index. Service-layer `start_run` for `mode != Forced` does a `find_by_idempotency_key` pre-check; for `mode = Forced` (retry), the partial unique on `WHERE status = 'success'` allows the new in-progress row to coexist with the successful prior run.
+  5. **Test additions** (challenge + consult test-gap findings): `user_relink_after_tombstone_succeeds` (UserRelink source bypasses the guard); `duplicate_active_classifier_attempt_is_noop` (classifier source returns existing link id without new insert); `idempotency_unique_constraint_enforces_no_duplicate_successful_run` (verifies the v253 UNIQUE actually rejects a second success row).
+  6. **`add_link` return on conflict semantics** (architect #2): the implementer must follow `INSERT … ON CONFLICT DO NOTHING RETURNING link_id` with a `SELECT link_id WHERE …` fallback when RETURNING returns zero rows. Documented in §4 implementation notes.
 
 - **V1.1 (2026-05-20 — cycle 1 fold):** Cycle 1 returned architect APPROVE (no findings), codex challenge BLOCK (5 findings), codex consult BLOCK (5 findings; 4 unique after dedup). Codex dissenters were right per memory `feedback_reviewer_dissent_is_signal`. Folds:
   1. **`RunsRepo::start_run` takes a request struct** (challenge #1 + consult #1): signature is `start_run(seed: StartRunSeed) -> Result<IngestionRunId, RunsError>` where `StartRunSeed { file_id: String, mode: IngestionMode, content_sha256: String, file_size_bytes: u64, extractor_version: String, retry_of_run_id: Option<String> }`. All v253 NOT NULL columns are populated by the seed; `retry_of_run_id` carries retry lineage.
@@ -55,11 +65,11 @@ Per Linear DOS-465 issue body acceptance criteria: "Rejected links are not silen
   - `DocumentEntityLinkId(pub String)` newtype.
   - `LinkAttributionSource { EntityIntake, Frontmatter, Classifier, UserRelink, DriveMetadata, McpPlacement, Backfill }` enum (snake_case serde).
   - `DocumentEntityLink { link_id, file_id, entity_type, entity_id, attribution_source, confidence, rationale, actor, user_override: Option<lifecycle::UserOverride>, rejected, rejected_at, rejected_reason, created_at, updated_at }` (V1.1 fold #2: `user_override` matches W1-A's pattern; reuses `lifecycle::UserOverride` struct).
-  - `LinkError { NotFound, DuplicateActive, AlreadyRejected, EntityTypeUnknown, DbError(String) }` enum + Display + Error.
-  - `LinkRepo::add_link(file_id, entity_type, entity_id, attribution_source, confidence, rationale, actor) -> Result<DocumentEntityLinkId, LinkError>` — UPSERT semantics via partial unique index; returns existing link's id on conflict-do-nothing.
-  - `LinkRepo::list_links_for_file(file_id, include_rejected) -> Result<Vec<DocumentEntityLink>, LinkError>`.
-  - `LinkRepo::override_link(emitter: &dyn contracts::SignalEmitter, file_id: &str, entity_id: &str, actor: &str) -> Result<(), LinkError>` — calls `emitter.emit_link_changed(file_id, entity_id, actor)` after the row write; populates `user_override` per W1-A precedent (V1.1 fold #2).
-  - `LinkRepo::reject_link(file_id, entity_id, actor, reason) -> Result<(), LinkError>` — flips `rejected = 1`, writes `rejected_at/rejected_reason`. Per DOS-465 issue AC "Rejected links are not silently recreated" (V1.1 fold #6).
+  - `LinkError { NotFound, DuplicateActive, AlreadyRejected, Tombstoned { rejected_at: DateTime<Utc>, rejected_reason: String }, EntityTypeUnknown, DbError(String) }` enum + Display + Error. (V1.2 fold #3: `Tombstoned` variant for the pre-insert tombstone-guard rejection path.)
+  - `LinkRepo::add_link(file_id: &str, entity_type: crate::entity::EntityType, entity_id: &str, attribution_source: LinkAttributionSource, confidence: f64, rationale: Option<&str>, actor: &str) -> Result<DocumentEntityLinkId, LinkError>` — V1.2 fold #3 tombstone guard: classifier/backfill/drive sources pre-check for `rejected = 1` row → `LinkError::Tombstoned` if present. Entity-intake/user-relink/MCP/frontmatter sources bypass. UPSERT via `INSERT … ON CONFLICT (file_id, entity_type, entity_id) WHERE rejected = 0 DO NOTHING RETURNING link_id`; fallback `SELECT link_id WHERE …` when RETURNING returns zero rows.
+  - `LinkRepo::list_links_for_file(file_id: &str, include_rejected: bool) -> Result<Vec<DocumentEntityLink>, LinkError>`.
+  - `LinkRepo::override_link(emitter: &dyn contracts::SignalEmitter, file_id: &str, entity_type: crate::entity::EntityType, entity_id: &str, actor: &str) -> Result<(), LinkError>` — V1.2 fold #1: `entity_type` now in signature (matches unique key triple). Calls `emitter.emit_link_changed(file_id, entity_id, actor)` after row write; populates `user_override_actor` + `user_override_at`.
+  - `LinkRepo::reject_link(file_id: &str, entity_type: crate::entity::EntityType, entity_id: &str, actor: &str, reason: &str) -> Result<(), LinkError>` — V1.2 fold #1: `entity_type` now in signature. Flips `rejected = 1`, writes `rejected_at`/`rejected_reason`.
 
 ### Tests
 - `src-tauri/tests/workspace_ingestion_runs.rs` — `start_run` / `complete_run` / `find_by_idempotency_key` / retry lineage / state persistence (V1.1 fold #5).
@@ -118,8 +128,11 @@ CREATE TABLE IF NOT EXISTS document_ingestion_runs (
 
 CREATE INDEX IF NOT EXISTS idx_dir_file_id ON document_ingestion_runs (file_id);
 CREATE INDEX IF NOT EXISTS idx_dir_status ON document_ingestion_runs (status);
--- Idempotency key index.
-CREATE INDEX IF NOT EXISTS idx_dir_idempotency
+-- V1.2 fold #4: UNIQUE partial index enforces idempotency at SQL layer (not just lookup).
+-- Successful run rows are unique by (file_id, content_sha256, mode); Forced-mode retries
+-- coexist because in-progress rows aren't in the partial scope, and a new successful retry
+-- replaces the prior only via explicit re-run lineage tracking via retry_of_run_id.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_dir_idempotency_unique
     ON document_ingestion_runs (file_id, content_sha256, mode)
     WHERE status = 'success';
 ```
@@ -153,12 +166,22 @@ CREATE TABLE IF NOT EXISTS document_entity_links (
 
 CREATE INDEX IF NOT EXISTS idx_del_file_id ON document_entity_links (file_id);
 CREATE INDEX IF NOT EXISTS idx_del_entity ON document_entity_links (entity_type, entity_id);
--- V1.1 fold #3: prevent classifier-resurrection — no duplicate active link for same triple.
+-- V1.1 fold #3: prevent classifier-resurrection at SQL layer — no duplicate active link
+-- for same triple. V1.2 fold #2 documents the canonical SQLite UPSERT pattern:
+--   INSERT INTO document_entity_links (...) VALUES (...)
+--   ON CONFLICT (file_id, entity_type, entity_id) WHERE rejected = 0
+--   DO NOTHING RETURNING link_id;
+-- The WHERE clause lives in the conflict target (matches the partial unique predicate),
+-- not the action clause.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_del_active_unique
     ON document_entity_links (file_id, entity_type, entity_id)
     WHERE rejected = 0;
-CREATE INDEX IF NOT EXISTS idx_del_rejected
-    ON document_entity_links (rejected) WHERE rejected = 1;
+-- V1.2 fold #3: lookup index for the service-layer tombstone guard.
+-- add_link from classifier/backfill/drive sources runs a SELECT against this index
+-- before insert; presence of a rejected row blocks the insert with LinkError::Tombstoned.
+CREATE INDEX IF NOT EXISTS idx_del_rejected_lookup
+    ON document_entity_links (file_id, entity_type, entity_id)
+    WHERE rejected = 1;
 ```
 
 ## 7. Tests required
@@ -173,7 +196,10 @@ CREATE INDEX IF NOT EXISTS idx_del_rejected
   - **V1.1 fold #5:** `add_link` then `list_links_for_file(file_id, include_rejected=false)` returns the link; `include_rejected=true` returns rejected links too.
   - Multi-entity: same `file_id` with two different `(entity_type, entity_id)` → both rows present.
 - **`LinkRepo::override_link` signal emission:** writes the link AND calls `emitter.emit_link_changed(file_id, entity_id, actor)` on a mock `SignalEmitter` recorder. Populates `user_override_actor` + `user_override_at` per V1.1 fold #2.
-- **V1.1 fold #3 — `tombstone_prevents_classifier_resurrection`:** `add_link(A, B, ...)` → `reject_link(A, B, ..., reason)` → `add_link(A, B, ...)` again (simulating classifier re-running) → asserts no new active row; the rejected row remains; `list_links_for_file(file_id, include_rejected=false)` returns empty.
+- **V1.1 fold #3 / V1.2 fold #3 — `tombstone_prevents_classifier_resurrection`:** `add_link(file_id, EntityType::Account, "acme", Classifier, ...)` → `reject_link(file_id, EntityType::Account, "acme", actor, reason)` → `add_link(file_id, EntityType::Account, "acme", Classifier, ...)` again → asserts `Err(LinkError::Tombstoned)` (service guard blocks); the rejected row remains; `list_links_for_file(file_id, include_rejected=false)` returns empty.
+- **V1.2 fold #5 — `user_relink_after_tombstone_succeeds`:** same setup but the second `add_link` uses `attribution_source = UserRelink` → succeeds; a new active row is created (intentional user-driven resurrection per the AC carve-out).
+- **V1.2 fold #5 — `duplicate_active_classifier_attempt_is_noop`:** `add_link(...)` → second `add_link(...)` with identical triple → returns the existing `DocumentEntityLinkId` (no error); single active row in the table.
+- **V1.2 fold #5 — `idempotency_unique_constraint_enforces_no_duplicate_successful_run`:** `start_run + complete_run(success)` twice with same `(file_id, content_sha256, mode)` → second `complete_run` returns `RunsError::AlreadyCompleted` (or `DbError` from the UNIQUE constraint violation, depending on whether the service guard catches it first). Test asserts only one `status='success'` row exists.
 - **Multi-entity links:** one `file_id` can have multiple `(entity_type, entity_id)` active rows without partial-unique violation.
 - **CI gates:** `cargo clippy --lib -- -D warnings` clean; `tests/workspace_ingestion_no_substrate_reinvention.rs` (W1-A) still passes.
 
