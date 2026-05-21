@@ -1,0 +1,25 @@
+2. Symlink chain fixture contradicts the stated algorithm. §7 says canonicalize happens first; A→B→outside returns `OutsideWorkspace` before open. The fixture expects `SymlinkRefused` at A via `O_NOFOLLOW`, which cannot happen after canonicalizing to the outside target. Lines 31-32, 153-160, 187.
+
+3. CI lint gate is unscoped/unimplementable as written. A repo-wide forbid on `std::fs::read*`, `metadata`, `read_dir`, `OpenOptions`, etc. will trip many existing non-ingestion callsites; if the intended boundary is W2 ingestion reads only, the packet must specify scan scope and exceptions. Lines 191-196, 210-211.
+
+4. Reserved-name slug coverage is internally inconsistent. §2 says Windows reserved names as `register_other` slug reject; §8 tests `"CON"` while saying the regex accepts it, but the regex rejects uppercase. Lowercase `"con"` still passes, and Windows validation is deferred. Lines 30, 59, 140, 223.
+
+Substrate check: `CategoryNotAllowed`/`RegisterError` have no current code collision; `StartRunSeed` is not in this W1-B packet, only W1-C.
+
+codex
+VERDICT: BLOCK, not ready to close cycle 3.
+1. V1.2 fold #5 is not faithful: it claims §4/§6/§8 specify `EntityType::Other` rejection, but §4 has `resolve_path(...) -> PathBuf` and §8 only tests `WorkspaceCategory::Other`, not `EntityType::Other`.
+2. Fixture counts are contradictory: §7 says 17 fixtures, enumerates 19, while §8/§9 still require 15; fresh implementation cannot know the target suite.
+3. Symlink-chain numbering is stale: changelog calls it fixture #13, §7 makes it #16.
+4. Reserved-name fold still has bad wording: §8 says `"CON"` regex accepts, but `^[a-z]...` rejects uppercase; lowercase `con` deferral needs explicit wording/test.
+5. Hardlink fixture is implementability-risky if it literally uses `/etc/passwd`; specify a same-device temp outside-workspace hardlink fixture.
+6. Architecture direction is close, but these are doc-contract contradictions, not polish.
+tokens used
+84,017
+VERDICT: BLOCK, not ready to close cycle 3.
+1. V1.2 fold #5 is not faithful: it claims §4/§6/§8 specify `EntityType::Other` rejection, but §4 has `resolve_path(...) -> PathBuf` and §8 only tests `WorkspaceCategory::Other`, not `EntityType::Other`.
+2. Fixture counts are contradictory: §7 says 17 fixtures, enumerates 19, while §8/§9 still require 15; fresh implementation cannot know the target suite.
+3. Symlink-chain numbering is stale: changelog calls it fixture #13, §7 makes it #16.
+4. Reserved-name fold still has bad wording: §8 says `"CON"` regex accepts, but `^[a-z]...` rejects uppercase; lowercase `con` deferral needs explicit wording/test.
+5. Hardlink fixture is implementability-risky if it literally uses `/etc/passwd`; specify a same-device temp outside-workspace hardlink fixture.
+6. Architecture direction is close, but these are doc-contract contradictions, not polish.

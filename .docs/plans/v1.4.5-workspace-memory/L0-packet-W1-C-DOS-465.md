@@ -1,6 +1,6 @@
 # L0 Packet — v1.4.5 W1-C — DOS-465 Document/Entity Links + Ingestion Run Tracking
 
-**Current revision:** V1.2 (cycle 2 fold, 2026-05-20). See §2 Changelog.
+**Current revision:** V1.3 (cycle 3 fold, 2026-05-20). See §2 Changelog.
 
 ## 1. Header
 
@@ -8,12 +8,53 @@
 - **Project:** v1.4.5 — Workspace Memory Refactor ([Linear](https://linear.app/a8c/project/v145-workspace-memory-refactor-cdb9d2c17102))
 - **Wave:** W1 stage 1b (gates on W1-A merge; runs parallel with W1-B)
 - **Issue:** [DOS-465 — Add document/entity links and ingestion run tracking](https://linear.app/a8c/issue/DOS-465)
-- **Branch (proposed):** `feat/dos-465-document-entity-links` from `wave/v1.4.5-w1-stage1a` after W1-A merges
+- **Branch:** lands on `wave/v1.4.5-w1-stage1a` directly (V1.3 fold #5: wave-PR merge model prevents the v253/v254-before-v252 migration-skip race). No separate PR vs `dev`; PR #345 is the single atomic wave merge.
 - **Migration slots claimed:** **v253, v254** (from v1.4.5 W1 block v250–v254 per wave-plan §Cycle 11)
 - **L0 reviewer matrix:** architect-reviewer + codex challenge + codex consult. No `/cso`.
 - **L2 reviewer matrix:** codex review + code-reviewer + architect-reviewer.
 
 ## 2. Changelog
+
+- **V1.3 (2026-05-20 — cycle 3 fold):** Cycle 3 returned architect APPROVE + codex challenge BLOCK (3 substantive + UPSERT validated correct) + codex consult pending. Codex's findings are real — the tombstone guard is raceable as specified (pre-SELECT then INSERT not atomic), the user-relink API path is unclear, and in-progress idempotency isn't guarded. Folds:
+  1. **Tombstone guard wrapped in `BEGIN IMMEDIATE` transaction** (challenge #1): V1.2 specified pre-SELECT then INSERT but didn't pin transactional boundary. A concurrent `reject_link` between SELECT and INSERT could let a classifier source insert an active row after tombstone. V1.3 explicitly requires the `add_link` flow for `attribution_source ∈ {Classifier, Backfill, DriveMetadata}` to wrap the SELECT-rejected + INSERT in `BEGIN IMMEDIATE` transaction:
+     ```rust
+     conn.execute("BEGIN IMMEDIATE", [])?;
+     let tombstoned: Option<(DateTime<Utc>, String)> = conn.query_row(
+         "SELECT rejected_at, rejected_reason FROM document_entity_links \
+          WHERE file_id = ?1 AND entity_type = ?2 AND entity_id = ?3 AND rejected = 1",
+         params![file_id, entity_type, entity_id], |r| Ok((r.get(0)?, r.get(1)?)),
+     ).optional()?;
+     if let Some((rejected_at, rejected_reason)) = tombstoned {
+         conn.execute("ROLLBACK", [])?;
+         return Err(LinkError::Tombstoned { rejected_at, rejected_reason });
+     }
+     let link_id = conn.query_row(
+         "INSERT INTO document_entity_links (...) VALUES (...) \
+          ON CONFLICT (file_id, entity_type, entity_id) WHERE rejected = 0 \
+          DO NOTHING RETURNING link_id",
+         params![...], |r| r.get(0),
+     ).optional()?.unwrap_or_else(|| /* SELECT fallback for DO NOTHING no-row */ ...);
+     conn.execute("COMMIT", [])?;
+     ```
+     `BEGIN IMMEDIATE` acquires a write lock immediately; no concurrent reject_link can interleave. EntityIntake/UserRelink/MCP/Frontmatter sources skip the tombstone-check step but still wrap their INSERT in a transaction for atomicity.
+  2. **User-relink API path clarified** (challenge #2): V1.2 §10 said W4-A calls `override_link` for re-link but V1.2 §7 tested `add_link(... UserRelink)` for resurrection. The two are different operations:
+     - **`add_link(file_id, entity_type, entity_id, UserRelink, ...)`**: creates a NEW link or resurrects a previously-rejected link. Used when W4-A's UI lets the user explicitly establish/re-establish a link (e.g., "this file IS about Acme" after a classifier mis-binding was rejected).
+     - **`override_link(emitter, file_id, entity_type, entity_id, actor)`**: marks an existing-AND-active link as user-confirmed (sets `user_override_actor` + `user_override_at`). Does NOT resurrect rejected links; returns `LinkError::NotFound` if no active row exists. Used when the user explicitly endorses an existing classifier-attributed link without changing the link itself.
+     §10 handoff updated: W4-A's re-link UI calls `add_link(... UserRelink)`; W4-A's "endorse" UI calls `override_link`. `reject_link` is the inverse of both.
+  3. **In-progress idempotency guard** (challenge #3): V1.2 UNIQUE was `WHERE status='success'` only — duplicate in-progress runs for the same `(file_id, content_sha256, mode)` could execute. V1.3 service-layer `start_run` guard:
+     - Pre-check via `find_by_idempotency_key` for **any** status (in_progress OR success).
+     - If `status = 'success'` exists → return `RunsError::AlreadyCompleted { existing: ExistingRunReceipt }` (caller can choose to use the existing receipt).
+     - If `status = 'in_progress'` exists AND `started_at` is within last 1 hour → return `RunsError::AlreadyInProgress { existing_run_id }` (the prior attempt is still live; caller can wait or poll).
+     - If `status = 'in_progress'` exists but `started_at` is >1 hour old → mark prior as `aborted` (likely crashed), proceed with new run.
+     - If no row exists → insert new run.
+     Schema unchanged (UNIQUE WHERE status='success' is the storage-level fence; service-layer guard prevents duplicate in_progress).
+  4. **`RunsError` extended**: adds `AlreadyInProgress { existing_run_id: IngestionRunId }` variant (V1.3 fold #3).
+  5. **Migration ordering safeguard** (consult #1): if W1-C ships v253/v254 before W1-B v252 lands, the `version > current` runner permanently skips v252. V1.3 mitigation: this wave uses the **wave-PR merge model** (PR #345 = `wave/v1.4.5-w1-stage1a` → `dev`). W1-B + W1-C land on the wave branch via local merges in dependency order (W1-A → W1-B → W1-C → wave PR). The wave PR is a single atomic merge to dev. W1-C must NOT open a separate PR vs dev. Documented in §10 handoff + §1 branch.
+  6. **`complete_run` idempotency convergence** (consult #2): wave AC requires "one record for same file hash". V1.3 service-layer `complete_run` flow:
+     - For `mode != Forced`: if `find_by_idempotency_key(file_id, content_sha256, mode)` already returns `Some(receipt)` with `status = success`, return `Err(RunsError::AlreadyCompleted { existing: receipt })` BEFORE attempting the UNIQUE-violating UPDATE.
+     - For `mode = Forced`: `retry_of_run_id` is required; the partial UNIQUE on `WHERE status = 'success'` will reject a duplicate success row at the SQL layer (caught + returned as `Err(RunsError::AlreadyCompleted)`).
+     - Test `idempotency_unique_constraint_enforces_no_duplicate_successful_run` updated to assert: second `complete_run` returns `Err(RunsError::AlreadyCompleted)` (NOT generic `DbError`); total `status='success'` rows = 1; existing receipt is returned in the error envelope.
+  7. **Downstream signature sweep** (consult #3): wave-plan + W4 handoff text still cites old `override_link/reject_link(file_id, entity_id, actor)` (without entity_type). V1.3 §10 handoff explicitly updates all callers to pass the triple: W4-A re-link UI → `add_link(file_id, entity_type, entity_id, UserRelink, ...)`; W4-A endorse UI → `override_link(emitter, file_id, entity_type, entity_id, actor)`; W2-C entity-intake → `add_link(file_id, entity_type, entity_id, EntityIntake, ...)`. The wave-plan text amendment is filed as a Cycle 13 wave-plan amendment to update the §Agent W1-C body and the W4-A/W2-C handoffs.
 
 - **V1.2 (2026-05-20 — cycle 2 fold):** Cycle 2 returned architect CONDITIONAL APPROVE (2 SQL-spec tightening conditions) + codex challenge BLOCK (3 substantive — partial-unique doesn't enforce post-rejection, idempotency weaker than wave, service guard underspecified) + codex consult BLOCK (3 substantive — override_link/reject_link missing entity_type, UPSERT syntax wrong, test gap). Folds:
   1. **`override_link` + `reject_link` take `entity_type`** (consult #1 + architect #1): both APIs now signature `(emitter: &dyn SignalEmitter, file_id: &str, entity_type: crate::entity::EntityType, entity_id: &str, actor: &str, …) -> Result<(), LinkError>`. The unique key is the `(file_id, entity_type, entity_id)` triple, so every link-mutation API must carry all three. Reuses `crate::entity::EntityType` (canonical per W1-B V1.1 fold #2; no reinvention).

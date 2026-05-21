@@ -1,0 +1,20 @@
+2|l1:1,l2:0
+
+exec
+/bin/zsh -lc "sqlite3 :memory: \"CREATE TABLE t(a,b,c,rejected); INSERT INTO t VALUES('f','account','a',1); SELECT 1 FROM t WHERE (a,b,c)=('f','account','a') AND rejected=1;\"" in /private/tmp/dailyos-v145-w1a
+ succeeded in 0ms:
+1
+
+codex
+VERDICT: BLOCK
+1. Migration-order blocker: W1-C owns v253/v254 but still runs parallel from W1-A; if v253/v254 apply before W1-B v252, the `version > current` runner permanently skips v252. Gate W1-C merge/apply after W1-B or integrate in order.
+2. Idempotency still under-converged: §7 allows second `complete_run` to end as `DbError` and only asserts one successful row; wave AC is one record for same file hash. Require existing-run return and assert total rows = 1.
+3. Downstream signature sweep incomplete: V1.2 adds `entity_type` to `override_link/reject_link`, but wave/W4 handoff refs still use `file_id, entity_id, actor`; amend callers/handoffs to pass the triple.
+4. Tombstone semantics, UPSERT conflict-target syntax, and entity_type additions are otherwise faithful and implementable.
+tokens used
+132,559
+VERDICT: BLOCK
+1. Migration-order blocker: W1-C owns v253/v254 but still runs parallel from W1-A; if v253/v254 apply before W1-B v252, the `version > current` runner permanently skips v252. Gate W1-C merge/apply after W1-B or integrate in order.
+2. Idempotency still under-converged: §7 allows second `complete_run` to end as `DbError` and only asserts one successful row; wave AC is one record for same file hash. Require existing-run return and assert total rows = 1.
+3. Downstream signature sweep incomplete: V1.2 adds `entity_type` to `override_link/reject_link`, but wave/W4 handoff refs still use `file_id, entity_id, actor`; amend callers/handoffs to pass the triple.
+4. Tombstone semantics, UPSERT conflict-target syntax, and entity_type additions are otherwise faithful and implementable.

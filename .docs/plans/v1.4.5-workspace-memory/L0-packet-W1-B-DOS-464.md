@@ -1,6 +1,6 @@
 # L0 Packet — v1.4.5 W1-B — DOS-464 Workspace Source Registry + Path Validation
 
-**Current revision:** V1.2 (cycle 2 fold, 2026-05-20). See §2 Changelog.
+**Current revision:** V1.3 (cycle 3 fold, 2026-05-20). See §2 Changelog.
 
 ## 1. Header
 
@@ -8,12 +8,20 @@
 - **Project:** v1.4.5 — Workspace Memory Refactor ([Linear](https://linear.app/a8c/project/v145-workspace-memory-refactor-cdb9d2c17102))
 - **Wave:** W1 stage 1b (gates on W1-A merge; runs parallel with W1-C)
 - **Issue:** [DOS-464 — Add workspace document registry migration](https://linear.app/a8c/issue/DOS-464)
-- **Branch (proposed):** `feat/dos-464-workspace-registry` from `wave/v1.4.5-w1-stage1a` after W1-A merges
+- **Branch:** lands on `wave/v1.4.5-w1-stage1a` directly (per V1.3 wave-PR merge model that prevents migration-ordering races). No separate PR vs `dev`; PR #345 is the single atomic wave merge.
 - **Migration slot claimed:** **v252** (from v1.4.5 W1 block v250–v254 per wave-plan §Cycle 11)
 - **L0 reviewer matrix:** architect-reviewer + codex challenge + codex consult + **`/cso` (security-auditor) — mandatory**
 - **L2 reviewer matrix:** codex review + code-reviewer + architect-reviewer + **`/cso` re-review**
 
 ## 2. Changelog
+
+- **V1.3 (2026-05-20 — cycle 3 fold):** Cycle 3 returned architect APPROVE + `/cso` APPROVE + codex challenge BLOCK (5 text-consistency findings) + codex consult BLOCK (6 doc-contract contradictions, 5 overlap challenge). Architecture is converged per architect + /cso; remaining findings are spec-text consistency, not architectural. Per memory `feedback_reviewer_dissent_is_signal` codex dissent is real — V1.3 folds:
+  1. **Fixture count consistency** (challenge #1 + consult #2): §7 header said "17 fixtures" but enumerated 19, and §8/§9 said "all 15". V1.3 §7 header says "19 fixtures (15 negative + 4 positive)"; §8/§9 say "all 19 fixtures".
+  2. **`resolve_path` returns `Result`** (challenge #2 + consult #1): V1.2 §4 signature was `-> PathBuf` but V1.2 §2 fold #5 said `EntityType::Other` returns Err — incompatible. V1.3 §4 signature is `resolve_path(...) -> Result<PathBuf, ResolvePathError>` with `ResolvePathError { CategoryNotAllowed(CategoryNotAllowed), EntityTypeNotRoutable }`. §8 adds `entity_type_other_returns_resolve_path_err` test.
+  3. **Reserved-name test wording** (challenge #4 + consult #4): V1.3 §8 explicitly: `register_other(Account, "CON") → Err(MalformedSlug)` because regex `^[a-z]...` rejects uppercase; `register_other(Account, "con") → Ok(())` currently (lowercase passes regex, Windows-reserved check deferred to follow-up ticket). Both tests present + Windows deferral cite.
+  4. **Hardlink fixture target** (challenge #4 + consult #5): V1.3 §7 fixture #7 specifies "same-device temp file outside workspace" (e.g., `${TMPDIR}/outside.txt`) hardlinked to in-workspace path, not `/etc/passwd` (which requires root). The hardlink creation step uses Rust `std::fs::hard_link` against the temp file. Same-device requirement ensures the cross-device check doesn't fire first — the `nlink > 1` check is the load-bearing assertion.
+  5. **Concurrency adversarial outcomes broadened** (challenge #5): V1.3 §7 fixture #17 acceptable outcomes are `Ok(identical FileIdentity) | Err(SymlinkRaced) | Err(OutsideWorkspace) | Err(PathTraversalAttempt)` — the rename race can produce file-not-found (mapped to PathTraversalAttempt at the lex step) or canonical-resolves-outside (OutsideWorkspace), not only the inode-mismatch SymlinkRaced.
+  6. **Fixture numbering** (consult #3): changelog references to fixture numbers updated to match §7 ordering (e.g., "symlink chain" is #16, not #13).
 
 - **V1.2 (2026-05-20 — cycle 2 fold):** Cycle 2 returned architect APPROVE (clean) + `/cso` CONDITIONAL APPROVE (3 new LOW/MEDIUM nits → path-α) + codex challenge BLOCK (4 substantive: hardlink defense FALSE, symlink fixture conflicts algorithm, CI lint unscoped, reserved-name regex inconsistent) + codex consult BLOCK (5 substantive, 4 overlap). The class is genuine security architecture — codex reviewers correctly identified that V1.1's hardlink defense was overclaim, and the symlink algorithm + fixture had a logical contradiction. Per memory `feedback_reviewer_dissent_is_signal`, dissent wins. Folds:
   1. **Hardlink defense corrected via `st_nlink > 1 → SymlinkRefused`** (challenge #1 + consult #1): cycle-1 fold #7 incorrectly claimed `fstat.dev == workspace_root_dev` caught same-device hardlinks-into-workspace. Codex correctly noted: an in-workspace path that is a hardlink to outside same-device content has in-workspace `canonical_path`, identical lstat/fstat dev+ino (the inode is shared), and passes ALL V1.1 checks while serving outside content. The actual defense is to refuse files with `st_nlink > 1` in the workspace at validation time — any hardlinked file in the workspace is suspect. Trade-off: legitimate hardlinks (rare in modern document workflows) are rejected. §7 step 5 adds: `if fstat.nlink > 1 → SymlinkRefused` (named broadly to capture the path-aliasing class; future variant rename to `HardLinkRefused` filed as Codebase Maintenance per architect F5/V1.1).
@@ -69,9 +77,9 @@ Migrate the registry of known workspace source types (inbox, Drive, entity-doc, 
 - `src-tauri/src/services/workspace_ingestion/registry.rs` — fills the W1-A-pre-created placeholder. Substantive content:
   - `WorkspaceSourceRegistry::open_validated(path: &Path) -> Result<(File, contracts::FileIdentity), contracts::RejectionReason>` per §7 security gate.
   - `WorkspaceCategoryRegistry::validate(category: &contracts::WorkspaceCategory, entity_type: crate::entity::EntityType) -> Result<(), CategoryNotAllowed>`.
-  - `WorkspaceCategoryRegistry::resolve_path(entity_type: crate::entity::EntityType, entity_name: &str, category: Option<&contracts::WorkspaceCategory>, filename: &str, source_type: contracts::WorkspaceFileKind) -> PathBuf` per cycle 8 + V1.1 fold #3.
+  - `WorkspaceCategoryRegistry::resolve_path(entity_type: crate::entity::EntityType, entity_name: &str, category: Option<&contracts::WorkspaceCategory>, filename: &str, source_type: contracts::WorkspaceFileKind) -> Result<PathBuf, ResolvePathError>` per cycle 8 + V1.1 fold #3. V1.3 fold #2: now returns `Result` so `EntityType::Other` rejects via `ResolvePathError::EntityTypeNotRoutable`.
   - `WorkspaceCategoryRegistry::register_other(entity_type: crate::entity::EntityType, slug: &str) -> Result<(), RegisterError>` per V1.1 fold #5.
-  - Error types: `pub struct CategoryNotAllowed { category: String, entity_type: crate::entity::EntityType, allowed: Vec<String> }`; `pub enum RegisterError { MalformedSlug { slug: String }, EntityTypeUnknown, DbError(String) }`.
+  - Error types: `pub struct CategoryNotAllowed { category: String, entity_type: crate::entity::EntityType, allowed: Vec<String> }`; `pub enum RegisterError { MalformedSlug { slug: String }, EntityTypeUnknown, DbError(String) }`; `pub enum ResolvePathError { CategoryNotAllowed(CategoryNotAllowed), EntityTypeNotRoutable }` (V1.3 fold #2).
   - Constant `SLUG_REGEX: &str = r"^[a-z][a-z0-9_-]{0,31}$"`.
 
 ### Tests
@@ -204,7 +212,7 @@ pub fn open_validated(path: &Path) -> Result<(File, contracts::FileIdentity), co
 }
 ```
 
-### Negative fixture suite (V1.2 — 17 fixtures, all return typed `RejectionReason` with zero bytes read)
+### Negative fixture suite (V1.3 — **19 fixtures: 15 negative + 4 positive**, all return typed `RejectionReason` with zero bytes read)
 
 1. **TOCTOU race**: validate → atomically swap symlink target between lstat and open → `SymlinkRaced`.
 2. **URL-encoded path traversal**: `%2e%2e/escape` → `PathTraversalAttempt`.
@@ -212,7 +220,7 @@ pub fn open_validated(path: &Path) -> Result<(File, contracts::FileIdentity), co
 4. **Absolute path**: `/etc/passwd` → `OutsideWorkspace`.
 5. **V1.2 — Symlink final-component pointing outside workspace**: → `OutsideWorkspace` (canonicalize resolves and catches; V1.2 corrects V1.1's `SymlinkRefused` claim).
 6. **Bare `..` component**: `notes/../escape` → `PathTraversalAttempt`.
-7. **V1.2 — hardlink to `/etc/passwd`**: in-workspace path that is a hardlink to outside (or to any other file regardless of device) → `SymlinkRefused` (`fstat.nlink > 1` per V1.2 fold #1).
+7. **V1.3 — hardlink to same-device temp file outside workspace**: create `${TMPDIR}/hl-target.txt` and `std::fs::hard_link` it into the workspace (same-device required so the cross-device check doesn't fire first; this fixture exercises the `nlink > 1` check) → `SymlinkRefused` (`fstat.nlink > 1` per V1.2 fold #1). NOT `/etc/passwd` per cycle 3 fold #4 (root-required, brittle).
 8. **V1.2 — bind-mount tmpfs over workspace subdir**: workspace-relative path inside the bind mount → `OutsideWorkspace` (canonicalize on the bind-mount path returns the bind-mount root which fails strict-child OR lstat.dev mismatch fires).
 9. **Case-insensitive lookup**: `Accounts/Acme/Presentations/x` vs `…/presentations/x` on case-insensitive FS → both succeed via NFKC + lowercase normalization at the registry-key layer.
 10. **NUL byte in path**: `foo\0bar` → kernel-level rejection mapped to `PathTraversalAttempt`.
@@ -222,7 +230,7 @@ pub fn open_validated(path: &Path) -> Result<(File, contracts::FileIdentity), co
 14. **V1.2 — NTFS ADS (`file.txt:hidden`)**: → `PathTraversalAttempt` (Unix-test asserts the `:` character is rejected at lex stage; Windows-specific handling deferred to follow-up).
 15. **Strict-child root equality**: `canonical_path == WORKSPACE_ROOT` → `OutsideWorkspace`.
 16. **V1.2 — symlink chain >1 hop**: A → B → outside → `OutsideWorkspace` at canonicalize (chain resolves to outside target; V1.2 corrects V1.1's `SymlinkRefused` claim).
-17. **V1.2 — concurrency adversarial (security SEC-W1B-011)**: 1 attacker thread renaming target symlink in a tight loop while N=8 readers call `open_validated`; every result is either `Ok(identical FileIdentity)` or `Err(SymlinkRaced)`, never `Ok` with a swapped inode.
+17. **V1.3 — concurrency adversarial (security SEC-W1B-011)**: 1 attacker thread renaming target symlink in a tight loop while N=8 readers call `open_validated`; every result is one of `Ok(identical FileIdentity) | Err(SymlinkRaced) | Err(OutsideWorkspace) | Err(PathTraversalAttempt)` — the rename race can produce file-not-found (lex-rejected as PathTraversalAttempt) or canonical-resolves-outside (OutsideWorkspace) outcomes, not only the inode-mismatch `SymlinkRaced`. Never `Ok` with a swapped inode.
 18. **Concurrency positive**: N=8 parallel `open_validated` calls on same valid path return identical `FileIdentity`.
 19. **Positive**: valid workspace-relative path returns `(File, FileIdentity)` with `fstat`-derived device+inode + `fstat.nlink == 1`.
 

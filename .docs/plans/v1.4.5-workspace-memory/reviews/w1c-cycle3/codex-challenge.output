@@ -1,0 +1,30 @@
+src-tauri/src/services/workspace_ingestion/lifecycle.rs:124:pub fn escalate_to_pending(_file_id: &str, _actor: &str) -> Result<(), LifecycleError> {
+src-tauri/src/services/workspace_ingestion/lifecycle.rs:126:        "escalate_to_pending: W1-A stub; W4-A wires the real DB update".to_string(),
+.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-A-DOS-463.md:22:  3. **`LifecycleError` defined in `lifecycle.rs` section** — V1.3 referenced it in `escalate_to_pending` return type but didn't define it. V1.4 §4 `lifecycle.rs` adds: `pub enum LifecycleError { FileNotFound, InvalidStateTransition { from: LifecycleState, to: LifecycleState }, DbError(String) }`.
+.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-A-DOS-463.md:197:/// swaps in WorkspaceSignalEmitter after W3-B merges. W1-C's link::override_link consumes
+.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-A-DOS-463.md:243:- `escalate_to_pending(file_id: &str, actor: &str) -> Result<(), LifecycleError>` API stub (W4-A wires later).
+.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-A-DOS-463.md:244:- `LifecycleError` enum (V1.4 cycle-4 fix: V1.3 referenced this in `escalate_to_pending` return but didn't define it):
+.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-A-DOS-463.md:330:3. **Signals + invalidation.** W1-A emits no signals. `SignalEmitter` trait compiles in W1 against `NullSignalEmitter` so W1-C's `link::override_link` lands without wave-timing inversion.
+.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-A-DOS-463.md:332:5. **Feedback loop.** `user_override: Option<UserOverride>` field; `lifecycle::escalate_to_pending` API for W4-A.
+
+codex
+VERDICT: BLOCK
+
+1. Tombstone guard is still raceable: V1.2 specifies pre-SELECT then INSERT, but not one transaction/single writer closure. A concurrent `reject_link` between them lets classifier/backfill/DriveMetadata recreate an active row after tombstone.
+
+2. User-relink carve-out is API-mismatched: §7 proves `add_link(..., UserRelink)` resurrects, but §10 says W4-A calls `override_link`; `override_link` has no attribution_source and no specified tombstone/create semantics.
+
+3. Idempotency is only completion-time, not attempt-time: unique `WHERE status='success'` permits duplicate `in_progress` runs for the same key; duplicate work can execute before `complete_run` hits UNIQUE.
+
+4. UPSERT syntax itself is SQLite-correct: `ON CONFLICT (...) WHERE rejected = 0 DO NOTHING RETURNING link_id` matches the partial unique index.
+tokens used
+95,475
+VERDICT: BLOCK
+
+1. Tombstone guard is still raceable: V1.2 specifies pre-SELECT then INSERT, but not one transaction/single writer closure. A concurrent `reject_link` between them lets classifier/backfill/DriveMetadata recreate an active row after tombstone.
+
+2. User-relink carve-out is API-mismatched: §7 proves `add_link(..., UserRelink)` resurrects, but §10 says W4-A calls `override_link`; `override_link` has no attribution_source and no specified tombstone/create semantics.
+
+3. Idempotency is only completion-time, not attempt-time: unique `WHERE status='success'` permits duplicate `in_progress` runs for the same key; duplicate work can execute before `complete_run` hits UNIQUE.
+
+4. UPSERT syntax itself is SQLite-correct: `ON CONFLICT (...) WHERE rejected = 0 DO NOTHING RETURNING link_id` matches the partial unique index.
