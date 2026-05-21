@@ -106,7 +106,8 @@ W1-B fills:
 2. **`src-tauri/src/services/mcp_v2/taxonomy.rs` extensions** — W1-A shipped the trait; W1-B fills the loader implementation. Adds:
    - `TaxonomyError` new variants per cycle-1 architect + challenge + devex: `ParseFailed { error: String }`, `InvalidName { name: String, reason: String }`, `InvalidScope { tool: ScopedName, scope: Scope }`, `DuplicateName { name: ScopedName }`, `SideMismatch { handler: ScopedName, expected: Side, actual: Side }`, `FixtureCoverage { tool: ScopedName, missing: &'static str }`
    - `impl std::fmt::Display for TaxonomyError` — operator-readable messages with concrete fix suggestions per devex cycle-1 #2+#4 (nearest-candidate suggestions on `HandlerCatalogMismatch` typos)
-   - `pub struct YamlTaxonomyCatalog { entries: HashMap<ScopedName, ToolDescription>, fixtures: HashMap<ScopedName, SelectionFixtures> }`
+   - `pub struct YamlTaxonomyCatalog { entries: HashMap<ScopedName, (ToolDescription, SelectionFixtures)> }` (cycle-4 #3 tuple-normalized)
+   - `pub fn description_for(&self, name: &ScopedName) -> Option<&ToolDescription>` + `pub fn fixtures_for(&self, name: &ScopedName) -> Option<&SelectionFixtures>` + `pub fn entries_with_fixtures(&self) -> impl Iterator<Item=(&ScopedName, &ToolDescription, &SelectionFixtures)>` (cycle-4 #4 explicit pub API)
    - `pub fn load_embedded() -> Result<YamlTaxonomyCatalog, TaxonomyError>` — reads embedded YAML via `include_str!`
    - `pub fn load_from_path(path: &Path) -> Result<YamlTaxonomyCatalog, TaxonomyError>` — env-gated dev override (cycle-1 devex #5; mirrors `src-tauri/src/presets/loader.rs` precedent)
    - `impl TaxonomyCatalog for YamlTaxonomyCatalog { ... }` — `validate_against_handlers` returns `Result<(), TaxonomyError>` (NOT panic; cycle-1 devex #1)
@@ -191,8 +192,8 @@ Note: pagination/list surface (DOS-172) is a discovery refinement applied across
 - **displacement framing** (AC-4): per-entry assert both keyword groups present in `when_NOT_to_call`.
 - **fixture coverage** (AC-5): per-entry assert positive ≥ 2, negative_broad_corpus ≥ 2, negative_adjacent_tool ≥ 1 (≥ 2 where adjacent exists).
 - **continuity affordance** (AC-6): per Read entry assert continuity keyword in `when_to_call`.
-- **boot validation Result** (AC-7): stub handler set covering 10 → `seal()` returns `Ok(())`. Stub missing one → `Err(HandlerCatalogMismatch { handler: <name>, nearest_candidate: Some(<closest>) })`.
-- **YAML hardening** (AC-8): duplicate-name YAML → `DuplicateName`; unknown-field YAML → `ParseFailed`; empty-when_to_call YAML → `ParseFailed`.
+- **boot validation Result** (AC-7): handler→catalog: stub set covering 10 → `seal()` returns `Ok(())`. EXTRA handler not in catalog → `seal()` returns `Err(HandlerCatalogMismatch { handler: <name>, catalog_entry: None, nearest_candidate: Some(<closest>) })`. **catalog→handler (separate method)**: stub set MISSING one catalog tool → `validate_catalog_against_handlers(handlers)` returns `Vec<ScopedName>{<missing>}` (NOT an error; logs pending; W2-W4 land incrementally).
+- **YAML hardening** (AC-8): duplicate-name YAML → `DuplicateName`; unknown top-level field → `ParseFailed`; empty-when_to_call YAML → `ParseFailed`; **nested unknown field on `SelectionFixtures` / `PromptFixture` / `AdjacentFixture` → `ParseFailed`** (cycle-4 #5 nested deny_unknown_fields).
 - **Display** (AC-9): per-variant assert message contains the suggestion substring.
 - **FS override** (AC-10): `load_from_path(temp_yaml)` succeeds; env var triggers override; release build ignores env.
 
