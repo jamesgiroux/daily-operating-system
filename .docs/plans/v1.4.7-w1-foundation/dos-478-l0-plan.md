@@ -5,6 +5,24 @@
 **Wave plan reference:** `.docs/plans/v1.4.7-waves.md` §"Agent W1-B — DOS-478"
 **Authoring discipline:** narrow-scoped per K-in lessons; substrate gaps file as separate Linear tickets.
 
+## Cycle-4 changelog (2026-05-20)
+
+Cycle-3 verdicts: CEO APPROVE ✅; challenge + architect + devex NEEDS-CHANGES. Convergent 3/3 cleanup: YAML `expected_response_shape` must be `expectedResponseShape` (ToolExample is `#[serde(rename_all = "camelCase")]` per contracts.rs:177); architect + challenge agree. Plus AC-7 test wording + storage normalization + public API + nested deny_unknown_fields.
+
+Cycle-4 fixes:
+
+1. **YAML examples casing matches ToolExample camelCase** (3/3 convergent). Sample YAML uses `expectedResponseShape` (not `expected_response_shape`). Direct deserialization to `Vec<ToolExample>` succeeds. No `YamlToolExample` DTO needed; ToolExample's existing camelCase serde rename handles wire shape.
+
+2. **AC-7 test wording split** (challenge cleanup). Test plan now reads:
+   - `seal()` handler→catalog: stub set with EXTRA handler not in catalog → `Err(HandlerCatalogMismatch { handler, catalog_entry: None, nearest_candidate: Some(closest) })`
+   - `validate_catalog_against_handlers(handlers)` catalog→handler: stub set missing one catalog tool → returns `Vec<ScopedName>{ missing_tool }` (NOT an error; production logs this)
+
+3. **Catalog storage normalization** (architect minor). Storage is `HashMap<ScopedName, (ToolDescription, SelectionFixtures)>` (tuple, not split maps). Public accessor: `pub fn description_for(name: &ScopedName) -> Option<&ToolDescription>`, `pub fn fixtures_for(name: &ScopedName) -> Option<&SelectionFixtures>`.
+
+4. **Public conversion API** (devex). All accessors explicit `pub`: `pub fn into_description_and_fixtures(self) -> (ToolDescription, SelectionFixtures)` on YamlToolEntry; `pub fn description_for/fixtures_for/entries_with_fixtures` on YamlTaxonomyCatalog.
+
+5. **Nested deny_unknown_fields** (devex). `SelectionFixtures`, `PromptFixture`, `AdjacentFixture` all carry `#[serde(deny_unknown_fields)]`. Test asserts unknown nested field rejects load.
+
 ## Cycle-3 changelog (2026-05-20)
 
 Cycle-2 verdicts: all 4 reviewers NEEDS-CHANGES. **Convergent (3/4 challenge + architect + devex):** YAML entry shape doesn't fit frozen `ToolDescription` contract — I added `selection_fixtures` + omitted required `examples`; AC-8 deny_unknown_fields conflicts. **Plus**: CEO product-vocabulary tightening; challenge AC-7 bidirectional-validation; architect `nearest_candidate` field needs explicit W1-A enum amendment.
@@ -69,10 +87,10 @@ W1-B fills:
      returns:
        schema: { type: object, additionalProperties: false }
        description: "Account status payload with claim attribution + freshness per ADR-0105"
-     examples:                                    # required per ToolDescription (contracts.rs:5)
+     examples:                                    # required per ToolDescription (contracts.rs:5); camelCase per ToolExample serde rename (contracts.rs:177)
        - prompt: "What's going on with Acme?"
          invocation: { name: dailyos.read.account_status, arguments: { subject: acme } }
-         expected_response_shape: { account_id: <opaque>, status: <enum>, as_of: <iso8601> }
+         expectedResponseShape: { account_id: <opaque>, status: <enum>, as_of: <iso8601> }
      selection_fixtures:                          # additive DTO field; consumed by DOS-481 W5-A; stripped before ToolDescription
        positive:
          - { prompt: "What's going on with Acme?", expected_tool: dailyos.read.account_status }
