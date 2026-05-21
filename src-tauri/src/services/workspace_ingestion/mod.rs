@@ -1,5 +1,5 @@
 //! Workspace ingestion service — single mutation boundary for all file-derived
-//! facts entering the DailyOS claim graph (DOS-463 / v1.4.5 W1-A).
+//! facts entering the DailyOS claim graph (v1.4.5 W1-A).
 //!
 //! All `pub mod` declarations are listed one-per-line in alphabetical order. The
 //! shape is enforced by `tests/mod_rs_shape.rs`; subsequent v1.4.5 lanes fill

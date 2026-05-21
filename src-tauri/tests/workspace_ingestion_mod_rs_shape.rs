@@ -1,4 +1,4 @@
-//! v1.4.5 W1-A / DOS-463 — `mod.rs` shape gate.
+//! v1.4.5 W1-A — `mod.rs` shape gate.
 //!
 //! Asserts that `src-tauri/src/services/workspace_ingestion/mod.rs` contains
 //! exactly one `pub mod` declaration per submodule, alphabetical, with no

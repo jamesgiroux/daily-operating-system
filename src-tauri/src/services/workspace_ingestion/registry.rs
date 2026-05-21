@@ -1,4 +1,4 @@
-//! Workspace source registry — DOS-464 (W1-B) fills this with the path-validating
+//! Workspace source registry — W1-B fills this with the path-validating
 //! `WorkspaceSourceRegistry::open_validated(path) -> Result<(File, contracts::FileIdentity),
 //! contracts::RejectionReason>` API and the `WorkspaceCategoryRegistry::validate(category,
 //! entity_type)` boundary that complements `contracts::WorkspaceCategory::from_slug`.

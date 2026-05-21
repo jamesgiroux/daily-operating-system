@@ -1,4 +1,4 @@
-//! Workspace signal emission — DOS-471 (W3-B) fills this with the
+//! Workspace signal emission — W3-B fills this with the
 //! `WorkspaceSignalEmitter` impl of `contracts::SignalEmitter`. Each of the
 //! five trait methods maps 1:1 to a `SignalType::WorkspaceFile*` variant added
 //! to `signals/policy_registry.rs` by the same lane.

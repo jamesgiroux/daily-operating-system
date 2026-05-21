@@ -1,4 +1,4 @@
-//! Document/entity link service — DOS-465 (W1-C) fills this with the
+//! Document/entity link service — W1-C fills this with the
 //! `document_entity_links` table mutations and the `override_link(emitter:
 //! &dyn contracts::SignalEmitter, ...)` API.
 //!

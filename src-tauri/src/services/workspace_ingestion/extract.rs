@@ -1,4 +1,4 @@
-//! Workspace claim extraction — DOS-470 (W3-A) fills this with the
+//! Workspace claim extraction — W3-A fills this with the
 //! `WorkspaceExtractor` impl of `contracts::Extractor`.
 //!
 //! W1-A pre-creates this placeholder so no later lane needs to create a new

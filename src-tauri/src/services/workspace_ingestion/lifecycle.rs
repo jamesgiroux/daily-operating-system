@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use super::contracts::{WorkspaceCategory, WorkspaceFileKind};
 
-/// Seven-state lifecycle per DOS-463 §Goal + cycle 2 amendment
+/// Seven-state lifecycle per wave plan §Goal + cycle 2 amendment
 /// (`pending_entity_assignment`).
 ///
 /// State-machine transitions that will trigger `contracts::SignalEmitter`
@@ -113,7 +113,7 @@ impl std::fmt::Display for LifecycleError {
 impl std::error::Error for LifecycleError {}
 
 /// User-correction escalation: move a `Rejected` file back to `Pending` for
-/// re-ingestion under user override. W4-A (DOS-472) wires this from the
+/// re-ingestion under user override. W4-A wires this from the
 /// source-management block; W1-A pre-defines the API so the `user_override`
 /// field on `WorkspaceFileLifecycle` is non-vacuous from W1.
 ///
@@ -123,6 +123,6 @@ impl std::error::Error for LifecycleError {}
 /// "not-yet-wired" state without hiding the API.
 pub fn escalate_to_pending(_file_id: &str, _actor: &str) -> Result<(), LifecycleError> {
     Err(LifecycleError::DbError(
-        "escalate_to_pending: W1-A stub; W4-A (DOS-472) wires the real DB update".to_string(),
+        "escalate_to_pending: W1-A stub; W4-A wires the real DB update".to_string(),
     ))
 }

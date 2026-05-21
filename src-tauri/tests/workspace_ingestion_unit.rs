@@ -1,4 +1,4 @@
-//! v1.4.5 W1-A / DOS-463 — unit-style tests for the workspace_ingestion
+//! v1.4.5 W1-A — unit-style tests for the workspace_ingestion
 //! contracts + lifecycle modules. Lives as an external integration test so it
 //! also exercises the external import surface (the same `dailyos_lib::…` path
 //! W1-B/W1-C/W2-A/W3-A/W3-B/W3-C will use).

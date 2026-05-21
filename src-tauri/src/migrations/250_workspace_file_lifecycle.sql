@@ -1,4 +1,4 @@
--- v1.4.5 W1-A / DOS-463 — workspace file lifecycle and ownership model.
+-- v1.4.5 W1-A — workspace file lifecycle and ownership model.
 --
 -- Authoritative provenance carrier for every workspace file DailyOS monitors.
 -- One row per (file_id) tracks the seven-state lifecycle (pending,

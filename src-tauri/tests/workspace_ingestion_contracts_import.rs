@@ -1,4 +1,4 @@
-//! v1.4.5 W1-A / DOS-463 — shared-types import gate.
+//! v1.4.5 W1-A — shared-types import gate.
 //!
 //! External integration test that asserts every type and trait in
 //! `services::workspace_ingestion::contracts` and `services::workspace_ingestion::lifecycle`

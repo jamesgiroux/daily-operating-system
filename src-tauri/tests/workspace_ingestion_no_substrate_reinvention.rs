@@ -1,4 +1,4 @@
-//! v1.4.5 W1-A / DOS-463 — substrate-reinvention regression gate.
+//! v1.4.5 W1-A — substrate-reinvention regression gate.
 //!
 //! Cycle 1–3 of W1-A's L0 review surfaced three substrate-reinvention class
 //! findings (V1.1 invented `TrustFactorInput` colliding with canonical

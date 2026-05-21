@@ -1,4 +1,4 @@
-//! Frozen shared-type surface for the workspace ingestion service (DOS-463 / W1-A).
+//! Frozen shared-type surface for the workspace ingestion service (v1.4.5 W1-A).
 //!
 //! Every subsequent v1.4.5 lane (W1-B/W1-C/W2-A/W3-A/W3-B/W3-C) imports types and
 //! traits from here. The signature shape is frozen by the L0 packet; bodies of
@@ -41,7 +41,7 @@ use super::lifecycle;
 /// Atomic identity of a workspace file. Populated by `registry::open_validated`
 /// (W1-B) immediately after the `O_NOFOLLOW`/`FILE_FLAG_OPEN_REPARSE_POINT` open,
 /// so device+inode are captured against the actual file handle (closes the
-/// validate-then-read TOCTOU race per ADR-0098 + DOS-464 security gate).
+/// validate-then-read TOCTOU race per ADR-0098  security gate).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileIdentity {
     pub canonical_path: PathBuf,

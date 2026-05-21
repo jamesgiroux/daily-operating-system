@@ -927,7 +927,7 @@ const MIGRATIONS: &[Migration] = &[
         version: 240,
         sql: include_str!("migrations/240_claim_review_deferrals.sql"),
     },
-    // v1.4.5 W1-A / DOS-463 — workspace file lifecycle + ownership model.
+    // v1.4.5 W1-A — workspace file lifecycle + ownership model.
     // Cycle 11 renumber: was v200/v201 in pre-2026-05-20 wave plan; live-dev
     // ceiling at v240 forced the shift above it (DBs at v240 would silently
     // skip lower versions per the `version > current` runner filter at
