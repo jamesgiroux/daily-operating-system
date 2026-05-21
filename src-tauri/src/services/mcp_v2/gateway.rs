@@ -154,6 +154,7 @@ impl SignalEmitter for StderrSignalEmitter {
 pub struct Gateway {
     handlers: HashMap<ScopedName, Arc<dyn McpToolHandler>>,
     emitter: Arc<dyn SignalEmitter>,
+    taxonomy: Option<Arc<dyn super::taxonomy::TaxonomyCatalog>>,
 }
 
 impl Gateway {
@@ -161,6 +162,7 @@ impl Gateway {
         Self {
             handlers: HashMap::new(),
             emitter: Arc::new(StderrSignalEmitter),
+            taxonomy: None,
         }
     }
 
@@ -168,6 +170,7 @@ impl Gateway {
         Self {
             handlers: HashMap::new(),
             emitter,
+            taxonomy: None,
         }
     }
 
@@ -178,6 +181,31 @@ impl Gateway {
 
     pub fn registered_tools(&self) -> impl Iterator<Item = &ScopedName> {
         self.handlers.keys()
+    }
+
+    /// Register the taxonomy catalog. Production callers wire this with
+    /// `YamlTaxonomyCatalog::load_embedded()`. Tests may use a stub.
+    pub fn set_taxonomy(&mut self, catalog: Arc<dyn super::taxonomy::TaxonomyCatalog>) {
+        self.taxonomy = Some(catalog);
+    }
+
+    /// Seal the gateway after all handlers are registered. Validates
+    /// every registered handler has a matching catalog entry with matching
+    /// `Side` (per DOS-478 L0 AC-7). Returns operator-readable error if
+    /// mismatch. Also returns catalog→handler pending-tool list as
+    /// operator info; callers log it.
+    ///
+    /// Production `main.rs` calls `gateway.seal()?` after registration.
+    /// No `panic!()` — fail-fast via structured `Result`.
+    pub fn seal(&self) -> Result<Vec<ScopedName>, super::taxonomy::TaxonomyError> {
+        let Some(catalog) = self.taxonomy.as_ref() else {
+            // No taxonomy registered: tests / dev mode skip validation.
+            return Ok(Vec::new());
+        };
+        let handlers: Vec<&dyn McpToolHandler> =
+            self.handlers.values().map(|h| h.as_ref()).collect();
+        catalog.validate_against_handlers(&handlers)?;
+        Ok(catalog.validate_catalog_against_handlers(&handlers))
     }
 
     /// Handle a single MCP tool invocation. Full per-dispatch contract per
