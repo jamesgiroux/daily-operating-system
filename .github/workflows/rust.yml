@@ -64,6 +64,9 @@ jobs:
       - name: Run claim projection roundtrip regression
         run: cargo test --manifest-path src-tauri/Cargo.toml -p dailyos --test dos301_claim_projection_roundtrip_test
 
+      - name: Run MCP v2 handler DB boundary gate
+        run: ./scripts/ci/check_mcp_v2_handlers_no_direct_db_open.sh
+
       - name: Run Rust clippy (production targets)
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --workspace --all-features --lib --bins -- -D warnings
 
@@ -80,3 +83,7 @@ jobs:
       - name: Run MCP dynamic reader harness test
         working-directory: src-tauri
         run: cargo test --features test-harness --test w05_a_mcp_dynamic_tool_readers_test
+
+      - name: Run MCP v2 gateway smoke
+        working-directory: src-tauri
+        run: cargo test --features test-harness --test mcp_v2_gateway_smoke

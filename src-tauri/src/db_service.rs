@@ -20,6 +20,7 @@
 //!   SQLCipher WAL read-verify races on `Connection::open()` verification.
 
 use std::any::Any;
+use std::cell::Cell;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -63,10 +64,19 @@ pub enum PooledCallError {
     Closed,
     #[error("pooled call panicked: {0}")]
     Panic(String),
+    #[error("re-entrant pooled call rejected: {0}")]
+    ReentrantCall(String),
 }
+
+thread_local! {
+    static CURRENT_POOLED_CONNECTION_ID: Cell<Option<usize>> = const { Cell::new(None) };
+}
+
+static NEXT_POOLED_CONNECTION_ID: AtomicUsize = AtomicUsize::new(1);
 
 /// Shared worker internals.
 struct PooledConnectionInner {
+    id: usize,
     sender: mpsc::Sender<CallMessage>,
     handle: StdMutex<Option<std::thread::JoinHandle<()>>>,
 }
@@ -115,7 +125,14 @@ fn run_task(task: WorkerTask, conn: &mut Connection) -> CallResult {
 
 impl PooledConnection {
     fn new(conn: Connection) -> Result<Self, DbError> {
+        let id = NEXT_POOLED_CONNECTION_ID.fetch_add(1, Ordering::Relaxed);
         let (sender, receiver) = mpsc::channel();
+        let inner = Arc::new(PooledConnectionInner {
+            id,
+            sender,
+            handle: StdMutex::new(None),
+        });
+        let worker_id = inner.id;
         let handle = thread::Builder::new()
             .name("dailyos-db-connection".to_string())
             .spawn(move || {
@@ -124,11 +141,11 @@ impl PooledConnection {
                     match message {
                         CallMessage::Async { task, respond_to } => {
                             #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
-                            let _ = respond_to.send(run_task(task, &mut conn));
+                            let _ = respond_to.send(run_task_on_worker(worker_id, task, &mut conn));
                         }
                         CallMessage::Sync { task, respond_to } => {
                             #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
-                            let _ = respond_to.send(run_task(task, &mut conn));
+                            let _ = respond_to.send(run_task_on_worker(worker_id, task, &mut conn));
                         }
                         CallMessage::Shutdown => {
                             break;
@@ -138,12 +155,8 @@ impl PooledConnection {
             })
             .map_err(|e| DbError::Migration(format!("failed to start DB worker thread: {e}")))?;
 
-        Ok(Self {
-            inner: Arc::new(PooledConnectionInner {
-                sender,
-                handle: StdMutex::new(Some(handle)),
-            }),
-        })
+        *inner.handle.lock().unwrap_or_else(|e| e.into_inner()) = Some(handle);
+        Ok(Self { inner })
     }
 
     fn split_payload<T: Send + 'static>(payload: CallResult) -> Result<T, PooledCallError> {
@@ -179,6 +192,14 @@ impl PooledConnection {
         F: FnOnce(&mut Connection) -> rusqlite::Result<T> + Send + 'static,
         T: Send + 'static,
     {
+        let is_reentrant =
+            CURRENT_POOLED_CONNECTION_ID.with(|current| current.get() == Some(self.inner.id));
+        if is_reentrant {
+            let message = "call_sync invoked from the same pooled connection worker".to_string();
+            debug_assert!(false, "{message}");
+            return Err(PooledCallError::ReentrantCall(message));
+        }
+
         let (tx, rx) = mpsc::channel();
         let task: WorkerTask = Box::new(move |conn| f(conn).map(|value| Box::new(value) as Box<_>));
         self.inner
@@ -194,6 +215,15 @@ impl PooledConnection {
     pub(crate) fn shutdown(&self) {
         self.inner.shutdown();
     }
+}
+
+fn run_task_on_worker(worker_id: usize, task: WorkerTask, conn: &mut Connection) -> CallResult {
+    CURRENT_POOLED_CONNECTION_ID.with(|current| {
+        let previous = current.replace(Some(worker_id));
+        let result = run_task(task, conn);
+        current.set(previous);
+        result
+    })
 }
 
 /// Apply standard pragmas to a connection. `read_only` adds `query_only=ON`.
@@ -456,6 +486,9 @@ impl DbService {
             Err(PooledCallError::TypeMismatch) => Err(DbError::Migration(
                 "open_fresh_serialized result type mismatch".to_string(),
             )),
+            Err(PooledCallError::ReentrantCall(message)) => Err(DbError::Migration(format!(
+                "open_fresh_serialized {message}"
+            ))),
         }
     }
 
@@ -676,6 +709,29 @@ mod tests {
     impl Drop for GlobalServiceGuard {
         fn drop(&mut self) {
             uninstall_global();
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn call_sync_reentrant_on_same_worker_fails_without_blocking() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let svc = DbService::open_at_unencrypted(dir.path().join("reentrant.db"))
+            .await
+            .expect("open svc");
+        let writer = svc.writer();
+        let nested_writer = writer.clone();
+
+        let result = writer.call_sync(move |_conn| {
+            let nested = nested_writer.call_sync(|_conn| Ok(()));
+            Ok(matches!(nested, Err(PooledCallError::ReentrantCall(_))))
+        });
+
+        if cfg!(debug_assertions) {
+            assert!(
+                matches!(result, Err(PooledCallError::Panic(message)) if message.contains("call_sync"))
+            );
+        } else {
+            assert_eq!(result.expect("outer call"), true);
         }
     }
 

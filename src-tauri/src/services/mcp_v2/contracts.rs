@@ -1,4 +1,10 @@
+use std::sync::Arc;
+
 use serde::{Deserialize, Serialize};
+
+use crate::db::ActionDb;
+use crate::db_service::{DbService, PooledCallError};
+use crate::state::AppState;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -297,11 +303,119 @@ pub enum McpToolResult {
     Error { error: ToolError },
 }
 
+/// Request-scoped dependency bundle for MCP v2 handlers.
+///
+/// Handlers receive this from the gateway and must use it for DB and
+/// service access instead of constructing process-global resources.
+pub struct McpHandlerContext<'a> {
+    app_state: &'a AppState,
+    db_service: Arc<DbService>,
+    services: crate::services::context::ServiceContext<'a>,
+}
+
+impl<'a> McpHandlerContext<'a> {
+    pub async fn from_state(app_state: &'a AppState) -> Result<Self, ToolError> {
+        {
+            let guard = app_state.db_service.read().await;
+            if guard.is_none() {
+                drop(guard);
+                app_state
+                    .init_db_service()
+                    .await
+                    .map_err(|error| ToolError::UpstreamFailure {
+                        detail: format!("database service unavailable: {error}"),
+                    })?;
+            }
+        }
+
+        let db_service = {
+            let guard = app_state.db_service.read().await;
+            guard
+                .as_ref()
+                .cloned()
+                .ok_or_else(|| ToolError::UpstreamFailure {
+                    detail: "database service unavailable".to_string(),
+                })?
+        };
+
+        Ok(Self {
+            app_state,
+            db_service,
+            services: app_state.live_service_context().with_actor("mcp_client"),
+        })
+    }
+
+    pub fn app_state(&self) -> &'a AppState {
+        self.app_state
+    }
+
+    pub fn services(&self) -> &crate::services::context::ServiceContext<'a> {
+        &self.services
+    }
+
+    pub fn db_service(&self) -> Arc<DbService> {
+        Arc::clone(&self.db_service)
+    }
+
+    pub fn read_db<T, F>(&self, f: F) -> Result<T, ToolError>
+    where
+        F: FnOnce(&ActionDb) -> Result<T, ToolError> + Send + 'static,
+        T: Send + 'static,
+    {
+        let reader = self.db_service.reader();
+        match reader.call_sync(move |conn| {
+            let db = ActionDb::from_conn(conn);
+            Ok(f(db))
+        }) {
+            Ok(Ok(value)) => Ok(value),
+            Ok(Err(error)) => Err(error),
+            Err(error) => Err(pooled_call_error(error, "database read failed")),
+        }
+    }
+
+    pub fn write_db<T, F>(&self, f: F) -> Result<T, ToolError>
+    where
+        F: FnOnce(&ActionDb) -> Result<T, ToolError> + Send + 'static,
+        T: Send + 'static,
+    {
+        let writer = self.db_service.writer();
+        match writer.call_sync(move |conn| {
+            let db = ActionDb::from_conn(conn);
+            Ok(f(db))
+        }) {
+            Ok(Ok(value)) => Ok(value),
+            Ok(Err(error)) => Err(error),
+            Err(error) => Err(pooled_call_error(error, "database write failed")),
+        }
+    }
+}
+
+fn pooled_call_error(error: PooledCallError, context: &str) -> ToolError {
+    match error {
+        PooledCallError::ReentrantCall(message) => ToolError::UpstreamFailure {
+            detail: format!("{context}: {message}"),
+        },
+        PooledCallError::Rusqlite(error) => ToolError::UpstreamFailure {
+            detail: format!("{context}: {error}"),
+        },
+        PooledCallError::Closed => ToolError::UpstreamFailure {
+            detail: format!("{context}: pooled connection unavailable"),
+        },
+        PooledCallError::Panic(message) => ToolError::UpstreamFailure {
+            detail: format!("{context}: pooled call panicked: {message}"),
+        },
+        PooledCallError::TypeMismatch => ToolError::Internal {
+            trace_id: format!("mcp-v2-{}", uuid::Uuid::new_v4()),
+        },
+    }
+}
+
 pub trait McpToolHandler: Send + Sync {
     fn description(&self) -> &ToolDescription;
 
     fn invoke(
         &self,
+        ctx: &McpHandlerContext<'_>,
         actor: &McpActor,
         params: serde_json::Value,
     ) -> Result<serde_json::Value, ToolError>;

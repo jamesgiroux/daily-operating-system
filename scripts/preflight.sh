@@ -94,6 +94,7 @@ run_step "Tauri externalBin sidecar stub" bash -c '
 
 # 3. Service-layer boundary
 run_step "service-layer boundary" ./scripts/check_service_layer_boundary.sh
+run_step "MCP v2 handler DB boundary" ./scripts/ci/check_mcp_v2_handlers_no_direct_db_open.sh
 
 # 4. must_use on DB mutation methods
 run_step "db mutator must_use" ./scripts/check_db_mutator_must_use.sh

@@ -32,6 +32,7 @@ trap 'rm -f "$OAUTH_SECRET_SCAN_SCRIPT"' EXIT
 # Each entry: "label::command"
 CHECKS=(
   "service-layer-boundary::./scripts/check_service_layer_boundary.sh"
+  "mcp-v2-handler-db-boundary::./scripts/ci/check_mcp_v2_handlers_no_direct_db_open.sh"
   "no-let-underscore::./scripts/check_no_let_underscore_feedback.sh"
   "write-fence-usage::./scripts/check_write_fence_usage.sh"
   "ability-surface-drift::bash src-tauri/scripts/check_ability_surface_drift.sh"
