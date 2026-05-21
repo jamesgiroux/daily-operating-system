@@ -1,6 +1,6 @@
 # L0 Packet - v1.4.5 W2-B - DOS-467 Services Refactor of Mutation Paths
 
-**Current revision:** V1.3 (cycle-3 reviewer micro-fold, 2026-05-21). See §2 Changelog.
+**Current revision:** V1.4 (cycle-4 reviewer mechanical fold, 2026-05-21). See §2 Changelog.
 
 ## §0 Shared Contract Anchor
 
@@ -35,6 +35,7 @@ shared contract. The key W2-B anchors are:
 
 ## §2 Changelog
 
+- **V1.4 - 2026-05-21:** Lands the cycle-4 critical helper-disposition table immediately after the function-level call-site inventory, closing the third recurrence of the same unfolded finding. The table explicitly keeps `accounts::write_account_markdown`, `people::write_person_markdown`, `projects::write_project_markdown`, `accounts::sync_content_index_for_account`, and `projects::sync_content_index_for_project` with `dos7-allowed: entity-markdown-regen` call-site comments, and it also pins the inbox and Drive staging allowlist comments. Tightens §8 caller wiring around `watcher.rs::handle_account_changes`: W2-B uses `wiring::build_pipeline()?`, obtains `&Connection` with `db.conn_ref()`, keeps the account upsert as an entity-table write, keeps `write_account_markdown` with the allowlist comment, and routes any true workspace-file ingestion through `pipeline.run(conn, request)`.
 - **V1.3 - 2026-05-21:** Adds trust topology declaration. Closes the helper-writer ambiguity: `write_person_markdown`, `write_account_markdown`, and `write_project_markdown` are explicitly allowlisted with `dos7-allowed: entity-markdown-regen` because they regenerate markdown summaries from entity DB state already canonical to the local user's workspace, not workspace-file ingestion. Adds concrete caller wiring: W2-B accesses the pipeline through `wiring::build_pipeline()` and passes `db.conn_ref()` as the `&Connection` from `ActionDb` watcher context. Adds failure-path test names for pipeline rejection after DB upsert, duplicate watcher-event idempotency, and real workspace edit lifecycle/run/event/markdown preservation proof. Fixes the `IngestPipeline::run` call shape to the instance method `pipeline.run(conn, request)`.
 - **V1.2 - 2026-05-21:** Folds cycle-13 §13.3.2 and cycle-2 reviewer findings into this packet. Drive content writes at `src-tauri/src/google_drive/poller.rs:199` and `:208` are explicitly de-scoped to v1.4.6 per cycle-13 §13.3.2; file the v1.4.6 ticket for a `workspace_ingestion::staging` API that bridges remote Drive bytes to a validated `File`. Drops the self-vacating AC test names and removes all `if_supported` / `or_documents_staging_gap` language in favor of concrete CI gates. Drops the staging-gap escape valve language from §10/§11 and replaces it with explicit `dos7-allowed: drive-staging-v146` allowlist comments at the two Drive write sites. Replaces any `blake3` formula references with `sha256` per §0 V1.2 §2.4. Confirms §0 V1.2 §2.1 and W2-A are the canonical `IngestRequest` source; W2-B does not invent fields, DTOs, or a parallel mutation boundary.
 - **V1.1 - 2026-05-21:** Folds §0 shared contract; reconciles §8 stub against W2-A's canonical `IngestRequest` (`file` + `identity` + `file_id` + `source_asof` + `source_type` + `entity` + `mode` + `category_hint`); replaces stringly `entity_id` with typed `EntityRef`; replaces `registry::open_validated` free-function call with method-call `WorkspaceSourceRegistry::open_validated`; explicitly de-scopes account/project/person/transcript DB writes and keeps them as-is; allowlists `watcher.rs:81` bootstrap with rationale; preserves existing `app_handle.emit` calls and does not refer to `emit_signal`; drops async run signature; clarifies CI script consumption: W2-A creates, W2-B verifies.
@@ -192,6 +193,23 @@ src-tauri/src/quill/poller.rs:399:                    let _ = db.update_meeting_
 - `async fn process_sync_row(...)` at `src-tauri/src/quill/poller.rs:102`; state-machine writes at `src-tauri/src/quill/poller.rs:121`, `134`, `155`, `187`, `223`, `253`, `275`, `299`, `312`, `348`, `372`, `527`, and `542`; transcript processing call at `src-tauri/src/quill/poller.rs:377`; DB writes at `src-tauri/src/quill/poller.rs:399`, `415`, `428`, `441`, and direct grep match at `src-tauri/src/quill/poller.rs:493` (`db.upsert_action_if_not_completed`). These are transcript metadata, capture, action, and sync-state writes; W2-B keeps them as-is because they are entity-table/state writes, not workspace-file writes.
 - `fn emit_transcript_processed(...)` at `src-tauri/src/quill/poller.rs:622`; Tauri event emissions at `src-tauri/src/quill/poller.rs:636` and `src-tauri/src/quill/poller.rs:643`. Preserve these emissions after any refactor.
 
+### V1.4 entity-markdown helper disposition (3rd-cycle recurring finding fold)
+
+These helpers generate workspace files from entity-table state and are NOT workspace_ingestion mutations. They KEEP, with explicit `dos7-allowed: entity-markdown-regen` allowlist comments at each call site so the W2-A `check_workspace_mutation_allowlist.sh` script recognizes them.
+
+| Helper | Defined at | Called from | Allowlist comment line |
+|---|---|---|---|
+| `accounts::write_account_markdown` | (look up at L1) | `watcher.rs:727` (handle_account_changes) | `// dos7-allowed: entity-markdown-regen` |
+| `people::write_person_markdown` | (look up at L1) | `watcher.rs:674` (handle_people_changes) | `// dos7-allowed: entity-markdown-regen` |
+| `projects::write_project_markdown` | (look up at L1) | `watcher.rs:768` (handle_project_changes) | `// dos7-allowed: entity-markdown-regen` |
+| `accounts::sync_content_index_for_account` | (look up at L1) | `watcher.rs:814` (handle_account_content_changes) | `// dos7-allowed: entity-markdown-regen` |
+| `projects::sync_content_index_for_project` | (look up at L1) | `watcher.rs:881` (handle_project_content_changes) | `// dos7-allowed: entity-markdown-regen` |
+| `watcher.rs:81` (`std::fs::create_dir_all` for inbox bootstrap) | n/a | n/a | `// dos7-allowed: inbox-bootstrap` |
+| `google_drive/poller.rs:199` (`std::fs::create_dir_all`) | n/a | n/a | `// dos7-allowed: drive-staging-v146` (cycle-13 §13.3.2) |
+| `google_drive/poller.rs:208` (`std::fs::write`) | n/a | n/a | `// dos7-allowed: drive-staging-v146` (cycle-13 §13.3.2) |
+
+The W2-A allowlist script reads these comments and skips the marked lines from the mutation-allowlist enforcement. ALL other workspace-file write paths in W2-B-owned files MUST route through `IngestPipeline::run` or fail the lint.
+
 ## §5 Don't Touch
 
 - **Don't touch:** `services/claims.rs` (not a mutation-path caller; leave untouched); `processor/enrich.rs` (intel_queue enrichment is not a workspace-file mutation; separate concern); `src-tauri/src/accounts.rs` / `people.rs` / `projects.rs` standalone files except through owned call-site behavior in `watcher.rs`; `src-tauri/src/commands/workspace.rs` (W2-D owns; do not touch any function in this file); `src-tauri/src/processor/mod.rs` and `src-tauri/src/processor/router.rs` (W2-D owns); `src-tauri/scripts/check_workspace_mutation_allowlist.sh` and `src-tauri/tests/workspace_mutation_allowlist_test.rs` creation (W2-A owns per §0 shared contract §5).
@@ -243,7 +261,9 @@ K-in grep at L0 returned no direct hits in `docs/solutions` or `.docs/decisions`
 
 ## §8 Code Stub
 
-The representative rewrite shape is the account change path around `src-tauri/src/watcher.rs:722`: preserve the account table upsert, then route the already existing workspace file through W2-A's canonical ingestion surface. This pattern applies only when the caller has an existing workspace-relative file. It does not apply to Drive remote content; Drive writes are explicitly out of scope for v1.4.5 per cycle-13 §13.3.2.
+This packet chooses `wiring::build_pipeline()?` for W2-B watcher call sites. Do not use a `state.workspace_intake_pipeline()?` extension method in this lane unless the shared W2 contract is amended first. The watcher already owns `ActionDb`; obtain the W2-A `&Connection` with `let conn = db.conn_ref();`.
+
+Complete L1 refactor sketch for `watcher.rs::handle_account_changes` around `src-tauri/src/watcher.rs:692-740`: preserve the account table upsert, keep `write_account_markdown` with a `dos7-allowed: entity-markdown-regen` comment, and route any true workspace-file ingestion through W2-A's canonical pipeline. This pattern applies only when the caller has an existing workspace-relative file. It does not apply to Drive remote content; Drive writes are explicitly out of scope for v1.4.5 per cycle-13 §13.3.2.
 
 ```rust
 // watcher.rs BEFORE: handle_account_changes around src-tauri/src/watcher.rs:722
@@ -253,8 +273,9 @@ if db.upsert_account(&account).is_ok() {
 ```
 
 ```rust
-// watcher.rs AFTER shape: account upsert remains an entity-table write; the
-// workspace-file ingestion request uses the exact §0 V1.2 §2.1 shape.
+// watcher.rs AFTER shape for handle_account_changes around lines 692-740.
+// The account upsert remains an entity-table write. Only a true workspace-file
+// ingestion path goes through the exact §0 V1.2 §2.1 request shape.
 use chrono::{DateTime, Utc};
 use rusqlite::Connection;
 use std::path::Path;
@@ -270,7 +291,7 @@ use abilities_runtime::abilities::provenance::source::{
     EntityId, WorkspaceFileKind,
 };
 
-fn handle_account_change_after_shape(
+fn handle_account_changes_after_w2b_refactor(
     db: &crate::db::ActionDb,
     workspace: &Path,
     workspace_root: &Path,
@@ -278,11 +299,13 @@ fn handle_account_change_after_shape(
     account: crate::db::DbAccount,
     json: serde_json::Value,
 ) -> Result<Option<IngestReceipt>, IngestError> {
+    // KEEPS: entity-table write, not workspace-file mutation.
     if !db.upsert_account(&account).is_ok() {
         return Ok(None);
     }
 
-    // `db` is the watcher-owned ActionDb; `conn` is the &Connection passed to W2-A.
+    // If this watcher branch has a workspace-relative file that would otherwise
+    // be written directly, route that ingestion through W2-A's pipeline.
     let pipeline = wiring::build_pipeline()?;
     let conn = db.conn_ref();
     let receipt = ingest_account_dashboard_after_upsert(
@@ -293,6 +316,7 @@ fn handle_account_change_after_shape(
         &account,
     )?;
 
+    // KEEPS: entity-table state -> local markdown summary, not workspace ingestion.
     // dos7-allowed: entity-markdown-regen - entity DB state -> local markdown summary; not workspace-file ingestion
     let _ = crate::accounts::write_account_markdown(workspace, &account, Some(&json), db);
 
@@ -383,7 +407,7 @@ std::fs::write(&file_path, content)?;
 
 ## §9 Tests Required
 
-Regression tests prove that W2-B adds no new direct workspace-file writes, preserves existing event payloads, and builds §0 V1.2 §2.1 requests at every refactored ingestion call site. There are no `*_if_supported` tests and no `*_or_documents_staging_gap` tests.
+Regression tests prove that W2-B adds no new direct workspace-file writes, preserves existing event payloads, and builds §0 V1.2 §2.1 requests at every refactored ingestion call site. Cycle-4 F3 keeps the V1.3 watcher fixture additions: pipeline rejection after DB upsert, duplicate-event idempotency, and real workspace-edit lifecycle proof. There are no `*_if_supported` tests and no `*_or_documents_staging_gap` tests.
 
 Required tests:
 

@@ -1,6 +1,6 @@
 # L0 Packet — v1.4.5 W2-A — DOS-466 Staged Ingestion Service: Pipeline Shell + Quarantine + auto_detect_category
 
-**Current revision:** V1.3 (trust-topology fold + cycle-3 compile-shape reviewer folds, 2026-05-21). See §2 Changelog.
+**Current revision:** V1.4 (cycle-4 cross-lane reconciliation + mechanical bug fold, 2026-05-21). See §2 Changelog.
 
 ## 1. Header
 
@@ -20,6 +20,11 @@
 
 ## 2. Changelog
 
+- **V1.4 — 2026-05-21:** Folds §0 V1.3 and cycle-4 mechanical findings without changing architecture.
+  1. Absorbs §0 V1.3: `WorkspaceIntakeService` trait DTOs use raw slugs at the crate boundary; `LifecycleRepo` adds `set_entity` + `get` helpers.
+  2. Makes `workspace_intake_impl.rs` the SLUG→TYPED translator: parse `WorkspaceIntakeRequest` raw slugs into `WorkspaceFileKind` / `IngestionMode` / `WorkspaceCategory`, parse entity type via `EntityType::from_str_lossy`, validate categories through `WorkspaceCategoryRegistry::validate`, then construct the internal typed `IngestRequest`.
+  3. Adds the one-line `pub mod workspace_intake_impl;` declaration to `workspace_ingestion/mod.rs` per cycle-13 §13.2 and §0 V1.3 bridge expansion.
+  4. Fixes cycle-4 mechanical bugs: `entity_name` is display-only and no longer slug-validated or used as a path segment; the no-direct-open grep catches bare `File::open`; extractor handoff requires rewinding the `&File` because W1 `Extractor::extract` accepts `&File` only; and the module declaration is explicitly owned by this packet.
 - **V1.3 — 2026-05-21:** Folds local-to-local trust topology framing and cycle-3 compile-shape findings against W2-A V1.2.
   1. Adds the trust topology declaration to §1: local-to-local single-user (WP block → loopback Tauri runtime, James-only principal).
   2. Drops `resolved_path` scope-gated redaction. The user already has filesystem access on this surface, so the bridge passes the receipt path through.
@@ -31,7 +36,7 @@
   2. `IngestError::Rejected(RejectionReason::{FileTooLarge, UnsupportedFormat})` consumes W1 UNIT variants per `src-tauri/src/services/workspace_ingestion/contracts.rs:125-132`; separate `RejectionMetadata { limit_bytes, found_bytes }` carries log/event metadata. Cite §0 V1.2 §2.3 and cycle-13 §13.2.2.
   3. Owns abilities-runtime bridge edits per cycle-13 §13.3.1: module declarations, `ServiceContext` field/accessor, dailyos_lib impl, and bootstrap registration.
   4. `WorkspaceIntakeService::ingest` is async per §0 V1.2 §4 and cycle-13 §13.2.4.
-  5. Security gate now covers caller-provided `file_id` derivation mismatch and `EntityRef.entity_name` slug validation before `WorkspaceCategoryRegistry::resolve_path`, per cycle-2 codex challenge F5.
+  5. Security gate now covers caller-provided `file_id` derivation mismatch. The former `EntityRef.entity_name` slug-validation requirement from V1.2 is superseded by V1.4 because §0 V1.3 marks `entity_name` display-only.
   6. IL gate Q3/Q5 now names `W3-B/DOS-471` and `W5-A/DOS-475` explicitly, per cycle-2 codex challenge F7.
   7. Adds resolved-path scope-gated enforcement test per cycle-2 `/cso` F4 and cycle-13 §13.4.
   8. Clarifies `IngestionMode` consumer mapping: W1-extension PR adds `EntitySeeded` + `Realtime` per cycle-13 §13.1; W2-A consumes the extended enum, not a local mapping.
@@ -74,11 +79,12 @@ Implement `services::workspace_ingestion::pipeline::IngestPipeline` — the stag
 
 - `src-tauri/src/services/workspace_ingestion/pipeline.rs` — sole owner permanently; defines the `IngestPipeline` struct and W2-A-owned public surface that USES the `Extractor` and `SignalEmitter` traits from W1-A's `contracts.rs`. It also owns the §0 §2 canonical DTO implementations in code; this packet cites §0 rather than duplicating their definitions.
 - `src-tauri/src/services/workspace_ingestion/wiring.rs` — sole owner of content; W1-A pre-created the empty file shell. W2-A fills it with `pub fn build_pipeline() -> IngestPipeline` constructed with `contracts::NullExtractor` + `contracts::NullSignalEmitter` defaults.
-- `src-tauri/src/services/workspace_ingestion/lifecycle.rs` — W2-A may add `LifecycleRepo::{insert_pending, transition, record_user_override, update_category}` write helpers per §0 §3. W1-A's existing `LifecycleState`, `WorkspaceFileLifecycle`, `UserOverride`, and `LifecycleError` types remain read-only.
+- `src-tauri/src/services/workspace_ingestion/lifecycle.rs` — W2-A may add `LifecycleRepo::{insert_pending, transition, record_user_override, update_category, set_entity, get}` write helpers per §0 V1.3 §3. W1-A's existing `LifecycleState`, `WorkspaceFileLifecycle`, `UserOverride`, and `LifecycleError` types remain read-only.
+- `src-tauri/src/services/workspace_ingestion/mod.rs` — single-line edit only: insert `pub mod workspace_intake_impl;` in the existing alphabetized module declaration list.
 - `src-tauri/abilities-runtime/src/lib.rs:12-18` — edit the existing inline `pub mod services { ... }` block to add `workspace_intake`; do not invent a separate `services/mod.rs` file.
-- `src-tauri/abilities-runtime/src/services/workspace_intake.rs` (NEW) — crate-boundary `WorkspaceIntakeService` async trait per §0 V1.2 §4 and cycle-13 §13.2.4. W2-C consumes this bridge rather than importing `dailyos_lib` from `abilities-runtime`.
-- `src-tauri/abilities-runtime/src/services/context.rs` — add `workspace_intake` field + accessor to `ServiceContext` per §0 V1.2 §4 and cycle-13 §13.3.1.
-- `src-tauri/src/services/workspace_ingestion/workspace_intake_impl.rs` (NEW) — dailyos_lib implementation of `WorkspaceIntakeService` that validates/open via `WorkspaceSourceRegistry::open_validated` and invokes `pipeline.run(&conn, request)` inside `spawn_blocking`.
+- `src-tauri/abilities-runtime/src/services/workspace_intake.rs` (NEW) — crate-boundary `WorkspaceIntakeService` async trait with raw-slug DTOs per §0 V1.3 §4 and cycle-13 §13.2.4. W2-C consumes this bridge rather than importing `dailyos_lib` from `abilities-runtime`.
+- `src-tauri/abilities-runtime/src/services/context.rs` — add `workspace_intake` field + accessor to `ServiceContext` per §0 V1.3 §4 and cycle-13 §13.3.1.
+- `src-tauri/src/services/workspace_ingestion/workspace_intake_impl.rs` (NEW) — dailyos_lib implementation of `WorkspaceIntakeService`; owns raw-slug parsing to typed `WorkspaceFileKind` / `IngestionMode` / `WorkspaceCategory`, category validation via `WorkspaceCategoryRegistry::validate`, validated open via `WorkspaceSourceRegistry::open_validated`, and `pipeline.run(&conn, request)` invocation inside `spawn_blocking`.
 - `src-tauri/src/main.rs` OR Bootstrap location — one registration line wiring `IngestPipelineWorkspaceIntake` into `ServiceContext` construction.
 - `src-tauri/scripts/check_workspace_mutation_allowlist.sh` (NEW) — W2-A creates the shared W2 mutation allowlist script per §0 §5.
 
@@ -90,7 +96,7 @@ Implement `services::workspace_ingestion::pipeline::IngestPipeline` — the stag
 
 ## 5. Don't touch
 
-- **Don't touch:** `processor/classifier.rs` (read-only call); `services/claims.rs` (no caller in W2-A — narrowed scope); `watcher.rs` (W2-B owns the watcher interaction); `google_drive/` mutation paths (W2-B owns); `_inbox/` refactor (W2-D owns); signal bus (W3-B owns the signal wiring); `services/workspace_ingestion/extract.rs` (W3-A owns); `services/workspace_ingestion/{registry,runs,link,signals,graph,mod}.rs` (other lanes). `services/workspace_ingestion/lifecycle.rs` is intentionally not in this list because §4 gives W2-A owned write-helper edits. No other crate-level `Cargo.toml` edits beyond the already-present `sha2` + `hex` dependencies at `src-tauri/Cargo.toml:54-56`; W2-A must not add a new hash dependency.
+- **Don't touch:** `processor/classifier.rs` (read-only call); `services/claims.rs` (no caller in W2-A — narrowed scope); `watcher.rs` (W2-B owns the watcher interaction); `google_drive/` mutation paths (W2-B owns); `_inbox/` refactor (W2-D owns); signal bus (W3-B owns the signal wiring); `services/workspace_ingestion/extract.rs` (W3-A owns); `services/workspace_ingestion/{registry,runs,link,signals,graph}.rs` (other lanes). `services/workspace_ingestion/lifecycle.rs` is intentionally not in this list because §4 gives W2-A owned write-helper edits. `services/workspace_ingestion/mod.rs` is forbidden except for W2-A V1.4's single `pub mod workspace_intake_impl;` declaration. No other crate-level `Cargo.toml` edits beyond the already-present `sha2` + `hex` dependencies at `src-tauri/Cargo.toml:54-56`; W2-A must not add a new hash dependency.
 
 ## 6. K-in substrate audit
 
@@ -124,11 +130,12 @@ Implement `services::workspace_ingestion::pipeline::IngestPipeline` — the stag
 | `DataSource::WorkspaceFile { kind }` | `src-tauri/abilities-runtime/src/abilities/provenance/source.rs:73` | Lifecycle provenance serializes workspace-file source through the canonical `DataSource` variant; no stale `WorkspaceInbox` mirror. See §0 §6. |
 | `DocumentId` | `src-tauri/abilities-runtime/src/abilities/provenance/source.rs:65` | W2-A preserves stable `file_id` so W3-A can map it into document provenance without inventing a document-id type. |
 | `EntityType` | `src-tauri/src/entity.rs:13` | `EntityRef` (§0 §2.1) and registry validation (§0 §7) pass typed entity kind; no stringly `entity_type` in pipeline logic. |
+| `EntityType::from_str_lossy` | `src-tauri/src/entity.rs:41-49` | `workspace_intake_impl.rs` converts crate-boundary raw entity slugs through this existing helper. There is no `EntityType::from_slug` helper in shipped substrate. |
 | `EntityId` | `src-tauri/abilities-runtime/src/abilities/provenance/source.rs:37` | `IngestRequest.entity` (§0 §2.1) consumes the canonical newtype through `EntityRef`; no stringly-typed entity ids in the public request surface. |
 | `sha2` + `hex` deps | `src-tauri/Cargo.toml:54-56` | `file_id_from_identity` uses `Sha256` + `hex::encode` per §0 V1.2 §2.4 and cycle-13 §13.2.1. W2-A must not add `blake3`. |
 | Canonical async ability shape | `src-tauri/abilities-runtime/src/abilities/account_overview.rs:106-115` | W2-A's bridge must support W2-C's canonical `pub async fn`, `ctx: &AbilityContext<'_>`, return-inner-type shape. See §0 V1.2 §13. |
 | `ActorKind` variants | `src-tauri/abilities-runtime/src/abilities/registry.rs:468-486` | Existing variants are `Agent`, `User`, `Admin`, `System`, `SurfaceClient`, `McpClient`; no `WordPressRender` actor and no W2-A principal-differentiation gate. |
-| `AbilityContext` | `src-tauri/abilities-runtime/src/abilities/registry.rs:740-768` | Ability fns receive `AbilityContext`, not `ServiceContext`; W2-A extends `ServiceContext` behind `ctx.services().workspace_intake()` per §0 V1.2 §4 and §13. |
+| `AbilityContext` | `src-tauri/abilities-runtime/src/abilities/registry.rs:740-768` | Ability fns receive `AbilityContext`, not `ServiceContext`; W2-A extends `ServiceContext` behind `ctx.services().workspace_intake()` per §0 V1.3 §4 and §13. |
 | Inline abilities-runtime services module | `src-tauri/abilities-runtime/src/lib.rs:12-18` | The crate uses `pub mod services { ... }` inline in `lib.rs`; W2-A adds `workspace_intake` there and must not create `src-tauri/abilities-runtime/src/services/mod.rs`. |
 
 ### Shared-contract anchors consumed
@@ -136,8 +143,8 @@ Implement `services::workspace_ingestion::pipeline::IngestPipeline` — the stag
 - `IngestRequest` and `IngestReceipt` live in §0 §§2.1–2.2. W2-A implements those types in `pipeline.rs`, but this packet does not restate their fields. `IngestError` follows §0 §2.3 plus the V1.3 local addition below; §0 V1.2 §2.3 is authoritative that `RejectionReason` consumes W1 UNIT variants.
 - V1.3 adds one W2-A-local `IngestError::FileIdMismatch { expected, found }` variant for caller-derived `file_id` mismatch. Do not encode this as `RejectionReason`.
 - `file_id_from_identity` and `FileIdError` live in §0 V1.2 §2.4. All W2 callers derive file IDs through that helper; V1.2 uses `sha256_hex_lower(workspace_relative_path_bytes)[..16]`, not `blake3`.
-- `LifecycleRepo` lives in §0 §3. W2-A adds write helpers in `lifecycle.rs`; `pipeline.rs` must not inline lifecycle SQL.
-- `WorkspaceIntakeService` and the ability/runtime crate bridge live in §0 V1.2 §4. The trait method is async and the owned file list in §4 includes all module declaration, context, implementation, and registration edits required by cycle-13 §13.3.1.
+- `LifecycleRepo` lives in §0 V1.3 §3. W2-A adds write helpers in `lifecycle.rs`, including `set_entity` and `get`; `pipeline.rs` must not inline lifecycle SQL.
+- `WorkspaceIntakeService` and the ability/runtime crate bridge live in §0 V1.3 §4. The trait method is async, the trait DTO surface uses raw slugs, and the dailyos_lib `workspace_intake_impl.rs` converts those slugs to typed pipeline fields before constructing `IngestRequest`. The owned file list in §4 includes all module declaration, context, implementation, and registration edits required by cycle-13 §13.3.1.
 - `check_workspace_mutation_allowlist.sh` ownership lives in §0 §5.
 - `auto_detect_category_pure` plus registry validation split lives in §0 §7.
 - The hardened path-opening CI gate lives in §0 §8.
@@ -147,7 +154,7 @@ Implement `services::workspace_ingestion::pipeline::IngestPipeline` — the stag
 
 ### Verified against §0
 
-Load-bearing §0 sections for W2-A are §§2.1–2.4 (canonical request/receipt/error/file-id), §3 (lifecycle write helpers), §4 (async crate-boundary intake bridge), §5 (CI script ownership), §6 (`DataSource::WorkspaceFile { kind }` canonicalization), §7 (category sniff/validate split), §8 (path-opening grep gate), §9 (typed quarantine actor), §10 (substrate reuse policy), and §13 (canonical ability shape). Any L1 implementation that conflicts with these sections or with cycle-13 §§13.1-13.4 is a packet violation.
+Load-bearing §0 sections for W2-A are §§2.1–2.4 (canonical typed internal request/receipt/error/file-id), V1.3 §3 (lifecycle write helpers including `set_entity` + `get`), V1.3 §4 (async raw-slug crate-boundary intake bridge), §5 (CI script ownership), §6 (`DataSource::WorkspaceFile { kind }` canonicalization), §7 (category sniff/validate split), §8 (path-opening grep gate), §9 (typed quarantine actor), §10 (substrate reuse policy), and §13 (canonical ability shape). Any L1 implementation that conflicts with these sections or with cycle-13 §§13.1-13.4 is a packet violation.
 
 ### K-in obligation (grep before scoring)
 
@@ -186,11 +193,12 @@ DOS-466 is security-annotated. Untrusted file content enters the service. Requir
 - No shell command invocation from the pipeline (no `std::process::Command` for content extraction).
 - Pipeline reads from the `(File, FileIdentity)` returned by `WorkspaceSourceRegistry::open_validated` only — never re-opens by path.
 - Caller-provided `IngestRequest.file_id` MUST match `file_id_from_identity(&request.identity, workspace_root)` per §0 V1.2 §2.1 and §2.4. Mismatch returns typed `IngestError::FileIdMismatch { expected, found }`; L1 must not downgrade this to `DbError`, `Io`, `RejectionReason`, or an untyped string. §10 requires the negative test.
-- `EntityRef.entity_name` MUST be slug-validated against `^[a-z0-9_-]+$` before it is used as the `entity_name` path segment in `WorkspaceCategoryRegistry::resolve_path`. The current registry treats this value as a path component at `src-tauri/src/services/workspace_ingestion/registry.rs:421,448`, so traversal characters, separators, empty names, and display-name strings are rejected before path resolution. §10 requires the negative test.
+- `EntityRef.entity_name` is display-only per §0 V1.3 §2.1 and must not be used as a routing/path segment. Do not add a slug-validation gate to `entity_name`; path resolution uses typed `entity_type` plus validated category only.
 - CI grep gate covers ALL path-opening APIs from §0 §8, verbatim:
 
 ```text
 Forbidden in pipeline.rs source:
+  - File::open
   - std::fs::File::open
   - std::fs::File::options
   - std::fs::OpenOptions
@@ -265,9 +273,10 @@ impl IngestPipeline {
         // L1 fills:
         // 1. Re-derive file_id via file_id_from_identity(&request.identity, workspace_root).
         // 2. Reject caller-provided file_id mismatch with IngestError::FileIdMismatch { expected, found }.
-        // 3. Validate EntityRef.entity_name slug before resolve_path.
+        // 3. Resolve path through WorkspaceCategoryRegistry using category + entity_type only.
+        //    EntityRef.entity_name is display-only; never treat it as a path segment.
         // 4. Read from request.file only, enforcing max bytes and 4KB content_head.
-        // 5. Seek back to start before calling extractor, or pass bounded content to extractor.
+        // 5. Seek back to start before calling Extractor::extract(&File, ...).
         // 6. Populate resolved_path in the receipt; no scope redaction in this topology.
     }
 
@@ -322,24 +331,6 @@ pub enum IngestError {
 }
 ```
 
-Canonical `IngestRequest` construction from a pre-validated registry open uses §0 V1.2 §2.1 exactly. W2-A owns the shape in `pipeline.rs`; callers construct it only after `WorkspaceSourceRegistry::open_validated`.
-
-```rust
-let (file, identity) = WorkspaceSourceRegistry::open_validated(workspace_root, file_ref)?;
-let file_id = file_id_from_identity(&identity, workspace_root)?;
-
-let request = IngestRequest {
-    file,
-    identity,
-    file_id,
-    source_asof,
-    source_type,
-    entity,
-    mode,
-    category_hint,
-};
-```
-
 Size and binary-format rejection uses UNIT `RejectionReason` variants per §0 V1.2 §2.3. Metadata is separate and redacted before logs/events:
 
 ```rust
@@ -352,7 +343,7 @@ pub struct RejectionMetadata {
 return Err(IngestError::Rejected(RejectionReason::FileTooLarge));
 ```
 
-`src-tauri/abilities-runtime/src/services/workspace_intake.rs` is the async crate-boundary trait from §0 V1.2 §4:
+`src-tauri/abilities-runtime/src/services/workspace_intake.rs` is the async crate-boundary trait from §0 V1.3 §4. The trait surface uses raw slugs because `abilities-runtime` cannot import dailyos_lib ingestion types:
 
 ```rust
 use async_trait::async_trait;
@@ -369,6 +360,8 @@ pub trait WorkspaceIntakeService: Send + Sync {
 }
 ```
 
+The required DTO fields are `file_ref`, `source_type_slug`, `entity: Option<EntityRefDto>`, `mode_slug`, and `category_slug: Option<String>`. `EntityRefDto` carries `entity_type_slug`, `entity_id`, and display-only `entity_name`.
+
 `src-tauri/abilities-runtime/src/services/context.rs` grows the service accessor behind `AbilityContext::services()`; ability functions still receive `AbilityContext`, not `ServiceContext`, per §0 V1.2 §13:
 
 ```rust
@@ -384,44 +377,85 @@ impl<'a> ServiceContext<'a> {
 }
 ```
 
-`src-tauri/src/services/workspace_ingestion/workspace_intake_impl.rs` is the dailyos_lib bridge implementation. It validates the workspace-relative file reference through `WorkspaceSourceRegistry::open_validated`, derives `file_id` via §0 V1.2 §2.4, converts to §0 V1.2 §2.1 `IngestRequest`, and runs sync rusqlite/pipeline work inside `spawn_blocking`. The bridge is constructed with a trusted `workspace_root`; `WorkspaceIntakeRequest` must not carry or override that root:
+`src-tauri/src/services/workspace_ingestion/workspace_intake_impl.rs` is the dailyos_lib bridge implementation and the only SLUG→TYPED translator. It validates the workspace-relative file reference through `WorkspaceSourceRegistry::open_validated`, derives `file_id` via §0 V1.2 §2.4, converts raw DTO slugs into the typed §0 V1.2 §2.1 `IngestRequest`, validates category via `WorkspaceCategoryRegistry::validate`, and runs sync rusqlite/pipeline work inside `spawn_blocking`. The bridge is constructed with a trusted `workspace_root`; `WorkspaceIntakeRequest` must not carry or override that root:
 
 ```rust
 use std::path::PathBuf;
 
 pub struct IngestPipelineWorkspaceIntake {
     workspace_root: PathBuf,
-    // L1 chooses the concrete handles needed to reach DB and pipeline wiring.
+    // workspace_root bound at impl construction; NOT caller-overridable
 }
 
 #[async_trait::async_trait]
 impl WorkspaceIntakeService for IngestPipelineWorkspaceIntake {
-    async fn ingest(
-        &self,
-        _ctx: &AbilityContext<'_>,
-        request: WorkspaceIntakeRequest,
-    ) -> Result<WorkspaceIntakeReceipt, WorkspaceIntakeError> {
-        let workspace_root = self.workspace_root.clone();
-        tokio::task::spawn_blocking(move || {
-            let (file, identity) = WorkspaceSourceRegistry::open_validated(&workspace_root, &request.file_ref)?;
-            let file_id = file_id_from_identity(&identity, &workspace_root)?;
-            let ingest_request = IngestRequest {
-                file,
-                identity,
-                file_id,
-                source_asof,
-                source_type: request.source_type,
-                entity: request.entity.map(EntityRef::try_from).transpose()?,
-                mode: request.mode,
-                category_hint: request.category_hint,
-            };
-            let receipt = pipeline.run(&conn, ingest_request)?;
-            Ok(receipt.into())
+    async fn ingest(&self, ctx: &AbilityContext<'_>, req: WorkspaceIntakeRequest)
+        -> Result<WorkspaceIntakeReceipt, WorkspaceIntakeError>
+    {
+        // Parse raw slugs to typed enums
+        let source_type = WorkspaceFileKind::from_slug(&req.source_type_slug)
+            .ok_or(WorkspaceIntakeError::InvalidSourceTypeSlug(req.source_type_slug.clone()))?;
+        let mode = IngestionMode::from_slug(&req.mode_slug)
+            .ok_or(WorkspaceIntakeError::InvalidModeSlug(req.mode_slug.clone()))?;
+        let entity = req.entity.map(|e| {
+            let entity_type = EntityType::from_str_lossy(&e.entity_type_slug); // NOTE: from_str_lossy NOT from_slug
+            Ok::<_, WorkspaceIntakeError>(EntityRef {
+                entity_type,
+                entity_id: EntityId::new(e.entity_id),
+                entity_name: e.entity_name,
+            })
+        }).transpose()?;
+        // Convert + validate category via registry
+        let conn = ctx.services().conn_ref()?;  // L1 wires this through; if accessor doesn't exist, ctx provides a db handle path
+        let category_hint = if let Some(slug) = req.category_slug.as_deref() {
+            let cat = WorkspaceCategory::from_slug(slug)
+                .ok_or(WorkspaceIntakeError::InvalidCategorySlug(slug.to_string()))?;
+            let entity_type = entity.as_ref().map(|e| e.entity_type);
+            WorkspaceCategoryRegistry::validate(conn, &cat, entity_type)
+                .map_err(|_| WorkspaceIntakeError::CategoryNotAllowed { allowed: vec![/* L1 enumerates */] })?;
+            Some(cat)
+        } else {
+            None
+        };
+        // Open the file via the canonical trust boundary
+        let (file, identity) = WorkspaceSourceRegistry::open_validated(&self.workspace_root, &req.file_ref)
+            .map_err(WorkspaceIntakeError::from_rejection)?;
+        let file_id = pipeline::file_id_from_identity(&identity, &self.workspace_root)?;
+        // Construct typed IngestRequest
+        let request = IngestRequest {
+            file, identity, file_id: file_id.clone(),
+            source_asof: identity.canonical_path.metadata()?.modified()?.into(),
+            source_type, entity, mode, category_hint,
+        };
+        // Run pipeline
+        let pipeline = build_pipeline();
+        let receipt = pipeline.run(&conn, request)?;
+        Ok(WorkspaceIntakeReceipt {
+            run_id: receipt.ingestion_run_id.to_string(),
+            file_id: receipt.file_id,
+            content_sha256: receipt.content_sha256,
+            lifecycle_state_after_slug: receipt.lifecycle_state_after.as_slug().to_string(),
+            resolved_path: receipt.resolved_path,
         })
-        .await
-        .map_err(WorkspaceIntakeError::Join)?
     }
 }
+```
+
+`LifecycleRepo` also exposes the §0 V1.3 §3 helpers W2-D consumes:
+
+```rust
+pub fn get(
+    conn: &Connection,
+    file_id: &str,
+) -> Result<Option<WorkspaceFileLifecycle>, LifecycleError>;
+
+pub fn set_entity(
+    conn: &Connection,
+    file_id: &str,
+    entity_type: EntityType,
+    entity_id: &str,
+    entity_name: Option<&str>,
+) -> Result<(), LifecycleError>;
 ```
 
 Bootstrap registration is a single wiring line in `src-tauri/src/main.rs` or the existing Bootstrap location:
@@ -439,9 +473,9 @@ service_context_builder.workspace_intake(&ingest_pipeline_workspace_intake);
 - `pipeline.rs` may hold a `File` value in `IngestRequest`; it must not call `File::open`, `OpenOptions`, `std::fs::read*`, metadata-open helpers, mmap, or any path-open equivalent. The line-anchored CI gate in §10 enforces §0 §8.
 - `auto_detect_category_pure` is pure and registry-free. `validate_detected_category` is the only registry validation surface and delegates to `WorkspaceCategoryRegistry::validate(conn, &candidate, entity_type)`, falling back to `None` on validation failure.
 - `IngestReceipt.claim_proposals` is present for W3-A compatibility, but W2-A returns an empty vector and records `claim_count_produced = 0`.
-- `WorkspaceIntakeService::ingest` is async and the dailyos_lib implementation uses `spawn_blocking` for the sync pipeline work.
+- `WorkspaceIntakeService::ingest` is async, its DTO surface uses raw slug fields, and the dailyos_lib implementation converts to typed pipeline fields before constructing `IngestRequest`; sync rusqlite/pipeline work stays behind `tokio::task::spawn_blocking`.
 - `file_id_from_identity` uses `Sha256` + `hex` exactly as pinned in §0 V1.2 §2.4; no `blake3` dependency or formula is allowed.
-- Pipeline either rewinds `request.file` before invoking `Extractor::extract` or passes already-buffered bounded content to the extractor; hashing must not leave the extractor reading EOF.
+- Pipeline rewinds `request.file` before invoking `Extractor::extract`; W1 `Extractor::extract` accepts `&File` only, so there is no extractor-buffer-handoff alternative. Hashing must not leave the extractor reading EOF.
 
 ### L1 implementation guardrails
 
@@ -452,7 +486,7 @@ service_context_builder.workspace_intake(&ingest_pipeline_workspace_intake);
 - Sniff only the first 4KB for frontmatter category detection, and prove this at the pipeline read boundary rather than only by unit-testing `auto_detect_category_pure`.
 - Treat caller-provided `category_hint` as already registry-valid by contract.
 - Treat auto-detected category output as provisional until registry validation passes.
-- Validate `EntityRef.entity_name` against `^[a-z0-9_-]+$` before path resolution; do not pass display names or path-like strings to `WorkspaceCategoryRegistry::resolve_path`.
+- Treat `EntityRef.entity_name` as display-only lifecycle data. Do not slug-validate it, and do not use it for path resolution; route using `entity_type` plus category only.
 - Pre-hash rejection paths (for example file too large before read allocation) do not create a `document_ingestion_runs` row because W1-C requires non-null `content_sha256`; they transition lifecycle to `Rejected` and emit a typed rejection. Post-hash handled failures complete the run as `Failed`.
 - Preserve the no-claim W2 behavior even if `Extractor::extract` is swapped early in a local workspace.
 - Complete failed runs with typed error detail; never leave a fresh run permanently `in_progress` on handled rejection paths.
@@ -463,7 +497,7 @@ service_context_builder.workspace_intake(&ingest_pipeline_workspace_intake);
 
 ## 10. Tests required
 
-End-to-end ingestion test against a fixture file (records ingestion run, `LifecycleRepo` transitions to `ingested`, category persists through `LifecycleRepo::update_category`, signal-emitter hook is called, claim count = 0); file size limit rejection through `IngestError::Rejected(RejectionReason::FileTooLarge)`; binary detection rejection through `IngestError::Rejected(RejectionReason::UnsupportedFormat)`; pre-hash rejection lifecycle row with no run row; idempotency test (re-ingesting same `(file_id, content_sha256, mode)` produces one successful ingestion run, not two); typed `quarantine_source` API test; rejection log/Tauri event privacy tests; caller-provided `file_id` mismatch rejection test; `EntityRef.entity_name` slug-validation test; bridge registration/async wrapping tests; inline abilities-runtime services module test; `cargo test` + `cargo clippy -D warnings` clean.
+End-to-end ingestion test against a fixture file (records ingestion run, `LifecycleRepo` transitions to `ingested`, category persists through `LifecycleRepo::update_category`, signal-emitter hook is called, claim count = 0); file size limit rejection through `IngestError::Rejected(RejectionReason::FileTooLarge)`; binary detection rejection through `IngestError::Rejected(RejectionReason::UnsupportedFormat)`; pre-hash rejection lifecycle row with no run row; idempotency test (re-ingesting same `(file_id, content_sha256, mode)` produces one successful ingestion run, not two); typed `quarantine_source` API test; rejection log/Tauri event privacy tests; caller-provided `file_id` mismatch rejection test; `LifecycleRepo::set_entity` / `LifecycleRepo::get` tests; raw-slug intake bridge parsing/validation tests; bridge registration/async wrapping tests; inline abilities-runtime services module test; `cargo test` + `cargo clippy -D warnings` clean.
 
 Required test files/gates:
 
@@ -477,13 +511,16 @@ Required test files/gates:
   7. pure function tolerates malformed/over-bound frontmatter by returning `None` without leaking content.
 - `tests/workspace_ingestion_w2a_content_head_bound.rs` proves the pipeline reads only the first 4KB for `content_head` before category sniffing. This must exercise `IngestPipeline::run` or the immediate pipeline helper, not only `auto_detect_category_pure(&str)`.
 - `tests/workspace_ingestion_w2a_file_id.rs` asserts caller-provided `IngestRequest.file_id` must equal `file_id_from_identity(&identity, workspace_root)`; mismatch returns typed `IngestError::FileIdMismatch { expected, found }` before run/lifecycle writes.
-- `tests/workspace_ingestion_w2a_entity_name_slug.rs` asserts an `EntityRef.entity_name` containing path traversal characters, slashes, separators, whitespace, or uppercase display-name text is rejected before `WorkspaceCategoryRegistry::resolve_path`.
 - `tests/workspace_ingestion_w2a_lifecycle_repo.rs` covers `LifecycleRepo::{insert_pending, transition, record_user_override, update_category}` and asserts no inline lifecycle SQL is required outside `lifecycle.rs`.
 - `tests/workspace_ingestion_w2a_lifecycle_transitions.rs` covers `LifecycleRepo::transition` legal vs illegal transition pairs, including illegal transitions returning `LifecycleError::InvalidStateTransition`.
+- `tests/workspace_ingestion_w2a_lifecycle_repo_set_entity.rs` covers `LifecycleRepo::set_entity`, including a legal pending-row entity assignment and nonexistent-file-id rejection.
+- `tests/workspace_ingestion_w2a_lifecycle_repo_get.rs` covers `LifecycleRepo::get`, including `None` for a nonexistent file_id and a populated `WorkspaceFileLifecycle` row for an existing file_id.
 - `tests/workspace_ingestion_w2a_quarantine_actor.rs` asserts `quarantine_source` accepts typed `QuarantineActor` only, records `user_override`, transitions to `quarantined`, and is idempotent on an already-quarantined file.
 - `tests/workspace_ingestion_w2a_rejection_privacy.rs` asserts rejection log lines and Tauri event payloads do not contain canonical path strings and serialize I/O errors only as `ErrorKind` + `raw_os_error()`.
-- `tests/workspace_ingestion_w2a_file_cursor.rs` uses a fake extractor to verify hashing/content sniffing does not leave the extractor reading EOF; either `seek(0)` happens before extractor invocation or the bounded content buffer is passed intentionally.
-- `tests/workspace_ingestion_w2a_workspace_intake_impl.rs` asserts `IngestPipelineWorkspaceIntake::ingest` is async, uses `tokio::task::spawn_blocking` for the sync pipeline work, binds `workspace_root` at bridge construction, converts through `WorkspaceSourceRegistry::open_validated` + `file_id_from_identity`, calls `pipeline.run(&conn, request)`, and passes through `resolved_path`.
+- `tests/workspace_ingestion_w2a_file_cursor.rs` uses a fake extractor to verify hashing/content sniffing does not leave the extractor reading EOF; `seek(0)` happens before `Extractor::extract(&File, ...)`.
+- `tests/workspace_ingestion_w2a_workspace_intake_impl.rs` asserts `IngestPipelineWorkspaceIntake::ingest` is async, uses `tokio::task::spawn_blocking` for sync pipeline work, binds `workspace_root` at bridge construction, converts raw `WorkspaceIntakeRequest` slugs to typed `IngestRequest` fields, converts through `WorkspaceSourceRegistry::open_validated` + `file_id_from_identity`, calls `pipeline.run(&conn, request)`, and passes through `resolved_path`.
+- `tests/workspace_ingestion_w2a_intake_impl_slug_parse.rs` asserts each invalid raw slug returns the matching typed `WorkspaceIntakeError` variant (`InvalidSourceTypeSlug`, `InvalidModeSlug`, `InvalidCategorySlug`).
+- `tests/workspace_ingestion_w2a_intake_impl_category_validate.rs` asserts `WorkspaceCategoryRegistry::validate` runs before pipeline invocation and disallowed categories return `CategoryNotAllowed`.
 - `tests/workspace_ingestion_w2a_service_context_registration.rs` asserts `ServiceContext` exposes `workspace_intake()` and app bootstrap registers `IngestPipelineWorkspaceIntake`.
 - `tests/workspace_ingestion_w2a_inline_mod_services.rs` asserts `src-tauri/abilities-runtime/src/lib.rs` declares `services::workspace_intake` inside the existing inline `pub mod services { ... }` block and that no `src-tauri/abilities-runtime/src/services/mod.rs` file is created for this lane.
 - `src-tauri/tests/workspace_mutation_allowlist_test.rs` pins `check_workspace_mutation_allowlist.sh` scope: workspace lifecycle/run/link table writes plus direct workspace-file filesystem writes outside `services/workspace_ingestion`.
@@ -492,7 +529,7 @@ Required test files/gates:
 
 ### CI grep gate
 
-Add `tests/workspace_ingestion_w2a_no_direct_open.rs`. This replaces the V1.0 substring-grep with a line-anchored check per §0 §8: strip comment lines, reject path-opening tokens in executable lines, and reject `OpenOptions` / `tokio::fs` / read-helper imports while allowing `std::fs::File` only as the §0 §2.1 request handle type.
+Add `tests/workspace_ingestion_w2a_no_direct_open.rs`. This replaces the V1.0 substring-grep with a line-anchored check per §0 §8: strip comment lines, reject path-opening tokens in executable lines (including bare `File::open` after `use std::fs::File;`), and reject `OpenOptions` / `tokio::fs` / read-helper imports while allowing `std::fs::File` only as the §0 §2.1 request handle type.
 
 ```rust
 #[test]
@@ -503,6 +540,7 @@ fn pipeline_never_opens_paths_directly() {
     .expect("pipeline.rs should be readable");
 
     let forbidden = [
+        "File::open",
         "std::fs::File::open",
         "std::fs::File::options",
         "std::fs::OpenOptions",
@@ -560,7 +598,7 @@ Required final verification:
 
 ## 11. Done when
 
-`pipeline.run(&conn, request)` consumes the canonical §0 V1.2 §2.1 request, revalidates caller-provided `file_id` with `IngestError::FileIdMismatch { expected, found }`, records an ingestion run when `content_sha256` exists, and produces zero claim proposals (W3-A's job to land them). LifecycleRepo::{insert_pending, transition, record_user_override, update_category} present and tested; pipeline records ingestion run via RunsRepo and transitions lifecycle via LifecycleRepo (no inline SQL outside lifecycle.rs). **Cycle 10 contract reconciliation:** `category_hint` is contracted to be a registry-valid `WorkspaceCategory` value when `Some`. Caller-side validation (DOS-474, W2-C, W2-D, W5-A) is responsible for rejecting malformed/disallowed caller-provided slugs BEFORE constructing `IngestRequest` — the pipeline trusts the type. When `category_hint` is `None`, `auto_detect_category_pure()` runs as fallback and `validate_detected_category()` performs the registry-bound validation per §0 §7. The pipeline never sees an "invalid" hint at the type level. `pipeline::quarantine_source` API present and tested with typed `QuarantineActor`; file content rejection paths return typed errors through §0 V1.2 §2.3; `resolved_path` is populated and passed through; `ServiceContext` extended with `workspace_intake`; bootstrap registers `IngestPipelineWorkspaceIntake`; `entity_intake` ability invocation (via W2-C) successfully reaches `IngestPipeline` through the bridge; no migration shipped; CI lint script `check_workspace_mutation_allowlist.sh` (modeled on `check_claim_writer_allowlist.sh`) green; all tests green; `/cso` L0 plan AND L2 diff approval recorded.
+`pipeline.run(&conn, request)` consumes the canonical typed §0 V1.2 §2.1 request, revalidates caller-provided `file_id` with `IngestError::FileIdMismatch { expected, found }`, records an ingestion run when `content_sha256` exists, and produces zero claim proposals (W3-A's job to land them). `LifecycleRepo::{insert_pending, transition, record_user_override, update_category, set_entity, get}` present and tested; pipeline records ingestion run via RunsRepo and transitions lifecycle via LifecycleRepo (no inline SQL outside lifecycle.rs). **Cycle 10 contract reconciliation:** `category_hint` is contracted to be a registry-valid `WorkspaceCategory` value when `Some`. Caller-side validation (DOS-474, W2-C, W2-D, W5-A) is responsible for rejecting malformed/disallowed caller-provided slugs BEFORE constructing `IngestRequest` — the pipeline trusts the type. When `category_hint` is `None`, `auto_detect_category_pure()` runs as fallback and `validate_detected_category()` performs the registry-bound validation per §0 §7. The pipeline never sees an "invalid" hint at the type level. `workspace_intake_impl.rs` translates raw slugs to typed enums via `WorkspaceFileKind::from_slug`, `IngestionMode::from_slug`, `EntityType::from_str_lossy`, and `WorkspaceCategoryRegistry::validate` before constructing `IngestRequest`. `pipeline::quarantine_source` API present and tested with typed `QuarantineActor`; file content rejection paths return typed errors through §0 V1.2 §2.3; `resolved_path` is populated and passed through; `ServiceContext` extended with `workspace_intake`; bootstrap registers `IngestPipelineWorkspaceIntake`; `entity_intake` ability invocation (via W2-C) successfully reaches `IngestPipeline` through the bridge; no migration shipped; CI lint script `check_workspace_mutation_allowlist.sh` (modeled on `check_claim_writer_allowlist.sh`) green; all tests green; `/cso` L0 plan AND L2 diff approval recorded.
 
 ## 12. Reviewer panel
 

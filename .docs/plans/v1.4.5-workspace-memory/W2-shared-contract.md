@@ -4,13 +4,18 @@
 **Status:** Frozen surface for W2-A V1.2 onwards; W2-B/C/D V1.2 packets cite this file.
 **Authority:** This addendum is the L0 reconciliation artifact for cycle 1+2 substrate-gap findings. Any conflict between a per-lane V1.x packet and this file resolves in favor of this file. A change to this file is a W2 wave-amendment, not a per-lane edit.
 
+**V1.3 changelog (cycle-4 mechanical fold, 2026-05-21):**
+1. `WorkspaceIntakeService` trait DTOs use **raw-slug fields** (`source_type_slug: String`, `mode_slug: String`, `category_slug: Option<String>`), NOT typed `WorkspaceFileKind` / `IngestionMode` / `WorkspaceCategory`. Rationale: abilities-runtime crate cannot import dailyos_lib types. The dailyos_lib impl (`workspace_intake_impl.rs`) parses raw slugs → typed enums + does `WorkspaceCategoryRegistry::validate` before constructing the internal `IngestRequest`. See §4.
+2. `LifecycleRepo` adds two helpers: `set_entity(conn, file_id, entity_type, entity_id, entity_name)` (W2-D's inbox-assignment use) and `get(conn, file_id) -> Option<WorkspaceFileLifecycle>` (W2-D's lifecycle-row read). W2-A V1.4 owns both. See §3.
+3. `resolved_path` redaction DROPPED entirely (V1.2 V1.2.4 referenced scope gating; cycle 3 dropped per topology). Pipeline always populates; bridge passes through unchanged.
+
 **V1.2 changelog (cycle 13):**
 1. `file_id_from_identity` switched from `blake3` to `sha256` (sha2 ships in Cargo.toml; blake3 doesn't). See §2.4.
 2. `IngestError::Rejected(RejectionReason)` consumes W1 unit variants (NOT payloaded). See §2.3.
 3. `WorkspaceIntakeService::ingest` is `async fn`. See §4.
 4. `AbilityContext` (not `ServiceContext`) is the ability fn parameter type. See §4 + new §13.
 5. `allowed_actors` differentiate by scope only — no fictional `WordPressRender` actor. See §13.
-6. `resolved_path` scope-gated by `read.entity_names` with enforcement test required. See §2.2.
+6. ~~`resolved_path` scope-gated by `read.entity_names` with enforcement test required.~~ → **V1.3 dropped per local-to-local topology** (user has filesystem access; redaction is theater).
 7. Cycle-13 also adds: W1-extension PR for `IngestionMode::EntitySeeded`/`Realtime` (W2-A precondition); W2-A bridge-ownership expansion to abilities-runtime lib.rs + context.rs; Drive staging + confirmation-token transport de-scoped to v1.4.6.
 
 **V1.0 (2026-05-21 — cycle-1 fold):** original — see git history.
@@ -234,6 +239,25 @@ impl LifecycleRepo {
         file_id: &str,
         category: Option<&WorkspaceCategory>,
     ) -> Result<(), LifecycleError> { /* W2-A L1 fills */ }
+
+    /// V1.3: W2-D consumer (assign_inbox_entity command). Reads the existing
+    /// lifecycle row for the file_id. Returns `None` if no row exists.
+    pub fn get(
+        conn: &Connection,
+        file_id: &str,
+    ) -> Result<Option<WorkspaceFileLifecycle>, LifecycleError> { /* W2-A L1 fills */ }
+
+    /// V1.3: W2-D consumer. Updates entity_id + entity_type + entity_name on
+    /// an existing PendingEntityAssignment row. Does NOT transition lifecycle
+    /// state; the pipeline does that when re-invoked after assignment. Returns
+    /// `LifecycleError::FileNotFound` if no row exists.
+    pub fn set_entity(
+        conn: &Connection,
+        file_id: &str,
+        entity_type: EntityType,
+        entity_id: &str,
+        entity_name: Option<&str>,
+    ) -> Result<(), LifecycleError> { /* W2-A L1 fills */ }
 }
 ```
 
@@ -267,6 +291,53 @@ pub trait WorkspaceIntakeService: Send + Sync {
         ctx: &AbilityContext<'_>,
         request: WorkspaceIntakeRequest,
     ) -> Result<WorkspaceIntakeReceipt, WorkspaceIntakeError>;
+}
+
+// V1.3: DTOs use RAW SLUGS. abilities-runtime cannot import dailyos_lib types,
+// so the trait surface is string-typed. The dailyos_lib impl parses slugs into
+// typed enums (WorkspaceFileKind, IngestionMode, WorkspaceCategory) and does
+// WorkspaceCategoryRegistry::validate BEFORE constructing the internal
+// IngestRequest. Invalid slugs return typed WorkspaceIntakeError variants.
+
+pub struct WorkspaceIntakeRequest {
+    pub file_ref: String,           // workspace-relative path
+    pub source_type_slug: String,   // bridge parses to WorkspaceFileKind
+    pub entity: Option<EntityRefDto>,
+    pub mode_slug: String,          // bridge parses to IngestionMode
+    pub category_slug: Option<String>, // bridge parses + validates via registry
+}
+
+pub struct EntityRefDto {
+    pub entity_type_slug: String,   // bridge parses to EntityType via from_str_lossy
+    pub entity_id: String,
+    pub entity_name: Option<String>, // display only; NOT a path segment
+}
+
+pub struct WorkspaceIntakeReceipt {
+    pub run_id: String,
+    pub file_id: String,
+    pub content_sha256: String,
+    pub lifecycle_state_after_slug: String, // bridge serializes from LifecycleState
+    pub resolved_path: Option<String>,      // V1.3: always populated; no scope gating
+}
+
+pub enum WorkspaceIntakeError {
+    InvalidSourceTypeSlug(String),
+    InvalidModeSlug(String),
+    InvalidCategorySlug(String),
+    CategoryNotAllowed { allowed: Vec<String> },
+    InvalidEntityTypeSlug(String),
+    InvalidEntityId,
+    EntityNotFound,
+    FileNotFound,
+    PathTraversalAttempt,
+    OutsideWorkspace,
+    SymlinkRaced,
+    FileTooLarge,
+    UnsupportedFormat,
+    AlreadyProcessed { existing_run_id: String },
+    Io(String),
+    DbError(String),
 }
 
 /// Mirror of IngestRequest but flattened for crate-boundary stability. The

@@ -1,6 +1,6 @@
 # L0 Packet - v1.4.5 W2-D - DOS-469 `_inbox/` Refactor to Unresolved Queue
 
-**Current revision:** V1.3 (cycle-3 micro-fold for local-to-local trust topology + compile-shape fixes, 2026-05-21). See §2 Changelog.
+**Current revision:** V1.4 (cycle-4 mechanical compile-shape fixes, 2026-05-21). See §2 Changelog.
 
 ## 0. Shared contract anchor
 
@@ -29,13 +29,14 @@ Required anchors for W2-D L1:
 - **Trust topology:** local-to-local single-user.
 - **Migration slots claimed:** none
 - **Authority docs:** `.docs/plans/v1.4.5-waves.md`, `.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-A-DOS-463.md`, and §0 shared contract
-- **Required substrate before L1:** W1-A lifecycle/ownership model, W1-B `WorkspaceSourceRegistry::open_validated`, W1-C ingestion-run and link tracking, W2-A `IngestPipeline::run` + `LifecycleRepo`, the W1-extension PR adding `IngestionMode::Realtime` + canonical `UserRelink`, and W2-A V1.3 `LifecycleRepo::set_entity`
+- **Required substrate before L1:** W1-A lifecycle/ownership model, W1-B `WorkspaceSourceRegistry::open_validated`, W1-C ingestion-run and link tracking, W2-A `IngestPipeline::run` + `LifecycleRepo`, the W1-extension PR adding `IngestionMode::Realtime` + canonical `UserRelink`, and W2-A V1.4 `LifecycleRepo::get` + `LifecycleRepo::set_entity`
 - **L2 reviewer matrix:** codex-review + code-reviewer + architect-reviewer
 - **Pacing note:** depends on W2-A merged before L1
 
 ## 2. Changelog
 
-- **V1.3 - 2026-05-21 - cycle-3 micro-fold.** Declares local-to-local single-user trust topology and drops multi-actor security gates while keeping data hygiene and compile correctness. Closes `process_inbox_file` entity-assignment bypass (cycle-3 codex challenge F1): `process_inbox_file` no longer accepts `entity: Option<EntityAssignmentInput>`; frontend call sites at `src/pages/InboxPage.tsx:382-384,789-792` continue calling `process_inbox_file` without `entityId`, and entity assignment is only through `assign_inbox_entity`. Reorders `assign_inbox_entity` per cycle-3 codex challenge F2: all pre-write validation runs before `LinkRepo::add_link`; the link is written at the end of the transactional block after `open_validated`, `file_id` derivation, and `reopened_file_id == assignment.file_id`. Fixes `IngestPipeline::run` instance-call shape (`let pipeline = wiring::build_pipeline(); pipeline.run(conn, request)`) per cycle-3 codex challenge F3 + consult F1. Adds W2-A V1.3 precondition `LifecycleRepo::set_entity` for updating `entity_id` + `entity_type` on the existing `pending_entity_assignment` row before pipeline rerun; this is not a lifecycle transition. Drops entity ACL/scope-helper requirements; keeps `EntityType::from_slug`, entity-id UUID/slug format, lifecycle-state, `source_type = 'inbox'`, and idempotency checks as data hygiene/correctness. Limits inbox listing and assignment to `source_type = 'inbox'` rows per cycle-3 codex consult F3. Notes the `pipeline` instance is obtained via `wiring::build_pipeline()`.
+- **V1.4 - 2026-05-21 - cycle-4 mechanical compile-shape fixes.** Compile-shape fixes per cycle-4 codex: use `EntityType::from_str_lossy(&entity_type_slug)`, not nonexistent `EntityType::from_slug` (`src-tauri/src/entity.rs:41-49`); consume W2-A-owned `LifecycleRepo::get(conn, &file_id)?` and `LifecycleRepo::set_entity(conn, &file_id, typed_entity_type, &entity_id, entity_name)?` from §0 V1.3 §3 / W2-A V1.4 lifecycle ownership; treats `InboxLifecycleRow` as a read projection, not substrate, with typed fields including `source_type: WorkspaceFileKind` parsed from row TEXT via `WorkspaceFileKind::from_slug` and `source_asof: DateTime<Utc>` parsed through chrono; and keeps `pipeline::file_id_from_identity` sha256-based per §0 V1.3 §2.4.
+- **V1.3 - 2026-05-21 - cycle-3 micro-fold.** Declares local-to-local single-user trust topology and drops multi-actor security gates while keeping data hygiene and compile correctness. Closes `process_inbox_file` entity-assignment bypass (cycle-3 codex challenge F1): `process_inbox_file` no longer accepts `entity: Option<EntityAssignmentInput>`; frontend call sites at `src/pages/InboxPage.tsx:382-384,789-792` continue calling `process_inbox_file` without `entityId`, and entity assignment is only through `assign_inbox_entity`. Reorders `assign_inbox_entity` per cycle-3 codex challenge F2: all pre-write validation runs before `LinkRepo::add_link`; the link is written at the end of the transactional block after `open_validated`, `file_id` derivation, and `reopened_file_id == assignment.file_id`. Fixes `IngestPipeline::run` instance-call shape (`let pipeline = wiring::build_pipeline(); pipeline.run(conn, request)`) per cycle-3 codex challenge F3 + consult F1. Adds W2-A V1.3 precondition `LifecycleRepo::set_entity` for updating `entity_id` + `entity_type` on the existing `pending_entity_assignment` row before pipeline rerun; this is not a lifecycle transition. Drops entity ACL/scope-helper requirements; keeps typed entity parsing, entity-id UUID/slug format, lifecycle-state, `source_type = 'inbox'`, and idempotency checks as data hygiene/correctness. Limits inbox listing and assignment to `source_type = 'inbox'` rows per cycle-3 codex consult F3. Notes the `pipeline` instance is obtained via `wiring::build_pipeline()`.
 - **V1.2 - 2026-05-21 - cycle-13 + cycle-2 fold.** `IngestionMode::Realtime` is now valid via cycle-13 §13.1: the W1-extension PR adds `EntitySeeded` and `Realtime` to `src-tauri/src/services/workspace_ingestion/runs.rs:32`. `LinkAttributionSource::UserAssignment` was invented in V1.1; W1-C already ships canonical `UserRelink` at `src-tauri/src/services/workspace_ingestion/link.rs:45-53`, and V1.2 uses `LinkAttributionSource::UserRelink`. Claims `src-tauri/src/lib.rs:713-718` only for the single-line `assign_inbox_entity` Tauri command registration, annotated with `dos7-allowed: w2d-assign-command-registration`. Adds the `assign_inbox_entity` security gate: entity authorization, lifecycle-state validation, idempotency, and no duplicate active link rows. Clarifies assignment ordering: W2-D writes `LinkRepo::add_link` first, then re-invokes `IngestPipeline::run`; the pipeline handles `PendingEntityAssignment -> Ingesting` internally through §0 V1.2 §3 `LifecycleRepo`, and W2-D does not call `LifecycleRepo::transition` directly. Purges the remaining stale inbox-specific `DataSource` alias reference; §0 V1.2 §6 and cycle-13 §13.3.6 keep `DataSource::WorkspaceFile { kind: WorkspaceFileKind::Inbox }` canonical.
 - **V1.1 - 2026-05-21 - cycle-1 fold.** Adds §0 shared-contract anchor; removes all direct lifecycle/run mutation SQL from the W2-D command and processor plan; routes lifecycle writes through W2-A's `LifecycleRepo` and ingestion-run writes through W1-C's `RunsRepo` via `IngestPipeline::run`; rewrites `IngestRequest` construction against §0 §2.1; replaces local inbox path opening with `WorkspaceSourceRegistry::open_validated`; uses canonical `DataSource::WorkspaceFile { kind: WorkspaceFileKind::Inbox }`; adds entity-assignment contract using `LinkRepo::add_link`; pins `copy_to_inbox` to post-copy pipeline ingestion; fixes `get_inbox_files` schema reads to v250 columns only; adds inbox-result and `inbox-updated` wire-shape regression coverage; names W3-B/DOS-471 and W5-B/DOS-476 as explicit deferred consumers.
 - **V1.0 - 2026-05-21 - initial packet.**
@@ -54,7 +55,7 @@ At W2 time, ingestion records lifecycle and ingestion-run state only. Claim prop
 
 ### Verbatim wave-plan ownership
 
-`src-tauri/src/processor/mod.rs` (the `process_file` top-level function and its routing - refactored to call `IngestPipeline::run` instead of direct `router::move_file` for claim-producing processing); `src-tauri/src/processor/router.rs` (the `resolve_destination` + `move_file` functions - preserved for file-move post-ingestion, not for claim extraction); **the six existing `src-tauri/src/commands/workspace.rs` inbox functions** - exact named functions: `get_inbox_files`, `process_inbox_file`, `process_all_inbox`, `enrich_inbox_file`, `get_inbox_file_content`, and `copy_to_inbox` (W2-D is the only owner of these per cycle 2 amendment; W2-B is denied). V1.3 also owns the new `assign_inbox_entity` command inside the same inbox command section. Updated to read from `workspace_file_lifecycle` where appropriate. Does not modify `processor/classifier.rs` or `processor/extract.rs`. Does not touch non-inbox functions in `commands/workspace.rs` (email/profile/iCloud handlers remain out of scope). V1.3 keeps ownership of `src-tauri/src/lib.rs:713-718` for a single-line command-registration addition only: add `commands::assign_inbox_entity` beside the existing inbox command registrations with `// dos7-allowed: w2d-assign-command-registration`. W2-A V1.3, not W2-D, picks up `LifecycleRepo::set_entity` in `src-tauri/src/services/workspace_ingestion/lifecycle.rs`.
+`src-tauri/src/processor/mod.rs` (the `process_file` top-level function and its routing - refactored to call `IngestPipeline::run` instead of direct `router::move_file` for claim-producing processing); `src-tauri/src/processor/router.rs` (the `resolve_destination` + `move_file` functions - preserved for file-move post-ingestion, not for claim extraction); **the six existing `src-tauri/src/commands/workspace.rs` inbox functions** - exact named functions: `get_inbox_files`, `process_inbox_file`, `process_all_inbox`, `enrich_inbox_file`, `get_inbox_file_content`, and `copy_to_inbox` (W2-D is the only owner of these per cycle 2 amendment; W2-B is denied). V1.3 also owns the new `assign_inbox_entity` command inside the same inbox command section. Updated to read from `workspace_file_lifecycle` where appropriate. Does not modify `processor/classifier.rs` or `processor/extract.rs`. Does not touch non-inbox functions in `commands/workspace.rs` (email/profile/iCloud handlers remain out of scope). V1.3 keeps ownership of `src-tauri/src/lib.rs:713-718` for a single-line command-registration addition only: add `commands::assign_inbox_entity` beside the existing inbox command registrations with `// dos7-allowed: w2d-assign-command-registration`. W2-A V1.4, not W2-D, picks up `LifecycleRepo::get` and `LifecycleRepo::set_entity` in `src-tauri/src/services/workspace_ingestion/lifecycle.rs`.
 
 ### Pinned per-function ownership ranges
 
@@ -95,19 +96,20 @@ W2-D may add command-local helper functions inside the owned inbox section of `c
 
 | Substrate | Current evidence | W2-D consumption rule |
 |---|---|---|
-| §0 shared contract | §0 V1.2 §2.1 `IngestRequest`, §0 V1.2 §2.2 `IngestReceipt`, §0 V1.2 §3 `LifecycleRepo`, §0 V1.2 §6 `DataSource` canonicalization. | Treat §0 as the contract. If W2-A lands different names, update W2-D to the merged names without changing the lane semantics. |
+| §0 shared contract | §0 V1.3 §2.1 `IngestRequest`, §0 V1.3 §2.2 `IngestReceipt`, §0 V1.3 §3 `LifecycleRepo::get` + `LifecycleRepo::set_entity`, §0 V1.3 §6 `DataSource` canonicalization. | Treat §0 as the contract. If W2-A lands different names, update W2-D to the merged names without changing the lane semantics. |
 | `IngestPipeline::run` | W2-A-owned API in `src-tauri/src/services/workspace_ingestion/pipeline.rs`, constrained by §0 §2.1-§2.2. | Obtain the instance via `wiring::build_pipeline()` and call `pipeline.run(&conn, request)` with an opened `File` + `FileIdentity`. Do not construct path-based or async-only request shapes unless W2-A changes §0. |
 | `WorkspaceSourceRegistry::open_validated` | `src-tauri/src/services/workspace_ingestion/registry.rs:148-151` returns `(File, FileIdentity)`. | Replace command-local path opening with this trust boundary. No direct `File::open` for inbox ingestion. |
-| `file_id_from_identity` | §0 §2.4 defines deterministic `file_id` derivation. | Derive `file_id` only through `pipeline::file_id_from_identity(&identity, workspace_root)`. |
+| `file_id_from_identity` | §0 V1.3 §2.4 defines deterministic sha256-based `file_id` derivation. | Derive `file_id` only through `pipeline::file_id_from_identity(&identity, workspace_root)`. |
 | `LifecycleState::PendingEntityAssignment` | `src-tauri/src/services/workspace_ingestion/lifecycle.rs:38-45` defines canonical enum; serde string is `pending_entity_assignment`. | Use the canonical enum/storage string for unresolved inbox rows. Do not invent a parallel "needs entity" lifecycle. |
 | W2-A pending transition responsibility | `src-tauri/src/services/workspace_ingestion/lifecycle.rs:26-28` documents W2-A emitting `emit_file_pending_entity_assignment` when intake cannot resolve entity. | Remove W2-D direct transition helpers. Pipeline/LifecycleRepo own the transition. |
-| `LifecycleRepo` | §0 V1.2 §3 assigns lifecycle write helpers to W2-A. W2-A V1.3 must add `LifecycleRepo::set_entity(conn, file_id, entity_type, entity_id)` in `src-tauri/src/services/workspace_ingestion/lifecycle.rs`. | W2-D does not call `LifecycleRepo::transition` directly. Assignment first updates the existing pending row's `entity_id` + `entity_type` via `LifecycleRepo::set_entity`, then re-enters `IngestPipeline::run`; the pipeline owns `PendingEntityAssignment -> Ingesting` via `LifecycleRepo`. No raw lifecycle mutation SQL in command or processor code. |
+| `LifecycleRepo` | §0 V1.3 §3 assigns `LifecycleRepo::get(conn, file_id)` and `LifecycleRepo::set_entity(conn, file_id, entity_type, entity_id, entity_name)` to W2-A V1.4 in `src-tauri/src/services/workspace_ingestion/lifecycle.rs`. | W2-D does not call `LifecycleRepo::transition` directly. Assignment reads the existing row through `LifecycleRepo::get`, updates `entity_id` + `entity_type` via `LifecycleRepo::set_entity`, passes `None` for `entity_name` unless a display name is actually provided, then re-enters `IngestPipeline::run`; the pipeline owns `PendingEntityAssignment -> Ingesting`. No raw lifecycle mutation SQL in command or processor code. |
 | W1-C `RunsRepo` | `src-tauri/src/services/workspace_ingestion/runs.rs` owns ingestion-run start/complete/idempotency. | W2-D receives run correlation through `IngestReceipt`. Any run write goes through pipeline/RunsRepo, never command SQL. |
 | `LinkRepo::add_link` | `src-tauri/src/services/workspace_ingestion/link.rs:215-224` requires `file_id`, typed `EntityType`, `entity_id`, `LinkAttributionSource`, confidence, rationale, and actor. | Entity assignment writes a canonical document/entity link before re-ingestion with `EntityRef`. |
 | `IngestionMode` | Cycle-13 §13.1 extends `src-tauri/src/services/workspace_ingestion/runs.rs:32` from `Initial | Incremental | Forced | Backfill` to include `EntitySeeded | Realtime`; this lands via the explicit W1-extension PR named in §1. | `copy_to_inbox`, `process_inbox_file`, and `assign_inbox_entity` construct `IngestRequest { mode: IngestionMode::Realtime, ... }` only after W1-extension is present. |
 | `LinkAttributionSource` | `src-tauri/src/services/workspace_ingestion/link.rs:45-53` ships `UserRelink`; cycle-13 §13.3.6 says V1.1 `UserAssignment` was invalid. | `assign_inbox_entity` uses `LinkAttributionSource::UserRelink`. No W2-D-local attribution variant is allowed. |
 | Tauri command registration | `src-tauri/src/lib.rs:713-718` contains existing inbox command registrations. Cycle-13 §13.3.6 recommends claiming the block for a single-line `assign_inbox_entity` registration. | W2-D adds one registration line plus `dos7-allowed: w2d-assign-command-registration`; no other `lib.rs` edits. |
-| `DataSource` / `WorkspaceFileKind` | `src-tauri/abilities-runtime/src/abilities/provenance/source.rs:73-82` defines `DataSource::WorkspaceFile { kind }`; `:201-208` defines `WorkspaceFileKind::Inbox`; ADR-0107 `:268-270` freezes the same shape. | Use `DataSource::WorkspaceFile { kind: WorkspaceFileKind::Inbox }` everywhere. |
+| `DataSource` / `WorkspaceFileKind` | `src-tauri/abilities-runtime/src/abilities/provenance/source.rs:73-82` defines `DataSource::WorkspaceFile { kind }`; `:201-208` defines `WorkspaceFileKind::Inbox`; ADR-0107 `:268-270` freezes the same shape. L1 must confirm the merged `WorkspaceFileKind::from_slug` helper in this file and record the exact line before coding the read projection. | Use `DataSource::WorkspaceFile { kind: WorkspaceFileKind::Inbox }` everywhere. Parse lifecycle `source_type` TEXT with `WorkspaceFileKind::from_slug`; reject malformed values in the read projection instead of carrying raw strings. |
+| `EntityType` parser | `src-tauri/src/entity.rs:41-49` defines `EntityType::from_str_lossy`; there is no `EntityType::from_slug`. | `assign_inbox_entity` parses with `EntityType::from_str_lossy(&entity_type)`, then explicitly rejects `EntityType::Other` as `AssignError::InvalidEntityType` so unknown slugs do not silently become valid assignments. |
 | v250 lifecycle schema | `src-tauri/src/migrations/250_workspace_file_lifecycle.sql:20-36` defines `file_id`, `canonical_path`, `source_type`, `lifecycle_state`, `source_asof`, `entity_id`, `entity_type`, `content_sha256`, `created_at`, `updated_at` plus identity/audit columns. | `get_inbox_files` reads only existing columns. UI-only fields come from existing wire defaults, metadata, or preview path, not nonexistent DB columns. |
 | Entity input hygiene | Local-to-local single-user trust topology; no multi-principal entity owner exists in this command surface. | Do not add an ACL/scope helper. `assign_inbox_entity` validates typed `entity_type` and `entity_id` format before writes; existence beyond link/lifecycle constraints remains data hygiene, not authorization. |
 | Existing `inbox-updated` event | `src-tauri/src/watcher.rs:95`, `src-tauri/src/watcher.rs:454`, `src-tauri/src/executor.rs:909`. | Preserve event name and mixed payload compatibility. Command-owned emissions use lifecycle count; W3-B/DOS-471 consumes lifecycle signals. |
@@ -128,7 +130,7 @@ rg -n 'workspace_file_lifecycle|pending_entity_assignment|DataSource::WorkspaceF
 ## 7. Intelligence Loop gate
 
 1. *Claim model:* Inbox files route through `IngestPipeline::run`, which records the ingestion run and lifecycle transitions. Claim production is W3-A's job; at W2 time the pipeline produces zero claims. Files without entity assignment remain as `pending_entity_assignment` lifecycle records. Real ingestion-to-claim rendering validation moves to W5-B/DOS-476.
-2. *Provenance + trust:* `source_asof` is the file mtime captured after `WorkspaceSourceRegistry::open_validated` returns. DataSource is `DataSource::WorkspaceFile { kind: WorkspaceFileKind::Inbox }` per §0 V1.2 §6. Last sweep must show no stale inbox-specific `DataSource` aliases anywhere in the W2-D packet or implementation.
+2. *Provenance + trust:* `source_asof` is the file mtime captured after `WorkspaceSourceRegistry::open_validated` returns. DataSource is `DataSource::WorkspaceFile { kind: WorkspaceFileKind::Inbox }` per §0 V1.3 §6. Last sweep must show no stale inbox-specific `DataSource` aliases anywhere in the W2-D packet or implementation.
 3. *Signals + invalidation:* Existing `app_handle.emit("inbox-updated", ...)` sites are preserved at `watcher.rs:95`, `watcher.rs:454`, and `executor.rs:909`. W2-D command-owned emissions may emit the same event with `{ count }` derived from unresolved lifecycle rows. New lifecycle state transitions emit signals through W3-B/DOS-471.
 4. *Runtime + surfaces:* `get_inbox_files` returns lifecycle-backed unresolved queue entries, not a raw filesystem listing. The command reads only v250 lifecycle columns; `sizeBytes`, `preview`, and `suggestedEntityName` remain wire-shape fields populated from metadata/fallbacks or `None`, not DB columns.
 5. *Feedback loop:* User assigns an entity to a `pending_entity_assignment` inbox file -> validate all inputs and source row -> re-open through `WorkspaceSourceRegistry::open_validated` -> verify derived `file_id` matches -> call `LifecycleRepo::set_entity` -> call `LinkRepo::add_link(conn, &file_id, entity_type, &entity_id, LinkAttributionSource::UserRelink, 1.0, Some("User assigned inbox file to entity"), "user")` -> re-invoke `pipeline.run(conn, request)` with `EntityRef`, `source_type: WorkspaceFileKind::Inbox`, and `mode: IngestionMode::Realtime`. The pipeline handles `PendingEntityAssignment -> Ingesting` through `LifecycleRepo` internally. W2-D does not call `LifecycleRepo::transition` directly and does not write lifecycle/run SQL inline.
@@ -138,7 +140,7 @@ rg -n 'workspace_file_lifecycle|pending_entity_assignment|DataSource::WorkspaceF
 `assign_inbox_entity` is a local trusted-user command surface. It must reject before link creation unless all data-hygiene and correctness checks pass:
 
 - `file_id` must exist in `workspace_file_lifecycle`; missing rows return typed `NotFound`.
-- `entity_type` must parse to typed `EntityType`; unknown slugs return typed `InvalidEntityType`.
+- `entity_type` must parse to typed `EntityType` through `EntityType::from_str_lossy`; if parsing returns `EntityType::Other`, the command returns typed `InvalidEntityType` instead of accepting the lossy fallback.
 - `entity_id` must be non-empty and match the accepted UUID/slug format; invalid values return typed `InvalidEntityId`.
 - The lifecycle state for `file_id` must be `PendingEntityAssignment`; any other source state, including already `Ingested` or rejected/tombstoned file lifecycle rows, returns typed `InvalidLifecycleState`.
 - The lifecycle row must have `source_type = 'inbox'`; this is a scope limit, not an authorization gate. Non-inbox pending files return typed `NotInboxFile` and never surface in inbox command output.
@@ -152,19 +154,29 @@ rg -n 'workspace_file_lifecycle|pending_entity_assignment|DataSource::WorkspaceF
 This is a shape stub for L1. It is not a substrate definition. Exact module paths and helper names must follow W2-A/W1-C after merge, with §0 taking precedence.
 
 ```rust
-struct InboxLifecycleRow {
-    file_id: String, canonical_path: String, source_type: String,
-    lifecycle_state: String, source_asof: String,
-    entity_id: Option<String>, entity_type: Option<String>,
-    content_sha256: Option<String>, created_at: String, updated_at: String,
+// Read projection of v250 lifecycle schema columns only. This is not a
+// substrate type; W2-D owns only the read-side mapping for inbox output.
+pub struct InboxLifecycleRow {
+    pub file_id: String,
+    pub canonical_path: PathBuf,
+    pub source_type: WorkspaceFileKind, // parsed from row TEXT via from_slug
+    pub lifecycle_state: LifecycleState,
+    pub source_asof: DateTime<Utc>, // parsed from row TEXT via chrono
+    pub entity_id: Option<String>,
+    pub entity_type: Option<EntityType>,
+    pub content_sha256: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 #[tauri::command]
 pub async fn get_inbox_files(state: State<'_, Arc<AppState>>) -> Result<InboxResult, String> {
     let rows: Vec<InboxLifecycleRow> = state
         .db_read(|conn| {
-            // Read only columns present in migration v250. No size/preview/suggested-name
-            // pseudo columns are allowed here.
+            // Read only columns present in migration v250. Parse source_type TEXT
+            // through WorkspaceFileKind::from_slug and source_asof TEXT through
+            // chrono::DateTime::parse_from_rfc3339(...). No size/preview/
+            // suggested-name pseudo columns are allowed here.
             query_lifecycle_rows(
                 conn,
                 "SELECT file_id, canonical_path, source_type, lifecycle_state, \
@@ -181,15 +193,15 @@ pub async fn get_inbox_files(state: State<'_, Arc<AppState>>) -> Result<InboxRes
         .map_err(|e| e.to_string())?;
 
     let files: Vec<InboxFile> = rows.into_iter().map(|row| {
-        let path = Path::new(&row.canonical_path);
+        let path = row.canonical_path.as_path();
         InboxFile {
             filename: path.file_name().and_then(|n| n.to_str()).unwrap_or(&row.file_id).into(),
-            path: row.canonical_path,
+            path: row.canonical_path.to_string_lossy().into_owned(),
             size_bytes: std::fs::metadata(path).map(|m| m.len()).unwrap_or(0),
-            modified: row.source_asof,
+            modified: row.source_asof.to_rfc3339(),
             preview: None,
             file_type: InboxFileType::Other,
-            processing_status: Some(row.lifecycle_state),
+            processing_status: Some(lifecycle_state_to_storage(row.lifecycle_state).into()),
             processing_error: None,
             suggested_entity_name: None,
         }
@@ -267,7 +279,7 @@ pub async fn process_inbox_file(
 }
 
 #[tauri::command]
-// V1.3: validation BEFORE link write; pipeline owns lifecycle transition.
+// V1.4: validation BEFORE link write; pipeline owns lifecycle transition.
 pub async fn assign_inbox_entity(
     state: State<'_, AppState>,
     file_id: String,
@@ -277,8 +289,10 @@ pub async fn assign_inbox_entity(
     let conn = state.db_write()?; // transactional
 
     // Step 1: validate inputs (data hygiene, not security)
-    let typed_entity_type = EntityType::from_slug(&entity_type)
-        .ok_or(AssignError::InvalidEntityType)?;
+    let typed_entity_type = EntityType::from_str_lossy(&entity_type);
+    if matches!(typed_entity_type, EntityType::Other) {
+        return Err(AssignError::InvalidEntityType);
+    }
     if entity_id.is_empty() || !is_valid_id_format(&entity_id) {
         return Err(AssignError::InvalidEntityId);
     }
@@ -304,7 +318,7 @@ pub async fn assign_inbox_entity(
     }
 
     // Step 5: NOW all checks passed. Update lifecycle entity fields + write link.
-    LifecycleRepo::set_entity(&conn, &file_id, typed_entity_type, &entity_id)?;
+    LifecycleRepo::set_entity(&conn, &file_id, typed_entity_type, &entity_id, None)?;
     LinkRepo::add_link(
         &conn,
         &file_id,
@@ -345,7 +359,7 @@ L1 guardrails for the stub:
 - Delete any W2-D-local unmatched-entity transition helper. Pipeline + `LifecycleRepo` emit that transition per §0 §3 and `lifecycle.rs:26-28`.
 - No direct lifecycle/run mutation SQL is allowed in `commands/workspace.rs` or `processor/mod.rs`.
 - `copy_to_inbox` calls the same staged ingestion helper after each successful copy. Watcher processing remains a secondary backstop only.
-- Entity assignment validates input, lifecycle state, `source_type = 'inbox'`, `open_validated`, and derived `file_id` before writes. It then calls `LifecycleRepo::set_entity`, writes through `LinkRepo::add_link` with `LinkAttributionSource::UserRelink`, and re-runs `pipeline.run` with a typed `EntityRef`. The caller does not call `LifecycleRepo::transition`; the pipeline owns the transition through §0 V1.2 §3.
+- Entity assignment validates input, lifecycle state, `source_type = 'inbox'`, `open_validated`, and derived `file_id` before writes. It parses `entity_type` with `EntityType::from_str_lossy` and rejects `EntityType::Other`. It then calls `LifecycleRepo::set_entity(..., None)` because the command has no `entity_name`, writes through `LinkRepo::add_link` with `LinkAttributionSource::UserRelink`, and re-runs `pipeline.run` with a typed `EntityRef`. The caller does not call `LifecycleRepo::transition`; the pipeline owns the transition through §0 V1.3 §3.
 - The retired V1.2 multi-actor input sketch is intentionally absent. The local audit actor is `"user"` (or the merged `QuarantineActor::User` equivalent if W2-A exposes that shape), not a command parameter.
 
 ## 9. Tests required
@@ -361,6 +375,7 @@ Inbox file produces a lifecycle record with `pending_entity_assignment` state wh
 - `get_inbox_files_preserves_inbox_result_wire_shape`
 - `get_inbox_files_empty_state_preserved`
 - `get_inbox_files_reads_only_v250_lifecycle_columns`
+- `inbox_lifecycle_row_parses_v250_schema_columns.rs`
 - `inbox_listing_filters_by_source_type.rs`
 - `get_inbox_file_content_reads_pending_lifecycle_row_path`
 - `get_inbox_file_content_rejects_path_traversal_from_lifecycle_filename`
@@ -390,6 +405,7 @@ Inbox file produces a lifecycle record with `pending_entity_assignment` state wh
 - `assign_inbox_entity_repeated_same_file_entity_type_entity_is_idempotent`
 - `assign_inbox_entity_rejected_file_lifecycle_returns_typed_rejection`
 - `assign_inbox_entity_rejects_invalid_entity_type`
+- `assign_inbox_entity_rejects_other_entity_type.rs`
 - `assign_inbox_entity_rejects_invalid_entity_id`
 - `assign_inbox_entity_link_not_written_on_validation_failure.rs`
 - `assign_inbox_entity_no_direct_lifecycle_transition.rs`
@@ -398,7 +414,7 @@ Inbox file produces a lifecycle record with `pending_entity_assignment` state wh
 - `link_attribution_user_relink_writes_fresh_active_row`
 - `link_attribution_user_relink_bypasses_tombstone_guard_per_w1c_link_rs_743_755`
 
-Keep all V1.2 typed-rejection coverage that still applies under local-to-local single-user topology: nonexistent file, wrong lifecycle state, non-inbox source type, rejected lifecycle, invalid `entity_type`, invalid `entity_id`, and idempotent repeat assignment. The retired actor/ACL rejection tests are replaced by the no-entity-param compile check and the explicit local audit actor rule.
+Keep all V1.3 typed-rejection coverage that still applies under local-to-local single-user topology: nonexistent file, wrong lifecycle state, non-inbox source type, rejected lifecycle, invalid `entity_type`, invalid `entity_id`, strict `EntityType::Other` rejection after `from_str_lossy`, and idempotent repeat assignment. The retired actor/ACL rejection tests are replaced by the no-entity-param compile check and the explicit local audit actor rule.
 
 ### Security and CI gates
 
@@ -412,11 +428,11 @@ Keep all V1.2 typed-rejection coverage that still applies under local-to-local s
 
 ## 10. Done when
 
-The W1-extension PR has landed before W2-D L1 starts, including `IngestionMode::Realtime` and `UserRelink` as the canonical user-assignment attribution. W2-A V1.3 has landed `LifecycleRepo::set_entity` in `src-tauri/src/services/workspace_ingestion/lifecycle.rs`.
+The W1-extension PR has landed before W2-D L1 starts, including `IngestionMode::Realtime` and `UserRelink` as the canonical user-assignment attribution. W2-A V1.4 has landed `LifecycleRepo::get` and `LifecycleRepo::set_entity` in `src-tauri/src/services/workspace_ingestion/lifecycle.rs`, and `EntityType::from_str_lossy` is handled with strict `EntityType::Other` rejection.
 
 Inbox commands and processor routing use `wiring::build_pipeline().run(...)`; `process_inbox_file` no longer takes any entity parameter; `pending_entity_assignment` files are visible in inbox command output only when `source_type = 'inbox'`; lifecycle transitions and ingestion run records are correct with zero proposals at W2 time; existing inbox UI behavior is preserved, including empty state, wire shape, preview path, and badge refresh.
 
-`assign_inbox_entity` is implemented in the owned inbox command section, registered in `src-tauri/src/lib.rs:713-718`, writes `LinkAttributionSource::UserRelink`, re-invokes the pipeline with `IngestionMode::Realtime`, and has all assign-related tests green: nonexistent file, wrong lifecycle state, non-inbox source type, invalid entity type/id, repeated assignment idempotency, rejected-file lifecycle handling, link-not-written on validation failure, and no direct lifecycle transition call.
+`assign_inbox_entity` is implemented in the owned inbox command section, registered in `src-tauri/src/lib.rs:713-718`, writes `LinkAttributionSource::UserRelink`, re-invokes the pipeline with `IngestionMode::Realtime`, and has all assign-related tests green: nonexistent file, wrong lifecycle state, non-inbox source type, invalid entity type/id, strict `EntityType::Other` rejection, repeated assignment idempotency, rejected-file lifecycle handling, link-not-written on validation failure, and no direct lifecycle transition call.
 
 The transactional ordering is verified: `assign_inbox_entity` validates type/id, lifecycle row existence, `PendingEntityAssignment`, `source_type = 'inbox'`, canonical `open_validated`, and reopened `file_id` match before `LifecycleRepo::set_entity` and before `LinkRepo::add_link`. If any check fails, no link row exists.
 

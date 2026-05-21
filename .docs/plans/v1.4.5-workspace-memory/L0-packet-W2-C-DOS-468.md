@@ -1,6 +1,6 @@
 # L0 Packet — v1.4.5 W2-C — DOS-468 Entity-Seeded Intake via Gutenberg Block
 
-**Current revision:** V1.3 (2026-05-21 local-to-local security trim + cycle-3 compile-shape fold).
+**Current revision:** V1.4 (2026-05-21 §0 raw-slug DTO alignment fold).
 
 ## §1 Header
 
@@ -20,6 +20,9 @@
 
 ## §2 Changelog
 
+- **V1.4 — 2026-05-21 — §0 raw-slug DTO alignment fold.**
+  - §0 V1.3 amendment landed: trait DTOs are now raw-slug (`source_type_slug`, `mode_slug`, `category_slug`, and `EntityRefDto.entity_type_slug`), matching W2-C V1.3 §9's intended raw-slug stub; the cross-lane DTO contract is reconciled.
+  - W2-C V1.4 is otherwise unchanged from V1.3; the cycle-4 §0-mismatch finding closes via the §0 amendment.
 - **V1.3 — 2026-05-21 — local-to-local security trim + cycle-3 compile-shape fold.**
   - Adds the local-to-local single-user trust topology declaration; per memory `feedback_local_to_local_security_overreach_primary_concern`, drops multi-actor gates that do not apply to this surface.
   - Demotes `entity_intake` from `category = Publish` to `category = Transform`. Transform abilities do not require confirmation in the live runtime, resolving cycle-3 codex F1 without inventing confirmation-token transport. The ability still sets `may_publish = true` because the pipeline may write claim/link rows as a side effect of transforming user-provided intake input.
@@ -73,15 +76,15 @@ Verbatim wave-plan ownership:
 
 > `wp/dailyos/blocks/entity-intake/` (new block directory — `block.json`, `render.php`, `edit.js`, `save.js`, styling). New ability `abilities-runtime/src/abilities/entity_intake.rs` (intake ability declaration via `#[ability]` macro). Does NOT own the ingestion pipeline (`IngestPipeline` — W2-A owns); does not own the block scaffolding pattern (reuses v1.4.2 W4 `block.json` pattern).
 
-V1.3 ownership corrections for this checkout:
+V1.4 ownership corrections for this checkout:
 
-- `src-tauri/abilities-runtime/src/services/workspace_intake.rs` is **W2-A-owned**, not W2-C-owned, per §0 V1.2 §4 and cycle-13 §13.3.1. W2-C consumes `WorkspaceIntakeService` and its DTOs; W2-C must not alter the trait contract or bridge registration unless W2-A's companion V1.3 packet explicitly assigns the bridge-surface update.
+- `src-tauri/abilities-runtime/src/services/workspace_intake.rs` is **W2-A-owned**, not W2-C-owned, per §0 V1.3 §4 and cycle-13 §13.3.1. W2-C consumes `WorkspaceIntakeService` and its raw-slug DTOs; W2-C must not alter the trait contract or bridge registration unless W2-A's companion packet explicitly assigns the bridge-surface update.
 - `src-tauri/abilities-runtime/src/abilities/entity_intake.rs` is W2-C-owned. This is the write ability and must use `category=Transform`, `may_publish=true`, `allowed_actors=[SurfaceClient]`, raw abilities-runtime DTOs, and the §0 V1.2 §13 canonical function shape.
 - `src-tauri/abilities-runtime/src/abilities/entity_intake_render.rs` is W2-C-owned **only if** no existing read ability can satisfy §9. The first reuse candidate is the existing claim-read substrate cited in §6 (`EntityContextClaimReadHandle` plus the live claim reader); if reused, W2-C documents that reuse and owns no new read ability file.
 - Rust validation helpers move out of W2-C:
   - `validate_entity_seed` belongs in W2-A's dailyos_lib-side `src-tauri/src/services/workspace_ingestion/workspace_intake_impl.rs`, because it needs typed `EntityType` parsing and DB existence lookup.
   - `WorkspaceCategoryRegistry::validate` also belongs in the bridge implementation, because the ability passes raw `category_slug: Option<String>` and the bridge converts to the internal typed request.
-  - W2-C depends on W2-A V1.3 absorbing this bridge-helper section before L1 implementation. In this checkout W2-A is still V1.2, so W2-C L1 is blocked until that companion packet is updated or the coordinator assigns the bridge change.
+  - W2-C depends on §0 V1.3 / W2-A absorbing this bridge-helper section before L1 implementation. The cycle-4 typed-DTO mismatch is closed by §0 V1.3's raw-slug trait surface; W2-C still does not own bridge edits unless assigned by the coordinator.
 - `wp/dailyos/blocks/entity-intake/` is W2-C-owned:
   - `block.json`
   - `edit.js`
@@ -118,7 +121,7 @@ Additional local guardrails:
 
 | Surface | K-in finding | Required implementation consequence |
 | --- | --- | --- |
-| §0 V1.2 §4 | `WorkspaceIntakeService` is the crate-boundary trait. `abilities-runtime` declares it; dailyos_lib implements it; `AbilityContext.services()` exposes the `ServiceContext` accessor per `src-tauri/abilities-runtime/src/abilities/registry.rs:740-768`. | `entity_intake` calls `ctx.services().workspace_intake().ingest(...)` with raw abilities-runtime DTOs. It must not import `dailyos_lib::services::workspace_ingestion`, app-crate entity types, `WorkspaceCategoryRegistry`, or instantiate `IngestPipeline`. |
+| §0 V1.3 §4 | `WorkspaceIntakeService` is the crate-boundary trait. `abilities-runtime` declares it with raw-slug DTOs; dailyos_lib implements it and parses slugs to typed ingestion contracts; `AbilityContext.services()` exposes the `ServiceContext` accessor per `src-tauri/abilities-runtime/src/abilities/registry.rs:740-768`. | `entity_intake` calls `ctx.services().workspace_intake().ingest(...)` with raw abilities-runtime DTOs. It must not import `dailyos_lib::services::workspace_ingestion`, app-crate entity types, `WorkspaceCategoryRegistry`, or instantiate `IngestPipeline`. |
 | §0 V1.2 §11 | Render-time mutation is prohibited. Write trigger and render read are separate flows. | `edit.js` invokes `entity_intake` after a user gesture. `render.php` invokes only `entity_intake_render` or an existing read ability. |
 | §0 V1.2 §13 | Canonical ability shape is pinned to `src-tauri/abilities-runtime/src/abilities/account_overview.rs:106-115`: `pub async fn`, `ctx: &AbilityContext<'_>`, and `AbilityResult<T>` returning `T` directly. | §9 stubs must not use `ServiceContext`, sync functions, or hand-built `AbilityOutput` wrappers. §10 adds a literal-diff guard against this skeleton. |
 | §0 §10 | Substrate-reuse table replaces `EntityIntakeClaimBand { trust_band: String }` with canonical `TrustBand`. | Output claims use `abilities-runtime/src/abilities/trust/types.rs:24-29` `TrustBand`; no local trust enum or string-only band DTO. |
@@ -133,7 +136,7 @@ Additional local guardrails:
 | Category parsing vs validation | `src-tauri/src/services/workspace_ingestion/contracts.rs:95-99` says `WorkspaceCategory::from_slug` is lexical only. `src-tauri/src/services/workspace_ingestion/registry.rs:358-362` is the canonical `WorkspaceCategoryRegistry::validate(conn, &category, entity_type)` signature. | V1.3 moves caller-provided category validation into W2-A's dailyos_lib bridge implementation. The ability passes raw `category_slug: Option<String>`; the bridge parses, validates against the typed entity, and returns `InvalidCategorySlug` or `CategoryNotAllowed` before constructing the internal typed request. |
 | WP editor permission | `wp/dailyos/includes/class-dailyos-plugin.php:655-665` gates editor REST routes through login, `edit_posts`, and pairing. Existing registered editor routes are at `wp/dailyos/includes/class-dailyos-plugin.php:609-647`. | `edit.js` write-trigger route must use `can_edit_posts_rest` or stricter. No existing entity-intake route fits; §9 names the required route unless a generic SurfaceClient invoke route lands first. |
 | WP block category | In this checkout the requested `wp/dailyos/includes/class-dailyos-plugin.php:651-670` range is the editor REST permission callback, not block-category registration. The actual `"dailyos"` block category registration is `wp/dailyos/includes/class-dailyos-plugin.php:162-182`. | `block.json` uses `"category": "dailyos"` and §11 verifies the category exists through the actual registration lines. |
-| Entity existence/data-hygiene substrate | `src-tauri/src/services/trust_extraction.rs:148-164` shows entity existence checks by typed entity table. | In this local single-user topology, entity authorization reduces to data hygiene: the bridge parses `entity_type`, validates `entity_id`, and rejects `EntityNotFound` when the row is absent. W2-C does not invent a cross-principal ACL helper. |
+| Entity existence/data-hygiene substrate | `src-tauri/src/services/trust_extraction.rs:148-164` shows entity existence checks by typed entity table. | In this local single-user topology, entity authorization reduces to data hygiene: the bridge parses `entity_type_slug`, validates `entity_id`, and rejects `EntityNotFound` when the row is absent. W2-C does not invent a cross-principal ACL helper. |
 
 Surface Bridge dependency checks:
 
@@ -156,7 +159,7 @@ This is a local-to-local single-user block invocation surface, not a generic ext
 - The read ability uses `allowed_actors = [SurfaceClient]`, `required_scopes = ["read.entity_intelligence"]`, `category = Read`, `may_publish = false`, and `mcp_exposure = None`.
 - The render path calls only the read ability (`entity_intake_render`) or a confirmed existing read ability. It must never call `entity_intake`.
 - The block calls through the paired SurfaceClient bridge and signed runtime client. PHP and browser JavaScript never read workspace files directly.
-- The ability routes raw `file_ref`, `entity_seed`, and `category_slug` values into §0 V1.2 §4 `WorkspaceIntakeService`; W2-A's dailyos_lib bridge validates the registry-relative path, parses entity/category strings, checks entity existence, and calls the W2-A pipeline boundary.
+- The ability routes raw `file_ref`, `entity_seed`, and `category_slug` values into §0 V1.3 §4 `WorkspaceIntakeService`; W2-A's dailyos_lib bridge validates the registry-relative path, parses entity/category strings, checks entity existence, and calls the W2-A pipeline boundary.
 - The ability must not accept absolute customer paths as durable block attributes; store only the registry-relative `file_ref` needed by the pipeline.
 - ADR-0093 untrusted-document-to-AI handling is not W2-C-owned because this lane does not perform extraction or AI calls; that boundary lands with W3-A.
 - `/cso` reviews at L0 and L2 are mandatory, scoped to the local trust topology.
@@ -190,7 +193,7 @@ Security acceptance checks:
 
 V1.3 amended gate:
 
-1. *Claim model:* `edit.js` triggers the write ability after a user gesture. The write ability calls §0 V1.2 §4 `WorkspaceIntakeService::ingest` with raw `source_type_slug="entity_doc"` and `mode_slug="entity_seeded"`; W2-A's bridge maps those to `WorkspaceFileKind::EntityDoc` and `IngestionMode::EntitySeeded` after validation. Claim proposals are committed by the pipeline, not the block. Block attributes store `entity_id`, `entity_type`, and `file_ref` only.
+1. *Claim model:* `edit.js` triggers the write ability after a user gesture. The write ability calls §0 V1.3 §4 `WorkspaceIntakeService::ingest` with raw `source_type_slug="entity_doc"` and `mode_slug="entity_seeded"`; W2-A's bridge maps those to `WorkspaceFileKind::EntityDoc` and `IngestionMode::EntitySeeded` after validation. Claim proposals are committed by the pipeline, not the block. Block attributes store `entity_id`, `entity_type`, and `file_ref` only.
 2. *Provenance + trust:* Trust-band rendering uses canonical `TrustBand` and the existing trust-band-render helper. No new trust UI primitive.
 3. *Signals + invalidation:* The block may re-render on `EntityIntelligenceUpdated`. V1.3 does not require entity-scoped subscription filtering for security; if broad local refresh becomes noisy, track it as UX polish outside W2-C.
 4. *Runtime + surfaces:* `entity_intake` is a Transform ability with `allowed_actors=[SurfaceClient]`, `required_scopes=[write.entity_intake]`, `mcp_exposure=None`, `category=Transform`, and `may_publish=true`. `entity_intake_render` is a read ability with `allowed_actors=[SurfaceClient]`, `required_scopes=[read.entity_intelligence]`, `mcp_exposure=None`, `category=Read`, and `may_publish=false`.
@@ -198,7 +201,7 @@ V1.3 amended gate:
 
 ## §9 Code Stub
 
-These stubs show contract shape only. Implementing agents adapt module paths to W2-A's final §0 V1.2 §4 trait files without changing actor, scope, MCP exposure, Transform category, bridge-owned validation, path validation, ADR-0108 redaction, or render-time mutation posture.
+These stubs show contract shape only. Implementing agents adapt module paths to W2-A's final §0 V1.3 §4 trait files without changing actor, scope, MCP exposure, Transform category, bridge-owned validation, path validation, ADR-0108 redaction, or render-time mutation posture.
 
 V1.3 hard pins:
 
@@ -292,7 +295,7 @@ pub async fn entity_intake(
 
 Bridge-owned validation contract:
 
-- Trim and parse `entity_seed.entity_type` to typed `EntityType` inside dailyos_lib.
+- Trim and parse `entity_seed.entity_type_slug` to typed `EntityType` inside dailyos_lib.
 - Reject unknown slugs with `EntityIntakeError::InvalidEntityType(String)`; do not coerce unknown values.
 - Validate `entity_seed.entity_id` is non-empty and matches the accepted UUID/slug shape before wrapping as the internal `EntityId`.
 - Check the typed entity exists in the local DB; return `EntityNotFound` if absent.
@@ -300,7 +303,7 @@ Bridge-owned validation contract:
 
 ### Required crate-boundary DTO shape
 
-V1.3 pins the raw shape W2-C consumes from W2-A's `src-tauri/abilities-runtime/src/services/workspace_intake.rs` bridge. These types live in `abilities-runtime` and contain no app-crate imports. If W2-A names fields differently at L1, W2-C updates the imports only after §0 is updated; it must not invent parallel DTOs.
+V1.4 confirms the raw shape W2-C consumes from §0 V1.3 / W2-A's `src-tauri/abilities-runtime/src/services/workspace_intake.rs` bridge. These types live in `abilities-runtime` and contain no app-crate imports. W2-C must not invent parallel DTOs.
 
 ```rust
 #[derive(Debug, Clone)]
@@ -314,7 +317,7 @@ pub struct WorkspaceIntakeRequest {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct EntityRefDto {
-    pub entity_type: String,
+    pub entity_type_slug: String,
     pub entity_id: String,
     pub entity_name: Option<String>,
 }
@@ -428,7 +431,7 @@ export default function Edit({ attributes, setAttributes }) {
 				data: {
 					entity_seed: {
 						entity_id: attributes.entity_id,
-						entity_type: attributes.entity_type,
+						entity_type_slug: attributes.entity_type,
 					},
 					file_ref: attributes.file_ref,
 				},
@@ -526,7 +529,7 @@ V1.3 additional required tests:
 - Render split test: `render.php` invokes only `entity_intake_render`; repeated renders do not mutate ingestion runs or links.
 - Fixture claim render test: `entity_intake_render` reads fixture-seeded `intelligence_claims` rows and returns renderable `claims[]` with canonical `TrustBand` values.
 - ADR-0108 output/log redaction test: sensitive claim projections are filtered/redacted before output crosses the ability boundary; PHP never sees raw confidential claim body/provenance text.
-- `validate_entity_seed` bridge test: unknown `entity_type` returns `InvalidEntityType`, invalid/empty `entity_id` returns `InvalidEntityId`, and absent entity rows return `EntityNotFound`.
+- `validate_entity_seed` bridge test: unknown `entity_type_slug` returns `InvalidEntityType`, invalid/empty `entity_id` returns `InvalidEntityId`, and absent entity rows return `EntityNotFound`.
 - Invalid category slug bridge test: malformed slugs return `InvalidCategorySlug`; registry-disallowed categories return `CategoryNotAllowed`; the internal typed request is not constructed on either failure.
 - Path traversal test: traversal/absolute/encoded traversal `file_ref` values return `PathTraversalAttempt`.
 - MCP non-enumeration test: `entity_intake` and `entity_intake_render` are not enumerated and cannot be invoked through MCP.
@@ -550,7 +553,7 @@ V1.3 additional done criteria:
 
 - Surface Bridge dev-diff confirmed, or explicit gap-on-`dev` escalation recorded before W2-C L1 starts.
 - `WorkspaceIntakeService` trait and dailyos_lib bootstrap impl are wired by W2-A. W2-A V1.3 also absorbs bridge-side entity/category validation in `workspace_intake_impl.rs`; if not, W2-C L1 is blocked.
-- `entity_intake` uses the §0 V1.2 §4 trait bridge and never imports app-crate ingestion services directly.
+- `entity_intake` uses the §0 V1.3 §4 trait bridge and never imports app-crate ingestion services directly.
 - `entity_intake` matches the §0 V1.2 §13 canonical ability shape: `pub async fn`, `ctx: &AbilityContext<'_>`, and returns `EntityIntakeOutput` directly.
 - `entity_intake_render` exists or existing read-ability reuse is confirmed and documented.
 - `entity_intake_render` returns a claim list filtered/redacted per ADR-0108 before output crosses the ability boundary.
