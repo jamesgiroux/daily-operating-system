@@ -557,24 +557,33 @@ final class DailyOS_Runtime_Client {
 	}
 
 	/**
-	 * Return the runtime URL embedded in the pairing code.
+	 * Resolve the runtime URL to handshake against.
+	 *
+	 * Accepts either a full `dailyos://pair?port=N&code=...` URL (port read
+	 * from the query string) or a bare pairing code (e.g. `K8XJ-2M4N-9PQR`,
+	 * port discovered via the sentinel file the runtime writes on bind).
 	 *
 	 * @param string $pairing_code Pairing code or DailyOS pairing URL.
 	 */
 	private function runtime_base_url_for_pairing( string $pairing_code ): ?string {
-		$query = wp_parse_url( $pairing_code, PHP_URL_QUERY );
+		$query = wp_parse_url( trim( $pairing_code ), PHP_URL_QUERY );
 
-		if ( ! is_string( $query ) ) {
-			return null;
+		if ( is_string( $query ) ) {
+			parse_str( $query, $parts );
+			if ( isset( $parts['port'] ) && is_scalar( $parts['port'] ) ) {
+				return self::normalize_loopback_runtime_url( 'http://127.0.0.1:' . (string) $parts['port'] );
+			}
 		}
 
-		parse_str( $query, $parts );
-
-		if ( ! isset( $parts['port'] ) || ! is_scalar( $parts['port'] ) ) {
-			return null;
+		// Bare code: port comes from the runtime sentinel (~/.dailyos/runtime-endpoint.json).
+		if ( class_exists( '\\DailyOS\\DailyOS_Plugin' ) ) {
+			$endpoint = \DailyOS\DailyOS_Plugin::discover_runtime_endpoint();
+			if ( is_array( $endpoint ) && isset( $endpoint['port'] ) && is_int( $endpoint['port'] ) ) {
+				return self::normalize_loopback_runtime_url( 'http://127.0.0.1:' . (string) $endpoint['port'] );
+			}
 		}
 
-		return self::normalize_loopback_runtime_url( 'http://127.0.0.1:' . (string) $parts['port'] );
+		return null;
 	}
 
 	/**

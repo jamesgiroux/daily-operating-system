@@ -387,8 +387,10 @@ pub fn issue_pairing_code(
     ctx.check_mutation_allowed()
         .map_err(|error| SurfacePairingError::Write(error.to_string()))?;
 
-    let token = random_url_token(24);
-    let code_hash = pairing_code_hash(&token);
+    let token = generate_pairing_code();
+    let canonical = normalize_pairing_code(&token)
+        .expect("generated pairing code is always canonical");
+    let code_hash = pairing_code_hash(&canonical);
     let issued_at = format_ts(input.now);
     let expires_at = format_ts(input.now + Duration::seconds(PAIRING_CODE_TTL_SECONDS));
     db.conn_ref()
@@ -2597,6 +2599,51 @@ fn random_url_token(byte_len: usize) -> String {
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
 }
 
+// Crockford base32 alphabet (no I/L/O/U to avoid look-alikes when typed).
+// 32 chars → 5 bits per char → 60 bits over 12 chars. Same-machine threat in
+// a 5-minute TTL window with failed-attempt revocation makes brute force a
+// non-issue; readability + typability are the priority for local-to-local.
+const PAIRING_CODE_ALPHABET: &[u8] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+const PAIRING_CODE_CANONICAL_LEN: usize = 12;
+
+fn generate_pairing_code() -> String {
+    let mut bytes = [0u8; PAIRING_CODE_CANONICAL_LEN];
+    rand::rng().fill_bytes(&mut bytes);
+    let chars: String = bytes
+        .iter()
+        .map(|b| PAIRING_CODE_ALPHABET[(*b & 0x1F) as usize] as char)
+        .collect();
+    // Display form: XXXX-XXXX-XXXX. Stored hash uses the canonical (no-dash)
+    // form via `normalize_pairing_code`.
+    format!("{}-{}-{}", &chars[0..4], &chars[4..8], &chars[8..12])
+}
+
+// Strip whitespace/dashes, uppercase, fold Crockford look-alikes
+// (I/L → 1, O → 0), then validate against the Crockford alphabet.
+// Returns the canonical 12-char form, or None if the input doesn't decode.
+fn normalize_pairing_code(input: &str) -> Option<String> {
+    let stripped: String = input
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != '-')
+        .map(|c| c.to_ascii_uppercase())
+        .collect();
+    if stripped.len() != PAIRING_CODE_CANONICAL_LEN {
+        return None;
+    }
+    let folded: String = stripped
+        .chars()
+        .map(|c| match c {
+            'I' | 'L' => '1',
+            'O' => '0',
+            other => other,
+        })
+        .collect();
+    if !folded.bytes().all(|b| PAIRING_CODE_ALPHABET.contains(&b)) {
+        return None;
+    }
+    Some(folded)
+}
+
 fn random_key32() -> [u8; 32] {
     let mut bytes = [0u8; 32];
     rand::rng().fill_bytes(&mut bytes);
@@ -2607,27 +2654,20 @@ fn pairing_code_hash(code: &str) -> String {
     stable_hash("pairing_code", code)
 }
 
+// Returns the canonical (no-dash, uppercase, Crockford-folded) form of an
+// input pairing code. Accepts either a bare code (typed by the user, with or
+// without dashes, any case) or a full `dailyos://pair?...` URL.
 fn pairing_code_token(value: &str) -> Option<String> {
     let value = value.trim();
-    if value.starts_with("dailyos://") {
+    let raw = if value.starts_with("dailyos://") {
         let url = url::Url::parse(value).ok()?;
         url.query_pairs()
             .find(|(key, _)| key == "code")
-            .map(|(_, value)| value.to_string())
-            .filter(|code| is_pairing_token(code))
-    } else if is_pairing_token(value) {
-        Some(value.to_string())
+            .map(|(_, code)| code.to_string())?
     } else {
-        None
-    }
-}
-
-fn is_pairing_token(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= 160
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+        value.to_string()
+    };
+    normalize_pairing_code(&raw)
 }
 
 fn sanitize_identifier(value: &str, code: &'static str) -> Result<String, SurfacePairingError> {
@@ -2894,6 +2934,41 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap()
+    }
+
+    #[test]
+    fn pairing_code_format_round_trips_through_normalization() {
+        // Generated codes are XXXX-XXXX-XXXX in the Crockford alphabet.
+        let display = generate_pairing_code();
+        assert_eq!(display.len(), 14, "display form is XXXX-XXXX-XXXX");
+        assert_eq!(&display[4..5], "-");
+        assert_eq!(&display[9..10], "-");
+        let canonical = normalize_pairing_code(&display).expect("display form normalizes");
+        assert_eq!(canonical.len(), PAIRING_CODE_CANONICAL_LEN);
+        assert!(canonical.bytes().all(|b| PAIRING_CODE_ALPHABET.contains(&b)));
+
+        // User-friendliness: lowercase + extra whitespace + Crockford look-alikes
+        // fold to the same canonical form (so paste-with-quirks still works).
+        let friendly = format!(
+            "  {}  ",
+            display
+                .replace('0', "O") // user typed letter-O
+                .replace('1', "l") // user typed lowercase L
+                .to_ascii_lowercase()
+        );
+        let folded = normalize_pairing_code(&friendly).expect("friendly form normalizes");
+        assert_eq!(folded, canonical, "friendly input matches canonical");
+
+        // pairing_code_token accepts both the URL form and the bare display form.
+        let url = format!("dailyos://pair?port=4411&code={}", display);
+        assert_eq!(pairing_code_token(&url).as_deref(), Some(canonical.as_str()));
+        assert_eq!(pairing_code_token(&display).as_deref(), Some(canonical.as_str()));
+
+        // Garbage input fails closed.
+        assert_eq!(pairing_code_token("not-a-code"), None);
+        assert_eq!(pairing_code_token(""), None);
+        // Forbidden Crockford letter U is rejected (no fold defined).
+        assert_eq!(normalize_pairing_code("UUUU-UUUU-UUUU"), None);
     }
 
     #[test]
