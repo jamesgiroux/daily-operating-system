@@ -2,7 +2,7 @@
 /**
  * MeetingClaimsForReview inner-block server-side render (W2 §5.4 / DOS-752).
  *
- * Projection: MetadataProposals section (meeting-bound proposals,\n * DOS-328). Per-proposal trust band; claim-fanout via outer block's\n * `dailyos_meeting_detail_claim_inner_consumer` hook for\n * claim_receipt + record_claim_feedback wiring.
+ * Projection: MetadataProposals section (meeting-bound proposals,\n * DOS-328). Per-proposal trust band; claim-fanout via outer block's\n * `dailyos_meeting_detail_claim_inner_read` hook for\n * claim_receipt + record_claim_feedback wiring.
  *
  * @package DailyOS
  */

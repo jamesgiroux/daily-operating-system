@@ -14,7 +14,7 @@
  *   the view-script when present, or via form-submission fallback) emits
  *   a `FeedbackAction::MergeIntent` claim-feedback through
  *   `record_claim_feedback` via the outer-block helper
- *   `dailyos_person_detail_claim_inner_consumer()`.
+ *   `dailyos_person_detail_claim_inner_read()`.
  *
  *   Canonical payload shape (sanitized by
  *   services::claim_receipt::feedback::validate_and_sanitize_metadata):
@@ -95,7 +95,7 @@ if ( ! function_exists( 'dailyos_recommended_actions_render' ) ) {
 	 * The button carries the claim_ref payload as data-attributes; the
 	 * frontend handler (view-script when present) reads them and POSTs
 	 * the typed feedback through the runtime client. Server-side, the
-	 * `dailyos_person_detail_claim_inner_consumer` helper is the single
+	 * `dailyos_person_detail_claim_inner_read` helper is the single
 	 * wiring authority for `record_claim_feedback` invocations — the
 	 * affordance click ultimately flows through that helper (see the
 	 * outer block's render-functions.php).
@@ -162,7 +162,7 @@ if ( ! function_exists( 'dailyos_recommended_actions_render' ) ) {
 	 *   1. Frontend collects the data-attrs + optional
 	 *      `supporting_evidence` from a textarea (≤500 chars).
 	 *   2. POST to a nonce-protected admin-ajax/REST endpoint that calls
-	 *      `dailyos_person_detail_claim_inner_consumer( $claim_ref )` with
+	 *      `dailyos_person_detail_claim_inner_read( $claim_ref )` with
 	 *      `action => 'merge_intent'` and `payload_json` carrying
 	 *      `merge_target` + `supporting_evidence`.
 	 *   3. `record_claim_feedback` validates + sanitizes the payload

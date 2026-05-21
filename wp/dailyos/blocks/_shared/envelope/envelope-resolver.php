@@ -98,11 +98,31 @@ if ( ! function_exists( 'dailyos_envelope_handle_from_response' ) ) {
 		} elseif ( isset( $envelope['envelope_render_id'] ) && is_string( $envelope['envelope_render_id'] ) ) {
 			$handle = $envelope['envelope_render_id'];
 		} else {
-			// Fall back to a deterministic per-request handle so inner blocks
-			// can still resolve. Substrate carries envelope_render_id once
-			// DOS-477 envelope-cache wire-up surfaces it on the response;
-			// until then this hash keeps the consumer side single-fetch.
-			$handle = hash( 'sha256', $entity_type . '|' . $entity_id . '|' . spl_object_hash( (object) $envelope ) );
+			// Fall back to a deterministic per-envelope handle so inner blocks
+			// can still resolve via the request-scoped cache. Substrate carries
+			// envelope_render_id once DOS-477 envelope-cache wire-up surfaces
+			// it on the response; until then this hash keeps the consumer side
+			// single-fetch.
+			//
+			// W1W2 L2 cycle-2 MEDIUM fix: the previous fallback used
+			// `spl_object_hash( (object) $envelope )` which casts the array to
+			// a FRESH stdClass on every call. PHP allocates a new object per
+			// call, so the object-hash differs each invocation — the outer
+			// block emitted one handle, the inner block (re-deriving from the
+			// same envelope shape) got a DIFFERENT handle, and the cache
+			// missed. Net effect: every inner block re-invoked the producer
+			// instead of reusing the cached envelope, multiplying ability
+			// invocations N-times per render.
+			//
+			// `md5( serialize( $envelope ) )` is deterministic on the
+			// envelope's data shape (associative arrays serialize in insertion
+			// order, identical envelopes hash identically), and the cost is
+			// dominated by the serialize() of an already-in-memory array —
+			// negligible compared to the saved ability round-trip.
+			$handle = hash(
+				'sha256',
+				$entity_type . '|' . $entity_id . '|' . md5( serialize( $envelope ) )
+			);
 		}
 		dailyos_envelope_cache_put( $handle, $envelope );
 		return $handle;

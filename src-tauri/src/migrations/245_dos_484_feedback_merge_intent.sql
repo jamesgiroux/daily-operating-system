@@ -12,9 +12,24 @@
 -- and re-create the existing indexes (`idx_feedback_claim`,
 -- `idx_feedback_type`) so reads stay covered.
 --
--- Safe across multi-process readers: SQLite serializes table-rebuilds at
--- the writer lock. No data shape changes; this is purely a CHECK
--- widening.
+-- Atomicity (W1W2 L2 cycle-2 CRITICAL fix; same class as v244 / L3 cycle-2
+-- F3): the migration runner at `migrations.rs` calls
+-- `conn.execute_batch(sql)` which does NOT wrap the batch in a single
+-- transaction unless the SQL contains explicit `BEGIN; ... COMMIT;`.
+-- Without that, multi-process readers (additional processes opening the
+-- encrypted DB during the migration window) could observe the moment
+-- between `DROP TABLE claim_feedback` and the `ALTER TABLE ... RENAME`,
+-- failing reads against the missing `claim_feedback` table.
+--
+-- Strategy: wrap the rebuild in `BEGIN IMMEDIATE; ... COMMIT;` so the
+-- write lock is held for the entire CREATE/INSERT/DROP/RENAME/INDEX
+-- sequence. SQLite guarantees other connections cannot observe schema
+-- state between those statements while the IMMEDIATE transaction holds
+-- the write lock. The class-wide CI gate
+-- `src-tauri/scripts/check_migrations_transactional.sh` enforces this
+-- pattern for every destructive migration going forward.
+
+BEGIN IMMEDIATE;
 
 CREATE TABLE claim_feedback_new (
     id              TEXT PRIMARY KEY,
@@ -57,3 +72,5 @@ CREATE INDEX IF NOT EXISTS idx_feedback_claim
 
 CREATE INDEX IF NOT EXISTS idx_feedback_type
     ON claim_feedback(feedback_type, submitted_at);
+
+COMMIT;

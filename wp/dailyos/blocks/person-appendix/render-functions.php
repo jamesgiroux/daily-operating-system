@@ -11,7 +11,7 @@
  * `data-empty-reason` per W2 §10 invariant (no silent hidden states).
  *
  * Claim affordances (per-claim_ref `claim_receipt` + `record_claim_feedback`)
- * flow through `dailyos_person_detail_claim_inner_consumer` on the outer
+ * flow through `dailyos_person_detail_claim_inner_read` on the outer
  * block — the consumer-skeleton CI gate (AC-W1.9) lints the 3-arg
  * invocation there, not in this inner file.
  *

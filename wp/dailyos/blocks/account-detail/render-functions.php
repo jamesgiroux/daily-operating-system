@@ -148,21 +148,26 @@ if ( ! function_exists( 'dailyos_account_detail_render' ) ) {
 	}
 
 	/**
-	 * Inner-block consumer hook (W2 L1 wire-up): claim-row inner blocks
+	 * Inner-block READ helper (W1W2 L2 cycle-2 split): claim-row inner blocks
 	 * invoke `claim_receipt` (audience-keyed receipt builder via
-	 * build_receipt_for_audience per DOS-341) and `record_claim_feedback`
-	 * (feedback affordance) through this hook so the outer block remains
-	 * the single wiring authority for receipt + feedback round-trips.
+	 * build_receipt_for_audience per DOS-341) through this hook to fetch
+	 * the audience-scoped receipt for one claim_ref during render.
+	 *
+	 * **Render-path only.** This helper MUST NOT mutate state. The previous
+	 * `..._claim_inner_consumer` shape unconditionally also fired
+	 * `record_claim_feedback`, which is a write surface. Reads-on-render
+	 * cannot emit writes; the write path is now `_claim_inner_write` below
+	 * and is called explicitly from feedback affordance handlers.
 	 *
 	 * AgentMcp audience filter is enforced inside build_receipt_for_audience
 	 * server-side; consumers pass the claim_ref unmodified.
 	 *
 	 * @param array<string, mixed> $claim_ref Claim reference from projection
 	 *                                         ({ claim_id, audience_key, ... }).
-	 * @return array<string, mixed> Receipt + feedback affordance envelope (raw
-	 *                              runtime response; typed shaping at inner block).
+	 * @return array<string, mixed> Receipt envelope (raw runtime response;
+	 *                              typed shaping at inner block).
 	 */
-	function dailyos_account_detail_claim_inner_consumer( array $claim_ref ): array {
+	function dailyos_account_detail_claim_inner_read( array $claim_ref ): array {
 		$runtime_client = apply_filters( 'dailyos_runtime_client_for_block', null );
 		if ( ! is_object( $runtime_client ) || ! method_exists( $runtime_client, 'invoke_ability' ) ) {
 			return [
@@ -186,17 +191,61 @@ if ( ! function_exists( 'dailyos_account_detail_render' ) ) {
 			$scope_set
 		);
 
-		// W1 producer: record_claim_feedback — feedback affordance mount for the
-		// same claim_ref. Returning the affordance descriptor lets the W2 inner
-		// block render the corrected / dismissed / corroborated controls.
+		return [
+			'receipt' => $receipt_response,
+		];
+	}
+
+	/**
+	 * Inner-block WRITE helper (W1W2 L2 cycle-2 split): explicit feedback
+	 * write surface for the account-detail subtree. Called from feedback
+	 * affordance handlers (accept/reject/correct/dismiss buttons,
+	 * MergeIntent submitters) — NEVER from the render path. The render
+	 * path uses `_claim_inner_read` above.
+	 *
+	 * @param array<string, mixed> $claim_ref Claim reference
+	 *                                        ({ claim_id, audience_key, ... }).
+	 * @param string               $action    Feedback action variant
+	 *                                        (e.g., 'confirm_current').
+	 * @param array<string, mixed> $metadata  Optional metadata (payload_json
+	 *                                        body — empty {} is valid).
+	 * @return array<string, mixed> Feedback runtime response.
+	 */
+	function dailyos_account_detail_claim_inner_write(
+		array $claim_ref,
+		string $action,
+		array $metadata = []
+	): array {
+		$runtime_client = apply_filters( 'dailyos_runtime_client_for_block', null );
+		if ( ! is_object( $runtime_client ) || ! method_exists( $runtime_client, 'invoke_ability' ) ) {
+			return [
+				'ok'    => false,
+				'error' => [
+					'code'    => 'runtime_unavailable',
+					'message' => 'DailyOS runtime client not bound for inner consumer.',
+				],
+			];
+		}
+
+		$scope_set = apply_filters( 'dailyos_surfaceclient_resolved_scopes', [] );
+		if ( ! is_array( $scope_set ) ) {
+			$scope_set = [];
+		}
+
+		// W1 producer: record_claim_feedback — explicit feedback write. The
+		// action + metadata are carried alongside the claim_ref so the
+		// runtime persists the typed feedback row.
+		$payload = $claim_ref;
+		$payload['action']   = $action;
+		$payload['metadata'] = $metadata;
+
 		$feedback_response = $runtime_client->invoke_ability(
 			'record_claim_feedback',
-			$claim_ref,
+			$payload,
 			$scope_set
 		);
 
 		return [
-			'receipt'  => $receipt_response,
 			'feedback' => $feedback_response,
 		];
 	}

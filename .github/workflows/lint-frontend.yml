@@ -130,6 +130,9 @@ jobs:
       - name: Enforce v1.4.4 W1 consumer-skeleton wiring (AC-W1.9)
         run: bash src-tauri/scripts/check_w1_consumer_skeleton.sh
 
+      - name: Enforce destructive migrations wrapped in BEGIN IMMEDIATE / COMMIT
+        run: bash src-tauri/scripts/check_migrations_transactional.sh
+
       - name: Enforce durable source comments
         run: ./scripts/check_no_ephemeral_issue_refs_in_comments.sh
 

@@ -167,19 +167,15 @@ if ( ! function_exists( 'dailyos_person_detail_render' ) ) {
 	}
 
 	/**
-	 * Inner-block consumer hook (W2 L1): claim-row inner blocks invoke
-	 * `claim_receipt` (audience-keyed receipt builder) and
-	 * `record_claim_feedback` (feedback affordance) through this hook so the
-	 * outer block remains the single wiring authority. Per W2 §5.3 path α,
-	 * the merge affordance also flows through `record_claim_feedback` —
-	 * recommended-actions block calls this helper with a
-	 * `FeedbackAction::MergeIntent` claim_ref to emit the typed feedback.
+	 * Inner-block READ helper (W1W2 L2 cycle-2 split): claim-row inner blocks
+	 * invoke `claim_receipt` through this hook to fetch the audience-scoped
+	 * receipt during render. **Render-path only — emits no writes.**
 	 *
 	 * @param array<string, mixed> $claim_ref Claim reference from projection
-	 *                                         ({ claim_id, audience_key, action?, ... }).
-	 * @return array<string, mixed> Receipt + feedback affordance envelope.
+	 *                                         ({ claim_id, audience_key, ... }).
+	 * @return array<string, mixed> Receipt envelope.
 	 */
-	function dailyos_person_detail_claim_inner_consumer( array $claim_ref ): array {
+	function dailyos_person_detail_claim_inner_read( array $claim_ref ): array {
 		$runtime_client = apply_filters( 'dailyos_runtime_client_for_block', null );
 		if ( ! is_object( $runtime_client ) || ! method_exists( $runtime_client, 'invoke_ability' ) ) {
 			return [
@@ -203,22 +199,60 @@ if ( ! function_exists( 'dailyos_person_detail_render' ) ) {
 			$scope_set
 		);
 
-		// W1 producer: record_claim_feedback — feedback affordance mount for
-		// the same claim_ref. Per W2 §5.3 path α, the recommended-actions
-		// inner block forwards a `FeedbackAction::MergeIntent` claim_ref
-		// (unit variant; payload_json carries `merge_target` SubjectRef +
-		// optional `supporting_evidence` ≤500 chars, validated by
-		// services::claim_receipt::feedback::validate_and_sanitize_metadata
-		// per ADR-0123 V1.1 §1). The WP block emits the typed intent; the
-		// actual merge runs Tauri-side.
+		return [
+			'receipt' => $receipt_response,
+		];
+	}
+
+	/**
+	 * Inner-block WRITE helper (W1W2 L2 cycle-2 split): explicit feedback
+	 * write surface for the person-detail subtree. Per W2 §5.3 path α, the
+	 * MergeIntent affordance flows through this helper with
+	 * `$action = 'merge_intent'` and `$metadata = { merge_target,
+	 * supporting_evidence? }`. The merge execution itself runs Tauri-side;
+	 * the WP block only emits the typed feedback row (ADR-0123 V1.1 §1
+	 * validated by services::claim_receipt::feedback::
+	 * validate_and_sanitize_metadata). Called from the recommended-actions
+	 * affordance handler — NEVER from render.
+	 *
+	 * @param array<string, mixed> $claim_ref Claim reference.
+	 * @param string               $action    Feedback action variant
+	 *                                        (e.g., 'merge_intent').
+	 * @param array<string, mixed> $metadata  Optional payload_json body.
+	 * @return array<string, mixed> Feedback runtime response.
+	 */
+	function dailyos_person_detail_claim_inner_write(
+		array $claim_ref,
+		string $action,
+		array $metadata = []
+	): array {
+		$runtime_client = apply_filters( 'dailyos_runtime_client_for_block', null );
+		if ( ! is_object( $runtime_client ) || ! method_exists( $runtime_client, 'invoke_ability' ) ) {
+			return [
+				'ok'    => false,
+				'error' => [
+					'code'    => 'runtime_unavailable',
+					'message' => 'DailyOS runtime client not bound for inner consumer.',
+				],
+			];
+		}
+
+		$scope_set = apply_filters( 'dailyos_surfaceclient_resolved_scopes', [] );
+		if ( ! is_array( $scope_set ) ) {
+			$scope_set = [];
+		}
+
+		$payload = $claim_ref;
+		$payload['action']   = $action;
+		$payload['metadata'] = $metadata;
+
 		$feedback_response = $runtime_client->invoke_ability(
 			'record_claim_feedback',
-			$claim_ref,
+			$payload,
 			$scope_set
 		);
 
 		return [
-			'receipt'  => $receipt_response,
 			'feedback' => $feedback_response,
 		];
 	}

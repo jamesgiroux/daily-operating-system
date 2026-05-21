@@ -173,17 +173,20 @@ if ( ! function_exists( 'dailyos_project_detail_render' ) ) {
 	}
 
 	/**
-	 * Inner-block consumer hook: claim-row inner blocks invoke `claim_receipt`
-	 * (audience-keyed receipt builder) and `record_claim_feedback` (feedback
-	 * affordance mount) through this hook so the outer block remains the
-	 * single wiring authority for claim affordances. The consumer-skeleton
-	 * CI gate (AC-W1.9) lints these 3-arg invocations on this outer file.
+	 * Inner-block READ helper (W1W2 L2 cycle-2 split): claim-row inner blocks
+	 * invoke `claim_receipt` (audience-keyed receipt builder) through this
+	 * hook to fetch the audience-scoped receipt during render. The
+	 * consumer-skeleton CI gate (AC-W1.9) lints the 3-arg invocation here.
 	 *
-	 * @param array<string, mixed> $claim_ref Claim reference from projection
-	 *                                         ({ claim_id, audience_key, ... }).
-	 * @return array<string, mixed> Receipt + feedback affordance envelope.
+	 * **Render-path only.** Read does NOT emit `record_claim_feedback`; the
+	 * feedback write path is `_claim_inner_write` and runs explicitly from
+	 * the feedback affordance handler.
+	 *
+	 * @param array<string, mixed> $claim_ref Claim reference
+	 *                                        ({ claim_id, audience_key, ... }).
+	 * @return array<string, mixed> Receipt envelope.
 	 */
-	function dailyos_project_detail_claim_inner_consumer( array $claim_ref ): array {
+	function dailyos_project_detail_claim_inner_read( array $claim_ref ): array {
 		$runtime_client = apply_filters( 'dailyos_runtime_client_for_block', null );
 		if ( ! is_object( $runtime_client ) || ! method_exists( $runtime_client, 'invoke_ability' ) ) {
 			return [
@@ -207,16 +210,54 @@ if ( ! function_exists( 'dailyos_project_detail_render' ) ) {
 			$scope_set
 		);
 
-		// W1 producer: record_claim_feedback — feedback affordance mount for
-		// the same claim_ref.
+		return [
+			'receipt' => $receipt_response,
+		];
+	}
+
+	/**
+	 * Inner-block WRITE helper (W1W2 L2 cycle-2 split): explicit feedback
+	 * write surface for the project-detail subtree. Called from feedback
+	 * affordance handlers — NEVER from render. AC-W1.9 consumer-skeleton
+	 * gate verifies the 3-arg `record_claim_feedback` invocation here.
+	 *
+	 * @param array<string, mixed> $claim_ref Claim reference.
+	 * @param string               $action    Feedback action variant.
+	 * @param array<string, mixed> $metadata  Optional metadata.
+	 * @return array<string, mixed> Feedback runtime response.
+	 */
+	function dailyos_project_detail_claim_inner_write(
+		array $claim_ref,
+		string $action,
+		array $metadata = []
+	): array {
+		$runtime_client = apply_filters( 'dailyos_runtime_client_for_block', null );
+		if ( ! is_object( $runtime_client ) || ! method_exists( $runtime_client, 'invoke_ability' ) ) {
+			return [
+				'ok'    => false,
+				'error' => [
+					'code'    => 'runtime_unavailable',
+					'message' => 'DailyOS runtime client not bound for inner consumer.',
+				],
+			];
+		}
+
+		$scope_set = apply_filters( 'dailyos_surfaceclient_resolved_scopes', [] );
+		if ( ! is_array( $scope_set ) ) {
+			$scope_set = [];
+		}
+
+		$payload = $claim_ref;
+		$payload['action']   = $action;
+		$payload['metadata'] = $metadata;
+
 		$feedback_response = $runtime_client->invoke_ability(
 			'record_claim_feedback',
-			$claim_ref,
+			$payload,
 			$scope_set
 		);
 
 		return [
-			'receipt'  => $receipt_response,
 			'feedback' => $feedback_response,
 		];
 	}

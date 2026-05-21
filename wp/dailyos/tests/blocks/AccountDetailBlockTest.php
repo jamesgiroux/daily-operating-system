@@ -245,6 +245,70 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 		$this->assertSame( 'not_available', $missing['reason'] );
 	}
 
+	// ---- envelope handle determinism (W1W2 L2 cycle-2 MEDIUM fix) -------
+
+	/**
+	 * Envelope handle is deterministic on envelope shape: two calls with
+	 * the same envelope payload produce the same handle, and both hit the
+	 * request-scoped cache so a single producer invocation serves outer +
+	 * inner blocks. Regression guard for the
+	 * spl_object_hash((object) $envelope) drift where every call cast to a
+	 * fresh stdClass and emitted a new handle.
+	 */
+	public function test_envelope_handle_fallback_is_deterministic_on_shape(): void {
+		// Strip envelopeRenderId so we exercise the fallback branch.
+		$envelope = [
+			'subject'  => [
+				'kind'         => 'account',
+				'id'           => 'acct-test-001',
+				'displayLabel' => 'Generic Test Account',
+			],
+			'sections' => [
+				'facts' => [ 'kind' => 'present', 'item_count' => 3 ],
+			],
+		];
+
+		$handle_a = dailyos_envelope_handle_from_response( $envelope, 'account', 'acct-test-001' );
+		$handle_b = dailyos_envelope_handle_from_response( $envelope, 'account', 'acct-test-001' );
+
+		$this->assertNotSame( '', $handle_a, 'handle emitted from fallback' );
+		$this->assertSame(
+			$handle_a,
+			$handle_b,
+			'identical envelope shape yields identical handle across calls (fallback determinism)'
+		);
+
+		// And the envelope is fetchable under that handle from the cache.
+		$cached = dailyos_envelope_cache_get( $handle_a );
+		$this->assertNotNull( $cached, 'envelope cached under deterministic handle' );
+	}
+
+	/**
+	 * Round-trip: outer + inner block sharing an envelopeRenderId both
+	 * resolve to the same cached envelope without re-invoking the producer.
+	 */
+	public function test_outer_and_inner_share_envelope_handle_single_fetch(): void {
+		$response = $this->envelope_response_present();
+		$client = $this->fake_runtime_client_with_envelope( $response );
+		$this->register_runtime_client_filter( $client );
+
+		// Outer-equivalent: emit handle from a response.
+		$outer_handle = dailyos_envelope_handle_from_response( $response, 'account', 'acct-test-001' );
+		$outer_calls_baseline = $client->calls;
+
+		// Inner-equivalent: resolve the same handle. With the deterministic
+		// handle + cache hit, dailyos_resolve_envelope short-circuits and
+		// never invokes the runtime client.
+		$resolved = dailyos_resolve_envelope( $outer_handle, 'account', 'acct-test-001', [] );
+
+		$this->assertIsArray( $resolved, 'inner resolve returns cached envelope' );
+		$this->assertSame(
+			$outer_calls_baseline,
+			$client->calls,
+			'inner block hits the cache; producer is NOT re-invoked'
+		);
+	}
+
 	// ---- filesystem pattern present -------------------------------------
 
 	/**

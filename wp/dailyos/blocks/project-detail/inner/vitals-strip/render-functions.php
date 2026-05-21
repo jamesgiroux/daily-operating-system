@@ -10,7 +10,7 @@
  * `dailyos-empty-chip` with `data-empty-reason` on absent projection —
  * NEVER silent-hidden. Claim-bearing rows route through
  * `build_receipt_for_audience` (DOS-341 AgentMcp audience filter) via the
- * outer block's `dailyos_project_detail_claim_inner_consumer` helper.
+ * outer block's `dailyos_project_detail_claim_inner_read` helper.
  *
  * Inner blocks declare `usesContext` for `dailyos/envelopeHandle` and
  * consume the cached envelope via `dailyos_resolve_envelope()`, which

@@ -130,19 +130,19 @@ if ( ! function_exists( 'dailyos_meeting_detail_render' ) ) {
 	}
 
 	/**
-	 * Inner-block consumer hook for claim-bearing inner blocks (W2 §5.4).
+	 * Inner-block READ helper for claim-bearing inner blocks (W2 §5.4 +
+	 * W1W2 L2 cycle-2 split). Per-claim render path invokes `claim_receipt`
+	 * (audience-keyed receipt builder) through this hook to fetch the
+	 * audience-scoped receipt during render. **Render-path only — no writes.**
 	 *
-	 * Per-claim render path invokes `claim_receipt` (audience-keyed
-	 * receipt builder) and `record_claim_feedback` (feedback affordance)
-	 * through this hook so the outer block remains the single wiring
-	 * authority. Used by `dailyos/meeting-claims-for-review` and
+	 * Used by `dailyos/meeting-claims-for-review` and
 	 * `dailyos/meeting-agenda-draft` per V1.1 §10 claim-fanout invariant.
 	 *
 	 * @param array<string, mixed> $claim_ref Claim reference from projection
 	 *                                         ({ claim_id, audience_key, ... }).
-	 * @return array<string, mixed> Receipt + feedback affordance envelope.
+	 * @return array<string, mixed> Receipt envelope.
 	 */
-	function dailyos_meeting_detail_claim_inner_consumer( array $claim_ref ): array {
+	function dailyos_meeting_detail_claim_inner_read( array $claim_ref ): array {
 		$runtime_client = apply_filters( 'dailyos_runtime_client_for_block', null );
 		if ( ! is_object( $runtime_client ) || ! method_exists( $runtime_client, 'invoke_ability' ) ) {
 			return [
@@ -166,16 +166,53 @@ if ( ! function_exists( 'dailyos_meeting_detail_render' ) ) {
 			$scope_set
 		);
 
-		// W1 producer: record_claim_feedback — feedback affordance mount for
-		// the same claim_ref.
+		return [
+			'receipt' => $receipt_response,
+		];
+	}
+
+	/**
+	 * Inner-block WRITE helper for meeting-detail (W1W2 L2 cycle-2 split):
+	 * explicit feedback write surface. Called from feedback affordance
+	 * handlers — NEVER from render.
+	 *
+	 * @param array<string, mixed> $claim_ref Claim reference.
+	 * @param string               $action    Feedback action variant.
+	 * @param array<string, mixed> $metadata  Optional payload_json body.
+	 * @return array<string, mixed> Feedback runtime response.
+	 */
+	function dailyos_meeting_detail_claim_inner_write(
+		array $claim_ref,
+		string $action,
+		array $metadata = []
+	): array {
+		$runtime_client = apply_filters( 'dailyos_runtime_client_for_block', null );
+		if ( ! is_object( $runtime_client ) || ! method_exists( $runtime_client, 'invoke_ability' ) ) {
+			return [
+				'ok'    => false,
+				'error' => [
+					'code'    => 'runtime_unavailable',
+					'message' => 'DailyOS runtime client not bound for meeting-detail inner consumer.',
+				],
+			];
+		}
+
+		$scope_set = apply_filters( 'dailyos_surfaceclient_resolved_scopes', [] );
+		if ( ! is_array( $scope_set ) ) {
+			$scope_set = [];
+		}
+
+		$payload = $claim_ref;
+		$payload['action']   = $action;
+		$payload['metadata'] = $metadata;
+
 		$feedback_response = $runtime_client->invoke_ability(
 			'record_claim_feedback',
-			$claim_ref,
+			$payload,
 			$scope_set
 		);
 
 		return [
-			'receipt'  => $receipt_response,
 			'feedback' => $feedback_response,
 		];
 	}

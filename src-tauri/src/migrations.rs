@@ -6198,6 +6198,73 @@ mod tests {
         .expect("post-migration schema accepts temporal_scope='closed'");
     }
 
+    /// W1W2 L2 cycle-2 CRITICAL fix (class regression of L3 cycle-2 F3):
+    /// v245 atomically rebuilds `claim_feedback` to widen the
+    /// `feedback_type` CHECK constraint with the `merge_intent` variant.
+    /// The rebuild MUST be wrapped in BEGIN IMMEDIATE / COMMIT so
+    /// multi-process readers cannot observe the intermediate state
+    /// between `DROP TABLE claim_feedback` and the `ALTER TABLE ...
+    /// RENAME` that brings `claim_feedback` back.
+    ///
+    /// Applied to a fresh DB the table must exist, accept the new
+    /// `merge_intent` variant, and reject unknown values. The schema
+    /// version must advance to v245 or later.
+    #[test]
+    fn migration_245_claim_feedback_merge_intent_atomic_widen() {
+        let conn = mem_db();
+        run_migrations(&conn).expect("build current schema");
+
+        // Table must exist and be the original name (rename target).
+        let table_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master \
+                 WHERE type = 'table' AND name = 'claim_feedback'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("query sqlite_master for table");
+        assert_eq!(
+            table_count, 1,
+            "claim_feedback exists after v245 applies"
+        );
+
+        // Seed a parent intelligence_claims row so the FK from
+        // claim_feedback.claim_id holds. Column shape mirrors the v140
+        // test seeds elsewhere in this file.
+        conn.execute(
+            "INSERT INTO intelligence_claims /* dos7-allowed: v245 migration test seeds parent row for claim_feedback FK */ \
+             (id, subject_ref, claim_type, text, dedup_key, actor, data_source, observed_at, provenance_json) \
+             VALUES ('claim-v245-test', 'a-v245', 'fact', 'parent for fb v245', 'd-v245', 'system', 'manual', '2026-05-05', '{}')",
+            [],
+        )
+        .expect("seed intelligence_claims row for FK");
+
+        // CHECK constraint must accept merge_intent.
+        conn.execute_batch(
+            "INSERT INTO claim_feedback \
+             (id, claim_id, feedback_type, actor) \
+             VALUES ('fb-v245-test', 'claim-v245-test', 'merge_intent', 'user');",
+        )
+        .expect("v245 CHECK widening accepts merge_intent");
+
+        // Sanity: an unknown variant is still rejected (CHECK is a
+        // superset of the prior 9, not "anything goes").
+        let rejected = conn.execute_batch(
+            "INSERT INTO claim_feedback \
+             (id, claim_id, feedback_type, actor) \
+             VALUES ('fb-v245-reject', 'claim-v245-test', 'not_a_real_variant', 'user');",
+        );
+        assert!(
+            rejected.is_err(),
+            "v245 CHECK still rejects unknown feedback_type values"
+        );
+
+        assert!(
+            current_version(&conn).expect("current version") >= 245,
+            "schema version is at least v245"
+        );
+    }
+
     /// DOS-335 L3 cycle-2 (F3): v244 atomically rebuilds the meeting prep
     /// status view so multi-process readers don't see a missing view between
     /// the DROP and CREATE. Applied to a fresh DB, the view must exist and

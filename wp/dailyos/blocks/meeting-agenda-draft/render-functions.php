@@ -8,7 +8,7 @@
  *
  * Claim-fanout: for any agenda item carrying a `claim_ref`, renders the
  * receipt + feedback affordance via the outer block's
- * `dailyos_meeting_detail_claim_inner_consumer` hook (single wiring
+ * `dailyos_meeting_detail_claim_inner_read` hook (single wiring
  * authority for `claim_receipt` + `record_claim_feedback`).
  *
  * @package DailyOS
