@@ -1,0 +1,37 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "dailyos/meeting-detail",
+	"title": "Meeting Detail",
+	"category": "dailyos",
+	"description": "Outer block for a Meeting entity surface — consumes get_entity_intelligence (entity_type=meeting) and get_meeting_prep_status, hosts 10 typed inner blocks projecting envelope sections per W2 V1.2.1 §5.4.",
+	"supports": {
+		"html": false,
+		"reusable": false,
+		"inserter": true
+	},
+	"attributes": {
+		"meeting_id": { "type": "string" },
+		"block_instance_id": { "type": "string" }
+	},
+	"providesContext": {
+		"dailyos/entityType": "entity_type",
+		"dailyos/entityId": "meeting_id",
+		"dailyos/envelopeHandle": "envelope_handle"
+	},
+	"templateLock": false,
+	"template": [
+		[ "dailyos/meeting-header" ],
+		[ "dailyos/meeting-prep-status" ],
+		[ "dailyos/meeting-agenda-draft" ],
+		[ "dailyos/meeting-attendees-section" ],
+		[ "dailyos/meeting-related-entities" ],
+		[ "dailyos/meeting-claims-for-review" ],
+		[ "dailyos/meeting-context-bundle" ],
+		[ "dailyos/meeting-post-meeting-capture" ],
+		[ "dailyos/meeting-touchpoints-feed" ],
+		[ "dailyos/meeting-recommended-actions" ]
+	],
+	"parent": null,
+	"render": "file:./render.php"
+}

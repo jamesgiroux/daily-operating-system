@@ -1,0 +1,12 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "dailyos/meeting-header",
+	"title": "Meeting Header",
+	"category": "dailyos",
+	"description": "Header for a Meeting entity — projects Facts (title, time, organizer) from the meeting envelope; operational shell (no trust band).",
+	"supports": { "html": false, "reusable": false, "inserter": false },
+	"usesContext": [ "dailyos/entityType", "dailyos/entityId" ],
+	"parent": [ "dailyos/meeting-detail" ],
+	"render": "file:./render.php"
+}

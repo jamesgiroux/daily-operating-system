@@ -1,0 +1,12 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "dailyos/meeting-claims-for-review",
+	"title": "Meeting Claims For Review",
+	"category": "dailyos",
+	"description": "Meeting-bound metadata proposals — projects MetadataProposals (DOS-328). Per-proposal trust band; claim-fanout via outer claim_receipt + record_claim_feedback wiring.",
+	"supports": { "html": false, "reusable": false, "inserter": false },
+	"usesContext": [ "dailyos/entityType", "dailyos/entityId" ],
+	"parent": [ "dailyos/meeting-detail" ],
+	"render": "file:./render.php"
+}
