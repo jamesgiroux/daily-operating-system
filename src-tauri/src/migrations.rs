@@ -927,6 +927,22 @@ const MIGRATIONS: &[Migration] = &[
         version: 240,
         sql: include_str!("migrations/240_claim_review_deferrals.sql"),
     },
+    Migration::Sql {
+        version: 241,
+        sql: include_str!("migrations/241_mcp_client_manifest.sql"),
+    },
+    Migration::Sql {
+        version: 242,
+        sql: include_str!("migrations/242_mcp_conversation_handle.sql"),
+    },
+    Migration::Sql {
+        version: 243,
+        sql: include_str!("migrations/243_mcp_transport_nonce_ledger.sql"),
+    },
+    Migration::Sql {
+        version: 244,
+        sql: include_str!("migrations/244_mcp_rate_limit_and_audit_outbox.sql"),
+    },
 ];
 
 const V155_SHADOW_TRUST_VERSION: i64 = 1_401_003;

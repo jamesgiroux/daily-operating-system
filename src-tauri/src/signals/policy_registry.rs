@@ -64,6 +64,13 @@ pub enum SignalType {
     IntelligenceRejected,
     MeetingFrequency,
     MeetingFrequencyDrop,
+    /// MCP v2 invocation audit event. Payload fields:
+    /// tool_name, client_id, conversation_handle. Raw params and raw
+    /// responses are intentionally excluded.
+    McpToolInvoked,
+    /// MCP v2 rejected invocation audit event. Payload fields:
+    /// client_id_or_unresolved, reject_reason, tool_name_or_unresolved.
+    McpInvocationRejected,
     NegativeSentiment,
     ObjectiveCompleted,
     ObjectiveCreated,
@@ -190,6 +197,8 @@ impl SignalType {
             "intelligence_rejected" => Self::IntelligenceRejected,
             "meeting_frequency" => Self::MeetingFrequency,
             "meeting_frequency_drop" => Self::MeetingFrequencyDrop,
+            "mcp_tool_invoked" | "McpToolInvoked" => Self::McpToolInvoked,
+            "mcp_invocation_rejected" | "McpInvocationRejected" => Self::McpInvocationRejected,
             "negative_sentiment" => Self::NegativeSentiment,
             "objective_completed" => Self::ObjectiveCompleted,
             "objective_created" => Self::ObjectiveCreated,
@@ -307,6 +316,8 @@ impl SignalType {
             Self::IntelligenceRejected => "intelligence_rejected",
             Self::MeetingFrequency => "meeting_frequency",
             Self::MeetingFrequencyDrop => "meeting_frequency_drop",
+            Self::McpToolInvoked => "mcp_tool_invoked",
+            Self::McpInvocationRejected => "mcp_invocation_rejected",
             Self::NegativeSentiment => "negative_sentiment",
             Self::ObjectiveCompleted => "objective_completed",
             Self::ObjectiveCreated => "objective_created",
@@ -438,6 +449,8 @@ pub fn known_signal_type_names() -> &'static [&'static str] {
         "intelligence_rejected",
         "meeting_frequency",
         "meeting_frequency_drop",
+        "mcp_tool_invoked",
+        "mcp_invocation_rejected",
         "negative_sentiment",
         "objective_completed",
         "objective_created",
@@ -646,6 +659,7 @@ pub fn policy_for(signal: &SignalType) -> SignalPolicy {
             propagate_and_heal_policy()
         }
         AbilityOutputChanged { .. } => ability_output_policy(),
+        McpToolInvoked | McpInvocationRejected => local_observation_policy(),
         ReadModelMaterialized | PrepInvalidated | IntelligenceRefreshed | EnrichmentComplete => {
             read_model_materialized_policy()
         }
