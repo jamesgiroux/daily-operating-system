@@ -1,7 +1,7 @@
 .dailyos-entity-intake {
-	border: 1px solid var(--wp--preset--color--contrast-3, #d7dce2);
+	border: 1px solid var(--wp--preset--color--desk-charcoal-8);
 	border-radius: 8px;
-	color: var(--wp--preset--color--contrast, #1f2328);
+	color: var(--wp--preset--color--text-primary);
 	padding: 16px;
 }
 
@@ -19,7 +19,7 @@
 }
 
 .dailyos-entity-intake__count {
-	background: var(--wp--preset--color--base-2, #f2f4f7);
+	background: var(--wp--preset--color--paper-cream);
 	border-radius: 999px;
 	font-size: 12px;
 	min-width: 24px;
@@ -28,7 +28,7 @@
 }
 
 .dailyos-entity-intake__empty {
-	color: var(--wp--preset--color--contrast-2, #5b6470);
+	color: var(--wp--preset--color--text-secondary);
 	font-size: 13px;
 	margin: 0;
 }
@@ -55,10 +55,10 @@
 }
 
 .dailyos-block-error-panel {
-	background: var(--wp--preset--color--base-2, #f2f4f7);
-	border: 1px solid var(--wp--preset--color--contrast-3, #d7dce2);
+	background: var(--wp--preset--color--paper-cream);
+	border: 1px solid var(--wp--preset--color--desk-charcoal-8);
 	border-radius: 8px;
-	color: var(--wp--preset--color--contrast, #1f2328);
+	color: var(--wp--preset--color--text-primary);
 	font-size: 13px;
 	padding: 12px 14px;
 }

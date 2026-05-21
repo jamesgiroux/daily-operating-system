@@ -6,7 +6,10 @@
  * Description: Default arrangement for the dailyos/meeting-detail composite — canonical Tauri MeetingDetailPage chapter ordering across 10 inner blocks. Theme-registered filesystem pattern per wp-skill H4 V1.1.
  * Block Types: core/post-content
  * Inserter: no
+ *
+ * @package DailyOS
  */
+
 ?>
 <!-- wp:group {"className":"dailyos-magazine-page","layout":{"type":"constrained"}} -->
 <div class="wp-block-group dailyos-magazine-page">

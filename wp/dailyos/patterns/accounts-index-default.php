@@ -6,7 +6,10 @@
  * Description: Default Accounts index page — magazine shell wrapping the dailyos/accounts-index list block.
  * Block Types: core/post-content
  * Inserter: no
+ *
+ * @package DailyOS
  */
+
 ?>
 <!-- wp:group {"className":"dailyos-magazine-page","layout":{"type":"constrained"}} -->
 <div class="wp-block-group dailyos-magazine-page">
