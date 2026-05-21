@@ -149,6 +149,7 @@ pub enum EntityKind {
     Account,
     Project,
     Person,
+    Meeting,
 }
 
 // ---------------------------------------------------------------------------
@@ -292,6 +293,12 @@ pub const PROJECT_METADATA_FIELDS: &[&str] = &[
 
 pub const PERSON_METADATA_FIELDS: &[&str] = &["role", "team", "seniority", "owner"];
 
+/// W2 F2 — Meeting metadata proposal allowlist. Surfaced through the Meeting
+/// Detail composite block; substrate seed kept narrow (no agenda/notes free-text
+/// which carry sensitivity baggage).
+pub const MEETING_METADATA_FIELDS: &[&str] =
+    &["meeting_type", "linked_entity_id", "linked_entity_type"];
+
 /// AC-477.3 — field-allowlist for metadata proposals per entity kind.
 pub fn validate_metadata_proposal_field(
     field_path: &str,
@@ -305,6 +312,7 @@ pub fn validate_metadata_proposal_field(
         EntityKind::Account => ACCOUNT_METADATA_FIELDS,
         EntityKind::Project => PROJECT_METADATA_FIELDS,
         EntityKind::Person => PERSON_METADATA_FIELDS,
+        EntityKind::Meeting => MEETING_METADATA_FIELDS,
     };
     if allowlist.contains(&trimmed) {
         Ok(())
