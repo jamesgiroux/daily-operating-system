@@ -845,6 +845,7 @@ pub struct ServiceContext<'a> {
     composition_commit: Option<Arc<dyn CompositionCommitHandle>>,
     entity_touchpoints_reader: Option<Arc<dyn EntityTouchpointsReadHandle>>,
     meeting_prep_status_reader: Option<Arc<dyn MeetingPrepStatusReadHandle>>,
+    claim_receipt_reader: Option<Arc<dyn ClaimReceiptReadHandle>>,
     account_list_reader: Option<Arc<dyn AccountListReadHandle>>,
     person_list_reader: Option<Arc<dyn PersonListReadHandle>>,
     project_list_reader: Option<Arc<dyn ProjectListReadHandle>>,
@@ -1429,6 +1430,191 @@ pub trait MeetingPrepStatusReadHandle: Send + Sync {
     ) -> MeetingPrepStatusReadFuture<'a>;
 }
 
+// ---------------------------------------------------------------------------
+// claim_receipt — Read ability dispatch surface
+// ---------------------------------------------------------------------------
+//
+// Read ability that wraps the existing `services::claim_receipt::render`
+// substrate so WP block inner-block renderers (account-detail / project-detail
+// quote-wall, value-commitments, on-track-chapter, technical-footprint, etc.)
+// can fan out per-claim receipts through `runtime_client->invoke_ability(
+// 'claim_receipt', ...)`. Without this registration the WP-side invocation
+// returns AbilityUnavailable and the 60+ claim-bearing inner blocks fall back
+// to empty placeholders.
+//
+// The ability is a thin shell: input shape mirrors `ReceiptTarget` plus
+// `SurfaceContext`, output mirrors the `ClaimReceipt` DTO that already exists
+// in the app crate. The narrow read handle below is the adapter seam — the
+// app crate's `LiveClaimReceiptReader` translates the ability-shaped DTOs into
+// `services::claim_receipt::contracts` types, dispatches through
+// `render_receipt_for(state, target, surface)`, and translates the result
+// back. This keeps `AppState` / SQL handles out of `abilities-runtime`.
+
+/// Ability-shaped mirror of `services::claim_receipt::contracts::ReceiptTarget`.
+///
+/// Serde wire format is byte-equivalent to the app crate DTO so the live
+/// reader can round-trip through `serde_json::Value` if a less-coupled adapter
+/// is desired later. Per L0-W1 §5.6 deferral only the `Claim` arm resolves
+/// today; `Proposal` and `WorkItem` arms are accepted by the contract but the
+/// reader returns `TargetNotFound`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum ClaimReceiptTarget {
+    #[serde(rename_all = "camelCase")]
+    Claim {
+        claim_id: String,
+        subject: crate::abilities::provenance::SubjectRef,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        field_path: Option<String>,
+    },
+    #[serde(rename_all = "camelCase")]
+    Proposal {
+        proposal_id: String,
+        subject: crate::abilities::provenance::SubjectRef,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        field_path: Option<String>,
+    },
+    #[serde(rename_all = "camelCase")]
+    WorkItem {
+        action_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        backing_claim_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        subject: Option<crate::abilities::provenance::SubjectRef>,
+    },
+}
+
+/// Ability-shaped mirror of `services::claim_receipt::contracts::SurfaceContext`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ClaimReceiptSurfaceContext {
+    ActionsWork,
+    EntityDetail,
+    DailyBriefing,
+    MeetingDetail,
+    Mcp,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ClaimReceiptFreshness {
+    Current,
+    Aging,
+    Stale,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ClaimReceiptRedactionLevel {
+    None,
+    Partial,
+    Full,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaimReceiptTrust {
+    pub band: crate::abilities::trust::types::TrustBand,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    pub source_asof: Option<DateTime<Utc>>,
+    pub freshness: ClaimReceiptFreshness,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub caveat: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rationale: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaimReceiptLifecycle {
+    pub claim_state: crate::types::ClaimState,
+    pub surfacing_state: crate::types::SurfacingState,
+    pub verification_state: crate::sensitivity::ClaimVerificationState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaimReceiptProvenanceSource {
+    pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    pub as_of: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub href: Option<String>,
+    pub redacted: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaimReceiptProvenance {
+    pub sources: Vec<ClaimReceiptProvenanceSource>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub field_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence_summary: Option<String>,
+    pub redaction: ClaimReceiptRedactionLevel,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaimReceiptAction {
+    pub action: crate::abilities::feedback::FeedbackAction,
+    pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disabled_reason: Option<String>,
+}
+
+/// Ability-shaped mirror of `services::claim_receipt::contracts::ClaimReceipt`.
+///
+/// Wire-format parity with the Tauri command output ensures the WP-side
+/// renderer can consume either path. The live reader in the app crate is
+/// responsible for byte-equivalent translation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaimReceiptSnapshot {
+    pub target: ClaimReceiptTarget,
+    pub surface_context: ClaimReceiptSurfaceContext,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rendered_text: Option<crate::sensitivity::RenderableClaimText>,
+    pub trust: ClaimReceiptTrust,
+    pub lifecycle: ClaimReceiptLifecycle,
+    pub provenance: ClaimReceiptProvenance,
+    pub actions: Vec<ClaimReceiptAction>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ClaimReceiptReadError {
+    #[error("claim receipt target not found")]
+    TargetNotFound,
+    #[error("claim receipt dropped by privacy gate")]
+    PrivacyDrop,
+    #[error("{0}")]
+    ReadFailed(String),
+}
+
+pub type ClaimReceiptReadFuture<'a> = Pin<
+    Box<dyn Future<Output = Result<ClaimReceiptSnapshot, ClaimReceiptReadError>> + Send + 'a>,
+>;
+
+/// Narrow read handle that the app crate attaches so the `claim_receipt`
+/// ability can dispatch through `services::claim_receipt::render::
+/// render_receipt_for` without pulling `AppState` or SQL handles into
+/// `abilities-runtime`. Read-only by contract; the adapter MUST NOT mutate.
+pub trait ClaimReceiptReadHandle: Send + Sync {
+    fn read_claim_receipt<'a>(
+        &'a self,
+        target: ClaimReceiptTarget,
+        surface: ClaimReceiptSurfaceContext,
+    ) -> ClaimReceiptReadFuture<'a>;
+}
+
 /// Transaction-scoped context exposed to `with_transaction_*` closures.
 ///
 /// Same `mode`/`clock`/`rng` as the parent `ServiceContext` plus a
@@ -1488,6 +1674,7 @@ impl<'a> ServiceContext<'a> {
             composition_commit: None,
             entity_touchpoints_reader: None,
             meeting_prep_status_reader: None,
+            claim_receipt_reader: None,
             account_list_reader: None,
             person_list_reader: None,
             project_list_reader: None,
@@ -1519,6 +1706,7 @@ impl<'a> ServiceContext<'a> {
             composition_commit: None,
             entity_touchpoints_reader: None,
             meeting_prep_status_reader: None,
+            claim_receipt_reader: None,
             account_list_reader: None,
             person_list_reader: None,
             project_list_reader: None,
@@ -1561,6 +1749,7 @@ impl<'a> ServiceContext<'a> {
             composition_commit: None,
             entity_touchpoints_reader: None,
             meeting_prep_status_reader: None,
+            claim_receipt_reader: None,
             account_list_reader: None,
             person_list_reader: None,
             project_list_reader: None,
@@ -1658,6 +1847,14 @@ impl<'a> ServiceContext<'a> {
         self
     }
 
+    pub fn with_claim_receipt_reader(
+        mut self,
+        reader: Arc<dyn ClaimReceiptReadHandle>,
+    ) -> Self {
+        self.claim_receipt_reader = Some(reader);
+        self
+    }
+
     pub fn with_account_list_reader(mut self, reader: Arc<dyn AccountListReadHandle>) -> Self {
         self.account_list_reader = Some(reader);
         self
@@ -1706,6 +1903,24 @@ impl<'a> ServiceContext<'a> {
             ));
         };
         reader.read_meeting_prep_status(meeting_id).await
+    }
+
+    /// Dispatch the `claim_receipt` ability through the app crate's
+    /// `LiveClaimReceiptReader` adapter, which wraps
+    /// `services::claim_receipt::render::render_receipt_for`. Returns a typed
+    /// `ReadFailed` with a missing-reader message when no adapter is attached
+    /// (test contexts without fixtures).
+    pub async fn read_claim_receipt(
+        &self,
+        target: ClaimReceiptTarget,
+        surface: ClaimReceiptSurfaceContext,
+    ) -> Result<ClaimReceiptSnapshot, ClaimReceiptReadError> {
+        let Some(reader) = &self.claim_receipt_reader else {
+            return Err(ClaimReceiptReadError::ReadFailed(
+                self.missing_reader_error("claim_receipt_reader"),
+            ));
+        };
+        reader.read_claim_receipt(target, surface).await
     }
 
     pub async fn commit_composition(

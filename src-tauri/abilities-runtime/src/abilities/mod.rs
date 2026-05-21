@@ -1,6 +1,7 @@
 //! Ability runtime modules.
 
 pub mod account_overview;
+pub mod claim_receipt;
 pub mod claims;
 pub mod composition;
 pub mod detect_risk_shift;
