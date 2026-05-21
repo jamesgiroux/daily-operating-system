@@ -60,7 +60,7 @@ const HANDLE_BYTES: usize = 16;
 const CLIENT_ID_BYTES: usize = 16;
 const NONCE_EXPIRY_SECONDS: i64 = 300; // 5 min per ADR-0102 §C.bis.refresh.
 const HANDLE_EXPIRY_SECONDS: i64 = 24 * 60 * 60; // 24h sliding per §D.
-const TRANSPORT_KEY_LEN: usize = 32;
+pub const TRANSPORT_KEY_LEN: usize = 32;
 
 /// Operator-supplied pairing input that the MCP server uses to mint a new
 /// `McpClientId` + seed nonce + transport key.
@@ -427,7 +427,7 @@ fn persist_transport_key(
     Ok(())
 }
 
-fn load_transport_key(key_ref: &KeychainRef) -> Result<[u8; TRANSPORT_KEY_LEN], AuthError> {
+pub fn load_transport_key(key_ref: &KeychainRef) -> Result<[u8; TRANSPORT_KEY_LEN], AuthError> {
     // L2 cycle-3 codex review HIGH AC-11: wrap every intermediate that
     // briefly holds key material in `Zeroizing` so backing allocations are
     // wiped on drop. The returned `[u8; 32]` is caller-managed and is
@@ -510,6 +510,35 @@ fn parse_exposure(tag: &str) -> McpExposure {
         "MetadataOnly" => McpExposure::MetadataOnly,
         _ => McpExposure::None,
     }
+}
+
+/// Mint a fresh seed-style nonce for the given client and insert it
+/// into `mcp_transport_nonce_ledger` with the standard 5-minute expiry.
+/// Used by the W1.5 transport binary at `serve` startup to bootstrap
+/// the per-process signing chain when the pairing-time seed nonce has
+/// already been consumed by an earlier session.
+///
+/// Same insert shape + TTL as the pairing-time seed nonce in
+/// `pair_client`, so the gateway's existing consume+preissue path
+/// accepts it identically.
+pub fn issue_seed_nonce(
+    conn: &mut Connection,
+    client_id: &McpClientId,
+) -> Result<OpaqueNonce, AuthError> {
+    let nonce = OpaqueNonce::new(random_hex(NONCE_BYTES));
+    let now = now_millis();
+    conn.execute(
+        "INSERT INTO mcp_transport_nonce_ledger \
+         (nonce, client_id, issued_at, expires_at, consumed_at) \
+         VALUES (?1, ?2, ?3, ?4, NULL)",
+        params![
+            nonce.as_str(),
+            client_id.as_str(),
+            now,
+            now + NONCE_EXPIRY_SECONDS * 1000,
+        ],
+    )?;
+    Ok(nonce)
 }
 
 /// Return every tool name from `mcp_tool_grant` for `client_id` where

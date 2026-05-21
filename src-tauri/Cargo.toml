@@ -140,6 +140,13 @@ name = "dailyos-mcp"
 path = "src/mcp/main.rs"
 required-features = ["mcp"]
 
+# v1.4.7 W1.5: MCP v2 transport binary. Wraps Gateway via rmcp stdio.
+# Local-to-local same-machine scope per dos-mcp-transport L0 §0.
+[[bin]]
+name = "dailyos-mcp-v2"
+path = "src/mcp_v2/main.rs"
+required-features = ["mcp"]
+
 # post-migration reconcile + repair binary. Reads
 # scripts/reconcile_ghost_resurrection.sql and runs it against the
 # workspace DB. Skeleton form: detects whether intelligence_claims
