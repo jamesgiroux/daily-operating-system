@@ -242,6 +242,42 @@ impl RunsRepo {
         claim_count: u64,
         error_log: Option<serde_json::Value>,
     ) -> Result<(), RunsError> {
+        // L0 V1.3 §4 fold #6: when transitioning to Success, pre-check for an
+        // existing success row matching the idempotency triple. If present,
+        // return AlreadyCompleted { existing } BEFORE the SQL UNIQUE-partial-
+        // index fires (which would surface as a generic DbError per V1.2's
+        // weaker contract). Service-layer guard ensures the caller always
+        // sees the typed variant.
+        if matches!(status, IngestionRunStatus::Success) {
+            // Resolve this run's idempotency triple from its own row.
+            let triple: Option<(String, String, String)> = conn
+                .query_row(
+                    "SELECT file_id, content_sha256, mode \
+                     FROM document_ingestion_runs WHERE run_id = ?1",
+                    params![run_id.0],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                )
+                .optional()
+                .map_err(|e| RunsError::DbError(e.to_string()))?;
+            if let Some((file_id, content_sha256, mode_str)) = triple {
+                if let Some(mode) = IngestionMode::from_storage_str(&mode_str) {
+                    if let Some(existing) = Self::find_by_idempotency_key(
+                        conn,
+                        &file_id,
+                        &content_sha256,
+                        mode,
+                    )? {
+                        // Only fire if a DIFFERENT run_id already succeeded for this triple.
+                        // Self-update (re-running complete_run on the same row) is a no-op
+                        // shaped operation that should succeed idempotently.
+                        if existing.run_id != *run_id {
+                            return Err(RunsError::AlreadyCompleted { existing });
+                        }
+                    }
+                }
+            }
+        }
+
         let error_log_json = error_log
             .map(|v| serde_json::to_string(&v).unwrap_or_else(|_| "null".to_string()));
         let rows = conn
@@ -642,10 +678,11 @@ mod tests {
     }
 
     #[test]
-    fn complete_run_to_success_then_duplicate_success_hits_unique_partial_index() {
+    fn complete_run_to_success_then_duplicate_returns_already_completed_with_existing() {
+        // L0 V1.3 §4 fold #6: second complete_run(Success) for same idempotency
+        // triple must return Err(AlreadyCompleted { existing }) BEFORE the SQL
+        // UNIQUE-partial-index fires. Generic DbError is NOT acceptable.
         let conn = fresh_conn();
-        // Two in_progress runs with same idempotency key are possible (partial unique
-        // only covers status='success'). Completing both to success should hit UNIQUE.
         insert_run(
             &conn,
             "run-a",
@@ -677,9 +714,15 @@ mod tests {
             10,
             None,
         )
-        .expect_err("second success should violate UNIQUE");
-        assert!(matches!(err, RunsError::DbError(_)));
-        // Confirm only one success row exists.
+        .expect_err("second success should return AlreadyCompleted");
+        match err {
+            RunsError::AlreadyCompleted { existing } => {
+                assert_eq!(existing.run_id.0, "run-a");
+                assert_eq!(existing.status, IngestionRunStatus::Success);
+            }
+            other => panic!("expected AlreadyCompleted, got {other:?}"),
+        }
+        // Confirm only one success row exists (run-b stays in_progress).
         let success_count: i64 = conn
             .query_row(
                 "SELECT count(*) FROM document_ingestion_runs WHERE status = 'success'",
@@ -687,6 +730,6 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("count");
-        assert_eq!(success_count, 1, "UNIQUE partial index enforces single success row");
+        assert_eq!(success_count, 1, "single success row preserved");
     }
 }

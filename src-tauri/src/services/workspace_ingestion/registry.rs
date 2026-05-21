@@ -248,9 +248,11 @@ impl WorkspaceSourceRegistry {
             };
             if lstat_dev != root_dev {
                 // Cross-device escape: bind-mount over a subdir, or hardlink-into-workspace
-                // from another mount. Reject as SymlinkRefused (overloaded for
-                // path-aliasing class per V1.3 §7).
-                return Err(RejectionReason::SymlinkRefused);
+                // from another mount. Per L0 V1.3 §7 fixture #8 (bind-mount), the pre-open
+                // device-mismatch maps to OutsideWorkspace (the file's STORAGE is elsewhere).
+                // The post-open fstat.dev check (step 5b) remains as SymlinkRefused for the
+                // defense-in-depth race window.
+                return Err(RejectionReason::OutsideWorkspace);
             }
 
             // Step 4: open canonical_path (plain open; canonicalize already
@@ -733,6 +735,88 @@ mod tests {
         .expect_err("outside symlink");
         // Canonicalize resolves outside; strict-child check fails.
         assert!(matches!(err, RejectionReason::OutsideWorkspace));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_validated_rejects_url_encoded_path_traversal() {
+        // L0 V1.3 §7 fixture #2: %2e%2e/escape → PathTraversalAttempt.
+        // Note: URL-encoded literal `%2e%2e` is NOT decoded by Path; it's just a
+        // filename. Without a file named `%2e%2e/escape` in the workspace,
+        // canonicalize fails with ENOENT → PathTraversalAttempt.
+        let ws = make_workspace();
+        let err = WorkspaceSourceRegistry::open_validated(
+            ws.path(),
+            std::path::Path::new("%2e%2e/escape"),
+        )
+        .expect_err("URL-encoded path");
+        assert!(matches!(err, RejectionReason::PathTraversalAttempt));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_validated_rejects_path_max_overflow() {
+        // L0 V1.3 §7 fixture #12: total path >4096 bytes → PathTraversalAttempt.
+        let ws = make_workspace();
+        // Build a path > 4096 bytes.
+        let huge: String = "a".repeat(5000);
+        let err = WorkspaceSourceRegistry::open_validated(
+            ws.path(),
+            std::path::Path::new(&huge),
+        )
+        .expect_err("PATH_MAX overflow");
+        assert!(matches!(err, RejectionReason::PathTraversalAttempt));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_validated_rejects_trailing_space_component() {
+        // L0 V1.3 §7 fixture #13: trailing-space → PathTraversalAttempt.
+        let ws = make_workspace();
+        let err = WorkspaceSourceRegistry::open_validated(
+            ws.path(),
+            std::path::Path::new("foo "),
+        )
+        .expect_err("trailing space");
+        assert!(matches!(err, RejectionReason::PathTraversalAttempt));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_validated_rejects_symlink_chain_resolving_outside() {
+        // L0 V1.3 §7 fixture #16: A → B → outside. canonicalize resolves the full chain.
+        let ws = make_workspace();
+        let outside = TempDir::new().expect("outside tempdir");
+        let outside_file = outside.path().join("secret.txt");
+        fs::write(&outside_file, b"secret").expect("write");
+        let b_link = ws.path().join("b_link");
+        let a_link = ws.path().join("a_link");
+        unix_symlink(&outside_file, &b_link).expect("symlink B → outside");
+        unix_symlink(&b_link, &a_link).expect("symlink A → B");
+        let err = WorkspaceSourceRegistry::open_validated(
+            ws.path(),
+            std::path::Path::new("a_link"),
+        )
+        .expect_err("symlink chain");
+        assert!(matches!(err, RejectionReason::OutsideWorkspace));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_validated_rejects_nfkc_equivalent_dotdot_attack() {
+        // L0 V1.3 §7 fixture #3: NFC/NFD/NFKC-equivalent `..` variants. Per V1.3
+        // fold #7, NFKC normalization is applied at the per-component lex step.
+        // U+FF0E (FULLWIDTH FULL STOP) NFKC-normalizes to ASCII `.`, so the
+        // fullwidth `..` (`\u{FF0E}\u{FF0E}`) should be rejected as bare `..`.
+        let ws = make_workspace();
+        let fullwidth_dotdot = "\u{FF0E}\u{FF0E}";
+        let err = WorkspaceSourceRegistry::open_validated(
+            ws.path(),
+            std::path::Path::new(fullwidth_dotdot),
+        )
+        .expect_err("fullwidth dotdot");
+        // After NFKC, the component is `..` — lex check fires.
+        assert!(matches!(err, RejectionReason::PathTraversalAttempt));
     }
 
     #[cfg(unix)]
