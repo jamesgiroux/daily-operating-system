@@ -294,6 +294,49 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 	}
 
 	/**
+	 * Production response shape: runtime returns
+	 * `{ ok, request_id, ability: { ability_name, data, ... } }` per
+	 * AbilityResponseJson::serialize in src-tauri/src/bridges/types.rs. The
+	 * envelope-handle extractor MUST unwrap `$response['ability']['data']`,
+	 * not fall through to the bare `$response` (which would cache the outer
+	 * wrapper as if it were the envelope and starve every inner block of
+	 * `sections`, triggering `not_available` chips).
+	 */
+	public function test_envelope_handle_unwraps_runtime_ability_data_shape(): void {
+		$envelope         = [
+			'envelopeRenderId' => 'env-acct-test-prod-001',
+			'subject'          => [
+				'kind' => 'account',
+				'id'   => 'acct-test-prod',
+			],
+			'sections'         => [
+				'facts' => [
+					'kind'       => 'present',
+					'item_count' => 1,
+				],
+			],
+		];
+		$runtime_response = [
+			'ok'         => true,
+			'request_id' => 'req-prod-001',
+			'ability'    => [
+				'ability_name'    => 'get_entity_intelligence',
+				'ability_version' => 'v1.0.0',
+				'schema_version'  => 1,
+				'data'            => $envelope,
+			],
+		];
+
+		$handle = dailyos_envelope_handle_from_response( $runtime_response, 'account', 'acct-test-prod' );
+		$this->assertSame( 'env-acct-test-prod-001', $handle, 'envelopeRenderId extracted from ability.data path' );
+
+		$cached = dailyos_envelope_cache_get( $handle );
+		$this->assertIsArray( $cached, 'envelope cached under handle' );
+		$this->assertArrayHasKey( 'sections', $cached, 'cached value is the envelope, not the runtime wrapper' );
+		$this->assertSame( 'present', $cached['sections']['facts']['kind'] );
+	}
+
+	/**
 	 * Round-trip: outer + inner block sharing an envelopeRenderId both
 	 * resolve to the same cached envelope without re-invoking the producer.
 	 */

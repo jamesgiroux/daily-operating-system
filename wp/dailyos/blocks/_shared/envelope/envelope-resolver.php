@@ -88,7 +88,15 @@ if ( ! function_exists( 'dailyos_envelope_handle_from_response' ) ) {
 	 * @return string Envelope handle (empty string on degenerate input).
 	 */
 	function dailyos_envelope_handle_from_response( array $response, string $entity_type, string $entity_id ): string {
-		$envelope = $response['envelope'] ?? $response['data'] ?? $response;
+		// Runtime returns { ok, request_id, ability: { ability_name, data, ... } }
+		// per src-tauri/src/bridges/types.rs::AbilityResponseJson — the actual
+		// envelope lives at $response['ability']['data']. The 'envelope' and
+		// 'data' top-level fallbacks remain for legacy callers that pre-unwrap.
+		$ability  = $response['ability'] ?? null;
+		$envelope = $response['envelope']
+			?? $response['data']
+			?? ( is_array( $ability ) ? ( $ability['data'] ?? null ) : null )
+			?? $response;
 		if ( ! is_array( $envelope ) ) {
 			return '';
 		}
