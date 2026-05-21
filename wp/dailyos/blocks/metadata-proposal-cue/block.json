@@ -1,0 +1,19 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "dailyos/metadata-proposal-cue",
+	"title": "Metadata Proposal Cue",
+	"category": "dailyos",
+	"description": "Peripheral cue surfacing unresolved MetadataProposals on an entity-detail surface (DOS-328 / W2 §5.6). Projection over EntityIntelligenceEnvelope.metadata_proposals. Inserter-global per ADR-0129 §2 (no parent); composes inside any entity-detail outer block via usesContext envelopeHandle.",
+	"supports": {
+		"html": false,
+		"reusable": false,
+		"inserter": true
+	},
+	"usesContext": [
+		"dailyos/entityType",
+		"dailyos/entityId",
+		"dailyos/envelopeHandle"
+	],
+	"render": "file:./render.php"
+}
