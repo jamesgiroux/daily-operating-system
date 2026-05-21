@@ -59,7 +59,7 @@ if ( ! function_exists( 'dailyos_account_detail_unified_timeline_render' ) ) {
 		}
 
 		$envelope = dailyos_resolve_envelope( $handle, 'account', $entity_id, $scope_set );
-		$projected_sections = ['record', 'metadata_proposals'];
+		$projected_sections = [ 'record', 'metadata_proposals' ];
 		$any_present = false;
 		$first_empty_reason = '';
 		foreach ( $projected_sections as $section_key ) {
@@ -73,7 +73,7 @@ if ( ! function_exists( 'dailyos_account_detail_unified_timeline_render' ) ) {
 			}
 		}
 		$out  = '<section id="the-record" class="entity-detail_chapterSection" data-ds-tier="pattern" data-ds-name="UnifiedTimeline" data-ds-spec="patterns/UnifiedTimeline.md">';
-		$out .= '<section class="UnifiedTimeline_section" data-dailyos-projection="unified-timeline" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['record', 'metadata_proposals'] ) ) . '">';
+		$out .= '<section class="UnifiedTimeline_section" data-dailyos-projection="unified-timeline" data-dailyos-envelope-sections="' . esc_attr( implode( ',', [ 'record', 'metadata_proposals' ] ) ) . '">';
 		$out .= '<div class="ChapterHeading_heading">';
 		$out .= '<hr class="ChapterHeading_rule" />';
 		$out .= '<div class="ChapterHeading_titleRow"><h2 class="ChapterHeading_title">' . esc_html__( 'The Record', 'dailyos' ) . '</h2></div>';
@@ -136,7 +136,7 @@ if ( ! function_exists( 'dailyos_account_detail_unified_timeline_select_claim_re
 		// exact projection rule lives in the L0-packet projection table; this
 		// helper is a single source for the slug's selection so test fixtures
 		// can target one function rather than the renderer.
-		foreach ( ['record', 'metadata_proposals'] as $section_key ) {
+		foreach ( [ 'record', 'metadata_proposals' ] as $section_key ) {
 			$slice = $envelope[ $section_key ] ?? [];
 			if ( ! is_array( $slice ) ) {
 				continue;

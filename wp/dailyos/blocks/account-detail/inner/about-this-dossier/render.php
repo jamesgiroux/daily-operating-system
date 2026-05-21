@@ -1,6 +1,6 @@
 <?php
 /**
- * about-this-dossier dynamic block render entrypoint (W2 L1 inner block).
+ * About-this-dossier dynamic block render entrypoint (W2 L1 inner block).
  *
  * Delegates to render-functions.php so the same function services both
  * the block-registration render path and the editor preview REST route.

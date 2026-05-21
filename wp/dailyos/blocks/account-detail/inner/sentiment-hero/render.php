@@ -1,6 +1,6 @@
 <?php
 /**
- * sentiment-hero dynamic block render entrypoint (W2 L1 inner block).
+ * Sentiment-hero dynamic block render entrypoint (W2 L1 inner block).
  *
  * Delegates to render-functions.php so the same function services both
  * the block-registration render path and the editor preview REST route.

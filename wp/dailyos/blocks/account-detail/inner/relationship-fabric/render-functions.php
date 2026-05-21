@@ -59,7 +59,7 @@ if ( ! function_exists( 'dailyos_relationship_fabric_render' ) ) {
 		}
 
 		$envelope = dailyos_resolve_envelope( $handle, 'account', $entity_id, $scope_set );
-		$projected_sections = ['facts', 'touchpoints'];
+		$projected_sections = [ 'facts', 'touchpoints' ];
 		$any_present = false;
 		$first_empty_reason = '';
 		foreach ( $projected_sections as $section_key ) {
@@ -77,7 +77,7 @@ if ( ! function_exists( 'dailyos_relationship_fabric_render' ) ) {
 		$out .= '<hr class="ChapterHeading_rule" />';
 		$out .= '<div class="ChapterHeading_titleRow"><h2 class="ChapterHeading_title">' . esc_html__( 'Relationship fabric', 'dailyos' ) . '</h2></div>';
 		$out .= '</div>';
-		$out .= '<div class="RelationshipFabric_list" data-dailyos-projection="relationship-fabric" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['facts', 'touchpoints'] ) ) . '">';
+		$out .= '<div class="RelationshipFabric_list" data-dailyos-projection="relationship-fabric" data-dailyos-envelope-sections="' . esc_attr( implode( ',', [ 'facts', 'touchpoints' ] ) ) . '">';
 		if ( ! $any_present ) {
 			$reason = '' !== $first_empty_reason ? $first_empty_reason : 'no_relationship_fabric';
 			$out .= dailyos_empty_chip(
@@ -134,7 +134,7 @@ if ( ! function_exists( 'dailyos_relationship_fabric_select_claim_refs' ) ) {
 		// exact projection rule lives in the L0-packet projection table; this
 		// helper is a single source for the slug's selection so test fixtures
 		// can target one function rather than the renderer.
-		foreach ( ['facts', 'touchpoints'] as $section_key ) {
+		foreach ( [ 'facts', 'touchpoints' ] as $section_key ) {
 			$slice = $envelope[ $section_key ] ?? [];
 			if ( ! is_array( $slice ) ) {
 				continue;

@@ -59,7 +59,7 @@ if ( ! function_exists( 'dailyos_sentiment_hero_render' ) ) {
 		}
 
 		$envelope = dailyos_resolve_envelope( $handle, 'account', $entity_id, $scope_set );
-		$projected_sections = ['health', 'facts'];
+		$projected_sections = [ 'health', 'facts' ];
 		$any_present = false;
 		$first_empty_reason = '';
 		foreach ( $projected_sections as $section_key ) {
@@ -73,7 +73,7 @@ if ( ! function_exists( 'dailyos_sentiment_hero_render' ) ) {
 			}
 		}
 		$out  = '<section id="your-assessment" class="entity-detail_chapterSection" data-ds-tier="pattern" data-ds-name="SentimentHero" data-ds-spec="patterns/SentimentHero.md">';
-		$out .= '<section class="SentimentHero_hero" data-dailyos-projection="sentiment-hero" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['health', 'facts'] ) ) . '">';
+		$out .= '<section class="SentimentHero_hero" data-dailyos-projection="sentiment-hero" data-dailyos-envelope-sections="' . esc_attr( implode( ',', [ 'health', 'facts' ] ) ) . '">';
 		$out .= '<div class="SentimentHero_label">' . esc_html__( 'Your Assessment', 'dailyos' ) . '</div>';
 		if ( ! $any_present ) {
 			$reason = '' !== $first_empty_reason ? $first_empty_reason : 'no_health_signal';

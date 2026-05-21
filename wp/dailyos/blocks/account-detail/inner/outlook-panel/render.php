@@ -1,6 +1,6 @@
 <?php
 /**
- * outlook-panel dynamic block render entrypoint (W2 L1 inner block).
+ * Outlook-panel dynamic block render entrypoint (W2 L1 inner block).
  *
  * Delegates to render-functions.php so the same function services both
  * the block-registration render path and the editor preview REST route.

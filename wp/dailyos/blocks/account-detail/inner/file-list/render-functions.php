@@ -59,7 +59,7 @@ if ( ! function_exists( 'dailyos_file_list_render' ) ) {
 		}
 
 		$envelope = dailyos_resolve_envelope( $handle, 'account', $entity_id, $scope_set );
-		$projected_sections = ['facts'];
+		$projected_sections = [ 'facts' ];
 		$any_present = false;
 		$first_empty_reason = '';
 		foreach ( $projected_sections as $section_key ) {
@@ -73,7 +73,7 @@ if ( ! function_exists( 'dailyos_file_list_render' ) ) {
 			}
 		}
 		$out  = '<section id="files" class="entity-detail_chapterSection" data-ds-tier="pattern" data-ds-name="FileListSection" data-ds-spec="patterns/FileListSection.md">';
-		$out .= '<div class="FileListSection_section" data-dailyos-projection="file-list" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['facts'] ) ) . '">';
+		$out .= '<div class="FileListSection_section" data-dailyos-projection="file-list" data-dailyos-envelope-sections="' . esc_attr( implode( ',', [ 'facts' ] ) ) . '">';
 		$out .= '<div class="FileListSection_header"><div class="FileListSection_sectionTitle">' . esc_html__( 'Files', 'dailyos' ) . '</div></div>';
 		if ( ! $any_present ) {
 			$reason = '' !== $first_empty_reason ? $first_empty_reason : 'no_files_attached';
@@ -136,7 +136,7 @@ if ( ! function_exists( 'dailyos_file_list_select_claim_refs' ) ) {
 		// exact projection rule lives in the L0-packet projection table; this
 		// helper is a single source for the slug's selection so test fixtures
 		// can target one function rather than the renderer.
-		foreach ( ['facts'] as $section_key ) {
+		foreach ( [ 'facts' ] as $section_key ) {
 			$slice = $envelope[ $section_key ] ?? [];
 			if ( ! is_array( $slice ) ) {
 				continue;

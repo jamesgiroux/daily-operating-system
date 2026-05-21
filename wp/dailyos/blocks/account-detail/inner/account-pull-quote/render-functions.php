@@ -59,7 +59,7 @@ if ( ! function_exists( 'dailyos_account_pull_quote_render' ) ) {
 		}
 
 		$envelope = dailyos_resolve_envelope( $handle, 'account', $entity_id, $scope_set );
-		$projected_sections = ['facts'];
+		$projected_sections = [ 'facts' ];
 		$any_present = false;
 		$first_empty_reason = '';
 		foreach ( $projected_sections as $section_key ) {
@@ -73,7 +73,7 @@ if ( ! function_exists( 'dailyos_account_pull_quote_render' ) ) {
 			}
 		}
 		$out  = '<section id="thesis" class="entity-detail_chapterSection" data-ds-tier="pattern" data-ds-name="AccountPullQuote" data-ds-spec="patterns/AccountPullQuote.md">';
-		$out .= '<section class="editorial-reveal-slow AccountDetailEditorial_thesisSection" data-dailyos-projection="account-pull-quote" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['facts'] ) ) . '">';
+		$out .= '<section class="editorial-reveal-slow AccountDetailEditorial_thesisSection" data-dailyos-projection="account-pull-quote" data-dailyos-envelope-sections="' . esc_attr( implode( ',', [ 'facts' ] ) ) . '">';
 		$out .= '<div class="AccountDetailEditorial_thesisLabel">' . esc_html__( 'The thesis', 'dailyos' ) . '</div>';
 		if ( ! $any_present ) {
 			$reason = '' !== $first_empty_reason ? $first_empty_reason : 'no_quote_available';
