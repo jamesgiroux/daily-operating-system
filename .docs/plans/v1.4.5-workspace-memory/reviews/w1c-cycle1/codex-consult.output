@@ -1,0 +1,60 @@
+   217	        "file_id",
+   218	        "canonical_path",
+   219	        "device",
+   220	        "inode",
+   221	        "source_type",
+   222	        "data_source",
+   223	        "lifecycle_state",
+   224	        "source_asof",
+   225	        "entity_id",
+   226	        "entity_type",
+   227	        "content_sha256",
+   228	        "user_override_actor",
+   229	        "user_override_at",
+   230	        "created_at",
+   231	        "updated_at",
+   232	        "category",
+   233	    ] {
+   234	        assert!(
+   235	            cols.iter().any(|c| c == required),
+   236	            "workspace_file_lifecycle missing required column `{required}`; got {cols:?}"
+   237	        );
+   238	    }
+   239	}
+   240	
+   241	#[test]
+   242	fn migrations_slice_max_version_is_at_least_251() {
+   243	    // Internal substrate check: ensures W1-A's v251 lands at the tail of the
+   244	    // registered MIGRATIONS slice (i.e., `version > current` runner filter
+   245	    // will pick up new DBs at any version ≤251). We assert ≥251 rather than
+   246	    // ==251 so future maintenance migrations don't false-fail this test.
+   247	    // The actual MIGRATIONS slice is internal; the schema_version table
+   248	    // populated by a fresh `run_migrations` walks the slice. As a proxy,
+   249	    // verify the SQL files exist (compile-time `include_str!` already
+   250	    // guarantees this if the registration is wired correctly).
+
+codex
+VERDICT: BLOCK
+
+1. `RunsRepo::start_run(file_id, mode, extractor_version)` is not implementable as written: v253 requires `content_sha256` + `file_size_bytes` NOT NULL and idempotency is keyed on `(file_id, content_sha256, mode)`. Add these to the start API or use a request struct.
+
+2. Faithfulness gap: wave W1-C requires `document_entity_links` to carry `user_override` nullable timestamp + actor and tests its round-trip; packet replaces that with `actor` + `user_confirmed` and no `user_override` test.
+
+3. Scope creep: `reject_link` / rejected tombstone rows are not in the W1-C wave-plan body. Either cite the actual authority or mark as an intentional packet expansion needing approval.
+
+4. Test gap: §7 does not prove `complete_run` persists `status`, `claim_count_produced`, and `error_log`, nor basic `add_link`/`list_links_for_file` round-trip.
+
+5. K-in clean: grep across `docs/solutions` + `.docs/decisions` for `document_ingestion_runs|document_entity_links|override_link|ingestion_run` returned zero hits.
+tokens used
+73,858
+VERDICT: BLOCK
+
+1. `RunsRepo::start_run(file_id, mode, extractor_version)` is not implementable as written: v253 requires `content_sha256` + `file_size_bytes` NOT NULL and idempotency is keyed on `(file_id, content_sha256, mode)`. Add these to the start API or use a request struct.
+
+2. Faithfulness gap: wave W1-C requires `document_entity_links` to carry `user_override` nullable timestamp + actor and tests its round-trip; packet replaces that with `actor` + `user_confirmed` and no `user_override` test.
+
+3. Scope creep: `reject_link` / rejected tombstone rows are not in the W1-C wave-plan body. Either cite the actual authority or mark as an intentional packet expansion needing approval.
+
+4. Test gap: §7 does not prove `complete_run` persists `status`, `claim_count_produced`, and `error_log`, nor basic `add_link`/`list_links_for_file` round-trip.
+
+5. K-in clean: grep across `docs/solutions` + `.docs/decisions` for `document_ingestion_runs|document_entity_links|override_link|ingestion_run` returned zero hits.

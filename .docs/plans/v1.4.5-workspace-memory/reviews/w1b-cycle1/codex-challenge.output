@@ -1,0 +1,80 @@
+
+ succeeded in 531ms:
+src-tauri/abilities-runtime/src/abilities/provenance/source.rs:214:            WorkspaceFileKind::Inbox => "inbox",
+src-tauri/abilities-runtime/src/abilities/provenance/source.rs:415:    fn workspace_file_variant_serializes_with_kind_and_taxonomy_holds() {
+src-tauri/abilities-runtime/src/abilities/provenance/source.rs:430:            WorkspaceFileKind::Inbox,
+src-tauri/abilities-runtime/src/abilities/trust/freshness_decay.rs:43:const WORKSPACE_FILE: &str = "workspace_file";
+src-tauri/abilities-runtime/src/abilities/trust/freshness_decay.rs:442:            kind: WorkspaceFileKind::Inbox,
+src-tauri/src/devtools/mod.rs:6827:fn write_project_workspace_files(workspace: &Path) -> Result<(), String> {
+src-tauri/src/abilities/trust/config/trust_compiler.toml:20:workspace_file = 21
+src-tauri/abilities-runtime/src/abilities/provenance/render.rs:2224:        DataSource::WorkspaceFile { .. } => "workspace_file".to_string(),
+src-tauri/src/util.rs:304:pub fn write_managed_workspace_files(workspace: &Path) -> Result<(), String> {
+src-tauri/src/util.rs:1052:        write_managed_workspace_files(dir.path()).unwrap();
+src-tauri/src/util.rs:1070:        write_managed_workspace_files(dir.path()).unwrap();
+src-tauri/src/util.rs:1076:        write_managed_workspace_files(dir.path()).unwrap();
+src-tauri/src/util.rs:1098:        write_managed_workspace_files(dir.path()).unwrap();
+src-tauri/src/util.rs:1114:        write_managed_workspace_files(dir.path()).unwrap();
+src-tauri/src/state.rs:1584:    if let Err(e) = crate::util::write_managed_workspace_files(workspace) {
+src-tauri/src/state.rs:1930:    crate::util::write_managed_workspace_files(path)?;
+src-tauri/src/migrations/251_workspace_file_lifecycle_category.sql:15:ALTER TABLE workspace_file_lifecycle ADD COLUMN category TEXT;
+src-tauri/src/migrations.rs:937:        sql: include_str!("migrations/250_workspace_file_lifecycle.sql"),
+src-tauri/src/migrations.rs:941:        sql: include_str!("migrations/251_workspace_file_lifecycle_category.sql"),
+src-tauri/src/db/data_lifecycle.rs:341:            DataSource::WorkspaceFile => "workspace_file",
+src-tauri/src/services/workspace_ingestion/lifecycle.rs:3://! Mirrors the `workspace_file_lifecycle` table (migration v250 + v251). The
+src-tauri/src/services/workspace_ingestion/lifecycle.rs:51:/// in the `workspace_file_lifecycle` row.
+src-tauri/src/services/workspace_ingestion/lifecycle.rs:58:/// One row of the `workspace_file_lifecycle` table (migration v250 + v251).
+src-tauri/src/services/workspace_ingestion/lifecycle.rs:87:    /// No `workspace_file_lifecycle` row with the given `file_id`.
+src-tauri/src/services/accounts.rs:4282:        let workspace_file = temp.path().join("workspace-file");
+src-tauri/src/services/accounts.rs:4283:        std::fs::write(&workspace_file, "not a directory").expect("workspace marker file");
+src-tauri/src/services/accounts.rs:4284:        let state = test_state_with_workspace(&workspace_file);
+src-tauri/src/services/accounts.rs:4313:        let workspace_file = temp.path().join("workspace-file");
+src-tauri/src/services/accounts.rs:4314:        std::fs::write(&workspace_file, "not a directory").expect("workspace marker file");
+src-tauri/src/services/accounts.rs:4315:        let state = test_state_with_workspace(&workspace_file);
+src-tauri/tests/workspace_ingestion_unit.rs:138:    let proposals = extractor.extract(&file, &identity, WorkspaceFileKind::Inbox);
+src-tauri/tests/workspace_ingestion_unit.rs:168:            kind: WorkspaceFileKind::Inbox,
+src-tauri/tests/workspace_ingestion_unit.rs:184:            kind: WorkspaceFileKind::Inbox
+src-tauri/tests/workspace_ingestion_unit.rs:200:    let v250 = include_str!("../src/migrations/250_workspace_file_lifecycle.sql");
+src-tauri/tests/workspace_ingestion_unit.rs:201:    let v251 = include_str!("../src/migrations/251_workspace_file_lifecycle_category.sql");
+src-tauri/tests/workspace_ingestion_unit.rs:205:    // table_info(workspace_file_lifecycle) should now contain `category`.
+src-tauri/tests/workspace_ingestion_unit.rs:207:        .prepare("PRAGMA table_info(workspace_file_lifecycle)")
+src-tauri/tests/workspace_ingestion_unit.rs:236:            "workspace_file_lifecycle missing required column `{required}`; got {cols:?}"
+src-tauri/tests/workspace_ingestion_unit.rs:251:    let v250_sql = include_str!("../src/migrations/250_workspace_file_lifecycle.sql");
+src-tauri/tests/workspace_ingestion_unit.rs:252:    let v251_sql = include_str!("../src/migrations/251_workspace_file_lifecycle_category.sql");
+src-tauri/tests/workspace_ingestion_unit.rs:254:        v250_sql.contains("CREATE TABLE IF NOT EXISTS workspace_file_lifecycle"),
+src-tauri/tests/workspace_ingestion_unit.rs:255:        "v250 must create workspace_file_lifecycle"
+src-tauri/tests/workspace_ingestion_contracts_import.rs:30:    let kind: WorkspaceFileKind = WorkspaceFileKind::Inbox;
+src-tauri/tests/workspace_ingestion_contracts_import.rs:31:    assert!(matches!(kind, WorkspaceFileKind::Inbox));
+src-tauri/src/migrations/250_workspace_file_lifecycle.sql:20:CREATE TABLE IF NOT EXISTS workspace_file_lifecycle (
+src-tauri/src/migrations/250_workspace_file_lifecycle.sql:41:    ON workspace_file_lifecycle (lifecycle_state);
+src-tauri/src/migrations/250_workspace_file_lifecycle.sql:47:    ON workspace_file_lifecycle (entity_id, entity_type)
+src-tauri/src/migrations/250_workspace_file_lifecycle.sql:53:    ON workspace_file_lifecycle (lifecycle_state)
+
+codex
+VERDICT: BLOCK
+
+1. `data_source_json` seed shape is not canonical serde for `DataSource::WorkspaceFile`. Packet seeds `{"kind":"workspace_file","name":{"kind":"inbox"}}` etc. [L0-packet-W1-B-DOS-464.md](/private/tmp/dailyos-v145-w1a/.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-B-DOS-464.md:80), [L0-packet-W1-B-DOS-464.md](/private/tmp/dailyos-v145-w1a/.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-B-DOS-464.md:88). Actual `DataSource` is externally tagged with only `rename_all`, and `WorkspaceFile { kind }` is the variant. [source.rs](/private/tmp/dailyos-v145-w1a/src-tauri/abilities-runtime/src/abilities/provenance/source.rs:71), [source.rs](/private/tmp/dailyos-v145-w1a/src-tauri/abilities-runtime/src/abilities/provenance/source.rs:81). Use serde-produced JSON, e.g. `{"workspace_file":{"kind":"inbox"}}`.
+
+2. Category seed count conflicts with locked contract. Wave plan says defaults are all six categories for the per-entity registry. [v1.4.5-waves.md](/private/tmp/dailyos-v145-w1a/.docs/plans/v1.4.5-waves.md:534). Packet seeds person with only four, omitting `presentations` and `contracts`. [L0-packet-W1-B-DOS-464.md](/private/tmp/dailyos-v145-w1a/.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-B-DOS-464.md:104). This makes done-when “all default pairs” ambiguous/incomplete. [L0-packet-W1-B-DOS-464.md](/private/tmp/dailyos-v145-w1a/.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-B-DOS-464.md:185).
+
+3. Trait/import compileability is underspecified: packet signature references bare `EntityType` and `CategoryNotAllowed`. [L0-packet-W1-B-DOS-464.md](/private/tmp/dailyos-v145-w1a/.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-B-DOS-464.md:34). Existing canonical `EntityType` is `crate::entity::EntityType`. [entity.rs](/private/tmp/dailyos-v145-w1a/src-tauri/src/entity.rs:13). `CategoryNotAllowed` only appears as a future `PlacementError` variant, not a registry error type. [v1.4.5-waves.md](/private/tmp/dailyos-v145-w1a/.docs/plans/v1.4.5-waves.md:937).
+
+4. Security negative fixtures miss the packet’s own strict-child root-equality case. Contract says canonical path must be a strict child, no equality with root. [L0-packet-W1-B-DOS-464.md](/private/tmp/dailyos-v145-w1a/.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-B-DOS-464.md:128). Fixture list has traversal, absolute path, symlink, race, but no workspace-root path/directory rejection. [L0-packet-W1-B-DOS-464.md](/private/tmp/dailyos-v145-w1a/.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-B-DOS-464.md:142).
+
+5. Stale lint marker: packet tells allowlist exceptions to use `dos-146-allowed`, not DOS-464 or a neutral marker. [L0-packet-W1-B-DOS-464.md](/private/tmp/dailyos-v145-w1a/.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-B-DOS-464.md:151). This is inherited from wave text. [v1.4.5-waves.md](/private/tmp/dailyos-v145-w1a/.docs/plans/v1.4.5-waves.md:542).
+
+Migration slot check: v252 is correct above live v240 and W1-A v250/v251. [migrations.rs](/private/tmp/dailyos-v145-w1a/src-tauri/src/migrations.rs:927), [migrations.rs](/private/tmp/dailyos-v145-w1a/src-tauri/src/migrations.rs:935).
+tokens used
+137,738
+VERDICT: BLOCK
+
+1. `data_source_json` seed shape is not canonical serde for `DataSource::WorkspaceFile`. Packet seeds `{"kind":"workspace_file","name":{"kind":"inbox"}}` etc. [L0-packet-W1-B-DOS-464.md](/private/tmp/dailyos-v145-w1a/.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-B-DOS-464.md:80), [L0-packet-W1-B-DOS-464.md](/private/tmp/dailyos-v145-w1a/.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-B-DOS-464.md:88). Actual `DataSource` is externally tagged with only `rename_all`, and `WorkspaceFile { kind }` is the variant. [source.rs](/private/tmp/dailyos-v145-w1a/src-tauri/abilities-runtime/src/abilities/provenance/source.rs:71), [source.rs](/private/tmp/dailyos-v145-w1a/src-tauri/abilities-runtime/src/abilities/provenance/source.rs:81). Use serde-produced JSON, e.g. `{"workspace_file":{"kind":"inbox"}}`.
+
+2. Category seed count conflicts with locked contract. Wave plan says defaults are all six categories for the per-entity registry. [v1.4.5-waves.md](/private/tmp/dailyos-v145-w1a/.docs/plans/v1.4.5-waves.md:534). Packet seeds person with only four, omitting `presentations` and `contracts`. [L0-packet-W1-B-DOS-464.md](/private/tmp/dailyos-v145-w1a/.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-B-DOS-464.md:104). This makes done-when “all default pairs” ambiguous/incomplete. [L0-packet-W1-B-DOS-464.md](/private/tmp/dailyos-v145-w1a/.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-B-DOS-464.md:185).
+
+3. Trait/import compileability is underspecified: packet signature references bare `EntityType` and `CategoryNotAllowed`. [L0-packet-W1-B-DOS-464.md](/private/tmp/dailyos-v145-w1a/.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-B-DOS-464.md:34). Existing canonical `EntityType` is `crate::entity::EntityType`. [entity.rs](/private/tmp/dailyos-v145-w1a/src-tauri/src/entity.rs:13). `CategoryNotAllowed` only appears as a future `PlacementError` variant, not a registry error type. [v1.4.5-waves.md](/private/tmp/dailyos-v145-w1a/.docs/plans/v1.4.5-waves.md:937).
+
+4. Security negative fixtures miss the packet’s own strict-child root-equality case. Contract says canonical path must be a strict child, no equality with root. [L0-packet-W1-B-DOS-464.md](/private/tmp/dailyos-v145-w1a/.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-B-DOS-464.md:128). Fixture list has traversal, absolute path, symlink, race, but no workspace-root path/directory rejection. [L0-packet-W1-B-DOS-464.md](/private/tmp/dailyos-v145-w1a/.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-B-DOS-464.md:142).
+
+5. Stale lint marker: packet tells allowlist exceptions to use `dos-146-allowed`, not DOS-464 or a neutral marker. [L0-packet-W1-B-DOS-464.md](/private/tmp/dailyos-v145-w1a/.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-B-DOS-464.md:151). This is inherited from wave text. [v1.4.5-waves.md](/private/tmp/dailyos-v145-w1a/.docs/plans/v1.4.5-waves.md:542).
+
+Migration slot check: v252 is correct above live v240 and W1-A v250/v251. [migrations.rs](/private/tmp/dailyos-v145-w1a/src-tauri/src/migrations.rs:927), [migrations.rs](/private/tmp/dailyos-v145-w1a/src-tauri/src/migrations.rs:935).

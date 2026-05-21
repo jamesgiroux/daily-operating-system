@@ -1,0 +1,80 @@
+   210	
+   211	impl WorkspaceFileKind {
+
+ succeeded in 0ms:
+    72	#[serde(rename_all = "snake_case")]
+    73	pub enum DataSource {
+    74	    User,
+    75	    Google,
+    76	    Glean { downstream: GleanDownstream },
+    77	    Clay,
+    78	    Ai,
+    79	    CoAttendance,
+    80	    LocalEnrichment,
+    81	    WorkspaceFile { kind: WorkspaceFileKind },
+    82	    Other(SourceName),
+    83	    LegacyUnattributed,
+    84	}
+    85	
+
+exec
+/bin/zsh -lc "nl -ba src-tauri/src/services/workspace_ingestion/contracts.rs | sed -n '51,65p'" in /private/tmp/dailyos-v145-w1a
+ succeeded in 0ms:
+    51	
+    52	/// Entity-relative sub-category for AI navigation (cycle 8 Option B-prime).
+    53	///
+    54	/// **Wire shape:** serializes per `#[serde(tag = "kind", content = "name")]` so
+    55	/// known variants render as `{"kind": "presentations"}` (no `content` field
+    56	/// because the variant carries no data) and `Other(s)` renders as
+    57	/// `{"kind": "other", "name": "<lowercase_ascii_slug>"}`.
+    58	///
+    59	/// **Slug responsibilities:**
+    60	/// - `as_slug()` / `from_slug()` enforce only the lexical slug shape (lowercase
+    61	///   ASCII matching `^[a-z0-9_-]+$`).
+    62	/// - Per-entity registry-allowedness (what `Other` slugs are valid for a given
+    63	///   entity type) is W1-B's `WorkspaceCategoryRegistry::validate` boundary, not
+    64	///   `WorkspaceCategory`'s.
+    65	#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+
+exec
+/bin/zsh -lc "nl -ba src-tauri/src/services/workspace_ingestion/contracts.rs | sed -n '30,38p'" in /private/tmp/dailyos-v145-w1a
+ succeeded in 0ms:
+    30	pub use abilities_runtime::abilities::claims::ClaimType;
+    31	pub use abilities_runtime::abilities::provenance::source::{
+    32	    DataSource, SourceAttribution, WorkspaceFileKind,
+    33	};
+    34	pub use abilities_runtime::abilities::provenance::subject::SubjectRef;
+    35	pub use abilities_runtime::types::ClaimSensitivity;
+    36	use chrono::{DateTime, Utc};
+    37	use serde::{Deserialize, Serialize};
+    38	
+
+codex
+VERDICT: BLOCK
+
+1. `data_source_json` seed shape appears wrong. Packet seeds `{"kind":"workspace_file","name":{"kind":"inbox"}}`, but canonical `DataSource` is externally tagged (`DataSource::WorkspaceFile { kind }`) and `WorkspaceFileKind` is snake_case. Add/require serde round-trip tests for every seeded row. See packet §6 lines 78-94 and `source.rs` lines 72-81, 200-208.
+
+2. Implementability gap: `validate(category, entity_type: EntityType)` invents/uses `EntityType`, while §5 says W1-B does not define `EntityType` and uses existing string entity types. Pin the signature to `&str`/`String` or cite a real type. See packet lines 34 and 61-62.
+
+3. Implementability gap: `resolve_path(entity_name, category, filename)` cannot implement the `_inbox/{filename}` rule because it has no source/inbox context. Either add a source/root context parameter or specify the sentinel contract. See packet lines 23, 35, 179.
+
+4. Security fixture/algorithm mismatch: the contract canonicalizes before `O_NOFOLLOW`, so an outside symlink resolves to `OutsideWorkspace`, not `SymlinkRefused`; a symlink swap under `O_NOFOLLOW` may fail before inode comparison, not `SymlinkRaced`. Tighten ordering or expected variants. See packet lines 126-133, 142, 146.
+
+5. Test adequacy: §8 does not fully cover §9/wave tests. Missing explicit `DataSource` variant mapping round-trip from wave line 550, and §8 does not list the W1-A no-substrate-reinvention gate that §9 requires.
+
+6. K-in grep: confirmed zero hits for exact command `rg -n "WorkspaceSourceRegistry|WorkspaceCategoryRegistry|open_validated|TOCTOU|O_NOFOLLOW" docs/solutions .docs/decisions`.
+tokens used
+76,623
+VERDICT: BLOCK
+
+1. `data_source_json` seed shape appears wrong. Packet seeds `{"kind":"workspace_file","name":{"kind":"inbox"}}`, but canonical `DataSource` is externally tagged (`DataSource::WorkspaceFile { kind }`) and `WorkspaceFileKind` is snake_case. Add/require serde round-trip tests for every seeded row. See packet §6 lines 78-94 and `source.rs` lines 72-81, 200-208.
+
+2. Implementability gap: `validate(category, entity_type: EntityType)` invents/uses `EntityType`, while §5 says W1-B does not define `EntityType` and uses existing string entity types. Pin the signature to `&str`/`String` or cite a real type. See packet lines 34 and 61-62.
+
+3. Implementability gap: `resolve_path(entity_name, category, filename)` cannot implement the `_inbox/{filename}` rule because it has no source/inbox context. Either add a source/root context parameter or specify the sentinel contract. See packet lines 23, 35, 179.
+
+4. Security fixture/algorithm mismatch: the contract canonicalizes before `O_NOFOLLOW`, so an outside symlink resolves to `OutsideWorkspace`, not `SymlinkRefused`; a symlink swap under `O_NOFOLLOW` may fail before inode comparison, not `SymlinkRaced`. Tighten ordering or expected variants. See packet lines 126-133, 142, 146.
+
+5. Test adequacy: §8 does not fully cover §9/wave tests. Missing explicit `DataSource` variant mapping round-trip from wave line 550, and §8 does not list the W1-A no-substrate-reinvention gate that §9 requires.
+
+6. K-in grep: confirmed zero hits for exact command `rg -n "WorkspaceSourceRegistry|WorkspaceCategoryRegistry|open_validated|TOCTOU|O_NOFOLLOW" docs/solutions .docs/decisions`.
