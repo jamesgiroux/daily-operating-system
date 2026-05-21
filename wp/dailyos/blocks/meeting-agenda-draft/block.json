@@ -1,0 +1,12 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "dailyos/meeting-agenda-draft",
+	"title": "Meeting Agenda Draft",
+	"category": "dailyos",
+	"description": "Agenda for a Meeting — projects Facts (agenda narrative) + OpenLoops (agenda-bound action items). Per-item trust band; claim-fanout via outer claim_receipt + record_claim_feedback wiring.",
+	"supports": { "html": false, "reusable": false, "inserter": false },
+	"usesContext": [ "dailyos/entityType", "dailyos/entityId" ],
+	"parent": [ "dailyos/meeting-detail" ],
+	"render": "file:./render.php"
+}

@@ -1,0 +1,12 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "dailyos/meeting-post-meeting-capture",
+	"title": "Meeting Post-Meeting Capture",
+	"category": "dailyos",
+	"description": "Post-meeting transcript/notes capture — projects Record (transcript/notes). Write path through process_paste_transcript ability per AC-MD.3; NO direct DB writes.",
+	"supports": { "html": false, "reusable": false, "inserter": false },
+	"usesContext": [ "dailyos/entityType", "dailyos/entityId" ],
+	"parent": [ "dailyos/meeting-detail" ],
+	"render": "file:./render.php"
+}
