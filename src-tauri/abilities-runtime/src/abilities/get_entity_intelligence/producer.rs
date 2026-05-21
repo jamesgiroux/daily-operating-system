@@ -110,6 +110,7 @@ pub async fn build_entity_intelligence(
             &input.entity_type,
             entity_id,
             &subject_ref,
+            &render_actor,
             &mut envelope_provenance,
         )
         .await?
@@ -469,6 +470,7 @@ async fn compose_touchpoints(
     entity_type: &EntityKind,
     entity_id: &str,
     subject_ref: &SubjectRef,
+    render_actor: &RenderActor,
     provenance: &mut EnvelopeProvenance,
 ) -> Result<Paginated<TouchpointBundle>, AbilityError> {
     let now = ctx.services().clock.now();
@@ -498,7 +500,7 @@ async fn compose_touchpoints(
         }
     };
 
-    let bundle = project_touchpoints_bundle(&snapshot, subject_ref, &now, provenance);
+    let bundle = project_touchpoints_bundle(&snapshot, subject_ref, &now, render_actor, provenance);
     Ok(Paginated::stable(vec![bundle]))
 }
 
@@ -506,17 +508,18 @@ fn project_touchpoints_bundle(
     snapshot: &EntityTouchpointsSnapshot,
     subject_ref: &SubjectRef,
     now: &DateTime<Utc>,
+    render_actor: &RenderActor,
     provenance: &mut EnvelopeProvenance,
 ) -> TouchpointBundle {
     let upcoming_items: Vec<Touchpoint> = snapshot
         .upcoming
         .iter()
-        .map(|raw| project_touchpoint(raw, now, provenance))
+        .map(|raw| project_touchpoint(raw, now, render_actor, provenance))
         .collect();
     let recent_items: Vec<Touchpoint> = snapshot
         .recent
         .iter()
-        .map(|raw| project_touchpoint(raw, now, provenance))
+        .map(|raw| project_touchpoint(raw, now, render_actor, provenance))
         .collect();
 
     let upcoming = Paginated::stable(upcoming_items);
@@ -560,18 +563,29 @@ fn project_touchpoints_bundle(
 fn project_touchpoint(
     raw: &EntityTouchpointSnapshot,
     now: &DateTime<Utc>,
+    render_actor: &RenderActor,
     provenance: &mut EnvelopeProvenance,
 ) -> Touchpoint {
     let when = parse_optional_timestamp(raw.starts_at.as_deref()).unwrap_or(*now);
-    let label = format!("meeting:{}", raw.meeting_id);
+    let id_label = format!("meeting:{}", raw.meeting_id);
+    // F2 (L3 cycle-2): touchpoint provenance label routes through an audience-aware
+    // scrub before emission. UserTauri audience (RenderActor.is_user()) sees the
+    // full meeting title; AgentMcp / agent surfaces see a redacted placeholder.
+    // ADR-0108 §3 — provenance labels are themselves user-visible strings and
+    // MUST honour the per-audience allowlist gate.
+    let (label, redacted) = if render_actor.is_user() {
+        (raw.title.clone(), false)
+    } else {
+        ("Meeting (redacted)".to_string(), true)
+    };
     let source_id = upsert_static_provenance_source(
         provenance,
         EnvelopeProvenanceSource {
-            id: label,
-            label: raw.title.clone(),
+            id: id_label,
+            label,
             source_type: Some("meeting".to_string()),
             as_of: parse_optional_timestamp(raw.source_asof.as_deref()),
-            redacted: false,
+            redacted,
         },
     );
     let inclusion_reason = match raw.inclusion_reason {
@@ -1195,10 +1209,12 @@ mod tests {
     fn project_touchpoints_empty_snapshot_emits_no_relevant_touchpoints() {
         let snapshot = fake_snapshot("account", "acc-1", vec![], vec![], vec![]);
         let mut prov = EnvelopeProvenance::empty();
+        let render_actor = RenderActor::user("user", None::<String>);
         let bundle = project_touchpoints_bundle(
             &snapshot,
             &SubjectRef::Account("acc-1".to_string()),
             &chrono::Utc::now(),
+            &render_actor,
             &mut prov,
         );
         assert_eq!(bundle.empty_reason, Some(EmptyReason::NoRelevantTouchpoints));
@@ -1228,10 +1244,12 @@ mod tests {
             vec![("account".to_string(), "acc-child".to_string())],
         );
         let mut prov = EnvelopeProvenance::empty();
+        let render_actor = RenderActor::user("user", None::<String>);
         let bundle = project_touchpoints_bundle(
             &snapshot,
             &SubjectRef::Account("acc-parent".to_string()),
             &now,
+            &render_actor,
             &mut prov,
         );
         assert!(bundle.empty_reason.is_none());
@@ -1270,10 +1288,12 @@ mod tests {
             vec![],
         );
         let mut prov = EnvelopeProvenance::empty();
+        let render_actor = RenderActor::user("user", None::<String>);
         let bundle = project_touchpoints_bundle(
             &snapshot,
             &SubjectRef::Person("p-1".to_string()),
             &now,
+            &render_actor,
             &mut prov,
         );
         assert_eq!(bundle.recent.items.len(), 1);
@@ -1304,10 +1324,12 @@ mod tests {
             vec![],
         );
         let mut prov = EnvelopeProvenance::empty();
+        let render_actor = RenderActor::user("user", None::<String>);
         let bundle = project_touchpoints_bundle(
             &snapshot,
             &SubjectRef::Account("acc-a".to_string()),
             &now,
+            &render_actor,
             &mut prov,
         );
         let tp = &bundle.upcoming.items[0];
@@ -1356,10 +1378,12 @@ mod tests {
             vec![],
         );
         let mut prov = EnvelopeProvenance::empty();
+        let render_actor = RenderActor::user("user", None::<String>);
         let bundle = project_touchpoints_bundle(
             &snapshot,
             &SubjectRef::Account("acc-1".to_string()),
             &now,
+            &render_actor,
             &mut prov,
         );
         assert_eq!(bundle.upcoming.items[0].freshness, Freshness::Current);
@@ -1445,6 +1469,102 @@ mod tests {
             &chrono::Utc::now(),
         );
         assert_eq!(bundle.empty_reason, Some(EmptyReason::FilteredOutBySubject));
+    }
+
+    // ---- F2 (L3 cycle-2) — touchpoint audience-scrub tests ----------------
+
+    #[test]
+    fn project_touchpoint_agent_audience_redacts_raw_meeting_title() {
+        // F2 / ADR-0108: AgentMcp / agent-surface audiences MUST NOT see the
+        // raw meeting title in the envelope provenance label. The producer
+        // routes the title through an audience-aware scrub at projection time.
+        let now = chrono::Utc::now();
+        let snapshot = fake_snapshot(
+            "account",
+            "acc-1",
+            vec![fake_touchpoint(
+                "m-secret",
+                "account",
+                "acc-1",
+                TouchpointInclusionReason::SubjectMatch,
+                now + chrono::Duration::days(1),
+            )],
+            vec![],
+            vec![],
+        );
+        let mut prov = EnvelopeProvenance::empty();
+        let agent_actor = RenderActor::agent("mcp_client");
+        let bundle = project_touchpoints_bundle(
+            &snapshot,
+            &SubjectRef::Account("acc-1".to_string()),
+            &now,
+            &agent_actor,
+            &mut prov,
+        );
+        assert_eq!(bundle.upcoming.items.len(), 1);
+        // Agent envelope MUST NOT carry the raw "Meeting m-secret" title; it
+        // MUST carry the redacted placeholder and `redacted: true`.
+        let secret_title = "Meeting m-secret";
+        for source in &prov.sources {
+            assert_ne!(
+                source.label, secret_title,
+                "agent envelope leaked raw meeting title via provenance label"
+            );
+            if source.id.starts_with("meeting:") {
+                assert!(
+                    source.redacted,
+                    "meeting touchpoint provenance must be marked redacted for agent audience"
+                );
+                assert_eq!(source.label, "Meeting (redacted)");
+            }
+        }
+        // Property: no field anywhere in the agent envelope contains the raw
+        // title. Serialize the bundle + provenance to JSON and assert absence.
+        let envelope_json = serde_json::json!({
+            "bundle": &bundle,
+            "provenance": &prov,
+        });
+        let serialized = serde_json::to_string(&envelope_json).expect("serializes");
+        assert!(
+            !serialized.contains(secret_title),
+            "agent envelope leaked raw meeting title in serialized form"
+        );
+    }
+
+    #[test]
+    fn project_touchpoint_user_audience_preserves_meeting_title() {
+        // Symmetric F2 — UserTauri audience sees the full meeting title.
+        let now = chrono::Utc::now();
+        let snapshot = fake_snapshot(
+            "account",
+            "acc-1",
+            vec![fake_touchpoint(
+                "m-secret",
+                "account",
+                "acc-1",
+                TouchpointInclusionReason::SubjectMatch,
+                now + chrono::Duration::days(1),
+            )],
+            vec![],
+            vec![],
+        );
+        let mut prov = EnvelopeProvenance::empty();
+        let user_actor = RenderActor::user("user", Some("user-1".to_string()));
+        let bundle = project_touchpoints_bundle(
+            &snapshot,
+            &SubjectRef::Account("acc-1".to_string()),
+            &now,
+            &user_actor,
+            &mut prov,
+        );
+        assert_eq!(bundle.upcoming.items.len(), 1);
+        let meeting_source = prov
+            .sources
+            .iter()
+            .find(|s| s.id == "meeting:m-secret")
+            .expect("meeting source present");
+        assert!(!meeting_source.redacted);
+        assert_eq!(meeting_source.label, "Meeting m-secret");
     }
 
     #[test]
