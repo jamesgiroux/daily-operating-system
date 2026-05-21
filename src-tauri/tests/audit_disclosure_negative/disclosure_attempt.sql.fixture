@@ -1,0 +1,12 @@
+-- DOS-340 AC-340.2 / AC-341.11 — disclosure-lint negative fixture.
+--
+-- This file deliberately contains an `audit_log` SELECT that would be
+-- a boundary violation if it lived under `services/claim_receipt/`.
+-- The path `tests/audit_disclosure_negative/` is allowlisted in
+-- `scripts/check_audit_disclosure_allowlist.sh` so the gate stays
+-- green here. The companion shell test (see
+-- `scripts/check_audit_disclosure_allowlist.sh.test`) copies this
+-- content into a forbidden path and asserts the lint fails — proving
+-- the gate catches a disclosure attempt.
+
+SELECT id, raw_source_id, prompt_hash, correlation_id FROM audit_log WHERE actor = ?;

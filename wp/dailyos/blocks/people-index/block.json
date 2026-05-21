@@ -1,0 +1,24 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "dailyos/people-index",
+	"title": "People Index",
+	"category": "dailyos",
+	"description": "List shell for the People surface. Consumes W1 list-mode envelope via executeAbility() (WP 7.0) + useAbilityCursor + per-row merge-intent affordance (FeedbackAction::MergeIntent) per L0 Packet W2 §5.5 + §5.3.",
+	"supports": {
+		"html": false,
+		"reusable": false,
+		"inserter": true
+	},
+	"attributes": {
+		"watermark": { "type": "string", "default": "" },
+		"page_size": { "type": "integer", "default": 25 },
+		"block_instance_id": { "type": "string" }
+	},
+	"providesContext": {
+		"dailyos/entityType": "entity_type"
+	},
+	"parent": null,
+	"render": "file:./render.php",
+	"viewScript": "file:./view.js"
+}

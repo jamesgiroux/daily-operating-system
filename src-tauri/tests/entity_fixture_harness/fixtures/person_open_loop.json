@@ -1,0 +1,138 @@
+{
+  "schemaVersion": 1,
+  "subject": {
+    "kind": "person",
+    "id": "person-zero",
+    "subjectRef": {
+      "person": "person-zero"
+    },
+    "displayLabel": "Person person-zero"
+  },
+  "sections": {
+    "facts": {
+      "kind": "empty",
+      "reason": "not_requested"
+    },
+    "health": {
+      "kind": "empty",
+      "reason": "not_requested"
+    },
+    "metadata_proposals": {
+      "kind": "empty",
+      "reason": "not_requested"
+    },
+    "open_loops": {
+      "kind": "present",
+      "item_count": 1
+    },
+    "touchpoints": {
+      "kind": "empty",
+      "reason": "not_requested"
+    },
+    "threads": {
+      "kind": "empty",
+      "reason": "not_requested"
+    },
+    "record": {
+      "kind": "empty",
+      "reason": "not_requested"
+    }
+  },
+  "facts": {
+    "items": [],
+    "nextCursor": null,
+    "totalHint": 0,
+    "cursorState": {
+      "kind": "stable"
+    }
+  },
+  "healthStory": null,
+  "metadataProposals": {
+    "items": [],
+    "nextCursor": null,
+    "totalHint": 0,
+    "cursorState": {
+      "kind": "stable"
+    }
+  },
+  "openLoops": {
+    "items": [
+      {
+        "openLoop": {
+          "id": "open-loop-person-1",
+          "subject": {
+            "entity_type": "person",
+            "entity_id": "person-zero"
+          },
+          "loop_kind": "follow_up",
+          "description": "Synthetic 1:1 follow-up",
+          "owner": "user:owner",
+          "due_date": "2026-05-25",
+          "status": "open",
+          "source_asof": "2026-05-20T12:00:00+00:00",
+          "claim_type": "open_loop.follow_up"
+        },
+        "receiptTarget": {
+          "claimId": "claim-person-receipt-1",
+          "subjectRef": {
+            "person": "person-zero"
+          },
+          "fieldPath": "body"
+        },
+        "trustBand": "likely_current",
+        "freshness": "current",
+        "provenance": {
+          "sourceIds": [
+            "src-1"
+          ]
+        }
+      }
+    ],
+    "nextCursor": null,
+    "totalHint": 1,
+    "cursorState": {
+      "kind": "stable"
+    }
+  },
+  "touchpoints": {
+    "items": [],
+    "nextCursor": null,
+    "totalHint": 0,
+    "cursorState": {
+      "kind": "stable"
+    }
+  },
+  "threads": {
+    "items": [],
+    "nextCursor": null,
+    "totalHint": 0,
+    "cursorState": {
+      "kind": "stable"
+    }
+  },
+  "recordEntries": {
+    "items": [],
+    "nextCursor": null,
+    "totalHint": 0,
+    "cursorState": {
+      "kind": "stable"
+    }
+  },
+  "trust": {
+    "aggregateBand": "unscored",
+    "sectionCaveats": {}
+  },
+  "provenance": {
+    "sources": [
+      {
+        "id": "src-1",
+        "label": "Synthetic 1:1 notes",
+        "sourceType": "internal_note",
+        "asOf": "2026-05-20T12:00:00Z",
+        "redacted": false
+      }
+    ],
+    "redactionApplied": false
+  },
+  "sensitivity": "internal"
+}

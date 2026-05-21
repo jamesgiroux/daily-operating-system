@@ -26,7 +26,8 @@
 .dailyos-health-badge__dot--yellow { background: var(--wp--preset--color--spice-saffron); }
 .dailyos-health-badge__dot--red    { background: var(--wp--preset--color--spice-terracotta); }
 
-.dailyos-health-badge__score        { font-variant-numeric: tabular-nums; color: var(--wp--preset--color--text-primary); }
+.dailyos-health-badge__label        { color: var(--wp--preset--color--text-primary); font-weight: 600; }
+.dailyos-health-badge__score        { font-variant-numeric: tabular-nums; color: var(--wp--preset--color--text-tertiary); font-size: 0.85em; }
 .dailyos-health-badge__insufficient { color: var(--wp--preset--color--text-tertiary); font-style: italic; }
 
 .dailyos-health-badge__trend                 { color: var(--wp--preset--color--text-tertiary); }

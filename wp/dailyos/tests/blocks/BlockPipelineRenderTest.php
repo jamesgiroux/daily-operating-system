@@ -33,10 +33,6 @@ final class DailyOS_BlockPipelineRenderTest extends TestCase {
 	 */
 	public static function block_render_provider(): array {
 		return [
-			'account-overview'           => [
-				'dailyos/account-overview',
-				[],
-			],
 			'avatar'                     => [
 				'dailyos/avatar',
 				[],

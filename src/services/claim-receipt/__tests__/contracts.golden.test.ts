@@ -247,6 +247,7 @@ const goldenFixture = {
       "needs_nuance",
       "surface_inappropriate",
       "not_relevant_here",
+      "merge_intent",
     ],
     renderPolicyKinds: ["render", "redacted", "drop"],
     claimSensitivities: ["public", "internal", "confidential", "user_only"],
@@ -316,7 +317,7 @@ describe("claim receipt contract golden fixture", () => {
     expect(enumCoverage.claimStates).toHaveLength(4);
     expect(enumCoverage.surfacingStates).toHaveLength(2);
     expect(enumCoverage.verificationStates).toHaveLength(3);
-    expect(enumCoverage.feedbackActions).toHaveLength(9);
+    expect(enumCoverage.feedbackActions).toHaveLength(10);
     expect(enumCoverage.renderPolicyKinds).toHaveLength(3);
     expect(enumCoverage.claimSensitivities).toHaveLength(4);
     expect(enumCoverage.renderSurfaces).toHaveLength(13);

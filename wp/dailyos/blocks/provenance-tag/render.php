@@ -9,6 +9,7 @@
  * @package DailyOS
  *
  * @var array<string, mixed> $attributes Block attributes from core.
+ * @var array<string, mixed> $block      Block instance (carries envelopeHandle ctx — DOS-691).
  */
 
 declare(strict_types=1);
@@ -22,5 +23,9 @@ if ( ! function_exists( 'dailyos_provenance_tag_render' ) ) {
 }
 
 $attributes = isset( $attributes ) && is_array( $attributes ) ? $attributes : [];
+$ctx        = [];
+if ( isset( $block ) && is_object( $block ) && isset( $block->context ) && is_array( $block->context ) ) {
+	$ctx = $block->context;
+}
 // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- render functions escape output internally via esc_html / esc_attr / wp_kses (W3 contract).
-echo dailyos_provenance_tag_render( $attributes );
+echo dailyos_provenance_tag_render( $attributes, $ctx );

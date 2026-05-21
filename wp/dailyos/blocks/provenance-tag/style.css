@@ -41,3 +41,37 @@
 	color: var(--wp--preset--color--text-tertiary);
 	font-style: italic;
 }
+
+/* DOS-691: envelope-wired tooltip. */
+.dailyos-provenance-tag--envelope-wired {
+	position: relative;
+	cursor: help;
+	outline: none;
+}
+
+.dailyos-provenance-tag--envelope-wired:focus-visible {
+	outline: 2px solid var(--wp--preset--color--action, currentColor);
+	outline-offset: 2px;
+}
+
+.dailyos-provenance-tag__tooltip {
+	position: absolute;
+	bottom: calc(100% + 4px);
+	left: 0;
+	z-index: 5;
+	padding: 4px 8px;
+	background: var(--wp--preset--color--desk-charcoal);
+	color: var(--wp--preset--color--paper-warm-white);
+	font-size: 11px;
+	white-space: nowrap;
+	border-radius: 3px;
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 120ms ease;
+}
+
+.dailyos-provenance-tag--envelope-wired:hover .dailyos-provenance-tag__tooltip,
+.dailyos-provenance-tag--envelope-wired:focus-visible .dailyos-provenance-tag__tooltip,
+.dailyos-provenance-tag--envelope-wired:focus-within .dailyos-provenance-tag__tooltip {
+	opacity: 1;
+}

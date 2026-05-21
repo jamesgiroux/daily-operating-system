@@ -409,3 +409,13 @@ dismiss_aggregate_telemetry_splash
 # W4-B-signals dispatcher: packet V3 §13.5 / devex P2-2 mandated Tauri ipc::Channel entrypoints, not capability-level operations, so they do not go through invoke_ability.
 version_dispatcher_replay
 version_dispatcher_subscribe
+# v1.4.4 W2 dual-path commands: claim_receipt + claim_feedback also register as
+# abilities (claim_receipt ability registered at L2 cycle-3 commit 8e49c34a;
+# claim_feedback handled via submit.feedback scope through invoke_ability).
+# These Tauri commands keep the React-side direct path for the entity-detail
+# surface while the WP loopback path consumes the same logic via invoke_ability.
+# Tauri commands kept for the entity-detail surface direct-invoke path; the
+# claim_receipt ability is also registered and routed through invoke_ability
+# for MCP and WP callers.
+render_claim_receipt
+submit_claim_feedback_command

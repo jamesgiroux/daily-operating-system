@@ -1,15 +1,22 @@
 //! Ability runtime modules.
 
 pub mod account_overview;
+pub mod claim_receipt;
 pub mod claims;
 pub mod composition;
 pub mod detect_risk_shift;
 pub mod extractors;
 pub mod fallback_projection;
 pub mod feedback;
+pub mod get_daily_briefing;
 pub mod get_daily_readiness;
 pub mod get_entity_context;
+pub mod get_entity_intelligence;
+pub mod list_accounts;
 pub mod list_open_loops;
+pub mod list_pagination;
+pub mod list_people;
+pub mod list_projects;
 pub mod prepare_meeting;
 pub mod provenance;
 pub mod registry;

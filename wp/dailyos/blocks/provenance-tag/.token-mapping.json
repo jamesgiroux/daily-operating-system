@@ -4,6 +4,18 @@
 		"target_token": "wp--custom--dailyos--tokens--font-mono"
 	},
 	{
+		"source_token": "--color-action",
+		"target_token": "wp--preset--color--action"
+	},
+	{
+		"source_token": "--color-desk-charcoal",
+		"target_token": "wp--preset--color--desk-charcoal"
+	},
+	{
+		"source_token": "--color-paper-warm-white",
+		"target_token": "wp--preset--color--paper-warm-white"
+	},
+	{
 		"source_token": "--color-spice-terracotta",
 		"target_token": "wp--preset--color--spice-terracotta"
 	},

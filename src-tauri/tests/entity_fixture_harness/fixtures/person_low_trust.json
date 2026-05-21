@@ -1,0 +1,137 @@
+{
+  "schemaVersion": 1,
+  "subject": {
+    "kind": "person",
+    "id": "person-zero",
+    "subjectRef": {
+      "person": "person-zero"
+    },
+    "displayLabel": "Person person-zero"
+  },
+  "sections": {
+    "facts": {
+      "kind": "present",
+      "item_count": 1
+    },
+    "health": {
+      "kind": "empty",
+      "reason": "not_requested"
+    },
+    "metadata_proposals": {
+      "kind": "empty",
+      "reason": "not_requested"
+    },
+    "open_loops": {
+      "kind": "empty",
+      "reason": "not_requested"
+    },
+    "touchpoints": {
+      "kind": "empty",
+      "reason": "not_requested"
+    },
+    "threads": {
+      "kind": "empty",
+      "reason": "not_requested"
+    },
+    "record": {
+      "kind": "empty",
+      "reason": "not_requested"
+    }
+  },
+  "facts": {
+    "items": [
+      {
+        "claimId": "claim-person-low-1",
+        "subjectRef": {
+          "person": "person-zero"
+        },
+        "fieldPath": "body",
+        "claimType": "person.preferences.signal",
+        "renderedText": {
+          "text": "Mentioned preferring async — informal",
+          "policy": {
+            "kind": "render",
+            "sensitivity": "internal",
+            "surface": "tauri_entity_detail",
+            "claimId": "claim-person-low-1"
+          }
+        },
+        "trustBand": "needs_verification",
+        "freshness": "aging",
+        "sourceAsof": "2026-05-18T12:00:00Z",
+        "sensitivity": "internal",
+        "lifecycleState": "active",
+        "surfacingState": "active",
+        "verificationState": "active",
+        "provenance": {
+          "sourceIds": [
+            "src-1"
+          ]
+        }
+      }
+    ],
+    "nextCursor": null,
+    "totalHint": 1,
+    "cursorState": {
+      "kind": "stable"
+    }
+  },
+  "healthStory": null,
+  "metadataProposals": {
+    "items": [],
+    "nextCursor": null,
+    "totalHint": 0,
+    "cursorState": {
+      "kind": "stable"
+    }
+  },
+  "openLoops": {
+    "items": [],
+    "nextCursor": null,
+    "totalHint": 0,
+    "cursorState": {
+      "kind": "stable"
+    }
+  },
+  "touchpoints": {
+    "items": [],
+    "nextCursor": null,
+    "totalHint": 0,
+    "cursorState": {
+      "kind": "stable"
+    }
+  },
+  "threads": {
+    "items": [],
+    "nextCursor": null,
+    "totalHint": 0,
+    "cursorState": {
+      "kind": "stable"
+    }
+  },
+  "recordEntries": {
+    "items": [],
+    "nextCursor": null,
+    "totalHint": 0,
+    "cursorState": {
+      "kind": "stable"
+    }
+  },
+  "trust": {
+    "aggregateBand": "unscored",
+    "sectionCaveats": {}
+  },
+  "provenance": {
+    "sources": [
+      {
+        "id": "src-1",
+        "label": "Synthetic Slack message",
+        "sourceType": "slack",
+        "asOf": "2026-05-20T12:00:00Z",
+        "redacted": false
+      }
+    ],
+    "redactionApplied": false
+  },
+  "sensitivity": "internal"
+}

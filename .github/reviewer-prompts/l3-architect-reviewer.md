@@ -1,5 +1,9 @@
 You are running an architectural review of a completed unit-of-work's integrated state.
 
+## §0 Threat-topology scoping (load-bearing)
+
+Read the wave plan's declared trust topology (canonical rule: `.docs/plans/engineering-ladder.md` → "Threat-topology framing"). Architectural review must match topology: do not flag missing multi-actor isolation against single-actor waves; do not approve missing per-principal scope sets on remote-to-local waves. If the integrated diff implies a topology different from the declared one (e.g., a new public unauthenticated route in a `local-to-local single-user` wave), that mismatch IS the architectural finding.
+
 Read:
 - `.docs/plans/v1.4.0-waves.md` / `v1.4.1-waves.md` for protocol context
 - `.docs/plans/l3-reviews/{SCOPE}/` and any pre-existing wave plan dirs for the unit's plans and ADRs

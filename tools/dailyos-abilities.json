@@ -2,6 +2,28 @@
   "schema_version": 1,
   "abilities": [
     {
+      "name": "claim_receipt",
+      "description": "",
+      "category": "read",
+      "annotations": {},
+      "wp_permission": "none",
+      "allowed_actors": [
+        "user",
+        "runtime",
+        "surface_client"
+      ],
+      "required_scopes": [
+        "read.claim_receipt"
+      ],
+      "mcp_exposure": "none",
+      "client_side_executable": false,
+      "idempotency_class": "idempotent",
+      "composition_kind": {
+        "produces_blocks": false,
+        "block_types": []
+      }
+    },
+    {
       "name": "dailyos/account-overview",
       "description": "",
       "category": "read",
@@ -60,6 +82,27 @@
       }
     },
     {
+      "name": "get_daily_briefing",
+      "description": "",
+      "category": "read",
+      "annotations": {},
+      "wp_permission": "none",
+      "allowed_actors": [
+        "user",
+        "surface_client"
+      ],
+      "required_scopes": [
+        "read.daily_briefing"
+      ],
+      "mcp_exposure": "none",
+      "client_side_executable": false,
+      "idempotency_class": "idempotent",
+      "composition_kind": {
+        "produces_blocks": false,
+        "block_types": []
+      }
+    },
+    {
       "name": "get_daily_readiness",
       "description": "",
       "category": "read",
@@ -68,7 +111,8 @@
       "allowed_actors": [
         "user",
         "runtime",
-        "mcp_client"
+        "mcp_client",
+        "surface_client"
       ],
       "required_scopes": [
         "read.daily_readiness"
@@ -89,9 +133,57 @@
       "wp_permission": "none",
       "allowed_actors": [
         "user",
-        "runtime"
+        "runtime",
+        "surface_client"
       ],
-      "required_scopes": [],
+      "required_scopes": [
+        "read.entity_intelligence"
+      ],
+      "mcp_exposure": "none",
+      "client_side_executable": false,
+      "idempotency_class": "idempotent",
+      "composition_kind": {
+        "produces_blocks": false,
+        "block_types": []
+      }
+    },
+    {
+      "name": "get_entity_intelligence",
+      "description": "",
+      "category": "read",
+      "annotations": {},
+      "wp_permission": "none",
+      "allowed_actors": [
+        "user",
+        "runtime",
+        "mcp_client",
+        "surface_client"
+      ],
+      "required_scopes": [
+        "read.entity_intelligence"
+      ],
+      "mcp_exposure": "invocable",
+      "client_side_executable": false,
+      "idempotency_class": "idempotent",
+      "composition_kind": {
+        "produces_blocks": false,
+        "block_types": []
+      }
+    },
+    {
+      "name": "list_accounts",
+      "description": "",
+      "category": "read",
+      "annotations": {},
+      "wp_permission": "none",
+      "allowed_actors": [
+        "user",
+        "runtime",
+        "surface_client"
+      ],
+      "required_scopes": [
+        "read.accounts_list"
+      ],
       "mcp_exposure": "none",
       "client_side_executable": false,
       "idempotency_class": "idempotent",
@@ -109,12 +201,57 @@
       "allowed_actors": [
         "user",
         "runtime",
-        "mcp_client"
+        "mcp_client",
+        "surface_client"
       ],
       "required_scopes": [
         "read.open_loops"
       ],
       "mcp_exposure": "invocable",
+      "client_side_executable": false,
+      "idempotency_class": "idempotent",
+      "composition_kind": {
+        "produces_blocks": false,
+        "block_types": []
+      }
+    },
+    {
+      "name": "list_people",
+      "description": "",
+      "category": "read",
+      "annotations": {},
+      "wp_permission": "none",
+      "allowed_actors": [
+        "user",
+        "runtime",
+        "surface_client"
+      ],
+      "required_scopes": [
+        "read.people_list"
+      ],
+      "mcp_exposure": "none",
+      "client_side_executable": false,
+      "idempotency_class": "idempotent",
+      "composition_kind": {
+        "produces_blocks": false,
+        "block_types": []
+      }
+    },
+    {
+      "name": "list_projects",
+      "description": "",
+      "category": "read",
+      "annotations": {},
+      "wp_permission": "none",
+      "allowed_actors": [
+        "user",
+        "runtime",
+        "surface_client"
+      ],
+      "required_scopes": [
+        "read.projects_list"
+      ],
+      "mcp_exposure": "none",
       "client_side_executable": false,
       "idempotency_class": "idempotent",
       "composition_kind": {

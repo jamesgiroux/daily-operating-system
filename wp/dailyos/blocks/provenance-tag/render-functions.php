@@ -22,9 +22,23 @@ if ( ! function_exists( 'dailyos_provenance_tag_render' ) ) {
 	 * render, typed-error switch from Packet B V1.1.1.
 	 *
 	 * @param array<string, mixed> $attributes Block attributes.
+	 * @param array<string, mixed> $ctx        Block context (DOS-691 envelopeHandle).
 	 * @return string
 	 */
-	function dailyos_provenance_tag_render( array $attributes ): string {
+	function dailyos_provenance_tag_render( array $attributes, array $ctx = [] ): string {
+		// DOS-691: envelope-wired tooltip branch. When the block is composed
+		// inside an entity-detail composite (envelopeHandle in context), resolve
+		// age + freshness from the envelope and render with tooltip semantics
+		// (no surface-local computation). Tooltip body stays inside the DOS-477
+		// 10-channel allowlist: human source label + relative age only.
+		$envelope_handle = isset( $ctx['dailyos/envelopeHandle'] ) ? (string) $ctx['dailyos/envelopeHandle'] : '';
+		if ( '' !== $envelope_handle && function_exists( 'dailyos_envelope_cache_get' ) ) {
+			$envelope = dailyos_envelope_cache_get( $envelope_handle );
+			if ( is_array( $envelope ) ) {
+				return dailyos_provenance_tag_render_envelope_wired( $envelope, $attributes );
+			}
+		}
+
 		$composition_id      = isset( $attributes['composition_id'] ) ? (string) $attributes['composition_id'] : '';
 		$composition_version = isset( $attributes['composition_version'] ) ? (int) $attributes['composition_version'] : 0;
 		$cache_hint_token    = isset( $attributes['cache_hint_token'] ) ? (string) $attributes['cache_hint_token'] : '';
@@ -579,6 +593,86 @@ if ( ! function_exists( 'dailyos_provenance_tag_render' ) ) {
 		return dailyos_provenance_tag_render_inline_notice(
 			'dailyos-verification-banner',
 			__( 'Content needs verification before rendering.', 'dailyos' )
+		);
+	}
+
+	/**
+	 * DOS-691: Render the provenance-tag with envelope-wired tooltip.
+	 *
+	 * Tooltip body stays inside the DOS-477 10-channel allowlist:
+	 *  - source label (human-readable; no raw IDs)
+	 *  - relative age (recomputed from envelope source_asof)
+	 *  - trust band (token)
+	 * No email addresses, no internal note bodies, no debug carriers.
+	 *
+	 * @param array<string,mixed> $envelope   Envelope payload.
+	 * @param array<string,mixed> $attributes Block attributes.
+	 * @return string
+	 */
+	function dailyos_provenance_tag_render_envelope_wired( array $envelope, array $attributes ): string {
+		$source_label = '';
+		$age_label    = '';
+		$band         = '';
+
+		if ( isset( $envelope['provenance'] ) && is_array( $envelope['provenance'] ) ) {
+			$prov   = $envelope['provenance'];
+			$source = isset( $prov['source'] ) ? $prov['source'] : null;
+			$label  = isset( $prov['label'] ) ? $prov['label'] : null;
+			$source_label = dailyos_provenance_tag_source_label( $source, $label );
+			if ( isset( $prov['source_asof'] ) ) {
+				$age_label = dailyos_provenance_tag_relative_age( $prov['source_asof'] );
+			}
+		}
+		if ( '' === $age_label && isset( $envelope['source_asof'] ) ) {
+			$age_label = dailyos_provenance_tag_relative_age( $envelope['source_asof'] );
+		}
+		if ( isset( $envelope['trust_band'] ) ) {
+			$band = is_array( $envelope['trust_band'] ) && isset( $envelope['trust_band']['band'] )
+				? (string) $envelope['trust_band']['band']
+				: (string) $envelope['trust_band'];
+		}
+		if ( ! in_array( $band, [ 'likely_current', 'use_with_caution', 'needs_verification' ], true ) ) {
+			$band = '';
+		}
+
+		if ( '' === $source_label && '' === $age_label ) {
+			return dailyos_provenance_tag_render_empty_primitive();
+		}
+
+		$tooltip_id   = 'dailyos-provenance-tooltip-' . substr( hash( 'sha256', $source_label . '|' . $age_label . '|' . $band ), 0, 12 );
+		$tooltip_text = trim( $source_label . ( '' !== $age_label ? ' · ' . $age_label : '' ) );
+		if ( '' !== $band ) {
+			$band_labels = [
+				'likely_current'     => __( 'Likely current', 'dailyos' ),
+				'use_with_caution'   => __( 'Use with caution', 'dailyos' ),
+				'needs_verification' => __( 'Needs verification', 'dailyos' ),
+			];
+			$tooltip_text .= ' · ' . $band_labels[ $band ];
+		}
+
+		$variant = '' === $source_label ? 'age-only' : 'with-source';
+		$classes = [
+			'dailyos-provenance-tag',
+			'dailyos-provenance-tag--' . $variant,
+			'dailyos-provenance-tag--envelope-wired',
+		];
+
+		$pieces = [];
+		if ( 'age-only' !== $variant && '' !== $source_label ) {
+			$pieces[] = '<span class="dailyos-provenance-tag__source">' . esc_html( $source_label ) . '</span>';
+		}
+		if ( '' !== $age_label ) {
+			$pieces[] = '<span class="dailyos-provenance-tag__age">' . esc_html( $age_label ) . '</span>';
+		}
+
+		return sprintf(
+			'<span class="%s" data-ds-tier="primitive" data-ds-name="ProvenanceTag" data-ds-spec="primitives/ProvenanceTag.md" data-band="%s" tabindex="0" aria-describedby="%s">%s<span class="dailyos-provenance-tag__tooltip" role="tooltip" id="%s">%s</span></span>',
+			esc_attr( implode( ' ', $classes ) ),
+			esc_attr( $band ),
+			esc_attr( $tooltip_id ),
+			implode( '<span class="dailyos-provenance-tag__separator" aria-hidden="true">·</span>', $pieces ),
+			esc_attr( $tooltip_id ),
+			esc_html( $tooltip_text )
 		);
 	}
 }

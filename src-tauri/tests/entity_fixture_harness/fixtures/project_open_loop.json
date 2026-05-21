@@ -1,0 +1,138 @@
+{
+  "schemaVersion": 1,
+  "subject": {
+    "kind": "project",
+    "id": "project-zero",
+    "subjectRef": {
+      "project": "project-zero"
+    },
+    "displayLabel": "Project project-zero"
+  },
+  "sections": {
+    "facts": {
+      "kind": "empty",
+      "reason": "not_requested"
+    },
+    "health": {
+      "kind": "empty",
+      "reason": "not_requested"
+    },
+    "metadata_proposals": {
+      "kind": "empty",
+      "reason": "not_requested"
+    },
+    "open_loops": {
+      "kind": "present",
+      "item_count": 1
+    },
+    "touchpoints": {
+      "kind": "empty",
+      "reason": "not_requested"
+    },
+    "threads": {
+      "kind": "empty",
+      "reason": "not_requested"
+    },
+    "record": {
+      "kind": "empty",
+      "reason": "not_requested"
+    }
+  },
+  "facts": {
+    "items": [],
+    "nextCursor": null,
+    "totalHint": 0,
+    "cursorState": {
+      "kind": "stable"
+    }
+  },
+  "healthStory": null,
+  "metadataProposals": {
+    "items": [],
+    "nextCursor": null,
+    "totalHint": 0,
+    "cursorState": {
+      "kind": "stable"
+    }
+  },
+  "openLoops": {
+    "items": [
+      {
+        "openLoop": {
+          "id": "open-loop-proj-1",
+          "subject": {
+            "entity_type": "project",
+            "entity_id": "project-zero"
+          },
+          "loop_kind": "work_item",
+          "description": "Synthetic work item — finalize block JSON",
+          "owner": "user:project-lead",
+          "due_date": "2026-06-10",
+          "status": "in_progress",
+          "source_asof": "2026-05-20T12:00:00+00:00",
+          "claim_type": "open_loop.work_item"
+        },
+        "receiptTarget": {
+          "claimId": "claim-proj-receipt-1",
+          "subjectRef": {
+            "project": "project-zero"
+          },
+          "fieldPath": "status"
+        },
+        "trustBand": "likely_current",
+        "freshness": "current",
+        "provenance": {
+          "sourceIds": [
+            "src-1"
+          ]
+        }
+      }
+    ],
+    "nextCursor": null,
+    "totalHint": 1,
+    "cursorState": {
+      "kind": "stable"
+    }
+  },
+  "touchpoints": {
+    "items": [],
+    "nextCursor": null,
+    "totalHint": 0,
+    "cursorState": {
+      "kind": "stable"
+    }
+  },
+  "threads": {
+    "items": [],
+    "nextCursor": null,
+    "totalHint": 0,
+    "cursorState": {
+      "kind": "stable"
+    }
+  },
+  "recordEntries": {
+    "items": [],
+    "nextCursor": null,
+    "totalHint": 0,
+    "cursorState": {
+      "kind": "stable"
+    }
+  },
+  "trust": {
+    "aggregateBand": "unscored",
+    "sectionCaveats": {}
+  },
+  "provenance": {
+    "sources": [
+      {
+        "id": "src-1",
+        "label": "Synthetic Linear issue",
+        "sourceType": "linear",
+        "asOf": "2026-05-20T12:00:00Z",
+        "redacted": false
+      }
+    ],
+    "redactionApplied": false
+  },
+  "sensitivity": "internal"
+}

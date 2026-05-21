@@ -1,0 +1,148 @@
+{
+  "schemaVersion": 1,
+  "subject": {
+    "kind": "person",
+    "id": "person-zero",
+    "subjectRef": {
+      "person": "person-zero"
+    },
+    "displayLabel": "Person person-zero"
+  },
+  "sections": {
+    "facts": {
+      "kind": "empty",
+      "reason": "not_requested"
+    },
+    "health": {
+      "kind": "empty",
+      "reason": "not_requested"
+    },
+    "metadata_proposals": {
+      "kind": "empty",
+      "reason": "not_requested"
+    },
+    "open_loops": {
+      "kind": "empty",
+      "reason": "not_requested"
+    },
+    "touchpoints": {
+      "kind": "present",
+      "item_count": 1
+    },
+    "threads": {
+      "kind": "empty",
+      "reason": "not_requested"
+    },
+    "record": {
+      "kind": "empty",
+      "reason": "not_requested"
+    }
+  },
+  "facts": {
+    "items": [],
+    "nextCursor": null,
+    "totalHint": 0,
+    "cursorState": {
+      "kind": "stable"
+    }
+  },
+  "healthStory": null,
+  "metadataProposals": {
+    "items": [],
+    "nextCursor": null,
+    "totalHint": 0,
+    "cursorState": {
+      "kind": "stable"
+    }
+  },
+  "openLoops": {
+    "items": [],
+    "nextCursor": null,
+    "totalHint": 0,
+    "cursorState": {
+      "kind": "stable"
+    }
+  },
+  "touchpoints": {
+    "items": [
+      {
+        "upcoming": {
+          "items": [
+            {
+              "meetingId": "meeting-synthetic-1",
+              "kind": "meeting",
+              "when": "2026-05-21T12:00:00Z",
+              "subjectRef": {
+                "person": "person-zero"
+              },
+              "inclusionReason": "subject_match",
+              "exclusionReason": null,
+              "trustBand": "likely_current",
+              "freshness": "current",
+              "provenance": {
+                "sourceIds": [
+                  "src-tp-1"
+                ]
+              }
+            }
+          ],
+          "nextCursor": null,
+          "totalHint": 1,
+          "cursorState": {
+            "kind": "stable"
+          }
+        },
+        "recent": {
+          "items": [],
+          "nextCursor": null,
+          "totalHint": 0,
+          "cursorState": {
+            "kind": "stable"
+          }
+        },
+        "candidateSet": {
+          "windowStart": "2026-04-20T12:00:00Z",
+          "windowEnd": "2026-06-03T12:00:00Z",
+          "filterDescription": "default 30/14 window"
+        },
+        "emptyReason": null,
+        "subjectScope": {
+          "primary": {
+            "person": "person-zero"
+          },
+          "alsoIncludes": []
+        }
+      }
+    ],
+    "nextCursor": null,
+    "totalHint": 1,
+    "cursorState": {
+      "kind": "stable"
+    }
+  },
+  "threads": {
+    "items": [],
+    "nextCursor": null,
+    "totalHint": 0,
+    "cursorState": {
+      "kind": "stable"
+    }
+  },
+  "recordEntries": {
+    "items": [],
+    "nextCursor": null,
+    "totalHint": 0,
+    "cursorState": {
+      "kind": "stable"
+    }
+  },
+  "trust": {
+    "aggregateBand": "unscored",
+    "sectionCaveats": {}
+  },
+  "provenance": {
+    "sources": [],
+    "redactionApplied": false
+  },
+  "sensitivity": "internal"
+}

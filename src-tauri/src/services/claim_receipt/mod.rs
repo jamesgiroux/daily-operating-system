@@ -2,6 +2,7 @@ pub mod auth;
 pub mod boundary;
 pub mod contracts;
 pub mod contradiction;
+pub mod event_bridge;
 pub mod feedback;
 pub mod privacy;
 pub mod render;

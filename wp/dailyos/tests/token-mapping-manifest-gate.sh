@@ -32,12 +32,13 @@ trap cleanup EXIT
 
 jq -r '.settings.color.palette[]?.slug // empty' "$theme_json" | sort -u > "$palette_file"
 
-raw_color_escape_files=(
-	"wp/dailyos/blocks/account-overview/style.css"
-)
+raw_color_escape_files=()
 
 is_raw_color_escape_file() {
 	local rel_path="$1"
+	if [ "${#raw_color_escape_files[@]}" -eq 0 ]; then
+		return 1
+	fi
 	local allowed
 	for allowed in "${raw_color_escape_files[@]}"; do
 		if [ "$rel_path" = "$allowed" ]; then

@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use abilities_runtime::abilities::composition::{
-    AbilityRef, BindingRole, Block, BlockId, ClaimRef, ClaimRefIndex, Composition,
+    AbilityRef, BindingRole, Block, BlockId, BlockType, ClaimRef, ClaimRefIndex, Composition,
     CompositionDocId, CompositionKind, CompositionMetadata, CompositionVersion, FieldBinding,
     ProvenanceRef, RenderHints, Salience, Section, SectionId,
 };
@@ -16,7 +16,7 @@ use abilities_runtime::abilities::{
 };
 use chrono::{TimeZone, Utc};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 
 #[derive(Debug, Clone)]
 pub struct BlockIntegrationFixture {
@@ -270,6 +270,57 @@ pub fn fixture_composition(
     composition
 }
 
+pub fn minimal_block_kit_fixture(
+    block_slug: &str,
+    wrapper_tag: &str,
+    wrapper_class: &str,
+    wrapper_data_attrs: &[(&str, &str)],
+    branch_label: &str,
+    expected_html_pattern: &str,
+) -> BlockIntegrationFixture {
+    let ability_name = format!("dailyos/{block_slug}");
+    let composition_id = format!("{ability_name}:account:fixture-test-001");
+    let claim_id = format!("claim-{block_slug}-text");
+    let block_id = format!("block-{block_slug}");
+    let claims = vec![fixture_claim(&claim_id, "/payload/text")];
+    let block = fixture_block(
+        &block_id,
+        BlockType::Pill,
+        json!({
+            "payload": {
+                "text": "Ready"
+            }
+        }),
+        claims,
+        vec![fixture_binding("/payload/text", BindingRole::Source, &[0])],
+    );
+    let composition = fixture_composition(&ability_name, &composition_id, 1, vec![block]);
+
+    BlockIntegrationFixture {
+        ability_name,
+        composition_id,
+        input_json: serde_json::to_value(composition).expect("minimal block fixture serializes"),
+        expected_bindings: vec![BindingExpectation {
+            pointer: "/blocks/0/payload/payload/text".to_string(),
+            value_kind: ValueKind::String,
+            required: true,
+        }],
+        expected_diagnostics: Vec::<ProjectionDiagnostic>::new(),
+        expected_renderer_branches: vec![RendererBranchAssertion {
+            branch_label: branch_label.to_string(),
+            expected_html_pattern: expected_html_pattern.to_string(),
+        }],
+        expected_wrapper: BlockWrapperAssertion {
+            tag: wrapper_tag.to_string(),
+            class: wrapper_class.to_string(),
+            data_attrs: wrapper_data_attrs
+                .iter()
+                .map(|(name, value)| (name.to_string(), value.to_string()))
+                .collect(),
+        },
+    }
+}
+
 fn surface_client_projection_context() -> FallbackProjectionContext {
     let scopes = ScopeSet::new([
         SurfaceScope::new("read.composition"),
@@ -474,30 +525,96 @@ fn escape_pointer_segment(segment: &str) -> String {
     segment.replace('~', "~0").replace('/', "~1")
 }
 
-#[path = "fixtures/account_overview_integration_fixture.rs"]
-mod account_overview_integration_fixture;
+#[path = "fixtures/account_detail_integration_fixture.rs"]
+mod account_detail_integration_fixture;
+#[path = "fixtures/accounts_index_integration_fixture.rs"]
+mod accounts_index_integration_fixture;
 #[path = "fixtures/avatar_integration_fixture.rs"]
 mod avatar_integration_fixture;
+#[path = "fixtures/daily_briefing_integration_fixture.rs"]
+mod daily_briefing_integration_fixture;
 #[path = "fixtures/entity_chip_integration_fixture.rs"]
 mod entity_chip_integration_fixture;
+#[path = "fixtures/evidence_drawer_integration_fixture.rs"]
+mod evidence_drawer_integration_fixture;
 #[path = "fixtures/freshness_indicator_integration_fixture.rs"]
 mod freshness_indicator_integration_fixture;
 #[path = "fixtures/health_badge_integration_fixture.rs"]
 mod health_badge_integration_fixture;
 #[path = "fixtures/intelligence_quality_badge_integration_fixture.rs"]
 mod intelligence_quality_badge_integration_fixture;
+#[path = "fixtures/meeting_agenda_draft_integration_fixture.rs"]
+mod meeting_agenda_draft_integration_fixture;
+#[path = "fixtures/meeting_attendees_section_integration_fixture.rs"]
+mod meeting_attendees_section_integration_fixture;
+#[path = "fixtures/meeting_claims_for_review_integration_fixture.rs"]
+mod meeting_claims_for_review_integration_fixture;
+#[path = "fixtures/meeting_context_bundle_integration_fixture.rs"]
+mod meeting_context_bundle_integration_fixture;
+#[path = "fixtures/meeting_detail_integration_fixture.rs"]
+mod meeting_detail_integration_fixture;
+#[path = "fixtures/meeting_header_integration_fixture.rs"]
+mod meeting_header_integration_fixture;
+#[path = "fixtures/meeting_post_meeting_capture_integration_fixture.rs"]
+mod meeting_post_meeting_capture_integration_fixture;
+#[path = "fixtures/meeting_prep_status_integration_fixture.rs"]
+mod meeting_prep_status_integration_fixture;
+#[path = "fixtures/meeting_recommended_actions_integration_fixture.rs"]
+mod meeting_recommended_actions_integration_fixture;
+#[path = "fixtures/meeting_related_entities_integration_fixture.rs"]
+mod meeting_related_entities_integration_fixture;
+#[path = "fixtures/meeting_touchpoints_feed_integration_fixture.rs"]
+mod meeting_touchpoints_feed_integration_fixture;
+#[path = "fixtures/metadata_proposal_cue_integration_fixture.rs"]
+mod metadata_proposal_cue_integration_fixture;
+#[path = "fixtures/metadata_proposal_drawer_integration_fixture.rs"]
+mod metadata_proposal_drawer_integration_fixture;
+#[path = "fixtures/open_loops_feed_integration_fixture.rs"]
+mod open_loops_feed_integration_fixture;
+#[path = "fixtures/people_index_integration_fixture.rs"]
+mod people_index_integration_fixture;
+#[path = "fixtures/person_appendix_integration_fixture.rs"]
+mod person_appendix_integration_fixture;
+#[path = "fixtures/person_detail_integration_fixture.rs"]
+mod person_detail_integration_fixture;
+#[path = "fixtures/person_hero_integration_fixture.rs"]
+mod person_hero_integration_fixture;
+#[path = "fixtures/person_insight_chapter_integration_fixture.rs"]
+mod person_insight_chapter_integration_fixture;
+#[path = "fixtures/person_network_integration_fixture.rs"]
+mod person_network_integration_fixture;
+#[path = "fixtures/person_relationships_integration_fixture.rs"]
+mod person_relationships_integration_fixture;
 #[path = "fixtures/pill_integration_fixture.rs"]
 mod pill_integration_fixture;
+#[path = "fixtures/project_detail_integration_fixture.rs"]
+mod project_detail_integration_fixture;
+#[path = "fixtures/projects_index_integration_fixture.rs"]
+mod projects_index_integration_fixture;
 #[path = "fixtures/provenance_tag_integration_fixture.rs"]
 mod provenance_tag_integration_fixture;
+#[path = "fixtures/recommended_actions_integration_fixture.rs"]
+mod recommended_actions_integration_fixture;
 #[path = "fixtures/score_band_integration_fixture.rs"]
 mod score_band_integration_fixture;
 #[path = "fixtures/status_dot_integration_fixture.rs"]
 mod status_dot_integration_fixture;
+#[path = "fixtures/the_work_integration_fixture.rs"]
+mod the_work_integration_fixture;
+#[path = "fixtures/touchpoints_feed_integration_fixture.rs"]
+mod touchpoints_feed_integration_fixture;
+#[path = "fixtures/trend_strip_integration_fixture.rs"]
+mod trend_strip_integration_fixture;
 #[path = "fixtures/trust_band_badge_integration_fixture.rs"]
 mod trust_band_badge_integration_fixture;
 #[path = "fixtures/type_badge_integration_fixture.rs"]
 mod type_badge_integration_fixture;
+#[path = "fixtures/unified_timeline_integration_fixture.rs"]
+mod unified_timeline_integration_fixture;
+#[path = "fixtures/vitals_strip_integration_fixture.rs"]
+mod vitals_strip_integration_fixture;
+#[path = "fixtures/watch_list_integration_fixture.rs"]
+mod watch_list_integration_fixture;
 
 #[test]
 fn expected_block_fixtures_cover_requested_ci_block() {
@@ -509,7 +626,8 @@ fn expected_block_fixtures_cover_requested_ci_block() {
         return;
     }
     let known = [
-        account_overview_integration_fixture::account_overview_fixture(),
+        account_detail_integration_fixture::account_detail_fixture(),
+        accounts_index_integration_fixture::accounts_index_fixture(),
         entity_chip_integration_fixture::entity_chip_fixture(),
         type_badge_integration_fixture::type_badge_fixture(),
         score_band_integration_fixture::score_band_fixture(),
@@ -518,9 +636,41 @@ fn expected_block_fixtures_cover_requested_ci_block() {
         provenance_tag_integration_fixture::provenance_tag_fixture(),
         health_badge_integration_fixture::health_badge_fixture(),
         avatar_integration_fixture::avatar_fixture(),
+        daily_briefing_integration_fixture::daily_briefing_fixture(),
+        evidence_drawer_integration_fixture::evidence_drawer_fixture(),
         freshness_indicator_integration_fixture::freshness_indicator_fixture(),
         trust_band_badge_integration_fixture::trust_band_badge_fixture(),
         intelligence_quality_badge_integration_fixture::intelligence_quality_badge_fixture(),
+        meeting_agenda_draft_integration_fixture::meeting_agenda_draft_fixture(),
+        meeting_attendees_section_integration_fixture::meeting_attendees_section_fixture(),
+        meeting_claims_for_review_integration_fixture::meeting_claims_for_review_fixture(),
+        meeting_context_bundle_integration_fixture::meeting_context_bundle_fixture(),
+        meeting_detail_integration_fixture::meeting_detail_fixture(),
+        meeting_header_integration_fixture::meeting_header_fixture(),
+        meeting_post_meeting_capture_integration_fixture::meeting_post_meeting_capture_fixture(),
+        meeting_prep_status_integration_fixture::meeting_prep_status_fixture(),
+        meeting_recommended_actions_integration_fixture::meeting_recommended_actions_fixture(),
+        meeting_related_entities_integration_fixture::meeting_related_entities_fixture(),
+        meeting_touchpoints_feed_integration_fixture::meeting_touchpoints_feed_fixture(),
+        metadata_proposal_cue_integration_fixture::metadata_proposal_cue_fixture(),
+        metadata_proposal_drawer_integration_fixture::metadata_proposal_drawer_fixture(),
+        open_loops_feed_integration_fixture::open_loops_feed_fixture(),
+        people_index_integration_fixture::people_index_fixture(),
+        person_appendix_integration_fixture::person_appendix_fixture(),
+        person_detail_integration_fixture::person_detail_fixture(),
+        person_hero_integration_fixture::person_hero_fixture(),
+        person_insight_chapter_integration_fixture::person_insight_chapter_fixture(),
+        person_network_integration_fixture::person_network_fixture(),
+        person_relationships_integration_fixture::person_relationships_fixture(),
+        project_detail_integration_fixture::project_detail_fixture(),
+        projects_index_integration_fixture::projects_index_fixture(),
+        recommended_actions_integration_fixture::recommended_actions_fixture(),
+        the_work_integration_fixture::the_work_fixture(),
+        touchpoints_feed_integration_fixture::touchpoints_feed_fixture(),
+        trend_strip_integration_fixture::trend_strip_fixture(),
+        unified_timeline_integration_fixture::unified_timeline_fixture(),
+        vitals_strip_integration_fixture::vitals_strip_fixture(),
+        watch_list_integration_fixture::watch_list_fixture(),
     ];
     assert!(
         known.iter().any(block_fixture_selected),

@@ -1,0 +1,29 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "dailyos/trend-strip",
+	"title": "Trend Strip",
+	"category": "dailyos",
+	"description": "DailyOS trend-strip primitive (DOS-688) — envelope-consumed sparkline; no raw factor values in headline.",
+	"supports": {
+		"html": false,
+		"reusable": false,
+		"inserter": true
+	},
+	"attributes": {
+		"block_instance_id": {
+			"type": "string"
+		},
+		"label": {
+			"type": "string",
+			"default": ""
+		}
+	},
+	"usesContext": [
+		"dailyos/entityType",
+		"dailyos/entityId",
+		"dailyos/envelopeHandle"
+	],
+	"render": "file:./render.php",
+	"style": "file:./style.css"
+}

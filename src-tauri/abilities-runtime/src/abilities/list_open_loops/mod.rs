@@ -69,7 +69,7 @@ pub struct OpenLoopSubject {
     category = Read,
     version = "1.0.0",
     schema_version = 1,
-    allowed_actors = [User, Agent, System],
+    allowed_actors = [User, Agent, System, SurfaceClient],
     allowed_modes = [Live, Evaluate],
     requires_confirmation = false,
     may_publish = false,

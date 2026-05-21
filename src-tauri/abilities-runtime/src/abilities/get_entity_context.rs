@@ -54,10 +54,11 @@ pub struct GetEntityContextOutput {
     category = Read,
     version = "1.0.0",
     schema_version = 2,
-    allowed_actors = [User, Agent, System],
+    allowed_actors = [User, Agent, System, SurfaceClient],
     allowed_modes = [Live, Evaluate],
     requires_confirmation = false,
     may_publish = false,
+    required_scopes = ["read.entity_intelligence"],
     composes = [],
     experimental = false,
     signal_policy = { emits_on_output_change = [], coalesce = false }

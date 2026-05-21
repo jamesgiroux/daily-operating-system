@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 1,
+  "subject": {
+    "kind": "project",
+    "id": "project-zero",
+    "subjectRef": {
+      "project": "project-zero"
+    },
+    "displayLabel": "Project project-zero"
+  },
+  "sections": {
+    "facts": {
+      "kind": "empty",
+      "reason": "not_requested"
+    },
+    "health": {
+      "kind": "empty",
+      "reason": "not_requested"
+    },
+    "metadata_proposals": {
+      "kind": "present",
+      "item_count": 1
+    },
+    "open_loops": {
+      "kind": "empty",
+      "reason": "not_requested"
+    },
+    "touchpoints": {
+      "kind": "empty",
+      "reason": "not_requested"
+    },
+    "threads": {
+      "kind": "empty",
+      "reason": "not_requested"
+    },
+    "record": {
+      "kind": "empty",
+      "reason": "not_requested"
+    }
+  },
+  "facts": {
+    "items": [],
+    "nextCursor": null,
+    "totalHint": 0,
+    "cursorState": {
+      "kind": "stable"
+    }
+  },
+  "healthStory": null,
+  "metadataProposals": {
+    "items": [
+      {
+        "proposalId": "proposal-proj-1",
+        "subjectRef": {
+          "project": "project-zero"
+        },
+        "fieldPath": "project.metadata.lead",
+        "currentValue": "person-prior",
+        "proposedValue": "person-current",
+        "trustBand": "use_with_caution",
+        "sensitivity": "internal",
+        "provenance": {
+          "sourceIds": [
+            "src-1"
+          ]
+        }
+      }
+    ],
+    "nextCursor": null,
+    "totalHint": 1,
+    "cursorState": {
+      "kind": "stable"
+    }
+  },
+  "openLoops": {
+    "items": [],
+    "nextCursor": null,
+    "totalHint": 0,
+    "cursorState": {
+      "kind": "stable"
+    }
+  },
+  "touchpoints": {
+    "items": [],
+    "nextCursor": null,
+    "totalHint": 0,
+    "cursorState": {
+      "kind": "stable"
+    }
+  },
+  "threads": {
+    "items": [],
+    "nextCursor": null,
+    "totalHint": 0,
+    "cursorState": {
+      "kind": "stable"
+    }
+  },
+  "recordEntries": {
+    "items": [],
+    "nextCursor": null,
+    "totalHint": 0,
+    "cursorState": {
+      "kind": "stable"
+    }
+  },
+  "trust": {
+    "aggregateBand": "unscored",
+    "sectionCaveats": {}
+  },
+  "provenance": {
+    "sources": [
+      {
+        "id": "src-1",
+        "label": "Synthetic project email",
+        "sourceType": "email_thread",
+        "asOf": "2026-05-20T12:00:00Z",
+        "redacted": false
+      }
+    ],
+    "redactionApplied": false
+  },
+  "sensitivity": "internal"
+}

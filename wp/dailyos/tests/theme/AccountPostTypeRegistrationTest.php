@@ -1,6 +1,10 @@
 <?php
 /**
- * W3 magazine theme — dailyos_account CPT registration tests.
+ * W3 magazine theme — DailyOS CPT registration tests.
+ *
+ * Covers all five entity CPTs registered by `register_post_types()`:
+ * dailyos_account, dailyos_project, dailyos_person, dailyos_meeting,
+ * dailyos_briefing.
  *
  * @package DailyOS
  */
@@ -62,10 +66,12 @@ if ( ! function_exists( 'get_post_types' ) ) {
 }
 
 /**
- * Asserts that the W3 magazine theme's `dailyos_account` CPT is
- * registered with the shape templates and rewrite rules depend on.
+ * Asserts that every DailyOS entity CPT registers with the shape templates
+ * and rewrite rules depend on. Each CPT gets the same four checks: registered,
+ * public, archive + rewrite slug, REST-exposed at the expected base.
  *
- * Spec: L0 Packet E V1.4 §5.0 + §8.2.
+ * Spec: L0 Packet E V1.4 §5.0 + §8.2; v1.4.4 W2 extends to project/person/
+ * meeting; v1.4.4 W3 extends to briefing.
  */
 final class DailyOS_AccountPostTypeRegistrationTest extends TestCase {
 	/**
@@ -79,52 +85,78 @@ final class DailyOS_AccountPostTypeRegistrationTest extends TestCase {
 	}
 
 	/**
-	 * Calling `register_post_types()` records the dailyos_account CPT.
+	 * @return array<string, array{0: string, 1: string}>
 	 */
-	public function test_register_post_types_records_dailyos_account(): void {
-		DailyOS_Plugin::instance()->register_post_types();
-
-		$post_types = get_post_types( [ 'name' => 'dailyos_account' ] );
-
-		$this->assertArrayHasKey( 'dailyos_account', $post_types );
+	public static function entity_cpt_provider(): array {
+		return [
+			'account'  => [ 'dailyos_account', 'accounts' ],
+			'project'  => [ 'dailyos_project', 'projects' ],
+			'person'   => [ 'dailyos_person', 'people' ],
+			'meeting'  => [ 'dailyos_meeting', 'meetings' ],
+			'briefing' => [ 'dailyos_briefing', 'briefings' ],
+		];
 	}
 
 	/**
-	 * The dailyos_account CPT is publicly queryable.
+	 * Calling `register_post_types()` records every entity CPT.
+	 *
+	 * @dataProvider entity_cpt_provider
 	 */
-	public function test_dailyos_account_is_public(): void {
+	public function test_register_post_types_records_cpt( string $cpt, string $rest_base ): void {
+		unset( $rest_base );
 		DailyOS_Plugin::instance()->register_post_types();
 
-		$cpt = $GLOBALS['dailyos_test_registered_post_types']['dailyos_account'] ?? null;
+		$post_types = get_post_types( [ 'name' => $cpt ] );
 
-		$this->assertNotNull( $cpt );
-		$this->assertTrue( (bool) $cpt->public );
+		$this->assertArrayHasKey( $cpt, $post_types );
 	}
 
 	/**
-	 * The dailyos_account CPT exposes a public archive at /accounts/.
+	 * Every entity CPT is publicly queryable.
+	 *
+	 * @dataProvider entity_cpt_provider
 	 */
-	public function test_dailyos_account_has_archive_and_accounts_slug(): void {
+	public function test_cpt_is_public( string $cpt, string $rest_base ): void {
+		unset( $rest_base );
 		DailyOS_Plugin::instance()->register_post_types();
 
-		$cpt = $GLOBALS['dailyos_test_registered_post_types']['dailyos_account'] ?? null;
+		$registered = $GLOBALS['dailyos_test_registered_post_types'][ $cpt ] ?? null;
 
-		$this->assertNotNull( $cpt );
-		$this->assertTrue( (bool) $cpt->has_archive );
-		$this->assertIsArray( $cpt->rewrite );
-		$this->assertSame( 'accounts', $cpt->rewrite['slug'] ?? null );
+		$this->assertNotNull( $registered, "CPT {$cpt} not registered" );
+		$this->assertTrue( (bool) $registered->public, "CPT {$cpt} must be public" );
 	}
 
 	/**
-	 * The dailyos_account CPT is exposed through the REST API as /wp-json/wp/v2/accounts.
+	 * Every entity CPT exposes a public archive and declares a rewrite slug.
+	 * The account slug is `accounts`; project/person/meeting nest under
+	 * `entities/`; briefing uses `briefings`.
+	 *
+	 * @dataProvider entity_cpt_provider
 	 */
-	public function test_dailyos_account_is_exposed_in_rest_with_accounts_base(): void {
+	public function test_cpt_has_archive_and_rewrite_slug( string $cpt, string $rest_base ): void {
+		unset( $rest_base );
 		DailyOS_Plugin::instance()->register_post_types();
 
-		$cpt = $GLOBALS['dailyos_test_registered_post_types']['dailyos_account'] ?? null;
+		$registered = $GLOBALS['dailyos_test_registered_post_types'][ $cpt ] ?? null;
 
-		$this->assertNotNull( $cpt );
-		$this->assertTrue( (bool) $cpt->show_in_rest );
-		$this->assertSame( 'accounts', $cpt->rest_base );
+		$this->assertNotNull( $registered, "CPT {$cpt} not registered" );
+		$this->assertTrue( (bool) $registered->has_archive, "CPT {$cpt} must declare has_archive" );
+		$this->assertIsArray( $registered->rewrite, "CPT {$cpt} must declare rewrite array" );
+		$this->assertArrayHasKey( 'slug', $registered->rewrite, "CPT {$cpt} rewrite missing slug" );
+	}
+
+	/**
+	 * Every entity CPT is exposed through the REST API at its expected base.
+	 *
+	 * @dataProvider entity_cpt_provider
+	 */
+	public function test_cpt_is_exposed_in_rest_with_expected_base( string $cpt, string $rest_base ): void {
+		DailyOS_Plugin::instance()->register_post_types();
+
+		$registered = $GLOBALS['dailyos_test_registered_post_types'][ $cpt ] ?? null;
+
+		$this->assertNotNull( $registered, "CPT {$cpt} not registered" );
+		$this->assertTrue( (bool) $registered->show_in_rest, "CPT {$cpt} must show_in_rest" );
+		$this->assertSame( $rest_base, $registered->rest_base, "CPT {$cpt} rest_base mismatch" );
 	}
 }

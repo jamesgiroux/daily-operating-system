@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 1,
+  "subject": {
+    "kind": "project",
+    "id": "project-zero",
+    "subjectRef": {
+      "project": "project-zero"
+    },
+    "displayLabel": "Project project-zero"
+  },
+  "sections": {
+    "facts": {
+      "kind": "empty",
+      "reason": "not_requested"
+    },
+    "health": {
+      "kind": "empty",
+      "reason": "not_requested"
+    },
+    "metadata_proposals": {
+      "kind": "empty",
+      "reason": "not_requested"
+    },
+    "open_loops": {
+      "kind": "empty",
+      "reason": "not_requested"
+    },
+    "touchpoints": {
+      "kind": "empty",
+      "reason": "not_requested"
+    },
+    "threads": {
+      "kind": "empty",
+      "reason": "not_requested"
+    },
+    "record": {
+      "kind": "present",
+      "item_count": 1
+    }
+  },
+  "facts": {
+    "items": [],
+    "nextCursor": null,
+    "totalHint": 0,
+    "cursorState": {
+      "kind": "stable"
+    }
+  },
+  "healthStory": null,
+  "metadataProposals": {
+    "items": [],
+    "nextCursor": null,
+    "totalHint": 0,
+    "cursorState": {
+      "kind": "stable"
+    }
+  },
+  "openLoops": {
+    "items": [],
+    "nextCursor": null,
+    "totalHint": 0,
+    "cursorState": {
+      "kind": "stable"
+    }
+  },
+  "touchpoints": {
+    "items": [],
+    "nextCursor": null,
+    "totalHint": 0,
+    "cursorState": {
+      "kind": "stable"
+    }
+  },
+  "threads": {
+    "items": [],
+    "nextCursor": null,
+    "totalHint": 0,
+    "cursorState": {
+      "kind": "stable"
+    }
+  },
+  "recordEntries": {
+    "items": [
+      {
+        "claimId": "claim-proj-record-1",
+        "subjectRef": {
+          "project": "project-zero"
+        },
+        "claimType": "project.scope",
+        "recordedAt": "2026-04-20T12:00:00Z",
+        "renderedText": {
+          "text": "Scope: deliver primitive blocks (superseded)",
+          "policy": {
+            "kind": "render",
+            "sensitivity": "internal",
+            "surface": "tauri_entity_detail",
+            "claimId": "claim-proj-record-1"
+          }
+        },
+        "trustBand": "use_with_caution",
+        "sensitivity": "internal",
+        "provenance": {
+          "sourceIds": [
+            "src-1"
+          ]
+        }
+      }
+    ],
+    "nextCursor": null,
+    "totalHint": 1,
+    "cursorState": {
+      "kind": "stable"
+    }
+  },
+  "trust": {
+    "aggregateBand": "unscored",
+    "sectionCaveats": {}
+  },
+  "provenance": {
+    "sources": [
+      {
+        "id": "src-1",
+        "label": "Synthetic Linear update",
+        "sourceType": "linear",
+        "asOf": "2026-05-20T12:00:00Z",
+        "redacted": false
+      }
+    ],
+    "redactionApplied": false
+  },
+  "sensitivity": "internal"
+}

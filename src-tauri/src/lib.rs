@@ -167,6 +167,11 @@ pub fn run() {
             // Create shared state
             let state = Arc::new(AppState::new());
             state.set_app_handle(app.handle().clone());
+            // Install the Tauri AppHandle into the
+            // claim_receipt event-bridge so `ClaimVerificationStateChanged`
+            // signals fan out to the `claim_receipt:invalidated` Tauri event
+            // consumed by `useClaimReceiptSubscription`.
+            crate::services::claim_receipt::event_bridge::set_app_handle(app.handle().clone());
             {
                 let telemetry = Arc::clone(&state.aggregate_telemetry);
                 tauri::async_runtime::spawn(async move {
@@ -674,6 +679,10 @@ pub fn run() {
             operations::invoke_operation,
             // sensitivity reveal audit
             commands::reveal_sensitive_claim_text,
+            // claim receipt rendering
+            commands::render_claim_receipt,
+            // semantic claim feedback
+            commands::submit_claim_feedback_command,
             // Core
             commands::get_surface_runtime_pairing_status,
             commands::list_surface_client_pairings,

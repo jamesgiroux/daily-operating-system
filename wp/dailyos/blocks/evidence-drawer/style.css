@@ -1,0 +1,51 @@
+/*
+ * EvidenceDrawer primitive (DOS-689).
+ */
+
+.dailyos-evidence-drawer {
+	display: block;
+	margin: var(--dailyos-space-xs, 8px) 0;
+}
+
+.dailyos-evidence-drawer__toggle {
+	appearance: none;
+	background: transparent;
+	border: 1px solid var(--dailyos-color-border-subtle, currentColor);
+	border-radius: var(--dailyos-radius-sm, 4px);
+	padding: var(--dailyos-space-2xs, 4px) var(--dailyos-space-xs, 8px);
+	font-size: var(--dailyos-font-size-xs, 12px);
+	cursor: pointer;
+	color: inherit;
+}
+
+.dailyos-evidence-drawer__toggle:focus-visible {
+	outline: 2px solid var(--dailyos-color-focus-ring, currentColor);
+	outline-offset: 2px;
+}
+
+.dailyos-evidence-drawer__panel {
+	margin-top: var(--dailyos-space-xs, 8px);
+	padding: var(--dailyos-space-sm, 12px);
+	border-left: 2px solid var(--dailyos-color-border-subtle, currentColor);
+}
+
+.dailyos-evidence-drawer__panel[hidden] {
+	display: none;
+}
+
+.dailyos-evidence-drawer__band,
+.dailyos-evidence-drawer__summary,
+.dailyos-evidence-drawer__freshness {
+	margin: 0 0 var(--dailyos-space-2xs, 4px) 0;
+	font-size: var(--dailyos-font-size-xs, 12px);
+}
+
+.dailyos-evidence-drawer__citations {
+	list-style: disc;
+	margin: 0;
+	padding-left: var(--dailyos-space-md, 16px);
+}
+
+.dailyos-evidence-drawer__citation {
+	font-size: var(--dailyos-font-size-xs, 12px);
+}

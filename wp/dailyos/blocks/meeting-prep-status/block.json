@@ -1,0 +1,12 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "dailyos/meeting-prep-status",
+	"title": "Meeting Prep Status",
+	"category": "dailyos",
+	"description": "Prep readiness for a Meeting — projects Health (composed from MeetingPrepStatus) + DOS-335 direct read. Surfaces FolioBar readiness signal via chrome.js.",
+	"supports": { "html": false, "reusable": false, "inserter": false },
+	"usesContext": [ "dailyos/entityType", "dailyos/entityId" ],
+	"parent": [ "dailyos/meeting-detail" ],
+	"render": "file:./render.php"
+}

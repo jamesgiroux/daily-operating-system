@@ -2245,8 +2245,9 @@ async fn surface_subscribe_response(
     }
 }
 
-/// Re-grant scopes (union with DEFAULT_GRANTED_SCOPES) to the calling
-/// SurfaceClient without invalidating its HMAC session key (scope-refresh mechanism #2).
+/// Re-grant scopes (union with the registry-derived default grant) to the
+/// calling SurfaceClient without invalidating its HMAC session key (scope-
+/// refresh mechanism #2).
 async fn surface_pairing_refresh_scopes_response(
     runtime: &EndpointRuntime,
     validated: ValidatedSurfaceSession,

@@ -1,0 +1,38 @@
+{
+  "target": {
+    "kind": "claim",
+    "claimId": "claim-fixture-confidential",
+    "subject": { "kind": "account", "value": "acct-fixture" },
+    "fieldPath": "health.risk"
+  },
+  "surfaceContext": "entity_detail",
+  "renderedText": null,
+  "trust": {
+    "band": "use_with_caution",
+    "sourceAsof": "2026-05-19T12:00:00Z",
+    "freshness": "current",
+    "caveat": null,
+    "rationale": null
+  },
+  "lifecycle": {
+    "claimState": "active",
+    "surfacingState": "active",
+    "verificationState": "active",
+    "updatedAt": "2026-05-20T12:00:00Z"
+  },
+  "provenance": {
+    "sources": [
+      {
+        "label": "primary source",
+        "sourceType": "unit_test",
+        "asOf": "2026-05-19T12:00:00Z",
+        "href": null,
+        "redacted": true
+      }
+    ],
+    "fieldPath": "health.risk",
+    "evidenceSummary": "Renewal risk is elevated",
+    "redaction": "partial"
+  },
+  "actions": []
+}
