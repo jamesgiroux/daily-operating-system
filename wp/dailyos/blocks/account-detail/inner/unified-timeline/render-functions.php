@@ -72,34 +72,45 @@ if ( ! function_exists( 'dailyos_unified_timeline_render' ) ) {
 				$first_empty_reason = $state['reason'];
 			}
 		}
+		$out  = '<section id="the-record" class="entity-detail_chapterSection" data-ds-tier="pattern" data-ds-name="UnifiedTimeline" data-ds-spec="patterns/UnifiedTimeline.md">';
+		$out .= '<section class="UnifiedTimeline_section" data-dailyos-projection="unified-timeline" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['record', 'metadata_proposals'] ) ) . '">';
+		$out .= '<div class="ChapterHeading_heading">';
+		$out .= '<hr class="ChapterHeading_rule" />';
+		$out .= '<div class="ChapterHeading_titleRow"><h2 class="ChapterHeading_title">' . esc_html__( 'The Record', 'dailyos' ) . '</h2></div>';
+		$out .= '</div>';
 		if ( ! $any_present ) {
 			$reason = '' !== $first_empty_reason ? $first_empty_reason : 'no_timeline_entries';
-			return dailyos_empty_chip(
+			$out .= dailyos_empty_chip(
 				$reason,
 				__( 'No record entries yet', 'dailyos' ),
-				'wp-block-dailyos-unified-timeline'
+				'UnifiedTimeline_emptyMessage'
 			);
+			$out .= '</section>';
+			$out .= '</section>';
+			return $out;
 		}
 
-		$wrapper_attrs = dailyos_inner_block_wrapper_attrs( 'wp-block-dailyos-unified-timeline' );
-		$out  = '<div ' . $wrapper_attrs . ' data-dailyos-projection="unified-timeline">';
-		$out .= '<header class="wp-block-dailyos-unified-timeline__header"><span class="wp-block-dailyos-unified-timeline__title">' . esc_html__( 'Unified Timeline', 'dailyos' ) . '</span></header>';
-		$out .= '<div class="wp-block-dailyos-unified-timeline__body" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['record', 'metadata_proposals'] ) ) . '">';
+		$out .= '<div class="TimelineEntry_timeline">';
 		// Per AC-462.3 + DOS-341: every claim-bearing inner block routes
 		// receipts through build_receipt_for_audience server-side. The
 		// dailyos_envelope_consume_claim helper invokes claim_receipt via the
 		// runtime client with the resolved scope set; AgentMcp audience filter
 		// is applied inside the producer (DOS-341 boundary).
 		$projected_claim_refs = dailyos_unified_timeline_select_claim_refs( $envelope );
+		$rows = '';
 		foreach ( $projected_claim_refs as $claim_ref ) {
 			$receipt = dailyos_envelope_consume_claim( $claim_ref, $scope_set );
 			if ( null === $receipt ) {
 				continue;
 			}
-			$out .= dailyos_unified_timeline_render_row( $claim_ref, $receipt );
+			$rows .= dailyos_unified_timeline_render_row( $claim_ref, $receipt );
 		}
+		$out .= '' !== $rows
+			? $rows
+			: dailyos_empty_chip( 'no_timeline_entries', __( 'No record entries yet', 'dailyos' ), 'UnifiedTimeline_emptyMessage' );
 		$out .= '</div>';
-		$out .= '</div>';
+		$out .= '</section>';
+		$out .= '</section>';
 		return $out;
 	}
 }
@@ -167,8 +178,10 @@ if ( ! function_exists( 'dailyos_unified_timeline_render_row' ) ) {
 	function dailyos_unified_timeline_render_row( array $claim_ref, array $receipt ): string {
 		$claim_id = isset( $claim_ref['claim_id'] ) ? (string) $claim_ref['claim_id'] : '';
 		$trust_band = isset( $receipt['trustBand'] ) ? (string) $receipt['trustBand'] : ( isset( $receipt['trust_band'] ) ? (string) $receipt['trust_band'] : 'unscored' );
-		return '<article class="wp-block-dailyos-unified-timeline__row" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
-			. '<span class="wp-block-dailyos-unified-timeline__row-label">' . esc_html( $claim_id ) . '</span>'
-			. '</article>';
+		return '<div class="TimelineEntry_entry" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
+			. '<div class="TimelineEntry_dot TimelineEntry_dotContext" aria-hidden="true"></div>'
+			. '<div class="TimelineEntry_dateLine"><span class="TimelineEntry_typeBadge TimelineEntry_typeContext">' . esc_html( $trust_band ) . '</span></div>'
+			. '<div class="TimelineEntry_title">' . esc_html( $claim_id ) . '</div>'
+			. '</div>';
 	}
 }

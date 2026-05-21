@@ -72,34 +72,49 @@ if ( ! function_exists( 'dailyos_linear_issues_chapter_render' ) ) {
 				$first_empty_reason = $state['reason'];
 			}
 		}
+		$out  = '<section id="linear-issues" class="editorial-reveal entity-detail_chapterSection LinearIssuesChapter_chapter" data-ds-tier="pattern" data-ds-name="LinearIssuesChapter" data-ds-spec="patterns/LinearIssuesChapter.md">';
+		$out .= '<div class="ChapterHeading_heading">';
+		$out .= '<hr class="ChapterHeading_rule" />';
+		$out .= '<div class="ChapterHeading_titleRow"><h2 class="ChapterHeading_title">' . esc_html__( 'Linear Issues', 'dailyos' ) . '</h2></div>';
+		$out .= '<p class="ChapterHeading_epigraph">' . esc_html__( 'Linear-sourced work grouped by current state', 'dailyos' ) . '</p>';
+		$out .= '</div>';
+		$out .= '<div class="LinearIssuesChapter_groups" data-dailyos-projection="linear-issues-chapter" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['facts'] ) ) . '">';
 		if ( ! $any_present ) {
 			$reason = '' !== $first_empty_reason ? $first_empty_reason : 'no_linear_issues';
-			return dailyos_empty_chip(
+			$out .= dailyos_empty_chip(
 				$reason,
 				__( 'No Linear issues linked', 'dailyos' ),
-				'wp-block-dailyos-linear-issues-chapter'
+				'LinearIssuesChapter_groups'
 			);
+			$out .= '</div>';
+			$out .= '</section>';
+			return $out;
 		}
 
-		$wrapper_attrs = dailyos_inner_block_wrapper_attrs( 'wp-block-dailyos-linear-issues-chapter' );
-		$out  = '<div ' . $wrapper_attrs . ' data-dailyos-projection="linear-issues-chapter">';
-		$out .= '<header class="wp-block-dailyos-linear-issues-chapter__header"><span class="wp-block-dailyos-linear-issues-chapter__title">' . esc_html__( 'Linear Issues Chapter', 'dailyos' ) . '</span></header>';
-		$out .= '<div class="wp-block-dailyos-linear-issues-chapter__body" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['facts'] ) ) . '">';
+		$out .= '<section class="LinearIssuesChapter_group">';
+		$out .= '<div class="LinearIssuesChapter_groupHeader"><h3 class="LinearIssuesChapter_groupTitle">' . esc_html__( 'Open', 'dailyos' ) . '</h3><span class="LinearIssuesChapter_groupSource">' . esc_html__( 'Linear-sourced', 'dailyos' ) . '</span></div>';
+		$out .= '<div class="LinearIssuesChapter_rows">';
 		// Per AC-462.3 + DOS-341: every claim-bearing inner block routes
 		// receipts through build_receipt_for_audience server-side. The
 		// dailyos_envelope_consume_claim helper invokes claim_receipt via the
 		// runtime client with the resolved scope set; AgentMcp audience filter
 		// is applied inside the producer (DOS-341 boundary).
 		$projected_claim_refs = dailyos_linear_issues_chapter_select_claim_refs( $envelope );
+		$rows = '';
 		foreach ( $projected_claim_refs as $claim_ref ) {
 			$receipt = dailyos_envelope_consume_claim( $claim_ref, $scope_set );
 			if ( null === $receipt ) {
 				continue;
 			}
-			$out .= dailyos_linear_issues_chapter_render_row( $claim_ref, $receipt );
+			$rows .= dailyos_linear_issues_chapter_render_row( $claim_ref, $receipt );
 		}
+		$out .= '' !== $rows
+			? $rows
+			: dailyos_empty_chip( 'no_linear_issues', __( 'No Linear issues linked', 'dailyos' ), 'LinearIssuesChapter_rows' );
 		$out .= '</div>';
+		$out .= '</section>';
 		$out .= '</div>';
+		$out .= '</section>';
 		return $out;
 	}
 }
@@ -167,8 +182,13 @@ if ( ! function_exists( 'dailyos_linear_issues_chapter_render_row' ) ) {
 	function dailyos_linear_issues_chapter_render_row( array $claim_ref, array $receipt ): string {
 		$claim_id = isset( $claim_ref['claim_id'] ) ? (string) $claim_ref['claim_id'] : '';
 		$trust_band = isset( $receipt['trustBand'] ) ? (string) $receipt['trustBand'] : ( isset( $receipt['trust_band'] ) ? (string) $receipt['trust_band'] : 'unscored' );
-		return '<article class="wp-block-dailyos-linear-issues-chapter__row" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
-			. '<span class="wp-block-dailyos-linear-issues-chapter__row-label">' . esc_html( $claim_id ) . '</span>'
-			. '</article>';
+		return '<div class="EntityRow_row EntityRow_rowBorder" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
+			. '<span class="EntityRow_dot LinearIssuesChapter_stateDot" data-state="open" aria-hidden="true"></span>'
+			. '<div class="EntityRow_content">'
+			. '<div class="EntityRow_nameRow"><span class="EntityRow_name">' . esc_html( $claim_id ) . '</span></div>'
+			. '<div class="EntityRow_subtitle">' . esc_html( $trust_band ) . '</div>'
+			. '</div>'
+			. '<div class="EntityRow_meta"><span class="TrustBand_band" data-density="compact" data-align="row">' . esc_html( $trust_band ) . '</span></div>'
+			. '</div>';
 	}
 }

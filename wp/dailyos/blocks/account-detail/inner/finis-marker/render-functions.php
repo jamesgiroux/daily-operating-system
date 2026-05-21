@@ -58,12 +58,15 @@ if ( ! function_exists( 'dailyos_finis_marker_render' ) ) {
 			$scope_set = [];
 		}
 
-		$wrapper_attrs = dailyos_inner_block_wrapper_attrs( 'wp-block-dailyos-finis-marker' );
-		$out  = '<div ' . $wrapper_attrs . ' data-dailyos-projection="chrome">';
-		$out .= '<span class="dailyos-finis-marker__rule" aria-hidden="true"></span>';
-		$out .= '<span class="dailyos-finis-marker__label">' . esc_html__( 'End of dossier', 'dailyos' ) . '</span>';
+		$mark = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>';
+		$out  = '<div class="editorial-reveal" data-ds-tier="pattern" data-ds-name="FinisMarker" data-ds-spec="patterns/FinisMarker.md" data-dailyos-projection="chrome">';
+		$out .= '<div class="FinisMarker_root">';
+		$out .= '<div class="FinisMarker_marks">';
+		$out .= $mark . $mark . $mark;
+		$out .= '</div>';
+		$out .= '<div class="FinisMarker_timestamp">' . esc_html__( 'End of dossier', 'dailyos' ) . '</div>';
+		$out .= '</div>';
 		$out .= '</div>';
 		return $out;
 	}
 }
-
