@@ -4,7 +4,7 @@
 	"name": "dailyos/account-detail",
 	"title": "Account Detail",
 	"category": "dailyos",
-	"description": "Outer block for an Account entity surface — consumes get_entity_intelligence and hosts inner blocks for typed slices.",
+	"description": "Outer block for an Account entity surface — consumes get_entity_intelligence and hosts 24 inner blocks projecting from the EntityIntelligenceEnvelope per ADR-0130 §4.",
 	"supports": {
 		"html": false,
 		"reusable": false,
@@ -16,8 +16,36 @@
 	},
 	"providesContext": {
 		"dailyos/entityType": "entity_type",
-		"dailyos/entityId": "account_id"
+		"dailyos/entityId": "account_id",
+		"dailyos/envelopeHandle": "envelope_handle"
 	},
 	"parent": null,
+	"templateLock": false,
+	"template": [
+		["dailyos/account-hero"],
+		["dailyos/sentiment-hero"],
+		["dailyos/triage-section"],
+		["dailyos/divergence-section"],
+		["dailyos/outlook-panel"],
+		["dailyos/on-track-chapter"],
+		["dailyos/supporting-tension"],
+		["dailyos/about-intelligence"],
+		["dailyos/account-pull-quote"],
+		["dailyos/stakeholder-grid"],
+		["dailyos/strategic-landscape"],
+		["dailyos/value-commitments"],
+		["dailyos/quote-wall"],
+		["dailyos/commercial-shape"],
+		["dailyos/account-technical-footprint"],
+		["dailyos/relationship-fabric"],
+		["dailyos/about-this-dossier"],
+		["dailyos/recommended-actions"],
+		["dailyos/touchpoints-feed"],
+		["dailyos/open-loops-feed"],
+		["dailyos/file-list"],
+		["dailyos/linear-issues-chapter"],
+		["dailyos/unified-timeline"],
+		["dailyos/finis-marker"]
+	],
 	"render": "file:./render.php"
 }
