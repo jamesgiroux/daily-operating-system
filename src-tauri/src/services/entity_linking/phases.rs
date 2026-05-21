@@ -109,7 +109,7 @@ pub fn phase2_record_facts(ctx: &mut LinkingContext, db: &ActionDb, user_domains
                 .to_lowercase()
                 .ends_with(&format!("@{}", ud.to_lowercase()))
         });
-        let relationship = if is_internal { "peer" } else { "contact" };
+        let relationship = if is_internal { "internal" } else { "external" };
 
         match super::primitives::find_or_create_person(
             db,
