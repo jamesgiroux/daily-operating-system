@@ -26,7 +26,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct IngestionRunId(pub String);
 
-/// Ingestion mode per L0 V1.3 §4.
+/// Ingestion mode per L0 V1.3 §4. `EntitySeeded` and `Realtime` added by the
+/// v1.4.5 W1-extension PR (cycle-13 §13.1) as preconditions for W2-A/C/D L1:
+/// W2-C entity-intake ability requests `EntitySeeded`; W2-D inbox immediate-
+/// ingest path requests `Realtime`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum IngestionMode {
@@ -34,6 +37,8 @@ pub enum IngestionMode {
     Incremental,
     Forced,
     Backfill,
+    EntitySeeded,
+    Realtime,
 }
 
 impl IngestionMode {
@@ -43,6 +48,8 @@ impl IngestionMode {
             Self::Incremental => "incremental",
             Self::Forced => "forced",
             Self::Backfill => "backfill",
+            Self::EntitySeeded => "entity_seeded",
+            Self::Realtime => "realtime",
         }
     }
 
@@ -52,6 +59,8 @@ impl IngestionMode {
             "incremental" => Some(Self::Incremental),
             "forced" => Some(Self::Forced),
             "backfill" => Some(Self::Backfill),
+            "entity_seeded" => Some(Self::EntitySeeded),
+            "realtime" => Some(Self::Realtime),
             _ => None,
         }
     }
@@ -731,5 +740,46 @@ mod tests {
             )
             .expect("count");
         assert_eq!(success_count, 1, "single success row preserved");
+    }
+
+    #[test]
+    fn ingestion_mode_storage_roundtrip_covers_all_variants() {
+        // W1-extension PR (cycle-13 §13.1): every IngestionMode variant must
+        // round-trip through as_storage_str/from_storage_str. Catches missed
+        // arms in either direction when variants are added.
+        for variant in [
+            IngestionMode::Initial,
+            IngestionMode::Incremental,
+            IngestionMode::Forced,
+            IngestionMode::Backfill,
+            IngestionMode::EntitySeeded,
+            IngestionMode::Realtime,
+        ] {
+            let s = variant.as_storage_str();
+            let back = IngestionMode::from_storage_str(s);
+            assert_eq!(
+                back,
+                Some(variant),
+                "round-trip mismatch for {variant:?} via {s:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn ingestion_mode_storage_slugs_are_distinct() {
+        // Slug-collision guard: a future variant must not collide with an
+        // existing storage slug.
+        let slugs = [
+            IngestionMode::Initial.as_storage_str(),
+            IngestionMode::Incremental.as_storage_str(),
+            IngestionMode::Forced.as_storage_str(),
+            IngestionMode::Backfill.as_storage_str(),
+            IngestionMode::EntitySeeded.as_storage_str(),
+            IngestionMode::Realtime.as_storage_str(),
+        ];
+        let mut sorted = slugs.to_vec();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(slugs.len(), sorted.len(), "storage slug collision");
     }
 }
