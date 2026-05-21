@@ -5,6 +5,27 @@
 **Wave plan reference:** `.docs/plans/v1.4.7-waves.md` §"Agent W1-B — DOS-478"
 **Authoring discipline:** narrow-scoped per K-in lessons; substrate gaps file as separate Linear tickets.
 
+## Cycle-3 changelog (2026-05-20)
+
+Cycle-2 verdicts: all 4 reviewers NEEDS-CHANGES. **Convergent (3/4 challenge + architect + devex):** YAML entry shape doesn't fit frozen `ToolDescription` contract — I added `selection_fixtures` + omitted required `examples`; AC-8 deny_unknown_fields conflicts. **Plus**: CEO product-vocabulary tightening; challenge AC-7 bidirectional-validation; architect `nearest_candidate` field needs explicit W1-A enum amendment.
+
+Cycle-3 fixes:
+
+1. **`YamlToolEntry` DTO + conversion** (3/4 convergent — challenge + architect + devex). Cycle-2 conflated wire YAML and frozen `ToolDescription`. Cycle-3 splits:
+   - `YamlToolEntry` (NEW DTO with `#[serde(deny_unknown_fields)]`): all `ToolDescription` fields verbatim (including required `examples: Vec<ToolExample>` per contracts.rs:5) PLUS `selection_fixtures: SelectionFixtures` (new struct for DOS-481 fixture stubs).
+   - `pub struct SelectionFixtures { positive: Vec<PromptFixture>, negative_broad_corpus: Vec<PromptFixture>, negative_adjacent_tool: Vec<AdjacentFixture> }` — separate type not in W0 contracts.
+   - `impl YamlToolEntry { fn into_description_and_fixtures(self) -> (ToolDescription, SelectionFixtures) }` — splits at load time.
+   - `YamlTaxonomyCatalog` stores `HashMap<ScopedName, (ToolDescription, SelectionFixtures)>`.
+   - `examples` field added to every YAML sample (mandatory per ToolDescription). Sample updated in §1.
+
+2. **Bidirectional registry validation** (challenge HIGH AC-7). The W1-A `validate_against_handlers(handlers: &[...])` validates handler→catalog. Cycle-3 also adds `validate_catalog_against_handlers(handlers: &[...]) -> Vec<ScopedName>` returning catalog entries with no matching handler (NOT an error in production where W2-W4 handlers haven't shipped yet; emit operator-log warning so handler authors see what's pending). `Gateway::seal()` in production calls handler→catalog only (forward direction; an unknown handler is a typo). Test `dos478_taxonomy_catalog_test` uses BOTH directions on a stub set — handler→catalog detects extra/wrong handler; catalog→handler detects pending tools (logs, doesn't fail).
+
+3. **`HandlerCatalogMismatch.nearest_candidate` W1-A enum amendment** (architect). Cycle-3 additively extends the W1-A variant: `HandlerCatalogMismatch { handler, catalog_entry, nearest_candidate: Option<ScopedName> }`. Same shape-amendment precedent as W0 cycle-7 amendments (additive optional field; no consumers break). Update W1-A `taxonomy.rs` in this W1-B branch.
+
+4. **Product-vocabulary discipline in AC-4 + AC-6** (CEO NEEDS-CHANGES). Cycle-3 AC-4 + AC-6 forbid `dailyos.*` substrings AND system identifiers in `when_to_call` / `when_NOT_to_call` natural-language fields. Tool identifiers MAY only appear in structured `selection_fixtures.*.expected_tool` fields. Test asserts the natural-language fields contain no `dailyos.` substring + no `Read|SubmitCorrection|Write|McpClient|etc.` system terms.
+
+5. **AC-8 unknown-field rejection is on `YamlToolEntry`, not `ToolDescription`**. The wire DTO uses `serde(deny_unknown_fields)`; `ToolDescription` is unchanged. Conversion strips `selection_fixtures` before producing `ToolDescription`.
+
 ## Cycle-2 changelog (2026-05-20)
 
 Cycle-1 verdicts: all 4 reviewers NEEDS-CHANGES (codex challenge, architect, plan-ceo-review, plan-devex-review). 13 findings; 5 convergent (3+/4):
@@ -24,41 +45,45 @@ W1-A already shipped the typed substrate (commit `45b3f53d` + `228a17f3`):
 
 W1-B fills:
 
-1. **`src-tauri/resources/mcp_v2/tool_descriptions.yaml`** (NEW) — version-controlled catalog. Entry shape:
+1. **`src-tauri/resources/mcp_v2/tool_descriptions.yaml`** (NEW) — version-controlled catalog, parsed via `YamlToolEntry` DTO (NOT directly as `ToolDescription` — see cycle-3 fix #1). Entry shape:
    ```yaml
    - name: dailyos.read.account_status
-     side: Read                     # MUST be "Read" | "SubmitCorrection" | "Write" — verbatim per Side enum
+     side: Read                     # verbatim "Read" | "SubmitCorrection" | "Write"
      summary: "Returns current state of an account the user works with."
      when_to_call: |
        When the user asks about a specific account they have a working
        relationship with — status, recent signals, open commitments,
-       champion engagement, contract state. DailyOS persists context
-       across conversations and updates as work evolves; the host model
-       can rely on this for cross-conversation continuity per ADR-0128 §6.
+       champion engagement, contract state. The assistant persists
+       context across conversations and updates as work evolves; the
+       host model can rely on this for cross-conversation continuity.
      when_NOT_to_call: |
        Do NOT call for accounts the user has no working relationship
-       with — DailyOS is for the user's working understanding of their
-       professional world, not broad enterprise / web corpus search.
-       Use enterprise search, web search, or Glean for broad corpus
-       lookups. Do NOT call for org-wide policy or how-to questions
-       (use Glean / enterprise search).
-     scopes_required:
-       - dailyos.read.account_status
+       with — this surface is for the user's personal working
+       understanding of their professional world, not broad enterprise
+       or web corpus search. Use enterprise search, web search, or
+       Glean for broad corpus lookups. Do NOT call for org-wide policy
+       or how-to questions.
+     scopes_required: [dailyos.read.account_status]
      parameters:
        - { name: subject, schema: { type: string }, required: true, description: "Account name or handle" }
      returns:
        schema: { type: object, additionalProperties: false }
        description: "Account status payload with claim attribution + freshness per ADR-0105"
-     selection_fixtures:                          # ≥ 2 positive + ≥ 2 negative per ADR-0128 §B (cycle-1 ceo + challenge)
+     examples:                                    # required per ToolDescription (contracts.rs:5)
+       - prompt: "What's going on with Acme?"
+         invocation: { name: dailyos.read.account_status, arguments: { subject: acme } }
+         expected_response_shape: { account_id: <opaque>, status: <enum>, as_of: <iso8601> }
+     selection_fixtures:                          # additive DTO field; consumed by DOS-481 W5-A; stripped before ToolDescription
        positive:
          - { prompt: "What's going on with Acme?", expected_tool: dailyos.read.account_status }
          - { prompt: "How are things looking with the Hooli deal?", expected_tool: dailyos.read.account_status }
-       negative_broad_corpus:                     # MUST select non-DailyOS tool
+       negative_broad_corpus:
          - { prompt: "Search the web for SaaS pricing benchmarks", expected_tool_class: external }
          - { prompt: "What's the company's vacation policy?", expected_tool_class: external }
-       negative_adjacent_tool:                    # MUST select a DIFFERENT DailyOS tool
+       negative_adjacent_tool:
          - { prompt: "What did I write about the Q1 readout?", expected_tool: dailyos.search.workspace_memory }
    ```
+   Note: natural-language fields (`summary`, `when_to_call`, `when_NOT_to_call`) MUST NOT contain `dailyos.` substrings or system identifiers (`Read | SubmitCorrection | Write | McpClient | ToolError | ...`). Tool identifiers appear only in structured `selection_fixtures.*.expected_tool` field (per AC-4/AC-6 cycle-3 #4). The sample above conforms.
 
 2. **`src-tauri/src/services/mcp_v2/taxonomy.rs` extensions** — W1-A shipped the trait; W1-B fills the loader implementation. Adds:
    - `TaxonomyError` new variants per cycle-1 architect + challenge + devex: `ParseFailed { error: String }`, `InvalidName { name: String, reason: String }`, `InvalidScope { tool: ScopedName, scope: Scope }`, `DuplicateName { name: ScopedName }`, `SideMismatch { handler: ScopedName, expected: Side, actual: Side }`, `FixtureCoverage { tool: ScopedName, missing: &'static str }`
@@ -120,10 +145,10 @@ Note: pagination/list surface (DOS-172) is a discovery refinement applied across
 - **AC-1 Inventory + load.** `YamlTaxonomyCatalog::load_embedded()` succeeds; resulting catalog has EXACTLY the 10 entries from §5 (assert by name + count). Extra or missing entries → test failure.
 - **AC-2 Naming convention + Side serialization.** Every entry `name` matches regex `^dailyos\.(read|write|submit|search|list|get|prepare)\.[a-z][a-z0-9_]*$`. Every entry `side` deserializes to `Side::Read | Side::SubmitCorrection | Side::Write` — YAML strings use verbatim variant names (cycle-1 architect #4). Wrong YAML `side: Submit` → `TaxonomyError::ParseFailed`.
 - **AC-3 Scope mapping exact** (cycle-1 challenge #2). Each entry's `scopes_required` matches the §5 table verbatim. Test asserts per-tool: catalog scope set equals expected scope set (NOT just "in allowlist").
-- **AC-4 Displacement framing** (cycle-1 ceo + challenge convergent). Every entry's `when_NOT_to_call` MUST contain BOTH (a) at least one broad-corpus keyword: `broad`, `enterprise search`, `web search`, `Glean`, `corpus`; AND (b) at least one adjacent-tool framing: `wrong tool`, `different tool`, `instead use`, `use ... for`, or an explicit `dailyos.*` cross-reference. Test fails per-entry if either is missing.
+- **AC-4 Displacement framing in product vocabulary** (cycle-1 ceo + challenge convergent + cycle-2 ceo tightening). Every entry's `when_NOT_to_call` MUST contain BOTH (a) at least one broad-corpus keyword: `broad`, `enterprise search`, `web search`, `Glean`, `corpus`; AND (b) at least one adjacent-tool framing in PRODUCT LANGUAGE: `different surface`, `not for ... — use ... for`, `personal working`, or natural-language reference to the alternative. **AC-4 ALSO forbids**: substring `dailyos.` AND system identifiers (`Read|SubmitCorrection|Write|McpClient|ToolError|McpToolHandler|Gateway|Scope`) in `when_to_call` / `when_NOT_to_call` natural-language fields per cycle-2 CEO. Tool identifiers appear ONLY in structured `selection_fixtures.*.expected_tool` field.
 - **AC-5 Fixture coverage** (cycle-1 ceo + challenge convergent). Every entry has `selection_fixtures`: `positive` with ≥ 2 entries, `negative_broad_corpus` with ≥ 2 entries, `negative_adjacent_tool` with ≥ 1 entry (≥ 2 if the tool has an adjacent counterpart in §5; the `dailyos.write.place_document` lone-write tool may have only 1). DOS-481 W5-A will consume these fixtures to run the host-selection eval. `TaxonomyError::FixtureCoverage` on shortfall.
-- **AC-6 Continuity affordance** (cycle-1 ceo #5). Every Read entry's `when_to_call` MUST mention continuity using one of: `cross-conversation`, `persists context`, `updates as work evolves`, `working understanding ... over time`. Per ADR-0128 §6 named-affordance contract.
-- **AC-7 Boot validation via `Gateway::seal()` returning `Result`** (cycle-1 architect #2 + devex #1). `main.rs` calls `gateway.seal()?` after registration. Mismatch → `Err(TaxonomyError::HandlerCatalogMismatch { handler, catalog_entry, nearest_candidate: Option<ScopedName> })` per devex #4 nearest-suggestion DX. No `panic!()` at startup.
+- **AC-6 Continuity affordance in product vocabulary** (cycle-1 ceo #5 + cycle-2 ceo tightening). Every Read entry's `when_to_call` MUST mention continuity using one of: `cross-conversation`, `persists context`, `updates as work evolves`, `working understanding ... over time`. Per ADR-0128 §6 named-affordance contract. Same vocabulary discipline as AC-4 — no `dailyos.` substrings, no system identifiers.
+- **AC-7 Boot validation via `Gateway::seal()` returning `Result`** (cycle-1 architect #2 + devex #1; cycle-2 challenge + architect). `main.rs` calls `gateway.seal()?` after registration. Production `seal()` runs ONLY handler→catalog validation (an unknown handler is a typo blocking startup). Mismatch → `Err(TaxonomyError::HandlerCatalogMismatch { handler, catalog_entry, nearest_candidate: Option<ScopedName> })` per devex #4. No `panic!()`. Catalog→handler validation is a SEPARATE method `validate_catalog_against_handlers(handlers) -> Vec<ScopedName>` (returns pending tools; W2-W4 land them one-by-one); production logs the list as operator info, doesn't fail boot. **W1-A taxonomy.rs `HandlerCatalogMismatch` variant additively extended** with `nearest_candidate: Option<ScopedName>` field (this lane lands the additive amendment).
 - **AC-8 YAML hardening** (cycle-1 challenge #4). Loader rejects: duplicate `name` entries (`DuplicateName`), unknown YAML fields (serde deny_unknown_fields), empty `summary` / `when_to_call` / `when_NOT_to_call`. Per-failure test asserts the specific variant.
 - **AC-9 `TaxonomyError::Display` operator-readable** (cycle-1 devex #2). Each variant's `Display` impl includes: what failed, where (handler name or YAML position), suggested fix. Tests assert the message contains the suggestion substring.
 - **AC-10 Local-dev FS override** (cycle-1 devex #5). `YamlTaxonomyCatalog::load_from_path(path: &Path)` reads YAML from filesystem; production uses `load_embedded()`. Env-gate via `DAILYOS_MCP_TAXONOMY_PATH`; mirrors `src/presets/loader.rs` precedent. Override never active in release builds.
