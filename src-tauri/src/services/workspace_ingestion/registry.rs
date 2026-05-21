@@ -182,6 +182,18 @@ impl WorkspaceSourceRegistry {
                 if c == ".." || c.contains("\\..\\") || c.contains("/..") || c.contains("../") {
                     return Err(RejectionReason::PathTraversalAttempt);
                 }
+                // Defense in depth against callers that URL-decode workspace
+                // paths upstream: reject any component containing a percent-
+                // encoded sequence (`%2e`, `%2E`, `%2f`, `%5c`, etc. — anything
+                // matching `%XX` where the decode COULD become path metachar).
+                // `open_validated` operates on literal Path bytes; URL decoding
+                // is not done at this layer. Per L0 V1.3 §7 fixture #2, we
+                // explicitly reject the lex-shape rather than silently
+                // accepting literal `%2e%2e` filenames as legitimate.
+                let lower = c.to_ascii_lowercase();
+                if lower.contains("%2e") || lower.contains("%2f") || lower.contains("%5c") {
+                    return Err(RejectionReason::PathTraversalAttempt);
+                }
                 if c.len() > 255 {
                     return Err(RejectionReason::PathTraversalAttempt);
                 }
@@ -739,18 +751,35 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn open_validated_rejects_url_encoded_path_traversal() {
+    fn open_validated_rejects_url_encoded_path_traversal_via_lex_check() {
         // L0 V1.3 §7 fixture #2: %2e%2e/escape → PathTraversalAttempt.
-        // Note: URL-encoded literal `%2e%2e` is NOT decoded by Path; it's just a
-        // filename. Without a file named `%2e%2e/escape` in the workspace,
-        // canonicalize fails with ENOENT → PathTraversalAttempt.
+        // Per defense-in-depth: even if an upstream caller URL-decodes paths
+        // (which is NOT this layer's responsibility), the lex check rejects
+        // any component containing `%2e` / `%2f` / `%5c` literal substrings.
         let ws = make_workspace();
+
+        // Prove the lex check is the load-bearing layer (not ENOENT). Create
+        // a literal directory named `%2e%2e` inside the workspace — without
+        // the lex check, canonicalize would succeed and the file could be
+        // opened. With the lex check, the rejection fires before any FS call.
+        let traversal_dir = ws.path().join("%2e%2e");
+        std::fs::create_dir(&traversal_dir).expect("create literal dir");
+        std::fs::write(traversal_dir.join("escape"), b"would-be-escape").expect("write");
+
         let err = WorkspaceSourceRegistry::open_validated(
             ws.path(),
             std::path::Path::new("%2e%2e/escape"),
         )
-        .expect_err("URL-encoded path");
+        .expect_err("URL-encoded path rejected by lex check");
         assert!(matches!(err, RejectionReason::PathTraversalAttempt));
+
+        // Same path with uppercase %2E also rejected (case-insensitive).
+        let err_upper = WorkspaceSourceRegistry::open_validated(
+            ws.path(),
+            std::path::Path::new("%2E%2E/escape"),
+        )
+        .expect_err("uppercase %2E rejected");
+        assert!(matches!(err_upper, RejectionReason::PathTraversalAttempt));
     }
 
     #[cfg(unix)]
