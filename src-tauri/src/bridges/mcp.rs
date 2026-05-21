@@ -68,7 +68,7 @@ impl McpWorkspaceReaders {
         }
     }
 
-    fn attach_to<'a>(&self, ctx: ServiceContext<'a>) -> ServiceContext<'a> {
+    pub(crate) fn attach_to<'a>(&self, ctx: ServiceContext<'a>) -> ServiceContext<'a> {
         ctx.with_entity_context_reader(self.entity_context_reader.clone())
             .with_entity_context_claim_reader(self.entity_context_claim_reader.clone())
             .with_prepare_meeting_context_reader(self.prepare_meeting_context_reader.clone())

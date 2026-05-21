@@ -193,25 +193,56 @@ fn run_serve(db_path: &PathBuf, legacy_config_path: Option<PathBuf>) -> Result<(
         std::env::remove_var(ENV_TRANSPORT_KEY);
     }
 
-    // Construct taxonomy + gateway. Seal at boot (empty handler set is
-    // expected for W1.5 transport-only build; pending list logged).
+    // Construct taxonomy + gateway. Build the tokio runtime up front so
+    // its handle can be captured by W2-A handlers at registration time
+    // (DOS-175 cycle-2 §3.2).
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| format!("build tokio runtime: {e}"))?;
+
     let catalog = YamlTaxonomyCatalog::load_embedded()
         .map_err(|e| format!("load embedded taxonomy: {e}"))?;
     let catalog: Arc<dyn dailyos_lib::services::mcp_v2::taxonomy::TaxonomyCatalog> =
         Arc::new(catalog);
+
+    // Seed nonce + DB Arc must come before gateway registration so the
+    // handlers can capture the shared DB for workspace readers.
+    let seed_nonce = auth::issue_seed_nonce(&mut conn, &client_id)
+        .map_err(|e| format!("issue seed nonce: {e}"))?;
+    let conn_shared = Arc::new(Mutex::new(conn));
+
+    // Open a second ActionDb handle for workspace readers — the
+    // primary `conn` above is owned by the transport for nonce ledger +
+    // HMAC verification; the legacy MCP binary at src/mcp/main.rs:1332
+    // uses the same pattern (open_readonly via LocalKeychain) for its
+    // own ability dispatch path.
+    let action_db = dailyos_lib::db::ActionDb::open_readonly(std::sync::Arc::new(
+        dailyos_lib::db::LocalKeychain::new(),
+    ))
+    .map_err(|e| format!("open action_db readonly for handlers: {e}"))?;
+    let action_db = std::sync::Arc::new(parking_lot::Mutex::new(action_db));
+
     let mut gateway = Gateway::new();
     gateway.set_taxonomy(catalog.clone());
+    dailyos_lib::services::mcp_v2::handlers::registration::register_v147_handlers(
+        &mut gateway,
+        &catalog,
+        action_db,
+        runtime.handle().clone(),
+    )
+    .map_err(|e| format!("register v147 handlers: {e}"))?;
     let pending = gateway
         .seal()
         .map_err(|e| format!("gateway seal: {e}"))?;
 
     // Per L0 AC-4 boot log to stderr (stdout reserved for MCP protocol).
+    let registered_count = gateway.registered_tools().count();
     let require_handlers = std::env::var("DAILYOS_MCP_V2_REQUIRE_HANDLERS")
         .map(|v| v == "1")
         .unwrap_or(false);
     eprintln!(
-        "mcp_v2 boot: pairing {} verified, 0 handlers registered, {} catalog entries pending. \
-         tools/list will return empty for this build. Expected for W1.5 transport-only.",
+        "mcp_v2 boot: pairing {} verified, {registered_count} handlers registered, {} catalog entries pending.",
         client_id.as_str(),
         pending.len(),
     );
@@ -222,15 +253,6 @@ fn run_serve(db_path: &PathBuf, legacy_config_path: Option<PathBuf>) -> Result<(
         ));
     }
 
-    // Seed nonce — for W1.5 transport-only build with no handlers, the
-    // seed nonce is the pairing's initial nonce. We re-mint a fresh
-    // pairing-style seed by issuing one via the auth nonce ledger.
-    // (Real pairing seed nonce flows from pair CLI to operator config;
-    // for this build we accept it via env too — path-α follow-up.)
-    let seed_nonce = auth::issue_seed_nonce(&mut conn, &client_id)
-        .map_err(|e| format!("issue seed nonce: {e}"))?;
-
-    let conn_shared = Arc::new(Mutex::new(conn));
     let gateway_shared = Arc::new(gateway);
 
     let transport_key = {
@@ -249,10 +271,6 @@ fn run_serve(db_path: &PathBuf, legacy_config_path: Option<PathBuf>) -> Result<(
     );
 
     // Run rmcp stdio loop per legacy precedent at src/mcp/main.rs:1379.
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .map_err(|e| format!("build tokio runtime: {e}"))?;
     runtime
         .block_on(async move {
             let service = handler

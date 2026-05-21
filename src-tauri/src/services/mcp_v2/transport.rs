@@ -230,15 +230,29 @@ impl ServerHandler for V2ServerHandler {
 
         // Call gateway. W1-A substrate verifies HMAC, consumes nonce,
         // dispatches handler, audits, signal-emits.
-        let response_envelope = {
-            let mut conn_guard = self.conn.lock();
-            self.gateway.handle_tool_call(
-                &mut conn_guard,
-                &self.verified_client_id,
-                envelope,
-                signature.as_ref(),
+        //
+        // Per DOS-175 cycle-2 §3.2: `handle_tool_call` is sync and the
+        // handler chain underneath it calls `runtime.block_on(...)` on a
+        // captured tokio handle to dispatch async abilities. Calling that
+        // directly from this async context would nested-runtime-panic, so
+        // we move dispatch onto a blocking-pool thread via
+        // `tokio::task::spawn_blocking`. Inside the blocking thread the
+        // handler's `block_on` is safe because we are not on a worker.
+        let gateway = self.gateway.clone();
+        let conn = self.conn.clone();
+        let client_id = self.verified_client_id.clone();
+        let signature_bytes = signature.as_ref().to_vec();
+        let response_envelope = tokio::task::spawn_blocking(move || {
+            let mut conn_guard = conn.lock();
+            gateway.handle_tool_call(&mut conn_guard, &client_id, envelope, &signature_bytes)
+        })
+        .await
+        .map_err(|join_err| {
+            ErrorData::internal_error(
+                format!("mcp_v2 dispatch task join failed: {join_err}"),
+                None,
             )
-        };
+        })?;
 
         // Store the gateway's preissued next_nonce for the NEXT call.
         // (Even on error responses the gateway returns a preissued nonce

@@ -85,7 +85,7 @@ enum ClaimPlacement {
     category = Read,
     version = "1.0.0",
     schema_version = 1,
-    allowed_actors = [User, SurfaceClient],
+    allowed_actors = [User, SurfaceClient, McpClient],
     allowed_modes = [Live],
     requires_confirmation = false,
     may_publish = false,
