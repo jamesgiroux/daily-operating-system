@@ -1,4 +1,4 @@
-//! Document/entity link service — DOS-465 (W1-C) substrate.
+//! Document/entity link service — v1.4.5 W1-C substrate.
 //!
 //! Wraps the `document_entity_links` table (migration v254). Per L0 question 10
 //! cycle-2 resolution: relational table, NOT a claim (an entity-doc link is
@@ -19,7 +19,7 @@
 //!
 //! User-driven attribution sources (`EntityIntake`, `UserRelink`, `McpPlacement`,
 //! `Frontmatter`) BYPASS the rejected-row check — the user is intentionally
-//! resurrecting per the DOS-465 issue AC carve-out. The SQL partial UNIQUE
+//! resurrecting per the issue AC carve-out. The SQL partial UNIQUE
 //! still prevents an active duplicate.
 //!
 //! `override_link` is the **endorse-existing** API: it UPDATEs an existing

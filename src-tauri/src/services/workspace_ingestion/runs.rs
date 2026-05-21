@@ -1,4 +1,4 @@
-//! Ingestion-run tracking — DOS-465 (W1-C) substrate.
+//! Ingestion-run tracking — v1.4.5 W1-C substrate.
 //!
 //! Wraps the `document_ingestion_runs` table (migration v253). Provides
 //! `start_run` / `complete_run` / `find_by_idempotency_key` with two-tier

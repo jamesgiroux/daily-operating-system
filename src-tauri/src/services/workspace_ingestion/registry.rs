@@ -1,4 +1,4 @@
-//! Workspace source registry — DOS-464 (W1-B) substrate.
+//! Workspace source registry — v1.4.5 W1-B substrate.
 //!
 //! Two responsibilities:
 //!
