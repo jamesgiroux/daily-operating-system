@@ -72,34 +72,44 @@ if ( ! function_exists( 'dailyos_about_intelligence_render' ) ) {
 				$first_empty_reason = $state['reason'];
 			}
 		}
+		$out  = '<section id="about-intelligence" class="entity-detail_chapterSection" data-ds-tier="pattern" data-ds-name="AboutIntelligence" data-ds-spec="patterns/AboutIntelligence.md">';
+		$out .= '<div class="ChapterHeading_heading">';
+		$out .= '<hr class="ChapterHeading_rule" />';
+		$out .= '<div class="ChapterHeading_titleRow"><h2 class="ChapterHeading_title">' . esc_html__( 'About this intelligence', 'dailyos' ) . '</h2></div>';
+		$out .= '</div>';
+		$out .= '<div class="health_metaCard" data-dailyos-projection="about-intelligence" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['facts'] ) ) . '">';
+		$out .= '<div class="health_metaCardLabel">' . esc_html__( 'Our data capture gap', 'dailyos' ) . '</div>';
 		if ( ! $any_present ) {
 			$reason = '' !== $first_empty_reason ? $first_empty_reason : 'no_intelligence_source';
-			return dailyos_empty_chip(
+			$out .= dailyos_empty_chip(
 				$reason,
 				__( 'Intelligence source narrative pending', 'dailyos' ),
-				'wp-block-dailyos-about-intelligence'
+				'health_metaCardText'
 			);
+			$out .= '</div>';
+			$out .= '</section>';
+			return $out;
 		}
 
-		$wrapper_attrs = dailyos_inner_block_wrapper_attrs( 'wp-block-dailyos-about-intelligence' );
-		$out  = '<div ' . $wrapper_attrs . ' data-dailyos-projection="about-intelligence">';
-		$out .= '<header class="wp-block-dailyos-about-intelligence__header"><span class="wp-block-dailyos-about-intelligence__title">' . esc_html__( 'About Intelligence', 'dailyos' ) . '</span></header>';
-		$out .= '<div class="wp-block-dailyos-about-intelligence__body" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['facts'] ) ) . '">';
 		// Per AC-462.3 + DOS-341: every claim-bearing inner block routes
 		// receipts through build_receipt_for_audience server-side. The
 		// dailyos_envelope_consume_claim helper invokes claim_receipt via the
 		// runtime client with the resolved scope set; AgentMcp audience filter
 		// is applied inside the producer (DOS-341 boundary).
 		$projected_claim_refs = dailyos_about_intelligence_select_claim_refs( $envelope );
+		$rows = '';
 		foreach ( $projected_claim_refs as $claim_ref ) {
 			$receipt = dailyos_envelope_consume_claim( $claim_ref, $scope_set );
 			if ( null === $receipt ) {
 				continue;
 			}
-			$out .= dailyos_about_intelligence_render_row( $claim_ref, $receipt );
+			$rows .= dailyos_about_intelligence_render_row( $claim_ref, $receipt );
 		}
+		$out .= '' !== $rows
+			? $rows
+			: dailyos_empty_chip( 'no_intelligence_source', __( 'Intelligence source narrative pending', 'dailyos' ), 'health_metaCardText' );
 		$out .= '</div>';
-		$out .= '</div>';
+		$out .= '</section>';
 		return $out;
 	}
 }
@@ -167,8 +177,8 @@ if ( ! function_exists( 'dailyos_about_intelligence_render_row' ) ) {
 	function dailyos_about_intelligence_render_row( array $claim_ref, array $receipt ): string {
 		$claim_id = isset( $claim_ref['claim_id'] ) ? (string) $claim_ref['claim_id'] : '';
 		$trust_band = isset( $receipt['trustBand'] ) ? (string) $receipt['trustBand'] : ( isset( $receipt['trust_band'] ) ? (string) $receipt['trust_band'] : 'unscored' );
-		return '<article class="wp-block-dailyos-about-intelligence__row" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
-			. '<span class="wp-block-dailyos-about-intelligence__row-label">' . esc_html( $claim_id ) . '</span>'
-			. '</article>';
+		return '<div class="health_metaCardText" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
+			. esc_html( $claim_id )
+			. '</div>';
 	}
 }

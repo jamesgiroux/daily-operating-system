@@ -1,0 +1,120 @@
+src-tauri/src/services/entity_linking/rules/p5_title_evidence.rs:10:use crate::db::ActionDb;
+src-tauri/src/services/entity_linking/rules/p5_title_evidence.rs:65:        _service_ctx: &crate::services::context::ServiceContext<'_>,
+src-tauri/src/services/entity_linking/rules/p5_title_evidence.rs:234:    use crate::db::test_utils::test_db;
+src-tauri/src/services/entity_linking/rules/p5_title_evidence.rs:235:    use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
+src-tauri/src/services/linear_issue_signals.rs:6:use crate::db::ActionDb;
+src-tauri/src/services/linear_issue_signals.rs:7:use crate::linear::client::LinearIssue;
+src-tauri/src/services/linear_issue_signals.rs:8:use crate::signals::propagation::PropagationEngine;
+src-tauri/src/services/linear_issue_signals.rs:79:    ctx: &crate::services::context::ServiceContext<'_>,
+src-tauri/src/services/linear_issue_signals.rs:129:            if let Err(error) = crate::services::signals::emit_and_propagate(
+
+exec
+/bin/zsh -lc "sed -n '1,220p' src-tauri/src/services/mod.rs" in /private/tmp/dailyos-v145-w1a
+ succeeded in 0ms:
+use std::sync::Arc;
+
+use crate::state::AppState;
+
+pub mod accounts;
+pub mod actions;
+pub mod claim_receipt;
+pub mod claim_review_queue;
+pub mod claims;
+pub mod claims_backfill;
+pub mod commitment_bridge;
+pub mod comparator_thresholds;
+pub mod composition_projection;
+pub mod composition_render_orchestrator;
+pub mod compositions;
+pub mod context;
+pub mod dashboard;
+pub mod derived_state;
+pub mod emails;
+pub mod entities;
+pub mod entity_context;
+pub mod entity_linking;
+pub mod external_replay;
+pub mod fail_improve;
+pub mod feedback;
+pub mod health_debouncer;
+pub mod hygiene;
+pub mod integrations;
+pub mod intelligence;
+pub mod invalidation_jobs;
+pub mod linear;
+pub mod linear_issue_signals;
+pub mod mcp_v2;
+pub mod meetings;
+pub mod mutations;
+pub mod people;
+pub mod projection_signing;
+pub mod projects;
+pub mod recommendations;
+pub mod reports;
+pub mod sensitivity;
+pub mod settings;
+pub mod signals;
+pub mod source_asof_backfill;
+pub mod stakeholder_writer;
+pub mod success_plans;
+pub mod surface_nonce;
+pub mod surface_pairing;
+pub mod surface_session_keychain;
+pub mod temporal;
+pub mod threads;
+pub mod trust_extraction;
+pub mod user_entity;
+pub mod version_dispatcher;
+pub mod versioning;
+
+#[cfg(test)]
+mod tests;
+
+/// Command-facing service boundary for mutation workflows.
+///
+/// Background processors may still use owned `ActionDb` handles, but should call
+/// service-owned mutation functions instead of direct DB mutations.
+#[derive(Clone)]
+pub struct ServiceLayer {
+    state: Arc<AppState>,
+}
+
+impl ServiceLayer {
+    pub fn new(state: Arc<AppState>) -> Self {
+        Self { state }
+    }
+
+    pub fn state(&self) -> &AppState {
+        self.state.as_ref()
+    }
+
+    pub fn state_arc(&self) -> Arc<AppState> {
+        self.state.clone()
+    }
+}
+
+codex
+VERDICT: BLOCK
+
+1. `contracts.rs` block is not implementable as written: `lifecycle::LifecycleState` is referenced without importing the sibling module. Add `use super::lifecycle;` or use `super::lifecycle::LifecycleState`.
+
+2. `tests/contracts_import.rs` gate is specified with `use crate::services::...`, but integration tests here import the library as `dailyos_lib::...`. The changelog says the external importability gap is closed, but the documented test would not prove it.
+
+3. `TrustFactorInput` appears to be a new W1-A workspace seed enum. Prior art exists in `abilities-runtime/src/abilities/trust/types.rs`: `TrustFactorInputs`, `SourceReliabilityInput`, `SourceLifecycleState`, etc., but no matching singular `TrustFactorInput` enum with `StructuredHigh/StructuredMedium/Unstructured`.
+
+4. Because of #3, the doc-comment claiming freshness decay “blends this” is imprecise. Freshness decay handles `data_source`/age; the trust compiler consumes `TrustFactorInputs`. V1.1 should specify the later mapping from `TrustFactorInput` to existing trust inputs.
+
+5. Boundary check passes: `WorkspaceCategory::from_slug` explicitly limits W1-A to lexical slug shape and says per-entity allowedness is W1-B’s `WorkspaceCategoryRegistry::validate`. No W1-B dependency is reintroduced there.
+tokens used
+116,387
+VERDICT: BLOCK
+
+1. `contracts.rs` block is not implementable as written: `lifecycle::LifecycleState` is referenced without importing the sibling module. Add `use super::lifecycle;` or use `super::lifecycle::LifecycleState`.
+
+2. `tests/contracts_import.rs` gate is specified with `use crate::services::...`, but integration tests here import the library as `dailyos_lib::...`. The changelog says the external importability gap is closed, but the documented test would not prove it.
+
+3. `TrustFactorInput` appears to be a new W1-A workspace seed enum. Prior art exists in `abilities-runtime/src/abilities/trust/types.rs`: `TrustFactorInputs`, `SourceReliabilityInput`, `SourceLifecycleState`, etc., but no matching singular `TrustFactorInput` enum with `StructuredHigh/StructuredMedium/Unstructured`.
+
+4. Because of #3, the doc-comment claiming freshness decay “blends this” is imprecise. Freshness decay handles `data_source`/age; the trust compiler consumes `TrustFactorInputs`. V1.1 should specify the later mapping from `TrustFactorInput` to existing trust inputs.
+
+5. Boundary check passes: `WorkspaceCategory::from_slug` explicitly limits W1-A to lexical slug shape and says per-entity allowedness is W1-B’s `WorkspaceCategoryRegistry::validate`. No W1-B dependency is reintroduced there.

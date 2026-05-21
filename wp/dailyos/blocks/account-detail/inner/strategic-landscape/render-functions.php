@@ -72,34 +72,46 @@ if ( ! function_exists( 'dailyos_strategic_landscape_render' ) ) {
 				$first_empty_reason = $state['reason'];
 			}
 		}
+		$out  = '<section id="strategic-landscape" class="entity-detail_chapterSection" data-ds-tier="pattern" data-ds-name="StrategicLandscape" data-ds-spec="patterns/StrategicLandscape.md">';
+		$out .= '<div class="ChapterHeading_heading">';
+		$out .= '<hr class="ChapterHeading_rule" />';
+		$out .= '<div class="ChapterHeading_titleRow"><h2 class="ChapterHeading_title">' . esc_html__( 'Competitive & Strategic', 'dailyos' ) . '</h2></div>';
+		$out .= '</div>';
+		$out .= '<section class="StrategicLandscape_section" data-dailyos-projection="strategic-landscape" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['facts'] ) ) . '">';
+		$out .= '<div class="StrategicLandscape_subsectionLabel">' . esc_html__( 'Strategic priorities', 'dailyos' ) . '</div>';
 		if ( ! $any_present ) {
 			$reason = '' !== $first_empty_reason ? $first_empty_reason : 'no_landscape_narrative';
-			return dailyos_empty_chip(
+			$out .= dailyos_empty_chip(
 				$reason,
 				__( 'No strategic landscape captured', 'dailyos' ),
-				'wp-block-dailyos-strategic-landscape'
+				'StrategicLandscape_priorityGrid'
 			);
+			$out .= '</section>';
+			$out .= '</section>';
+			return $out;
 		}
 
-		$wrapper_attrs = dailyos_inner_block_wrapper_attrs( 'wp-block-dailyos-strategic-landscape' );
-		$out  = '<div ' . $wrapper_attrs . ' data-dailyos-projection="strategic-landscape">';
-		$out .= '<header class="wp-block-dailyos-strategic-landscape__header"><span class="wp-block-dailyos-strategic-landscape__title">' . esc_html__( 'Strategic Landscape', 'dailyos' ) . '</span></header>';
-		$out .= '<div class="wp-block-dailyos-strategic-landscape__body" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['facts'] ) ) . '">';
+		$out .= '<div class="StrategicLandscape_priorityGrid">';
 		// Per AC-462.3 + DOS-341: every claim-bearing inner block routes
 		// receipts through build_receipt_for_audience server-side. The
 		// dailyos_envelope_consume_claim helper invokes claim_receipt via the
 		// runtime client with the resolved scope set; AgentMcp audience filter
 		// is applied inside the producer (DOS-341 boundary).
 		$projected_claim_refs = dailyos_strategic_landscape_select_claim_refs( $envelope );
+		$rows = '';
 		foreach ( $projected_claim_refs as $claim_ref ) {
 			$receipt = dailyos_envelope_consume_claim( $claim_ref, $scope_set );
 			if ( null === $receipt ) {
 				continue;
 			}
-			$out .= dailyos_strategic_landscape_render_row( $claim_ref, $receipt );
+			$rows .= dailyos_strategic_landscape_render_row( $claim_ref, $receipt );
 		}
+		$out .= '' !== $rows
+			? $rows
+			: dailyos_empty_chip( 'no_landscape_narrative', __( 'No strategic landscape captured', 'dailyos' ), 'StrategicLandscape_priorityGrid' );
 		$out .= '</div>';
-		$out .= '</div>';
+		$out .= '</section>';
+		$out .= '</section>';
 		return $out;
 	}
 }
@@ -167,8 +179,11 @@ if ( ! function_exists( 'dailyos_strategic_landscape_render_row' ) ) {
 	function dailyos_strategic_landscape_render_row( array $claim_ref, array $receipt ): string {
 		$claim_id = isset( $claim_ref['claim_id'] ) ? (string) $claim_ref['claim_id'] : '';
 		$trust_band = isset( $receipt['trustBand'] ) ? (string) $receipt['trustBand'] : ( isset( $receipt['trust_band'] ) ? (string) $receipt['trust_band'] : 'unscored' );
-		return '<article class="wp-block-dailyos-strategic-landscape__row" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
-			. '<span class="wp-block-dailyos-strategic-landscape__row-label">' . esc_html( $claim_id ) . '</span>'
+		return '<article class="StrategicLandscape_priorityCard" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
+			. '<div class="StrategicLandscape_priorityHead">'
+			. '<div class="StrategicLandscape_priorityName">' . esc_html( $claim_id ) . '</div>'
+			. '<span class="StrategicLandscape_statusTag StrategicLandscape_statusNeutral">' . esc_html( $trust_band ) . '</span>'
+			. '</div>'
 			. '</article>';
 	}
 }

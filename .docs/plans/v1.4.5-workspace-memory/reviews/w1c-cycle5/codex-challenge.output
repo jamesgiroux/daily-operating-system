@@ -1,0 +1,15 @@
+   244	- **V1.3 fold #3 — `in_progress_idempotency_returns_already_in_progress`:** `start_run(seed)` → without calling `complete_run`, a second `start_run(seed)` with same `(file_id, content_sha256, mode)` returns `Err(RunsError::AlreadyInProgress { existing_run_id })` if the prior run is <1 hour old; if >1 hour old, the prior is marked `aborted` and the new run proceeds.
+
+codex
+VERDICT: BLOCK.
+Cycle 4’s 3 stale findings are fixed: L101, L243, L267/L276-L280 now match V1.3.
+Residual fold gap #1: `BEGIN IMMEDIATE` only appears in §2 L19-L39; body §4 L110/§6 L220-L222 still describe plain pre-check before insert.
+Residual fold gap #3: §7 L234 still has repeat `start_run` after success flowing to `find_by_idempotency_key`, not `AlreadyCompleted { existing }`.
+Residual fold gap #5: wave-PR safeguard is in §1 L11, but not in §10 despite V1.3 claiming handoff update.
+tokens used
+68,930
+VERDICT: BLOCK.
+Cycle 4’s 3 stale findings are fixed: L101, L243, L267/L276-L280 now match V1.3.
+Residual fold gap #1: `BEGIN IMMEDIATE` only appears in §2 L19-L39; body §4 L110/§6 L220-L222 still describe plain pre-check before insert.
+Residual fold gap #3: §7 L234 still has repeat `start_run` after success flowing to `find_by_idempotency_key`, not `AlreadyCompleted { existing }`.
+Residual fold gap #5: wave-PR safeguard is in §1 L11, but not in §10 despite V1.3 claiming handoff update.

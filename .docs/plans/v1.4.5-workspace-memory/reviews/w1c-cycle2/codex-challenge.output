@@ -1,0 +1,50 @@
+src-tauri/tests/workspace_ingestion_unit.rs:8:    DataSource, SourceAttribution, SourceIdentifier,
+src-tauri/tests/workspace_ingestion_unit.rs:159:// ---- SourceAttribution construction sanity (W3-A target shape) --------------
+src-tauri/tests/workspace_ingestion_unit.rs:166:    let attribution = SourceAttribution::new(
+src-tauri/tests/workspace_ingestion_unit.rs:179:    .expect("SourceAttribution::new accepts canonical workspace-shape inputs");
+src-tauri/tests/bundle17_source_lifecycle_actor_provenance_substrate_test.rs:16:    ProvenanceWarning, ProviderRef, SanitizedExplanation, SignalId, SourceAttribution,
+src-tauri/tests/bundle17_source_lifecycle_actor_provenance_substrate_test.rs:771:    let source = SourceAttribution::new(
+src-tauri/tests/bundle17_source_lifecycle_actor_provenance_substrate_test.rs:856:    let source = SourceAttribution::new(
+src-tauri/tests/dos211_finalize_unattributed_field_fails_test.rs:4:    SourceAttribution, SubjectAttribution, SubjectRef,
+src-tauri/tests/dos211_finalize_unattributed_field_fails_test.rs:18:    let source = SourceAttribution::new(
+src-tauri/tests/workspace_ingestion_contracts_import.rs:13:    SourceAttribution, WorkspaceCategory, WorkspaceClaimProposal, WorkspaceFileKind,
+src-tauri/tests/workspace_ingestion_contracts_import.rs:41:    assert!(std::mem::size_of::<SourceAttribution>() > 0);
+src-tauri/tests/edge_cases/support.rs:9:    TrustConfig, TrustContext, TrustFactorInputs, TrustScore, UserFeedbackSignal,
+src-tauri/tests/edge_cases/support.rs:71:    inputs: TrustFactorInputs,
+src-tauri/tests/edge_cases/support.rs:98:pub fn baseline_trust_inputs() -> TrustFactorInputs {
+src-tauri/tests/edge_cases/support.rs:99:    TrustFactorInputs {
+src-tauri/tests/edge_cases/support.rs:117:pub fn score_of(inputs: TrustFactorInputs) -> f64 {
+src-tauri/tests/edge_cases/support.rs:121:pub fn band_of(inputs: TrustFactorInputs) -> TrustBand {
+src-tauri/tests/dos211_llm_synthesis_trust_test.rs:4:    ProvenanceBuilderConfig, SourceAttribution, SourceRef, SubjectAttribution, SubjectRef,
+src-tauri/tests/dos211_llm_synthesis_trust_test.rs:18:    let source = SourceAttribution::new(
+src-tauri/tests/dos320_per_field_trust_band_test.rs:12:    ProvenanceBuilderConfig, SourceAttribution, SourceRef, SubjectAttribution, SubjectRef,
+src-tauri/tests/dos320_per_field_trust_band_test.rs:158:fn source_for_claim(claim: &IntelligenceClaim) -> SourceAttribution {
+src-tauri/tests/dos320_per_field_trust_band_test.rs:161:    SourceAttribution::new(
+src-tauri/tests/edge_cases/unit/dos282_provenance_field_attribution.rs:4:    SourceAttribution, SourceIdentifier, SubjectAttribution, SubjectRef,
+src-tauri/tests/edge_cases/unit/dos282_provenance_field_attribution.rs:18:        SourceAttribution::new(
+
+codex
+VERDICT BLOCK
+
+1. Cycle-1 #3 is not actually resolved: after `reject_link` sets `rejected = 1`, the row exits `idx_del_active_unique`, so `INSERT ... ON CONFLICT ... WHERE rejected = 0 DO NOTHING` inserts a new active row. I verified this in SQLite. Packet lines 21, 156-159, 176.
+
+2. The tombstone service guard is asserted but not specified. V1.1 must require an explicit pre-insert rejected-tombstone lookup for classifier/backfill sources, and separately define how `UserRelink` can intentionally resurrect. Current `add_link` contract cannot satisfy both safely.
+
+3. Idempotency remains weaker than the wave contract: wave line 573 requires inserting the same run twice with same file hash produces one record, but V1.1 uses a non-unique `idx_dir_idempotency` and only tests lookup after success. Packet lines 122-124, 170.
+
+4. Cycle-1 #1, #2, #4, and #5 are folded on paper: `StartRunSeed` covers NOT NULL fields, `user_override_*` matches W1-A naming, stale W4-C ref is gone, and the missing state/round-trip tests are named.
+
+5. Substrate check passed for V1.1-new names: no repo collisions found for `StartRunSeed`, `IngestionRunStatus`, `LinkAttributionSource`, `RunsError`, or `LinkError`; `LinkAttributionSource` is distinct from canonical `SourceAttribution`.
+tokens used
+114,699
+VERDICT BLOCK
+
+1. Cycle-1 #3 is not actually resolved: after `reject_link` sets `rejected = 1`, the row exits `idx_del_active_unique`, so `INSERT ... ON CONFLICT ... WHERE rejected = 0 DO NOTHING` inserts a new active row. I verified this in SQLite. Packet lines 21, 156-159, 176.
+
+2. The tombstone service guard is asserted but not specified. V1.1 must require an explicit pre-insert rejected-tombstone lookup for classifier/backfill sources, and separately define how `UserRelink` can intentionally resurrect. Current `add_link` contract cannot satisfy both safely.
+
+3. Idempotency remains weaker than the wave contract: wave line 573 requires inserting the same run twice with same file hash produces one record, but V1.1 uses a non-unique `idx_dir_idempotency` and only tests lookup after success. Packet lines 122-124, 170.
+
+4. Cycle-1 #1, #2, #4, and #5 are folded on paper: `StartRunSeed` covers NOT NULL fields, `user_override_*` matches W1-A naming, stale W4-C ref is gone, and the missing state/round-trip tests are named.
+
+5. Substrate check passed for V1.1-new names: no repo collisions found for `StartRunSeed`, `IngestionRunStatus`, `LinkAttributionSource`, `RunsError`, or `LinkError`; `LinkAttributionSource` is distinct from canonical `SourceAttribution`.

@@ -967,6 +967,34 @@ const MIGRATIONS: &[Migration] = &[
         version: 245,
         sql: include_str!("migrations/245_dos_484_feedback_merge_intent.sql"),
     },
+    // v1.4.5 W1-A — workspace file lifecycle + ownership model.
+    // Cycle 11 renumber: was v200/v201 in pre-2026-05-20 wave plan; live-dev
+    // ceiling at v240 forced the shift above it (DBs at v240 would silently
+    // skip lower versions per the `version > current` runner filter at
+    // `run_migrations_with_key`).
+    Migration::Sql {
+        version: 250,
+        sql: include_str!("migrations/250_workspace_file_lifecycle.sql"),
+    },
+    Migration::Sql {
+        version: 251,
+        sql: include_str!("migrations/251_workspace_file_lifecycle_category.sql"),
+    },
+    // v1.4.5 W1-B — workspace source-type allowlist + per-entity category registry.
+    Migration::Sql {
+        version: 252,
+        sql: include_str!("migrations/252_workspace_source_registry.sql"),
+    },
+    // v1.4.5 W1-C — ingestion run tracking (idempotency + retry lineage).
+    Migration::Sql {
+        version: 253,
+        sql: include_str!("migrations/253_document_ingestion_runs.sql"),
+    },
+    // v1.4.5 W1-C — document/entity link tombstone-aware table.
+    Migration::Sql {
+        version: 254,
+        sql: include_str!("migrations/254_document_entity_links.sql"),
+    },
 ];
 
 const V155_SHADOW_TRUST_VERSION: i64 = 1_401_003;
@@ -3452,7 +3480,7 @@ fn backup_before_migration(
         return Err(format!(
             "Pre-migration backup is suspiciously small ({backup_size} bytes) for a \
              {source_size}-byte source database. The backup is likely hollow. \
-             Refusing to apply migrations without a valid safety copy (DOS-273)."
+             Refusing to apply migrations without a valid safety copy."
         ));
     }
 

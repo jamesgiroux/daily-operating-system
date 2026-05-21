@@ -72,34 +72,46 @@ if ( ! function_exists( 'dailyos_stakeholder_grid_render' ) ) {
 				$first_empty_reason = $state['reason'];
 			}
 		}
+		$out  = '<section id="the-room" class="entity-detail_chapterSection" data-ds-tier="pattern" data-ds-name="StakeholderGrid" data-ds-spec="patterns/StakeholderGrid.md">';
+		$out .= '<section class="StakeholderGrid_section" data-dailyos-projection="stakeholder-grid" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['facts', 'touchpoints'] ) ) . '">';
+		$out .= '<div class="ChapterHeading_heading">';
+		$out .= '<hr class="ChapterHeading_rule" />';
+		$out .= '<div class="ChapterHeading_titleRow"><h2 class="ChapterHeading_title">' . esc_html__( 'The Room', 'dailyos' ) . '</h2></div>';
+		$out .= '</div>';
+		$out .= '<div class="StakeholderGrid_subsectionLabel">' . esc_html__( 'Their team', 'dailyos' ) . '</div>';
 		if ( ! $any_present ) {
 			$reason = '' !== $first_empty_reason ? $first_empty_reason : 'no_stakeholders_in_facts';
-			return dailyos_empty_chip(
+			$out .= dailyos_empty_chip(
 				$reason,
 				__( 'No stakeholders on record', 'dailyos' ),
-				'wp-block-dailyos-stakeholder-grid'
+				'StakeholderGrid_empty'
 			);
+			$out .= '</section>';
+			$out .= '</section>';
+			return $out;
 		}
 
-		$wrapper_attrs = dailyos_inner_block_wrapper_attrs( 'wp-block-dailyos-stakeholder-grid' );
-		$out  = '<div ' . $wrapper_attrs . ' data-dailyos-projection="stakeholder-grid">';
-		$out .= '<header class="wp-block-dailyos-stakeholder-grid__header"><span class="wp-block-dailyos-stakeholder-grid__title">' . esc_html__( 'Stakeholder Grid', 'dailyos' ) . '</span></header>';
-		$out .= '<div class="wp-block-dailyos-stakeholder-grid__body" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['facts', 'touchpoints'] ) ) . '">';
+		$out .= '<div class="StakeholderGrid_roomGrid">';
 		// Per AC-462.3 + DOS-341: every claim-bearing inner block routes
 		// receipts through build_receipt_for_audience server-side. The
 		// dailyos_envelope_consume_claim helper invokes claim_receipt via the
 		// runtime client with the resolved scope set; AgentMcp audience filter
 		// is applied inside the producer (DOS-341 boundary).
 		$projected_claim_refs = dailyos_stakeholder_grid_select_claim_refs( $envelope );
+		$rows = '';
 		foreach ( $projected_claim_refs as $claim_ref ) {
 			$receipt = dailyos_envelope_consume_claim( $claim_ref, $scope_set );
 			if ( null === $receipt ) {
 				continue;
 			}
-			$out .= dailyos_stakeholder_grid_render_row( $claim_ref, $receipt );
+			$rows .= dailyos_stakeholder_grid_render_row( $claim_ref, $receipt );
 		}
+		$out .= '' !== $rows
+			? $rows
+			: dailyos_empty_chip( 'no_stakeholders_in_facts', __( 'No stakeholders on record', 'dailyos' ), 'StakeholderGrid_empty' );
 		$out .= '</div>';
-		$out .= '</div>';
+		$out .= '</section>';
+		$out .= '</section>';
 		return $out;
 	}
 }
@@ -167,8 +179,14 @@ if ( ! function_exists( 'dailyos_stakeholder_grid_render_row' ) ) {
 	function dailyos_stakeholder_grid_render_row( array $claim_ref, array $receipt ): string {
 		$claim_id = isset( $claim_ref['claim_id'] ) ? (string) $claim_ref['claim_id'] : '';
 		$trust_band = isset( $receipt['trustBand'] ) ? (string) $receipt['trustBand'] : ( isset( $receipt['trust_band'] ) ? (string) $receipt['trust_band'] : 'unscored' );
-		return '<article class="wp-block-dailyos-stakeholder-grid__row" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
-			. '<span class="wp-block-dailyos-stakeholder-grid__row-label">' . esc_html( $claim_id ) . '</span>'
+		return '<article class="StakeholderGrid_personCard StakeholderGrid_personCardPrimary" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
+			. '<div class="StakeholderGrid_personHeader">'
+			. '<div class="StakeholderGrid_avatar" aria-hidden="true"></div>'
+			. '<div class="StakeholderGrid_personIdentity">'
+			. '<div class="StakeholderGrid_personName">' . esc_html( $claim_id ) . '</div>'
+			. '<div class="StakeholderGrid_personTitle">' . esc_html( $trust_band ) . '</div>'
+			. '</div>'
+			. '</div>'
 			. '</article>';
 	}
 }

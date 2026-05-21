@@ -72,34 +72,47 @@ if ( ! function_exists( 'dailyos_account_pull_quote_render' ) ) {
 				$first_empty_reason = $state['reason'];
 			}
 		}
+		$out  = '<section id="thesis" class="entity-detail_chapterSection" data-ds-tier="pattern" data-ds-name="AccountPullQuote" data-ds-spec="patterns/AccountPullQuote.md">';
+		$out .= '<section class="editorial-reveal-slow AccountDetailEditorial_thesisSection" data-dailyos-projection="account-pull-quote" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['facts'] ) ) . '">';
+		$out .= '<div class="AccountDetailEditorial_thesisLabel">' . esc_html__( 'The thesis', 'dailyos' ) . '</div>';
 		if ( ! $any_present ) {
 			$reason = '' !== $first_empty_reason ? $first_empty_reason : 'no_quote_available';
-			return dailyos_empty_chip(
+			$out .= dailyos_empty_chip(
 				$reason,
 				__( 'No representative quote selected', 'dailyos' ),
-				'wp-block-dailyos-account-pull-quote'
+				'AccountDetailEditorial_thesisQuote'
 			);
+			$out .= '</section>';
+			$out .= '</section>';
+			return $out;
 		}
 
-		$wrapper_attrs = dailyos_inner_block_wrapper_attrs( 'wp-block-dailyos-account-pull-quote' );
-		$out  = '<div ' . $wrapper_attrs . ' data-dailyos-projection="account-pull-quote">';
-		$out .= '<header class="wp-block-dailyos-account-pull-quote__header"><span class="wp-block-dailyos-account-pull-quote__title">' . esc_html__( 'Account Pull Quote', 'dailyos' ) . '</span></header>';
-		$out .= '<div class="wp-block-dailyos-account-pull-quote__body" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['facts'] ) ) . '">';
+		$out .= '<p class="AccountDetailEditorial_thesisQuote">';
+		$out .= '<span aria-hidden="true" class="AccountDetailEditorial_pullquoteMark">&ldquo;</span>';
 		// Per AC-462.3 + DOS-341: every claim-bearing inner block routes
 		// receipts through build_receipt_for_audience server-side. The
 		// dailyos_envelope_consume_claim helper invokes claim_receipt via the
 		// runtime client with the resolved scope set; AgentMcp audience filter
 		// is applied inside the producer (DOS-341 boundary).
 		$projected_claim_refs = dailyos_account_pull_quote_select_claim_refs( $envelope );
+		$rows = '';
 		foreach ( $projected_claim_refs as $claim_ref ) {
 			$receipt = dailyos_envelope_consume_claim( $claim_ref, $scope_set );
 			if ( null === $receipt ) {
 				continue;
 			}
-			$out .= dailyos_account_pull_quote_render_row( $claim_ref, $receipt );
+			$rows .= dailyos_account_pull_quote_render_row( $claim_ref, $receipt );
 		}
-		$out .= '</div>';
-		$out .= '</div>';
+		if ( '' !== $rows ) {
+			$out .= $rows;
+			$out .= '<span aria-hidden="true" class="AccountDetailEditorial_pullquoteMark">&rdquo;</span>';
+			$out .= '</p>';
+		} else {
+			$out .= '</p>';
+			$out .= dailyos_empty_chip( 'no_quote_available', __( 'No representative quote selected', 'dailyos' ), 'AccountDetailEditorial_thesisQuote' );
+		}
+		$out .= '</section>';
+		$out .= '</section>';
 		return $out;
 	}
 }
@@ -167,8 +180,8 @@ if ( ! function_exists( 'dailyos_account_pull_quote_render_row' ) ) {
 	function dailyos_account_pull_quote_render_row( array $claim_ref, array $receipt ): string {
 		$claim_id = isset( $claim_ref['claim_id'] ) ? (string) $claim_ref['claim_id'] : '';
 		$trust_band = isset( $receipt['trustBand'] ) ? (string) $receipt['trustBand'] : ( isset( $receipt['trust_band'] ) ? (string) $receipt['trust_band'] : 'unscored' );
-		return '<article class="wp-block-dailyos-account-pull-quote__row" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
-			. '<span class="wp-block-dailyos-account-pull-quote__row-label">' . esc_html( $claim_id ) . '</span>'
-			. '</article>';
+		return '<span data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
+			. esc_html( $claim_id )
+			. '</span>';
 	}
 }

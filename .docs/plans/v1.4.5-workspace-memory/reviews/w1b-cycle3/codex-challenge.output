@@ -1,0 +1,45 @@
+pub enum RejectionReason {
+    PathTraversalAttempt,
+    SymlinkRefused,
+    SymlinkRaced,
+    OutsideWorkspace,
+    FileTooLarge,
+    UnsupportedFormat,
+}
+
+/// Extraction shape returned by W3-A's `Extractor::extract`. Wrapper that
+/// bundles extractor output with workspace-specific metadata BEFORE conversion
+/// to the canonical commit shape (`dailyos_lib::services::claims::ClaimProposal`
+/// at `services/claims.rs:74`, 18 fields).
+///
+/// W3-A is responsible for the `into_commit(self, actor: &str) -> ClaimProposal`
+/// mapping that translates this extraction shape into the commit shape, packing
+
+exec
+/bin/zsh -lc "rg -n \"workspace_source_registry|workspace_category_registry|v252|252_workspace\" src-tauri/src/migrations.rs src-tauri/src/migrations -g '*.sql'" in /private/tmp/dailyos-v145-w1a
+ exited 1 in 0ms:
+codex
+VERDICT BLOCK
+
+1. §8/§9 still require “all 15” security fixtures while §7 lists 19 and its heading says 17. The V1.2 fixture expansion is not actually enforced by acceptance criteria.
+
+2. `EntityType::Other` handling is still internally inconsistent: §2 says `resolve_path(EntityType::Other, …)` returns Err, but §4’s signature returns `PathBuf`, and §8 tests `WorkspaceCategory::Other`, not `EntityType::Other`.
+
+3. Reserved-name fold is stale in §8: `register_other(Account, "CON")` says the regex accepts it, but `^[a-z]...` rejects uppercase. The intended “uppercase regex rejection, lowercase Windows-reserved deferral” must be stated consistently.
+
+4. Hardlink defense via `fstat.nlink > 1` is sound as a coarse Unix defense, but fixture #7 should not specify `/etc/passwd`; hardlink creation there is often impossible. Use a same-device temp file outside workspace.
+
+5. Symlink static expectations are now consistent (`OutsideWorkspace` after canonicalize), but the concurrency adversarial fixture is over-narrow: canonicalize races can produce missing/outside outcomes, not only `SymlinkRaced`.
+tokens used
+127,470
+VERDICT BLOCK
+
+1. §8/§9 still require “all 15” security fixtures while §7 lists 19 and its heading says 17. The V1.2 fixture expansion is not actually enforced by acceptance criteria.
+
+2. `EntityType::Other` handling is still internally inconsistent: §2 says `resolve_path(EntityType::Other, …)` returns Err, but §4’s signature returns `PathBuf`, and §8 tests `WorkspaceCategory::Other`, not `EntityType::Other`.
+
+3. Reserved-name fold is stale in §8: `register_other(Account, "CON")` says the regex accepts it, but `^[a-z]...` rejects uppercase. The intended “uppercase regex rejection, lowercase Windows-reserved deferral” must be stated consistently.
+
+4. Hardlink defense via `fstat.nlink > 1` is sound as a coarse Unix defense, but fixture #7 should not specify `/etc/passwd`; hardlink creation there is often impossible. Use a same-device temp file outside workspace.
+
+5. Symlink static expectations are now consistent (`OutsideWorkspace` after canonicalize), but the concurrency adversarial fixture is over-narrow: canonicalize races can produce missing/outside outcomes, not only `SymlinkRaced`.
