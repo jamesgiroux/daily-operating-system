@@ -1,4 +1,4 @@
-//! DOS-461 AC-461.2 — Account fixture suite (the richest primary proof).
+//! AC-461.2 — Account fixture suite (the richest primary proof).
 //!
 //! Covers metadata-proposal + correction-loop depth, plus the matrix-required
 //! account fixtures. Each fixture deserializes into a full

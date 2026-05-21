@@ -1,4 +1,4 @@
-//! DOS-461 AC-461.3 — Project fixture suite.
+//! AC-461.3 — Project fixture suite.
 //!
 //! Per AC-461.3: covers trajectory / horizon / stakeholder / team context /
 //! record entries / work / open loops / touchpoints / trust / provenance /

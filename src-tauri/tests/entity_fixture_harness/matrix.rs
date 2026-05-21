@@ -1,4 +1,4 @@
-//! DOS-461 AC-461.5b — per-subject expected-fixture matrix.
+//! AC-461.5b — per-subject expected-fixture matrix.
 //!
 //! Replaces "where supported" wording from cycle-0 with an explicit
 //! Account ✕ Project ✕ Person × fixture-class table. Absent expected

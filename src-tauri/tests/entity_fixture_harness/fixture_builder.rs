@@ -1,4 +1,4 @@
-//! Programmatic fixture builders for DOS-461.
+//! Programmatic fixture builders.
 //!
 //! Each fixture is a real `EntityIntelligenceEnvelope` serialized to JSON
 //! under `tests/entity_fixture_harness/fixtures/`. This module owns the

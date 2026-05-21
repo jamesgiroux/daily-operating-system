@@ -1,4 +1,4 @@
-//! DOS-461 AC-461.6a / 6b — assertion library.
+//! AC-461.6a / 6b — assertion library.
 //!
 //! - **`assert_no_bypass`** (AC-461.6a, static check): the rendered surface
 //!   sources its claim-substantive text ONLY from the supplied envelope. The
@@ -42,7 +42,7 @@ const BYPASS_DENYLIST: &[&str] = &[
     "AppState::get_intelligence",
     "ActionDb::query_claims",
     // page-local intelligence composers (the regression class that motivated
-    // DOS-461 — visually-polished surface that recreates its own composer)
+    // visually-polished surface that recreates its own composer)
     "compose_account_intelligence",
     "compose_project_intelligence",
     "compose_person_intelligence",

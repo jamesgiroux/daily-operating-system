@@ -1,4 +1,4 @@
-//! DOS-459 — `get_entity_intelligence` envelope producer.
+//! `get_entity_intelligence` envelope producer.
 //!
 //! Read-side composition over existing claim/proposal/open-loop substrate.
 //! See `.docs/plans/v1.4.4-wp-surface-migration/L0-packet-W1-substrate-gaps.md` §5.1.
@@ -6,7 +6,7 @@
 //! W1 scope: envelope shape + facts + open_loops are wired to real readers.
 //! Touchpoints / threads / record_entries / metadata_proposals return typed
 //! empty states keyed to the producer that will fill them in later substrate
-//! waves (DOS-460 touchpoints, DOS-297 threads, DOS-328 metadata proposals).
+//! waves (touchpoints, threads, metadata proposals).
 //! This matches the L0 contract: empty sections carry typed reasons; no
 //! "Phase 2" stubs.
 
@@ -103,7 +103,7 @@ pub async fn build_entity_intelligence(
         Paginated::empty_stable()
     };
 
-    // ---- compose: touchpoints (DOS-460) ------------------------------------
+    // ---- compose: touchpoints ---------------------------------------------
     let touchpoints = if active_sections.contains(&EnvelopeSection::Touchpoints) {
         compose_touchpoints(
             ctx,
@@ -122,7 +122,7 @@ pub async fn build_entity_intelligence(
     let metadata_proposals = empty_paginated_metadata_proposals();
     let threads = Paginated::<ThreadSummary>::empty_stable();
 
-    // ---- compose: health (Meeting subject only, via DOS-335 prep status) ---
+    // ---- compose: health (Meeting subject only, via prep status) ----------
     // W2 F2 (cycle-1 codex challenge): Meeting Detail's prep-status inner block
     // reads from `services::meeting_prep_status::read::compute_status`. We surface
     // it as the envelope's Health section so the Meeting Detail block can render
@@ -467,7 +467,7 @@ fn not_requested_touchpoints_bundle(subject_ref: &SubjectRef) -> Paginated<Touch
     Paginated::stable(vec![bundle])
 }
 
-// ---- touchpoints (DOS-460) -----------------------------------------------
+// ---- touchpoints ---------------------------------------------------------
 
 /// Default upcoming window in days. Matches the `today + horizon` convention
 /// used by daily briefing readiness — long enough to surface the next-week
@@ -728,9 +728,9 @@ fn read_failed_touchpoints_bundle(
     }
 }
 
-// ---- meeting health (W2 F2 — DOS-335 prep status) ------------------------
+// ---- meeting health (W2 F2 prep status) ---------------------------------
 
-/// Compose `HealthStory` for a Meeting subject from the DOS-335 prep status
+/// Compose `HealthStory` for a Meeting subject from the prep status
 /// snapshot. Returns `None` when no reader is attached or the meeting is not
 /// found — the envelope renders Health as `Empty { NotProcessedYet }` in that
 /// case (see `build_sections_map`).
@@ -738,7 +738,7 @@ fn read_failed_touchpoints_bundle(
 /// W2 F2 wiring: the Meeting Detail composite block invokes
 /// `get_entity_intelligence(entity_type=meeting)` and consumes
 /// `envelope.health_story` directly. Status / blocking_reason / stale_reason
-/// are stringly-typed projections of DOS-335 `PrepStatus` per the read handle
+/// are stringly-typed projections of `PrepStatus` per the read handle
 /// contract (`MeetingPrepStatusSnapshot`).
 async fn compose_meeting_health(
     ctx: &AbilityContext<'_>,
@@ -985,7 +985,7 @@ fn upsert_provenance_source(provenance: &mut EnvelopeProvenance, claim: &Intelli
         source_type: Some(claim.data_source.clone()),
         as_of: parse_optional_timestamp(claim.source_asof.as_deref()),
         // W1 producer is naive about redaction — the W2 projection layer composes
-        // `redact_provenance_for_surface` per DOS-477. Substrate marks redacted=false
+        // `redact_provenance_for_surface`. Substrate marks redacted=false
         // here; the projection layer flips it when applying surface-specific gates.
         redacted: false,
     };
@@ -1094,8 +1094,8 @@ fn field_error(error: impl std::fmt::Display) -> AbilityError {
 
 #[cfg(test)]
 mod tests {
-    //! Pure shape + section-state tests for the DOS-459 envelope. The full
-    //! runtime test using `AbilityContext` lives in the DOS-461 harness (W1
+    //! Pure shape + section-state tests for the envelope. The full
+    //! runtime test using `AbilityContext` lives in the fixture harness (W1
     //! sibling). These tests verify the cycle-1 architecture F5 + correctness F4
     //! contracts — every list-shape field is `Paginated<T>` with `CursorState`,
     //! empty sections carry typed reasons, sections map enumerates all variants.
@@ -1284,7 +1284,7 @@ mod tests {
         assert!(matches!(parsed, EntityKind::Meeting));
     }
 
-    // ---- DOS-460 — touchpoint projection + subject-isolation tests --------
+    // ---- touchpoint projection + subject-isolation tests ------------------
 
     fn fake_snapshot(
         entity_type: &str,
@@ -1696,7 +1696,7 @@ mod tests {
         assert_eq!(inner.empty_reason, Some(EmptyReason::NotRequested));
     }
 
-    // ---- W2 F2 — Meeting health projection (DOS-335 prep status) ----------
+    // ---- W2 F2 Meeting health projection (prep status) -------------------
 
     fn meeting_prep_snapshot_ready(meeting_id: &str) -> crate::services::context::MeetingPrepStatusSnapshot {
         crate::services::context::MeetingPrepStatusSnapshot {
@@ -1730,7 +1730,7 @@ mod tests {
     fn meeting_health_projection_ready_emits_status_and_last_prepared_rows() {
         // W2 F2 — Ready prep status surfaces "Prep status" + "Last prepared"
         // rows, no blocking/stale reason rows. The headline mirrors the
-        // DOS-335 PrepStatus string discriminant so consumers can render a
+        // PrepStatus string discriminant so consumers can render a
         // trust-band-tinted summary verbatim.
         let snap = meeting_prep_snapshot_ready("m-1");
         let mut prov = EnvelopeProvenance::empty();
@@ -1750,7 +1750,7 @@ mod tests {
         // W2 F2 — BlockedNoEntity status carries a blocking_reason row and
         // omits last_prepared_at (the meeting was never prepared). The
         // renderer consumes this row to surface "Link an account/project to
-        // unblock prep" affordance per DOS-335 §6.
+        // unblock prep" affordance per the render contract.
         let snap = meeting_prep_snapshot_blocked("m-blocked");
         let mut prov = EnvelopeProvenance::empty();
         let health = project_meeting_health(&snap, "m-blocked", &mut prov);
@@ -1766,7 +1766,7 @@ mod tests {
     fn meeting_health_projection_stale_surfaces_stale_reason_row() {
         // W2 F2 — Stale prep folds the stale_reason into the HealthStory so
         // the Meeting Detail surface can name *why* prep is stale (upstream
-        // claim invalidation per DOS-335 W1 Stage 1c).
+        // claim invalidation).
         let snap = crate::services::context::MeetingPrepStatusSnapshot {
             meeting_id: "m-stale".to_string(),
             event_id: None,

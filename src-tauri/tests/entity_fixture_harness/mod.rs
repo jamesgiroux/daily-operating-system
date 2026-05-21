@@ -1,4 +1,4 @@
-//! DOS-461 harness modules. See `tests/entity_fixture_harness.rs` for the
+//! Harness modules. See `tests/entity_fixture_harness.rs` for the
 //! integration entry point.
 
 pub mod accounts;

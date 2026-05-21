@@ -1,4 +1,4 @@
-//! DOS-461 — Entity fixture harness + no-bypass checks.
+//! Entity fixture harness + no-bypass checks.
 //!
 //! Substrate-only test harness. Per `.docs/plans/v1.4.4-wp-surface-migration/L0-packet-W1-substrate-gaps.md` §5.3
 //! this harness gates W2 entity-detail block ship: any rendering path that does

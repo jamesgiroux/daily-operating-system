@@ -1,4 +1,4 @@
-//! DOS-461 — Red-first no-bypass proof tests.
+//! Red-first no-bypass proof tests.
 //!
 //! Demonstrates the assertion library actually catches the regressions it
 //! claims to. Two paired fixtures:

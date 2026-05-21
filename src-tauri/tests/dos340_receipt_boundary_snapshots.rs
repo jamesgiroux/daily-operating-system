@@ -1,4 +1,4 @@
-//! DOS-340 AC-340.3 / AC-340.5: receipt boundary snapshot harness.
+//! AC-340.3 / AC-340.5: receipt boundary snapshot harness.
 //!
 //! Loads every JSON fixture under `tests/claim_receipt_boundary/` and
 //! asserts that every key is in

@@ -1,4 +1,4 @@
-//! DOS-461 AC-461.4 — Person fixture suite.
+//! AC-461.4 — Person fixture suite.
 //!
 //! Per AC-461.4: covers profile / dynamic / rhythm / network / relationships /
 //! record entries / work / open loops / touchpoints / ambiguous-association /
