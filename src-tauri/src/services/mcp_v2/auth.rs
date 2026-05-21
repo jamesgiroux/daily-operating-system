@@ -42,6 +42,8 @@ pub enum AuthError {
     ConversationRevoked,
     #[error("keychain access failed: {0}")]
     Keychain(String),
+    #[error("nonce preissue failed after consume (fail-closed): {0}")]
+    PreissueFailed(String),
     #[error("sqlite error: {0}")]
     Sqlite(#[from] rusqlite::Error),
     #[error("canonical-json encoding failed: {0}")]
@@ -241,46 +243,63 @@ pub fn verify_transport_hmac(
     Ok(asserted_client_id.clone())
 }
 
-/// Atomic consume + preissue: in ONE transaction, consume the presented
-/// nonce and insert the next nonce, then return the next. Closes cycle-7 CSO
-/// HIGH + architect MED (issue-next-nonce post-handler failure path).
+/// Fail-closed consume + preissue per ADR-0102 §C.bis.fail-closed.
 ///
-/// Per ADR-0102 §C.bis.refresh + §C.bis.schema + §C.bis.fail-closed: the
-/// consume `UPDATE` is the authoritative point — once `rowsAffected = 1`,
-/// the nonce is permanently consumed even if the gateway later fails.
+/// Implemented as TWO separate phases per L2 cycle-1 code-reviewer HIGH:
+/// (a) commit the consume in its own transaction — once committed the nonce
+///     is permanently consumed regardless of downstream failure;
+/// (b) insert the next nonce in a second statement (autocommit). If (b)
+///     fails the consume from (a) is NOT rolled back — caller receives
+///     `AuthError::PreissueFailed`, must re-pair.
+///
+/// Cycle-7 CSO HIGH + architect MED on issue-next failure path is closed
+/// this way: consume is fail-closed, preissue failure is surfaced explicitly.
 pub fn verify_and_consume_and_preissue(
     conn: &mut Connection,
     client_id: &McpClientId,
     presented: &OpaqueNonce,
 ) -> Result<OpaqueNonce, AuthError> {
     let now = now_millis();
-    let tx = conn.transaction()?;
-    let consumed = tx.execute(
-        "UPDATE mcp_transport_nonce_ledger SET consumed_at = ?3 \
-         WHERE client_id = ?1 AND nonce = ?2 \
-           AND consumed_at IS NULL AND expires_at >= ?3",
-        params![client_id.as_str(), presented.as_str(), now],
-    )?;
-    if consumed != 1 {
-        // Disambiguate replayed vs absent/expired for caller-error shape per
-        // §C.bis.schema. Same wire shape; only `detail` field differs.
-        let already_consumed: Option<i64> = tx
-            .query_row(
-                "SELECT consumed_at FROM mcp_transport_nonce_ledger \
-                 WHERE client_id = ?1 AND nonce = ?2",
-                params![client_id.as_str(), presented.as_str()],
-                |row| row.get(0),
-            )
-            .optional()?
-            .flatten();
-        return Err(if already_consumed.is_some() {
-            AuthError::NonceReplayed
-        } else {
-            AuthError::InvalidSignature
-        });
+
+    // Phase (a): consume-only transaction. Either consumes successfully (and
+    // commits — fail-closed point) or returns the typed AuthError.
+    {
+        let tx = conn.transaction()?;
+        let consumed = tx.execute(
+            "UPDATE mcp_transport_nonce_ledger SET consumed_at = ?3 \
+             WHERE client_id = ?1 AND nonce = ?2 \
+               AND consumed_at IS NULL AND expires_at >= ?3",
+            params![client_id.as_str(), presented.as_str(), now],
+        )?;
+        if consumed != 1 {
+            // Disambiguate replayed vs absent/expired for caller-error shape
+            // per §C.bis.schema. Same wire shape; only `detail` differs.
+            let already_consumed: Option<i64> = tx
+                .query_row(
+                    "SELECT consumed_at FROM mcp_transport_nonce_ledger \
+                     WHERE client_id = ?1 AND nonce = ?2",
+                    params![client_id.as_str(), presented.as_str()],
+                    |row| row.get(0),
+                )
+                .optional()?
+                .flatten();
+            // tx auto-rolls back on drop — fine here, nothing has changed.
+            return Err(if already_consumed.is_some() {
+                AuthError::NonceReplayed
+            } else {
+                AuthError::InvalidSignature
+            });
+        }
+        tx.commit()?;
+        // Fail-closed point: consume is now permanent in the ledger.
     }
+
+    // Phase (b): preissue next nonce. If this fails, consume from (a) stays
+    // committed; caller learns the failure via `AuthError::PreissueFailed`
+    // and must re-pair (or use the recovery path the gateway provides if
+    // any). Per ADR-0102 §C.bis.fail-closed.
     let next_nonce = OpaqueNonce::new(random_hex(NONCE_BYTES));
-    tx.execute(
+    conn.execute(
         "INSERT INTO mcp_transport_nonce_ledger \
          (nonce, client_id, issued_at, expires_at, consumed_at) \
          VALUES (?1, ?2, ?3, ?4, NULL)",
@@ -290,8 +309,8 @@ pub fn verify_and_consume_and_preissue(
             now,
             now + NONCE_EXPIRY_SECONDS * 1000,
         ],
-    )?;
-    tx.commit()?;
+    )
+    .map_err(|err| AuthError::PreissueFailed(err.to_string()))?;
     Ok(next_nonce)
 }
 
