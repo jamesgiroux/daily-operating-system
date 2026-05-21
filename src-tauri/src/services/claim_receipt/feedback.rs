@@ -467,6 +467,7 @@ fn validate_and_sanitize_metadata(
             | FeedbackAction::NeedsNuance
             | FeedbackAction::SurfaceInappropriate
             | FeedbackAction::NotRelevantHere
+            | FeedbackAction::MergeIntent
     );
     if requires_metadata && sanitized_metadata.is_none() {
         return Err(FeedbackError::BadRequest(format!(
@@ -628,6 +629,56 @@ fn validate_and_sanitize_metadata(
                 ));
             }
         }
+        FeedbackAction::MergeIntent => {
+            // Required `merge_target: SubjectRef`; optional sanitized
+            // `supporting_evidence: String` (≤500 chars). ADR-0123 V1.1.
+            let metadata = sanitized_metadata
+                .as_mut()
+                .expect("requires_metadata branch enforced presence");
+            let obj = metadata.as_object_mut().ok_or_else(|| {
+                FeedbackError::BadRequest(
+                    "merge_intent metadata must be a JSON object".to_string(),
+                )
+            })?;
+            let target_value = obj.get("merge_target").cloned().ok_or_else(|| {
+                FeedbackError::BadRequest(
+                    "merge_intent.merge_target is required (ADR-0123 V1.1 verbatim field name)"
+                        .to_string(),
+                )
+            })?;
+            // Deep-decode to enforce the SubjectRef shape per ADR-0125.
+            serde_json::from_value::<SubjectRef>(target_value).map_err(|error| {
+                FeedbackError::BadRequest(format!(
+                    "merge_intent.merge_target must decode as SubjectRef: {error}"
+                ))
+            })?;
+            // supporting_evidence: optional sanitized free text.
+            if let Some(evidence_value) = obj.get("supporting_evidence").cloned() {
+                if evidence_value.is_null() {
+                    obj.remove("supporting_evidence");
+                } else {
+                    let evidence = evidence_value.as_str().ok_or_else(|| {
+                        FeedbackError::BadRequest(
+                            "merge_intent.supporting_evidence must be a string".to_string(),
+                        )
+                    })?;
+                    if evidence.chars().count() > MAX_NOTE_CHARS {
+                        return Err(FeedbackError::BadRequest(format!(
+                            "merge_intent.supporting_evidence exceeds {MAX_NOTE_CHARS} char budget"
+                        )));
+                    }
+                    let (sanitized, warning) =
+                        sanitize_freetext("merge_intent.supporting_evidence", evidence);
+                    if let Some(warning) = warning {
+                        warnings.push(warning);
+                    }
+                    obj.insert(
+                        "supporting_evidence".to_string(),
+                        serde_json::Value::String(sanitized),
+                    );
+                }
+            }
+        }
     }
 
     Ok(ValidatedMetadata {
@@ -647,6 +698,10 @@ fn allowed_keys_for(action: FeedbackAction) -> &'static [&'static str] {
         FeedbackAction::NeedsNuance => &["corrected_text"],
         FeedbackAction::SurfaceInappropriate => &["surface"],
         FeedbackAction::NotRelevantHere => &["invocation_id"],
+        // MergeIntent (ADR-0123 V1.1 / W2 §5.3): user nominates a
+        // canonical merge target. supporting_evidence is optional
+        // free-text and runs through the ADR-0108 §3 sanitizer.
+        FeedbackAction::MergeIntent => &["merge_target", "supporting_evidence"],
     }
 }
 
@@ -906,7 +961,7 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn validates_all_nine_variants() {
+    fn validates_all_ten_variants() {
         // ConfirmCurrent / MarkOutdated / MarkFalse: no required metadata.
         for action in [
             FeedbackAction::ConfirmCurrent,
@@ -974,6 +1029,78 @@ mod tests {
             Some(&serde_json::json!({"invocation_id": "invocation-1"})),
         )
         .expect("not_relevant_here with invocation_id");
+
+        // MergeIntent (ADR-0123 V1.1): required merge_target (SubjectRef),
+        // optional supporting_evidence (sanitized free text).
+        let err = validate_and_sanitize_metadata(FeedbackAction::MergeIntent, None).unwrap_err();
+        assert!(matches!(err, FeedbackError::BadRequest(_)));
+        validate_and_sanitize_metadata(
+            FeedbackAction::MergeIntent,
+            Some(&serde_json::json!({"merge_target": {"person": "person-canonical-1"}})),
+        )
+        .expect("merge_intent with merge_target only");
+        validate_and_sanitize_metadata(
+            FeedbackAction::MergeIntent,
+            Some(&serde_json::json!({
+                "merge_target": {"person": "person-canonical-1"},
+                "supporting_evidence": "Same person; different email aliases"
+            })),
+        )
+        .expect("merge_intent with merge_target + supporting_evidence");
+        // Reject malformed merge_target.
+        let err = validate_and_sanitize_metadata(
+            FeedbackAction::MergeIntent,
+            Some(&serde_json::json!({"merge_target": 42})),
+        )
+        .unwrap_err();
+        assert!(matches!(err, FeedbackError::BadRequest(message) if message.contains("merge_target")));
+    }
+
+    #[test]
+    fn merge_intent_sanitizes_supporting_evidence_through_adr_0108_pipeline() {
+        let validated = validate_and_sanitize_metadata(
+            FeedbackAction::MergeIntent,
+            Some(&serde_json::json!({
+                "merge_target": {"person": "person-canonical-1"},
+                "supporting_evidence": "Trace at https://example.com/audit"
+            })),
+        )
+        .expect("validate merge_intent");
+        let sanitized = validated
+            .metadata
+            .as_ref()
+            .and_then(|m| m.get("supporting_evidence"))
+            .and_then(serde_json::Value::as_str)
+            .expect("supporting_evidence");
+        assert!(!sanitized.contains("https://example.com"));
+        assert!(sanitized.contains("[url removed]"));
+    }
+
+    #[test]
+    fn merge_intent_rejects_oversize_supporting_evidence() {
+        let huge = "x".repeat(MAX_NOTE_CHARS + 50);
+        let err = validate_and_sanitize_metadata(
+            FeedbackAction::MergeIntent,
+            Some(&serde_json::json!({
+                "merge_target": {"person": "person-1"},
+                "supporting_evidence": huge
+            })),
+        )
+        .unwrap_err();
+        assert!(matches!(err, FeedbackError::BadRequest(message) if message.contains("supporting_evidence")));
+    }
+
+    #[test]
+    fn merge_intent_rejects_unknown_keys() {
+        let err = validate_and_sanitize_metadata(
+            FeedbackAction::MergeIntent,
+            Some(&serde_json::json!({
+                "merge_target": {"person": "person-1"},
+                "rogue": "value"
+            })),
+        )
+        .unwrap_err();
+        assert!(matches!(err, FeedbackError::BadRequest(message) if message.contains("rogue")));
     }
 
     #[test]
@@ -1160,6 +1287,111 @@ mod tests {
         .await
         .unwrap_err();
         assert!(matches!(err, FeedbackError::CallerSuppliedIdempotencyKey));
+    }
+
+    #[tokio::test]
+    async fn agent_actor_denied_for_merge_intent_at_every_surface() {
+        // AC-8.13 extension (ADR-0123 V1.1): MergeIntent is user-only.
+        let (state, _tempdir) = test_state().await;
+        let claim_id = "claim-feedback-merge-agent";
+        seed_claim(&state, claim_id).await;
+
+        let envelope = FakeEnvelope::new("entity_intelligence", &[claim_id]);
+        let set = EnvelopeSet::new(&envelope);
+        let agent = RenderActor::agent("agent:test");
+        let cache = IdempotencyCache::new();
+
+        for surface in [
+            SurfaceContext::ActionsWork,
+            SurfaceContext::EntityDetail,
+            SurfaceContext::DailyBriefing,
+            SurfaceContext::MeetingDetail,
+            SurfaceContext::Mcp,
+        ] {
+            let err = submit_claim_feedback(
+                &state,
+                &set,
+                &agent,
+                &cache,
+                ClaimFeedbackRequest {
+                    target: claim_target(claim_id),
+                    action: FeedbackAction::MergeIntent,
+                    surface,
+                    metadata: Some(serde_json::json!({
+                        "merge_target": {"person": "person-canonical-1"}
+                    })),
+                    idempotency_key: None,
+                },
+            )
+            .await
+            .unwrap_err();
+            assert!(
+                matches!(err, FeedbackError::AgentActorDenied),
+                "surface {:?} must deny agent for MergeIntent",
+                surface
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn merge_intent_records_feedback_row_without_lifecycle_change() {
+        // MergeIntent persists the typed proposal as a claim_feedback row
+        // but does NOT mutate claim verification_state or lifecycle.
+        let (state, _tempdir) = test_state().await;
+        let claim_id = "claim-feedback-merge-write";
+        seed_claim(&state, claim_id).await;
+
+        let envelope = FakeEnvelope::new("entity_intelligence", &[claim_id]);
+        let set = EnvelopeSet::new(&envelope);
+        let actor = RenderActor::user("user", Some("user-1"));
+        let cache = IdempotencyCache::new();
+
+        let response = submit_claim_feedback(
+            &state,
+            &set,
+            &actor,
+            &cache,
+            ClaimFeedbackRequest {
+                target: claim_target(claim_id),
+                action: FeedbackAction::MergeIntent,
+                surface: SurfaceContext::EntityDetail,
+                metadata: Some(serde_json::json!({
+                    "merge_target": {"person": "person-canonical-1"},
+                    "supporting_evidence": "Same person across two sources"
+                })),
+                idempotency_key: None,
+            },
+        )
+        .await
+        .expect("merge_intent submit");
+
+        assert!(!response.replayed);
+        assert!(!response.lifecycle_changed,
+            "MergeIntent must not mutate claim verification_state");
+        assert!(!response.repair_queued,
+            "MergeIntent must not enqueue a repair job");
+
+        // claim_feedback row landed.
+        let seed_claim_id = claim_id.to_string();
+        let rows: Vec<String> = state
+            .db_read(move |db| {
+                let mut stmt = db
+                    .conn_ref()
+                    .prepare(
+                        "SELECT feedback_type FROM claim_feedback WHERE claim_id = ?1 \
+                         ORDER BY rowid",
+                    )
+                    .map_err(|e| e.to_string())?;
+                let actions = stmt
+                    .query_map(params![&seed_claim_id], |row| row.get::<_, String>(0))
+                    .map_err(|e| e.to_string())?
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|e| e.to_string())?;
+                Ok(actions)
+            })
+            .await
+            .expect("read claim_feedback");
+        assert_eq!(rows, vec!["merge_intent".to_string()]);
     }
 
     #[tokio::test]

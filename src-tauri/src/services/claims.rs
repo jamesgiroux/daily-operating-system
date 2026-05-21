@@ -5186,6 +5186,11 @@ fn validate_feedback_action_metadata(
         FeedbackAction::NeedsNuance => require_payload_string(action, payload, "corrected_text"),
         FeedbackAction::SurfaceInappropriate => require_payload_string(action, payload, "surface"),
         FeedbackAction::NotRelevantHere => require_payload_string(action, payload, "invocation_id"),
+        // MergeIntent (ADR-0123 V1.1) requires merge_target as a JSON-encoded
+        // SubjectRef. The receipt-side validator already deep-decodes the
+        // SubjectRef shape (`services::claim_receipt::feedback`); here the
+        // writer enforces presence + non-empty.
+        FeedbackAction::MergeIntent => require_payload_object(action, payload, "merge_target"),
         _ => Ok(()),
     }
 }
@@ -5205,6 +5210,31 @@ fn require_payload_string(
     } else {
         Err(ClaimError::InvalidFeedback(format!(
             "{} feedback requires non-empty payload_json.{}",
+            action.as_str(),
+            key
+        )))
+    }
+}
+
+fn require_payload_object(
+    action: FeedbackAction,
+    payload: &serde_json::Value,
+    key: &str,
+) -> Result<(), ClaimError> {
+    // MergeIntent.merge_target may decode as either a tagged SubjectRef
+    // object (`{"account":"acct-1"}`) or the special string variants
+    // (`"global"` / `"unknown"`). Accept any non-null value here; the
+    // receipt-side `services::claim_receipt::feedback` validator runs
+    // the strict SubjectRef decode before this writer is called.
+    let present = payload
+        .get(key)
+        .map(|value| !value.is_null())
+        .unwrap_or(false);
+    if present {
+        Ok(())
+    } else {
+        Err(ClaimError::InvalidFeedback(format!(
+            "{} feedback requires non-null payload_json.{}",
             action.as_str(),
             key
         )))
@@ -5319,6 +5349,10 @@ fn expected_lifecycle_render_policy(action: FeedbackAction) -> ClaimRenderPolicy
         FeedbackAction::NeedsNuance => ClaimRenderPolicy::RenderSuperseder,
         FeedbackAction::SurfaceInappropriate => ClaimRenderPolicy::HiddenOnNamedSurface,
         FeedbackAction::NotRelevantHere => ClaimRenderPolicy::DeprioritizedInContext,
+        // MergeIntent persists a typed proposal row only; the source
+        // claim renders unchanged while the merge picker reads the
+        // proposal separately.
+        FeedbackAction::MergeIntent => ClaimRenderPolicy::Default,
     }
 }
 
@@ -5364,7 +5398,11 @@ fn lifecycle_update_for_feedback(
         | FeedbackAction::WrongSource
         | FeedbackAction::CannotVerify
         | FeedbackAction::SurfaceInappropriate
-        | FeedbackAction::NotRelevantHere => LifecycleUpdate::from_claim(claim),
+        | FeedbackAction::NotRelevantHere
+        // MergeIntent does not change source-claim lifecycle. The merge
+        // execution flow (DOS-484) is a separate service that runs the
+        // subject rebind after the user reviews the proposal.
+        | FeedbackAction::MergeIntent => LifecycleUpdate::from_claim(claim),
     }
 }
 
@@ -11700,7 +11738,7 @@ mod tests {
         commit_claim(ctx, db, tombstone).expect("commit tombstone claim");
     }
 
-    fn all_feedback_actions() -> [FeedbackAction; 9] {
+    fn all_feedback_actions() -> [FeedbackAction; 10] {
         [
             FeedbackAction::ConfirmCurrent,
             FeedbackAction::MarkOutdated,
@@ -11711,6 +11749,7 @@ mod tests {
             FeedbackAction::NeedsNuance,
             FeedbackAction::SurfaceInappropriate,
             FeedbackAction::NotRelevantHere,
+            FeedbackAction::MergeIntent,
         ]
     }
 
@@ -11729,6 +11768,13 @@ mod tests {
             FeedbackAction::NotRelevantHere => {
                 Some(serde_json::json!({ "invocation_id": "invocation-fixture" }).to_string())
             }
+            FeedbackAction::MergeIntent => Some(
+                serde_json::json!({
+                    "merge_target": { "person": "person-canonical-1" },
+                    "supporting_evidence": "Same person, different email aliases"
+                })
+                .to_string(),
+            ),
             _ => None,
         }
     }
@@ -13291,7 +13337,7 @@ mod tests {
     }
 
     #[test]
-    fn record_claim_feedback_persists_a_row_per_action_for_each_of_9_variants() {
+    fn record_claim_feedback_persists_a_row_per_action_for_each_of_10_variants() {
         let db = test_db();
         seed_account(&db);
         let (clock, rng, external) = ctx_parts();
@@ -14845,7 +14891,7 @@ mod tests {
     }
 
     #[test]
-    fn claim_feedback_check_constraint_accepts_all_9_action_strings() {
+    fn claim_feedback_check_constraint_accepts_all_10_action_strings() {
         let db = test_db();
 
         for action in all_feedback_actions() {
@@ -14869,7 +14915,7 @@ mod tests {
             .conn_ref()
             .query_row("SELECT count(*) FROM claim_feedback", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(feedback_count, 9);
+        assert_eq!(feedback_count, 10);
     }
 
     /// L2 cycle-1 fix #5: reconcile_contradiction must bump per-entity
