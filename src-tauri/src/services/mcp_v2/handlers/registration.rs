@@ -5,9 +5,6 @@
 
 use std::sync::Arc;
 
-use parking_lot::Mutex as ParkingMutex;
-
-use crate::db::ActionDb;
 use crate::services::mcp_v2::contracts::ScopedName;
 use crate::services::mcp_v2::gateway::Gateway;
 use crate::services::mcp_v2::taxonomy::TaxonomyCatalog;
@@ -46,7 +43,6 @@ impl std::error::Error for RegistrationError {}
 pub fn register_v147_handlers(
     gateway: &mut Gateway,
     catalog: &Arc<dyn TaxonomyCatalog>,
-    db: Arc<ParkingMutex<ActionDb>>,
     runtime: tokio::runtime::Handle,
 ) -> Result<(), RegistrationError> {
     let account_status_name = ScopedName::new("dailyos.read.account_status");
@@ -55,7 +51,7 @@ pub fn register_v147_handlers(
         .ok_or_else(|| RegistrationError::CatalogEntryMissing(account_status_name.clone()))?
         .clone();
 
-    let handler = AccountStatusHandler::from_runtime(description, db, runtime)
+    let handler = AccountStatusHandler::from_runtime(description, runtime)
         .map_err(RegistrationError::AbilityRegistry)?;
     gateway.register(Arc::new(handler));
 

@@ -10,13 +10,10 @@
 
 use std::sync::Arc;
 
-use dailyos_lib::db::ActionDb;
 use dailyos_lib::services::mcp_v2::contracts::ScopedName;
 use dailyos_lib::services::mcp_v2::gateway::Gateway;
 use dailyos_lib::services::mcp_v2::handlers::registration::register_v147_handlers;
 use dailyos_lib::services::mcp_v2::taxonomy::{TaxonomyCatalog, YamlTaxonomyCatalog};
-use parking_lot::Mutex as ParkingMutex;
-use rusqlite::Connection;
 
 /// Per DOS-175 AC-3 + AC-5 + AC-6: the registration helper exposes
 /// `dailyos.read.account_status` on the gateway against the embedded
@@ -35,17 +32,12 @@ fn account_status_handler_registers_against_embedded_catalog() {
     let catalog = YamlTaxonomyCatalog::load_embedded().expect("load embedded catalog");
     let catalog: Arc<dyn TaxonomyCatalog> = Arc::new(catalog);
 
-    // In-memory ActionDb for the workspace readers. Real run_serve uses
-    // ActionDb::open_readonly against the encrypted DB; smoke test only
-    // exercises registration, not invocation, so in-memory is sufficient.
-    let conn = Connection::open_in_memory().expect("open in-memory connection");
-    let action_db = ActionDb::from_connection_for_tests(conn);
-    let action_db = Arc::new(ParkingMutex::new(action_db));
-
-    // Build the gateway and register the W2-A handler.
+    // Build the gateway and register the W2-A handler. Workspace readers
+    // are attached at invocation time via attach_live_workspace_readers;
+    // registration does not need DB access.
     let mut gateway = Gateway::new();
     gateway.set_taxonomy(catalog.clone());
-    register_v147_handlers(&mut gateway, &catalog, action_db, runtime.handle().clone())
+    register_v147_handlers(&mut gateway, &catalog, runtime.handle().clone())
         .expect("register_v147_handlers succeeds");
 
     // AC-3 + AC-5: the handler is registered under the canonical scoped name.

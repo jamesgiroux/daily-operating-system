@@ -126,7 +126,50 @@ fn default_db_path() -> Result<PathBuf, String> {
 }
 
 fn open_conn(db_path: &PathBuf) -> Result<Connection, String> {
-    Connection::open(db_path).map_err(|e| format!("open db {db_path:?}: {e}"))
+    let conn = Connection::open(db_path).map_err(|e| format!("open db {db_path:?}: {e}"))?;
+
+    // Apply the SQLCipher PRAGMA key before any other statement (ADR-0092).
+    // Mirrors the Tauri main DB open path at src-tauri/src/db/core.rs:148.
+    // Without this, queries against the encrypted DB fail with "file is not
+    // a database".
+    let key_provider: Arc<dyn dailyos_lib::db::DbKeyProvider> =
+        Arc::new(dailyos_lib::db::LocalKeychain::new());
+    let user = dailyos_lib::db::UserIdentity::local(db_path.clone());
+    let key = key_provider
+        .get_or_create_key(&user)
+        .map_err(|e| format!("read DB encryption key from keychain: {e}"))?;
+    conn.execute_batch(&key.to_pragma())
+        .map_err(|e| format!("apply DB encryption key: {e}"))?;
+    conn.execute_batch("PRAGMA busy_timeout = 5000;")
+        .map_err(|e| format!("set busy_timeout: {e}"))?;
+
+    // NOTE: do NOT run migrations here. The Tauri app owns the migration
+    // lifecycle (db/core.rs::prepare_encrypted_connection runs them at app
+    // start). When the app is running, concurrent migration attempts from
+    // this binary collide with the app's WAL writes and produce transient
+    // "malformed schema / orphan index" errors. The MCP v2 binary is a
+    // read-mostly side channel; it requires the app to have run the
+    // v1.4.7 W1-A migrations once at its own startup.
+    //
+    // Precondition check: confirm the W1-A tables exist before proceeding.
+    // If not, surface a clear error directing the operator to start the
+    // Tauri app once so migrations run.
+    let mcp_table_exists: bool = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='mcp_client_manifest'",
+            [],
+            |row| row.get::<_, i64>(0).map(|_| true),
+        )
+        .unwrap_or(false);
+    if !mcp_table_exists {
+        return Err(
+            "v1.4.7 W1-A schema not present in this DB. Start the DailyOS app once \
+             (it runs migrations on launch), then re-run this binary."
+                .to_string(),
+        );
+    }
+
+    Ok(conn)
 }
 
 // ---------------------------------------------------------------------------
@@ -212,23 +255,11 @@ fn run_serve(db_path: &PathBuf, legacy_config_path: Option<PathBuf>) -> Result<(
         .map_err(|e| format!("issue seed nonce: {e}"))?;
     let conn_shared = Arc::new(Mutex::new(conn));
 
-    // Open a second ActionDb handle for workspace readers — the
-    // primary `conn` above is owned by the transport for nonce ledger +
-    // HMAC verification; the legacy MCP binary at src/mcp/main.rs:1332
-    // uses the same pattern (open_readonly via LocalKeychain) for its
-    // own ability dispatch path.
-    let action_db = dailyos_lib::db::ActionDb::open_readonly(std::sync::Arc::new(
-        dailyos_lib::db::LocalKeychain::new(),
-    ))
-    .map_err(|e| format!("open action_db readonly for handlers: {e}"))?;
-    let action_db = std::sync::Arc::new(parking_lot::Mutex::new(action_db));
-
     let mut gateway = Gateway::new();
     gateway.set_taxonomy(catalog.clone());
     dailyos_lib::services::mcp_v2::handlers::registration::register_v147_handlers(
         &mut gateway,
         &catalog,
-        action_db,
         runtime.handle().clone(),
     )
     .map_err(|e| format!("register v147 handlers: {e}"))?;
