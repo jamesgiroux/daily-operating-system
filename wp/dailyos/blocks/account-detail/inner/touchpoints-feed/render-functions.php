@@ -72,34 +72,39 @@ if ( ! function_exists( 'dailyos_touchpoints_feed_render' ) ) {
 				$first_empty_reason = $state['reason'];
 			}
 		}
+		$out  = '<section id="touchpoints" class="entity-detail_chapterSection" data-ds-tier="pattern" data-ds-name="TimelineEntry" data-ds-spec="patterns/TimelineEntry.md">';
+		$out .= '<div class="TimelineEntry_timeline" data-dailyos-projection="touchpoints-feed" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['touchpoints'] ) ) . '">';
 		if ( ! $any_present ) {
 			$reason = '' !== $first_empty_reason ? $first_empty_reason : 'no_touchpoints';
-			return dailyos_empty_chip(
+			$out .= dailyos_empty_chip(
 				$reason,
 				__( 'No touchpoints yet', 'dailyos' ),
-				'wp-block-dailyos-touchpoints-feed'
+				'TimelineEntry_timeline'
 			);
+			$out .= '</div>';
+			$out .= '</section>';
+			return $out;
 		}
 
-		$wrapper_attrs = dailyos_inner_block_wrapper_attrs( 'wp-block-dailyos-touchpoints-feed' );
-		$out  = '<div ' . $wrapper_attrs . ' data-dailyos-projection="touchpoints-feed">';
-		$out .= '<header class="wp-block-dailyos-touchpoints-feed__header"><span class="wp-block-dailyos-touchpoints-feed__title">' . esc_html__( 'Touchpoints Feed', 'dailyos' ) . '</span></header>';
-		$out .= '<div class="wp-block-dailyos-touchpoints-feed__body" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['touchpoints'] ) ) . '">';
 		// Per AC-462.3 + DOS-341: every claim-bearing inner block routes
 		// receipts through build_receipt_for_audience server-side. The
 		// dailyos_envelope_consume_claim helper invokes claim_receipt via the
 		// runtime client with the resolved scope set; AgentMcp audience filter
 		// is applied inside the producer (DOS-341 boundary).
 		$projected_claim_refs = dailyos_touchpoints_feed_select_claim_refs( $envelope );
+		$rows = '';
 		foreach ( $projected_claim_refs as $claim_ref ) {
 			$receipt = dailyos_envelope_consume_claim( $claim_ref, $scope_set );
 			if ( null === $receipt ) {
 				continue;
 			}
-			$out .= dailyos_touchpoints_feed_render_row( $claim_ref, $receipt );
+			$rows .= dailyos_touchpoints_feed_render_row( $claim_ref, $receipt );
 		}
+		$out .= '' !== $rows
+			? $rows
+			: dailyos_empty_chip( 'no_touchpoints', __( 'No touchpoints yet', 'dailyos' ), 'TimelineEntry_timeline' );
 		$out .= '</div>';
-		$out .= '</div>';
+		$out .= '</section>';
 		return $out;
 	}
 }
@@ -167,8 +172,10 @@ if ( ! function_exists( 'dailyos_touchpoints_feed_render_row' ) ) {
 	function dailyos_touchpoints_feed_render_row( array $claim_ref, array $receipt ): string {
 		$claim_id = isset( $claim_ref['claim_id'] ) ? (string) $claim_ref['claim_id'] : '';
 		$trust_band = isset( $receipt['trustBand'] ) ? (string) $receipt['trustBand'] : ( isset( $receipt['trust_band'] ) ? (string) $receipt['trust_band'] : 'unscored' );
-		return '<article class="wp-block-dailyos-touchpoints-feed__row" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
-			. '<span class="wp-block-dailyos-touchpoints-feed__row-label">' . esc_html( $claim_id ) . '</span>'
-			. '</article>';
+		return '<div class="TimelineEntry_entry" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
+			. '<div class="TimelineEntry_dot TimelineEntry_dotContext" aria-hidden="true"></div>'
+			. '<div class="TimelineEntry_dateLine"><span class="TimelineEntry_typeBadge TimelineEntry_typeContext">' . esc_html( $trust_band ) . '</span></div>'
+			. '<div class="TimelineEntry_title">' . esc_html( $claim_id ) . '</div>'
+			. '</div>';
 	}
 }

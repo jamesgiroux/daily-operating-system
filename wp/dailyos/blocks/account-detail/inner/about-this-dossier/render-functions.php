@@ -72,34 +72,44 @@ if ( ! function_exists( 'dailyos_about_this_dossier_render' ) ) {
 				$first_empty_reason = $state['reason'];
 			}
 		}
+		$out  = '<section id="about-dossier" class="entity-detail_chapterSection" data-ds-tier="pattern" data-ds-name="AboutThisDossier" data-ds-spec="patterns/AboutThisDossier.md">';
+		$out .= '<section class="AboutThisDossier_section" data-dailyos-projection="about-this-dossier" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['facts'] ) ) . '">';
+		$out .= '<div class="AboutThisDossier_eyebrow">' . esc_html__( 'About the dossier', 'dailyos' ) . '</div>';
+		$out .= '<div class="AboutThisDossier_card">';
+		$out .= '<div class="AboutThisDossier_cardLabel">' . esc_html__( 'Source posture', 'dailyos' ) . '</div>';
 		if ( ! $any_present ) {
 			$reason = '' !== $first_empty_reason ? $first_empty_reason : 'no_dossier_meta';
-			return dailyos_empty_chip(
+			$out .= dailyos_empty_chip(
 				$reason,
 				__( 'Dossier metadata unavailable', 'dailyos' ),
-				'wp-block-dailyos-about-this-dossier'
+				'AboutThisDossier_cardText'
 			);
+			$out .= '</div>';
+			$out .= '</section>';
+			$out .= '</section>';
+			return $out;
 		}
 
-		$wrapper_attrs = dailyos_inner_block_wrapper_attrs( 'wp-block-dailyos-about-this-dossier' );
-		$out  = '<div ' . $wrapper_attrs . ' data-dailyos-projection="about-this-dossier">';
-		$out .= '<header class="wp-block-dailyos-about-this-dossier__header"><span class="wp-block-dailyos-about-this-dossier__title">' . esc_html__( 'About This Dossier', 'dailyos' ) . '</span></header>';
-		$out .= '<div class="wp-block-dailyos-about-this-dossier__body" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['facts'] ) ) . '">';
 		// Per AC-462.3 + DOS-341: every claim-bearing inner block routes
 		// receipts through build_receipt_for_audience server-side. The
 		// dailyos_envelope_consume_claim helper invokes claim_receipt via the
 		// runtime client with the resolved scope set; AgentMcp audience filter
 		// is applied inside the producer (DOS-341 boundary).
 		$projected_claim_refs = dailyos_about_this_dossier_select_claim_refs( $envelope );
+		$rows = '';
 		foreach ( $projected_claim_refs as $claim_ref ) {
 			$receipt = dailyos_envelope_consume_claim( $claim_ref, $scope_set );
 			if ( null === $receipt ) {
 				continue;
 			}
-			$out .= dailyos_about_this_dossier_render_row( $claim_ref, $receipt );
+			$rows .= dailyos_about_this_dossier_render_row( $claim_ref, $receipt );
 		}
+		$out .= '' !== $rows
+			? $rows
+			: dailyos_empty_chip( 'no_dossier_meta', __( 'Dossier metadata unavailable', 'dailyos' ), 'AboutThisDossier_cardText' );
 		$out .= '</div>';
-		$out .= '</div>';
+		$out .= '</section>';
+		$out .= '</section>';
 		return $out;
 	}
 }
@@ -167,8 +177,8 @@ if ( ! function_exists( 'dailyos_about_this_dossier_render_row' ) ) {
 	function dailyos_about_this_dossier_render_row( array $claim_ref, array $receipt ): string {
 		$claim_id = isset( $claim_ref['claim_id'] ) ? (string) $claim_ref['claim_id'] : '';
 		$trust_band = isset( $receipt['trustBand'] ) ? (string) $receipt['trustBand'] : ( isset( $receipt['trust_band'] ) ? (string) $receipt['trust_band'] : 'unscored' );
-		return '<article class="wp-block-dailyos-about-this-dossier__row" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
-			. '<span class="wp-block-dailyos-about-this-dossier__row-label">' . esc_html( $claim_id ) . '</span>'
-			. '</article>';
+		return '<div class="AboutThisDossier_cardText" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
+			. esc_html( $claim_id )
+			. '</div>';
 	}
 }
