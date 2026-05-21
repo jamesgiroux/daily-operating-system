@@ -56,7 +56,13 @@ fn workspace_ingestion_w2b_no_new_direct_writes() {
     assert!(watcher.contains("dos7-allowed: inbox-bootstrap"));
     assert!(watcher.contains("dos7-allowed: entity-markdown-regen"));
     assert!(watcher.contains("dos7-allowed: content-index-cache"));
-    assert!(!watcher.contains("crate::processor::process_user_attachment"));
+    // L2 cycle-1 BLOCK fold: §4 V1.2 preserves the processor trigger for
+    // user attachments; do NOT remove this call. The W2-A pipeline shell
+    // produces zero claims and does not populate db_content_files, so
+    // routing user attachments through it instead of the processor would
+    // silently break semantic retrieval for entity_type='user_context'.
+    assert!(watcher.contains("crate::processor::process_user_attachment"));
+    assert!(watcher.contains("dos7-allowed: user-attachment-processor-trigger"));
 
     let drive = read("src/google_drive/poller.rs");
     assert_eq!(drive.matches("dos7-allowed: drive-staging-v146").count(), 2);
@@ -145,16 +151,16 @@ fn watcher_project_content_change_preserves_content_index_enrichment_trigger() {
 }
 
 #[test]
-fn watcher_user_attachment_change_preserves_embedding_queue_wake() {
+fn watcher_user_attachment_change_preserves_processor_trigger_and_embedding_queue_wake() {
     let watcher = read("src/watcher.rs");
     let function = function_body(&watcher, "fn handle_user_attachment_changes");
-    assert!(function.contains("WorkspaceFileKind::UserAttachment"));
-    assert_eq!(
-        function
-            .matches("embedding_queue_wake.notify_one()")
-            .count(),
-        2
-    );
+    // §4 V1.2: W2-B preserves the trigger — the processor call does text
+    // extraction + mechanical_summary + db_content_files upsert.
+    assert!(function.contains("crate::processor::process_user_attachment"));
+    assert!(function.contains("dos7-allowed: user-attachment-processor-trigger"));
+    // Embedding wake remains so the embedding worker picks up the new
+    // db_content_files row.
+    assert!(function.contains("embedding_queue_wake.notify_one()"));
 }
 
 #[test]

@@ -1111,53 +1111,32 @@ fn handle_user_attachment_changes(paths: &[PathBuf], state: &AppState, workspace
         Some(db) => db,
         None => return,
     };
-    let workspace_root = canonical_workspace_root(workspace);
-    let pipeline = wiring::build_pipeline(workspace_root.to_path_buf());
-    let conn = db.conn_ref();
 
     for path in paths {
         if !path.exists() || !path.is_file() {
             continue;
         }
 
-        match ingest_after_upsert(
-            &pipeline,
-            conn,
-            &workspace_root,
-            path,
-            WorkspaceFileKind::UserAttachment,
-            None,
-        ) {
-            Ok(()) => {
-                log::info!("Watcher: processed user attachment {}", path.display());
-                // Queue embedding generation
-                state
-                    .embedding_queue
-                    .enqueue(crate::processor::embeddings::EmbeddingRequest {
-                        entity_id: "user_context".to_string(),
-                        entity_type: "user_context".to_string(),
-                        requested_at: std::time::Instant::now(),
-                    });
-                state.integrations.embedding_queue_wake.notify_one();
-            }
-            Err(err) => {
-                log::warn!(
-                    "Watcher: failed to process user attachment {}: {}. Enqueuing for retry via embedding queue.",
-                    path.display(),
-                    err
-                );
-                // Acceptance criterion: Enqueue for retry — the next hygiene/embedding cycle will
-                // re-attempt processing when the embedding worker picks up this request.
-                state
-                    .embedding_queue
-                    .enqueue(crate::processor::embeddings::EmbeddingRequest {
-                        entity_id: "user_context".to_string(),
-                        entity_type: "user_context".to_string(),
-                        requested_at: std::time::Instant::now(),
-                    });
-                state.integrations.embedding_queue_wake.notify_one();
-            }
-        }
+        // L2 cycle-1 BLOCK fold: §4 V1.2 says "W2-B preserves the trigger".
+        // process_user_attachment is the content-indexing entry point —
+        // text extraction + mechanical summary + db_content_files upsert
+        // for entity_type='user_context'. The W2-A pipeline shell produces
+        // zero claims at v1.4.5 and does not populate content_files;
+        // routing user attachments through it instead of the processor
+        // silently breaks semantic retrieval. Workspace_file_lifecycle
+        // for user attachments is W3-A scope or a v1.4.6 follow-up.
+        // dos7-allowed: user-attachment-processor-trigger — processor handles
+        // content indexing; not a direct workspace-file write.
+        let _ = crate::processor::process_user_attachment(workspace, path, Some(&db));
+        log::info!("Watcher: processed user attachment {}", path.display());
+        state
+            .embedding_queue
+            .enqueue(crate::processor::embeddings::EmbeddingRequest {
+                entity_id: "user_context".to_string(),
+                entity_type: "user_context".to_string(),
+                requested_at: std::time::Instant::now(),
+            });
+        state.integrations.embedding_queue_wake.notify_one();
     }
 }
 
