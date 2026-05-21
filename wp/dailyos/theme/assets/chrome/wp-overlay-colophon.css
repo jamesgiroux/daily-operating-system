@@ -1,0 +1,29 @@
+/* =============================================================================
+   WP-only chrome overlay: editorial colophon below the FinisMarker
+   -----------------------------------------------------------------------------
+   The FinisMarker pattern (three turmeric brand-mark asterisks) is the
+   canonical end-of-page signal. Below it, the WP layer adds a quiet
+   colophon line — "DailyOS · memory + judgment" — as a small editorial
+   sign-off. Visually it mirrors the .FinisMarker_timestamp style:
+   font-mono, 10px, uppercase-ish letter-spacing, text-tertiary color,
+   margin-top: 16px (matching the timestamp slot in the canonical
+   FinisMarker.module.css).
+
+   The colophon is a WP-specific addition — the canonical Tauri-side
+   surfaces don't carry one because the macOS title bar handles
+   sign-off via the app chrome. WP has no equivalent, so the editorial
+   sign-off lives below the FinisMarker.
+
+   Per L0 packet §10 WP-only deviation exception; not synced from canonical.
+   ============================================================================= */
+
+.dailyos-colophon {
+	margin-top: 16px;
+	text-align: center;
+	font-family: var(--font-mono);
+	font-size: 10px;
+	font-weight: 500;
+	letter-spacing: 0.06em;
+	color: var(--color-text-tertiary);
+	text-transform: uppercase;
+}

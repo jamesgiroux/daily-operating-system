@@ -25,6 +25,7 @@ final class DailyOS_RuntimeClientTest extends TestCase {
 		parent::setUp();
 
 		dailyos_test_reset_globals();
+		DailyOS_Plugin::invalidate_runtime_endpoint_cache();
 		( new DailyOS_Credential_Store() )->register_session_key_filter_safeguard();
 	}
 
@@ -113,6 +114,45 @@ final class DailyOS_RuntimeClientTest extends TestCase {
 		$client->invoke_ability( 'briefing.daily', [], [] );
 
 		$this->assertSame( 'http://127.0.0.1:54322/v1/surface/invoke', $GLOBALS['dailyos_test_remote_post_calls'][0]['url'] );
+	}
+
+	/**
+	 * Sentinel discovery follows the new port after a hot Tauri restart.
+	 */
+	public function test_runtime_sentinel_cache_resets_after_restart_and_uses_new_port(): void {
+		$original_home = getenv( 'HOME' );
+		$home          = sys_get_temp_dir() . '/dailyos-sentinel-' . uniqid( '', true );
+		mkdir( $home . '/.dailyos', 0700, true );
+
+		try {
+			putenv( 'HOME=' . $home );
+			$this->save_marker();
+			$this->add_session_key_filter();
+			$GLOBALS['dailyos_test_remote_post_response'] = [
+				'response' => [ 'code' => 200 ],
+				'body'     => '{"ok":true}',
+			];
+
+			$this->write_runtime_sentinel( $home, 54322 );
+			DailyOS_Plugin::invalidate_runtime_endpoint_cache();
+			$client = new DailyOS_Runtime_Client( new DailyOS_Credential_Store(), new DailyOS_Hmac_Signer() );
+			$client->invoke_ability( 'briefing.daily', [], [] );
+			$this->assertSame( 'http://127.0.0.1:54322/v1/surface/invoke', $GLOBALS['dailyos_test_remote_post_calls'][0]['url'] );
+
+			$this->write_runtime_sentinel( $home, 54323 );
+			DailyOS_Plugin::invalidate_runtime_endpoint_cache();
+			$GLOBALS['dailyos_test_remote_post_calls'] = [];
+			$client->invoke_ability( 'briefing.daily', [], [] );
+			$this->assertSame( 'http://127.0.0.1:54323/v1/surface/invoke', $GLOBALS['dailyos_test_remote_post_calls'][0]['url'] );
+		} finally {
+			DailyOS_Plugin::invalidate_runtime_endpoint_cache();
+			if ( false === $original_home ) {
+				putenv( 'HOME' );
+			} else {
+				putenv( 'HOME=' . $original_home );
+			}
+			$this->remove_runtime_sentinel_home( $home );
+		}
 	}
 
 	/**
@@ -330,6 +370,39 @@ final class DailyOS_RuntimeClientTest extends TestCase {
 				'last_use_gmt'         => '2026-05-13 00:00:00',
 			]
 		);
+	}
+
+	/**
+	 * Write a strict sentinel payload for tests.
+	 */
+	private function write_runtime_sentinel( string $home, int $port ): void {
+		$path = $home . '/.dailyos/runtime-endpoint.json';
+		file_put_contents(
+			$path,
+			wp_json_encode(
+				[
+					'port'            => $port,
+					'runtime_version' => 'v1-test',
+				]
+			)
+		);
+		chmod( $path, 0600 );
+	}
+
+	/**
+	 * Remove a temporary sentinel home directory.
+	 */
+	private function remove_runtime_sentinel_home( string $home ): void {
+		$path = $home . '/.dailyos/runtime-endpoint.json';
+		if ( is_file( $path ) ) {
+			unlink( $path );
+		}
+		if ( is_dir( $home . '/.dailyos' ) ) {
+			rmdir( $home . '/.dailyos' );
+		}
+		if ( is_dir( $home ) ) {
+			rmdir( $home );
+		}
 	}
 
 	/**

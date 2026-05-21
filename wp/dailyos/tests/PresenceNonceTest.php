@@ -115,7 +115,54 @@ final class DailyOS_PresenceNonceTest extends TestCase {
 		$this->assertIsArray( $blocks );
 		$this->assertArrayNotHasKey( 'presence_nonce', $blocks[0]['attrs'] );
 		$this->assertArrayNotHasKey( 'dailyosPresenceNonce', $blocks[0]['attrs']['nested'] );
-		$this->assertTrue( $blocks[0]['attrs']['nested']['kept'] );
+			$this->assertTrue( $blocks[0]['attrs']['nested']['kept'] );
+	}
+
+	/**
+	 * Saved block content rejects raw runtime payloads and sensitive shapes.
+	 */
+	public function test_block_serialization_rejects_raw_ability_payloads_provenance_and_unknown_sensitive_shapes(): void {
+		$GLOBALS['dailyos_test_parse_blocks_result'] = [
+			[
+				'blockName'   => 'dailyos/account-overview',
+				'attrs'       => [
+					'composition_id'           => 'dailyos/account-overview:account:acct-test-001',
+					'ability_payload'          => [ 'claim_id' => 'claim-1' ],
+					'payloadJson'              => [ 'presence_nonce' => 'nonce-token' ],
+					'provenance_json'          => '{"source":"runtime"}',
+					'unknownSensitiveShape'    => [ 'raw' => true ],
+					'nested'                   => [
+						'renderedProvenance' => [ 'source_ref' => 'source-1' ],
+						'sensitivity_label'  => 'restricted',
+						'kept'               => 'safe-display-field',
+					],
+				],
+				'innerBlocks' => [
+					[
+						'blockName'   => 'dailyos/surface-claim',
+						'attrs'       => [
+							'dailyosPayloadJson' => [ 'raw' => 'runtime' ],
+							'claim_id'           => 'claim-2',
+						],
+						'innerBlocks' => [],
+					],
+				],
+			],
+		];
+
+		DailyOS_Plugin::strip_presence_nonces_from_content( '<!-- wp:dailyos/account-overview /-->' );
+
+		$blocks = $GLOBALS['dailyos_test_serialized_blocks'];
+		$this->assertIsArray( $blocks );
+		$this->assertArrayNotHasKey( 'ability_payload', $blocks[0]['attrs'] );
+		$this->assertArrayNotHasKey( 'payloadJson', $blocks[0]['attrs'] );
+		$this->assertArrayNotHasKey( 'provenance_json', $blocks[0]['attrs'] );
+		$this->assertArrayNotHasKey( 'unknownSensitiveShape', $blocks[0]['attrs'] );
+		$this->assertArrayNotHasKey( 'renderedProvenance', $blocks[0]['attrs']['nested'] );
+		$this->assertArrayNotHasKey( 'sensitivity_label', $blocks[0]['attrs']['nested'] );
+		$this->assertArrayNotHasKey( 'dailyosPayloadJson', $blocks[0]['innerBlocks'][0]['attrs'] );
+		$this->assertSame( 'safe-display-field', $blocks[0]['attrs']['nested']['kept'] );
+		$this->assertSame( 'claim-2', $blocks[0]['innerBlocks'][0]['attrs']['claim_id'] );
 	}
 
 	/**

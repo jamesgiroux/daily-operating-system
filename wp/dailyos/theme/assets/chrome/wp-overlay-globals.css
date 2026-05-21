@@ -1,0 +1,52 @@
+/* =============================================================================
+   WP-only chrome overlay: global baseline ground
+   -----------------------------------------------------------------------------
+   The canonical reference at `.docs/design/reference/_shared/chrome.css`
+   ships a global reset that the chrome lane (which lifted only the
+   `*.module.css` files) did NOT pull in. The two practical effects
+   that broke WP-side rendering:
+
+   1. `* { box-sizing: border-box; }` — without this, `.FolioBar_folio`
+      computes height: 40px (var(--folio-height)) + 20px vertical padding
+      (10px top + 10px bottom) + 1px border = 61px rendered. Canonical
+      uses border-box so 40px IS the rendered height. This was visibly
+      a 21px-too-tall FolioBar on WP.
+
+   2. `html, body { font-family: var(--font-sans); background: var(--color-paper-cream); }`
+      — WP browsers fall back to UA defaults (Times New Roman serif body,
+      white viewport background) outside the magazinePage wrapper.
+
+   Intentionally NOT lifting canonical chrome.css verbatim because its
+   `* { margin: 0; padding: 0; }` line would clobber the WP block spacing
+   that theme.json `styles.spacing.padding` wires up. The overlay below
+   keeps the safe baseline + leaves block padding intact.
+
+   Per L0 packet §10 WP-only deviation exception; not synced from canonical.
+   ============================================================================= */
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	font-family: var(--font-sans);
+	background: var(--color-paper-cream);
+	color: var(--color-text-primary);
+	-webkit-font-smoothing: antialiased;
+	text-rendering: optimizeLegibility;
+}
+
+/* MagazinePageLayout_magazinePage breaks out of WP's contentSize/wideSize
+   constraint so the cream paper fills the viewport, not just the 1180px
+   centered column. Canonical contract: `width: 100%; min-height: 100vh`
+   relative to the viewport, not to a constrained parent. Uses the
+   alignfull idiom so the wrapper escapes its parent's max-width. */
+.MagazinePageLayout_magazinePage {
+	width: 100vw;
+	max-width: 100vw;
+	margin-left: calc(50% - 50vw);
+	margin-right: calc(50% - 50vw);
+}

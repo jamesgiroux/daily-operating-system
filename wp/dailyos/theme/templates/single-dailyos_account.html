@@ -1,20 +1,24 @@
 <!-- wp:template-part {"slug":"header","tagName":"header"} /-->
-<!-- wp:group {"className":"dailyos-atmosphere","layout":{"type":"constrained"}} -->
-<div class="wp-block-group dailyos-atmosphere">
-	<!-- wp:columns -->
-	<div class="wp-block-columns">
-		<!-- wp:column {"width":"25%"} -->
-		<div class="wp-block-column" style="flex-basis:25%">
-			<!-- wp:template-part {"slug":"sidebar-account-summary"} /-->
+<!-- wp:group {"className":"MagazinePageLayout_magazinePage","layout":{"type":"default"}} -->
+<div class="wp-block-group MagazinePageLayout_magazinePage" data-ds-tier="surface" data-ds-name="AccountDetail" data-ds-spec="surfaces/AccountDetail.md">
+	<!-- wp:group {"className":"MagazinePageLayout_pageContainer","layout":{"type":"constrained"}} -->
+	<div class="wp-block-group MagazinePageLayout_pageContainer">
+		<!-- wp:columns -->
+		<div class="wp-block-columns">
+			<!-- wp:column {"width":"25%"} -->
+			<div class="wp-block-column" style="flex-basis:25%">
+				<!-- wp:template-part {"slug":"sidebar-account-summary"} /-->
+			</div>
+			<!-- /wp:column -->
+			<!-- wp:column {"width":"75%"} -->
+			<div class="wp-block-column" style="flex-basis:75%">
+				<!-- wp:pattern {"slug":"dailyos/account-detail-default"} /-->
+			</div>
+			<!-- /wp:column -->
 		</div>
-		<!-- /wp:column -->
-		<!-- wp:column {"width":"75%"} -->
-		<div class="wp-block-column" style="flex-basis:75%">
-			<!-- wp:pattern {"slug":"dailyos/account-detail-default"} /-->
-		</div>
-		<!-- /wp:column -->
+		<!-- /wp:columns -->
 	</div>
-	<!-- /wp:columns -->
+	<!-- /wp:group -->
 </div>
 <!-- /wp:group -->
 <!-- wp:template-part {"slug":"footer","tagName":"footer"} /-->

@@ -682,6 +682,30 @@
 			],
 			"padding": true
 		},
+		"typography": {
+			"fontFamilies": [
+				{
+					"slug": "sans",
+					"name": "DM Sans (body / UI)",
+					"fontFamily": "'DM Sans', -apple-system, sans-serif"
+				},
+				{
+					"slug": "serif",
+					"name": "Newsreader (display / headlines)",
+					"fontFamily": "'Newsreader', Georgia, serif"
+				},
+				{
+					"slug": "mono",
+					"name": "JetBrains Mono (time / eyebrow / code)",
+					"fontFamily": "'JetBrains Mono', ui-monospace, monospace"
+				},
+				{
+					"slug": "mark",
+					"name": "Montserrat (brand mark only)",
+					"fontFamily": "'Montserrat', sans-serif"
+				}
+			]
+		},
 		"layout": {
 			"contentSize": "900px",
 			"wideSize": "1180px"
@@ -747,9 +771,59 @@
 			"name": "sidebar-account-summary",
 			"area": "uncategorized",
 			"title": "Sidebar — Account Summary"
+		},
+		{
+			"name": "day-strip",
+			"area": "uncategorized",
+			"title": "DayStrip — Briefing day navigation"
 		}
 	],
 	"styles": {
+		"typography": {
+			"fontFamily": "var(--wp--preset--font-family--sans)"
+		},
+		"elements": {
+			"heading": {
+				"typography": {
+					"fontFamily": "var(--wp--preset--font-family--serif)",
+					"fontWeight": "400",
+					"lineHeight": "1.15",
+					"letterSpacing": "-0.01em"
+				}
+			},
+			"h1": {
+				"typography": {
+					"fontSize": "40px",
+					"fontWeight": "400",
+					"lineHeight": "1.06"
+				}
+			},
+			"h2": {
+				"typography": {
+					"fontSize": "32px",
+					"fontWeight": "400"
+				}
+			},
+			"h3": {
+				"typography": {
+					"fontSize": "24px",
+					"fontWeight": "500"
+				}
+			}
+		},
+		"blocks": {
+			"core/code": {
+				"typography": {
+					"fontFamily": "var(--wp--preset--font-family--mono)",
+					"fontSize": "13px"
+				}
+			},
+			"core/preformatted": {
+				"typography": {
+					"fontFamily": "var(--wp--preset--font-family--mono)"
+				}
+			}
+		},
 		"spacing": {
 			"padding": {
 				"top": "var(--wp--custom--dailyos--tokens--page-margin-top)",
@@ -757,7 +831,6 @@
 				"bottom": "var(--wp--custom--dailyos--tokens--page-padding-bottom)",
 				"left": "var(--wp--custom--dailyos--tokens--page-padding-horizontal)"
 			}
-		},
-		"blocks": {}
+		}
 	}
 }

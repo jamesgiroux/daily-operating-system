@@ -16,6 +16,23 @@ use dailyos_lib::release_gate::{
 use serde_json::json;
 
 const TEST_GIT_SHA: &str = RELEASE_GATE_BUILD_GIT_SHA;
+const W6_TEST_FIXTURE_IDS: &[&str] = &[
+    "w6-01-default-wp-mcp-no-dailyos",
+    "w6-02-mcp-exposure-none-hidden",
+    "w6-03-frontend-js-no-dailyos-secrets",
+    "w6-04-gutenberg-rejects-raw-runtime-payloads",
+    "w6-05-projection-tampered-typed-error",
+    "w6-06-stale-claim-version-feedback-409",
+    "w6-07-cross-user-presence-nonce",
+    "w6-08-presence-nonce-replay-rejected",
+    "w6-09-phase3-budget-charge-fail-closed",
+    "w6-10-direct-plugin-claim-table-write-lint",
+    "w6-11-payload-json-redaction",
+    "w6-12-stock-theme-account-overview-render",
+    "w6-13-cold-start-stale-marker-notice",
+    "w6-14-hot-tauri-restart-sentinel-discovery",
+    "w6-15-hot-studio-restart-first-render",
+];
 
 type BundleStatus = (u32, bool, u64);
 type BundleStatusWithRegression = (u32, bool, u64, Option<(RegressionClass, Severity)>);
@@ -249,6 +266,90 @@ fn release_gate_rejects_mismatched_fixtures_hash() {
     }));
 }
 
+#[test]
+fn release_gate_requires_w6_fixture_report() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let report_path = temp.path().join("harness-report.json");
+    let output_dir = temp.path().join("release-gate");
+    write_harness_report(
+        &report_path,
+        &[(1, true, 12), (5, true, 20), (13, true, 30)],
+    );
+    write_dos288_evidence(&output_dir, "dos288_bleed_detection_test", "pass");
+    write_dos288_evidence(&output_dir, "dos288_ownership_validator_test", "pass");
+    let config = config_for_report(&report_path, &output_dir);
+    fs::remove_file(output_dir.join("w6-fixtures.json")).expect("remove W6 evidence");
+
+    let outcome = run_gate_with_db_reader(&config, &UnusedDbReader).expect("gate writes evidence");
+    let evidence = read_evidence(&outcome.evidence_json_path);
+
+    assert_eq!(outcome.exit_code, EXIT_INFRA_FAILURE);
+    assert!(evidence.suites.iter().any(|suite| {
+        suite.name == "w6_negative_fixture_catalog"
+            && suite.status == GateStatus::InfraFailure
+            && suite.mandatory
+    }));
+}
+
+#[test]
+fn release_gate_requires_w6_fixture_failures_green() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let report_path = temp.path().join("harness-report.json");
+    let output_dir = temp.path().join("release-gate");
+    write_harness_report(
+        &report_path,
+        &[(1, true, 12), (5, true, 20), (13, true, 30)],
+    );
+    write_dos288_evidence(&output_dir, "dos288_bleed_detection_test", "pass");
+    write_dos288_evidence(&output_dir, "dos288_ownership_validator_test", "pass");
+    let config = config_for_report(&report_path, &output_dir);
+    write_w6_fixture_evidence(
+        &output_dir,
+        &[("w6-05-projection-tampered-typed-error", "fail")],
+    );
+
+    let outcome = run_gate_with_db_reader(&config, &UnusedDbReader).expect("gate writes evidence");
+    let evidence = read_evidence(&outcome.evidence_json_path);
+
+    assert_eq!(outcome.exit_code, EXIT_MANDATORY_FAILURE);
+    assert!(evidence.invariants.iter().any(|invariant| {
+        invariant.id == "w6-05-projection-tampered-typed-error"
+            && invariant.status == GateStatus::Fail
+            && invariant.mandatory
+    }));
+}
+
+#[test]
+fn release_gate_treats_w6_skipped_fixture_as_failure() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let report_path = temp.path().join("harness-report.json");
+    let output_dir = temp.path().join("release-gate");
+    write_harness_report(
+        &report_path,
+        &[(1, true, 12), (5, true, 20), (13, true, 30)],
+    );
+    write_dos288_evidence(&output_dir, "dos288_bleed_detection_test", "pass");
+    write_dos288_evidence(&output_dir, "dos288_ownership_validator_test", "pass");
+    let config = config_for_report(&report_path, &output_dir);
+    write_w6_fixture_evidence(
+        &output_dir,
+        &[("w6-14-hot-tauri-restart-sentinel-discovery", "skipped")],
+    );
+
+    let outcome = run_gate_with_db_reader(&config, &UnusedDbReader).expect("gate writes evidence");
+    let evidence = read_evidence(&outcome.evidence_json_path);
+
+    assert_eq!(outcome.exit_code, EXIT_MANDATORY_FAILURE);
+    assert!(evidence.invariants.iter().any(|invariant| {
+        invariant.id == "w6-14-hot-tauri-restart-sentinel-discovery"
+            && invariant.status == GateStatus::Fail
+            && invariant
+                .failure_summary
+                .as_deref()
+                .is_some_and(|summary| summary.contains("skipped"))
+    }));
+}
+
 fn run_with_bundle_statuses(bundle_statuses: &[BundleStatus]) -> GateEvidenceV1 {
     let temp = tempfile::tempdir().expect("tempdir");
     let report_path = temp.path().join("harness-report.json");
@@ -274,7 +375,9 @@ fn config_for_report(report_path: &Path, output_dir: &Path) -> GateConfig {
         OsString::from("--git-sha"),
         OsString::from(TEST_GIT_SHA),
     ];
-    parse_cli_from(args).expect("config parses")
+    let config = parse_cli_from(args).expect("config parses");
+    write_w6_fixture_evidence(output_dir, &[]);
+    config
 }
 
 fn write_harness_report(path: &Path, bundle_statuses: &[BundleStatus]) {
@@ -348,6 +451,44 @@ fn write_dos288_evidence(output_dir: &Path, selector: &str, status: &str) {
         .expect("serialize"),
     )
     .expect("write dos288 evidence");
+}
+
+fn write_w6_fixture_evidence(output_dir: &Path, overrides: &[(&str, &str)]) {
+    fs::create_dir_all(output_dir).expect("create output dir");
+    let fixtures = W6_TEST_FIXTURE_IDS
+        .iter()
+        .map(|id| {
+            let status = overrides
+                .iter()
+                .find(|(override_id, _)| override_id == id)
+                .map(|(_, status)| *status)
+                .unwrap_or("pass");
+            json!({
+                "id": id,
+                "status": status,
+            })
+        })
+        .collect::<Vec<_>>();
+    let status = if fixtures
+        .iter()
+        .all(|fixture| fixture["status"].as_str() == Some("pass"))
+    {
+        "pass"
+    } else {
+        "fail"
+    };
+    fs::write(
+        output_dir.join("w6-fixtures.json"),
+        serde_json::to_string_pretty(&json!({
+            "schema_version": "w6_negative_fixture_results_v1",
+            "status": status,
+            "git_sha": TEST_GIT_SHA,
+            "fixtures_hash": live_fixtures_hash(),
+            "fixtures": fixtures,
+        }))
+        .expect("serialize"),
+    )
+    .expect("write W6 evidence");
 }
 
 fn live_fixtures_hash() -> String {

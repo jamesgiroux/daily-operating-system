@@ -1252,6 +1252,7 @@ fn is_supported_signed_route(method: &Method, path: &str) -> bool {
             | (&Method::POST, "/v1/surface/project-composition")
             | (&Method::POST, "/v1/surface/subscribe")
             | (&Method::POST, "/v1/surface/replay")
+            | (&Method::POST, "/v1/surface/pairing/refresh-scopes")
     )
 }
 
@@ -2068,6 +2069,9 @@ async fn signed_route_response(
         (Method::POST, "/v1/surface/replay") => {
             surface_replay_response(runtime, validated, request.body.clone(), request_id).await
         }
+        (Method::POST, "/v1/surface/pairing/refresh-scopes") => {
+            surface_pairing_refresh_scopes_response(runtime, validated, request_id).await
+        }
         (Method::POST, "/v1/surface/invoke") => {
             let invoke = match serde_json::from_slice::<SurfaceInvokeRequest>(&request.body) {
                 Ok(invoke) if is_safe_ability_name(&invoke.ability) => invoke,
@@ -2234,6 +2238,60 @@ async fn surface_subscribe_response(
             StatusCode::OK,
             serde_json::to_value(&ack).unwrap_or(json!({})),
         ),
+        Err(error) => error_response(
+            SurfaceHttpError::from_pairing_error(SurfacePairingError::Write(error))
+                .with_request_id(request_id),
+        ),
+    }
+}
+
+/// Re-grant scopes (union with DEFAULT_GRANTED_SCOPES) to the calling
+/// SurfaceClient without invalidating its HMAC session key (scope-refresh mechanism #2).
+async fn surface_pairing_refresh_scopes_response(
+    runtime: &EndpointRuntime,
+    validated: ValidatedSurfaceSession,
+    request_id: String,
+) -> Response<ResponseBody> {
+    let Some(app_state) = runtime.app_state.as_ref().cloned() else {
+        return error_response(SurfaceHttpError::runtime_unavailable().with_request_id(request_id));
+    };
+
+    let input = surface_pairing::RefreshScopesInput {
+        session_id: validated.session_id.clone(),
+        surface_client_id: validated.surface_client_id.clone(),
+        site_binding_digest: validated.site_binding_digest.clone(),
+        now: Utc::now(),
+    };
+    let request_id_for_audit = request_id.clone();
+
+    let result = app_state
+        .db_write(move |db| {
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let external = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &external);
+            Ok::<_, String>(surface_pairing::refresh_pairing_scopes(&ctx, db, input))
+        })
+        .await;
+
+    match result {
+        Ok(Ok(outcome)) => {
+            let mut audit = outcome.audit.clone();
+            audit.request_id = Some(request_id_for_audit);
+            emit_pairing_audit_event(&app_state, &audit);
+            json_response(
+                StatusCode::OK,
+                json!({
+                    "ok": true,
+                    "request_id": request_id,
+                    "endpoint_version": SURFACE_ENDPOINT_VERSION,
+                    "refresh": outcome.response,
+                }),
+            )
+        }
+        Ok(Err(error)) => {
+            error_response(SurfaceHttpError::from_pairing_error(error).with_request_id(request_id))
+        }
         Err(error) => error_response(
             SurfaceHttpError::from_pairing_error(SurfacePairingError::Write(error))
                 .with_request_id(request_id),
@@ -5382,6 +5440,29 @@ mod tests {
         let body = body_json(response);
         assert_eq!(body["error"]["code"], "version_skew");
         assert_eq!(body["error"]["request_id"], "req_409");
+        assert!(body["error"]["remediation"]
+            .as_str()
+            .unwrap()
+            .contains("Refresh"));
+    }
+
+    #[test]
+    fn dos575_projection_tampered_maps_to_typed_http_error() {
+        let error = BridgeSurfaceError::ProjectionTampered {
+            projection_id: "projection-1".to_string(),
+            signature_id: "signature-1".to_string(),
+            key_id: "key-1".to_string(),
+            observed_signature_status: "mismatch".to_string(),
+            quarantine_id: "quarantine-1".to_string(),
+        };
+
+        let response =
+            error_response(bridge_surface_error(error).with_request_id("req_tampered".into()));
+
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let body = body_json(response);
+        assert_eq!(body["error"]["code"], "projection_tampered");
+        assert_eq!(body["error"]["request_id"], "req_tampered");
         assert!(body["error"]["remediation"]
             .as_str()
             .unwrap()

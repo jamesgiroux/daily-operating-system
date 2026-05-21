@@ -2185,6 +2185,35 @@ mod tests {
     }
 
     #[test]
+    fn dos575_cross_user_presence_nonce_rejected() {
+        let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 13, 12, 0, 0).unwrap());
+        let rng = SeedableRng::new(1);
+        let ext = ExternalClients::default();
+        let ctx = ctx(&clock, &rng, &ext);
+        let db = db();
+        let service = service(SurfaceNonceConfig::default());
+        let issuer_session = session("session-1", 42);
+        let verifier_session = session("session-1", 43);
+        let token = issue_token(&service, &ctx, &db, &issuer_session, "request-user-a");
+        let mut payload = verify_payload(&token);
+        payload["wp_user_id"] = json!(43);
+
+        let error = service
+            .verify_nonce(
+                &ctx,
+                &db,
+                &verifier_session,
+                payload,
+                "request-user-b",
+                PresenceNonceRequestMeta::default(),
+            )
+            .expect_err("cross-user nonce must be rejected");
+
+        assert_eq!(error.reason, PresenceNonceRejectReason::WrongUser);
+        assert_eq!(error.status, StatusCode::FORBIDDEN);
+    }
+
+    #[test]
     fn dos571_fixture_missing_and_unknown_nonce_rejections() {
         let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 13, 12, 0, 0).unwrap());
         let rng = SeedableRng::new(1);
@@ -2446,6 +2475,11 @@ mod tests {
             .expect_err("stale");
         assert_eq!(error.reason, PresenceNonceRejectReason::ClaimVersionStale);
         assert_eq!(error.status, StatusCode::CONFLICT);
+        let feedback_count: i64 = db
+            .conn_ref()
+            .query_row("SELECT count(*) FROM claim_feedback", [], |row| row.get(0))
+            .expect("feedback count");
+        assert_eq!(feedback_count, 0);
     }
 
     #[test]
@@ -2879,5 +2913,67 @@ mod tests {
             .find(|e| e.event_kind == "presence_nonce_rejected")
             .expect("rejection event present");
         assert_eq!(rejected_event.detail["reason"], "replayed");
+    }
+
+    #[test]
+    fn dos719_phase_three_failure_charges_failure_budget_fail_closed() {
+        let service = service(SurfaceNonceConfig {
+            failure_budget_per_minute: 1,
+            ..SurfaceNonceConfig::default()
+        });
+        let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 19, 12, 0, 0).unwrap());
+        let rng = SeedableRng::new(13);
+        let external = ExternalClients::default();
+        let context = ctx(&clock, &rng, &external);
+        let db = db();
+        let session = session("session-1", 42);
+        let issued = service
+            .issue_nonce(
+                &context,
+                &db,
+                &session,
+                issue_payload(),
+                "phase3-issue",
+                PresenceNonceRequestMeta::default(),
+            )
+            .expect("issue");
+
+        service
+            .verify_nonce(
+                &context,
+                &db,
+                &session,
+                verify_payload(&issued.presence_nonce),
+                "phase3-verify",
+                PresenceNonceRequestMeta::default(),
+            )
+            .expect("verify consumes nonce");
+
+        service.charge_phase_three_failure(
+            &session,
+            PresenceNonceRequestMeta::default(),
+            "phase3-record-feedback-failed",
+        );
+
+        let failure_key = NonceBudgetKey::narrow(&session, NonceBudgetClass::Failure);
+        let budget_result =
+            service
+                .inner
+                .budgets
+                .lock()
+                .check_and_consume(failure_key, 1, clock.now());
+        assert!(budget_result.is_err());
+
+        let replayed = service
+            .verify_nonce(
+                &context,
+                &db,
+                &session,
+                verify_payload(&issued.presence_nonce),
+                "phase3-replay",
+                PresenceNonceRequestMeta::default(),
+            )
+            .expect_err("phase-3 failure must not reopen nonce");
+        assert_eq!(replayed.reason, PresenceNonceRejectReason::Replayed);
     }
 }
