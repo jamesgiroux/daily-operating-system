@@ -211,6 +211,35 @@ impl std::fmt::Display for OpaqueConversationHandle {
     }
 }
 
+/// Server-issued opaque per-message nonce for transport replay protection
+/// per ADR-0102 §C.bis.replay (cycle-8 amendment) + lifecycle per §C.bis.refresh
+/// (cycle-9 amendment). The wire shape is a transparent opaque string;
+/// the server-side ledger keys nonces by `(client_id, nonce)` and tracks
+/// `issued_at` / `expires_at` / `consumed_at`.
+///
+/// Nonces flow asymmetrically: clients present `request_nonce` on the
+/// request envelope, server returns `next_request_nonce` on the response
+/// envelope. The seed nonce is issued at pairing handshake.
+#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct OpaqueNonce(pub String);
+
+impl OpaqueNonce {
+    pub fn new(nonce: impl Into<String>) -> Self {
+        Self(nonce.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for OpaqueNonce {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
 /// wire envelope mirror of the runtime type.
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -253,6 +282,12 @@ pub enum McpActor {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct McpToolRequestEnvelope {
+    /// Server-issued per-message nonce signed in the transport HMAC per
+    /// ADR-0102 §C.bis.replay (cycle-8 amendment). Echoed from the
+    /// `next_request_nonce` of the prior response envelope, or the seed
+    /// nonce issued at pairing handshake on the very first call.
+    /// Required on every invocation.
+    pub request_nonce: OpaqueNonce,
     /// Server-minted opaque token from a prior response, echoed by the
     /// caller. Absent on the very first call in a conversation.
     pub conversation_handle: Option<OpaqueConversationHandle>,
@@ -277,6 +312,12 @@ pub struct McpToolResponseEnvelope {
     /// Server-minted opaque token. Caller persists for follow-up
     /// invocations in the same conversation.
     pub conversation_handle: OpaqueConversationHandle,
+    /// Server-issued next per-message nonce per ADR-0102 §C.bis.refresh
+    /// (cycle-9 amendment). Caller MUST present this as `request_nonce`
+    /// on the next invocation (or the pairing-seed nonce expires). The
+    /// new nonce is pre-issued with `consumed_at IS NULL` and
+    /// `expires_at = now() + 5min` in `mcp_transport_nonce_ledger`.
+    pub next_request_nonce: OpaqueNonce,
     /// Tool result. `Ok` carries the handler's typed JSON return value;
     /// `Err` carries a [`ToolError`].
     pub result: McpToolResult,
@@ -311,12 +352,12 @@ pub trait McpToolHandler: Send + Sync {
 ///
 /// `ConversationRequired` is intentionally absent — the gateway mints
 /// handles transparently on first write per ADR-0102 §D (2026-05-19
-/// amendment). Auth-state-revocation cases (`PairingRevoked`,
-/// `ConversationRevoked`) live as their own variants rather than abusing
-/// `Unauthorized::missing_scope` with sentinel strings: the [`Scope`]
-/// type is reserved for `<namespace>.<verb>.<noun>` (or pre-amendment
-/// substrate) values per §E, so auth-state sentinels do not belong on
-/// that field.
+/// amendment). Auth-state cases — `PairingRevoked`,
+/// `ConversationRevoked`, `ExposureForbidden` — live as their own
+/// variants rather than abusing `Unauthorized::missing_scope` with
+/// sentinel strings: the [`Scope`] type is reserved for
+/// `<namespace>.<verb>.<noun>` (or pre-amendment substrate) values
+/// per §E, so auth-state sentinels do not belong on that field.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(
     tag = "kind",
@@ -340,6 +381,15 @@ pub enum ToolError {
     /// caller must restart with a fresh conversation (the gateway will
     /// mint a new handle on the next call).
     ConversationRevoked,
+    /// The caller's manifest does not include an invocable grant for
+    /// this tool — either no grant exists for `tool_name` OR the grant's
+    /// `exposure` tier is `None` / `MetadataOnly` per ADR-0102 §G. Use
+    /// this rather than abusing `Unauthorized::missing_scope` with a
+    /// sentinel `Scope` value: exposure is an auth-state distinct from
+    /// scope-deficit (per ADR-0102 §C/§G cycle-7 amendment).
+    ExposureForbidden {
+        tool_name: ScopedName,
+    },
     NotFound {
         resource: String,
     },
@@ -674,8 +724,31 @@ mod tests {
     }
 
     #[test]
+    fn tool_error_exposure_forbidden_wire_shape() {
+        // Per ADR-0102 §C/§G cycle-7 amendment: absent grant or
+        // exposure tier of None / MetadataOnly returns a dedicated
+        // variant rather than abusing `Unauthorized::missing_scope`
+        // with a sentinel `Scope` value. Wire shape mirrors the other
+        // typed errors: snake_case tag + camelCase fields.
+        let err = ToolError::ExposureForbidden {
+            tool_name: ScopedName::new("dailyos.read.account_status"),
+        };
+        let encoded = serde_json::to_value(&err).expect("serializes");
+        assert_eq!(
+            encoded,
+            json!({
+                "kind": "exposure_forbidden",
+                "toolName": "dailyos.read.account_status",
+            })
+        );
+        let decoded: ToolError = serde_json::from_value(encoded).expect("deserializes");
+        assert_eq!(decoded, err);
+    }
+
+    #[test]
     fn mcp_tool_request_envelope_wire_shape() {
         let envelope = McpToolRequestEnvelope {
+            request_nonce: OpaqueNonce::new("nonce-req-001"),
             conversation_handle: Some(OpaqueConversationHandle::new("conv-abc-123")),
             tool_name: ScopedName::new("dailyos.read.account_status"),
             params: json!({ "subject": "acme" }),
@@ -684,6 +757,7 @@ mod tests {
         assert_eq!(
             encoded,
             json!({
+                "requestNonce": "nonce-req-001",
                 "conversationHandle": "conv-abc-123",
                 "toolName": "dailyos.read.account_status",
                 "params": { "subject": "acme" },
@@ -697,6 +771,7 @@ mod tests {
     #[test]
     fn mcp_tool_request_envelope_first_call_omits_handle() {
         let envelope = McpToolRequestEnvelope {
+            request_nonce: OpaqueNonce::new("nonce-seed-pair-001"),
             conversation_handle: None,
             tool_name: ScopedName::new("dailyos.submit.note"),
             params: json!({ "body": "kickoff" }),
@@ -705,6 +780,7 @@ mod tests {
         assert_eq!(
             encoded,
             json!({
+                "requestNonce": "nonce-seed-pair-001",
                 "conversationHandle": null,
                 "toolName": "dailyos.submit.note",
                 "params": { "body": "kickoff" },
@@ -716,6 +792,7 @@ mod tests {
     fn mcp_tool_response_envelope_ok_wire_shape() {
         let envelope = McpToolResponseEnvelope {
             conversation_handle: OpaqueConversationHandle::new("conv-abc-123"),
+            next_request_nonce: OpaqueNonce::new("nonce-resp-002"),
             result: McpToolResult::Ok {
                 value: json!({ "status": "ok" }),
             },
@@ -725,6 +802,7 @@ mod tests {
             encoded,
             json!({
                 "conversationHandle": "conv-abc-123",
+                "nextRequestNonce": "nonce-resp-002",
                 "result": { "kind": "ok", "value": { "status": "ok" } },
             })
         );
@@ -737,6 +815,7 @@ mod tests {
     fn mcp_tool_response_envelope_error_wire_shape() {
         let envelope = McpToolResponseEnvelope {
             conversation_handle: OpaqueConversationHandle::new("conv-abc-123"),
+            next_request_nonce: OpaqueNonce::new("nonce-resp-002"),
             result: McpToolResult::Error {
                 error: ToolError::RateLimited {
                     retry_after_seconds: 30,
@@ -748,11 +827,25 @@ mod tests {
             encoded,
             json!({
                 "conversationHandle": "conv-abc-123",
+                "nextRequestNonce": "nonce-resp-002",
                 "result": {
                     "kind": "error",
                     "error": { "kind": "rate_limited", "retryAfterSeconds": 30 },
                 },
             })
         );
+    }
+
+    #[test]
+    fn opaque_nonce_wire_is_transparent_string() {
+        // Per ADR-0102 §C.bis.replay (cycle-8) + §C.bis.refresh (cycle-9):
+        // request_nonce + next_request_nonce ride the wire as opaque
+        // strings; the server-side ledger keys them by (client_id,
+        // nonce) and tracks issued_at / expires_at / consumed_at.
+        let nonce = OpaqueNonce::new("nonce-abc-123");
+        let encoded = serde_json::to_string(&nonce).expect("serializes");
+        assert_eq!(encoded, "\"nonce-abc-123\"");
+        let decoded: OpaqueNonce = serde_json::from_str(&encoded).expect("deserializes");
+        assert_eq!(decoded, nonce);
     }
 }

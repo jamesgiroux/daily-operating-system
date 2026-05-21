@@ -679,3 +679,116 @@ W0 ships only: the actor-class contract (this amendment), the Rust enum variants
 ### I. Companion ADR-0128 amendment
 
 ADR-0128 receives a same-date amendment recording the v1.4.7-specific consequences of this trust-boundary contract: tool description as product copy with eval coverage (DOS-481), cross-conversation continuity surfaced as a named affordance per ADR-0128 §6 with the wire-level shape defined here in §D, and extension of the displacement-use-case framing to v1.4.7 W5 host-selection evaluation. ADR-0128 §5 ("Feedback is the only write") narrows in v1.4.7's headless head: writes are restricted to the v1.4.7 W4 surface (note/observation, create_action, update_action_status), all routed through approved `services::*` per ADR-0101.
+
+## Cycle-7 amendment — 2026-05-20 — exposure-tier rejection variant + handle client_id binding
+
+Origin: v1.4.7 W1-A L0 cycles 2–3. Two trust-contract clarifications surfaced by independent codex reviewers (challenge / architect / CSO / plan-devex-review). Both fold into the existing §C/§D/§G framing; neither expands W1-A scope.
+
+### §C.bis — `ExposureForbidden` joins `PairingRevoked` / `ConversationRevoked` as a dedicated `ToolError` variant
+
+The `Scope` newtype is reserved for `<namespace>.<verb>.<noun>` (or pre-amendment substrate-shipped) values per §E. Auth-state rejection paths therefore live as their own `ToolError` variants rather than abusing `Unauthorized::missing_scope` with sentinel `Scope` strings.
+
+The cycle-1 amendment already established this for `PairingRevoked` and `ConversationRevoked`. This amendment adds the parallel variant for exposure-tier rejection per §G:
+
+- **`ToolError::ExposureForbidden { tool_name: ScopedName }`** — returned when the caller's per-client manifest contains either (a) no grant for the requested `tool_name`, or (b) a grant whose `exposure` tier is `McpExposure::None` or `McpExposure::MetadataOnly`. The gateway rejects before handler dispatch; the wire shape is `{"kind": "exposure_forbidden", "toolName": "..."}` (snake_case tag + camelCase fields, parity with the other typed errors).
+
+The W1-A gateway uses the following decision order for the §C scope-authorization gate: (i) absent grant OR non-`Invocable` exposure → `ExposureForbidden`; (ii) grant present and `Invocable` but `tool.description().scopes_required.is_subset(grant.scopes_granted)` is false → `Unauthorized { missing_scope }`. Caller-asserted scope claims in tool params remain rejected with `BadParams`.
+
+### §D.bis — `OpaqueConversationHandle` is bound to `client_id` at mint time
+
+The §D lifecycle (mint, echo, 24h sliding expiry, transparent first-write mint, revocation) is preserved verbatim. This amendment adds a server-side binding:
+
+- **Mint records `(client_id, handle)`.** Server-side storage indexes the handle by the issuing `McpClientId`.
+- **Resolution is keyed on `(client_id, handle)`.** A presented handle that exists but was issued to a different `McpClientId` resolves to "no matching binding" and returns `ToolError::ConversationRevoked` (the substrate's existing handle-revocation path; from the caller's perspective the handle is no longer valid and a fresh conversation must be started).
+- **Wire shape is unchanged.** `OpaqueConversationHandle` remains a transparent opaque string on the wire; the binding is a server-side property of the storage row.
+
+The runtime `Actor::McpClient { client_id, conversation_handle: Option<OpaqueConversationHandle> }` shape is unchanged — `client_id` is already present on the variant and naturally serves as the binding key when the gateway constructs `McpActor::Client` after manifest resolution.
+
+### Non-goals (cycle-7)
+
+This amendment does **not** change: the `Actor::McpClient` enum variant, `McpClientId` / `OpaqueConversationHandle` newtypes, the `McpExposure` tri-state, any wire-shape envelope, the pairing handshake, transport HMAC signing, the manifest schema's other fields, rate-limit registry, audit attribution, or signal payload shape.
+
+## Cycle-8 amendment — 2026-05-20 — transport replay guard (nonce ledger)
+
+Origin: v1.4.7 W1-A L0 cycle 5 CSO HIGH finding + L6 verdict. The cycle-1 §C contract specifies per-message HMAC-SHA256 transport signing but does NOT require replay protection. A captured, signed MCP message could be replayed by an attacker within the validity window of the pairing key OR the `OpaqueConversationHandle` (up to 24 hours). For a v1.4.7 W4 write-tool (`dailyos.submit.note`, `dailyos.submit.action`, `dailyos.submit.action_status`, `dailyos.write.place_document`), replay produces duplicate mutations.
+
+### §C.bis.replay — Mandatory per-message nonce
+
+Every MCP-originated message MUST include a `request_nonce` field whose value is signed by the transport HMAC alongside the payload. The nonce is server-issued during the pairing handshake (initial seed) and refreshed per response via a server-side ledger. Format: 128-bit cryptographically-random opaque token.
+
+Server-side enforcement, executed at the transport layer before `Actor::McpClient` construction (per the cycle-1 §C "rejected at the transport layer before any `Actor::McpClient` is constructed" rule):
+
+1. **Lookup.** `services/mcp_v2/auth.rs::verify_transport_hmac(payload, sig, presented_nonce)` first verifies HMAC-SHA256 signature; on success, queries `mcp_transport_nonce_ledger` for `(client_id, presented_nonce)`.
+2. **Consume-or-reject.** Mirrors the proven `services::surface_nonce::verify_and_consume` pattern: if `(client_id, nonce)` row exists with `consumed_at IS NULL`, mark consumed atomically (`UPDATE ... WHERE consumed_at IS NULL`) and admit the request. If row exists with `consumed_at IS NOT NULL`, reject with `ToolError::BadParams { detail: "nonce_replayed" }`. If row absent, reject with `ToolError::BadParams { detail: "invalid_signature" }` (uniform error shape with HMAC verification failure — see timing-oracle gate below).
+3. **Window.** Nonces older than 5 minutes (`consumed_at < now() - 5min`) are eligible for cleanup by a background sweep. Window is short enough to bound ledger size; long enough to absorb realistic client→server clock skew + retry latency.
+4. **Timing-oracle gate.** Replay-rejected, invalid-signature, missing-client, and absent-grant rejections all complete after a uniform `tokio::time::sleep_until(start + 10ms)` floor with no upper-bound assertion (per v1.4.7 W1-A AC-12).
+
+### Non-goals (cycle-8)
+
+This amendment does NOT change: the HMAC-SHA256 signing algorithm; the keychain-managed shared key shape; the pairing handshake flow; the `OpaqueConversationHandle` lifecycle (per §D); the `ExposureForbidden` variant or scope-deficit `Unauthorized` semantics; the rate-limit ledger; the manifest schema; the success-path audit shape.
+
+## Cycle-9 amendment — 2026-05-20 — nonce ledger lifecycle: per-response refresh + ledger schema + fail-closed consume
+
+Origin: v1.4.7 W1-A L0 cycle 6 — three convergent findings on the cycle-8 nonce-ledger amendment. Architect MED + challenge HIGH + CSO HIGH flagged that §C.bis.replay defined consume-once semantics but did not pin: (a) where the next nonce comes from after the seed is consumed, (b) ledger schema needs `issued_at`/`expires_at` for expiry of unconsumed nonces, (c) fail-closed semantics if downstream checks fail after consume.
+
+### §C.bis.refresh — Per-response nonce refresh
+
+Every gateway response carries a fresh server-issued `next_request_nonce` in the response envelope alongside `conversation_handle`. The caller MUST present this exact value as `request_nonce` on the next invocation; the seed nonce (issued during pairing handshake) is consumed on the first call and never reused. This makes nonce flow asymmetric and stateful:
+
+```
+pairing handshake → seed_nonce  (issued, consumed_at NULL, expires_at = now + 5min)
+client req 1     → seed_nonce              [verify + consume + issue nonce_1]
+server resp 1    → next_request_nonce = nonce_1
+client req 2     → nonce_1                  [verify + consume + issue nonce_2]
+server resp 2    → next_request_nonce = nonce_2
+…
+```
+
+Wire shape: `McpToolRequestEnvelope.request_nonce: OpaqueNonce` (required on every call) and `McpToolResponseEnvelope.next_request_nonce: OpaqueNonce` (always present on response). Both are transparent opaque strings.
+
+If a client misses a response (network drop), the server's most-recently-issued nonce remains valid in the ledger until `expires_at`; client can re-present its prior request with the same `request_nonce` value within window. After expiry, all unconsumed issued nonces are swept; a stale client request fails with `BadParams { detail: "invalid_signature" }` (uniform shape with the no-row case).
+
+### §C.bis.schema — Ledger table shape
+
+```
+mcp_transport_nonce_ledger (
+    nonce         TEXT NOT NULL,
+    client_id     TEXT NOT NULL,
+    issued_at     INTEGER NOT NULL,        -- unix epoch millis
+    expires_at    INTEGER NOT NULL,        -- issued_at + 5 minutes default
+    consumed_at   INTEGER NULL,            -- NULL until consumed; epoch millis on consume
+    UNIQUE(nonce, client_id)
+)
+CREATE INDEX idx_mcp_nonce_lookup     ON mcp_transport_nonce_ledger (client_id, nonce);
+CREATE INDEX idx_mcp_nonce_consumed   ON mcp_transport_nonce_ledger (consumed_at);
+CREATE INDEX idx_mcp_nonce_expires    ON mcp_transport_nonce_ledger (expires_at);
+```
+
+Atomic consume predicate (mirrors `services::surface_nonce::verify_and_consume`):
+
+```sql
+UPDATE mcp_transport_nonce_ledger
+   SET consumed_at = ?now_millis
+ WHERE client_id = ?client AND nonce = ?nonce
+   AND consumed_at IS NULL
+   AND expires_at >= ?now_millis;
+```
+
+If `rowsAffected = 1`, admit the request and issue a fresh `next_request_nonce` (insert new row with `consumed_at = NULL`, `expires_at = now + 5min`). If `rowsAffected = 0`, reject:
+- row exists with `consumed_at IS NOT NULL` → already consumed → `BadParams { detail: "nonce_replayed" }`
+- row exists with `expires_at < now` → expired (unconsumed) → `BadParams { detail: "invalid_signature" }` (uniform shape; the client effectively has a stale credential)
+- row absent → `BadParams { detail: "invalid_signature" }`
+
+Both rejection shapes are indistinguishable by JSON keys (uniform shape per AC-12 timing-oracle requirement).
+
+### §C.bis.fail-closed — Fail-closed semantics after consume
+
+Once a nonce is consumed (`UPDATE` succeeds with `rowsAffected = 1`), subsequent failure in the gateway pipeline — handler error, audit-append failure, downstream service rollback, network error during response transmission — does NOT rollback the consume. The nonce stays consumed permanently. Rationale: a rollback would let an attacker who can interrupt the response phase (e.g., RST the TCP connection after the request lands but before the response transmits) replay the captured signed request. Fail-closed protects against this. The caller pays the cost of a wasted nonce in the rare interrupted-response case; the next call uses the next-issued nonce from the latest successful response, or re-pairs if no successful response was ever received.
+
+### §C.bis.sweep — Background nonce sweep
+
+A background task (singleton per process) deletes ledger rows where `expires_at < now() - 1 hour` (one hour grace beyond expiry for forensic visibility). Sweep cadence: every 5 minutes (matches expiry window). The sweep does NOT let a replayed nonce slip through because absent rows reject as `invalid_signature`, identical to expired rows.
+
+### Non-goals (cycle-9)
+
+This amendment does NOT change: the HMAC-SHA256 signing algorithm; the pairing handshake (still issues the seed nonce); rate-limit ledger; manifest schema; audit shape (success-only per L6-2); `OpaqueConversationHandle` lifecycle. The 5-minute expiry window is fixed in W1-A; configurable TTL is filed as DOS-? "MCP nonce TTL configuration" in the Maintenance project for post-v1.4.7 tuning.
