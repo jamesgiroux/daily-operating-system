@@ -845,6 +845,9 @@ pub struct ServiceContext<'a> {
     composition_commit: Option<Arc<dyn CompositionCommitHandle>>,
     entity_touchpoints_reader: Option<Arc<dyn EntityTouchpointsReadHandle>>,
     meeting_prep_status_reader: Option<Arc<dyn MeetingPrepStatusReadHandle>>,
+    account_list_reader: Option<Arc<dyn AccountListReadHandle>>,
+    person_list_reader: Option<Arc<dyn PersonListReadHandle>>,
+    project_list_reader: Option<Arc<dyn ProjectListReadHandle>>,
 }
 
 pub type EntityContextReadFuture<'a> =
@@ -971,6 +974,138 @@ pub type ListOpenLoopsReadFuture<'a> = Pin<
 
 pub trait ListOpenLoopsReadHandle: Send + Sync {
     fn read_open_loops<'a>(&'a self, query: ListOpenLoopsQuery) -> ListOpenLoopsReadFuture<'a>;
+}
+
+// -----------------------------------------------------------------------------
+// v1.4.4 W1 substrate extension — entity index read seams.
+//
+// `list_accounts` / `list_people` / `list_projects` are W2 §5.5 list-shell
+// abilities (Accounts/People/Projects index). The producers shape opaque
+// paginated responses; the reader handles below are the narrow capability
+// seams the app-side adapters fill in. Each query carries the
+// already-validated filter + offset/page_size; each snapshot carries a
+// concise list-row plus a total + optional concurrent-mutation advisory
+// the producer maps to `CursorState::DataShifted`.
+// -----------------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccountListQuery {
+    pub status: Option<String>,
+    pub health_band: Option<crate::abilities::trust::types::TrustBand>,
+    pub name_contains: Option<String>,
+    pub offset: u64,
+    pub page_size: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccountListSummary {
+    pub account_id: String,
+    pub name: String,
+    pub status: String,
+    pub health_band: crate::abilities::trust::types::TrustBand,
+    pub last_touchpoint_at: Option<String>,
+    pub open_loops_count: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccountListSnapshot {
+    pub items: Vec<AccountListSummary>,
+    pub total_after_filter: u64,
+    /// `Some(advisory)` when the reader detected a concurrent insert/
+    /// retract between the cursor's offset and the page boundary — the
+    /// producer maps this verbatim to `CursorState::DataShifted`.
+    pub data_shifted_advisory: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum AccountListReadError {
+    #[error("{0}")]
+    ReadFailed(String),
+}
+
+pub type AccountListReadFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<AccountListSnapshot, AccountListReadError>> + Send + 'a>>;
+
+pub trait AccountListReadHandle: Send + Sync {
+    fn read_accounts<'a>(&'a self, query: AccountListQuery) -> AccountListReadFuture<'a>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PersonListQuery {
+    pub role: Option<String>,
+    pub primary_account_id: Option<String>,
+    pub name_contains: Option<String>,
+    pub offset: u64,
+    pub page_size: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PersonListSummary {
+    pub person_id: String,
+    pub display_name: String,
+    pub primary_account_id: Option<String>,
+    pub role: String,
+    pub last_touchpoint_at: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PersonListSnapshot {
+    pub items: Vec<PersonListSummary>,
+    pub total_after_filter: u64,
+    pub data_shifted_advisory: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum PersonListReadError {
+    #[error("{0}")]
+    ReadFailed(String),
+}
+
+pub type PersonListReadFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<PersonListSnapshot, PersonListReadError>> + Send + 'a>>;
+
+pub trait PersonListReadHandle: Send + Sync {
+    fn read_people<'a>(&'a self, query: PersonListQuery) -> PersonListReadFuture<'a>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectListQuery {
+    pub status: Option<String>,
+    pub trajectory: Option<crate::abilities::list_projects::ProjectTrajectory>,
+    pub parent_account_id: Option<String>,
+    pub name_contains: Option<String>,
+    pub offset: u64,
+    pub page_size: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectListSummary {
+    pub project_id: String,
+    pub name: String,
+    pub parent_account_id: Option<String>,
+    pub status: String,
+    pub trajectory: crate::abilities::list_projects::ProjectTrajectory,
+    pub last_touchpoint_at: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectListSnapshot {
+    pub items: Vec<ProjectListSummary>,
+    pub total_after_filter: u64,
+    pub data_shifted_advisory: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ProjectListReadError {
+    #[error("{0}")]
+    ReadFailed(String),
+}
+
+pub type ProjectListReadFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<ProjectListSnapshot, ProjectListReadError>> + Send + 'a>>;
+
+pub trait ProjectListReadHandle: Send + Sync {
+    fn read_projects<'a>(&'a self, query: ProjectListQuery) -> ProjectListReadFuture<'a>;
 }
 
 // -----------------------------------------------------------------------------
@@ -1353,6 +1488,9 @@ impl<'a> ServiceContext<'a> {
             composition_commit: None,
             entity_touchpoints_reader: None,
             meeting_prep_status_reader: None,
+            account_list_reader: None,
+            person_list_reader: None,
+            project_list_reader: None,
         }
     }
 
@@ -1381,6 +1519,9 @@ impl<'a> ServiceContext<'a> {
             composition_commit: None,
             entity_touchpoints_reader: None,
             meeting_prep_status_reader: None,
+            account_list_reader: None,
+            person_list_reader: None,
+            project_list_reader: None,
         }
     }
 
@@ -1420,6 +1561,9 @@ impl<'a> ServiceContext<'a> {
             composition_commit: None,
             entity_touchpoints_reader: None,
             meeting_prep_status_reader: None,
+            account_list_reader: None,
+            person_list_reader: None,
+            project_list_reader: None,
         }
     }
 
@@ -1511,6 +1655,21 @@ impl<'a> ServiceContext<'a> {
         reader: Arc<dyn MeetingPrepStatusReadHandle>,
     ) -> Self {
         self.meeting_prep_status_reader = Some(reader);
+        self
+    }
+
+    pub fn with_account_list_reader(mut self, reader: Arc<dyn AccountListReadHandle>) -> Self {
+        self.account_list_reader = Some(reader);
+        self
+    }
+
+    pub fn with_person_list_reader(mut self, reader: Arc<dyn PersonListReadHandle>) -> Self {
+        self.person_list_reader = Some(reader);
+        self
+    }
+
+    pub fn with_project_list_reader(mut self, reader: Arc<dyn ProjectListReadHandle>) -> Self {
+        self.project_list_reader = Some(reader);
         self
     }
 
@@ -1624,6 +1783,45 @@ impl<'a> ServiceContext<'a> {
         };
 
         reader.read_open_loops(query).await
+    }
+
+    pub async fn read_list_accounts(
+        &self,
+        query: AccountListQuery,
+    ) -> Result<AccountListSnapshot, AccountListReadError> {
+        let Some(reader) = &self.account_list_reader else {
+            return Err(AccountListReadError::ReadFailed(
+                self.missing_reader_error("list_accounts_read"),
+            ));
+        };
+
+        reader.read_accounts(query).await
+    }
+
+    pub async fn read_list_people(
+        &self,
+        query: PersonListQuery,
+    ) -> Result<PersonListSnapshot, PersonListReadError> {
+        let Some(reader) = &self.person_list_reader else {
+            return Err(PersonListReadError::ReadFailed(
+                self.missing_reader_error("list_people_read"),
+            ));
+        };
+
+        reader.read_people(query).await
+    }
+
+    pub async fn read_list_projects(
+        &self,
+        query: ProjectListQuery,
+    ) -> Result<ProjectListSnapshot, ProjectListReadError> {
+        let Some(reader) = &self.project_list_reader else {
+            return Err(ProjectListReadError::ReadFailed(
+                self.missing_reader_error("list_projects_read"),
+            ));
+        };
+
+        reader.read_projects(query).await
     }
 
     pub async fn read_trajectory_bundle(
