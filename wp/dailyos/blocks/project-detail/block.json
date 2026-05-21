@@ -39,5 +39,6 @@
 		["dailyos/recommended-actions"],
 		["dailyos/project-appendix"]
 	],
-	"render": "file:./render.php"
+	"render": "file:./render.php",
+	"editorScript": "file:./edit.js"
 }

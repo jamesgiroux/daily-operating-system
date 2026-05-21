@@ -262,8 +262,13 @@ final class DailyOS_Plugin {
 	 * Register DailyOS custom post types.
 	 *
 	 * `dailyos_account` is the substrate-backed account post type the W3 magazine
-	 * theme attaches templates to. Additional CPTs (e.g. `dailyos_briefing`) follow
-	 * in v1.4.4 W (briefing surface migration).
+	 * theme attaches templates to. v1.4.4 W2 adds `dailyos_project`,
+	 * `dailyos_person`, `dailyos_meeting` so the W2 entity-detail outer blocks
+	 * have a host post type whose template + post-meta-derived entity_id wire
+	 * the runtime envelope into the magazine surface (one CPT per EntityKind
+	 * per ADR-0129 §3 surface-typing). Each CPT also registers a
+	 * `dailyos_entity_id` post-meta key — exposed in REST so editor UX can
+	 * read/write the entity id alongside the post.
 	 */
 	public function register_post_types(): void {
 		if ( ! function_exists( 'register_post_type' ) ) {
@@ -287,6 +292,88 @@ final class DailyOS_Plugin {
 				'menu_icon'     => 'dashicons-businessperson',
 			]
 		);
+
+		register_post_type(
+			'dailyos_project',
+			[
+				'labels'        => [
+					'name'          => __( 'Projects', 'dailyos' ),
+					'singular_name' => __( 'Project', 'dailyos' ),
+				],
+				'public'        => true,
+				'has_archive'   => true,
+				'rewrite'       => [ 'slug' => 'entities/projects' ],
+				'show_in_rest'  => true,
+				'rest_base'     => 'projects',
+				'supports'      => [ 'title', 'editor', 'custom-fields' ],
+				'template_lock' => false,
+				'menu_icon'     => 'dashicons-portfolio',
+			]
+		);
+
+		register_post_type(
+			'dailyos_person',
+			[
+				'labels'        => [
+					'name'          => __( 'People', 'dailyos' ),
+					'singular_name' => __( 'Person', 'dailyos' ),
+				],
+				'public'        => true,
+				'has_archive'   => true,
+				'rewrite'       => [ 'slug' => 'entities/people' ],
+				'show_in_rest'  => true,
+				'rest_base'     => 'people',
+				'supports'      => [ 'title', 'editor', 'custom-fields' ],
+				'template_lock' => false,
+				'menu_icon'     => 'dashicons-id',
+			]
+		);
+
+		register_post_type(
+			'dailyos_meeting',
+			[
+				'labels'        => [
+					'name'          => __( 'Meetings', 'dailyos' ),
+					'singular_name' => __( 'Meeting', 'dailyos' ),
+				],
+				'public'        => true,
+				'has_archive'   => true,
+				'rewrite'       => [ 'slug' => 'entities/meetings' ],
+				'show_in_rest'  => true,
+				'rest_base'     => 'meetings',
+				'supports'      => [ 'title', 'editor', 'custom-fields' ],
+				'template_lock' => false,
+				'menu_icon'     => 'dashicons-calendar-alt',
+			]
+		);
+
+		// Register the shared dailyos_entity_id post-meta key on every entity
+		// CPT (including the existing dailyos_account). Outer-block renderers
+		// fall back to this meta value (then the post slug) when the block
+		// attribute is empty — enables the L4 quick-setup path "create a
+		// dailyos_<entity> post; the W2 surface renders against the runtime".
+		if ( function_exists( 'register_post_meta' ) ) {
+			foreach (
+				[ 'dailyos_account', 'dailyos_project', 'dailyos_person', 'dailyos_meeting' ]
+				as $cpt
+			) {
+				register_post_meta(
+					$cpt,
+					'dailyos_entity_id',
+					[
+						'show_in_rest'  => true,
+						'single'        => true,
+						'type'          => 'string',
+						'default'       => '',
+						'auth_callback' => static function (): bool {
+							return function_exists( 'current_user_can' )
+								? current_user_can( 'edit_posts' )
+								: false;
+						},
+					]
+				);
+			}
+		}
 	}
 
 	/**

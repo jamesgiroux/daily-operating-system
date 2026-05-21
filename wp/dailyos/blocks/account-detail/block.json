@@ -47,5 +47,6 @@
 		["dailyos/unified-timeline"],
 		["dailyos/finis-marker"]
 	],
-	"render": "file:./render.php"
+	"render": "file:./render.php",
+	"editorScript": "file:./edit.js"
 }

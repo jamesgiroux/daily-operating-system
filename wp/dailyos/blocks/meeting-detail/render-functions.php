@@ -48,6 +48,27 @@ if ( ! function_exists( 'dailyos_meeting_detail_render' ) ) {
 	function dailyos_meeting_detail_render( array $attributes, string $content = '' ): string {
 		$meeting_id = isset( $attributes['meeting_id'] ) ? (string) $attributes['meeting_id'] : '';
 
+		// Auto-fill from post context when attribute is empty AND we're
+		// rendering inside the matching CPT. L4 quick-setup path: create a
+		// `dailyos_meeting` post, set the `dailyos_entity_id` post-meta (or
+		// fall back to post slug), and the W2 surface composes automatically.
+		if ( '' === $meeting_id && function_exists( 'get_the_ID' ) && function_exists( 'get_post_type' ) ) {
+			$post_id = get_the_ID();
+			if ( $post_id && 'dailyos_meeting' === get_post_type( $post_id ) ) {
+				$meta_id = function_exists( 'get_post_meta' )
+					? get_post_meta( $post_id, 'dailyos_entity_id', true )
+					: '';
+				if ( is_string( $meta_id ) && '' !== $meta_id ) {
+					$meeting_id = $meta_id;
+				} else {
+					$post_obj = function_exists( 'get_post' ) ? get_post( $post_id ) : null;
+					if ( $post_obj && is_object( $post_obj ) && isset( $post_obj->post_name ) ) {
+						$meeting_id = (string) $post_obj->post_name;
+					}
+				}
+			}
+		}
+
 		if ( '' === $meeting_id ) {
 			return '<div class="wp-block-dailyos-meeting-detail is-empty" data-empty-reason="missing_meeting_id">'
 				. esc_html__( 'No meeting to show here.', 'dailyos' )
