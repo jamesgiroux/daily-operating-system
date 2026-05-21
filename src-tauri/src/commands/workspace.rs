@@ -4,6 +4,18 @@
 )]
 
 use super::*;
+use abilities_runtime::abilities::provenance::source::{EntityId, WorkspaceFileKind};
+use chrono::{DateTime, Utc};
+use rusqlite::{params, OptionalExtension};
+
+use crate::entity::EntityType;
+use crate::services::workspace_ingestion::lifecycle::{LifecycleRepo, LifecycleState};
+use crate::services::workspace_ingestion::pipeline::{
+    file_id_from_identity, EntityRef, IngestRequest,
+};
+use crate::services::workspace_ingestion::registry::WorkspaceSourceRegistry;
+use crate::services::workspace_ingestion::runs::IngestionMode;
+use crate::services::workspace_ingestion::wiring;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -408,6 +420,243 @@ pub fn copy_to_inbox(
         copied_count: copied_filenames.len(),
         copied_filenames,
     })
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssignInboxEntityReceipt {
+    pub file_id: String,
+    pub ingestion_run_id: String,
+    pub content_sha256: String,
+    pub lifecycle_state_after: String,
+    pub resolved_path: Option<String>,
+}
+
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
+#[tauri::command]
+pub async fn assign_inbox_entity(
+    state: State<'_, Arc<AppState>>,
+    file_id: String,
+    entity_type_slug: String,
+    entity_id: String,
+    entity_name: String,
+    source_type_slug: String,
+) -> Result<AssignInboxEntityReceipt, String> {
+    let config = state
+        .config
+        .read()
+        .clone()
+        .ok_or("No configuration loaded")?;
+    let workspace_root = std::path::PathBuf::from(config.workspace_path)
+        .canonicalize()
+        .map_err(|e| format!("workspace_root: {e}"))?;
+
+    state
+        .db_write(move |db| {
+            assign_inbox_entity_in_db(
+                db,
+                &workspace_root,
+                file_id,
+                entity_type_slug,
+                entity_id,
+                entity_name,
+                source_type_slug,
+            )
+        })
+        .await
+}
+
+#[cfg(any(test, debug_assertions, feature = "test-harness"))]
+#[doc(hidden)]
+pub fn assign_inbox_entity_for_tests(
+    db: &crate::db::ActionDb,
+    workspace_root: &std::path::Path,
+    file_id: String,
+    entity_type_slug: String,
+    entity_id: String,
+    entity_name: String,
+    source_type_slug: String,
+) -> Result<AssignInboxEntityReceipt, String> {
+    assign_inbox_entity_in_db(
+        db,
+        workspace_root,
+        file_id,
+        entity_type_slug,
+        entity_id,
+        entity_name,
+        source_type_slug,
+    )
+}
+
+fn assign_inbox_entity_in_db(
+    db: &crate::db::ActionDb,
+    workspace_root: &std::path::Path,
+    file_id: String,
+    entity_type_slug: String,
+    entity_id: String,
+    entity_name: String,
+    source_type_slug: String,
+) -> Result<AssignInboxEntityReceipt, String> {
+    let entity_type = EntityType::from_str_lossy(&entity_type_slug);
+    if matches!(entity_type, EntityType::Other) {
+        return Err("invalid_entity_type".to_string());
+    }
+    if !is_valid_entity_id(&entity_id) {
+        return Err("invalid_entity_id".to_string());
+    }
+    if !is_valid_slug_shape(&entity_name) {
+        return Err("invalid_entity_name".to_string());
+    }
+    let source_type = WorkspaceFileKind::from_slug(&source_type_slug)
+        .ok_or_else(|| "invalid source_type_slug".to_string())?;
+    if source_type != WorkspaceFileKind::Inbox {
+        return Err("not_inbox_file".to_string());
+    }
+
+    db.with_transaction(|tx_db| {
+        let conn = tx_db.conn_ref();
+        let row = LifecycleRepo::get(conn, &file_id)
+            .map_err(|e| format!("lifecycle_get: {e}"))?
+            .ok_or_else(|| "not_found".to_string())?;
+        if row.lifecycle_state != LifecycleState::PendingEntityAssignment {
+            return Err("invalid_lifecycle_state".to_string());
+        }
+        if row.source_type != WorkspaceFileKind::Inbox {
+            return Err("not_inbox_file".to_string());
+        }
+
+        let canonical_path = std::path::PathBuf::from(&row.canonical_path);
+        let (file, identity) =
+            WorkspaceSourceRegistry::open_validated(workspace_root, &canonical_path)
+                .map_err(|e| format!("open_validated: {e:?}"))?;
+        let reopened_file_id = file_id_from_identity(&identity, workspace_root)
+            .map_err(|e| format!("file_id: {e:?}"))?;
+        if reopened_file_id != file_id {
+            return Err("file_id_mismatch".to_string());
+        }
+        let source_asof: DateTime<Utc> = identity
+            .canonical_path
+            .metadata()
+            .and_then(|metadata| metadata.modified())
+            .map_err(|e| format!("source_asof: {e}"))?
+            .into();
+
+        LifecycleRepo::set_entity(conn, &file_id, entity_type, &entity_id, Some(&entity_name))
+            .map_err(|e| format!("set_entity: {e}"))?;
+        add_user_relink_link(conn, &file_id, entity_type, &entity_id)
+            .map_err(|e| format!("add_link: {e}"))?;
+
+        // The live W2-A pipeline re-enters from `pending`; keep this state
+        // change inside the same command transaction so failures roll back.
+        conn.execute(
+            "UPDATE workspace_file_lifecycle SET lifecycle_state = 'pending', \
+             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') \
+             WHERE file_id = ?1 AND lifecycle_state = 'pending_entity_assignment'",
+            params![file_id],
+        )
+        .map_err(|e| format!("prepare_pipeline: {e}"))?;
+
+        let pipeline = wiring::build_pipeline(workspace_root.to_path_buf());
+        let receipt = pipeline
+            .run(
+                conn,
+                IngestRequest {
+                    file,
+                    identity,
+                    file_id: file_id.clone(),
+                    source_asof,
+                    source_type,
+                    entity: Some(EntityRef {
+                        entity_type,
+                        entity_id: EntityId::new(entity_id.clone()),
+                        entity_name: Some(entity_name.clone()),
+                    }),
+                    mode: IngestionMode::Realtime,
+                    category_hint: None,
+                },
+            )
+            .map_err(|e| format!("pipeline: {e}"))?;
+
+        Ok(AssignInboxEntityReceipt {
+            file_id: receipt.file_id,
+            ingestion_run_id: receipt.ingestion_run_id.0,
+            content_sha256: receipt.content_sha256,
+            lifecycle_state_after: lifecycle_state_to_slug(receipt.lifecycle_state_after)
+                .to_string(),
+            resolved_path: receipt.resolved_path,
+        })
+    })
+}
+
+fn add_user_relink_link(
+    conn: &rusqlite::Connection,
+    file_id: &str,
+    entity_type: EntityType,
+    entity_id: &str,
+) -> rusqlite::Result<String> {
+    let link_id = uuid::Uuid::new_v4().to_string();
+    let inserted_id: Option<String> = conn
+        .query_row(
+            "INSERT INTO document_entity_links \
+             (link_id, file_id, entity_type, entity_id, attribution_source, \
+              confidence, rationale, actor) \
+             VALUES (?1, ?2, ?3, ?4, 'user_relink', 1.0, \
+                     'User assigned inbox file to entity', 'user') \
+             ON CONFLICT (file_id, entity_type, entity_id) WHERE rejected = 0 \
+             DO NOTHING RETURNING link_id",
+            params![link_id, file_id, entity_type.as_str(), entity_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+
+    match inserted_id {
+        Some(id) => Ok(id),
+        None => conn.query_row(
+            "SELECT link_id FROM document_entity_links \
+             WHERE file_id = ?1 AND entity_type = ?2 AND entity_id = ?3 AND rejected = 0",
+            params![file_id, entity_type.as_str(), entity_id],
+            |row| row.get(0),
+        ),
+    }
+}
+
+fn is_valid_entity_id(value: &str) -> bool {
+    if uuid::Uuid::parse_str(value).is_ok() {
+        return true;
+    }
+    !value.is_empty()
+        && value.len() <= 128
+        && value
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphanumeric())
+        && value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | ':'))
+}
+
+fn is_valid_slug_shape(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 32
+        && value.chars().next().is_some_and(|c| c.is_ascii_lowercase())
+        && value
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
+}
+
+fn lifecycle_state_to_slug(state: LifecycleState) -> &'static str {
+    match state {
+        LifecycleState::Pending => "pending",
+        LifecycleState::PendingEntityAssignment => "pending_entity_assignment",
+        LifecycleState::Ingesting => "ingesting",
+        LifecycleState::Ingested => "ingested",
+        LifecycleState::Superseded => "superseded",
+        LifecycleState::Rejected => "rejected",
+        LifecycleState::Quarantined => "quarantined",
+    }
 }
 
 // =============================================================================

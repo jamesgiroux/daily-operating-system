@@ -63,12 +63,12 @@ pub mod substrate_test_api {
         crate::intel_queue::compose_enrichment_intelligence_payload(db, input, intel, None)
     }
 }
-#[cfg(feature = "test-harness")]
+#[cfg(any(feature = "test-harness", debug_assertions))]
 #[doc(hidden)]
 pub mod command_test_api {
     pub use crate::commands::{
-        create_entity_context_entry, delete_entity_context_entry, get_entity_context_entries,
-        reveal_sensitive_claim_text, update_entity_context_entry,
+        assign_inbox_entity_for_tests, create_entity_context_entry, delete_entity_context_entry,
+        get_entity_context_entries, reveal_sensitive_claim_text, update_entity_context_entry,
     };
 }
 #[cfg(any(feature = "test-harness", feature = "bench-harness", debug_assertions))]
@@ -724,6 +724,7 @@ pub fn run() {
             commands::process_inbox_file,
             commands::process_all_inbox,
             commands::enrich_inbox_file,
+            commands::assign_inbox_entity, // dos7-allowed: w2d-assign-command-registration
             commands::copy_to_inbox,
             commands::list_meeting_preps,
             commands::set_profile,
