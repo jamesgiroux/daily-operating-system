@@ -72,34 +72,49 @@ if ( ! function_exists( 'dailyos_outlook_panel_render' ) ) {
 				$first_empty_reason = $state['reason'];
 			}
 		}
+		$out  = '<section id="outlook" class="entity-detail_chapterSection" data-ds-tier="pattern" data-ds-name="AccountOutlook" data-ds-spec="patterns/AccountOutlook.md">';
+		$out .= '<div class="ChapterHeading_heading">';
+		$out .= '<hr class="ChapterHeading_rule" />';
+		$out .= '<div class="ChapterHeading_titleRow"><h2 class="ChapterHeading_title">' . esc_html__( 'Outlook', 'dailyos' ) . '</h2></div>';
+		$out .= '</div>';
+		$out .= '<section class="AccountOutlook_section" data-dailyos-projection="outlook-panel" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['health'] ) ) . '">';
 		if ( ! $any_present ) {
 			$reason = '' !== $first_empty_reason ? $first_empty_reason : 'no_outlook_factor';
-			return dailyos_empty_chip(
+			$out .= dailyos_empty_chip(
 				$reason,
 				__( 'No outlook yet', 'dailyos' ),
-				'wp-block-dailyos-outlook-panel'
+				'AccountOutlook_section'
 			);
+			$out .= '</section>';
+			$out .= '</section>';
+			return $out;
 		}
 
-		$wrapper_attrs = dailyos_inner_block_wrapper_attrs( 'wp-block-dailyos-outlook-panel' );
-		$out  = '<div ' . $wrapper_attrs . ' data-dailyos-projection="outlook-panel">';
-		$out .= '<header class="wp-block-dailyos-outlook-panel__header"><span class="wp-block-dailyos-outlook-panel__title">' . esc_html__( 'Outlook Panel', 'dailyos' ) . '</span></header>';
-		$out .= '<div class="wp-block-dailyos-outlook-panel__body" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['health'] ) ) . '">';
+		$out .= '<div class="AccountOutlook_growthSection">';
+		$out .= '<div class="AccountOutlook_sectionRule"></div>';
+		$out .= '<h3 class="AccountOutlook_sectionHeading">' . esc_html__( 'Growth Opportunities', 'dailyos' ) . '</h3>';
+		$out .= '<div class="AccountOutlook_signalList">';
 		// Per AC-462.3 + DOS-341: every claim-bearing inner block routes
 		// receipts through build_receipt_for_audience server-side. The
 		// dailyos_envelope_consume_claim helper invokes claim_receipt via the
 		// runtime client with the resolved scope set; AgentMcp audience filter
 		// is applied inside the producer (DOS-341 boundary).
 		$projected_claim_refs = dailyos_outlook_panel_select_claim_refs( $envelope );
+		$rows = '';
 		foreach ( $projected_claim_refs as $claim_ref ) {
 			$receipt = dailyos_envelope_consume_claim( $claim_ref, $scope_set );
 			if ( null === $receipt ) {
 				continue;
 			}
-			$out .= dailyos_outlook_panel_render_row( $claim_ref, $receipt );
+			$rows .= dailyos_outlook_panel_render_row( $claim_ref, $receipt );
 		}
+		$out .= '' !== $rows
+			? $rows
+			: dailyos_empty_chip( 'no_outlook_factor', __( 'No outlook yet', 'dailyos' ), 'AccountOutlook_signalList' );
 		$out .= '</div>';
 		$out .= '</div>';
+		$out .= '</section>';
+		$out .= '</section>';
 		return $out;
 	}
 }
@@ -167,8 +182,11 @@ if ( ! function_exists( 'dailyos_outlook_panel_render_row' ) ) {
 	function dailyos_outlook_panel_render_row( array $claim_ref, array $receipt ): string {
 		$claim_id = isset( $claim_ref['claim_id'] ) ? (string) $claim_ref['claim_id'] : '';
 		$trust_band = isset( $receipt['trustBand'] ) ? (string) $receipt['trustBand'] : ( isset( $receipt['trust_band'] ) ? (string) $receipt['trust_band'] : 'unscored' );
-		return '<article class="wp-block-dailyos-outlook-panel__row" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
-			. '<span class="wp-block-dailyos-outlook-panel__row-label">' . esc_html( $claim_id ) . '</span>'
-			. '</article>';
+		return '<div class="AccountOutlook_signalItem" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
+			. '<div class="AccountOutlook_signalBody">'
+			. '<p class="AccountOutlook_signalText">' . esc_html( $claim_id ) . '</p>'
+			. '<div class="AccountOutlook_signalMeta"><span class="AccountOutlook_badge AccountOutlook_badgeNeutral">' . esc_html( $trust_band ) . '</span></div>'
+			. '</div>'
+			. '</div>';
 	}
 }

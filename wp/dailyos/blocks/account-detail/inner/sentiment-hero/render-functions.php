@@ -72,34 +72,56 @@ if ( ! function_exists( 'dailyos_sentiment_hero_render' ) ) {
 				$first_empty_reason = $state['reason'];
 			}
 		}
+		$out  = '<section id="your-assessment" class="entity-detail_chapterSection" data-ds-tier="pattern" data-ds-name="SentimentHero" data-ds-spec="patterns/SentimentHero.md">';
+		$out .= '<section class="SentimentHero_hero" data-dailyos-projection="sentiment-hero" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['health', 'facts'] ) ) . '">';
+		$out .= '<div class="SentimentHero_label">' . esc_html__( 'Your Assessment', 'dailyos' ) . '</div>';
 		if ( ! $any_present ) {
 			$reason = '' !== $first_empty_reason ? $first_empty_reason : 'no_health_signal';
-			return dailyos_empty_chip(
+			$out .= dailyos_empty_chip(
 				$reason,
 				__( 'No sentiment signal yet', 'dailyos' ),
-				'wp-block-dailyos-sentiment-hero'
+				'SentimentHero_hero'
 			);
+			$out .= '</section>';
+			$out .= '</section>';
+			return $out;
 		}
 
-		$wrapper_attrs = dailyos_inner_block_wrapper_attrs( 'wp-block-dailyos-sentiment-hero' );
-		$out  = '<div ' . $wrapper_attrs . ' data-dailyos-projection="sentiment-hero">';
-		$out .= '<header class="wp-block-dailyos-sentiment-hero__header"><span class="wp-block-dailyos-sentiment-hero__title">' . esc_html__( 'Sentiment Hero', 'dailyos' ) . '</span></header>';
-		$out .= '<div class="wp-block-dailyos-sentiment-hero__body" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['health', 'facts'] ) ) . '">';
+		$out .= '<div class="SentimentHero_setRow">';
+		$out .= '<div class="SentimentHero_value SentimentHero_valueOnTrack">' . esc_html__( 'Account intelligence', 'dailyos' ) . '</div>';
+		$out .= '<div class="SentimentHero_sparklineEmpty" aria-hidden="true">';
+		foreach ( [ 'H7', 'H11', 'H9', 'H13', 'H17', 'H11', 'H9' ] as $height_class ) {
+			$out .= '<span class="SentimentHero_sparklineEmptyBar SentimentHero_sparklineEmptyBar' . esc_attr( $height_class ) . '"></span>';
+		}
+		$out .= '</div>';
+		$out .= '</div>';
 		// Per AC-462.3 + DOS-341: every claim-bearing inner block routes
 		// receipts through build_receipt_for_audience server-side. The
 		// dailyos_envelope_consume_claim helper invokes claim_receipt via the
 		// runtime client with the resolved scope set; AgentMcp audience filter
 		// is applied inside the producer (DOS-341 boundary).
 		$projected_claim_refs = dailyos_sentiment_hero_select_claim_refs( $envelope );
+		$rows = '';
 		foreach ( $projected_claim_refs as $claim_ref ) {
 			$receipt = dailyos_envelope_consume_claim( $claim_ref, $scope_set );
 			if ( null === $receipt ) {
 				continue;
 			}
-			$out .= dailyos_sentiment_hero_render_row( $claim_ref, $receipt );
+			$rows .= dailyos_sentiment_hero_render_row( $claim_ref, $receipt );
 		}
-		$out .= '</div>';
-		$out .= '</div>';
+		if ( '' !== $rows ) {
+			$out .= '<blockquote class="SentimentHero_pullquote">';
+			$out .= $rows;
+			$out .= '</blockquote>';
+		} else {
+			$out .= dailyos_empty_chip(
+				'no_health_signal',
+				__( 'No sentiment signal yet', 'dailyos' ),
+				'SentimentHero_pullquote'
+			);
+		}
+		$out .= '</section>';
+		$out .= '</section>';
 		return $out;
 	}
 }
@@ -167,8 +189,8 @@ if ( ! function_exists( 'dailyos_sentiment_hero_render_row' ) ) {
 	function dailyos_sentiment_hero_render_row( array $claim_ref, array $receipt ): string {
 		$claim_id = isset( $claim_ref['claim_id'] ) ? (string) $claim_ref['claim_id'] : '';
 		$trust_band = isset( $receipt['trustBand'] ) ? (string) $receipt['trustBand'] : ( isset( $receipt['trust_band'] ) ? (string) $receipt['trust_band'] : 'unscored' );
-		return '<article class="wp-block-dailyos-sentiment-hero__row" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
-			. '<span class="wp-block-dailyos-sentiment-hero__row-label">' . esc_html( $claim_id ) . '</span>'
-			. '</article>';
+		return '<span class="SentimentHero_pullquoteAttr" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
+			. esc_html( $claim_id )
+			. '</span>';
 	}
 }

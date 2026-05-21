@@ -72,32 +72,40 @@ if ( ! function_exists( 'dailyos_divergence_section_render' ) ) {
 				$first_empty_reason = $state['reason'];
 			}
 		}
+		$out  = '<div data-ds-tier="pattern" data-ds-name="DivergenceSection" data-ds-spec="patterns/DivergenceSection.md" data-dailyos-projection="divergence-section" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['health'] ) ) . '">';
+		$out .= '<div class="health_divergenceHeader">';
+		$out .= '<span class="health_divergenceLabel">' . esc_html__( 'Divergences', 'dailyos' ) . ' &middot; ' . esc_html__( 'data/narrative mismatches', 'dailyos' ) . '</span>';
+		$out .= '<span class="health_divergenceNote">' . esc_html__( 'The story does not match the data.', 'dailyos' ) . '</span>';
+		$out .= '</div>';
 		if ( ! $any_present ) {
 			$reason = '' !== $first_empty_reason ? $first_empty_reason : 'no_divergence_content';
-			return dailyos_empty_chip(
+			$out .= dailyos_empty_chip(
 				$reason,
 				__( 'No divergence signals on file', 'dailyos' ),
-				'wp-block-dailyos-divergence-section'
+				'health_triageCard'
 			);
+			$out .= '</div>';
+			return $out;
 		}
 
-		$wrapper_attrs = dailyos_inner_block_wrapper_attrs( 'wp-block-dailyos-divergence-section' );
-		$out  = '<div ' . $wrapper_attrs . ' data-dailyos-projection="divergence-section">';
-		$out .= '<header class="wp-block-dailyos-divergence-section__header"><span class="wp-block-dailyos-divergence-section__title">' . esc_html__( 'Divergence Section', 'dailyos' ) . '</span></header>';
-		$out .= '<div class="wp-block-dailyos-divergence-section__body" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['health'] ) ) . '">';
+		$out .= '<div>';
 		// Per AC-462.3 + DOS-341: every claim-bearing inner block routes
 		// receipts through build_receipt_for_audience server-side. The
 		// dailyos_envelope_consume_claim helper invokes claim_receipt via the
 		// runtime client with the resolved scope set; AgentMcp audience filter
 		// is applied inside the producer (DOS-341 boundary).
 		$projected_claim_refs = dailyos_divergence_section_select_claim_refs( $envelope );
+		$rows = '';
 		foreach ( $projected_claim_refs as $claim_ref ) {
 			$receipt = dailyos_envelope_consume_claim( $claim_ref, $scope_set );
 			if ( null === $receipt ) {
 				continue;
 			}
-			$out .= dailyos_divergence_section_render_row( $claim_ref, $receipt );
+			$rows .= dailyos_divergence_section_render_row( $claim_ref, $receipt );
 		}
+		$out .= '' !== $rows
+			? $rows
+			: dailyos_empty_chip( 'no_divergence_content', __( 'No divergence signals on file', 'dailyos' ), 'health_triageCard' );
 		$out .= '</div>';
 		$out .= '</div>';
 		return $out;
@@ -167,8 +175,13 @@ if ( ! function_exists( 'dailyos_divergence_section_render_row' ) ) {
 	function dailyos_divergence_section_render_row( array $claim_ref, array $receipt ): string {
 		$claim_id = isset( $claim_ref['claim_id'] ) ? (string) $claim_ref['claim_id'] : '';
 		$trust_band = isset( $receipt['trustBand'] ) ? (string) $receipt['trustBand'] : ( isset( $receipt['trust_band'] ) ? (string) $receipt['trust_band'] : 'unscored' );
-		return '<article class="wp-block-dailyos-divergence-section__row" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
-			. '<span class="wp-block-dailyos-divergence-section__row-label">' . esc_html( $claim_id ) . '</span>'
+		return '<article class="health_triageCard" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
+			. '<div class="health_triageSpine health_spineDivergence" aria-hidden="true"></div>'
+			. '<div class="health_triageBody">'
+			. '<span class="health_triageKind health_kindDivergence">' . esc_html__( 'Divergence', 'dailyos' ) . '</span>'
+			. '<div class="health_triageHeadline">' . esc_html( $claim_id ) . '</div>'
+			. '<div class="health_triageSources"><span class="health_triageCitationPlain">' . esc_html( $trust_band ) . '</span></div>'
+			. '</div>'
 			. '</article>';
 	}
 }

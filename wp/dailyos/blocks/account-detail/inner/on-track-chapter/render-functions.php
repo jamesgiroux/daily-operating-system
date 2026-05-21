@@ -72,34 +72,47 @@ if ( ! function_exists( 'dailyos_on_track_chapter_render' ) ) {
 				$first_empty_reason = $state['reason'];
 			}
 		}
+		$out  = '<section id="on-track" class="entity-detail_chapterSection" data-ds-tier="pattern" data-ds-name="OnTrackChapter" data-ds-spec="patterns/OnTrackChapter.md">';
+		$out .= '<div class="ChapterHeading_heading">';
+		$out .= '<hr class="ChapterHeading_rule" />';
+		$out .= '<div class="ChapterHeading_titleRow"><h2 class="ChapterHeading_title">' . esc_html__( 'On track', 'dailyos' ) . '</h2></div>';
+		$out .= '</div>';
 		if ( ! $any_present ) {
 			$reason = '' !== $first_empty_reason ? $first_empty_reason : 'no_on_track_factor';
-			return dailyos_empty_chip(
+			$out .= dailyos_empty_chip(
 				$reason,
 				__( 'No on-track signal yet', 'dailyos' ),
-				'wp-block-dailyos-on-track-chapter'
+				'health_peerStrip'
 			);
+			$out .= '</section>';
+			return $out;
 		}
 
-		$wrapper_attrs = dailyos_inner_block_wrapper_attrs( 'wp-block-dailyos-on-track-chapter' );
-		$out  = '<div ' . $wrapper_attrs . ' data-dailyos-projection="on-track-chapter">';
-		$out .= '<header class="wp-block-dailyos-on-track-chapter__header"><span class="wp-block-dailyos-on-track-chapter__title">' . esc_html__( 'On-Track Chapter', 'dailyos' ) . '</span></header>';
-		$out .= '<div class="wp-block-dailyos-on-track-chapter__body" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['health'] ) ) . '">';
+		$out .= '<p class="health_ontrackBody">' . esc_html__( 'No active friction surfaced in the current account intelligence.', 'dailyos' ) . '</p>';
+		$out .= '<div class="health_peerStrip" data-dailyos-projection="on-track-chapter" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['health'] ) ) . '">';
+		$out .= '<div class="health_peerNumber">&mdash;</div>';
+		$out .= '<div class="health_peerLabel">' . esc_html__( 'Account read', 'dailyos' ) . '</div>';
+		$out .= '<div>';
 		// Per AC-462.3 + DOS-341: every claim-bearing inner block routes
 		// receipts through build_receipt_for_audience server-side. The
 		// dailyos_envelope_consume_claim helper invokes claim_receipt via the
 		// runtime client with the resolved scope set; AgentMcp audience filter
 		// is applied inside the producer (DOS-341 boundary).
 		$projected_claim_refs = dailyos_on_track_chapter_select_claim_refs( $envelope );
+		$rows = '';
 		foreach ( $projected_claim_refs as $claim_ref ) {
 			$receipt = dailyos_envelope_consume_claim( $claim_ref, $scope_set );
 			if ( null === $receipt ) {
 				continue;
 			}
-			$out .= dailyos_on_track_chapter_render_row( $claim_ref, $receipt );
+			$rows .= dailyos_on_track_chapter_render_row( $claim_ref, $receipt );
 		}
+		$out .= '' !== $rows
+			? $rows
+			: dailyos_empty_chip( 'no_on_track_factor', __( 'No on-track signal yet', 'dailyos' ), 'health_peerContext' );
 		$out .= '</div>';
 		$out .= '</div>';
+		$out .= '</section>';
 		return $out;
 	}
 }
@@ -167,8 +180,8 @@ if ( ! function_exists( 'dailyos_on_track_chapter_render_row' ) ) {
 	function dailyos_on_track_chapter_render_row( array $claim_ref, array $receipt ): string {
 		$claim_id = isset( $claim_ref['claim_id'] ) ? (string) $claim_ref['claim_id'] : '';
 		$trust_band = isset( $receipt['trustBand'] ) ? (string) $receipt['trustBand'] : ( isset( $receipt['trust_band'] ) ? (string) $receipt['trust_band'] : 'unscored' );
-		return '<article class="wp-block-dailyos-on-track-chapter__row" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
-			. '<span class="wp-block-dailyos-on-track-chapter__row-label">' . esc_html( $claim_id ) . '</span>'
-			. '</article>';
+		return '<div class="health_peerContext" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
+			. esc_html( $claim_id )
+			. '</div>';
 	}
 }

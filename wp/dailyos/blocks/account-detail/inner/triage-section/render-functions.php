@@ -72,34 +72,45 @@ if ( ! function_exists( 'dailyos_triage_section_render' ) ) {
 				$first_empty_reason = $state['reason'];
 			}
 		}
+		$out  = '<section id="needs-attention" class="entity-detail_chapterSection" data-ds-tier="pattern" data-ds-name="TriageSection" data-ds-spec="patterns/TriageSection.md">';
+		$out .= '<section class="health_blockHeader" data-dailyos-projection="triage-section" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['health'] ) ) . '">';
+		$out .= '<hr class="health_blockHeaderRule" />';
+		$out .= '<div class="health_blockHeaderTitleRow">';
+		$out .= '<h2 class="health_blockHeaderTitle">' . esc_html__( 'Needs attention', 'dailyos' ) . '</h2>';
+		$out .= '<span class="health_blockHeaderCount health_blockHeaderCountTerracotta">' . esc_html__( 'Account intelligence', 'dailyos' ) . '</span>';
+		$out .= '</div>';
+		$out .= '</section>';
 		if ( ! $any_present ) {
 			$reason = '' !== $first_empty_reason ? $first_empty_reason : 'no_triage_content';
-			return dailyos_empty_chip(
+			$out .= dailyos_empty_chip(
 				$reason,
 				__( 'No triage signals on file', 'dailyos' ),
-				'wp-block-dailyos-triage-section'
+				'health_triageCard'
 			);
+			$out .= '</section>';
+			return $out;
 		}
 
-		$wrapper_attrs = dailyos_inner_block_wrapper_attrs( 'wp-block-dailyos-triage-section' );
-		$out  = '<div ' . $wrapper_attrs . ' data-dailyos-projection="triage-section">';
-		$out .= '<header class="wp-block-dailyos-triage-section__header"><span class="wp-block-dailyos-triage-section__title">' . esc_html__( 'Triage Section', 'dailyos' ) . '</span></header>';
-		$out .= '<div class="wp-block-dailyos-triage-section__body" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['health'] ) ) . '">';
+		$out .= '<div>';
 		// Per AC-462.3 + DOS-341: every claim-bearing inner block routes
 		// receipts through build_receipt_for_audience server-side. The
 		// dailyos_envelope_consume_claim helper invokes claim_receipt via the
 		// runtime client with the resolved scope set; AgentMcp audience filter
 		// is applied inside the producer (DOS-341 boundary).
 		$projected_claim_refs = dailyos_triage_section_select_claim_refs( $envelope );
+		$rows = '';
 		foreach ( $projected_claim_refs as $claim_ref ) {
 			$receipt = dailyos_envelope_consume_claim( $claim_ref, $scope_set );
 			if ( null === $receipt ) {
 				continue;
 			}
-			$out .= dailyos_triage_section_render_row( $claim_ref, $receipt );
+			$rows .= dailyos_triage_section_render_row( $claim_ref, $receipt );
 		}
+		$out .= '' !== $rows
+			? $rows
+			: dailyos_empty_chip( 'no_triage_content', __( 'No triage signals on file', 'dailyos' ), 'health_triageCard' );
 		$out .= '</div>';
-		$out .= '</div>';
+		$out .= '</section>';
 		return $out;
 	}
 }
@@ -167,8 +178,13 @@ if ( ! function_exists( 'dailyos_triage_section_render_row' ) ) {
 	function dailyos_triage_section_render_row( array $claim_ref, array $receipt ): string {
 		$claim_id = isset( $claim_ref['claim_id'] ) ? (string) $claim_ref['claim_id'] : '';
 		$trust_band = isset( $receipt['trustBand'] ) ? (string) $receipt['trustBand'] : ( isset( $receipt['trust_band'] ) ? (string) $receipt['trust_band'] : 'unscored' );
-		return '<article class="wp-block-dailyos-triage-section__row" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
-			. '<span class="wp-block-dailyos-triage-section__row-label">' . esc_html( $claim_id ) . '</span>'
+		return '<article class="health_triageCard" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
+			. '<div class="health_triageSpine health_spineUrgent" aria-hidden="true"></div>'
+			. '<div class="health_triageBody">'
+			. '<span class="health_triageKind health_kindUrgent">' . esc_html__( 'Account signal', 'dailyos' ) . '</span>'
+			. '<div class="health_triageHeadline">' . esc_html( $claim_id ) . '</div>'
+			. '<div class="health_triageSources"><span class="health_triageCitationPlain">' . esc_html( $trust_band ) . '</span></div>'
+			. '</div>'
 			. '</article>';
 	}
 }
