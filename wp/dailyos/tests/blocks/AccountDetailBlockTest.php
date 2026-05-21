@@ -38,6 +38,7 @@ require_once __DIR__ . '/../../blocks/account-detail/render-functions.php';
  * @covers dailyos_empty_chip
  */
 final class DailyOS_AccountDetailBlockTest extends TestCase {
+
 	/**
 	 * Resets test globals before each test.
 	 */
@@ -147,7 +148,7 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 	 * the subject carries one — allowlisted form.
 	 */
 	public function test_render_emits_allowlisted_custom_property_tint(): void {
-		$envelope = $this->envelope_response_present();
+		$envelope                                      = $this->envelope_response_present();
 		$envelope['envelope']['subject']['chromeTint'] = 'var(--dailyos-tint-cobalt)';
 		$client                                        = $this->fake_runtime_client_with_envelope( $envelope );
 		$this->register_runtime_client_filter( $client );
@@ -203,7 +204,7 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 			'unified-timeline'    => 'dailyos_unified_timeline_render',
 		];
 		foreach ( $cases as $slug => $fn ) {
-			require_once __DIR__ . '/../../blocks/account-detail/inner/' . $slug . '/render-functions.php';
+			include_once __DIR__ . '/../../blocks/account-detail/inner/' . $slug . '/render-functions.php';
 			$this->assertTrue( function_exists( $fn ), $fn );
 			$html = $fn( [], '', null );
 			$this->assertStringContainsString(
@@ -222,17 +223,23 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 	// ---- envelope helpers: section state lookup -------------------------
 
 	/**
-	 * dailyos_envelope_section returns present=true/item_count when the
+	 * Verify `dailyos_envelope_section` returns present=true/item_count when the
 	 * section is populated; falls back to reason on Empty variants.
 	 */
 	public function test_envelope_section_reads_present_and_empty_states(): void {
 		$envelope = [
 			'sections' => [
-				'facts'      => [ 'kind' => 'present', 'item_count' => 4 ],
-				'open_loops' => [ 'kind' => 'empty', 'reason' => 'not_processed_yet' ],
+				'facts'      => [
+					'kind'       => 'present',
+					'item_count' => 4,
+				],
+				'open_loops' => [
+					'kind'   => 'empty',
+					'reason' => 'not_processed_yet',
+				],
 			],
 		];
-		$facts = dailyos_envelope_section( $envelope, 'facts' );
+		$facts    = dailyos_envelope_section( $envelope, 'facts' );
 		$this->assertTrue( $facts['present'] );
 		$this->assertSame( 4, $facts['item_count'] );
 
@@ -264,7 +271,10 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 				'displayLabel' => 'Generic Test Account',
 			],
 			'sections' => [
-				'facts' => [ 'kind' => 'present', 'item_count' => 3 ],
+				'facts' => [
+					'kind'       => 'present',
+					'item_count' => 3,
+				],
 			],
 		];
 
@@ -289,11 +299,11 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 	 */
 	public function test_outer_and_inner_share_envelope_handle_single_fetch(): void {
 		$response = $this->envelope_response_present();
-		$client = $this->fake_runtime_client_with_envelope( $response );
+		$client   = $this->fake_runtime_client_with_envelope( $response );
 		$this->register_runtime_client_filter( $client );
 
 		// Outer-equivalent: emit handle from a response.
-		$outer_handle = dailyos_envelope_handle_from_response( $response, 'account', 'acct-test-001' );
+		$outer_handle         = dailyos_envelope_handle_from_response( $response, 'account', 'acct-test-001' );
 		$outer_calls_baseline = $client->calls;
 
 		// Inner-equivalent: resolve the same handle. With the deterministic
@@ -359,13 +369,34 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 					'displayLabel' => 'Generic Test Account',
 				],
 				'sections'         => [
-					'facts'              => [ 'kind' => 'present', 'item_count' => 3 ],
-					'health'             => [ 'kind' => 'present', 'item_count' => 2 ],
-					'metadata_proposals' => [ 'kind' => 'empty', 'reason' => 'no_evidence_backed_proposal' ],
-					'open_loops'         => [ 'kind' => 'present', 'item_count' => 1 ],
-					'touchpoints'        => [ 'kind' => 'present', 'item_count' => 4 ],
-					'threads'            => [ 'kind' => 'empty', 'reason' => 'not_processed_yet' ],
-					'record'             => [ 'kind' => 'present', 'item_count' => 6 ],
+					'facts'              => [
+						'kind'       => 'present',
+						'item_count' => 3,
+					],
+					'health'             => [
+						'kind'       => 'present',
+						'item_count' => 2,
+					],
+					'metadata_proposals' => [
+						'kind'   => 'empty',
+						'reason' => 'no_evidence_backed_proposal',
+					],
+					'open_loops'         => [
+						'kind'       => 'present',
+						'item_count' => 1,
+					],
+					'touchpoints'        => [
+						'kind'       => 'present',
+						'item_count' => 4,
+					],
+					'threads'            => [
+						'kind'   => 'empty',
+						'reason' => 'not_processed_yet',
+					],
+					'record'             => [
+						'kind'       => 'present',
+						'item_count' => 6,
+					],
 				],
 			],
 		];
@@ -379,11 +410,17 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 	 */
 	private function fake_runtime_client_with_envelope( array $response ): object {
 		return new class( $response ) {
-			/** @var array */
+			/**
+			 * @var array
+			 */
 			public array $response;
-			/** @var int */
+			/**
+			 * @var int
+			 */
 			public int $calls = 0;
-			/** @var array<int,array<string,mixed>> */
+			/**
+			 * @var array<int,array<string,mixed>>
+			 */
 			public array $requests = [];
 			public function __construct( array $response ) {
 				$this->response = $response;

@@ -1,6 +1,6 @@
 <?php
 /**
- * v1.4.4 W2 L4 wiring: post-context auto-fill regression tests.
+ * V1.4.4 W2 L4 wiring: post-context auto-fill regression tests.
  *
  * Per the W2 L4 acceptance criteria: when the outer-block attribute is
  * empty AND we're rendering inside the matching CPT, the renderer falls
@@ -34,6 +34,7 @@ require_once __DIR__ . '/../../blocks/meeting-detail/render-functions.php';
 // PHPUnit bootstrap stubs by default. Each function reads from a test-only
 // global so the test can pin the simulated post.
 if ( ! function_exists( 'get_the_ID' ) ) {
+	// phpcs:ignore WordPress.NamingConventions.ValidFunctionName.FunctionNameInvalid -- Mirror WP core function name.
 	function get_the_ID(): int {
 		return (int) ( $GLOBALS['dailyos_test_current_post_id'] ?? 0 );
 	}
@@ -41,8 +42,8 @@ if ( ! function_exists( 'get_the_ID' ) ) {
 if ( ! function_exists( 'get_post_type' ) ) {
 	function get_post_type( int|object|null $post = null ): string|false {
 		$post_id = is_int( $post )
-			? $post
-			: (int) ( $GLOBALS['dailyos_test_current_post_id'] ?? 0 );
+		? $post
+		: (int) ( $GLOBALS['dailyos_test_current_post_id'] ?? 0 );
 		$posts   = $GLOBALS['dailyos_test_posts'] ?? [];
 		if ( ! isset( $posts[ $post_id ] ) ) {
 			return false;
@@ -77,6 +78,7 @@ if ( ! function_exists( 'get_post' ) ) {
  * @covers dailyos_meeting_detail_render
  */
 final class DailyOS_EntityDetailAutoFillTest extends TestCase {
+
 	/**
 	 * Reset test globals between tests.
 	 */
@@ -95,12 +97,15 @@ final class DailyOS_EntityDetailAutoFillTest extends TestCase {
 
 	// ---- account-detail -------------------------------------------------
 
+	/**
+	 * Asserts account detail uses post meta when attribute empty.
+	 */
 	public function test_account_detail_uses_post_meta_when_attribute_empty(): void {
 		$this->seed_post( 101, 'dailyos_account', 'acct-from-slug' );
 		$GLOBALS['dailyos_test_post_meta'][101] = [
 			'dailyos_entity_id' => 'acct-from-meta',
 		];
-		$client = $this->fake_runtime_client();
+		$client                                 = $this->fake_runtime_client();
 		$this->register_runtime_client_filter( $client );
 
 		dailyos_account_detail_render( [], '' );
@@ -109,6 +114,9 @@ final class DailyOS_EntityDetailAutoFillTest extends TestCase {
 		$this->assertSame( 'acct-from-meta', $client->requests[0]['payload']['entity_id'] );
 	}
 
+	/**
+	 * Asserts account detail falls back to slug when meta empty.
+	 */
 	public function test_account_detail_falls_back_to_slug_when_meta_empty(): void {
 		$this->seed_post( 102, 'dailyos_account', 'acct-from-slug' );
 		$client = $this->fake_runtime_client();
@@ -120,6 +128,9 @@ final class DailyOS_EntityDetailAutoFillTest extends TestCase {
 		$this->assertSame( 'acct-from-slug', $client->requests[0]['payload']['entity_id'] );
 	}
 
+	/**
+	 * Asserts account detail does not auto fill on wrong post type.
+	 */
 	public function test_account_detail_does_not_auto_fill_on_wrong_post_type(): void {
 		// post type is project, not account — auto-fill must NOT apply.
 		$this->seed_post( 103, 'dailyos_project', 'proj-slug' );
@@ -132,12 +143,15 @@ final class DailyOS_EntityDetailAutoFillTest extends TestCase {
 		$this->assertSame( 0, $client->calls, 'producer must NOT be invoked when attribute empty + post type mismatched' );
 	}
 
+	/**
+	 * Asserts account detail attribute wins over post context.
+	 */
 	public function test_account_detail_attribute_wins_over_post_context(): void {
 		$this->seed_post( 104, 'dailyos_account', 'acct-from-slug' );
 		$GLOBALS['dailyos_test_post_meta'][104] = [
 			'dailyos_entity_id' => 'acct-from-meta',
 		];
-		$client = $this->fake_runtime_client();
+		$client                                 = $this->fake_runtime_client();
 		$this->register_runtime_client_filter( $client );
 
 		dailyos_account_detail_render( [ 'account_id' => 'acct-from-attr' ], '' );
@@ -147,12 +161,15 @@ final class DailyOS_EntityDetailAutoFillTest extends TestCase {
 
 	// ---- project-detail -------------------------------------------------
 
+	/**
+	 * Asserts project detail uses post meta when attribute empty.
+	 */
 	public function test_project_detail_uses_post_meta_when_attribute_empty(): void {
 		$this->seed_post( 201, 'dailyos_project', 'proj-from-slug' );
 		$GLOBALS['dailyos_test_post_meta'][201] = [
 			'dailyos_entity_id' => 'proj-from-meta',
 		];
-		$client = $this->fake_runtime_client();
+		$client                                 = $this->fake_runtime_client();
 		$this->register_runtime_client_filter( $client );
 
 		dailyos_project_detail_render( [], '' );
@@ -160,6 +177,9 @@ final class DailyOS_EntityDetailAutoFillTest extends TestCase {
 		$this->assertSame( 'proj-from-meta', $client->requests[0]['payload']['entity_id'] );
 	}
 
+	/**
+	 * Asserts project detail falls back to slug when meta empty.
+	 */
 	public function test_project_detail_falls_back_to_slug_when_meta_empty(): void {
 		$this->seed_post( 202, 'dailyos_project', 'proj-from-slug' );
 		$client = $this->fake_runtime_client();
@@ -172,12 +192,15 @@ final class DailyOS_EntityDetailAutoFillTest extends TestCase {
 
 	// ---- person-detail --------------------------------------------------
 
+	/**
+	 * Asserts person detail uses post meta when attribute empty.
+	 */
 	public function test_person_detail_uses_post_meta_when_attribute_empty(): void {
 		$this->seed_post( 301, 'dailyos_person', 'person-from-slug' );
 		$GLOBALS['dailyos_test_post_meta'][301] = [
 			'dailyos_entity_id' => 'person-from-meta',
 		];
-		$client = $this->fake_runtime_client();
+		$client                                 = $this->fake_runtime_client();
 		$this->register_runtime_client_filter( $client );
 
 		dailyos_person_detail_render( [], '' );
@@ -185,6 +208,9 @@ final class DailyOS_EntityDetailAutoFillTest extends TestCase {
 		$this->assertSame( 'person-from-meta', $client->requests[0]['payload']['entity_id'] );
 	}
 
+	/**
+	 * Asserts person detail falls back to slug when meta empty.
+	 */
 	public function test_person_detail_falls_back_to_slug_when_meta_empty(): void {
 		$this->seed_post( 302, 'dailyos_person', 'person-from-slug' );
 		$client = $this->fake_runtime_client();
@@ -197,12 +223,15 @@ final class DailyOS_EntityDetailAutoFillTest extends TestCase {
 
 	// ---- meeting-detail -------------------------------------------------
 
+	/**
+	 * Asserts meeting detail uses post meta when attribute empty.
+	 */
 	public function test_meeting_detail_uses_post_meta_when_attribute_empty(): void {
 		$this->seed_post( 401, 'dailyos_meeting', 'meeting-from-slug' );
 		$GLOBALS['dailyos_test_post_meta'][401] = [
 			'dailyos_entity_id' => 'meeting-from-meta',
 		];
-		$client = $this->fake_runtime_client();
+		$client                                 = $this->fake_runtime_client();
 		$this->register_runtime_client_filter( $client );
 
 		dailyos_meeting_detail_render( [], '' );
@@ -213,6 +242,9 @@ final class DailyOS_EntityDetailAutoFillTest extends TestCase {
 		$this->assertSame( 'meeting-from-meta', $client->requests[0]['payload']['entity_id'] );
 	}
 
+	/**
+	 * Asserts meeting detail falls back to slug when meta empty.
+	 */
 	public function test_meeting_detail_falls_back_to_slug_when_meta_empty(): void {
 		$this->seed_post( 402, 'dailyos_meeting', 'meeting-from-slug' );
 		$client = $this->fake_runtime_client();
@@ -226,6 +258,9 @@ final class DailyOS_EntityDetailAutoFillTest extends TestCase {
 
 	// ---- block.json contract: editorScript declared ---------------------
 
+	/**
+	 * Asserts w2 outer blocks declare editor script.
+	 */
 	public function test_w2_outer_blocks_declare_editor_script(): void {
 		$outers = [
 			'account-detail',
@@ -259,6 +294,9 @@ final class DailyOS_EntityDetailAutoFillTest extends TestCase {
 
 	// ---- theme template contract: W2 outer block rendered --------------
 
+	/**
+	 * Asserts entity templates render w2 outer blocks.
+	 */
 	public function test_entity_templates_render_w2_outer_blocks(): void {
 		// V2 wave templates can reference the outer block either directly
 		// (`<!-- wp:dailyos/X-detail /-->`) or via the canonical filesystem
@@ -266,15 +304,15 @@ final class DailyOS_EntityDetailAutoFillTest extends TestCase {
 		// which expands to the full chapter composition at parse time. Both
 		// forms route through the same outer-block renderer at render time.
 		$cases = [
-			'single-dailyos_account.html'  => [ 'wp:dailyos/account-detail', 'wp:pattern' ],
-			'single-dailyos_project.html'  => [ 'wp:dailyos/project-detail', 'wp:pattern' ],
-			'single-dailyos_person.html'   => [ 'wp:dailyos/person-detail', 'wp:pattern' ],
-			'single-dailyos_meeting.html'  => [ 'wp:dailyos/meeting-detail', 'wp:pattern' ],
+			'single-dailyos_account.html' => [ 'wp:dailyos/account-detail', 'wp:pattern' ],
+			'single-dailyos_project.html' => [ 'wp:dailyos/project-detail', 'wp:pattern' ],
+			'single-dailyos_person.html'  => [ 'wp:dailyos/person-detail', 'wp:pattern' ],
+			'single-dailyos_meeting.html' => [ 'wp:dailyos/meeting-detail', 'wp:pattern' ],
 		];
 		foreach ( $cases as $template => $any_of_markers ) {
 			$path = __DIR__ . '/../../theme/templates/' . $template;
 			$this->assertFileExists( $path, $template . ' missing' );
-			$contents = (string) file_get_contents( $path );
+			$contents     = (string) file_get_contents( $path );
 			$found_marker = false;
 			foreach ( $any_of_markers as $marker ) {
 				if ( str_contains( $contents, $marker ) ) {
@@ -312,7 +350,9 @@ final class DailyOS_EntityDetailAutoFillTest extends TestCase {
 	private function fake_runtime_client(): object {
 		return new class() {
 			public int $calls = 0;
-			/** @var array<int,array<string,mixed>> */
+			/**
+			 * @var array<int,array<string,mixed>>
+			 */
 			public array $requests = [];
 			public function invoke_ability( string $ability, array $payload, array $scope_set ) {
 				++$this->calls;
@@ -333,7 +373,10 @@ final class DailyOS_EntityDetailAutoFillTest extends TestCase {
 							'displayLabel' => 'Generic Test Subject',
 						],
 						'sections'         => [
-							'facts' => [ 'kind' => 'present', 'item_count' => 1 ],
+							'facts' => [
+								'kind'       => 'present',
+								'item_count' => 1,
+							],
 						],
 					],
 				];

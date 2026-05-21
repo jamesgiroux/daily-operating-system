@@ -27,6 +27,7 @@ use PHPUnit\Framework\TestCase;
  * sidebar template-part on single-account).
  */
 final class DailyOS_EditorialShellPresenceTest extends TestCase {
+
 	private string $theme_dir;
 
 	/**
@@ -43,7 +44,7 @@ final class DailyOS_EditorialShellPresenceTest extends TestCase {
 	 * This avoids needing `do_blocks()` while still asserting the chrome
 	 * actually composes from the parts it claims to compose from.
 	 *
-	 * @param string $template_filename Template filename inside templates/.
+	 * @param  string $template_filename Template filename inside templates/.
 	 * @return string Concatenated source of template + referenced parts + patterns.
 	 */
 	private function compose_surface( string $template_filename ): string {
