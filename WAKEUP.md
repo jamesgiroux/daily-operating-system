@@ -46,7 +46,7 @@ Verdict trail at `.docs/plans/v1.4.4-wp-surface-migration/reviews/packet-W2-*-cy
 - ✅ `check_sensitivity_gate_composition.sh`
 - ✅ `check_w1_consumer_skeleton.sh` (all 5+ producers now have valid consumer skeletons)
 - ✅ `check_no_inline_style_exception.sh` (only `--dailyos-*` custom properties)
-- ⏳ `cargo test --lib` running (background task `bswoepyo6` confirmed earlier 2648/0; latest run in flight)
+- ✅ `cargo test --lib` — **2648 passed / 0 failed** / 11 ignored (875.27s on the final integrated wave incl. W1 extensions + W2 L1 surfaces). Matches the pre-W2-L1 baseline — no regressions, no new lib-level tests at W2 layer because surface work is WP-side (PHP/JS) not in the Rust lib crate. Surface tests are in `wp/dailyos/tests/blocks/` (PHPUnit) + TS golden tests (vitest) which were verified by individual L1 agents.
 
 ## Where W2 stands in the protocol
 
