@@ -450,9 +450,13 @@ fn load_transport_key(key_ref: &KeychainRef) -> Result<[u8; TRANSPORT_KEY_LEN], 
         )));
     }
     let stdout: Zeroizing<Vec<u8>> = Zeroizing::new(output.stdout);
+    // L2 cycle-5 codex review NEW: use borrowing str::from_utf8 to avoid
+    // a clone-into-FromUtf8Error path that would drop unzeroized on UTF-8
+    // failure. The borrowed &str is then explicitly Zeroizing-owned.
     let hex_key: Zeroizing<String> = Zeroizing::new(
-        String::from_utf8(stdout.to_vec())
-            .map_err(|error| AuthError::Keychain(format!("non-UTF-8 key: {error}")))?,
+        std::str::from_utf8(&stdout)
+            .map_err(|error| AuthError::Keychain(format!("non-UTF-8 key: {error}")))?
+            .to_owned(),
     );
     let bytes: Zeroizing<Vec<u8>> = Zeroizing::new(
         hex::decode(hex_key.trim())

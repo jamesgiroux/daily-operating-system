@@ -269,9 +269,13 @@ fn read_audit_key() -> Result<Option<[u8; AUDIT_KEY_BYTES]>, String> {
     // must wrap in Zeroizing to match the AC-11 contract sweep applied to
     // auth.rs (cycle-3 + cycle-4 fixes).
     let stdout: Zeroizing<Vec<u8>> = Zeroizing::new(output.stdout);
+    // L2 cycle-5 codex review NEW: use borrowing str::from_utf8 to avoid
+    // a clone-into-FromUtf8Error path that would drop unzeroized on UTF-8
+    // failure. Mirrors auth.rs::load_transport_key.
     let hex_key: Zeroizing<String> = Zeroizing::new(
-        String::from_utf8(stdout.to_vec())
-            .map_err(|error| format!("keychain returned non-UTF-8 key: {error}"))?,
+        std::str::from_utf8(&stdout)
+            .map_err(|error| format!("keychain returned non-UTF-8 key: {error}"))?
+            .to_owned(),
     );
     decode_key(hex_key.trim()).map(Some)
 }
