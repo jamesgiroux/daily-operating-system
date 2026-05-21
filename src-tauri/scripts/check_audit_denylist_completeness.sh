@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# DOS-340 / AC-340.7 — denylist completeness CI gate.
+# AC-340.7 — denylist completeness CI gate.
 #
 # Pairs with AC-477.12 (allowlist-primary boundary). Every column added to
 # an operational audit storage schema MUST be classified explicitly:

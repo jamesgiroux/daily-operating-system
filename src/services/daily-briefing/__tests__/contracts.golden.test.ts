@@ -1,4 +1,4 @@
-// DOS-507 — parity golden test for `DailyBriefingOutput` TS mirror.
+// Parity golden test for `DailyBriefingOutput` TS mirror.
 // Asserts every closed-enum variant from the Rust contract at
 // `src-tauri/abilities-runtime/src/abilities/get_daily_briefing/contracts.rs`
 // is representable in the TypeScript mirror, and that a representative

@@ -24,7 +24,9 @@ if rg -n "${COMMENT_PREFIX}.*${EPHEMERAL_REF}" "${ROOTS[@]}" \
   --glob '!target/**' \
   --glob '!node_modules/**' \
   --glob '!dist/**' \
-  --glob '!.git/**'; then
+  --glob '!.git/**' \
+  --glob '!*.md' \
+  --glob '!*.fixture'; then
   cat <<'MSG'
 
 Ephemeral issue reference found in a source comment.

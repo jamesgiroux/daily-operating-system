@@ -1110,7 +1110,7 @@ pub trait ProjectListReadHandle: Send + Sync {
 }
 
 // -----------------------------------------------------------------------------
-// DOS-460 — canonical entity touchpoints read seam.
+// Canonical entity touchpoints read seam.
 //
 // Narrow read handle for entity-scoped touchpoint composition: the producer
 // asks for upcoming + recent meeting-shaped interactions for a subject; the
@@ -1369,7 +1369,7 @@ pub trait DailyReadinessContextReadHandle: Send + Sync {
 }
 
 // -----------------------------------------------------------------------------
-// DOS-507 — meeting prep status read handle
+// Meeting prep status read handle
 // -----------------------------------------------------------------------------
 
 /// Service-owned status describing whether a meeting's prep is ready, blocked,
@@ -1870,7 +1870,7 @@ impl<'a> ServiceContext<'a> {
         self
     }
 
-    /// Reader-backed touchpoint composition (DOS-460). When no reader is
+    /// Reader-backed touchpoint composition. When no reader is
     /// attached (test contexts, evaluate mode without fixtures) the caller
     /// receives a typed `ReadFailed` error and the producer falls back to a
     /// typed empty bundle. Subject isolation is the reader's responsibility —
@@ -1888,7 +1888,7 @@ impl<'a> ServiceContext<'a> {
         reader.read_entity_touchpoints(query).await
     }
 
-    /// DOS-507 — read per-meeting prep status. Returns
+    /// Read per-meeting prep status. Returns
     /// `MeetingPrepStatusReadError::ReadFailed` with a typed missing-reader
     /// message when no adapter is attached (test contexts without fixtures);
     /// the briefing producer projects that into a typed `NeedsPreparation`

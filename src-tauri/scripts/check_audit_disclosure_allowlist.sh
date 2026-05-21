@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# DOS-340: Receipt vs operational audit boundary — CI lint.
+# Receipt vs operational audit boundary — CI lint.
 #
 # Operational audit tables (e.g. sensitivity_reveal_audit, audit_log,
 # provenance_audit_storage, maintenance_audit) carry tamper-evident
@@ -44,7 +44,7 @@ allowed_basename_regex='commands/audit_management[^:]*\.rs'
 allowed_basename_regex="${allowed_basename_regex}|services/source_asof_backfill\.rs"
 allowed_basename_regex="${allowed_basename_regex}|services/claims_backfill\.rs"
 allowed_basename_regex="${allowed_basename_regex}|migrations/[^:]+\.(sql|rs)"
-# Tests for audit-management surface itself. DOS-412 / DOS-411 tests
+# Tests for audit-management surface itself. The audit-row tests
 # assert audit-row behaviour directly and are NOT receipt-rendering
 # paths.
 allowed_basename_regex="${allowed_basename_regex}|tests/dos411_user_note_migration_test\.rs"
@@ -100,7 +100,7 @@ fi
 echo "DOS-340: receipt-vs-audit disclosure allowlist clean."
 
 # -----------------------------------------------------------------------------
-# DOS-341 / CSO cycle-1 Finding 11 extension:
+# CSO cycle-1 Finding 11 extension:
 # Forbid direct read of maintenance_audit rows from services::claim_receipt::*
 # (privacy module writes assertions but never surfaces raw rows)
 # -----------------------------------------------------------------------------

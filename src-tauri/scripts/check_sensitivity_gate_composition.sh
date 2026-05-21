@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Sensitivity-gate composition lint (DOS-477 / AC-477.11).
+# Sensitivity-gate composition lint (AC-477.11).
 #
 # Forbids `match … sensitivity` against `ClaimSensitivity` variants outside the
 # canonical sensitivity gate at `abilities-runtime/src/sensitivity*`. The
@@ -34,7 +34,7 @@ fi
 # - tests/dos412_mcp_static_surface_test.rs  — fixture name mapper
 # - tests/w5_c_detect_risk_shift_test.rs     — fixture name mapper
 # - claim_receipt/auth.rs tests              — fixture seeding (sensitivity_name)
-# - services/entity_intelligence/auth.rs     — DOS-477 boundary helper (allowlist itself
+# - services/entity_intelligence/auth.rs     — boundary helper (allowlist itself
 #                                              is the gate's allowlist; only invokes the
 #                                              canonical gate through a synthetic claim)
 allowed_basename_regex='abilities-runtime/src/sensitivity\.rs|abilities-runtime/src/sensitivity/|src/services/sensitivity\.rs|src/services/claims\.rs|src/services/claims/canonicalization_parity\.rs|src/services/entity_intelligence/auth\.rs|src/services/claim_receipt/auth\.rs|tests/dos412_mcp_static_surface_test\.rs|tests/w5_c_detect_risk_shift_test\.rs'

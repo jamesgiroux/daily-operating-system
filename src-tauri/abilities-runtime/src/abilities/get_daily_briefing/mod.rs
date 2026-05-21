@@ -1,4 +1,4 @@
-//! DOS-507 — `get_daily_briefing` Read/User-only ability + composed
+//! `get_daily_briefing` Read/User-only ability + composed
 //! `BriefingState` (cycle-1 correctness F3).
 //!
 //! Read-side composition over existing meeting prep status (§5.5) +

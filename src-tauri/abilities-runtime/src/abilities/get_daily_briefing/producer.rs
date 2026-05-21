@@ -1,4 +1,4 @@
-//! DOS-507 — `get_daily_briefing` Read-only ability producer.
+//! `get_daily_briefing` Read-only ability producer.
 //!
 //! Pure read composition over:
 //! - `get_daily_readiness` context reader → workspace + day-bounded meetings
@@ -851,7 +851,7 @@ mod state_matrix_fixtures {
     //! AC-507.4 — each fixture asserts the 4-tuple
     //! `(availability, freshness, integrity, advisories)` independently. The
     //! producer is intentionally NOT exercised end-to-end here (that lives in
-    //! the DOS-461 fixture harness once the brief-level fixture lands);
+    //! the fixture harness once the brief-level fixture lands);
     //! these are shape assertions on the composed-state matrix to prevent
     //! anyone collapsing it back to a flat enum.
 

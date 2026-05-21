@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# v1.4.4 W2 inline-style narrow-exception lint (AC-W2.7 + DOS-725).
+# v1.4.4 W2 inline-style narrow-exception lint (AC-W2.7).
 #
 # AC-W2.7 (V1.2 hardened): the only permitted inline `style=` attribute
 # body in `wp/dailyos/blocks/**/*.php` must match the `--dailyos-*`
@@ -9,7 +9,7 @@
 #   ^--dailyos-[a-z-]+:\s*var\(--[a-z-]+\);?$
 #
 # This is the narrow exception to memory `feedback_no_inline_css` for
-# per-project tint flow (DOS-725 — `--dailyos-project-tint`) plus any
+# per-project tint flow (`--dailyos-project-tint`) plus any
 # future `--dailyos-*` custom-property emissions. Arbitrary `--*`
 # prefixes are REJECTED (V1.2 cycle-2 codex-challenge F3 tightening).
 # Anything else (declarative style, vendor prefix, hex color, etc.)

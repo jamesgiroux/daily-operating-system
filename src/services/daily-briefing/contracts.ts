@@ -1,4 +1,4 @@
-// DOS-507 — TypeScript mirror of `DailyBriefingOutput` DTO.
+// TypeScript mirror of `DailyBriefingOutput` DTO.
 //
 // Parity contract for the Rust producer at
 // `src-tauri/abilities-runtime/src/abilities/get_daily_briefing/contracts.rs`.

@@ -1,5 +1,5 @@
 /**
- * `useClaimReceiptSubscription` — DOS-339 / AC-339.1 + AC-339.6
+ * `useClaimReceiptSubscription` — AC-339.1 + AC-339.6
  *
  * Subscribes to the existing `claim_verification_state_changed` signal (and
  * adjacent claim-lifecycle signals) and re-fetches the claim receipt via the

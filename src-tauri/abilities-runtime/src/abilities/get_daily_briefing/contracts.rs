@@ -1,4 +1,4 @@
-//! DOS-507 — `DailyBriefingOutput` DTO contract.
+//! `DailyBriefingOutput` DTO contract.
 //!
 //! Read-side composition over existing meeting prep status + entity intelligence +
 //! daily readiness substrate. Per L0 packet §5.10 and the locked decisions in
@@ -6,7 +6,7 @@
 //! (`BriefingState` is a composed struct, NOT a flat enum — real briefings have
 //! multi-dimensional state).
 //!
-//! Coexists with the `get_daily_readiness` ability — DOS-507 ships the typed
+//! Coexists with the `get_daily_readiness` ability while this typed
 //! briefing envelope that composes per-subject `EntityIntelligenceEnvelope`s
 //! (§5.1) and per-meeting prep status (§5.5). The readiness ability remains
 //! the provider-backed synthesis path; this ability is pure read composition.
@@ -239,4 +239,3 @@ pub struct DailyBriefingOutput {
     pub sensitivity: ClaimSensitivity,
     pub source_asof_inputs: Vec<SourceAsofRef>,
 }
-
