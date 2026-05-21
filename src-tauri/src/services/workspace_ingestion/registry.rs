@@ -40,8 +40,11 @@
 
 use std::fs::File;
 use std::path::{Path, PathBuf};
+#[cfg(unix)]
+use std::os::unix::fs::MetadataExt;
 
 use rusqlite::{params, Connection, OptionalExtension};
+use unicode_normalization::UnicodeNormalization;
 
 use crate::entity::EntityType;
 use super::contracts::{FileIdentity, RejectionReason, WorkspaceCategory, WorkspaceFileKind};
@@ -142,15 +145,163 @@ impl WorkspaceSourceRegistry {
     ///
     /// Unix-only at v1.4.5. Windows path returns `RejectionReason::OutsideWorkspace`
     /// with a platform-not-supported log until follow-up ticket lands.
-    pub fn open_validated(_path: &Path) -> Result<(File, FileIdentity), RejectionReason> {
-        unimplemented!(
-            "W1-B implementing agent: implement the 6-step canonicalize-first \
-             algorithm per registry.rs module doc-comment. Unix-only. 15 negative + \
-             4 positive fixtures in tests/workspace_registry_open_validated.rs. \
-             The security boundary requires careful Rust unix-specific code \
-             (libc::O_NOFOLLOW interaction, std::os::unix::fs metadata APIs). \
-             Defer to next iteration."
-        )
+    pub fn open_validated(
+        workspace_root: &Path,
+        path: &Path,
+    ) -> Result<(File, FileIdentity), RejectionReason> {
+        #[cfg(not(unix))]
+        {
+            let _ = (workspace_root, path);
+            log::warn!("open_validated: Windows platform deferred to follow-up ticket");
+            return Err(RejectionReason::OutsideWorkspace);
+        }
+
+        #[cfg(unix)]
+        {
+            // Step 1: lex-validate per component.
+            // - Reject any `..` component (defense-in-depth against canonicalize bugs).
+            // - Apply NFKC normalization to each component (collapses fullwidth/
+            //   compatibility-equivalent attacks before any disk-touching syscall).
+            // - Reject NUL bytes (kernel-level rejection mapped to PathTraversalAttempt).
+            // - Reject component-length > 255 (NAME_MAX).
+            let raw_bytes = path.as_os_str().as_encoded_bytes();
+            if raw_bytes.contains(&0) {
+                return Err(RejectionReason::PathTraversalAttempt);
+            }
+            if raw_bytes.len() > 4096 {
+                return Err(RejectionReason::PathTraversalAttempt);
+            }
+            let normalized_components: Vec<String> = path
+                .components()
+                .map(|c| {
+                    let s: String = c.as_os_str().to_string_lossy().nfkc().collect();
+                    s
+                })
+                .collect();
+            for c in &normalized_components {
+                if c == ".." || c.contains("\\..\\") || c.contains("/..") || c.contains("../") {
+                    return Err(RejectionReason::PathTraversalAttempt);
+                }
+                if c.len() > 255 {
+                    return Err(RejectionReason::PathTraversalAttempt);
+                }
+                // Reject components ending in "." or " " on cross-platform basis (Windows
+                // semantics, defense-in-depth on Unix).
+                if c.ends_with('.') && c != "." {
+                    return Err(RejectionReason::PathTraversalAttempt);
+                }
+                if c.ends_with(' ') {
+                    return Err(RejectionReason::PathTraversalAttempt);
+                }
+                // Reject NTFS-style alternate data stream syntax.
+                if c.contains(':') && !path.is_absolute() {
+                    return Err(RejectionReason::PathTraversalAttempt);
+                }
+            }
+
+            // Resolve the input path relative to workspace_root if it's relative.
+            let candidate = if path.is_absolute() {
+                path.to_path_buf()
+            } else {
+                workspace_root.join(path)
+            };
+
+            // Step 2: canonicalize → strict-child-of-workspace_root check.
+            let canonical_root = workspace_root
+                .canonicalize()
+                .map_err(|_| RejectionReason::OutsideWorkspace)?;
+            let canonical_path = match candidate.canonicalize() {
+                Ok(p) => p,
+                Err(e) => {
+                    // ENOENT or similar — treat as PathTraversalAttempt (the file or
+                    // a parent does not exist).
+                    log::debug!("canonicalize failed for {candidate:?}: {e}");
+                    return Err(RejectionReason::PathTraversalAttempt);
+                }
+            };
+            if canonical_path == canonical_root {
+                // Root itself isn't a valid file target (V1.1 fold #13).
+                return Err(RejectionReason::OutsideWorkspace);
+            }
+            if !canonical_path.starts_with(&canonical_root) {
+                return Err(RejectionReason::OutsideWorkspace);
+            }
+
+            // Step 3: lstat canonical_path; record (dev, ino) + check cross-device.
+            let lstat = match std::fs::symlink_metadata(&canonical_path) {
+                Ok(m) => m,
+                Err(e) => {
+                    log::debug!("lstat failed for {canonical_path:?}: {e}");
+                    return Err(RejectionReason::PathTraversalAttempt);
+                }
+            };
+            let lstat_dev = lstat.dev();
+            let lstat_ino = lstat.ino();
+
+            // Establish workspace_root_dev via the canonical root's metadata.
+            let root_dev = match std::fs::metadata(&canonical_root) {
+                Ok(m) => m.dev(),
+                Err(e) => {
+                    log::warn!("workspace_root metadata failed: {e}");
+                    return Err(RejectionReason::OutsideWorkspace);
+                }
+            };
+            if lstat_dev != root_dev {
+                // Cross-device escape: bind-mount over a subdir, or hardlink-into-workspace
+                // from another mount. Reject as SymlinkRefused (overloaded for
+                // path-aliasing class per V1.3 §7).
+                return Err(RejectionReason::SymlinkRefused);
+            }
+
+            // Step 4: open canonical_path (plain open; canonicalize already
+            // resolved any symlinks in the chain).
+            let file = match File::open(&canonical_path) {
+                Ok(f) => f,
+                Err(e) => {
+                    log::debug!("open failed for {canonical_path:?}: {e}");
+                    return Err(RejectionReason::PathTraversalAttempt);
+                }
+            };
+
+            // Step 5: fstat the open File and run the 3 safety checks.
+            let fmeta = match file.metadata() {
+                Ok(m) => m,
+                Err(e) => {
+                    log::warn!("fstat failed: {e}");
+                    return Err(RejectionReason::SymlinkRaced);
+                }
+            };
+            let fstat_dev = fmeta.dev();
+            let fstat_ino = fmeta.ino();
+            let fstat_nlink = fmeta.nlink();
+
+            // (a) TOCTOU close: (dev, ino) at open-time must match lstat-time. If
+            // not, an attacker swapped the canonical target between lstat and open.
+            if (fstat_dev, fstat_ino) != (lstat_dev, lstat_ino) {
+                return Err(RejectionReason::SymlinkRaced);
+            }
+            // (b) Defense in depth: fstat.dev should still match workspace_root_dev
+            // (covers the same attack from a different angle).
+            if fstat_dev != root_dev {
+                return Err(RejectionReason::SymlinkRefused);
+            }
+            // (c) Hardlink defense: refuse all multi-link files in workspace.
+            // Trade-off documented in module doc-comment: legitimate hardlinks
+            // rejected; DailyOS document workflows don't use hardlinks.
+            if fstat_nlink > 1 {
+                return Err(RejectionReason::SymlinkRefused);
+            }
+
+            // Step 6: return the validated handle + identity.
+            Ok((
+                file,
+                FileIdentity {
+                    canonical_path,
+                    device: fstat_dev,
+                    inode: fstat_ino,
+                },
+            ))
+        }
     }
 }
 
@@ -500,6 +651,204 @@ mod tests {
         )
         .expect_err("Other should Err");
         assert!(matches!(err, ResolvePathError::EntityTypeNotRoutable));
+    }
+
+    // ---- open_validated security fixtures (Unix; subset of L0 V1.3 §7) -----
+
+    #[cfg(unix)]
+    use std::os::unix::fs::symlink as unix_symlink;
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn make_workspace() -> TempDir {
+        TempDir::new().expect("tempdir")
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_validated_accepts_valid_workspace_file() {
+        let ws = make_workspace();
+        let target = ws.path().join("doc.md");
+        fs::write(&target, b"hello").expect("write");
+        let (file, identity) = WorkspaceSourceRegistry::open_validated(
+            ws.path(),
+            std::path::Path::new("doc.md"),
+        )
+        .expect("Ok");
+        drop(file);
+        assert!(identity.canonical_path.ends_with("doc.md"));
+        assert!(identity.inode > 0);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_validated_rejects_bare_dotdot_component() {
+        let ws = make_workspace();
+        let err = WorkspaceSourceRegistry::open_validated(
+            ws.path(),
+            std::path::Path::new("notes/../escape"),
+        )
+        .expect_err("dotdot");
+        assert!(matches!(err, RejectionReason::PathTraversalAttempt));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_validated_rejects_absolute_path_outside_workspace() {
+        let ws = make_workspace();
+        let err = WorkspaceSourceRegistry::open_validated(
+            ws.path(),
+            std::path::Path::new("/etc/passwd"),
+        )
+        .expect_err("absolute outside");
+        assert!(matches!(err, RejectionReason::OutsideWorkspace));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_validated_rejects_workspace_root_equality() {
+        let ws = make_workspace();
+        let err = WorkspaceSourceRegistry::open_validated(
+            ws.path(),
+            std::path::Path::new("."),
+        )
+        .expect_err("root equality");
+        assert!(matches!(err, RejectionReason::OutsideWorkspace));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_validated_rejects_outside_symlink_via_canonicalize() {
+        let ws = make_workspace();
+        let outside = TempDir::new().expect("outside tempdir");
+        let outside_file = outside.path().join("secret.txt");
+        fs::write(&outside_file, b"secret").expect("write");
+        // Create a symlink inside workspace pointing to outside file.
+        let link_path = ws.path().join("escape");
+        unix_symlink(&outside_file, &link_path).expect("symlink");
+        let err = WorkspaceSourceRegistry::open_validated(
+            ws.path(),
+            std::path::Path::new("escape"),
+        )
+        .expect_err("outside symlink");
+        // Canonicalize resolves outside; strict-child check fails.
+        assert!(matches!(err, RejectionReason::OutsideWorkspace));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_validated_rejects_hardlink_to_outside_file_via_nlink_check() {
+        let ws = make_workspace();
+        // Same-device temp file outside workspace.
+        let target_inside = ws.path().join("decoy.txt");
+        fs::write(&target_inside, b"normal").expect("write");
+        // Hardlink to a file outside workspace's same-device parent (in many test
+        // setups, ws and TMPDIR share the same fs). We approximate by creating a
+        // second file inside workspace and hardlinking the two so nlink=2.
+        let alias = ws.path().join("alias.txt");
+        fs::hard_link(&target_inside, &alias).expect("hardlink");
+        let err = WorkspaceSourceRegistry::open_validated(
+            ws.path(),
+            std::path::Path::new("alias.txt"),
+        )
+        .expect_err("multi-link");
+        // nlink>1 triggers SymlinkRefused (path-aliasing class).
+        assert!(matches!(err, RejectionReason::SymlinkRefused));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_validated_rejects_nul_byte_in_path() {
+        let ws = make_workspace();
+        let bad = std::path::PathBuf::from("foo\0bar");
+        let err = WorkspaceSourceRegistry::open_validated(ws.path(), &bad)
+            .expect_err("NUL");
+        assert!(matches!(err, RejectionReason::PathTraversalAttempt));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_validated_rejects_name_max_overflow_component() {
+        let ws = make_workspace();
+        let oversized: String = "x".repeat(256);
+        let err = WorkspaceSourceRegistry::open_validated(
+            ws.path(),
+            std::path::Path::new(&oversized),
+        )
+        .expect_err("NAME_MAX overflow");
+        assert!(matches!(err, RejectionReason::PathTraversalAttempt));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_validated_rejects_trailing_dot_component() {
+        let ws = make_workspace();
+        let err = WorkspaceSourceRegistry::open_validated(
+            ws.path(),
+            std::path::Path::new("foo."),
+        )
+        .expect_err("trailing dot");
+        assert!(matches!(err, RejectionReason::PathTraversalAttempt));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_validated_rejects_ntfs_ads_colon_in_relative_path() {
+        let ws = make_workspace();
+        let err = WorkspaceSourceRegistry::open_validated(
+            ws.path(),
+            std::path::Path::new("file.txt:hidden"),
+        )
+        .expect_err("ADS colon");
+        assert!(matches!(err, RejectionReason::PathTraversalAttempt));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_validated_returns_distinct_identities_for_two_files() {
+        let ws = make_workspace();
+        let a = ws.path().join("a.md");
+        let b = ws.path().join("b.md");
+        fs::write(&a, b"a").expect("write");
+        fs::write(&b, b"b").expect("write");
+        let (_fa, id_a) = WorkspaceSourceRegistry::open_validated(
+            ws.path(),
+            std::path::Path::new("a.md"),
+        )
+        .expect("Ok");
+        let (_fb, id_b) = WorkspaceSourceRegistry::open_validated(
+            ws.path(),
+            std::path::Path::new("b.md"),
+        )
+        .expect("Ok");
+        assert_ne!(id_a.inode, id_b.inode);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_validated_positive_concurrency_returns_consistent_identity() {
+        use std::sync::Arc;
+        let ws = Arc::new(make_workspace());
+        let target = ws.path().join("doc.md");
+        fs::write(&target, b"hello").expect("write");
+        let mut handles = Vec::new();
+        for _ in 0..8 {
+            let ws_clone = Arc::clone(&ws);
+            handles.push(std::thread::spawn(move || {
+                WorkspaceSourceRegistry::open_validated(
+                    ws_clone.path(),
+                    std::path::Path::new("doc.md"),
+                )
+            }));
+        }
+        let mut inodes: Vec<u64> = Vec::new();
+        for h in handles {
+            let result = h.join().expect("thread");
+            let (_file, id) = result.expect("Ok");
+            inodes.push(id.inode);
+        }
+        // All 8 readers should see the same inode.
+        assert!(inodes.iter().all(|i| i == &inodes[0]));
     }
 
     #[test]

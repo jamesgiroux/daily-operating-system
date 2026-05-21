@@ -28,7 +28,7 @@
 //! `add_link(... UserRelink)` (V1.3 fold #2).
 
 use chrono::{DateTime, Utc};
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
 use crate::entity::EntityType;
@@ -213,19 +213,99 @@ impl LinkRepo {
     /// transactional handling for classifier-class sources per V1.3 fold #1.
     #[allow(clippy::too_many_arguments)]
     pub fn add_link(
-        _conn: &Connection,
-        _file_id: &str,
-        _entity_type: EntityType,
-        _entity_id: &str,
-        _attribution_source: LinkAttributionSource,
-        _confidence: f64,
-        _rationale: Option<&str>,
-        _actor: &str,
+        conn: &Connection,
+        file_id: &str,
+        entity_type: EntityType,
+        entity_id: &str,
+        attribution_source: LinkAttributionSource,
+        confidence: f64,
+        rationale: Option<&str>,
+        actor: &str,
     ) -> Result<DocumentEntityLinkId, LinkError> {
-        unimplemented!(
-            "W1-C implementing agent: implement the BEGIN IMMEDIATE flow per \
-             link.rs module doc-comment + L0 V1.3 §4 fold #1. Defer to next iteration."
-        )
+        let et_slug = entity_type_slug(entity_type);
+        // Open BEGIN IMMEDIATE transaction to serialize the (optional)
+        // tombstone-check + INSERT atomically. This closes the V1.2 race
+        // where a concurrent reject_link between SELECT and INSERT could
+        // let a classifier source create an active row after tombstone.
+        conn.execute("BEGIN IMMEDIATE", [])
+            .map_err(|e| LinkError::DbError(e.to_string()))?;
+
+        // Tombstone guard for classifier-class sources only.
+        if attribution_source.is_classifier_class() {
+            let tombstoned: Option<(String, String)> = conn
+                .query_row(
+                    "SELECT rejected_at, rejected_reason FROM document_entity_links \
+                     WHERE file_id = ?1 AND entity_type = ?2 AND entity_id = ?3 \
+                       AND rejected = 1",
+                    params![file_id, et_slug, entity_id],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()
+                .map_err(|e| {
+                    drop(conn.execute("ROLLBACK", []));
+                    LinkError::DbError(e.to_string())
+                })?;
+            if let Some((rejected_at_raw, rejected_reason)) = tombstoned {
+                drop(conn.execute("ROLLBACK", []));
+                let rejected_at = parse_dt(Some(rejected_at_raw)).unwrap_or_else(Utc::now);
+                return Err(LinkError::Tombstoned {
+                    rejected_at,
+                    rejected_reason,
+                });
+            }
+        }
+
+        let link_id = uuid::Uuid::new_v4().to_string();
+        // INSERT with ON CONFLICT DO NOTHING (matching the partial UNIQUE
+        // on rejected=0). If conflict (active duplicate exists), the
+        // INSERT yields zero rows and we fall back to SELECT to return
+        // the existing link_id.
+        let inserted_id: Option<String> = conn
+            .query_row(
+                "INSERT INTO document_entity_links \
+                 (link_id, file_id, entity_type, entity_id, attribution_source, \
+                  confidence, rationale, actor) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) \
+                 ON CONFLICT (file_id, entity_type, entity_id) WHERE rejected = 0 \
+                 DO NOTHING RETURNING link_id",
+                params![
+                    link_id,
+                    file_id,
+                    et_slug,
+                    entity_id,
+                    attribution_source.as_storage_str(),
+                    confidence,
+                    rationale,
+                    actor,
+                ],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| {
+                drop(conn.execute("ROLLBACK", []));
+                LinkError::DbError(e.to_string())
+            })?;
+
+        let final_id = match inserted_id {
+            Some(id) => id,
+            None => {
+                // Active duplicate present; fetch its link_id.
+                conn.query_row(
+                    "SELECT link_id FROM document_entity_links \
+                     WHERE file_id = ?1 AND entity_type = ?2 AND entity_id = ?3 \
+                       AND rejected = 0",
+                    params![file_id, et_slug, entity_id],
+                    |row| row.get(0),
+                )
+                .map_err(|e| {
+                    drop(conn.execute("ROLLBACK", []));
+                    LinkError::DbError(e.to_string())
+                })?
+            }
+        };
+        conn.execute("COMMIT", [])
+            .map_err(|e| LinkError::DbError(e.to_string()))?;
+        Ok(DocumentEntityLinkId(final_id))
     }
 
     /// Lists active (and optionally rejected) links for a file.
@@ -519,6 +599,191 @@ mod tests {
         )
         .expect_err("missing");
         assert!(matches!(err, LinkError::NotFound));
+    }
+
+    #[test]
+    fn add_link_inserts_new_active_row_via_classifier() {
+        let conn = fresh_conn();
+        let id = LinkRepo::add_link(
+            &conn,
+            "wf-1",
+            EntityType::Account,
+            "acme",
+            LinkAttributionSource::Classifier,
+            0.7,
+            Some("inferred"),
+            "agent-1",
+        )
+        .expect("Ok");
+        assert_eq!(id.0.len(), 36);
+        let links = LinkRepo::list_links_for_file(&conn, "wf-1", false).expect("Ok");
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].confidence, 0.7);
+        assert_eq!(links[0].rationale.as_deref(), Some("inferred"));
+    }
+
+    #[test]
+    fn add_link_classifier_duplicate_returns_existing_id_idempotent() {
+        let conn = fresh_conn();
+        let id1 = LinkRepo::add_link(
+            &conn,
+            "wf-1",
+            EntityType::Account,
+            "acme",
+            LinkAttributionSource::Classifier,
+            0.5,
+            None,
+            "agent-1",
+        )
+        .expect("first Ok");
+        let id2 = LinkRepo::add_link(
+            &conn,
+            "wf-1",
+            EntityType::Account,
+            "acme",
+            LinkAttributionSource::Classifier,
+            0.9,
+            Some("re-attempt"),
+            "agent-2",
+        )
+        .expect("second Ok");
+        assert_eq!(id1, id2, "duplicate add_link should return existing link_id");
+        let links = LinkRepo::list_links_for_file(&conn, "wf-1", false).expect("Ok");
+        assert_eq!(links.len(), 1, "no new row created");
+        // Original values preserved (DO NOTHING semantics).
+        assert_eq!(links[0].confidence, 0.5);
+    }
+
+    #[test]
+    fn add_link_classifier_blocked_by_tombstone_returns_typed_err() {
+        let conn = fresh_conn();
+        let id = LinkRepo::add_link(
+            &conn,
+            "wf-1",
+            EntityType::Account,
+            "acme",
+            LinkAttributionSource::Classifier,
+            0.5,
+            None,
+            "agent-1",
+        )
+        .expect("first Ok");
+        // Reject the link.
+        LinkRepo::reject_link(
+            &conn,
+            "wf-1",
+            EntityType::Account,
+            "acme",
+            "user-1",
+            "wrong entity",
+        )
+        .expect("reject Ok");
+        // Classifier retries — should be blocked.
+        let err = LinkRepo::add_link(
+            &conn,
+            "wf-1",
+            EntityType::Account,
+            "acme",
+            LinkAttributionSource::Classifier,
+            0.5,
+            None,
+            "agent-1",
+        )
+        .expect_err("classifier should be Tombstoned");
+        match err {
+            LinkError::Tombstoned {
+                rejected_reason, ..
+            } => {
+                assert_eq!(rejected_reason, "wrong entity");
+            }
+            other => panic!("expected Tombstoned, got {other:?}"),
+        }
+        // No new active link created.
+        let active = LinkRepo::list_links_for_file(&conn, "wf-1", false).expect("Ok");
+        assert!(active.is_empty(), "rejected link must NOT resurrect via classifier");
+        // But the rejected row still exists.
+        let all = LinkRepo::list_links_for_file(&conn, "wf-1", true).expect("Ok");
+        assert_eq!(all.len(), 1);
+        assert!(all[0].rejected);
+        // Sanity: confirm id is unused (the rejected row keeps its original id).
+        assert_eq!(all[0].link_id, id);
+    }
+
+    #[test]
+    fn add_link_user_relink_bypasses_tombstone_and_creates_active_row() {
+        let conn = fresh_conn();
+        // Seed classifier link, reject it.
+        LinkRepo::add_link(
+            &conn,
+            "wf-1",
+            EntityType::Account,
+            "acme",
+            LinkAttributionSource::Classifier,
+            0.5,
+            None,
+            "agent-1",
+        )
+        .expect("classifier add Ok");
+        LinkRepo::reject_link(
+            &conn,
+            "wf-1",
+            EntityType::Account,
+            "acme",
+            "user-1",
+            "wrong, but…",
+        )
+        .expect("reject Ok");
+
+        // User-relink: should bypass tombstone guard and create a NEW active row.
+        let relink_id = LinkRepo::add_link(
+            &conn,
+            "wf-1",
+            EntityType::Account,
+            "acme",
+            LinkAttributionSource::UserRelink,
+            1.0,
+            Some("user confirms binding"),
+            "user-1",
+        )
+        .expect("UserRelink bypass Ok");
+
+        let active = LinkRepo::list_links_for_file(&conn, "wf-1", false).expect("Ok");
+        assert_eq!(active.len(), 1, "UserRelink creates fresh active row");
+        assert_eq!(active[0].link_id, relink_id);
+        assert!(matches!(
+            active[0].attribution_source,
+            LinkAttributionSource::UserRelink
+        ));
+    }
+
+    #[test]
+    fn add_link_multi_entity_allowed_for_same_file() {
+        let conn = fresh_conn();
+        let a = LinkRepo::add_link(
+            &conn,
+            "wf-1",
+            EntityType::Account,
+            "acme",
+            LinkAttributionSource::Classifier,
+            0.5,
+            None,
+            "agent-1",
+        )
+        .expect("Ok");
+        let b = LinkRepo::add_link(
+            &conn,
+            "wf-1",
+            EntityType::Project,
+            "apollo",
+            LinkAttributionSource::Classifier,
+            0.5,
+            None,
+            "agent-1",
+        )
+        .expect("Ok");
+        assert_ne!(a, b);
+        let links = LinkRepo::list_links_for_file(&conn, "wf-1", false).expect("Ok");
+        assert_eq!(links.len(), 2);
     }
 
     #[test]

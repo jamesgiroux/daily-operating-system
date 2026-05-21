@@ -151,11 +151,81 @@ impl RunsRepo {
     /// - 1-hour staleness threshold (use `chrono::Duration::hours(1)`)
     /// - Retry lineage (`mode = Forced` requires `retry_of_run_id`)
     /// - Wall-clock determinism for tests
-    pub fn start_run(_conn: &Connection, _seed: StartRunSeed) -> Result<IngestionRunId, RunsError> {
-        unimplemented!(
-            "W1-C implementing agent: implement two-tier idempotency per \
-             runs.rs module doc-comment + L0 V1.3 §4 fold #3."
+    pub fn start_run(conn: &Connection, seed: StartRunSeed) -> Result<IngestionRunId, RunsError> {
+        // Tier 1 (service-layer preflight, skipped for Forced retries):
+        // check success rows first, then in_progress rows for staleness.
+        if !matches!(seed.mode, IngestionMode::Forced) {
+            if let Some(existing) = Self::find_by_idempotency_key(
+                conn,
+                &seed.file_id,
+                &seed.content_sha256,
+                seed.mode,
+            )? {
+                return Err(RunsError::AlreadyCompleted { existing });
+            }
+            // Look for in_progress runs for the same idempotency triple.
+            let in_progress: Option<(String, String)> = conn
+                .query_row(
+                    "SELECT run_id, started_at FROM document_ingestion_runs \
+                     WHERE file_id = ?1 AND content_sha256 = ?2 AND mode = ?3 \
+                       AND status = 'in_progress' \
+                     ORDER BY started_at DESC LIMIT 1",
+                    params![
+                        seed.file_id,
+                        seed.content_sha256,
+                        seed.mode.as_storage_str()
+                    ],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()
+                .map_err(|e| RunsError::DbError(e.to_string()))?;
+            if let Some((existing_run_id, started_at_raw)) = in_progress {
+                let stale = DateTime::parse_from_rfc3339(&started_at_raw)
+                    .map(|dt| Utc::now() - dt.with_timezone(&Utc))
+                    .map(|age| age >= chrono::Duration::hours(1))
+                    .unwrap_or(false);
+                if stale {
+                    // Mark prior aborted (likely crashed); proceed.
+                    conn.execute(
+                        "UPDATE document_ingestion_runs SET status = 'aborted', \
+                         completed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') \
+                         WHERE run_id = ?1",
+                        params![existing_run_id],
+                    )
+                    .map_err(|e| RunsError::DbError(e.to_string()))?;
+                } else {
+                    return Err(RunsError::AlreadyInProgress {
+                        existing_run_id: IngestionRunId(existing_run_id),
+                    });
+                }
+            }
+        }
+
+        // For Forced mode, require retry_of_run_id (explicit retry contract).
+        if matches!(seed.mode, IngestionMode::Forced) && seed.retry_of_run_id.is_none() {
+            return Err(RunsError::DbError(
+                "Forced mode requires retry_of_run_id".to_string(),
+            ));
+        }
+
+        let run_id = uuid::Uuid::new_v4().to_string();
+        conn.execute(
+            "INSERT INTO document_ingestion_runs \
+             (run_id, file_id, mode, status, content_sha256, file_size_bytes, \
+              extractor_version, retry_of_run_id) \
+             VALUES (?1, ?2, ?3, 'in_progress', ?4, ?5, ?6, ?7)",
+            params![
+                run_id,
+                seed.file_id,
+                seed.mode.as_storage_str(),
+                seed.content_sha256,
+                seed.file_size_bytes as i64,
+                seed.extractor_version,
+                seed.retry_of_run_id.as_ref().map(|r| &r.0),
+            ],
         )
+        .map_err(|e| RunsError::DbError(e.to_string()))?;
+        Ok(IngestionRunId(run_id))
     }
 
     /// Transitions a run to a terminal state. Returns `NotFound` if no row
@@ -401,6 +471,174 @@ mod tests {
         assert_eq!(status_str, "failed");
         assert_eq!(claim_count, 42);
         assert!(error_log.unwrap().contains("\"one\""));
+    }
+
+    #[test]
+    fn start_run_inserts_new_in_progress_row_with_uuid_run_id() {
+        let conn = fresh_conn();
+        let seed = StartRunSeed {
+            file_id: "wf-1".to_string(),
+            mode: IngestionMode::Initial,
+            content_sha256: "abc".to_string(),
+            file_size_bytes: 1024,
+            extractor_version: "test-v1".to_string(),
+            retry_of_run_id: None,
+        };
+        let run_id = RunsRepo::start_run(&conn, seed).expect("Ok");
+        let count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM document_ingestion_runs WHERE run_id = ?1 \
+                 AND status = 'in_progress'",
+                params![run_id.0],
+                |row| row.get(0),
+            )
+            .expect("count");
+        assert_eq!(count, 1);
+        // run_id is a UUID4 (36 chars w/ hyphens).
+        assert_eq!(run_id.0.len(), 36);
+    }
+
+    #[test]
+    fn start_run_returns_already_completed_when_success_row_exists() {
+        let conn = fresh_conn();
+        // First run + complete to success.
+        let seed = StartRunSeed {
+            file_id: "wf-1".to_string(),
+            mode: IngestionMode::Initial,
+            content_sha256: "abc".to_string(),
+            file_size_bytes: 1024,
+            extractor_version: "test-v1".to_string(),
+            retry_of_run_id: None,
+        };
+        let first = RunsRepo::start_run(&conn, seed.clone()).expect("first Ok");
+        RunsRepo::complete_run(&conn, &first, IngestionRunStatus::Success, 3, None)
+            .expect("complete Ok");
+
+        let err = RunsRepo::start_run(&conn, seed).expect_err("second should AlreadyCompleted");
+        match err {
+            RunsError::AlreadyCompleted { existing } => {
+                assert_eq!(existing.run_id, first);
+                assert_eq!(existing.claim_count_produced, 3);
+            }
+            other => panic!("expected AlreadyCompleted, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn start_run_returns_already_in_progress_when_recent_run_open() {
+        let conn = fresh_conn();
+        let seed = StartRunSeed {
+            file_id: "wf-1".to_string(),
+            mode: IngestionMode::Initial,
+            content_sha256: "abc".to_string(),
+            file_size_bytes: 1024,
+            extractor_version: "test-v1".to_string(),
+            retry_of_run_id: None,
+        };
+        let first = RunsRepo::start_run(&conn, seed.clone()).expect("first Ok");
+        let err = RunsRepo::start_run(&conn, seed).expect_err("second should AlreadyInProgress");
+        match err {
+            RunsError::AlreadyInProgress { existing_run_id } => {
+                assert_eq!(existing_run_id, first);
+            }
+            other => panic!("expected AlreadyInProgress, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn start_run_aborts_stale_in_progress_and_proceeds() {
+        let conn = fresh_conn();
+        // Insert an in-progress row whose started_at is >1h old (use raw SQL).
+        let stale_ts = (Utc::now() - chrono::Duration::hours(2))
+            .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        conn.execute(
+            "INSERT INTO document_ingestion_runs \
+             (run_id, file_id, mode, status, content_sha256, file_size_bytes, \
+              extractor_version, started_at) \
+             VALUES ('stale-run', 'wf-1', 'initial', 'in_progress', 'abc', 1024, 'v1', ?1)",
+            params![stale_ts],
+        )
+        .expect("insert stale");
+
+        let seed = StartRunSeed {
+            file_id: "wf-1".to_string(),
+            mode: IngestionMode::Initial,
+            content_sha256: "abc".to_string(),
+            file_size_bytes: 1024,
+            extractor_version: "test-v1".to_string(),
+            retry_of_run_id: None,
+        };
+        let new_run = RunsRepo::start_run(&conn, seed).expect("should proceed after aborting stale");
+        // Stale row should now be aborted.
+        let stale_status: String = conn
+            .query_row(
+                "SELECT status FROM document_ingestion_runs WHERE run_id = 'stale-run'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("query");
+        assert_eq!(stale_status, "aborted");
+        // New run should be in_progress.
+        let new_status: String = conn
+            .query_row(
+                "SELECT status FROM document_ingestion_runs WHERE run_id = ?1",
+                params![new_run.0],
+                |row| row.get(0),
+            )
+            .expect("query");
+        assert_eq!(new_status, "in_progress");
+    }
+
+    #[test]
+    fn start_run_forced_requires_retry_of_run_id() {
+        let conn = fresh_conn();
+        let seed = StartRunSeed {
+            file_id: "wf-1".to_string(),
+            mode: IngestionMode::Forced,
+            content_sha256: "abc".to_string(),
+            file_size_bytes: 1024,
+            extractor_version: "test-v1".to_string(),
+            retry_of_run_id: None,
+        };
+        let err = RunsRepo::start_run(&conn, seed).expect_err("Forced without retry_of");
+        assert!(matches!(err, RunsError::DbError(_)));
+    }
+
+    #[test]
+    fn start_run_forced_bypasses_idempotency_preflight() {
+        let conn = fresh_conn();
+        // Seed a successful run.
+        let initial_seed = StartRunSeed {
+            file_id: "wf-1".to_string(),
+            mode: IngestionMode::Initial,
+            content_sha256: "abc".to_string(),
+            file_size_bytes: 1024,
+            extractor_version: "test-v1".to_string(),
+            retry_of_run_id: None,
+        };
+        let first = RunsRepo::start_run(&conn, initial_seed).expect("Ok");
+        RunsRepo::complete_run(&conn, &first, IngestionRunStatus::Success, 0, None).expect("Ok");
+
+        // Forced retry against the same triple should bypass.
+        let forced_seed = StartRunSeed {
+            file_id: "wf-1".to_string(),
+            mode: IngestionMode::Forced,
+            content_sha256: "abc".to_string(),
+            file_size_bytes: 1024,
+            extractor_version: "test-v1".to_string(),
+            retry_of_run_id: Some(first.clone()),
+        };
+        let retry = RunsRepo::start_run(&conn, forced_seed).expect("Forced retry Ok");
+        assert_ne!(retry, first);
+        // Verify retry_of_run_id was populated.
+        let retry_of: String = conn
+            .query_row(
+                "SELECT retry_of_run_id FROM document_ingestion_runs WHERE run_id = ?1",
+                params![retry.0],
+                |row| row.get(0),
+            )
+            .expect("query");
+        assert_eq!(retry_of, first.0);
     }
 
     #[test]
