@@ -1,6 +1,6 @@
 # L0 Packet — v1.4.5 W2-A — DOS-466 Staged Ingestion Service: Pipeline Shell + Quarantine + auto_detect_category
 
-**Current revision:** V1.5 (L1 kickoff precondition resolutions, 2026-05-21). See §2 Changelog.
+**Current revision:** V1.6 (L2 cycle-1 codex BLOCK fold, 2026-05-21). See §2 Changelog.
 
 ## 1. Header
 
@@ -20,6 +20,9 @@
 
 ## 2. Changelog
 
+- **V1.6 — 2026-05-21 (L2 cycle-1 fold):** Codex L2 challenge returned BLOCK at 18:30Z with two findings. Architect / correctness / security reviewers returned APPROVE. Folds per `feedback_reviewer_dissent_is_signal`:
+  1. **Finding 2 (§3 + §7 AC violation) — FIXED in cycle 2.** Frontmatter `doc_type` priority 1 was not terminal: a present-but-shape-invalid `doc_type` (e.g. `Bad`) fell through to filename-glob, letting filename intent override user-supplied invalid intent. Fix at `pipeline.rs::auto_detect_category_pure` — new internal helper `frontmatter_doctype_detection(content_head) -> Option<Option<WorkspaceCategory>>` distinguishes "priority 1 didn't fire" from "priority 1 fired with no match". Regression test at `tests/workspace_ingestion_w2a_auto_detect_category.rs::invalid_frontmatter_doctype_is_terminal_none_even_with_filename_match` (2 assertions covering shape-invalid + leading-digit cases).
+  2. **Finding 1 (ServiceContext field shape) — PATH-α, NOT BLOCK.** Codex flagged that §9 stub specifies `workspace_intake: &'a dyn WorkspaceIntakeService` (non-Option borrowed ref) but impl uses `Option<Arc<dyn WorkspaceIntakeService>>`. Per `feedback_l2_path_alpha_to_maintenance_project`: this is code-stub drift, not an AC violation (§11 says "ServiceContext extended with workspace_intake; bootstrap registers IngestPipelineWorkspaceIntake" — satisfied), not an ADR-named contract violation, not a PR-introduced regression. Architect reviewer correctly noted the impl shape matches the established convention for builder-populated handles (`entity_context_reader`, `composition_commit`, `claim_receipt_reader` are all `Option<Arc<dyn ...>>`). Non-Option borrowed refs in ServiceContext (`Clock`, `SeededRng`, `ExternalClients`) are constructor params; handles need builder pattern. File under DOS-751 to revisit when W2-C's consumer pattern stabilizes — if `workspace_intake().expect(...)` proliferates, lift the field to non-Option.
 - **V1.5 — 2026-05-21 (L1 kickoff):** Resolves three L1-preconditions from `L1-residuals-from-L0-cycle-5.md` against live substrate.
   1. **`entity_name` IS a path segment.** Live `registry.rs:448` (`PathBuf::from(entity_dir).join(entity_name)`) confirms. REVERTS V1.4 §7 / §9 wording marking it "display-only". The bridge (`workspace_intake_impl.rs`) MUST slug-validate `entity_name` via `is_valid_slug_shape` (registry.rs:464 pattern) before constructing `IngestRequest`; invalid → `WorkspaceIntakeError::InvalidEntityName(String)` (new variant added to §0 V1.4).
   2. **`workspace_root` threaded via constructor.** `IngestPipeline` holds `workspace_root: PathBuf` as a field; `pub fn build_pipeline(workspace_root: PathBuf) -> IngestPipeline` (still infallible). `pipeline.run()` revalidates `request.file_id == file_id_from_identity(&request.identity, &self.workspace_root)`. Also resolves W2-B residual #2 — W2-B call sites become `wiring::build_pipeline(workspace_root)`, no `?`.

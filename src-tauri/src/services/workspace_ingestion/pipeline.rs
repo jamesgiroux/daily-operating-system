@@ -299,8 +299,13 @@ impl IngestPipeline {
         filename: &str,
         content_head: &str,
     ) -> Option<WorkspaceCategory> {
-        if let Some(category) = category_from_frontmatter(content_head) {
-            return Some(category);
+        // Priority 1 — frontmatter doc_type. Per packet §3 frozen detection
+        // table, priority 1 is terminal whenever it fires: a present `doc_type`
+        // key (even if invalid or unregistered) resolves the lane at this
+        // priority and lower priorities do not run. Only when frontmatter is
+        // absent / malformed / has no `doc_type` key do we fall through.
+        if let Some(result) = frontmatter_doctype_detection(content_head) {
+            return result;
         }
         if content_head.trim_start().starts_with("---") && frontmatter_block(content_head).is_none()
         {
@@ -392,7 +397,19 @@ fn frontmatter_block(content_head: &str) -> Option<&str> {
     Some(&rest[..end])
 }
 
-fn category_from_frontmatter(content_head: &str) -> Option<WorkspaceCategory> {
+/// Outer `Option` distinguishes "priority 1 fired" from "priority 1 didn't
+/// fire":
+/// - `None` → no frontmatter block, or frontmatter has no `doc_type` key →
+///   priority 1 did NOT fire, caller should fall through.
+/// - `Some(Some(cat))` → `doc_type` present, valid, mapped to a category →
+///   terminal Some.
+/// - `Some(None)` → `doc_type` present but invalid shape, unknown variant,
+///   or unregistered `Other(s)` slug → priority 1 FIRED with a non-match →
+///   terminal None per packet §3 frozen detection table row 6 ("else None").
+///
+/// This split closes the L2 cycle-1 codex BLOCK on §7: invalid `doc_type`
+/// must not allow filename-glob fallback to override user-supplied intent.
+fn frontmatter_doctype_detection(content_head: &str) -> Option<Option<WorkspaceCategory>> {
     let block = frontmatter_block(content_head)?;
     for line in block.lines() {
         let Some((key, value)) = line.split_once(':') else {
@@ -403,9 +420,9 @@ fn category_from_frontmatter(content_head: &str) -> Option<WorkspaceCategory> {
         }
         let value = value.trim().trim_matches('"').trim_matches('\'');
         if !is_valid_doc_type(value) {
-            return None;
+            return Some(None);
         }
-        return match value {
+        let category = match value {
             "transcript" => Some(WorkspaceCategory::Transcripts),
             "presentation" | "deck" | "slides" => Some(WorkspaceCategory::Presentations),
             "meeting" | "1on1" => Some(WorkspaceCategory::Meetings),
@@ -413,6 +430,7 @@ fn category_from_frontmatter(content_head: &str) -> Option<WorkspaceCategory> {
             "contract" | "msa" | "sow" => Some(WorkspaceCategory::Contracts),
             other => WorkspaceCategory::from_slug(other),
         };
+        return Some(category);
     }
     None
 }
