@@ -1,4 +1,4 @@
--- ADR-0123 V1.1 amendment (v1.4.4 W2 §5.3 / DOS-484):
+-- ADR-0123 V1.1 amendment (v1.4.4 W2 §5.3):
 -- extend the `claim_feedback.feedback_type` CHECK constraint to include
 -- the 10th typed feedback variant, `merge_intent`. MergeIntent persists a
 -- typed proposal row (merge_target + optional supporting_evidence) that

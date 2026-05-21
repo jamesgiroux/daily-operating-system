@@ -1,4 +1,4 @@
--- DOS-335 L3 cycle-2 (F3): atomic meeting_prep_status_view recreation.
+-- Atomic meeting_prep_status_view recreation.
 --
 -- v243 rebuilt `meeting_prep_status_view` with two separate statements
 -- (`DROP VIEW`; `CREATE VIEW`). The migration runner at

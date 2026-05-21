@@ -1,4 +1,4 @@
-//! DOS-335 (v1.4.4 W1): Meeting prep / readiness status service.
+//! Meeting prep / readiness status service.
 //!
 //! Single service-owned status contract for "is this meeting's prep
 //! ready, blocked, stale, failed, or user-suppressed?" — consumed by
@@ -23,7 +23,7 @@
 //!   `Decision` / `Commitment` claims through the existing claim store
 //!   substrate.
 //!
-//! `get_daily_briefing` (DOS-507, Stage 1c) and any other Read-ability
+//! `get_daily_briefing` (Stage 1c) and any other Read-ability
 //! call graph member must only depend on [`read`].
 //!
 //! # State machine (L0 packet §5.5 — AC-335.14)
@@ -72,7 +72,7 @@ use serde::{Deserialize, Serialize};
 
 /// Lifecycle state of meeting prep readiness for a given meeting.
 ///
-/// Variants are deliberately the full set named in DOS-335 ticket
+/// Variants are deliberately the full set named in the acceptance criteria
 /// (AC-335.4) plus the cycle-1 correctness F10 finding (AC-335.14).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -198,7 +198,7 @@ pub enum StaleReason {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum RefreshReason {
-    /// Manual entity link / relink / unlink (DOS-258 path).
+    /// Manual entity link / relink / unlink path.
     EntityRelinked,
     /// Upstream claim retraction / contradiction invalidated prep.
     UpstreamClaimChanged,

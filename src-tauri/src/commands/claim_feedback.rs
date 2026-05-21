@@ -3,14 +3,14 @@
     reason = "tauri::command macro emits internal Result glue that discards generated metadata"
 )]
 
-//! Tauri command wrapper for `services::claim_receipt::feedback::submit_claim_feedback` (DOS-8).
+//! Tauri command wrapper for `services::claim_receipt::feedback::submit_claim_feedback`.
 //!
 //! Composes the substrate-side primitives — envelope target binding, sensitivity gate
 //! (Agent → deny in v1.4.4), per-action metadata schema validation, ADR-0108 §3 sanitizer,
 //! server-issued idempotency key, typed feedback write — and returns the post-feedback
 //! receipt so the TS layer can drive a re-render in one round trip.
 //!
-//! ## DOS-477 cycle-2 envelope wiring (code-reviewer F3 + L3 cycle-1 codex F4)
+//! ## Cycle-2 envelope wiring (code-reviewer F3 + L3 cycle-1 codex F4)
 //!
 //! The command accepts an `envelope_render_id` AND an `actor_principal_id` from the
 //! caller. The TS hook threads `envelope_render_id` back from the previous

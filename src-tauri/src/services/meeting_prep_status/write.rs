@@ -1,4 +1,4 @@
-//! DOS-335: mutating writers for meeting prep status.
+//! Mutating writers for meeting prep status.
 //!
 //! All paths in this module are out of the ADR-0102 §3 Read-ability
 //! call graph. Callers are non-Read abilities (background workers,

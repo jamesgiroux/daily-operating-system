@@ -1,4 +1,4 @@
--- DOS-335 (v1.4.4 W1): Meeting prep status indexed view.
+-- Meeting prep status indexed view.
 --
 -- Materializes the join across `meetings` + `meeting_entities` +
 -- `meeting_prep` so `services::meeting_prep_status::read::compute_status`

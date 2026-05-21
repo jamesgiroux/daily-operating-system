@@ -64,7 +64,7 @@ pub enum SignalType {
     IntelligenceRejected,
     MeetingFrequency,
     MeetingFrequencyDrop,
-    /// DOS-335 (v1.4.4 W1): meeting prep status transitioned from one
+    /// Meeting prep status transitioned from one
     /// `PrepStatus` to another (e.g., Ready → Stale, Queued → Running,
     /// PrepNeeded → UserSuppressed). Emitted from
     /// `services::meeting_prep_status::write` after any successful
@@ -385,7 +385,7 @@ impl SignalType {
                 | Self::TrustBandDowngraded
                 | Self::TrustBandCleared
                 | Self::AbilityOutputChanged { .. }
-                // DOS-335 L3 cycle-2 (F1): MeetingPrepStatusChanged policy at
+                // L3 cycle-2 (F1): MeetingPrepStatusChanged policy at
                 // `meeting_prep_status_changed_policy()` declares a 500ms
                 // entity-keyed coalesce window. Without this branch the
                 // emit-path predicate excluded it, so rapid PrepNeeded →
@@ -859,7 +859,7 @@ fn read_model_materialized_policy() -> SignalPolicy {
     }
 }
 
-/// DOS-335 (v1.4.4 W1): MeetingPrepStatusChanged policy.
+/// MeetingPrepStatusChanged policy.
 ///
 /// Async coalesced propagation keyed on the meeting (entity) so
 /// rapid transitions (Queued → Running → Ready) within the 500ms

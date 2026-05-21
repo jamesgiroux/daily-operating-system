@@ -5,7 +5,7 @@
 
 //! Tauri command wrapper for `services::claim_receipt::render::render_receipt_for`.
 //!
-//! Threads `&AppState` into the shipped DOS-701 substrate per AC-339.1 so the
+//! Threads `&AppState` into the shipped claim receipt substrate per AC-339.1 so the
 //! `useClaimReceiptSubscription` TS hook can drive a re-render off the
 //! `claim_verification_state_changed` signal (and adjacent claim-lifecycle
 //! signals) without exposing the receipt rendering substrate to direct
@@ -19,7 +19,7 @@
 //!   verification-state transition driven by `record_claim_feedback`.
 //! * Coverage tests: `services::claims::tests` at `claims.rs:14472..=14486`.
 //!
-//! No new signal type is introduced here. The DOS-339 fan-out is wired by
+//! No new signal type is introduced here. The fan-out is wired by
 //! re-using the existing `ClaimVerificationStateChanged` signal as the
 //! subscription trigger plus a 250 ms trailing-edge debounce per
 //! `(target.claim_id, surface)` pair in the TS hook (per AC-339.6).

@@ -1,4 +1,4 @@
-//! DOS-335: pure-read path for meeting prep status.
+//! Pure-read path for meeting prep status.
 //!
 //! # ADR-0102 §3 Read-ability call-graph invariant
 //!
@@ -196,7 +196,7 @@ fn derive_status(
 
     // 4 + 5. Prep exists. For W1 we treat it as Ready; staleness
     //        derivation by upstream-claim-change folds in at W1 Stage
-    //        1c (DOS-507 caller). Writers in the sibling write module
+    //        1c caller. Writers in the sibling write module
     //        re-classify Ready into Stale when the signal substrate
     //        dispatches the invalidation event.
     (PrepStatus::Ready, None, None)

@@ -1,4 +1,4 @@
--- DOS-335 (v1.4.4 W1): Meeting prep status dismissals.
+-- Meeting prep status dismissals.
 --
 -- Persists user-driven UserSuppressed / UserDismissed transitions for
 -- meeting prep status. Distinct from claim-level dismissals

@@ -167,7 +167,7 @@ pub fn run() {
             // Create shared state
             let state = Arc::new(AppState::new());
             state.set_app_handle(app.handle().clone());
-            // DOS-339 cycle-2 fix: install the Tauri AppHandle into the
+            // Install the Tauri AppHandle into the
             // claim_receipt event-bridge so `ClaimVerificationStateChanged`
             // signals fan out to the `claim_receipt:invalidated` Tauri event
             // consumed by `useClaimReceiptSubscription`.
@@ -679,9 +679,9 @@ pub fn run() {
             operations::invoke_operation,
             // sensitivity reveal audit
             commands::reveal_sensitive_claim_text,
-            // claim receipt rendering (DOS-339 / DOS-701 substrate)
+            // claim receipt rendering
             commands::render_claim_receipt,
-            // semantic claim feedback (DOS-8)
+            // semantic claim feedback
             commands::submit_claim_feedback_command,
             // Core
             commands::get_surface_runtime_pairing_status,

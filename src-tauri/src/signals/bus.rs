@@ -1097,7 +1097,7 @@ mod tests {
 
     #[test]
     fn dos335_l3_meeting_prep_status_changed_coalesces_inside_window() {
-        // DOS-335 L3 cycle-2 (F1): MeetingPrepStatusChanged declares a 500ms
+        // L3 cycle-2 (F1): MeetingPrepStatusChanged declares a 500ms
         // entity-keyed coalesce in `meeting_prep_status_changed_policy()`.
         // Before the cycle-2 fix, `uses_emit_path_coalescing()` excluded it,
         // so the emit-path predicate returned None and every transition
@@ -1148,7 +1148,7 @@ mod tests {
 
     #[test]
     fn dos335_l3_meeting_prep_does_not_coalesce_with_claim_verification() {
-        // DOS-335 L3 cycle-2 (F1): cross-signal ordering contract.
+        // L3 cycle-2 (F1): cross-signal ordering contract.
         //
         // MeetingPrepStatusChanged is keyed on the meeting entity; a
         // simultaneous ClaimVerificationStateChanged emitted on a claim

@@ -1,4 +1,4 @@
--- DOS-335 cycle-2 fix (codex review P2): deterministic meeting prep status view.
+-- Deterministic meeting prep status view.
 --
 -- The v241 view emits one row per `(meeting, linked_entity)` join. When
 -- `meeting_entities` carries multiple links for the same meeting (e.g. a
