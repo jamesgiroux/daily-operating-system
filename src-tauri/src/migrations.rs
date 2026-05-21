@@ -927,6 +927,19 @@ const MIGRATIONS: &[Migration] = &[
         version: 240,
         sql: include_str!("migrations/240_claim_review_deferrals.sql"),
     },
+    // v1.4.5 W1-A / DOS-463 — workspace file lifecycle + ownership model.
+    // Cycle 11 renumber: was v200/v201 in pre-2026-05-20 wave plan; live-dev
+    // ceiling at v240 forced the shift above it (DBs at v240 would silently
+    // skip lower versions per the `version > current` runner filter at
+    // `run_migrations_with_key`).
+    Migration::Sql {
+        version: 250,
+        sql: include_str!("migrations/250_workspace_file_lifecycle.sql"),
+    },
+    Migration::Sql {
+        version: 251,
+        sql: include_str!("migrations/251_workspace_file_lifecycle_category.sql"),
+    },
 ];
 
 const V155_SHADOW_TRUST_VERSION: i64 = 1_401_003;
