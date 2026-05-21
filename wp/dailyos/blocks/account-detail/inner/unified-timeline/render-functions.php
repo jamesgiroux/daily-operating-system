@@ -31,7 +31,7 @@ if ( ! function_exists( 'dailyos_resolve_envelope' ) ) {
 	require_once dirname( __DIR__, 3 ) . '/_shared/envelope/envelope-resolver.php';
 }
 
-if ( ! function_exists( 'dailyos_unified_timeline_render' ) ) {
+if ( ! function_exists( 'dailyos_account_detail_unified_timeline_render' ) ) {
 	/**
 	 * Render the unified-timeline inner block.
 	 *
@@ -40,7 +40,7 @@ if ( ! function_exists( 'dailyos_unified_timeline_render' ) ) {
 	 * @param \WP_Block|null       $block      Parsed block carrying usesContext.
 	 * @return string
 	 */
-	function dailyos_unified_timeline_render( array $attributes, string $content = '', $block = null ): string {
+	function dailyos_account_detail_unified_timeline_render( array $attributes, string $content = '', $block = null ): string {
 		unset( $attributes, $content );
 
 		$handle    = null;
@@ -96,14 +96,14 @@ if ( ! function_exists( 'dailyos_unified_timeline_render' ) ) {
 		// dailyos_envelope_consume_claim helper invokes claim_receipt via the
 		// runtime client with the resolved scope set; AgentMcp audience filter
 		// is applied inside the producer (DOS-341 boundary).
-		$projected_claim_refs = dailyos_unified_timeline_select_claim_refs( $envelope );
+		$projected_claim_refs = dailyos_account_detail_unified_timeline_select_claim_refs( $envelope );
 		$rows = '';
 		foreach ( $projected_claim_refs as $claim_ref ) {
 			$receipt = dailyos_envelope_consume_claim( $claim_ref, $scope_set );
 			if ( null === $receipt ) {
 				continue;
 			}
-			$rows .= dailyos_unified_timeline_render_row( $claim_ref, $receipt );
+			$rows .= dailyos_account_detail_unified_timeline_render_row( $claim_ref, $receipt );
 		}
 		$out .= '' !== $rows
 			? $rows
@@ -116,7 +116,7 @@ if ( ! function_exists( 'dailyos_unified_timeline_render' ) ) {
 }
 
 
-if ( ! function_exists( 'dailyos_unified_timeline_select_claim_refs' ) ) {
+if ( ! function_exists( 'dailyos_account_detail_unified_timeline_select_claim_refs' ) ) {
 	/**
 	 * Select claim references from the envelope for the unified-timeline projection.
 	 * Pure projection — does not invoke any abilities; receipts fan out in
@@ -127,7 +127,7 @@ if ( ! function_exists( 'dailyos_unified_timeline_select_claim_refs' ) ) {
 	 * @param array<string,mixed>|null $envelope Envelope payload.
 	 * @return array<int,array<string,mixed>>
 	 */
-	function dailyos_unified_timeline_select_claim_refs( ?array $envelope ): array {
+	function dailyos_account_detail_unified_timeline_select_claim_refs( ?array $envelope ): array {
 		if ( null === $envelope ) {
 			return [];
 		}
@@ -165,7 +165,7 @@ if ( ! function_exists( 'dailyos_unified_timeline_select_claim_refs' ) ) {
 	}
 }
 
-if ( ! function_exists( 'dailyos_unified_timeline_render_row' ) ) {
+if ( ! function_exists( 'dailyos_account_detail_unified_timeline_render_row' ) ) {
 	/**
 	 * Render a single claim row inside the unified-timeline projection.
 	 * Receipt was already resolved server-side through claim_receipt; this
@@ -175,7 +175,7 @@ if ( ! function_exists( 'dailyos_unified_timeline_render_row' ) ) {
 	 * @param array<string,mixed> $receipt   Receipt payload returned by claim_receipt.
 	 * @return string
 	 */
-	function dailyos_unified_timeline_render_row( array $claim_ref, array $receipt ): string {
+	function dailyos_account_detail_unified_timeline_render_row( array $claim_ref, array $receipt ): string {
 		$claim_id = isset( $claim_ref['claim_id'] ) ? (string) $claim_ref['claim_id'] : '';
 		$trust_band = isset( $receipt['trustBand'] ) ? (string) $receipt['trustBand'] : ( isset( $receipt['trust_band'] ) ? (string) $receipt['trust_band'] : 'unscored' );
 		return '<div class="TimelineEntry_entry" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'

@@ -29,7 +29,7 @@ if ( ! function_exists( 'dailyos_resolve_envelope' ) ) {
 	require_once dirname( __DIR__, 3 ) . '/_shared/envelope/envelope-resolver.php';
 }
 
-if ( ! function_exists( 'dailyos_recommended_actions_render' ) ) {
+if ( ! function_exists( 'dailyos_project_detail_recommended_actions_render' ) ) {
 	/**
 	 * Render the recommended-actions inner block.
 	 *
@@ -38,7 +38,7 @@ if ( ! function_exists( 'dailyos_recommended_actions_render' ) ) {
 	 * @param \WP_Block|null       $block      Parsed block carrying usesContext.
 	 * @return string
 	 */
-	function dailyos_recommended_actions_render( array $attributes, string $content = '', $block = null ): string {
+	function dailyos_project_detail_recommended_actions_render( array $attributes, string $content = '', $block = null ): string {
 		unset( $attributes, $content );
 
 		$handle    = null;

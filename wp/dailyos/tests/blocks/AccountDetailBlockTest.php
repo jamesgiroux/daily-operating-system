@@ -187,6 +187,28 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 		}
 	}
 
+	/**
+	 * Block-name collision guard: the 4 feed-shape inner blocks that share
+	 * a slug with person-detail's top-level (de-facto person-detail-inner)
+	 * blocks MUST be surface-prefixed. register_block_type is first-wins,
+	 * so without the prefix the top-level wins, the account-detail inner
+	 * block silently fails to register, and the rendered surface emits
+	 * the wrong empty-state reason (`no_envelope` from the person-detail
+	 * renderer that calls a person-detail-specific envelope store).
+	 */
+	public function test_collision_slugs_are_surface_prefixed(): void {
+		$collision_slugs = [ 'recommended-actions', 'touchpoints-feed', 'open-loops-feed', 'unified-timeline' ];
+		foreach ( $collision_slugs as $slug ) {
+			$json_path = __DIR__ . '/../../blocks/account-detail/inner/' . $slug . '/block.json';
+			$json      = json_decode( (string) file_get_contents( $json_path ), true );
+			$this->assertSame(
+				'dailyos/account-detail-' . $slug,
+				$json['name'],
+				$slug . ' must carry the account-detail- surface prefix to avoid 3-way name collision'
+			);
+		}
+	}
+
 	// ---- inner blocks: empty-state pattern ------------------------------
 
 	/**
@@ -194,14 +216,19 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 	 * touchpoints-feed, open-loops-feed, unified-timeline) render the
 	 * dailyos-empty-chip with a data-empty-reason when the envelope is
 	 * absent — V1.1 §10 invariant "never silent-hidden".
+	 *
+	 * The 4 feed-shape blocks are surface-prefixed (dailyos/account-detail-*)
+	 * to avoid the 3-way name collision with person-detail's top-level
+	 * blocks of the same short slug, which would otherwise first-win at
+	 * register_block_type and starve the inner block of context.
 	 */
 	public function test_complex_inner_blocks_render_empty_chip_on_absent_envelope(): void {
 		$cases = [
 			'stakeholder-grid'    => 'dailyos_stakeholder_grid_render',
-			'recommended-actions' => 'dailyos_recommended_actions_render',
-			'touchpoints-feed'    => 'dailyos_touchpoints_feed_render',
-			'open-loops-feed'     => 'dailyos_open_loops_feed_render',
-			'unified-timeline'    => 'dailyos_unified_timeline_render',
+			'recommended-actions' => 'dailyos_account_detail_recommended_actions_render',
+			'touchpoints-feed'    => 'dailyos_account_detail_touchpoints_feed_render',
+			'open-loops-feed'     => 'dailyos_account_detail_open_loops_feed_render',
+			'unified-timeline'    => 'dailyos_account_detail_unified_timeline_render',
 		];
 		foreach ( $cases as $slug => $fn ) {
 			include_once __DIR__ . '/../../blocks/account-detail/inner/' . $slug . '/render-functions.php';

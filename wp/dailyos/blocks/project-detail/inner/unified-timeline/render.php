@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	return '';
 }
 
-if ( ! function_exists( 'dailyos_unified_timeline_render' ) ) {
+if ( ! function_exists( 'dailyos_project_detail_unified_timeline_render' ) ) {
 	require_once __DIR__ . '/render-functions.php';
 }
 
@@ -26,4 +26,4 @@ $attributes = isset( $attributes ) && is_array( $attributes ) ? $attributes : []
 $content    = isset( $content ) && is_string( $content ) ? $content : '';
 $block      = isset( $block ) && is_object( $block ) ? $block : null;
 // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- render functions escape output internally.
-echo dailyos_unified_timeline_render( $attributes, $content, $block );
+echo dailyos_project_detail_unified_timeline_render( $attributes, $content, $block );

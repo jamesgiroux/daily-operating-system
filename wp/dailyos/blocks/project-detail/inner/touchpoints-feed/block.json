@@ -1,7 +1,7 @@
 {
 	"$schema": "https://schemas.wp.org/trunk/block.json",
 	"apiVersion": 3,
-	"name": "dailyos/touchpoints-feed",
+	"name": "dailyos/project-detail-touchpoints-feed",
 	"title": "Touchpoints Feed",
 	"category": "dailyos",
 	"description": "Touchpoints feed (per-touchpoint trust band). AgentMcp audience downshifts to aggregate-only render. Inserter-global per ADR-0129 §2 (no parent); default composition lives in the project-detail-default filesystem pattern.",

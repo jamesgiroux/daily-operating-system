@@ -1,7 +1,7 @@
 {
 	"$schema": "https://schemas.wp.org/trunk/block.json",
 	"apiVersion": 3,
-	"name": "dailyos/unified-timeline",
+	"name": "dailyos/project-detail-unified-timeline",
 	"title": "Unified Timeline",
 	"category": "dailyos",
 	"description": "Paginated Record entries composed with MetadataProposals lifecycle. Per-entry trust band. Inserter-global per ADR-0129 §2 (no parent); default composition lives in the project-detail-default filesystem pattern.",
