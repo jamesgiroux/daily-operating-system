@@ -6,7 +6,7 @@
 // Per L0 packet §5.1 and locked decisions in §13 (server-signed cursor pagination,
 // per-fact `ProvenanceRef`, typed empty reasons, 1-outer-N-inner block model).
 
-export type EntityKind = "account" | "project" | "person";
+export type EntityKind = "account" | "project" | "person" | "meeting";
 
 export type ContextDepth = "shallow" | "standard" | "deep";
 

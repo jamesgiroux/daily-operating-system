@@ -121,7 +121,19 @@ pub async fn build_entity_intelligence(
     // ---- sections without producers yet — typed empties --------------------
     let metadata_proposals = empty_paginated_metadata_proposals();
     let threads = Paginated::<ThreadSummary>::empty_stable();
-    let health_story: Option<HealthStory> = None;
+
+    // ---- compose: health (Meeting subject only, via DOS-335 prep status) ---
+    // W2 F2 (cycle-1 codex challenge): Meeting Detail's prep-status inner block
+    // reads from `services::meeting_prep_status::read::compute_status`. We surface
+    // it as the envelope's Health section so the Meeting Detail block can render
+    // PrepStatus/blocking_reason/stale_reason without a second invocation.
+    let health_story: Option<HealthStory> = if active_sections.contains(&EnvelopeSection::Health)
+        && matches!(input.entity_type, EntityKind::Meeting)
+    {
+        compose_meeting_health(ctx, entity_id, &mut envelope_provenance).await
+    } else {
+        None
+    };
 
     // ---- sections map enumerates ALL EnvelopeSection variants (AC-459.2) ---
     let sections_map = build_sections_map(
@@ -192,6 +204,7 @@ fn subject_ref_for(entity_type: EntityKind, entity_id: &str) -> SubjectRef {
         EntityKind::Account => SubjectRef::Account(entity_id.to_string()),
         EntityKind::Project => SubjectRef::Project(entity_id.to_string()),
         EntityKind::Person => SubjectRef::Person(entity_id.to_string()),
+        EntityKind::Meeting => SubjectRef::Meeting(entity_id.to_string()),
     }
 }
 
@@ -715,6 +728,90 @@ fn read_failed_touchpoints_bundle(
     }
 }
 
+// ---- meeting health (W2 F2 — DOS-335 prep status) ------------------------
+
+/// Compose `HealthStory` for a Meeting subject from the DOS-335 prep status
+/// snapshot. Returns `None` when no reader is attached or the meeting is not
+/// found — the envelope renders Health as `Empty { NotProcessedYet }` in that
+/// case (see `build_sections_map`).
+///
+/// W2 F2 wiring: the Meeting Detail composite block invokes
+/// `get_entity_intelligence(entity_type=meeting)` and consumes
+/// `envelope.health_story` directly. Status / blocking_reason / stale_reason
+/// are stringly-typed projections of DOS-335 `PrepStatus` per the read handle
+/// contract (`MeetingPrepStatusSnapshot`).
+async fn compose_meeting_health(
+    ctx: &AbilityContext<'_>,
+    meeting_id: &str,
+    provenance: &mut EnvelopeProvenance,
+) -> Option<HealthStory> {
+    let snapshot = match ctx
+        .services()
+        .read_meeting_prep_status(meeting_id.to_string())
+        .await
+    {
+        Ok(snap) => snap,
+        Err(_) => return None,
+    };
+    Some(project_meeting_health(&snapshot, meeting_id, provenance))
+}
+
+/// Pure projection: `MeetingPrepStatusSnapshot` → `HealthStory`. Exposed to
+/// tests so the row composition + provenance index upsert can be exercised
+/// without spinning a full `AbilityContext`.
+fn project_meeting_health(
+    snapshot: &crate::services::context::MeetingPrepStatusSnapshot,
+    meeting_id: &str,
+    provenance: &mut EnvelopeProvenance,
+) -> HealthStory {
+    let source_id = upsert_static_provenance_source(
+        provenance,
+        EnvelopeProvenanceSource {
+            id: format!("meeting_prep:{meeting_id}"),
+            label: "Meeting prep status".to_string(),
+            source_type: Some("meeting_prep_status".to_string()),
+            as_of: parse_optional_timestamp(snapshot.last_prepared_at.as_deref()),
+            redacted: false,
+        },
+    );
+    let prov = ProvenanceRef::from_ids([source_id]);
+
+    let mut rows = Vec::new();
+    rows.push(super::contracts::HealthStoryRow {
+        label: "Prep status".to_string(),
+        body: snapshot.status.clone(),
+        evidence_claim_ids: Vec::new(),
+        provenance: prov.clone(),
+    });
+    if let Some(reason) = snapshot.blocking_reason.as_deref() {
+        rows.push(super::contracts::HealthStoryRow {
+            label: "Blocking reason".to_string(),
+            body: reason.to_string(),
+            evidence_claim_ids: Vec::new(),
+            provenance: prov.clone(),
+        });
+    }
+    if let Some(reason) = snapshot.stale_reason.as_deref() {
+        rows.push(super::contracts::HealthStoryRow {
+            label: "Stale reason".to_string(),
+            body: reason.to_string(),
+            evidence_claim_ids: Vec::new(),
+            provenance: prov.clone(),
+        });
+    }
+    if let Some(prepared) = snapshot.last_prepared_at.as_deref() {
+        rows.push(super::contracts::HealthStoryRow {
+            label: "Last prepared".to_string(),
+            body: prepared.to_string(),
+            evidence_claim_ids: Vec::new(),
+            provenance: prov.clone(),
+        });
+    }
+
+    let headline = Some(format!("Meeting prep: {}", snapshot.status));
+    HealthStory { headline, rows }
+}
+
 fn count_touchpoints(touchpoints: &Paginated<TouchpointBundle>) -> u64 {
     touchpoints
         .items
@@ -1163,6 +1260,28 @@ mod tests {
         assert_eq!(EntityKind::Account.as_lower_str(), "account");
         assert_eq!(EntityKind::Project.as_lower_str(), "project");
         assert_eq!(EntityKind::Person.as_lower_str(), "person");
+        // W2 F2 (cycle-1 codex challenge) — Meeting subject variant.
+        assert_eq!(EntityKind::Meeting.as_lower_str(), "meeting");
+    }
+
+    #[test]
+    fn meeting_subject_ref_round_trip() {
+        // W2 F2 — Meeting EntityKind must materialize as `SubjectRef::Meeting`
+        // so the per-fact provenance + envelope subject all carry the meeting
+        // discriminator consistently with the touchpoint reader output.
+        let sr = subject_ref_for(EntityKind::Meeting, "m-42");
+        assert_eq!(sr, SubjectRef::Meeting("m-42".to_string()));
+    }
+
+    #[test]
+    fn entity_kind_meeting_serializes_snake_case() {
+        // The TS mirror at `src/services/entity-intelligence/contracts.ts`
+        // expects `"meeting"` for the Meeting variant. Confirm the serde
+        // rename keeps the wire shape stable.
+        let json = serde_json::to_string(&EntityKind::Meeting).expect("serializes");
+        assert_eq!(json, "\"meeting\"");
+        let parsed: EntityKind = serde_json::from_str("\"meeting\"").expect("round trips");
+        assert!(matches!(parsed, EntityKind::Meeting));
     }
 
     // ---- DOS-460 — touchpoint projection + subject-isolation tests --------
@@ -1575,5 +1694,193 @@ mod tests {
         let bundle = not_requested_touchpoints_bundle(&SubjectRef::Account("a".to_string()));
         let inner = &bundle.items[0];
         assert_eq!(inner.empty_reason, Some(EmptyReason::NotRequested));
+    }
+
+    // ---- W2 F2 — Meeting health projection (DOS-335 prep status) ----------
+
+    fn meeting_prep_snapshot_ready(meeting_id: &str) -> crate::services::context::MeetingPrepStatusSnapshot {
+        crate::services::context::MeetingPrepStatusSnapshot {
+            meeting_id: meeting_id.to_string(),
+            event_id: None,
+            linked_entity_type: Some("account".to_string()),
+            linked_entity_id: Some("acc-1".to_string()),
+            status: "ready".to_string(),
+            blocking_reason: None,
+            stale_reason: None,
+            last_prepared_at: Some("2026-05-21T08:00:00Z".to_string()),
+            source_asof_inputs: Vec::new(),
+        }
+    }
+
+    fn meeting_prep_snapshot_blocked(meeting_id: &str) -> crate::services::context::MeetingPrepStatusSnapshot {
+        crate::services::context::MeetingPrepStatusSnapshot {
+            meeting_id: meeting_id.to_string(),
+            event_id: None,
+            linked_entity_type: None,
+            linked_entity_id: None,
+            status: "blocked_no_entity".to_string(),
+            blocking_reason: Some("no_linked_entity".to_string()),
+            stale_reason: None,
+            last_prepared_at: None,
+            source_asof_inputs: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn meeting_health_projection_ready_emits_status_and_last_prepared_rows() {
+        // W2 F2 — Ready prep status surfaces "Prep status" + "Last prepared"
+        // rows, no blocking/stale reason rows. The headline mirrors the
+        // DOS-335 PrepStatus string discriminant so consumers can render a
+        // trust-band-tinted summary verbatim.
+        let snap = meeting_prep_snapshot_ready("m-1");
+        let mut prov = EnvelopeProvenance::empty();
+        let health = project_meeting_health(&snap, "m-1", &mut prov);
+        assert_eq!(health.headline.as_deref(), Some("Meeting prep: ready"));
+        let labels: Vec<&str> = health.rows.iter().map(|r| r.label.as_str()).collect();
+        assert_eq!(labels, vec!["Prep status", "Last prepared"]);
+        // Provenance index upserted once with the meeting_prep id.
+        assert_eq!(prov.sources.len(), 1);
+        assert_eq!(prov.sources[0].id, "meeting_prep:m-1");
+        assert_eq!(prov.sources[0].source_type.as_deref(), Some("meeting_prep_status"));
+        assert!(!prov.sources[0].redacted);
+    }
+
+    #[test]
+    fn meeting_health_projection_blocked_no_entity_surfaces_blocking_reason() {
+        // W2 F2 — BlockedNoEntity status carries a blocking_reason row and
+        // omits last_prepared_at (the meeting was never prepared). The
+        // renderer consumes this row to surface "Link an account/project to
+        // unblock prep" affordance per DOS-335 §6.
+        let snap = meeting_prep_snapshot_blocked("m-blocked");
+        let mut prov = EnvelopeProvenance::empty();
+        let health = project_meeting_health(&snap, "m-blocked", &mut prov);
+        let labels: Vec<&str> = health.rows.iter().map(|r| r.label.as_str()).collect();
+        assert_eq!(labels, vec!["Prep status", "Blocking reason"]);
+        let bodies: Vec<&str> = health.rows.iter().map(|r| r.body.as_str()).collect();
+        assert!(bodies.contains(&"no_linked_entity"));
+        // No "Last prepared" row when last_prepared_at is None.
+        assert!(!labels.contains(&"Last prepared"));
+    }
+
+    #[test]
+    fn meeting_health_projection_stale_surfaces_stale_reason_row() {
+        // W2 F2 — Stale prep folds the stale_reason into the HealthStory so
+        // the Meeting Detail surface can name *why* prep is stale (upstream
+        // claim invalidation per DOS-335 W1 Stage 1c).
+        let snap = crate::services::context::MeetingPrepStatusSnapshot {
+            meeting_id: "m-stale".to_string(),
+            event_id: None,
+            linked_entity_type: Some("account".to_string()),
+            linked_entity_id: Some("acc-1".to_string()),
+            status: "stale".to_string(),
+            blocking_reason: None,
+            stale_reason: Some("upstream_claim_changed".to_string()),
+            last_prepared_at: Some("2026-05-01T08:00:00Z".to_string()),
+            source_asof_inputs: Vec::new(),
+        };
+        let mut prov = EnvelopeProvenance::empty();
+        let health = project_meeting_health(&snap, "m-stale", &mut prov);
+        let labels: Vec<&str> = health.rows.iter().map(|r| r.label.as_str()).collect();
+        assert!(labels.contains(&"Stale reason"));
+        assert!(labels.contains(&"Last prepared"));
+    }
+
+    #[test]
+    fn meeting_health_projection_provenance_carries_last_prepared_as_of() {
+        // F2 audience-filter (cycle-2 §F2 pattern) — the meeting prep
+        // provenance source must carry `as_of` from `last_prepared_at` so
+        // freshness rendering at the consumer side can compute freshness
+        // without re-reading the snapshot.
+        let snap = meeting_prep_snapshot_ready("m-asof");
+        let mut prov = EnvelopeProvenance::empty();
+        let _ = project_meeting_health(&snap, "m-asof", &mut prov);
+        let source = prov
+            .sources
+            .iter()
+            .find(|s| s.id == "meeting_prep:m-asof")
+            .expect("prep source present");
+        assert!(source.as_of.is_some());
+    }
+
+    #[test]
+    fn meeting_subject_facts_render_through_audience_for_touchpoint_label() {
+        // W2 F2 — touchpoint provenance label routes through the same
+        // audience-aware scrub used for Account/Project/Person subjects.
+        // The Meeting subject re-uses the existing render_actor gate, so
+        // the AgentMcp surface sees redacted titles even when the subject
+        // is itself a meeting (no special-case bypass).
+        let now = chrono::Utc::now();
+        let snapshot = fake_snapshot(
+            "meeting",
+            "m-host",
+            vec![fake_touchpoint(
+                "m-related",
+                "meeting",
+                "m-host",
+                TouchpointInclusionReason::SubjectMatch,
+                now + chrono::Duration::days(1),
+            )],
+            vec![],
+            vec![],
+        );
+        let mut prov = EnvelopeProvenance::empty();
+        let agent_actor = RenderActor::agent("mcp_client");
+        let bundle = project_touchpoints_bundle(
+            &snapshot,
+            &SubjectRef::Meeting("m-host".to_string()),
+            &now,
+            &agent_actor,
+            &mut prov,
+        );
+        assert_eq!(bundle.upcoming.items.len(), 1);
+        let meeting_source = prov
+            .sources
+            .iter()
+            .find(|s| s.id == "meeting:m-related")
+            .expect("touchpoint meeting source present");
+        assert!(
+            meeting_source.redacted,
+            "agent audience must see touchpoint provenance redacted regardless of meeting subject"
+        );
+        assert_eq!(meeting_source.label, "Meeting (redacted)");
+    }
+
+    #[test]
+    fn meeting_subject_user_audience_preserves_touchpoint_title() {
+        // Symmetric — UserTauri audience for a Meeting subject sees the raw
+        // related-meeting title. The audience filter is end-to-end: the
+        // user surface gets full fidelity, the agent surface gets the
+        // redacted placeholder, in both cases the envelope still carries the
+        // touchpoint shape (no information shape leak).
+        let now = chrono::Utc::now();
+        let snapshot = fake_snapshot(
+            "meeting",
+            "m-host",
+            vec![fake_touchpoint(
+                "m-related",
+                "meeting",
+                "m-host",
+                TouchpointInclusionReason::SubjectMatch,
+                now + chrono::Duration::days(1),
+            )],
+            vec![],
+            vec![],
+        );
+        let mut prov = EnvelopeProvenance::empty();
+        let user_actor = RenderActor::user("user", Some("user-1".to_string()));
+        let _ = project_touchpoints_bundle(
+            &snapshot,
+            &SubjectRef::Meeting("m-host".to_string()),
+            &now,
+            &user_actor,
+            &mut prov,
+        );
+        let meeting_source = prov
+            .sources
+            .iter()
+            .find(|s| s.id == "meeting:m-related")
+            .expect("touchpoint meeting source present");
+        assert!(!meeting_source.redacted);
+        assert_eq!(meeting_source.label, "Meeting m-related");
     }
 }

@@ -31,6 +31,12 @@ pub enum EntityKind {
     Account,
     Project,
     Person,
+    /// W2 F2 (cycle-1 codex challenge) — Meeting Detail surface invokes
+    /// `get_entity_intelligence` with `entity_type=meeting`. Substrate carries
+    /// the Meeting subject alongside Account/Project/Person; the producer
+    /// composes meeting-shaped Facts (attendees, duration, status) and Health
+    /// (via `meeting_prep_status::read::compute_status`).
+    Meeting,
 }
 
 impl EntityKind {
@@ -40,6 +46,7 @@ impl EntityKind {
             EntityKind::Account => "account",
             EntityKind::Project => "project",
             EntityKind::Person => "person",
+            EntityKind::Meeting => "meeting",
         }
     }
 }
