@@ -1,0 +1,30 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "dailyos/evidence-drawer",
+	"title": "Evidence Drawer",
+	"category": "dailyos",
+	"description": "DailyOS evidence-drawer primitive (DOS-689) — claim-bearing drill-down with actor-filtered render projection (ADR-0108).",
+	"supports": {
+		"html": false,
+		"reusable": false,
+		"inserter": true
+	},
+	"attributes": {
+		"block_instance_id": {
+			"type": "string"
+		},
+		"label": {
+			"type": "string",
+			"default": ""
+		}
+	},
+	"usesContext": [
+		"dailyos/entityType",
+		"dailyos/entityId",
+		"dailyos/envelopeHandle"
+	],
+	"render": "file:./render.php",
+	"style": "file:./style.css",
+	"viewScript": "file:./view.js"
+}

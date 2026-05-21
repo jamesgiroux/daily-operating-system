@@ -47,3 +47,9 @@
 	--dailyos-trust-band-color: var(--wp--preset--color--trust-needs-verification);
 	--dailyos-trust-band-border: var(--wp--preset--color--trust-needs-verification-12);
 }
+
+/* DOS-692 a11y: keyboard-focus state for the (newly focusable) trust-band-badge. */
+.dailyos-trust-band-badge:focus-visible {
+	outline: 2px solid var(--wp--preset--color--focus-ring, currentColor);
+	outline-offset: 2px;
+}
