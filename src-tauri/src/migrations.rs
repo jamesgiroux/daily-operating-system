@@ -927,7 +927,7 @@ const MIGRATIONS: &[Migration] = &[
         version: 240,
         sql: include_str!("migrations/240_claim_review_deferrals.sql"),
     },
-    // DOS-335 (v1.4.4 W1): indexed view + dismissals table for the
+    // Indexed view + dismissals table for the
     // meeting prep status read service. See
     // `services/meeting_prep_status/` and L0 packet §5.5.
     Migration::Sql {
@@ -938,7 +938,7 @@ const MIGRATIONS: &[Migration] = &[
         version: 242,
         sql: include_str!("migrations/242_meeting_prep_status_dismissals.sql"),
     },
-    // DOS-335 cycle-2 fix (codex review P2): rebuild
+    // Rebuild
     // `meeting_prep_status_view` so `meeting_entities` rows are
     // deterministically aggregated to one entity per meeting. v241's
     // unaggregated LEFT JOIN produced non-deterministic LIMIT 1 reads in
@@ -947,7 +947,7 @@ const MIGRATIONS: &[Migration] = &[
         version: 243,
         sql: include_str!("migrations/243_meeting_prep_status_indexed_view_deterministic.sql"),
     },
-    // DOS-335 L3 cycle-2 (F3): atomic view recreation. v243's DROP/CREATE
+    // L3 cycle-2 (F3): atomic view recreation. v243's DROP/CREATE
     // pair ran outside an explicit transaction; the migration runner's
     // `execute_batch` call at `migrations.rs:3573` did not implicitly
     // wrap the batch, so multi-process readers could observe the gap
@@ -959,7 +959,7 @@ const MIGRATIONS: &[Migration] = &[
         version: 244,
         sql: include_str!("migrations/244_meeting_prep_status_view_transactional.sql"),
     },
-    // ADR-0123 V1.1 (v1.4.4 W2 §5.3 / DOS-484): widen
+    // ADR-0123 V1.1 (v1.4.4 W2 §5.3): widen
     // `claim_feedback.feedback_type` CHECK to include the 10th typed
     // variant, `merge_intent`. See migration body for the rebuild
     // strategy.
@@ -6293,7 +6293,7 @@ mod tests {
         );
     }
 
-    /// DOS-335 L3 cycle-2 (F3): v244 atomically rebuilds the meeting prep
+    /// L3 cycle-2 (F3): v244 atomically rebuilds the meeting prep
     /// status view so multi-process readers don't see a missing view between
     /// the DROP and CREATE. Applied to a fresh DB, the view must exist and
     /// be queryable; the schema version must advance to v244 or later.

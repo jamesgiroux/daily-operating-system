@@ -5400,7 +5400,7 @@ fn lifecycle_update_for_feedback(
         | FeedbackAction::SurfaceInappropriate
         | FeedbackAction::NotRelevantHere
         // MergeIntent does not change source-claim lifecycle. The merge
-        // execution flow (DOS-484) is a separate service that runs the
+        // execution flow is a separate service that runs the
         // subject rebind after the user reviews the proposal.
         | FeedbackAction::MergeIntent => LifecycleUpdate::from_claim(claim),
     }
@@ -8773,7 +8773,7 @@ fn emit_claim_feedback_signals(
             );
         }
 
-        // DOS-339 cycle-2 fix (codex review P1): bridge the signal to the
+        // Bridge the signal to the
         // `claim_receipt:invalidated` Tauri event so `useClaimReceiptSubscription`
         // can re-fetch its receipt projection. Best-effort: the bridge is a
         // no-op in test / headless contexts.

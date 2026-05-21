@@ -1,6 +1,6 @@
-//! Receipt vs operational audit boundary (DOS-340).
+//! Receipt vs operational audit boundary.
 //!
-//! Fills the DOS-701 placeholder. Classifies fields that may travel out to a
+//! Fills the claim receipt placeholder. Classifies fields that may travel out to a
 //! user-facing [`ClaimReceipt`] versus fields that belong only inside the
 //! operational audit trail (a tamper-evident internal security trace).
 //!
@@ -38,7 +38,7 @@
 //!   Fields explicitly in [`AUDIT_ONLY_DENYLIST`] are dropped (returns
 //!   [`None`]); fields in neither list trigger **fail-loud panic** per
 //!   Rule 11 — new audit columns MUST be classified explicitly.
-//! * Feedback loop: a leak observed in production routes through DOS-8
+//! * Feedback loop: a leak observed in production routes through semantic feedback
 //!   `WrongSource` / `SourceUnreliable` signals against the receipt's
 //!   source — the boundary is itself a trust contract.
 

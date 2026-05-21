@@ -42,7 +42,7 @@ pub fn audience_for_surface(surface: SurfaceContext) -> Audience {
 
 /// Render the receipt projection for a target on a given surface.
 ///
-/// **DOS-341 wiring (cycle-2 fix):** dispatches through
+/// **Cycle-2 wiring:** dispatches through
 /// [`build_receipt_for_audience`] with an [`Audience`] derived from the
 /// supplied `surface`. This is the production path that ensures the audience
 /// allowlist (USER_TAURI_ALLOWED_FIELDS / AGENT_MCP_ALLOWED_FIELDS) governs

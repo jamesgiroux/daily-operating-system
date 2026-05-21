@@ -1,4 +1,4 @@
-//! DOS-339 cycle-2 fix: signal → Tauri-event bridge for claim receipts.
+//! Signal → Tauri-event bridge for claim receipts.
 //!
 //! The Rust signal substrate (`signals::policy_registry::SignalType::ClaimVerificationStateChanged`)
 //! fires whenever `services::claims::record_claim_feedback` mutates verification

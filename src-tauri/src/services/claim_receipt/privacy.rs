@@ -1,6 +1,6 @@
 //! Audience-aware claim receipt builder — allowlist-primary construction.
 //!
-//! Fills DOS-701 placeholder per W1 §5.9 (DOS-341) and CSO cycle-1 Findings 10/11/12 +
+//! Fills the claim receipt placeholder per W1 §5.9 and CSO cycle-1 Findings 10/11/12 +
 //! correctness cycle-1 F5. Composes ADR-0108 primitives — does NOT define a second
 //! redaction system.
 //!

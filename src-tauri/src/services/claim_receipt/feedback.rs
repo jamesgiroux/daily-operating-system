@@ -1,10 +1,10 @@
-//! Semantic claim feedback (DOS-8) — typed `claim_feedback` substrate wiring.
+//! Semantic claim feedback — typed `claim_feedback` substrate wiring.
 //!
-//! Fills the DOS-701 placeholder. The writer (`services::claims::record_claim_feedback`)
+//! Fills the placeholder. The writer (`services::claims::record_claim_feedback`)
 //! is already 9-variant aware per ADR-0123; this module is the caller-side
 //! receipt-shaped wrapper that:
 //!
-//! 1. Validates the mutation target against the envelope-set (DOS-477; AC-477.2 + AC-477.13).
+//! 1. Validates the mutation target against the envelope-set (AC-477.2 + AC-477.13).
 //! 2. Authorizes the actor + surface via the shipped sensitivity gate
 //!    (`claim_receipt::auth::can_surface_for`). `Actor::Agent` collapses to
 //!    deny at every surface in v1.4.4 (AC-8.13).
@@ -119,7 +119,7 @@ pub enum FeedbackError {
     /// AC-8.3 — sensitivity gate denied the actor/surface pair.
     #[error("forbidden: {0}")]
     SurfaceForbidden(String),
-    /// DOS-477 — target not in envelope-set.
+    /// Target not in envelope-set.
     #[error("target binding error: {0}")]
     TargetBinding(#[from] TargetBindingError),
     /// Claim not found (auth helper returns this).
@@ -242,7 +242,7 @@ pub async fn submit_claim_feedback(
         return Err(FeedbackError::CallerSuppliedIdempotencyKey);
     }
 
-    // Step 1: envelope target binding (DOS-477).
+    // Step 1: envelope target binding.
     validate_envelope_target(envelope_set, &request.target)?;
 
     // Receipt rendering is Claim-only in v1.4.4 W1; proposal/work-item targets
