@@ -310,7 +310,7 @@ pub struct WorkspaceIntakeRequest {
 pub struct EntityRefDto {
     pub entity_type_slug: String,   // bridge parses to EntityType via from_str_lossy
     pub entity_id: String,
-    pub entity_name: Option<String>, // display only; NOT a path segment
+    pub entity_name: Option<String>, // V1.4: IS a path segment per live registry.rs:448. Bridge MUST slug-validate via is_valid_slug_shape before construction; None or invalid → reject with InvalidEntityName (bridge error).
 }
 
 pub struct WorkspaceIntakeReceipt {
@@ -328,6 +328,7 @@ pub enum WorkspaceIntakeError {
     CategoryNotAllowed { allowed: Vec<String> },
     InvalidEntityTypeSlug(String),
     InvalidEntityId,
+    InvalidEntityName(String), // V1.4: entity_name is a path segment; must pass is_valid_slug_shape.
     EntityNotFound,
     FileNotFound,
     PathTraversalAttempt,
@@ -339,18 +340,9 @@ pub enum WorkspaceIntakeError {
     Io(String),
     DbError(String),
 }
-
-/// Mirror of IngestRequest but flattened for crate-boundary stability. The
-/// dailyos_lib impl converts WorkspaceIntakeRequest into IngestRequest using
-/// internal helpers (registry::open_validated, file_id_from_identity).
-pub struct WorkspaceIntakeRequest {
-    pub file_ref: String,              // workspace-relative path
-    pub source_type: WorkspaceFileKind,
-    pub entity: Option<EntityRefDto>,
-    pub mode: IngestionMode,
-    pub category_hint: Option<WorkspaceCategory>,
-}
 ```
+
+**V1.4 dedup (W2-A L1 kickoff, 2026-05-21):** A stale typed-DTO mirror of `WorkspaceIntakeRequest` (with `source_type: WorkspaceFileKind`, `mode: IngestionMode`, `category_hint: Option<WorkspaceCategory>`) was removed from this section. The canonical V1.3 raw-slug form at lines 302–308 is the only authority; the bridge in `workspace_intake_impl.rs` parses raw slugs to typed enums per §4 paragraph 1.
 
 `ServiceContext` gets a new accessor: `ctx.services().workspace_intake() -> &dyn WorkspaceIntakeService`. The dailyos_lib `Bootstrap` registers an `IngestPipelineWorkspaceIntake` impl during app startup.
 
