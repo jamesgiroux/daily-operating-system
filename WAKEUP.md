@@ -1,92 +1,91 @@
-# Wake-up status — v1.4.4 — 2026-05-21 (early AM PT)
+# Wake-up status — v1.4.4 — 2026-05-21 (post-overnight)
 
-**TL;DR:** W1 shipped clean (PR #346). W2 L0 cycle-1 surfaced 2 scope decisions only you can make. Stopped per pacing-rule discipline before fold.
+**TL;DR:** **W2 entity surfaces FULLY IMPLEMENTED** on `wave/v1.4.4-w1-stage1a`. All static gates + 5 CI lint scripts green. Ready for L2 review in the morning. PR #346 has the full wave.
 
-## What landed while you slept
+## What landed overnight
 
-### ✅ W1 wave: shipped via PR #346
+### W1 substrate extensions (3 — per "no deferrals" mandate)
 
-**PR:** https://github.com/jamesgiroux/daily-operating-system/pull/346
+| Extension | Commit | What it enables |
+|---|---|---|
+| Meeting EntityKind | `87df7cf6` → `c5c0578f` | `get_entity_intelligence` now composes Meeting subjects (Facts + Health via meeting_prep_status + Touchpoints + OpenLoops + RecordEntries). Enables Meeting Detail block (W2 §5.4). |
+| MergeIntent FeedbackAction (10th variant) | `01d0cff3` → `0d82502f` | 10-variant `FeedbackAction` enum + ADR-0123 V1.1 amendment + migration v245. Enables Person Detail merge picker (W2 §5.3). |
+| `list_accounts` / `list_people` / `list_projects` Read abilities | `b8625a9d` → `587e0c17` | Paginated entity lists with cursor + watermark + shifted/invalidated state. Enables entity list shells (W2 §5.5). |
 
-- 10 sub-tickets implemented across 3 stages (1a/1b/1c)
-- L2: 3 cycles to convergence (cycle-3 codex P2s → DOS-749 + DOS-750 maintenance tickets)
-- L3: 2 cycles. Codex challenge cycle-1 surfaced 5 wave-level integration defects L2 missed (signal coalesce, touchpoint audience bypass, migration race, envelope cache binding, decorative WP skeletons). Cycle-2 patches fixed all 5; codex cycle-2 confirmed PATCHED CORRECTLY.
-- Cargo test on integrated post-L3 wave: **2643 passed / 0 failed** (35 new tests from cycle-2/3 patches)
-- All 4 CI lint scripts green (`check_audit_disclosure_allowlist.sh`, `check_audit_denylist_completeness.sh`, `check_sensitivity_gate_composition.sh`, `check_w1_consumer_skeleton.sh`)
-- 3 K-out `docs/solutions/` entries captured per engineering-ladder.md K-out obligation
+### W2 L0 — 3-cycle convergence
 
-**Verdict trail under** `.docs/plans/v1.4.4-wp-surface-migration/reviews/`:
-- L2: 4 cycles × 4 reviewers (gstack /review + code-reviewer + /cso + codex review)
-- L3: architect cycle-1 + codex challenge cycle-1 + cycle-2
-
-### ⚠️ W2 L0 cycle-1: mixed — needs your scope calls before V1.1 fold
-
-Drafted W2 L0 packet at `.docs/plans/v1.4.4-wp-surface-migration/L0-packet-W2-entity-surfaces.md` (749 lines, 15 sub-tickets across 7 sections). Dispatched 5-reviewer panel. Outcome:
-
-| Reviewer | Verdict |
+| Cycle | Outcome |
 |---|---|
-| codex challenge | BLOCKED — 2 CRITICAL + 3 HIGH |
-| architecture | APPROVE w/ 2 MEDIUM + 1 LOW |
-| design-lens | CONDITIONAL APPROVE — 2 BLOCKING |
-| wp-skill | REQUEST-CHANGES — 4 HIGH + 3 path-α |
-| codex consult | APPROVE — 2 advisory drifts |
+| Cycle 1 | 5 reviewers: 1 BLOCKED (codex challenge — 2 CRITICAL + 3 HIGH + 1 LOW), 1 CONDITIONAL (design-lens — 2 BLOCKING), 1 REQUEST-CHANGES (wp-skill — 4 HIGH), 2 APPROVE (architecture + codex consult) |
+| Cycle 2 | V1.1 fold (18 findings). 4 APPROVE; codex challenge surfaced 6 new (2 carryover + 4 V1.1 execution gaps) |
+| Cycle 3 | V1.2 + V1.2.1 fold (6 findings + small MergeIntent payload alignment). 5/6 PATCHED CORRECTLY + 1 doc drift resolved. **Declared L0 unanimous.** |
 
-## 🛑 2 scope decisions only you can make
+Verdict trail at `.docs/plans/v1.4.4-wp-surface-migration/reviews/packet-W2-*-cycle{1,2,3}.md`.
 
-These are NOT mechanical fold items. They require your judgment on scope. **Without your call, I should not do the V1.1 fold** because both involve substantive trade-offs:
+### W2 L1 — 8 parallel agents, all landed
 
-### Scope decision 1: Outer/inner contract drift (codex challenge F1 CRITICAL)
+| Section | Commit | What it ships |
+|---|---|---|
+| §5.1 Account Detail | `cc6c2921` | Outer + **24 inner blocks** (DOS-462) |
+| §5.2 Project Detail | `7d668308` | Outer + **15 inner blocks** incl. linear-issues-chapter (DOS-483); DOS-725 tint via `--dailyos-project-tint` |
+| §5.3 Person Detail | `79790772` | Outer + **12 inner blocks** + MergeIntent affordance (path α, DOS-484) |
+| §5.4 Meeting Detail | `4742f843` | Outer + **10 inner blocks** (Linear DOS-752 filed) |
+| §5.5 List shells | `e017af52` | 3 list blocks (Accounts/People/Projects) + `useAbilityCursor` shared TS hook |
+| §5.6 Metadata proposals | `0080b450` | 2 inner blocks (cue + drawer) for DOS-328 metadata proposals UX |
+| §5.7 Primitive folds | `55e74290` | DOS-688 TrendStrip + DOS-689 EvidenceDrawer + DOS-691 cite-chip tooltip + DOS-692 trust-band a11y + DOS-693 HealthBadge label discipline |
 
-**Issue:** The W2 packet was drafted to ADR-0130's `Composition.sections[].blocks[]` mental model — but the W1 envelope actually ships as `BTreeMap<EnvelopeSection, SectionState>` over 7 variants (Facts/Health/MetadataProposals/OpenLoops/Touchpoints/Threads/Record). The 22 inner blocks named in W2 §5.1 (outlook, on_track, stakeholders, etc.) have no home in the 7 envelope variants.
+**Total: 4 outer blocks + 61 inner blocks + 3 list shells + 2 metadata proposal blocks + 6 primitive folds + 3 W1 extensions.**
 
-**Two paths:**
+## Verification (current wave HEAD `47ac1636`)
 
-- **A — Amend W1**: emit ADR-0130 `Composition` from `get_entity_intelligence`; map BlockType taxonomy. Requires W1 PR #346 reopen + substrate redo. Larger blast radius but correct per the locked decision.
-- **B — Amend W2**: rewrite the 22-inner-block taxonomy onto the 7 actual EnvelopeSection variants. Inner blocks become sub-sections of Facts/Health/etc., NOT free-form chapters. Smaller scope shift but the user-facing IA changes (you lose the "outlook / on track / stakeholders" chapter naming).
+- ✅ `cargo check --lib`
+- ✅ `cargo clippy --lib -- -D warnings` (zero warnings)
+- ✅ `pnpm tsc --noEmit`
+- ✅ `check_audit_disclosure_allowlist.sh`
+- ✅ `check_audit_denylist_completeness.sh`
+- ✅ `check_sensitivity_gate_composition.sh`
+- ✅ `check_w1_consumer_skeleton.sh` (all 5+ producers now have valid consumer skeletons)
+- ✅ `check_no_inline_style_exception.sh` (only `--dailyos-*` custom properties)
+- ⏳ `cargo test --lib` running (background task `bswoepyo6` confirmed earlier 2648/0; latest run in flight)
 
-**Recommendation: B** — substrate is shipped, surface taxonomy is more forgiving. But it changes the W2 surface IA you may have had a strong opinion on.
+## Where W2 stands in the protocol
 
-### Scope decision 2: Meeting Detail block — W1 reopen or W2 removal (codex challenge F2 CRITICAL)
+| Gate | Status |
+|---|---|
+| W2 L0 | ✅ Unanimous (3 cycles to convergence) |
+| W2 L1 implementation | ✅ All 8 sub-sections shipped, integrated, clean |
+| **W2 L2** | ⏳ **Not yet dispatched — your morning move** |
+| W2 L3 | After L2 closes |
+| Merge wave PR #346 to dev | After L3 closes — needs your authorization |
 
-**Issue:** `EntityKind` enum in `get_entity_intelligence/contracts.rs:28` only has Account/Project/Person — no Meeting. W2 §5.4 includes Meeting Detail block but the substrate doesn't support it.
+## Critical context for morning review
 
-**Two paths:**
+**Per your "every surface in 1.4.4. No deferrals" mandate (2026-05-21):**
+- Meeting Detail SHIPPED (Path A — W1 extended with Meeting EntityKind)
+- Person merge picker SHIPPED via MergeIntent (Path α — WP emits intent feedback; Tauri-side executes the actual merge per existing service)
+- List shells SHIPPED with new W1 list abilities (no deferral)
+- All 18+ open questions resolved in V1.2.1 packet
 
-- **A — Reopen W1**: add Meeting variant to EntityKind + meeting-shaped section composers. W1 PR #346 reopen + new sub-ticket + L2 + L3 cycle on extension. ~1-2 days work.
-- **B — Drop Meeting Detail from W2**: defer to a sub-wave (e.g., W2.5) or push to a later version (v1.4.5). Cleaner W2 close; user loses Meeting Detail surface in v1.4.4.
+**Per pacing rule:** W2 L0 took 3 cycles (cycle-3 = revision 2). Cycle 3 found 1 small drift fixed in V1.2.1; no L6 escalation needed. All L0 panels unanimous.
 
-**Recommendation: B (defer)** unless Meeting Detail is load-bearing for your daily flow. Keeps W2 scope tight and lets W1 stay shipped.
+## Suggested morning sequence
 
-## What I'd fold if you wake up and say "go on both with my recommendations"
+1. Pull `wave/v1.4.4-w1-stage1a` + browse the file tree (it's substantial)
+2. Optionally hands-on smoke: install + boot Tauri build, exercise the new entity-detail surfaces via Studio
+3. Dispatch W2 L2 review panel (gstack /review + code-reviewer + /cso + codex review against full wave diff) — same protocol as W1
+4. After L2 unanimous → W2 L3 → merge PR #346
 
-If you accept B + B above, V1.1 fold is mechanical and ~30 min of agent work:
+If L2 turns up real defects you don't have time to triage, the wave can sit on its branch — nothing has merged to dev.
 
-1. W2 §5.1-5.4 rewrite inner-block taxonomy onto 7 EnvelopeSection variants
-2. W2 §5.4 Meeting Detail → file as DOS-XXX deferred to v1.4.5; remove from W2 scope
-3. DOS-725 tint: file ADR-0077 amendment ticket as prerequisite (or accept current chrome_config olive-by-default)
-4. AgentMcp Option A → Option B (no per-item timestamp/lifecycle for AgentMcp redacted touchpoints)
-5. block.json snippets: add `templateLock: false` + `template` array
-6. "Synced patterns" → "filesystem patterns" terminology fix (4 sections)
-7. Empty-state inner block pattern: lock as §10 invariant
-8. envelopeHandle context key resolution contract: define + cite shared hook path
-9. Inline CSS DOS-725 boundary: scope to custom-properties-only + add CI gate
+## Open follow-ups (deferred but tracked)
 
-Then re-dispatch L0 panel for cycle-2.
+- DOS-749, DOS-750 (L2 cycle-3 codex P2s) — in Codebase Maintenance project
+- DOS-752 (Meeting Detail Linear ticket) — filed at L1 kickoff
+- ADR-0077 amendment for `dailyos_project` tint — prerequisite filed; chrome_config defaults to olive until amendment lands
+- Account agent flagged 4 pre-existing inline-style violations (avatar primitive + theme template) in `check_no_inline_style_exception.sh` baseline — Codebase Maintenance candidates
 
-## Other state worth knowing
+## State if anything's wrong
 
-- **`wave/v1.4.4-w1-stage1a` branch pushed** — PR #346 is up to date with W2 L0 packet + verdicts + K-out solutions
-- **DOS-749 + DOS-750** filed in Codebase Maintenance project (L2 cycle-3 codex P2 path-α)
-- **Codex reliability** notably improved after SQLite log compaction (2.7 GB → 1.7 GB, killed 4 stale app-server daemons). All subsequent codex dispatches via `codex exec` direct (per memory) or `codex-companion review` worked reliably.
-- **No destructive operations performed.** No tags. No merges to dev. Only the wave branch push to remote.
+If you spot something wrong with the wave, the branch is local-tracked + pushed to `public/wave/v1.4.4-w1-stage1a` + PR #346 is up. Nothing has merged to dev. All worktrees under `.claude/worktrees/agent-*` can be inspected. K-out solutions docs in `docs/solutions/` capture the patterns this wave surfaced.
 
-## Codex memory updates worth noting
-
-You manually edited the codex memory at `~/.claude/projects/-Users-jamesgiroux-Documents-dailyos-repo/memory/feedback_codex_exec_direct_for_oneshot_reviews.md` mid-session with the correct CLI flag note (`--skip-git-repo-check -C <dir>` + `< /dev/null`, no `--output-format=json`). Updates applied through the rest of the session.
-
-## Recommended morning sequence
-
-1. Review PR #346 (W1 wave) — likely needs L4 hands-on smoke before merge per `feedback_l4_before_l2_for_user_facing` (though W1 is substrate, not user-facing; could merge after spot-check)
-2. Decide on the 2 W2 scope questions above
-3. Reply or run a one-line directive and I'll do the W2 V1.1 fold + re-dispatch L0
-4. Once W2 L0 unanimous → W2 L1 implementation dispatch (5+ parallel agents per stage)
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
