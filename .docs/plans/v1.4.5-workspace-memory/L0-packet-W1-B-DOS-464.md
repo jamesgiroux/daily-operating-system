@@ -256,7 +256,7 @@ V1.1 fold #19: deferred. Unix-only at v1.4.5. Windows path returns `OutsideWorks
 
 ### Security suite (Suite S contributors; mandatory `/cso` re-review at L2)
 
-- `tests/workspace_registry_open_validated.rs` — all 15 fixtures in §7 (13 negative + 2 positive). Each negative asserts zero bytes read.
+- `tests/workspace_registry_open_validated.rs` — all 19 fixtures in §7 (15 negative + 4 positive per V1.3 fold #1). Each negative asserts zero bytes read.
 - `check_workspace_path_validation.sh` CI lint (initially vacuous; activates W2-A merge).
 - `tests/workspace_ingestion_no_substrate_reinvention.rs` — W1-A's CI grep gate (V1.1 fold #16: explicit dependency).
 
@@ -269,7 +269,9 @@ V1.1 fold #19: deferred. Unix-only at v1.4.5. Windows path returns `OutsideWorks
   - `register_other(Account, "WithUpper")` → `Err(MalformedSlug)` (regex rejects uppercase).
   - `register_other(Account, "with space")` → `Err(MalformedSlug)`.
   - `register_other(Account, "x".repeat(33))` → `Err(MalformedSlug)` (length limit).
-  - `register_other(Account, "CON")` → `Err(MalformedSlug)` (regex `^[a-z]...` accepts; but CON test is Unix-context; Windows reserved-name check is in path validation, not slug regex).
+  - `register_other(Account, "CON")` → `Err(MalformedSlug)` because regex `^[a-z][a-z0-9_-]{0,31}$` **rejects uppercase** (V1.3 fold #3 clarification).
+  - `register_other(Account, "con")` → `Ok(())` (lowercase passes the regex). The Windows-reserved-name semantic check is deferred to the Windows path validation follow-up ticket. Documented limitation: today, on Windows, a registry entry for slug `"con"` would resolve to a path like `Accounts/Acme/con/file.txt` that Windows treats as a reserved name. Per V1.1 fold #19, Windows is deferred.
+  - **V1.3 fold #2: `resolve_path(EntityType::Other, ...)` → `Err(ResolvePathError::EntityTypeNotRoutable)`** — `Other`-typed entities cannot bind workspace files in v1.4.5 (deferred to follow-up). Test name: `entity_type_other_returns_resolve_path_err`.
   - `resolve_path(Account, "Acme", Some(&Presentations), "q1.pdf", EntityDoc)` → `"Accounts/Acme/presentations/q1.pdf"`.
   - `resolve_path(Person, "Bob", Some(&Notes), "1on1.md", EntityDoc)` → `"People/Bob/notes/1on1.md"`.
   - `resolve_path(Project, "Apollo", None, "design.pdf", EntityDoc)` → `"Projects/Apollo/design.pdf"` (no category sub-dir).
@@ -282,7 +284,7 @@ V1.1 fold #19: deferred. Unix-only at v1.4.5. Windows path returns `OutsideWorks
 
 - Migration slot **v252** used; `workspace_source_registry` + `workspace_category_registry` tables exist; 7 source rows + 18 category rows pre-seeded.
 - `services/workspace_ingestion/registry.rs` substantively filled with the 4 APIs (`open_validated`, `validate`, `resolve_path`, `register_other`) + 2 error types (`CategoryNotAllowed`, `RegisterError`) + `SLUG_REGEX` constant.
-- All 15 §7 security fixtures pass with typed `RejectionReason` variants (Unix; Windows skipped).
+- All 19 §7 security fixtures pass with typed `RejectionReason` variants (Unix; Windows skipped). 15 negative + 4 positive per V1.3 fold #1.
 - All registry/category tests in §8 pass.
 - `tests/workspace_ingestion_no_substrate_reinvention.rs` (W1-A's CI gate) still passes — `registry.rs` defines no `pub struct/enum/trait` matching the canonical-primitives blocklist.
 - `data_source_json` serde round-trip green for all 7 variants.

@@ -98,7 +98,7 @@ Per Linear DOS-465 issue body acceptance criteria: "Rejected links are not silen
   - `StartRunSeed { file_id: String, mode: IngestionMode, content_sha256: String, file_size_bytes: u64, extractor_version: String, retry_of_run_id: Option<String> }` (V1.1 fold #1).
   - `IngestionRunStatus { InProgress, Success, Failed, Aborted }` enum.
   - `ExistingRunReceipt { run_id: IngestionRunId, completed_at: Option<DateTime<Utc>>, status: IngestionRunStatus, claim_count_produced: u64 }`.
-  - `RunsError { NotFound, AlreadyCompleted, ContentSha256Mismatch, DbError(String) }` enum + Display + Error.
+  - `RunsError { NotFound, AlreadyCompleted { existing: ExistingRunReceipt }, AlreadyInProgress { existing_run_id: IngestionRunId }, ContentSha256Mismatch, DbError(String) }` enum + Display + Error. (V1.3 fold #4: `AlreadyInProgress` variant for in-progress idempotency guard; `AlreadyCompleted` now carries the existing receipt envelope so callers can use it directly per V1.3 fold #6.)
   - `RunsRepo::start_run(seed: StartRunSeed) -> Result<IngestionRunId, RunsError>`.
   - `RunsRepo::complete_run(run_id: &IngestionRunId, status: IngestionRunStatus, claim_count: u64, error_log: Option<serde_json::Value>) -> Result<(), RunsError>`.
   - `RunsRepo::find_by_idempotency_key(file_id: &str, content_sha256: &str, mode: IngestionMode) -> Result<Option<ExistingRunReceipt>, RunsError>`.
@@ -240,7 +240,8 @@ CREATE INDEX IF NOT EXISTS idx_del_rejected_lookup
 - **V1.1 fold #3 / V1.2 fold #3 — `tombstone_prevents_classifier_resurrection`:** `add_link(file_id, EntityType::Account, "acme", Classifier, ...)` → `reject_link(file_id, EntityType::Account, "acme", actor, reason)` → `add_link(file_id, EntityType::Account, "acme", Classifier, ...)` again → asserts `Err(LinkError::Tombstoned)` (service guard blocks); the rejected row remains; `list_links_for_file(file_id, include_rejected=false)` returns empty.
 - **V1.2 fold #5 — `user_relink_after_tombstone_succeeds`:** same setup but the second `add_link` uses `attribution_source = UserRelink` → succeeds; a new active row is created (intentional user-driven resurrection per the AC carve-out).
 - **V1.2 fold #5 — `duplicate_active_classifier_attempt_is_noop`:** `add_link(...)` → second `add_link(...)` with identical triple → returns the existing `DocumentEntityLinkId` (no error); single active row in the table.
-- **V1.2 fold #5 — `idempotency_unique_constraint_enforces_no_duplicate_successful_run`:** `start_run + complete_run(success)` twice with same `(file_id, content_sha256, mode)` → second `complete_run` returns `RunsError::AlreadyCompleted` (or `DbError` from the UNIQUE constraint violation, depending on whether the service guard catches it first). Test asserts only one `status='success'` row exists.
+- **V1.3 fold #6 — `idempotency_unique_constraint_enforces_no_duplicate_successful_run`:** `start_run + complete_run(success)` twice with same `(file_id, content_sha256, mode)` → second call returns `Err(RunsError::AlreadyCompleted { existing: receipt })` from the service-layer guard (NOT generic `DbError`). Test asserts: returned error envelope carries the existing receipt; total `status='success'` rows in the table = exactly 1. Generic `DbError` is **not** an acceptable outcome — service guard must catch the case before the SQL UNIQUE fires.
+- **V1.3 fold #3 — `in_progress_idempotency_returns_already_in_progress`:** `start_run(seed)` → without calling `complete_run`, a second `start_run(seed)` with same `(file_id, content_sha256, mode)` returns `Err(RunsError::AlreadyInProgress { existing_run_id })` if the prior run is <1 hour old; if >1 hour old, the prior is marked `aborted` and the new run proceeds.
 - **Multi-entity links:** one `file_id` can have multiple `(entity_type, entity_id)` active rows without partial-unique violation.
 - **CI gates:** `cargo clippy --lib -- -D warnings` clean; `tests/workspace_ingestion_no_substrate_reinvention.rs` (W1-A) still passes.
 
@@ -263,7 +264,7 @@ CREATE INDEX IF NOT EXISTS idx_del_rejected_lookup
 1. **Claim model.** Per L0 question #10 (cycle 2): both tables are relational metadata, not claims. W1-C commits no claims.
 2. **Provenance + trust.** `document_ingestion_runs.content_sha256` provides tamper detection. `document_entity_links.{attribution_source, confidence, user_override_*}` are link-quality fields; downstream W3-A treats user-overridden + high-confidence links as trust-factor inputs.
 3. **Signals + invalidation.** `override_link` emits via `contracts::SignalEmitter::emit_link_changed`. W3-B real impl maps to `SignalType::WorkspaceFileEntityLinkChanged`. W1-C does NOT reference the SignalType variant directly (trait-DI pattern preserved per W1-A cycle 4-6 fix).
-4. **Runtime + surfaces.** `document_ingestion_runs` consumed by W5 backfill (idempotency), W4-A source-management block (history display), W3-C graph projection (run-status surface). `LinkRepo::override_link` consumed by W4-A (re-link action) and W2-C (entity-seeded intake first-link).
+4. **Runtime + surfaces.** `document_ingestion_runs` consumed by W5 backfill (idempotency), W4-A source-management block (history display), W3-C graph projection (run-status surface). `LinkRepo::add_link(... UserRelink)` consumed by W4-A re-link UI; `LinkRepo::add_link(... EntityIntake)` consumed by W2-C entity-seeded intake; `LinkRepo::override_link` consumed by W4-A endorse-UI (V1.3 fold #2: override is for existing-active endorsement only, NOT resurrection — resurrection goes through `add_link(UserRelink)`).
 5. **Feedback loop.** `override_link` populates `user_override_*` AND emits signal. `reject_link` writes `rejected = 1` AND partial unique + service guard prevent silent classifier resurrection (Linear DOS-465 AC; V1.1 fold #3 + #6).
 
 ## 10. Handoff notes
@@ -271,7 +272,11 @@ CREATE INDEX IF NOT EXISTS idx_del_rejected_lookup
 - **W2-A (DOS-466)** consumes `RunsRepo::{start_run, complete_run, find_by_idempotency_key}`. Idempotency check before each ingestion attempt.
 - **W3-A (DOS-470)** populates `extractor_version` + `claim_count_produced` after extraction.
 - **W3-B (DOS-471)** wires real `WorkspaceSignalEmitter::emit_link_changed`; the trait-method surface W1-C compiles against in `override_link` is unchanged.
-- **W4-A (DOS-472)** invokes `LinkRepo::override_link` from source-management block; consumes `RunsRepo::find_by_idempotency_key` for run-history display.
-- **W2-C (DOS-468)** invokes `LinkRepo::add_link` with `attribution_source = EntityIntake` from the entity-intake Gutenberg block.
+- **W4-A (DOS-472)** invokes:
+  - `LinkRepo::add_link(file_id, entity_type, entity_id, UserRelink, ..., actor)` for the re-link UI (resurrects rejected links; creates new active row if tombstone exists per V1.3 fold #2).
+  - `LinkRepo::override_link(emitter, file_id, entity_type, entity_id, actor)` for the "endorse this link" UI (marks an existing-AND-active link as user-confirmed; `LinkError::NotFound` if no active row).
+  - `LinkRepo::reject_link(file_id, entity_type, entity_id, actor, reason)` for the "this isn't right" UI.
+  - `RunsRepo::find_by_idempotency_key` for run-history display.
+- **W2-C (DOS-468)** invokes `LinkRepo::add_link(file_id, entity_type, entity_id, EntityIntake, ..., actor)` from the entity-intake Gutenberg block (passes the full triple per V1.2 fold #1 + V1.3 fold #7 signature sweep).
 
 No lane creates files in `services/workspace_ingestion/` beyond W1-A placeholders. No lane edits `mod.rs`. No lane reinvents canonical substrate primitives (W1-A CI grep gate enforces).
