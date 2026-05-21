@@ -187,24 +187,75 @@ final class DailyOS_Plugin {
 	}
 
 	/**
-	 * Register filesystem block patterns shipped under wp/dailyos/patterns/.
-	 * Per L0-packet-wave-plan V1.1 §10 invariant "Outer/inner block contract"
-	 * and wp-skill H4: composition defaults ship as theme-registered
-	 * filesystem patterns (insert-then-detach), NOT DB-stored synced
-	 * patterns. Each pattern file in wp/dailyos/patterns/ is included; the
-	 * include must call register_block_pattern() for its own slug.
+	 * Register filesystem block patterns shipped under wp/dailyos/patterns/
+	 * (W2 V1.2.1 §5.2 + wave §10 invariant "Filesystem pattern, not synced
+	 * pattern"; insert-then-detach semantics — user reordering does not
+	 * affect other instances).
 	 */
 	public function register_block_patterns(): void {
-		if ( ! function_exists( 'register_block_pattern' ) ) {
+		if ( ! function_exists( 'register_block_pattern_from_file' ) && ! function_exists( 'register_block_pattern' ) ) {
 			return;
 		}
+
 		$pattern_files = glob( DAILYOS_PLUGIN_DIR . 'patterns/*.php' );
-		if ( false === $pattern_files ) {
+		if ( false === $pattern_files || empty( $pattern_files ) ) {
 			return;
 		}
+
 		foreach ( $pattern_files as $pattern_file ) {
-			require_once $pattern_file;
+			$headers = function_exists( 'get_file_data' )
+				? get_file_data(
+					$pattern_file,
+					[
+						'title'       => 'Title',
+						'slug'        => 'Slug',
+						'description' => 'Description',
+						'categories'  => 'Categories',
+						'blockTypes'  => 'Block Types',
+						'inserter'    => 'Inserter',
+					]
+				)
+				: [];
+
+			$slug = isset( $headers['slug'] ) ? trim( (string) $headers['slug'] ) : '';
+			if ( '' === $slug ) {
+				continue;
+			}
+
+			$args = [
+				'title'       => isset( $headers['title'] ) ? (string) $headers['title'] : $slug,
+				'description' => isset( $headers['description'] ) ? (string) $headers['description'] : '',
+				'content'     => $this->load_pattern_content( $pattern_file ),
+			];
+
+			if ( ! empty( $headers['categories'] ) ) {
+				$args['categories'] = array_filter( array_map( 'trim', explode( ',', (string) $headers['categories'] ) ) );
+			}
+			if ( ! empty( $headers['blockTypes'] ) ) {
+				$args['blockTypes'] = array_filter( array_map( 'trim', explode( ',', (string) $headers['blockTypes'] ) ) );
+			}
+			if ( isset( $headers['inserter'] ) && 'no' === strtolower( trim( (string) $headers['inserter'] ) ) ) {
+				$args['inserter'] = false;
+			}
+
+			if ( function_exists( 'register_block_pattern' ) ) {
+				register_block_pattern( $slug, $args );
+			}
 		}
+	}
+
+	/**
+	 * Load the rendered pattern content (block markup after the closing
+	 * PHP tag in the pattern file).
+	 *
+	 * @param string $pattern_file Absolute filesystem path.
+	 * @return string Rendered pattern markup.
+	 */
+	private function load_pattern_content( string $pattern_file ): string {
+		ob_start();
+		include $pattern_file;
+		$rendered = ob_get_clean();
+		return is_string( $rendered ) ? trim( $rendered ) : '';
 	}
 
 	/**
