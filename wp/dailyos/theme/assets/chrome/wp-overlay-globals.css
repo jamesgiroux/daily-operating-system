@@ -50,3 +50,34 @@ body {
 	margin-left: calc(50% - 50vw);
 	margin-right: calc(50% - 50vw);
 }
+
+/* Empty-chip pattern — `dailyos_empty_chip()` (see
+   `wp/dailyos/blocks/_shared/envelope/envelope-resolver.php:241`) emits
+   `<div class="<WrapperClass> <WrapperClass>--empty"><span class="dailyos-empty-chip">...</span></div>`.
+   Some canonical wrapper classes use CSS grid (e.g. `.health_triageCard`
+   has 3 columns); the empty chip would otherwise be squeezed into a 3px
+   gutter and render one letter per line. These rules:
+
+   1. Force the wrapper to span all parent grid columns + revert to a
+      simple block layout so the chip text flows normally.
+   2. Style the chip itself as a quiet italic uppercase metadata label
+      per the editorial calm aesthetic — distinct from active content
+      but still legible.
+
+   Per V1.1 §10 invariant "empty-state pattern — every inner block renders
+   a quiet dailyos-empty-chip with data-empty-reason; no silent-hidden". */
+[class*="--empty"] {
+	display: block !important;
+	grid-column: 1 / -1 !important;
+	grid-template-columns: none !important;
+}
+
+.dailyos-empty-chip {
+	display: inline-block;
+	color: var(--color-text-tertiary);
+	font-family: var(--font-sans);
+	font-size: 13px;
+	font-style: italic;
+	line-height: 1.5;
+	padding: var(--space-xs, 8px) 0;
+}

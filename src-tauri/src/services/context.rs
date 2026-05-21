@@ -48,6 +48,15 @@ pub struct LiveEntityContextClaimReader;
 pub struct LivePrepareMeetingContextReader;
 pub struct LiveTemporalWorkspaceReader;
 pub struct LiveCompositionCommitter;
+/// Live adapter projecting `services::meeting_prep_status::read`
+/// into the abilities-runtime crate's narrow `MeetingPrepStatusReadHandle`.
+pub struct LiveMeetingPrepStatusReader;
+/// Live adapter projecting `services::claim_receipt::render::
+/// render_receipt_for` into the abilities-runtime crate's narrow
+/// `ClaimReceiptReadHandle`. Required for the WP block runtime client to
+/// invoke `claim_receipt` (the existing `render_claim_receipt` Tauri command
+/// remains as the React/Tauri invocation path).
+pub struct LiveClaimReceiptReader;
 
 pub fn attach_live_workspace_readers(ctx: ServiceContext<'_>) -> ServiceContext<'_> {
     ctx.with_entity_context_reader(Arc::new(LiveEntityContextReader))
@@ -56,6 +65,11 @@ pub fn attach_live_workspace_readers(ctx: ServiceContext<'_>) -> ServiceContext<
         .with_trajectory_reader(Arc::new(LiveTemporalWorkspaceReader))
         .with_temporal_maintenance(Arc::new(LiveTemporalWorkspaceReader))
         .with_composition_commit_handle(Arc::new(LiveCompositionCommitter))
+        .with_entity_touchpoints_reader(Arc::new(
+            crate::services::entity_intelligence::touchpoints::LiveEntityTouchpointsReader,
+        ))
+        .with_meeting_prep_status_reader(Arc::new(LiveMeetingPrepStatusReader))
+        .with_claim_receipt_reader(Arc::new(LiveClaimReceiptReader))
 }
 
 impl EntityContextReadHandle for LiveEntityContextReader {
@@ -205,6 +219,109 @@ impl PrepareMeetingContextReadHandle for LivePrepareMeetingContextReader {
     }
 }
 
+impl MeetingPrepStatusReadHandle for LiveMeetingPrepStatusReader {
+    fn read_meeting_prep_status<'a>(
+        &'a self,
+        meeting_id: String,
+    ) -> MeetingPrepStatusReadFuture<'a> {
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                let db =
+                    crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                        .map_err(|error| {
+                            MeetingPrepStatusReadError::ReadFailed(format!(
+                                "Database unavailable: {error}"
+                            ))
+                        })?;
+                project_meeting_prep_status_snapshot(&db, &meeting_id)
+            })
+            .await
+            .map_err(|error| {
+                MeetingPrepStatusReadError::ReadFailed(format!(
+                    "meeting_prep_status read task failed: {error}"
+                ))
+            })?
+        })
+    }
+}
+
+fn project_meeting_prep_status_snapshot(
+    db: &crate::db::ActionDb,
+    meeting_id: &str,
+) -> Result<MeetingPrepStatusSnapshot, MeetingPrepStatusReadError> {
+    use crate::services::meeting_prep_status::{read::compute_status, PrepStatusError};
+    match compute_status(meeting_id, db) {
+        Ok(snapshot) => Ok(MeetingPrepStatusSnapshot {
+            meeting_id: snapshot.meeting_id,
+            event_id: snapshot.event_id,
+            linked_entity_type: snapshot
+                .linked_entity
+                .as_ref()
+                .map(|binding| binding.entity_type.clone()),
+            linked_entity_id: snapshot
+                .linked_entity
+                .as_ref()
+                .map(|binding| binding.entity_id.clone()),
+            status: prep_status_to_str(snapshot.status).to_string(),
+            blocking_reason: snapshot.blocking_reason.map(blocking_reason_to_str),
+            stale_reason: snapshot.stale_reason.map(stale_reason_to_str),
+            last_prepared_at: snapshot.last_prepared_at,
+            source_asof_inputs: snapshot
+                .source_asof_inputs
+                .into_iter()
+                .map(|input| MeetingPrepSourceAsofRef {
+                    source: input.source,
+                    as_of: input.as_of,
+                })
+                .collect(),
+        }),
+        Err(PrepStatusError::MeetingNotFound(id)) => {
+            Err(MeetingPrepStatusReadError::MeetingNotFound(id))
+        }
+        Err(other) => Err(MeetingPrepStatusReadError::ReadFailed(other.to_string())),
+    }
+}
+
+fn prep_status_to_str(status: crate::services::meeting_prep_status::PrepStatus) -> &'static str {
+    use crate::services::meeting_prep_status::PrepStatus::*;
+    match status {
+        BlockedNoEntity => "blocked_no_entity",
+        PrepNeeded => "prep_needed",
+        Queued => "queued",
+        Running => "running",
+        Ready => "ready",
+        Limited => "limited",
+        Stale => "stale",
+        Failed => "failed",
+        UserSuppressed => "user_suppressed",
+        UserDismissed => "user_dismissed",
+    }
+}
+
+fn blocking_reason_to_str(
+    reason: crate::services::meeting_prep_status::BlockingReason,
+) -> String {
+    use crate::services::meeting_prep_status::BlockingReason::*;
+    match reason {
+        NoLinkedEntity => "no_linked_entity",
+        AmbiguousAttendeeMatch => "ambiguous_attendee_match",
+        SourceRevoked => "source_revoked",
+        PolicyForbidden => "policy_forbidden",
+    }
+    .to_string()
+}
+
+fn stale_reason_to_str(reason: crate::services::meeting_prep_status::StaleReason) -> String {
+    use crate::services::meeting_prep_status::StaleReason::*;
+    match reason {
+        EntityContextStale => "entity_context_stale",
+        RecentCorrection => "recent_correction",
+        SourceAsofOlderThanThreshold => "source_asof_older_than_threshold",
+        ContradictedClaimUpstream => "contradicted_claim_upstream",
+    }
+    .to_string()
+}
+
 impl TrajectoryReadHandle for LiveTemporalWorkspaceReader {
     fn read_trajectory_bundle<'a>(
         &'a self,
@@ -286,6 +403,289 @@ impl EntityContextReadHandle for crate::db_service::PooledConnection {
                 .map_err(|error| format!("DB read error: {error}"))?;
             Ok(entries)
         })
+    }
+}
+
+// ─── claim_receipt — live read adapter ─────────────────────────────────────
+
+impl ClaimReceiptReadHandle for LiveClaimReceiptReader {
+    fn read_claim_receipt<'a>(
+        &'a self,
+        target: ClaimReceiptTarget,
+        surface: ClaimReceiptSurfaceContext,
+    ) -> ClaimReceiptReadFuture<'a> {
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                live_render_claim_receipt(target, surface)
+            })
+            .await
+            .map_err(|error| {
+                ClaimReceiptReadError::ReadFailed(format!(
+                    "claim_receipt blocking task failed: {error}"
+                ))
+            })?
+        })
+    }
+}
+
+/// Open a connection and dispatch through the same privacy + render-policy
+/// pipeline as the Tauri `render_claim_receipt` command, then translate the
+/// app crate's `ClaimReceipt` into the ability-shaped `ClaimReceiptSnapshot`.
+///
+/// Mirrors `services::claim_receipt::render::render_receipt_for` — the two
+/// entry points share the privacy filter (`build_receipt_for_audience`) +
+/// surface-policy rendered-text projection so the Tauri command and the
+/// ability invocation are byte-equivalent for the same target/surface.
+fn live_render_claim_receipt(
+    target: ClaimReceiptTarget,
+    surface: ClaimReceiptSurfaceContext,
+) -> Result<ClaimReceiptSnapshot, ClaimReceiptReadError> {
+    use crate::services::claim_receipt::contracts as app;
+    use crate::services::claim_receipt::privacy::{build_receipt_for_audience, PrivacyError};
+    use crate::services::claim_receipt::render::audience_for_surface;
+    use abilities_runtime::sensitivity::{
+        renderable_claim_text_with_value, RenderActor, RenderSurface,
+    };
+
+    let app_target = ability_target_to_app(&target);
+    let app_surface = ability_surface_to_app(surface);
+
+    // Proposal / WorkItem deferral matches the Tauri command's behavior.
+    match &app_target {
+        app::ReceiptTarget::Claim { .. } => {}
+        app::ReceiptTarget::Proposal { .. } | app::ReceiptTarget::WorkItem { .. } => {
+            return Err(ClaimReceiptReadError::TargetNotFound);
+        }
+    }
+
+    let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        .map_err(|error| {
+            ClaimReceiptReadError::ReadFailed(format!("Database unavailable: {error}"))
+        })?;
+    let audience = audience_for_surface(app_surface);
+    let mut receipt = match build_receipt_for_audience(&app_target, audience, db.conn_ref()) {
+        Ok(receipt) => receipt,
+        Err(PrivacyError::ClaimNotFound(_)) => {
+            return Err(ClaimReceiptReadError::TargetNotFound);
+        }
+        Err(PrivacyError::NonDisclosureAudience)
+        | Err(PrivacyError::ComposedClaimDropped)
+        | Err(PrivacyError::SurfaceDrop) => {
+            return Err(ClaimReceiptReadError::PrivacyDrop);
+        }
+        Err(PrivacyError::Storage(message)) => {
+            return Err(ClaimReceiptReadError::ReadFailed(message.to_string()));
+        }
+        Err(PrivacyError::InvalidMetadata(message)) => {
+            return Err(ClaimReceiptReadError::ReadFailed(format!(
+                "invalid metadata: {message}"
+            )));
+        }
+    };
+
+    receipt.surface_context = app_surface;
+
+    // UserTauri surfaces attach the policy-resolved rendered text exactly the
+    // same way `render_receipt_for` does (see render.rs for the rationale).
+    if matches!(
+        audience,
+        crate::services::claim_receipt::privacy::Audience::UserTauri
+    ) {
+        if let app::ReceiptTarget::Claim { claim_id, .. } = &app_target {
+            let claim_opt =
+                crate::services::claims::load_claim_by_id(db.conn_ref(), claim_id)
+                    .map_err(|error| {
+                        ClaimReceiptReadError::ReadFailed(error.to_string())
+                    })?;
+            let claim =
+                claim_opt.ok_or(ClaimReceiptReadError::TargetNotFound)?;
+            let render_surface = match app_surface {
+                app::SurfaceContext::ActionsWork => RenderSurface::Action,
+                app::SurfaceContext::EntityDetail => RenderSurface::TauriEntityDetail,
+                app::SurfaceContext::DailyBriefing => RenderSurface::TauriBriefingPrep,
+                app::SurfaceContext::MeetingDetail => RenderSurface::TauriMeetingDetail,
+                app::SurfaceContext::Mcp => RenderSurface::McpTool,
+            };
+            let actor = RenderActor {
+                actor: "user".to_string(),
+                user_id: None,
+            };
+            if let Some(rendered_text) =
+                renderable_claim_text_with_value(&claim, &claim.text, render_surface, &actor)
+            {
+                receipt.rendered_text = Some(rendered_text);
+            }
+        }
+    }
+
+    Ok(app_receipt_to_ability(receipt))
+}
+
+fn ability_target_to_app(
+    target: &ClaimReceiptTarget,
+) -> crate::services::claim_receipt::contracts::ReceiptTarget {
+    use crate::services::claim_receipt::contracts as app;
+    match target {
+        ClaimReceiptTarget::Claim {
+            claim_id,
+            subject,
+            field_path,
+        } => app::ReceiptTarget::Claim {
+            claim_id: claim_id.clone(),
+            subject: subject.clone(),
+            field_path: field_path.clone(),
+        },
+        ClaimReceiptTarget::Proposal {
+            proposal_id,
+            subject,
+            field_path,
+        } => app::ReceiptTarget::Proposal {
+            proposal_id: proposal_id.clone(),
+            subject: subject.clone(),
+            field_path: field_path.clone(),
+        },
+        ClaimReceiptTarget::WorkItem {
+            action_id,
+            backing_claim_id,
+            subject,
+        } => app::ReceiptTarget::WorkItem {
+            action_id: action_id.clone(),
+            backing_claim_id: backing_claim_id.clone(),
+            subject: subject.clone(),
+        },
+    }
+}
+
+fn app_target_to_ability(
+    target: &crate::services::claim_receipt::contracts::ReceiptTarget,
+) -> ClaimReceiptTarget {
+    use crate::services::claim_receipt::contracts as app;
+    match target {
+        app::ReceiptTarget::Claim {
+            claim_id,
+            subject,
+            field_path,
+        } => ClaimReceiptTarget::Claim {
+            claim_id: claim_id.clone(),
+            subject: subject.clone(),
+            field_path: field_path.clone(),
+        },
+        app::ReceiptTarget::Proposal {
+            proposal_id,
+            subject,
+            field_path,
+        } => ClaimReceiptTarget::Proposal {
+            proposal_id: proposal_id.clone(),
+            subject: subject.clone(),
+            field_path: field_path.clone(),
+        },
+        app::ReceiptTarget::WorkItem {
+            action_id,
+            backing_claim_id,
+            subject,
+        } => ClaimReceiptTarget::WorkItem {
+            action_id: action_id.clone(),
+            backing_claim_id: backing_claim_id.clone(),
+            subject: subject.clone(),
+        },
+    }
+}
+
+fn ability_surface_to_app(
+    surface: ClaimReceiptSurfaceContext,
+) -> crate::services::claim_receipt::contracts::SurfaceContext {
+    use crate::services::claim_receipt::contracts as app;
+    match surface {
+        ClaimReceiptSurfaceContext::ActionsWork => app::SurfaceContext::ActionsWork,
+        ClaimReceiptSurfaceContext::EntityDetail => app::SurfaceContext::EntityDetail,
+        ClaimReceiptSurfaceContext::DailyBriefing => app::SurfaceContext::DailyBriefing,
+        ClaimReceiptSurfaceContext::MeetingDetail => app::SurfaceContext::MeetingDetail,
+        ClaimReceiptSurfaceContext::Mcp => app::SurfaceContext::Mcp,
+    }
+}
+
+fn app_surface_to_ability(
+    surface: crate::services::claim_receipt::contracts::SurfaceContext,
+) -> ClaimReceiptSurfaceContext {
+    use crate::services::claim_receipt::contracts as app;
+    match surface {
+        app::SurfaceContext::ActionsWork => ClaimReceiptSurfaceContext::ActionsWork,
+        app::SurfaceContext::EntityDetail => ClaimReceiptSurfaceContext::EntityDetail,
+        app::SurfaceContext::DailyBriefing => ClaimReceiptSurfaceContext::DailyBriefing,
+        app::SurfaceContext::MeetingDetail => ClaimReceiptSurfaceContext::MeetingDetail,
+        app::SurfaceContext::Mcp => ClaimReceiptSurfaceContext::Mcp,
+    }
+}
+
+fn app_receipt_to_ability(
+    receipt: crate::services::claim_receipt::contracts::ClaimReceipt,
+) -> ClaimReceiptSnapshot {
+    ClaimReceiptSnapshot {
+        target: app_target_to_ability(&receipt.target),
+        surface_context: app_surface_to_ability(receipt.surface_context),
+        rendered_text: receipt.rendered_text,
+        trust: ClaimReceiptTrust {
+            band: receipt.trust.band,
+            source_asof: receipt.trust.source_asof,
+            freshness: match receipt.trust.freshness {
+                crate::services::claim_receipt::contracts::Freshness::Current => {
+                    ClaimReceiptFreshness::Current
+                }
+                crate::services::claim_receipt::contracts::Freshness::Aging => {
+                    ClaimReceiptFreshness::Aging
+                }
+                crate::services::claim_receipt::contracts::Freshness::Stale => {
+                    ClaimReceiptFreshness::Stale
+                }
+                crate::services::claim_receipt::contracts::Freshness::Unknown => {
+                    ClaimReceiptFreshness::Unknown
+                }
+            },
+            caveat: receipt.trust.caveat,
+            rationale: receipt.trust.rationale,
+        },
+        lifecycle: ClaimReceiptLifecycle {
+            claim_state: receipt.lifecycle.claim_state,
+            surfacing_state: receipt.lifecycle.surfacing_state,
+            verification_state: receipt.lifecycle.verification_state,
+            updated_at: receipt.lifecycle.updated_at,
+        },
+        provenance: ClaimReceiptProvenance {
+            sources: receipt
+                .provenance
+                .sources
+                .into_iter()
+                .map(|source| ClaimReceiptProvenanceSource {
+                    label: source.label,
+                    source_type: source.source_type,
+                    as_of: source.as_of,
+                    href: source.href,
+                    redacted: source.redacted,
+                })
+                .collect(),
+            field_path: receipt.provenance.field_path,
+            evidence_summary: receipt.provenance.evidence_summary,
+            redaction: match receipt.provenance.redaction {
+                crate::services::claim_receipt::contracts::RedactionLevel::None => {
+                    ClaimReceiptRedactionLevel::None
+                }
+                crate::services::claim_receipt::contracts::RedactionLevel::Partial => {
+                    ClaimReceiptRedactionLevel::Partial
+                }
+                crate::services::claim_receipt::contracts::RedactionLevel::Full => {
+                    ClaimReceiptRedactionLevel::Full
+                }
+            },
+        },
+        actions: receipt
+            .actions
+            .into_iter()
+            .map(|action| ClaimReceiptAction {
+                action: action.action,
+                label: action.label,
+                disabled_reason: action.disabled_reason,
+            })
+            .collect(),
     }
 }
 

@@ -19,6 +19,7 @@ pub mod derived_state;
 pub mod emails;
 pub mod entities;
 pub mod entity_context;
+pub mod entity_intelligence;
 pub mod entity_linking;
 pub mod external_replay;
 pub mod fail_improve;
@@ -31,6 +32,7 @@ pub mod invalidation_jobs;
 pub mod linear;
 pub mod linear_issue_signals;
 pub mod mcp_v2;
+pub mod meeting_prep_status;
 pub mod meetings;
 pub mod mutations;
 pub mod people;
@@ -53,6 +55,7 @@ pub mod trust_extraction;
 pub mod user_entity;
 pub mod version_dispatcher;
 pub mod versioning;
+pub mod workspace_ingestion;
 
 #[cfg(test)]
 mod tests;

@@ -843,6 +843,12 @@ pub struct ServiceContext<'a> {
     trajectory_reader: Option<Arc<dyn TrajectoryReadHandle>>,
     temporal_maintenance: Option<Arc<dyn TemporalMaintenanceHandle>>,
     composition_commit: Option<Arc<dyn CompositionCommitHandle>>,
+    entity_touchpoints_reader: Option<Arc<dyn EntityTouchpointsReadHandle>>,
+    meeting_prep_status_reader: Option<Arc<dyn MeetingPrepStatusReadHandle>>,
+    claim_receipt_reader: Option<Arc<dyn ClaimReceiptReadHandle>>,
+    account_list_reader: Option<Arc<dyn AccountListReadHandle>>,
+    person_list_reader: Option<Arc<dyn PersonListReadHandle>>,
+    project_list_reader: Option<Arc<dyn ProjectListReadHandle>>,
 }
 
 pub type EntityContextReadFuture<'a> =
@@ -969,6 +975,236 @@ pub type ListOpenLoopsReadFuture<'a> = Pin<
 
 pub trait ListOpenLoopsReadHandle: Send + Sync {
     fn read_open_loops<'a>(&'a self, query: ListOpenLoopsQuery) -> ListOpenLoopsReadFuture<'a>;
+}
+
+// -----------------------------------------------------------------------------
+// v1.4.4 W1 substrate extension — entity index read seams.
+//
+// `list_accounts` / `list_people` / `list_projects` are W2 §5.5 list-shell
+// abilities (Accounts/People/Projects index). The producers shape opaque
+// paginated responses; the reader handles below are the narrow capability
+// seams the app-side adapters fill in. Each query carries the
+// already-validated filter + offset/page_size; each snapshot carries a
+// concise list-row plus a total + optional concurrent-mutation advisory
+// the producer maps to `CursorState::DataShifted`.
+// -----------------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccountListQuery {
+    pub status: Option<String>,
+    pub health_band: Option<crate::abilities::trust::types::TrustBand>,
+    pub name_contains: Option<String>,
+    pub offset: u64,
+    pub page_size: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccountListSummary {
+    pub account_id: String,
+    pub name: String,
+    pub status: String,
+    pub health_band: crate::abilities::trust::types::TrustBand,
+    pub last_touchpoint_at: Option<String>,
+    pub open_loops_count: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccountListSnapshot {
+    pub items: Vec<AccountListSummary>,
+    pub total_after_filter: u64,
+    /// `Some(advisory)` when the reader detected a concurrent insert/
+    /// retract between the cursor's offset and the page boundary — the
+    /// producer maps this verbatim to `CursorState::DataShifted`.
+    pub data_shifted_advisory: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum AccountListReadError {
+    #[error("{0}")]
+    ReadFailed(String),
+}
+
+pub type AccountListReadFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<AccountListSnapshot, AccountListReadError>> + Send + 'a>>;
+
+pub trait AccountListReadHandle: Send + Sync {
+    fn read_accounts<'a>(&'a self, query: AccountListQuery) -> AccountListReadFuture<'a>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PersonListQuery {
+    pub role: Option<String>,
+    pub primary_account_id: Option<String>,
+    pub name_contains: Option<String>,
+    pub offset: u64,
+    pub page_size: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PersonListSummary {
+    pub person_id: String,
+    pub display_name: String,
+    pub primary_account_id: Option<String>,
+    pub role: String,
+    pub last_touchpoint_at: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PersonListSnapshot {
+    pub items: Vec<PersonListSummary>,
+    pub total_after_filter: u64,
+    pub data_shifted_advisory: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum PersonListReadError {
+    #[error("{0}")]
+    ReadFailed(String),
+}
+
+pub type PersonListReadFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<PersonListSnapshot, PersonListReadError>> + Send + 'a>>;
+
+pub trait PersonListReadHandle: Send + Sync {
+    fn read_people<'a>(&'a self, query: PersonListQuery) -> PersonListReadFuture<'a>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectListQuery {
+    pub status: Option<String>,
+    pub trajectory: Option<crate::abilities::list_projects::ProjectTrajectory>,
+    pub parent_account_id: Option<String>,
+    pub name_contains: Option<String>,
+    pub offset: u64,
+    pub page_size: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectListSummary {
+    pub project_id: String,
+    pub name: String,
+    pub parent_account_id: Option<String>,
+    pub status: String,
+    pub trajectory: crate::abilities::list_projects::ProjectTrajectory,
+    pub last_touchpoint_at: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectListSnapshot {
+    pub items: Vec<ProjectListSummary>,
+    pub total_after_filter: u64,
+    pub data_shifted_advisory: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ProjectListReadError {
+    #[error("{0}")]
+    ReadFailed(String),
+}
+
+pub type ProjectListReadFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<ProjectListSnapshot, ProjectListReadError>> + Send + 'a>>;
+
+pub trait ProjectListReadHandle: Send + Sync {
+    fn read_projects<'a>(&'a self, query: ProjectListQuery) -> ProjectListReadFuture<'a>;
+}
+
+// -----------------------------------------------------------------------------
+// Canonical entity touchpoints read seam.
+//
+// Narrow read handle for entity-scoped touchpoint composition: the producer
+// asks for upcoming + recent meeting-shaped interactions for a subject; the
+// app-side reader resolves those out of `meeting_entities` + parent/child
+// account expansion + attendee-match fallback. Subject isolation lives in the
+// reader's filter — the reader returns each candidate with an explicit
+// `inclusion_reason`, never a raw join soup.
+// -----------------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EntityTouchpointsQuery {
+    pub entity_type: String,
+    pub entity_id: String,
+    pub now: DateTime<Utc>,
+    /// Days into the future considered "upcoming".
+    pub upcoming_window_days: u16,
+    /// Days into the past considered "recent".
+    pub recent_window_days: u16,
+    /// Hard cap per side (upcoming/recent) to bound the reader.
+    pub per_side_cap: usize,
+}
+
+/// Why a touchpoint belongs to this subject — surfaced verbatim to the
+/// envelope so callers can debug subject bleed without re-querying.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TouchpointInclusionReason {
+    /// Direct row in `meeting_entities` for this subject.
+    SubjectMatch,
+    /// Inherited via parent/child account or related entity link.
+    EntityLink,
+    /// Person subject found as attendee of the meeting.
+    AttendeeMatch,
+    /// Domain match (e.g., attendee email domain matches account).
+    DomainMatch,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EntityTouchpointSnapshot {
+    pub meeting_id: String,
+    pub title: String,
+    pub kind: String,
+    pub starts_at: Option<String>,
+    pub ends_at: Option<String>,
+    /// Echo of the requesting subject in `kind:id` form so a downstream
+    /// composer can re-render `SubjectRef` without re-parsing IDs.
+    pub subject_entity_type: String,
+    pub subject_entity_id: String,
+    pub inclusion_reason: TouchpointInclusionReason,
+    /// Populated only when the candidate set was over capacity OR the reader
+    /// dropped a row for a typed reason (low confidence, suppressed, etc.).
+    pub exclusion_reason: Option<String>,
+    pub source_asof: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EntityTouchpointsSnapshot {
+    pub subject_entity_type: String,
+    pub subject_entity_id: String,
+    pub upcoming: Vec<EntityTouchpointSnapshot>,
+    pub recent: Vec<EntityTouchpointSnapshot>,
+    /// Additional subject IDs whose touchpoints were also pulled in via
+    /// parent/child link or related-entity expansion. The composer uses this
+    /// to populate `SubjectScope::also_includes` so downstream surfaces can
+    /// show "scope includes child accounts X, Y".
+    pub also_includes: Vec<(String, String)>,
+    /// Filter description for `CandidateSetRef::filter_description` — explains
+    /// how the candidate set was assembled, in plain English.
+    pub filter_description: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum EntityTouchpointsReadError {
+    #[error("subject is not owned by this workspace: {entity_type}:{entity_id}")]
+    SubjectNotOwned {
+        entity_type: String,
+        entity_id: String,
+    },
+    #[error("{0}")]
+    ReadFailed(String),
+}
+
+pub type EntityTouchpointsReadFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<EntityTouchpointsSnapshot, EntityTouchpointsReadError>>
+            + Send
+            + 'a,
+    >,
+>;
+
+pub trait EntityTouchpointsReadHandle: Send + Sync {
+    fn read_entity_touchpoints<'a>(
+        &'a self,
+        query: EntityTouchpointsQuery,
+    ) -> EntityTouchpointsReadFuture<'a>;
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1132,6 +1368,253 @@ pub trait DailyReadinessContextReadHandle: Send + Sync {
     ) -> DailyReadinessContextReadFuture<'a>;
 }
 
+// -----------------------------------------------------------------------------
+// Meeting prep status read handle
+// -----------------------------------------------------------------------------
+
+/// Service-owned status describing whether a meeting's prep is ready, blocked,
+/// stale, failed, or user-suppressed. The richer DTO lives in the app crate
+/// (`services::meeting_prep_status`); this mirror is the narrow shape the
+/// `get_daily_briefing` Read ability consumes through a read handle.
+///
+/// Stays a string-typed projection on the abilities-runtime side so the crate
+/// boundary doesn't force a circular dependency — the app crate's adapter
+/// stringifies `PrepStatus` / `BlockingReason` / `StaleReason` enums when
+/// projecting into this snapshot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MeetingPrepStatusSnapshot {
+    pub meeting_id: String,
+    pub event_id: Option<String>,
+    pub linked_entity_type: Option<String>,
+    pub linked_entity_id: Option<String>,
+    /// Lower-snake_case PrepStatus discriminant: `ready` | `prep_needed` |
+    /// `queued` | `running` | `limited` | `stale` | `failed` |
+    /// `blocked_no_entity` | `user_suppressed` | `user_dismissed`.
+    pub status: String,
+    pub blocking_reason: Option<String>,
+    pub stale_reason: Option<String>,
+    pub last_prepared_at: Option<String>,
+    pub source_asof_inputs: Vec<MeetingPrepSourceAsofRef>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MeetingPrepSourceAsofRef {
+    pub source: String,
+    pub as_of: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum MeetingPrepStatusReadError {
+    #[error("meeting prep status read failed: {0}")]
+    ReadFailed(String),
+    #[error("meeting not found: {0}")]
+    MeetingNotFound(String),
+}
+
+pub type MeetingPrepStatusReadFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<MeetingPrepStatusSnapshot, MeetingPrepStatusReadError>>
+            + Send
+            + 'a,
+    >,
+>;
+
+/// Narrow read handle attached by the app crate so the `get_daily_briefing`
+/// ability can compose per-meeting prep status into its envelope. AC-507.2 /
+/// AC-507.7 — the handle is read-only by contract; the adapter must not
+/// perform any mutation.
+pub trait MeetingPrepStatusReadHandle: Send + Sync {
+    fn read_meeting_prep_status<'a>(
+        &'a self,
+        meeting_id: String,
+    ) -> MeetingPrepStatusReadFuture<'a>;
+}
+
+// ---------------------------------------------------------------------------
+// claim_receipt — Read ability dispatch surface
+// ---------------------------------------------------------------------------
+//
+// Read ability that wraps the existing `services::claim_receipt::render`
+// substrate so WP block inner-block renderers (account-detail / project-detail
+// quote-wall, value-commitments, on-track-chapter, technical-footprint, etc.)
+// can fan out per-claim receipts through `runtime_client->invoke_ability(
+// 'claim_receipt', ...)`. Without this registration the WP-side invocation
+// returns AbilityUnavailable and the 60+ claim-bearing inner blocks fall back
+// to empty placeholders.
+//
+// The ability is a thin shell: input shape mirrors `ReceiptTarget` plus
+// `SurfaceContext`, output mirrors the `ClaimReceipt` DTO that already exists
+// in the app crate. The narrow read handle below is the adapter seam — the
+// app crate's `LiveClaimReceiptReader` translates the ability-shaped DTOs into
+// `services::claim_receipt::contracts` types, dispatches through
+// `render_receipt_for(state, target, surface)`, and translates the result
+// back. This keeps `AppState` / SQL handles out of `abilities-runtime`.
+
+/// Ability-shaped mirror of `services::claim_receipt::contracts::ReceiptTarget`.
+///
+/// Serde wire format is byte-equivalent to the app crate DTO so the live
+/// reader can round-trip through `serde_json::Value` if a less-coupled adapter
+/// is desired later. Per L0-W1 §5.6 deferral only the `Claim` arm resolves
+/// today; `Proposal` and `WorkItem` arms are accepted by the contract but the
+/// reader returns `TargetNotFound`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum ClaimReceiptTarget {
+    #[serde(rename_all = "camelCase")]
+    Claim {
+        claim_id: String,
+        subject: crate::abilities::provenance::SubjectRef,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        field_path: Option<String>,
+    },
+    #[serde(rename_all = "camelCase")]
+    Proposal {
+        proposal_id: String,
+        subject: crate::abilities::provenance::SubjectRef,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        field_path: Option<String>,
+    },
+    #[serde(rename_all = "camelCase")]
+    WorkItem {
+        action_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        backing_claim_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        subject: Option<crate::abilities::provenance::SubjectRef>,
+    },
+}
+
+/// Ability-shaped mirror of `services::claim_receipt::contracts::SurfaceContext`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ClaimReceiptSurfaceContext {
+    ActionsWork,
+    EntityDetail,
+    DailyBriefing,
+    MeetingDetail,
+    Mcp,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ClaimReceiptFreshness {
+    Current,
+    Aging,
+    Stale,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ClaimReceiptRedactionLevel {
+    None,
+    Partial,
+    Full,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaimReceiptTrust {
+    pub band: crate::abilities::trust::types::TrustBand,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    pub source_asof: Option<DateTime<Utc>>,
+    pub freshness: ClaimReceiptFreshness,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub caveat: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rationale: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaimReceiptLifecycle {
+    pub claim_state: crate::types::ClaimState,
+    pub surfacing_state: crate::types::SurfacingState,
+    pub verification_state: crate::sensitivity::ClaimVerificationState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaimReceiptProvenanceSource {
+    pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    pub as_of: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub href: Option<String>,
+    pub redacted: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaimReceiptProvenance {
+    pub sources: Vec<ClaimReceiptProvenanceSource>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub field_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence_summary: Option<String>,
+    pub redaction: ClaimReceiptRedactionLevel,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaimReceiptAction {
+    pub action: crate::abilities::feedback::FeedbackAction,
+    pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disabled_reason: Option<String>,
+}
+
+/// Ability-shaped mirror of `services::claim_receipt::contracts::ClaimReceipt`.
+///
+/// Wire-format parity with the Tauri command output ensures the WP-side
+/// renderer can consume either path. The live reader in the app crate is
+/// responsible for byte-equivalent translation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaimReceiptSnapshot {
+    pub target: ClaimReceiptTarget,
+    pub surface_context: ClaimReceiptSurfaceContext,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rendered_text: Option<crate::sensitivity::RenderableClaimText>,
+    pub trust: ClaimReceiptTrust,
+    pub lifecycle: ClaimReceiptLifecycle,
+    pub provenance: ClaimReceiptProvenance,
+    pub actions: Vec<ClaimReceiptAction>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ClaimReceiptReadError {
+    #[error("claim receipt target not found")]
+    TargetNotFound,
+    #[error("claim receipt dropped by privacy gate")]
+    PrivacyDrop,
+    #[error("{0}")]
+    ReadFailed(String),
+}
+
+pub type ClaimReceiptReadFuture<'a> = Pin<
+    Box<dyn Future<Output = Result<ClaimReceiptSnapshot, ClaimReceiptReadError>> + Send + 'a>,
+>;
+
+/// Narrow read handle that the app crate attaches so the `claim_receipt`
+/// ability can dispatch through `services::claim_receipt::render::
+/// render_receipt_for` without pulling `AppState` or SQL handles into
+/// `abilities-runtime`. Read-only by contract; the adapter MUST NOT mutate.
+pub trait ClaimReceiptReadHandle: Send + Sync {
+    fn read_claim_receipt<'a>(
+        &'a self,
+        target: ClaimReceiptTarget,
+        surface: ClaimReceiptSurfaceContext,
+    ) -> ClaimReceiptReadFuture<'a>;
+}
+
 /// Transaction-scoped context exposed to `with_transaction_*` closures.
 ///
 /// Same `mode`/`clock`/`rng` as the parent `ServiceContext` plus a
@@ -1189,6 +1672,12 @@ impl<'a> ServiceContext<'a> {
             trajectory_reader: None,
             temporal_maintenance: None,
             composition_commit: None,
+            entity_touchpoints_reader: None,
+            meeting_prep_status_reader: None,
+            claim_receipt_reader: None,
+            account_list_reader: None,
+            person_list_reader: None,
+            project_list_reader: None,
         }
     }
 
@@ -1215,6 +1704,12 @@ impl<'a> ServiceContext<'a> {
             trajectory_reader: None,
             temporal_maintenance: None,
             composition_commit: None,
+            entity_touchpoints_reader: None,
+            meeting_prep_status_reader: None,
+            claim_receipt_reader: None,
+            account_list_reader: None,
+            person_list_reader: None,
+            project_list_reader: None,
         }
     }
 
@@ -1252,6 +1747,12 @@ impl<'a> ServiceContext<'a> {
             trajectory_reader: None,
             temporal_maintenance: None,
             composition_commit: None,
+            entity_touchpoints_reader: None,
+            meeting_prep_status_reader: None,
+            claim_receipt_reader: None,
+            account_list_reader: None,
+            person_list_reader: None,
+            project_list_reader: None,
         }
     }
 
@@ -1330,6 +1831,98 @@ impl<'a> ServiceContext<'a> {
         self
     }
 
+    pub fn with_entity_touchpoints_reader(
+        mut self,
+        reader: Arc<dyn EntityTouchpointsReadHandle>,
+    ) -> Self {
+        self.entity_touchpoints_reader = Some(reader);
+        self
+    }
+
+    pub fn with_meeting_prep_status_reader(
+        mut self,
+        reader: Arc<dyn MeetingPrepStatusReadHandle>,
+    ) -> Self {
+        self.meeting_prep_status_reader = Some(reader);
+        self
+    }
+
+    pub fn with_claim_receipt_reader(
+        mut self,
+        reader: Arc<dyn ClaimReceiptReadHandle>,
+    ) -> Self {
+        self.claim_receipt_reader = Some(reader);
+        self
+    }
+
+    pub fn with_account_list_reader(mut self, reader: Arc<dyn AccountListReadHandle>) -> Self {
+        self.account_list_reader = Some(reader);
+        self
+    }
+
+    pub fn with_person_list_reader(mut self, reader: Arc<dyn PersonListReadHandle>) -> Self {
+        self.person_list_reader = Some(reader);
+        self
+    }
+
+    pub fn with_project_list_reader(mut self, reader: Arc<dyn ProjectListReadHandle>) -> Self {
+        self.project_list_reader = Some(reader);
+        self
+    }
+
+    /// Reader-backed touchpoint composition. When no reader is
+    /// attached (test contexts, evaluate mode without fixtures) the caller
+    /// receives a typed `ReadFailed` error and the producer falls back to a
+    /// typed empty bundle. Subject isolation is the reader's responsibility —
+    /// each returned snapshot carries `inclusion_reason` so the producer can
+    /// project verbatim without recomputing the filter.
+    pub async fn read_entity_touchpoints(
+        &self,
+        query: EntityTouchpointsQuery,
+    ) -> Result<EntityTouchpointsSnapshot, EntityTouchpointsReadError> {
+        let Some(reader) = &self.entity_touchpoints_reader else {
+            return Err(EntityTouchpointsReadError::ReadFailed(
+                self.missing_reader_error("entity_touchpoints_reader"),
+            ));
+        };
+        reader.read_entity_touchpoints(query).await
+    }
+
+    /// Read per-meeting prep status. Returns
+    /// `MeetingPrepStatusReadError::ReadFailed` with a typed missing-reader
+    /// message when no adapter is attached (test contexts without fixtures);
+    /// the briefing producer projects that into a typed `NeedsPreparation`
+    /// state rather than failing the envelope.
+    pub async fn read_meeting_prep_status(
+        &self,
+        meeting_id: String,
+    ) -> Result<MeetingPrepStatusSnapshot, MeetingPrepStatusReadError> {
+        let Some(reader) = &self.meeting_prep_status_reader else {
+            return Err(MeetingPrepStatusReadError::ReadFailed(
+                self.missing_reader_error("meeting_prep_status_reader"),
+            ));
+        };
+        reader.read_meeting_prep_status(meeting_id).await
+    }
+
+    /// Dispatch the `claim_receipt` ability through the app crate's
+    /// `LiveClaimReceiptReader` adapter, which wraps
+    /// `services::claim_receipt::render::render_receipt_for`. Returns a typed
+    /// `ReadFailed` with a missing-reader message when no adapter is attached
+    /// (test contexts without fixtures).
+    pub async fn read_claim_receipt(
+        &self,
+        target: ClaimReceiptTarget,
+        surface: ClaimReceiptSurfaceContext,
+    ) -> Result<ClaimReceiptSnapshot, ClaimReceiptReadError> {
+        let Some(reader) = &self.claim_receipt_reader else {
+            return Err(ClaimReceiptReadError::ReadFailed(
+                self.missing_reader_error("claim_receipt_reader"),
+            ));
+        };
+        reader.read_claim_receipt(target, surface).await
+    }
+
     pub async fn commit_composition(
         &self,
         proposal: CompositionProposal,
@@ -1405,6 +1998,45 @@ impl<'a> ServiceContext<'a> {
         };
 
         reader.read_open_loops(query).await
+    }
+
+    pub async fn read_list_accounts(
+        &self,
+        query: AccountListQuery,
+    ) -> Result<AccountListSnapshot, AccountListReadError> {
+        let Some(reader) = &self.account_list_reader else {
+            return Err(AccountListReadError::ReadFailed(
+                self.missing_reader_error("list_accounts_read"),
+            ));
+        };
+
+        reader.read_accounts(query).await
+    }
+
+    pub async fn read_list_people(
+        &self,
+        query: PersonListQuery,
+    ) -> Result<PersonListSnapshot, PersonListReadError> {
+        let Some(reader) = &self.person_list_reader else {
+            return Err(PersonListReadError::ReadFailed(
+                self.missing_reader_error("list_people_read"),
+            ));
+        };
+
+        reader.read_people(query).await
+    }
+
+    pub async fn read_list_projects(
+        &self,
+        query: ProjectListQuery,
+    ) -> Result<ProjectListSnapshot, ProjectListReadError> {
+        let Some(reader) = &self.project_list_reader else {
+            return Err(ProjectListReadError::ReadFailed(
+                self.missing_reader_error("list_projects_read"),
+            ));
+        };
+
+        reader.read_projects(query).await
     }
 
     pub async fn read_trajectory_bundle(

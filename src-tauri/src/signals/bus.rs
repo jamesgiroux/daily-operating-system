@@ -1096,6 +1096,119 @@ mod tests {
     }
 
     #[test]
+    fn dos335_l3_meeting_prep_status_changed_coalesces_inside_window() {
+        // L3 cycle-2 (F1): MeetingPrepStatusChanged declares a 500ms
+        // entity-keyed coalesce in `meeting_prep_status_changed_policy()`.
+        // Before the cycle-2 fix, `uses_emit_path_coalescing()` excluded it,
+        // so the emit-path predicate returned None and every transition
+        // (PrepNeeded → Queued → Running → Ready) inserted a separate row
+        // and propagated independently.
+        //
+        // After the fix: rapid transitions on the same meeting collapse to
+        // a single signal_events row inside the 500ms window.
+        *coalescing_state().lock() = CoalescingState::default();
+        let db = test_db();
+
+        let first = emit_signal(
+            &db,
+            "meeting",
+            "m-coalesce-1",
+            "meeting_prep_status_changed",
+            "unit_test",
+            Some(r#"{"from":"PrepNeeded","to":"Queued"}"#),
+            1.0,
+        )
+        .expect("first emit");
+
+        // 10 rapid transitions on the same meeting inside the 500ms window.
+        for _ in 0..10 {
+            let id = emit_signal(
+                &db,
+                "meeting",
+                "m-coalesce-1",
+                "meeting_prep_status_changed",
+                "unit_test",
+                Some(r#"{"from":"Queued","to":"Running"}"#),
+                1.0,
+            )
+            .expect("rapid emit");
+            assert_eq!(id, first, "all rapid emits collapse onto the first id");
+        }
+
+        let count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(*) FROM signal_events WHERE entity_id = 'm-coalesce-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count signal rows");
+        assert_eq!(count, 1, "11 rapid transitions collapse to 1 row");
+    }
+
+    #[test]
+    fn dos335_l3_meeting_prep_does_not_coalesce_with_claim_verification() {
+        // L3 cycle-2 (F1): cross-signal ordering contract.
+        //
+        // MeetingPrepStatusChanged is keyed on the meeting entity; a
+        // simultaneous ClaimVerificationStateChanged emitted on a claim
+        // belonging to the same meeting MUST NOT coalesce onto the prep
+        // signal — they have different signal types, different coalescing
+        // keys, and different propagation responsibilities (prep → readiness
+        // chrome; claim verification → trust band re-render).
+        //
+        // Documented ordering: emits land in arrival order. Subscribers
+        // that need cross-signal serialization observe both events on the
+        // signal_events table ordered by `created_at` ASC.
+        *coalescing_state().lock() = CoalescingState::default();
+        let db = test_db();
+
+        let prep_id = emit_signal(
+            &db,
+            "meeting",
+            "m-cross-signal-1",
+            "meeting_prep_status_changed",
+            "unit_test",
+            Some(r#"{"from":"Running","to":"Ready"}"#),
+            1.0,
+        )
+        .expect("prep emit");
+
+        let claim_id = emit_signal(
+            &db,
+            "claim",
+            "c-cross-signal-1",
+            "claim_verification_state_changed",
+            "unit_test",
+            Some(r#"{"to":"verified"}"#),
+            1.0,
+        )
+        .expect("claim emit");
+
+        assert_ne!(
+            prep_id, claim_id,
+            "different signal types and different coalescing keys never collapse"
+        );
+
+        // Both rows land. Ordering is preserved by created_at ASC.
+        let ids: Vec<String> = db
+            .conn_ref()
+            .prepare(
+                "SELECT id FROM signal_events \
+                 WHERE entity_id IN ('m-cross-signal-1', 'c-cross-signal-1') \
+                 ORDER BY created_at ASC, rowid ASC",
+            )
+            .expect("prepare")
+            .query_map([], |row| row.get::<_, String>(0))
+            .expect("query")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect");
+        assert_eq!(ids.len(), 2, "both rows persist");
+        assert_eq!(ids[0], prep_id, "prep emitted first arrives first");
+        assert_eq!(ids[1], claim_id, "claim follows in arrival order");
+    }
+
+    #[test]
     fn dos262_emit_returns_when_fail_improve_worker_is_paused() {
         let _env_guard = fail_improve_env_lock().lock().expect("env lock");
         let tmp = tempfile::tempdir().expect("tempdir");

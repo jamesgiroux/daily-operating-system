@@ -11,7 +11,9 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
-use abilities_runtime::abilities::registry::{Actor, ScopeSet, SurfaceClientId, SurfaceScope};
+use abilities_runtime::abilities::registry::{
+    AbilityCategory, AbilityRegistry, Actor, ActorKind, ScopeSet, SurfaceClientId, SurfaceScope,
+};
 
 use crate::audit_log::{emit_surface_audit, AuditFields, AuditLogger};
 use crate::db::ActionDb;
@@ -30,7 +32,12 @@ pub const SESSION_ABSOLUTE_TTL_SECONDS: i64 = 365 * 24 * 60 * 60;
 // timestamp; only absolute_expires_at is consulted by validate_signed_session_readonly").
 pub const SESSION_INACTIVE_TTL_SECONDS: i64 = SESSION_ABSOLUTE_TTL_SECONDS;
 pub const SESSION_SUSPICIOUS_THROTTLE_SECONDS: i64 = 60;
-const DEFAULT_GRANTED_SCOPES: &[&str] = &["read.account_overview", "submit.feedback"];
+// Non-Read scopes a freshly paired SurfaceClient (e.g. WP loopback) needs.
+// Read scopes are derived from the registry at pair time (see
+// `default_granted_scopes`). ADR-0129 frames the WP surface as the user's
+// own loopback, so every Read ability that admits SurfaceClient is in the
+// default grant. Non-Read scopes (today: feedback submission) stay explicit.
+const DEFAULT_EXPLICIT_NON_READ_SCOPES: &[&str] = &["submit.feedback"];
 const HMAC_SESSION_KEY_INFO: &[u8] = b"dailyos-wp-bridge-v1";
 const HMAC_SESSION_KEY_BYTES: usize = 32;
 
@@ -2518,10 +2525,31 @@ fn suspend_pairing(
 }
 
 fn default_granted_scopes() -> Vec<String> {
-    DEFAULT_GRANTED_SCOPES
-        .iter()
-        .map(|scope| (*scope).to_string())
-        .collect()
+    let mut scopes: BTreeSet<String> = BTreeSet::new();
+    if let Ok(registry) = AbilityRegistry::global_checked() {
+        for descriptor in registry.iter_all() {
+            if descriptor.experimental {
+                continue;
+            }
+            if descriptor.category != AbilityCategory::Read {
+                continue;
+            }
+            if !descriptor
+                .policy
+                .allowed_actors
+                .contains(&ActorKind::SurfaceClient)
+            {
+                continue;
+            }
+            for scope in descriptor.policy.required_scopes {
+                scopes.insert((*scope).to_string());
+            }
+        }
+    }
+    for scope in DEFAULT_EXPLICIT_NON_READ_SCOPES {
+        scopes.insert((*scope).to_string());
+    }
+    scopes.into_iter().collect()
 }
 
 fn scope_set_from_strings(scopes: &[String]) -> Result<ScopeSet, SurfacePairingError> {
@@ -2795,11 +2823,15 @@ mod tests {
     }
 
     fn allow_surface_scopes() {
-        ScopeSet::set_allowlist_for_tests([
-            SurfaceScope::new("read.account_overview"),
-            SurfaceScope::new("read.composition"),
-            SurfaceScope::new("submit.feedback"),
-        ]);
+        // Mirror the production grant set + `read.composition` (used by the
+        // widening tests). Kept symmetric with `default_granted_scopes` so a
+        // new Read ability auto-flows into the test allowlist.
+        let mut scopes: Vec<SurfaceScope> = default_granted_scopes()
+            .into_iter()
+            .map(SurfaceScope::new)
+            .collect();
+        scopes.push(SurfaceScope::new("read.composition"));
+        ScopeSet::set_allowlist_for_tests(scopes);
     }
 
     fn issue_code(ctx: &ServiceContext<'_>, db: &ActionDb, now: DateTime<Utc>) -> PairingCodeIssue {
@@ -2862,6 +2894,48 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap()
+    }
+
+    #[test]
+    fn default_granted_scopes_auto_derives_from_registry() {
+        // Every Read ability that admits SurfaceClient contributes its
+        // required_scopes to the default grant. submit.feedback stays as the
+        // one explicit non-Read scope. New Read abilities flow in without a
+        // constant update — this is the regression guard for "L4 surface
+        // empties out after substrate adds a new Read ability."
+        let scopes = default_granted_scopes();
+        assert!(
+            scopes.contains(&"submit.feedback".to_string()),
+            "submit.feedback must remain in the explicit non-Read grant set"
+        );
+        let registry = AbilityRegistry::global_checked()
+            .expect("registry initializes in test process");
+        let expected_read_scopes: BTreeSet<String> = registry
+            .iter_all()
+            .filter(|d| !d.experimental)
+            .filter(|d| d.category == AbilityCategory::Read)
+            .filter(|d| d.policy.allowed_actors.contains(&ActorKind::SurfaceClient))
+            .flat_map(|d| d.policy.required_scopes.iter().map(|s| (*s).to_string()))
+            .collect();
+        for scope in &expected_read_scopes {
+            assert!(
+                scopes.contains(scope),
+                "expected derived scope {} to be in default grant",
+                scope
+            );
+        }
+        // Non-Read scopes from the registry MUST NOT flow into the default
+        // grant — only the explicit allowlist does.
+        let nonread_in_grant: Vec<&String> = scopes
+            .iter()
+            .filter(|s| !s.starts_with("read."))
+            .filter(|s| !DEFAULT_EXPLICIT_NON_READ_SCOPES.contains(&s.as_str()))
+            .collect();
+        assert!(
+            nonread_in_grant.is_empty(),
+            "non-Read scopes leaked into default grant: {:?}",
+            nonread_in_grant
+        );
     }
 
     #[test]
@@ -4335,11 +4409,14 @@ mod tests {
         let surface_client_id = outcome.response.surface_client_id.clone();
         let session_id = outcome.response.session_id.clone();
 
-        let broader_scopes = vec![
-            "read.account_overview".to_string(),
-            "read.composition".to_string(),
-            "submit.feedback".to_string(),
-        ];
+        // Build a stored set that's strictly broader than the default grant
+        // (the full default set + `read.composition` which is never in the
+        // auto-derived Read set). Refresh should retain `read.composition`
+        // and report no change, exercising the never-narrow invariant.
+        let mut broader_scopes = default_granted_scopes();
+        broader_scopes.push("read.composition".to_string());
+        broader_scopes.sort();
+        broader_scopes.dedup();
         let broader_digest = scope_digest(&broader_scopes);
         let broader_json = serde_json::to_string(&broader_scopes).unwrap();
         db.conn_ref()

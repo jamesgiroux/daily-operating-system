@@ -1,0 +1,30 @@
+{
+  "target": {
+    "kind": "claim",
+    "claimId": "",
+    "subject": { "kind": "account", "value": "" },
+    "fieldPath": null
+  },
+  "surfaceContext": "mcp",
+  "renderedText": null,
+  "trust": {
+    "band": "use_with_caution",
+    "sourceAsof": null,
+    "freshness": "current",
+    "caveat": null,
+    "rationale": null
+  },
+  "lifecycle": {
+    "claimState": "active",
+    "surfacingState": "active",
+    "verificationState": "active",
+    "updatedAt": null
+  },
+  "provenance": {
+    "sources": [],
+    "fieldPath": null,
+    "evidenceSummary": "Renewal risk is elevated",
+    "redaction": "none"
+  },
+  "actions": []
+}

@@ -1,0 +1,22 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "dailyos/metadata-proposal-drawer",
+	"title": "Metadata Proposal Drawer",
+	"category": "dailyos",
+	"description": "Expanded drawer for MetadataProposals (DOS-328 / W2 §5.6). Renders typed proposed value, target field, evidence summary, trust band, freshness caveat, display-safe provenance, plus accept/dismiss/edit affordances that emit FeedbackAction via record_claim_feedback (ADR-0123). Inserter-global per ADR-0129 §2 (no parent); composes inside any entity-detail outer block via usesContext envelopeHandle.",
+	"supports": {
+		"html": false,
+		"reusable": false,
+		"inserter": true
+	},
+	"attributes": {
+		"block_instance_id": { "type": "string" }
+	},
+	"usesContext": [
+		"dailyos/entityType",
+		"dailyos/entityId",
+		"dailyos/envelopeHandle"
+	],
+	"render": "file:./render.php"
+}

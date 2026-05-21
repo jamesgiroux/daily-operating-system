@@ -27,6 +27,7 @@ use PHPUnit\Framework\TestCase;
  * sidebar template-part on single-account).
  */
 final class DailyOS_EditorialShellPresenceTest extends TestCase {
+
 	private string $theme_dir;
 
 	/**
@@ -43,7 +44,7 @@ final class DailyOS_EditorialShellPresenceTest extends TestCase {
 	 * This avoids needing `do_blocks()` while still asserting the chrome
 	 * actually composes from the parts it claims to compose from.
 	 *
-	 * @param string $template_filename Template filename inside templates/.
+	 * @param  string $template_filename Template filename inside templates/.
 	 * @return string Concatenated source of template + referenced parts + patterns.
 	 */
 	private function compose_surface( string $template_filename ): string {
@@ -82,7 +83,7 @@ final class DailyOS_EditorialShellPresenceTest extends TestCase {
 
 	/**
 	 * Front-page composes the folio bar, atmosphere body, magazine page,
-	 * and end-mark via header part + account-overview-page pattern.
+	 * and end-mark via header part + atmosphere body container.
 	 *
 	 * @return void
 	 */
@@ -93,19 +94,15 @@ final class DailyOS_EditorialShellPresenceTest extends TestCase {
 		// `dailyos-folio-bar` matches as a prefix substring).
 		$this->assertStringContainsString( 'dailyos-folio-bar', $composed, 'Missing dailyos-folio-bar header shell.' );
 		// Canonical MagazinePageLayout classes (lifted from .docs/design/reference/_shared/styles/
-		// per the chrome lane). Previously these were parallel WP-side `dailyos-atmosphere` /
-		// `dailyos-magazine-page` kebab names that didn't match any canonical CSS — the post-merge
-		// chrome refinement PR aligned the WP templates to the canonical names so the lifted
-		// MagazinePageLayout.module.css actually reaches the WP DOM.
+		// per the chrome lane).
 		$this->assertStringContainsString( 'MagazinePageLayout_magazinePage', $composed, 'Missing MagazinePageLayout_magazinePage root container.' );
 		$this->assertStringContainsString( 'MagazinePageLayout_pageContainer', $composed, 'Missing MagazinePageLayout_pageContainer content wrap.' );
-		// account-overview-page pattern still uses dailyos-end-mark + literal `* * *` as an
-		// in-pattern section separator (separate concern from the end-of-page FinisMarker
-		// rendered by the footer template part).
-		$this->assertStringContainsString( 'dailyos-end-mark', $composed, 'Missing dailyos-end-mark separator.' );
-		$this->assertStringContainsString( '* * *', $composed, 'Missing literal end-mark glyph.' );
 		// End-of-page FinisMarker is rendered by the footer template part; assert the canonical
-		// FinisMarker root class (pattern spec at .docs/design/patterns/FinisMarker.md).
+		// FinisMarker root class (pattern spec at .docs/design/patterns/FinisMarker.md). The
+		// previous v1.4.2 `dailyos-end-mark` + literal `* * *` in-pattern separator was part of
+		// the deleted `account-overview-page` pattern; v1.4.4 W2 ships a FinisMarker inner block
+		// at the end of `account-detail-default` composition + footer-level FinisMarker via the
+		// magazine-theme footer template part.
 		$this->assertStringContainsString( 'FinisMarker_root', $composed, 'Missing FinisMarker_root end-of-page finis.' );
 	}
 
@@ -123,11 +120,21 @@ final class DailyOS_EditorialShellPresenceTest extends TestCase {
 		$this->assertStringContainsString( 'MagazinePageLayout_magazinePage', $composed, 'Missing MagazinePageLayout_magazinePage root container.' );
 		$this->assertStringContainsString( 'MagazinePageLayout_pageContainer', $composed, 'Missing MagazinePageLayout_pageContainer content wrap.' );
 		$this->assertStringContainsString( 'FinisMarker_root', $composed, 'Missing FinisMarker_root end-of-page finis.' );
-		$this->assertStringContainsString( 'dailyos-end-mark', $composed, 'Missing dailyos-end-mark separator.' );
+		// `dailyos-end-mark` + literal `* * *` were part of the v1.4.2 account-overview-page
+		// pattern (deleted in v1.4.4 W2 substrate trim). The new account-detail-default
+		// composition ends with FinisMarker via the `dailyos/finis-marker` inner block;
+		// FinisMarker_root assertion above covers the canonical end-of-page sign-off.
 		$this->assertStringContainsString(
 			'template-part {"slug":"sidebar-account-summary"}',
 			$template,
 			'single-account template must mount sidebar-account-summary part.'
+		);
+		// V2 wave: single-account template references the account-detail-default pattern
+		// (which expands to the 24-chapter canonical composition).
+		$this->assertStringContainsString(
+			'wp:pattern',
+			$template,
+			'single-account template must reference the dailyos/account-detail-default pattern.'
 		);
 	}
 }

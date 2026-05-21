@@ -71,6 +71,12 @@ pub enum SignalType {
     /// MCP v2 rejected invocation audit event. Payload fields:
     /// client_id_or_unresolved, reject_reason, tool_name_or_unresolved.
     McpInvocationRejected,
+    /// Meeting prep status transitioned from one
+    /// `PrepStatus` to another (e.g., Ready → Stale, Queued → Running,
+    /// PrepNeeded → UserSuppressed). Emitted from
+    /// `services::meeting_prep_status::write` after any successful
+    /// transition.
+    MeetingPrepStatusChanged,
     NegativeSentiment,
     ObjectiveCompleted,
     ObjectiveCreated,
@@ -199,6 +205,7 @@ impl SignalType {
             "meeting_frequency_drop" => Self::MeetingFrequencyDrop,
             "mcp_tool_invoked" | "McpToolInvoked" => Self::McpToolInvoked,
             "mcp_invocation_rejected" | "McpInvocationRejected" => Self::McpInvocationRejected,
+            "meeting_prep_status_changed" => Self::MeetingPrepStatusChanged,
             "negative_sentiment" => Self::NegativeSentiment,
             "objective_completed" => Self::ObjectiveCompleted,
             "objective_created" => Self::ObjectiveCreated,
@@ -318,6 +325,7 @@ impl SignalType {
             Self::MeetingFrequencyDrop => "meeting_frequency_drop",
             Self::McpToolInvoked => "mcp_tool_invoked",
             Self::McpInvocationRejected => "mcp_invocation_rejected",
+            Self::MeetingPrepStatusChanged => "meeting_prep_status_changed",
             Self::NegativeSentiment => "negative_sentiment",
             Self::ObjectiveCompleted => "objective_completed",
             Self::ObjectiveCreated => "objective_created",
@@ -386,6 +394,14 @@ impl SignalType {
                 | Self::TrustBandDowngraded
                 | Self::TrustBandCleared
                 | Self::AbilityOutputChanged { .. }
+                // L3 cycle-2 (F1): MeetingPrepStatusChanged policy at
+                // `meeting_prep_status_changed_policy()` declares a 500ms
+                // entity-keyed coalesce window. Without this branch the
+                // emit-path predicate excluded it, so rapid PrepNeeded →
+                // Queued → Running → Ready churn fanned out one signal per
+                // transition and races against the ClaimVerificationStateChanged
+                // fan-out (services/claims.rs:8713 + :8738) became reorder-prone.
+                | Self::MeetingPrepStatusChanged
         )
     }
 }
@@ -451,6 +467,7 @@ pub fn known_signal_type_names() -> &'static [&'static str] {
         "meeting_frequency_drop",
         "mcp_tool_invoked",
         "mcp_invocation_rejected",
+        "meeting_prep_status_changed",
         "negative_sentiment",
         "objective_completed",
         "objective_created",
@@ -663,6 +680,7 @@ pub fn policy_for(signal: &SignalType) -> SignalPolicy {
         ReadModelMaterialized | PrepInvalidated | IntelligenceRefreshed | EnrichmentComplete => {
             read_model_materialized_policy()
         }
+        MeetingPrepStatusChanged => meeting_prep_status_changed_policy(),
         AccountCreated
         | AccountDomainsUpdated
         | AccountEventRecorded
@@ -847,6 +865,29 @@ fn read_model_materialized_policy() -> SignalPolicy {
         target_resolver: TargetResolver::ReadModel,
         retry_class: RetryClass::None,
         stale_marker: StaleMarkerBehavior::None,
+        await_timeout: None,
+        payload_privacy: PayloadPrivacy::NonPiiMetadata,
+        channel_eligibility: ChannelEligibility::AnyBus,
+    }
+}
+
+/// MeetingPrepStatusChanged policy.
+///
+/// Async coalesced propagation keyed on the meeting (entity) so
+/// rapid transitions (Queued → Running → Ready) within the 500ms
+/// window collapse to a single downstream re-render. Local audit row
+/// is durable so reconnecting surfaces can detect a missed transition.
+fn meeting_prep_status_changed_policy() -> SignalPolicy {
+    SignalPolicy {
+        durability: DurabilityClass::CoalescedDurablePropagation,
+        role: SignalRole::Invalidation,
+        execution_mode: ExecutionModeBehavior::PersistInLive,
+        propagation: PropagationPolicy::PropagateAsync {
+            coalesce: Some(COALESCE_ENTITY_500MS),
+        },
+        target_resolver: TargetResolver::MeetingPrep,
+        retry_class: RetryClass::Invalidation,
+        stale_marker: StaleMarkerBehavior::MarkAffectedOutputsStale,
         await_timeout: None,
         payload_privacy: PayloadPrivacy::NonPiiMetadata,
         channel_eligibility: ChannelEligibility::AnyBus,

@@ -1,0 +1,23 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "dailyos/recommended-actions",
+	"title": "Recommended Actions",
+	"category": "dailyos",
+	"description": "Recommended-actions subset of open loops; surfaces Suggest-merge affordance when MetadataProposals carries a merge_intent proposal (W2 §5.3 path α).",
+	"supports": {
+		"html": false,
+		"reusable": false,
+		"inserter": false
+	},
+	"attributes": {
+		"block_instance_id": { "type": "string" }
+	},
+	"usesContext": [
+		"dailyos/entityType",
+		"dailyos/entityId",
+		"dailyos/envelopeHandle"
+	],
+	"parent": [ "dailyos/person-detail" ],
+	"render": "file:./render.php"
+}

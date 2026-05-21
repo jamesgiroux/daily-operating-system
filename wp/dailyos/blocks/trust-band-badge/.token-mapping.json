@@ -4,6 +4,10 @@
 		"target_token": "wp--custom--dailyos--tokens--font-mono"
 	},
 	{
+		"source_token": "--color-action",
+		"target_token": "wp--preset--color--action"
+	},
+	{
 		"source_token": "--space-xs",
 		"target_token": "wp--preset--spacing--xs"
 	},

@@ -4,7 +4,7 @@
 	"name": "dailyos/health-badge",
 	"title": "Health Badge",
 	"category": "dailyos",
-	"description": "DailyOS HealthBadge primitive — health score dot + score + trend visual.",
+	"description": "DailyOS HealthBadge primitive — canonical band label (On Track / Watching / Action Needed / No Read) with band-dot + optional secondary score + trend (DOS-693).",
 	"supports": {
 		"html": false,
 		"reusable": false,

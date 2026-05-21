@@ -1,0 +1,60 @@
+src-tauri/src/intelligence/io.rs:2645:        let metadata = match std::fs::metadata(path) {
+src-tauri/src/db/data_lifecycle.rs:69:        .and_then(|p| std::fs::metadata(p).ok())
+src-tauri/src/db/data_lifecycle.rs:105:        .and_then(|p| std::fs::metadata(p).ok())
+src-tauri/src/db/data_lifecycle.rs:307:        .and_then(|p| std::fs::metadata(p).ok())
+src-tauri/src/google_api/mod.rs:292:        let content = std::fs::read_to_string(&primary)?;
+src-tauri/src/google_api/mod.rs:302:            let content = std::fs::read_to_string(&fallback)?;
+src-tauri/src/services/surface_pairing.rs:3986:        let raw = std::fs::read_to_string(logger.path()).unwrap();
+src-tauri/src/services/integrations.rs:43:    let content = match std::fs::read_to_string(&config_path) {
+src-tauri/src/services/integrations.rs:129:                if let Ok(meta) = std::fs::metadata(p) {
+src-tauri/src/services/integrations.rs:166:        match std::fs::read_to_string(&config_path) {
+src-tauri/src/migrations.rs:2423:    let mut backups: Vec<PathBuf> = std::fs::read_dir(parent)
+src-tauri/src/migrations.rs:3355:    let source_size_bytes = std::fs::metadata(&db_path).map(|m| m.len()).unwrap_or(0);
+src-tauri/src/migrations.rs:3415:    let source_size = std::fs::metadata(&db_path).map(|m| m.len()).unwrap_or(0);
+src-tauri/src/migrations.rs:3416:    let backup_size = std::fs::metadata(&backup_path)
+src-tauri/src/migrations.rs:5765:        let backup_files: Vec<_> = std::fs::read_dir(dir.path())
+src-tauri/src/google_api/token_store.rs:100:    let content = std::fs::read_to_string(&path)?;
+src-tauri/src/surface_runtime/mod.rs:7:use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+src-tauri/src/surface_runtime/mod.rs:914:        let mut opts = fs::OpenOptions::new();
+src-tauri/src/surface_runtime/mod.rs:4373:        std::fs::read_to_string(path).unwrap_or_default()
+src-tauri/src/surface_runtime/mod.rs:6001:        let source = std::fs::read_to_string(
+src-tauri/src/surface_runtime/mod.rs:6027:        let source = std::fs::read_to_string(
+src-tauri/src/surface_runtime/mod.rs:6097:        let raw = std::fs::read_to_string(&audit_path).expect("audit file is readable");
+src-tauri/src/processor/mod.rs:323:        let metadata = std::fs::metadata(file_path).ok();
+src-tauri/src/processor/mod.rs:410:    let entries = match std::fs::read_dir(&inbox_dir) {
+src-tauri/src/processor/mod.rs:698:                let companion_content = std::fs::read_to_string(&companion).unwrap();
+src-tauri/src/processor/mod.rs:730:                let md_files: Vec<_> = std::fs::read_dir(parent)
+src-tauri/src/presets/loader.rs:38:        std::fs::read_to_string(path).map_err(|e| format!("Failed to read preset file: {}", e))?;
+
+ succeeded in 473ms:
+src-tauri/tests/workspace_ingestion_no_substrate_reinvention.rs
+
+codex
+VERDICT: BLOCK
+
+Cycle-1 findings #1/#2/#3/#5 are resolved; #4’s root-equality fixture is added. New V1.1 security rewrite issues block approval.
+
+1. Hardlink mitigation is still false. §2/#7 and §7 claim same-device hardlinks are caught by strict-child + lstat/fstat equality, but an in-workspace hardlink to an outside same-device file has an in-workspace canonical path and identical lstat/fstat dev+ino. `fstat.dev == workspace_root_dev` does not catch it. Lines 25, 155-166, 181.
+
+2. Symlink chain fixture contradicts the stated algorithm. §7 says canonicalize happens first; A→B→outside returns `OutsideWorkspace` before open. The fixture expects `SymlinkRefused` at A via `O_NOFOLLOW`, which cannot happen after canonicalizing to the outside target. Lines 31-32, 153-160, 187.
+
+3. CI lint gate is unscoped/unimplementable as written. A repo-wide forbid on `std::fs::read*`, `metadata`, `read_dir`, `OpenOptions`, etc. will trip many existing non-ingestion callsites; if the intended boundary is W2 ingestion reads only, the packet must specify scan scope and exceptions. Lines 191-196, 210-211.
+
+4. Reserved-name slug coverage is internally inconsistent. §2 says Windows reserved names as `register_other` slug reject; §8 tests `"CON"` while saying the regex accepts it, but the regex rejects uppercase. Lowercase `"con"` still passes, and Windows validation is deferred. Lines 30, 59, 140, 223.
+
+Substrate check: `CategoryNotAllowed`/`RegisterError` have no current code collision; `StartRunSeed` is not in this W1-B packet, only W1-C.
+tokens used
+61,124
+VERDICT: BLOCK
+
+Cycle-1 findings #1/#2/#3/#5 are resolved; #4’s root-equality fixture is added. New V1.1 security rewrite issues block approval.
+
+1. Hardlink mitigation is still false. §2/#7 and §7 claim same-device hardlinks are caught by strict-child + lstat/fstat equality, but an in-workspace hardlink to an outside same-device file has an in-workspace canonical path and identical lstat/fstat dev+ino. `fstat.dev == workspace_root_dev` does not catch it. Lines 25, 155-166, 181.
+
+2. Symlink chain fixture contradicts the stated algorithm. §7 says canonicalize happens first; A→B→outside returns `OutsideWorkspace` before open. The fixture expects `SymlinkRefused` at A via `O_NOFOLLOW`, which cannot happen after canonicalizing to the outside target. Lines 31-32, 153-160, 187.
+
+3. CI lint gate is unscoped/unimplementable as written. A repo-wide forbid on `std::fs::read*`, `metadata`, `read_dir`, `OpenOptions`, etc. will trip many existing non-ingestion callsites; if the intended boundary is W2 ingestion reads only, the packet must specify scan scope and exceptions. Lines 191-196, 210-211.
+
+4. Reserved-name slug coverage is internally inconsistent. §2 says Windows reserved names as `register_other` slug reject; §8 tests `"CON"` while saying the regex accepts it, but the regex rejects uppercase. Lowercase `"con"` still passes, and Windows validation is deferred. Lines 30, 59, 140, 223.
+
+Substrate check: `CategoryNotAllowed`/`RegisterError` have no current code collision; `StartRunSeed` is not in this W1-B packet, only W1-C.

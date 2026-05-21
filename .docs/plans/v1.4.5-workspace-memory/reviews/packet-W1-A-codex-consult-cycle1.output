@@ -1,0 +1,150 @@
+  3487	    let current = current_version(conn)?;
+  3488	    let max_known = MIGRATIONS.last().map(Migration::version).unwrap_or(0);
+  3489	
+  3490	    // Forward-compat guard
+  3491	    if current > max_known {
+  3492	        return Err(format!(
+  3493	            "Database schema version ({}) is newer than this version of DailyOS supports ({}). \
+  3494	             Please update DailyOS to the latest version.",
+  3495	            current, max_known
+  3496	        ));
+  3497	    }
+  3498	
+  3499	    // Collect pending migrations
+  3500	    let pending: Vec<&Migration> = MIGRATIONS
+  3501	        .iter()
+  3502	        .filter(|m| m.version() > current)
+  3503	        .collect();
+  3504	
+  3505	    if pending.is_empty() {
+  3506	        verify_required_schema(conn)?;
+  3507	        return Ok(0);
+  3508	    }
+  3509	
+  3510	    // quarantine gate. Refuse to apply migration 126 (the
+  3511	    // backfill territory) until unresolved quarantine rows are resolved.
+  3512	    // Resolved quarantine rows are retained as audit trail and do NOT block
+  3513	    // subsequent migrations.
+  3514	    let migration_126_pending = pending.iter().any(|m| m.version() == 126);
+  3515	    if migration_126_pending {
+  3516	        let quarantine_exists: bool = conn
+  3517	            .query_row(
+  3518	                "SELECT count(*) FROM sqlite_master \
+  3519	                 WHERE type = 'table' AND name = 'suppression_tombstones_quarantine'",
+  3520	                [],
+  3521	                |row| row.get::<_, i64>(0).map(|count| count > 0),
+  3522	            )
+  3523	            .map_err(|e| format!("quarantine gate check: {e}"))?;
+  3524	
+  3525	        if quarantine_exists {
+
+exec
+/bin/zsh -lc "nl -ba src-tauri/src/migrations.rs | sed -n '3525,3605p'" in /private/tmp/dailyos-v145-w1a
+ succeeded in 0ms:
+  3525	        if quarantine_exists {
+  3526	            let unresolved_count = quarantine_gate_blocking_count(conn)?;
+  3527	
+  3528	            if unresolved_count > 0 {
+  3529	                return Err(format!(
+  3530	                    "DOS-308 quarantine gate: refusing to apply migration 126 while {} \
+  3531	                     unresolved malformed suppression record(s) remain in quarantine. Run \
+  3532	                     scripts/remediate_suppression_tombstones.sh to resolve, then re-run \
+  3533	                     migrations. (Resolved/audit-trail rows do NOT block migrations.)",
+  3534	                    unresolved_count
+  3535	                ));
+  3536	            }
+  3537	        }
+  3538	    }
+  3539	
+  3540	    // Backup before applying any migrations
+  3541	    let backup_path = backup_before_migration(conn, encryption_key)?;
+  3542	    if backup_path.to_string_lossy() != ":memory:" {
+  3543	        log::info!(
+  3544	            "Migration safety backup ready at {}",
+  3545	            backup_path.to_string_lossy()
+  3546	        );
+  3547	    }
+  3548	
+  3549	    // Apply each pending migration in order
+  3550	    for migration in &pending {
+  3551	        let version = migration.version();
+  3552	        match migration {
+  3553	            Migration::Sql { sql, .. } => {
+  3554	                let apply_result = if version == 141 {
+  3555	                    apply_migration_141_user_note_backfill(conn, sql)
+  3556	                        .map_err(rusqlite::Error::InvalidParameterName)
+  3557	                } else if version == 146 {
+  3558	                    apply_migration_146_signal_events_data_source(conn, sql)
+  3559	                        .map_err(rusqlite::Error::InvalidParameterName)
+  3560	                } else {
+  3561	                    conn.execute_batch(sql)
+  3562	                };
+  3563	                match apply_result {
+  3564	                    Ok(()) => {}
+  3565	                    Err(e) => {
+  3566	                        let msg = e.to_string();
+  3567	                        // SQLite DDL statements like ALTER TABLE ADD COLUMN and RENAME COLUMN
+  3568	                        // are not idempotent (no IF NOT EXISTS / IF EXISTS variants).
+  3569	                        // Tolerate these specific benign errors ONLY for true single-statement
+  3570	                        // ALTER TABLE migrations:
+  3571	                        // - "duplicate column name": ADD COLUMN when column already exists
+  3572	                        // - "no such column": RENAME COLUMN when column was already renamed
+  3573	                        //
+  3574	                        // Multi-statement migrations may have completed only their first
+  3575	                        // statements before a crash; swallowing a later duplicate-column
+  3576	                        // error can skip required data-copy/cleanup work and still record
+  3577	                        // the migration as applied.
+  3578	                        if is_benign_single_alter_conflict(sql, &e) {
+  3579	                            log::warn!(
+  3580	                                "Migration v{}: benign schema conflict ({}), continuing",
+  3581	                                version,
+  3582	                                msg.split('\n').next().unwrap_or(&msg)
+  3583	                            );
+  3584	                        } else {
+  3585	                            return Err(format!("Migration v{} failed: {}", version, e));
+  3586	                        }
+  3587	                    }
+  3588	                }
+  3589	            }
+  3590	            Migration::Fn { apply, .. } => {
+  3591	                apply(conn).map_err(|e| format!("Migration v{} failed: {}", version, e))?;
+  3592	            }
+  3593	        }
+  3594	
+  3595	        conn.execute(
+  3596	            "INSERT INTO schema_version (version) VALUES (?1)",
+  3597	            [i64::from(version)],
+  3598	        )
+  3599	        .map_err(|e| format!("Failed to record migration v{}: {}", version, e))?;
+  3600	
+  3601	        log::info!("Applied migration v{}", version);
+  3602	    }
+  3603	
+  3604	    verify_required_schema(conn)?;
+  3605	    Ok(pending.len())
+
+codex
+VERDICT: BLOCK
+
+1. Migration slots are not implementable as written. Packet claims v200/v201 and “highest migration ... v178” (`L0-packet...:13,30,82`), but repo has v240 registered (`src-tauri/src/migrations.rs:927`) and runner applies only `version > current` (`src-tauri/src/migrations.rs:3500`). v200/v201 can be skipped on DBs already at v240.
+
+2. Cycle 5 trait surface is under-specified. Packet lists only `SignalEmitter` method names and omits `Send + Sync` (`L0-packet...:44-45`); wave plan pins exact trait bounds and method signatures (`v1.4.5-waves.md:449-458`). Fresh agent must guess parameters.
+
+3. Cycle 9 `WorkspaceCategory` serde contract is only partially translated. Packet says `#[serde(rename_all = "snake_case")]` (`L0-packet...:38`); wave plan requires `tag = "kind", content = "name"` and explicit `Other(name)` wire shape (`v1.4.5-waves.md:417-426`).
+
+4. Test adequacy gap: done-when requires all shared types importable (`FileIdentity`, `SourceType`, `RejectionReason`, `WorkspaceClaimProposal`, `SourceAttribution`) and `services/mod.rs` export (`L0-packet...:155,158`), but §8 tests only lifecycle constructor/category/traits/skeleton/mod.rs under submodule (`L0-packet...:140-148`).
+
+5. K-in completeness confirmed for requested terms: `rg -n "workspace_ingestion|ingestion_run|document_entity_link|FileIdentity|RejectionReason|SignalEmitter" docs/solutions .docs/decisions` returned zero hits.
+tokens used
+107,359
+VERDICT: BLOCK
+
+1. Migration slots are not implementable as written. Packet claims v200/v201 and “highest migration ... v178” (`L0-packet...:13,30,82`), but repo has v240 registered (`src-tauri/src/migrations.rs:927`) and runner applies only `version > current` (`src-tauri/src/migrations.rs:3500`). v200/v201 can be skipped on DBs already at v240.
+
+2. Cycle 5 trait surface is under-specified. Packet lists only `SignalEmitter` method names and omits `Send + Sync` (`L0-packet...:44-45`); wave plan pins exact trait bounds and method signatures (`v1.4.5-waves.md:449-458`). Fresh agent must guess parameters.
+
+3. Cycle 9 `WorkspaceCategory` serde contract is only partially translated. Packet says `#[serde(rename_all = "snake_case")]` (`L0-packet...:38`); wave plan requires `tag = "kind", content = "name"` and explicit `Other(name)` wire shape (`v1.4.5-waves.md:417-426`).
+
+4. Test adequacy gap: done-when requires all shared types importable (`FileIdentity`, `SourceType`, `RejectionReason`, `WorkspaceClaimProposal`, `SourceAttribution`) and `services/mod.rs` export (`L0-packet...:155,158`), but §8 tests only lifecycle constructor/category/traits/skeleton/mod.rs under submodule (`L0-packet...:140-148`).
+
+5. K-in completeness confirmed for requested terms: `rg -n "workspace_ingestion|ingestion_run|document_entity_link|FileIdentity|RejectionReason|SignalEmitter" docs/solutions .docs/decisions` returned zero hits.

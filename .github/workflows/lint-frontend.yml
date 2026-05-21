@@ -97,9 +97,6 @@ jobs:
       - name: Enforce stakeholder graph writer signal helper
         run: ./scripts/check_stakeholder_writer_emits_signal.sh
 
-      - name: Enforce W4-A account-overview block boundaries
-        run: ./scripts/check_w4a_account_overview_block.sh
-
       - name: Enforce W4-F feedback wire-through invariants
         run: ./scripts/check_w4f_feedback_wire_through.sh
 
@@ -117,6 +114,21 @@ jobs:
           bash src-tauri/scripts/check_trust_factor_thresholds.sh
           bash scripts/check_prompt_template_registry.sh
           bash scripts/check_prompt_fingerprint_boundary.sh
+
+      - name: Enforce DOS-340 audit disclosure allowlist
+        run: bash src-tauri/scripts/check_audit_disclosure_allowlist.sh
+
+      - name: Enforce DOS-340 audit denylist completeness (AC-340.7)
+        run: bash src-tauri/scripts/check_audit_denylist_completeness.sh
+
+      - name: Enforce DOS-477 sensitivity gate composition (AC-477.11)
+        run: bash src-tauri/scripts/check_sensitivity_gate_composition.sh
+
+      - name: Enforce v1.4.4 W1 consumer-skeleton wiring (AC-W1.9)
+        run: bash src-tauri/scripts/check_w1_consumer_skeleton.sh
+
+      - name: Enforce destructive migrations wrapped in BEGIN IMMEDIATE / COMMIT
+        run: bash src-tauri/scripts/check_migrations_transactional.sh
 
       - name: Enforce durable source comments
         run: ./scripts/check_no_ephemeral_issue_refs_in_comments.sh

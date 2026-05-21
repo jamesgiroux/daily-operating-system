@@ -1,0 +1,50 @@
+ succeeded in 544ms:
+   736	### Agent W3-B — DOS-471: Signal and invalidation wiring
+   737	
+   738	- **Spec:** [DOS-471](https://linear.app/a8c/issue/DOS-471).
+   739	- **Goal:** Wire the workspace ingestion pipeline to the v1.4.1 Signal Policy Registry. **Cycle 2 amendment:** the new `SignalType` variants are enumerated explicitly here (no longer "if needed") because the current `signals/policy_registry.rs` enum has no `WorkspaceFile*` variants — confirmed by grep. W3-B adds these five variants AND their `from_name` / `canonical_name` / `policy_for` arms AND the corresponding entries in `signals/invalidation.rs::invalidating_types` allowlist (which currently lacks any `workspace_file_*` entries):
+   740	  - `WorkspaceFileIngested` (canonical `workspace_file_ingested`) — affects intelligence; triggers `EntityIntelligenceUpdated` propagation; in invalidation allowlist (prep regenerates).
+   741	  - `WorkspaceFileRejected` (canonical `workspace_file_rejected`) — audit-only; NOT in invalidation allowlist (rejected files don't affect prep).
+   742	  - `WorkspaceFilePendingEntityAssignment` (canonical `workspace_file_pending_entity_assignment`) — surfaces a review item; NOT in invalidation allowlist (no entity to invalidate yet).
+   743	  - `WorkspaceFileQuarantined` (canonical `workspace_file_quarantined`) — triggers claim retraction for the file's prior claims; in invalidation allowlist (prep regenerates without the file).
+   744	  - `WorkspaceFileEntityLinkChanged` (canonical `workspace_file_entity_link_changed`) — emitted by `link::override_link` (W1-C); in invalidation allowlist (entity attribution changed).
+   745	- **Files owned (exclusive):** `src-tauri/src/services/workspace_ingestion/signals.rs` (W3-B is the only owner of content; W1-A pre-created the empty placeholder; W3-B fills it with `WorkspaceSignalEmitter`, the impl of the `SignalEmitter` trait **defined in W1-A's `contracts.rs`** — cycle 4 trait relocation. Each trait method (`emit_file_ingested`, `emit_file_rejected`, `emit_file_pending_entity_assignment`, `emit_file_quarantined`, `emit_link_changed`) maps to a `bus::emit_signal(SignalType::WorkspaceFile*, payload)` call); function-level additions to `src-tauri/src/signals/policy_registry.rs` (the five new `SignalType` enum variants + their arms in `from_name` / `canonical_name` / `policy_for` matchers — strictly additive; no edits to existing variants); function-level additions to `src-tauri/src/signals/invalidation.rs` (extending the `invalidating_types` constant with `workspace_file_ingested`, `workspace_file_quarantined`, `workspace_file_entity_link_changed` per the policy above); a single-line documented patch in `src-tauri/src/services/workspace_ingestion/wiring.rs` to swap `NullSignalEmitter` for `WorkspaceSignalEmitter` in the `build_pipeline()` constructor call (W3-B's only allowed touch in `wiring.rs`, at a different argument position than W3-A's patch). **Cycle 3+4:** W3-B does NOT edit `pipeline.rs` or `link.rs`. The DI pattern with the W1-A trait means the real emitter is constructed in `wiring.rs` and threaded through every consumer that needs to emit. `link::override_link` (W1-C) takes `&dyn SignalEmitter` and calls `emit_link_changed()`; the same trait surface that W1-C used against `NullSignalEmitter` in tests now maps to a real bus emission once W3-B's impl is wired in `wiring.rs`.
+   746	- **Don't touch:** `services/claims.rs` signal emission (existing; do not modify); `signals/bus.rs` `emit_signal` function family (v1.4.1 owns the signal bus; extend only via `policy_registry.rs`); existing `SignalType` variants or matcher arms; existing entries in `invalidating_types`; W3-A's `extract.rs` body (W3-A owns); W2-A's `pipeline.rs` (W2-A owns; W3-B touches `wiring.rs` only); W1-C's `link.rs` (W1-C owns; W3-B does not touch); other `services/workspace_ingestion/*.rs` submodules.
+
+exec
+/bin/zsh -lc "nl -ba .docs/plans/v1.4.5-waves.md | sed -n '720,735p'" in /private/tmp/dailyos-v145-w1a
+ succeeded in 531ms:
+   720	- **Spec:** [DOS-470](https://linear.app/a8c/issue/DOS-470).
+   721	- **Goal:** Extend `services::workspace_ingestion` with the claim extraction logic: given file content (structured JSON/markdown entity files, or extracted text from Drive/attachment files), produce typed `WorkspaceClaimProposal` records (the type is **W1-A-owned in `contracts.rs`** per cycle 6 promotion) using the existing `CLAIM_TYPE_REGISTRY`. This is the "intelligence" half of the ingestion pipeline — converting raw file content to structured claim proposals.
+   722	- **Files owned (exclusive):** `src-tauri/src/services/workspace_ingestion/extract.rs` (W3-A is the only owner of content; W1-A pre-created the empty placeholder; W3-A fills it with the `WorkspaceExtractor` impl of the `Extractor` trait **defined in W1-A's `contracts.rs`** — cycle 4 trait relocation); `src-tauri/src/intelligence/io.rs` (read extensions for workspace file formats — read-only callers, no write); a single-line documented patch in `src-tauri/src/services/workspace_ingestion/wiring.rs` to swap `NullExtractor` for `WorkspaceExtractor` in the `build_pipeline()` constructor call (W3-A's only allowed touch in `wiring.rs`; named at L0 plan; the corresponding patch by W3-B for `SignalEmitter` is at a different argument position so the two patches are mechanically non-conflicting). **Cycle 3+4:** W3-A does not touch `pipeline.rs` at all; trait DI through `contracts.rs` (W1-A) makes this clean. Does NOT introduce new `claim_kind` variants without an L0 plan amendment that identifies which existing variants in `CLAIM_TYPE_REGISTRY` cover workspace-file-derived claims and which genuinely need new variants.
+   723	- **Don't touch:** `services/claims.rs` (caller, not modifier); `abilities/claims.rs::CLAIM_TYPE_REGISTRY` (read-only — if new variants are needed, raise in L0 plan as an amendment, do not add silently); signal bus (W3-B owns); `services/workspace_ingestion/{lifecycle,registry,runs,link,signals,graph,pipeline,mod}.rs` (other lanes — pipeline.rs is W2-A's permanent exclusive).
+   724	- **Depends on:** W2 fully merged (pipeline shell exists; stub extractor is the replacement target).
+   725	- **Intelligence Loop gate:**
+   726	  1. *Claim model:* Every extracted proposal is submitted via `commit_claim`. The `claim_kind` is resolved against `CLAIM_TYPE_REGISTRY`. If a file-derived fact doesn't map to an existing kind, it becomes a `RawObservation` claim (existing kind) rather than silently dropped or a new kind invented. Confirm this rule in done-when.
+   727	  2. *Provenance + trust:* Each proposal carries `source_asof` (file mtime), `data_source` (ADR-0107 variant from the source registry), and `source_attribution` (file path + ingestion run ID). The trust computation uses the v1.4.1 freshness decay table for the `DataSource` variant.
+   728	  3. *Signals + invalidation:* `extract_proposals_*` does not emit signals directly. Signals flow from `commit_claim` per existing v1.4.1 signal infrastructure.
+   729	  4. *Runtime + surfaces:* Proposals are consumed by `build_intelligence_context()` once committed (existing behavior). Confirm the claim `subject_ref` is correctly populated so context queries find the claims.
+   730	  5. *Feedback loop:* User correction of a workspace-derived claim propagates through the existing `services::feedback` path. The feedback event traces back to the source file via `source_attribution`.
+   731	- **Tests required:** Extraction test against a fixture entity JSON (produces expected claim kinds); extraction test against a fixture Drive markdown (produces `RawObservation` for unstructured content); no claim produced without `source_asof`; `subject_ref` populated correctly; `cargo test` + `cargo clippy -D warnings` clean.
+   732	- **Done when:** `extract_proposals_*` functions produce typed proposals for all fixture file types; all proposals carry mandatory provenance fields; no new `claim_kind` variants introduced without L0 plan amendment; all tests green.
+   733	
+   734	---
+   735	
+
+codex
+VERDICT: BLOCK
+
+1. Packet-local cycle-4 fixes are resolved: `Some(source_asof)`, `DocumentId::new(...)`, removed `SourceIdentifier` import, defined `LifecycleError`, 10-field §8 test, and CI gate limitation acknowledged.
+2. `SourceType` wave-plan targets are resolved: W1-A/W2-A now use canonical `WorkspaceFileKind`.
+3. BLOCK: wave-plan Cycle 12 did not propagate the canonical 10-field shape into W1-A snippet. `.docs/plans/v1.4.5-waves.md:481` still shows 7 fields and labels `source_attribution` as “file_id + ingestion_run_id (new v1.4.5 type, defined here)”, omitting separate `ingestion_run_id`, `lifecycle_state`, `initial_source_reliability`.
+4. BLOCK: downstream W3-A repeats stale semantics at `.docs/plans/v1.4.5-waves.md:727`: `source_attribution` is “file path + ingestion run ID”, contradicting Cycle 12’s canonical 7-field `SourceAttribution` plus separate run linkage.
+5. No new V1.4 packet-local regression found; blocker is remaining wave-plan authority drift.
+tokens used
+76,899
+VERDICT: BLOCK
+
+1. Packet-local cycle-4 fixes are resolved: `Some(source_asof)`, `DocumentId::new(...)`, removed `SourceIdentifier` import, defined `LifecycleError`, 10-field §8 test, and CI gate limitation acknowledged.
+2. `SourceType` wave-plan targets are resolved: W1-A/W2-A now use canonical `WorkspaceFileKind`.
+3. BLOCK: wave-plan Cycle 12 did not propagate the canonical 10-field shape into W1-A snippet. `.docs/plans/v1.4.5-waves.md:481` still shows 7 fields and labels `source_attribution` as “file_id + ingestion_run_id (new v1.4.5 type, defined here)”, omitting separate `ingestion_run_id`, `lifecycle_state`, `initial_source_reliability`.
+4. BLOCK: downstream W3-A repeats stale semantics at `.docs/plans/v1.4.5-waves.md:727`: `source_attribution` is “file path + ingestion run ID”, contradicting Cycle 12’s canonical 7-field `SourceAttribution` plus separate run linkage.
+5. No new V1.4 packet-local regression found; blocker is remaining wave-plan authority drift.

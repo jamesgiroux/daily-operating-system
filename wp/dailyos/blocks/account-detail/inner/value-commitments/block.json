@@ -1,0 +1,19 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "dailyos/value-commitments",
+	"title": "Value Commitments",
+	"category": "dailyos",
+	"description": "Value Commitments \u2014 projection over EntityIntelligenceEnvelope. Inserter-global per ADR-0129 \u00a72 (no parent); default composition lives in the account-detail-default filesystem pattern.",
+	"supports": {
+		"html": false,
+		"reusable": false,
+		"inserter": true
+	},
+	"usesContext": [
+		"dailyos/entityType",
+		"dailyos/entityId",
+		"dailyos/envelopeHandle"
+	],
+	"render": "file:./render.php"
+}

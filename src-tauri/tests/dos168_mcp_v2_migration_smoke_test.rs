@@ -1,4 +1,5 @@
-//! Smoke test for the v1.4.7 W1-A migrations (v241-v244) per DOS-168 L0 packet.
+//! Smoke test for the v1.4.7 W1-A migrations (v255-v258 per dev-reconciliation
+//! renumber 2026-05-21; originally v241-v244 in L0 packet) per DOS-168.
 //!
 //! Runs the full migration chain against an in-memory SQLite and asserts the
 //! schema landed correctly: tables exist, expected columns are present, and
@@ -9,11 +10,11 @@ use dailyos_lib::migration_test_api::run_migrations;
 use rusqlite::Connection;
 
 #[test]
-fn dos168_v241_v244_migrations_land_canonical_schema() {
+fn dos168_v255_v258_migrations_land_canonical_schema() {
     let conn = Connection::open_in_memory().expect("open in-memory database");
     run_migrations(&conn).expect("migrations apply cleanly");
 
-    // ---- v241 mcp_client_manifest + mcp_tool_grant ----
+    // ---- v255 mcp_client_manifest + mcp_tool_grant ----
     let manifest_cols = table_columns(&conn, "mcp_client_manifest");
     assert!(manifest_cols.contains(&"client_id".to_string()), "manifest missing client_id");
     assert!(manifest_cols.contains(&"paired_at".to_string()), "manifest missing paired_at");
@@ -44,7 +45,7 @@ fn dos168_v241_v244_migrations_land_canonical_schema() {
         "missing idx_mcp_tool_grant_client_tool index per L0 packet AC-2"
     );
 
-    // ---- v242 mcp_conversation_handle (composite handle+client_id) ----
+    // ---- v256 mcp_conversation_handle (composite handle+client_id) ----
     let handle_cols = table_columns(&conn, "mcp_conversation_handle");
     assert!(handle_cols.contains(&"handle".to_string()));
     assert!(handle_cols.contains(&"client_id".to_string()));
@@ -58,7 +59,7 @@ fn dos168_v241_v244_migrations_land_canonical_schema() {
         "missing handle index per ADR-0102 §D.bis"
     );
 
-    // ---- v243 mcp_transport_nonce_ledger (ADR-0102 §C.bis.schema verbatim) ----
+    // ---- v257 mcp_transport_nonce_ledger (ADR-0102 §C.bis.schema verbatim) ----
     let nonce_cols = table_columns(&conn, "mcp_transport_nonce_ledger");
     assert!(nonce_cols.contains(&"nonce".to_string()));
     assert!(nonce_cols.contains(&"client_id".to_string()));
@@ -107,7 +108,7 @@ fn dos168_v241_v244_migrations_land_canonical_schema() {
         "UNIQUE(nonce, client_id) NOT enforced — replay protection broken"
     );
 
-    // ---- v244 mcp_tool_call_ledger + mcp_audit_outbox ----
+    // ---- v258 mcp_tool_call_ledger + mcp_audit_outbox ----
     let ledger_cols = table_columns(&conn, "mcp_tool_call_ledger");
     assert!(ledger_cols.contains(&"client_id".to_string()));
     assert!(ledger_cols.contains(&"tool_name".to_string()));

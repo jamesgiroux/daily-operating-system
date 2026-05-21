@@ -1,0 +1,44 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "dailyos/project-detail",
+	"title": "Project Detail",
+	"category": "dailyos",
+	"description": "Outer block for a Project entity surface — consumes get_entity_intelligence (entity_type=project) and hosts 15 inner blocks (Path B renderer-side projection over EnvelopeSection per W2 V1.2.1 §5.2).",
+	"supports": {
+		"html": false,
+		"reusable": false,
+		"inserter": true
+	},
+	"attributes": {
+		"project_id": { "type": "string" },
+		"block_instance_id": { "type": "string" },
+		"envelope_handle": { "type": "string", "default": "" }
+	},
+	"providesContext": {
+		"dailyos/entityType": "entity_type",
+		"dailyos/entityId": "project_id",
+		"dailyos/envelopeHandle": "envelope_handle"
+	},
+	"parent": null,
+	"templateLock": false,
+	"template": [
+		["dailyos/project-hero"],
+		["dailyos/vitals-strip"],
+		["dailyos/portfolio-chapter"],
+		["dailyos/trajectory-chapter"],
+		["dailyos/horizon-chapter"],
+		["dailyos/watch-list"],
+		["dailyos/watch-list-milestones"],
+		["dailyos/stakeholder-gallery"],
+		["dailyos/the-work"],
+		["dailyos/touchpoints-feed"],
+		["dailyos/open-loops-feed"],
+		["dailyos/linear-issues-chapter"],
+		["dailyos/unified-timeline"],
+		["dailyos/recommended-actions"],
+		["dailyos/project-appendix"]
+	],
+	"render": "file:./render.php",
+	"editorScript": "file:./edit.js"
+}

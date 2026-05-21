@@ -1,0 +1,27 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "dailyos/person-relationships",
+	"title": "Person Relationships",
+	"category": "dailyos",
+	"description": "Relationship narrative + per-relationship touchpoint cadence.",
+	"supports": {
+		"html": false,
+		"reusable": false,
+		"inserter": false
+	},
+	"attributes": {
+		"block_instance_id": {
+			"type": "string"
+		}
+	},
+	"usesContext": [
+		"dailyos/entityType",
+		"dailyos/entityId",
+		"dailyos/envelopeHandle"
+	],
+	"parent": [
+		"dailyos/person-detail"
+	],
+	"render": "file:./render.php"
+}

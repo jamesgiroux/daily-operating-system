@@ -1,0 +1,80 @@
+src-tauri/src/services/workspace_ingestion/lifecycle.rs:62:/// construction time; the trybuild test at `src-tauri/tests/trybuild/`
+src-tauri/src/services/workspace_ingestion/lifecycle.rs:66:pub struct WorkspaceFileLifecycle {
+src-tauri/tests/dos265_link_map_macro_shape_test.rs:4:    let t = trybuild::TestCases::new();
+src-tauri/tests/dos265_link_map_macro_shape_test.rs:5:    t.compile_fail("tests/trybuild/frontmatter_link_map_shape_missing_subject_type_fails.rs");
+src-tauri/tests/dos209_regression.rs:13://! and capability trybuild fixtures (§9 item 8) are deferred to a follow-up
+src-tauri/tests/workspace_ingestion_unit.rs:242:fn migrations_slice_max_version_is_at_least_251() {
+src-tauri/tests/trybuild/frontmatter_link_map_shape_missing_subject_type_fails.stderr:2:  --> tests/trybuild/frontmatter_link_map_shape_missing_subject_type_fails.rs:45:9
+src-tauri/tests/trybuild/frontmatter_link_map_shape_missing_subject_type_fails.rs:42:            edge_type: "trybuild_mentions_account",
+src-tauri/tests/dos211_envelope_constructor_gate_test.rs:3:    let t = trybuild::TestCases::new();
+src-tauri/tests/dos211_envelope_constructor_gate_test.rs:4:    t.compile_fail("tests/trybuild/external_ability_output_construction_fails.rs");
+src-tauri/tests/trybuild/external_ability_output_construction_fails.stderr:2:  --> tests/trybuild/external_ability_output_construction_fails.rs:20:9
+
+ succeeded in 80905ms:
+   Compiling dailyos v1.4.1 (/private/tmp/dailyos-v145-w1a/src-tauri)
+   Compiling abilities-runtime v0.1.0 (/private/tmp/dailyos-v145-w1a/src-tauri/abilities-runtime)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 19s
+     Running tests/workspace_ingestion_contracts_import.rs (target/debug/deps/workspace_ingestion_contracts_import-ad642be780485c7c)
+
+running 2 tests
+test contracts_public_surface_importable_externally ... ok
+test lifecycle_public_surface_importable_externally ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/workspace_ingestion_mod_rs_shape.rs (target/debug/deps/workspace_ingestion_mod_rs_shape-51474a6869c166b2)
+
+running 1 test
+test mod_rs_has_exactly_expected_alphabetical_pub_mods ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/workspace_ingestion_no_substrate_reinvention.rs (target/debug/deps/workspace_ingestion_no_substrate_reinvention-f9c94ca17b4a2666)
+
+running 1 test
+test no_substrate_reinvention_in_workspace_ingestion ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/workspace_ingestion_unit.rs (target/debug/deps/workspace_ingestion_unit-ea421e3593a358c8)
+
+running 10 tests
+test null_signal_emitter_methods_are_noops_callable_through_dyn ... ok
+test workspace_category_as_slug_and_from_slug_round_trip_for_known_variants ... ok
+test migrations_slice_max_version_is_at_least_251 ... ok
+test workspace_category_from_slug_rejects_malformed ... ok
+test workspace_category_other_accepts_lex_valid_lowercase_ascii_slugs ... ok
+test lifecycle_state_has_exactly_seven_variants_with_canonical_serde_strings ... ok
+test source_attribution_accepts_workspace_shape_inputs ... ok
+test workspace_category_serde_wire_shape_matches_frozen_contract ... ok
+test null_extractor_is_send_sync_and_returns_empty ... ok
+test migrations_v250_v251_apply_against_in_memory_db_and_register_columns ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+codex
+VERDICT: APPROVE
+
+Findings: none.
+
+Nits:
+1. `src-tauri/tests/workspace_ingestion_unit.rs:241` names a MIGRATIONS max-version gate, but it only checks the v250/v251 SQL files exist and says `>=251`; the code itself satisfies max `251` at `src-tauri/src/migrations.rs:935`.
+2. L0 §8 asked for trybuild compile-fail gates, but W1-A added runtime/import tests only. Not blocking against the AC list above because the frozen structs are present and importable, but worth tightening in maintenance.
+
+Verified:
+`cargo clippy --lib -- -D warnings` green.
+W1-A tests green: 14 passed across `workspace_ingestion_contracts_import`, `mod_rs_shape`, `no_substrate_reinvention`, and `unit`.
+tokens used
+176,701
+VERDICT: APPROVE
+
+Findings: none.
+
+Nits:
+1. `src-tauri/tests/workspace_ingestion_unit.rs:241` names a MIGRATIONS max-version gate, but it only checks the v250/v251 SQL files exist and says `>=251`; the code itself satisfies max `251` at `src-tauri/src/migrations.rs:935`.
+2. L0 §8 asked for trybuild compile-fail gates, but W1-A added runtime/import tests only. Not blocking against the AC list above because the frozen structs are present and importable, but worth tightening in maintenance.
+
+Verified:
+`cargo clippy --lib -- -D warnings` green.
+W1-A tests green: 14 passed across `workspace_ingestion_contracts_import`, `mod_rs_shape`, `no_substrate_reinvention`, and `unit`.

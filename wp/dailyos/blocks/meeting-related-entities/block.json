@@ -1,0 +1,12 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "dailyos/meeting-related-entities",
+	"title": "Meeting Related Entities",
+	"category": "dailyos",
+	"description": "Related entities (Account/Project/Person) for a Meeting — projects Facts (related_entities: [SubjectRef] resolved). Cross-stack navigation per AC-MD.4.",
+	"supports": { "html": false, "reusable": false, "inserter": false },
+	"usesContext": [ "dailyos/entityType", "dailyos/entityId" ],
+	"parent": [ "dailyos/meeting-detail" ],
+	"render": "file:./render.php"
+}

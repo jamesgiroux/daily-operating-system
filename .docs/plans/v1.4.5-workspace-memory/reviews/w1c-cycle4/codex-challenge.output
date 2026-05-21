@@ -1,0 +1,25 @@
+   268	
+   269	## 10. Handoff notes
+   270	
+   271	- **W2-A (DOS-466)** consumes `RunsRepo::{start_run, complete_run, find_by_idempotency_key}`. Idempotency check before each ingestion attempt.
+   272	- **W3-A (DOS-470)** populates `extractor_version` + `claim_count_produced` after extraction.
+   273	- **W3-B (DOS-471)** wires real `WorkspaceSignalEmitter::emit_link_changed`; the trait-method surface W1-C compiles against in `override_link` is unchanged.
+   274	- **W4-A (DOS-472)** invokes `LinkRepo::override_link` from source-management block; consumes `RunsRepo::find_by_idempotency_key` for run-history display.
+   275	- **W2-C (DOS-468)** invokes `LinkRepo::add_link` with `attribution_source = EntityIntake` from the entity-intake Gutenberg block.
+   276	
+
+codex
+VERDICT BLOCK
+
+1. [L101](/private/tmp/dailyos-v145-w1a/.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-C-DOS-465.md:101) still omits `AlreadyInProgress` and `AlreadyCompleted { existing }`.
+2. [L243](/private/tmp/dailyos-v145-w1a/.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-C-DOS-465.md:243) still permits `DbError` for duplicate success, contradicting V1.3.
+3. [L266](/private/tmp/dailyos-v145-w1a/.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-C-DOS-465.md:266) and [L274](/private/tmp/dailyos-v145-w1a/.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-C-DOS-465.md:274) still assign re-link / first-link consumers to `override_link`.
+Fix these stale operative sections; the race, tombstone, and migration-order folds otherwise converge.
+tokens used
+20,110
+VERDICT BLOCK
+
+1. [L101](/private/tmp/dailyos-v145-w1a/.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-C-DOS-465.md:101) still omits `AlreadyInProgress` and `AlreadyCompleted { existing }`.
+2. [L243](/private/tmp/dailyos-v145-w1a/.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-C-DOS-465.md:243) still permits `DbError` for duplicate success, contradicting V1.3.
+3. [L266](/private/tmp/dailyos-v145-w1a/.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-C-DOS-465.md:266) and [L274](/private/tmp/dailyos-v145-w1a/.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-C-DOS-465.md:274) still assign re-link / first-link consumers to `override_link`.
+Fix these stale operative sections; the race, tombstone, and migration-order folds otherwise converge.

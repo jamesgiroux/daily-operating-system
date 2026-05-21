@@ -1,10 +1,36 @@
 # ADR-0123: Typed Claim Feedback Semantics
 
-**Status:** Accepted
+**Status:** Accepted (V1.1 amendment 2026-05-21 adds `MergeIntent` as 10th variant)
 **Date:** 2026-04-24
 **Target:** v1.4.0 substrate (FeedbackAction enum + ClaimFeedback row + Trust-compiler effects) / v1.4.2 (UI surfaces beyond inline)
 **Extends:** [ADR-0113](0113-human-and-agent-analysis-as-first-class-claim-sources.md), [ADR-0114](0114-scoring-unification.md), [ADR-0105](0105-provenance-as-first-class-output.md) (SubjectAttribution amendment)
 **Closes:** "v1.4.0 Claim Feedback and Prompt Granularity Review" — 7 open decisions
+
+## V1.1 Amendment (2026-05-21) — `MergeIntent` 10th variant
+
+v1.4.4 W2 §5.3 (Person Detail merge picker / DOS-484) requires a user-authored
+proposal to merge an ambiguous person entity into a canonical target. The
+existing 9-variant set has no shape for this: `WrongSubject` is "right fact,
+wrong subject," not "this entity equals that entity." A 10th variant is
+substrate-correct:
+
+```rust
+/// User nominates a canonical merge target for an ambiguous entity.
+/// Payload carries `merge_target: SubjectRef` (required) and
+/// `supporting_evidence: Option<String>` (optional, sanitized).
+/// → persists a typed proposal row only; does NOT mutate claim
+///   verification_state or lifecycle. The merge execution flow (DOS-484)
+///   consumes the typed payload and runs the subject rebind. User-only
+///   action; Agent actor denied at every surface (AC-8.13).
+MergeIntent,
+```
+
+Semantics matrix: `verification_state = Active`, `trust_effect = NONE`, `repair
+= None`, `render = Default`, `requires_action_metadata = true`,
+`is_truth_feedback = false`. Subject-attribution feedback, not truth feedback.
+
+DB widening: migration `245_dos_484_feedback_merge_intent.sql` rebuilds the
+`claim_feedback.feedback_type` CHECK constraint to include `'merge_intent'`.
 
 ## Context
 
@@ -83,10 +109,21 @@ pub enum FeedbackAction {
     /// → context-binding hint recorded against the ability invocation that
     ///   surfaced it (relevance signal, not truth signal); no trust delta.
     NotRelevantHere { invocation_id: InvocationId },
+
+    /// (V1.1 — 2026-05-21) User nominates a canonical merge target for an
+    /// ambiguous entity (Person Detail merge picker; v1.4.4 W2 §5.3 /
+    /// DOS-484).
+    /// → persists a typed proposal row only; no trust/lifecycle change on
+    ///   the source claim. The merge execution flow (DOS-484) consumes
+    ///   the typed payload and runs the subject rebind.
+    /// → User-only; Agent actor denied at every surface (AC-8.13).
+    MergeIntent { merge_target: SubjectRef, supporting_evidence: Option<String> },
 }
 ```
 
-Nine variants, each mapping to a distinct triple of (claim state, source weight, agent ledger). No 5-point scale. No yes/no.
+Ten variants, each mapping to a distinct triple of (claim state, source weight, agent ledger). No 5-point scale. No yes/no.
+
+> **Implementation note:** the Rust enum is unit-only (`#[derive(Copy)]`); per-variant data (`corrected_to`, `corrected_text`, `merge_target`, etc.) is carried via the `payload_json` field on `ClaimFeedback` and validated against this ADR's schema by `services::claim_receipt::feedback::validate_and_sanitize_metadata`. The variant-with-fields notation above is the canonical conceptual shape.
 
 ### 2. `ClaimFeedback` row shape (closed)
 

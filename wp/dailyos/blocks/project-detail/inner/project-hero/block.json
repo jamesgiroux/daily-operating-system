@@ -1,0 +1,19 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "dailyos/project-hero",
+	"title": "Project Hero",
+	"category": "dailyos",
+	"description": "Project identity + thesis narrative chapter (Facts section); operational shell, no claim row. Inserter-global per ADR-0129 §2 (no parent); default composition lives in the project-detail-default filesystem pattern.",
+	"supports": {
+		"html": false,
+		"reusable": false,
+		"inserter": true
+	},
+	"usesContext": [
+		"dailyos/entityType",
+		"dailyos/entityId",
+		"dailyos/envelopeHandle"
+	],
+	"render": "file:./render.php"
+}

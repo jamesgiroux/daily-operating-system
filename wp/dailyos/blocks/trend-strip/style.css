@@ -1,0 +1,35 @@
+/*
+ * TrendStrip primitive (DOS-688).
+ * No inline styles — all visual state via class + data attributes.
+ * Trust-band tinting flows from the surrounding composite via design tokens.
+ */
+
+.dailyos-trend-strip {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--dailyos-space-2xs, 4px);
+	color: var(--dailyos-color-fg-muted, currentColor);
+	font-size: var(--dailyos-font-size-xs, 12px);
+	line-height: 1;
+}
+
+.dailyos-trend-strip__label {
+	font-variant: tabular-nums;
+}
+
+.dailyos-trend-strip__spark {
+	flex: 0 0 auto;
+	display: block;
+}
+
+.dailyos-trend-strip--band-likely_current {
+	color: var(--dailyos-color-trust-likely-current, currentColor);
+}
+
+.dailyos-trend-strip--band-use_with_caution {
+	color: var(--dailyos-color-trust-use-with-caution, currentColor);
+}
+
+.dailyos-trend-strip--band-needs_verification {
+	color: var(--dailyos-color-trust-needs-verification, currentColor);
+}

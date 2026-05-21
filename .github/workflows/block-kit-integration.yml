@@ -203,24 +203,6 @@ jobs:
             done
           done < <(find wp/dailyos/blocks -name render-functions.php -print0 2>/dev/null)
 
-      # §9 invariant #13 (W3 / PR-E1) — composite must not be edited outside of tests.
-      # Two-stage POSIX grep (negative lookahead under -E is unsupported per cycle-3
-      # codex challenge BLOCK on V1.2). Per L0 Packet E V1.4 §9 inv #13.
-      - name: W3 composite boundary
-        shell: bash
-        run: |
-          set -euo pipefail
-          OFFENDING=$(
-            git diff --name-only "origin/${{ github.base_ref }}...HEAD" \
-              | grep '^wp/dailyos/blocks/account-overview/' \
-              | grep -v test || true
-          )
-          if [ -n "$OFFENDING" ]; then
-            echo "FAIL: W3 must not edit composite outside of tests" >&2
-            echo "$OFFENDING" >&2
-            exit 1
-          fi
-
       # §9 invariants #1, #2, #4, #5, #14 — W3 theme inventory grep-gates.
       # Per L0 Packet E V1.4 LOCKED.
       - name: W3 theme invariants

@@ -1,0 +1,15 @@
+   276	  - `resolve_path(Person, "Bob", Some(&Notes), "1on1.md", EntityDoc)` → `"People/Bob/notes/1on1.md"`.
+   286	- `services/workspace_ingestion/registry.rs` substantively filled with the 4 APIs (`open_validated`, `validate`, `resolve_path`, `register_other`) + 2 error types (`CategoryNotAllowed`, `RegisterError`) + `SLUG_REGEX` constant.
+   287	- All 19 §7 security fixtures pass with typed `RejectionReason` variants (Unix; Windows skipped). 15 negative + 4 positive per V1.3 fold #1.
+   288	- All registry/category tests in §8 pass.
+   289	- `tests/workspace_ingestion_no_substrate_reinvention.rs` (W1-A's CI gate) still passes — `registry.rs` defines no `pub struct/enum/trait` matching the canonical-primitives blocklist.
+
+codex
+VERDICT BLOCK
+
+V1.3 fold #6 is still not true: §2 V1.2 fold #2 still says symlink chain is fixture #13; §7 has it as fixture #16.
+tokens used
+29,852
+VERDICT BLOCK
+
+V1.3 fold #6 is still not true: §2 V1.2 fold #2 still says symlink chain is fixture #13; §7 has it as fixture #16.
