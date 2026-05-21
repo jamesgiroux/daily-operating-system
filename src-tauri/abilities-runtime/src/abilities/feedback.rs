@@ -10,7 +10,7 @@
 //! Person Detail merge picker (v1.4.4 W2 §5.3): the user nominates a
 //! canonical merge target for an ambiguous person entity. It is a typed
 //! proposal — it does NOT mutate claim verification or lifecycle state;
-//! the merge execution flow (DOS-484) reads the typed payload and runs
+//! the merge execution flow reads the typed payload and runs
 //! the actual subject rebind. User-only action (Agent denied per
 //! AC-8.13).
 //!
@@ -74,7 +74,7 @@ pub enum FeedbackAction {
     ///
     /// MergeIntent does NOT mutate claim verification or lifecycle
     /// state — it persists a typed proposal row that the downstream
-    /// merge execution service (DOS-484) consumes to run the actual
+    /// merge execution service consumes to run the actual
     /// subject rebind. Agent actor is denied at every surface
     /// (AC-8.13).
     MergeIntent,
@@ -360,7 +360,7 @@ pub const fn feedback_semantics(action: FeedbackAction) -> ClaimFeedbackMetadata
             action,
             // MergeIntent is a typed proposal — it does NOT raise the
             // verification ratchet on the source claim. Merge execution
-            // (DOS-484) is a separate service flow that runs after the
+            // The merge execution service is a separate flow that runs after the
             // user reviews the proposal.
             verification_state: ClaimVerificationState::Active,
             trust_effect: TrustEffect::NONE,

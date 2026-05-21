@@ -1,4 +1,4 @@
-//! DOS-460 — canonical entity touchpoints reader.
+//! Canonical entity touchpoints reader.
 //!
 //! Per L0 packet `.docs/plans/v1.4.4-wp-surface-migration/L0-packet-W1-substrate-gaps.md` §5.2.
 //!
@@ -10,7 +10,7 @@
 //!
 //! The reader returns a `Snapshot` shape; the projection to
 //! `TouchpointBundle` happens in the `get_entity_intelligence` producer
-//! (DOS-459). This keeps the substrate read seam narrow (no envelope DTO
+//! there. This keeps the substrate read seam narrow (no envelope DTO
 //! pollution) and lets the daily-briefing readiness path consume the same
 //! `EntityTouchpointsSnapshot::filter_description` as the candidate-set
 //! primitive (AC-460.7).
@@ -409,7 +409,7 @@ fn describe_filter(
 #[cfg(test)]
 mod tests {
     //! Subject-isolation tests use the abilities-runtime DTOs directly.
-    //! Full DB-backed coverage lives in the DOS-461 harness
+    //! Full DB-backed coverage lives in the fixture harness
     //! (`src-tauri/tests/entity_intelligence_no_bypass/`).
 
     use super::*;

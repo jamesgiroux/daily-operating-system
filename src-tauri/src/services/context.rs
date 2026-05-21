@@ -48,7 +48,7 @@ pub struct LiveEntityContextClaimReader;
 pub struct LivePrepareMeetingContextReader;
 pub struct LiveTemporalWorkspaceReader;
 pub struct LiveCompositionCommitter;
-/// DOS-507 — live adapter projecting `services::meeting_prep_status::read`
+/// Live adapter projecting `services::meeting_prep_status::read`
 /// into the abilities-runtime crate's narrow `MeetingPrepStatusReadHandle`.
 pub struct LiveMeetingPrepStatusReader;
 /// Live adapter projecting `services::claim_receipt::render::

@@ -1,4 +1,4 @@
-//! DOS-459 — `get_entity_intelligence` Read ability + `EntityIntelligenceEnvelope` DTO.
+//! `get_entity_intelligence` Read ability + `EntityIntelligenceEnvelope` DTO.
 //!
 //! Read-side composition over existing claim/proposal/open-loop substrate.
 //! Per `.docs/plans/v1.4.4-wp-surface-migration/L0-packet-W1-substrate-gaps.md` §5.1.

@@ -1,4 +1,4 @@
-// DOS-459 — parity golden test for `EntityIntelligenceEnvelope` TS mirror.
+// Parity golden test for `EntityIntelligenceEnvelope` TS mirror.
 // Mirrors the pattern from `src/services/claim-receipt/__tests__/contracts.golden.test.ts`.
 // Asserts every closed enum variant from the Rust contract is representable in the
 // TypeScript mirror and that a representative envelope round-trips through JSON.

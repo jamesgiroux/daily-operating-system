@@ -1,4 +1,4 @@
-// DOS-459 — TypeScript mirror of `EntityIntelligenceEnvelope` DTO.
+// TypeScript mirror of `EntityIntelligenceEnvelope` DTO.
 //
 // Parity contract for the Rust producer at
 // `src-tauri/abilities-runtime/src/abilities/get_entity_intelligence/contracts.rs`.

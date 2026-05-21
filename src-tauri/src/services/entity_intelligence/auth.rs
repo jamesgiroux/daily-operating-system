@@ -1,4 +1,4 @@
-//! DOS-477 — entity-detail trust-boundary auth helpers.
+//! Entity-detail trust-boundary auth helpers.
 //!
 //! Per L0 packet `.docs/plans/v1.4.4-wp-surface-migration/L0-packet-W1-substrate-gaps.md` §5.4.
 //!
@@ -22,7 +22,7 @@
 //!    `src-tauri/scripts/check_sensitivity_gate_composition.sh` forbids any parallel
 //!    `match … sensitivity` outside `abilities-runtime/src/sensitivity*`.
 //!
-//! Stub note (W1 worktree integration boundary): DOS-459 ships
+//! Stub note (W1 worktree integration boundary): the parallel worktree ships
 //! `EntityIntelligenceEnvelope` in a parallel worktree. To avoid coupling this
 //! module's land to that crate's mod-wiring, the type is referenced through a
 //! local trait (`EnvelopeView`) that the real envelope will implement once
@@ -41,7 +41,7 @@ use abilities_runtime::types::ClaimSensitivity;
 use crate::services::claim_receipt::contracts::{ProvenanceSource, ReceiptTarget, RedactionLevel};
 
 // ---------------------------------------------------------------------------
-// EnvelopeView — local trait wrapping the (parallel-shipping) DOS-459 envelope.
+// EnvelopeView — local trait wrapping the parallel-shipping envelope.
 // ---------------------------------------------------------------------------
 
 /// Identifier for the producing ability of an envelope. Used as the entry-point
@@ -59,7 +59,7 @@ impl EnvelopeOrigin {
     }
 }
 
-/// View over an `EntityIntelligenceEnvelope` (DOS-459) — local trait so this
+/// View over an `EntityIntelligenceEnvelope` — local trait so this
 /// module compiles before the parallel envelope crate is wired into the
 /// abilities mod tree. The real envelope implements this with one-line getters.
 ///
@@ -138,7 +138,7 @@ pub enum FieldAllowlistError {
 }
 
 // ---------------------------------------------------------------------------
-// EntityKind — local mirror until DOS-459 lands the canonical enum.
+// EntityKind — local mirror until the canonical enum lands.
 // ---------------------------------------------------------------------------
 
 /// Mirrors `abilities_runtime::abilities::get_entity_intelligence::contracts::EntityKind`
@@ -461,7 +461,7 @@ fn synthesize_claim_for_gate(view: &ProvenanceClaimView<'_>) -> abilities_runtim
 ///
 /// The allowlist is duplicated here at the field-name level rather than
 /// imported from `services::claim_receipt` to keep this gate self-contained;
-/// the §5.8 DOS-340 sibling adds a CI lint that fails the build if these two
+/// the §5.8 sibling adds a CI lint that fails the build if these two
 /// drift.
 pub const RECEIPT_ALLOWED_FIELDS: &[&str] = &[
     "target",
@@ -476,7 +476,7 @@ pub const RECEIPT_ALLOWED_FIELDS: &[&str] = &[
 /// AC-477.12 — receipt-allowlist filter. Panics on encountering field names
 /// not on the allowlist. Receipt snapshots are the canonical contract; new
 /// fields MUST update both the allowlist here AND the `ClaimReceipt`
-/// snapshot fixture set (per §5.8 DOS-340 + AC-340.7).
+/// snapshot fixture set (per §5.8 + AC-340.7).
 pub fn filter_for_receipt(snapshot: &serde_json::Value) -> serde_json::Value {
     let serde_json::Value::Object(map) = snapshot else {
         // Non-object inputs are not valid receipt snapshots — fail loud.

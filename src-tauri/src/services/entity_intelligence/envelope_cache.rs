@@ -1,4 +1,4 @@
-//! DOS-477 cycle-2 fix — substrate-grade envelope cache (L3 cycle-2 F4 hardening).
+//! Substrate-grade envelope cache (L3 cycle-2 F4 hardening).
 //!
 //! ## Problem (code-reviewer cycle-1 F3 + L3 cycle-1 codex F4)
 //!

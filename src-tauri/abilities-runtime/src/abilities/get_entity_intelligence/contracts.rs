@@ -1,11 +1,11 @@
-//! DOS-459 — `EntityIntelligenceEnvelope` DTO contract.
+//! `EntityIntelligenceEnvelope` DTO contract.
 //!
 //! Read-side projection over existing claim/proposal/touchpoint substrate.
 //! Per L0 packet `.docs/plans/v1.4.4-wp-surface-migration/L0-packet-W1-substrate-gaps.md` §5.1
 //! and the locked decisions in §13 (server-signed cursor pagination, per-fact `ProvenanceRef`,
 //! typed empty reasons, 1-outer-N-inner block model).
 //!
-//! Coexists with the existing `get_entity_context` ability — DOS-459 ships the typed
+//! Coexists with the existing `get_entity_context` ability while this typed
 //! envelope; consolidation deferred to v1.5.x per §13 Q1/Q6.
 
 use std::collections::BTreeMap;
@@ -239,7 +239,7 @@ impl ProvenanceRef {
 
 /// Display-safe per-source descriptor for the envelope-level provenance index.
 /// Raw source identifiers (Glean doc IDs, meeting IDs, URLs, etc.) are redacted
-/// per DOS-477 — never emitted unless render policy permits.
+/// by render policy; never emitted unless render policy permits.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct EnvelopeProvenanceSource {
