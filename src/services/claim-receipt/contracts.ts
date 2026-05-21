@@ -156,3 +156,27 @@ export interface ClaimReceipt {
   provenance: ReceiptProvenance;
   actions: ReceiptAction[];
 }
+
+/**
+ * Input contract for the registered `claim_receipt` Read ability.
+ *
+ * Mirrors `abilities-runtime::abilities::claim_receipt::ClaimReceiptInput`.
+ * Callers that invoke through the ability path
+ * (WordPress block runtime client; future agent orchestrators) must wrap
+ * `target` + `surface` in this envelope; the Tauri command
+ * `render_claim_receipt` accepts the bare `(target, surface)` pair instead.
+ *
+ * `schemaVersion` is the substrate version pin — v1.4.4 W2 only accepts `1`.
+ */
+export interface ClaimReceiptAbilityInput {
+  schemaVersion: 1;
+  target: ReceiptTarget;
+  surface: SurfaceContext;
+}
+
+/**
+ * Output contract for the `claim_receipt` Read ability — byte-equivalent
+ * to `ClaimReceipt` from the Tauri command path so consumers can swap
+ * invocation paths without changing the rendering code.
+ */
+export type ClaimReceiptAbilityOutput = ClaimReceipt;

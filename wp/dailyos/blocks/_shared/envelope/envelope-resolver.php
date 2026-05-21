@@ -309,7 +309,38 @@ if ( ! function_exists( 'dailyos_envelope_consume_claim' ) ) {
 		if ( ! is_object( $runtime_client ) || ! method_exists( $runtime_client, 'invoke_ability' ) ) {
 			return null;
 		}
-		$response = $runtime_client->invoke_ability( 'claim_receipt', $claim_ref, $scope_set );
+
+		// Shape the claim_ref into the registered claim_receipt ability's
+		// input contract: { schemaVersion, target: { kind, claimId, ... },
+		// surface }. Without this shaping the ability decoder rejects the
+		// payload as a contract violation rather than rendering the receipt.
+		$claim_id = isset( $claim_ref['claim_id'] ) ? (string) $claim_ref['claim_id'] : '';
+		if ( '' === $claim_id ) {
+			return null;
+		}
+		$subject_ref = $claim_ref['subject_ref'] ?? null;
+		if ( ! is_array( $subject_ref ) ) {
+			return null;
+		}
+		$target = [
+			'kind'    => 'claim',
+			'claimId' => $claim_id,
+			'subject' => $subject_ref,
+		];
+		if ( ! empty( $claim_ref['field_path'] ) ) {
+			$target['fieldPath'] = (string) $claim_ref['field_path'];
+		}
+		// Envelope readers run inside the WP block render path, which
+		// corresponds to entity_detail for the account-detail / project-detail
+		// inner blocks unless the caller overrides via claim_ref['surface'].
+		$surface = isset( $claim_ref['surface'] ) ? (string) $claim_ref['surface'] : 'entity_detail';
+		$payload = [
+			'schemaVersion' => 1,
+			'target'        => $target,
+			'surface'       => $surface,
+		];
+
+		$response = $runtime_client->invoke_ability( 'claim_receipt', $payload, $scope_set );
 		return is_array( $response ) ? $response : null;
 	}
 }
