@@ -265,13 +265,20 @@ fn read_audit_key() -> Result<Option<[u8; AUDIT_KEY_BYTES]>, String> {
         return Err(format!("keychain read failed: {}", stderr.trim()));
     }
 
-    let hex_key = String::from_utf8(output.stdout)
-        .map_err(|error| format!("keychain returned non-UTF-8 key: {error}"))?;
+    // L2 cycle-4 codex review class-pattern: audit HMAC key intermediates
+    // must wrap in Zeroizing to match the AC-11 contract sweep applied to
+    // auth.rs (cycle-3 + cycle-4 fixes).
+    let stdout: Zeroizing<Vec<u8>> = Zeroizing::new(output.stdout);
+    let hex_key: Zeroizing<String> = Zeroizing::new(
+        String::from_utf8(stdout.to_vec())
+            .map_err(|error| format!("keychain returned non-UTF-8 key: {error}"))?,
+    );
     decode_key(hex_key.trim()).map(Some)
 }
 
 fn persist_audit_key(key: &[u8; AUDIT_KEY_BYTES]) -> Result<(), AuditError> {
-    let key_hex = hex::encode(key);
+    // L2 cycle-4 codex review class-pattern: see read_audit_key comment.
+    let key_hex: Zeroizing<String> = Zeroizing::new(hex::encode(key));
     let output = run_security(&[
         "add-generic-password",
         "-s",
@@ -309,7 +316,12 @@ fn is_keychain_item_not_found(stderr: &str) -> bool {
 }
 
 fn decode_key(hex_key: &str) -> Result<[u8; AUDIT_KEY_BYTES], String> {
-    let bytes = hex::decode(hex_key).map_err(|error| format!("invalid audit key hex: {error}"))?;
+    // L2 cycle-4 codex review class-pattern: decoded key bytes must wrap
+    // in Zeroizing before the copy_from_slice into the fixed-size array,
+    // matching the AC-11 sweep applied to auth.rs::load_transport_key.
+    let bytes: Zeroizing<Vec<u8>> = Zeroizing::new(
+        hex::decode(hex_key).map_err(|error| format!("invalid audit key hex: {error}"))?,
+    );
     if bytes.len() != AUDIT_KEY_BYTES {
         return Err(format!(
             "audit key length mismatch: expected {AUDIT_KEY_BYTES}, got {}",
