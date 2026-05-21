@@ -414,6 +414,8 @@ version_dispatcher_subscribe
 # claim_feedback handled via submit.feedback scope through invoke_ability).
 # These Tauri commands keep the React-side direct path for the entity-detail
 # surface while the WP loopback path consumes the same logic via invoke_ability.
-# Per L3 cycle-2 substrate patches (DOS-339/341/477 wiring) — see commit 0a586218.
+# Tauri commands kept for the entity-detail surface direct-invoke path; the
+# claim_receipt ability is also registered and routed through invoke_ability
+# for MCP and WP callers.
 render_claim_receipt
 submit_claim_feedback_command
