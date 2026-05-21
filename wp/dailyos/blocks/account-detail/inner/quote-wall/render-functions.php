@@ -72,34 +72,43 @@ if ( ! function_exists( 'dailyos_quote_wall_render' ) ) {
 				$first_empty_reason = $state['reason'];
 			}
 		}
+		$out  = '<section id="their-voice" class="entity-detail_chapterSection" data-ds-tier="pattern" data-ds-name="QuoteWall" data-ds-spec="patterns/QuoteWall.md">';
+		$out .= '<div class="ChapterHeading_heading">';
+		$out .= '<hr class="ChapterHeading_rule" />';
+		$out .= '<div class="ChapterHeading_titleRow"><h2 class="ChapterHeading_title">' . esc_html__( 'Their voice', 'dailyos' ) . '</h2></div>';
+		$out .= '</div>';
+		$out .= '<div class="QuoteWall_wall" data-dailyos-projection="quote-wall" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['facts'] ) ) . '">';
 		if ( ! $any_present ) {
 			$reason = '' !== $first_empty_reason ? $first_empty_reason : 'no_quote_bundle';
-			return dailyos_empty_chip(
+			$out .= dailyos_empty_chip(
 				$reason,
 				__( 'No quotes captured', 'dailyos' ),
-				'wp-block-dailyos-quote-wall'
+				'QuoteWall_wall'
 			);
+			$out .= '</div>';
+			$out .= '</section>';
+			return $out;
 		}
 
-		$wrapper_attrs = dailyos_inner_block_wrapper_attrs( 'wp-block-dailyos-quote-wall' );
-		$out  = '<div ' . $wrapper_attrs . ' data-dailyos-projection="quote-wall">';
-		$out .= '<header class="wp-block-dailyos-quote-wall__header"><span class="wp-block-dailyos-quote-wall__title">' . esc_html__( 'Quote Wall', 'dailyos' ) . '</span></header>';
-		$out .= '<div class="wp-block-dailyos-quote-wall__body" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['facts'] ) ) . '">';
 		// Per AC-462.3 + DOS-341: every claim-bearing inner block routes
 		// receipts through build_receipt_for_audience server-side. The
 		// dailyos_envelope_consume_claim helper invokes claim_receipt via the
 		// runtime client with the resolved scope set; AgentMcp audience filter
 		// is applied inside the producer (DOS-341 boundary).
 		$projected_claim_refs = dailyos_quote_wall_select_claim_refs( $envelope );
+		$rows = '';
 		foreach ( $projected_claim_refs as $claim_ref ) {
 			$receipt = dailyos_envelope_consume_claim( $claim_ref, $scope_set );
 			if ( null === $receipt ) {
 				continue;
 			}
-			$out .= dailyos_quote_wall_render_row( $claim_ref, $receipt );
+			$rows .= dailyos_quote_wall_render_row( $claim_ref, $receipt );
 		}
+		$out .= '' !== $rows
+			? $rows
+			: dailyos_empty_chip( 'no_quote_bundle', __( 'No quotes captured', 'dailyos' ), 'QuoteWall_wall' );
 		$out .= '</div>';
-		$out .= '</div>';
+		$out .= '</section>';
 		return $out;
 	}
 }
@@ -167,8 +176,9 @@ if ( ! function_exists( 'dailyos_quote_wall_render_row' ) ) {
 	function dailyos_quote_wall_render_row( array $claim_ref, array $receipt ): string {
 		$claim_id = isset( $claim_ref['claim_id'] ) ? (string) $claim_ref['claim_id'] : '';
 		$trust_band = isset( $receipt['trustBand'] ) ? (string) $receipt['trustBand'] : ( isset( $receipt['trust_band'] ) ? (string) $receipt['trust_band'] : 'unscored' );
-		return '<article class="wp-block-dailyos-quote-wall__row" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
-			. '<span class="wp-block-dailyos-quote-wall__row-label">' . esc_html( $claim_id ) . '</span>'
-			. '</article>';
+		return '<div class="QuoteWall_card" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
+			. '<blockquote class="QuoteWall_quote">' . esc_html( $claim_id ) . '</blockquote>'
+			. '<div class="QuoteWall_footer"><span class="QuoteWall_badge QuoteWall_neutral">' . esc_html( $trust_band ) . '</span></div>'
+			. '</div>';
 	}
 }

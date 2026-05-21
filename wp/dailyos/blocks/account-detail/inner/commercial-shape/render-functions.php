@@ -72,34 +72,42 @@ if ( ! function_exists( 'dailyos_commercial_shape_render' ) ) {
 				$first_empty_reason = $state['reason'];
 			}
 		}
+		$out  = '<section id="commercial-shape" class="entity-detail_chapterSection" data-ds-tier="pattern" data-ds-name="CommercialShape" data-ds-spec="patterns/CommercialShape.md">';
+		$out .= '<div class="ChapterHeading_heading">';
+		$out .= '<hr class="ChapterHeading_rule" />';
+		$out .= '<div class="ChapterHeading_titleRow"><h2 class="ChapterHeading_title">' . esc_html__( 'Commercial shape', 'dailyos' ) . '</h2></div>';
+		$out .= '</div>';
 		if ( ! $any_present ) {
 			$reason = '' !== $first_empty_reason ? $first_empty_reason : 'no_commercial_shape';
-			return dailyos_empty_chip(
+			$out .= dailyos_empty_chip(
 				$reason,
 				__( 'No commercial shape captured', 'dailyos' ),
-				'wp-block-dailyos-commercial-shape'
+				'ReferenceGrid_grid'
 			);
+			$out .= '</section>';
+			return $out;
 		}
 
-		$wrapper_attrs = dailyos_inner_block_wrapper_attrs( 'wp-block-dailyos-commercial-shape' );
-		$out  = '<div ' . $wrapper_attrs . ' data-dailyos-projection="commercial-shape">';
-		$out .= '<header class="wp-block-dailyos-commercial-shape__header"><span class="wp-block-dailyos-commercial-shape__title">' . esc_html__( 'Commercial Shape', 'dailyos' ) . '</span></header>';
-		$out .= '<div class="wp-block-dailyos-commercial-shape__body" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['facts'] ) ) . '">';
+		$out .= '<div class="ReferenceGrid_grid" data-dailyos-projection="commercial-shape" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['facts'] ) ) . '">';
 		// Per AC-462.3 + DOS-341: every claim-bearing inner block routes
 		// receipts through build_receipt_for_audience server-side. The
 		// dailyos_envelope_consume_claim helper invokes claim_receipt via the
 		// runtime client with the resolved scope set; AgentMcp audience filter
 		// is applied inside the producer (DOS-341 boundary).
 		$projected_claim_refs = dailyos_commercial_shape_select_claim_refs( $envelope );
+		$rows = '';
 		foreach ( $projected_claim_refs as $claim_ref ) {
 			$receipt = dailyos_envelope_consume_claim( $claim_ref, $scope_set );
 			if ( null === $receipt ) {
 				continue;
 			}
-			$out .= dailyos_commercial_shape_render_row( $claim_ref, $receipt );
+			$rows .= dailyos_commercial_shape_render_row( $claim_ref, $receipt );
 		}
+		$out .= '' !== $rows
+			? $rows
+			: dailyos_empty_chip( 'no_commercial_shape', __( 'No commercial shape captured', 'dailyos' ), 'ReferenceGrid_grid' );
 		$out .= '</div>';
-		$out .= '</div>';
+		$out .= '</section>';
 		return $out;
 	}
 }
@@ -167,8 +175,9 @@ if ( ! function_exists( 'dailyos_commercial_shape_render_row' ) ) {
 	function dailyos_commercial_shape_render_row( array $claim_ref, array $receipt ): string {
 		$claim_id = isset( $claim_ref['claim_id'] ) ? (string) $claim_ref['claim_id'] : '';
 		$trust_band = isset( $receipt['trustBand'] ) ? (string) $receipt['trustBand'] : ( isset( $receipt['trust_band'] ) ? (string) $receipt['trust_band'] : 'unscored' );
-		return '<article class="wp-block-dailyos-commercial-shape__row" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
-			. '<span class="wp-block-dailyos-commercial-shape__row-label">' . esc_html( $claim_id ) . '</span>'
-			. '</article>';
+		return '<div class="ReferenceGrid_row" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
+			. '<span class="ReferenceGrid_label">' . esc_html( $claim_id ) . '</span>'
+			. '<span class="ReferenceGrid_value">' . esc_html( $trust_band ) . '</span>'
+			. '</div>';
 	}
 }

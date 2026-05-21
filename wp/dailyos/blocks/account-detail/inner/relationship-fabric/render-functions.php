@@ -72,34 +72,43 @@ if ( ! function_exists( 'dailyos_relationship_fabric_render' ) ) {
 				$first_empty_reason = $state['reason'];
 			}
 		}
+		$out  = '<section id="relationship-fabric" class="entity-detail_chapterSection" data-ds-tier="pattern" data-ds-name="RelationshipFabric" data-ds-spec="patterns/RelationshipFabric.md">';
+		$out .= '<div class="ChapterHeading_heading">';
+		$out .= '<hr class="ChapterHeading_rule" />';
+		$out .= '<div class="ChapterHeading_titleRow"><h2 class="ChapterHeading_title">' . esc_html__( 'Relationship fabric', 'dailyos' ) . '</h2></div>';
+		$out .= '</div>';
+		$out .= '<div class="RelationshipFabric_list" data-dailyos-projection="relationship-fabric" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['facts', 'touchpoints'] ) ) . '">';
 		if ( ! $any_present ) {
 			$reason = '' !== $first_empty_reason ? $first_empty_reason : 'no_relationship_fabric';
-			return dailyos_empty_chip(
+			$out .= dailyos_empty_chip(
 				$reason,
 				__( 'Relationship fabric not yet woven', 'dailyos' ),
-				'wp-block-dailyos-relationship-fabric'
+				'RelationshipFabric_list'
 			);
+			$out .= '</div>';
+			$out .= '</section>';
+			return $out;
 		}
 
-		$wrapper_attrs = dailyos_inner_block_wrapper_attrs( 'wp-block-dailyos-relationship-fabric' );
-		$out  = '<div ' . $wrapper_attrs . ' data-dailyos-projection="relationship-fabric">';
-		$out .= '<header class="wp-block-dailyos-relationship-fabric__header"><span class="wp-block-dailyos-relationship-fabric__title">' . esc_html__( 'Relationship Fabric', 'dailyos' ) . '</span></header>';
-		$out .= '<div class="wp-block-dailyos-relationship-fabric__body" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['facts', 'touchpoints'] ) ) . '">';
 		// Per AC-462.3 + DOS-341: every claim-bearing inner block routes
 		// receipts through build_receipt_for_audience server-side. The
 		// dailyos_envelope_consume_claim helper invokes claim_receipt via the
 		// runtime client with the resolved scope set; AgentMcp audience filter
 		// is applied inside the producer (DOS-341 boundary).
 		$projected_claim_refs = dailyos_relationship_fabric_select_claim_refs( $envelope );
+		$rows = '';
 		foreach ( $projected_claim_refs as $claim_ref ) {
 			$receipt = dailyos_envelope_consume_claim( $claim_ref, $scope_set );
 			if ( null === $receipt ) {
 				continue;
 			}
-			$out .= dailyos_relationship_fabric_render_row( $claim_ref, $receipt );
+			$rows .= dailyos_relationship_fabric_render_row( $claim_ref, $receipt );
 		}
+		$out .= '' !== $rows
+			? $rows
+			: dailyos_empty_chip( 'no_relationship_fabric', __( 'Relationship fabric not yet woven', 'dailyos' ), 'RelationshipFabric_list' );
 		$out .= '</div>';
-		$out .= '</div>';
+		$out .= '</section>';
 		return $out;
 	}
 }
@@ -167,8 +176,9 @@ if ( ! function_exists( 'dailyos_relationship_fabric_render_row' ) ) {
 	function dailyos_relationship_fabric_render_row( array $claim_ref, array $receipt ): string {
 		$claim_id = isset( $claim_ref['claim_id'] ) ? (string) $claim_ref['claim_id'] : '';
 		$trust_band = isset( $receipt['trustBand'] ) ? (string) $receipt['trustBand'] : ( isset( $receipt['trust_band'] ) ? (string) $receipt['trust_band'] : 'unscored' );
-		return '<article class="wp-block-dailyos-relationship-fabric__row" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
-			. '<span class="wp-block-dailyos-relationship-fabric__row-label">' . esc_html( $claim_id ) . '</span>'
-			. '</article>';
+		return '<div class="RelationshipFabric_row" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
+			. '<span class="RelationshipFabric_label">' . esc_html( $claim_id ) . '</span>'
+			. '<span class="RelationshipFabric_content">' . esc_html( $trust_band ) . '</span>'
+			. '</div>';
 	}
 }

@@ -72,34 +72,46 @@ if ( ! function_exists( 'dailyos_value_commitments_render' ) ) {
 				$first_empty_reason = $state['reason'];
 			}
 		}
+		$out  = '<section id="value-commitments" class="entity-detail_chapterSection" data-ds-tier="pattern" data-ds-name="ValueCommitments" data-ds-spec="patterns/ValueCommitments.md">';
+		$out .= '<div class="ChapterHeading_heading">';
+		$out .= '<hr class="ChapterHeading_rule" />';
+		$out .= '<div class="ChapterHeading_titleRow"><h2 class="ChapterHeading_title">' . esc_html__( 'Value & Commitments', 'dailyos' ) . '</h2></div>';
+		$out .= '</div>';
+		$out .= '<section class="ValueCommitments_section" data-dailyos-projection="value-commitments" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['facts'] ) ) . '">';
+		$out .= '<div class="ValueCommitments_subsectionLabel">' . esc_html__( 'Value delivered', 'dailyos' ) . '</div>';
 		if ( ! $any_present ) {
 			$reason = '' !== $first_empty_reason ? $first_empty_reason : 'no_commitments_recorded';
-			return dailyos_empty_chip(
+			$out .= dailyos_empty_chip(
 				$reason,
 				__( 'No commitments captured', 'dailyos' ),
-				'wp-block-dailyos-value-commitments'
+				'ValueCommitments_valueGrid'
 			);
+			$out .= '</section>';
+			$out .= '</section>';
+			return $out;
 		}
 
-		$wrapper_attrs = dailyos_inner_block_wrapper_attrs( 'wp-block-dailyos-value-commitments' );
-		$out  = '<div ' . $wrapper_attrs . ' data-dailyos-projection="value-commitments">';
-		$out .= '<header class="wp-block-dailyos-value-commitments__header"><span class="wp-block-dailyos-value-commitments__title">' . esc_html__( 'Value Commitments', 'dailyos' ) . '</span></header>';
-		$out .= '<div class="wp-block-dailyos-value-commitments__body" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['facts'] ) ) . '">';
+		$out .= '<div class="ValueCommitments_valueGrid">';
 		// Per AC-462.3 + DOS-341: every claim-bearing inner block routes
 		// receipts through build_receipt_for_audience server-side. The
 		// dailyos_envelope_consume_claim helper invokes claim_receipt via the
 		// runtime client with the resolved scope set; AgentMcp audience filter
 		// is applied inside the producer (DOS-341 boundary).
 		$projected_claim_refs = dailyos_value_commitments_select_claim_refs( $envelope );
+		$rows = '';
 		foreach ( $projected_claim_refs as $claim_ref ) {
 			$receipt = dailyos_envelope_consume_claim( $claim_ref, $scope_set );
 			if ( null === $receipt ) {
 				continue;
 			}
-			$out .= dailyos_value_commitments_render_row( $claim_ref, $receipt );
+			$rows .= dailyos_value_commitments_render_row( $claim_ref, $receipt );
 		}
+		$out .= '' !== $rows
+			? $rows
+			: dailyos_empty_chip( 'no_commitments_recorded', __( 'No commitments captured', 'dailyos' ), 'ValueCommitments_valueGrid' );
 		$out .= '</div>';
-		$out .= '</div>';
+		$out .= '</section>';
+		$out .= '</section>';
 		return $out;
 	}
 }
@@ -167,8 +179,9 @@ if ( ! function_exists( 'dailyos_value_commitments_render_row' ) ) {
 	function dailyos_value_commitments_render_row( array $claim_ref, array $receipt ): string {
 		$claim_id = isset( $claim_ref['claim_id'] ) ? (string) $claim_ref['claim_id'] : '';
 		$trust_band = isset( $receipt['trustBand'] ) ? (string) $receipt['trustBand'] : ( isset( $receipt['trust_band'] ) ? (string) $receipt['trust_band'] : 'unscored' );
-		return '<article class="wp-block-dailyos-value-commitments__row" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
-			. '<span class="wp-block-dailyos-value-commitments__row-label">' . esc_html( $claim_id ) . '</span>'
+		return '<article class="ValueCommitments_valueCard" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
+			. '<span class="ValueCommitments_impactTag ValueCommitments_impactTagDefault">' . esc_html( $trust_band ) . '</span>'
+			. '<div class="ValueCommitments_valueHeadline">' . esc_html( $claim_id ) . '</div>'
 			. '</article>';
 	}
 }
