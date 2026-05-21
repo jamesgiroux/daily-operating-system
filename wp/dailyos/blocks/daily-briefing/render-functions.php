@@ -41,11 +41,19 @@ if ( ! function_exists( 'dailyos_daily_briefing_render' ) ) {
 		}
 
 		// W1 producer: get_daily_briefing (DOS-507 BriefingState envelope).
+		// Runtime client signature (class-dailyos-runtime-client.php:85) requires
+		// (name, payload, scope_set). Scope set resolves from the surface client's
+		// granted scopes via the canonical filter (see class-dailyos-plugin.php:1421
+		// + class-dailyos-ability-registry.php:185).
 		$args = [];
 		if ( isset( $attributes['date'] ) && is_string( $attributes['date'] ) && '' !== $attributes['date'] ) {
 			$args['date'] = (string) $attributes['date'];
 		}
-		$response = $runtime_client->invoke_ability( 'get_daily_briefing', $args );
+		$scope_set = apply_filters( 'dailyos_surfaceclient_resolved_scopes', [] );
+		if ( ! is_array( $scope_set ) ) {
+			$scope_set = [];
+		}
+		$response = $runtime_client->invoke_ability( 'get_daily_briefing', $args, $scope_set );
 
 		if ( is_wp_error( $response ) ) {
 			return '<div class="wp-block-dailyos-daily-briefing is-unavailable">'
@@ -76,15 +84,41 @@ if ( ! function_exists( 'dailyos_daily_briefing_render' ) ) {
 	/**
 	 * Inner-block consumer hook (W2 sub-L0): meeting-prep inner blocks call
 	 * `meeting_prep_status` through this hook so the outer block remains the
-	 * single wiring authority. Defined here for the consumer-skeleton lint
-	 * anchor; body lands in W2 sub-L0.
+	 * single wiring authority.
+	 *
+	 * Cycle-2 fix for codex-challenge F5: previous body unset the input and
+	 * returned [] — decorative, not a real consumer. Per F5 patch, the inner
+	 * consumer must invoke the W1 producer via the runtime client with the
+	 * full 3-arg signature so the consumer-skeleton CI gate has a real signal.
+	 * The full prep-status UX (typed inner blocks, state-machine driven
+	 * rendering) lands in W2 sub-L0.
 	 *
 	 * @param string $meeting_id Meeting identifier.
-	 * @return array<string, mixed> Prep status envelope.
+	 * @return array<string, mixed> Prep status envelope (raw runtime response;
+	 *                              typed shaping in W2).
 	 */
 	function dailyos_daily_briefing_meeting_prep_inner_consumer( string $meeting_id ): array {
-		// W2 sub-L0: invoke meeting_prep_status state machine.
-		unset( $meeting_id );
-		return [];
+		$runtime_client = apply_filters( 'dailyos_runtime_client_for_block', null );
+		if ( ! is_object( $runtime_client ) || ! method_exists( $runtime_client, 'invoke_ability' ) ) {
+			return [
+				'ok'    => false,
+				'error' => [
+					'code'    => 'runtime_unavailable',
+					'message' => 'DailyOS runtime client not bound for inner consumer.',
+				],
+			];
+		}
+
+		$scope_set = apply_filters( 'dailyos_surfaceclient_resolved_scopes', [] );
+		if ( ! is_array( $scope_set ) ) {
+			$scope_set = [];
+		}
+
+		// W1 producer: meeting_prep_status — state machine for one meeting.
+		return $runtime_client->invoke_ability(
+			'meeting_prep_status',
+			[ 'meeting_id' => $meeting_id ],
+			$scope_set
+		);
 	}
 }

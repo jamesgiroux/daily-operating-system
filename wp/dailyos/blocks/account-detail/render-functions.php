@@ -51,12 +51,23 @@ if ( ! function_exists( 'dailyos_account_detail_render' ) ) {
 		}
 
 		// W1 producer: get_entity_intelligence (entity_type=account).
-		$response = $runtime_client->invoke_ability(
+		// Runtime client signature (class-dailyos-runtime-client.php:85) requires
+		// (name, payload, scope_set). Scope set resolves from the surface client's
+		// granted scopes via the canonical filter (see class-dailyos-plugin.php:1421
+		// + class-dailyos-ability-registry.php:185). The runtime authoritatively
+		// enforces required scopes; passing the surface-resolved set scopes the
+		// invocation to what this paired site has been granted.
+		$scope_set = apply_filters( 'dailyos_surfaceclient_resolved_scopes', [] );
+		if ( ! is_array( $scope_set ) ) {
+			$scope_set = [];
+		}
+		$response  = $runtime_client->invoke_ability(
 			'get_entity_intelligence',
 			[
 				'entity_type' => 'account',
 				'entity_id'   => $account_id,
-			]
+			],
+			$scope_set
 		);
 
 		if ( is_wp_error( $response ) ) {
@@ -91,17 +102,58 @@ if ( ! function_exists( 'dailyos_account_detail_render' ) ) {
 
 	/**
 	 * Inner-block consumer hook (W2 sub-L0): claim-row inner blocks invoke
-	 * `claim_receipt` and `record_claim_feedback` through this hook so the
-	 * outer block is the wiring authority. Defined here for the consumer-
-	 * skeleton lint anchor; bodies land in W2 sub-L0.
+	 * `claim_receipt` (audience-keyed receipt builder) and
+	 * `record_claim_feedback` (feedback affordance) through this hook so the
+	 * outer block remains the single wiring authority.
 	 *
-	 * @param array<string, mixed> $claim_ref Claim reference from projection.
-	 * @return array<string, mixed> Receipt + feedback affordance shape.
+	 * Cycle-2 fix for codex-challenge F5: previous body unset the input and
+	 * returned [] — decorative, not a real consumer. Per F5 patch, the inner
+	 * consumer must invoke the W1 producers via the runtime client with the
+	 * full 3-arg signature so the consumer-skeleton CI gate has a real signal.
+	 * The full receipt-rendering UX (typed inner blocks, audience-keyed
+	 * rendering, feedback affordance UI) lands in W2 sub-L0.
+	 *
+	 * @param array<string, mixed> $claim_ref Claim reference from projection
+	 *                                         ({ claim_id, audience_key, ... }).
+	 * @return array<string, mixed> Receipt + feedback affordance envelope (raw
+	 *                              runtime response; typed shaping in W2).
 	 */
 	function dailyos_account_detail_claim_inner_consumer( array $claim_ref ): array {
-		// W2 sub-L0: invoke claim_receipt to build the audience-keyed receipt;
-		// pair with record_claim_feedback for the feedback affordance.
-		unset( $claim_ref );
-		return [];
+		$runtime_client = apply_filters( 'dailyos_runtime_client_for_block', null );
+		if ( ! is_object( $runtime_client ) || ! method_exists( $runtime_client, 'invoke_ability' ) ) {
+			return [
+				'ok'    => false,
+				'error' => [
+					'code'    => 'runtime_unavailable',
+					'message' => 'DailyOS runtime client not bound for inner consumer.',
+				],
+			];
+		}
+
+		$scope_set = apply_filters( 'dailyos_surfaceclient_resolved_scopes', [] );
+		if ( ! is_array( $scope_set ) ) {
+			$scope_set = [];
+		}
+
+		// W1 producer: claim_receipt — audience-keyed receipt for one claim_ref.
+		$receipt_response = $runtime_client->invoke_ability(
+			'claim_receipt',
+			$claim_ref,
+			$scope_set
+		);
+
+		// W1 producer: record_claim_feedback — feedback affordance mount for the
+		// same claim_ref. Returning the affordance descriptor lets the W2 inner
+		// block render the corrected / dismissed / corroborated controls.
+		$feedback_response = $runtime_client->invoke_ability(
+			'record_claim_feedback',
+			$claim_ref,
+			$scope_set
+		);
+
+		return [
+			'receipt'  => $receipt_response,
+			'feedback' => $feedback_response,
+		];
 	}
 }
