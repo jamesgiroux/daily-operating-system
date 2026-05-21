@@ -1,0 +1,36 @@
+.dailyos-entity-intake-editor {
+	border: 1px solid var(--wp--preset--color--contrast-3, #d7dce2);
+	border-radius: 8px;
+	padding: 16px;
+}
+
+.dailyos-entity-intake-editor__fields {
+	display: grid;
+	gap: 10px;
+	margin-bottom: 12px;
+}
+
+.dailyos-entity-intake-editor__fields label {
+	display: grid;
+	font-size: 12px;
+	font-weight: 600;
+	gap: 4px;
+}
+
+.dailyos-entity-intake-editor__fields input {
+	border: 1px solid var(--wp--preset--color--contrast-3, #d7dce2);
+	border-radius: 6px;
+	font: inherit;
+	min-height: 34px;
+	padding: 6px 8px;
+}
+
+.dailyos-entity-intake-editor__button {
+	min-height: 34px;
+}
+
+.dailyos-entity-intake-editor__notice {
+	color: var(--wp--preset--color--contrast-2, #5b6470);
+	font-size: 12px;
+	margin: 10px 0 0;
+}
