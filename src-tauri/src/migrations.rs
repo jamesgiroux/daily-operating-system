@@ -947,6 +947,18 @@ const MIGRATIONS: &[Migration] = &[
         version: 243,
         sql: include_str!("migrations/243_meeting_prep_status_indexed_view_deterministic.sql"),
     },
+    // DOS-335 L3 cycle-2 (F3): atomic view recreation. v243's DROP/CREATE
+    // pair ran outside an explicit transaction; the migration runner's
+    // `execute_batch` call at `migrations.rs:3573` did not implicitly
+    // wrap the batch, so multi-process readers could observe the gap
+    // between DROP VIEW and CREATE VIEW and fail on "no such view".
+    // v244 re-runs the same rebuild inside `BEGIN IMMEDIATE; ... COMMIT;`
+    // so the writer holds the write lock across the entire sequence and
+    // no other connection can see a missing view.
+    Migration::Sql {
+        version: 244,
+        sql: include_str!("migrations/244_meeting_prep_status_view_transactional.sql"),
+    },
 ];
 
 const V155_SHADOW_TRUST_VERSION: i64 = 1_401_003;
@@ -6176,5 +6188,46 @@ mod tests {
             [],
         )
         .expect("post-migration schema accepts temporal_scope='closed'");
+    }
+
+    /// DOS-335 L3 cycle-2 (F3): v244 atomically rebuilds the meeting prep
+    /// status view so multi-process readers don't see a missing view between
+    /// the DROP and CREATE. Applied to a fresh DB, the view must exist and
+    /// be queryable; the schema version must advance to v244 or later.
+    #[test]
+    fn migration_244_meeting_prep_status_view_exists_and_is_queryable() {
+        let conn = mem_db();
+        run_migrations(&conn).expect("build current schema");
+
+        // The view name must resolve as a VIEW (type='view') in sqlite_master.
+        let view_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master \
+                 WHERE type = 'view' AND name = 'meeting_prep_status_view'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("query sqlite_master for view");
+        assert_eq!(
+            view_count, 1,
+            "meeting_prep_status_view exists after v244 applies"
+        );
+
+        // The view must be queryable end-to-end; an empty result is fine.
+        // This catches the case where the DROP succeeded but CREATE failed
+        // mid-batch and left the view definition unparseable.
+        let row_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM meeting_prep_status_view",
+                [],
+                |row| row.get(0),
+            )
+            .expect("query the view");
+        assert!(row_count >= 0, "view is queryable");
+
+        assert!(
+            current_version(&conn).expect("current version") >= 244,
+            "schema version is at least v244"
+        );
     }
 }

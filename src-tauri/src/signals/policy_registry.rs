@@ -385,6 +385,14 @@ impl SignalType {
                 | Self::TrustBandDowngraded
                 | Self::TrustBandCleared
                 | Self::AbilityOutputChanged { .. }
+                // DOS-335 L3 cycle-2 (F1): MeetingPrepStatusChanged policy at
+                // `meeting_prep_status_changed_policy()` declares a 500ms
+                // entity-keyed coalesce window. Without this branch the
+                // emit-path predicate excluded it, so rapid PrepNeeded →
+                // Queued → Running → Ready churn fanned out one signal per
+                // transition and races against the ClaimVerificationStateChanged
+                // fan-out (services/claims.rs:8713 + :8738) became reorder-prone.
+                | Self::MeetingPrepStatusChanged
         )
     }
 }
