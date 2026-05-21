@@ -16,8 +16,24 @@
 	},
 	"providesContext": {
 		"dailyos/entityType": "entity_type",
-		"dailyos/entityId": "person_id"
+		"dailyos/entityId": "person_id",
+		"dailyos/envelopeHandle": "envelope_handle"
 	},
 	"parent": null,
+	"templateLock": false,
+	"template": [
+		[ "dailyos/person-hero" ],
+		[ "dailyos/vitals-strip" ],
+		[ "dailyos/person-insight-chapter" ],
+		[ "dailyos/person-network" ],
+		[ "dailyos/person-relationships" ],
+		[ "dailyos/watch-list" ],
+		[ "dailyos/the-work" ],
+		[ "dailyos/touchpoints-feed" ],
+		[ "dailyos/open-loops-feed" ],
+		[ "dailyos/unified-timeline" ],
+		[ "dailyos/recommended-actions" ],
+		[ "dailyos/person-appendix" ]
+	],
 	"render": "file:./render.php"
 }
