@@ -1193,6 +1193,13 @@ pub struct RefreshScopesInput {
     pub session_id: String,
     pub surface_client_id: String,
     pub site_binding_digest: String,
+    /// Session-bound WP user id. Required so the audit event emitted by
+    /// `refresh_pairing_scopes` can satisfy the `Actor::SurfaceClient`
+    /// contract (wp_user_id + wp_user_hash MUST be `Some(_)` per
+    /// `emit_surface_audit`). Sourced from the caller's
+    /// `ValidatedSurfaceSession`.
+    pub wp_user_id: u64,
+    pub wp_user_hash: String,
     pub now: DateTime<Utc>,
 }
 
@@ -1344,8 +1351,8 @@ pub fn refresh_pairing_scopes(
         },
         category: "pairing_lifecycle",
         actor,
-        wp_user_id: None,
-        wp_user_hash: None,
+        wp_user_id: Some(input.wp_user_id),
+        wp_user_hash: Some(input.wp_user_hash.clone()),
         request_id: None,
         detail: json!({
             "surface_client_id": row.surface_client_id,
@@ -4388,6 +4395,8 @@ mod tests {
                 session_id: outcome.response.session_id.clone(),
                 surface_client_id: outcome.response.surface_client_id.clone(),
                 site_binding_digest: outcome.response.site_binding_digest.clone(),
+                wp_user_id: 42,
+                wp_user_hash: "test_wp_user_hash".to_string(),
                 now: now + Duration::seconds(1),
             },
         )
@@ -4395,6 +4404,15 @@ mod tests {
 
         assert!(!refresh.response.changed);
         assert_eq!(refresh.audit.event_kind, "pairing_scopes_unchanged");
+        // Audit attribution: SurfaceClient actor MUST carry wp_user_id +
+        // wp_user_hash so emit_surface_audit's contract is satisfied.
+        // Previously these were None, which silently dropped every
+        // scope-refresh event from the audit log via log::warn.
+        assert_eq!(refresh.audit.wp_user_id, Some(42));
+        assert_eq!(
+            refresh.audit.wp_user_hash.as_deref(),
+            Some("test_wp_user_hash")
+        );
     }
 
     #[test]
@@ -4433,6 +4451,8 @@ mod tests {
                 session_id: session_id.clone(),
                 surface_client_id: surface_client_id.clone(),
                 site_binding_digest: outcome.response.site_binding_digest.clone(),
+                wp_user_id: 42,
+                wp_user_hash: "test_wp_user_hash".to_string(),
                 now: now + Duration::seconds(1),
             },
         )
@@ -4463,6 +4483,8 @@ mod tests {
                 session_id: outcome.response.session_id.clone(),
                 surface_client_id: outcome.response.surface_client_id.clone(),
                 site_binding_digest: "deadbeef".to_string(),
+                wp_user_id: 42,
+                wp_user_hash: "test_wp_user_hash".to_string(),
                 now: now + Duration::seconds(1),
             },
         )
@@ -4514,6 +4536,8 @@ mod tests {
                 session_id: session_id.clone(),
                 surface_client_id: surface_client_id.clone(),
                 site_binding_digest: outcome.response.site_binding_digest.clone(),
+                wp_user_id: 42,
+                wp_user_hash: "test_wp_user_hash".to_string(),
                 now: now + Duration::seconds(1),
             },
         )
@@ -4549,6 +4573,8 @@ mod tests {
                 session_id: "sess_does_not_exist".to_string(),
                 surface_client_id: "sc_does_not_exist".to_string(),
                 site_binding_digest: "deadbeef".to_string(),
+                wp_user_id: 42,
+                wp_user_hash: "test_wp_user_hash".to_string(),
                 now: Utc::now(),
             },
         )
