@@ -10,24 +10,24 @@
 //! server-issued idempotency key, typed feedback write — and returns the post-feedback
 //! receipt so the TS layer can drive a re-render in one round trip.
 //!
-//! ## DOS-477 cycle-2 envelope wiring (code-reviewer F3 fix)
+//! ## DOS-477 cycle-2 envelope wiring (code-reviewer F3 + L3 cycle-1 codex F4)
 //!
-//! The command accepts an `envelope_render_id` string from the caller, which the
-//! TS hook threads back from the previous `render_claim_receipt` round-trip. The
-//! command looks up the cached envelope via
+//! The command accepts an `envelope_render_id` AND an `actor_principal_id` from the
+//! caller. The TS hook threads `envelope_render_id` back from the previous
+//! `render_claim_receipt` round-trip, and the surface layer supplies the authenticated
+//! principal id. The command looks up the cached envelope via
 //! [`crate::services::entity_intelligence::envelope_cache::lookup_envelope_for_render`]
-//! and uses its claim/proposal id sets as the `EnvelopeSet` basis — so
+//! keyed by `(envelope_render_id, actor_principal_id, surface)` — so
 //! `validate_envelope_target` is a real binding check, not a tautology built
-//! from the target's own id.
+//! from the target's own id, AND cross-principal cache lookups are rejected.
 //!
-//! ### v1.4.4 W1 middle ground
-//!
-//! Ability-side wiring of `record_envelope_for_render` into every renderable-
-//! envelope producer (`get_entity_intelligence`, `get_daily_briefing`, etc.) is
-//! W2 scope. Until then, callers MAY pass `envelope_render_id = None` (or a
-//! render id absent from the cache) and the command falls back to a logged
-//! single-claim envelope — preserving cycle-1 behavior so the substrate PR
-//! unblocks. See `entity_intelligence::envelope_cache::path_alpha_envelope_cache_v2`.
+//! Cache miss (no entry / expired) → `BadRequest::EnvelopeRequired`. The cycle-1
+//! tautological single-claim fallback has been removed (L3 cycle-2 F4). Cross-actor
+//! lookup → `Forbidden::PrincipalMismatch`. W2 wiring lands the ability-side
+//! `record_envelope_for_render` calls into every renderable-envelope producer
+//! (`get_entity_intelligence`, `get_daily_briefing`, etc.); until then any caller
+//! that does not first render an envelope will receive `EnvelopeRequired`. This
+//! is intentional — the workaround MUST NOT survive as the production path.
 //!
 //! Idempotency cache scope is process-wide; the AppState carries it as a lazily-
 //! initialized singleton via `AppState::claim_feedback_idempotency_cache()`.
@@ -41,6 +41,9 @@ use crate::services::claim_receipt::feedback::{
     submit_claim_feedback, ClaimFeedbackRequest, ClaimFeedbackResponse, IdempotencyCache,
 };
 use crate::services::entity_intelligence::auth::{EnvelopeOrigin, EnvelopeSet, EnvelopeView};
+use crate::services::entity_intelligence::envelope_cache::{
+    lookup_envelope_for_render, EnvelopeCacheError,
+};
 use crate::state::AppState;
 
 use abilities_runtime::sensitivity::RenderActor;
@@ -56,100 +59,78 @@ fn idempotency_cache() -> &'static IdempotencyCache {
     IDEMPOTENCY_CACHE.get_or_init(IdempotencyCache::new)
 }
 
-/// Minimal envelope view that surfaces the single targeted claim id. W2's
-/// composition path will eventually pass a real `EntityIntelligenceEnvelope`
-/// through; this stub is the v1.4.4 W1 entry point — the receipt-shaped surface
-/// has the claim id already, so the envelope-set check is satisfied trivially
-/// while the substrate-level wiring lands.
-struct SingleClaimEnvelope {
-    origin: EnvelopeOrigin,
-    claim_ids: BTreeSet<String>,
-}
-
-impl EnvelopeView for SingleClaimEnvelope {
-    fn ability(&self) -> &str {
-        &self.origin.ability
-    }
-    fn claim_ids(&self) -> BTreeSet<String> {
-        self.claim_ids.clone()
-    }
-    fn proposal_ids(&self) -> BTreeSet<String> {
-        BTreeSet::new()
-    }
-}
-
-fn extract_claim_id(target: &crate::services::claim_receipt::contracts::ReceiptTarget) -> String {
-    use crate::services::claim_receipt::contracts::ReceiptTarget;
-    match target {
-        ReceiptTarget::Claim { claim_id, .. } => claim_id.clone(),
-        ReceiptTarget::WorkItem {
-            backing_claim_id: Some(claim_id),
-            ..
-        } => claim_id.clone(),
-        _ => String::new(),
-    }
-}
+/// Default surface tag for feedback originating from the Tauri entity detail
+/// surface. Other surfaces (MCP feedback) MUST pass their own surface tag.
+const DEFAULT_SURFACE_TAG: &str = "tauri_entity_detail";
 
 #[tauri::command]
 pub async fn submit_claim_feedback_command(
     request: ClaimFeedbackRequest,
     envelope_render_id: Option<String>,
+    actor_principal_id: Option<String>,
+    surface: Option<String>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<ClaimFeedbackResponse, String> {
-    // DOS-477 cycle-2 fix (code-reviewer F3): construct the EnvelopeSet from a
-    // cached envelope keyed by the caller-supplied render id, NOT from the
-    // target's own claim id. The cache is populated by ability producers (W2)
-    // and looked up here. Cache miss = logged warning + cycle-1 fallback so
-    // the substrate PR unblocks.
-    let cached_envelope = envelope_render_id
+    // L3 cycle-2 F4: actor_principal_id is REQUIRED. The previous hardcoded
+    // `RenderActor::user("user", None)` was a cross-principal hazard; we
+    // refuse to synthesize a principal at the command layer.
+    let principal = actor_principal_id
         .as_deref()
-        .and_then(crate::services::entity_intelligence::envelope_cache::lookup_envelope_for_render);
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| {
+            "bad request: actor_principal_id is required (no principal available at command layer)"
+                .to_string()
+        })?;
 
-    let envelope: ResolvedEnvelope = match cached_envelope {
-        Some(cached) => ResolvedEnvelope::Cached(CachedEnvelopeAdapter {
-            origin: EnvelopeOrigin::new(cached.ability.clone()),
-            claim_ids: cached.claim_ids,
-            proposal_ids: cached.proposal_ids,
-        }),
-        None => {
-            // Cache miss path — TODO(v2): ability-side wiring lands in W2.
-            // Until then, log and degrade gracefully so the receipt boundary
-            // continues to function. The OTHER authorization layers
-            // (sensitivity gate, Agent actor denial, per-action metadata
-            // schema, source content hash validation) are still the actual
-            // security boundary in v1.4.4.
-            if let Some(render_id) = envelope_render_id.as_deref() {
-                log::warn!(
-                    "submit_claim_feedback_command: envelope cache miss for render_id={render_id}; \
-                     falling back to single-claim envelope (path_alpha_envelope_cache_v2)"
-                );
-            } else {
-                log::debug!(
-                    "submit_claim_feedback_command: no envelope_render_id supplied; \
-                     falling back to single-claim envelope (W2 will require this id)"
-                );
-            }
-            let claim_id = extract_claim_id(&request.target);
-            let mut claim_ids = BTreeSet::new();
-            if !claim_id.is_empty() {
-                claim_ids.insert(claim_id);
-            }
-            ResolvedEnvelope::Fallback(SingleClaimEnvelope {
-                origin: EnvelopeOrigin::new("entity_intelligence"),
-                claim_ids,
-            })
-        }
+    // L3 cycle-2 F4: envelope_render_id is REQUIRED. Cycle-1's
+    // tautological single-claim fallback has been removed. Callers MUST
+    // first render an envelope via `render_claim_receipt` (or the
+    // entity-intelligence ability when W2 wiring lands) and thread the
+    // returned render id back here.
+    let render_id = envelope_render_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| {
+            "bad request: envelope_required — envelope_render_id is mandatory; \
+             render an envelope first and pass the returned render id"
+                .to_string()
+        })?;
+
+    let surface_tag = surface
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(DEFAULT_SURFACE_TAG);
+
+    let cached = lookup_envelope_for_render(render_id, principal, surface_tag).map_err(
+        |err| match err {
+            EnvelopeCacheError::EnvelopeRequired(_) => format!(
+                "bad request: envelope_required — no envelope binding for render id `{render_id}` \
+                 (cache miss or expired); re-render and resubmit"
+            ),
+            EnvelopeCacheError::PrincipalMismatch { .. } => format!(
+                "forbidden: principal_mismatch — envelope `{render_id}` was minted for a \
+                 different actor/surface"
+            ),
+        },
+    )?;
+
+    let envelope = CachedEnvelopeAdapter {
+        origin: EnvelopeOrigin::new(cached.ability),
+        claim_ids: cached.claim_ids,
+        proposal_ids: cached.proposal_ids,
     };
 
-    let envelope_view: &dyn EnvelopeView = match &envelope {
-        ResolvedEnvelope::Cached(c) => c,
-        ResolvedEnvelope::Fallback(f) => f,
-    };
+    let envelope_view: &dyn EnvelopeView = &envelope;
     let set = EnvelopeSet::new(envelope_view);
 
-    // Default actor for the user surface; W2 entity-detail will pass a more
-    // specific actor once user-id resolution is wired through.
-    let actor = RenderActor::user("user", None::<String>);
+    // L3 cycle-2 F4: actor derived from request-supplied principal id, not
+    // hardcoded. `RenderActor::user` is correct here — the command is the
+    // Tauri user-surface entry point; agent-feedback submissions land via a
+    // different command path (MCP tool) once W4 ships.
+    let actor = RenderActor::user(principal.to_string(), Some(principal.to_string()));
 
     submit_claim_feedback(
         state.inner().as_ref(),
@@ -163,9 +144,9 @@ pub async fn submit_claim_feedback_command(
 }
 
 /// Adapter so a cached envelope (post-lookup) can satisfy `EnvelopeView`
-/// without owning a borrow. Mirrors the [`SingleClaimEnvelope`] shape but
-/// carries both claim_ids and proposal_ids — proposal targets are deferred to
-/// W4 but the cache primitive supports them upstream.
+/// without owning a borrow. Carries both claim_ids and proposal_ids —
+/// proposal targets are deferred to W4 but the cache primitive supports them
+/// upstream.
 struct CachedEnvelopeAdapter {
     origin: EnvelopeOrigin,
     claim_ids: BTreeSet<String>,
@@ -182,10 +163,4 @@ impl EnvelopeView for CachedEnvelopeAdapter {
     fn proposal_ids(&self) -> BTreeSet<String> {
         self.proposal_ids.clone()
     }
-}
-
-/// Either a cache-resolved envelope or the v1.4.4 W1 fallback.
-enum ResolvedEnvelope {
-    Cached(CachedEnvelopeAdapter),
-    Fallback(SingleClaimEnvelope),
 }
