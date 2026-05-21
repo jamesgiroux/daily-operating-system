@@ -2,82 +2,80 @@
 
 **Wave:** v1.4.7 W1.5 (post-W1-A + W1-B; pre-W2 handlers)
 **Linear ticket:** TBD (mint after L0 approve)
-**Authoring discipline:** narrow-scoped per K-in lessons. Substrate gaps file as separate Linear tickets.
+**Scope:** local-to-local same-machine only. No remote MCP transport in scope. Trust boundary is "same user on this machine."
+**Authoring discipline:** narrow-scoped per K-in lessons.
 
-## Cycle-4 changelog (2026-05-21)
+## Cycle-5 changelog (2026-05-21)
 
-Cycle-3 verdicts: 1 BLOCK (devex) + 3 NEEDS-CHANGES (CSO + architect + challenge). 3/4 reviewers convergent on **identify-subprotocol fundamentally broken**:
-- **Devex BLOCK**: standard MCP clients (Claude Desktop, Cursor) call only spec methods — they will never send `dailyos/identify`. Pre-identify lockdown turns the whole server into a brick from a standard client.
-- **Architect critical**: single-use 60s identify nonce makes Claude Desktop subprocess restart impossible.
-- **CSO**: identify consumes a ledger nonce but doesn't return `next_request_nonce`, pressuring implementers to bypass Gateway nonce verification.
+Cycle-4 verdicts: architect APPROVE, challenge NEEDS-CHANGES, CSO BLOCK, devex BLOCK. CSO + devex convergent on per-envelope HMAC client-incompatibility for standard MCP clients (Claude Desktop, Cursor don't compute HMAC); devex provided the concrete fix.
 
-**Cycle-4 architectural pivot: drop the identify subprotocol entirely.** Identity flows via process environment at startup, not via JSON-RPC message:
+**Cycle-5 architectural commit (user-directed):** Option A — startup identity is the auth boundary for stdio; transport self-signs internally. Scope explicitly local-to-local same-machine. No remote MCP transport in v1.4.7.
 
-```
-pair CLI emits config snippet with env block:
-  env: { DAILYOS_MCP_CLIENT_ID, DAILYOS_MCP_TRANSPORT_KEY }
+Cycle-5 fixes:
 
-Subprocess startup reads env, cross-checks against mcp_client_manifest +
-keychain. Standard MCP initialize → tools/list (filtered by env client_id's
-grants) → tools/call (wrapper still HMAC-verifies + consumes nonce per call
-via W1-A Gateway substrate).
-```
+1. **Trust model differentiated by transport class.** Stdio transport (Claude Desktop, Cursor): auth = env-asserted startup identity. Per-envelope HMAC + nonce ledger = transport-internal hygiene (consistent with W1-A substrate; zero attacker value for this transport class given the local-to-local scope). WP adapter (v1.4.2 W3-C) + custom SDK clients: per-envelope HMAC authenticates the middleware/SDK to the gateway (real client auth at the envelope boundary). Gateway substrate unchanged — it always verifies HMAC + consumes nonce; the transport decides where the trust boundary lives.
 
-Threat model collapses to "machine-local trust" (same as transport_key being in env at all). Per-envelope HMAC + nonce ledger still provides replay protection. Works with standard MCP clients without custom protocol extension.
+2. **Transport self-signs internally** (devex BLOCK fix). `tools/call` accepts normal MCP tool params from Claude Desktop / Cursor (no `_dailyos_*` keys in `arguments`). Transport reads `verified_client_id` + transport_key (process-held) + assigns request_nonce (from W1-A preissue ledger), constructs `McpToolRequestEnvelope`, signs with JCS canonicalization, calls `Gateway::handle_tool_call`. `_dailyos_envelope` and `_dailyos_signature` are NOT exposed in public `tools/list` input_schema.
 
-Cycle-4 changes:
-1. Drop `dailyos/identify` JSON-RPC method + AC-12 (consume) + AC-13 (pre-identify lockdown) + AC-14 (single-assignment) + AC-15 (server_pid binding)
-2. New AC-12: startup env-assertion (read env vars, look up manifest, cross-check transport_key against keychain via `keychain_ref`, fail-fast with operator-readable error)
-3. AC-6 unchanged in semantics (per-pairing `tools/list` filtering) but driven by env-asserted client_id at startup, not session identify state
-4. AC-2 wire shape unchanged (still `arguments._dailyos_envelope/_signature`)
-5. Per-call envelope HMAC canonicalization spec: RFC 8785 JCS, with golden cross-language fixtures (challenge cycle-3 #1)
-6. AC-3 typo: `NotFound { resource }` not `{ entity }` (devex cycle-3)
-7. AC-6 `_dailyos_envelope` is JSON object schema (challenge cycle-3 + architect cycle-3 alignment)
-8. AC-11 hardlinks/copies acknowledgment + binary self-identification fallback (challenge cycle-3 #4)
-9. `pair --format claude-desktop` snippet emits env block (not identify_nonce); becomes the standard MCP-client-compatible deliverable
+3. **Scope statement: local-to-local same-machine** (user direction). Documented in §0 scope. The /proc/<pid>/environ exposure (challenge + CSO cycle-4) is acceptable because any attacker who can read it is already same-user same-machine and has access to ~/.dailyos/keychain etc. env-wipe via `std::env::remove_var` reworded as best-effort in-process hygiene (limits subsequent `getenv` reads in same process), not a /proc mitigation.
+
+4. **AC-3 add public `message` field** (devex cycle-4). rmcp::Error carries both `code` + `data.kind` + a short human-readable `message` so MCP clients can render a meaningful error.
+
+5. **AC-6 input_schema clean** — only handler params + `_dailyos_*` excluded (devex cycle-4 + transport self-signs).
+
+6. **Cursor compatibility — `"type": "stdio"`** (devex cycle-4). `pair --format claude-desktop` snippet includes `"type": "stdio"` for Cursor compatibility (harmless for Claude Desktop).
+
+7. **JCS hardening** (challenge + CSO cycle-4). Duplicate-key rejection at all object levels; I-JSON-compatible values; golden fixtures expanded to cover ASCII + Unicode (no normalization) + escape sequences + nested arrays/objects + floats + nulls + integer edge cases. Fixtures shipped for SDK authors of WP adapter / custom SDK clients (real auth path).
+
+8. **claude_desktop_config.json file perms note** (challenge cycle-4). `pair --format claude-desktop` stderr warning extended: "Recommend `chmod 600` on claude_desktop_config.json; the transport_key is in the env block." Soft guidance — local-to-local scope means file perms are advisory, not load-bearing.
+
+9. **`McpToolRequestEnvelope` has no client_id** (devex cycle-4 confirmed). Transport passes `verified_client_id` as the `asserted_client_id` argument to `Gateway::handle_tool_call` (existing W1-A API). Envelope shape is unchanged.
+
+10. **Documented trust-model softening for stdio** in §11 DoD. W1-A's "every call HMAC-verified" claim still technically true, but for stdio transport the HMAC is self-signed by the same process that holds the key. Honest framing in proof bundle.
+
+## 0. Scope statement
+
+**In scope:** local stdio MCP transport (Claude Desktop, Cursor, custom local SDK clients) on the same machine as the dailyos-mcp-v2 binary. Trust boundary: same user on this machine.
+
+**Out of scope:** remote MCP transport (HTTP/TLS to external clients). Out-of-machine attackers. Cross-user attackers on the same machine (multi-tenant systems). Network-attached MCP servers. If you have a remote-MCP threat model, this lane is the wrong substrate.
 
 ## 1. What this lane ships
 
-The MCP v2 Gateway (W1-A) has no transport ingress — it's a Rust function nobody can call over the wire. Legacy `dailyos-mcp` binary uses `rmcp::ServerHandler` on stdio with a legacy `McpAbilityBridge`. This lane bridges `rmcp` to the v2 `Gateway` so standard MCP clients (Claude Desktop, Cursor, custom) invoke v2 tools through the W1-A trust contract.
+The MCP v2 Gateway (W1-A) has no transport ingress — it's a Rust function nobody can call over the wire. Legacy `dailyos-mcp` uses `rmcp::ServerHandler` on stdio. This lane bridges `rmcp` to the v2 `Gateway` so standard MCP clients (Claude Desktop, Cursor, custom) invoke v2 tools through the W1-A trust contract under the §0 scope.
 
-### Architecture: env-asserted identity, per-envelope HMAC
+### Architecture: env-asserted startup identity, transport-internal signing
 
-Each `dailyos-mcp-v2` stdio process serves one verified pairing for its lifetime. Identity is asserted via environment variables at process startup; per-call envelopes still HMAC-verify and consume the W1-A nonce ledger per invocation (defense in depth).
-
-Lifecycle:
+Each `dailyos-mcp-v2` stdio process serves one verified pairing for its lifetime. Identity is asserted via environment variables at process startup; per-call envelopes are constructed + signed BY THE TRANSPORT itself, then dispatched via `Gateway::handle_tool_call` which verifies HMAC + consumes nonce as substrate hygiene.
 
 ```
-1. Operator runs `dailyos-mcp-v2 pair --client-name claude --grant ... --format claude-desktop`
-2. Operator pastes the emitted snippet into claude_desktop_config.json:
-     {
-       "mcpServers": {
-         "dailyos": {
-           "command": "dailyos-mcp-v2",
-           "args": ["serve"],
-           "env": {
-             "DAILYOS_MCP_CLIENT_ID": "mcp_client_<hex>",
-             "DAILYOS_MCP_TRANSPORT_KEY": "<hex>"
-           }
-         }
-       }
-     }
-3. Claude Desktop spawns `dailyos-mcp-v2 serve` with those env vars set
-4. Subprocess startup:
+1. pair CLI emits config snippet → operator pastes into claude_desktop_config.json
+2. Claude Desktop spawns `dailyos-mcp-v2 serve` with env vars set
+3. Subprocess startup:
      a. Read DAILYOS_MCP_CLIENT_ID + DAILYOS_MCP_TRANSPORT_KEY from env
-     b. Look up `mcp_client_manifest` row for that client_id; verify exists + not revoked
-     c. Read transport_key from keychain (via row.keychain_ref); cross-check
-        against env-asserted key; reject on mismatch
-     d. Store `verified_client_id` in V2ServerHandler (process-scoped, immutable)
-     e. Log boot status; begin serving rmcp::ServerHandler
-5. Standard MCP `initialize` / `get_info` handshake (no auth state beyond what's
-   already set at startup)
-6. `tools/list` returns registered handler set FILTERED by `mcp_tool_grant` rows
-   for verified_client_id where exposure = Invocable
-7. `tools/call` extracts arguments._dailyos_envelope + _dailyos_signature,
-   asserts envelope.client_id == verified_client_id + envelope.tool_name ==
-   request.name, calls Gateway::handle_tool_call (HMAC + nonce + dispatch per
-   W1-A substrate)
-8. Process exit = session end; no persistent state
+     b. Look up mcp_client_manifest row for client_id; verify exists + not revoked
+     c. Read transport_key from keychain via row.keychain_ref; cross-check
+        against env-asserted key (Zeroizing comparison, constant-time)
+     d. Store verified_client_id + transport_key in V2ServerHandler
+     e. Best-effort: std::env::remove_var on env vars (limits subsequent
+        in-process getenv reads; does NOT scrub /proc/<pid>/environ — see §0 scope)
+     f. Begin serving rmcp::ServerHandler
+4. Standard MCP `initialize`/`get_info` handshake
+5. `tools/list` returns registered handlers FILTERED by mcp_tool_grant rows
+   for verified_client_id where exposure = Invocable. input_schema exposes
+   only handler-defined params (no _dailyos_* keys).
+6. `tools/call` flow:
+     a. Receive { name, arguments } — normal MCP shape, no _dailyos_* keys
+     b. Transport assigns request_nonce (W1-A preissue path)
+     c. Transport constructs McpToolRequestEnvelope { tool_name=name,
+        request_nonce, params=arguments, conversation_handle, tool_grant_id }
+     d. Transport canonicalizes envelope via RFC 8785 JCS; signs with
+        process-held transport_key using HMAC-SHA256
+     e. Transport calls Gateway::handle_tool_call(conn, &verified_client_id,
+        envelope, signature)
+     f. Gateway substrate (W1-A, unchanged): verify HMAC, consume nonce,
+        check manifest scope grant, dispatch handler, audit, signal-emit
+     g. Transport unwraps response envelope into rmcp::CallToolResult
+7. Process exit = session end; no persistent state
 ```
 
 ### Deliverable 1: `src-tauri/src/services/mcp_v2/transport.rs` (NEW)
@@ -85,35 +83,37 @@ Lifecycle:
 ```rust
 pub struct V2ServerHandler {
     gateway: Arc<Gateway>,
-    catalog: Arc<dyn TaxonomyCatalog>,         // requires §4 trait extension
+    catalog: Arc<dyn TaxonomyCatalog>,
     db: Arc<Mutex<ActionDb>>,
-    verified_client_id: McpClientId,           // set at construction; immutable
+    verified_client_id: McpClientId,                  // immutable, set at construction
+    transport_key: Zeroizing<[u8; 32]>,               // process-held; signs envelopes internally
     server_info: ServerInfo,
 }
 
 impl V2ServerHandler {
     /// Constructed AFTER successful env-assertion + manifest lookup +
-    /// keychain cross-check in main.rs. Construction failure (any of those
-    /// checks fail) exits the process before the rmcp service runs.
+    /// keychain cross-check in main.rs. Construction failure exits the
+    /// process before the rmcp service runs.
     pub fn from_verified_pairing(
         gateway: Arc<Gateway>,
         catalog: Arc<dyn TaxonomyCatalog>,
         db: Arc<Mutex<ActionDb>>,
         verified_client_id: McpClientId,
+        transport_key: Zeroizing<[u8; 32]>,
     ) -> Self { ... }
 }
 
 impl rmcp::ServerHandler for V2ServerHandler {
-    fn get_info(&self) -> ServerInfo { ... }                    // not initialize
+    fn get_info(&self) -> ServerInfo { ... }                   // mirrors legacy
     async fn list_tools(...) -> Result<ListToolsResult, McpError> { ... }
     async fn call_tool(...) -> Result<CallToolResult, McpError> { ... }
+    // Internal: construct + sign envelope from request before gateway dispatch
 }
 ```
 
 ### Deliverable 2: `src-tauri/src/mcp_v2/main.rs` (NEW binary `dailyos-mcp-v2`)
 
 ```bash
-# Subcommands
 dailyos-mcp-v2 serve [--legacy-config-path <p>]   # stdio MCP server
 dailyos-mcp-v2 pair --client-name <s>             # pair a new client
                     --grant <tool>:<scope1,scope2>:<exposure>  # repeatable
@@ -121,48 +121,13 @@ dailyos-mcp-v2 pair --client-name <s>             # pair a new client
 dailyos-mcp-v2 unpair --client-id <id>             # revoke a pairing
 ```
 
-`serve` reads env at startup. Missing env vars OR unknown client_id OR revoked pairing OR keychain mismatch → exit code 1 with operator-readable error to stderr.
-
-### Deliverable 3: `tools/call` wire shape
-
-```jsonrpc
-{
-  "jsonrpc": "2.0",
-  "method": "tools/call",
-  "params": {
-    "name": "dailyos.read.account_status",
-    "arguments": {
-      "subject": "acme",
-      "_dailyos_envelope": {
-        "client_id": "mcp_client_<hex>",
-        "tool_name": "dailyos.read.account_status",
-        "request_nonce": "<hex>",
-        "params": { "subject": "acme" },
-        "conversation_handle": null,
-        "tool_grant_id": null
-      },
-      "_dailyos_signature": "<hex>"
-    }
-  }
-}
-
-// signature = HMAC-SHA256(
-//   transport_key,
-//   JCS_canonical_json(_dailyos_envelope)
-// )
-// where JCS_canonical_json is RFC 8785 JSON Canonicalization Scheme:
-// UTF-8, sorted keys, no insignificant whitespace, RFC 8259 number form.
-//
-// Cross-language golden fixtures shipped in tests/fixtures/jcs_*.json
-// so SDK authors in Python/TypeScript/Go can verify their implementation.
-```
-
-### Deliverable 4: `pair --format claude-desktop` output
+### Deliverable 3: `pair --format claude-desktop` output
 
 ```json
 {
   "mcpServers": {
     "<client-name>": {
+      "type": "stdio",
       "command": "dailyos-mcp-v2",
       "args": ["serve"],
       "env": {
@@ -174,24 +139,32 @@ dailyos-mcp-v2 unpair --client-id <id>             # revoke a pairing
 }
 ```
 
-Stderr (never stdout): `WARNING: DAILYOS_MCP_TRANSPORT_KEY printed ONCE. Record it now — there is no recovery. Re-pair via 'unpair --client-id <id>' then 'pair' regenerates a new key.`
+Stderr (never stdout):
+```
+WARNING: DAILYOS_MCP_TRANSPORT_KEY printed ONCE. Record it now — there is
+no recovery. Re-pair via 'unpair --client-id <id>' then 'pair' regenerates
+a new key.
+
+Recommended: chmod 600 on claude_desktop_config.json — the env block
+contains the transport_key. (Same-user same-machine threat model; advisory
+only.)
+```
 
 ## 2. What this lane does NOT ship
 
 - Per-tool handlers (W2 / W3 / W4)
-- Loopback HTTP transport (Phase 2)
+- Remote MCP transport (HTTP/TLS) — §0 out-of-scope for v1.4.7
 - MCP v1 deprecation — legacy binary stays per W1-A AC-10
 - Production `BusSignalEmitter` (separate W1.5 lane)
 - Operator pairing UI beyond CLI (post-v1.4.7)
 - `client_label` schema column for pair-by-name revoke (separate ticket)
-- Per-process keychain ACLs to gate transport_key reads (the env-assertion model assumes the operator's machine is trusted; tightening to per-process keychain ACL is post-v1.4.7)
 
 ## 3. Frozen substrate citations
 
 - `rmcp = "0.1"` already in Cargo.toml; legacy precedent at `src/mcp/main.rs:973-1031` + `:1312-1379`
-- W1-A `Gateway::handle_tool_call` — dispatch entry called per envelope
+- W1-A `Gateway::handle_tool_call(conn, &asserted_client_id, envelope, signature)` — dispatch entry, unchanged
 - W1-A `auth::pair_client`, `auth::load_client_record`, `auth::verify_transport_hmac`, `auth::verify_and_consume_and_preissue` — all reused; no parallel paths
-- W1-A keychain via `keychain_ref` in `mcp_client_manifest` — env-asserted key cross-checked against this
+- W1-A keychain via `keychain_ref` in `mcp_client_manifest` — env-asserted key cross-checked here
 - W1-A `mcp_transport_nonce_ledger` — request_nonce ledger consumed per envelope
 - W1-B `YamlTaxonomyCatalog::description_for` (will move to trait per §4)
 - W1-B `Gateway::seal()`
@@ -201,97 +174,107 @@ Stderr (never stdout): `WARNING: DAILYOS_MCP_TRANSPORT_KEY printed ONCE. Record 
 ## 4. K-in + substrate extensions
 
 - **K-in**: grep `docs/solutions/` + `.docs/decisions/`. Legacy `dailyos-mcp` is the rmcp precedent.
-- **`TaxonomyCatalog` trait extension** (architect cycle-1): add `fn description_for(&self, name: &ScopedName) -> Option<&ToolDescription>` to the trait. One-line additive.
+- **`TaxonomyCatalog` trait extension**: add `fn description_for(&self, name: &ScopedName) -> Option<&ToolDescription>`. One-line additive.
 
-## 5. Acceptance criteria (cycle-4 normative — supersedes cycle-1/2/3)
+## 5. Acceptance criteria (cycle-5 normative)
 
-- **AC-1 rmcp::ServerHandler implemented.** `V2ServerHandler` implements `get_info` (mirrors legacy `src/mcp/main.rs:973`), `list_tools`, `call_tool`. No custom JSON-RPC methods.
-- **AC-2 Wire shape pinned.** `tools/call` extracts `_dailyos_envelope` + `_dailyos_signature` from `arguments` (rmcp 0.1 exposes only name + arguments on CallToolRequestParam). Asserts `request.name == envelope.tool_name`. Asserts `envelope.client_id == verified_client_id`. Reserved-key collision (real param `_dailyos_*`) rejected with uniform `BadParams { detail: "reserved key" }`.
-- **AC-3 ToolError → rmcp::Error closed-matrix mapping.** Every `ToolError` variant has a row. Test asserts every variant; CI lint fails on orphan variant.
+- **AC-1 rmcp::ServerHandler implemented.** `V2ServerHandler` implements `get_info`, `list_tools`, `call_tool`. No custom JSON-RPC methods. Standard MCP clients work without modification.
+- **AC-2 Transport self-signs.** `tools/call` receives normal MCP `{ name, arguments }`. Transport (NOT client) constructs `McpToolRequestEnvelope` with `tool_name = name`, `params = arguments`, assigns `request_nonce` from W1-A ledger, signs with process-held `transport_key` over JCS canonicalization. No `_dailyos_*` keys exposed in public input_schema.
+- **AC-3 ToolError → rmcp::Error closed-matrix mapping** including public human-readable `message`.
 
-   | ToolError | rmcp::Error code | public `data.kind` | operator log fields |
-   |---|---|---|---|
-   | `Unauthorized { missing_scope }` | -32600 invalid_request | `unauthorized` | client_id, tool_name, missing_scope |
-   | `BadParams { detail }` | -32602 invalid_params | `bad_params` | client_id, tool_name, detail (server-side log only — never on wire) |
-   | `RateLimited { retry_after_seconds }` | -32099 custom | `rate_limited` | client_id, tool_name, retry_after_seconds |
-   | `ExposureForbidden { tool_name }` | -32601 method_not_found | `exposure_forbidden` | client_id, tool_name |
-   | `PairingRevoked` | -32600 invalid_request | `pairing_revoked` | client_id |
-   | `ConversationRevoked` | -32600 invalid_request | `conversation_revoked` | client_id, conversation_handle |
-   | `NotFound { resource }` | -32601 method_not_found | `not_found` | client_id, tool_name, resource (opaque ID only — no PII) |
-   | `UpstreamFailure { detail }` | -32603 internal_error | `upstream_failure` | trace_id (opaque); detail logged server-side only |
-   | `Internal { trace_id }` | -32603 internal_error | `internal` | trace_id |
+   | ToolError | rmcp::Error code | data.kind | message (public) | log fields (server-side) |
+   |---|---|---|---|---|
+   | `Unauthorized { missing_scope }` | -32600 invalid_request | `unauthorized` | "tool requires scope your pairing lacks" | client_id, tool_name, missing_scope |
+   | `BadParams { detail }` | -32602 invalid_params | `bad_params` | "tool params are malformed" | client_id, tool_name, detail (server-side only) |
+   | `RateLimited { retry_after_seconds }` | -32099 custom | `rate_limited` | "too many calls; retry later" | client_id, tool_name, retry_after_seconds |
+   | `ExposureForbidden { tool_name }` | -32601 method_not_found | `exposure_forbidden` | "tool is not exposed to your pairing" | client_id, tool_name |
+   | `PairingRevoked` | -32600 invalid_request | `pairing_revoked` | "pairing has been revoked" | client_id |
+   | `ConversationRevoked` | -32600 invalid_request | `conversation_revoked` | "conversation has been revoked" | client_id, conversation_handle |
+   | `NotFound { resource }` | -32601 method_not_found | `not_found` | "requested resource not found" | client_id, tool_name, resource (opaque ID) |
+   | `UpstreamFailure { detail }` | -32603 internal_error | `upstream_failure` | "upstream system failure; try again later" | trace_id (opaque); detail server-side only |
+   | `Internal { trace_id }` | -32603 internal_error | `internal` | "internal error" | trace_id |
 
-- **AC-4 Boot logs.** Format: `mcp_v2 boot: pairing <client_id> verified, 0 handlers registered, N catalog entries pending. tools/list will return empty for this build. Expected for W1.5 transport-only.` With embedded YAML (10 tools) and 0 handlers, N = 10. Strict mode env: `DAILYOS_MCP_V2_REQUIRE_HANDLERS=1` fails boot if no handlers registered.
+   Test asserts every variant; CI lint fails on orphan variant.
+- **AC-4 Boot logs.** Format: `mcp_v2 boot: pairing <client_id> verified, 0 handlers registered, 10 catalog entries pending. tools/list will return empty for this build. Expected for W1.5 transport-only.` Strict mode env: `DAILYOS_MCP_V2_REQUIRE_HANDLERS=1` fails boot if no handlers registered.
 - **AC-5 `pair` CLI:**
   - `dailyos-mcp-v2 pair --client-name <s> --grant <tool>:<scope1>[,<scope2>...]:<invocable|metadata-only> [--grant ...] [--format json|claude-desktop]`
-  - Writes `mcp_client_manifest` + `mcp_tool_grant` via `auth::pair_client` (no parallel write path)
-  - `--format json` → machine-parsable `PairingResponse` to stdout
-  - `--format claude-desktop` → MCP-client-compatible `{"mcpServers": {...}}` snippet (env block with DAILYOS_MCP_CLIENT_ID + DAILYOS_MCP_TRANSPORT_KEY)
-  - Stderr: "WARNING: DAILYOS_MCP_TRANSPORT_KEY printed ONCE. Record it now — there is no recovery."
-  - **No "same name revokes existing"**: operator must `unpair --client-id <id>` first; separate ticket for `client_label` substrate.
+  - `--format claude-desktop` → snippet includes `"type": "stdio"` (Cursor compat) + env block (client_id + transport_key)
+  - Stderr warnings: key-printed-once + chmod 600 advisory (§0 scope acknowledgment)
+  - No name-based re-pair (substrate gap filed separately)
 - **AC-6 `tools/list` filtered + composed description.** Returns only registered handlers WHOSE `mcp_tool_grant` row for `verified_client_id` has `exposure = Invocable`. Each `rmcp::Tool` carries:
   - `name` = catalog entry name (ScopedName)
   - `description` = `format!("{summary}\n\nWhen to call:\n{when_to_call}\n\nWhen NOT to call:\n{when_not_to_call}")`
-  - `input_schema` = JSON Schema with tool params from `ToolDescription.parameters` + required `_dailyos_envelope` (type: object, opaque to client; reference doc URL) + required `_dailyos_signature` (type: string, hex)
-  - Empty filtered set → empty `tools` list (valid MCP response).
-- **AC-7 Legacy `dailyos-mcp` binary unchanged.** Build matrix verifies both binaries compile + bin paths don't collide. W1-A AC-10 coexistence preserved.
-- **AC-8 Integration tests** (cover AC-1..AC-13):
-  - Unit: `V2ServerHandler::call_tool` direct invocation with wrapper extraction + verified_client_id assertion + Gateway dispatch via stub handler
-  - **Subprocess test**: spawn `dailyos-mcp-v2 serve` with env vars; perform full MCP `initialize` → `tools/list` → `tools/call` sequence over stdin/stdout; assert stdout is protocol-only (no boot log corruption per legacy `src/mcp/main.rs:1312` precedent)
-  - Subprocess negative tests: missing env var → exit 1 with stderr error; unknown client_id env → exit 1; revoked pairing env → exit 1; keychain mismatch → exit 1; tools/call with envelope.client_id != verified_client_id → BadParams; tools/call with wrong HMAC → BadParams; replay (consumed nonce) → BadParams
-- **AC-9 (DELETED — per-pairing filtering is now REQUIRED via AC-6, not deferred)**
-- **AC-10 Required checks.** `cargo build --features mcp --bin dailyos-mcp-v2` clean. `cargo clippy --features mcp -- -D warnings` clean. `cargo test --features mcp` passes including subprocess tests.
-- **AC-11 Legacy executable identity guardrail.** `serve --legacy-config-path <p>` parses the config and refuses to start if it claims v2-owned tool names AND points at a binary that resolves (via filesystem canonicalization following symlinks) to legacy `dailyos-mcp`. Error: `dailyos-mcp-v2: refusing to start. Config at <p> claims v2-owned tools [<list>] routed through legacy binary at <resolved-path>. Run 'dailyos-mcp-v2 migrate-config <p>' to update.` **Hardlinks/copies acknowledged limitation** (per challenge cycle-3): canonical path resolution catches symlinks; hardlinks and copies are indistinguishable from independent binaries at filesystem level. Path-α fallback: binary self-identification via `<binary> --version-id` returning a stable internal identifier; if `--legacy-config-path` is provided AND the configured binary's `--version-id` returns the legacy identifier, refuse. Filed as separate ticket if `which`-based canonicalization proves insufficient in practice.
-- **AC-12 Startup env-assertion** (replaces cycle-3 AC-12/13/14/15). `serve` subcommand:
-  1. Read `DAILYOS_MCP_CLIENT_ID` + `DAILYOS_MCP_TRANSPORT_KEY` from process env. Missing → exit 1, stderr: `dailyos-mcp-v2: missing required env var <NAME>. See 'dailyos-mcp-v2 pair --format claude-desktop' output.`
-  2. Look up `mcp_client_manifest` row for client_id. Not found → exit 1, stderr: `dailyos-mcp-v2: client_id <id> not paired. Run 'pair' first.`
-  3. Row.revoked_at != NULL → exit 1, stderr: `dailyos-mcp-v2: pairing for <id> revoked at <ts>. Re-pair.`
-  4. Read transport_key from keychain via `row.keychain_ref`; cross-check against env-asserted key (Zeroizing comparison, constant-time). Mismatch → exit 1, stderr: `dailyos-mcp-v2: transport_key mismatch for <id>. Env value does not match keychain. Re-pair to regenerate.`
-  5. All checks pass → construct `V2ServerHandler::from_verified_pairing(...)`, begin serving.
-  Env vars are wiped from the process's own environment after reading (`unsafe { std::env::remove_var }`) so subprocess inspection via `/proc/self/environ` minimizes the surface time the key is visible.
-- **AC-13 Per-envelope replay protection via W1-A substrate (unchanged behavior).** `tools/call` calls `Gateway::handle_tool_call` which already invokes `auth::verify_transport_hmac` + `auth::verify_and_consume_and_preissue`. Per-envelope HMAC + nonce consumption is the defense-in-depth layer beyond startup env-assertion. No new substrate needed.
-- **AC-14 RFC 8785 JCS canonicalization** (replaces cycle-3 server_pid binding). HMAC input is RFC 8785 JSON Canonicalization Scheme (JCS) of the `_dailyos_envelope` JSON object. UTF-8, sorted keys, no insignificant whitespace, RFC 8259 number form. Golden cross-language fixtures shipped in `src-tauri/tests/fixtures/jcs_envelope_*.json` covering ASCII + Unicode + escape sequences + nested objects + arrays + integers/floats/nulls so SDK authors in Python/TypeScript/Go can verify their implementation matches.
+  - `input_schema` = JSON Schema for handler params from `ToolDescription.parameters`. **Excludes `_dailyos_*` keys** (transport self-signs; client doesn't construct them).
+- **AC-7 Legacy `dailyos-mcp` unchanged.** Build matrix verifies both binaries compile + bin paths don't collide.
+- **AC-8 Integration tests** (cover AC-1..AC-14):
+  - Unit: `V2ServerHandler::call_tool` direct invocation with stub handler
+  - **Subprocess test**: spawn `dailyos-mcp-v2 serve` with env; perform full MCP `initialize` → `tools/list` → `tools/call` over stdin/stdout; assert stdout protocol-only (per legacy `src/mcp/main.rs:1312` precedent)
+  - Subprocess negative tests: missing env → exit 1; unknown client_id → exit 1; revoked pairing → exit 1; keychain mismatch → exit 1; tools/call with replay of consumed nonce → BadParams (W1-A substrate via gateway)
+- **AC-10 Required checks.** `cargo build --features mcp --bin dailyos-mcp-v2` clean. `cargo clippy --features mcp -- -D warnings` clean. `cargo test --features mcp` passes including subprocess + JCS golden tests.
+- **AC-11 Legacy executable identity guardrail.** `serve --legacy-config-path <p>` refuses to start if config claims v2-owned tools AND points (via filesystem canonicalization following symlinks) at the legacy `dailyos-mcp` binary. Error message includes resolved-path + suggested remediation. Hardlinks/copies acknowledged limitation; binary self-ID `--version-id` fallback filed as separate ticket.
+- **AC-12 Startup env-assertion** (replaces cycle-3 identify ACs).
+  1. Read `DAILYOS_MCP_CLIENT_ID` + `DAILYOS_MCP_TRANSPORT_KEY` from env (into Zeroizing buffers). Missing → exit 1 with operator-readable error.
+  2. Look up `mcp_client_manifest` row. Not found → exit 1.
+  3. Revoked → exit 1.
+  4. Read transport_key from keychain via `row.keychain_ref`; constant-time compare against env-asserted key (Zeroizing). Mismatch → exit 1.
+  5. **Best-effort env-wipe**: `unsafe { std::env::remove_var }` on both env vars BEFORE spawning the rmcp service / any threads. Documented as best-effort in-process hygiene — does NOT scrub `/proc/<pid>/environ` (which retains the initial exec environment for process lifetime per Linux kernel behavior). Acceptable under §0 scope (same-user same-machine threat model; attacker reading /proc already has keychain access).
+  6. Construct `V2ServerHandler::from_verified_pairing` and begin serving.
+- **AC-13 Per-envelope replay protection via W1-A substrate.** `tools/call` calls `Gateway::handle_tool_call` which invokes `auth::verify_transport_hmac` + `auth::verify_and_consume_and_preissue`. Replay (consumed nonce) → BadParams. **Note**: for stdio transport, HMAC verification + nonce consumption are transport-internal hygiene (the same process signs and verifies via the same key). Real client auth for stdio is the startup env-assertion (AC-12). For WP adapter / SDK transports, HMAC + nonce remain real client-to-gateway authentication.
+- **AC-14 RFC 8785 JCS canonicalization with hardened spec + golden fixtures.**
+  - Duplicate-key rejection at all object levels (UnknownField / DuplicateKey error)
+  - I-JSON-compatible values only (no NaN, no Infinity, no -0, no excessive precision)
+  - Golden fixtures shipped in `src-tauri/tests/fixtures/jcs_envelope_*.json` covering:
+    - ASCII text
+    - Unicode (BMP + surrogate pairs)
+    - Escape sequences (`\n`, `\t`, `\\`, `ÿ`)
+    - Nested objects (depth 5)
+    - Arrays (mixed types)
+    - Integer edge cases (0, -0 rejection, max safe int, negative)
+    - Floats (0.1, 1e10, 1e-10)
+    - Null values
+    - Empty object / empty array
+    - Duplicate-key rejection (input + expected error)
 
 ## 6. Files owned
 
 | File | State | Owner |
 |---|---|---|
 | `src-tauri/src/services/mcp_v2/transport.rs` | NEW | exclusive |
-| `src-tauri/src/services/mcp_v2/taxonomy.rs` | additive — `description_for` moves to trait | shared (one-line) |
+| `src-tauri/src/services/mcp_v2/taxonomy.rs` | additive — `description_for` to trait | shared (one-line) |
 | `src-tauri/src/services/mcp_v2/mod.rs` | additive — `pub mod transport;` | shared (one-line) |
 | `src-tauri/src/mcp_v2/main.rs` | NEW (binary with serve / pair / unpair) | exclusive |
-| `src-tauri/Cargo.toml` | additive — `[[bin]]` block for `dailyos-mcp-v2` matching legacy pattern | shared (additive) |
+| `src-tauri/Cargo.toml` | additive — `[[bin]]` block for `dailyos-mcp-v2` | shared (additive) |
 | `src-tauri/tests/dos_mcp_transport_test.rs` | NEW | exclusive |
 | `src-tauri/tests/dos_mcp_transport_subprocess_test.rs` | NEW | exclusive |
-| `src-tauri/tests/fixtures/jcs_envelope_*.json` | NEW (5-10 golden fixtures) | exclusive |
+| `src-tauri/tests/fixtures/jcs_envelope_*.json` | NEW (10 golden fixtures per AC-14) | exclusive |
 
 ## 7. Test plan (per-AC)
 
-- **AC-1**: unit test asserts `get_info` returns expected ServerInfo
-- **AC-2**: unit tests for wrapper extraction (well-formed, missing key, reserved-key collision, name mismatch, client_id mismatch)
-- **AC-3**: for-each `ToolError` variant assert correct rmcp::Error code; CI lint asserts no orphan variant
-- **AC-4**: subprocess boot test parses stderr boot log against exact format
-- **AC-5**: subprocess `pair` run asserts stdout parseable, stderr warning present, DB rows match
-- **AC-6**: subprocess test pairs with grant for tool A but not B; asserts tools/list returns [A] not [B]; description contains "When to call:" + "When NOT to call:" sections
-- **AC-7**: build matrix asserts both binaries compile
-- **AC-8**: subprocess full handshake test (covered above)
-- **AC-10**: CI script
-- **AC-11**: synthetic config triggers refusal; error message matches
-- **AC-12**: subprocess tests for each failure mode (missing env, unknown client, revoked pairing, key mismatch); env-wipe verification via `/proc/self/environ` check
-- **AC-13**: subprocess test replays consumed nonce → BadParams (already covered by W1-A substrate unit tests; this lane just asserts the integration path)
-- **AC-14**: golden fixture tests assert JCS canonicalization matches across Python (reference impl), Rust (this impl), and a manual hex-dump of expected bytes for at least one fixture
+- AC-1: get_info shape assertion
+- AC-2: wrapper construction unit test (transport builds envelope from MCP request params, signs, dispatches)
+- AC-3: for-each ToolError variant assert code + message + data.kind + log fields; CI lint enforces no orphan
+- AC-4: subprocess boot stderr parse against exact format
+- AC-5: subprocess pair invocation asserts stdout JSON parseable + "type": "stdio" present + stderr warnings + DB rows present
+- AC-6: subprocess pair with grant for A not B; tools/list returns [A] with composed description, no _dailyos_* in input_schema
+- AC-7: build matrix asserts both binaries compile
+- AC-8: full subprocess MCP handshake test; stdout protocol-only assertion
+- AC-10: CI
+- AC-11: synthetic config triggers refusal with expected error text
+- AC-12: subprocess negative tests per failure mode; env-wipe verified via in-process getenv (NOT /proc — acknowledged limitation)
+- AC-13: replay test asserts second tools/call with same envelope nonce → BadParams from gateway
+- AC-14: golden fixture round-trip tests across all 10 fixtures; duplicate-key fixture asserts error
 
 ## 8. Security gates
 
-`/cso` mandatory. Cycle-4 must verify the env-assertion model (AC-12) is acceptable threat-model-wise: machine-local trust assumption + env-wipe after read + per-envelope HMAC defense-in-depth via W1-A substrate. Specifically verify no degradation vs cycle-3's identify model on attacker capabilities given attacker-in-env.
+`/cso` mandatory. Cycle-5 must verify the local-to-local same-machine scope statement (§0) makes the env-asserted identity model acceptable, AND that the trust-model differentiation (stdio = internal hygiene; WP/SDK = real auth) is documented honestly without misleading W1-A's "every call HMAC-verified" framing.
 
 ## 9. Path-α (separate Linear tickets)
 
 - `client_label` schema for pair-by-name revoke (cycle-2)
 - `dailyos-mcp-v2 migrate-config` subcommand (AC-11 error reference)
-- Binary self-identification via `--version-id` if `which`-canonicalization insufficient (AC-11 challenge cycle-3)
-- Per-process keychain ACL to gate transport_key reads (cycle-4 threat-model tightening)
-- Loopback HTTP transport (Phase 2)
+- Binary self-identification via `--version-id` (AC-11 challenge cycle-3)
+- Per-process keychain ACL gating transport_key reads (post-v1.4.7 hardening)
+- Loopback HTTP transport (Phase 2 — out of §0 scope for v1.4.7)
 - Tauri operator pairing UI (post-v1.4.7)
 - MCP client SDK code samples + JCS reference implementations
 
@@ -305,22 +288,22 @@ Stderr (never stdout): `WARNING: DAILYOS_MCP_TRANSPORT_KEY printed ONCE. Record 
 
 §5 AC-1..AC-14 met. L0 unanimous APPROVE. L2 unanimous APPROVE bounded by AC. Commit-msg `L2-status: passed`. Pushed to PR #347. CI green including subprocess + JCS golden tests.
 
+**Trust-model honest framing in proof bundle:** W1-A claims "every Gateway::handle_tool_call verifies HMAC + consumes nonce" — that remains true. For stdio transport, the signer IS the verifier (same process holds the key). The real client auth is the startup env-assertion + keychain cross-check (AC-12). For non-stdio transports (WP adapter, SDK clients), the HMAC verification authenticates the external signer to the gateway. Both transport classes share the same gateway substrate; their trust boundaries are at different points.
+
 ## 12. Open questions resolved
 
 | # | Question | Resolution |
 |---|---|---|
-| Q1 | rmcp wrapper format | `arguments._dailyos_envelope/_dailyos_signature` (cycle-2 4/4) |
+| Q1 | rmcp wrapper format | DELETED (cycle-5: transport self-signs internally; no `_dailyos_*` in client params) |
 | Q2 | pair CLI argparse | clap |
 | Q3 | empty handler set at boot | warning + strict-mode env |
-| Q4 | HTTP transport | path-α |
-| Q5 | identify_nonce expiry | DELETED (cycle-4 pivot to env-assertion; no nonce in startup path) |
-| Q6 | server_pid binding | DELETED (cycle-4 pivot; JCS canonicalization replaces) |
-| Q7 (cycle-4 NEW) | env-wipe after read | yes (AC-12 step 5; minimizes /proc/self/environ surface time) |
-| Q8 (cycle-4 NEW) | JCS canonicalization | RFC 8785 with golden cross-language fixtures |
+| Q4 | HTTP transport | path-α (§0 scope out for v1.4.7) |
+| Q5 (NEW) | trust-model class | Differentiated by transport: stdio = startup identity + internal hygiene; WP/SDK = per-envelope HMAC real auth |
+| Q6 (NEW) | local-to-local same-machine scope | locked in §0 (user direction) |
 
 ## 13. Reviewer dispatch
 
-- **CSO** (mandatory; cycle-4 pivot needs fresh security review of env-assertion model)
-- **/codex challenge** (adversarial; especially attacker-has-env threat model)
-- **architect-reviewer** (env-assertion architecture; constructor pattern)
-- **/plan-devex-review** (Claude Desktop config integration UX; JCS SDK fixtures)
+- **CSO** (mandatory; verify local-to-local scope statement + honest trust framing)
+- **/codex challenge** (adversarial within scope; out-of-scope vectors documented)
+- **architect-reviewer** (V2ServerHandler shape; transport-internal signing seam)
+- **/plan-devex-review** (Claude Desktop + Cursor compatibility; client integration UX)
