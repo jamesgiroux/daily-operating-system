@@ -1,0 +1,40 @@
+.docs/plans/v1.4.5-workspace-memory/reviews/packet-W1-A-codex-challenge-cycle3.output
+.docs/plans/v1.4.5-workspace-memory/reviews/packet-W1-A-codex-challenge-cycle4.output
+.docs/plans/v1.4.5-workspace-memory/reviews/packet-W1-A-codex-challenge-cycle5.output
+.docs/plans/v1.4.5-workspace-memory/reviews/packet-W1-A-codex-challenge-cycle6.output
+.docs/plans/v1.4.5-workspace-memory/reviews/packet-W1-A-codex-consult-cycle1.output
+.docs/plans/v1.4.5-workspace-memory/reviews/packet-W1-A-codex-consult-cycle2.output
+.docs/plans/v1.4.5-workspace-memory/reviews/packet-W1-A-codex-consult-cycle3.output
+.docs/plans/v1.4.5-workspace-memory/reviews/packet-W1-A-codex-consult-cycle4.output
+.docs/plans/v1.4.5-workspace-memory/reviews/packet-W1-A-codex-consult-cycle5.output
+.docs/plans/v1.4.5-workspace-memory/reviews/packet-W1-A-codex-consult-cycle6.output
+.docs/plans/v1.4.5-workspace-memory/reviews/w1b-cycle1/codex-challenge.output
+.docs/plans/v1.4.5-workspace-memory/reviews/w1b-cycle1/codex-consult.output
+.docs/plans/v1.4.5-workspace-memory/reviews/w1c-cycle1/codex-challenge.output
+.docs/plans/v1.4.5-workspace-memory/reviews/w1c-cycle1/codex-consult.output
+
+codex
+VERDICT: BLOCK
+
+1. §7 hardlink defense is not implementable as written: cross-device hardlinks are impossible, and same-device hardlinks from outside the workspace are not caught by strict-child canonicalize + lstat/fstat dev/inode equality. The hardlink fixture expecting `SymlinkRefused` overclaims security.
+
+2. Symlink expected variants still conflict: §2 #14 says canonicalize-first outside symlinks return `OutsideWorkspace`, but §7 fixtures #5/#13 expect `SymlinkRefused`. Opening the canonical path also means `O_NOFOLLOW` does not see the original symlink.
+
+3. §2 #12 changelog overstates the fold: NAME_MAX, trailing-dot/space, and NTFS ADS fixtures are claimed but absent from §7/§8. `CON` handling is also contradictory: uppercase `CON` fails the regex, while lowercase `con` would pass unless a reserved-name check is specified.
+
+4. `EntityType::Other` remains underspecified: §4 APIs accept canonical `EntityType`, but §6 seeds/comments only `account|person|project`, `resolve_path` has no `Other` route, and `EntityTypeUnknown` is unreachable with a typed enum.
+
+5. §8 covers much of §9 after the serde/category/no-substrate folds, but the security fixture suite cannot prove §9 done-when until findings 1–3 are reconciled.
+tokens used
+72,791
+VERDICT: BLOCK
+
+1. §7 hardlink defense is not implementable as written: cross-device hardlinks are impossible, and same-device hardlinks from outside the workspace are not caught by strict-child canonicalize + lstat/fstat dev/inode equality. The hardlink fixture expecting `SymlinkRefused` overclaims security.
+
+2. Symlink expected variants still conflict: §2 #14 says canonicalize-first outside symlinks return `OutsideWorkspace`, but §7 fixtures #5/#13 expect `SymlinkRefused`. Opening the canonical path also means `O_NOFOLLOW` does not see the original symlink.
+
+3. §2 #12 changelog overstates the fold: NAME_MAX, trailing-dot/space, and NTFS ADS fixtures are claimed but absent from §7/§8. `CON` handling is also contradictory: uppercase `CON` fails the regex, while lowercase `con` would pass unless a reserved-name check is specified.
+
+4. `EntityType::Other` remains underspecified: §4 APIs accept canonical `EntityType`, but §6 seeds/comments only `account|person|project`, `resolve_path` has no `Other` route, and `EntityTypeUnknown` is unreachable with a typed enum.
+
+5. §8 covers much of §9 after the serde/category/no-substrate folds, but the security fixture suite cannot prove §9 done-when until findings 1–3 are reconciled.

@@ -1,0 +1,25 @@
+34:  4. **Reserved-name regex inconsistency reconciled** (challenge #4 + consult #3): the slug regex `^[a-z][a-z0-9_-]{0,31}$` accepts lowercase `"con"` which is a Windows reserved name. Since Windows path validation is deferred to follow-up ticket (V1.1 fold #19), the Windows-reserved-name slug check is also deferred. V1.2 §8 explicitly notes: the test asserting `register_other(Account, "CON") → MalformedSlug` rejects on the uppercase regex constraint, NOT on Windows-reserved-name semantics. The case-INSENSITIVE Windows-reserved check lands in the Windows follow-up ticket together with the path validation work.
+35:  5. **EntityType::Other explicit handling** (consult #4): V1.2 §4 + §6 + §8 document that `crate::entity::EntityType::Other` is intentionally non-canonical for workspace category routing. `validate(category, EntityType::Other) → Err(CategoryNotAllowed { allowed: vec![] })` — Other-typed entities cannot bind workspace files in v1.4.5 (deferred to follow-up). `resolve_path(EntityType::Other, …)` returns Err via the validate gate. V1.2 §8 adds `entity_type_other_rejects_category_validation` test.
+80:  - `WorkspaceCategoryRegistry::resolve_path(entity_type: crate::entity::EntityType, entity_name: &str, category: Option<&contracts::WorkspaceCategory>, filename: &str, source_type: contracts::WorkspaceFileKind) -> Result<PathBuf, ResolvePathError>` per cycle 8 + V1.1 fold #3. V1.3 fold #2: now returns `Result` so `EntityType::Other` rejects via `ResolvePathError::EntityTypeNotRoutable`.
+82:  - Error types: `pub struct CategoryNotAllowed { category: String, entity_type: crate::entity::EntityType, allowed: Vec<String> }`; `pub enum RegisterError { MalformedSlug { slug: String }, EntityTypeUnknown, DbError(String) }`; `pub enum ResolvePathError { CategoryNotAllowed(CategoryNotAllowed), EntityTypeNotRoutable }` (V1.3 fold #2).
+215:### Negative fixture suite (V1.3 — **19 fixtures: 15 negative + 4 positive**, all return typed `RejectionReason` with zero bytes read)
+259:- `tests/workspace_registry_open_validated.rs` — all 15 fixtures in §7 (13 negative + 2 positive). Each negative asserts zero bytes read.
+272:  - `register_other(Account, "CON")` → `Err(MalformedSlug)` (regex `^[a-z]...` accepts; but CON test is Unix-context; Windows reserved-name check is in path validation, not slug regex).
+
+codex
+VERDICT BLOCK
+
+1. Fixture count fold is incomplete: §7 says 19 fixtures, but §8/§9 still say “all 15” at lines 259 and 285.
+2. Reserved-name wording still contradicts V1.3: line 272 says regex accepts `CON`; it rejects uppercase. No lowercase `con → Ok(())` test is present.
+3. `resolve_path` fold overclaims: changelog says §8 adds `entity_type_other_returns_resolve_path_err`, but §8 does not list it.
+
+Architecture may be converged, but V1.3 is not text-converged.
+tokens used
+54,303
+VERDICT BLOCK
+
+1. Fixture count fold is incomplete: §7 says 19 fixtures, but §8/§9 still say “all 15” at lines 259 and 285.
+2. Reserved-name wording still contradicts V1.3: line 272 says regex accepts `CON`; it rejects uppercase. No lowercase `con → Ok(())` test is present.
+3. `resolve_path` fold overclaims: changelog says §8 adds `entity_type_other_returns_resolve_path_err`, but §8 does not list it.
+
+Architecture may be converged, but V1.3 is not text-converged.

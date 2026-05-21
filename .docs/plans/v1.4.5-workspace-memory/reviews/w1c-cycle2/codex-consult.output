@@ -1,0 +1,30 @@
+.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-B-DOS-464.md:251:4. **Runtime + surfaces.** Registry consumed by W2 ingestion (`pipeline::run` calls `open_validated`) + W4-A source-management block (category picker).
+.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-B-DOS-464.md:258:- **W4-A (DOS-472)** consumes `WorkspaceCategoryRegistry` for the category-picker UI.
+.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-C-DOS-465.md:21:  3. **Tombstone semantics enforced via service guard + partial unique index** (challenge #3): `idx_del_active_unique UNIQUE (file_id, entity_type, entity_id) WHERE rejected = 0` added to v254. `add_link` is `INSERT … ON CONFLICT DO NOTHING WHERE rejected = 0` (SQL UPSERT semantics) — the partial unique guarantees no duplicate active row for the same `(file_id, entity_type, entity_id)` triple regardless of classifier race conditions. `reject_link` flips `rejected = 1` (which makes the row exit the partial unique scope, so a separate user-relink can later create a fresh active row). New test: `tombstone_prevents_classifier_resurrection` asserts that after `reject_link`, calling `add_link` with the same triple is a no-op (no new active row created).
+.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-C-DOS-465.md:59:  - `LinkRepo::add_link(file_id, entity_type, entity_id, attribution_source, confidence, rationale, actor) -> Result<DocumentEntityLinkId, LinkError>` — UPSERT semantics via partial unique index; returns existing link's id on conflict-do-nothing.
+.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-C-DOS-465.md:60:  - `LinkRepo::list_links_for_file(file_id, include_rejected) -> Result<Vec<DocumentEntityLink>, LinkError>`.
+.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-C-DOS-465.md:61:  - `LinkRepo::override_link(emitter: &dyn contracts::SignalEmitter, file_id: &str, entity_id: &str, actor: &str) -> Result<(), LinkError>` — calls `emitter.emit_link_changed(file_id, entity_id, actor)` after the row write; populates `user_override` per W1-A precedent (V1.1 fold #2).
+.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-C-DOS-465.md:62:  - `LinkRepo::reject_link(file_id, entity_id, actor, reason) -> Result<(), LinkError>` — flips `rejected = 1`, writes `rejected_at/rejected_reason`. Per DOS-465 issue AC "Rejected links are not silently recreated" (V1.1 fold #6).
+.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-C-DOS-465.md:140:    attribution_source      TEXT NOT NULL,                  -- 'entity_intake' | 'frontmatter' | 'classifier' | 'user_relink' | 'drive_metadata' | 'mcp_placement' | 'backfill'
+.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-C-DOS-465.md:172:- **`LinkRepo::add_link / list_links_for_file`:**
+.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-C-DOS-465.md:175:- **`LinkRepo::override_link` signal emission:** writes the link AND calls `emitter.emit_link_changed(file_id, entity_id, actor)` on a mock `SignalEmitter` recorder. Populates `user_override_actor` + `user_override_at` per V1.1 fold #2.
+.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-C-DOS-465.md:184:- `services/workspace_ingestion/link.rs` substantively filled with `LinkRepo` + `DocumentEntityLink` + `LinkAttributionSource` enum + `LinkError` enum. `override_link(emitter: &dyn contracts::SignalEmitter, …)` compiles against W1-A trait + `NullSignalEmitter`.
+.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-C-DOS-465.md:199:4. **Runtime + surfaces.** `document_ingestion_runs` consumed by W5 backfill (idempotency), W4-A source-management block (history display), W3-C graph projection (run-status surface). `LinkRepo::override_link` consumed by W4-A (re-link action) and W2-C (entity-seeded intake first-link).
+.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-C-DOS-465.md:207:- **W4-A (DOS-472)** invokes `LinkRepo::override_link` from source-management block; consumes `RunsRepo::find_by_idempotency_key` for run-history display.
+.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-C-DOS-465.md:208:- **W2-C (DOS-468)** invokes `LinkRepo::add_link` with `attribution_source = EntityIntake` from the entity-intake Gutenberg block.
+
+codex
+VERDICT: BLOCK
+
+1. `override_link` / `reject_link` still take only `file_id + entity_id`, but the schema/unique key is `(file_id, entity_type, entity_id)`; add `entity_type` to repo methods/tests and keep W1-A signal emit as-is.
+2. Tombstone guard is still under-specified: after `rejected = 1`, the partial unique no longer conflicts, so classifier resurrection requires an explicit pre-insert rejected-row check; also fix the invalid `ON CONFLICT DO NOTHING WHERE rejected = 0` wording.
+3. Test gap: add duplicate-active/race coverage and a user-relink-after-tombstone case, not only classifier no-op after reject.
+4. Cycle-1 folds otherwise look faithful: `StartRunSeed` covers v253 NOT NULLs, and `user_override_actor/at` matches W1-A `UserOverride`.
+tokens used
+89,609
+VERDICT: BLOCK
+
+1. `override_link` / `reject_link` still take only `file_id + entity_id`, but the schema/unique key is `(file_id, entity_type, entity_id)`; add `entity_type` to repo methods/tests and keep W1-A signal emit as-is.
+2. Tombstone guard is still under-specified: after `rejected = 1`, the partial unique no longer conflicts, so classifier resurrection requires an explicit pre-insert rejected-row check; also fix the invalid `ON CONFLICT DO NOTHING WHERE rejected = 0` wording.
+3. Test gap: add duplicate-active/race coverage and a user-relink-after-tombstone case, not only classifier no-op after reject.
+4. Cycle-1 folds otherwise look faithful: `StartRunSeed` covers v253 NOT NULLs, and `user_override_actor/at` matches W1-A `UserOverride`.

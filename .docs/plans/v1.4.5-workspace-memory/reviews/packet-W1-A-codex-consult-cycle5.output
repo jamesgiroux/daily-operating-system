@@ -1,0 +1,50 @@
+   463	        Transcripts,                    // wire/path slug: "transcripts"
+   464	        Meetings,                       // wire/path slug: "meetings"
+   465	        Notes,                          // wire/path slug: "notes"
+   466	        Contracts,                      // wire/path slug: "contracts"
+   467	        Attachments,                    // wire/path slug: "attachments"
+   468	        Other(String),                  // wire shape: { "kind": "other", "name": "<lowercase_ascii_slug>" }; registry validates allowed names per entity type and rejects non-slug forms
+   469	    }
+   470	
+   471	    impl WorkspaceCategory {
+   472	        pub fn as_slug(&self) -> &str { /* "presentations" | ... | Other(s) => s */ }
+   473	        pub fn from_slug(s: &str) -> Option<Self> { /* canonical slug → variant; unknown → Other(s) only if registry-valid */ }
+   474	    }
+   475	    ```
+   476	
+   477	    The `as_slug()` / `from_slug()` pair is the canonical wire+path representation used by EVERY surface — `PlaceDocumentInput.category`, `PlaceDocumentReceipt.category`, `PlacementError::CategoryNotAllowed.allowed`, `WorkspaceGraphQueryInput.category_filter`, `file_links[].category`, AND the filesystem path segment. Single source of truth, case-sensitive lowercase, no aliases or normalization needed at consumer sites.
+   478	
+   479	    ```rust
+   480	    pub enum RejectionReason { PathTraversalAttempt, SymlinkRefused, SymlinkRaced, OutsideWorkspace, FileTooLarge, UnsupportedFormat }
+   481	    pub struct WorkspaceClaimProposal {
+   482	        pub claim_type: ClaimType,                    // existing v1.4.0 type from abilities_runtime::abilities::claims (CLAIM_TYPE_REGISTRY)
+   483	        pub subject_ref: SubjectRef,                  // existing v1.4.0/v1.4.1 type
+   484	        pub content: serde_json::Value,
+   485	        pub source_asof: chrono::DateTime<chrono::Utc>,
+   486	        pub data_source: DataSource,                  // ADR-0107 + v1.4.5 amendment
+   487	        pub sensitivity: ClaimSensitivity,            // existing v1.4.0 type from abilities_runtime::types (ADR-0125)
+   488	        pub source_attribution: SourceAttribution,    // file_id + ingestion_run_id (new v1.4.5 type, defined here)
+   489	    }
+   490	
+   491	    pub trait Extractor: Send + Sync {
+   492	        // Cycle 12: takes canonical WorkspaceFileKind (not the dropped SourceType mirror).
+   493	        fn extract(&self, file: &File, identity: &FileIdentity, source_type: WorkspaceFileKind) -> Vec<WorkspaceClaimProposal>;
+   494	    }
+   495	
+   496	    pub trait SignalEmitter: Send + Sync {
+
+codex
+VERDICT: BLOCK
+
+1. Faithfulness gap: `.docs/plans/v1.4.5-waves.md:488` still says `source_attribution: SourceAttribution` is “file_id + ingestion_run_id (new v1.4.5 type, defined here)”, contradicting the V1.4/Cycle 12 claim that local `SourceAttribution` was swept.
+2. Other V1.4 fold claims check out: `Some(source_asof)`, `DocumentId::new(...)`, dropped `SourceIdentifier` import, and 10-field count are present in the L0 packet.
+3. `LifecycleError` shape is sensible: domain miss, invalid transition with `{ from, to }`, and DB escape hatch.
+4. No new substrate types introduced in the L0 packet itself; it consumes canonical `SourceAttribution` / `WorkspaceFileKind`.
+tokens used
+39,683
+VERDICT: BLOCK
+
+1. Faithfulness gap: `.docs/plans/v1.4.5-waves.md:488` still says `source_attribution: SourceAttribution` is “file_id + ingestion_run_id (new v1.4.5 type, defined here)”, contradicting the V1.4/Cycle 12 claim that local `SourceAttribution` was swept.
+2. Other V1.4 fold claims check out: `Some(source_asof)`, `DocumentId::new(...)`, dropped `SourceIdentifier` import, and 10-field count are present in the L0 packet.
+3. `LifecycleError` shape is sensible: domain miss, invalid transition with `{ from, to }`, and DB escape hatch.
+4. No new substrate types introduced in the L0 packet itself; it consumes canonical `SourceAttribution` / `WorkspaceFileKind`.

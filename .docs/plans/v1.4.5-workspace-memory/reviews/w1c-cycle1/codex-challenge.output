@@ -1,0 +1,60 @@
+   166	- `tests/workspace_ingestion_no_substrate_reinvention.rs` (W1-A's CI gate) still passes.
+   167	- `cargo clippy --lib -- -D warnings && cargo test` green.
+   168	- IL gate items 1–5 answered in commit message.
+   169	- `L2-status: passed` declared.
+   170	- L0 verdict posted as Linear comment on DOS-465.
+   171	
+   172	## 9. Intelligence Loop gate
+   173	
+   174	1. **Claim model.** Per L0 question #10 (resolved cycle 2): both tables are relational metadata, not claims. W1-C commits no claims via `services::claims::commit_claim`.
+   175	2. **Provenance + trust.** `document_ingestion_runs.content_sha256` provides tamper detection for re-run idempotency. `document_entity_links.{attribution_source, confidence, user_confirmed}` are link-quality fields; downstream consumers (W3-A's claim production) treat user-confirmed + high-confidence links as trust-factor inputs.
+   176	3. **Signals + invalidation.** `override_link` emits via `contracts::SignalEmitter::emit_link_changed` (W3-B real impl maps to `SignalType::WorkspaceFileEntityLinkChanged`). W1-C does NOT reference the SignalType directly (trait-DI pattern preserved per W1-A's cycle 4-6 fix). Other W1-C mutations (`add_link`, `reject_link`) currently do not emit — wave plan defers to W3-B for additional signal coverage if needed.
+   177	4. **Runtime + surfaces.** `document_ingestion_runs` consumed by W5 backfill (idempotency key), W4-A source-management block (history display), W3-C graph projection (run-status surface). `LinkRepo::override_link` consumed by W4-A (user re-link action) and W2-C (DOS-468 entity-seeded intake first-link).
+   178	5. **Feedback loop.** User-correction via `override_link` writes `user_confirmed = 1` AND emits the link-changed signal. User-rejection via `reject_link` writes `rejected = 1` AND prevents classifier from silently re-creating the same link (the AC explicit safeguard).
+
+ succeeded in 0ms:
+    20	CREATE TABLE IF NOT EXISTS workspace_file_lifecycle (
+    21	    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    22	    file_id               TEXT    NOT NULL UNIQUE,
+    23	    canonical_path        TEXT    NOT NULL,
+    24	    device                INTEGER NOT NULL,
+    25	    inode                 INTEGER NOT NULL,
+    26	    source_type           TEXT    NOT NULL,
+    27	    data_source           TEXT    NOT NULL,
+    28	    lifecycle_state       TEXT    NOT NULL DEFAULT 'pending',
+    29	    source_asof           TEXT    NOT NULL,
+    30	    entity_id             TEXT,
+    31	    entity_type           TEXT,
+    32	    content_sha256        TEXT,
+    33	    user_override_actor   TEXT,
+    34	    user_override_at      TEXT,
+    35	    created_at            TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    36	    updated_at            TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    37	);
+    38	
+
+codex
+VERDICT BLOCK
+
+1. `RunsRepo::start_run(file_id, mode, extractor_version)` cannot populate the v253 schema: `content_sha256` and `file_size_bytes` are `NOT NULL`, and `retry_of_run_id` is tested, but none are in the API. Packet lines 36, 94-99, 153.
+
+2. `document_entity_links` drifts from the locked `user_override` contract. Wave requires `user_override` as nullable timestamp + actor and a round-trip test; packet replaces it with `actor` + `user_confirmed`, so W3-C’s expected projection shape cannot be produced cleanly. Packet lines 127-128, 175, 178 vs wave lines 565, 569, 572-573, 803.
+
+3. Tombstone semantics are not enforceable. A partial index on `rejected = 1` does not stop `add_link`/classifier from inserting a new active duplicate for the same `(file_id, entity_type, entity_id)`. Need service guard/upsert semantics plus a resurrection test. Packet lines 129-145, 155, 178.
+
+4. Stale-reference cleanup needed: packet cites a wave-plan AC for rejected-link resurrection that is not in the W1-C locked section, and the “W4-C idempotency” citation does not match the W4-C key in the wave plan. Packet lines 38, 43, 140.
+
+5. Non-blocking checks passed: no ClaimProposal/ClaimFeedbackInput/SourceAttribution substrate reinvention found; v253/v254 are correctly above W1-B v252; FK to `workspace_file_lifecycle(file_id)` is valid because W1-A makes `file_id` UNIQUE; `override_link` compiles against W1-A `SignalEmitter::emit_link_changed`.
+tokens used
+109,141
+VERDICT BLOCK
+
+1. `RunsRepo::start_run(file_id, mode, extractor_version)` cannot populate the v253 schema: `content_sha256` and `file_size_bytes` are `NOT NULL`, and `retry_of_run_id` is tested, but none are in the API. Packet lines 36, 94-99, 153.
+
+2. `document_entity_links` drifts from the locked `user_override` contract. Wave requires `user_override` as nullable timestamp + actor and a round-trip test; packet replaces it with `actor` + `user_confirmed`, so W3-C’s expected projection shape cannot be produced cleanly. Packet lines 127-128, 175, 178 vs wave lines 565, 569, 572-573, 803.
+
+3. Tombstone semantics are not enforceable. A partial index on `rejected = 1` does not stop `add_link`/classifier from inserting a new active duplicate for the same `(file_id, entity_type, entity_id)`. Need service guard/upsert semantics plus a resurrection test. Packet lines 129-145, 155, 178.
+
+4. Stale-reference cleanup needed: packet cites a wave-plan AC for rejected-link resurrection that is not in the W1-C locked section, and the “W4-C idempotency” citation does not match the W4-C key in the wave plan. Packet lines 38, 43, 140.
+
+5. Non-blocking checks passed: no ClaimProposal/ClaimFeedbackInput/SourceAttribution substrate reinvention found; v253/v254 are correctly above W1-B v252; FK to `workspace_file_lifecycle(file_id)` is valid because W1-A makes `file_id` UNIQUE; `override_link` compiles against W1-A `SignalEmitter::emit_link_changed`.

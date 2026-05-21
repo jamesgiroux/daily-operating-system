@@ -1,0 +1,120 @@
+    59	bytes = "1"
+    60	http-body-util = "0.1"
+    61	hyper = { version = "1", features = ["http1", "server"] }
+    62	hyper-util = { version = "0.1", features = ["tokio"] }
+    63	ring = "0.17"
+    64	subtle = "2"
+    65	
+    66	# Sprint 8: Native Google API (ADR-0049)
+    67	reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream", "blocking"], default-features = false }
+    68	url = "2"
+    69	open = "5"
+    70	base64 = "0.22"
+   120	[features]
+   121	experimental = ["abilities-runtime/experimental", "dailyos-abilities-macro/experimental"]
+   122	harness-hermetic = ["abilities-runtime/harness-hermetic"]
+   123	# Enables public helpers used only by integration tests. This must stay out of
+   124	# default/release builds; src/lib.rs also rejects release builds with it enabled.
+   125	test-harness = []
+   126	bench-harness = []
+   127	release-gate = []
+   128	debug-telemetry-override = []
+   129	mcp = []
+   130	load-test = ["test-harness"]
+   131	
+   132	[[bin]]
+   133	name = "dailyos"
+   134	path = "src/main.rs"
+   135	bench = false
+   136	
+   137	[[bin]]
+   138	name = "dailyos-mcp"
+   139	path = "src/mcp/main.rs"
+   140	required-features = ["mcp"]
+
+exec
+/bin/zsh -lc "ls -la src-tauri/abilities-runtime/src/abilities/provenance src-tauri/abilities-runtime/src/abilities 2>/dev/null && rg -n \"pub enum DataSource|pub enum WorkspaceFileKind|pub enum SubjectRef|pub enum ClaimType|CLAIM_TYPE_REGISTRY|pub enum ClaimSensitivity\" src-tauri/abilities-runtime/src -g '*.rs'" in /private/tmp/dailyos-v145-w1a
+ succeeded in 0ms:
+src-tauri/abilities-runtime/src/abilities:
+total 752
+drwxr-xr-x@ 21 jamesgiroux  wheel     672 May 20 19:11 .
+drwxr-xr-x@ 13 jamesgiroux  wheel     416 May 20 19:11 ..
+-rw-r--r--@  1 jamesgiroux  wheel   58593 May 20 19:11 account_overview.rs
+-rw-r--r--@  1 jamesgiroux  wheel   38241 May 20 19:11 claims.rs
+-rw-r--r--@  1 jamesgiroux  wheel   52766 May 20 19:11 composition.rs
+drwxr-xr-x@  5 jamesgiroux  wheel     160 May 20 19:11 detect_risk_shift
+drwxr-xr-x@  4 jamesgiroux  wheel     128 May 20 19:11 extractors
+-rw-r--r--@  1 jamesgiroux  wheel   61848 May 20 19:11 fallback_projection.rs
+-rw-r--r--@  1 jamesgiroux  wheel   23839 May 20 19:11 feedback.rs
+drwxr-xr-x@  5 jamesgiroux  wheel     160 May 20 19:11 get_daily_readiness
+-rw-r--r--@  1 jamesgiroux  wheel   22776 May 20 19:11 get_entity_context.rs
+drwxr-xr-x@  3 jamesgiroux  wheel      96 May 20 19:11 judge
+drwxr-xr-x@  3 jamesgiroux  wheel      96 May 20 19:11 list_open_loops
+-rw-r--r--@  1 jamesgiroux  wheel    1850 May 20 19:11 mod.rs
+drwxr-xr-x@  5 jamesgiroux  wheel     160 May 20 19:11 prepare_meeting
+drwxr-xr-x@ 12 jamesgiroux  wheel     384 May 20 19:11 provenance
+-rw-r--r--@  1 jamesgiroux  wheel  101887 May 20 19:11 registry.rs
+drwxr-xr-x@  3 jamesgiroux  wheel      96 May 20 19:11 temporal
+-rw-r--r--@  1 jamesgiroux  wheel    1112 May 20 19:11 threads.rs
+-rw-r--r--@  1 jamesgiroux  wheel     939 May 20 19:11 tracer.rs
+drwxr-xr-x@  9 jamesgiroux  wheel     288 May 20 19:11 trust
+
+src-tauri/abilities-runtime/src/abilities/provenance:
+total 552
+drwxr-xr-x@ 12 jamesgiroux  wheel     384 May 20 19:11 .
+drwxr-xr-x@ 21 jamesgiroux  wheel     672 May 20 19:11 ..
+-rw-r--r--@  1 jamesgiroux  wheel   28348 May 20 19:11 builder.rs
+-rw-r--r--@  1 jamesgiroux  wheel   25103 May 20 19:11 envelope.rs
+-rw-r--r--@  1 jamesgiroux  wheel   11300 May 20 19:11 field.rs
+-rw-r--r--@  1 jamesgiroux  wheel     487 May 20 19:11 mod.rs
+-rw-r--r--@  1 jamesgiroux  wheel   36434 May 20 19:11 ownership.rs
+-rw-r--r--@  1 jamesgiroux  wheel  115123 May 20 19:11 render.rs
+-rw-r--r--@  1 jamesgiroux  wheel   14488 May 20 19:11 source.rs
+-rw-r--r--@  1 jamesgiroux  wheel   14166 May 20 19:11 source_time.rs
+-rw-r--r--@  1 jamesgiroux  wheel    6309 May 20 19:11 subject.rs
+-rw-r--r--@  1 jamesgiroux  wheel   11494 May 20 19:11 trust.rs
+src-tauri/abilities-runtime/src/abilities/mod.rs:25:    UnknownClaimTypeError, CLAIM_TYPE_REGISTRY,
+src-tauri/abilities-runtime/src/abilities/claims.rs:130:pub enum ClaimType {
+src-tauri/abilities-runtime/src/abilities/claims.rs:191:        for entry in CLAIM_TYPE_REGISTRY {
+src-tauri/abilities-runtime/src/abilities/claims.rs:710:pub const CLAIM_TYPE_REGISTRY: &[&ClaimTypeMetadata] = &[
+src-tauri/abilities-runtime/src/abilities/claims.rs:749:    CLAIM_TYPE_REGISTRY.iter().copied().find(|m| m.name == name)
+src-tauri/abilities-runtime/src/abilities/claims.rs:842:        for entry in CLAIM_TYPE_REGISTRY {
+src-tauri/abilities-runtime/src/abilities/claims.rs:853:        // Drift guard for callers that traverse CLAIM_TYPE_REGISTRY
+src-tauri/abilities-runtime/src/abilities/claims.rs:907:            let m = &CLAIM_TYPE_REGISTRY[idx];
+src-tauri/abilities-runtime/src/abilities/claims.rs:913:            CLAIM_TYPE_REGISTRY.len(),
+src-tauri/abilities-runtime/src/abilities/claims.rs:920:        for entry in CLAIM_TYPE_REGISTRY {
+src-tauri/abilities-runtime/src/abilities/claims.rs:1060:        for entry in CLAIM_TYPE_REGISTRY {
+src-tauri/abilities-runtime/src/abilities/claims.rs:1072:        for entry in CLAIM_TYPE_REGISTRY {
+src-tauri/abilities-runtime/src/abilities/claims.rs:1087:        for entry in CLAIM_TYPE_REGISTRY {
+src-tauri/abilities-runtime/src/abilities/claims.rs:1133:        for entry in CLAIM_TYPE_REGISTRY {
+src-tauri/abilities-runtime/src/abilities/claims.rs:1151:        for entry in CLAIM_TYPE_REGISTRY {
+src-tauri/abilities-runtime/src/abilities/provenance/source.rs:73:pub enum DataSource {
+src-tauri/abilities-runtime/src/abilities/provenance/source.rs:201:pub enum WorkspaceFileKind {
+src-tauri/abilities-runtime/src/types.rs:37:pub enum ClaimSensitivity {
+src-tauri/abilities-runtime/src/abilities/provenance/subject.rs:8:pub enum SubjectRef {
+
+codex
+VERDICT: BLOCK
+
+1. `.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-A-DOS-463.md:104` / `:110` — §4 `contracts.rs` still does not compile literally: `as_slug()` and `from_slug()` have comment-only bodies, returning `()` for `&str` / `Option<Self>`.
+
+2. `.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-A-DOS-463.md:131` — `lifecycle::LifecycleState` is unresolved from `contracts.rs` unless the snippet adds `use super::lifecycle;` or uses `super::lifecycle::LifecycleState`. W1-A owns the type, so no wave-timing inversion, but the code shape is wrong.
+
+3. `.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-A-DOS-463.md:295` — `tests/contracts_import.rs` is called an external integration test but imports `crate::services...`; `src-tauri` integration tests import `dailyos_lib::...` (`src-tauri/Cargo.toml:21-23`). As written, the new importability gate will not compile/prove the stated done-when.
+
+4. `.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-A-DOS-463.md:308` vs `:287-300` — §9 requires `LifecycleState` has exactly 7 variants including `pending_entity_assignment`, but §8 has no test asserting the variant set/serde strings. The constructor field tests do not cover this done-when.
+
+Stale-reference note: wave-plan per-lane slots and Summary footer are internally v250-v269 now; remaining v200-v219 references are historical/old-slot context except `.docs/plans/v1.4.5-waves.md:125`, which still says Cycle 8 folds into W1-A’s existing v200-v201 allocation.
+tokens used
+81,732
+VERDICT: BLOCK
+
+1. `.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-A-DOS-463.md:104` / `:110` — §4 `contracts.rs` still does not compile literally: `as_slug()` and `from_slug()` have comment-only bodies, returning `()` for `&str` / `Option<Self>`.
+
+2. `.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-A-DOS-463.md:131` — `lifecycle::LifecycleState` is unresolved from `contracts.rs` unless the snippet adds `use super::lifecycle;` or uses `super::lifecycle::LifecycleState`. W1-A owns the type, so no wave-timing inversion, but the code shape is wrong.
+
+3. `.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-A-DOS-463.md:295` — `tests/contracts_import.rs` is called an external integration test but imports `crate::services...`; `src-tauri` integration tests import `dailyos_lib::...` (`src-tauri/Cargo.toml:21-23`). As written, the new importability gate will not compile/prove the stated done-when.
+
+4. `.docs/plans/v1.4.5-workspace-memory/L0-packet-W1-A-DOS-463.md:308` vs `:287-300` — §9 requires `LifecycleState` has exactly 7 variants including `pending_entity_assignment`, but §8 has no test asserting the variant set/serde strings. The constructor field tests do not cover this done-when.
+
+Stale-reference note: wave-plan per-lane slots and Summary footer are internally v250-v269 now; remaining v200-v219 references are historical/old-slot context except `.docs/plans/v1.4.5-waves.md:125`, which still says Cycle 8 folds into W1-A’s existing v200-v201 allocation.

@@ -1,0 +1,150 @@
+   696	- **Goal:** Wire the workspace ingestion pipeline to the v1.4.1 Signal Policy Registry. **Cycle 2 amendment:** the new `SignalType` variants are enumerated explicitly here (no longer "if needed") because the current `signals/policy_registry.rs` enum has no `WorkspaceFile*` variants — confirmed by grep. W3-B adds these five variants AND their `from_name` / `canonical_name` / `policy_for` arms AND the corresponding entries in `signals/invalidation.rs::invalidating_types` allowlist (which currently lacks any `workspace_file_*` entries):
+   697	  - `WorkspaceFileIngested` (canonical `workspace_file_ingested`) — affects intelligence; triggers `EntityIntelligenceUpdated` propagation; in invalidation allowlist (prep regenerates).
+   698	  - `WorkspaceFileRejected` (canonical `workspace_file_rejected`) — audit-only; NOT in invalidation allowlist (rejected files don't affect prep).
+   699	  - `WorkspaceFilePendingEntityAssignment` (canonical `workspace_file_pending_entity_assignment`) — surfaces a review item; NOT in invalidation allowlist (no entity to invalidate yet).
+   700	  - `WorkspaceFileQuarantined` (canonical `workspace_file_quarantined`) — triggers claim retraction for the file's prior claims; in invalidation allowlist (prep regenerates without the file).
+   701	  - `WorkspaceFileEntityLinkChanged` (canonical `workspace_file_entity_link_changed`) — emitted by `link::override_link` (W1-C); in invalidation allowlist (entity attribution changed).
+   702	- **Files owned (exclusive):** `src-tauri/src/services/workspace_ingestion/signals.rs` (W3-B is the only owner of content; W1-A pre-created the empty placeholder; W3-B fills it with `WorkspaceSignalEmitter`, the impl of the `SignalEmitter` trait **defined in W1-A's `contracts.rs`** — cycle 4 trait relocation. Each trait method (`emit_file_ingested`, `emit_file_rejected`, `emit_file_pending_entity_assignment`, `emit_file_quarantined`, `emit_link_changed`) maps to a `bus::emit_signal(SignalType::WorkspaceFile*, payload)` call); function-level additions to `src-tauri/src/signals/policy_registry.rs` (the five new `SignalType` enum variants + their arms in `from_name` / `canonical_name` / `policy_for` matchers — strictly additive; no edits to existing variants); function-level additions to `src-tauri/src/signals/invalidation.rs` (extending the `invalidating_types` constant with `workspace_file_ingested`, `workspace_file_quarantined`, `workspace_file_entity_link_changed` per the policy above); a single-line documented patch in `src-tauri/src/services/workspace_ingestion/wiring.rs` to swap `NullSignalEmitter` for `WorkspaceSignalEmitter` in the `build_pipeline()` constructor call (W3-B's only allowed touch in `wiring.rs`, at a different argument position than W3-A's patch). **Cycle 3+4:** W3-B does NOT edit `pipeline.rs` or `link.rs`. The DI pattern with the W1-A trait means the real emitter is constructed in `wiring.rs` and threaded through every consumer that needs to emit. `link::override_link` (W1-C) takes `&dyn SignalEmitter` and calls `emit_link_changed()`; the same trait surface that W1-C used against `NullSignalEmitter` in tests now maps to a real bus emission once W3-B's impl is wired in `wiring.rs`.
+   703	- **Don't touch:** `services/claims.rs` signal emission (existing; do not modify); `signals/bus.rs` `emit_signal` function family (v1.4.1 owns the signal bus; extend only via `policy_registry.rs`); existing `SignalType` variants or matcher arms; existing entries in `invalidating_types`; W3-A's `extract.rs` body (W3-A owns); W2-A's `pipeline.rs` (W2-A owns; W3-B touches `wiring.rs` only); W1-C's `link.rs` (W1-C owns; W3-B does not touch); other `services/workspace_ingestion/*.rs` submodules.
+   704	- **Depends on:** W3-A (DOS-470) merged — claim extraction must exist before signals fire on its outputs.
+   705	- **Intelligence Loop gate:**
+   706	  1. *Claim model:* No new claims from W3-B. Signal emission is consequence, not claim.
+   707	  2. *Provenance + trust:* Signal payloads for `WorkspaceFileIngested` carry `file_id`, `file_hash`, `ingestion_run_id`, and `entity_id` (when known) — **no raw file content, no file path, no claim text** in signal payloads (Suite S check, enforced by serde-derive on a typed payload struct, not free-form JSON).
+   708	  3. *Signals + invalidation:* W3-B is the signal wiring wave. The five-variant policy table above is the channel inventory.
+   709	  4. *Runtime + surfaces:* `build_intelligence_context()` and `gather_account_context()` are not modified — they consume the claim signals through the existing propagation path. Prep invalidation works via the extended `invalidating_types` allowlist.
+   710	  5. *Feedback loop:* `WorkspaceFileQuarantined` signals trigger claim retraction (via existing `services::claims::retract_claims_for_source` path — confirm name at L0 plan from grep). `WorkspaceFileEntityLinkChanged` triggers entity-context refresh.
+   711	- **Tests required:** Signal emission test for each of the five new variants (fixture-driven); typed payload struct has no `String` content/path fields (compile-time check); invalidation queue enqueued after `WorkspaceFileIngested` AND `WorkspaceFileQuarantined` AND `WorkspaceFileEntityLinkChanged`; invalidation queue NOT enqueued after `WorkspaceFileRejected` AND `WorkspaceFilePendingEntityAssignment` (negative tests); `from_name` round-trips for all five variants; `cargo test` + `cargo clippy -D warnings` clean.
+   712	- **Done when:** All five `SignalType` variants present with full matcher coverage; `invalidating_types` extended; `WorkspaceSignalEmitter` replaces `NullSignalEmitter` in pipeline; signal channel inventory documented in `.docs/plans/wave-W3-v146/W3-B-signal-channel-inventory.md` (same format as v1.4.1); typed payload struct in place; CI lint script `check_workspace_signal_allowlist.sh` (modeled on `check_claim_writer_allowlist.sh`) green — forbids any `emit_signal` of workspace `SignalType` outside `services/workspace_ingestion/signals.rs` and `services/workspace_ingestion/link.rs`; all tests green.
+   713	
+   714	---
+   715	
+   716	### Agent W3-C — DOS-489: Graph projection and audit
+   717	
+   718	- **Spec:** [DOS-489](https://linear.app/a8c/issue/DOS-489).
+   719	- **Goal:** Project the workspace entity graph — the bipartite graph of (workspace files) × (entities) established by `document_entity_links` (W1-C) and claim proposals (W3-A) — into a versioned, paginated, sensitivity-aware queryable surface that v1.4.7 MCP tooling can consume without requiring a v1.4.5 amendment. **Cycle 2 amendment** addresses DX consult findings #2 + #3 (API stability + machine-parseable audit).
+   720	- **Files owned (exclusive):** `src-tauri/src/abilities/workspace_graph.rs` (new ability — graph projection query); `src-tauri/src/services/workspace_ingestion/graph.rs` (W3-C is the only owner — projection query functions); `src-tauri/src/bin/workspace_graph_audit.rs` (new binary for audit report generation, JSON output mode + optional human text mode).
+   721	- **Don't touch:** `document_entity_links` schema (W1-C owns); `document_ingestion_runs` schema (W1-C owns); signal bus (W3-B owns); other `services/workspace_ingestion/*.rs` submodules.
+   722	- **Depends on:** DOS-470 (W3-A) merged — the graph projection consumes committed claim proposals.
+   723	- **DX gate:** DOS-489 is DX-annotated because v1.4.7 MCP tooling depends on its projection API. `/plan-devex-review` at L0 plan required. The projection API must be stable enough that v1.4.7 can build on it without requiring a v1.4.5 amendment.
+   724	- **Frozen API contract (per cycle 2 DX amendment, extended in cycle 3):**
+   725	  - **Query input `WorkspaceGraphQueryInput v1`** (cycle 3 amendment closes DX OPEN F#2; cycle 8 adds `category_filter`):
+   726	    ```
+   727	    {
+   728	      "page_cursor": Option<String>,            // null on first page; opaque base64 from prior next_cursor
+   729	      "page_size": Option<u32>,                 // null = server default (200); server caps at 500
+   730	      "if_modified_since_version": Option<u64>, // optional incremental fetch hint
+   731	      "entity_filter": Option<{ "entity_type": Option<EntityType>, "entity_ids": Option<Vec<String>> }>,  // optional narrowing
+   732	      "category_filter": Option<Vec<String>>,   // cycle 8: filter file_links by category ("presentations", "transcripts", etc.); null/empty = no filter
+   733	      "include_unredacted_entity_names": bool   // honored only if caller has read.entity_names scope; otherwise ignored
+   734	    }
+   735	    ```
+
+exec
+/bin/zsh -lc 'rg -n "RawObservation|raw_observation|Observation" src-tauri/abilities-runtime/src/abilities/claims.rs .docs/plans/v1.4.5-waves.md .docs/plans/v1.4.5-workspace-memory/L0-packet-W1-A-DOS-463.md' in /private/tmp/dailyos-v145-w1a
+ succeeded in 0ms:
+.docs/plans/v1.4.5-waves.md:683:  1. *Claim model:* Every extracted proposal is submitted via `commit_claim`. The `claim_kind` is resolved against `CLAIM_TYPE_REGISTRY`. If a file-derived fact doesn't map to an existing kind, it becomes a `RawObservation` claim (existing kind) rather than silently dropped or a new kind invented. Confirm this rule in done-when.
+.docs/plans/v1.4.5-waves.md:688:- **Tests required:** Extraction test against a fixture entity JSON (produces expected claim kinds); extraction test against a fixture Drive markdown (produces `RawObservation` for unstructured content); no claim produced without `source_asof`; `subject_ref` populated correctly; `cargo test` + `cargo clippy -D warnings` clean.
+.docs/plans/v1.4.5-waves.md:1137:| 3 | Does DOS-470 require new `claim_kind` variants for document-derived claims, or do existing kinds (`RawObservation`, `IntelligenceField`) cover workspace file content adequately? | W3 | **Open** — defer to W3-A L0 plan with fresh grep against `CLAIM_TYPE_REGISTRY`. Default per plan: fall back to `RawObservation` rather than invent new kinds; raise as L0 plan amendment if new kinds genuinely needed |
+
+exec
+/bin/zsh -lc "nl -ba src-tauri/src/migrations.rs | sed -n '3470,3508p'" in /private/tmp/dailyos-v145-w1a
+ succeeded in 0ms:
+  3470	/// Run all pending migrations.
+  3471	///
+  3472	/// Returns the number of migrations applied (0 if already up-to-date).
+  3473	///
+  3474	/// Forward-compat guard: if the database has a higher version than the highest
+  3475	/// known migration, returns an error telling the user to update DailyOS.
+  3476	pub fn run_migrations(conn: &Connection) -> Result<usize, String> {
+  3477	    run_migrations_with_key(conn, None)
+  3478	}
+  3479	
+  3480	pub(crate) fn run_migrations_with_key(
+  3481	    conn: &Connection,
+  3482	    encryption_key: Option<&crate::db::EncryptionKey>,
+  3483	) -> Result<usize, String> {
+  3484	    ensure_schema_version_table(conn)?;
+  3485	    bootstrap_existing_db(conn)?;
+  3486	
+  3487	    let current = current_version(conn)?;
+  3488	    let max_known = MIGRATIONS.last().map(Migration::version).unwrap_or(0);
+  3489	
+  3490	    // Forward-compat guard
+  3491	    if current > max_known {
+  3492	        return Err(format!(
+  3493	            "Database schema version ({}) is newer than this version of DailyOS supports ({}). \
+  3494	             Please update DailyOS to the latest version.",
+  3495	            current, max_known
+  3496	        ));
+  3497	    }
+  3498	
+  3499	    // Collect pending migrations
+  3500	    let pending: Vec<&Migration> = MIGRATIONS
+  3501	        .iter()
+  3502	        .filter(|m| m.version() > current)
+  3503	        .collect();
+  3504	
+  3505	    if pending.is_empty() {
+  3506	        verify_required_schema(conn)?;
+  3507	        return Ok(0);
+  3508	    }
+
+exec
+/bin/zsh -lc "nl -ba .docs/plans/v1.4.5-waves.md | sed -n '314,326p'" in /private/tmp/dailyos-v145-w1a
+ succeeded in 0ms:
+   314	All v1.4.0/v1.4.1/v1.4.2 invariants remain active. v1.4.5 adds:
+   315	
+   316	| Invariant | Mechanism | Activated by |
+   317	|---|---|---|
+   318	| All workspace file mutations route through `services::workspace_ingestion` — no direct DB writes from watcher handlers, processor pipeline, or Drive poller | **CI lint script `src-tauri/scripts/check_workspace_mutation_allowlist.sh`** modeled on `check_claim_writer_allowlist.sh`: forbids `INSERT/UPDATE/REPLACE INTO (workspace_file_lifecycle\|document_ingestion_runs\|document_entity_links)` outside `services/workspace_ingestion/*.rs`; explicit allowlist file regex; `dos-146-allowed:` per-line rationale exceptions | W2-A merge |
+   319	| File-derived facts commit only as claim proposals through `services::claims::commit_claim` — no direct `intelligence_claims` inserts from ingestion code | Existing `check_claim_writer_allowlist.sh` already enforces this for the claim tables; no new lint needed (the script's allowlist already excludes `services/workspace_ingestion/**`, so any future direct insert there would fail it) | W3-A merge |
+   320	| `content_index` and embeddings tables remain derived caches — no ingestion path treats them as truth stores | **CI lint script `src-tauri/scripts/check_content_index_allowlist.sh`** modeled on the claim writer script: forbids `INSERT/UPDATE` against `content_index` / `embeddings` outside the existing cache-update services + ingestion pipeline cache hooks | W3-A merge |
+   321	| User-visible source UI ships as Gutenberg blocks on the v1.4.2 SurfaceClient foundation — no new Tauri React surfaces for source management, entity intake, or markdown preview | Architecture review gate at W4 L0 + grep test for new files under `src/components/` matching v1.4.5 surface names | W4 L0 plan approval |
+   322	| All untrusted input (markdown content, MCP write payloads, attachment file paths) passes through validation before service entry — no raw content reaches `commit_claim` without sanitization | Suite S test at W2 gate; explicit lint script `check_workspace_path_validation.sh` (W1-B owns) forbids `std::fs::File::open` / `tokio::fs::File::open` on workspace-rooted paths outside `registry::open_validated` | W1-B merge → W2-A merge |
+   323	| Claim proposals from file ingestion carry `source_asof`, source attribution, `sensitivity`, `lifecycle_state`, and at least one trust factor input from creation | Property test on `WorkspaceClaimProposal` type shape; trybuild asserts required fields | W3-A merge |
+   324	| Backfill is idempotent, resumable, dry-runnable, and never mass-promotes historical files into `likely_current` band without explicit per-file lifecycle state | Property test on `BackfillSummary`; dry-run mode CI test | W5 start gate |
+   325	| DOS-474 AI placement contract write operations must be on the explicit MCP write allowlist — no write path added without a corresponding allowlist entry | **CI lint script `src-tauri/scripts/check_mcp_write_allowlist.sh`** asserts every ability with `mcp_exposure: Invocable` AND `required_scopes` containing `write.*` is enumerated in the MCP write allowlist file | W4-C merge |
+   326	| Workspace signals only emitted from `services/workspace_ingestion/signals.rs` and `services/workspace_ingestion/link.rs` | **CI lint script `src-tauri/scripts/check_workspace_signal_allowlist.sh`** modeled on claim writer script: forbids `emit_signal(SignalType::WorkspaceFile*)` outside the two allowlisted submodules | W3-B merge |
+
+exec
+/bin/zsh -lc 'rg -n "CLAIM_TYPE_REGISTRY" src-tauri/abilities-runtime/src/abilities/claims.rs | head -n 20' in /private/tmp/dailyos-v145-w1a
+ succeeded in 0ms:
+191:        for entry in CLAIM_TYPE_REGISTRY {
+710:pub const CLAIM_TYPE_REGISTRY: &[&ClaimTypeMetadata] = &[
+749:    CLAIM_TYPE_REGISTRY.iter().copied().find(|m| m.name == name)
+842:        for entry in CLAIM_TYPE_REGISTRY {
+853:        // Drift guard for callers that traverse CLAIM_TYPE_REGISTRY
+907:            let m = &CLAIM_TYPE_REGISTRY[idx];
+913:            CLAIM_TYPE_REGISTRY.len(),
+920:        for entry in CLAIM_TYPE_REGISTRY {
+1060:        for entry in CLAIM_TYPE_REGISTRY {
+1072:        for entry in CLAIM_TYPE_REGISTRY {
+1087:        for entry in CLAIM_TYPE_REGISTRY {
+1133:        for entry in CLAIM_TYPE_REGISTRY {
+1151:        for entry in CLAIM_TYPE_REGISTRY {
+
+codex
+VERDICT: BLOCK
+
+1. Migration numbering is stale and unsafe. Packet line 82 says highest migration is v178 and v200/v201 are clear, but live `src-tauri/src/migrations.rs:923` already registers v180 and `:927` registers v240. The runner only applies migrations with `version > current` (`migrations.rs:3487-3503`), so any DB already at v240 will skip newly-added v200/v201. This needs renumbering or an explicit repair strategy.
+
+2. `SignalEmitter` is not actually frozen in the packet. Packet line 45 lists method names only; the locked wave contract specifies exact signatures at `.docs/plans/v1.4.5-waves.md:453-458`. W1-C and W2-A can only compile predictably if W1-A pins argument/return types in this packet.
+
+3. `WorkspaceCategory::from_slug()` has a W1-B dependency leak. Packet lines 38, 120, and 143 require registry-valid `Other` slugs, but the registry is owned by W1-B. W1-A can enforce canonical lexical slug shape; per-entity allowedness must be explicitly deferred to W1-B or this recreates wave-timing inversion.
+
+4. `WorkspaceClaimProposal` shape misses a locked invariant. Packet line 42 omits `lifecycle_state` and any explicit trust-factor input, while `.docs/plans/v1.4.5-waves.md:323` says the proposal type-shape/trybuild gate must enforce `source_asof`, attribution, sensitivity, `lifecycle_state`, and at least one trust factor from creation. Since W1-A owns this type, W3-A cannot fix it without crossing ownership.
+
+5. Stale citation: packet line 80 cites `CLAIM_TYPE_REGISTRY` at `claims.rs:691`; live code has it at `src-tauri/abilities-runtime/src/abilities/claims.rs:710`. This is minor alone, but it confirms the packet was not fully reconciled against live code.
+tokens used
+178,360
+VERDICT: BLOCK
+
+1. Migration numbering is stale and unsafe. Packet line 82 says highest migration is v178 and v200/v201 are clear, but live `src-tauri/src/migrations.rs:923` already registers v180 and `:927` registers v240. The runner only applies migrations with `version > current` (`migrations.rs:3487-3503`), so any DB already at v240 will skip newly-added v200/v201. This needs renumbering or an explicit repair strategy.
+
+2. `SignalEmitter` is not actually frozen in the packet. Packet line 45 lists method names only; the locked wave contract specifies exact signatures at `.docs/plans/v1.4.5-waves.md:453-458`. W1-C and W2-A can only compile predictably if W1-A pins argument/return types in this packet.
+
+3. `WorkspaceCategory::from_slug()` has a W1-B dependency leak. Packet lines 38, 120, and 143 require registry-valid `Other` slugs, but the registry is owned by W1-B. W1-A can enforce canonical lexical slug shape; per-entity allowedness must be explicitly deferred to W1-B or this recreates wave-timing inversion.
+
+4. `WorkspaceClaimProposal` shape misses a locked invariant. Packet line 42 omits `lifecycle_state` and any explicit trust-factor input, while `.docs/plans/v1.4.5-waves.md:323` says the proposal type-shape/trybuild gate must enforce `source_asof`, attribution, sensitivity, `lifecycle_state`, and at least one trust factor from creation. Since W1-A owns this type, W3-A cannot fix it without crossing ownership.
+
+5. Stale citation: packet line 80 cites `CLAIM_TYPE_REGISTRY` at `claims.rs:691`; live code has it at `src-tauri/abilities-runtime/src/abilities/claims.rs:710`. This is minor alone, but it confirms the packet was not fully reconciled against live code.
