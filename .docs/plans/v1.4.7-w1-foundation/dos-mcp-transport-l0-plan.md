@@ -4,6 +4,34 @@
 **Linear ticket:** TBD (mint after L0 approve)
 **Authoring discipline:** narrow-scoped per K-in lessons. Substrate gaps file as separate Linear tickets.
 
+## Cycle-2 changelog (2026-05-21)
+
+Cycle-1 verdicts: 1 BLOCK (challenge) + 3 NEEDS-CHANGES. Convergent on rmcp wire shape (must be `arguments._dailyos_*`, not top-level wrapper which won't parse) + `ToolError` table incomplete + AC-9 deferral acceptable only while handler set empty + pair CLI re-pair semantics don't fit substrate + empty-boot misstatement. Plus BLOCK on missing `client_id` path.
+
+Cycle-2 fixes (architectural insight from synthesis: **stdio process = pairing session** — first message is identify, subsequent calls inherit verified client_id):
+
+1. **`dailyos/identify` session bootstrap** (closes challenge #1 BLOCK + AC-9 path-α + CSO #2 + devex #5). First MCP message a v2 client sends is a server-namespaced `dailyos/identify` containing `{client_id, identify_nonce, signature}`. Server: looks up client manifest by client_id, verifies HMAC of `(client_id || identify_nonce)` against transport key, sets per-session `verified_client_id` state. All subsequent `tools/list` is filtered by that session's manifest grants (Invocable only); all subsequent `tools/call` envelopes MUST have `client_id == verified_client_id` (else reject) AND still verify HMAC + consume nonce per envelope (defense in depth). Process exit = session end.
+
+2. **Wire shape pinned to `arguments._dailyos_*`** (convergent 4/4). `call_tool` extracts `_dailyos_envelope` + `_dailyos_signature` from `arguments` (rmcp 0.1 only exposes name + arguments). Asserts `request.name == envelope.tool_name`. Reserved-key collision: real param names matching `_dailyos_*` rejected via `BadParams`. `input_schema` in `tools/list` advertises the wrapper convention (closes architect #4).
+
+3. **AC-3 mapping table complete** (CSO #1 + devex #2). Closed matrix of EVERY `ToolError` variant → rmcp::Error code → opaque public `data.kind` → operator-log fields. Includes `NotFound` (→ method_not_found, kind "tool_not_found") and `UpstreamFailure { detail }` (→ internal_error, opaque trace_id, detail logged server-side only). Test asserts every variant; CI lint fails if a new variant lands without a row.
+
+4. **`TaxonomyCatalog` trait gains `description_for`** (architect #1). Additive method `fn description_for(&self, name: &ScopedName) -> Option<&ToolDescription>`. `YamlTaxonomyCatalog` already has this method; trait addition is one-line.
+
+5. **rmcp `get_info` not `initialize`** (architect #3). `V2ServerHandler::get_info(&self) -> ServerInfo` returning `{server_info: {name: "dailyos-mcp-v2", version: ...}, capabilities: {tools: {list_changed: false}, ...}}`. Mirrors legacy `dailyos-mcp` at `src/mcp/main.rs:973`.
+
+6. **rmcp Tool description composes summary + when_to_call + when_NOT_to_call** (devex #4). `list_tools` builds `Tool.description` as `format!("{summary}\n\nWhen to call:\n{when_to_call}\n\nWhen NOT to call:\n{when_NOT_to_call}")` so host model has ADR-0128 §3 product copy directly. Examples and fixtures stay out of wire shape.
+
+7. **Empty-boot misstatement fixed** (architect #2 + devex #6). With embedded YAML (10 tools) + 0 handlers, `gateway.seal()` returns `Vec<ScopedName>` of length 10 (the catalog-only entries). Log line: `mcp_v2 boot: 0 handlers registered, 10 catalog entries pending. tools/list will return empty for this build. Expected for W1.5 transport-only.` Strict mode env hint included.
+
+8. **Pair CLI ergonomics** (devex #3 + CSO #3 + challenge #4). `dailyos-mcp-v2 pair --client-name <s> --grant <tool>:<scope>[,<scope>...]:<exposure> [--grant ...] [--format json|claude-desktop]` — `--grant` is repeatable per-tool to match the `mcp_tool_grant` substrate. `--format claude-desktop` emits a copy-pasteable `mcpServers` JSON snippet. "Transport key printed ONCE; record it now — there is no recovery path" warning. **Drop "same name revokes existing" claim** (CSO #3 + challenge #4): re-pair semantics need `client_label` schema column that doesn't exist; operator must explicitly `unpair --client-id <id>` first. Filed as separate ticket for v1.4.7+ ("DOS-? MCP pair-by-name revoke via client_label").
+
+9. **Subprocess JSON-RPC handshake test** (challenge #5). AC-8 extended: integration test spawns `dailyos-mcp-v2` as a child process, performs full JSON-RPC handshake over stdin/stdout, verifies stdout is protocol-only (no boot log corruption per legacy precedent `src/mcp/main.rs:1312`). Direct `ServerHandler::call_tool` unit test stays as a faster inner-loop check.
+
+10. **Legacy coexistence guardrails** (challenge #6). Cycle-2 adds AC-11: dailyos-mcp-v2 binary refuses to run if `--legacy-config-path <p>` points at a config that still references `dailyos-mcp` for tools v2 owns. Operator gets clear error + remediation. Negative integration test asserts the refusal. Documents post-v1.4.7 deprecation path for legacy binary in `.docs/decisions/0128-headless-dailyos-mcp-as-product-surface.md` as a separate ADR amendment (filed ticket).
+
+Cycle-2 commits the architecture insight (`identify` session bootstrap) which collapses multiple findings into one design.
+
 ## 1. What this lane ships
 
 The MCP v2 Gateway (W1-A) has no transport ingress yet — it's a Rust function nobody can call over the wire. The legacy `dailyos-mcp` binary (`src/mcp/main.rs`, 1898 LOC) uses the official `rmcp` crate (`rmcp::ServerHandler` trait) on stdio with a legacy `McpAbilityBridge`. This lane bridges `rmcp` to the v2 `Gateway` so MCP clients (Claude Desktop, Cursor, custom) can actually invoke v2 tools through the W1-A trust contract.
