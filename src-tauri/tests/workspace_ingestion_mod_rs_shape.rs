@@ -14,8 +14,17 @@ use std::fs;
 use std::path::PathBuf;
 
 const EXPECTED_PUB_MODS: &[&str] = &[
-    "contracts", "extract", "graph", "lifecycle", "link", "pipeline", "registry", "runs",
-    "signals", "wiring",
+    "contracts",
+    "extract",
+    "graph",
+    "lifecycle",
+    "link",
+    "pipeline",
+    "registry",
+    "runs",
+    "signals",
+    "wiring",
+    "workspace_intake_impl",
 ];
 
 #[test]

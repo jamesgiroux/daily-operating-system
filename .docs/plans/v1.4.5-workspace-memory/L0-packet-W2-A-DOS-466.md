@@ -1,6 +1,6 @@
 # L0 Packet — v1.4.5 W2-A — DOS-466 Staged Ingestion Service: Pipeline Shell + Quarantine + auto_detect_category
 
-**Current revision:** V1.4 (cycle-4 cross-lane reconciliation + mechanical bug fold, 2026-05-21). See §2 Changelog.
+**Current revision:** V1.6 (L2 cycle-1 codex BLOCK fold, 2026-05-21). See §2 Changelog.
 
 ## 1. Header
 
@@ -20,6 +20,13 @@
 
 ## 2. Changelog
 
+- **V1.6 — 2026-05-21 (L2 cycle-1 fold):** Codex L2 challenge returned BLOCK at 18:30Z with two findings. Architect / correctness / security reviewers returned APPROVE. Folds per `feedback_reviewer_dissent_is_signal`:
+  1. **Finding 2 (§3 + §7 AC violation) — FIXED in cycle 2.** Frontmatter `doc_type` priority 1 was not terminal: a present-but-shape-invalid `doc_type` (e.g. `Bad`) fell through to filename-glob, letting filename intent override user-supplied invalid intent. Fix at `pipeline.rs::auto_detect_category_pure` — new internal helper `frontmatter_doctype_detection(content_head) -> Option<Option<WorkspaceCategory>>` distinguishes "priority 1 didn't fire" from "priority 1 fired with no match". Regression test at `tests/workspace_ingestion_w2a_auto_detect_category.rs::invalid_frontmatter_doctype_is_terminal_none_even_with_filename_match` (2 assertions covering shape-invalid + leading-digit cases).
+  2. **Finding 1 (ServiceContext field shape) — PATH-α, NOT BLOCK.** Codex flagged that §9 stub specifies `workspace_intake: &'a dyn WorkspaceIntakeService` (non-Option borrowed ref) but impl uses `Option<Arc<dyn WorkspaceIntakeService>>`. Per `feedback_l2_path_alpha_to_maintenance_project`: this is code-stub drift, not an AC violation (§11 says "ServiceContext extended with workspace_intake; bootstrap registers IngestPipelineWorkspaceIntake" — satisfied), not an ADR-named contract violation, not a PR-introduced regression. Architect reviewer correctly noted the impl shape matches the established convention for builder-populated handles (`entity_context_reader`, `composition_commit`, `claim_receipt_reader` are all `Option<Arc<dyn ...>>`). Non-Option borrowed refs in ServiceContext (`Clock`, `SeededRng`, `ExternalClients`) are constructor params; handles need builder pattern. File under DOS-751 to revisit when W2-C's consumer pattern stabilizes — if `workspace_intake().expect(...)` proliferates, lift the field to non-Option.
+- **V1.5 — 2026-05-21 (L1 kickoff):** Resolves three L1-preconditions from `L1-residuals-from-L0-cycle-5.md` against live substrate.
+  1. **`entity_name` IS a path segment.** Live `registry.rs:448` (`PathBuf::from(entity_dir).join(entity_name)`) confirms. REVERTS V1.4 §7 / §9 wording marking it "display-only". The bridge (`workspace_intake_impl.rs`) MUST slug-validate `entity_name` via `is_valid_slug_shape` (registry.rs:464 pattern) before constructing `IngestRequest`; invalid → `WorkspaceIntakeError::InvalidEntityName(String)` (new variant added to §0 V1.4).
+  2. **`workspace_root` threaded via constructor.** `IngestPipeline` holds `workspace_root: PathBuf` as a field; `pub fn build_pipeline(workspace_root: PathBuf) -> IngestPipeline` (still infallible). `pipeline.run()` revalidates `request.file_id == file_id_from_identity(&request.identity, &self.workspace_root)`. Also resolves W2-B residual #2 — W2-B call sites become `wiring::build_pipeline(workspace_root)`, no `?`.
+  3. **§0 typed-DTO duplicate removed.** `W2-shared-contract.md` §4's stale typed-field `WorkspaceIntakeRequest` mirror (V1.2 leftover) deleted; canonical V1.3 raw-slug form is the only authority.
 - **V1.4 — 2026-05-21:** Folds §0 V1.3 and cycle-4 mechanical findings without changing architecture.
   1. Absorbs §0 V1.3: `WorkspaceIntakeService` trait DTOs use raw slugs at the crate boundary; `LifecycleRepo` adds `set_entity` + `get` helpers.
   2. Makes `workspace_intake_impl.rs` the SLUG→TYPED translator: parse `WorkspaceIntakeRequest` raw slugs into `WorkspaceFileKind` / `IngestionMode` / `WorkspaceCategory`, parse entity type via `EntityType::from_str_lossy`, validate categories through `WorkspaceCategoryRegistry::validate`, then construct the internal typed `IngestRequest`.
@@ -193,7 +200,7 @@ DOS-466 is security-annotated. Untrusted file content enters the service. Requir
 - No shell command invocation from the pipeline (no `std::process::Command` for content extraction).
 - Pipeline reads from the `(File, FileIdentity)` returned by `WorkspaceSourceRegistry::open_validated` only — never re-opens by path.
 - Caller-provided `IngestRequest.file_id` MUST match `file_id_from_identity(&request.identity, workspace_root)` per §0 V1.2 §2.1 and §2.4. Mismatch returns typed `IngestError::FileIdMismatch { expected, found }`; L1 must not downgrade this to `DbError`, `Io`, `RejectionReason`, or an untyped string. §10 requires the negative test.
-- `EntityRef.entity_name` is display-only per §0 V1.3 §2.1 and must not be used as a routing/path segment. Do not add a slug-validation gate to `entity_name`; path resolution uses typed `entity_type` plus validated category only.
+- **V1.5 fold:** `EntityRef.entity_name` IS a path segment per live `registry.rs:448` (`PathBuf::from(entity_dir).join(entity_name)`). The bridge MUST slug-validate via `is_valid_slug_shape` before constructing `IngestRequest`; invalid → `WorkspaceIntakeError::InvalidEntityName(String)`. Inside `pipeline.run()` we trust the type (validation happens at the bridge boundary).
 - CI grep gate covers ALL path-opening APIs from §0 §8, verbatim:
 
 ```text
@@ -273,8 +280,9 @@ impl IngestPipeline {
         // L1 fills:
         // 1. Re-derive file_id via file_id_from_identity(&request.identity, workspace_root).
         // 2. Reject caller-provided file_id mismatch with IngestError::FileIdMismatch { expected, found }.
-        // 3. Resolve path through WorkspaceCategoryRegistry using category + entity_type only.
-        //    EntityRef.entity_name is display-only; never treat it as a path segment.
+        // 3. Resolve path through WorkspaceCategoryRegistry::resolve_path using
+        //    entity_type + entity_name + category. V1.5: entity_name IS a path
+        //    segment (registry.rs:448); bridge has already slug-validated it.
         // 4. Read from request.file only, enforcing max bytes and 4KB content_head.
         // 5. Seek back to start before calling Extractor::extract(&File, ...).
         // 6. Populate resolved_path in the receipt; no scope redaction in this topology.
@@ -360,7 +368,7 @@ pub trait WorkspaceIntakeService: Send + Sync {
 }
 ```
 
-The required DTO fields are `file_ref`, `source_type_slug`, `entity: Option<EntityRefDto>`, `mode_slug`, and `category_slug: Option<String>`. `EntityRefDto` carries `entity_type_slug`, `entity_id`, and display-only `entity_name`.
+The required DTO fields are `file_ref`, `source_type_slug`, `entity: Option<EntityRefDto>`, `mode_slug`, and `category_slug: Option<String>`. `EntityRefDto` carries `entity_type_slug`, `entity_id`, and `entity_name` (path-segment per V1.5; bridge slug-validates via `is_valid_slug_shape`).
 
 `src-tauri/abilities-runtime/src/services/context.rs` grows the service accessor behind `AbilityContext::services()`; ability functions still receive `AbilityContext`, not `ServiceContext`, per §0 V1.2 §13:
 
@@ -486,7 +494,7 @@ service_context_builder.workspace_intake(&ingest_pipeline_workspace_intake);
 - Sniff only the first 4KB for frontmatter category detection, and prove this at the pipeline read boundary rather than only by unit-testing `auto_detect_category_pure`.
 - Treat caller-provided `category_hint` as already registry-valid by contract.
 - Treat auto-detected category output as provisional until registry validation passes.
-- Treat `EntityRef.entity_name` as display-only lifecycle data. Do not slug-validate it, and do not use it for path resolution; route using `entity_type` plus category only.
+- V1.5: `EntityRef.entity_name` IS the path segment between `{Accounts|People|Projects}/` and the category dir (live `registry.rs:448`). The bridge slug-validates via `is_valid_slug_shape` before `IngestRequest` is constructed; `pipeline.run()` trusts the typed field. Routing uses `entity_type` + `entity_name` + category, not entity_type + category alone.
 - Pre-hash rejection paths (for example file too large before read allocation) do not create a `document_ingestion_runs` row because W1-C requires non-null `content_sha256`; they transition lifecycle to `Rejected` and emit a typed rejection. Post-hash handled failures complete the run as `Failed`.
 - Preserve the no-claim W2 behavior even if `Extractor::extract` is swapped early in a local workspace.
 - Complete failed runs with typed error detail; never leave a fresh run permanently `in_progress` on handled rejection paths.

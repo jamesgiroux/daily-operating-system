@@ -70,6 +70,9 @@ pub fn attach_live_workspace_readers(ctx: ServiceContext<'_>) -> ServiceContext<
         ))
         .with_meeting_prep_status_reader(Arc::new(LiveMeetingPrepStatusReader))
         .with_claim_receipt_reader(Arc::new(LiveClaimReceiptReader))
+        .with_workspace_intake(Arc::new(
+            crate::services::workspace_ingestion::workspace_intake_impl::IngestPipelineWorkspaceIntake::from_config_or_empty(),
+        ))
 }
 
 impl EntityContextReadHandle for LiveEntityContextReader {
@@ -298,9 +301,7 @@ fn prep_status_to_str(status: crate::services::meeting_prep_status::PrepStatus) 
     }
 }
 
-fn blocking_reason_to_str(
-    reason: crate::services::meeting_prep_status::BlockingReason,
-) -> String {
+fn blocking_reason_to_str(reason: crate::services::meeting_prep_status::BlockingReason) -> String {
     use crate::services::meeting_prep_status::BlockingReason::*;
     match reason {
         NoLinkedEntity => "no_linked_entity",
@@ -415,15 +416,13 @@ impl ClaimReceiptReadHandle for LiveClaimReceiptReader {
         surface: ClaimReceiptSurfaceContext,
     ) -> ClaimReceiptReadFuture<'a> {
         Box::pin(async move {
-            tokio::task::spawn_blocking(move || {
-                live_render_claim_receipt(target, surface)
-            })
-            .await
-            .map_err(|error| {
-                ClaimReceiptReadError::ReadFailed(format!(
-                    "claim_receipt blocking task failed: {error}"
-                ))
-            })?
+            tokio::task::spawn_blocking(move || live_render_claim_receipt(target, surface))
+                .await
+                .map_err(|error| {
+                    ClaimReceiptReadError::ReadFailed(format!(
+                        "claim_receipt blocking task failed: {error}"
+                    ))
+                })?
         })
     }
 }
@@ -492,13 +491,9 @@ fn live_render_claim_receipt(
         crate::services::claim_receipt::privacy::Audience::UserTauri
     ) {
         if let app::ReceiptTarget::Claim { claim_id, .. } = &app_target {
-            let claim_opt =
-                crate::services::claims::load_claim_by_id(db.conn_ref(), claim_id)
-                    .map_err(|error| {
-                        ClaimReceiptReadError::ReadFailed(error.to_string())
-                    })?;
-            let claim =
-                claim_opt.ok_or(ClaimReceiptReadError::TargetNotFound)?;
+            let claim_opt = crate::services::claims::load_claim_by_id(db.conn_ref(), claim_id)
+                .map_err(|error| ClaimReceiptReadError::ReadFailed(error.to_string()))?;
+            let claim = claim_opt.ok_or(ClaimReceiptReadError::TargetNotFound)?;
             let render_surface = match app_surface {
                 app::SurfaceContext::ActionsWork => RenderSurface::Action,
                 app::SurfaceContext::EntityDetail => RenderSurface::TauriEntityDetail,
