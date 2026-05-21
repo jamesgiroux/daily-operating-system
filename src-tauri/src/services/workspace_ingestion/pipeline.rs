@@ -401,14 +401,16 @@ fn frontmatter_block(content_head: &str) -> Option<&str> {
 /// fire":
 /// - `None` → no frontmatter block, or frontmatter has no `doc_type` key →
 ///   priority 1 did NOT fire, caller should fall through.
-/// - `Some(Some(cat))` → `doc_type` present, valid, mapped to a category →
-///   terminal Some.
-/// - `Some(None)` → `doc_type` present but invalid shape, unknown variant,
-///   or unregistered `Other(s)` slug → priority 1 FIRED with a non-match →
-///   terminal None per packet §3 frozen detection table row 6 ("else None").
+/// - `Some(Some(cat))` → `doc_type` present, shape-valid, mapped to a known
+///   variant OR a shape-valid `Other(slug)` → terminal Some. Registry
+///   validation of `Other(slug)` happens later at `validate_detected_category`.
+/// - `Some(None)` → `doc_type` present but FAILS the shape check
+///   (`^[a-z][a-z0-9_-]{0,31}$`) → priority 1 FIRED with no match → terminal
+///   None per packet §3 frozen detection table row 1.
 ///
-/// This split closes the L2 cycle-1 codex BLOCK on §7: invalid `doc_type`
-/// must not allow filename-glob fallback to override user-supplied intent.
+/// This split closes the L2 cycle-1 codex BLOCK on §7: a shape-invalid
+/// `doc_type` (user-supplied invalid intent) must not allow filename-glob
+/// fallback to override.
 fn frontmatter_doctype_detection(content_head: &str) -> Option<Option<WorkspaceCategory>> {
     let block = frontmatter_block(content_head)?;
     for line in block.lines() {
