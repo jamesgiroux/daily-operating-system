@@ -50,12 +50,21 @@ if ( ! function_exists( 'dailyos_project_detail_render' ) ) {
 		}
 
 		// W1 producer: get_entity_intelligence (entity_type=project).
-		$response = $runtime_client->invoke_ability(
+		// Runtime client signature (class-dailyos-runtime-client.php:85) requires
+		// (name, payload, scope_set). Scope set resolves from the surface client's
+		// granted scopes via the canonical filter (see class-dailyos-plugin.php:1421
+		// + class-dailyos-ability-registry.php:185).
+		$scope_set = apply_filters( 'dailyos_surfaceclient_resolved_scopes', [] );
+		if ( ! is_array( $scope_set ) ) {
+			$scope_set = [];
+		}
+		$response  = $runtime_client->invoke_ability(
 			'get_entity_intelligence',
 			[
 				'entity_type' => 'project',
 				'entity_id'   => $project_id,
-			]
+			],
+			$scope_set
 		);
 
 		if ( is_wp_error( $response ) ) {
