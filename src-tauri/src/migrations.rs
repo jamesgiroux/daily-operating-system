@@ -940,6 +940,21 @@ const MIGRATIONS: &[Migration] = &[
         version: 251,
         sql: include_str!("migrations/251_workspace_file_lifecycle_category.sql"),
     },
+    // v1.4.5 W1-B (DOS-464) — workspace source-type allowlist + per-entity category registry.
+    Migration::Sql {
+        version: 252,
+        sql: include_str!("migrations/252_workspace_source_registry.sql"),
+    },
+    // v1.4.5 W1-C (DOS-465) — ingestion run tracking (idempotency + retry lineage).
+    Migration::Sql {
+        version: 253,
+        sql: include_str!("migrations/253_document_ingestion_runs.sql"),
+    },
+    // v1.4.5 W1-C (DOS-465) — document/entity link tombstone-aware table.
+    Migration::Sql {
+        version: 254,
+        sql: include_str!("migrations/254_document_entity_links.sql"),
+    },
 ];
 
 const V155_SHADOW_TRUST_VERSION: i64 = 1_401_003;
