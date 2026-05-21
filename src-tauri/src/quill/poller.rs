@@ -118,6 +118,7 @@ async fn process_sync_row(
             clippy::let_underscore_must_use,
             reason = "intentional best-effort discard; preserves existing non-blocking behavior"
         )]
+        // dos7-allowed: transcript-db-write - transcript sync-state write; not workspace-file ingestion
         let _ = sync::transition_state(&db, &row.id, "polling", None, None, None, None);
 
         let meeting = match db.get_meeting_by_id(&row.meeting_id) {
@@ -131,6 +132,7 @@ async fn process_sync_row(
                     clippy::let_underscore_must_use,
                     reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                 )]
+                // dos7-allowed: transcript-db-write - transcript sync-state write; not workspace-file ingestion
                 let _ = sync::transition_state(
                     &db,
                     &row.id,
@@ -152,6 +154,7 @@ async fn process_sync_row(
                     clippy::let_underscore_must_use,
                     reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                 )]
+                // dos7-allowed: transcript-db-write - transcript sync-state write; not workspace-file ingestion
                 let _ = sync::advance_attempt(&db, &row.id);
                 return;
             }
@@ -184,6 +187,7 @@ async fn process_sync_row(
                     clippy::let_underscore_must_use,
                     reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                 )]
+                // dos7-allowed: transcript-db-write - transcript sync-state write; not workspace-file ingestion
                 let _ = sync::transition_state(
                     &db,
                     &row.id,
@@ -220,6 +224,7 @@ async fn process_sync_row(
                     clippy::let_underscore_must_use,
                     reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                 )]
+                // dos7-allowed: transcript-db-write - transcript sync-state write; not workspace-file ingestion
                 let _ = sync::advance_attempt(&db, &row.id);
             }
             return;
@@ -250,6 +255,7 @@ async fn process_sync_row(
                     clippy::let_underscore_must_use,
                     reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                 )]
+                // dos7-allowed: transcript-db-write - transcript sync-state write; not workspace-file ingestion
                 let _ = sync::advance_attempt(&db, &row.id);
             }
             return;
@@ -272,6 +278,7 @@ async fn process_sync_row(
                 clippy::let_underscore_must_use,
                 reason = "intentional best-effort discard; preserves existing non-blocking behavior"
             )]
+            // dos7-allowed: transcript-db-write - transcript sync-state write; not workspace-file ingestion
             let _ = sync::transition_state(
                 &db,
                 &row.id,
@@ -296,6 +303,7 @@ async fn process_sync_row(
                     clippy::let_underscore_must_use,
                     reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                 )]
+                // dos7-allowed: transcript-db-write - transcript sync-state write; not workspace-file ingestion
                 let _ = sync::transition_state(
                     &db,
                     &row.id,
@@ -309,6 +317,7 @@ async fn process_sync_row(
                     clippy::let_underscore_must_use,
                     reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                 )]
+                // dos7-allowed: transcript-db-write - transcript sync-state write; not workspace-file ingestion
                 let _ = sync::advance_attempt(&db, &row.id);
             }
             return;
@@ -345,6 +354,7 @@ async fn process_sync_row(
                         clippy::let_underscore_must_use,
                         reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                     )]
+                    // dos7-allowed: transcript-db-write - transcript sync-state write; not workspace-file ingestion
                     let _ = sync::transition_state(
                         &db,
                         &row.id,
@@ -369,6 +379,7 @@ async fn process_sync_row(
                 clippy::let_underscore_must_use,
                 reason = "intentional best-effort discard; preserves existing non-blocking behavior"
             )]
+            // dos7-allowed: transcript-db-write - transcript sync-state write; not workspace-file ingestion
             let _ = sync::transition_state(&db, &row.id, "processing", None, None, None, None);
         }
     }
@@ -396,6 +407,7 @@ async fn process_sync_row(
                         clippy::let_underscore_must_use,
                         reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                     )]
+                    // dos7-allowed: transcript-db-write - transcript metadata write; not workspace-file ingestion
                     let _ = db.update_meeting_transcript_metadata(
                         &calendar_event.id,
                         dest,
@@ -412,6 +424,7 @@ async fn process_sync_row(
                             clippy::let_underscore_must_use,
                             reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                         )]
+                        // dos7-allowed: transcript-db-write - transcript capture write; not workspace-file ingestion
                         let _ = db.insert_capture(
                             &calendar_event.id,
                             &calendar_event.title,
@@ -425,6 +438,7 @@ async fn process_sync_row(
                             clippy::let_underscore_must_use,
                             reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                         )]
+                        // dos7-allowed: transcript-db-write - transcript capture write; not workspace-file ingestion
                         let _ = db.insert_capture(
                             &calendar_event.id,
                             &calendar_event.title,
@@ -438,6 +452,7 @@ async fn process_sync_row(
                             clippy::let_underscore_must_use,
                             reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                         )]
+                        // dos7-allowed: transcript-db-write - transcript capture write; not workspace-file ingestion
                         let _ = db.insert_capture(
                             &calendar_event.id,
                             &calendar_event.title,
@@ -490,6 +505,7 @@ async fn process_sync_row(
                             linear_identifier: None,
                             linear_url: None,
                         };
+                        // dos7-allowed: transcript-db-write - transcript action write; not workspace-file ingestion
                         match db.upsert_action_if_not_completed(&db_action) {
                             Ok(()) => written += 1,
                             Err(e) => {
@@ -524,6 +540,7 @@ async fn process_sync_row(
                         clippy::let_underscore_must_use,
                         reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                     )]
+                    // dos7-allowed: transcript-db-write - transcript sync-state write; not workspace-file ingestion
                     let _ = sync::transition_state(
                         &db,
                         &row.id,
@@ -539,6 +556,7 @@ async fn process_sync_row(
                         clippy::let_underscore_must_use,
                         reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                     )]
+                    // dos7-allowed: transcript-db-write - transcript sync-state write; not workspace-file ingestion
                     let _ = sync::transition_state(
                         &db,
                         &row.id,

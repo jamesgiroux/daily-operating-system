@@ -179,9 +179,11 @@ pub fn process_fetched_transcript_without_db_with_kind(
         clippy::let_underscore_must_use,
         reason = "intentional best-effort discard; preserves existing non-blocking behavior"
     )]
+    // dos7-allowed: transcript-direct-write-v146 - transcript content staging deferred to v1.4.6 staging API per cycle-13 §13.3.2
     let _ = std::fs::create_dir_all(&temp_dir);
     let temp_path = temp_dir.join(format!("quill-transcript-{}.md", sync_id));
 
+    // dos7-allowed: transcript-direct-write-v146 - transcript content staging deferred to v1.4.6 staging API per cycle-13 §13.3.2
     std::fs::write(&temp_path, transcript_text)
         .map_err(|e| format!("Failed to write temp transcript: {}", e))?;
 
@@ -238,9 +240,11 @@ pub fn process_fetched_transcript(
         clippy::let_underscore_must_use,
         reason = "intentional best-effort discard; preserves existing non-blocking behavior"
     )]
+    // dos7-allowed: transcript-direct-write-v146 - transcript content staging deferred to v1.4.6 staging API per cycle-13 §13.3.2
     let _ = std::fs::create_dir_all(&temp_dir);
     let temp_path = temp_dir.join(format!("quill-transcript-{}.md", sync_id));
 
+    // dos7-allowed: transcript-direct-write-v146 - transcript content staging deferred to v1.4.6 staging API per cycle-13 §13.3.2
     std::fs::write(&temp_path, transcript_text)
         .map_err(|e| format!("Failed to write temp transcript: {}", e))?;
 

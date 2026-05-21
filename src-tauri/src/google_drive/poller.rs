@@ -196,6 +196,7 @@ pub fn save_to_entity_docs(
         .join(entity_id)
         .join("Documents");
 
+    // dos7-allowed: drive-staging-v146 - remote Drive bytes need v1.4.6 staging API
     std::fs::create_dir_all(&docs_dir)
         .map_err(|e| format!("Failed to create Documents directory: {}", e))?;
 
@@ -205,6 +206,7 @@ pub fn save_to_entity_docs(
     );
     let file_path = docs_dir.join(&filename);
 
+    // dos7-allowed: drive-staging-v146 - remote Drive bytes need v1.4.6 staging API
     std::fs::write(&file_path, content).map_err(|e| format!("Failed to write file: {}", e))?;
 
     Ok(file_path)

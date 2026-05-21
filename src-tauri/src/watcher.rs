@@ -7,15 +7,26 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use abilities_runtime::abilities::provenance::source::{EntityId, WorkspaceFileKind};
+use chrono::{DateTime, Utc};
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use rusqlite::Connection;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc;
 use tokio::time::sleep;
 
 use crate::accounts;
+use crate::entity::EntityType;
 use crate::parser::count_inbox;
 use crate::people;
 use crate::projects;
+use crate::services::workspace_ingestion::contracts::RejectionReason;
+use crate::services::workspace_ingestion::pipeline::{
+    file_id_from_identity, EntityRef, IngestError, IngestPipeline, IngestRequest,
+};
+use crate::services::workspace_ingestion::registry::WorkspaceSourceRegistry;
+use crate::services::workspace_ingestion::runs::IngestionMode;
+use crate::services::workspace_ingestion::wiring;
 use crate::state::AppState;
 
 /// Debounce window for file system events
@@ -78,6 +89,7 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
 
         // Create _inbox/ if it doesn't exist
         if !inbox_dir.exists() {
+            // dos7-allowed: inbox-bootstrap - directory bootstrap, not file mutation; no lifecycle row created
             if let Err(e) = std::fs::create_dir_all(&inbox_dir) {
                 log::warn!("Watcher: failed to create _inbox/: {}", e);
                 return;
@@ -626,6 +638,67 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
 /// Handle detected changes to People/*/person.json files.
 ///
 /// Reads the changed JSON files, syncs to SQLite, regenerates person.md.
+fn canonical_workspace_root(workspace: &Path) -> PathBuf {
+    workspace
+        .canonicalize()
+        .unwrap_or_else(|_| workspace.to_path_buf())
+}
+
+fn entity_ref(
+    entity_type: EntityType,
+    entity_id: String,
+    entity_name: Option<String>,
+) -> EntityRef {
+    EntityRef {
+        entity_type,
+        entity_id: EntityId::new(entity_id),
+        entity_name,
+    }
+}
+
+fn ingest_after_upsert(
+    pipeline: &IngestPipeline,
+    conn: &Connection,
+    workspace_root: &Path,
+    path: &Path,
+    source_type: WorkspaceFileKind,
+    entity: Option<EntityRef>,
+) -> Result<(), IngestError> {
+    let (file, identity) = WorkspaceSourceRegistry::open_validated(workspace_root, path)
+        .map_err(IngestError::Rejected)?;
+
+    let source_asof: DateTime<Utc> = identity
+        .canonical_path
+        .metadata()
+        .and_then(|metadata| metadata.modified())
+        .map_err(IngestError::Io)?
+        .into();
+
+    let file_id = file_id_from_identity(&identity, workspace_root)
+        .map_err(|_| IngestError::Rejected(RejectionReason::OutsideWorkspace))?;
+
+    let request = IngestRequest {
+        file,
+        identity,
+        file_id,
+        source_asof,
+        source_type,
+        entity,
+        mode: IngestionMode::Realtime,
+        category_hint: None,
+    };
+
+    pipeline.run(conn, request).map(|_| ())
+}
+
+fn log_ingest_failure(path: &Path, err: IngestError) {
+    log::warn!(
+        "Watcher: workspace-file ingestion failed after upsert for {}: {}",
+        path.display(),
+        err
+    );
+}
+
 fn handle_people_changes(paths: &[PathBuf], state: &AppState, workspace: &Path) {
     // Skip in dev DB mode
     if crate::db::is_dev_db_mode() {
@@ -640,6 +713,9 @@ fn handle_people_changes(paths: &[PathBuf], state: &AppState, workspace: &Path) 
         Some(db) => db,
         None => return,
     };
+    let workspace_root = canonical_workspace_root(workspace);
+    let pipeline = wiring::build_pipeline(workspace_root.to_path_buf());
+    let conn = db.conn_ref();
 
     let user_domains = {
         let g = state.config.read();
@@ -671,7 +747,22 @@ fn handle_people_changes(paths: &[PathBuf], state: &AppState, workspace: &Path) 
                             clippy::let_underscore_must_use,
                             reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                         )]
+                        // dos7-allowed: entity-markdown-regen - entity DB state -> local markdown summary; not workspace-file ingestion
                         let _ = people::write_person_markdown(workspace, &person, &db);
+                        if let Err(err) = ingest_after_upsert(
+                            &pipeline,
+                            conn,
+                            &workspace_root,
+                            path,
+                            WorkspaceFileKind::EntityDoc,
+                            Some(entity_ref(
+                                EntityType::Person,
+                                person.id.clone(),
+                                Some(person.name.clone()),
+                            )),
+                        ) {
+                            log_ingest_failure(path, err);
+                        }
                         log::info!("Watcher: synced external edit to {}", path.display());
                     }
                     Err(e) => {
@@ -705,6 +796,9 @@ fn handle_account_changes(paths: &[PathBuf], _state: &AppState, workspace: &Path
         Some(db) => db,
         None => return,
     };
+    let workspace_root = canonical_workspace_root(workspace);
+    let pipeline = wiring::build_pipeline(workspace_root.to_path_buf());
+    let conn = db.conn_ref();
 
     for path in paths {
         if !path.exists() {
@@ -724,7 +818,22 @@ fn handle_account_changes(paths: &[PathBuf], _state: &AppState, workspace: &Path
                         clippy::let_underscore_must_use,
                         reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                     )]
+                    // dos7-allowed: entity-markdown-regen - entity DB state -> local markdown summary; not workspace-file ingestion
                     let _ = accounts::write_account_markdown(workspace, &account, Some(&json), &db);
+                    if let Err(err) = ingest_after_upsert(
+                        &pipeline,
+                        conn,
+                        &workspace_root,
+                        path,
+                        WorkspaceFileKind::EntityDoc,
+                        Some(entity_ref(
+                            EntityType::Account,
+                            account.id.clone(),
+                            Some(account.name.clone()),
+                        )),
+                    ) {
+                        log_ingest_failure(path, err);
+                    }
                     log::info!("Watcher: synced external edit to {}", path.display());
                 }
             }
@@ -752,6 +861,9 @@ fn handle_project_changes(paths: &[PathBuf], _state: &AppState, workspace: &Path
         Some(db) => db,
         None => return,
     };
+    let workspace_root = canonical_workspace_root(workspace);
+    let pipeline = wiring::build_pipeline(workspace_root.to_path_buf());
+    let conn = db.conn_ref();
 
     for path in paths {
         if !path.exists() {
@@ -765,7 +877,22 @@ fn handle_project_changes(paths: &[PathBuf], _state: &AppState, workspace: &Path
                         clippy::let_underscore_must_use,
                         reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                     )]
+                    // dos7-allowed: entity-markdown-regen - entity DB state -> local markdown summary; not workspace-file ingestion
                     let _ = projects::write_project_markdown(workspace, &project, Some(&json), &db);
+                    if let Err(err) = ingest_after_upsert(
+                        &pipeline,
+                        conn,
+                        &workspace_root,
+                        path,
+                        WorkspaceFileKind::EntityDoc,
+                        Some(entity_ref(
+                            EntityType::Project,
+                            project.id.clone(),
+                            Some(project.name.clone()),
+                        )),
+                    ) {
+                        log_ingest_failure(path, err);
+                    }
                     log::info!("Watcher: synced external edit to {}", path.display());
                 }
             }
@@ -793,6 +920,9 @@ fn handle_account_content_changes(
     // Own DB connection to avoid holding state.db Mutex during content indexing
     let db =
         crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())).ok()?;
+    let workspace_root = canonical_workspace_root(workspace);
+    let pipeline = wiring::build_pipeline(workspace_root.to_path_buf());
+    let conn = db.conn_ref();
 
     let accounts_dir = workspace.join("Accounts");
     let mut affected_entity_ids = std::collections::HashSet::new();
@@ -811,6 +941,7 @@ fn handle_account_content_changes(
     let mut total_changes = 0;
     for entity_id in &affected_entity_ids {
         if let Ok(Some(account)) = db.get_account(entity_id) {
+            // dos7-allowed: content-index-cache - cache update/enrichment surface; not workspace-file ingestion
             match accounts::sync_content_index_for_account(workspace, &db, &account) {
                 Ok((added, updated, removed)) => {
                     total_changes += added + updated + removed;
@@ -828,6 +959,31 @@ fn handle_account_content_changes(
                         entity_id,
                         e
                     );
+                }
+            }
+            for path in paths.iter().filter(|path| {
+                path.exists()
+                    && path.is_file()
+                    && path
+                        .strip_prefix(&accounts_dir)
+                        .ok()
+                        .and_then(|relative| relative.iter().next())
+                        .map(|name| crate::util::slugify(&name.to_string_lossy()) == account.id)
+                        .unwrap_or(false)
+            }) {
+                if let Err(err) = ingest_after_upsert(
+                    &pipeline,
+                    conn,
+                    &workspace_root,
+                    path,
+                    WorkspaceFileKind::EntityDoc,
+                    Some(entity_ref(
+                        EntityType::Account,
+                        account.id.clone(),
+                        Some(account.name.clone()),
+                    )),
+                ) {
+                    log_ingest_failure(path, err);
                 }
             }
         }
@@ -860,6 +1016,9 @@ fn handle_project_content_changes(
     // Own DB connection to avoid holding state.db Mutex during content indexing
     let db =
         crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())).ok()?;
+    let workspace_root = canonical_workspace_root(workspace);
+    let pipeline = wiring::build_pipeline(workspace_root.to_path_buf());
+    let conn = db.conn_ref();
 
     let projects_dir = workspace.join("Projects");
     let mut affected_entity_ids = std::collections::HashSet::new();
@@ -878,6 +1037,7 @@ fn handle_project_content_changes(
     let mut total_changes = 0;
     for entity_id in &affected_entity_ids {
         if let Ok(Some(project)) = db.get_project(entity_id) {
+            // dos7-allowed: content-index-cache - cache update/enrichment surface; not workspace-file ingestion
             match projects::sync_content_index_for_project(workspace, &db, &project) {
                 Ok((added, updated, removed)) => {
                     total_changes += added + updated + removed;
@@ -895,6 +1055,31 @@ fn handle_project_content_changes(
                         entity_id,
                         e
                     );
+                }
+            }
+            for path in paths.iter().filter(|path| {
+                path.exists()
+                    && path.is_file()
+                    && path
+                        .strip_prefix(&projects_dir)
+                        .ok()
+                        .and_then(|relative| relative.iter().next())
+                        .map(|name| crate::util::slugify(&name.to_string_lossy()) == project.id)
+                        .unwrap_or(false)
+            }) {
+                if let Err(err) = ingest_after_upsert(
+                    &pipeline,
+                    conn,
+                    &workspace_root,
+                    path,
+                    WorkspaceFileKind::EntityDoc,
+                    Some(entity_ref(
+                        EntityType::Project,
+                        project.id.clone(),
+                        Some(project.name.clone()),
+                    )),
+                ) {
+                    log_ingest_failure(path, err);
                 }
             }
         }
@@ -926,15 +1111,24 @@ fn handle_user_attachment_changes(paths: &[PathBuf], state: &AppState, workspace
         Some(db) => db,
         None => return,
     };
+    let workspace_root = canonical_workspace_root(workspace);
+    let pipeline = wiring::build_pipeline(workspace_root.to_path_buf());
+    let conn = db.conn_ref();
 
     for path in paths {
         if !path.exists() || !path.is_file() {
             continue;
         }
 
-        let result = crate::processor::process_user_attachment(workspace, path, Some(&db));
-        match &result {
-            crate::processor::ProcessingResult::Routed { .. } => {
+        match ingest_after_upsert(
+            &pipeline,
+            conn,
+            &workspace_root,
+            path,
+            WorkspaceFileKind::UserAttachment,
+            None,
+        ) {
+            Ok(()) => {
                 log::info!("Watcher: processed user attachment {}", path.display());
                 // Queue embedding generation
                 state
@@ -946,11 +1140,11 @@ fn handle_user_attachment_changes(paths: &[PathBuf], state: &AppState, workspace
                     });
                 state.integrations.embedding_queue_wake.notify_one();
             }
-            crate::processor::ProcessingResult::Error { message } => {
+            Err(err) => {
                 log::warn!(
                     "Watcher: failed to process user attachment {}: {}. Enqueuing for retry via embedding queue.",
                     path.display(),
-                    message
+                    err
                 );
                 // Acceptance criterion: Enqueue for retry — the next hygiene/embedding cycle will
                 // re-attempt processing when the embedding worker picks up this request.
@@ -963,7 +1157,6 @@ fn handle_user_attachment_changes(paths: &[PathBuf], state: &AppState, workspace
                     });
                 state.integrations.embedding_queue_wake.notify_one();
             }
-            _ => {}
         }
     }
 }
