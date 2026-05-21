@@ -1,6 +1,6 @@
 # L0 Packet C1 — ADR + Wave-Plan Topology Retrofits
 
-**Status:** L0 DRAFT — not yet panel-reviewed
+**Status:** SUPERSEDED 2026-05-21 — L0 panel surfaced 14 findings; ADR amendments + wave retrofits are premature. Deferred until after the minimal trim PR ships and the actual shape is known. PR 347 (MCP v2 substrate) is queueing ADR-0102 cycle-7/8/9 amendments to dev — let those land first so we know what we'd be amending against.
 **Scope:** ADR amendments + wave-plan §1 topology classifier sweep + memory promotion
 **Author:** James + Claude Opus 4.7
 **Drafted:** 2026-05-21

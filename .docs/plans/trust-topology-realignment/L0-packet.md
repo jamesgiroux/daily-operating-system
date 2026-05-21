@@ -1,6 +1,6 @@
 # L0 Packet — Trust Topology Realignment
 
-**Status:** L0 DRAFT — not yet panel-reviewed
+**Status:** SUPERSEDED 2026-05-21 — L0 panel surfaced 50+ findings across the C0/B/C1 split; root cause was scope-too-wide (per memory `feedback_review_loop_diminishing_returns_means_scope_is_wrong`). Phase A already shipped at `df19db78` (the L4 W2-C unblock). Remaining work is one tiny PR: auto-derive `DEFAULT_GRANTED_SCOPES` from registry at pair time + add topology-scoping §0 to 5 reviewer prompts. PR 348 already shipped the doctrine in `engineering-ladder.md`. ADR amendments deferred until after the trim ships and the actual shape is known. This packet kept for retro K-out reference only.
 **Scope:** Codebase + plan-document sweep
 **Author:** James + Claude Opus 4.7
 **Drafted:** 2026-05-21

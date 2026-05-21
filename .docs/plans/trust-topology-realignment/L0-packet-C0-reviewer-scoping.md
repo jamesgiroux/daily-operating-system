@@ -1,6 +1,6 @@
 # L0 Packet C0 — Reviewer + Template Topology Scoping
 
-**Status:** L0 DRAFT — not yet panel-reviewed
+**Status:** SUPERSEDED 2026-05-21 — L0 panel ran; scope-too-wide diagnosis. Replaced by minimal-scope PR: just add a topology-scoping §0 paragraph to 5 reviewer prompts citing engineering-ladder.md. No new template, no CLAUDE.md/AUTHORING.md stubs, no enforcement gate. Template + CLAUDE.md updates deferred — they're not load-bearing for the L4 unblock or for downstream substrate trim.
 **Scope:** Reviewer-prompt updates + L0 packet template + AUTHORING.md / CLAUDE.md stubs
 **Author:** James + Claude Opus 4.7
 **Drafted:** 2026-05-21

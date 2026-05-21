@@ -1,6 +1,6 @@
 # L0 Packet B — Substrate Trim (Topology-Aware Gate Bypass)
 
-**Status:** L0 DRAFT — not yet panel-reviewed
+**Status:** SUPERSEDED 2026-05-21 — L0 panel surfaced 26 findings; convergent root cause: `ValidatedSurfaceSession.topology` + category-keyed bypass + Default impl was over-engineered for the actual L4 unblock (Phase A already solved it). Replaced by minimal change: auto-derive `DEFAULT_GRANTED_SCOPES` from registry at pair time (preserves `submit.feedback` as explicit grant). No new enum, no `Actor` change, no bypass branch in `authorize_for_path`. Topology stays as documentation (engineering-ladder.md §Threat-topology framing, PR 348) — not a runtime data type yet.
 **Scope:** Rust substrate — `ValidatedSurfaceSession.topology` field + category-keyed bypass logic in `authorize_for_path` + refresh-endpoint rhetoric fix
 **Author:** James + Claude Opus 4.7
 **Drafted:** 2026-05-21
