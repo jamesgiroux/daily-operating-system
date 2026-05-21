@@ -50,6 +50,6 @@
 
 /* DOS-692 a11y: keyboard-focus state for the (newly focusable) trust-band-badge. */
 .dailyos-trust-band-badge:focus-visible {
-	outline: 2px solid var(--wp--preset--color--focus-ring, currentColor);
+	outline: 2px solid var(--wp--preset--color--action, currentColor);
 	outline-offset: 2px;
 }

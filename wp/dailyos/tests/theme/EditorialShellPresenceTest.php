@@ -82,7 +82,7 @@ final class DailyOS_EditorialShellPresenceTest extends TestCase {
 
 	/**
 	 * Front-page composes the folio bar, atmosphere body, magazine page,
-	 * and end-mark via header part + account-overview-page pattern.
+	 * and end-mark via header part + atmosphere body container.
 	 *
 	 * @return void
 	 */

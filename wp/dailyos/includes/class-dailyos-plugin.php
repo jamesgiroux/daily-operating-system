@@ -347,6 +347,24 @@ final class DailyOS_Plugin {
 			]
 		);
 
+		register_post_type(
+			'dailyos_briefing',
+			[
+				'labels'        => [
+					'name'          => __( 'Briefings', 'dailyos' ),
+					'singular_name' => __( 'Briefing', 'dailyos' ),
+				],
+				'public'        => true,
+				'has_archive'   => true,
+				'rewrite'       => [ 'slug' => 'briefings' ],
+				'show_in_rest'  => true,
+				'rest_base'     => 'briefings',
+				'supports'      => [ 'title', 'editor', 'custom-fields' ],
+				'template_lock' => false,
+				'menu_icon'     => 'dashicons-clipboard',
+			]
+		);
+
 		// Register the shared dailyos_entity_id post-meta key on every entity
 		// CPT (including the existing dailyos_account). Outer-block renderers
 		// fall back to this meta value (then the post slug) when the block
@@ -354,7 +372,7 @@ final class DailyOS_Plugin {
 		// dailyos_<entity> post; the W2 surface renders against the runtime".
 		if ( function_exists( 'register_post_meta' ) ) {
 			foreach (
-				[ 'dailyos_account', 'dailyos_project', 'dailyos_person', 'dailyos_meeting' ]
+				[ 'dailyos_account', 'dailyos_project', 'dailyos_person', 'dailyos_meeting', 'dailyos_briefing' ]
 				as $cpt
 			) {
 				register_post_meta(
@@ -770,161 +788,19 @@ final class DailyOS_Plugin {
 			]
 		);
 
-		register_rest_route(
-			'dailyos/v1',
-			'/account-overview/preview',
-			[
-				'methods'             => 'POST',
-				'callback'            => [ $this, 'account_overview_preview' ],
-				'permission_callback' => [ $this, 'can_edit_posts_rest' ],
-			]
-		);
-
-		register_rest_route(
-			'dailyos/v1',
-			'/account-overview/accounts',
-			[
-				'methods'             => 'GET',
-				'callback'            => [ $this, 'account_overview_accounts' ],
-				'permission_callback' => [ $this, 'can_edit_posts_rest' ],
-			]
-		);
-	}
-
-	/**
-	 * Permission callback for editor-only REST routes.
-	 *
-	 * @return bool|\WP_Error
-	 */
-	public function can_edit_posts_rest(): bool|\WP_Error {
-		if ( function_exists( 'is_user_logged_in' ) && ! is_user_logged_in() ) {
-			return new \WP_Error( 'dailyos_unauthenticated', __( 'Sign in to use this endpoint.', 'dailyos' ), [ 'status' => 401 ] );
-		}
-		if ( function_exists( 'current_user_can' ) && ! current_user_can( 'edit_posts' ) ) {
-			return new \WP_Error( 'dailyos_forbidden', __( 'You cannot use this endpoint.', 'dailyos' ), [ 'status' => 403 ] );
-		}
-		if ( ! ( new DailyOS_Credential_Store() )->is_paired() ) {
-			return new \WP_Error( 'dailyos_not_paired', __( 'DailyOS is not paired with a runtime.', 'dailyos' ), [ 'status' => 403 ] );
-		}
-		return true;
-	}
-
-	/**
-	 * Editor preview: server-side projection fetch via the runtime client.
-	 *
-	 * @param mixed $request REST request.
-	 * @return array<string, mixed>|\WP_Error
-	 */
-	public function account_overview_preview( mixed $request ): array|\WP_Error {
-		$params              = self::request_params( $request );
-		$composition_id      = isset( $params['composition_id'] ) ? (string) $params['composition_id'] : '';
-		$composition_version = isset( $params['composition_version'] ) ? (int) $params['composition_version'] : 0;
-		$cache_hint_token    = isset( $params['cache_hint_token'] ) && '' !== $params['cache_hint_token']
-			? (string) $params['cache_hint_token']
-			: null;
-
-		if ( '' === $composition_id ) {
-			return new \WP_Error( 'dailyos_preview_invalid', __( 'composition_id is required.', 'dailyos' ), [ 'status' => 400 ] );
-		}
-
-		$client = $this->build_runtime_client_for_block();
-		if ( $client instanceof \WP_Error ) {
-			return $client;
-		}
-
-		$response = $client->project_composition_for_surface(
-			$composition_id,
-			$composition_version,
-			$cache_hint_token
-		);
-
-		if ( ! function_exists( 'dailyos_account_overview_render_from_projection' ) ) {
-			require_once DAILYOS_PLUGIN_DIR . 'blocks/account-overview/render-functions.php';
-		}
-
-		$attributes = [
-			'composition_id'      => $composition_id,
-			'composition_version' => is_array( $response ) && isset( $response['projection']['composition_version'] )
-				? (int) $response['projection']['composition_version']
-				: $composition_version,
-			'watermarks'          => is_array( $response ) && isset( $response['projection']['watermarks'] )
-				? (array) $response['projection']['watermarks']
-				: [],
-			'cache_hint_token'    => is_array( $response ) && isset( $response['cache_hint_token'] )
-				? (string) $response['cache_hint_token']
-				: '',
-		];
-
-		$html = dailyos_account_overview_render_from_projection( $response, $attributes );
-		if ( is_wp_error( $response ) ) {
-			return [
-				'ok'         => false,
-				'error'      => [
-					'code'    => $response->get_error_code(),
-					'message' => $response->get_error_message(),
-				],
-				'html'       => $html,
-				'attributes' => $attributes,
-			];
-		}
-
-		return array_merge(
-			$response,
-			[
-				'html'       => $html,
-				'attributes' => $attributes,
-			]
-		);
-	}
-
-	/**
-	 * Account list for the editor combobox. Returns id+name pairs from
-	 * the runtime's account index without surfacing PII beyond what the
-	 * runtime already exposes to a logged-in editor.
-	 *
-	 * @param mixed $request REST request (signature required by register_rest_route
-	 *     callback contract; this stub-mode endpoint returns the same empty list
-	 *     regardless of request payload — kept for the future search wiring).
-	 * @return array<int, array<string, string>>|\WP_Error
-	 */
-	public function account_overview_accounts( mixed $request ): array|\WP_Error {
-		unset( $request ); // Intentionally unused — stub returns empty list until account search ships.
-		$client = $this->build_runtime_client_for_block();
-		if ( $client instanceof \WP_Error ) {
-			return $client;
-		}
-		// v1.4.2 doesn't ship a substrate-side account search endpoint;
-		// return an empty list so the combobox renders without crashing.
-		// Account discovery follows in the next iteration.
-		return [];
-	}
-
-	/**
-	 * Builds a runtime client for block rendering requests.
-	 *
-	 * @return \DailyOS\Transport\DailyOS_Runtime_Client|\WP_Error Runtime client or pairing error.
-	 */
-	private function build_runtime_client_for_block(): \DailyOS\Transport\DailyOS_Runtime_Client|\WP_Error {
-		$store = new DailyOS_Credential_Store();
-		if ( ! $store->is_paired() ) {
-			return new \WP_Error( 'dailyos_not_paired', __( 'DailyOS is not paired.', 'dailyos' ), [ 'status' => 403 ] );
-		}
-		$signer = new \DailyOS\Transport\DailyOS_Hmac_Signer( $store );
-		return new \DailyOS\Transport\DailyOS_Runtime_Client( $store, $signer );
 	}
 
 	/**
 	 * Default provider for the dailyos_runtime_client_for_block filter.
 	 *
-	 * Registered at priority 5 in init() so the WP block-registration render
-	 * path (render.php → dailyos_account_overview_render → apply_filters) always
-	 * resolves to a real transport client when paired. Without this default,
-	 * apply_filters returns null and every block short-circuits to is-empty
-	 * regardless of runtime state.
+	 * Registered at priority 5 in init() so every block's render path
+	 * (render.php → render-functions.php → apply_filters) resolves to a real
+	 * transport client when paired. Without this default, apply_filters returns
+	 * null and every block short-circuits to is-empty regardless of runtime state.
 	 *
-	 * Per-render overrides at priority 10 (render_block_with_filter for REST
-	 * preview, test fixtures) run after this and win — preserving the existing
-	 * test seam and editor-preview path.
+	 * Per-render overrides at priority 10 (test fixtures and REST callers that
+	 * scope a client to a single render) run after this and win — preserving
+	 * the existing test seam.
 	 *
 	 * When unpaired, returns the existing filter value (null by default) so the
 	 * renderer short-circuits to its is-empty fallback. When paired but transport
@@ -943,43 +819,6 @@ final class DailyOS_Plugin {
 			return $existing;
 		}
 		return new DailyOS_Runtime_Client( $store, new DailyOS_Hmac_Signer( $store ) );
-	}
-
-	/**
-	 * Extracts parameters from a REST request-like value.
-	 *
-	 * @param mixed $request REST request or parameter array.
-	 * @return array Request parameters.
-	 */
-	private static function request_params( mixed $request ): array {
-		if ( is_array( $request ) ) {
-			return $request;
-		}
-		if ( is_object( $request ) && method_exists( $request, 'get_params' ) ) {
-			$params = $request->get_params();
-			return is_array( $params ) ? $params : [];
-		}
-		return [];
-	}
-
-	/**
-	 * Renders the account overview block with a scoped runtime client filter.
-	 *
-	 * @param array                                     $attributes Block attributes.
-	 * @param \DailyOS\Transport\DailyOS_Runtime_Client $client     Runtime client.
-	 * @return string Rendered block HTML.
-	 */
-	private static function render_block_with_filter( array $attributes, \DailyOS\Transport\DailyOS_Runtime_Client $client ): string {
-		if ( ! function_exists( 'dailyos_account_overview_render' ) ) {
-			require_once DAILYOS_PLUGIN_DIR . 'blocks/account-overview/render-functions.php';
-		}
-		$filter_cb = static function () use ( $client ) {
-			return $client;
-		};
-		add_filter( 'dailyos_runtime_client_for_block', $filter_cb, 10, 0 );
-		$html = dailyos_account_overview_render( $attributes );
-		remove_filter( 'dailyos_runtime_client_for_block', $filter_cb, 10 );
-		return $html;
 	}
 
 	/**

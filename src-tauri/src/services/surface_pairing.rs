@@ -30,7 +30,23 @@ pub const SESSION_ABSOLUTE_TTL_SECONDS: i64 = 365 * 24 * 60 * 60;
 // timestamp; only absolute_expires_at is consulted by validate_signed_session_readonly").
 pub const SESSION_INACTIVE_TTL_SECONDS: i64 = SESSION_ABSOLUTE_TTL_SECONDS;
 pub const SESSION_SUSPICIOUS_THROTTLE_SECONDS: i64 = 60;
-const DEFAULT_GRANTED_SCOPES: &[&str] = &["read.account_overview", "submit.feedback"];
+// Default scope set for a freshly paired SurfaceClient (e.g. WP loopback).
+// v1.4.4 W2 surfaces read through these scopes; ADR-0129 frames the WP
+// surface as the user's own loopback, not a third-party MCP client, so the
+// default grant covers the read-only ability set the W2/W3 entity-detail
+// pages need to render. Write/feedback scopes remain as explicit grants.
+const DEFAULT_GRANTED_SCOPES: &[&str] = &[
+    "read.account_overview",
+    "read.entity_intelligence",
+    "read.accounts_list",
+    "read.people_list",
+    "read.projects_list",
+    "read.open_loops",
+    "read.daily_briefing",
+    "read.daily_readiness",
+    "read.claim_receipt",
+    "submit.feedback",
+];
 const HMAC_SESSION_KEY_INFO: &[u8] = b"dailyos-wp-bridge-v1";
 const HMAC_SESSION_KEY_BYTES: usize = 32;
 

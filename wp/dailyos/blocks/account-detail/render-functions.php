@@ -74,7 +74,7 @@ if ( ! function_exists( 'dailyos_account_detail_render' ) ) {
 		}
 
 		$runtime_client = apply_filters( 'dailyos_runtime_client_for_block', null );
-		if ( ! is_object( $runtime_client ) || ! method_exists( $runtime_client, 'invoke_ability' ) ) {
+		if ( ! is_object( $runtime_client ) || ! is_callable( [ $runtime_client, 'invoke_ability' ] ) ) {
 			return dailyos_empty_chip(
 				'runtime_unavailable',
 				__( 'Runtime unavailable.', 'dailyos' ),

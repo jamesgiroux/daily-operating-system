@@ -50,7 +50,7 @@
 }
 
 .dailyos-provenance-tag--envelope-wired:focus-visible {
-	outline: 2px solid var(--wp--preset--color--focus-ring, currentColor);
+	outline: 2px solid var(--wp--preset--color--action, currentColor);
 	outline-offset: 2px;
 }
 
@@ -60,8 +60,8 @@
 	left: 0;
 	z-index: 5;
 	padding: 4px 8px;
-	background: var(--wp--preset--color--surface-emphasis, #222);
-	color: var(--wp--preset--color--text-on-emphasis, #fff);
+	background: var(--wp--preset--color--desk-charcoal);
+	color: var(--wp--preset--color--paper-warm-white);
 	font-size: 11px;
 	white-space: nowrap;
 	border-radius: 3px;

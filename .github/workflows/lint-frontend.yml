@@ -97,9 +97,6 @@ jobs:
       - name: Enforce stakeholder graph writer signal helper
         run: ./scripts/check_stakeholder_writer_emits_signal.sh
 
-      - name: Enforce W4-A account-overview block boundaries
-        run: ./scripts/check_w4a_account_overview_block.sh
-
       - name: Enforce W4-F feedback wire-through invariants
         run: ./scripts/check_w4f_feedback_wire_through.sh
 
