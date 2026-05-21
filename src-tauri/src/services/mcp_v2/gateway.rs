@@ -82,9 +82,14 @@ pub trait SignalEmitter: Send + Sync {
     /// operator dashboards can separate auth rejections from handler
     /// soft-warnings (closes L2 cycle-2 convergent 3/4 MED on
     /// warning-as-rejection pollution).
+    ///
+    /// Carries `conversation_handle` for per-call triage correlation with
+    /// the success audit row (closes L2 cycle-3 devex MED on warning
+    /// correlation).
     fn emit_warning(
         &self,
         client_id: &McpClientId,
+        conversation_handle: &OpaqueConversationHandle,
         tool_name: &ScopedName,
         warning_reason: &str,
     );
@@ -127,12 +132,14 @@ impl SignalEmitter for StderrSignalEmitter {
     fn emit_warning(
         &self,
         client_id: &McpClientId,
+        conversation_handle: &OpaqueConversationHandle,
         tool_name: &ScopedName,
         warning_reason: &str,
     ) {
         eprintln!(
-            "mcp.signal.warning client_id={} tool_name={} warning_reason={warning_reason}",
+            "mcp.signal.warning client_id={} conversation_handle={} tool_name={} warning_reason={warning_reason}",
             client_id.as_str(),
+            conversation_handle.as_str(),
             tool_name.as_str()
         );
     }
@@ -428,6 +435,7 @@ impl Gateway {
                         // cycle-2 convergent 3/4 MED on warning-as-rejection.
                         self.emitter.emit_warning(
                             asserted_client_id,
+                            &conversation_handle,
                             &envelope.tool_name,
                             "mcp_write_handler_missing_cursor",
                         );
@@ -440,6 +448,7 @@ impl Gateway {
                             // Suite-S warning, not just silently truncate.
                             self.emitter.emit_warning(
                                 asserted_client_id,
+                                &conversation_handle,
                                 &envelope.tool_name,
                                 "mcp_write_handler_cursor_truncated",
                             );
@@ -699,14 +708,24 @@ fn reserve_rate_limit(
         return Err(RATE_LIMIT_RETRY_DEFAULT_SECONDS);
     }
 
-    let count: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM mcp_tool_call_ledger \
-             WHERE client_id = ?1 AND tool_name = ?2",
-            params![client_id.as_str(), tool_name.as_str()],
-            |row| row.get(0),
-        )
-        .unwrap_or(0);
+    // L2 cycle-3 codex review + code-reviewer convergent MED AC-5: a
+    // SELECT failure must NOT fail-open by being treated as 0. ROLLBACK
+    // + reject so the call is gated correctly.
+    let count: i64 = match conn.query_row(
+        "SELECT COUNT(*) FROM mcp_tool_call_ledger \
+         WHERE client_id = ?1 AND tool_name = ?2",
+        params![client_id.as_str(), tool_name.as_str()],
+        |row| row.get(0),
+    ) {
+        Ok(value) => value,
+        Err(err) => {
+            eprintln!("mcp_v2 rate-limit SELECT COUNT failed: {err}");
+            if let Err(rollback_err) = conn.execute_batch("ROLLBACK") {
+                eprintln!("mcp_v2 rate-limit ROLLBACK after SELECT err: {rollback_err}");
+            }
+            return Err(RATE_LIMIT_RETRY_DEFAULT_SECONDS);
+        }
+    };
     if count as u32 >= grant.rate_limit.max_calls {
         if let Err(rollback_err) = conn.execute_batch("ROLLBACK") {
             eprintln!("mcp_v2 rate-limit ROLLBACK failed: {rollback_err}");

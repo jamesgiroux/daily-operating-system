@@ -400,7 +400,11 @@ fn persist_transport_key(
     key_ref: &KeychainRef,
     key: &[u8; TRANSPORT_KEY_LEN],
 ) -> Result<(), AuthError> {
-    let key_hex = hex::encode(key);
+    // L2 cycle-3 codex review HIGH AC-11: transport key intermediates must
+    // not linger in non-Zeroizing buffers. Wrap the hex String in
+    // `Zeroizing` so its backing allocation is wiped when this function
+    // returns, regardless of success/error path.
+    let key_hex: Zeroizing<String> = Zeroizing::new(hex::encode(key));
     let output = Command::new("security")
         .args([
             "add-generic-password",
@@ -424,6 +428,10 @@ fn persist_transport_key(
 }
 
 fn load_transport_key(key_ref: &KeychainRef) -> Result<[u8; TRANSPORT_KEY_LEN], AuthError> {
+    // L2 cycle-3 codex review HIGH AC-11: wrap every intermediate that
+    // briefly holds key material in `Zeroizing` so backing allocations are
+    // wiped on drop. The returned `[u8; 32]` is caller-managed and is
+    // expected to be wrapped in `Zeroizing` at the call site (gateway).
     let output = Command::new("security")
         .args([
             "find-generic-password",
@@ -441,10 +449,15 @@ fn load_transport_key(key_ref: &KeychainRef) -> Result<[u8; TRANSPORT_KEY_LEN], 
             String::from_utf8_lossy(&output.stderr).trim()
         )));
     }
-    let hex_key = String::from_utf8(output.stdout)
-        .map_err(|error| AuthError::Keychain(format!("non-UTF-8 key: {error}")))?;
-    let bytes = hex::decode(hex_key.trim())
-        .map_err(|error| AuthError::Keychain(format!("invalid hex key: {error}")))?;
+    let stdout: Zeroizing<Vec<u8>> = Zeroizing::new(output.stdout);
+    let hex_key: Zeroizing<String> = Zeroizing::new(
+        String::from_utf8(stdout.to_vec())
+            .map_err(|error| AuthError::Keychain(format!("non-UTF-8 key: {error}")))?,
+    );
+    let bytes: Zeroizing<Vec<u8>> = Zeroizing::new(
+        hex::decode(hex_key.trim())
+            .map_err(|error| AuthError::Keychain(format!("invalid hex key: {error}")))?,
+    );
     if bytes.len() != TRANSPORT_KEY_LEN {
         return Err(AuthError::Keychain(format!(
             "transport key length mismatch: expected {TRANSPORT_KEY_LEN}, got {}",
