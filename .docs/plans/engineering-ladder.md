@@ -34,6 +34,8 @@ Used in chat: "L2 looks good." Used in docs/headings: "L2 (Diff) review verdict:
 
 **Bounding.** L2 reviews are bounded by acceptance criteria (memory `feedback_l2_must_review_against_acceptance_criteria`). Path-α findings (theoretical hardening beyond AC) → file in the maintenance project, not cycle-N+1.
 
+**Threat-topology framing (L0 reviewer scoping).** Every L0 packet declares its trust topology in §1 header: `local-to-local single-user | local-to-local multi-user | remote-to-local | remote-to-remote`. `/cso`, `security-auditor`, and codex challenge scope their threat model to that topology — they do **not** enforce multi-actor gates on single-actor surfaces. DailyOS's WP block → loopback Tauri runtime is local-to-local single-user; most multi-actor gates (confirmation tokens, principal differentiation, cross-actor poisoning, scope-gated redaction of data the user already has filesystem access to) collapse to non-issues. What still applies regardless of topology: compile bugs, crate-boundary rules, slug/path validation for data hygiene, indirect prompt injection from untrusted document content (ADR-0093), and sensitivity redaction in logs/screenshots (ADR-0108). Reviewers who flag multi-actor gates on a single-actor surface waste a cycle; reviewer prompts must cite the topology and constrain accordingly. See memory entry on local-to-local security overreach for the full pattern.
+
 ## The Knowledge Channel (K)
 
 `K` is a continuous feedback channel parallel to L0–L6, not a rung.
