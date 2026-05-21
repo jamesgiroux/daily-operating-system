@@ -74,6 +74,20 @@ pub trait SignalEmitter: Send + Sync {
         tool_name: Option<&ScopedName>,
         reject_reason: &str,
     );
+
+    /// Suite-S warning for successful invocations that violated a soft
+    /// contract (e.g. `mcp_write_handler_missing_cursor` per AC-6 cycle-6
+    /// devex MED, or `mcp_write_handler_cursor_truncated` per AC-6
+    /// cycle-2 devex MED). Distinct from [`Self::emit_rejected`] so
+    /// operator dashboards can separate auth rejections from handler
+    /// soft-warnings (closes L2 cycle-2 convergent 3/4 MED on
+    /// warning-as-rejection pollution).
+    fn emit_warning(
+        &self,
+        client_id: &McpClientId,
+        tool_name: &ScopedName,
+        warning_reason: &str,
+    );
 }
 
 /// Default emitter used when the gateway is constructed without an explicit
@@ -107,6 +121,19 @@ impl SignalEmitter for StderrSignalEmitter {
         let tool = tool_name.map(|t| t.as_str()).unwrap_or("unresolved");
         eprintln!(
             "mcp.signal.rejected client_id={client} tool_name={tool} reject_reason={reject_reason}"
+        );
+    }
+
+    fn emit_warning(
+        &self,
+        client_id: &McpClientId,
+        tool_name: &ScopedName,
+        warning_reason: &str,
+    ) {
+        eprintln!(
+            "mcp.signal.warning client_id={} tool_name={} warning_reason={warning_reason}",
+            client_id.as_str(),
+            tool_name.as_str()
         );
     }
 }
@@ -218,7 +245,7 @@ impl Gateway {
         // not yet verified, so AC-7 says we MUST NOT signal it.
         if let Err(err) = auth::verify_transport_hmac(conn, asserted_client_id, envelope, signature)
         {
-            return Err(auth_to_failure(err, envelope, /* gate0_attributed */ false, None));
+            return Err(auth_to_failure(err, envelope, None, None));
         }
 
         // Gate 0b: fail-closed consume + preissue per ADR-0102 §C.bis.refresh
@@ -230,7 +257,7 @@ impl Gateway {
             match auth::verify_and_consume_and_preissue(conn, asserted_client_id, &envelope.request_nonce) {
                 Ok(nonce) => nonce,
                 Err(err) => {
-                    return Err(auth_to_failure(err, envelope, /* gate0_attributed */ false, None))
+                    return Err(auth_to_failure(err, envelope, None, None))
                 }
             };
 
@@ -244,7 +271,7 @@ impl Gateway {
                 return Err(auth_to_failure(
                     err,
                     envelope,
-                    /* gate0_attributed */ true,
+                    Some(asserted_client_id),
                     preissued.clone(),
                 ))
             }
@@ -262,7 +289,7 @@ impl Gateway {
         let grant = match auth::resolve_tool_grant(conn, asserted_client_id, &envelope.tool_name) {
             Ok(g) => g,
             Err(err) => {
-                return Err(auth_to_failure(err, envelope, true, preissued.clone()))
+                return Err(auth_to_failure(err, envelope, Some(asserted_client_id), preissued.clone()))
             }
         };
         let Some(grant) = grant else {
@@ -357,7 +384,7 @@ impl Gateway {
         ) {
             Ok(h) => h,
             Err(err) => {
-                return Err(auth_to_failure(err, envelope, true, preissued.clone()))
+                return Err(auth_to_failure(err, envelope, Some(asserted_client_id), preissued.clone()))
             }
         };
 
@@ -395,13 +422,30 @@ impl Gateway {
                     let extracted = value.get("mutation_cursor").cloned();
                     if extracted.is_none() {
                         // SHOULD-with-warning per L0 cycle-6 devex MED.
-                        self.emitter.emit_rejected(
-                            Some(asserted_client_id),
-                            Some(&envelope.tool_name),
+                        // Use emit_warning (distinct from emit_rejected) so
+                        // operator dashboards don't conflate auth rejections
+                        // with successful-write soft warnings — closes L2
+                        // cycle-2 convergent 3/4 MED on warning-as-rejection.
+                        self.emitter.emit_warning(
+                            asserted_client_id,
+                            &envelope.tool_name,
                             "mcp_write_handler_missing_cursor",
                         );
                     }
-                    extracted.map(cap_mutation_cursor)
+                    extracted.map(|cursor| {
+                        let (capped, was_truncated) = cap_mutation_cursor(cursor);
+                        if was_truncated {
+                            // Per L2 cycle-2 devex MED: oversize truncation
+                            // promised in taxonomy.rs rustdoc must emit a
+                            // Suite-S warning, not just silently truncate.
+                            self.emitter.emit_warning(
+                                asserted_client_id,
+                                &envelope.tool_name,
+                                "mcp_write_handler_cursor_truncated",
+                            );
+                        }
+                        capped
+                    })
                 } else {
                     None
                 };
@@ -476,13 +520,21 @@ struct GatewayFailure {
     preissued_next_nonce: Option<OpaqueNonce>,
 }
 
-/// Project an `AuthError` to a gateway failure. `gate0_attributed = false`
-/// means we are still inside Gate 0a/0b — attribution MUST be `None` per
-/// AC-7 wording (asserted client_id is not yet verified).
+/// Project an `AuthError` to a gateway failure.
+///
+/// `attributed_client` is `Some(_)` when the asserted client_id has been
+/// verified (post-Gate 0a/0b admit — manifest gates onward) and `None` for
+/// Gate 0a/0b failures themselves. Per AC-7 wording, pre-verification
+/// attribution is `"unresolved"`; post-verification attribution carries the
+/// real `McpClientId` for forensic dashboards.
+///
+/// Closes L2 cycle-2 codex review HIGH + CSO HIGH: cycle-2 hardcoded `None`
+/// for both arms, dropping verified attribution on post-Gate errors
+/// (ConversationRevoked, etc.).
 fn auth_to_failure(
     err: AuthError,
     envelope: &McpToolRequestEnvelope,
-    gate0_attributed: bool,
+    attributed_client: Option<&McpClientId>,
     preissued: Option<OpaqueNonce>,
 ) -> Box<GatewayFailure> {
     let (tool_error, reason) = match err {
@@ -511,45 +563,54 @@ fn auth_to_failure(
         }
         AuthError::PreissueFailed(detail) => (
             ToolError::Internal {
-                trace_id: format!("preissue_failed:{detail}"),
+                trace_id: opaque_trace_id("preissue_failed", &detail),
             },
             "preissue_failed".to_string(),
         ),
         AuthError::Keychain(detail) => (
             ToolError::Internal {
-                trace_id: format!("auth_keychain:{detail}"),
+                trace_id: opaque_trace_id("auth_keychain", &detail),
             },
             "keychain_error".to_string(),
         ),
         AuthError::Sqlite(detail) => (
             ToolError::Internal {
-                trace_id: format!("auth_sqlite:{detail}"),
+                trace_id: opaque_trace_id("auth_sqlite", &detail.to_string()),
             },
             "sqlite_error".to_string(),
         ),
         AuthError::Encoding(detail) => (
             ToolError::Internal {
-                trace_id: format!("auth_encoding:{detail}"),
+                trace_id: opaque_trace_id("auth_encoding", &detail.to_string()),
             },
             "encoding_error".to_string(),
         ),
     };
-    let _ = gate0_attributed; // attribution policy currently identical for both arms; see comment.
     Box::new(GatewayFailure {
         error: tool_error,
         reject_reason: reason,
         tool_name_for_signal: Some(envelope.tool_name.clone()),
-        client_id_for_signal: None,
-        // ^ Per AC-7 wording: pre-verification → `unresolved`. After Gate 0b
-        //   admit the caller passes verified attribution at the call sites
-        //   in `dispatch` (manifest gates onward) by setting
-        //   `client_id_for_signal: Some(asserted_client_id.clone())`.
-        //   `auth_to_failure` itself is only used for the unverified paths
-        //   (Gate 0a HMAC, Gate 0b consume, and the post-admit auth helpers
-        //   that bubble up DB / encoding errors — those carry verified
-        //   attribution via the per-call-site explicit field).
+        client_id_for_signal: attributed_client.cloned(),
         preissued_next_nonce: preissued,
     })
+}
+
+/// Build an opaque `trace_id` for `ToolError::Internal` per L2 cycle-2 CSO
+/// NEW HIGH: never leak raw DB / keychain / encoding error strings on the
+/// wire. Format: `<category>-<sha256-hex-12>`. The detail is logged to
+/// stderr server-side so operators can grep by trace_id.
+fn opaque_trace_id(category: &str, detail: &str) -> String {
+    use ring::digest;
+    let digest = digest::digest(&digest::SHA256, detail.as_bytes());
+    let hex = digest
+        .as_ref()
+        .iter()
+        .take(6)
+        .map(|b| format!("{b:02x}"))
+        .collect::<String>();
+    let trace_id = format!("{category}-{hex}");
+    eprintln!("mcp_v2 internal: trace_id={trace_id} detail={detail}");
+    trace_id
 }
 
 fn scope_is_subset(required: &[Scope], granted: &[Scope]) -> bool {
@@ -584,13 +645,23 @@ fn build_audit_detail(
 /// Enforce AC-6 mutation_cursor caps: depth ≤ 4 + serialized ≤ 2 KiB. On
 /// violation, replace the cursor with the `"truncated_oversize"` sentinel
 /// string so audit detail stays bounded.
-fn cap_mutation_cursor(value: serde_json::Value) -> serde_json::Value {
+///
+/// Returns `(capped_value, was_truncated)` so the caller can emit a
+/// Suite-S warning per L2 cycle-2 devex MED — silent truncation breaks
+/// the taxonomy.rs rustdoc contract.
+fn cap_mutation_cursor(value: serde_json::Value) -> (serde_json::Value, bool) {
     if cursor_depth(&value) > MUTATION_CURSOR_MAX_DEPTH {
-        return serde_json::Value::String(MUTATION_CURSOR_TRUNCATION_SENTINEL.to_string());
+        return (
+            serde_json::Value::String(MUTATION_CURSOR_TRUNCATION_SENTINEL.to_string()),
+            true,
+        );
     }
     match serde_json::to_vec(&value) {
-        Ok(bytes) if bytes.len() <= MUTATION_CURSOR_MAX_BYTES => value,
-        _ => serde_json::Value::String(MUTATION_CURSOR_TRUNCATION_SENTINEL.to_string()),
+        Ok(bytes) if bytes.len() <= MUTATION_CURSOR_MAX_BYTES => (value, false),
+        _ => (
+            serde_json::Value::String(MUTATION_CURSOR_TRUNCATION_SENTINEL.to_string()),
+            true,
+        ),
     }
 }
 
@@ -655,8 +726,15 @@ fn reserve_rate_limit(
         return Err(RATE_LIMIT_RETRY_DEFAULT_SECONDS);
     }
 
-    conn.execute_batch("COMMIT")
-        .map_err(|_| RATE_LIMIT_RETRY_DEFAULT_SECONDS)?;
+    // L2 cycle-2 code-reviewer NEW: COMMIT failure must roll back the
+    // pending tx to avoid leaving a long-held writer lock open.
+    if let Err(commit_err) = conn.execute_batch("COMMIT") {
+        eprintln!("mcp_v2 rate-limit COMMIT failed; rolling back: {commit_err}");
+        if let Err(rollback_err) = conn.execute_batch("ROLLBACK") {
+            eprintln!("mcp_v2 rate-limit ROLLBACK after COMMIT failure: {rollback_err}");
+        }
+        return Err(RATE_LIMIT_RETRY_DEFAULT_SECONDS);
+    }
     Ok(())
 }
 
@@ -730,16 +808,18 @@ mod tests {
     #[test]
     fn cap_mutation_cursor_passes_small_payload() {
         let cursor = json!({ "claim_id": 42, "signal_id": "abc" });
-        let capped = cap_mutation_cursor(cursor.clone());
+        let (capped, was_truncated) = cap_mutation_cursor(cursor.clone());
         assert_eq!(capped, cursor);
+        assert!(!was_truncated);
     }
 
     #[test]
     fn cap_mutation_cursor_truncates_oversize_bytes() {
         let huge: Vec<i64> = (0..1000).collect();
         let cursor = json!({ "ids": huge });
-        let capped = cap_mutation_cursor(cursor);
+        let (capped, was_truncated) = cap_mutation_cursor(cursor);
         assert_eq!(capped, json!("truncated_oversize"));
+        assert!(was_truncated);
     }
 
     #[test]
@@ -749,7 +829,8 @@ mod tests {
         for _ in 0..6 {
             value = json!({ "a": value });
         }
-        let capped = cap_mutation_cursor(value);
+        let (capped, was_truncated) = cap_mutation_cursor(value);
         assert_eq!(capped, json!("truncated_oversize"));
+        assert!(was_truncated);
     }
 }
