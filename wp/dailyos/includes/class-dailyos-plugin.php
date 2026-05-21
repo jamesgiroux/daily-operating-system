@@ -70,6 +70,7 @@ final class DailyOS_Plugin {
 		add_action( 'wp_abilities_api_categories_init', [ $this, 'register_ability_categories' ], 10 );
 		add_action( 'wp_abilities_api_init', [ $this, 'register_abilities' ], 10 );
 		add_action( 'init', [ $this, 'register_blocks' ], 11 );
+		add_action( 'init', [ $this, 'register_block_patterns' ], 11 );
 		add_action( 'init', [ $this, 'register_post_types' ], 11 );
 		add_filter( 'block_categories_all', [ $this, 'register_block_category' ], 10, 1 );
 		add_action( 'init', [ $this, 'register_mcp_server_config' ], 12 );
@@ -155,15 +156,106 @@ final class DailyOS_Plugin {
 			return;
 		}
 
-		$block_files = glob( DAILYOS_PLUGIN_DIR . 'blocks/*/block.json' );
+		// Load shared block-side helpers (envelope resolver shim per
+		// L0-packet-W2 §5.1 envelopeHandle resolution contract) before any
+		// block registers — render-functions.php in W2 inner blocks calls
+		// dailyos_resolve_envelope() / dailyos_envelope_section() / etc.
+		$shared_envelope = DAILYOS_PLUGIN_DIR . 'blocks/_shared/envelope/envelope-resolver.php';
+		if ( file_exists( $shared_envelope ) ) {
+			require_once $shared_envelope;
+		}
 
+		// Depth-1 globs (existing v1.4.2 + W2 outer blocks).
+		$block_files = glob( DAILYOS_PLUGIN_DIR . 'blocks/*/block.json' );
 		if ( false === $block_files ) {
-			return;
+			$block_files = [];
+		}
+
+		// Depth-2 globs for W2 entity-detail composites: each outer block
+		// has a sibling inner/ directory containing one subdirectory per
+		// inner block (15 for project-detail per W2 V1.2.1 §5.2). Inner
+		// blocks register inserter-global per ADR-0129 §2 — no parent
+		// field in their block.json.
+		$inner_files = glob( DAILYOS_PLUGIN_DIR . 'blocks/*/inner/*/block.json' );
+		if ( is_array( $inner_files ) ) {
+			$block_files = array_merge( $block_files, $inner_files );
 		}
 
 		foreach ( $block_files as $block_file ) {
 			register_block_type_from_metadata( dirname( $block_file ) );
 		}
+	}
+
+	/**
+	 * Register filesystem block patterns shipped under wp/dailyos/patterns/
+	 * (W2 V1.2.1 §5.2 + wave §10 invariant "Filesystem pattern, not synced
+	 * pattern"; insert-then-detach semantics — user reordering does not
+	 * affect other instances).
+	 */
+	public function register_block_patterns(): void {
+		if ( ! function_exists( 'register_block_pattern_from_file' ) && ! function_exists( 'register_block_pattern' ) ) {
+			return;
+		}
+
+		$pattern_files = glob( DAILYOS_PLUGIN_DIR . 'patterns/*.php' );
+		if ( false === $pattern_files || empty( $pattern_files ) ) {
+			return;
+		}
+
+		foreach ( $pattern_files as $pattern_file ) {
+			$headers = function_exists( 'get_file_data' )
+				? get_file_data(
+					$pattern_file,
+					[
+						'title'       => 'Title',
+						'slug'        => 'Slug',
+						'description' => 'Description',
+						'categories'  => 'Categories',
+						'blockTypes'  => 'Block Types',
+						'inserter'    => 'Inserter',
+					]
+				)
+				: [];
+
+			$slug = isset( $headers['slug'] ) ? trim( (string) $headers['slug'] ) : '';
+			if ( '' === $slug ) {
+				continue;
+			}
+
+			$args = [
+				'title'       => isset( $headers['title'] ) ? (string) $headers['title'] : $slug,
+				'description' => isset( $headers['description'] ) ? (string) $headers['description'] : '',
+				'content'     => $this->load_pattern_content( $pattern_file ),
+			];
+
+			if ( ! empty( $headers['categories'] ) ) {
+				$args['categories'] = array_filter( array_map( 'trim', explode( ',', (string) $headers['categories'] ) ) );
+			}
+			if ( ! empty( $headers['blockTypes'] ) ) {
+				$args['blockTypes'] = array_filter( array_map( 'trim', explode( ',', (string) $headers['blockTypes'] ) ) );
+			}
+			if ( isset( $headers['inserter'] ) && 'no' === strtolower( trim( (string) $headers['inserter'] ) ) ) {
+				$args['inserter'] = false;
+			}
+
+			if ( function_exists( 'register_block_pattern' ) ) {
+				register_block_pattern( $slug, $args );
+			}
+		}
+	}
+
+	/**
+	 * Load the rendered pattern content (block markup after the closing
+	 * PHP tag in the pattern file).
+	 *
+	 * @param string $pattern_file Absolute filesystem path.
+	 * @return string Rendered pattern markup.
+	 */
+	private function load_pattern_content( string $pattern_file ): string {
+		ob_start();
+		include $pattern_file;
+		$rendered = ob_get_clean();
+		return is_string( $rendered ) ? trim( $rendered ) : '';
 	}
 
 	/**

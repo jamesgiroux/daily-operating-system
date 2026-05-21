@@ -1,0 +1,19 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "dailyos/stakeholder-gallery",
+	"title": "Stakeholder Gallery",
+	"category": "dailyos",
+	"description": "People (Facts) composed with last-touch (Touchpoints). Per-person trust band. Same composition shape as Account stakeholder-grid. Inserter-global per ADR-0129 §2 (no parent); default composition lives in the project-detail-default filesystem pattern.",
+	"supports": {
+		"html": false,
+		"reusable": false,
+		"inserter": true
+	},
+	"usesContext": [
+		"dailyos/entityType",
+		"dailyos/entityId",
+		"dailyos/envelopeHandle"
+	],
+	"render": "file:./render.php"
+}
