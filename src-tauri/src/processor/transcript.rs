@@ -236,6 +236,7 @@ pub fn process_transcript_with_kind(
 
     // Create dirs and write
     if let Some(parent) = destination.parent() {
+        // dos7-allowed: transcript-direct-write-v146 - transcript content staging deferred to v1.4.6 staging API per cycle-13 §13.3.2
         if let Err(e) = std::fs::create_dir_all(parent) {
             return TranscriptResult {
                 status: "error".to_string(),
@@ -245,6 +246,7 @@ pub fn process_transcript_with_kind(
         }
     }
 
+    // dos7-allowed: transcript-direct-write-v146 - transcript content staging deferred to v1.4.6 staging API per cycle-13 §13.3.2
     if let Err(e) = std::fs::write(&destination, &content_with_frontmatter) {
         return TranscriptResult {
             status: "error".to_string(),
@@ -1449,6 +1451,7 @@ fn generate_and_persist_meeting_record(workspace: &Path, data: &MeetingRecordDat
 
     // Create directory and write file
     if let Some(parent) = record_path.parent() {
+        // dos7-allowed: transcript-direct-write-v146 - transcript content staging deferred to v1.4.6 staging API per cycle-13 §13.3.2
         if let Err(e) = std::fs::create_dir_all(parent) {
             log::warn!(
                 "I636: Failed to create Meeting-Records dir for {}: {}",
@@ -1459,6 +1462,7 @@ fn generate_and_persist_meeting_record(workspace: &Path, data: &MeetingRecordDat
         }
     }
 
+    // dos7-allowed: transcript-direct-write-v146 - transcript content staging deferred to v1.4.6 staging API per cycle-13 §13.3.2
     if let Err(e) = std::fs::write(&record_path, &markdown) {
         log::warn!(
             "I636: Failed to write meeting record for {}: {}",

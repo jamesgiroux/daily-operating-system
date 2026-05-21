@@ -160,6 +160,7 @@ fn poll_once(
                             clippy::let_underscore_must_use,
                             reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                         )]
+                        // dos7-allowed: transcript-db-write - transcript sync-state write; not workspace-file ingestion
                         let _ = crate::quill::sync::transition_state(
                             &db,
                             &existing.id,
@@ -282,6 +283,7 @@ fn process_granola_document(
             clippy::let_underscore_must_use,
             reason = "intentional best-effort discard; preserves existing non-blocking behavior"
         )]
+        // dos7-allowed: transcript-db-write - transcript sync-state write; not workspace-file ingestion
         let _ = crate::quill::sync::transition_state(
             &db,
             sync_id,
@@ -319,6 +321,7 @@ fn process_granola_document(
                 clippy::let_underscore_must_use,
                 reason = "intentional best-effort discard; preserves existing non-blocking behavior"
             )]
+            // dos7-allowed: transcript-db-write - transcript metadata write; not workspace-file ingestion
             let _ = db.update_meeting_transcript_metadata(
                 &calendar_event.id,
                 dest,
@@ -334,6 +337,7 @@ fn process_granola_document(
                     clippy::let_underscore_must_use,
                     reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                 )]
+                // dos7-allowed: transcript-db-write - transcript capture write; not workspace-file ingestion
                 let _ = db.insert_capture(
                     &calendar_event.id,
                     &calendar_event.title,
@@ -347,6 +351,7 @@ fn process_granola_document(
                     clippy::let_underscore_must_use,
                     reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                 )]
+                // dos7-allowed: transcript-db-write - transcript capture write; not workspace-file ingestion
                 let _ = db.insert_capture(
                     &calendar_event.id,
                     &calendar_event.title,
@@ -360,6 +365,7 @@ fn process_granola_document(
                     clippy::let_underscore_must_use,
                     reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                 )]
+                // dos7-allowed: transcript-db-write - transcript capture write; not workspace-file ingestion
                 let _ = db.insert_capture(
                     &calendar_event.id,
                     &calendar_event.title,
@@ -435,6 +441,7 @@ fn process_granola_document(
                     linear_identifier: None,
                     linear_url: None,
                 };
+                // dos7-allowed: transcript-db-write - transcript action write; not workspace-file ingestion
                 match db.upsert_action_if_not_completed(&db_action) {
                     Ok(()) => written += 1,
                     Err(e) => {
@@ -460,6 +467,7 @@ fn process_granola_document(
                 clippy::let_underscore_must_use,
                 reason = "intentional best-effort discard; preserves existing non-blocking behavior"
             )]
+            // dos7-allowed: transcript-db-write - transcript sync-state write; not workspace-file ingestion
             let _ = crate::quill::sync::transition_state(
                 &db,
                 sync_id,
@@ -480,6 +488,7 @@ fn process_granola_document(
                     clippy::let_underscore_must_use,
                     reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                 )]
+                // dos7-allowed: transcript-db-write - transcript sync-state write; not workspace-file ingestion
                 let _ = crate::quill::sync::transition_state(
                     &db,
                     sync_id,
@@ -493,6 +502,7 @@ fn process_granola_document(
                     clippy::let_underscore_must_use,
                     reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                 )]
+                // dos7-allowed: transcript-db-write - transcript sync-state write; not workspace-file ingestion
                 let _ = crate::quill::sync::advance_attempt(&db, sync_id);
             }
             Err(error)
@@ -747,6 +757,7 @@ pub fn trigger_granola_sync_for_meeting(
                         clippy::let_underscore_must_use,
                         reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                     )]
+                    // dos7-allowed: transcript-db-write - transcript sync-state write; not workspace-file ingestion
                     let _ = crate::quill::sync::transition_state(
                         &db,
                         &existing.id,
