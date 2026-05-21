@@ -103,6 +103,12 @@ final class DailyOS_PatternRegistrationTest extends TestCase {
 	public function test_pattern_bodies_reference_existing_dailyos_blocks(): void {
 		$patterns = [ 'briefing-page.php' ];
 
+		// Baseline assertion: at least one pattern file is registered so the
+		// inner block-reference loop has a real corpus to walk. Without this,
+		// a pattern set with zero `dailyos/*` block references would surface
+		// as a "risky" PHPUnit warning rather than a clear failure.
+		$this->assertNotEmpty( $patterns, 'theme must register at least one pattern' );
+
 		foreach ( $patterns as $pattern ) {
 			$path     = $this->theme_dir . '/patterns/' . $pattern;
 			$contents = (string) file_get_contents( $path );

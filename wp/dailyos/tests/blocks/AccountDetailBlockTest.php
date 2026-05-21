@@ -313,13 +313,30 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 
 	/**
 	 * Default composition ships as a filesystem pattern per AC-462.8.
+	 *
+	 * Pattern file uses header-style registration (parsed by the plugin's
+	 * `register_block_patterns()` loader at `class-dailyos-plugin.php:195`)
+	 * matching project-detail-default / person-detail-default /
+	 * meeting-detail-default sibling files. The previous direct
+	 * `register_block_pattern()` direct-call style never registered because
+	 * the loader only reads files with the standard `Title:` / `Slug:`
+	 * docblock headers (V1.2 substrate-trim convert at `wave/v1.4.4-w1-stage1a`).
 	 */
 	public function test_filesystem_pattern_ships_default_composition(): void {
 		$pattern = __DIR__ . '/../../patterns/account-detail-default.php';
 		$this->assertFileExists( $pattern );
 		$contents = file_get_contents( $pattern );
-		$this->assertStringContainsString( 'register_block_pattern', $contents );
-		$this->assertStringContainsString( "dailyos/account-detail-default", $contents );
+		// Header-style registration: Title + Slug + Block Types headers.
+		$this->assertMatchesRegularExpression(
+			'/^\s*\*\s*Slug:\s*dailyos\/account-detail-default\s*$/m',
+			$contents,
+			'pattern declares the dailyos/account-detail-default Slug header'
+		);
+		$this->assertMatchesRegularExpression(
+			'/^\s*\*\s*Title:\s*\S+/m',
+			$contents,
+			'pattern declares a Title header'
+		);
 		$this->assertStringContainsString( '<!-- wp:dailyos/account-detail -->', $contents );
 		// Mirrors the canonical 24-chapter ordering.
 		$this->assertStringContainsString( '<!-- wp:dailyos/account-hero /-->', $contents );
@@ -388,8 +405,11 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 	 * picks up the fake.
 	 */
 	private function register_runtime_client_filter( object $client ): void {
-		$GLOBALS['dailyos_test_filters']['dailyos_runtime_client_for_block'][] = static function () use ( $client ) {
-			return $client;
-		};
+		add_filter(
+			'dailyos_runtime_client_for_block',
+			static function () use ( $client ) {
+				return $client;
+			}
+		);
 	}
 }

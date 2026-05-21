@@ -153,9 +153,25 @@ if ( ! function_exists( 'dailyos_account_detail_render' ) ) {
 			$wrapper_args['style'] = '--dailyos-account-tint: ' . $tint;
 		}
 
-		$wrapper_attrs = function_exists( 'get_block_wrapper_attributes' )
-			? get_block_wrapper_attributes( $wrapper_args )
-			: 'class="wp-block-dailyos-account-detail" data-dailyos-surface="account_detail"';
+		// In test envs without `get_block_wrapper_attributes`, flatten the
+		// wrapper args ourselves so `data-ds-*`, `data-dailyos-entity-id`,
+		// and the allowlisted `--dailyos-account-tint` custom property
+		// still reach the rendered output. AccountDetailBlockTest's
+		// `test_render_emits_allowlisted_custom_property_tint` exercises
+		// this path; without the manual flatten it asserted against a
+		// stripped-down "class + data-dailyos-surface" stub.
+		if ( function_exists( 'get_block_wrapper_attributes' ) ) {
+			$wrapper_attrs = get_block_wrapper_attributes( $wrapper_args );
+		} else {
+			$pieces = [];
+			foreach ( $wrapper_args as $attr_key => $attr_value ) {
+				if ( ! is_string( $attr_value ) ) {
+					continue;
+				}
+				$pieces[] = esc_attr( $attr_key ) . '="' . esc_attr( $attr_value ) . '"';
+			}
+			$wrapper_attrs = implode( ' ', $pieces );
+		}
 
 		$out  = '<section ' . $wrapper_attrs . ' data-dailyos-envelope-handle="' . esc_attr( $handle ) . '">';
 		// Inner blocks projection: 24 typed inner blocks. core emits

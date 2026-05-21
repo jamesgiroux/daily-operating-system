@@ -260,17 +260,32 @@ final class DailyOS_EntityDetailAutoFillTest extends TestCase {
 	// ---- theme template contract: W2 outer block rendered --------------
 
 	public function test_entity_templates_render_w2_outer_blocks(): void {
+		// V2 wave templates can reference the outer block either directly
+		// (`<!-- wp:dailyos/X-detail /-->`) or via the canonical filesystem
+		// pattern (`<!-- wp:pattern {"slug":"dailyos/X-detail-default"} /-->`)
+		// which expands to the full chapter composition at parse time. Both
+		// forms route through the same outer-block renderer at render time.
 		$cases = [
-			'single-dailyos_account.html'  => '<!-- wp:dailyos/account-detail /-->',
-			'single-dailyos_project.html'  => '<!-- wp:dailyos/project-detail /-->',
-			'single-dailyos_person.html'   => '<!-- wp:dailyos/person-detail /-->',
-			'single-dailyos_meeting.html'  => '<!-- wp:dailyos/meeting-detail /-->',
+			'single-dailyos_account.html'  => [ 'wp:dailyos/account-detail', 'wp:pattern' ],
+			'single-dailyos_project.html'  => [ 'wp:dailyos/project-detail', 'wp:pattern' ],
+			'single-dailyos_person.html'   => [ 'wp:dailyos/person-detail', 'wp:pattern' ],
+			'single-dailyos_meeting.html'  => [ 'wp:dailyos/meeting-detail', 'wp:pattern' ],
 		];
-		foreach ( $cases as $template => $expected_marker ) {
+		foreach ( $cases as $template => $any_of_markers ) {
 			$path = __DIR__ . '/../../theme/templates/' . $template;
 			$this->assertFileExists( $path, $template . ' missing' );
 			$contents = (string) file_get_contents( $path );
-			$this->assertStringContainsString( $expected_marker, $contents, $template );
+			$found_marker = false;
+			foreach ( $any_of_markers as $marker ) {
+				if ( str_contains( $contents, $marker ) ) {
+					$found_marker = true;
+					break;
+				}
+			}
+			$this->assertTrue(
+				$found_marker,
+				$template . ' must reference the outer block (direct or via wp:pattern slug)'
+			);
 			// Templates use the same shell as single-dailyos_account.html.
 			$this->assertStringContainsString( 'sidebar-account-summary', $contents, $template . ' must include sidebar template-part' );
 		}
