@@ -23,6 +23,10 @@ use super::contracts::{
     McpToolHandler, ParamSpec, ReturnSpec, Scope, ScopedName, Side, ToolDescription, ToolExample,
 };
 
+#[cfg(test)]
+#[allow(unused_imports)]
+use super::contracts::ToolDescription as _ToolDescriptionImported;
+
 // ---------------------------------------------------------------------------
 // TaxonomyError
 // ---------------------------------------------------------------------------
@@ -204,6 +208,16 @@ pub trait TaxonomyCatalog: Send + Sync {
 
     /// Look up the catalog-declared [`Side`] tier for a tool by name.
     fn side_for(&self, tool_name: &ScopedName) -> Option<Side>;
+
+    /// Look up the full `ToolDescription` for a tool by name. Used by
+    /// the v2 transport (W1.5) to compose `tools/list` descriptions
+    /// from `summary` + `when_to_call` + `when_NOT_to_call`.
+    fn description_for(&self, tool_name: &ScopedName) -> Option<&ToolDescription>;
+
+    /// Iterate every catalog entry's `ScopedName`. Used by transport
+    /// `tools/list` to enumerate handler candidates before filtering by
+    /// manifest grants.
+    fn iter_names(&self) -> Box<dyn Iterator<Item = &ScopedName> + '_>;
 }
 
 // ---------------------------------------------------------------------------
@@ -447,6 +461,14 @@ impl TaxonomyCatalog for YamlTaxonomyCatalog {
 
     fn side_for(&self, tool_name: &ScopedName) -> Option<Side> {
         self.entries.get(tool_name).map(|(d, _)| d.side)
+    }
+
+    fn description_for(&self, tool_name: &ScopedName) -> Option<&ToolDescription> {
+        self.entries.get(tool_name).map(|(d, _)| d)
+    }
+
+    fn iter_names(&self) -> Box<dyn Iterator<Item = &ScopedName> + '_> {
+        Box::new(self.entries.keys())
     }
 }
 

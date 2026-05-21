@@ -511,3 +511,27 @@ fn parse_exposure(tag: &str) -> McpExposure {
         _ => McpExposure::None,
     }
 }
+
+/// Return every tool name from `mcp_tool_grant` for `client_id` where
+/// exposure = `Invocable`. Consumed by the W1.5 transport `tools/list`
+/// per the DOS-MCP-Transport L0 AC-6: only Invocable-tier grants are
+/// surfaced to the host model.
+pub fn list_invocable_tool_grants(
+    conn: &Connection,
+    client_id: &McpClientId,
+) -> Result<Vec<ScopedName>, AuthError> {
+    let mut stmt = conn.prepare_cached(
+        "SELECT tool_name FROM mcp_tool_grant \
+         WHERE client_id = ?1 AND exposure = 'Invocable' \
+         ORDER BY tool_name ASC",
+    )?;
+    let rows = stmt.query_map(params![client_id.as_str()], |row| {
+        let name: String = row.get(0)?;
+        Ok(ScopedName::new(name))
+    })?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
