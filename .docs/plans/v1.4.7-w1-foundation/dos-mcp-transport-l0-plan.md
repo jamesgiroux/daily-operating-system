@@ -128,7 +128,7 @@ dailyos-mcp-v2 unpair --client-id <id>             # revoke a pairing
   "mcpServers": {
     "<client-name>": {
       "type": "stdio",
-      "command": "dailyos-mcp-v2",
+      "command": "<resolved-absolute-path>",
       "args": ["serve"],
       "env": {
         "DAILYOS_MCP_CLIENT_ID": "mcp_client_<hex>",
@@ -198,7 +198,7 @@ only.)
 - **AC-4 Boot logs.** Format: `mcp_v2 boot: pairing <client_id> verified, 0 handlers registered, 10 catalog entries pending. tools/list will return empty for this build. Expected for W1.5 transport-only.` Strict mode env: `DAILYOS_MCP_V2_REQUIRE_HANDLERS=1` fails boot if no handlers registered.
 - **AC-5 `pair` CLI:**
   - `dailyos-mcp-v2 pair --client-name <s> --grant <tool>:<scope1>[,<scope2>...]:<invocable|metadata-only> [--grant ...] [--format json|claude-desktop]`
-  - `--format claude-desktop` → snippet includes `"type": "stdio"` (Cursor compat) + env block (client_id + transport_key)
+  - `--format claude-desktop` → snippet includes `"type": "stdio"` (Cursor compat) + env block (client_id + transport_key). **`command` field MUST be an absolute path** resolved via `std::env::current_exe()` (cycle-5 devex finding: GUI-launched Claude Desktop / Cursor don't reliably inherit shell PATH; bare binary names fail to spawn)
   - Stderr warnings: key-printed-once + chmod 600 advisory (§0 scope acknowledgment)
   - No name-based re-pair (substrate gap filed separately)
 - **AC-6 `tools/list` filtered + composed description.** Returns only registered handlers WHOSE `mcp_tool_grant` row for `verified_client_id` has `exposure = Invocable`. Each `rmcp::Tool` carries:
@@ -254,7 +254,7 @@ only.)
 - AC-2: wrapper construction unit test (transport builds envelope from MCP request params, signs, dispatches)
 - AC-3: for-each ToolError variant assert code + message + data.kind + log fields; CI lint enforces no orphan
 - AC-4: subprocess boot stderr parse against exact format
-- AC-5: subprocess pair invocation asserts stdout JSON parseable + "type": "stdio" present + stderr warnings + DB rows present
+- AC-5: subprocess pair invocation asserts stdout JSON parseable + "type": "stdio" present + `command` field is an absolute path that resolves to an executable file + stderr warnings + DB rows present
 - AC-6: subprocess pair with grant for A not B; tools/list returns [A] with composed description, no _dailyos_* in input_schema
 - AC-7: build matrix asserts both binaries compile
 - AC-8: full subprocess MCP handshake test; stdout protocol-only assertion
