@@ -80,7 +80,7 @@ Beyond W1-A's universal gates, DOS-175 (W2-A) MUST honor these briefing-specific
    - meeting exists, accessible, but ClaimSensitivity gate filters all surfaceable claims
    - meeting exists but briefing freshness exceeds operator-configured threshold (stale)
    
-   No timing distinction either (10ms floor from W1-A AC-12 applies). Existence oracle defense.
+   **Uniform timing floor for unavailable success responses** (cycle-2 CSO NEEDS-CHANGES fix): the W1-A AC-12 10ms floor applies only to auth-state rejections, NOT to successful typed responses. DOS-175 handler MUST apply an explicit timing floor (recommended: `tokio::time::sleep_until(start + Duration::from_millis(20))`) before returning ANY `{status: "unavailable"}` response, regardless of which internal branch (nonexistent / scope-insufficient / sensitivity-filtered / stale) produced it. Concurrent burst test required to assert all four branches return within a uniform jitter band. Closes CSO cycle-2 enumeration-via-latency finding.
 
 5. **Audit covers unavailable responses** (cycle-2 fix #5 per CSO #2). Because unavailable is a successful typed result, W1-A's success-path audit naturally fingerprints it via `params_hash` over `(meeting_id)`. Operators detect probing via duplicate `params_hash` across many `conversation_handle`s. No new audit substrate needed.
 
