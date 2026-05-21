@@ -1,6 +1,6 @@
 # L0 Packet — v1.4.4 W2 Entity Surfaces
 
-**Current revision: V1.0 (initial draft, 2026-05-21).**
+**Current revision: V1.1 (2026-05-21).** V1.0 → V1.1 fold below in §2.
 
 ## 1. Header
 
@@ -8,7 +8,7 @@ Date: 2026-05-21
 Project: [v1.4.4 — WordPress Surface Migration](https://linear.app/a8c/project/v144-wordpress-surface-migration-877aaa780177) (id `f8b805d9-f3d4-41b4-a446-51bbb7e05f2e`)
 Sub-wave: **W2 — Entity surfaces.** Inherits all wave-level invariants and locked decisions from `.docs/plans/v1.4.4-wp-surface-migration/L0-packet-wave-plan.md` V1.1 §10 and §13. Builds on top of W1 substrate (this packet's "Substrate consumed" §6 is the full reuse map).
 
-Branch base: `wave/v1.4.4-w1-stage1a` at HEAD `deb682b0` (`docs(K-out): 3 solutions docs from v1.4.4 W1 wave`). W1 substrate is fully landed on this branch — every W1 producer named in this packet exists in `src-tauri/abilities-runtime/` or `src-tauri/src/services/` at the cited SHA. New W2 work branches from this base as `wave/v1.4.4-w2-entity-surfaces` after L0 close.
+Branch base: `wave/v1.4.4-w1-stage1a` at HEAD `c5c0578f` (`Merge worktree-agent-a5e003b64a9524cf8 (W1 Meeting EntityKind extension for W2 §5.4) into wave/v1.4.4-w1-stage1a`; updated V1.1 from stale `deb682b0` per codex-challenge F6). W1 substrate fully landed including the Meeting EntityKind extension at `87df7cf6` that closes V1.0 F2 (Meeting). New W2 work branches from this base as `wave/v1.4.4-w2-entity-surfaces` after L0 close.
 
 Sub-tickets (12):
 
@@ -41,6 +41,7 @@ Substrate consumed from W1 (every producer landed on `wave/v1.4.4-w1-stage1a`):
 | Semantic feedback actions (DOS-8) | `services::claim_receipt::feedback` (typed 9-variant enum) | `7bbbc6f7` | Metadata proposals (§5.6) + cite-chip drawer feedback (§5.7) |
 | Entity fixture harness + no-bypass checks (DOS-461) | `tests/entity_intelligence_no_bypass/` | landed in W1 cycle-2 verdict cluster (verify at L1) | Gates every W2 AC (§7) |
 | Meeting prep / readiness DTO (DOS-335) | `src-tauri/src/services/meeting_prep_status/{read,write}.rs` | landed via DOS-335 PR (verify at L1; was Stage 1a per W1 V1.1 §13 Q10) | Meeting Detail block (§5.4) |
+| Meeting `EntityKind` extension for `get_entity_intelligence` (V1.1 fold) | `src-tauri/abilities-runtime/src/abilities/get_entity_intelligence/{contracts,producer}.rs` + `services::entity_intelligence::auth` | `87df7cf6` (merged at `c5c0578f`) | Meeting Detail block (§5.4) — closes V1.0 codex-challenge F2 |
 | `get_daily_briefing` Read/User-only (DOS-507) | `abilities-runtime/src/abilities/get_daily_briefing/` | `ed51d1b7` | NOT consumed by W2 — W3 surface. Cited for cross-wave plumbing only. |
 | L2 cycle-3 section-list + source_type redaction patches | n/a | `1a56d612` | Adopted as-is via the renderer projection. |
 | L3 cycle-2 WP block consumer skeletons | `wp/dailyos/blocks/account-detail/render-functions.php` + sibling person/project skeletons | `00f38b3b` + `3e58bc13` | W2 specializes these skeletons into typed inner-block compositions. |
@@ -59,7 +60,7 @@ Primary code areas touched (W2 NEW):
 - `wp/dailyos/blocks/health-badge/` — label-discipline pass (DOS-693).
 - `wp/dailyos/blocks/provenance-tag/` — cite-chip tooltip envelope wiring (DOS-691).
 - `wp/dailyos/blocks/trust-band-badge/` — keyboard nav + ARIA pass (DOS-692).
-- `wp/dailyos/patterns/account-detail-default.php`, `project-detail-default.php`, `person-detail-default.php`, `meeting-detail-default.php` — synced patterns (per wave AC #W4).
+- `wp/dailyos/patterns/account-detail-default.php`, `project-detail-default.php`, `person-detail-default.php`, `meeting-detail-default.php` — filesystem patterns (theme-registered via `register_block_pattern`, per wp-skill H4 V1.1; NOT synced patterns).
 - `wp/dailyos/theme/functions.php` `chrome_config()` `$stub_tints` — set `dailyos_project` to resolved value (DOS-725; §5.2 + §13 Q4 decision).
 
 **Intelligence Loop integration check.** Every sub-ticket section §5.1–5.7 below answers the 5 CLAUDE.md questions inline. Per wave §10 invariant "Refresh model", §3 (signals + invalidation) is answered uniformly: **pull on render + user-initiated refresh; no push invalidation at v1.4.4.** Per-sub-ticket §3 entries inherit this unless the surface genuinely emits new signals (none do at W2).
@@ -68,15 +69,17 @@ Primary code areas touched (W2 NEW):
 
 - **V1.0 (2026-05-21):** Initial L0 draft. Converts wave §5.2 + reorientation doc §"v1.4.4 W2" + the 12 sub-tickets into a reviewable sub-wave packet. All 4 wave §13 locked decisions inherited verbatim; this packet does not re-litigate them. W1 substrate fully landed on `wave/v1.4.4-w1-stage1a` at branch HEAD `deb682b0`; substrate-consumed table in §6 cites concrete SHAs per producer. Reviewer panel adds WP-skill-grounded reviewer per memory `feedback_wp_skill_grounded_reviewer_for_wp_l0`; `/cso` opts in per-sub-ticket (write paths emerge in DOS-328 metadata-proposal accept/dismiss/edit and DOS-689 EvidenceDrawer field-allowlist).
 
+- **V1.1 (2026-05-21):** Cycle-1 reviewer fold — 18 findings across 5 reviewers folded, locking 4 decisions James green-lit at 2026-05-21. Locked: (a) outer/inner = renderer-side projection (Path B) — the 22/14/12/10 inner blocks project from the 7 `EnvelopeSection` variants (Facts / Health / MetadataProposals / OpenLoops / Touchpoints / Threads / Record); (b) Meeting Detail = Path A, W1 substrate extended at commit `87df7cf6` (merged at `c5c0578f`); (c) AgentMcp touchpoint render = Option B (aggregate signal `{ count, recency: Recent|Aging|Stale, content: redacted }`, no per-item rows / titles / timestamps); (d) DOS-725 project tint = CSS custom property `--dailyos-project-tint` on outer wrapper, gated by ADR-0077 amendment ticket as W2 L1 prerequisite, with new CI script `check_no_inline_style_exception.sh` allowing only `style="--dailyos-*:..."`; until amendment lands, `chrome_config()` emits olive default. **Per-reviewer fold:** codex-challenge (6) — F1 CRITICAL outer/inner contract rewritten as Path B projection mapping across §5.1–5.4 + AC #W2.6, F2 CRITICAL Meeting reframed as Path A with §5.4 / §6 / §13 Q4 + Q5 now citing `87df7cf6`, F3 HIGH DOS-725 tint locked via ADR-0077 amendment prerequisite + CI script + chrome_config() default, F4 HIGH AgentMcp swapped to Option B aggregate, F5 HIGH list shells consume W1 `Paginated<T>` + `CursorState` (no more invented `ListEnvelope<T>`), F6 LOW base SHA refreshed to `c5c0578f`. Architecture (3) — A1 templateLock + default template added to §5.1 block.json sketch (and code-shape sketch obligation generalized as §10 invariant), A2 `useAbilityCursor` authorship declared as new W2 substrate in §3 K-in, A3 Meeting envelope verification now Path A (resolved) instead of L1 verification gate. Design-lens (2 BLOCKING) — F1 empty-state pattern locked as §10 invariant ("every inner block renders empty as quiet chip with `data-empty-reason`; no silent hidden states; inherits envelope `Empty { reason }`"); F2 Q3 AgentMcp touchpoint locked as Option B aggregate. WP-skill (4 HIGH + 3 path-α) — H1 templateLock contract + default template in every outer block.json, H2 `dailyos/envelopeHandle` resolution contract documented (outer invokes producer once, DOS-477 cache key `(envelope_render_id, actor_principal_id, surface)`, inner blocks key off context), H3 inline-style boundary gated by new CI script `check_no_inline_style_exception.sh`, H4 "synced patterns" → "filesystem patterns" throughout §5 + AC-W2.10. Path-α (M1 WP 7.0 fallback / M2 inserter-null guard / M3 theme.json per-block-styles) routed to maintenance project `b8e6aea4-d47e-4f3a-b03d-a05bec914aeb` per memory `feedback_l2_path_alpha_to_maintenance_project`. Codex-consult (2 drift) — D1 K-in inventory refreshed to 24 .md files at scan with 3 new W1 K-out entries cited (codex-companion finalAnswerSeen hang, parallel-agent commit-hook contention, L3 sub-ticket bypass discipline); D2 DOS-339 footnote added clarifying `0243df65` is merge SHA vs `ca8e7e21` substrate SHA. **New §10 invariants added in V1.1:** (i) code-shape sketch obligation (every block.json declaration in §5 carries a concrete sketch, not just prose); (ii) empty-state pattern (`data-empty-reason="<reason>"` quiet chip, never silent-hidden); (iii) AgentMcp touchpoint aggregate render (count + recency tier only, no per-item).
+
 ## 3. K-in record (substrate-grep audit, 2026-05-21)
 
 Per CLAUDE.md "Knowledge store discovery" + engineering-ladder.md L0 K-in obligation.
 
-### `docs/solutions/` — 16 .md files at scan time
+### `docs/solutions/` — 24 .md files at V1.1 scan (re-grep 2026-05-21 per codex-consult drift D1)
 
-Greps run against the full inventory for: `entity-detail`, `account-detail`, `project-detail`, `person-detail`, `meeting-detail`, `gutenberg`, `inner-blocks`, `providescontext`, `usescontext`, `render-functions`, `theme-json`, `cursor`, `pagination`, `merge`, `tint`, `composition`, `envelope`, `agentmcp`, `audience`.
+Greps run against the full inventory for: `entity-detail`, `account-detail`, `project-detail`, `person-detail`, `meeting-detail`, `gutenberg`, `inner-blocks`, `providescontext`, `usescontext`, `render-functions`, `theme-json`, `cursor`, `pagination`, `merge`, `tint`, `composition`, `envelope`, `agentmcp`, `audience`. Inventory grew from 16 → 24 between V1.0 and V1.1 (W1 close emitted 3 new entries this packet now cites; remaining 5 net-new are unrelated to W2 scope).
 
-**Full inventory at scan:**
+**Full inventory at V1.1 scan:**
 
 ```
 docs/solutions/architecture-patterns/L3-catches-wave-level-bypass-of-sub-ticket-discipline-2026-05-20.md
@@ -85,11 +88,14 @@ docs/solutions/architecture-patterns/capability-boundary-needs-crate-split-not-g
 docs/solutions/architecture-patterns/emit-or-log-wrapper-silent-error-swallow-class-2026-05-18.md
 docs/solutions/conventions/migration-filename-version-offset-2026-05-18.md
 docs/solutions/security-issues/prompt-channel-sensitivity-class-sweep-2026-05-18.md
+docs/solutions/test-failures/hmac-canonical-change-requires-golden-vector-recompute-2026-05-20.md
 docs/solutions/test-failures/parallel-test-singleton-state-flake-2026-05-18.md
+docs/solutions/tooling-decisions/codex-companion-task-worker-hang-finalAnswerSeen-2026-05-20.md
 docs/solutions/tooling-decisions/codex-worktree-isolation-incompatible-with-rescue-forwarder-2026-05-18.md
 docs/solutions/tooling-decisions/gh-pr-merge-delete-branch-multi-worktree-incompatibility-2026-05-19.md
 docs/solutions/tooling-decisions/phpcs-warning-severity-zero-prevents-warning-only-ci-fails-2026-05-19.md
 docs/solutions/tooling-decisions/pre-push-hook-duration-vs-ssh-idle-timeout-2026-05-19.md
+docs/solutions/tooling-decisions/wip-and-no-verify-escape-hatches-under-memory-pressure-2026-05-20.md
 docs/solutions/workflow-issues/codex-agent-dispatched-but-no-file-changes-2026-05-20.md
 docs/solutions/workflow-issues/k-in-grep-substrate-type-not-proposed-name-2026-05-19.md
 docs/solutions/workflow-issues/l0-review-loop-diminishing-returns-means-scope-is-wrong-2026-05-20.md
@@ -101,11 +107,12 @@ docs/solutions/workflow-issues/substrate-only-landing-needs-l0-amendment-2026-05
 docs/solutions/workflow-issues/worktree-setup-needs-pnpm-install-2026-05-19.md
 ```
 
-**Relevant cross-references the W2 packet consumes:**
+**Relevant cross-references the W2 packet consumes (3 new entries cited per V1.1 fold):**
 
-- `architecture-patterns/L3-catches-wave-level-bypass-of-sub-ticket-discipline-2026-05-20.md` — NEW K-out from W1 retro. Sets the discipline that wave-level "spec compliance" is not a substitute for sub-ticket AC. W2 obligation: every sub-ticket's ACs trace back to the originating Linear ticket's "Required visible QA states" matrix, not to wave-level rollup language. AC-W2.1 enforces this per-block.
-- `workflow-issues/codex-agent-dispatched-but-no-file-changes-2026-05-20.md` — NEW K-out from W1. Applied to L1 parallel fan-out (§5.1–5.7): codex tasks fan out per-block, but dispatch hygiene (last-log-no-writes-3-min = cancel) prevents stuck-agent loss in a 7-task parallel set.
-- `workflow-issues/parallel-agent-commit-hook-contention-2026-05-20.md` — NEW K-out from W1. Applied: codex tasks committing through worktrees serialize the commit step; W2 parallel branches use shared `.claude/` symlink + commit-msg hook discipline to avoid lock contention. L1 protocol section in §5.1 references.
+- `architecture-patterns/L3-catches-wave-level-bypass-of-sub-ticket-discipline-2026-05-20.md` — K-out from W1 retro (NEW citation). Sets the discipline that wave-level "spec compliance" is not a substitute for sub-ticket AC. W2 obligation: every sub-ticket's ACs trace back to the originating Linear ticket's "Required visible QA states" matrix, not to wave-level rollup language. AC-W2.1 enforces this per-block.
+- `workflow-issues/codex-agent-dispatched-but-no-file-changes-2026-05-20.md` — K-out from W1 (NEW citation). Applied to L1 parallel fan-out (§5.1–5.7): codex tasks fan out per-block, but dispatch hygiene (last-log-no-writes-3-min = cancel) prevents stuck-agent loss in a 7-task parallel set.
+- `workflow-issues/parallel-agent-commit-hook-contention-2026-05-20.md` — K-out from W1 (NEW citation). Applied: codex tasks committing through worktrees serialize the commit step; W2 parallel branches use shared `.claude/` symlink + commit-msg hook discipline to avoid lock contention. L1 protocol section in §5.1 references.
+- `tooling-decisions/codex-companion-task-worker-hang-finalAnswerSeen-2026-05-20.md` — K-out from W1 close (NEW citation, V1.1). Applied to L1 codex-task dispatch: if worker emits `finalAnswerSeen` but no file writes land within 3 min, cancel + re-dispatch with smaller scope. Pairs with `codex-agent-dispatched-but-no-file-changes` as the dispatch-hygiene class for W2 parallel codex fan-out.
 - `workflow-issues/l0-review-loop-diminishing-returns-means-scope-is-wrong-2026-05-20.md` — applied: 12 sub-tickets sized to 1 outer + N inner per entity. If reviewers surface 5+ net-new findings per cycle, scope reset, not fold-and-continue. Reviewer panel reads this as a precondition.
 - `workflow-issues/premise-check-production-vs-dev-friction-before-scoping-waves-2026-05-20.md` — applied: every sub-ticket's AC is production-friction-grounded (real claim volume / real account fixture); dev-friction shortcuts (mocking the envelope, stubbing scope sets) are excluded.
 - `workflow-issues/k-in-grep-substrate-type-not-proposed-name-2026-05-19.md` — applied throughout §5: every inner-block DTO sketch confirms the existing substrate type names landed by W1 match (`EntityIntelligenceEnvelope`, `TouchpointBundle`, `ClaimReceipt`, `RenderableClaimText`, `FeedbackAction`); no proposed-name aliases.
@@ -131,7 +138,11 @@ docs/solutions/workflow-issues/worktree-setup-needs-pnpm-install-2026-05-19.md
 | 0130 | Surface-independent composition contract | Reading A (1 outer = renderer-side projection of `Composition`; N inner = projection of `sections[].blocks[]`) governs every entity-detail composite. |
 | 0132 | Pill primitive dual existence | Chrome `.Pill_*` vs block `.dailyos-pill*` discipline carried into W2 (NavIsland active-state stays chrome; in-block pill stays block). No new contract. |
 
-**Verdict: K-in complete. No documented prior substrate reinvented.** W2 is renderer-only over substrate that landed in W1. The three NEW K-out solutions (L3 sub-ticket discipline, codex dispatch hygiene, hook contention) directly shape this packet's reviewer panel discipline + L1 parallel-fan-out protocol (§5.x footers + §11).
+**`useAbilityCursor` hook authorship (architecture A2 fold, V1.1):** grep `wp/dailyos/blocks/_shared/hooks/` at V1.1 scan time confirms no prior `useAbilityCursor.ts` file exists on `wave/v1.4.4-w1-stage1a` HEAD `c5c0578f`. **W2 authors this hook as NEW substrate** at the shared lane location declared in §5.5. Not inherited from a prior stub.
+
+**DOS-339 SHA footnote (codex-consult drift D2, V1.1):** The substrate-reuse table cites `0243df65` as the DOS-339 base for claim-receipt fan-out wiring. `0243df65` is the **PR-merge SHA** (`Merge feat/dos-339-claim-receipt-fanout into wave/v1.4.4-w1-stage1a`); the underlying feature commit is `ca8e7e21` (`feat(claim_receipt): fan-out signal wiring + useClaimReceiptSubscription hook (DOS-339)`). Both reach the same tree on `wave/v1.4.4-w1-stage1a`. Readers walking diff hunks should point at `ca8e7e21` for the substantive change; merge SHA is correct for PR-trail reconstruction. No code-level impact on this packet.
+
+**Verdict: K-in complete. No documented prior substrate reinvented.** W2 is renderer-only over substrate that landed in W1. The four cited NEW K-out solutions (L3 sub-ticket discipline, codex dispatch hygiene, hook contention, codex-companion finalAnswerSeen hang) directly shape this packet's reviewer panel discipline + L1 parallel-fan-out protocol (§5.x footers + §11).
 
 ## 4. Scope summary
 
@@ -161,7 +172,9 @@ docs/solutions/workflow-issues/worktree-setup-needs-pnpm-install-2026-05-19.md
 
 **Outer block:** `dailyos/account-detail` (already-scaffolded at `wp/dailyos/blocks/account-detail/`; W2 specializes the Stage 1b skeleton from `00f38b3b`).
 
-**Block.json contract:**
+**Outer/inner contract — Path B locked V1.1 (codex-challenge F1).** The W1 ability returns `AbilityResult<EntityIntelligenceEnvelope>` where `envelope.sections: BTreeMap<EnvelopeSection, SectionState>` enumerates 7 variants (`Facts`, `Health`, `MetadataProposals`, `OpenLoops`, `Touchpoints`, `Threads`, `Record`) per `src-tauri/abilities-runtime/src/abilities/get_entity_intelligence/contracts.rs:75`. **The 22 inner blocks are renderer-side projections over those 7 sections per ADR-0130 §4 Reading A** — each inner block reads one or more `EnvelopeSection` slices and projects display. No new substrate variants emitted; inner blocks correspond to *projection rules*, not to a new `Composition.sections[].blocks[]` shape.
+
+**Block.json contract (templateLock + default template added V1.1 per architecture A1 + wp-skill H1):**
 ```json
 {
   "apiVersion": 3,
@@ -175,63 +188,123 @@ docs/solutions/workflow-issues/worktree-setup-needs-pnpm-install-2026-05-19.md
     "dailyos/envelopeHandle": "envelope_handle"
   },
   "supports": { "html": false, "reusable": false, "inserter": true },
+  "templateLock": false,
+  "template": [
+    ["dailyos/account-hero"],
+    ["dailyos/sentiment-hero"],
+    ["dailyos/triage-section"],
+    ["dailyos/divergence-section"],
+    ["dailyos/outlook-panel"],
+    ["dailyos/on-track-chapter"],
+    ["dailyos/supporting-tension"],
+    ["dailyos/about-intelligence"],
+    ["dailyos/account-pull-quote"],
+    ["dailyos/stakeholder-grid"],
+    ["dailyos/strategic-landscape"],
+    ["dailyos/value-commitments"],
+    ["dailyos/quote-wall"],
+    ["dailyos/commercial-shape"],
+    ["dailyos/account-technical-footprint"],
+    ["dailyos/relationship-fabric"],
+    ["dailyos/about-this-dossier"],
+    ["dailyos/recommended-actions"],
+    ["dailyos/touchpoints-feed"],
+    ["dailyos/open-loops-feed"],
+    ["dailyos/linear-issues-chapter"],
+    ["dailyos/unified-timeline"],
+    ["dailyos/finis-marker"]
+  ],
   "render": "file:./render.php"
 }
 ```
 
-`providesContext` adds `dailyos/envelopeHandle` so inner blocks resolve the envelope without re-invoking the producer ability. The outer block invokes `get_entity_intelligence` once per render, stores the projected `Composition` in a per-request runtime cache keyed by `(account_id, surface, actor)`, and binds the handle into block context.
+`templateLock: false` + the default `template` array ship the canonical chapter ordering on insert; user reorders via Site Editor. Authoritative ordering lives in the filesystem pattern at `wp/dailyos/patterns/account-detail-default.php` per wp-skill H4 — block.json `template` mirrors the pattern's canonical order so an empty-context insert renders meaningfully.
+
+**`dailyos/envelopeHandle` resolution contract (wp-skill H2, V1.1):**
+
+`providesContext` adds `dailyos/envelopeHandle`. The handle resolves as follows:
+
+1. Outer block render.php invokes `get_entity_intelligence` ONCE per render via `$runtime_client->invoke_ability($producer, $payload, $scope_set)`.
+2. The producer-side DOS-477 envelope cache (per `services::entity_intelligence::auth::envelope_cache`) keys the result by `(envelope_render_id, actor_principal_id, surface)` where `envelope_render_id` is the deterministic hash of `(entity_type, entity_id, depth, sections, watermark)` and `surface = "wp.account-detail"`.
+3. The outer block writes `envelope_render_id` into block context as `dailyos/envelopeHandle`. Inner blocks `usesContext: ["dailyos/envelopeHandle"]` and pass the handle into their own `get_entity_intelligence` invocation (with the same scope_set), which short-circuits to the cached result without a second producer call.
+4. Cache is per-request scope (lifetime = single PHP request); evicts on response close. DOS-477 cache implementation lives in W1 substrate; this is consumer-side discipline only.
+
+A 2-arg invocation (without `$scope_set`) FAILS `check_w1_consumer_skeleton.sh` per W1 F5 fix at `00f38b3b`.
 
 **render-functions.php invocation contract (locked):**
 ```php
 $response = $runtime_client->invoke_ability(
   'get_entity_intelligence',
   [ 'entity_type' => 'account', 'entity_id' => $account_id,
-    'depth' => 'Full', 'sections' => [/* default chapter ordering */] ],
+    'depth' => 'Full',
+    'sections' => null /* all 7 EnvelopeSection variants */ ],
   $scope_set  // 3rd arg mandatory per W1 F5 fix (00f38b3b)
 );
 ```
 A 2-arg invocation FAILS `check_w1_consumer_skeleton.sh`. The scope set resolves from the canonical filter `dailyos_surfaceclient_resolved_scopes`.
 
-**Inner block default template (22 inner blocks, canonical chapter order — translated 1-to-1 from `src/pages/AccountDetailPage.tsx`):**
+**Inner-block → envelope projection mapping (22 blocks — Path B per codex-challenge F1; chapter ordering translated 1-to-1 from `src/pages/AccountDetailPage.tsx`):**
 
-Health view (chapters consumed by `Composition.sections[0]`):
-1. `dailyos/account-hero` (operational shell — name, lifecycle, parent/child nav).
-2. `dailyos/sentiment-hero` (envelope-backed; SentimentHero source).
-3. `dailyos/triage-section` (envelope-backed; uses `hasTriageContent` projection rule from W1).
-4. `dailyos/divergence-section` (envelope-backed; uses `hasDivergenceContent`).
-5. `dailyos/outlook-panel` (envelope `outlook` slice + `renewalCallVerdict` projection).
-6. `dailyos/on-track-chapter` (envelope `on_track` slice).
-7. `dailyos/supporting-tension` (envelope-backed).
-8. `dailyos/about-intelligence` (envelope `about_intelligence` slice).
+| Inner block | Projects from envelope section(s) | Trust band source | Notes |
+|---|---|---|---|
+| `dailyos/account-hero` | Facts (identity facts: name, lifecycle, parent/child refs) | n/a — operational shell | No claim binding required at hero; entity-link via `SubjectRef`. |
+| `dailyos/sentiment-hero` | Health + Facts (composed sentiment scalar + supporting voice quote) | `Health.aggregate_band` | SentimentHero projection rule from `compose_health()`. |
+| `dailyos/triage-section` | Health (`hasTriageContent` derived) | per-row from `Health.factors` | Empty when `Health` reports no triage signal. |
+| `dailyos/divergence-section` | Health (`hasDivergenceContent` derived) | per-row from `Health.factors` | Empty when divergence factors absent. |
+| `dailyos/outlook-panel` | Health (`outlook` factor + `renewalCallVerdict` projection) | `Health.aggregate_band` | RenewalCallVerdict is a projection over health factors, not a substrate slice. |
+| `dailyos/on-track-chapter` | Health (`on_track` factor) | `Health.aggregate_band` | |
+| `dailyos/supporting-tension` | Health (composed view across factor delta) | per-row | |
+| `dailyos/about-intelligence` | Facts (intelligence-source narrative) | aggregate from `Facts.provenance` | |
+| `dailyos/account-pull-quote` | Facts (thesis narrative) | n/a — quote primitive | Quote selection rule lives in renderer. |
+| `dailyos/stakeholder-grid` | Facts (people) + Touchpoints (last-touch / cadence per person) | per-person from Facts.subject_refs[].trust_band | Composes 2 sections. |
+| `dailyos/strategic-landscape` | Facts (landscape narrative) | aggregate | |
+| `dailyos/value-commitments` | Facts (commitments narrative) | per-commitment | |
+| `dailyos/quote-wall` | Facts (voice quote bundle) | per-quote | |
+| `dailyos/commercial-shape` | Facts (commercial shape narrative) | aggregate | |
+| `dailyos/account-technical-footprint` | Facts (technical footprint narrative) | aggregate | |
+| `dailyos/relationship-fabric` | Facts (relationship-fabric narrative) + Touchpoints | aggregate | Cross-section projection. |
+| `dailyos/about-this-dossier` | Facts (dossier-about narrative) + envelope-level `EnvelopeProvenance` | n/a — meta | Provenance summary chip. |
+| `dailyos/recommended-actions` | OpenLoops (recommended-actions subset) | per-action `OpenLoop.trust_band` | Filtered to actionable-suggested loops. |
+| `dailyos/touchpoints-feed` | Touchpoints (envelope-first-page) + `useAbilityCursor` for subsequent pages | per-touchpoint | AgentMcp audience renders aggregate-only per V1.1 lock. |
+| `dailyos/open-loops-feed` | OpenLoops | per-loop | First-page-in-envelope per wave §13 Q1; `useAbilityCursor` for pagination. |
+| `dailyos/linear-issues-chapter` | Facts (external Linear refs) | per-issue | |
+| `dailyos/unified-timeline` | Record (record entries `Paginated<RecordEntry>`) + cross-cut from MetadataProposals lifecycle events | per-entry | Composes Record + lifecycle events. |
+| `dailyos/finis-marker` | — | — | Chrome only; no envelope binding. |
 
-Context view (`Composition.sections[1]`):
-9. `dailyos/account-pull-quote` (envelope-backed thesis).
-10. `dailyos/stakeholder-grid` (envelope `stakeholders` slice).
-11. `dailyos/strategic-landscape` (envelope `landscape` slice).
-12. `dailyos/value-commitments` (envelope `commitments`).
-13. `dailyos/quote-wall` (envelope `voice`).
-14. `dailyos/commercial-shape` (envelope `commercial_shape`).
-15. `dailyos/account-technical-footprint` (envelope `technical_footprint`).
-16. `dailyos/relationship-fabric` (envelope `relationship_fabric`).
-17. `dailyos/about-this-dossier` (envelope `about_dossier`).
+**Code-shape sketch for a typical inner block (per V1.1 §10 invariant "code-shape sketch obligation"):**
 
-Work view (`Composition.sections[2]`):
-18. `dailyos/recommended-actions` (envelope `recommended_actions`).
-19. `dailyos/touchpoints-feed` (envelope `touchpoints: Paginated<TouchpointBundle>` — first page in envelope per wave §13 Q1 sub-clause; `useAbilityCursor` for subsequent pages).
-20. `dailyos/open-loops-feed` (envelope `open_loops: Paginated<OpenLoop>` — same).
-21. `dailyos/linear-issues-chapter` (envelope `linear_issues`).
+```json
+{
+  "apiVersion": 3,
+  "name": "dailyos/stakeholder-grid",
+  "category": "dailyos",
+  "usesContext": ["dailyos/entityType", "dailyos/entityId", "dailyos/envelopeHandle"],
+  "supports": { "html": false, "reusable": false, "inserter": true },
+  "render": "file:./render.php"
+}
+```
 
-Record/Timeline view (`Composition.sections[3]`):
-22. `dailyos/unified-timeline` (envelope `record_entries: Paginated<RecordEntry>`).
-
-`dailyos/finis-marker` closes the outer block (chrome only, no envelope binding).
+```php
+// render.php (sketch — V1.1 code-shape obligation)
+$handle = $block->context['dailyos/envelopeHandle'] ?? null;
+$entity_id = $block->context['dailyos/entityId'] ?? null;
+$envelope = dailyos_resolve_envelope($handle, 'account', $entity_id, $scope_set);
+// projection: Facts (people) ∪ Touchpoints (last-touch per person)
+$people = $envelope['sections']['facts']['people'] ?? [];
+$touchpoints_by_person = dailyos_index_touchpoints_by_subject($envelope['sections']['touchpoints']);
+if (empty($people)) {
+    return '<div class="dailyos-stakeholder-grid" data-empty-reason="no_stakeholders_in_facts"></div>';
+}
+// ... render rows with trust-band per person + last-touch chip ...
+```
 
 **Inner block registration (every inner block):**
 - `apiVersion: 3` (per wave §10 invariant; non-negotiable).
 - NO `parent` field. Primitives stay inserter-global per ADR-0129 §2.
 - `usesContext: ["dailyos/entityType", "dailyos/entityId", "dailyos/envelopeHandle"]` for envelope-binding.
 - `render: "file:./render.php"`.
-- Synced pattern at `wp/dailyos/patterns/account-detail-default.php` ships the default chapter ordering (per wave AC #W4).
+- Filesystem pattern at `wp/dailyos/patterns/account-detail-default.php` (theme-registered via `register_block_pattern`, per wp-skill H4) ships the default chapter ordering. Filesystem patterns insert-then-detach: user reordering does not affect other instances. **NOT** synced patterns (DB-stored reusable blocks).
+- Empty-state pattern per V1.1 §10 invariant: when projection produces empty, render a quiet chip with `data-empty-reason="<reason>"`. NEVER silent-hidden (`return ''`). Reasons inherit envelope `Empty { reason }` where applicable.
 
 **Acceptance criteria (per DOS-462 + wave AC #W1/W2/W6 + Intelligence Loop):**
 
@@ -260,36 +333,49 @@ Record/Timeline view (`Composition.sections[3]`):
 
 **Outer block:** `dailyos/project-detail` (scaffolded at `wp/dailyos/blocks/project-detail/`; specializing Stage 1b skeleton).
 
-**Composition contract:** identical outer/inner shape as DOS-462 (1 outer + N inner per wave §13 Q1; renderer-side projection of `AbilityOutput<Composition>`).
+**Outer/inner contract — Path B locked V1.1:** Same renderer-side projection over `BTreeMap<EnvelopeSection, SectionState>` as Account Detail. The 14 inner blocks project from the same 7 `EnvelopeSection` variants — no project-specific section variants emitted by W1.
 
 **block.json delta vs Account Detail:**
 - `providesContext`: `dailyos/entityType="project"`, `dailyos/entityId="project_id"`.
 - attributes: `project_id` not `account_id`.
+- `templateLock: false` + default `template` array per V1.1 architecture A1 + wp-skill H1 — same shape as §5.1, sequence is the 14 inner blocks below.
+- Outer wrapper style attribute carries `--dailyos-project-tint` CSS custom property per DOS-725 (V1.1 lock below).
 
-**render-functions.php contract:** same 3-arg invocation discipline; `entity_type: 'project'`.
+**render-functions.php contract:** same 3-arg invocation discipline; `entity_type: 'project'`. Outer wrapper emitted via:
 
-**DOS-725 tint resolution gate (§13 Q4 decision):**
+```php
+$wrapper = get_block_wrapper_attributes([
+  'style' => '--dailyos-project-tint: var(--color-garden-olive);',
+]);
+echo "<div {$wrapper}>{$content}</div>";
+```
 
-DOS-725 lists 3 options. **Locked decision: Option A — ADR-0077 amendment adding project tint = `olive`** (per token `--color-project: var(--color-garden-olive)` in `src/styles/design-tokens.css:87`). Mechanism: per-project tint flows as CSS custom property on outer wrapper (`style="--dailyos-project-tint: var(--color-garden-olive);"`) per wave §10 invariant. The `dailyos_project` CPT registration remains **default-no** (account-overview comparator: account is not a CPT either) UNLESS a non-substrate reason emerges at L1.
+**DOS-725 tint resolution (V1.1 lock — codex-challenge F3 + wp-skill H3):**
 
-**ADR-0077 amendment ticket** files at L1 kickoff alongside the W2 W2 PR; the amendment lands in the same commit window as the Project Detail block specialization. AC-725.1 below tracks the amendment landing.
+Per the canonical decision (James 2026-05-21): tint flows as **CSS custom property `--dailyos-project-tint` on the outer wrapper only**, via `get_block_wrapper_attributes()`. This is the narrow exception to memory `feedback_no_inline_css` — the style attribute body must match `^--[a-z-]+:\s*var\(--[a-z-]+\);?$` (custom-property assignment only; no declarative styles).
 
-**Inner block default template (14 inner blocks — translated 1-to-1 from `src/pages/ProjectDetailEditorial.tsx`):**
+**Prerequisite for W2 L1 start (V1.1):** ADR-0077 amendment adding project tint = `olive` (token `--color-project: var(--color-garden-olive)` from `src/styles/design-tokens.css:87`) **must land before any W2 L1 work begins**. AC-W2.7 + AC-483.3 gate on the amendment SHA. Until amendment lands, `chrome_config()` emits olive default (`$stub_tints['dailyos_project'] = 'olive'`) — this preserves the chrome-lane rendering during the amendment-author window.
 
-1. `dailyos/project-hero` (operational shell + thesis from envelope).
-2. `dailyos/vitals-strip` (envelope-derived counts/trends; reusable across entity types).
-3. `dailyos/portfolio-chapter` (envelope `portfolio` slice — parent projects only; render-empty for leaf projects).
-4. `dailyos/trajectory-chapter` (envelope `trajectory`).
-5. `dailyos/horizon-chapter` (envelope `horizon`).
-6. `dailyos/watch-list` (envelope `watch_list`).
-7. `dailyos/watch-list-milestones` (envelope `milestones`).
-8. `dailyos/stakeholder-gallery` (envelope `stakeholders`).
-9. `dailyos/unified-timeline` (envelope `record_entries: Paginated<RecordEntry>`).
-10. `dailyos/recommended-actions` (envelope `recommended_actions`).
-11. `dailyos/the-work` (envelope `attached_work`).
-12. `dailyos/touchpoints-feed` (envelope `touchpoints: Paginated<TouchpointBundle>`).
-13. `dailyos/open-loops-feed` (envelope `open_loops: Paginated<OpenLoop>`).
-14. `dailyos/project-appendix` (envelope `appendix` — evidence + provenance affordances).
+**New CI script (file at L1 kickoff):** `src-tauri/scripts/check_no_inline_style_exception.sh`. Lints `wp/dailyos/blocks/**/*.php` and asserts that any `style=` attribute body matches the custom-property-only regex above. Anything else fails the gate. Pairs with the existing `check_w1_consumer_skeleton.sh`. Sister script for the `feedback_no_inline_css` cardinal rule.
+
+**Inner-block → envelope projection mapping (14 blocks — Path B; chapter ordering from `src/pages/ProjectDetailEditorial.tsx`):**
+
+| Inner block | Projects from envelope section(s) | Trust band source | Notes |
+|---|---|---|---|
+| `dailyos/project-hero` | Facts (project identity + thesis narrative) | n/a — operational shell | |
+| `dailyos/vitals-strip` | Health (composed counts/trends) | `Health.aggregate_band` | Reusable across entity types per §5.3. |
+| `dailyos/portfolio-chapter` | Facts (parent-project portfolio refs) | per-child aggregate | Empty when leaf project — `data-empty-reason="leaf_project_no_portfolio"`. |
+| `dailyos/trajectory-chapter` | Health (trajectory factor) | `Health.aggregate_band` | |
+| `dailyos/horizon-chapter` | Facts (horizon narrative) + Health (horizon outlook) | aggregate | |
+| `dailyos/watch-list` | OpenLoops (watch-list subset) | per-loop | |
+| `dailyos/watch-list-milestones` | Facts (milestones) + OpenLoops (milestone-bound loops) | per-milestone | Composes 2 sections. |
+| `dailyos/stakeholder-gallery` | Facts (people) + Touchpoints (last-touch) | per-person | Same composition shape as Account stakeholder-grid. |
+| `dailyos/unified-timeline` | Record (`Paginated<RecordEntry>`) + MetadataProposals lifecycle | per-entry | |
+| `dailyos/recommended-actions` | OpenLoops (recommended subset) | per-action | |
+| `dailyos/the-work` | Facts (attached-work refs) | per-work-item | |
+| `dailyos/touchpoints-feed` | Touchpoints | per-touchpoint | AgentMcp aggregate-only render per V1.1 lock. |
+| `dailyos/open-loops-feed` | OpenLoops | per-loop | First-page-in-envelope; `useAbilityCursor` for pagination. |
+| `dailyos/project-appendix` | envelope-level `EnvelopeProvenance` + all section caveats | aggregate | Evidence + provenance affordances. |
 
 **Acceptance criteria:**
 
@@ -300,7 +386,7 @@ DOS-725 lists 3 options. **Locked decision: Option A — ADR-0077 amendment addi
 - AC-483.5: DOS-477 trust-boundary hardening satisfied.
 - AC-483.6: Visible-QA-state matrix from DOS-483 (full / empty / stale / `needs_verification` / corrected/superseded / touchpoints present / cite-chip drawer / parent-project portfolio state) reachable + screenshot-evidenced.
 - AC-483.7: Receipt rendering through `build_receipt_for_audience` for every claim-bearing inner block.
-- AC-483.8: No PII in fixture; synced pattern at `wp/dailyos/patterns/project-detail-default.php`.
+- AC-483.8: No PII in fixture; filesystem pattern at `wp/dailyos/patterns/project-detail-default.php` (theme-registered).
 
 **Intelligence Loop check:** identical structure to §5.1. Q3 inherits the uniform wave-level answer.
 
@@ -310,9 +396,9 @@ DOS-725 lists 3 options. **Locked decision: Option A — ADR-0077 amendment addi
 
 **Outer block:** `dailyos/person-detail` (scaffolded at `wp/dailyos/blocks/person-detail/`).
 
-**Composition contract:** 1 outer + 12 inner per wave §13 Q1.
+**Outer/inner contract — Path B locked V1.1:** Same renderer-side projection model. 12 inner blocks project from the 7 `EnvelopeSection` variants.
 
-**block.json delta:** `dailyos/entityType="person"`, `dailyos/entityId="person_id"`.
+**block.json delta:** `dailyos/entityType="person"`, `dailyos/entityId="person_id"`. `templateLock: false` + default `template` array shape mirrors §5.1.
 
 **Merge-picker substrate (per W0 audit + §13 Q6):**
 
@@ -323,20 +409,22 @@ W0 surface-audit flagged "Person merge picker substrate" as **unfiled — needs 
 
 **Locked at L0 close: path α.** If L4 reveals user friction with Tauri-only merge during the W2 build-out window, path β escalates as an in-wave amendment per wave AC #W5 — NOT deferred to v1.4.5+.
 
-**Inner block default template (12 inner blocks — from `src/pages/PersonDetailEditorial.tsx`):**
+**Inner-block → envelope projection mapping (12 blocks — Path B; from `src/pages/PersonDetailEditorial.tsx`):**
 
-1. `dailyos/person-hero` (operational shell + profile/story from envelope).
-2. `dailyos/vitals-strip` (reuses block from §5.2).
-3. `dailyos/person-insight-chapter` (envelope `insight` — rhythm/dynamic).
-4. `dailyos/person-network` (envelope `network`).
-5. `dailyos/person-relationships` (envelope `relationships`).
-6. `dailyos/watch-list` (envelope `watch_list`).
-7. `dailyos/unified-timeline` (envelope `record_entries: Paginated<RecordEntry>`).
-8. `dailyos/recommended-actions` (envelope `recommended_actions`).
-9. `dailyos/the-work` (envelope `attached_work`).
-10. `dailyos/touchpoints-feed` (envelope `touchpoints`).
-11. `dailyos/open-loops-feed` (envelope `open_loops`).
-12. `dailyos/person-appendix` (envelope `appendix`).
+| Inner block | Projects from envelope section(s) | Trust band source | Notes |
+|---|---|---|---|
+| `dailyos/person-hero` | Facts (person identity + profile/story narrative) | n/a — operational shell | |
+| `dailyos/vitals-strip` | Health (composed counts/trends) | `Health.aggregate_band` | Reused from §5.2. |
+| `dailyos/person-insight-chapter` | Health (rhythm/dynamic factors) | `Health.aggregate_band` | |
+| `dailyos/person-network` | Facts (network refs to accounts/projects/people) | per-edge | |
+| `dailyos/person-relationships` | Facts (relationship narrative) + Touchpoints (per-relationship cadence) | per-relationship | Composes 2 sections. |
+| `dailyos/watch-list` | OpenLoops (watch-list subset) | per-loop | |
+| `dailyos/unified-timeline` | Record (`Paginated<RecordEntry>`) + MetadataProposals lifecycle | per-entry | |
+| `dailyos/recommended-actions` | OpenLoops (recommended subset) | per-action | Includes merge-intent affordance per path α. |
+| `dailyos/the-work` | Facts (attached-work refs) | per-work-item | |
+| `dailyos/touchpoints-feed` | Touchpoints | per-touchpoint | AgentMcp aggregate-only render per V1.1 lock. |
+| `dailyos/open-loops-feed` | OpenLoops | per-loop | `useAbilityCursor` for pagination. |
+| `dailyos/person-appendix` | envelope-level `EnvelopeProvenance` + all section caveats | aggregate | Evidence + provenance affordances. |
 
 **Acceptance criteria:**
 
@@ -346,7 +434,7 @@ W0 surface-audit flagged "Person merge picker substrate" as **unfiled — needs 
 - AC-484.4: DOS-461 no-bypass harness green; DOS-477 satisfied.
 - AC-484.5: Visible-QA-state matrix from DOS-484 (incl. ambiguous/multi-account association) reachable + screenshot-evidenced.
 - AC-484.6: Receipt rendering through `build_receipt_for_audience` for every claim-bearing inner block.
-- AC-484.7: No PII in fixture (`user@example.com`, generic role labels); synced pattern at `wp/dailyos/patterns/person-detail-default.php`.
+- AC-484.7: No PII in fixture (`user@example.com`, generic role labels); filesystem pattern at `wp/dailyos/patterns/person-detail-default.php` (theme-registered).
 
 **Intelligence Loop check:** identical structure; Q3 inherits uniform answer. Q5 feedback loop adds the `MergeIntent` variant as an opt-in extension of the 9-variant `FeedbackAction` enum if path β escalates; v1.4.4 W2 ships path α with `MergeIntent` filed against DOS-8's typed-enum work as a v1.4.5 candidate variant.
 
@@ -356,24 +444,39 @@ W0 surface-audit flagged "Person merge picker substrate" as **unfiled — needs 
 
 **Outer block:** `dailyos/meeting-detail` (NEW; scaffold at `wp/dailyos/blocks/meeting-detail/` at L1 kickoff).
 
+**Meeting substrate — Path A locked V1.1 (codex-challenge F2 + architecture A3):**
+
+W1 substrate extended to support Meeting via commit `87df7cf6` (`feat(abilities): extend get_entity_intelligence with Meeting EntityKind (W2 L0 cycle-1 F2 fix)`), merged into wave at `c5c0578f`. `EntityKind` is now `{ Account, Project, Person, Meeting }` per `src-tauri/abilities-runtime/src/abilities/get_entity_intelligence/contracts.rs`. Meeting subject composes the standard 7 `EnvelopeSection` variants:
+
+- **Facts** — attendees, location, status, agenda narrative.
+- **Health** — composed from `services::meeting_prep_status` (readiness + freshness).
+- **Touchpoints** — related meetings (cadence to the same attendee set / account / project).
+- **OpenLoops** — agenda items, follow-ups, post-meeting actions.
+- **Threads** / **Record** — meeting transcript / notes / decision log.
+- **MetadataProposals** — attendee corrections, location updates, related-entity refinements.
+
+AgentMcp audience scrub applies per W1 cycle-2 F2 pattern (no per-attendee identifying data, no raw meeting IDs, etc.).
+
 **Linear ticket status:** no Linear ticket at packet-author time. **File at L1 kickoff** with title "v1.4.4 W2 — Meeting Detail block consumes entity-intelligence envelope + meeting prep DTO". Project = v1.4.4 WP Surface Migration. Priority = High. AC list below seeds the ticket description.
 
-**Composition contract:** 1 outer + 10 inner per wave §13 Q1.
+**Outer/inner contract — Path B locked V1.1:** Same renderer-side projection. 10 inner blocks project from the 7 `EnvelopeSection` variants (Meeting-extended at `87df7cf6`).
 
-**block.json:** `dailyos/entityType="meeting"`, `dailyos/entityId="meeting_id"`. Outer invokes `get_entity_intelligence` (entity_type=meeting) AND `get_meeting_prep_status` (DOS-335) — two-call composition per wave §10 invariant "Entity list pagination contract" (composite blocks consuming list shapes invoke the list ability separately from the entity-detail Composition ability; analogous rule for prep-status sibling).
+**block.json:** `dailyos/entityType="meeting"`, `dailyos/entityId="meeting_id"`. `templateLock: false` + default `template` array. Outer invokes `get_entity_intelligence` (entity_type=meeting) AND `get_meeting_prep_status` (DOS-335) — two-call composition per wave §10 invariant (composite blocks may invoke a sibling DTO-shaped ability alongside the entity envelope; cache key includes both abilities' watermarks).
 
-**Inner block default template (10 inner blocks):**
+**Inner-block → envelope projection mapping (10 blocks — Path B):**
 
-1. `dailyos/meeting-header` (operational shell — title, time, organizer).
-2. `dailyos/prep-status` (consumes DOS-335 `MeetingPrepStatus` — readiness + freshness; surfaces FolioBar-bound readiness signal per §13 Q3).
-3. `dailyos/agenda-draft` (envelope `agenda`).
-4. `dailyos/attendees-section` (envelope `attendees`).
-5. `dailyos/related-entities` (envelope `related_entities: [SubjectRef]`).
-6. `dailyos/claims-for-review` (envelope `claims_for_review`).
-7. `dailyos/context-bundle` (envelope `context_bundle` — links to Account/Project/Person detail composites).
-8. `dailyos/post-meeting-capture` (envelope `post_meeting_capture`; write path through `process_paste_transcript`).
-9. `dailyos/touchpoints-feed` (envelope `touchpoints: Paginated<TouchpointBundle>`).
-10. `dailyos/recommended-actions` (envelope `recommended_actions`).
+| Inner block | Projects from envelope section(s) | Trust band source | Notes |
+|---|---|---|---|
+| `dailyos/meeting-header` | Facts (title, time, organizer) | n/a — operational shell | |
+| `dailyos/prep-status` | Health (composed from `MeetingPrepStatus`) + DOS-335 direct read | `Health.aggregate_band` | Two-call composition — envelope's Health composes with DOS-335 read. Surfaces FolioBar readiness signal via chrome.js. |
+| `dailyos/agenda-draft` | Facts (agenda narrative) + OpenLoops (agenda-bound action items) | per-item | Composes 2 sections. |
+| `dailyos/attendees-section` | Facts (attendees) | per-attendee | |
+| `dailyos/related-entities` | Facts (`related_entities: [SubjectRef]` resolved) | per-edge | Links to Account/Project/Person composites. |
+| `dailyos/claims-for-review` | MetadataProposals (meeting-bound proposals) | per-proposal | Surfaces DOS-328 metadata proposals on the meeting subject. |
+| `dailyos/context-bundle` | Facts (referenced entity context) + envelope-level `EnvelopeProvenance` | aggregate | Links into Account/Project/Person detail composites. |
+| `dailyos/post-meeting-capture` | Record (transcript/notes) | aggregate | Write path through `process_paste_transcript` ability — NO direct DB writes. |
+| `dailyos/touchpoints-feed` | Touchpoints (related-meeting cadence) | per-touchpoint | AgentMcp aggregate-only render per V1.1 lock. |
+| `dailyos/recommended-actions` | OpenLoops (recommended-actions subset) | per-action | |
 
 **Acceptance criteria:**
 
@@ -381,9 +484,9 @@ W0 surface-audit flagged "Person merge picker substrate" as **unfiled — needs 
 - AC-MD.2: `dailyos/prep-status` inner block consumes `services::meeting_prep_status::read` (DOS-335); writes go through `meeting_prep_status::write` per W1 architecture F2 split.
 - AC-MD.3: `dailyos/post-meeting-capture` write path goes through `process_paste_transcript` ability; NO direct DB writes from PHP/JS.
 - AC-MD.4: Cross-stack navigation works (per wave §5.x dogfooding-flow §m semantics) — link from `dailyos/related-entities` to a Tauri-routed account detail resolves through the existing Tauri router during build-out window.
-- AC-MD.5: DOS-461 no-bypass harness extended to cover meeting entity (W1 cycle-2 fixture set already includes meeting fixture per W1 §5.5 split).
+- AC-MD.5: DOS-461 no-bypass harness extended to cover meeting entity. Meeting `EntityKind` extension landed at `87df7cf6` per V1.1 lock; meeting fixture verification gate confirmed at L1 Day-1 (was previously "verify at L1 kickoff"; now confirmed-landed).
 - AC-MD.6: Visible-QA-state matrix (meeting prep-ready / prep-not-started / agenda-drafting-in-flight / post-meeting-pending / claim correction in-flight per DOS-335) reachable + evidenced.
-- AC-MD.7: No PII in fixture; synced pattern at `wp/dailyos/patterns/meeting-detail-default.php`.
+- AC-MD.7: No PII in fixture; filesystem pattern at `wp/dailyos/patterns/meeting-detail-default.php` (theme-registered).
 
 **Intelligence Loop check:**
 1. *Claim model:* Claims surfaced in `claims_for_review` and `agenda` bound to envelope via `ProvenanceRef`; meeting itself carries `meeting_id` as `SubjectRef` per ADR-0125.
@@ -398,36 +501,68 @@ W0 surface-audit flagged "Person merge picker substrate" as **unfiled — needs 
 
 **Blocks (NEW):** `dailyos/accounts-list`, `dailyos/people-list`, `dailyos/projects-list`. Flat list blocks; NO inner blocks (rendered list-row primitives consume context the list block exposes per ADR-0129 §2).
 
-**Cursor pagination contract (per wave §13 Q2 + §10 invariant):**
+**Cursor pagination contract (V1.1 — codex-challenge F5 fix; consumes W1 `Paginated<T>`):**
 
-List blocks consume `executeAbility()` (WP 7.0 client-side Abilities API) — NOT `useEntityRecords` (`@wordpress/core-data`). List abilities return:
+List blocks consume `executeAbility()` (WP 7.0 client-side Abilities API; M1 fallback path-α for WP 6.x) — NOT `useEntityRecords` (`@wordpress/core-data`). List abilities return W1's actual `Paginated<T>` shape per `src-tauri/abilities-runtime/src/abilities/get_entity_intelligence/contracts.rs:149`:
+
+```rust
+// W1 substrate — DO NOT invent client-side shapes around this
+pub struct Paginated<T> {
+    pub items: Vec<T>,
+    pub next_cursor: Option<Cursor>,       // opaque server-signed token
+    pub total_hint: Option<u64>,
+    pub cursor_state: CursorState,         // Stable | DataShifted | Invalidated
+}
+
+pub enum CursorState {
+    Stable,
+    DataShifted { advisory: String },
+    Invalidated { reason: String, restart_required: bool },
+}
+```
+
+TypeScript projection on the WP client side mirrors the wire shape directly (camelCase per `#[serde(rename_all = "camelCase")]`):
 
 ```typescript
-type ListEnvelope<T> = {
+type Cursor = string;  // opaque; client MUST NOT parse
+type CursorState =
+  | { kind: "stable" }
+  | { kind: "data_shifted"; advisory: string }
+  | { kind: "invalidated"; reason: string; restart_required: boolean };
+
+type Paginated<T> = {
   items: T[];
-  next_cursor: string | null;  // opaque server-encoded; client must not parse
-  total_hint: number | null;
+  nextCursor: Cursor | null;
+  totalHint: number | null;
+  cursorState: CursorState;
 };
 ```
 
-**Shared hook ships at `wp/dailyos/blocks/_shared/hooks/useAbilityCursor.ts`** (NEW). Signature:
+**Shared hook ships at `wp/dailyos/blocks/_shared/hooks/useAbilityCursor.ts`** (NEW; W2 substrate per V1.1 §3 K-in). Signature:
 ```typescript
 function useAbilityCursor<T>(abilityName: string, payload: object, scopeSet: string[]):
-  { items: T[]; loading: boolean; loadMore: () => void; done: boolean; reset: () => void };
+  {
+    items: T[];
+    loading: boolean;
+    loadMore: () => void;
+    done: boolean;       // !nextCursor || cursorState.kind === "invalidated" && !restart_required
+    reset: () => void;   // user-initiated reset; also called automatically on cursor_state.invalidated
+    advisory: string | null;  // surfaces DataShifted advisory to the caller
+  };
 ```
 
-Reset semantics per wave §10 invariant: cursor resets when watermark changes (signal-driven cache invalidation per v1.4.2 W4-F cache discipline carried forward).
+Reset semantics per wave §10 invariant: cursor resets when watermark changes (signal-driven cache invalidation per v1.4.2 W4-F cache discipline carried forward) OR when `cursor_state` arrives as `Invalidated { restart_required: true }`. `DataShifted` surfaces the advisory string through the hook return; caller decides whether to display.
 
-**List item shape:** `EntityListItem` typed projection from `get_entity_intelligence` with `depth: Shallow` and `sections: [Facts, Vitals]`. Light envelope; no full Composition.
+**List item shape:** `EntityListItem` typed projection from `get_entity_intelligence` with `depth: Shallow` and `sections: [Facts]` (the only `EnvelopeSection` variant that's load-bearing for a list row — name, lifecycle, trust-band-aggregate via `Facts.provenance`). NOT `sections: [Facts, Vitals]` (Vitals is not an `EnvelopeSection` variant — V1.0 invented that name; corrected V1.1 per codex-challenge F5).
 
 **Acceptance criteria (shared across 3 list shells):**
 
 - AC-L.1: List block invokes `get_entity_intelligence` (or list-mode ability if W1 envelope distinguishes; verify at L1) with `depth: Shallow`; cursor pagination via `useAbilityCursor`.
 - AC-L.2: NO `useEntityRecords` calls in list block source.
-- AC-L.3: Visible-QA-states: full list / empty / loading-more / load-more-error / cursor-invalidated (advisory toast + reset).
+- AC-L.3: Visible-QA-states: full list / empty (`data-empty-reason` per V1.1 invariant) / loading-more / load-more-error / `cursor_state.data_shifted` (advisory chip surfaced from hook) / `cursor_state.invalidated.restart_required` (automatic reset + toast).
 - AC-L.4: List rendering passes envelope items through `build_receipt_for_audience` for any claim-bearing field (e.g., trust band per row).
 - AC-L.5: People-list shows merge-affordance affordance (per §5.3 path α) — emits `MergeIntent` not direct mutation.
-- AC-L.6: Synced patterns at `wp/dailyos/patterns/{accounts,people,projects}-list-default.php`; user can reorder column visibility via Site Editor.
+- AC-L.6: Filesystem patterns at `wp/dailyos/patterns/{accounts,people,projects}-list-default.php` (theme-registered via `register_block_pattern`, per wp-skill H4); user can reorder column visibility via Site Editor. NOT synced patterns.
 
 **Intelligence Loop check:** Q1 every list row binds to `SubjectRef` per ADR-0125; Q2 trust band per row from envelope; Q3 uniform pull-on-render; Q4 list ability is invocable from MCP (deferred to v1.4.7 scope manifest); Q5 row-level corrections route through standard feedback.
 
@@ -558,6 +693,7 @@ Inventory of W1 substrate the W2 wave consumes, by source. None reinvented; ever
 | `services::claim_receipt::boundary` + audit-disclosure-allowlist CI lint | Receipt rendering boundary across W2 surfaces | `e74d49dc` | Reuse |
 | `services::claim_receipt::feedback` (DOS-8 typed 9-variant enum) | Metadata proposal accept/dismiss/edit + cite-chip drawer corrections | `7bbbc6f7` | Reuse |
 | `services::meeting_prep_status::{read,write}` | `dailyos/prep-status` inner block (§5.4) | DOS-335 PR (verify L1) | Reuse |
+| Meeting `EntityKind` extension for `get_entity_intelligence` | All 10 `dailyos/meeting-detail` inner blocks (§5.4) | `87df7cf6` (merged at `c5c0578f`) | Reuse (extended W1 substrate per V1.1 codex-challenge F2 fix) |
 | DOS-461 fixture harness + no-bypass checks | All §5.1–5.4 ACs gate on green harness | W1 cycle-2 verdict cluster | Reuse |
 | L3 cycle-2 WP block consumer skeletons | All 4 outer blocks specialize these | `00f38b3b` + `3e58bc13` | Specialize |
 | `check_w1_consumer_skeleton.sh` CI gate | W2 PR must stay green | `c2e857b8` | Inherit as gate |
@@ -580,17 +716,17 @@ W2-level ACs span the full sub-wave program. Per-sub-ticket ACs in §5.
 
 **AC #W2.4 — `check_w1_consumer_skeleton.sh` CI gate green.** Every W1 producer named in §6 has a 3-arg `invoke_ability($producer, $payload, $scope_set)` reference in `wp/dailyos/blocks/*/render-functions.php`.
 
-**AC #W2.5 — Receipt rendering audience-keyed.** Every claim-bearing inner block routes through `build_receipt_for_audience` (W1 DOS-341); AgentMcp audience field-allowlist row passes negative fixture (per W1 AC-341.12).
+**AC #W2.5 — Receipt rendering audience-keyed.** Every claim-bearing inner block routes through `build_receipt_for_audience` (W1 DOS-341); AgentMcp audience field-allowlist row passes negative fixture (per W1 AC-341.12). **AgentMcp touchpoint render = Option B aggregate (V1.1 lock).** `dailyos/touchpoints-feed` under AgentMcp emits `{ count, recency: Recent|Aging|Stale, content: redacted }` only — NO per-item rows, NO touchpoint titles, NO `source_asof` timestamps, NO per-item trust bands. Recency tier resolves coarsely from the touchpoint set (no per-row timing oracle). Negative fixture asserts the aggregate-only shape (per W1 AC-341.12 + V1.1 §10 invariant "AgentMcp touchpoint aggregate render").
 
-**AC #W2.6 — Outer/inner block contract per wave §10.** Each outer block is a renderer-side projection of `AbilityOutput<Composition>`; inner blocks correspond 1-to-1 with `Composition.sections[].blocks[]`; primitives stay inserter-global (no `parent` field); block context via `providesContext`/`usesContext`, not attribute passthrough.
+**AC #W2.6 — Outer/inner block contract per wave §10 (Path B locked V1.1).** Each outer block is a renderer-side projection of `AbilityResult<EntityIntelligenceEnvelope>` where `envelope.sections: BTreeMap<EnvelopeSection, SectionState>` enumerates the 7 W1 section variants (Facts / Health / MetadataProposals / OpenLoops / Touchpoints / Threads / Record). Inner blocks correspond to *projection rules* over one or more `EnvelopeSection` slices per ADR-0130 §4 Reading A — NOT to a separate `Composition.sections[].blocks[]` substrate shape. Primitives stay inserter-global (no `parent` field); block context via `providesContext`/`usesContext`, not attribute passthrough; `templateLock: false` + default `template` array ship in every outer block.json.
 
-**AC #W2.7 — Per-project tint via CSS custom property.** `dailyos/project-detail` outer wrapper carries `style="--dailyos-project-tint: var(--color-garden-olive);"` (DOS-725 locked at olive); `chrome_config()` `$stub_tints['dailyos_project'] = 'olive'`; AtmosphereLayer renders olive tint on `singular(dailyos_project)` and `is_post_type_archive(dailyos_project)` if CPT registered (default-no per §5.2).
+**AC #W2.7 — Per-project tint via CSS custom property (V1.1 lock).** `dailyos/project-detail` outer wrapper carries `--dailyos-project-tint: var(--color-garden-olive);` via `get_block_wrapper_attributes(['style' => ...])`. **Prerequisite for W2 L1 start:** ADR-0077 amendment ticket lands first, locking project tint = `olive`. Until the amendment lands, `chrome_config()` emits olive default (`$stub_tints['dailyos_project'] = 'olive'`). **New CI script `src-tauri/scripts/check_no_inline_style_exception.sh`** (file at L1 kickoff): asserts that any `style=` attribute body in `wp/dailyos/blocks/**/*.php` matches `^--[a-z-]+:\s*var\(--[a-z-]+\);?$` (custom-property assignment only — `--dailyos-*` namespace). This is the narrow exception to `feedback_no_inline_css` per memory; CI gate enforces the boundary. AtmosphereLayer renders olive tint on `singular(dailyos_project)` and `is_post_type_archive(dailyos_project)` if CPT registered (default-no per §5.2).
 
 **AC #W2.8 — Visible-QA-state matrix per surface.** Each entity-detail composite reaches the per-DOS-462 / per-DOS-483 / per-DOS-484 / per-Meeting matrix (§5 ACs); list shells reach the AC-L.3 state set; metadata proposals reach AC-328.1 state set. Screenshot-evidenced.
 
 **AC #W2.9 — No PII in any fixture data.** Per CLAUDE.md critical rule. Generic examples only (`subsidiary.com`, `parent.com`, `user@example.com`).
 
-**AC #W2.10 — Synced patterns ship per composite.** `wp/dailyos/patterns/{account,project,person,meeting}-detail-default.php` + `{accounts,people,projects}-list-default.php` (per wave AC #W4 many-blocks-not-few rule).
+**AC #W2.10 — Filesystem patterns ship per composite.** `wp/dailyos/patterns/{account,project,person,meeting}-detail-default.php` + `{accounts,people,projects}-list-default.php` (per wave AC #W4 many-blocks-not-few rule). Theme-registered via `register_block_pattern` per wp-skill H4 V1.1 (insert-then-detach semantics; user reordering does not affect other instances). **NOT** synced patterns (DB-stored reusable blocks).
 
 **AC #W2.11 — Inline-edit-affordance contract (per wave §10 + AC #W3).** Every claim-bearing block supports inline correction → `FeedbackAction` → `record_claim_feedback`; no direct DB writes from WP-side JS or PHP.
 
@@ -640,6 +776,9 @@ W2 inherits ALL wave-level invariants from `.docs/plans/v1.4.4-wp-surface-migrat
 | **Chrome runtime-injection scope** | Body content stays Gutenberg blocks. Chrome (FolioBar / FloatingNavIsland / AtmosphereLayer / MagazinePageLayout) is the only runtime-injection lane. W2 introduces NO new runtime-injection module. |
 | **Design-system canonicity** | Every chapter inner block translates an existing canonical design (`src/pages/AccountDetailPage.tsx`, `ProjectDetailEditorial.tsx`, `PersonDetailEditorial.tsx`, `MeetingDetailPage.tsx`, `.docs/design/patterns/*`) — NO new visual patterns invented in `wp/dailyos/blocks/`. New patterns land canonical-first with `ce-design-lens-reviewer` approval. |
 | **L2 bounded by acceptance criteria** | Path-α findings → maintenance project `b8e6aea4-d47e-4f3a-b03d-a05bec914aeb`. C4-blocking findings reopen W1. |
+| **Code-shape sketch obligation (NEW V1.1, per architecture A1 + wp-skill H1)** | Every block.json declaration named in §5 ships with a concrete code-shape sketch — block.json + render.php skeleton — alongside the prose. No spec-named-in-prose-only patterns. If a third spec-vs-sketch gap surfaces in cycle 2, switch to a class-wide sweep over §5. |
+| **Empty-state pattern (NEW V1.1, per design-lens F1)** | Every inner block renders empty as a quiet chip with `data-empty-reason="<reason>"` attribute. NEVER silent-hidden (`return ''` from render.php is non-conforming). Reasons inherit envelope's `SectionState::Empty { reason: EmptyReason }` where applicable, surface-local otherwise. Anchors a stable QA target across 60+ inner blocks. |
+| **AgentMcp touchpoint aggregate render (NEW V1.1, per design-lens F2 + codex-challenge F4)** | For AgentMcp audience, `dailyos/touchpoints-feed` (and any other touchpoint-bearing inner block) emits `{ count: u64, recency: Recent | Aging | Stale, content: redacted }` only. NO per-item rows, NO titles, NO `source_asof` timestamps, NO per-row trust bands. Recency tier resolves coarsely server-side from the touchpoint set; no timing oracle leaks. Negative fixture asserts the aggregate-only shape (per W1 AC-341.12). |
 
 ## 11. Reviewer matrix (L0 panel)
 
@@ -706,7 +845,7 @@ Sub-wave L0 inherits wave-level locked decisions (§13 #1, #2, #5, #6). W2-speci
 
 **Q1 — Per-entity inner block default ordering: which chapters in the default template?**
 
-Each composite has a canonical Tauri React chapter ordering (translated 1-to-1 in §5.1–5.4 from `AccountDetailPage.tsx` / `ProjectDetailEditorial.tsx` / `PersonDetailEditorial.tsx`). Open: should the default synced pattern enforce this canonical ordering as the lock-default, or ship a "spread out" arrangement? **Recommendation: canonical Tauri ordering as default**; user reorders via Site Editor with `templateLock: false`. Decided here unless `ce-design-lens-reviewer` objects.
+Each composite has a canonical Tauri React chapter ordering (translated 1-to-1 in §5.1–5.4 from `AccountDetailPage.tsx` / `ProjectDetailEditorial.tsx` / `PersonDetailEditorial.tsx`). Open: should the default filesystem pattern enforce this canonical ordering as the lock-default, or ship a "spread out" arrangement? **Recommendation: canonical Tauri ordering as default**; user reorders via Site Editor with `templateLock: false`. Decided here unless `ce-design-lens-reviewer` objects.
 
 **Resolves at:** L0 close (assume canonical ordering default unless reviewer panel objects).
 
@@ -720,25 +859,21 @@ Each composite has a canonical Tauri React chapter ordering (translated 1-to-1 i
 
 **Resolves at:** L0 close.
 
-**Q3 — How does AgentMcp envelope render the redacted touchpoint title?**
+**Q3 — How does AgentMcp envelope render the redacted touchpoint title? — RESOLVED V1.1**
 
-For AgentMcp audience, the field allowlist excludes source labels + claim_id (per W1 AC-341.12). Touchpoint titles often carry source-derived strings (e.g., "Slack message from..."). Two options:
-- **Option A — placeholder:** redacted touchpoint renders as "Redacted touchpoint" with timestamp + trust band + lifecycle only.
-- **Option B — hidden:** AgentMcp envelope omits the touchpoint entirely from the items array (filtered server-side in `build_receipt_for_audience`).
+**Locked decision (James 2026-05-21): Option B — coarse aggregate signal only.** For AgentMcp audience, `dailyos/touchpoints-feed` emits `{ count: u64, recency: Recent | Aging | Stale, content: redacted }` and NO per-item rows. No titles, no `source_asof` timestamps, no per-row trust bands. Recency tier resolves coarsely server-side from the touchpoint set (e.g., `Recent` = most-recent within N days; `Aging` = within M days; `Stale` = older).
 
-**Recommendation: Option A (placeholder)**. Reasoning: trust contract requires that the AI agent *knows the touchpoint exists* (so it can request elevated audience if needed) — hiding it entirely creates a coverage gap. Placeholder preserves coverage without leaking field-allowlist-disallowed data.
+Rationale (overrides V1.0 Option A): even a placeholder per-row entry with timestamp + trust band leaks an existence + timing oracle to the agent. The aggregate signal preserves coverage (agent knows there's activity) without per-item leakage. AC-W2.5 + §10 invariant "AgentMcp touchpoint aggregate render" enforce; negative fixture per W1 AC-341.12 asserts the shape.
 
-**Resolves at:** L0 close with `/cso` panel review (this is a trust-boundary decision, not a pure UX question).
+**Q4 — Meeting Detail substrate gap: is W1 fully sufficient? — RESOLVED V1.1**
 
-**Q4 — Meeting Detail substrate gap: is W1 fully sufficient, or does Meeting Detail need a W1 follow-up?**
+**W1 substrate extended to support Meeting EntityKind via commit `87df7cf6`** (`feat(abilities): extend get_entity_intelligence with Meeting EntityKind (W2 L0 cycle-1 F2 fix)`), merged into wave at `c5c0578f`. `EntityKind` now `{ Account, Project, Person, Meeting }`. Meeting subject composes Facts / Health / Touchpoints / OpenLoops / Threads / Record / MetadataProposals as listed in §5.4 V1.1. AgentMcp audience scrub applies per W1 cycle-2 F2 pattern.
 
-W1 shipped DOS-335 meeting prep DTO + `get_entity_intelligence` covers `entity_type=meeting`. Open: does `get_entity_intelligence` produce a meeting-shaped envelope (agenda / attendees / context_bundle / post_meeting_capture slices)? **Verify at L1 kickoff.** If gap exists (e.g., `agenda` slice not in envelope), this is a C4 reopen of W1, NOT a path-α defer. Per wave AC #W5 tie-break.
+No further substrate work required for W2 L1 start. C4 not invoked.
 
-**Resolves at:** L1 kickoff with codex consult + ce-architecture-strategist on the envelope shape audit.
+**Q5 — Meeting Detail Linear ticket: file new, or fold into existing meeting work? — STILL OPEN (filing-only)**
 
-**Q5 — Meeting Detail Linear ticket: file new, or fold into existing meeting work?**
-
-No Linear ticket at packet-author time. **Locked recommendation:** file new ticket "v1.4.4 W2 — Meeting Detail block" at L1 kickoff; priority High; project v1.4.4. AC list seeded from §5.4.
+No Linear ticket at packet-author time. **Locked recommendation (unchanged V1.1):** file new ticket "v1.4.4 W2 — Meeting Detail block" at L1 kickoff; priority High; project v1.4.4. AC list seeded from §5.4. The substrate gap that previously made this risky has been closed at `87df7cf6`; filing is now a routine L1-kickoff task.
 
 **Resolves at:** L1 kickoff (filing only; no scope decision needed).
 
@@ -747,3 +882,13 @@ No Linear ticket at packet-author time. **Locked recommendation:** file new tick
 Per §5.3, locked at path α (`MergeIntent` feedback; Tauri-side actual merge). If L4 reveals user friction, escalate to path β (substrate addition). Wave AC #W5 C4 tie-break applies — path β goes back to W1, not deferred to v1.4.5+.
 
 **Resolves at:** L4 hands-on for §5.3; path α holds unless L4 evidence triggers path β.
+
+**Q7 — ADR-0077 amendment + path-α maintenance items (NEW V1.1):**
+
+- **ADR-0077 amendment** (project tint = `olive`) is a **W2 L1 prerequisite** per AC-W2.7 V1.1 lock. Files alongside the L1 kickoff PR; until amendment lands, `chrome_config()` emits olive default.
+- **Path-α items routed to maintenance project `b8e6aea4-d47e-4f3a-b03d-a05bec914aeb` (per memory `feedback_l2_path_alpha_to_maintenance_project`):**
+  - M1 — WP 7.0 abilities API fallback (REST endpoint shim for `executeAbility()` if WP-core slip materializes).
+  - M2 — Inserter-global primitives null-context render guard (graceful render path when inner block is inserted outside an entity-detail outer).
+  - M3 — theme.json `styles.blocks["dailyos/*"]` declaration deferred to v1.4.5+ (W2 blocks declare only `supports.html` / `reusable` / `inserter`; no `supports.color/spacing/typography`).
+
+**Resolves at:** L1 kickoff (ADR-0077 amendment lands first); maintenance tickets filed at L0 close, do not block.
