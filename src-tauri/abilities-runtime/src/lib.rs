@@ -15,6 +15,7 @@ pub mod services {
     pub mod sensitivity {
         pub use crate::sensitivity::*;
     }
+    pub mod workspace_intake;
 }
 pub mod structured_claim;
 pub mod types;

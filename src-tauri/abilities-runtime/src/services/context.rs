@@ -53,6 +53,7 @@ use crate::services::external_replay::{
     AuthScopeId, ExternalReplayFixture, ExternalReplayFixtureMissing, JsonExternalReplayFixture,
     ReplayResponse, RequestKey,
 };
+use crate::services::workspace_intake::WorkspaceIntakeService;
 use crate::types::{
     subject_ref_from_json, ClaimSubjectRef, EntityContextEntry, EntityContextText,
     IntelligenceClaim,
@@ -849,6 +850,7 @@ pub struct ServiceContext<'a> {
     account_list_reader: Option<Arc<dyn AccountListReadHandle>>,
     person_list_reader: Option<Arc<dyn PersonListReadHandle>>,
     project_list_reader: Option<Arc<dyn ProjectListReadHandle>>,
+    workspace_intake: Option<Arc<dyn WorkspaceIntakeService>>,
 }
 
 pub type EntityContextReadFuture<'a> =
@@ -1599,9 +1601,8 @@ pub enum ClaimReceiptReadError {
     ReadFailed(String),
 }
 
-pub type ClaimReceiptReadFuture<'a> = Pin<
-    Box<dyn Future<Output = Result<ClaimReceiptSnapshot, ClaimReceiptReadError>> + Send + 'a>,
->;
+pub type ClaimReceiptReadFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<ClaimReceiptSnapshot, ClaimReceiptReadError>> + Send + 'a>>;
 
 /// Narrow read handle that the app crate attaches so the `claim_receipt`
 /// ability can dispatch through `services::claim_receipt::render::
@@ -1678,6 +1679,7 @@ impl<'a> ServiceContext<'a> {
             account_list_reader: None,
             person_list_reader: None,
             project_list_reader: None,
+            workspace_intake: None,
         }
     }
 
@@ -1710,6 +1712,7 @@ impl<'a> ServiceContext<'a> {
             account_list_reader: None,
             person_list_reader: None,
             project_list_reader: None,
+            workspace_intake: None,
         }
     }
 
@@ -1753,6 +1756,7 @@ impl<'a> ServiceContext<'a> {
             account_list_reader: None,
             person_list_reader: None,
             project_list_reader: None,
+            workspace_intake: None,
         }
     }
 
@@ -1847,10 +1851,7 @@ impl<'a> ServiceContext<'a> {
         self
     }
 
-    pub fn with_claim_receipt_reader(
-        mut self,
-        reader: Arc<dyn ClaimReceiptReadHandle>,
-    ) -> Self {
+    pub fn with_claim_receipt_reader(mut self, reader: Arc<dyn ClaimReceiptReadHandle>) -> Self {
         self.claim_receipt_reader = Some(reader);
         self
     }
@@ -1868,6 +1869,15 @@ impl<'a> ServiceContext<'a> {
     pub fn with_project_list_reader(mut self, reader: Arc<dyn ProjectListReadHandle>) -> Self {
         self.project_list_reader = Some(reader);
         self
+    }
+
+    pub fn with_workspace_intake(mut self, service: Arc<dyn WorkspaceIntakeService>) -> Self {
+        self.workspace_intake = Some(service);
+        self
+    }
+
+    pub fn workspace_intake(&self) -> Option<&dyn WorkspaceIntakeService> {
+        self.workspace_intake.as_deref()
     }
 
     /// Reader-backed touchpoint composition. When no reader is

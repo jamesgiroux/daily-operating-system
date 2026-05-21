@@ -16,3 +16,4 @@ pub mod registry;
 pub mod runs;
 pub mod signals;
 pub mod wiring;
+pub mod workspace_intake_impl;
