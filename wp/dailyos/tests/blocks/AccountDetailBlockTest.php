@@ -524,6 +524,39 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 	}
 
 	/**
+	 * Account-detail row renderers must use rendered claim text for visible
+	 * copy. Claim ids belong in data attributes only.
+	 */
+	public function test_account_detail_inner_rows_do_not_render_claim_ids_as_visible_labels(): void {
+		$files = glob( __DIR__ . '/../../blocks/account-detail/inner/*/render-functions.php' );
+		$this->assertIsArray( $files );
+		$this->assertNotEmpty( $files );
+
+		foreach ( $files as $file ) {
+			$source = (string) file_get_contents( $file );
+			if ( false === strpos( $source, '_render_row' ) ) {
+				continue;
+			}
+
+			$this->assertStringContainsString(
+				'dailyos_receipt_rendered_text',
+				$source,
+				basename( dirname( $file ) ) . ' rows must derive visible copy from rendered claim text'
+			);
+			$this->assertStringNotContainsString(
+				'esc_html( $claim_id )',
+				$source,
+				basename( dirname( $file ) ) . ' rows must not print opaque claim ids as visible copy'
+			);
+			$this->assertStringNotContainsString(
+				'$trust_band = isset( $receipt[\'trustBand\'] )',
+				$source,
+				basename( dirname( $file ) ) . ' rows must use shared trust DTO parsing'
+			);
+		}
+	}
+
+	/**
 	 * Round-trip: outer + inner block sharing an envelopeRenderId both
 	 * resolve to the same cached envelope without re-invoking the producer.
 	 */

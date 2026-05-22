@@ -177,11 +177,12 @@ if ( ! function_exists( 'dailyos_account_detail_unified_timeline_render_row' ) )
 	 */
 	function dailyos_account_detail_unified_timeline_render_row( array $claim_ref, array $receipt ): string {
 		$claim_id = isset( $claim_ref['claim_id'] ) ? (string) $claim_ref['claim_id'] : '';
-		$trust_band = isset( $receipt['trustBand'] ) ? (string) $receipt['trustBand'] : ( isset( $receipt['trust_band'] ) ? (string) $receipt['trust_band'] : 'unscored' );
+		$trust_band = dailyos_receipt_trust_band( $receipt );
+		$display    = dailyos_receipt_rendered_text( $receipt, $claim_id );
 		return '<div class="TimelineEntry_entry" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
 			. '<div class="TimelineEntry_dot TimelineEntry_dotContext" aria-hidden="true"></div>'
 			. '<div class="TimelineEntry_dateLine"><span class="TimelineEntry_typeBadge TimelineEntry_typeContext">' . esc_html( $trust_band ) . '</span></div>'
-			. '<div class="TimelineEntry_title">' . esc_html( $claim_id ) . '</div>'
+			. '<div class="TimelineEntry_title">' . esc_html( $display ) . '</div>'
 			. '</div>';
 	}
 }

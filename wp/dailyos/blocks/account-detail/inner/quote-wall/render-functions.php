@@ -175,9 +175,10 @@ if ( ! function_exists( 'dailyos_quote_wall_render_row' ) ) {
 	 */
 	function dailyos_quote_wall_render_row( array $claim_ref, array $receipt ): string {
 		$claim_id = isset( $claim_ref['claim_id'] ) ? (string) $claim_ref['claim_id'] : '';
-		$trust_band = isset( $receipt['trustBand'] ) ? (string) $receipt['trustBand'] : ( isset( $receipt['trust_band'] ) ? (string) $receipt['trust_band'] : 'unscored' );
+		$trust_band = dailyos_receipt_trust_band( $receipt );
+		$display    = dailyos_receipt_rendered_text( $receipt, $claim_id );
 		return '<div class="QuoteWall_card" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
-			. '<blockquote class="QuoteWall_quote">' . esc_html( $claim_id ) . '</blockquote>'
+			. '<blockquote class="QuoteWall_quote">' . esc_html( $display ) . '</blockquote>'
 			. '<div class="QuoteWall_footer"><span class="QuoteWall_badge QuoteWall_neutral">' . esc_html( $trust_band ) . '</span></div>'
 			. '</div>';
 	}
