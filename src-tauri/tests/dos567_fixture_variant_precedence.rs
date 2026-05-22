@@ -33,6 +33,7 @@ fn precedence_rank(error: &BridgeSurfaceError) -> u8 {
         BridgeSurfaceError::StaleComposition { .. } => 6,
         BridgeSurfaceError::AbilityUnavailable
         | BridgeSurfaceError::InputSchemaInvalid
+        | BridgeSurfaceError::InputReservedField
         | BridgeSurfaceError::ProducerUnavailable
         | BridgeSurfaceError::Validation(_)
         | BridgeSurfaceError::Ownership(_) => 7,

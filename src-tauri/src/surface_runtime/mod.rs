@@ -3960,6 +3960,9 @@ fn bridge_surface_error_code(error: &BridgeSurfaceError) -> &'static str {
         BridgeSurfaceError::StaleVersion { .. } => "stale_watermark",
         BridgeSurfaceError::StaleComposition { .. } => "stale_composition",
         BridgeSurfaceError::CompositionVersionOverflow { .. } => "composition_version_overflow",
+        BridgeSurfaceError::ProducerUnavailable => "producer_unavailable",
+        BridgeSurfaceError::InputSchemaInvalid => "input_schema_invalid",
+        BridgeSurfaceError::InputReservedField => "input_reserved_field",
         BridgeSurfaceError::Validation(_) => "validation_error",
         BridgeSurfaceError::AbilityUnavailable | BridgeSurfaceError::Ownership(_) => {
             "ability_unavailable"
