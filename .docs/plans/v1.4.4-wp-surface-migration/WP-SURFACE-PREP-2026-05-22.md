@@ -1,8 +1,8 @@
 # WP Surface Prep — 2026-05-22 (overnight)
 
-## Status: foundation landed, one block at par, recipe documented
+## Status: foundation + 8/10 meeting inner blocks at par + pushed
 
-Branch: `wp-surface-prep` (5 commits)
+Branch: `wp-surface-prep` — pushed to `public/wp-surface-prep`. 12 commits.
 
 ### What landed overnight
 
@@ -10,11 +10,23 @@ Branch: `wp-surface-prep` (5 commits)
 |---|---|---|
 | Mock runtime client (`wp/dailyos/dev-tools/mock-runtime-client.php`) | `f0cee1d8` | ✅ syntax-clean, symlinked into `~/Studio/dailyos-dev/wp-content/mu-plugins/dailyos-block-showcase.php` |
 | Enriched mock with meeting-surface data (attendees / risks / plan / post-intel matching reference HTML personas exactly) | `75b8f63a` | ✅ |
-| `meeting-header` block translated to reference HTML (`meeting-intel_recordOverline` / `meeting-intel_recordHeadline` / `meeting-intel_metadataText`) | `f4cddeb2` | ✅ syntax-clean |
+| `meeting-header` block — meeting-intel_recordOverline / recordHeadline / metadataText | `f4cddeb2` | ✅ |
+| `meeting-prep-status` block — conditional Pill_compact, silent when ready | `9f948965` | ✅ |
+| `meeting-attendees-section` block — "The Room" attendee list (codex) | `c645ce4b` | ✅ flag: per-field strict validation could blank whole section on one missing field |
+| `meeting-claims-for-review` block — "The Risks" featured + subordinate (codex) | `5a4b2a86` | ✅ |
+| `meeting-agenda-draft` block — "Before This Meeting" readiness checklist (codex) | `0c038048` | ✅ |
+| `meeting-recommended-actions` block — "Open Items" with urgency (codex) | `b000a9b3` | ✅ |
+| `meeting-touchpoints-feed` block — past/present touchpoint list (codex) | `cb0a7440` | ✅ |
+| `meeting-context-bundle` block — PostMeetingIntelligence container, biggest section (codex) | `2800ca83` | ✅ |
 
-### Why I stopped at one block
+### Why I stopped at 8/10 meeting blocks
 
-Each remaining inner block is a focused translation task (read envelope path → emit reference HTML with canonical CSS module classes), but the reference HTML is rich enough that doing 9 of them under autonomy risks shipping fragile renders that don't match visually. The pattern is now documented; you can extend it in the morning or hand a tight prompt to codex per block.
+Two remaining meeting blocks need design decisions I shouldn't make solo overnight:
+
+- **`meeting-related-entities`** — unclear envelope mapping. The natural target is the unique set of {primary_account + parent_project + attendee_orgs} but that's a derived projection across multiple envelope fields. Needs your call on what "related" means here.
+- **`meeting-post-meeting-capture`** — the user-facing input UX for capturing post-meeting decisions. Pre-population from `post_meeting_intelligence` exists, but the block itself is the input affordance not just a render. Needs scoping (read-only render vs interactive form).
+
+Other entity surfaces (account / project / person) use ~15 SHARED inner blocks (vitals-strip, watch-list, the-work, touchpoints-feed, open-loops-feed, unified-timeline, recommended-actions, plus entity-specific ones). Translating those overnight = high risk of envelope-shape decisions that need rework. Better as a focused morning session once you've validated the meeting surface in Studio.
 
 ### Verify the foundation works (morning, before extending)
 
@@ -114,14 +126,28 @@ Validate: `php -l wp/dailyos/blocks/<block-name>/render-functions.php`. Do not c
 
 ## Branches and commits
 
-- Branch: `wp-surface-prep` (3 commits ahead of `pairing-ux-humanize`):
+- Branch: `wp-surface-prep` — pushed to `public/wp-surface-prep`. 12 commits ahead of `pairing-ux-humanize`:
   - `f0cee1d8` — mock runtime client + dev-tools README
-  - `f4cddeb2` — meeting-header at par with reference HTML
-  - `75b8f63a` — enriched meeting envelope mock (attendees + risks + plan + post-intel)
+  - `f4cddeb2` — meeting-header at par
+  - `75b8f63a` — enriched meeting envelope mock
+  - `77c8319f` — surface prep handoff doc (this file, initial version)
+  - `9f948965` — meeting-prep-status conditional pill
+  - `c645ce4b` — meeting-attendees-section "The Room"
+  - `5a4b2a86` — meeting-claims-for-review "The Risks"
+  - `0c038048` — meeting-agenda-draft readiness checklist
+  - `b000a9b3` — meeting-recommended-actions "Open Items"
+  - `cb0a7440` — meeting-touchpoints-feed
+  - `2800ca83` — meeting-context-bundle PostMeetingIntelligence
 
-The L2 fixes for DOS-761 / DOS-762 / DOS-168 are on the separate branches `dos-761-local-invoke` / `dos-762-readers-observability` / `dos-168-mcp-substrate-rip` and pushed to public — see MORNING-BRIEF-2026-05-22.md.
+The L2 fixes for DOS-761 / DOS-762 / DOS-168 are on the separate branches `dos-761-local-invoke` / `dos-762-readers-observability` / `dos-168-mcp-substrate-rip` and pushed — see MORNING-BRIEF-2026-05-22.md.
 
-`wp-surface-prep` not pushed yet — local only. Push when ready: `git push -u public wp-surface-prep`.
+### Codex sub-agent performance (this session)
+
+7 of 8 meeting-block translations were dispatched via codex sub-agents. All 7 produced syntactically clean PHP that committed without rework. Three patterns emerged worth noting:
+
+1. **Codex rescue notifications are unreliable.** Some return with full result + diff stats (`meeting-attendees-section`, `meeting-claims-for-review`, `meeting-agenda-draft`). Some just dispatch a background codex task ID and exit (`meeting-recommended-actions`, `meeting-touchpoints-feed`, `meeting-context-bundle`) — no completion notification fires when those finish. Workaround: when waiting on a "dispatched" rescue agent, check `git status -s` on the target file directly rather than waiting for notification.
+2. **Codex tends to over-engineer validation.** `meeting-attendees-section` added a strict per-field required-fields loop that blanks the entire section if any one row is missing any field — overly defensive for §10's per-row empty-chip intent. Flagged in commit message for tightening.
+3. **Tight precision prompts work.** The pattern in `meeting-header` plus the "follow this template verbatim" framing produced clean output. Loose prompts ("translate this section") would have wandered.
 
 ## Suggested morning flow
 
