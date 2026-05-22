@@ -1244,7 +1244,7 @@ mod tests {
             .await
             .unwrap_err();
 
-        assert_eq!(err, BridgeSurfaceError::AbilityUnavailable);
+        assert_eq!(err, BridgeSurfaceError::InputSchemaInvalid);
     }
 
     #[tokio::test]

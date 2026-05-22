@@ -5,7 +5,7 @@
 //! adapters that reach SQLite from the app crate, keeping those raw handles out
 //! of the ability runtime dependency graph.
 
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 pub use abilities_runtime::services::context::*;
 
@@ -44,6 +44,10 @@ impl ProjectionSignatureEnforcementMode {
 }
 
 pub struct LiveEntityContextReader;
+pub struct LiveListOpenLoopsReader;
+pub struct LiveAccountListReader;
+pub struct LivePersonListReader;
+pub struct LiveProjectListReader;
 pub struct LiveEntityContextClaimReader;
 pub struct LivePrepareMeetingContextReader;
 pub struct LiveTemporalWorkspaceReader;
@@ -60,6 +64,10 @@ pub struct LiveClaimReceiptReader;
 
 pub fn attach_live_workspace_readers(ctx: ServiceContext<'_>) -> ServiceContext<'_> {
     ctx.with_entity_context_reader(Arc::new(LiveEntityContextReader))
+        .with_list_open_loops_reader(Arc::new(LiveListOpenLoopsReader))
+        .with_account_list_reader(Arc::new(LiveAccountListReader))
+        .with_person_list_reader(Arc::new(LivePersonListReader))
+        .with_project_list_reader(Arc::new(LiveProjectListReader))
         .with_entity_context_claim_reader(Arc::new(LiveEntityContextClaimReader))
         .with_prepare_meeting_context_reader(Arc::new(LivePrepareMeetingContextReader))
         .with_trajectory_reader(Arc::new(LiveTemporalWorkspaceReader))
@@ -91,6 +99,359 @@ impl EntityContextReadHandle for LiveEntityContextReader {
             .await
             .map_err(|error| format!("Entity context read task failed: {error}"))?
         })
+    }
+}
+
+impl ListOpenLoopsReadHandle for LiveListOpenLoopsReader {
+    fn read_open_loops<'a>(&'a self, query: ListOpenLoopsQuery) -> ListOpenLoopsReadFuture<'a> {
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                let db = open_action_db().map_err(ListOpenLoopsReadError::ReadFailed)?;
+                let actions = load_open_loop_actions(&db, &query)?;
+                let claims = actions
+                    .into_iter()
+                    .filter(is_open_loop_action)
+                    .filter_map(|action| open_loop_claim_for_action(action, &query))
+                    .collect::<Vec<_>>();
+                Ok(ListOpenLoopsSnapshot { claims })
+            })
+            .await
+            .map_err(|error| {
+                ListOpenLoopsReadError::ReadFailed(format!("open loop read task failed: {error}"))
+            })?
+        })
+    }
+}
+
+impl AccountListReadHandle for LiveAccountListReader {
+    fn read_accounts<'a>(&'a self, query: AccountListQuery) -> AccountListReadFuture<'a> {
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                let db = open_action_db().map_err(AccountListReadError::ReadFailed)?;
+                let mut rows = db
+                    .get_all_accounts()
+                    .map_err(|error| AccountListReadError::ReadFailed(error.to_string()))?
+                    .into_iter()
+                    .map(|account| AccountListSummary {
+                        account_id: account.id,
+                        name: account.name,
+                        status: account.lifecycle.unwrap_or_else(|| "unknown".to_string()), // MVP default until lifecycle is mandatory.
+                        health_band: health_band_for_account(account.health.as_deref()),
+                        last_touchpoint_at: None, // MVP default until touchpoint rollups are available here.
+                        open_loops_count: 0, // MVP default until a cheap per-account aggregate exists.
+                    })
+                    .collect::<Vec<_>>();
+
+                if let Some(filter) = query.status.as_deref() {
+                    rows.retain(|row| row.status == filter);
+                }
+                if let Some(filter) = query.health_band {
+                    rows.retain(|row| row.health_band == filter);
+                }
+                if let Some(needle) = query.name_contains.as_deref() {
+                    let needle_lc = needle.to_lowercase();
+                    rows.retain(|row| row.name.to_lowercase().contains(&needle_lc));
+                }
+
+                Ok(AccountListSnapshot {
+                    total_after_filter: rows.len() as u64,
+                    items: paginate(rows, query.offset, query.page_size),
+                    data_shifted_advisory: None,
+                })
+            })
+            .await
+            .map_err(|error| {
+                AccountListReadError::ReadFailed(format!("account list read task failed: {error}"))
+            })?
+        })
+    }
+}
+
+impl PersonListReadHandle for LivePersonListReader {
+    fn read_people<'a>(&'a self, query: PersonListQuery) -> PersonListReadFuture<'a> {
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                let db = open_action_db().map_err(PersonListReadError::ReadFailed)?;
+                let mut rows = db
+                    .get_people(None)
+                    .map_err(|error| PersonListReadError::ReadFailed(error.to_string()))?
+                    .into_iter()
+                    .map(|person| PersonListSummary {
+                        person_id: person.id,
+                        display_name: if person.name.trim().is_empty() {
+                            person.email // MVP fallback for legacy rows without a display name.
+                        } else {
+                            person.name
+                        },
+                        primary_account_id: None, // MVP default until primary-account resolution is exposed here.
+                        role: person.role.unwrap_or_else(|| "unknown".to_string()), // MVP default until role is mandatory.
+                        last_touchpoint_at: person.last_seen, // MVP uses people.last_seen as the safest existing proxy.
+                    })
+                    .collect::<Vec<_>>();
+
+                if let Some(filter) = query.role.as_deref() {
+                    rows.retain(|row| row.role == filter);
+                }
+                if let Some(filter) = query.primary_account_id.as_deref() {
+                    rows.retain(|row| row.primary_account_id.as_deref() == Some(filter));
+                }
+                if let Some(needle) = query.name_contains.as_deref() {
+                    let needle_lc = needle.to_lowercase();
+                    rows.retain(|row| row.display_name.to_lowercase().contains(&needle_lc));
+                }
+
+                Ok(PersonListSnapshot {
+                    total_after_filter: rows.len() as u64,
+                    items: paginate(rows, query.offset, query.page_size),
+                    data_shifted_advisory: None,
+                })
+            })
+            .await
+            .map_err(|error| {
+                PersonListReadError::ReadFailed(format!("person list read task failed: {error}"))
+            })?
+        })
+    }
+}
+
+impl ProjectListReadHandle for LiveProjectListReader {
+    fn read_projects<'a>(&'a self, query: ProjectListQuery) -> ProjectListReadFuture<'a> {
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                let db = open_action_db().map_err(ProjectListReadError::ReadFailed)?;
+                let mut rows = db
+                    .get_all_projects()
+                    .map_err(|error| ProjectListReadError::ReadFailed(error.to_string()))?
+                    .into_iter()
+                    .map(|project| ProjectListSummary {
+                        project_id: project.id,
+                        name: project.name,
+                        parent_account_id: project.parent_id,
+                        status: project.status,
+                        trajectory:
+                            abilities_runtime::abilities::list_projects::ProjectTrajectory::Unknown, // MVP default until trajectory is persisted.
+                        last_touchpoint_at: None, // MVP default until touchpoint rollups are available here.
+                    })
+                    .collect::<Vec<_>>();
+
+                if let Some(filter) = query.status.as_deref() {
+                    rows.retain(|row| row.status == filter);
+                }
+                if let Some(filter) = query.trajectory {
+                    rows.retain(|row| row.trajectory == filter);
+                }
+                if let Some(filter) = query.parent_account_id.as_deref() {
+                    rows.retain(|row| row.parent_account_id.as_deref() == Some(filter));
+                }
+                if let Some(needle) = query.name_contains.as_deref() {
+                    let needle_lc = needle.to_lowercase();
+                    rows.retain(|row| row.name.to_lowercase().contains(&needle_lc));
+                }
+
+                Ok(ProjectListSnapshot {
+                    total_after_filter: rows.len() as u64,
+                    items: paginate(rows, query.offset, query.page_size),
+                    data_shifted_advisory: None,
+                })
+            })
+            .await
+            .map_err(|error| {
+                ProjectListReadError::ReadFailed(format!("project list read task failed: {error}"))
+            })?
+        })
+    }
+}
+
+fn open_action_db() -> Result<crate::db::ActionDb, String> {
+    crate::db::ActionDb::open(Arc::new(crate::db::LocalKeychain::new()))
+        .map_err(|error| format!("Database unavailable: {error}"))
+}
+
+fn paginate<T>(rows: Vec<T>, offset: u64, page_size: u32) -> Vec<T>
+where
+    T: Clone,
+{
+    let offset = offset as usize;
+    let end = (offset + page_size as usize).min(rows.len());
+    if offset >= rows.len() {
+        Vec::new()
+    } else {
+        rows[offset..end].to_vec()
+    }
+}
+
+fn health_band_for_account(
+    health: Option<&str>,
+) -> abilities_runtime::abilities::trust::types::TrustBand {
+    use abilities_runtime::abilities::trust::types::TrustBand;
+
+    // DOS-762 P2 (codex review): the accounts table stores health as color
+    // strings — `green` / `yellow` / `red` — per the existing data layer, NOT
+    // the narrative strings the producer first guessed. Map both vocabularies
+    // so existing rows surface their actual band instead of silently
+    // defaulting to LikelyCurrent. Unknown / missing → Unscored (honest)
+    // instead of LikelyCurrent (optimistic).
+    match health.map(|value| value.trim().to_ascii_lowercase()) {
+        Some(value) if value == "healthy" || value == "good" || value == "green" => {
+            TrustBand::LikelyCurrent
+        }
+        Some(value) if value == "watch" || value == "neutral" || value == "yellow" => {
+            TrustBand::UseWithCaution
+        }
+        Some(value)
+            if value == "at-risk"
+                || value == "at_risk"
+                || value == "critical"
+                || value == "red" =>
+        {
+            TrustBand::NeedsVerification
+        }
+        None | Some(_) => TrustBand::Unscored,
+    }
+}
+
+fn load_open_loop_actions(
+    db: &crate::db::ActionDb,
+    query: &ListOpenLoopsQuery,
+) -> Result<Vec<crate::db::DbAction>, ListOpenLoopsReadError> {
+    match (query.entity_type.as_deref(), query.entity_id.as_deref()) {
+        (None, None) => db
+            .get_due_actions(36_500)
+            .map_err(|error| ListOpenLoopsReadError::ReadFailed(error.to_string())),
+        (Some("account"), Some(entity_id)) => {
+            let mut seen = HashSet::new();
+            let mut rows = Vec::new();
+            for action in db
+                .get_account_actions(entity_id)
+                .map_err(|error| ListOpenLoopsReadError::ReadFailed(error.to_string()))?
+                .into_iter()
+                .chain(
+                    db.get_account_commitments(entity_id)
+                        .map_err(|error| ListOpenLoopsReadError::ReadFailed(error.to_string()))?,
+                )
+            {
+                if seen.insert(action.id.clone()) {
+                    rows.push(action);
+                }
+            }
+            Ok(rows)
+        }
+        (Some("person"), Some(entity_id)) => db
+            .get_person_actions(entity_id)
+            .map_err(|error| ListOpenLoopsReadError::ReadFailed(error.to_string())),
+        (Some("project"), Some(entity_id)) => db
+            .get_project_actions(entity_id)
+            .map_err(|error| ListOpenLoopsReadError::ReadFailed(error.to_string())),
+        (Some("meeting"), Some(entity_id)) => db
+            .get_actions_for_meeting(entity_id)
+            .map_err(|error| ListOpenLoopsReadError::ReadFailed(error.to_string())),
+        (Some(entity_type), Some(entity_id)) => Err(ListOpenLoopsReadError::SubjectNotOwned {
+            entity_type: entity_type.to_string(),
+            entity_id: entity_id.to_string(),
+        }),
+        (entity_type, entity_id) => Err(ListOpenLoopsReadError::ReadFailed(format!(
+            "incomplete open loop subject filter: entity_type={entity_type:?}, entity_id={entity_id:?}"
+        ))),
+    }
+}
+
+fn is_open_loop_action(action: &crate::db::DbAction) -> bool {
+    matches!(
+        action.status.as_str(),
+        crate::action_status::BACKLOG
+            | crate::action_status::UNSTARTED
+            | crate::action_status::STARTED
+    )
+}
+
+fn open_loop_claim_for_action(
+    action: crate::db::DbAction,
+    query: &ListOpenLoopsQuery,
+) -> Option<abilities_runtime::types::IntelligenceClaim> {
+    let (entity_type, entity_id) = open_loop_subject_for_action(&action, query)?;
+    let claim_type = if action.action_kind == crate::action_status::KIND_COMMITMENT {
+        abilities_runtime::ClaimType::Commitment.as_str()
+    } else {
+        abilities_runtime::ClaimType::OpenLoop.as_str()
+    };
+    let timestamp = if action.updated_at.trim().is_empty() {
+        action.created_at.clone()
+    } else {
+        action.updated_at.clone()
+    };
+    let metadata = serde_json::json!({
+        "loop_kind": action.action_kind,
+        "status": action.status,
+        "owner": action.owner_raw.or(action.waiting_on),
+        "due_date": action.due_date,
+        "source_label": action.source_label,
+        "surface": query.surface.as_str(),
+    });
+
+    Some(abilities_runtime::types::IntelligenceClaim {
+        id: action.id.clone(),
+        claim_version: 1,
+        subject_ref: serde_json::json!({
+            "kind": entity_type,
+            "id": entity_id,
+        })
+        .to_string(),
+        claim_type: claim_type.to_string(),
+        field_path: Some("open_loop".to_string()),
+        topic_key: None,
+        text: action.title,
+        dedup_key: format!("action:{}", action.id),
+        item_hash: None,
+        actor: "system".to_string(),
+        data_source: "local_enrichment".to_string(),
+        source_ref: action.source_id,
+        source_asof: Some(timestamp.clone()),
+        observed_at: timestamp.clone(),
+        created_at: action.created_at,
+        provenance_json: "{}".to_string(),
+        metadata_json: Some(metadata.to_string()),
+        claim_state: abilities_runtime::types::ClaimState::Active,
+        surfacing_state: abilities_runtime::types::SurfacingState::Active,
+        demotion_reason: None,
+        reactivated_at: None,
+        retraction_reason: None,
+        expires_at: None,
+        superseded_by: None,
+        trust_score: action.trust_score,
+        trust_computed_at: None,
+        trust_version: None,
+        thread_id: None,
+        temporal_scope: abilities_runtime::types::TemporalScope::State,
+        sensitivity: abilities_runtime::types::ClaimSensitivity::Public,
+        verification_state: abilities_runtime::ClaimVerificationState::Active,
+        verification_reason: None,
+        needs_user_decision_at: None,
+    })
+}
+
+fn open_loop_subject_for_action(
+    action: &crate::db::DbAction,
+    query: &ListOpenLoopsQuery,
+) -> Option<(String, String)> {
+    if let (Some(entity_type), Some(entity_id)) =
+        (query.entity_type.as_deref(), query.entity_id.as_deref())
+    {
+        return Some((entity_type.to_string(), entity_id.to_string()));
+    }
+    if let Some(project_id) = action.project_id.as_ref().filter(|value| !value.is_empty()) {
+        return Some(("project".to_string(), project_id.clone()));
+    }
+    if let Some(account_id) = action.account_id.as_ref().filter(|value| !value.is_empty()) {
+        return Some(("account".to_string(), account_id.clone()));
+    }
+    if let Some(person_id) = action.person_id.as_ref().filter(|value| !value.is_empty()) {
+        return Some(("person".to_string(), person_id.clone()));
+    }
+    match (action.source_type.as_deref(), action.source_id.as_ref()) {
+        (Some("transcript" | "post_meeting"), Some(meeting_id)) if !meeting_id.is_empty() => {
+            Some(("meeting".to_string(), meeting_id.clone()))
+        }
+        _ => None,
     }
 }
 
