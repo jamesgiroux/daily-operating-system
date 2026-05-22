@@ -88,6 +88,7 @@ pub async fn version_dispatcher_replay(
                 .map_err(|e| e.to_string())
         })
         .await
+        .map_err(String::from)
 }
 
 /// Build a SurfaceClient-shaped actor for the native Tauri caller. The

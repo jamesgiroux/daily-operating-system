@@ -352,6 +352,7 @@ pub async fn get_person_detail(
             })
         })
         .await
+        .map_err(String::from)
 }
 
 /// Update a single field on a person, emit signal, and regenerate workspace files.

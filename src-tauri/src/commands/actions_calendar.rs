@@ -41,6 +41,7 @@ pub async fn get_actions_from_db(
     state
         .db_read(move |db| crate::services::actions::get_actions_from_db(db, days))
         .await
+        .map_err(String::from)
 }
 
 /// Mark an action as completed in the SQLite database.
@@ -60,6 +61,7 @@ pub async fn complete_action(id: String, state: State<'_, Arc<AppState>>) -> Res
             crate::services::actions::complete_action(&ctx, db, &engine, &id)
         })
         .await
+        .map_err(String::from)
 }
 
 /// Reopen a completed action, setting it back to pending.
@@ -77,6 +79,7 @@ pub async fn reopen_action(id: String, state: State<'_, Arc<AppState>>) -> Resul
             crate::services::actions::reopen_action(&ctx, db, &engine, &id)
         })
         .await
+        .map_err(String::from)
 }
 
 /// Accept a suggested action, moving it to pending.
@@ -97,6 +100,7 @@ pub async fn accept_suggested_action(
             crate::services::actions::accept_suggested_action(&ctx, db, &engine, &id)
         })
         .await
+        .map_err(String::from)
 }
 
 /// Reject a suggested action by archiving it.
@@ -129,6 +133,7 @@ pub async fn reject_suggested_action(
             crate::services::actions::reject_suggested_action(&ctx, db, &engine, &id, &source)
         })
         .await
+        .map_err(String::from)
 }
 
 /// Dismiss a suggested action — preference-based (no quality penalty).
@@ -167,6 +172,7 @@ pub async fn dismiss_suggested_action(
             crate::services::actions::dismiss_suggested_action(&ctx, db, &engine, &id, &source)
         })
         .await
+        .map_err(String::from)
 }
 
 // =============================================================================
@@ -362,6 +368,7 @@ pub async fn dismiss_email_item(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 /// Get all dismissed email item keys for frontend filtering.
@@ -380,6 +387,7 @@ pub async fn list_dismissed_email_items(
                 .map_err(|e| e.to_string())
         })
         .await
+        .map_err(String::from)
 }
 
 /// Reset all email dismissal learning data.
@@ -405,6 +413,7 @@ pub async fn reset_email_preferences(
             Ok(format!("Cleared {} email dismissal records", count))
         })
         .await
+        .map_err(String::from)
 }
 
 /// Resolve a decision: clear the needs_decision flag and emit signal.
@@ -422,6 +431,7 @@ pub async fn resolve_decision(id: String, state: State<'_, Arc<AppState>>) -> Re
             crate::services::actions::resolve_decision(&ctx, db, &engine, &id)
         })
         .await
+        .map_err(String::from)
 }
 
 /// Get suggested (AI-suggested) actions.
@@ -448,10 +458,12 @@ pub async fn get_suggested_actions(
         state
             .db_read(crate::services::actions::get_suggested_actions)
             .await
+            .map_err(String::from)
     } else {
         state
             .db_read(crate::services::actions::get_suggested_actions_for_user)
             .await
+            .map_err(String::from)
     }
 }
 
@@ -472,6 +484,7 @@ pub async fn get_account_commitments(
     state
         .db_read(move |db| crate::services::actions::get_account_commitments(db, &account_id))
         .await
+        .map_err(String::from)
 }
 
 /// DOS Work-tab Phase 3: backlog suggestions for the Work tab Suggestions chapter.
@@ -491,6 +504,7 @@ pub async fn get_account_suggestions(
     state
         .db_read(move |db| crate::services::actions::get_account_suggestions(db, &account_id))
         .await
+        .map_err(String::from)
 }
 
 /// DOS Work-tab Phase 3: recently landed (completed) actions for the Work
@@ -510,6 +524,7 @@ pub async fn get_account_recently_landed(
     state
         .db_read(move |db| crate::services::actions::get_account_recently_landed(db, &account_id))
         .await
+        .map_err(String::from)
 }
 
 /// Get recent meeting history for an account from the SQLite database.
@@ -534,6 +549,7 @@ pub async fn get_meeting_history(
                 .map_err(|e| e.to_string())
         })
         .await
+        .map_err(String::from)
 }
 
 /// Assembled detail for a single past meeting: metadata + captures + actions.
@@ -643,6 +659,7 @@ pub async fn get_action_detail(
     state
         .db_read(move |db| crate::services::actions::get_action_detail(db, &action_id))
         .await
+        .map_err(String::from)
 }
 
 // =============================================================================
@@ -1093,6 +1110,7 @@ pub async fn get_meeting_outcomes(
             Ok(collect_meeting_outcomes_from_db(db, &meeting))
         })
         .await
+        .map_err(String::from)
 }
 
 /// Get post-meeting intelligence: interaction dynamics, champion health,
@@ -1112,6 +1130,7 @@ pub async fn get_meeting_post_intelligence(
                 .map_err(|e| e.to_string())
         })
         .await
+        .map_err(String::from)
 }
 
 /// Update the content of a capture (win/risk/decision) — inline editing.
@@ -1133,6 +1152,7 @@ pub async fn update_capture(
             crate::services::mutations::update_capture_content(&ctx, db, &id, &content)
         })
         .await
+        .map_err(String::from)
 }
 
 /// Cycle an action's priority (P1→P2→P3→P1) — interaction.
@@ -1161,6 +1181,7 @@ pub async fn update_action_priority(
             crate::services::actions::update_action_priority(&ctx, db, &engine, &id, &priority)
         })
         .await
+        .map_err(String::from)
 }
 
 // =============================================================================
@@ -1309,6 +1330,7 @@ pub async fn get_meeting_continuity_thread(
             }
         })
         .await
+        .map_err(String::from)
 }
 
 /// Get prediction scorecard — compare pre-meeting prep predictions against
@@ -1382,6 +1404,7 @@ pub async fn get_prediction_scorecard(
             }
         })
         .await
+        .map_err(String::from)
 }
 
 // =============================================================================

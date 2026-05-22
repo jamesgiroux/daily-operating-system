@@ -408,6 +408,7 @@ pub async fn get_executive_intelligence(
             ))
         })
         .await
+        .map_err(String::from)
 }
 
 /// Load cached SKIP TODAY results from `_today/data/intelligence.json`.

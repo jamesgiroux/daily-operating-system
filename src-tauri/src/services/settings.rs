@@ -133,7 +133,8 @@ pub async fn set_workspace_path(
             let _ = crate::projects::sync_projects_from_workspace(workspace, db);
             Ok(())
         })
-        .await;
+        .await
+        .map_err(String::from);
 
     Ok(config)
 }
@@ -636,7 +637,8 @@ pub async fn set_user_domains(
                 }
                 Ok(())
             })
-            .await;
+            .await
+            .map_err(String::from);
     }
 
     Ok(config)

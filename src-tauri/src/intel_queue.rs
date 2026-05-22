@@ -603,6 +603,7 @@ async fn drain_projection_resign_queue_once(state: &Arc<AppState>) {
                 .map_err(|error| error.to_string())
         })
         .await
+        .map_err(String::from)
     {
         Ok(count) if count > 0 => {
             log::info!("ProjectionSigning: drained {count} queued re-sign jobs")

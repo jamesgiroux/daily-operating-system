@@ -394,7 +394,8 @@ pub async fn run_meeting_prep_processor(state: Arc<AppState>, app: AppHandle) {
                             Some("meeting"),
                         )
                     })
-                    .await;
+                    .await
+                    .map_err(String::from);
 
                 // Audit: meeting prep generated
                 {
@@ -484,7 +485,8 @@ pub async fn run_meeting_prep_processor(state: Arc<AppState>, app: AppHandle) {
                                 attempt,
                             )
                         })
-                        .await;
+                        .await
+                        .map_err(String::from);
                     log::warn!(
                         "MeetingPrepProcessor: failed for {}: {}",
                         request.meeting_id,
@@ -905,7 +907,8 @@ async fn enrich_prep_via_pty(state: &AppState, app: &AppHandle, meeting_id: &str
                 )
                 .map_err(|e| format!("DB write: {}", e))
         })
-        .await;
+        .await
+        .map_err(String::from);
 
     match write_result {
         Ok(_) => {

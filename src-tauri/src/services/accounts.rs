@@ -1583,12 +1583,14 @@ pub async fn get_account_detail(
             let ctx = state_for_ctx.live_service_context();
             ensure_account_lifecycle_state(&ctx, db, &engine, &lifecycle_account_id)
         })
-        .await;
+        .await
+        .map_err(String::from);
 
     let account_id = account_id.to_string();
     state
         .db_read(move |db| build_account_detail_result(db, &account_id))
         .await
+        .map_err(String::from)
 }
 
 /// Synchronous assembly of `AccountDetailResult` against a given DB

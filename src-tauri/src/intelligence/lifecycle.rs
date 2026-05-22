@@ -260,7 +260,7 @@ pub async fn generate_meeting_intelligence(
             Ok((intel_state, has_new))
         })
         .await
-        .map_err(ExecutionError::ConfigurationError)?;
+        .map_err(|error| ExecutionError::ConfigurationError(error.to_string()))?;
 
     if force_full {
         return refresh_meeting_briefing_from_state(state, meeting_id).await;
@@ -275,7 +275,7 @@ pub async fn generate_meeting_intelligence(
             let quality = app_state
                 .db_read(move |db| Ok(assess_intelligence_quality(db, &mid)))
                 .await
-                .map_err(ExecutionError::ConfigurationError)?;
+                .map_err(|error| ExecutionError::ConfigurationError(error.to_string()))?;
             if quality.staleness == Staleness::Current {
                 return Ok(quality);
             }
@@ -294,7 +294,7 @@ pub async fn generate_meeting_intelligence(
                 let _ = db.update_intelligence_state(&mid, "refreshing", None, None);
                 Ok(())
             })
-            .await;
+            .await.map_err(String::from);
     } else if meeting_state.as_deref() != Some("enriched") {
         // No intelligence exists (detected): set state to "enriching"
         let mid = meeting_id.to_string();
@@ -305,7 +305,7 @@ pub async fn generate_meeting_intelligence(
                 let _ = db.update_intelligence_state(&mid, "enriching", None, None);
                 Ok(())
             })
-            .await;
+            .await.map_err(String::from);
     }
 
     // 3. Run mechanical quality assessment
@@ -313,7 +313,7 @@ pub async fn generate_meeting_intelligence(
     let quality = app_state
         .db_read(move |db| Ok(assess_intelligence_quality(db, &mid)))
         .await
-        .map_err(ExecutionError::ConfigurationError)?;
+        .map_err(|error| ExecutionError::ConfigurationError(error.to_string()))?;
 
     // 4. Enqueue meeting prep regeneration.
     app_state
@@ -352,7 +352,7 @@ pub async fn generate_meeting_intelligence(
             Ok(())
         })
         .await
-        .map_err(ExecutionError::ConfigurationError)?;
+        .map_err(|error| ExecutionError::ConfigurationError(error.to_string()))?;
 
     Ok(quality)
 }

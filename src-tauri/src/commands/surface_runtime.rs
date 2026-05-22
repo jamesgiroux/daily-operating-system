@@ -28,6 +28,7 @@ pub async fn list_surface_client_pairings(
     state
         .db_read(|db| surface_pairing::list_pairings(db).map_err(|error| error.to_string()))
         .await
+        .map_err(String::from)
 }
 
 #[tauri::command]

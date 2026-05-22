@@ -113,6 +113,7 @@ pub async fn rescan_stale_weak_primaries(
                 .map_err(|e| format!("update last_migration_sweep_at: {e}"))
         })
         .await
+        .map_err(String::from)
     {
         log::warn!("entity linking rescan marker update failed: {}", err);
     }

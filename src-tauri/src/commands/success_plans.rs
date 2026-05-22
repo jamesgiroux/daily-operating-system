@@ -53,6 +53,7 @@ pub async fn create_objective(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 #[allow(
@@ -81,6 +82,7 @@ pub async fn update_objective(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 #[allow(
@@ -100,6 +102,7 @@ pub async fn complete_objective(
             crate::services::success_plans::complete_objective(&ctx, db, &app_state, &id)
         })
         .await
+        .map_err(String::from)
 }
 
 #[allow(
@@ -114,6 +117,7 @@ pub async fn abandon_objective(
     state
         .db_write(move |db| crate::services::success_plans::abandon_objective(db, &id))
         .await
+        .map_err(String::from)
 }
 
 #[allow(
@@ -129,6 +133,7 @@ pub async fn delete_objective(id: String, state: State<'_, Arc<AppState>>) -> Re
             crate::services::success_plans::delete_objective(&ctx, db, &id)
         })
         .await
+        .map_err(String::from)
 }
 
 #[allow(
@@ -157,6 +162,7 @@ pub async fn create_milestone(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 #[allow(
@@ -185,6 +191,7 @@ pub async fn update_milestone(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 #[allow(
@@ -204,6 +211,7 @@ pub async fn complete_milestone(
             crate::services::success_plans::complete_milestone(&ctx, db, &app_state, &id)
         })
         .await
+        .map_err(String::from)
 }
 
 #[allow(
@@ -223,6 +231,7 @@ pub async fn skip_milestone(
             crate::services::success_plans::skip_milestone(&ctx, db, &app_state, &id)
         })
         .await
+        .map_err(String::from)
 }
 
 #[allow(
@@ -238,6 +247,7 @@ pub async fn delete_milestone(id: String, state: State<'_, Arc<AppState>>) -> Re
             crate::services::success_plans::delete_milestone(&ctx, db, &id)
         })
         .await
+        .map_err(String::from)
 }
 
 #[allow(
@@ -262,6 +272,7 @@ pub async fn link_action_to_objective(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 #[allow(
@@ -286,6 +297,7 @@ pub async fn unlink_action_from_objective(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 #[allow(
@@ -303,6 +315,7 @@ pub async fn reorder_objectives(
             crate::services::success_plans::reorder_objectives(db, &account_id, &ordered_ids)
         })
         .await
+        .map_err(String::from)
 }
 
 #[allow(
@@ -320,6 +333,7 @@ pub async fn reorder_milestones(
             crate::services::success_plans::reorder_milestones(db, &objective_id, &ordered_ids)
         })
         .await
+        .map_err(String::from)
 }
 
 #[allow(
@@ -336,6 +350,7 @@ pub async fn get_objective_suggestions(
             crate::services::success_plans::get_objective_suggestions(db, &account_id)
         })
         .await
+        .map_err(String::from)
 }
 
 #[allow(
@@ -362,6 +377,7 @@ pub async fn create_objective_from_suggestion(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 #[tauri::command]
@@ -391,4 +407,5 @@ pub async fn apply_success_plan_template(
             )
         })
         .await
+        .map_err(String::from)
 }

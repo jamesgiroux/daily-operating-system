@@ -275,6 +275,7 @@ pub async fn process_inbox_file(
     state
         .db_write(move |db| process_inbox_file_in_db(db, &workspace_root, &filename))
         .await
+        .map_err(String::from)
 }
 
 #[cfg(any(test, debug_assertions, feature = "test-harness"))]
@@ -789,6 +790,7 @@ pub async fn assign_inbox_entity(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 #[cfg(any(test, debug_assertions, feature = "test-harness"))]
@@ -1143,6 +1145,7 @@ pub async fn dismiss_email_signal(
             crate::services::emails::dismiss_email_signal(&ctx, db, signal_id)
         })
         .await
+        .map_err(String::from)
 }
 
 /// Mark an email as replied to (reply debt).
@@ -1191,6 +1194,7 @@ pub async fn dismiss_gone_quiet(
             crate::services::emails::dismiss_gone_quiet(&ctx, db, &engine, &entity_id)
         })
         .await
+        .map_err(String::from)
 }
 
 /// Get email sync status: last fetch time, enrichment progress, failure count.
@@ -1205,6 +1209,7 @@ pub async fn get_email_sync_status(
     state
         .db_read(|db| db.get_email_sync_stats().map_err(|e| e.to_string()))
         .await
+        .map_err(String::from)
 }
 
 /// Get emails linked to a specific entity for entity detail pages (AC5).
@@ -1221,6 +1226,7 @@ pub async fn get_entity_emails(
     state
         .db_read(move |db| crate::services::emails::get_entity_emails(db, &entity_id, &entity_type))
         .await
+        .map_err(String::from)
 }
 
 /// Refresh emails independently without re-running the full /today pipeline.
@@ -1312,6 +1318,7 @@ pub async fn list_permanently_failed_emails(
             .map_err(|e| e.to_string())
         })
         .await
+        .map_err(String::from)
 }
 
 /// User-initiated "Skip" action for the failure UX. Marks the
@@ -1330,6 +1337,7 @@ pub async fn skip_failed_emails(
     state
         .db_write(move |db| db.skip_failed_emails(&email_ids).map_err(|e| e.to_string()))
         .await
+        .map_err(String::from)
 }
 
 /// Set user profile (customer-success or general)

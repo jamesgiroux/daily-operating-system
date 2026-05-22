@@ -154,7 +154,8 @@ pub async fn drain_pending_claim_recomputes(state: &Arc<AppState>) {
                 let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
                 process_one_claim_recompute_job(&ctx, db, &worker_id)
             })
-            .await;
+            .await
+            .map_err(String::from);
 
         match result {
             Ok(ClaimRecomputeProcessOutcome::NoJob) => break,
@@ -180,7 +181,8 @@ pub async fn drain_pending_targeted_claim_repairs(state: &Arc<AppState>) {
                 crate::services::claims::targeted_repair_process_next_job(&ctx, db, &worker_id)
                     .map_err(|e| e.to_string())
             })
-            .await;
+            .await
+            .map_err(String::from);
 
         match result {
             Ok(crate::services::claims::TargetedRepairProcessOutcome::NoJob) => break,
@@ -210,7 +212,8 @@ pub async fn run_targeted_claim_repair_worker(state: Arc<AppState>) {
                 )
                 .map_err(|e| e.to_string())
             })
-            .await;
+            .await
+            .map_err(String::from);
 
         match result {
             Ok(crate::services::claims::TargetedRepairProcessOutcome::NoJob) => {

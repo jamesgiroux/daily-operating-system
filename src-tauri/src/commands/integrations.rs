@@ -362,6 +362,7 @@ pub async fn create_person_from_stakeholder(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 // =============================================================================
@@ -520,6 +521,7 @@ pub async fn start_quill_backfill(
             Ok(QuillBackfillResult { created, eligible })
         })
         .await
+        .map_err(String::from)
 }
 
 /// Set the Quill poll interval (1–60 minutes).
@@ -645,6 +647,7 @@ pub async fn trigger_quill_sync_for_meeting(
             }
         })
         .await
+        .map_err(String::from)
 }
 
 /// Get Quill sync states, optionally filtered by meeting ID.
@@ -668,6 +671,7 @@ pub async fn get_quill_sync_states(
             None => db.get_pending_quill_syncs().map_err(|e| e.to_string()),
         })
         .await
+        .map_err(String::from)
 }
 
 // =============================================================================
@@ -1115,7 +1119,8 @@ pub async fn bulk_fetch_gravatars(state: State<'_, Arc<AppState>>) -> Result<usi
         )]
         let _ = state
             .db_write(move |db| crate::gravatar::cache::upsert_cache(db.conn_ref(), &cache_entry))
-            .await;
+            .await
+            .map_err(String::from);
 
         fetched += 1;
         // Rate limit: 1 req/sec
@@ -1145,6 +1150,7 @@ pub async fn get_person_avatar(
             ))
         })
         .await
+        .map_err(String::from)
     {
         Ok(Some(p)) => p,
         _ => return Ok(None),
@@ -1477,7 +1483,7 @@ pub async fn get_enrichment_log(
             .collect();
 
         Ok(entries)
-    }).await
+    }).await.map_err(String::from)
 }
 
 // ---------------------------------------------------------------------------
@@ -1758,7 +1764,7 @@ pub async fn get_linear_recent_issues(
         .filter_map(|r| r.ok())
         .collect();
         Ok(issues)
-    }).await
+    }).await.map_err(String::from)
 }
 
 /// Get Linear issues linked to an account or project entity.
@@ -1784,6 +1790,7 @@ pub async fn get_linear_issues_for_entity(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 /// Get all Linear entity links with project and entity names.
@@ -1830,6 +1837,7 @@ pub async fn get_linear_entity_links(
             Ok(links)
         })
         .await
+        .map_err(String::from)
 }
 
 /// Jaccard word-token similarity for fuzzy name matching.
@@ -2039,6 +2047,7 @@ pub async fn run_linear_auto_link(
             }))
         })
         .await
+        .map_err(String::from)
 }
 
 /// Delete a Linear entity link.
@@ -2058,6 +2067,7 @@ pub async fn delete_linear_entity_link(
             crate::services::mutations::delete_linear_entity_link(&ctx, db, &link_id)
         })
         .await
+        .map_err(String::from)
 }
 
 /// List all Linear projects for the manual link picker.
@@ -2088,6 +2098,7 @@ pub async fn get_linear_projects(
             Ok(projects)
         })
         .await
+        .map_err(String::from)
 }
 
 /// Manually create a Linear entity link.
@@ -2119,6 +2130,7 @@ pub async fn create_linear_entity_link(
             )
         })
         .await
+        .map_err(String::from)
 }
 
 // =============================================================================
@@ -2273,6 +2285,7 @@ pub async fn get_entity_metadata(
     state
         .db_read(move |db| db.get_entity_metadata(&entity_type, &entity_id))
         .await
+        .map_err(String::from)
 }
 
 // =============================================================================
@@ -2336,6 +2349,7 @@ pub async fn correct_email_disposition(
             Ok(format!("Disposition corrected to {}", corrected_priority))
         })
         .await
+        .map_err(String::from)
 }
 
 // =============================================================================
@@ -2643,6 +2657,7 @@ pub async fn upsert_person_relationship(
             Ok(id)
         })
         .await
+        .map_err(String::from)
 }
 
 #[allow(
@@ -2662,6 +2677,7 @@ pub async fn delete_person_relationship(
             crate::services::mutations::delete_person_relationship(&ctx, db, &engine, &id)
         })
         .await
+        .map_err(String::from)
 }
 
 #[allow(
@@ -2679,6 +2695,7 @@ pub async fn get_person_relationships(
                 .map_err(|e| format!("Failed to get relationships: {}", e))
         })
         .await
+        .map_err(String::from)
 }
 
 // =========================================================================
@@ -2872,6 +2889,7 @@ pub async fn remove_google_drive_watch(
     state
         .db_write(move |db| crate::google_drive::sync::remove_watched_source(db, &watch_id))
         .await
+        .map_err(String::from)
 }
 
 /// Get all watched Drive sources.
@@ -3051,6 +3069,7 @@ pub async fn set_context_mode(
             Ok::<_, String>(targets)
         })
         .await
+        .map_err(String::from)
     {
         use crate::intel_queue::{IntelPriority, IntelRequest};
         for (id, typ) in &targets {
@@ -3122,6 +3141,7 @@ pub async fn start_glean_auth(
                     crate::context_provider::save_context_mode(db, &glean_mode_for_write)
                 })
                 .await
+                .map_err(String::from)
             {
                 log::error!("Failed to save Glean context mode: {}", e);
             }
@@ -3256,6 +3276,7 @@ pub async fn disconnect_glean(
     if let Err(e) = state
         .db_write(move |db| crate::context_provider::save_context_mode(db, &local_mode_for_write))
         .await
+        .map_err(String::from)
     {
         log::error!("Failed to save Local context mode on disconnect: {}", e);
     }
@@ -4451,6 +4472,7 @@ pub async fn onboarding_enrichment_status(
             Ok(results)
         })
         .await
+        .map_err(String::from)
 }
 
 #[derive(Debug, Clone, serde::Serialize)]

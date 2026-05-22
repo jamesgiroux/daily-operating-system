@@ -505,7 +505,8 @@ pub async fn get_emails_enriched(
                 }
                 Ok::<(), String>(())
             })
-            .await;
+            .await
+            .map_err(String::from);
     }
 
     // ── Link emails to upcoming meetings via pre_meeting_context bridge ──
@@ -1670,7 +1671,8 @@ pub async fn archive_low_priority_emails(
             db.mark_emails_resolved(&ids_clone)
                 .map_err(|e| e.to_string())
         })
-        .await;
+        .await
+        .map_err(String::from);
 
     data["lowPriority"] = serde_json::json!([]);
     if let Some(stats) = data.get_mut("stats") {

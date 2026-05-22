@@ -541,6 +541,7 @@ pub async fn create_action(
             Ok(id)
         })
         .await
+        .map_err(String::from)
 }
 
 /// Auto-link a newly created action to objectives with similar titles.
@@ -621,6 +622,7 @@ pub async fn update_action(
             apply_update_action(&ctx, db, request)
         })
         .await
+        .map_err(String::from)
 }
 
 fn validate_update_action_request(request: &UpdateActionRequest) -> Result<(), String> {

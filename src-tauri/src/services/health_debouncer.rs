@@ -142,7 +142,8 @@ pub fn schedule_recompute(
                     "account",
                 )
             })
-            .await;
+            .await
+            .map_err(String::from);
 
         match write_result {
             Ok(()) => {
@@ -159,7 +160,7 @@ pub fn schedule_recompute(
                         db.clear_health_recompute_pending(&clear_id)
                             .map_err(|e| e.to_string())
                     })
-                    .await;
+                    .await.map_err(String::from);
             }
             Err(e) => log::warn!(
                 "DOS-228: debounced health recompute failed for {}: {} (marker retained for startup retry)",
@@ -191,6 +192,7 @@ pub async fn drain_pending(
                 .map_err(|e| e.to_string())
         })
         .await
+        .map_err(String::from)
     {
         Ok(v) => v,
         Err(e) => {
@@ -226,7 +228,8 @@ pub async fn drain_pending(
                     "account",
                 )
             })
-            .await;
+            .await
+            .map_err(String::from);
 
         match recompute_result {
             Ok(()) => {
@@ -240,7 +243,8 @@ pub async fn drain_pending(
                         db.clear_health_recompute_pending(&clear_id)
                             .map_err(|e| e.to_string())
                     })
-                    .await;
+                    .await
+                    .map_err(String::from);
                 log::info!(
                     "DOS-228: startup-drained health recompute for {}",
                     account_id
