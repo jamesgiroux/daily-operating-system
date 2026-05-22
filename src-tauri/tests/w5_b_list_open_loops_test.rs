@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use chrono::{TimeZone, Utc};
 use dailyos_lib::abilities::feedback::ClaimVerificationState;
+use dailyos_lib::abilities::registry::McpClientId;
 use dailyos_lib::abilities::{AbilityContext, AbilityError, AbilityErrorKind, AbilityRegistry};
 use dailyos_lib::abilities::{Actor, NOOP_ABILITY_TRACER};
 use dailyos_lib::db::claims::{
@@ -150,6 +151,29 @@ async fn w5_b_list_open_loops_returns_empty_for_owned_entity_without_loops() {
 }
 
 #[tokio::test]
+async fn w5_b_list_open_loops_allows_mcp_actor_with_provenance() {
+    let value = invoke_list_open_loops_with_actor(
+        Actor::McpClient {
+            client_id: McpClientId::new("mcp-test"),
+            conversation_handle: None,
+        },
+        Some(("account", EMPTY_ACCOUNT_ID)),
+        fixture_claims(),
+        owned_subjects(),
+    )
+    .await
+    .expect("mcp actor list_open_loops succeeds");
+
+    assert!(loops(&value).is_empty());
+    assert!(
+        value["provenance"]["field_attributions"]
+            .get("/loops")
+            .is_some(),
+        "mcp actor output should carry provenance instead of panicking"
+    );
+}
+
+#[tokio::test]
 async fn w5_b_list_open_loops_rejects_cross_tenant_subject() {
     let err = invoke_list_open_loops(
         Some(("account", CROSS_TENANT_ACCOUNT_ID)),
@@ -188,6 +212,15 @@ async fn invoke_list_open_loops(
     claims: Vec<IntelligenceClaim>,
     owned_subjects: HashSet<SubjectKey>,
 ) -> Result<Value, AbilityError> {
+    invoke_list_open_loops_with_actor(Actor::User, entity_filter, claims, owned_subjects).await
+}
+
+async fn invoke_list_open_loops_with_actor(
+    actor: Actor,
+    entity_filter: Option<(&str, &str)>,
+    claims: Vec<IntelligenceClaim>,
+    owned_subjects: HashSet<SubjectKey>,
+) -> Result<Value, AbilityError> {
     let registry = AbilityRegistry::from_inventory_checked().expect("registry builds");
     let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 6, 12, 0, 0).unwrap());
     let rng = SeedableRng::new(221);
@@ -202,7 +235,7 @@ async fn invoke_list_open_loops(
         &services,
         &provider,
         &NOOP_ABILITY_TRACER,
-        Actor::User,
+        actor,
         None,
         ClaimDismissalSurface::Eval,
     );

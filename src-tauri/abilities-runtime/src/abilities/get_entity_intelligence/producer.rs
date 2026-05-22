@@ -38,7 +38,9 @@ use crate::abilities::trust::types::TrustBand;
 use crate::abilities::{
     AbilityCategory, AbilityContext, AbilityError, AbilityErrorKind, AbilityResult, Actor,
 };
-use crate::sensitivity::{renderable_claim_text_with_value, RenderActor, RenderSurface};
+use crate::sensitivity::{
+    renderable_claim_text_with_value, ClaimDismissalSurface, RenderActor, RenderSurface,
+};
 use crate::types::{claim_allowed_for_prompt_input, IntelligenceClaim};
 
 const ABILITY_NAME: &str = "get_entity_intelligence";
@@ -79,7 +81,7 @@ pub async fn build_entity_intelligence(
         Vec::new()
     };
     let render_actor = render_actor_for_context(ctx);
-    let render_surface = RenderSurface::TauriEntityDetail;
+    let render_surface = render_surface_for_context(ctx);
 
     let mut envelope_provenance = EnvelopeProvenance::empty();
 
@@ -252,13 +254,38 @@ async fn read_claims(
 }
 
 fn filter_claims_for_actor(actor: Actor, claims: Vec<IntelligenceClaim>) -> Vec<IntelligenceClaim> {
-    if matches!(actor, Actor::Agent) {
+    if matches!(actor, Actor::Agent | Actor::McpClient { .. }) {
         claims
             .into_iter()
             .filter(claim_allowed_for_prompt_input)
             .collect()
     } else {
         claims
+    }
+}
+
+fn render_surface_for_context(ctx: &AbilityContext<'_>) -> RenderSurface {
+    match ctx.entity_context_claim_surface() {
+        ClaimDismissalSurface::TauriEntityDetail => RenderSurface::TauriEntityDetail,
+        ClaimDismissalSurface::Briefing => RenderSurface::TauriBriefingPrep,
+        ClaimDismissalSurface::TauriMeetingDetail => RenderSurface::TauriMeetingDetail,
+        ClaimDismissalSurface::TauriEmailSummary => RenderSurface::TauriEmailSummary,
+        ClaimDismissalSurface::Action => RenderSurface::Action,
+        ClaimDismissalSurface::TauriProvenance => RenderSurface::TauriProvenance,
+        ClaimDismissalSurface::TauriReport => RenderSurface::TauriReport,
+        ClaimDismissalSurface::TauriChat => RenderSurface::TauriChat,
+        ClaimDismissalSurface::McpTool => RenderSurface::McpTool,
+        ClaimDismissalSurface::McpToolDetail => RenderSurface::McpToolDetail,
+        ClaimDismissalSurface::P2Publication => RenderSurface::P2Publication,
+        ClaimDismissalSurface::LogStructured => RenderSurface::LogStructured,
+        ClaimDismissalSurface::PushNotification => RenderSurface::PushNotification,
+        ClaimDismissalSurface::Worker | ClaimDismissalSurface::Eval => {
+            if matches!(&ctx.actor, Actor::Agent | Actor::McpClient { .. }) {
+                RenderSurface::McpTool
+            } else {
+                RenderSurface::TauriEntityDetail
+            }
+        }
     }
 }
 

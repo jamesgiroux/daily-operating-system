@@ -4,14 +4,13 @@
 //!   gateway consumes at boot.
 //! - [`TaxonomyError`] — fail-fast variants with operator-readable
 //!   `Display`.
-//! - [`YamlTaxonomyCatalog`] — concrete YAML loader (W1-B / DOS-478)
-//!   implementing the trait. Production uses `load_embedded()` reading
+//! - [`YamlTaxonomyCatalog`] — concrete YAML loader implementing the trait.
+//!   Production uses `load_embedded()` reading
 //!   the embedded `tool_descriptions` resource via `include_str!`. Dev uses
 //!   `load_from_path(env DAILYOS_MCP_TAXONOMY_PATH)` for catalog
 //!   iteration without rebuild.
 //!
-//! Handler bodies live in subsequent waves (W2 / W3 / W4) but must
-//! follow the handler-contract conventions documented on
+//! Handler bodies follow the handler-contract conventions documented on
 //! [`TaxonomyCatalog`] below.
 
 use std::collections::HashMap;
@@ -261,7 +260,7 @@ impl YamlToolEntry {
     }
 }
 
-/// Host-selection eval fixture stubs consumed by DOS-481 (W5-A).
+/// Host-selection eval fixture stubs consumed by the routing evaluator.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct SelectionFixtures {
@@ -296,11 +295,11 @@ pub struct AdjacentFixture {
 /// `DAILYOS_MCP_TAXONOMY_PATH` env var pointed at a local YAML file.
 const EMBEDDED_YAML: &str = include_str!("resources/tool_descriptions.yaml");
 
-/// Tool-name regex per AC-2 + ADR-0102 §E.
+/// Tool-name regex per ADR-0102 §E.
 const NAME_RE: &str = r"^dailyos\.(read|write|submit|search|list|get|prepare)\.[a-z][a-z0-9_]*$";
 
-/// v1.4.5 grandfathered scopes (per ADR-0102 §E + DOS-478 L0 §3): kept
-/// unprefixed verbatim to avoid breaking existing substrate.
+/// Grandfathered scopes (per ADR-0102 §E): kept unprefixed verbatim to avoid
+/// breaking existing substrate.
 const GRANDFATHERED_SCOPES: &[&str] = &[
     "write.workspace_place_document",
     "read.workspace_graph",

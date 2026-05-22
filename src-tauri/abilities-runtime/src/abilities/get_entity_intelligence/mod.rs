@@ -28,7 +28,7 @@ use crate::abilities::{AbilityContext, AbilityResult};
     category = Read,
     version = "0.1.0",
     schema_version = 1,
-    allowed_actors = [User, Agent, System, SurfaceClient],
+    allowed_actors = [User, Agent, System, SurfaceClient, McpClient],
     allowed_modes = [Live, Simulate, Evaluate],
     requires_confirmation = false,
     may_publish = false,

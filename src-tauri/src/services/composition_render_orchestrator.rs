@@ -86,12 +86,11 @@ impl CompositionRenderOrchestrator {
         composition_id: &str,
         composition_version: i64,
     ) -> Option<CacheKey> {
-        // DOS-761 codex P2: first-party loopback runs as Actor::User and
-        // needs the cache to function the same as Actor::SurfaceClient.
-        // Without an Actor::User branch the new /v1/local/project-composition
-        // route would re-run the producer on every render. Use a fixed
-        // "local_first_party" canonical id since first-party invocations
-        // share the full scope set.
+        // First-party loopback runs as Actor::User and needs the cache to
+        // function the same as Actor::SurfaceClient. Without an Actor::User
+        // branch the local composition route would re-run the producer on
+        // every render. Use a fixed "local_first_party" canonical id since
+        // first-party invocations share the full scope set.
         let scopes_canonical = match actor {
             Actor::SurfaceClient { scopes, .. } => scopes_canonical_id(scopes),
             Actor::User => "local_first_party".to_string(),
