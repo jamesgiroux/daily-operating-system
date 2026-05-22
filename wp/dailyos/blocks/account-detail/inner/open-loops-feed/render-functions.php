@@ -59,7 +59,7 @@ if ( ! function_exists( 'dailyos_account_detail_open_loops_feed_render' ) ) {
 		}
 
 		$envelope = dailyos_resolve_envelope( $handle, 'account', $entity_id, $scope_set );
-		$projected_sections = ['open_loops'];
+		$projected_sections = [ 'open_loops' ];
 		$any_present = false;
 		$first_empty_reason = '';
 		foreach ( $projected_sections as $section_key ) {
@@ -73,7 +73,7 @@ if ( ! function_exists( 'dailyos_account_detail_open_loops_feed_render' ) ) {
 			}
 		}
 		$out  = '<section id="open-loops" class="entity-detail_chapterSection" data-ds-tier="pattern" data-ds-name="RecommendedActions" data-ds-spec="patterns/RecommendedActions.md">';
-		$out .= '<div class="RecommendedActions_root" data-dailyos-projection="open-loops-feed" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['open_loops'] ) ) . '">';
+		$out .= '<div class="RecommendedActions_root" data-dailyos-projection="open-loops-feed" data-dailyos-envelope-sections="' . esc_attr( implode( ',', [ 'open_loops' ] ) ) . '">';
 		$out .= '<div class="RecommendedActions_label">' . esc_html__( 'Open loops', 'dailyos' ) . '</div>';
 		if ( ! $any_present ) {
 			$reason = '' !== $first_empty_reason ? $first_empty_reason : 'no_open_loops';
@@ -131,7 +131,7 @@ if ( ! function_exists( 'dailyos_account_detail_open_loops_feed_select_claim_ref
 		// exact projection rule lives in the L0-packet projection table; this
 		// helper is a single source for the slug's selection so test fixtures
 		// can target one function rather than the renderer.
-		foreach ( ['open_loops'] as $section_key ) {
+		foreach ( [ 'open_loops' ] as $section_key ) {
 			$slice = $envelope[ $section_key ] ?? [];
 			if ( ! is_array( $slice ) ) {
 				continue;

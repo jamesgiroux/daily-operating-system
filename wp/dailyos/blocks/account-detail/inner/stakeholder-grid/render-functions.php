@@ -59,7 +59,7 @@ if ( ! function_exists( 'dailyos_stakeholder_grid_render' ) ) {
 		}
 
 		$envelope = dailyos_resolve_envelope( $handle, 'account', $entity_id, $scope_set );
-		$projected_sections = ['facts', 'touchpoints'];
+		$projected_sections = [ 'facts', 'touchpoints' ];
 		$any_present = false;
 		$first_empty_reason = '';
 		foreach ( $projected_sections as $section_key ) {
@@ -73,7 +73,7 @@ if ( ! function_exists( 'dailyos_stakeholder_grid_render' ) ) {
 			}
 		}
 		$out  = '<section id="the-room" class="entity-detail_chapterSection" data-ds-tier="pattern" data-ds-name="StakeholderGrid" data-ds-spec="patterns/StakeholderGrid.md">';
-		$out .= '<section class="StakeholderGrid_section" data-dailyos-projection="stakeholder-grid" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['facts', 'touchpoints'] ) ) . '">';
+		$out .= '<section class="StakeholderGrid_section" data-dailyos-projection="stakeholder-grid" data-dailyos-envelope-sections="' . esc_attr( implode( ',', [ 'facts', 'touchpoints' ] ) ) . '">';
 		$out .= '<div class="ChapterHeading_heading">';
 		$out .= '<hr class="ChapterHeading_rule" />';
 		$out .= '<div class="ChapterHeading_titleRow"><h2 class="ChapterHeading_title">' . esc_html__( 'The Room', 'dailyos' ) . '</h2></div>';
@@ -137,7 +137,7 @@ if ( ! function_exists( 'dailyos_stakeholder_grid_select_claim_refs' ) ) {
 		// exact projection rule lives in the L0-packet projection table; this
 		// helper is a single source for the slug's selection so test fixtures
 		// can target one function rather than the renderer.
-		foreach ( ['facts', 'touchpoints'] as $section_key ) {
+		foreach ( [ 'facts', 'touchpoints' ] as $section_key ) {
 			$slice = $envelope[ $section_key ] ?? [];
 			if ( ! is_array( $slice ) ) {
 				continue;

@@ -1,6 +1,6 @@
 <?php
 /**
- * value-commitments dynamic block render entrypoint (W2 L1 inner block).
+ * Value-commitments dynamic block render entrypoint (W2 L1 inner block).
  *
  * Delegates to render-functions.php so the same function services both
  * the block-registration render path and the editor preview REST route.

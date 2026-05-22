@@ -59,7 +59,7 @@ if ( ! function_exists( 'dailyos_quote_wall_render' ) ) {
 		}
 
 		$envelope = dailyos_resolve_envelope( $handle, 'account', $entity_id, $scope_set );
-		$projected_sections = ['facts'];
+		$projected_sections = [ 'facts' ];
 		$any_present = false;
 		$first_empty_reason = '';
 		foreach ( $projected_sections as $section_key ) {
@@ -77,7 +77,7 @@ if ( ! function_exists( 'dailyos_quote_wall_render' ) ) {
 		$out .= '<hr class="ChapterHeading_rule" />';
 		$out .= '<div class="ChapterHeading_titleRow"><h2 class="ChapterHeading_title">' . esc_html__( 'Their voice', 'dailyos' ) . '</h2></div>';
 		$out .= '</div>';
-		$out .= '<div class="QuoteWall_wall" data-dailyos-projection="quote-wall" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['facts'] ) ) . '">';
+		$out .= '<div class="QuoteWall_wall" data-dailyos-projection="quote-wall" data-dailyos-envelope-sections="' . esc_attr( implode( ',', [ 'facts' ] ) ) . '">';
 		if ( ! $any_present ) {
 			$reason = '' !== $first_empty_reason ? $first_empty_reason : 'no_quote_bundle';
 			$out .= dailyos_empty_chip(
@@ -134,7 +134,7 @@ if ( ! function_exists( 'dailyos_quote_wall_select_claim_refs' ) ) {
 		// exact projection rule lives in the L0-packet projection table; this
 		// helper is a single source for the slug's selection so test fixtures
 		// can target one function rather than the renderer.
-		foreach ( ['facts'] as $section_key ) {
+		foreach ( [ 'facts' ] as $section_key ) {
 			$slice = $envelope[ $section_key ] ?? [];
 			if ( ! is_array( $slice ) ) {
 				continue;

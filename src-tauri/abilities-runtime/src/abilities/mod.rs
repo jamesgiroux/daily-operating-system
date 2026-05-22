@@ -5,6 +5,7 @@ pub mod claim_receipt;
 pub mod claims;
 pub mod composition;
 pub mod detect_risk_shift;
+pub mod entity_intake;
 pub mod extractors;
 pub mod fallback_projection;
 pub mod feedback;

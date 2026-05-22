@@ -535,6 +535,8 @@ mod avatar_integration_fixture;
 mod daily_briefing_integration_fixture;
 #[path = "fixtures/entity_chip_integration_fixture.rs"]
 mod entity_chip_integration_fixture;
+#[path = "fixtures/entity_intake_integration_fixture.rs"]
+mod entity_intake_integration_fixture;
 #[path = "fixtures/evidence_drawer_integration_fixture.rs"]
 mod evidence_drawer_integration_fixture;
 #[path = "fixtures/freshness_indicator_integration_fixture.rs"]
@@ -629,6 +631,7 @@ fn expected_block_fixtures_cover_requested_ci_block() {
         account_detail_integration_fixture::account_detail_fixture(),
         accounts_index_integration_fixture::accounts_index_fixture(),
         entity_chip_integration_fixture::entity_chip_fixture(),
+        entity_intake_integration_fixture::entity_intake_fixture(),
         type_badge_integration_fixture::type_badge_fixture(),
         score_band_integration_fixture::score_band_fixture(),
         pill_integration_fixture::pill_fixture(),

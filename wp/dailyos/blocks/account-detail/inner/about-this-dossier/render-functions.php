@@ -59,7 +59,7 @@ if ( ! function_exists( 'dailyos_about_this_dossier_render' ) ) {
 		}
 
 		$envelope = dailyos_resolve_envelope( $handle, 'account', $entity_id, $scope_set );
-		$projected_sections = ['facts'];
+		$projected_sections = [ 'facts' ];
 		$any_present = false;
 		$first_empty_reason = '';
 		foreach ( $projected_sections as $section_key ) {
@@ -73,7 +73,7 @@ if ( ! function_exists( 'dailyos_about_this_dossier_render' ) ) {
 			}
 		}
 		$out  = '<section id="about-dossier" class="entity-detail_chapterSection" data-ds-tier="pattern" data-ds-name="AboutThisDossier" data-ds-spec="patterns/AboutThisDossier.md">';
-		$out .= '<section class="AboutThisDossier_section" data-dailyos-projection="about-this-dossier" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['facts'] ) ) . '">';
+		$out .= '<section class="AboutThisDossier_section" data-dailyos-projection="about-this-dossier" data-dailyos-envelope-sections="' . esc_attr( implode( ',', [ 'facts' ] ) ) . '">';
 		$out .= '<div class="AboutThisDossier_eyebrow">' . esc_html__( 'About the dossier', 'dailyos' ) . '</div>';
 		$out .= '<div class="AboutThisDossier_card">';
 		$out .= '<div class="AboutThisDossier_cardLabel">' . esc_html__( 'Source posture', 'dailyos' ) . '</div>';
@@ -135,7 +135,7 @@ if ( ! function_exists( 'dailyos_about_this_dossier_select_claim_refs' ) ) {
 		// exact projection rule lives in the L0-packet projection table; this
 		// helper is a single source for the slug's selection so test fixtures
 		// can target one function rather than the renderer.
-		foreach ( ['facts'] as $section_key ) {
+		foreach ( [ 'facts' ] as $section_key ) {
 			$slice = $envelope[ $section_key ] ?? [];
 			if ( ! is_array( $slice ) ) {
 				continue;

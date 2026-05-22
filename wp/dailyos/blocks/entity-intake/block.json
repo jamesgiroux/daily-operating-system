@@ -1,0 +1,23 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "dailyos/entity-intake",
+	"title": "Entity Intake",
+	"category": "dailyos",
+	"description": "Associates a workspace document with an entity and renders resulting claim trust bands.",
+	"supports": {
+		"html": false,
+		"reusable": false,
+		"inserter": true
+	},
+	"attributes": {
+		"entity_id": { "type": "string", "default": "" },
+		"entity_type": { "type": "string", "default": "" },
+		"file_ref": { "type": "string", "default": "" }
+	},
+	"render": "file:./render.php",
+	"editorScript": "file:./edit.js",
+	"viewScript": "file:./view.js",
+	"style": "file:./style.css",
+	"editorStyle": "file:./editor.css"
+}

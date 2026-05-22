@@ -6,7 +6,10 @@
  * Description: Magazine shell wrapping the dailyos/person-detail composite with the canonical 12 inner blocks + editorial chrome + end-mark.
  * Block Types: core/post-content
  * Inserter: no
+ *
+ * @package DailyOS
  */
+
 ?>
 <!-- wp:group {"className":"dailyos-magazine-page","layout":{"type":"constrained"}} -->
 <div class="wp-block-group dailyos-magazine-page">

@@ -59,7 +59,7 @@ if ( ! function_exists( 'dailyos_strategic_landscape_render' ) ) {
 		}
 
 		$envelope = dailyos_resolve_envelope( $handle, 'account', $entity_id, $scope_set );
-		$projected_sections = ['facts'];
+		$projected_sections = [ 'facts' ];
 		$any_present = false;
 		$first_empty_reason = '';
 		foreach ( $projected_sections as $section_key ) {
@@ -77,7 +77,7 @@ if ( ! function_exists( 'dailyos_strategic_landscape_render' ) ) {
 		$out .= '<hr class="ChapterHeading_rule" />';
 		$out .= '<div class="ChapterHeading_titleRow"><h2 class="ChapterHeading_title">' . esc_html__( 'Competitive & Strategic', 'dailyos' ) . '</h2></div>';
 		$out .= '</div>';
-		$out .= '<section class="StrategicLandscape_section" data-dailyos-projection="strategic-landscape" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['facts'] ) ) . '">';
+		$out .= '<section class="StrategicLandscape_section" data-dailyos-projection="strategic-landscape" data-dailyos-envelope-sections="' . esc_attr( implode( ',', [ 'facts' ] ) ) . '">';
 		$out .= '<div class="StrategicLandscape_subsectionLabel">' . esc_html__( 'Strategic priorities', 'dailyos' ) . '</div>';
 		if ( ! $any_present ) {
 			$reason = '' !== $first_empty_reason ? $first_empty_reason : 'no_landscape_narrative';

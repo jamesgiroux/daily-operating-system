@@ -59,7 +59,7 @@ if ( ! function_exists( 'dailyos_value_commitments_render' ) ) {
 		}
 
 		$envelope = dailyos_resolve_envelope( $handle, 'account', $entity_id, $scope_set );
-		$projected_sections = ['facts'];
+		$projected_sections = [ 'facts' ];
 		$any_present = false;
 		$first_empty_reason = '';
 		foreach ( $projected_sections as $section_key ) {
@@ -77,7 +77,7 @@ if ( ! function_exists( 'dailyos_value_commitments_render' ) ) {
 		$out .= '<hr class="ChapterHeading_rule" />';
 		$out .= '<div class="ChapterHeading_titleRow"><h2 class="ChapterHeading_title">' . esc_html__( 'Value & Commitments', 'dailyos' ) . '</h2></div>';
 		$out .= '</div>';
-		$out .= '<section class="ValueCommitments_section" data-dailyos-projection="value-commitments" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['facts'] ) ) . '">';
+		$out .= '<section class="ValueCommitments_section" data-dailyos-projection="value-commitments" data-dailyos-envelope-sections="' . esc_attr( implode( ',', [ 'facts' ] ) ) . '">';
 		$out .= '<div class="ValueCommitments_subsectionLabel">' . esc_html__( 'Value delivered', 'dailyos' ) . '</div>';
 		if ( ! $any_present ) {
 			$reason = '' !== $first_empty_reason ? $first_empty_reason : 'no_commitments_recorded';

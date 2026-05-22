@@ -59,7 +59,7 @@ if ( ! function_exists( 'dailyos_commercial_shape_render' ) ) {
 		}
 
 		$envelope = dailyos_resolve_envelope( $handle, 'account', $entity_id, $scope_set );
-		$projected_sections = ['facts'];
+		$projected_sections = [ 'facts' ];
 		$any_present = false;
 		$first_empty_reason = '';
 		foreach ( $projected_sections as $section_key ) {
@@ -88,7 +88,7 @@ if ( ! function_exists( 'dailyos_commercial_shape_render' ) ) {
 			return $out;
 		}
 
-		$out .= '<div class="ReferenceGrid_grid" data-dailyos-projection="commercial-shape" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['facts'] ) ) . '">';
+		$out .= '<div class="ReferenceGrid_grid" data-dailyos-projection="commercial-shape" data-dailyos-envelope-sections="' . esc_attr( implode( ',', [ 'facts' ] ) ) . '">';
 		// Per AC-462.3 + DOS-341: every claim-bearing inner block routes
 		// receipts through build_receipt_for_audience server-side. The
 		// dailyos_envelope_consume_claim helper invokes claim_receipt via the

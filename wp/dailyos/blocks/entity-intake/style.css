@@ -1,0 +1,64 @@
+.dailyos-entity-intake {
+	border: 1px solid var(--wp--preset--color--desk-charcoal-8);
+	border-radius: 8px;
+	color: var(--wp--preset--color--text-primary);
+	padding: 16px;
+}
+
+.dailyos-entity-intake__header {
+	align-items: center;
+	display: flex;
+	gap: 10px;
+	justify-content: space-between;
+	margin-bottom: 12px;
+}
+
+.dailyos-entity-intake__label {
+	font-size: 13px;
+	font-weight: 600;
+}
+
+.dailyos-entity-intake__count {
+	background: var(--wp--preset--color--paper-cream);
+	border-radius: 999px;
+	font-size: 12px;
+	min-width: 24px;
+	padding: 2px 8px;
+	text-align: center;
+}
+
+.dailyos-entity-intake__empty {
+	color: var(--wp--preset--color--text-secondary);
+	font-size: 13px;
+	margin: 0;
+}
+
+.dailyos-entity-intake__claims {
+	display: grid;
+	gap: 10px;
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+.dailyos-entity-intake__claim {
+	align-items: flex-start;
+	display: flex;
+	gap: 10px;
+	justify-content: space-between;
+}
+
+.dailyos-entity-intake__claimText {
+	font-size: 14px;
+	line-height: 1.45;
+	min-width: 0;
+}
+
+.dailyos-block-error-panel {
+	background: var(--wp--preset--color--paper-cream);
+	border: 1px solid var(--wp--preset--color--desk-charcoal-8);
+	border-radius: 8px;
+	color: var(--wp--preset--color--text-primary);
+	font-size: 13px;
+	padding: 12px 14px;
+}
