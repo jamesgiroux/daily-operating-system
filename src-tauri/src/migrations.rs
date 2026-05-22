@@ -2603,33 +2603,7 @@ fn create_backup_via_api(
                     "Pre-migration backup unexpected step result: {other:?}"
                 ));
             }
-            Err(e) => {
-                // SQLite occasionally clears its extended error code mid-step
-                // on large encrypted backups so rusqlite reports `Err(_)`
-                // with the canonical "not an error" string (extended_code 0
-                // → ErrorCode::Unknown + message "not an error"). The page
-                // copy actually succeeded; treating it as a hard failure
-                // blocks migrations and forces manual intervention. Detect
-                // the well-known false-positive and continue the loop.
-                let is_false_positive = match &e {
-                    rusqlite::Error::SqliteFailure(sqlite_err, Some(msg)) => {
-                        sqlite_err.extended_code == 0
-                            && msg.trim().eq_ignore_ascii_case("not an error")
-                    }
-                    _ => false,
-                };
-                if is_false_positive {
-                    log::warn!(
-                        "Pre-migration backup step returned `not an error` \
-                         (extended_code 0); treating as continue. step_count={}",
-                        step_count
-                    );
-                    step_count += 1;
-                    busy_retries = 0;
-                    continue;
-                }
-                return Err(format!("Pre-migration backup failed: {e}"));
-            }
+            Err(e) => return Err(format!("Pre-migration backup failed: {e}")),
         }
     }
     Ok(())
