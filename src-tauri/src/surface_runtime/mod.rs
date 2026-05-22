@@ -30,6 +30,7 @@ use tokio::task::{AbortHandle, JoinHandle, JoinSet};
 use uuid::Uuid;
 
 use crate::abilities::NOOP_ABILITY_TRACER;
+use crate::audit_log::{emit_surface_audit, AuditFields};
 use crate::bridges::correction_payload::{
     project_claim_for_scope, project_composition_for_scope, CorrectionPayload,
 };
@@ -39,6 +40,7 @@ use crate::bridges::surface_client::{
     SurfaceClientBridgeError, SurfaceClientRateLimitAxis, SurfaceClientRateLimitBudget,
     SurfaceClientRequestClassLimits,
 };
+use crate::bridges::tauri::{TauriAbilityBridge, TauriInvokeContext};
 use crate::bridges::types::{
     invoke_registry_json_for_actor, provider_from_context_snapshot, surface_error,
     AbilityResponseJson, BridgeActor, BridgeSurface, RequestScopedInvocation,
@@ -68,6 +70,7 @@ const DEFAULT_PAIRING_CODE_FAILED_ATTEMPTS: u32 = 5;
 const MAX_HANDSHAKE_BODY_BYTES: usize = 4 * 1024;
 const MAX_SESSION_REFRESH_BODY_BYTES: usize = 1024;
 const DEFAULT_SIGNED_REQUEST_MAX_BODY_BYTES: usize = 256 * 1024;
+const LOCAL_LOOPBACK_ORIGIN_WP_PLUGIN: &str = "wp_plugin";
 
 type ResponseBody = Full<Bytes>;
 
@@ -968,13 +971,13 @@ async fn run_listener(
             }
             accepted = listener.accept() => {
                 match accepted {
-                    Ok((stream, _peer_addr)) => {
+                    Ok((stream, peer_addr)) => {
                         let runtime = Arc::clone(&runtime);
                         connection_tasks.spawn(async move {
                             let io = TokioIo::new(stream);
                             let service = service_fn(move |request: Request<Incoming>| {
                                 let runtime = Arc::clone(&runtime);
-                                async move { handle_hyper_request(request, runtime).await }
+                                async move { handle_hyper_request(request, runtime, peer_addr).await }
                             });
                             if let Err(error) = http1::Builder::new().serve_connection(io, service).await {
                                 log::debug!("surface endpoint connection ended with error: {error}");
@@ -1002,8 +1005,23 @@ async fn run_listener(
 async fn handle_hyper_request(
     request: Request<Incoming>,
     runtime: Arc<EndpointRuntime>,
+    peer_addr: SocketAddr,
 ) -> Result<Response<ResponseBody>, Infallible> {
     let request_id = request_id_from_headers(request.headers());
+    let method = request.method().clone();
+    let uri = request.uri().clone();
+    if method == Method::POST
+        && matches!(
+            uri.path(),
+            "/v1/local/invoke" | "/v1/local/project-composition"
+        )
+        && !peer_addr.ip().is_loopback()
+    {
+        return Ok(error_response(
+            SurfaceHttpError::route_not_found().with_request_id(request_id),
+        ));
+    }
+
     let transport_check = {
         let origins = runtime.paired_site_origins.read();
         validate_transport_headers(request.headers(), runtime.bound_port, &origins)
@@ -1019,14 +1037,14 @@ async fn handle_hyper_request(
         ));
     }
 
-    let method = request.method().clone();
-    let uri = request.uri().clone();
     let headers = request.headers().clone();
     let body_limit = if method == Method::POST && uri.path() == "/v1/pairing/handshake" {
         Some(MAX_HANDSHAKE_BODY_BYTES)
     } else if method == Method::POST && uri.path() == "/v1/surface/session/refresh" {
         Some(MAX_SESSION_REFRESH_BODY_BYTES)
-    } else if is_signed_route_candidate(uri.path()) {
+    } else if is_local_loopback_body_route(&method, uri.path())
+        || is_signed_route_candidate(uri.path())
+    {
         Some(runtime.signed_request_max_body_bytes)
     } else {
         None
@@ -1048,6 +1066,7 @@ async fn handle_hyper_request(
             uri,
             headers,
             body,
+            peer_addr,
         },
         runtime,
         request_id,
@@ -1076,6 +1095,7 @@ struct SurfaceHttpRequest {
     uri: Uri,
     headers: HeaderMap,
     body: Bytes,
+    peer_addr: SocketAddr,
 }
 
 async fn dispatch_surface_request(
@@ -1091,6 +1111,12 @@ async fn dispatch_surface_request(
         }
         (&Method::POST, "/v1/surface/session/refresh") => {
             surface_session_refresh_response(request.body, runtime, request_id).await
+        }
+        (&Method::POST, "/v1/local/invoke") => {
+            local_loopback_invoke_response(&request, runtime, request_id).await
+        }
+        (&Method::POST, "/v1/local/project-composition") => {
+            local_loopback_project_composition_response(&request, runtime, request_id).await
         }
         _ if is_signed_route_candidate(path.as_str()) => {
             let route_supported = is_supported_signed_route(&request.method, path.as_str());
@@ -1234,6 +1260,10 @@ async fn signed_transport_response(
     }
 
     signed_route_response(&request, &runtime, validated, request_id).await
+}
+
+fn is_local_loopback_body_route(method: &Method, path: &str) -> bool {
+    *method == Method::POST && matches!(path, "/v1/local/invoke" | "/v1/local/project-composition")
 }
 
 fn is_supported_signed_route(method: &Method, path: &str) -> bool {
@@ -2204,6 +2234,301 @@ async fn signed_route_response(
         }
         _ => error_response(SurfaceHttpError::runtime_unavailable().with_request_id(request_id)),
     }
+}
+
+async fn local_loopback_invoke_response(
+    request: &SurfaceHttpRequest,
+    runtime: Arc<EndpointRuntime>,
+    request_id: String,
+) -> Response<ResponseBody> {
+    if !request.peer_addr.ip().is_loopback() {
+        return error_response(SurfaceHttpError::route_not_found().with_request_id(request_id));
+    }
+
+    let invoke = match serde_json::from_slice::<SurfaceInvokeRequest>(&request.body) {
+        Ok(invoke) if is_safe_ability_name(&invoke.ability) => invoke,
+        Ok(_) | Err(_) => {
+            return error_response(
+                SurfaceHttpError::bad_request("local_invoke_invalid").with_request_id(request_id),
+            );
+        }
+    };
+
+    let Some(app_state) = runtime.app_state.as_ref().cloned() else {
+        return error_response(SurfaceHttpError::runtime_unavailable().with_request_id(request_id));
+    };
+
+    #[cfg(test)]
+    let registry_override = runtime.ability_registry_override.clone();
+    #[cfg(test)]
+    let registry = if let Some(registry) = registry_override.as_deref() {
+        registry
+    } else {
+        match crate::abilities::AbilityRegistry::global_checked() {
+            Ok(registry) => registry,
+            Err(_) => {
+                return error_response(
+                    SurfaceHttpError::runtime_unavailable().with_request_id(request_id),
+                );
+            }
+        }
+    };
+    #[cfg(not(test))]
+    let registry = match crate::abilities::AbilityRegistry::global_checked() {
+        Ok(registry) => registry,
+        Err(_) => {
+            return error_response(
+                SurfaceHttpError::runtime_unavailable().with_request_id(request_id),
+            );
+        }
+    };
+
+    let audit_input = invoke.input.clone();
+    match TauriAbilityBridge::new(registry)
+        .invoke(
+            app_state.as_ref(),
+            &invoke.ability,
+            invoke.input,
+            TauriInvokeContext::new(
+                Actor::User,
+                BridgeSurface::LocalLoopback,
+                ClaimDismissalSurface::LogStructured,
+                false,
+                None,
+            ),
+        )
+        .await
+    {
+        Ok(ability) => {
+            emit_successful_local_loopback_invocation_audit(
+                app_state.as_ref(),
+                &request_id,
+                &audit_input,
+                &ability,
+            );
+            json_response(
+                StatusCode::OK,
+                json!({
+                    "ok": true,
+                    "request_id": request_id,
+                    "ability": ability,
+                }),
+            )
+        }
+        Err(error) => {
+            emit_local_loopback_invocation_failure_audit(
+                app_state.as_ref(),
+                &request_id,
+                &invoke.ability,
+                &error,
+            );
+            error_response(local_bridge_surface_error(error).with_request_id(request_id))
+        }
+    }
+}
+
+async fn local_loopback_project_composition_response(
+    request: &SurfaceHttpRequest,
+    runtime: Arc<EndpointRuntime>,
+    request_id: String,
+) -> Response<ResponseBody> {
+    use crate::services::composition_render_orchestrator::{
+        extract_account_id_from_composition_id, project_from_ability_data,
+        resolve_producer_ability_name, FALLBACK_POLICY_VERSION,
+    };
+
+    if !request.peer_addr.ip().is_loopback() {
+        return error_response(SurfaceHttpError::route_not_found().with_request_id(request_id));
+    }
+
+    let request_payload: SurfaceProjectCompositionRequest =
+        match serde_json::from_slice(&request.body) {
+            Ok(r) => r,
+            Err(_) => {
+                return error_response(
+                    SurfaceHttpError::bad_request("project_composition_invalid")
+                        .with_request_id(request_id),
+                );
+            }
+        };
+
+    let Some(app_state) = runtime.app_state.as_ref().cloned() else {
+        log::warn!("local_project_composition: app_state is None");
+        return error_response(SurfaceHttpError::runtime_unavailable().with_request_id(request_id));
+    };
+
+    let Some(ability_name) = resolve_producer_ability_name(&request_payload.composition_id) else {
+        return error_response(
+            SurfaceHttpError::bad_request("project_composition_unknown_producer")
+                .with_request_id(request_id),
+        );
+    };
+    let Some(account_id) = extract_account_id_from_composition_id(&request_payload.composition_id)
+    else {
+        return error_response(
+            SurfaceHttpError::bad_request("project_composition_invalid_id")
+                .with_request_id(request_id),
+        );
+    };
+    let account_id = account_id.to_string();
+
+    #[cfg(test)]
+    let registry_override = runtime.ability_registry_override.clone();
+    #[cfg(test)]
+    let registry = if let Some(registry) = registry_override.as_deref() {
+        registry
+    } else {
+        match crate::abilities::AbilityRegistry::global_checked() {
+            Ok(registry) => registry,
+            Err(_) => {
+                return error_response(
+                    SurfaceHttpError::runtime_unavailable().with_request_id(request_id),
+                );
+            }
+        }
+    };
+    #[cfg(not(test))]
+    let registry = match crate::abilities::AbilityRegistry::global_checked() {
+        Ok(registry) => registry,
+        Err(_) => {
+            return error_response(
+                SurfaceHttpError::runtime_unavailable().with_request_id(request_id),
+            );
+        }
+    };
+
+    let actor = Actor::User;
+    let orchestrator = app_state.composition_render_orchestrator.clone();
+    let composition_id_for_lookup = request_payload.composition_id.clone();
+    let current_db_version_for_producer = app_state
+        .db_read(move |db| {
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let external = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &external);
+            crate::services::compositions::current_composition_version_for_composition_id(
+                &ctx,
+                db,
+                &composition_id_for_lookup,
+            )
+            .map_err(|e| e.to_string())
+        })
+        .await
+        .ok()
+        .unwrap_or(0);
+    let current_db_version = i64::try_from(current_db_version_for_producer).unwrap_or(i64::MAX);
+
+    if let Some(cached) =
+        orchestrator.cache_lookup(&actor, &request_payload.composition_id, current_db_version)
+    {
+        let projection_json = match serde_json::to_value(&cached.projection) {
+            Ok(value) => value,
+            Err(_) => {
+                return error_response(
+                    SurfaceHttpError::runtime_unavailable().with_request_id(request_id),
+                );
+            }
+        };
+        return json_response(
+            StatusCode::OK,
+            json!({
+                "ok": true,
+                "request_id": request_id,
+                "projection": projection_json,
+                "cache_hint_token": cached.cache_hint_token,
+                "served_from_cache": true,
+            }),
+        );
+    }
+
+    let expected_version_for_producer: u64 = current_db_version_for_producer;
+    let input = json!({
+        "account_id": account_id,
+        "composition_id": request_payload.composition_id.clone(),
+        "schema_version": 1,
+        "expected_composition_version": expected_version_for_producer,
+    });
+
+    let response_json = match TauriAbilityBridge::new(registry)
+        .invoke(
+            app_state.as_ref(),
+            ability_name,
+            input.clone(),
+            TauriInvokeContext::new(
+                Actor::User,
+                BridgeSurface::LocalLoopback,
+                ClaimDismissalSurface::LogStructured,
+                false,
+                None,
+            ),
+        )
+        .await
+    {
+        Ok(response_json) => {
+            emit_successful_local_loopback_invocation_audit(
+                app_state.as_ref(),
+                &request_id,
+                &input,
+                &response_json,
+            );
+            response_json
+        }
+        Err(error) => {
+            emit_local_loopback_invocation_failure_audit(
+                app_state.as_ref(),
+                &request_id,
+                ability_name,
+                &error,
+            );
+            return error_response(local_bridge_surface_error(error).with_request_id(request_id));
+        }
+    };
+
+    let (projection, _audits) = match project_from_ability_data(
+        &response_json.data,
+        Actor::User,
+        FALLBACK_POLICY_VERSION,
+    ) {
+        Ok(tuple) => tuple,
+        Err(err) => {
+            log::warn!("local_project_composition: project_from_ability_data failed: {err:?}");
+            return error_response(
+                SurfaceHttpError::runtime_unavailable().with_request_id(request_id),
+            );
+        }
+    };
+
+    let projection_cache_version = projection
+        .composition_version
+        .unwrap_or(current_db_version_for_producer);
+    let projection_cache_version = i64::try_from(projection_cache_version).unwrap_or(i64::MAX);
+    let cache_hint_token = orchestrator
+        .cache_store(
+            &actor,
+            &request_payload.composition_id,
+            projection_cache_version,
+            projection.clone(),
+        )
+        .unwrap_or_default();
+    let projection_json = match serde_json::to_value(&projection) {
+        Ok(value) => value,
+        Err(_) => {
+            return error_response(
+                SurfaceHttpError::runtime_unavailable().with_request_id(request_id),
+            );
+        }
+    };
+
+    json_response(
+        StatusCode::OK,
+        json!({
+            "ok": true,
+            "request_id": request_id,
+            "projection": projection_json,
+            "cache_hint_token": cache_hint_token,
+            "served_from_cache": false,
+        }),
+    )
 }
 
 async fn surface_subscribe_response(
@@ -3346,6 +3671,25 @@ fn surface_bridge_error(error: SurfaceClientBridgeError) -> SurfaceHttpError {
     }
 }
 
+fn local_bridge_surface_error(error: BridgeSurfaceError) -> SurfaceHttpError {
+    match error {
+        BridgeSurfaceError::AbilityUnavailable => SurfaceHttpError::new(
+            StatusCode::BAD_REQUEST,
+            "ability_not_registered",
+            "The requested DailyOS ability is not available.",
+            "Use a registered DailyOS ability.",
+        ),
+        BridgeSurfaceError::Ownership(_) => SurfaceHttpError::new(
+            StatusCode::FORBIDDEN,
+            "ownership_denied",
+            "The requested DailyOS ability is not available for this actor.",
+            "Use an ability exposed to the local loopback surface.",
+        ),
+        BridgeSurfaceError::Validation(_) => SurfaceHttpError::bad_request("input_schema_invalid"),
+        other => bridge_surface_error(other),
+    }
+}
+
 fn bridge_surface_error(error: BridgeSurfaceError) -> SurfaceHttpError {
     match error {
         BridgeSurfaceError::ProjectionTampered { .. } => SurfaceHttpError::new(
@@ -3529,6 +3873,98 @@ fn signed_transport_failure_event(
             "decision": "rejected"
         }),
     })
+}
+
+fn emit_successful_local_loopback_invocation_audit(
+    app_state: &AppState,
+    request_id: &str,
+    input: &Value,
+    ability: &AbilityResponseJson,
+) {
+    let mut detail = json!({
+        "ability_name": &ability.ability_name,
+        "ability_version": &ability.ability_version,
+        "schema_version": ability.schema_version,
+        "claim_ref_count": composition_claim_ref_count(&ability.data),
+    });
+    if let Some(account_id) = input
+        .get("account_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        detail["account_id"] = json!(account_id);
+    }
+    if let Some(composition_id) = ability.data.get("id").and_then(Value::as_str) {
+        detail["composition_id"] = json!(composition_id);
+    }
+    if let Some(composition_version) = ability
+        .data
+        .pointer("/metadata/composition_version")
+        .and_then(Value::as_u64)
+    {
+        detail["composition_version"] = json!(composition_version);
+    }
+
+    emit_local_loopback_audit(
+        app_state,
+        "data_access",
+        "ability_invoked",
+        request_id,
+        detail,
+    );
+}
+
+fn emit_local_loopback_invocation_failure_audit(
+    app_state: &AppState,
+    request_id: &str,
+    ability_name: &str,
+    error: &BridgeSurfaceError,
+) {
+    emit_local_loopback_audit(
+        app_state,
+        "security",
+        "ability_invoke_rejected",
+        request_id,
+        json!({
+            "ability_name": ability_name,
+            "reason": bridge_surface_error_code(error),
+            "decision": "rejected",
+        }),
+    );
+}
+
+fn emit_local_loopback_audit(
+    app_state: &AppState,
+    category: &'static str,
+    event_kind: &'static str,
+    request_id: &str,
+    detail: Value,
+) {
+    let mut audit = app_state.audit_log.lock();
+    let fields = AuditFields::new(category, detail)
+        .with_request_id(request_id.to_string())
+        .with_loopback_origin(LOCAL_LOOPBACK_ORIGIN_WP_PLUGIN);
+    if let Err(error) = emit_surface_audit(&mut audit, event_kind, &Actor::User, fields) {
+        log::warn!("local loopback audit write failed: {error}");
+    }
+}
+
+fn bridge_surface_error_code(error: &BridgeSurfaceError) -> &'static str {
+    match error {
+        BridgeSurfaceError::ProjectionTampered { .. } => "projection_tampered",
+        BridgeSurfaceError::ProjectionVersionRollback { .. } => "projection_version_rollback",
+        BridgeSurfaceError::MissingExpectedClaimVersion { .. } => "expected_version_missing",
+        BridgeSurfaceError::MidFlightMutation { .. } => "mid_flight_mutation",
+        BridgeSurfaceError::ClaimVersionOverflow { .. } => "claim_version_overflow",
+        BridgeSurfaceError::StaleVersion { .. } => "stale_watermark",
+        BridgeSurfaceError::StaleComposition { .. } => "stale_composition",
+        BridgeSurfaceError::CompositionVersionOverflow { .. } => "composition_version_overflow",
+        BridgeSurfaceError::Validation(_) => "validation_error",
+        BridgeSurfaceError::AbilityUnavailable | BridgeSurfaceError::Ownership(_) => {
+            "ability_unavailable"
+        }
+    }
 }
 
 fn successful_surface_invocation_audit_event(
@@ -4517,6 +4953,42 @@ mod tests {
         )
     }
 
+    fn local_loopback_descriptor() -> AbilityDescriptor {
+        AbilityDescriptor {
+            name: "surface_route_test",
+            version: "1.0.0",
+            schema_version: 1,
+            category: AbilityCategory::Read,
+            policy: AbilityPolicy {
+                allowed_actors: &[ActorKind::User],
+                allowed_modes: &[crate::services::context::ExecutionMode::Live],
+                requires_confirmation: false,
+                may_publish: false,
+                required_scopes: &[],
+                mcp_exposure: McpExposure::None,
+                client_side_executable: true,
+                rate_limit: None,
+            },
+            composes: &[],
+            mutates: &[],
+            experimental: false,
+            registered_at: None,
+            signal_policy: SignalPolicy::default(),
+            invoke_erased: surface_route_dispatch_erased,
+            input_schema: surface_route_schema,
+            output_schema: surface_route_schema,
+        }
+    }
+
+    fn local_loopback_registry() -> Arc<crate::abilities::AbilityRegistry> {
+        SURFACE_ROUTE_DISPATCH_COUNT.store(0, Ordering::SeqCst);
+        Arc::new(
+            crate::abilities::AbilityRegistry::from_descriptors_unchecked_for_runtime_validation_tests(
+                vec![local_loopback_descriptor()],
+            ),
+        )
+    }
+
     fn surface_route_limit_registry() -> Arc<crate::abilities::AbilityRegistry> {
         SURFACE_ROUTE_LIMIT_COUNT.store(0, Ordering::SeqCst);
         Arc::new(
@@ -4536,7 +5008,7 @@ mod tests {
             schema_version: 1,
             category: AbilityCategory::Read,
             policy: AbilityPolicy {
-                allowed_actors: &[ActorKind::SurfaceClient],
+                allowed_actors: &[ActorKind::User, ActorKind::SurfaceClient],
                 allowed_modes: &[crate::services::context::ExecutionMode::Live],
                 requires_confirmation: false,
                 may_publish: false,
@@ -4747,6 +5219,7 @@ mod tests {
             uri: path.parse::<Uri>().unwrap(),
             headers,
             body,
+            peer_addr: SocketAddr::from(([127, 0, 0, 1], 0)),
         }
     }
 
@@ -5748,6 +6221,80 @@ mod tests {
         assert_eq!(invoked.wp_user_hash.as_deref(), Some("wp_user_hash_test"));
         assert_eq!(invoked.detail["ability_name"], json!("surface_route_test"));
         assert_eq!(invoked.detail["claim_ref_count"], json!(0));
+    }
+
+    #[test]
+    fn local_loopback_invoke_dispatches_as_user_without_signed_headers() {
+        let _counter_guard = SURFACE_ROUTE_COUNTER_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let runtime = runtime_for_surface_route_tests(
+            local_loopback_registry(),
+            SurfaceClientBridgeConfig::default(),
+        );
+        let request = request_for_tests(
+            Method::POST,
+            "/v1/local/invoke",
+            Bytes::from_static(
+                br#"{"ability":"surface_route_test","input":{"value":761},"loopback_origin":"spoofed"}"#,
+            ),
+        );
+
+        let response = dispatch_for_tests(request, Arc::clone(&runtime), "req_local_invoke".into());
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(SURFACE_ROUTE_DISPATCH_COUNT.load(Ordering::SeqCst), 1);
+        let body = body_json(response);
+        assert_eq!(body["ok"], true);
+        assert_eq!(body["request_id"], "req_local_invoke");
+        assert_eq!(body["ability"]["data"]["input"]["value"], 761);
+        assert_eq!(body["ability"]["data"]["actor"], "User");
+        assert_eq!(
+            body["ability"]["rendered_provenance"]["surface"],
+            "local_loopback"
+        );
+        assert!(body["ability"].get("diagnostics").is_none());
+
+        let audit_path = runtime
+            .app_state
+            .as_ref()
+            .expect("test app state")
+            .audit_log
+            .lock()
+            .path()
+            .to_path_buf();
+        let audit_records = crate::audit_log::read_records(&audit_path, 10, Some("data_access"));
+        let invoked = audit_records
+            .iter()
+            .find(|record| record.event == "ability_invoked")
+            .expect("successful local invoke audit is written");
+        assert_eq!(invoked.actor_kind.as_deref(), Some("user"));
+        assert_eq!(invoked.loopback_origin.as_deref(), Some("wp_plugin"));
+        assert!(invoked.actor_instance.is_none());
+        assert!(invoked.wp_user_id.is_none());
+        assert!(invoked.wp_user_hash.is_none());
+        assert_eq!(invoked.detail["ability_name"], json!("surface_route_test"));
+    }
+
+    #[test]
+    fn local_loopback_invoke_rejects_non_loopback_peer_with_404() {
+        let runtime = runtime_for_surface_route_tests(
+            local_loopback_registry(),
+            SurfaceClientBridgeConfig::default(),
+        );
+        let mut request = request_for_tests(
+            Method::POST,
+            "/v1/local/invoke",
+            Bytes::from_static(br#"{"ability":"surface_route_test","input":{"value":1}}"#),
+        );
+        request.peer_addr = SocketAddr::from(([192, 0, 2, 10], 8080));
+
+        let response = dispatch_for_tests(request, runtime, "req_non_loopback".into());
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        let body = body_json(response);
+        assert_eq!(body["error"]["code"], "route_not_found");
+        assert_eq!(body["error"]["request_id"], "req_non_loopback");
     }
 
     #[test]
