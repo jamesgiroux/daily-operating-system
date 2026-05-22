@@ -995,6 +995,22 @@ const MIGRATIONS: &[Migration] = &[
         version: 254,
         sql: include_str!("migrations/254_document_entity_links.sql"),
     },
+    // DOS-168 amended (v1.4.7 W1-A MCP v2 substrate at simplified shape).
+    // Migration 257 (mcp_transport_nonce_ledger) is intentionally absent —
+    // the nonce ledger defended replay over a wire that doesn't exist for
+    // stdio / loopback MCP. See L0 packet §3e.
+    Migration::Sql {
+        version: 255,
+        sql: include_str!("migrations/255_mcp_client_manifest.sql"),
+    },
+    Migration::Sql {
+        version: 256,
+        sql: include_str!("migrations/256_mcp_conversation_handle.sql"),
+    },
+    Migration::Sql {
+        version: 258,
+        sql: include_str!("migrations/258_mcp_rate_limit_and_audit_outbox.sql"),
+    },
 ];
 
 const V155_SHADOW_TRUST_VERSION: i64 = 1_401_003;

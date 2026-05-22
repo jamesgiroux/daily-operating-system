@@ -1379,10 +1379,7 @@ fn w6_report_status(report: &W6FixtureReport, runner_success: Option<bool>) -> G
                 .unwrap_or(GateStatus::InfraFailure)
         })
         .collect::<Vec<_>>();
-    if fixture_statuses
-        .iter()
-        .any(|status| *status == GateStatus::InfraFailure)
-    {
+    if fixture_statuses.contains(&GateStatus::InfraFailure) {
         return GateStatus::InfraFailure;
     }
     if fixture_statuses
