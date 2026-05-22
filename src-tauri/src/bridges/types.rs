@@ -349,6 +349,17 @@ pub enum BridgeSurfaceError {
     },
     #[error("ability unavailable")]
     AbilityUnavailable,
+    /// Producer composition reached the ability but the underlying reader /
+    /// service context was not wired or returned a hard error. Distinct from
+    /// `AbilityUnavailable` so the wire layer can render a clearer reason
+    /// than "auth missing".
+    #[error("producer unavailable")]
+    ProducerUnavailable,
+    /// Input failed schema validation. Distinct from `AbilityUnavailable` so
+    /// the wire layer returns HTTP 422 with a schema-failure code instead of
+    /// `auth_missing`.
+    #[error("input schema invalid")]
+    InputSchemaInvalid,
     #[error("{0}")]
     Validation(String),
     #[error("ownership validation failed: {0}")]
@@ -463,9 +474,20 @@ pub(crate) async fn invoke_registry_json<'a>(
     let canonical_ability_name = descriptor.name.to_string();
     let input_schema = (descriptor.input_schema)();
 
-    reject_reserved_input_fields(&input_json)?;
-    validate_input_json_against_schema(&input_schema, &input_json)
-        .map_err(|_| BridgeSurfaceError::AbilityUnavailable)?;
+    if let Err(error) = reject_reserved_input_fields(&input_json) {
+        log::warn!(
+            target: "abilities::dispatch",
+            "reserved bridge input field rejected before invoking ability `{canonical_ability_name}`: {error}"
+        );
+        return Err(error.into());
+    }
+    validate_input_json_against_schema(&input_schema, &input_json).map_err(|error| {
+        log::warn!(
+            target: "abilities::dispatch",
+            "input schema validation failed before invoking ability `{canonical_ability_name}`: {error:?}"
+        );
+        BridgeSurfaceError::InputSchemaInvalid
+    })?;
 
     let args_hash = confirmation_args_hash(&input_json);
 
@@ -537,9 +559,20 @@ pub(crate) async fn invoke_registry_json_for_actor<'a>(
     let canonical_ability_name = descriptor.name.to_string();
     let input_schema = (descriptor.input_schema)();
 
-    reject_reserved_input_fields(&input_json)?;
-    validate_input_json_against_schema(&input_schema, &input_json)
-        .map_err(|_| BridgeSurfaceError::AbilityUnavailable)?;
+    if let Err(error) = reject_reserved_input_fields(&input_json) {
+        log::warn!(
+            target: "abilities::dispatch",
+            "reserved bridge input field rejected before invoking ability `{canonical_ability_name}`: {error}"
+        );
+        return Err(error.into());
+    }
+    validate_input_json_against_schema(&input_schema, &input_json).map_err(|error| {
+        log::warn!(
+            target: "abilities::dispatch",
+            "input schema validation failed before invoking ability `{canonical_ability_name}`: {error:?}"
+        );
+        BridgeSurfaceError::InputSchemaInvalid
+    })?;
 
     let invocation = InvocationContext {
         actor: response_actor,
@@ -1000,25 +1033,60 @@ fn render_diagnostics(surface: BridgeSurface, diagnostics: serde_json::Value) ->
 pub(crate) fn surface_error(error: AbilityInvokeError) -> BridgeSurfaceError {
     match error {
         AbilityInvokeError::Surface(error) => error,
-        AbilityInvokeError::Ability(error) => match error.kind {
+        AbilityInvokeError::Ability(error) => match &error.kind {
             crate::abilities::AbilityErrorKind::StaleComposition {
                 composition_id,
                 expected,
                 current,
             } => BridgeSurfaceError::StaleComposition {
-                composition_id,
-                expected,
-                current,
+                composition_id: composition_id.clone(),
+                expected: *expected,
+                current: *current,
             },
             crate::abilities::AbilityErrorKind::CompositionVersionOverflow { composition_id } => {
-                BridgeSurfaceError::CompositionVersionOverflow { composition_id }
+                BridgeSurfaceError::CompositionVersionOverflow {
+                    composition_id: composition_id.clone(),
+                }
             }
-            _ => BridgeSurfaceError::AbilityUnavailable,
+            _ => {
+                log::warn!(
+                    target: "abilities::dispatch",
+                    "ability invocation failed: kind={:?}; message={}",
+                    error.kind,
+                    error.message
+                );
+                if ability_error_indicates_missing_context(&error) {
+                    BridgeSurfaceError::ProducerUnavailable
+                } else {
+                    BridgeSurfaceError::AbilityUnavailable
+                }
+            }
         },
         AbilityInvokeError::InvalidEnvelope
         | AbilityInvokeError::ProvenanceTooLarge
         | AbilityInvokeError::ProvenanceSerialize(_) => BridgeSurfaceError::AbilityUnavailable,
     }
+}
+
+fn ability_error_indicates_missing_context(error: &AbilityError) -> bool {
+    let crate::abilities::AbilityErrorKind::HardError(code) = &error.kind else {
+        return false;
+    };
+    if !code.ends_with("_read_failed") {
+        return false;
+    }
+    let message = error.message.to_ascii_lowercase();
+    [
+        "database unavailable",
+        "requires an injected fixture reader",
+        "missing reader",
+        "reader unavailable",
+        "context unavailable",
+        "not configured",
+        "not attached",
+    ]
+    .iter()
+    .any(|needle| message.contains(needle))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

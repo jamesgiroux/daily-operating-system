@@ -3339,12 +3339,11 @@ fn latest_claim_version_cursor(
 }
 
 fn surface_bridge_error(error: SurfaceClientBridgeError) -> SurfaceHttpError {
-    if let Some(_surface_error) = error.as_surface_error() {
-        return SurfaceHttpError::auth_missing()
-            .with_message("The requested DailyOS surface ability is not available.")
-            .with_remediation("Use an ability exposed to this paired surface.");
+    match error {
+        SurfaceClientBridgeError::AbilityUnavailable => SurfaceHttpError::ability_not_registered(),
+        SurfaceClientBridgeError::ScopeDenied => SurfaceHttpError::ownership_denied(),
+        SurfaceClientBridgeError::RateLimited(_) => SurfaceHttpError::runtime_unavailable(),
     }
-    SurfaceHttpError::runtime_unavailable()
 }
 
 fn bridge_surface_error(error: BridgeSurfaceError) -> SurfaceHttpError {
@@ -3397,11 +3396,10 @@ fn bridge_surface_error(error: BridgeSurfaceError) -> SurfaceHttpError {
         BridgeSurfaceError::Validation(_) => {
             SurfaceHttpError::bad_request("surface_invoke_invalid")
         }
-        BridgeSurfaceError::AbilityUnavailable | BridgeSurfaceError::Ownership(_) => {
-            SurfaceHttpError::auth_missing()
-                .with_message("The requested DailyOS surface ability is not available.")
-                .with_remediation("Use an ability exposed to this paired surface.")
-        }
+        BridgeSurfaceError::AbilityUnavailable => SurfaceHttpError::ability_not_registered(),
+        BridgeSurfaceError::ProducerUnavailable => SurfaceHttpError::producer_unavailable(),
+        BridgeSurfaceError::InputSchemaInvalid => SurfaceHttpError::input_schema_invalid(),
+        BridgeSurfaceError::Ownership(_) => SurfaceHttpError::ownership_denied(),
     }
 }
 
@@ -3652,6 +3650,42 @@ impl SurfaceHttpError {
             "auth_missing",
             "The request is missing DailyOS surface authentication.",
             "Pair the surface with DailyOS and retry with signed credentials.",
+        )
+    }
+
+    fn ability_not_registered() -> Self {
+        Self::new(
+            StatusCode::NOT_FOUND,
+            "ability_not_registered",
+            "The requested ability is not registered for this surface.",
+            "Use an ability exposed to this surface; check the ability inventory.",
+        )
+    }
+
+    fn producer_unavailable() -> Self {
+        Self::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "producer_unavailable",
+            "The ability producer could not compose a response.",
+            "Inspect Tauri logs for the producer error; readers or composition state may be missing.",
+        )
+    }
+
+    fn input_schema_invalid() -> Self {
+        Self::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "input_schema_invalid",
+            "The ability input failed schema validation.",
+            "Check the ability descriptor's input schema and retry with conforming input.",
+        )
+    }
+
+    fn ownership_denied() -> Self {
+        Self::new(
+            StatusCode::FORBIDDEN,
+            "ownership_denied",
+            "Ownership policy denied the request.",
+            "Verify the actor is authorized for the subject and retry.",
         )
     }
 

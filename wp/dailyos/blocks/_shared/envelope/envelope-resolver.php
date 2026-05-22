@@ -188,6 +188,31 @@ if ( ! function_exists( 'dailyos_resolve_envelope' ) ) {
 
 if ( ! function_exists( 'dailyos_envelope_section' ) ) {
 	/**
+	 * Return a surface-runtime wire reason when the cached envelope is an
+	 * error envelope rather than a sectioned ability payload.
+	 *
+	 * @param array<string,mixed>|null $envelope Envelope payload.
+	 * @return string
+	 */
+	function dailyos_envelope_surface_wire_reason( ?array $envelope ): string {
+		if ( null === $envelope ) {
+			return '';
+		}
+		$error = $envelope['error'] ?? null;
+		$code  = is_array( $error ) ? (string) ( $error['code'] ?? '' ) : '';
+		if ( '' === $code && isset( $envelope['code'] ) ) {
+			$code = (string) $envelope['code'];
+		}
+		$known_reasons = [
+			'ability_not_registered' => true,
+			'input_schema_invalid'   => true,
+			'producer_unavailable'   => true,
+			'ownership_denied'       => true,
+		];
+		return isset( $known_reasons[ $code ] ) ? $code : '';
+	}
+
+	/**
 	 * Lookup a named section in the envelope's sections map, return a flat
 	 * descriptor: [ 'present' => bool, 'item_count' => int, 'reason' => string ].
 	 *
@@ -196,10 +221,11 @@ if ( ! function_exists( 'dailyos_envelope_section' ) ) {
 	 * @return array{present:bool,item_count:int,reason:string}
 	 */
 	function dailyos_envelope_section( ?array $envelope, string $section ): array {
+		$wire_reason = dailyos_envelope_surface_wire_reason( $envelope );
 		$default = [
 			'present'    => false,
 			'item_count' => 0,
-			'reason'     => 'not_available',
+			'reason'     => '' !== $wire_reason ? $wire_reason : 'not_available',
 		];
 		if ( null === $envelope ) {
 			return $default;
@@ -236,6 +262,28 @@ if ( ! function_exists( 'dailyos_envelope_section' ) ) {
 
 if ( ! function_exists( 'dailyos_empty_chip' ) ) {
 	/**
+	 * Human-readable labels for runtime wire reasons.
+	 *
+	 * @param string $reason Empty-state reason.
+	 * @param string $fallback Caller-provided label.
+	 * @return string
+	 */
+	function dailyos_empty_reason_label( string $reason, string $fallback ): string {
+		switch ( $reason ) {
+			case 'ability_not_registered':
+				return __( 'Ability not registered', 'dailyos' );
+			case 'input_schema_invalid':
+				return __( 'Input schema invalid', 'dailyos' );
+			case 'producer_unavailable':
+				return __( 'Producer unavailable', 'dailyos' );
+			case 'ownership_denied':
+				return __( 'Ownership denied', 'dailyos' );
+			default:
+				return $fallback;
+		}
+	}
+
+	/**
 	 * Render the canonical empty-state chip mandated by V1.1 §10 invariant
 	 * "every inner block renders empty as quiet chip with data-empty-reason;
 	 * no silent hidden states; inherits envelope Empty { reason }".
@@ -248,7 +296,7 @@ if ( ! function_exists( 'dailyos_empty_chip' ) ) {
 	 */
 	function dailyos_empty_chip( string $reason, string $label, string $block_class ): string {
 		$safe_reason = esc_attr( '' === $reason ? 'empty' : $reason );
-		$safe_label  = esc_html( $label );
+		$safe_label  = esc_html( dailyos_empty_reason_label( $reason, $label ) );
 		$safe_class  = esc_attr( $block_class );
 		return '<div class="' . $safe_class . ' ' . $safe_class . '--empty">'
 			. '<span class="dailyos-empty-chip" data-empty-reason="' . $safe_reason . '">'
