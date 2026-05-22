@@ -179,12 +179,11 @@ impl ServerHandler for V2ServerHandler {
         // Call gateway. The simplified substrate loads the manifest,
         // dispatches handler, audits, and signal-emits.
         //
-        // Per DOS-175 cycle-2 §3.2: `handle_tool_call` is sync and the
-        // handler chain underneath it calls `runtime.block_on(...)` on a
-        // captured tokio handle to dispatch async abilities. Calling that
-        // directly from this async context would nested-runtime-panic, so
-        // we move dispatch onto a blocking-pool thread via
-        // `tokio::task::spawn_blocking`. Inside the blocking thread the
+        // `handle_tool_call` is sync and the handler chain underneath it calls
+        // `runtime.block_on(...)` on a captured tokio handle to dispatch async
+        // abilities. Calling that directly from this async context would
+        // nested-runtime-panic, so we move dispatch onto a blocking-pool thread
+        // via `tokio::task::spawn_blocking`. Inside the blocking thread the
         // handler's `block_on` is safe because we are not on a worker.
         let gateway = self.gateway.clone();
         let conn = self.conn.clone();

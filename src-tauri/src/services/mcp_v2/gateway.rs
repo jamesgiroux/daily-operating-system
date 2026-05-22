@@ -7,9 +7,9 @@
 //! respectively via the [`SignalEmitter`] trait (W2+ wires a production
 //! emitter that calls `crate::signals::bus::emit_signal_and_propagate`).
 //!
-//! Per ADR-0102 §C authorization machinery and the DOS-168-amended local MCP
-//! trust model: authorization and operational controls live here; local
-//! transport ceremony does not.
+//! Per ADR-0102 §C authorization machinery and the local MCP trust model:
+//! authorization and operational controls live here; local transport ceremony
+//! does not.
 
 use rusqlite::{params, Connection};
 use serde_json::json;
@@ -187,7 +187,7 @@ impl Gateway {
 
     /// Seal the gateway after all handlers are registered. Validates
     /// every registered handler has a matching catalog entry with matching
-    /// `Side` (per DOS-478 L0 AC-7). Returns operator-readable error if
+    /// `Side` per the taxonomy seal contract. Returns operator-readable error if
     /// mismatch. Also returns catalog→handler pending-tool list as
     /// operator info; callers log it.
     ///
@@ -205,9 +205,8 @@ impl Gateway {
     }
 
     /// Handle a single MCP tool invocation. Full per-dispatch contract per
-    /// L0 packet §1 #1 after DOS-168-amended: local transport identity is the
-    /// asserted `McpClientId`; the gateway enforces manifest authorization and
-    /// operational controls.
+    /// Local transport identity is the asserted `McpClientId`; the gateway
+    /// enforces manifest authorization and operational controls.
     pub fn handle_tool_call(
         &self,
         conn: &mut Connection,

@@ -1,5 +1,4 @@
-//! Smoke test for the v1.4.7 W1-A migrations (v255-v258 per dev-reconciliation
-//! renumber 2026-05-21; originally v241-v244 in L0 packet) per DOS-168.
+//! Smoke test for the MCP v2 migrations after dev-reconciliation renumbering.
 //!
 //! Runs the full migration chain against an in-memory SQLite and asserts the
 //! schema landed correctly: tables exist, expected columns are present, and
@@ -59,7 +58,7 @@ fn dos168_v255_v258_migrations_land_canonical_schema() {
         "missing handle index per ADR-0102 §D.bis"
     );
 
-    // ---- DOS-168 amended: transport-ceremony rip verification ----
+    // ---- Transport-ceremony rip verification ----
     // Migration 257 (mcp_transport_nonce_ledger) was never introduced — the
     // nonce-replay defense applied to a transport that doesn't have a wire to
     // capture (stdio MCP / loopback). Proving its absence here keeps a future
@@ -78,8 +77,8 @@ fn dos168_v255_v258_migrations_land_canonical_schema() {
     );
 
     // Seed a manifest row so subsequent assertions can reference a client_id.
-    // transport_key_ref retained for schema stability under DOS-758 but is
-    // always NULL post-rip (no transport key material in personal-tier model).
+    // transport_key_ref is retained for schema stability but is always NULL
+    // post-rip (no transport key material in the personal-tier model).
     conn.execute(
         "INSERT INTO mcp_client_manifest (client_id, paired_at, revoked_at, transport_key_ref) \
          VALUES ('smoke-client', 1, NULL, NULL)",

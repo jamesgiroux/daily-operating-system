@@ -285,12 +285,11 @@ fn health_band_for_account(
 ) -> abilities_runtime::abilities::trust::types::TrustBand {
     use abilities_runtime::abilities::trust::types::TrustBand;
 
-    // DOS-762 P2 (codex review): the accounts table stores health as color
-    // strings — `green` / `yellow` / `red` — per the existing data layer, NOT
-    // the narrative strings the producer first guessed. Map both vocabularies
-    // so existing rows surface their actual band instead of silently
-    // defaulting to LikelyCurrent. Unknown / missing → Unscored (honest)
-    // instead of LikelyCurrent (optimistic).
+    // The accounts table stores health as color strings — `green` / `yellow`
+    // / `red` — per the existing data layer, not the narrative strings the
+    // producer first guessed. Map both vocabularies so existing rows surface
+    // their actual band instead of silently defaulting to LikelyCurrent.
+    // Unknown / missing maps to Unscored instead of an optimistic band.
     match health.map(|value| value.trim().to_ascii_lowercase()) {
         Some(value) if value == "healthy" || value == "good" || value == "green" => {
             TrustBand::LikelyCurrent

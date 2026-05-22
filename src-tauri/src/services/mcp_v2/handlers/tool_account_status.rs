@@ -3,8 +3,8 @@
 //! Wraps the claim-backed `get_entity_intelligence` ability from
 //! `abilities-runtime`, then projects the envelope into an MCP-friendly
 //! account briefing with prose plus compact provenance.
-//! Per DOS-175 cycle-2 §3: sync `McpToolHandler::invoke` is called from
-//! within `tokio::task::spawn_blocking` at the transport boundary, so
+//! Sync `McpToolHandler::invoke` is called from within
+//! `tokio::task::spawn_blocking` at the transport boundary, so
 //! `runtime.block_on(...)` on a captured handle is safe.
 //!
 //! See `.docs/plans/v1.4.7-w1-foundation/dos-175-l0-plan.md` for the L0
@@ -161,9 +161,8 @@ fn extract_subject(params: &Value) -> Result<String, ToolError> {
             detail: "'subject' must be a non-empty string".into(),
         });
     }
-    // Cycle-1 passthrough: treat `subject` as the account_id directly per
-    // DOS-175 §3.4. Phase-A.1 sub-ticket replaces this with a real
-    // subject-to-account_id resolver.
+    // Phase-A passthrough: treat `subject` as the account_id directly. The
+    // follow-on subject resolver replaces this with slug/account resolution.
     Ok(subject.to_string())
 }
 
