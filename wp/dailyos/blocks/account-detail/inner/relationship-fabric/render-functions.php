@@ -176,9 +176,8 @@ if ( ! function_exists( 'dailyos_relationship_fabric_render_row' ) ) {
 	function dailyos_relationship_fabric_render_row( array $claim_ref, array $receipt ): string {
 		$claim_id = isset( $claim_ref['claim_id'] ) ? (string) $claim_ref['claim_id'] : '';
 		$trust_band = dailyos_receipt_trust_band( $receipt );
-		$display    = dailyos_receipt_rendered_text( $receipt, $claim_id );
 		return '<div class="RelationshipFabric_row" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
-			. '<span class="RelationshipFabric_label">' . esc_html( $display ) . '</span>'
+			. '<span class="RelationshipFabric_label">' . esc_html( dailyos_receipt_rendered_text( $receipt, $claim_id ) ) . '</span>'
 			. '<span class="RelationshipFabric_content">' . esc_html( $trust_band ) . '</span>'
 			. '</div>';
 	}

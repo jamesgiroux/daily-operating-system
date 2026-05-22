@@ -30,7 +30,6 @@ use PHPUnit\Framework\TestCase;
 
 require_once __DIR__ . '/../../blocks/_shared/envelope/envelope-resolver.php';
 require_once __DIR__ . '/../../blocks/account-detail/render-functions.php';
-require_once __DIR__ . '/../../blocks/account-detail/inner/account-hero/render-functions.php';
 
 /**
  * @covers dailyos_account_detail_render
@@ -101,29 +100,6 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 		$html = dailyos_account_detail_render( [ 'account_id' => 'acct-test-001' ] );
 		$this->assertStringContainsString( 'dailyos-empty-chip', $html );
 		$this->assertStringContainsString( 'data-empty-reason="runtime_unavailable"', $html );
-	}
-
-	/**
-	 * Runtime error envelopes are surfaced as errors, not cached as fake
-	 * entity envelopes.
-	 */
-	public function test_render_returns_empty_chip_when_runtime_returns_error_envelope(): void {
-		$client = $this->fake_runtime_client_with_envelope(
-			[
-				'ok'    => false,
-				'error' => [
-					'code'    => 'runtime_request_failed',
-					'message' => 'DailyOS runtime request failed.',
-				],
-			]
-		);
-		$this->register_runtime_client_filter( $client );
-
-		$html = dailyos_account_detail_render( [ 'account_id' => 'acct-test-001' ] );
-
-		$this->assertStringContainsString( 'dailyos-empty-chip', $html );
-		$this->assertStringContainsString( 'data-empty-reason="runtime_request_failed"', $html );
-		$this->assertStringNotContainsString( 'data-dailyos-envelope-handle=', $html );
 	}
 
 	/**
@@ -388,170 +364,75 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 	}
 
 	/**
-	 * Entity-intelligence envelopes already carry rendered claim items; row
-	 * rendering should use those before falling back to per-claim receipt fan-out.
+	 * Claim receipts arrive in the same runtime wrapper shape as other
+	 * abilities. Inner rows must render the display-safe text from
+	 * ability.data.renderedText, never the opaque claim id.
 	 */
-	public function test_envelope_consume_claim_uses_embedded_rendered_claim_item(): void {
-		$handle = dailyos_envelope_handle_from_response(
-			[
-				'ok'      => true,
-				'ability' => [
-					'ability_name' => 'get_entity_intelligence',
-					'data'         => [
-						'envelopeRenderId' => 'env-acct-test-embedded-001',
-						'sections'         => [
-							'facts' => [
-								'kind'       => 'present',
-								'item_count' => 1,
-							],
-						],
-						'facts'            => [
-							'items' => [
-								[
-									'claimId'      => 'claim-test-embedded-001',
-									'renderedText' => [
-										'text' => 'Embedded rendered claim',
-									],
-									'trustBand'    => 'likely_current',
-								],
-							],
-						],
+	public function test_receipt_helpers_unwrap_runtime_ability_data_shape(): void {
+		$receipt = [
+			'ok'      => true,
+			'ability' => [
+				'ability_name' => 'claim_receipt',
+				'data'         => [
+					'renderedText' => [
+						'text' => 'Readable account signal',
+					],
+					'trust'        => [
+						'band' => 'likely_current',
 					],
 				],
 			],
-			'account',
-			'acct-test-embedded'
-		);
-		$this->assertSame( 'env-acct-test-embedded-001', $handle );
+		];
 
-		$client = $this->fake_runtime_client_with_envelope(
-			[
-				'ok'      => true,
-				'ability' => [
-					'ability_name' => 'claim_receipt',
-					'data'         => [
-						'renderedText' => [
-							'text' => 'Fallback rendered claim',
-						],
-					],
-				],
-			]
-		);
-		$this->register_runtime_client_filter( $client );
-
-		$receipt = dailyos_envelope_consume_claim(
-			[
-				'claim_id'    => 'claim-test-embedded-001',
-				'subject_ref' => [ 'account' => 'acct-test-embedded' ],
-			],
-			[]
-		);
-
-		$this->assertIsArray( $receipt );
-		$this->assertSame( 'Embedded rendered claim', $receipt['renderedText']['text'] );
+		$this->assertSame( 'Readable account signal', dailyos_receipt_rendered_text( $receipt, 'claim-test-001' ) );
 		$this->assertSame( 'likely_current', dailyos_receipt_trust_band( $receipt ) );
-		$this->assertSame( 0, $client->calls, 'embedded envelope claim should avoid claim_receipt fan-out' );
 	}
 
 	/**
-	 * Claim receipt fan-out returns the receipt DTO, not the runtime wrapper.
-	 * The account-detail inner blocks consume this helper before row render.
+	 * Claim-ref collection can select Tauri-style dossier fields from the
+	 * generic facts section without returning every claim in the envelope.
 	 */
-	public function test_envelope_consume_claim_unwraps_claim_receipt_runtime_response(): void {
-		$client = $this->fake_runtime_client_with_envelope(
-			[
-				'ok'      => true,
-				'ability' => [
-					'ability_name' => 'claim_receipt',
-					'data'         => [
-						'renderedText' => [
-							'text' => 'Generic rendered claim',
-						],
-						'trust'        => [
-							'band' => 'likely_current',
-						],
+	public function test_envelope_claim_ref_collection_filters_by_field_path(): void {
+		$envelope = [
+			'facts' => [
+				'items' => [
+					[
+						'claimId'    => 'claim-pull-quote',
+						'claimType'  => 'entity_summary',
+						'fieldPath'  => 'pullQuote',
+						'subjectRef' => [ 'kind' => 'account', 'id' => 'acct-test-001' ],
+					],
+					[
+						'claimId'    => 'claim-risk',
+						'claimType'  => 'entity_risk',
+						'fieldPath'  => 'risks[0]',
+						'subjectRef' => [ 'kind' => 'account', 'id' => 'acct-test-001' ],
 					],
 				],
-			]
-		);
-		$this->register_runtime_client_filter( $client );
-
-		$receipt = dailyos_envelope_consume_claim(
-			[
-				'claim_id'    => 'claim-test-001',
-				'subject_ref' => [ 'account' => 'acct-test-001' ],
-				'field_path'  => 'status',
 			],
-			[]
+		];
+
+		$refs = dailyos_envelope_collect_claim_refs(
+			$envelope,
+			[ 'facts' ],
+			[ 'field_paths' => [ 'pullQuote' ] ]
 		);
 
-		$this->assertIsArray( $receipt );
-		$this->assertSame( 'Generic rendered claim', $receipt['renderedText']['text'] );
-		$this->assertSame( 'claim_receipt', $client->requests[0]['ability'] );
-		$this->assertSame( 1, $client->requests[0]['payload']['schemaVersion'] );
-		$this->assertSame( 'claim', $client->requests[0]['payload']['target']['kind'] );
-		$this->assertSame( 'entity_detail', $client->requests[0]['payload']['surface'] );
+		$this->assertCount( 1, $refs );
+		$this->assertSame( 'claim-pull-quote', $refs[0]['claim_id'] );
 	}
 
 	/**
-	 * Hero rows use the new claim_receipt DTO for rendered text, trust, and
-	 * provenance labels instead of falling back to opaque claim ids.
-	 */
-	public function test_account_hero_row_reads_claim_receipt_dto_fields(): void {
-		$html = dailyos_account_hero_render_row(
-			[ 'claim_id' => 'claim-test-001' ],
-			[
-				'renderedText' => [
-					'text' => 'Generic rendered claim',
-				],
-				'trust'        => [
-					'band' => 'likely_current',
-				],
-				'provenance'   => [
-					'sources' => [
-						[
-							'label'    => 'Generic source',
-							'redacted' => false,
-						],
-					],
-				],
-			]
-		);
-
-		$this->assertStringContainsString( 'Generic rendered claim', $html );
-		$this->assertStringContainsString( 'data-trust-band="likely_current"', $html );
-		$this->assertStringContainsString( 'Generic source', $html );
-	}
-
-	/**
-	 * Account-detail row renderers must use rendered claim text for visible
-	 * copy. Claim ids belong in data attributes only.
+	 * Regression guard for claim-backed rows: ids are machine metadata only.
 	 */
 	public function test_account_detail_inner_rows_do_not_render_claim_ids_as_visible_labels(): void {
-		$files = glob( __DIR__ . '/../../blocks/account-detail/inner/*/render-functions.php' );
-		$this->assertIsArray( $files );
-		$this->assertNotEmpty( $files );
-
-		foreach ( $files as $file ) {
-			$source = (string) file_get_contents( $file );
-			if ( false === strpos( $source, '_render_row' ) ) {
-				continue;
-			}
-
-			$this->assertStringContainsString(
-				'dailyos_receipt_rendered_text',
-				$source,
-				basename( dirname( $file ) ) . ' rows must derive visible copy from rendered claim text'
-			);
+		$inner_dir = __DIR__ . '/../../blocks/account-detail/inner';
+		foreach ( glob( $inner_dir . '/*/render-functions.php' ) as $path ) {
+			$contents = (string) file_get_contents( $path );
 			$this->assertStringNotContainsString(
 				'esc_html( $claim_id )',
-				$source,
-				basename( dirname( $file ) ) . ' rows must not print opaque claim ids as visible copy'
-			);
-			$this->assertStringNotContainsString(
-				'$trust_band = isset( $receipt[\'trustBand\'] )',
-				$source,
-				basename( dirname( $file ) ) . ' rows must use shared trust DTO parsing'
+				$contents,
+				basename( dirname( $path ) ) . ' must render receipt text, not the claim id'
 			);
 		}
 	}

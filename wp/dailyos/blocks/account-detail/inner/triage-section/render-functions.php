@@ -59,7 +59,7 @@ if ( ! function_exists( 'dailyos_triage_section_render' ) ) {
 		}
 
 		$envelope = dailyos_resolve_envelope( $handle, 'account', $entity_id, $scope_set );
-		$projected_sections = ['health'];
+		$projected_sections = ['facts'];
 		$any_present = false;
 		$first_empty_reason = '';
 		foreach ( $projected_sections as $section_key ) {
@@ -73,7 +73,7 @@ if ( ! function_exists( 'dailyos_triage_section_render' ) ) {
 			}
 		}
 		$out  = '<section id="needs-attention" class="entity-detail_chapterSection" data-ds-tier="pattern" data-ds-name="TriageSection" data-ds-spec="patterns/TriageSection.md">';
-		$out .= '<section class="health_blockHeader" data-dailyos-projection="triage-section" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['health'] ) ) . '">';
+		$out .= '<section class="health_blockHeader" data-dailyos-projection="triage-section" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['facts'] ) ) . '">';
 		$out .= '<hr class="health_blockHeaderRule" />';
 		$out .= '<div class="health_blockHeaderTitleRow">';
 		$out .= '<h2 class="health_blockHeaderTitle">' . esc_html__( 'Needs attention', 'dailyos' ) . '</h2>';
@@ -128,40 +128,14 @@ if ( ! function_exists( 'dailyos_triage_section_select_claim_refs' ) ) {
 	 * @return array<int,array<string,mixed>>
 	 */
 	function dailyos_triage_section_select_claim_refs( ?array $envelope ): array {
-		if ( null === $envelope ) {
-			return [];
-		}
-		$refs = [];
-		// Walk the projected envelope sections and collect claim_ids. The
-		// exact projection rule lives in the L0-packet projection table; this
-		// helper is a single source for the slug's selection so test fixtures
-		// can target one function rather than the renderer.
-		foreach ( ['health'] as $section_key ) {
-			$slice = $envelope[ $section_key ] ?? [];
-			if ( ! is_array( $slice ) ) {
-				continue;
-			}
-			$items = $slice['items'] ?? ( is_array( reset( $slice ) ) ? $slice : [] );
-			if ( ! is_array( $items ) ) {
-				continue;
-			}
-			foreach ( $items as $item ) {
-				if ( ! is_array( $item ) ) {
-					continue;
-				}
-				$claim_id = $item['claimId'] ?? $item['claim_id'] ?? '';
-				if ( '' === $claim_id ) {
-					continue;
-				}
-				$refs[] = [
-					'claim_id'     => (string) $claim_id,
-					'audience_key' => $item['audienceKey'] ?? 'user',
-					'subject_ref'  => $item['subjectRef'] ?? null,
-					'field_path'   => $item['fieldPath'] ?? null,
-				];
-			}
-		}
-		return $refs;
+		return dailyos_envelope_collect_claim_refs(
+			$envelope,
+			[ 'facts' ],
+			[
+				'claim_types'         => [ 'entity_risk' ],
+				'field_path_prefixes' => [ 'risks[', 'blockers[' ],
+			]
+		);
 	}
 }
 
@@ -178,12 +152,11 @@ if ( ! function_exists( 'dailyos_triage_section_render_row' ) ) {
 	function dailyos_triage_section_render_row( array $claim_ref, array $receipt ): string {
 		$claim_id = isset( $claim_ref['claim_id'] ) ? (string) $claim_ref['claim_id'] : '';
 		$trust_band = dailyos_receipt_trust_band( $receipt );
-		$display    = dailyos_receipt_rendered_text( $receipt, $claim_id );
 		return '<article class="health_triageCard" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
 			. '<div class="health_triageSpine health_spineUrgent" aria-hidden="true"></div>'
 			. '<div class="health_triageBody">'
 			. '<span class="health_triageKind health_kindUrgent">' . esc_html__( 'Account signal', 'dailyos' ) . '</span>'
-			. '<div class="health_triageHeadline">' . esc_html( $display ) . '</div>'
+			. '<div class="health_triageHeadline">' . esc_html( dailyos_receipt_rendered_text( $receipt, $claim_id ) ) . '</div>'
 			. '<div class="health_triageSources"><span class="health_triageCitationPlain">' . esc_html( $trust_band ) . '</span></div>'
 			. '</div>'
 			. '</article>';

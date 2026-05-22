@@ -179,12 +179,11 @@ if ( ! function_exists( 'dailyos_stakeholder_grid_render_row' ) ) {
 	function dailyos_stakeholder_grid_render_row( array $claim_ref, array $receipt ): string {
 		$claim_id = isset( $claim_ref['claim_id'] ) ? (string) $claim_ref['claim_id'] : '';
 		$trust_band = dailyos_receipt_trust_band( $receipt );
-		$display    = dailyos_receipt_rendered_text( $receipt, $claim_id );
 		return '<article class="StakeholderGrid_personCard StakeholderGrid_personCardPrimary" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
 			. '<div class="StakeholderGrid_personHeader">'
 			. '<div class="StakeholderGrid_avatar" aria-hidden="true"></div>'
 			. '<div class="StakeholderGrid_personIdentity">'
-			. '<div class="StakeholderGrid_personName">' . esc_html( $display ) . '</div>'
+			. '<div class="StakeholderGrid_personName">' . esc_html( dailyos_receipt_rendered_text( $receipt, $claim_id ) ) . '</div>'
 			. '<div class="StakeholderGrid_personTitle">' . esc_html( $trust_band ) . '</div>'
 			. '</div>'
 			. '</div>'

@@ -176,11 +176,10 @@ if ( ! function_exists( 'dailyos_account_technical_footprint_render_row' ) ) {
 	function dailyos_account_technical_footprint_render_row( array $claim_ref, array $receipt ): string {
 		$claim_id = isset( $claim_ref['claim_id'] ) ? (string) $claim_ref['claim_id'] : '';
 		$trust_band = dailyos_receipt_trust_band( $receipt );
-		$display    = dailyos_receipt_rendered_text( $receipt, $claim_id );
 		return '<div class="AccountTechnicalFootprint_productGroup" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
 			. '<div class="ReferenceGrid_featureItem AccountTechnicalFootprint_productHeader">'
 			. '<span class="ReferenceGrid_featureDot"></span>'
-			. '<span class="AccountTechnicalFootprint_productLabel">' . esc_html( $display ) . '</span>'
+			. '<span class="AccountTechnicalFootprint_productLabel">' . esc_html( dailyos_receipt_rendered_text( $receipt, $claim_id ) ) . '</span>'
 			. '<span class="AccountTechnicalFootprint_productMeta">' . esc_html( $trust_band ) . '</span>'
 			. '</div>'
 			. '</div>';

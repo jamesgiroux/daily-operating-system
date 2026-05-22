@@ -59,7 +59,7 @@ if ( ! function_exists( 'dailyos_supporting_tension_render' ) ) {
 		}
 
 		$envelope = dailyos_resolve_envelope( $handle, 'account', $entity_id, $scope_set );
-		$projected_sections = ['health'];
+		$projected_sections = ['facts'];
 		$any_present = false;
 		$first_empty_reason = '';
 		foreach ( $projected_sections as $section_key ) {
@@ -77,7 +77,7 @@ if ( ! function_exists( 'dailyos_supporting_tension_render' ) ) {
 		$out .= '<hr class="ChapterHeading_rule" />';
 		$out .= '<div class="ChapterHeading_titleRow"><h2 class="ChapterHeading_title">' . esc_html__( 'Health Score vs. Signals', 'dailyos' ) . '</h2></div>';
 		$out .= '</div>';
-		$out .= '<div class="health_supportingTension" data-dailyos-projection="supporting-tension" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['health'] ) ) . '">';
+		$out .= '<div class="health_supportingTension" data-dailyos-projection="supporting-tension" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['facts'] ) ) . '">';
 		$out .= '<div><div class="health_tensionBlockLabel">' . esc_html__( 'Computed score', 'dailyos' ) . '</div><div class="health_tensionBlockValue health_tensionValueNeutral">--</div><div class="health_tensionBlockMeta">' . esc_html__( 'Awaiting account score', 'dailyos' ) . '</div></div>';
 		$out .= '<div><div class="health_tensionBlockLabel">' . esc_html__( 'Signal trend', 'dailyos' ) . '</div><div class="health_tensionBlockValue health_tensionValueNeutral">' . esc_html__( 'Unknown', 'dailyos' ) . '</div><div class="health_tensionBlockMeta">' . esc_html__( 'Projected from account intelligence', 'dailyos' ) . '</div></div>';
 		$out .= '</div>';
@@ -129,40 +129,13 @@ if ( ! function_exists( 'dailyos_supporting_tension_select_claim_refs' ) ) {
 	 * @return array<int,array<string,mixed>>
 	 */
 	function dailyos_supporting_tension_select_claim_refs( ?array $envelope ): array {
-		if ( null === $envelope ) {
-			return [];
-		}
-		$refs = [];
-		// Walk the projected envelope sections and collect claim_ids. The
-		// exact projection rule lives in the L0-packet projection table; this
-		// helper is a single source for the slug's selection so test fixtures
-		// can target one function rather than the renderer.
-		foreach ( ['health'] as $section_key ) {
-			$slice = $envelope[ $section_key ] ?? [];
-			if ( ! is_array( $slice ) ) {
-				continue;
-			}
-			$items = $slice['items'] ?? ( is_array( reset( $slice ) ) ? $slice : [] );
-			if ( ! is_array( $items ) ) {
-				continue;
-			}
-			foreach ( $items as $item ) {
-				if ( ! is_array( $item ) ) {
-					continue;
-				}
-				$claim_id = $item['claimId'] ?? $item['claim_id'] ?? '';
-				if ( '' === $claim_id ) {
-					continue;
-				}
-				$refs[] = [
-					'claim_id'     => (string) $claim_id,
-					'audience_key' => $item['audienceKey'] ?? 'user',
-					'subject_ref'  => $item['subjectRef'] ?? null,
-					'field_path'   => $item['fieldPath'] ?? null,
-				];
-			}
-		}
-		return $refs;
+		return dailyos_envelope_collect_claim_refs(
+			$envelope,
+			[ 'facts' ],
+			[
+				'field_paths' => [ 'health', 'coverageAssessment', 'meetingCadence', 'emailResponsiveness' ],
+			]
+		);
 	}
 }
 
@@ -179,9 +152,8 @@ if ( ! function_exists( 'dailyos_supporting_tension_render_row' ) ) {
 	function dailyos_supporting_tension_render_row( array $claim_ref, array $receipt ): string {
 		$claim_id = isset( $claim_ref['claim_id'] ) ? (string) $claim_ref['claim_id'] : '';
 		$trust_band = dailyos_receipt_trust_band( $receipt );
-		$display    = dailyos_receipt_rendered_text( $receipt, $claim_id );
 		return '<div class="health_dim" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
-			. '<div class="health_dimName"><span>' . esc_html( $display ) . '</span><span class="health_dimScore">' . esc_html( $trust_band ) . '</span></div>'
+			. '<div class="health_dimName"><span>' . esc_html( dailyos_receipt_rendered_text( $receipt, $claim_id ) ) . '</span><span class="health_dimScore">' . esc_html( $trust_band ) . '</span></div>'
 			. '<div class="health_dimBar"><div class="health_dimFill health_dimFillYellow"></div></div>'
 			. '</div>';
 	}
