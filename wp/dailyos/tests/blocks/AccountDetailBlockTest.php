@@ -389,6 +389,35 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 	}
 
 	/**
+	 * Failed receipt calls are not displayable rows; claim ids must remain
+	 * metadata only.
+	 */
+	public function test_envelope_consume_claim_skips_receipts_without_rendered_text(): void {
+		$client = $this->fake_runtime_client_with_envelope(
+			[
+				'ok'    => false,
+				'error' => [
+					'code'    => 'input_schema_invalid',
+					'message' => 'Invalid ability input.',
+				],
+			]
+		);
+		$this->register_runtime_client_filter( $client );
+
+		$receipt = dailyos_envelope_consume_claim(
+			[
+				'claim_id'    => 'claim-test-001',
+				'subject_ref' => [ 'kind' => 'account', 'id' => 'acct-test-001' ],
+				'field_path'  => 'health.risk',
+			],
+			[ 'read.claim_receipt' ]
+		);
+
+		$this->assertNull( $receipt );
+		$this->assertSame( 1, $client->calls );
+	}
+
+	/**
 	 * Claim-ref collection can select Tauri-style dossier fields from the
 	 * generic facts section without returning every claim in the envelope.
 	 */

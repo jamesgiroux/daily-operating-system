@@ -397,7 +397,11 @@ if ( ! function_exists( 'dailyos_envelope_consume_claim' ) ) {
 		];
 
 		$response = $runtime_client->invoke_ability( 'claim_receipt', $payload, $scope_set );
-		return is_array( $response ) ? $response : null;
+		if ( ! is_array( $response ) ) {
+			return null;
+		}
+
+		return '' !== dailyos_receipt_rendered_text( $response, '' ) ? $response : null;
 	}
 }
 

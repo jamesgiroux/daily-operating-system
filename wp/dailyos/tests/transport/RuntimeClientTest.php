@@ -106,6 +106,97 @@ final class DailyOS_RuntimeClientTest extends TestCase {
 	}
 
 	/**
+	 * Claim receipt invokes normalize raw claim refs to the Rust ability DTO.
+	 */
+	public function test_claim_receipt_payload_normalizes_raw_claim_ref_to_runtime_contract(): void {
+		$this->save_marker();
+		$this->add_session_key_filter();
+
+		$GLOBALS['dailyos_test_remote_post_response'] = [
+			'response' => [
+				'code' => 200,
+			],
+			'body'     => '{"ok":true}',
+		];
+
+		$client = new DailyOS_Runtime_Client( new DailyOS_Credential_Store(), new DailyOS_Hmac_Signer() );
+		$client->invoke_ability(
+			'claim_receipt',
+			[
+				'claim_id'    => 'claim-test-001',
+				'subject_ref' => [
+					'kind' => 'account',
+					'id'   => 'acct-test-001',
+				],
+				'field_path'  => 'health.risk',
+				'surface'     => 'entityDetail',
+			],
+			[ 'read.claim_receipt' ]
+		);
+
+		$body = json_decode( $GLOBALS['dailyos_test_remote_post_calls'][0]['args']['body'], true );
+
+		$this->assertSame( 'claim_receipt', $body['ability'] );
+		$this->assertSame( 1, $body['input']['schemaVersion'] );
+		$this->assertSame( 'entity_detail', $body['input']['surface'] );
+		$this->assertSame( 'claim', $body['input']['target']['kind'] );
+		$this->assertSame( 'claim-test-001', $body['input']['target']['claimId'] );
+		$this->assertSame( [ 'account' => 'acct-test-001' ], $body['input']['target']['subject'] );
+		$this->assertSame( 'health.risk', $body['input']['target']['fieldPath'] );
+		$this->assertArrayNotHasKey( 'claim_id', $body['input'] );
+		$this->assertArrayNotHasKey( 'subject_ref', $body['input'] );
+		$this->assertArrayNotHasKey( 'field_path', $body['input'] );
+	}
+
+	/**
+	 * Claim receipt invokes normalize shaped targets from envelope subject refs.
+	 */
+	public function test_claim_receipt_payload_normalizes_shaped_target_subject_ref(): void {
+		$this->save_marker();
+		$this->add_session_key_filter();
+
+		$GLOBALS['dailyos_test_remote_post_response'] = [
+			'response' => [
+				'code' => 200,
+			],
+			'body'     => '{"ok":true}',
+		];
+
+		$client = new DailyOS_Runtime_Client( new DailyOS_Credential_Store(), new DailyOS_Hmac_Signer() );
+		$client->invoke_ability(
+			'claim_receipt',
+			[
+				'schema_version' => 1,
+				'target'         => [
+					'kind'       => 'claim',
+					'claim_id'   => 'claim-test-002',
+					'subjectRef' => [
+						'kind' => 'person',
+						'id'   => 'person-test-001',
+					],
+					'field_path' => 'role.current',
+				],
+				'surface'        => 'tauri_entity_detail',
+			],
+			[ 'read.claim_receipt' ]
+		);
+
+		$body = json_decode( $GLOBALS['dailyos_test_remote_post_calls'][0]['args']['body'], true );
+
+		$this->assertSame( 'claim_receipt', $body['ability'] );
+		$this->assertSame( 1, $body['input']['schemaVersion'] );
+		$this->assertArrayNotHasKey( 'schema_version', $body['input'] );
+		$this->assertSame( 'entity_detail', $body['input']['surface'] );
+		$this->assertSame( 'claim', $body['input']['target']['kind'] );
+		$this->assertSame( 'claim-test-002', $body['input']['target']['claimId'] );
+		$this->assertSame( [ 'person' => 'person-test-001' ], $body['input']['target']['subject'] );
+		$this->assertSame( 'role.current', $body['input']['target']['fieldPath'] );
+		$this->assertArrayNotHasKey( 'claim_id', $body['input']['target'] );
+		$this->assertArrayNotHasKey( 'subjectRef', $body['input']['target'] );
+		$this->assertArrayNotHasKey( 'field_path', $body['input']['target'] );
+	}
+
+	/**
 	 * Local requests refuse to guess a default runtime URL when no marker exists.
 	 */
 	public function test_local_post_returns_not_paired_without_marker(): void {
