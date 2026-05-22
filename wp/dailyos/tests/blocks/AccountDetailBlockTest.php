@@ -30,6 +30,7 @@ use PHPUnit\Framework\TestCase;
 
 require_once __DIR__ . '/../../blocks/_shared/envelope/envelope-resolver.php';
 require_once __DIR__ . '/../../blocks/account-detail/render-functions.php';
+require_once __DIR__ . '/../../blocks/account-detail/inner/account-hero/render-functions.php';
 
 /**
  * @covers dailyos_account_detail_render
@@ -100,6 +101,29 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 		$html = dailyos_account_detail_render( [ 'account_id' => 'acct-test-001' ] );
 		$this->assertStringContainsString( 'dailyos-empty-chip', $html );
 		$this->assertStringContainsString( 'data-empty-reason="runtime_unavailable"', $html );
+	}
+
+	/**
+	 * Runtime error envelopes are surfaced as errors, not cached as fake
+	 * entity envelopes.
+	 */
+	public function test_render_returns_empty_chip_when_runtime_returns_error_envelope(): void {
+		$client = $this->fake_runtime_client_with_envelope(
+			[
+				'ok'    => false,
+				'error' => [
+					'code'    => 'runtime_request_failed',
+					'message' => 'DailyOS runtime request failed.',
+				],
+			]
+		);
+		$this->register_runtime_client_filter( $client );
+
+		$html = dailyos_account_detail_render( [ 'account_id' => 'acct-test-001' ] );
+
+		$this->assertStringContainsString( 'dailyos-empty-chip', $html );
+		$this->assertStringContainsString( 'data-empty-reason="runtime_request_failed"', $html );
+		$this->assertStringNotContainsString( 'data-dailyos-envelope-handle=', $html );
 	}
 
 	/**
@@ -361,6 +385,142 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 		$this->assertIsArray( $cached, 'envelope cached under handle' );
 		$this->assertArrayHasKey( 'sections', $cached, 'cached value is the envelope, not the runtime wrapper' );
 		$this->assertSame( 'present', $cached['sections']['facts']['kind'] );
+	}
+
+	/**
+	 * Entity-intelligence envelopes already carry rendered claim items; row
+	 * rendering should use those before falling back to per-claim receipt fan-out.
+	 */
+	public function test_envelope_consume_claim_uses_embedded_rendered_claim_item(): void {
+		$handle = dailyos_envelope_handle_from_response(
+			[
+				'ok'      => true,
+				'ability' => [
+					'ability_name' => 'get_entity_intelligence',
+					'data'         => [
+						'envelopeRenderId' => 'env-acct-test-embedded-001',
+						'sections'         => [
+							'facts' => [
+								'kind'       => 'present',
+								'item_count' => 1,
+							],
+						],
+						'facts'            => [
+							'items' => [
+								[
+									'claimId'      => 'claim-test-embedded-001',
+									'renderedText' => [
+										'text' => 'Embedded rendered claim',
+									],
+									'trustBand'    => 'likely_current',
+								],
+							],
+						],
+					],
+				],
+			],
+			'account',
+			'acct-test-embedded'
+		);
+		$this->assertSame( 'env-acct-test-embedded-001', $handle );
+
+		$client = $this->fake_runtime_client_with_envelope(
+			[
+				'ok'      => true,
+				'ability' => [
+					'ability_name' => 'claim_receipt',
+					'data'         => [
+						'renderedText' => [
+							'text' => 'Fallback rendered claim',
+						],
+					],
+				],
+			]
+		);
+		$this->register_runtime_client_filter( $client );
+
+		$receipt = dailyos_envelope_consume_claim(
+			[
+				'claim_id'    => 'claim-test-embedded-001',
+				'subject_ref' => [ 'account' => 'acct-test-embedded' ],
+			],
+			[]
+		);
+
+		$this->assertIsArray( $receipt );
+		$this->assertSame( 'Embedded rendered claim', $receipt['renderedText']['text'] );
+		$this->assertSame( 'likely_current', dailyos_receipt_trust_band( $receipt ) );
+		$this->assertSame( 0, $client->calls, 'embedded envelope claim should avoid claim_receipt fan-out' );
+	}
+
+	/**
+	 * Claim receipt fan-out returns the receipt DTO, not the runtime wrapper.
+	 * The account-detail inner blocks consume this helper before row render.
+	 */
+	public function test_envelope_consume_claim_unwraps_claim_receipt_runtime_response(): void {
+		$client = $this->fake_runtime_client_with_envelope(
+			[
+				'ok'      => true,
+				'ability' => [
+					'ability_name' => 'claim_receipt',
+					'data'         => [
+						'renderedText' => [
+							'text' => 'Generic rendered claim',
+						],
+						'trust'        => [
+							'band' => 'likely_current',
+						],
+					],
+				],
+			]
+		);
+		$this->register_runtime_client_filter( $client );
+
+		$receipt = dailyos_envelope_consume_claim(
+			[
+				'claim_id'    => 'claim-test-001',
+				'subject_ref' => [ 'account' => 'acct-test-001' ],
+				'field_path'  => 'status',
+			],
+			[]
+		);
+
+		$this->assertIsArray( $receipt );
+		$this->assertSame( 'Generic rendered claim', $receipt['renderedText']['text'] );
+		$this->assertSame( 'claim_receipt', $client->requests[0]['ability'] );
+		$this->assertSame( 1, $client->requests[0]['payload']['schemaVersion'] );
+		$this->assertSame( 'claim', $client->requests[0]['payload']['target']['kind'] );
+		$this->assertSame( 'entity_detail', $client->requests[0]['payload']['surface'] );
+	}
+
+	/**
+	 * Hero rows use the new claim_receipt DTO for rendered text, trust, and
+	 * provenance labels instead of falling back to opaque claim ids.
+	 */
+	public function test_account_hero_row_reads_claim_receipt_dto_fields(): void {
+		$html = dailyos_account_hero_render_row(
+			[ 'claim_id' => 'claim-test-001' ],
+			[
+				'renderedText' => [
+					'text' => 'Generic rendered claim',
+				],
+				'trust'        => [
+					'band' => 'likely_current',
+				],
+				'provenance'   => [
+					'sources' => [
+						[
+							'label'    => 'Generic source',
+							'redacted' => false,
+						],
+					],
+				],
+			]
+		);
+
+		$this->assertStringContainsString( 'Generic rendered claim', $html );
+		$this->assertStringContainsString( 'data-trust-band="likely_current"', $html );
+		$this->assertStringContainsString( 'Generic source', $html );
 	}
 
 	/**

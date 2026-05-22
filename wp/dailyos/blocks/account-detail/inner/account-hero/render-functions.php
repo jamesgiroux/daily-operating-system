@@ -77,7 +77,7 @@ if ( ! function_exists( 'dailyos_account_hero_render' ) ) {
 			? $envelope['subject']
 			: [];
 		$subject_name = '';
-		foreach ( [ 'name', 'displayName', 'display_name', 'label' ] as $name_key ) {
+		foreach ( [ 'name', 'displayName', 'display_name', 'displayLabel', 'display_label', 'label' ] as $name_key ) {
 			if ( isset( $subject[ $name_key ] ) && is_string( $subject[ $name_key ] ) && '' !== $subject[ $name_key ] ) {
 				$subject_name = $subject[ $name_key ];
 				break;
@@ -259,9 +259,9 @@ if ( ! function_exists( 'dailyos_account_hero_render_row' ) ) {
 	 */
 	function dailyos_account_hero_render_row( array $claim_ref, array $receipt ): string {
 		$claim_id   = isset( $claim_ref['claim_id'] ) ? (string) $claim_ref['claim_id'] : '';
-		$trust_band = isset( $receipt['trustBand'] ) ? (string) $receipt['trustBand'] : ( isset( $receipt['trust_band'] ) ? (string) $receipt['trust_band'] : 'unscored' );
-		$display    = isset( $receipt['value']['display'] ) ? (string) $receipt['value']['display'] : ( isset( $receipt['display'] ) ? (string) $receipt['display'] : $claim_id );
-		$source     = isset( $receipt['source']['name'] ) ? (string) $receipt['source']['name'] : ( isset( $receipt['sourceName'] ) ? (string) $receipt['sourceName'] : '' );
+		$trust_band = dailyos_receipt_trust_band( $receipt );
+		$display    = dailyos_receipt_rendered_text( $receipt, $claim_id );
+		$source     = dailyos_receipt_source_label( $receipt );
 
 		$out  = '<span class="EditableVitalsStrip_itemWithSeparator" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">';
 		$out .= '<span class="EditableVitalsStrip_separatorDot"></span>';

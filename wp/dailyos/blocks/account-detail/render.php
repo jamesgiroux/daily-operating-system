@@ -9,6 +9,7 @@
  *
  * @var array<string, mixed> $attributes Block attributes from core.
  * @var string               $content    Inner content rendered upstream by core.
+ * @var \WP_Block|null       $block      Parsed block instance from core.
  */
 
 declare(strict_types=1);
@@ -23,5 +24,6 @@ if ( ! function_exists( 'dailyos_account_detail_render' ) ) {
 
 $attributes = isset( $attributes ) && is_array( $attributes ) ? $attributes : [];
 $content    = isset( $content ) && is_string( $content ) ? $content : '';
+$block      = isset( $block ) ? $block : null;
 // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- render functions escape output internally via esc_html / esc_attr (W3 contract).
-echo dailyos_account_detail_render( $attributes, $content );
+echo dailyos_account_detail_render( $attributes, $content, $block );

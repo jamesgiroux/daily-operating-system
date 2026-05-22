@@ -61,6 +61,7 @@ if ( ! function_exists( 'dailyos_envelope_cache_put' ) ) {
 		}
 		$shared             = &dailyos_envelope_cache_storage();
 		$shared[ $handle ]  = $envelope;
+		dailyos_envelope_claim_cache_index( $envelope );
 	}
 }
 
@@ -74,6 +75,69 @@ if ( ! function_exists( 'dailyos_envelope_cache_storage' ) ) {
 	function &dailyos_envelope_cache_storage(): array {
 		static $storage = [];
 		return $storage;
+	}
+}
+
+if ( ! function_exists( 'dailyos_envelope_claim_cache_storage' ) ) {
+	/**
+	 * Request-scoped index of rendered claim items carried by an entity
+	 * intelligence envelope.
+	 *
+	 * @return array<string,array<string,mixed>>
+	 */
+	function &dailyos_envelope_claim_cache_storage(): array {
+		static $storage = [];
+		return $storage;
+	}
+}
+
+if ( ! function_exists( 'dailyos_envelope_claim_cache_index' ) ) {
+	/**
+	 * Index embedded rendered claim items so block rows can render from the
+	 * already-produced envelope without making one claim_receipt request per row.
+	 *
+	 * @param array<string,mixed> $envelope Entity intelligence envelope.
+	 */
+	function dailyos_envelope_claim_cache_index( array $envelope ): void {
+		$claims = &dailyos_envelope_claim_cache_storage();
+
+		foreach ( $envelope as $slice ) {
+			if ( ! is_array( $slice ) ) {
+				continue;
+			}
+
+			$items = $slice['items'] ?? ( is_array( reset( $slice ) ) ? $slice : [] );
+			if ( ! is_array( $items ) ) {
+				continue;
+			}
+
+			foreach ( $items as $item ) {
+				if ( ! is_array( $item ) ) {
+					continue;
+				}
+				$claim_id = $item['claimId'] ?? $item['claim_id'] ?? '';
+				if ( ! is_string( $claim_id ) || '' === $claim_id ) {
+					continue;
+				}
+				$claims[ $claim_id ] = $item;
+			}
+		}
+	}
+}
+
+if ( ! function_exists( 'dailyos_envelope_claim_cache_get' ) ) {
+	/**
+	 * Read an embedded rendered claim item by claim id.
+	 *
+	 * @param string $claim_id Claim id.
+	 * @return array<string,mixed>|null
+	 */
+	function dailyos_envelope_claim_cache_get( string $claim_id ): ?array {
+		if ( '' === $claim_id ) {
+			return null;
+		}
+		$claims = &dailyos_envelope_claim_cache_storage();
+		return $claims[ $claim_id ] ?? null;
 	}
 }
 
@@ -276,6 +340,8 @@ if ( ! function_exists( 'dailyos_empty_chip' ) ) {
 				return __( 'Input schema invalid', 'dailyos' );
 			case 'producer_unavailable':
 				return __( 'Producer unavailable', 'dailyos' );
+			case 'runtime_request_failed':
+				return __( 'Runtime request failed', 'dailyos' );
 			case 'ownership_denied':
 				return __( 'Ownership denied', 'dailyos' );
 			default:
@@ -361,6 +427,16 @@ if ( ! function_exists( 'dailyos_envelope_consume_claim' ) ) {
 	 * @return array<string,mixed>|null
 	 */
 	function dailyos_envelope_consume_claim( array $claim_ref, array $scope_set ): ?array {
+		$claim_id = isset( $claim_ref['claim_id'] ) ? (string) $claim_ref['claim_id'] : '';
+		if ( '' === $claim_id ) {
+			return null;
+		}
+
+		$embedded = dailyos_envelope_claim_cache_get( $claim_id );
+		if ( null !== $embedded ) {
+			return $embedded;
+		}
+
 		$runtime_client = apply_filters( 'dailyos_runtime_client_for_block', null );
 		if ( ! is_object( $runtime_client ) || ! method_exists( $runtime_client, 'invoke_ability' ) ) {
 			return null;
@@ -370,10 +446,6 @@ if ( ! function_exists( 'dailyos_envelope_consume_claim' ) ) {
 		// input contract: { schemaVersion, target: { kind, claimId, ... },
 		// surface }. Without this shaping the ability decoder rejects the
 		// payload as a contract violation rather than rendering the receipt.
-		$claim_id = isset( $claim_ref['claim_id'] ) ? (string) $claim_ref['claim_id'] : '';
-		if ( '' === $claim_id ) {
-			return null;
-		}
 		$subject_ref = $claim_ref['subject_ref'] ?? null;
 		if ( ! is_array( $subject_ref ) ) {
 			return null;
@@ -397,6 +469,87 @@ if ( ! function_exists( 'dailyos_envelope_consume_claim' ) ) {
 		];
 
 		$response = $runtime_client->invoke_ability( 'claim_receipt', $payload, $scope_set );
-		return is_array( $response ) ? $response : null;
+		if ( ! is_array( $response ) ) {
+			return null;
+		}
+		if ( isset( $response['error'] ) && is_array( $response['error'] ) ) {
+			return null;
+		}
+
+		$ability = $response['ability'] ?? null;
+		$receipt = $response['receipt']
+			?? $response['data']
+			?? ( is_array( $ability ) ? ( $ability['data'] ?? null ) : null )
+			?? $response;
+
+		return is_array( $receipt ) ? $receipt : null;
+	}
+}
+
+if ( ! function_exists( 'dailyos_receipt_rendered_text' ) ) {
+	/**
+	 * Read the display text from either the new claim_receipt DTO or legacy
+	 * fixture shapes.
+	 *
+	 * @param array<string,mixed> $receipt Receipt payload.
+	 * @param string              $fallback Fallback label.
+	 * @return string
+	 */
+	function dailyos_receipt_rendered_text( array $receipt, string $fallback ): string {
+		$rendered = $receipt['renderedText'] ?? $receipt['rendered_text'] ?? null;
+		if ( is_array( $rendered ) && isset( $rendered['text'] ) && is_string( $rendered['text'] ) && '' !== $rendered['text'] ) {
+			return $rendered['text'];
+		}
+		if ( isset( $receipt['value']['display'] ) && is_string( $receipt['value']['display'] ) && '' !== $receipt['value']['display'] ) {
+			return $receipt['value']['display'];
+		}
+		if ( isset( $receipt['display'] ) && is_string( $receipt['display'] ) && '' !== $receipt['display'] ) {
+			return $receipt['display'];
+		}
+		return $fallback;
+	}
+}
+
+if ( ! function_exists( 'dailyos_receipt_trust_band' ) ) {
+	/**
+	 * Read the trust band from either the new claim_receipt DTO or legacy
+	 * fixture shapes.
+	 *
+	 * @param array<string,mixed> $receipt Receipt payload.
+	 * @return string
+	 */
+	function dailyos_receipt_trust_band( array $receipt ): string {
+		if ( isset( $receipt['trust']['band'] ) && is_string( $receipt['trust']['band'] ) && '' !== $receipt['trust']['band'] ) {
+			return $receipt['trust']['band'];
+		}
+		if ( isset( $receipt['trustBand'] ) && is_string( $receipt['trustBand'] ) && '' !== $receipt['trustBand'] ) {
+			return $receipt['trustBand'];
+		}
+		if ( isset( $receipt['trust_band'] ) && is_string( $receipt['trust_band'] ) && '' !== $receipt['trust_band'] ) {
+			return $receipt['trust_band'];
+		}
+		return 'unscored';
+	}
+}
+
+if ( ! function_exists( 'dailyos_receipt_source_label' ) ) {
+	/**
+	 * Read a non-raw source label from either the new claim_receipt DTO or
+	 * legacy fixture shapes.
+	 *
+	 * @param array<string,mixed> $receipt Receipt payload.
+	 * @return string
+	 */
+	function dailyos_receipt_source_label( array $receipt ): string {
+		if ( isset( $receipt['provenance']['sources'][0]['label'] ) && is_string( $receipt['provenance']['sources'][0]['label'] ) ) {
+			return $receipt['provenance']['sources'][0]['label'];
+		}
+		if ( isset( $receipt['source']['name'] ) && is_string( $receipt['source']['name'] ) ) {
+			return $receipt['source']['name'];
+		}
+		if ( isset( $receipt['sourceName'] ) && is_string( $receipt['sourceName'] ) ) {
+			return $receipt['sourceName'];
+		}
+		return '';
 	}
 }

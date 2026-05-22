@@ -20,6 +20,7 @@
  *
  * @var array<string, mixed> $attributes Block attributes (provided by core).
  * @var string               $content    Pre-rendered inner-block content from core.
+ * @var \WP_Block|null       $block      Parsed block instance from core.
  */
 
 declare(strict_types=1);
@@ -38,9 +39,10 @@ if ( ! function_exists( 'dailyos_account_detail_render' ) ) {
 	 *
 	 * @param array<string, mixed> $attributes Block attributes.
 	 * @param string               $content    Pre-rendered inner-block content from core.
+	 * @param \WP_Block|null       $block      Parsed block instance from core.
 	 * @return string Rendered HTML.
 	 */
-	function dailyos_account_detail_render( array $attributes, string $content = '' ): string {
+	function dailyos_account_detail_render( array $attributes, string $content = '', $block = null ): string {
 		$account_id = isset( $attributes['account_id'] ) ? (string) $attributes['account_id'] : '';
 
 		// Auto-fill from post context when attribute is empty AND we're
@@ -109,6 +111,16 @@ if ( ! function_exists( 'dailyos_account_detail_render' ) ) {
 				'wp-block-dailyos-account-detail'
 			);
 		}
+		if ( isset( $response['error'] ) && is_array( $response['error'] ) ) {
+			$code = isset( $response['error']['code'] ) && is_string( $response['error']['code'] )
+				? $response['error']['code']
+				: 'runtime_unavailable';
+			return dailyos_empty_chip(
+				$code,
+				__( 'Runtime unavailable.', 'dailyos' ),
+				'wp-block-dailyos-account-detail'
+			);
+		}
 
 		// Cache the envelope under its handle; inner blocks pick it up via
 		// the dailyos/envelopeHandle context value.
@@ -173,30 +185,26 @@ if ( ! function_exists( 'dailyos_account_detail_render' ) ) {
 			$wrapper_attrs = implode( ' ', $pieces );
 		}
 
-		// If the caller passed no inner content (programmatic render or
-		// CPT single-template with a bare wrapper), render the default
-		// template so the 24-inner-block composition still produces.
-		//
-		// `do_blocks()` on raw markup does NOT propagate the outer block's
-		// providesContext to inner blocks — each block renders top-level
-		// with empty context, so inner blocks short-circuit to the
-		// `missing_account_context` empty-chip path. Manually instantiate
-		// each inner block with explicit parent context per block.json's
-		// providesContext mapping.
-		$inner = '' !== $content ? do_blocks( $content ) : '';
-		if ( '' === trim( $inner ) && class_exists( 'WP_Block' ) ) {
-			$ctx_for_inner = [
-				'dailyos/entityType'     => 'account',
-				'dailyos/entityId'       => $account_id,
-				'dailyos/envelopeHandle' => $handle,
-			];
+		// Core passes `$content` to dynamic render files after rendering
+		// inner blocks. That is too early for this surface: the inner blocks
+		// need the envelope handle produced above. Re-render the parsed inner
+		// block tree with explicit parent context after the envelope is cached.
+		$ctx_for_inner = [
+			'dailyos/entityType'     => 'account',
+			'dailyos/entityId'       => $account_id,
+			'dailyos/envelopeHandle' => $handle,
+		];
+		$inner = dailyos_account_detail_render_parsed_inner( $ctx_for_inner, $block );
+		if ( '' === trim( $inner ) ) {
 			$inner = dailyos_account_detail_render_default_inner( $ctx_for_inner );
+		}
+		if ( '' === trim( $inner ) && '' !== $content ) {
+			$inner = $content;
 		}
 
 		$out  = '<section ' . $wrapper_attrs . ' data-dailyos-envelope-handle="' . esc_attr( $handle ) . '">';
-		// Inner blocks projection: 24 typed inner blocks. core emits
-		// $content from the InnerBlocks parse; we route through do_blocks()
-		// to ensure dynamic inner blocks re-render with current context.
+		// Inner blocks projection: 24 typed inner blocks rendered after the
+		// account envelope handle exists in request-scoped cache.
 		$out .= '<div class="dailyos-inner-blocks-slot">';
 		$out .= $inner;
 		$out .= '</div>';
@@ -241,6 +249,35 @@ if ( ! function_exists( 'dailyos_account_detail_render' ) ) {
 		$out = '';
 		foreach ( $blocks as $name ) {
 			$out .= '<!-- wp:' . $name . ' /-->';
+		}
+		return $out;
+	}
+
+	/**
+	 * Render saved parsed inner blocks with explicit account-detail context.
+	 *
+	 * @param array<string, mixed> $context Context map keyed as the inner
+	 *                                      blocks consume in `usesContext`.
+	 * @param \WP_Block|null       $block   Parsed account-detail block.
+	 * @return string Concatenated rendered HTML.
+	 */
+	function dailyos_account_detail_render_parsed_inner( array $context, $block = null ): string {
+		if ( ! class_exists( 'WP_Block' ) || ! is_object( $block ) || ! isset( $block->parsed_block ) || ! is_array( $block->parsed_block ) ) {
+			return '';
+		}
+
+		$inner_blocks = $block->parsed_block['innerBlocks'] ?? [];
+		if ( ! is_array( $inner_blocks ) || empty( $inner_blocks ) ) {
+			return '';
+		}
+
+		$out = '';
+		foreach ( $inner_blocks as $block_data ) {
+			if ( ! is_array( $block_data ) || empty( $block_data['blockName'] ) ) {
+				continue;
+			}
+			$wp_block = new \WP_Block( $block_data, $context );
+			$out     .= $wp_block->render();
 		}
 		return $out;
 	}
