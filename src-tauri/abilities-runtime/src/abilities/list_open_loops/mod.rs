@@ -69,7 +69,7 @@ pub struct OpenLoopSubject {
     category = Read,
     version = "1.0.0",
     schema_version = 1,
-    allowed_actors = [User, Agent, System, SurfaceClient],
+    allowed_actors = [User, Agent, System, SurfaceClient, McpClient],
     allowed_modes = [Live, Evaluate],
     requires_confirmation = false,
     may_publish = false,
@@ -296,7 +296,7 @@ fn render_surface_for_context(ctx: &AbilityContext<'_>) -> RenderSurface {
         ClaimDismissalSurface::LogStructured => RenderSurface::LogStructured,
         ClaimDismissalSurface::PushNotification => RenderSurface::PushNotification,
         ClaimDismissalSurface::Worker | ClaimDismissalSurface::Eval => {
-            if matches!(&ctx.actor, Actor::Agent) {
+            if matches!(&ctx.actor, Actor::Agent | Actor::McpClient { .. }) {
                 RenderSurface::McpTool
             } else {
                 RenderSurface::TauriEntityDetail
@@ -317,8 +317,11 @@ fn render_actor_for_context(ctx: &AbilityContext<'_>) -> RenderActor {
             actor: "system".to_string(),
             user_id: None,
         },
-        Actor::SurfaceClient { .. } => todo!("W1-B+ wiring for Actor::SurfaceClient"),
-        Actor::McpClient { .. } => todo!("McpClient invocation routing pending"),
+        Actor::SurfaceClient { .. } => RenderActor {
+            actor: "surface_client".to_string(),
+            user_id: None,
+        },
+        Actor::McpClient { .. } => RenderActor::agent("mcp_client"),
     }
 }
 
@@ -582,8 +585,13 @@ fn provenance_actor(actor: Actor) -> crate::abilities::provenance::Actor {
         Actor::System => crate::abilities::provenance::Actor::System {
             component: "dailyos".to_string(),
         },
-        Actor::SurfaceClient { .. } => todo!("W1-B+ wiring for Actor::SurfaceClient"),
-        Actor::McpClient { .. } => todo!("McpClient invocation routing pending"),
+        Actor::SurfaceClient { .. } => crate::abilities::provenance::Actor::System {
+            component: "surface_client".to_string(),
+        },
+        Actor::McpClient { .. } => crate::abilities::provenance::Actor::Agent {
+            name: "mcp".to_string(),
+            version: "unknown".to_string(),
+        },
     }
 }
 
