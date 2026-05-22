@@ -360,6 +360,11 @@ pub enum BridgeSurfaceError {
     /// `auth_missing`.
     #[error("input schema invalid")]
     InputSchemaInvalid,
+    /// Input contained a reserved field (e.g. `actor`, `bridge_actor`,
+    /// `confirmation`). Distinct so the wire layer returns HTTP 422 with a
+    /// reserved-field code instead of collapsing to `ability_not_registered`.
+    #[error("input rejected: reserved field")]
+    InputReservedField,
     #[error("{0}")]
     Validation(String),
     #[error("ownership validation failed: {0}")]
@@ -1099,7 +1104,12 @@ fn reject_reserved_input_fields(input: &serde_json::Value) -> Result<(), BridgeS
 
     for reserved in ["actor", "bridge_actor", "confirmation"] {
         if object.contains_key(reserved) {
-            return Err(BridgeSurfaceError::AbilityUnavailable);
+            log::warn!(
+                target: "abilities::dispatch",
+                "input rejected: reserved field `{}` present",
+                reserved
+            );
+            return Err(BridgeSurfaceError::InputReservedField);
         }
     }
 

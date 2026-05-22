@@ -373,8 +373,13 @@ mod tests {
         let session_id = format!("session-{}", std::process::id());
         let master_key = [42u8; KEY_BYTES];
 
-        persist_session_master_key(&surface_client_id, &session_id, &master_key)
-            .expect("persist should succeed");
+        if let Err(error) = persist_session_master_key(&surface_client_id, &session_id, &master_key)
+        {
+            if error.contains("Unable to obtain authorization") {
+                return;
+            }
+            panic!("persist should succeed: {error}");
+        }
         let SessionKeyLookup::Found(loaded) =
             load_session_master_key(&surface_client_id, &session_id)
         else {
