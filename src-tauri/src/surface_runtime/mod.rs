@@ -1010,7 +1010,13 @@ async fn handle_hyper_request(
     let request_id = request_id_from_headers(request.headers());
     let method = request.method().clone();
     let uri = request.uri().clone();
-    if method == Method::POST && uri.path() == "/v1/local/invoke" && !peer_addr.ip().is_loopback() {
+    if method == Method::POST
+        && matches!(
+            uri.path(),
+            "/v1/local/invoke" | "/v1/local/project-composition"
+        )
+        && !peer_addr.ip().is_loopback()
+    {
         return Ok(error_response(
             SurfaceHttpError::route_not_found().with_request_id(request_id),
         ));

@@ -169,6 +169,11 @@ if ( ! function_exists( 'dailyos_project_detail_render' ) ) {
 	 * @return string Block markup for the default template.
 	 */
 	function dailyos_project_detail_default_template_markup(): string {
+		// DOS-761 codex P1: surface-prefixed inner block names per PR #351
+		// commit `52a2c49f` so the fallback template uses the project-detail
+		// renderers, not the top-level person-detail registrations (which is
+		// what `register_block_type` first-wins resolves the unprefixed
+		// names to). Keep in sync with `block.json` template entries.
 		$blocks = [
 			'dailyos/project-hero',
 			'dailyos/vitals-strip',
@@ -179,11 +184,11 @@ if ( ! function_exists( 'dailyos_project_detail_render' ) ) {
 			'dailyos/watch-list-milestones',
 			'dailyos/stakeholder-gallery',
 			'dailyos/the-work',
-			'dailyos/touchpoints-feed',
-			'dailyos/open-loops-feed',
+			'dailyos/project-detail-touchpoints-feed',
+			'dailyos/project-detail-open-loops-feed',
 			'dailyos/linear-issues-chapter',
-			'dailyos/unified-timeline',
-			'dailyos/recommended-actions',
+			'dailyos/project-detail-unified-timeline',
+			'dailyos/project-detail-recommended-actions',
 			'dailyos/project-appendix',
 		];
 		$out = '';

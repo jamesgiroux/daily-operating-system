@@ -85,10 +85,11 @@ final class DailyOS_Runtime_Client {
 	public function invoke_ability( string $name, array $payload, array $scope_set ): array|\WP_Error {
 		unset( $scope_set );
 		// Wire key is `input` per src-tauri/src/surface_runtime/mod.rs::SurfaceInvokeRequest.
-		// Sending `payload` (the legacy key) gets dropped during deserialization,
-		// invoke.input defaults to Value::Null, the producer fails to deserialize
-		// EntityIntelligenceInput, and the bridge maps the ability error to
-		// AbilityUnavailable → wire code `auth_missing`.
+		// Sending `payload` (the legacy key) gets dropped during deserialization
+		// and invoke.input defaults to Value::Null, so the producer fails to
+		// deserialize EntityIntelligenceInput. With the DOS-762 wire-code split
+		// the bridge now maps that case to AbilityUnavailable → wire code
+		// `ability_not_registered` (HTTP 404) rather than `auth_missing`.
 		$body_bytes = $this->encode_json(
 			[
 				'ability' => $name,
