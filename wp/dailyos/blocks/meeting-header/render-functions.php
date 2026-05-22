@@ -1,15 +1,21 @@
 <?php
 /**
- * Meeting Header inner-block server-side render (W2 §5.4 / DOS-752).
+ * Meeting Header inner-block server-side render.
  *
- * Projection: Facts section (title, time, organizer) from the meeting
- * envelope produced by `get_entity_intelligence` (entity_type=meeting,
- * W1 substrate at `87df7cf6`). Operational shell — no trust band.
+ * Translation of the meeting record header from
+ * `.docs/design/reference/surfaces/meeting.html` lines 53-58 — the
+ * "Meeting Record" overline + headline + metadata row that sits at the
+ * top of every meeting briefing page.
  *
- * Reads `dailyos/entityId` from block context (provided by outer
- * `dailyos/meeting-detail`). For Day-1 the inner block re-invokes
- * `get_entity_intelligence` and the DOS-477 envelope cache de-duplicates
- * the call within a single request.
+ * Reads `dailyos/entityId` from outer-block context (provided by
+ * `dailyos/meeting-detail`), invokes `get_entity_intelligence`
+ * (entity_type=meeting) via the runtime client, and projects the Facts
+ * section. The DOS-477 envelope cache de-duplicates the call within a
+ * single request — sibling inner blocks reuse the same response.
+ *
+ * Emitted CSS classes match the canonical modules at
+ * `.docs/design/reference/_shared/styles/meeting-intel.module.css` so
+ * the magazine shell + design tokens apply without theme overrides.
  *
  * @package DailyOS
  *
@@ -39,16 +45,12 @@ if ( ! function_exists( 'dailyos_meeting_header_render' ) ) {
 		}
 
 		if ( '' === $meeting_id ) {
-			return '<span class="dailyos-empty-chip" data-empty-reason="missing_meeting_context">'
-				. esc_html__( 'No meeting context.', 'dailyos' )
-				. '</span>';
+			return dailyos_meeting_header_empty_chip( 'missing_meeting_context', __( 'No meeting context.', 'dailyos' ) );
 		}
 
 		$runtime_client = apply_filters( 'dailyos_runtime_client_for_block', null );
 		if ( ! is_object( $runtime_client ) || ! method_exists( $runtime_client, 'invoke_ability' ) ) {
-			return '<span class="dailyos-empty-chip" data-empty-reason="runtime_unavailable">'
-				. esc_html__( 'Runtime unavailable.', 'dailyos' )
-				. '</span>';
+			return dailyos_meeting_header_empty_chip( 'runtime_unavailable', __( 'Runtime unavailable.', 'dailyos' ) );
 		}
 
 		$scope_set = apply_filters( 'dailyos_surfaceclient_resolved_scopes', [] );
@@ -66,25 +68,117 @@ if ( ! function_exists( 'dailyos_meeting_header_render' ) ) {
 		);
 
 		if ( is_wp_error( $response ) ) {
-			return '<span class="dailyos-empty-chip" data-empty-reason="envelope_error">'
-				. esc_html__( 'Header unavailable.', 'dailyos' )
-				. '</span>';
+			return dailyos_meeting_header_empty_chip( 'envelope_error', __( 'Header unavailable.', 'dailyos' ) );
+		}
+
+		$facts = dailyos_meeting_header_extract_facts( $response );
+		if ( null === $facts ) {
+			return dailyos_meeting_header_empty_chip( 'no_facts', __( 'Meeting facts unavailable.', 'dailyos' ) );
+		}
+
+		$title           = $facts['title'] ?? '';
+		$time_local      = $facts['time_local'] ?? '';
+		$meeting_type    = $facts['meeting_type'] ?? '';
+		$primary_account = $facts['primary_account'] ?? '';
+
+		if ( '' === $title ) {
+			return dailyos_meeting_header_empty_chip( 'no_title', __( 'Meeting title unavailable.', 'dailyos' ) );
 		}
 
 		$wrapper_attrs = function_exists( 'get_block_wrapper_attributes' )
 			? get_block_wrapper_attributes(
 				[
-					'class'        => 'wp-block-dailyos-meeting-header',
-					'data-ds-tier' => 'primitive',
+					'class'        => 'wp-block-dailyos-meeting-header meeting-intel_outcomesWrap',
+					'data-ds-tier' => 'pattern',
 					'data-ds-name' => 'MeetingHeader',
+					'data-ds-spec' => 'patterns/MeetingHeader.md',
 				]
 			)
-			: 'class="wp-block-dailyos-meeting-header"';
+			: 'class="wp-block-dailyos-meeting-header meeting-intel_outcomesWrap" data-ds-tier="pattern" data-ds-name="MeetingHeader"';
 
-		return '<header ' . $wrapper_attrs . ' data-empty-reason="">'
-			. '<h1 class="dailyos-meeting-header__title">'
-			. esc_html__( 'Meeting', 'dailyos' )
-			. '</h1>'
-			. '</header>';
+		$metadata_parts = array_filter(
+			[ $time_local, $meeting_type, $primary_account ],
+			static fn( $value ) => '' !== (string) $value
+		);
+		$metadata_text = implode( ' · ', array_map( 'esc_html', $metadata_parts ) );
+
+		$out  = '<header ' . $wrapper_attrs . '>';
+		$out .= '<p class="meeting-intel_recordOverline">'
+			. esc_html__( 'Meeting Record', 'dailyos' )
+			. '</p>';
+		$out .= '<h1 class="meeting-intel_recordHeadline">'
+			. esc_html( $title )
+			. '</h1>';
+		if ( '' !== $metadata_text ) {
+			$out .= '<p class="meeting-intel_metadataText">' . $metadata_text . '</p>';
+		}
+		$out .= '</header>';
+
+		return $out;
+	}
+}
+
+if ( ! function_exists( 'dailyos_meeting_header_extract_facts' ) ) {
+	/**
+	 * Pull the facts section from an EntityIntelligenceEnvelope response
+	 * envelope. Returns an associative array keyed by fact key (title /
+	 * time_local / etc), or null when facts can't be read.
+	 *
+	 * @param array<string, mixed> $response Raw runtime client response.
+	 * @return array<string, string>|null
+	 */
+	function dailyos_meeting_header_extract_facts( array $response ): ?array {
+		$envelope = null;
+		$ability  = $response['ability'] ?? null;
+		if ( is_array( $ability ) && isset( $ability['data'] ) && is_array( $ability['data'] ) ) {
+			$envelope = $ability['data'];
+		} elseif ( isset( $response['data'] ) && is_array( $response['data'] ) ) {
+			$envelope = $response['data'];
+		} elseif ( isset( $response['envelope'] ) && is_array( $response['envelope'] ) ) {
+			$envelope = $response['envelope'];
+		} else {
+			$envelope = $response;
+		}
+		if ( ! is_array( $envelope ) ) {
+			return null;
+		}
+		$facts_section = $envelope['facts'] ?? null;
+		if ( ! is_array( $facts_section ) ) {
+			return null;
+		}
+		$items = $facts_section['items'] ?? [];
+		if ( ! is_array( $items ) || empty( $items ) ) {
+			return null;
+		}
+		$by_key = [];
+		foreach ( $items as $item ) {
+			if ( ! is_array( $item ) ) {
+				continue;
+			}
+			$key   = isset( $item['key'] ) ? (string) $item['key'] : '';
+			$value = isset( $item['value'] ) ? (string) $item['value'] : '';
+			if ( '' === $key ) {
+				continue;
+			}
+			$by_key[ $key ] = $value;
+		}
+		return $by_key;
+	}
+}
+
+if ( ! function_exists( 'dailyos_meeting_header_empty_chip' ) ) {
+	/**
+	 * Visible empty-state chip per §10 invariant — never silent-hidden.
+	 *
+	 * @param string $reason Machine-readable reason for diagnostics.
+	 * @param string $label  Human-readable label.
+	 * @return string Rendered HTML chip.
+	 */
+	function dailyos_meeting_header_empty_chip( string $reason, string $label ): string {
+		return sprintf(
+			'<header class="wp-block-dailyos-meeting-header is-empty" data-empty-reason="%s"><p class="meeting-intel_recordOverline">%s</p></header>',
+			esc_attr( $reason ),
+			esc_html( $label )
+		);
 	}
 }
