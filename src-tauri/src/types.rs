@@ -960,6 +960,8 @@ pub enum InboxFileType {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InboxFile {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_id: Option<String>,
     pub filename: String,
     pub path: String,
     pub size_bytes: u64,

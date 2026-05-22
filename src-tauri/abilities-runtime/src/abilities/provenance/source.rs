@@ -209,6 +209,19 @@ pub enum WorkspaceFileKind {
 }
 
 impl WorkspaceFileKind {
+    pub fn from_slug(slug: &str) -> Option<Self> {
+        match slug {
+            "inbox" => Some(Self::Inbox),
+            "entity_doc" => Some(Self::EntityDoc),
+            "drive_sync" => Some(Self::DriveSync),
+            "user_attachment" => Some(Self::UserAttachment),
+            "granola_transcript" => Some(Self::GranolaTranscript),
+            "quill_transcript" => Some(Self::QuillTranscript),
+            "mcp_placement" => Some(Self::McpPlacement),
+            _ => None,
+        }
+    }
+
     pub fn display_name(&self) -> &'static str {
         match self {
             WorkspaceFileKind::Inbox => "inbox",

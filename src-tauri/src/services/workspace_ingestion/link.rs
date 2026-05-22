@@ -211,9 +211,8 @@ fn row_to_link(row: &rusqlite::Row<'_>) -> rusqlite::Result<DocumentEntityLink> 
 pub struct LinkRepo;
 
 impl LinkRepo {
-    /// Creates or resurrects a document/entity link. UNIMPLEMENTED — defer to
-    /// next iteration. Implementation requires careful `BEGIN IMMEDIATE`
-    /// transactional handling for classifier-class sources per V1.3 fold #1.
+    /// Creates or resurrects a document/entity link. Opens its own
+    /// `BEGIN IMMEDIATE` boundary, then delegates to `add_link_in_tx`.
     #[allow(clippy::too_many_arguments)]
     pub fn add_link(
         conn: &Connection,
@@ -225,14 +224,46 @@ impl LinkRepo {
         rationale: Option<&str>,
         actor: &str,
     ) -> Result<DocumentEntityLinkId, LinkError> {
-        let et_slug = entity_type_slug(entity_type);
-        // Open BEGIN IMMEDIATE transaction to serialize the (optional)
-        // tombstone-check + INSERT atomically. This closes the V1.2 race
-        // where a concurrent reject_link between SELECT and INSERT could
-        // let a classifier source create an active row after tombstone.
         conn.execute("BEGIN IMMEDIATE", [])
             .map_err(|e| LinkError::DbError(e.to_string()))?;
 
+        let result = Self::add_link_in_tx(
+            conn,
+            file_id,
+            entity_type,
+            entity_id,
+            attribution_source,
+            confidence,
+            rationale,
+            actor,
+        );
+        match result {
+            Ok(id) => {
+                conn.execute("COMMIT", [])
+                    .map_err(|e| LinkError::DbError(e.to_string()))?;
+                Ok(id)
+            }
+            Err(err) => {
+                drop(conn.execute("ROLLBACK", []));
+                Err(err)
+            }
+        }
+    }
+
+    /// Creates or resurrects a document/entity link using an existing
+    /// transaction connection. The caller owns commit/rollback.
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_link_in_tx(
+        conn: &Connection,
+        file_id: &str,
+        entity_type: EntityType,
+        entity_id: &str,
+        attribution_source: LinkAttributionSource,
+        confidence: f64,
+        rationale: Option<&str>,
+        actor: &str,
+    ) -> Result<DocumentEntityLinkId, LinkError> {
+        let et_slug = entity_type_slug(entity_type);
         // Tombstone guard for classifier-class sources only.
         if attribution_source.is_classifier_class() {
             let tombstoned: Option<(String, String)> = conn
@@ -244,12 +275,8 @@ impl LinkRepo {
                     |row| Ok((row.get(0)?, row.get(1)?)),
                 )
                 .optional()
-                .map_err(|e| {
-                    drop(conn.execute("ROLLBACK", []));
-                    LinkError::DbError(e.to_string())
-                })?;
+                .map_err(|e| LinkError::DbError(e.to_string()))?;
             if let Some((rejected_at_raw, rejected_reason)) = tombstoned {
-                drop(conn.execute("ROLLBACK", []));
                 let rejected_at = parse_dt(Some(rejected_at_raw)).unwrap_or_else(Utc::now);
                 return Err(LinkError::Tombstoned {
                     rejected_at,
@@ -284,10 +311,7 @@ impl LinkRepo {
                 |row| row.get(0),
             )
             .optional()
-            .map_err(|e| {
-                drop(conn.execute("ROLLBACK", []));
-                LinkError::DbError(e.to_string())
-            })?;
+            .map_err(|e| LinkError::DbError(e.to_string()))?;
 
         let final_id = match inserted_id {
             Some(id) => id,
@@ -300,14 +324,9 @@ impl LinkRepo {
                     params![file_id, et_slug, entity_id],
                     |row| row.get(0),
                 )
-                .map_err(|e| {
-                    drop(conn.execute("ROLLBACK", []));
-                    LinkError::DbError(e.to_string())
-                })?
+                .map_err(|e| LinkError::DbError(e.to_string()))?
             }
         };
-        conn.execute("COMMIT", [])
-            .map_err(|e| LinkError::DbError(e.to_string()))?;
         Ok(DocumentEntityLinkId(final_id))
     }
 
@@ -801,6 +820,44 @@ mod tests {
         assert_ne!(a, b);
         let links = LinkRepo::list_links_for_file(&conn, "wf-1", false).expect("Ok");
         assert_eq!(links.len(), 2);
+    }
+
+    #[test]
+    fn add_link_in_tx_returns_id_and_is_idempotent_on_conflict() {
+        let conn = fresh_conn();
+        conn.execute("BEGIN IMMEDIATE", []).expect("begin");
+        let id1 = LinkRepo::add_link_in_tx(
+            &conn,
+            "wf-1",
+            EntityType::Account,
+            "acme",
+            LinkAttributionSource::UserRelink,
+            1.0,
+            Some("user assigned inbox file"),
+            "user",
+        )
+        .expect("first add");
+        let id2 = LinkRepo::add_link_in_tx(
+            &conn,
+            "wf-1",
+            EntityType::Account,
+            "acme",
+            LinkAttributionSource::UserRelink,
+            1.0,
+            Some("duplicate user assignment"),
+            "user",
+        )
+        .expect("duplicate add");
+        conn.execute("COMMIT", []).expect("commit");
+
+        assert_eq!(id1, id2);
+        let links = LinkRepo::list_links_for_file(&conn, "wf-1", false).expect("links");
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].link_id, id1);
+        assert!(matches!(
+            links[0].attribution_source,
+            LinkAttributionSource::UserRelink
+        ));
     }
 
     #[test]

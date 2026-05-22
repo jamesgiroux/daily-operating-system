@@ -419,3 +419,4 @@ version_dispatcher_subscribe
 # for MCP and WP callers.
 render_claim_receipt
 submit_claim_feedback_command
+assign_inbox_entity

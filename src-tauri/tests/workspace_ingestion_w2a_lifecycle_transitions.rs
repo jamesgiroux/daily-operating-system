@@ -52,3 +52,35 @@ fn legal_and_illegal_lifecycle_transitions_are_enforced() {
     .expect_err("illegal");
     assert!(matches!(err, LifecycleError::InvalidStateTransition { .. }));
 }
+
+#[test]
+fn pending_entity_assignment_can_return_to_pending_for_user_assignment() {
+    let conn = seeded_conn();
+    LifecycleRepo::transition(
+        &conn,
+        "wf-1",
+        LifecycleState::Pending,
+        LifecycleState::Ingesting,
+    )
+    .expect("pending to ingesting");
+    LifecycleRepo::transition(
+        &conn,
+        "wf-1",
+        LifecycleState::Ingesting,
+        LifecycleState::PendingEntityAssignment,
+    )
+    .expect("ingesting to pending entity assignment");
+
+    LifecycleRepo::transition(
+        &conn,
+        "wf-1",
+        LifecycleState::PendingEntityAssignment,
+        LifecycleState::Pending,
+    )
+    .expect("pending entity assignment to pending");
+
+    let row = LifecycleRepo::get(&conn, "wf-1")
+        .expect("get")
+        .expect("row");
+    assert_eq!(row.lifecycle_state, LifecycleState::Pending);
+}
