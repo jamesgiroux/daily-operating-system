@@ -81,6 +81,7 @@ pub enum BridgeSurface {
     Worker,
     Eval,
     SurfaceClient,
+    LocalLoopback,
 }
 
 #[non_exhaustive]
@@ -282,7 +283,10 @@ impl Serialize for AbilityResponseJson {
     {
         let include_diagnostics = !matches!(
             self.rendered_provenance.surface,
-            BridgeSurface::McpTool | BridgeSurface::McpToolDetail | BridgeSurface::SurfaceClient
+            BridgeSurface::McpTool
+                | BridgeSurface::McpToolDetail
+                | BridgeSurface::SurfaceClient
+                | BridgeSurface::LocalLoopback
         );
         let mut state = serializer.serialize_struct(
             "AbilityResponseJson",
@@ -630,6 +634,7 @@ pub(crate) fn claim_dismissal_surface_for_non_tauri_bridge(
         BridgeSurface::Worker => Some(ClaimDismissalSurface::Worker),
         BridgeSurface::Eval => Some(ClaimDismissalSurface::Eval),
         BridgeSurface::SurfaceClient => Some(ClaimDismissalSurface::LogStructured),
+        BridgeSurface::LocalLoopback => Some(ClaimDismissalSurface::LogStructured),
     }
 }
 
@@ -896,7 +901,10 @@ fn maintenance_blocked_for_surface(descriptor: &AbilityDescriptor, surface: Brid
     descriptor.category == AbilityCategory::Maintenance
         && matches!(
             surface,
-            BridgeSurface::TauriApp | BridgeSurface::McpTool | BridgeSurface::McpToolDetail
+            BridgeSurface::TauriApp
+                | BridgeSurface::McpTool
+                | BridgeSurface::McpToolDetail
+                | BridgeSurface::LocalLoopback
         )
 }
 
@@ -967,6 +975,7 @@ fn provenance_surface_for_bridge(surface: BridgeSurface) -> Option<ProvenanceSur
         BridgeSurface::McpTool => Some(ProvenanceSurface::McpTool),
         BridgeSurface::McpToolDetail => Some(ProvenanceSurface::McpToolDetail),
         BridgeSurface::SurfaceClient => Some(ProvenanceSurface::LogStructured),
+        BridgeSurface::LocalLoopback => Some(ProvenanceSurface::LogStructured),
         BridgeSurface::Worker | BridgeSurface::Eval => None,
     }
 }
@@ -1006,7 +1015,8 @@ fn render_ability_data(
         BridgeSurface::TauriApp
         | BridgeSurface::Worker
         | BridgeSurface::Eval
-        | BridgeSurface::SurfaceClient => data,
+        | BridgeSurface::SurfaceClient
+        | BridgeSurface::LocalLoopback => data,
     }
 }
 
@@ -1028,9 +1038,10 @@ fn render_mcp_ability_data_with_authoritative_claims(
 
 fn render_diagnostics(surface: BridgeSurface, diagnostics: serde_json::Value) -> serde_json::Value {
     match surface {
-        BridgeSurface::McpTool | BridgeSurface::McpToolDetail | BridgeSurface::SurfaceClient => {
-            serde_json::json!({ "warnings": [] })
-        }
+        BridgeSurface::McpTool
+        | BridgeSurface::McpToolDetail
+        | BridgeSurface::SurfaceClient
+        | BridgeSurface::LocalLoopback => serde_json::json!({ "warnings": [] }),
         BridgeSurface::TauriApp | BridgeSurface::Worker | BridgeSurface::Eval => diagnostics,
     }
 }

@@ -267,7 +267,8 @@ fn is_remote_bound_surface(surface: BridgeSurface) -> bool {
         BridgeSurface::TauriApp
         | BridgeSurface::Worker
         | BridgeSurface::Eval
-        | BridgeSurface::SurfaceClient => false,
+        | BridgeSurface::SurfaceClient
+        | BridgeSurface::LocalLoopback => false,
     }
 }
 
@@ -628,7 +629,9 @@ mod tests {
                         BridgeSurface::McpToolDetail => ClaimDismissalSurface::McpToolDetail,
                         BridgeSurface::Worker => ClaimDismissalSurface::Worker,
                         BridgeSurface::Eval => ClaimDismissalSurface::Eval,
-                        BridgeSurface::SurfaceClient => ClaimDismissalSurface::LogStructured,
+                        BridgeSurface::SurfaceClient | BridgeSurface::LocalLoopback => {
+                            ClaimDismissalSurface::LogStructured
+                        }
                     },
                 ),
             )

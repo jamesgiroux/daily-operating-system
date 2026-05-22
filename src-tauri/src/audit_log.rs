@@ -62,6 +62,10 @@ pub struct AuditRecord {
     /// entered the surface audit path.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub request_id: Option<String>,
+    /// Server-derived origin for first-party loopback emissions. This is
+    /// trace metadata, not caller-supplied identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub loopback_origin: Option<String>,
 
     // --- W1-A0 actor attribution (ADR-0102 §7.6, ADR-0111 §8) ---
     /// Kind tag for the invoking [`Actor`]: `"agent"`, `"user"`, `"admin"`,
@@ -164,6 +168,8 @@ pub struct AuditFields {
     /// Server-generated request correlation id. Required by the surface audit
     /// migration for user-initiated Tauri command emissions.
     pub request_id: Option<String>,
+    /// Server-derived first-party loopback origin for traceability.
+    pub loopback_origin: Option<String>,
 }
 
 impl AuditFields {
@@ -177,6 +183,7 @@ impl AuditFields {
             wp_user_id: None,
             wp_user_hash: None,
             request_id: None,
+            loopback_origin: None,
         }
     }
 
@@ -200,6 +207,13 @@ impl AuditFields {
     #[must_use]
     pub fn with_request_id(mut self, request_id: impl Into<String>) -> Self {
         self.request_id = Some(request_id.into());
+        self
+    }
+
+    /// Attach server-derived first-party loopback origin metadata.
+    #[must_use]
+    pub fn with_loopback_origin(mut self, loopback_origin: impl Into<String>) -> Self {
+        self.loopback_origin = Some(loopback_origin.into());
         self
     }
 }
@@ -299,7 +313,7 @@ impl AuditLogger {
         event: &str,
         detail: serde_json::Value,
     ) -> Result<(), String> {
-        self.write_record(category, event, detail, None, None, None, None, None)
+        self.write_record(category, event, detail, None, None, None, None, None, None)
             .map_err(|err| match err {
                 AuditError::Write(msg) => msg,
                 AuditError::SurfaceClientMissingWpUserId => {
@@ -364,6 +378,7 @@ impl AuditLogger {
             wp_user_hash,
             actor_scopes,
             fields.request_id,
+            fields.loopback_origin,
         )
     }
 
@@ -382,6 +397,7 @@ impl AuditLogger {
         wp_user_hash: Option<String>,
         actor_scopes: Option<Vec<String>>,
         request_id: Option<String>,
+        loopback_origin: Option<String>,
     ) -> Result<(), AuditError> {
         let record = AuditRecord {
             ts: Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
@@ -391,6 +407,7 @@ impl AuditLogger {
             detail,
             prev_hash: self.last_hash.clone(),
             request_id,
+            loopback_origin,
             actor_kind,
             actor_instance,
             wp_user_id: None,
@@ -687,6 +704,7 @@ mod tests {
                 detail: serde_json::json!({}),
                 prev_hash: logger.last_hash.clone(),
                 request_id: None,
+                loopback_origin: None,
                 actor_kind: None,
                 actor_instance: None,
                 wp_user_id: None,

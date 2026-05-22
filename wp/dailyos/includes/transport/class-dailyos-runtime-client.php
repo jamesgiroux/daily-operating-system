@@ -83,6 +83,7 @@ final class DailyOS_Runtime_Client {
 	 * @return array<string, mixed>|\WP_Error Runtime response envelope or typed pairing error.
 	 */
 	public function invoke_ability( string $name, array $payload, array $scope_set ): array|\WP_Error {
+		unset( $scope_set );
 		// Wire key is `input` per src-tauri/src/surface_runtime/mod.rs::SurfaceInvokeRequest.
 		// Sending `payload` (the legacy key) gets dropped during deserialization,
 		// invoke.input defaults to Value::Null, the producer fails to deserialize
@@ -92,7 +93,6 @@ final class DailyOS_Runtime_Client {
 			[
 				'ability' => $name,
 				'input'   => $payload,
-				'scopes'  => $scope_set,
 			]
 		);
 
@@ -100,14 +100,14 @@ final class DailyOS_Runtime_Client {
 			return $this->error_response( 'json_encode_failed', 'DailyOS ability request could not be encoded.' );
 		}
 
-		return $this->signed_post( '/v1/surface/invoke', $body_bytes );
+		return $this->local_post( '/v1/local/invoke', $body_bytes );
 	}
 
 
 	/**
 	 * Request a scope-filtered projected composition for a WordPress render.
 	 *
-	 * Calls POST /v1/surface/project-composition. The substrate side
+	 * Calls POST /v1/local/project-composition. The substrate side
 	 * orchestrates: cache lookup → producer ability invocation → W4-D
 	 * projection → cache store → response. The block surface receives only
 	 * the scope-filtered ProjectedComposition DTO plus an opaque
@@ -139,7 +139,7 @@ final class DailyOS_Runtime_Client {
 			);
 		}
 
-		return $this->signed_post( '/v1/surface/project-composition', $body_bytes );
+		return $this->local_post( '/v1/local/project-composition', $body_bytes );
 	}
 
 	/**
@@ -155,6 +155,7 @@ final class DailyOS_Runtime_Client {
 			return $this->error_response( 'json_encode_failed', 'DailyOS nonce request could not be encoded.' );
 		}
 
+		// dormant: only signed-path callers remain for the legacy presence-nonce contract.
 		return $this->signed_post( '/v1/surface/nonce/issue', $body_bytes );
 	}
 
@@ -171,6 +172,7 @@ final class DailyOS_Runtime_Client {
 			return $this->error_response( 'json_encode_failed', 'DailyOS nonce verify request could not be encoded.' );
 		}
 
+		// dormant: only signed-path callers remain for the legacy presence-nonce contract.
 		return $this->signed_post( '/v1/surface/nonce/verify', $body_bytes );
 	}
 
@@ -200,6 +202,7 @@ final class DailyOS_Runtime_Client {
 			);
 		}
 
+		// dormant: only signed-path callers remain for pairing-maintenance refreshes.
 		return $this->signed_post( '/v1/surface/pairing/refresh-scopes', $body_bytes );
 	}
 
@@ -218,7 +221,7 @@ final class DailyOS_Runtime_Client {
 			return $this->not_paired_error();
 		}
 
-		$runtime_base_url = $this->runtime_base_url_for_signed_request( $marker );
+		$runtime_base_url = $this->discover_runtime_base_url( $marker );
 
 		if ( null === $runtime_base_url ) {
 			return $this->not_paired_error();
@@ -300,7 +303,61 @@ final class DailyOS_Runtime_Client {
 		// differs" guard missed same-port transient refusals.
 		if ( self::is_connection_refused( $response ) ) {
 			\DailyOS\DailyOS_Plugin::invalidate_runtime_endpoint_cache();
-			$retry_base_url = $this->runtime_base_url_for_signed_request( $marker );
+			$retry_base_url = $this->discover_runtime_base_url( $marker );
+			if ( null !== $retry_base_url ) {
+				$response = wp_remote_post( $this->runtime_url( $retry_base_url, $path ), $post_args );
+			}
+		}
+
+		$parsed = $this->parse_response( $response );
+
+		if ( true === ( $parsed['ok'] ?? false ) ) {
+			$this->credential_store->update_last_use();
+		}
+
+		return $parsed;
+	}
+
+	/**
+	 * Send a first-party local loopback JSON POST request.
+	 *
+	 * @param string $path Runtime local path.
+	 * @param string $body_bytes Exact body bytes to send.
+	 * @return array<string, mixed>|\WP_Error Runtime response envelope or typed pairing error.
+	 */
+	private function local_post( string $path, string $body_bytes ): array|\WP_Error {
+		$marker = $this->credential_store->get_marker();
+
+		if ( null === $marker ) {
+			return $this->not_paired_error();
+		}
+
+		$runtime_base_url = $this->discover_runtime_base_url( $marker );
+
+		if ( null === $runtime_base_url ) {
+			return $this->not_paired_error();
+		}
+
+		$request_id = wp_generate_uuid4();
+		$url        = $this->runtime_url( $runtime_base_url, $path );
+		$post_args  = [
+			'body'        => $body_bytes,
+			'headers'     => [
+				'Content-Type'          => self::CONTENT_TYPE,
+				'X-DailyOS-Request-Id' => $request_id,
+			],
+			'redirection' => 0,
+			'timeout'     => 30,
+			'sslverify'   => false,
+			'blocking'    => true,
+			'data_format' => 'body',
+		];
+
+		$response = wp_remote_post( $url, $post_args );
+
+		if ( self::is_connection_refused( $response ) ) {
+			\DailyOS\DailyOS_Plugin::invalidate_runtime_endpoint_cache();
+			$retry_base_url = $this->discover_runtime_base_url( $marker );
 			if ( null !== $retry_base_url ) {
 				$response = wp_remote_post( $this->runtime_url( $retry_base_url, $path ), $post_args );
 			}
@@ -490,7 +547,7 @@ final class DailyOS_Runtime_Client {
 	private function not_paired_error(): \WP_Error {
 		return new \WP_Error(
 			'dailyos_not_paired',
-			__( 'DailyOS is not paired with an active loopback runtime. Pair this site before making signed requests.', 'dailyos' )
+			__( 'DailyOS is not paired with an active loopback runtime. Pair this site before making runtime requests.', 'dailyos' )
 		);
 	}
 
@@ -523,17 +580,16 @@ final class DailyOS_Runtime_Client {
 	}
 
 	/**
-	 * Return the signed-request runtime base URL from marker and gated filter.
+	 * Discover the loopback runtime base URL from sentinel, marker, and gated filter.
 	 *
 	 * @param array<string, mixed> $marker Pairing marker.
 	 * @return string|null Base URL, or null when not paired.
 	 */
-	private function runtime_base_url_for_signed_request( array $marker ): ?string {
+	private function discover_runtime_base_url( array $marker ): ?string {
 		// Prefer the sentinel-discovered URL (current runtime port across
 		// restarts) over the stored marker (may be stale after the runtime
-		// restarts on a new port). The sentinel is HMAC-defended: a
-		// substituted sentinel cannot produce valid signed responses, so
-		// WP detects impersonation at first request.
+		// restarts on a new port). Signed callers still authenticate at the
+		// route; local callers only need this shared discovery result.
 		$sentinel_url = \DailyOS\DailyOS_Plugin::discover_runtime_base_url();
 
 		$marker_url = isset( $marker['runtime_url'] ) ? self::normalize_loopback_runtime_url( (string) $marker['runtime_url'] ) : null;

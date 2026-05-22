@@ -9,7 +9,6 @@ declare(strict_types=1);
 
 use DailyOS\DailyOS_Plugin;
 use DailyOS\Transport\DailyOS_Credential_Store;
-use DailyOS\Transport\DailyOS_Hmac_Key;
 use DailyOS\Transport\DailyOS_Hmac_Signer;
 use DailyOS\Transport\DailyOS_Runtime_Client;
 use PHPUnit\Framework\TestCase;
@@ -30,14 +29,10 @@ final class DailyOS_RuntimeClientTest extends TestCase {
 	}
 
 	/**
-	 * Signed requests send string bodies and sign the exact transmitted bytes.
+	 * Local ability invokes send string bodies and only trace headers.
 	 */
-	public function test_signed_post_uses_string_body_headers_and_byte_exact_signature(): void {
-		$hmac_key_bytes = str_repeat( "\x02", 32 );
-
-		$GLOBALS['dailyos_test_current_user_id'] = 42;
+	public function test_local_post_uses_string_body_two_headers_and_request_id(): void {
 		$this->save_marker();
-		$this->add_session_key_filter();
 
 		$GLOBALS['dailyos_test_remote_post_response'] = [
 			'response' => [
@@ -56,34 +51,24 @@ final class DailyOS_RuntimeClientTest extends TestCase {
 		$headers = $args['headers'];
 
 		$this->assertSame( 'string', gettype( $args['body'] ) );
-		$this->assertSame( 'application/json', $headers['Content-Type'] );
-		$this->assertSame( 0, $args['redirection'] );
-
-		$expected_signature = ( new DailyOS_Hmac_Signer() )->sign_request(
-			new DailyOS_Hmac_Key( $hmac_key_bytes ),
-			'POST',
-			'/v1/surface/invoke',
-			'application/json',
-			$args['body'],
-			$this->canonical_identity(),
-			$headers['X-DailyOS-Nonce'],
-			$headers['X-DailyOS-Timestamp'],
-			$headers['X-DailyOS-Request-Id']
+		$this->assertSame(
+			[
+				'ability' => 'briefing.daily',
+				'input'   => [ 'depth' => 'standard' ],
+			],
+			json_decode( $args['body'], true )
 		);
-
-		$this->assertSame( $expected_signature, $headers['X-DailyOS-Signature'] );
-		$this->assertSame( 'http://127.0.0.1:54321/v1/surface/invoke', $call['url'] );
-		$this->assertSame( 'surface-session-id', $headers['X-DailyOS-Session-Id'] );
-		$this->assertSame( 'surface-client-123', $headers['X-DailyOS-SurfaceClient'] );
-		$this->assertSame( str_repeat( 'a', 64 ), $headers['X-DailyOS-Site-Binding-Digest'] );
-		$this->assertSame( 'siteNonceAlpha123', $headers['X-DailyOS-Site-Nonce'] );
-		$this->assertSame( '42', $headers['X-DailyOS-WP-User-Id'] );
+		$this->assertSame( 'application/json', $headers['Content-Type'] );
+		$this->assertArrayHasKey( 'X-DailyOS-Request-Id', $headers );
+		$this->assertSame( [ 'Content-Type', 'X-DailyOS-Request-Id' ], array_keys( $headers ) );
+		$this->assertSame( 0, $args['redirection'] );
+		$this->assertSame( 'http://127.0.0.1:54321/v1/local/invoke', $call['url'] );
 	}
 
 	/**
-	 * Signed requests refuse to guess a default runtime URL when no marker exists.
+	 * Local requests refuse to guess a default runtime URL when no marker exists.
 	 */
-	public function test_signed_post_returns_not_paired_without_marker(): void {
+	public function test_local_post_returns_not_paired_without_marker(): void {
 		$this->add_session_key_filter();
 
 		$client = new DailyOS_Runtime_Client( new DailyOS_Credential_Store(), new DailyOS_Hmac_Signer() );
@@ -113,7 +98,7 @@ final class DailyOS_RuntimeClientTest extends TestCase {
 		$client = new DailyOS_Runtime_Client( new DailyOS_Credential_Store(), new DailyOS_Hmac_Signer() );
 		$client->invoke_ability( 'briefing.daily', [], [] );
 
-		$this->assertSame( 'http://127.0.0.1:54322/v1/surface/invoke', $GLOBALS['dailyos_test_remote_post_calls'][0]['url'] );
+		$this->assertSame( 'http://127.0.0.1:54322/v1/local/invoke', $GLOBALS['dailyos_test_remote_post_calls'][0]['url'] );
 	}
 
 	/**
@@ -137,13 +122,13 @@ final class DailyOS_RuntimeClientTest extends TestCase {
 			DailyOS_Plugin::invalidate_runtime_endpoint_cache();
 			$client = new DailyOS_Runtime_Client( new DailyOS_Credential_Store(), new DailyOS_Hmac_Signer() );
 			$client->invoke_ability( 'briefing.daily', [], [] );
-			$this->assertSame( 'http://127.0.0.1:54322/v1/surface/invoke', $GLOBALS['dailyos_test_remote_post_calls'][0]['url'] );
+			$this->assertSame( 'http://127.0.0.1:54322/v1/local/invoke', $GLOBALS['dailyos_test_remote_post_calls'][0]['url'] );
 
 			$this->write_runtime_sentinel( $home, 54323 );
 			DailyOS_Plugin::invalidate_runtime_endpoint_cache();
 			$GLOBALS['dailyos_test_remote_post_calls'] = [];
 			$client->invoke_ability( 'briefing.daily', [], [] );
-			$this->assertSame( 'http://127.0.0.1:54323/v1/surface/invoke', $GLOBALS['dailyos_test_remote_post_calls'][0]['url'] );
+			$this->assertSame( 'http://127.0.0.1:54323/v1/local/invoke', $GLOBALS['dailyos_test_remote_post_calls'][0]['url'] );
 		} finally {
 			DailyOS_Plugin::invalidate_runtime_endpoint_cache();
 			if ( false === $original_home ) {
@@ -178,7 +163,7 @@ final class DailyOS_RuntimeClientTest extends TestCase {
 		$client = new DailyOS_Runtime_Client( new DailyOS_Credential_Store(), new DailyOS_Hmac_Signer() );
 		$client->invoke_ability( 'briefing.daily', [], [] );
 
-		$this->assertSame( 'http://127.0.0.1:54321/v1/surface/invoke', $GLOBALS['dailyos_test_remote_post_calls'][0]['url'] );
+		$this->assertSame( 'http://127.0.0.1:54321/v1/local/invoke', $GLOBALS['dailyos_test_remote_post_calls'][0]['url'] );
 	}
 
 	/**
