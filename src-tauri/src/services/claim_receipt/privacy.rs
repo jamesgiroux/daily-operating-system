@@ -779,9 +779,8 @@ mod tests {
         let conn = open_test_db();
         insert_claim(&conn, "c1", "internal", None, None);
         let target = claim_target("c1");
-        let err =
-            build_receipt_for_audience(&target, Audience::OperationalAuditStorage, &conn)
-                .unwrap_err();
+        let err = build_receipt_for_audience(&target, Audience::OperationalAuditStorage, &conn)
+            .unwrap_err();
         assert!(matches!(err, PrivacyError::NonDisclosureAudience));
     }
 
@@ -805,8 +804,14 @@ mod tests {
             }
             _ => panic!("expected Claim target"),
         }
-        assert!(r.trust.source_asof.is_none(), "source_asof is timing oracle");
-        assert!(r.lifecycle.updated_at.is_none(), "updated_at leaks graph timing");
+        assert!(
+            r.trust.source_asof.is_none(),
+            "source_asof is timing oracle"
+        );
+        assert!(
+            r.lifecycle.updated_at.is_none(),
+            "updated_at leaks graph timing"
+        );
         assert!(
             r.provenance.sources.is_empty(),
             "AgentMcp forbids source labels"
@@ -833,7 +838,13 @@ mod tests {
     #[test]
     fn ac_341_3_redacted_receipts_keep_trust_and_freshness() {
         let conn = open_test_db();
-        insert_claim(&conn, "c1", "confidential", None, Some("2026-05-19T12:00:00Z"));
+        insert_claim(
+            &conn,
+            "c1",
+            "confidential",
+            None,
+            Some("2026-05-19T12:00:00Z"),
+        );
         let target = claim_target("c1");
         let r = build_receipt_for_audience(&target, Audience::UserTauri, &conn).unwrap();
         assert!(matches!(
@@ -907,7 +918,10 @@ mod tests {
         let target = claim_target("c1");
         let r = build_receipt_for_audience(&target, Audience::UserTauri, &conn).unwrap();
         let json = serde_json::to_string(&r).unwrap();
-        assert!(!json.contains("@"), "no email-like content in fixture output");
+        assert!(
+            !json.contains("@"),
+            "no email-like content in fixture output"
+        );
     }
 
     #[test]

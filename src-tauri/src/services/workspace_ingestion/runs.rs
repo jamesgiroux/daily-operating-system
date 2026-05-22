@@ -164,12 +164,9 @@ impl RunsRepo {
         // Tier 1 (service-layer preflight, skipped for Forced retries):
         // check success rows first, then in_progress rows for staleness.
         if !matches!(seed.mode, IngestionMode::Forced) {
-            if let Some(existing) = Self::find_by_idempotency_key(
-                conn,
-                &seed.file_id,
-                &seed.content_sha256,
-                seed.mode,
-            )? {
+            if let Some(existing) =
+                Self::find_by_idempotency_key(conn, &seed.file_id, &seed.content_sha256, seed.mode)?
+            {
                 return Err(RunsError::AlreadyCompleted { existing });
             }
             // Look for in_progress runs for the same idempotency triple.
@@ -270,12 +267,9 @@ impl RunsRepo {
                 .map_err(|e| RunsError::DbError(e.to_string()))?;
             if let Some((file_id, content_sha256, mode_str)) = triple {
                 if let Some(mode) = IngestionMode::from_storage_str(&mode_str) {
-                    if let Some(existing) = Self::find_by_idempotency_key(
-                        conn,
-                        &file_id,
-                        &content_sha256,
-                        mode,
-                    )? {
+                    if let Some(existing) =
+                        Self::find_by_idempotency_key(conn, &file_id, &content_sha256, mode)?
+                    {
                         // Only fire if a DIFFERENT run_id already succeeded for this triple.
                         // Self-update (re-running complete_run on the same row) is a no-op
                         // shaped operation that should succeed idempotently.
@@ -287,8 +281,8 @@ impl RunsRepo {
             }
         }
 
-        let error_log_json = error_log
-            .map(|v| serde_json::to_string(&v).unwrap_or_else(|_| "null".to_string()));
+        let error_log_json =
+            error_log.map(|v| serde_json::to_string(&v).unwrap_or_else(|_| "null".to_string()));
         let rows = conn
             .execute(
                 "UPDATE document_ingestion_runs SET \
@@ -370,7 +364,15 @@ mod tests {
         conn.execute(
             "INSERT INTO workspace_file_lifecycle (file_id, canonical_path, device, inode, \
              source_type, data_source, source_asof) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            params!["wf-1", "test/path", 0_i64, 0_i64, "inbox", "{}", "2026-05-21T00:00:00Z"],
+            params![
+                "wf-1",
+                "test/path",
+                0_i64,
+                0_i64,
+                "inbox",
+                "{}",
+                "2026-05-21T00:00:00Z"
+            ],
         )
         .expect("seed file_lifecycle");
         conn
@@ -404,13 +406,9 @@ mod tests {
     #[test]
     fn find_by_idempotency_key_returns_none_when_no_row() {
         let conn = fresh_conn();
-        let result = RunsRepo::find_by_idempotency_key(
-            &conn,
-            "wf-1",
-            "deadbeef",
-            IngestionMode::Initial,
-        )
-        .expect("Ok");
+        let result =
+            RunsRepo::find_by_idempotency_key(&conn, "wf-1", "deadbeef", IngestionMode::Initial)
+                .expect("Ok");
         assert!(result.is_none());
     }
 
@@ -425,13 +423,9 @@ mod tests {
             IngestionMode::Initial,
             IngestionRunStatus::InProgress,
         );
-        let result = RunsRepo::find_by_idempotency_key(
-            &conn,
-            "wf-1",
-            "deadbeef",
-            IngestionMode::Initial,
-        )
-        .expect("Ok");
+        let result =
+            RunsRepo::find_by_idempotency_key(&conn, "wf-1", "deadbeef", IngestionMode::Initial)
+                .expect("Ok");
         assert!(result.is_none(), "in_progress should be filtered out");
     }
 
@@ -456,14 +450,10 @@ mod tests {
         )
         .expect("complete_run");
 
-        let receipt = RunsRepo::find_by_idempotency_key(
-            &conn,
-            "wf-1",
-            "deadbeef",
-            IngestionMode::Initial,
-        )
-        .expect("Ok")
-        .expect("Some");
+        let receipt =
+            RunsRepo::find_by_idempotency_key(&conn, "wf-1", "deadbeef", IngestionMode::Initial)
+                .expect("Ok")
+                .expect("Some");
         assert_eq!(receipt.run_id.0, "run-good");
         assert_eq!(receipt.status, IngestionRunStatus::Success);
         assert_eq!(receipt.claim_count_produced, 5);
@@ -613,7 +603,8 @@ mod tests {
             extractor_version: "test-v1".to_string(),
             retry_of_run_id: None,
         };
-        let new_run = RunsRepo::start_run(&conn, seed).expect("should proceed after aborting stale");
+        let new_run =
+            RunsRepo::start_run(&conn, seed).expect("should proceed after aborting stale");
         // Stale row should now be aborted.
         let stale_status: String = conn
             .query_row(

@@ -64,7 +64,10 @@ fn w1_b_source_registry_seeded_with_seven_workspace_file_kinds() {
         "quill_transcript",
         "user_attachment",
     ];
-    assert_eq!(seeded, expected, "expected 7 canonical WorkspaceFileKind seeds in alphabetical order");
+    assert_eq!(
+        seeded, expected,
+        "expected 7 canonical WorkspaceFileKind seeds in alphabetical order"
+    );
 }
 
 #[test]

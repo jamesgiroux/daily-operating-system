@@ -9,9 +9,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use dailyos_lib::services::claim_receipt::boundary::{
-    AUDIT_ONLY_DENYLIST, RECEIPT_ALLOWED_FIELDS,
-};
+use dailyos_lib::services::claim_receipt::boundary::{AUDIT_ONLY_DENYLIST, RECEIPT_ALLOWED_FIELDS};
 
 fn fixtures_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/claim_receipt_boundary")
@@ -41,7 +39,11 @@ fn fixture_matrix_is_complete() {
 
     let names: Vec<String> = fixture_files()
         .iter()
-        .filter_map(|p| p.file_stem().and_then(|s| s.to_str()).map(|s| s.to_string()))
+        .filter_map(|p| {
+            p.file_stem()
+                .and_then(|s| s.to_str())
+                .map(|s| s.to_string())
+        })
         .collect();
 
     for surface in &expected_cells {

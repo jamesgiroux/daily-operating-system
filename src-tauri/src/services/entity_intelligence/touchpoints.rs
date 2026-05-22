@@ -287,9 +287,7 @@ fn classify_inclusion(
 ) -> TouchpointInclusionReason {
     match (entity_type, reason_str) {
         ("person", "attendee_match") => TouchpointInclusionReason::AttendeeMatch,
-        (_, "subject_match") if matched_id == primary_id => {
-            TouchpointInclusionReason::SubjectMatch
-        }
+        (_, "subject_match") if matched_id == primary_id => TouchpointInclusionReason::SubjectMatch,
         // Matched via expanded scope (parent/child account, parent project) —
         // this is a typed entity link, not a raw subject match.
         (_, "subject_match") => TouchpointInclusionReason::EntityLink,

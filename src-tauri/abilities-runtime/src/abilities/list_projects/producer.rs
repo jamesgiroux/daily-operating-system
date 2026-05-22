@@ -60,8 +60,7 @@ pub async fn list_projects(
                     next_cursor: None,
                     total_hint: None,
                     cursor_state: CursorState::Invalidated {
-                        reason: "filter or page_size changed since cursor was issued"
-                            .to_string(),
+                        reason: "filter or page_size changed since cursor was issued".to_string(),
                         restart_required: true,
                     },
                 },

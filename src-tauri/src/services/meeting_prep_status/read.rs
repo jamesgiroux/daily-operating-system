@@ -51,14 +51,20 @@ struct ViewRow {
 /// Daily Briefing rollup, Meeting Detail) calls this function with the
 /// same `meeting_id`. They render from the same snapshot so they agree
 /// on status without app restart.
-pub fn compute_status(meeting_id: &str, db: &ActionDb) -> Result<PrepStatusSnapshot, PrepStatusError> {
+pub fn compute_status(
+    meeting_id: &str,
+    db: &ActionDb,
+) -> Result<PrepStatusSnapshot, PrepStatusError> {
     let row = load_view_row(meeting_id, db)?
         .ok_or_else(|| PrepStatusError::MeetingNotFound(meeting_id.to_string()))?;
     let dismissal = load_active_dismissal(meeting_id, db)?;
 
     let (status, blocking_reason, stale_reason) = derive_status(&row, dismissal.as_deref());
 
-    let linked_entity = match (row.linked_entity_id.as_deref(), row.linked_entity_type.as_deref()) {
+    let linked_entity = match (
+        row.linked_entity_id.as_deref(),
+        row.linked_entity_type.as_deref(),
+    ) {
         (Some(id), Some(ty)) => Some(EntityBinding {
             entity_id: id.to_string(),
             entity_type: ty.to_string(),
@@ -133,7 +139,10 @@ fn load_view_row(meeting_id: &str, db: &ActionDb) -> Result<Option<ViewRow>, Pre
 ///
 /// Returns the `dismissal_kind` string ('user_suppressed' /
 /// 'user_dismissed') when an active row exists, else `None`.
-fn load_active_dismissal(meeting_id: &str, db: &ActionDb) -> Result<Option<String>, PrepStatusError> {
+fn load_active_dismissal(
+    meeting_id: &str,
+    db: &ActionDb,
+) -> Result<Option<String>, PrepStatusError> {
     let conn = db.conn_ref();
     let mut stmt = conn
         .prepare(

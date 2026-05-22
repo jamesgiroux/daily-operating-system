@@ -70,7 +70,9 @@ impl ContextDepth {
 }
 
 /// Envelope section discriminator.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum EnvelopeSection {
     Facts,
@@ -189,7 +191,9 @@ pub enum EmptyReason {
     UnsupportedForSubject,
     NotRequested,
     /// Per AC-459.10 — one section failing emits this; others continue.
-    PartialFailure { advisory: String },
+    PartialFailure {
+        advisory: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]

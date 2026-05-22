@@ -388,8 +388,8 @@ pub fn issue_pairing_code(
         .map_err(|error| SurfacePairingError::Write(error.to_string()))?;
 
     let token = generate_pairing_code();
-    let canonical = normalize_pairing_code(&token)
-        .expect("generated pairing code is always canonical");
+    let canonical =
+        normalize_pairing_code(&token).expect("generated pairing code is always canonical");
     let code_hash = pairing_code_hash(&canonical);
     let issued_at = format_ts(input.now);
     let expires_at = format_ts(input.now + Duration::seconds(PAIRING_CODE_TTL_SECONDS));
@@ -1256,13 +1256,11 @@ pub fn refresh_pairing_scopes(
             let stored_scopes = scopes_from_json(&row.scopes_json).unwrap_or_default();
             let stored_set: BTreeSet<String> = stored_scopes.iter().cloned().collect();
             let default_set: BTreeSet<String> = default_scopes.iter().cloned().collect();
-            let union_set: BTreeSet<String> =
-                stored_set.union(&default_set).cloned().collect();
+            let union_set: BTreeSet<String> = stored_set.union(&default_set).cloned().collect();
             let target_scopes: Vec<String> = union_set.iter().cloned().collect();
             let target_scope_digest = scope_digest(&target_scopes);
 
-            let added_scopes: Vec<String> =
-                default_set.difference(&stored_set).cloned().collect();
+            let added_scopes: Vec<String> = default_set.difference(&stored_set).cloned().collect();
             let removed_from_default_but_retained: Vec<String> =
                 stored_set.difference(&default_set).cloned().collect();
 
@@ -2952,7 +2950,9 @@ mod tests {
         assert_eq!(&display[9..10], "-");
         let canonical = normalize_pairing_code(&display).expect("display form normalizes");
         assert_eq!(canonical.len(), PAIRING_CODE_CANONICAL_LEN);
-        assert!(canonical.bytes().all(|b| PAIRING_CODE_ALPHABET.contains(&b)));
+        assert!(canonical
+            .bytes()
+            .all(|b| PAIRING_CODE_ALPHABET.contains(&b)));
 
         // User-friendliness: lowercase + extra whitespace + Crockford look-alikes
         // fold to the same canonical form (so paste-with-quirks still works).
@@ -2968,8 +2968,14 @@ mod tests {
 
         // pairing_code_token accepts both the URL form and the bare display form.
         let url = format!("dailyos://pair?port=4411&code={}", display);
-        assert_eq!(pairing_code_token(&url).as_deref(), Some(canonical.as_str()));
-        assert_eq!(pairing_code_token(&display).as_deref(), Some(canonical.as_str()));
+        assert_eq!(
+            pairing_code_token(&url).as_deref(),
+            Some(canonical.as_str())
+        );
+        assert_eq!(
+            pairing_code_token(&display).as_deref(),
+            Some(canonical.as_str())
+        );
 
         // Garbage input fails closed.
         assert_eq!(pairing_code_token("not-a-code"), None);
@@ -2990,8 +2996,8 @@ mod tests {
             scopes.contains(&"submit.feedback".to_string()),
             "submit.feedback must remain in the explicit non-Read grant set"
         );
-        let registry = AbilityRegistry::global_checked()
-            .expect("registry initializes in test process");
+        let registry =
+            AbilityRegistry::global_checked().expect("registry initializes in test process");
         let expected_read_scopes: BTreeSet<String> = registry
             .iter_all()
             .filter(|d| !d.experimental)

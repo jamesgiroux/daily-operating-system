@@ -148,7 +148,11 @@ impl SubjectKind {
     }
 
     pub fn all() -> [SubjectKind; 3] {
-        [SubjectKind::Account, SubjectKind::Project, SubjectKind::Person]
+        [
+            SubjectKind::Account,
+            SubjectKind::Project,
+            SubjectKind::Person,
+        ]
     }
 }
 
@@ -169,8 +173,7 @@ pub fn required_fixture_filenames() -> Vec<String> {
 #[test]
 fn fixture_matrix_complete_ac_461_5b() {
     let required = required_fixture_filenames();
-    let present: std::collections::BTreeSet<String> =
-        list_fixture_files().into_iter().collect();
+    let present: std::collections::BTreeSet<String> = list_fixture_files().into_iter().collect();
 
     let missing: Vec<&String> = required
         .iter()
@@ -198,7 +201,9 @@ fn fixture_matrix_no_orphan_unexpected_fixtures() {
         .into_iter()
         .filter(|name| {
             !required.contains(name)
-                && !allowed_prefixes.iter().any(|prefix| name.starts_with(prefix))
+                && !allowed_prefixes
+                    .iter()
+                    .any(|prefix| name.starts_with(prefix))
         })
         .collect();
 

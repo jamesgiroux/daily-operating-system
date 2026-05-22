@@ -31,9 +31,9 @@ use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
-use crate::entity::EntityType;
 use super::contracts::SignalEmitter;
 use super::lifecycle::UserOverride;
+use crate::entity::EntityType;
 
 /// Opaque UUID4 identifier for a document/entity link row.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -54,7 +54,10 @@ pub enum LinkAttributionSource {
 
 impl LinkAttributionSource {
     pub fn is_classifier_class(&self) -> bool {
-        matches!(self, Self::Classifier | Self::Backfill | Self::DriveMetadata)
+        matches!(
+            self,
+            Self::Classifier | Self::Backfill | Self::DriveMetadata
+        )
     }
 
     pub fn as_storage_str(self) -> &'static str {
@@ -417,7 +420,15 @@ mod tests {
         conn.execute(
             "INSERT INTO workspace_file_lifecycle (file_id, canonical_path, device, inode, \
              source_type, data_source, source_asof) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            params!["wf-1", "test/path", 0_i64, 0_i64, "inbox", "{}", "2026-05-21T00:00:00Z"],
+            params![
+                "wf-1",
+                "test/path",
+                0_i64,
+                0_i64,
+                "inbox",
+                "{}",
+                "2026-05-21T00:00:00Z"
+            ],
         )
         .expect("seed file_lifecycle");
         conn
@@ -647,7 +658,10 @@ mod tests {
             "agent-2",
         )
         .expect("second Ok");
-        assert_eq!(id1, id2, "duplicate add_link should return existing link_id");
+        assert_eq!(
+            id1, id2,
+            "duplicate add_link should return existing link_id"
+        );
         let links = LinkRepo::list_links_for_file(&conn, "wf-1", false).expect("Ok");
         assert_eq!(links.len(), 1, "no new row created");
         // Original values preserved (DO NOTHING semantics).
@@ -700,7 +714,10 @@ mod tests {
         }
         // No new active link created.
         let active = LinkRepo::list_links_for_file(&conn, "wf-1", false).expect("Ok");
-        assert!(active.is_empty(), "rejected link must NOT resurrect via classifier");
+        assert!(
+            active.is_empty(),
+            "rejected link must NOT resurrect via classifier"
+        );
         // But the rejected row still exists.
         let all = LinkRepo::list_links_for_file(&conn, "wf-1", true).expect("Ok");
         assert_eq!(all.len(), 1);
@@ -805,8 +822,19 @@ mod tests {
             "INSERT INTO document_entity_links \
              (link_id, file_id, entity_type, entity_id, attribution_source, confidence, actor) \
              VALUES (?, ?, ?, ?, ?, ?, ?)",
-            params!["l-2", "wf-1", "account", "acme", "classifier", 0.5_f64, "test-actor"],
+            params![
+                "l-2",
+                "wf-1",
+                "account",
+                "acme",
+                "classifier",
+                0.5_f64,
+                "test-actor"
+            ],
         );
-        assert!(result.is_err(), "second active insert for same triple should fail UNIQUE");
+        assert!(
+            result.is_err(),
+            "second active insert for same triple should fail UNIQUE"
+        );
     }
 }

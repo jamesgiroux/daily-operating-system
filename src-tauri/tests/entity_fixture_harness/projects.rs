@@ -10,9 +10,10 @@ use abilities_runtime::abilities::get_entity_intelligence::{EntityKind, Freshnes
 
 use crate::harness::load_envelope;
 
-fn project_envelope(file_name: &str) -> abilities_runtime::abilities::get_entity_intelligence::EntityIntelligenceEnvelope {
-    let env = load_envelope(file_name)
-        .unwrap_or_else(|e| panic!("fixture load failed: {e}"));
+fn project_envelope(
+    file_name: &str,
+) -> abilities_runtime::abilities::get_entity_intelligence::EntityIntelligenceEnvelope {
+    let env = load_envelope(file_name).unwrap_or_else(|e| panic!("fixture load failed: {e}"));
     assert_eq!(
         env.subject.kind,
         EntityKind::Project,
@@ -33,7 +34,11 @@ fn project_metadata_proposal_present() {
 #[test]
 fn project_stale_fact_surfaces_freshness_stale() {
     let env = project_envelope("project_stale_fact.json");
-    let stale = env.facts.items.iter().any(|f| matches!(f.freshness, Freshness::Stale));
+    let stale = env
+        .facts
+        .items
+        .iter()
+        .any(|f| matches!(f.freshness, Freshness::Stale));
     assert!(stale, "project_stale_fact must include Freshness::Stale");
 }
 
@@ -127,20 +132,37 @@ fn project_confidential_claim_present() {
             ClaimSensitivity::Confidential | ClaimSensitivity::UserOnly
         )
     });
-    assert!(restricted, "project_confidential_user_only_claim requires restricted sensitivity");
+    assert!(
+        restricted,
+        "project_confidential_user_only_claim requires restricted sensitivity"
+    );
 }
 
 #[test]
 fn project_wrong_subject_fixture_emits_foreign_subject() {
     let env = project_envelope("project_wrong_subject.json");
     let envelope_subject = &env.subject.subject_ref;
-    let any_foreign = env.facts.items.iter().any(|f| &f.subject_ref != envelope_subject);
-    assert!(any_foreign, "project_wrong_subject must carry a foreign-subject fact");
+    let any_foreign = env
+        .facts
+        .items
+        .iter()
+        .any(|f| &f.subject_ref != envelope_subject);
+    assert!(
+        any_foreign,
+        "project_wrong_subject must carry a foreign-subject fact"
+    );
 }
 
 #[test]
 fn project_account_overlap_has_subject_scope_extension() {
     let env = project_envelope("project_project_account_overlap.json");
-    let has_overlap = env.touchpoints.items.iter().any(|b| !b.subject_scope.also_includes.is_empty());
-    assert!(has_overlap, "project_account_overlap requires subject_scope.also_includes");
+    let has_overlap = env
+        .touchpoints
+        .items
+        .iter()
+        .any(|b| !b.subject_scope.also_includes.is_empty());
+    assert!(
+        has_overlap,
+        "project_account_overlap requires subject_scope.also_includes"
+    );
 }

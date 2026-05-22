@@ -86,7 +86,10 @@ impl<'a> EnvelopeSet<'a> {
         }
     }
 
-    pub fn with_children(parent: &'a dyn EnvelopeView, children: Vec<&'a dyn EnvelopeView>) -> Self {
+    pub fn with_children(
+        parent: &'a dyn EnvelopeView,
+        children: Vec<&'a dyn EnvelopeView>,
+    ) -> Self {
         Self { parent, children }
     }
 
@@ -120,9 +123,7 @@ pub enum TargetBindingError {
         proposal_id: String,
         ability: String,
     },
-    #[error(
-        "WorkItem target binding requires backing_claim_id (action_id={action_id})"
-    )]
+    #[error("WorkItem target binding requires backing_claim_id (action_id={action_id})")]
     WorkItemUnboundedClaim { action_id: String },
 }
 
@@ -226,10 +227,7 @@ pub fn validate_envelope_target(
 ///
 /// Used by callers building an `EnvelopeSet` to know which child envelopes the
 /// parent legitimately covers under AC-477.13.
-pub fn composes_set_for(
-    registry: &AbilityRegistry,
-    parent_ability: &str,
-) -> BTreeSet<String> {
+pub fn composes_set_for(registry: &AbilityRegistry, parent_ability: &str) -> BTreeSet<String> {
     let by_name: HashMap<&str, Vec<&str>> = registry
         .iter_all()
         .map(|descriptor| {
@@ -283,13 +281,8 @@ pub const ACCOUNT_METADATA_FIELDS: &[&str] = &[
     "industry",
 ];
 
-pub const PROJECT_METADATA_FIELDS: &[&str] = &[
-    "status",
-    "stage",
-    "owner",
-    "next_milestone",
-    "outcome",
-];
+pub const PROJECT_METADATA_FIELDS: &[&str] =
+    &["status", "stage", "owner", "next_milestone", "outcome"];
 
 pub const PERSON_METADATA_FIELDS: &[&str] = &["role", "team", "seniority", "owner"];
 
@@ -404,7 +397,9 @@ pub fn redaction_level_for_sources(sources: &[ProvenanceSource]) -> RedactionLev
     }
 }
 
-fn synthesize_claim_for_gate(view: &ProvenanceClaimView<'_>) -> abilities_runtime::types::IntelligenceClaim {
+fn synthesize_claim_for_gate(
+    view: &ProvenanceClaimView<'_>,
+) -> abilities_runtime::types::IntelligenceClaim {
     use abilities_runtime::sensitivity::ClaimVerificationState;
     use abilities_runtime::types::{ClaimState, SurfacingState, TemporalScope};
 
@@ -610,10 +605,7 @@ mod tests {
         assert!(validate_envelope_target(&set, &claim_target("c-child")).is_ok());
         assert!(validate_envelope_target(&set, &claim_target("c-parent")).is_ok());
         let err = validate_envelope_target(&set, &claim_target("c-orphan")).unwrap_err();
-        assert!(matches!(
-            err,
-            TargetBindingError::ClaimNotInEnvelope { .. }
-        ));
+        assert!(matches!(err, TargetBindingError::ClaimNotInEnvelope { .. }));
     }
 
     #[test]
