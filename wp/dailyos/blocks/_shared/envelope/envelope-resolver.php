@@ -61,6 +61,7 @@ if ( ! function_exists( 'dailyos_envelope_cache_put' ) ) {
 		}
 		$shared             = &dailyos_envelope_cache_storage();
 		$shared[ $handle ]  = $envelope;
+		dailyos_envelope_claim_item_cache_put_from_envelope( $envelope );
 	}
 }
 
@@ -72,6 +73,74 @@ if ( ! function_exists( 'dailyos_envelope_cache_storage' ) ) {
 	 * @return array<string,array<string,mixed>>
 	 */
 	function &dailyos_envelope_cache_storage(): array {
+		static $storage = [];
+		return $storage;
+	}
+}
+
+if ( ! function_exists( 'dailyos_envelope_claim_item_cache_get' ) ) {
+	/**
+	 * Read an indexed claim-backed envelope item by claim id.
+	 *
+	 * @param string $claim_id Claim identifier.
+	 * @return array<string,mixed>|null
+	 */
+	function dailyos_envelope_claim_item_cache_get( string $claim_id ): ?array {
+		if ( '' === $claim_id ) {
+			return null;
+		}
+		$storage = dailyos_envelope_claim_item_cache_storage();
+		return $storage[ $claim_id ] ?? null;
+	}
+}
+
+if ( ! function_exists( 'dailyos_envelope_claim_item_cache_put_from_envelope' ) ) {
+	/**
+	 * Index claim-backed envelope items so copied inner-block selectors that
+	 * only pass claim ids can recover producer-rendered text without receipt
+	 * fan-out.
+	 *
+	 * @param array<string,mixed> $envelope Cached EntityIntelligenceEnvelope.
+	 */
+	function dailyos_envelope_claim_item_cache_put_from_envelope( array $envelope ): void {
+		$storage = &dailyos_envelope_claim_item_cache_storage();
+		dailyos_envelope_claim_item_cache_walk( $envelope, $storage );
+	}
+
+	/**
+	 * Recursively index claim items from an envelope subtree.
+	 *
+	 * @param mixed                            $node Envelope subtree.
+	 * @param array<string,array<string,mixed>> $storage Cache storage.
+	 */
+	function dailyos_envelope_claim_item_cache_walk( mixed $node, array &$storage ): void {
+		if ( ! is_array( $node ) ) {
+			return;
+		}
+		$claim_id = $node['claimId'] ?? $node['claim_id'] ?? null;
+		if ( is_scalar( $claim_id ) && '' !== (string) $claim_id ) {
+			$existing          = $storage[ (string) $claim_id ] ?? null;
+			$node_has_text     = '' !== dailyos_receipt_rendered_text( $node, '' );
+			$existing_has_text = is_array( $existing ) && '' !== dailyos_receipt_rendered_text( $existing, '' );
+			if ( ! is_array( $existing ) || ( $node_has_text && ! $existing_has_text ) ) {
+				$storage[ (string) $claim_id ] = $node;
+			}
+		}
+		foreach ( $node as $child ) {
+			if ( is_array( $child ) ) {
+				dailyos_envelope_claim_item_cache_walk( $child, $storage );
+			}
+		}
+	}
+}
+
+if ( ! function_exists( 'dailyos_envelope_claim_item_cache_storage' ) ) {
+	/**
+	 * Backing storage for claim item lookup.
+	 *
+	 * @return array<string,array<string,mixed>>
+	 */
+	function &dailyos_envelope_claim_item_cache_storage(): array {
 		static $storage = [];
 		return $storage;
 	}
@@ -100,6 +169,7 @@ if ( ! function_exists( 'dailyos_envelope_handle_from_response' ) ) {
 		if ( ! is_array( $envelope ) ) {
 			return '';
 		}
+		$envelope = dailyos_envelope_normalize_surface_payload( $envelope );
 		$handle = '';
 		if ( isset( $envelope['envelopeRenderId'] ) && is_string( $envelope['envelopeRenderId'] ) ) {
 			$handle = $envelope['envelopeRenderId'];
@@ -134,6 +204,34 @@ if ( ! function_exists( 'dailyos_envelope_handle_from_response' ) ) {
 		}
 		dailyos_envelope_cache_put( $handle, $envelope );
 		return $handle;
+	}
+}
+
+if ( ! function_exists( 'dailyos_envelope_normalize_surface_payload' ) ) {
+	/**
+	 * Normalize runtime DTO aliases to the section keys used by WP inner blocks.
+	 *
+	 * @param array<string,mixed> $envelope EntityIntelligenceEnvelope payload.
+	 * @return array<string,mixed>
+	 */
+	function dailyos_envelope_normalize_surface_payload( array $envelope ): array {
+		$aliases = [
+			'recordEntries'     => [ 'record', 'record_entries' ],
+			'metadataProposals' => [ 'metadata_proposals' ],
+			'openLoops'         => [ 'open_loops' ],
+			'healthStory'       => [ 'health_story' ],
+		];
+		foreach ( $aliases as $source_key => $target_keys ) {
+			if ( ! array_key_exists( $source_key, $envelope ) ) {
+				continue;
+			}
+			foreach ( $target_keys as $target_key ) {
+				if ( ! array_key_exists( $target_key, $envelope ) ) {
+					$envelope[ $target_key ] = $envelope[ $source_key ];
+				}
+			}
+		}
+		return $envelope;
 	}
 }
 
@@ -361,6 +459,24 @@ if ( ! function_exists( 'dailyos_envelope_consume_claim' ) ) {
 	 * @return array<string,mixed>|null
 	 */
 	function dailyos_envelope_consume_claim( array $claim_ref, array $scope_set ): ?array {
+		// get_entity_intelligence now carries display-safe renderedText on
+		// claim-backed envelope rows. Use that first so WordPress does not
+		// fan out into dozens of claim_receipt calls and trip loopback limits.
+		if ( '' !== dailyos_receipt_rendered_text( $claim_ref, '' ) ) {
+			return $claim_ref;
+		}
+
+		$claim_id = isset( $claim_ref['claim_id'] ) ? (string) $claim_ref['claim_id'] : '';
+		if ( '' !== $claim_id ) {
+			$cached_item = dailyos_envelope_claim_item_cache_get( $claim_id );
+			if ( is_array( $cached_item ) ) {
+				$claim_ref = array_merge( $cached_item, $claim_ref );
+				if ( '' !== dailyos_receipt_rendered_text( $claim_ref, '' ) ) {
+					return $claim_ref;
+				}
+			}
+		}
+
 		$runtime_client = apply_filters( 'dailyos_runtime_client_for_block', null );
 		if ( ! is_object( $runtime_client ) || ! method_exists( $runtime_client, 'invoke_ability' ) ) {
 			return null;
@@ -370,7 +486,6 @@ if ( ! function_exists( 'dailyos_envelope_consume_claim' ) ) {
 		// input contract: { schemaVersion, target: { kind, claimId, ... },
 		// surface }. Without this shaping the ability decoder rejects the
 		// payload as a contract violation rather than rendering the receipt.
-		$claim_id = isset( $claim_ref['claim_id'] ) ? (string) $claim_ref['claim_id'] : '';
 		if ( '' === $claim_id ) {
 			return null;
 		}
@@ -397,6 +512,154 @@ if ( ! function_exists( 'dailyos_envelope_consume_claim' ) ) {
 		];
 
 		$response = $runtime_client->invoke_ability( 'claim_receipt', $payload, $scope_set );
-		return is_array( $response ) ? $response : null;
+		if ( ! is_array( $response ) ) {
+			return null;
+		}
+
+		return '' !== dailyos_receipt_rendered_text( $response, '' ) ? $response : null;
+	}
+}
+
+if ( ! function_exists( 'dailyos_receipt_payload' ) ) {
+	/**
+	 * Unwrap a claim_receipt ability response into its ClaimReceiptSnapshot.
+	 *
+	 * @param array<string,mixed> $receipt Raw runtime response or unwrapped receipt.
+	 * @return array<string,mixed>
+	 */
+	function dailyos_receipt_payload( array $receipt ): array {
+		$ability = $receipt['ability'] ?? null;
+		$data    = is_array( $ability ) ? ( $ability['data'] ?? null ) : null;
+		if ( is_array( $data ) ) {
+			return $data;
+		}
+		if ( isset( $receipt['data'] ) && is_array( $receipt['data'] ) ) {
+			return $receipt['data'];
+		}
+		if ( isset( $receipt['receipt'] ) && is_array( $receipt['receipt'] ) ) {
+			return $receipt['receipt'];
+		}
+		return $receipt;
+	}
+
+	/**
+	 * Read display-safe claim text from a receipt.
+	 *
+	 * @param array<string,mixed> $receipt Raw runtime response or unwrapped receipt.
+	 * @param string              $fallback Fallback when no rendered text is available.
+	 * @return string
+	 */
+	function dailyos_receipt_rendered_text( array $receipt, string $fallback = '' ): string {
+		$payload       = dailyos_receipt_payload( $receipt );
+		$rendered_text = $payload['renderedText'] ?? $payload['rendered_text'] ?? null;
+		if ( is_array( $rendered_text ) ) {
+			$text = $rendered_text['text'] ?? '';
+			return is_string( $text ) && '' !== trim( $text ) ? $text : $fallback;
+		}
+		if ( is_string( $rendered_text ) && '' !== trim( $rendered_text ) ) {
+			return $rendered_text;
+		}
+		$text = $payload['text'] ?? '';
+		return is_string( $text ) && '' !== trim( $text ) ? $text : $fallback;
+	}
+
+	/**
+	 * Read trust band from a receipt.
+	 *
+	 * @param array<string,mixed> $receipt Raw runtime response or unwrapped receipt.
+	 * @return string
+	 */
+	function dailyos_receipt_trust_band( array $receipt ): string {
+		$payload = dailyos_receipt_payload( $receipt );
+		$trust   = $payload['trust'] ?? null;
+		if ( is_array( $trust ) ) {
+			$band = $trust['band'] ?? '';
+			if ( is_string( $band ) && '' !== $band ) {
+				return $band;
+			}
+		}
+		$band = $payload['trustBand'] ?? $payload['trust_band'] ?? '';
+		return is_string( $band ) && '' !== $band ? $band : 'unscored';
+	}
+}
+
+if ( ! function_exists( 'dailyos_envelope_collect_claim_refs' ) ) {
+	/**
+	 * Collect claim refs from envelope sections with optional claim/field filters.
+	 *
+	 * @param array<string,mixed>|null $envelope Envelope payload.
+	 * @param array<int,string>        $section_keys Section keys to scan.
+	 * @param array<string,mixed>      $filters Optional claim_types,
+	 *                                          field_paths,
+	 *                                          field_path_prefixes.
+	 * @return array<int,array<string,mixed>>
+	 */
+	function dailyos_envelope_collect_claim_refs( ?array $envelope, array $section_keys, array $filters = [] ): array {
+		if ( null === $envelope ) {
+			return [];
+		}
+		$refs = [];
+		foreach ( $section_keys as $section_key ) {
+			$slice = $envelope[ $section_key ] ?? [];
+			if ( ! is_array( $slice ) ) {
+				continue;
+			}
+			$items = $slice['items'] ?? ( is_array( reset( $slice ) ) ? $slice : [] );
+			if ( ! is_array( $items ) ) {
+				continue;
+			}
+			foreach ( $items as $item ) {
+				if ( ! is_array( $item ) || ! dailyos_envelope_claim_ref_matches( $item, $filters ) ) {
+					continue;
+				}
+				$claim_id = $item['claimId'] ?? $item['claim_id'] ?? '';
+				if ( '' === $claim_id ) {
+					continue;
+				}
+				$ref = [
+					'claim_id'     => (string) $claim_id,
+					'audience_key' => $item['audienceKey'] ?? $item['audience_key'] ?? 'user',
+					'subject_ref'  => $item['subjectRef'] ?? $item['subject_ref'] ?? null,
+					'field_path'   => $item['fieldPath'] ?? $item['field_path'] ?? null,
+				];
+				foreach ( [ 'renderedText', 'rendered_text', 'text', 'trust', 'trustBand', 'trust_band', 'provenance', 'sensitivity' ] as $key ) {
+					if ( array_key_exists( $key, $item ) ) {
+						$ref[ $key ] = $item[ $key ];
+					}
+				}
+				$refs[] = $ref;
+			}
+		}
+		return $refs;
+	}
+
+	/**
+	 * Match an envelope item against selector filters.
+	 *
+	 * @param array<string,mixed> $item Envelope item.
+	 * @param array<string,mixed> $filters Filter map.
+	 * @return bool
+	 */
+	function dailyos_envelope_claim_ref_matches( array $item, array $filters ): bool {
+		$claim_type = (string) ( $item['claimType'] ?? $item['claim_type'] ?? '' );
+		$field_path = (string) ( $item['fieldPath'] ?? $item['field_path'] ?? '' );
+
+		if ( isset( $filters['claim_types'] ) && is_array( $filters['claim_types'] ) && ! in_array( $claim_type, $filters['claim_types'], true ) ) {
+			return false;
+		}
+		$has_field_filter = false;
+		if ( isset( $filters['field_paths'] ) && is_array( $filters['field_paths'] ) && in_array( $field_path, $filters['field_paths'], true ) ) {
+			return true;
+		}
+		$has_field_filter = $has_field_filter || ( isset( $filters['field_paths'] ) && is_array( $filters['field_paths'] ) && ! empty( $filters['field_paths'] ) );
+		if ( isset( $filters['field_path_prefixes'] ) && is_array( $filters['field_path_prefixes'] ) ) {
+			foreach ( $filters['field_path_prefixes'] as $prefix ) {
+				if ( is_string( $prefix ) && 0 === strpos( $field_path, $prefix ) ) {
+					return true;
+				}
+			}
+			$has_field_filter = $has_field_filter || ! empty( $filters['field_path_prefixes'] );
+		}
+		return ! $has_field_filter;
 	}
 }

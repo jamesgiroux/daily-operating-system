@@ -235,8 +235,10 @@ mod tests {
         assert_eq!(data["items"].as_array().unwrap().len(), 2);
         assert_eq!(data["totalHint"].as_u64().unwrap(), 4);
         let cursor = data["nextCursor"].as_str().expect("next cursor present");
-        let payload = decode_cursor(&crate::abilities::get_entity_intelligence::contracts::Cursor::new(cursor))
-            .expect("cursor decodes");
+        let payload = decode_cursor(
+            &crate::abilities::get_entity_intelligence::contracts::Cursor::new(cursor),
+        )
+        .expect("cursor decodes");
         assert_eq!(payload.offset, 2);
     }
 

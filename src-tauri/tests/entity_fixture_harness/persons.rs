@@ -9,9 +9,10 @@ use abilities_runtime::abilities::get_entity_intelligence::{EntityKind, Freshnes
 
 use crate::harness::load_envelope;
 
-fn person_envelope(file_name: &str) -> abilities_runtime::abilities::get_entity_intelligence::EntityIntelligenceEnvelope {
-    let env = load_envelope(file_name)
-        .unwrap_or_else(|e| panic!("fixture load failed: {e}"));
+fn person_envelope(
+    file_name: &str,
+) -> abilities_runtime::abilities::get_entity_intelligence::EntityIntelligenceEnvelope {
+    let env = load_envelope(file_name).unwrap_or_else(|e| panic!("fixture load failed: {e}"));
     assert_eq!(
         env.subject.kind,
         EntityKind::Person,
@@ -23,7 +24,11 @@ fn person_envelope(file_name: &str) -> abilities_runtime::abilities::get_entity_
 #[test]
 fn person_stale_fact_surfaces_freshness_stale() {
     let env = person_envelope("person_stale_fact.json");
-    let stale = env.facts.items.iter().any(|f| matches!(f.freshness, Freshness::Stale));
+    let stale = env
+        .facts
+        .items
+        .iter()
+        .any(|f| matches!(f.freshness, Freshness::Stale));
     assert!(stale, "person_stale_fact must include Freshness::Stale");
 }
 
@@ -58,14 +63,22 @@ fn person_open_loop_present() {
 #[test]
 fn person_upcoming_touchpoint_present() {
     let env = person_envelope("person_upcoming_touchpoint.json");
-    let bundle = env.touchpoints.items.first().expect("touchpoint bundle required");
+    let bundle = env
+        .touchpoints
+        .items
+        .first()
+        .expect("touchpoint bundle required");
     assert!(!bundle.upcoming.items.is_empty());
 }
 
 #[test]
 fn person_recent_touchpoint_present() {
     let env = person_envelope("person_recent_touchpoint.json");
-    let bundle = env.touchpoints.items.first().expect("touchpoint bundle required");
+    let bundle = env
+        .touchpoints
+        .items
+        .first()
+        .expect("touchpoint bundle required");
     assert!(!bundle.recent.items.is_empty());
 }
 
@@ -104,7 +117,11 @@ fn person_confidential_claim_present() {
 fn person_wrong_subject_emits_foreign_subject() {
     let env = person_envelope("person_wrong_subject.json");
     let envelope_subject = &env.subject.subject_ref;
-    let any_foreign = env.facts.items.iter().any(|f| &f.subject_ref != envelope_subject);
+    let any_foreign = env
+        .facts
+        .items
+        .iter()
+        .any(|f| &f.subject_ref != envelope_subject);
     assert!(any_foreign);
 }
 
@@ -114,9 +131,11 @@ fn person_ambiguous_association_is_person_only_signal() {
     // Person-only ambiguity case: same email/name across multiple subjects.
     // The envelope's subject_scope.also_includes is the substrate signal.
     let env = person_envelope("person_ambiguous_association.json");
-    let has_ambiguous_scope = env.touchpoints.items.iter().any(|b| {
-        !b.subject_scope.also_includes.is_empty()
-    });
+    let has_ambiguous_scope = env
+        .touchpoints
+        .items
+        .iter()
+        .any(|b| !b.subject_scope.also_includes.is_empty());
     assert!(
         has_ambiguous_scope,
         "AC-461.4 — person_ambiguous_association must include subject_scope.also_includes (multi-subject overlap)"

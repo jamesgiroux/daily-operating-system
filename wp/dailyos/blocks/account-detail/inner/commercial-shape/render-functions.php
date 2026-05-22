@@ -125,40 +125,14 @@ if ( ! function_exists( 'dailyos_commercial_shape_select_claim_refs' ) ) {
 	 * @return array<int,array<string,mixed>>
 	 */
 	function dailyos_commercial_shape_select_claim_refs( ?array $envelope ): array {
-		if ( null === $envelope ) {
-			return [];
-		}
-		$refs = [];
-		// Walk the projected envelope sections and collect claim_ids. The
-		// exact projection rule lives in the L0-packet projection table; this
-		// helper is a single source for the slug's selection so test fixtures
-		// can target one function rather than the renderer.
-		foreach ( ['facts'] as $section_key ) {
-			$slice = $envelope[ $section_key ] ?? [];
-			if ( ! is_array( $slice ) ) {
-				continue;
-			}
-			$items = $slice['items'] ?? ( is_array( reset( $slice ) ) ? $slice : [] );
-			if ( ! is_array( $items ) ) {
-				continue;
-			}
-			foreach ( $items as $item ) {
-				if ( ! is_array( $item ) ) {
-					continue;
-				}
-				$claim_id = $item['claimId'] ?? $item['claim_id'] ?? '';
-				if ( '' === $claim_id ) {
-					continue;
-				}
-				$refs[] = [
-					'claim_id'     => (string) $claim_id,
-					'audience_key' => $item['audienceKey'] ?? 'user',
-					'subject_ref'  => $item['subjectRef'] ?? null,
-					'field_path'   => $item['fieldPath'] ?? null,
-				];
-			}
-		}
-		return $refs;
+		return dailyos_envelope_collect_claim_refs(
+			$envelope,
+			[ 'facts' ],
+			[
+				'field_paths'         => [ 'contractContext', 'agreementOutlook' ],
+				'field_path_prefixes' => [ 'expansionSignals[' ],
+			]
+		);
 	}
 }
 
@@ -174,9 +148,9 @@ if ( ! function_exists( 'dailyos_commercial_shape_render_row' ) ) {
 	 */
 	function dailyos_commercial_shape_render_row( array $claim_ref, array $receipt ): string {
 		$claim_id = isset( $claim_ref['claim_id'] ) ? (string) $claim_ref['claim_id'] : '';
-		$trust_band = isset( $receipt['trustBand'] ) ? (string) $receipt['trustBand'] : ( isset( $receipt['trust_band'] ) ? (string) $receipt['trust_band'] : 'unscored' );
+		$trust_band = dailyos_receipt_trust_band( $receipt );
 		return '<div class="ReferenceGrid_row" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
-			. '<span class="ReferenceGrid_label">' . esc_html( $claim_id ) . '</span>'
+			. '<span class="ReferenceGrid_label">' . esc_html( dailyos_receipt_rendered_text( $receipt, $claim_id ) ) . '</span>'
 			. '<span class="ReferenceGrid_value">' . esc_html( $trust_band ) . '</span>'
 			. '</div>';
 	}

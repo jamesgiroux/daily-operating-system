@@ -8,9 +8,7 @@ use crate::abilities::get_entity_intelligence::contracts::{CursorState, Paginate
 use crate::abilities::list_pagination::{
     decode_cursor, encode_cursor, finalize_pagination, watermark_from_request,
 };
-use crate::abilities::list_people::contracts::{
-    PersonListFilter, PersonListInput, PersonSummary,
-};
+use crate::abilities::list_people::contracts::{PersonListFilter, PersonListInput, PersonSummary};
 use crate::abilities::list_people::{ABILITY_NAME, ABILITY_SCHEMA_VERSION};
 use crate::abilities::provenance::SubjectRef;
 use crate::abilities::{AbilityContext, AbilityError, AbilityErrorKind, AbilityResult};
@@ -60,8 +58,7 @@ pub async fn list_people(
                     next_cursor: None,
                     total_hint: None,
                     cursor_state: CursorState::Invalidated {
-                        reason: "filter or page_size changed since cursor was issued"
-                            .to_string(),
+                        reason: "filter or page_size changed since cursor was issued".to_string(),
                         restart_required: true,
                     },
                 },

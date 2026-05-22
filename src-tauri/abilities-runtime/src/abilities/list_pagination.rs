@@ -108,8 +108,7 @@ pub(crate) fn finalize_pagination<T: serde::Serialize + Clone>(
     // the list ability is a thin index.
     builder
         .attribute_subtree(
-            FieldPath::new("")
-                .map_err(|error| make_field_error(&error))?,
+            FieldPath::new("").map_err(|error| make_field_error(&error))?,
             FieldAttribution::constant(subject_attr),
         )
         .map_err(|error| make_provenance_error(&error))?;

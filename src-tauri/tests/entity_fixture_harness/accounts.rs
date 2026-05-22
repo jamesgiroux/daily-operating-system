@@ -11,9 +11,10 @@ use abilities_runtime::types::ClaimState;
 
 use crate::harness::load_envelope;
 
-fn account_envelope(file_name: &str) -> abilities_runtime::abilities::get_entity_intelligence::EntityIntelligenceEnvelope {
-    let env = load_envelope(file_name)
-        .unwrap_or_else(|e| panic!("fixture load failed: {e}"));
+fn account_envelope(
+    file_name: &str,
+) -> abilities_runtime::abilities::get_entity_intelligence::EntityIntelligenceEnvelope {
+    let env = load_envelope(file_name).unwrap_or_else(|e| panic!("fixture load failed: {e}"));
     assert_eq!(
         env.subject.kind,
         EntityKind::Account,
@@ -184,9 +185,11 @@ fn account_project_account_overlap_present() {
     // The "overlap" fixture asserts that the envelope's subject_scope or
     // facts surface BOTH account- and project-scoped claims tied to the same
     // touchpoint — this is the cross-subject contention class.
-    let has_overlap = env.touchpoints.items.iter().any(|b| {
-        !b.subject_scope.also_includes.is_empty()
-    });
+    let has_overlap = env
+        .touchpoints
+        .items
+        .iter()
+        .any(|b| !b.subject_scope.also_includes.is_empty());
     assert!(
         has_overlap,
         "AC-461.5b — project_account_overlap fixture must include a TouchpointBundle whose subject_scope.also_includes is non-empty"
@@ -198,9 +201,11 @@ fn account_parent_child_present() {
     let env = account_envelope("account_parent_child.json");
     // Parent/child fixture: subject_scope.also_includes contains the
     // other-tier account (parent OR child) — substantiates inheritance class.
-    let has_relation = env.touchpoints.items.iter().any(|b| {
-        !b.subject_scope.also_includes.is_empty()
-    });
+    let has_relation = env
+        .touchpoints
+        .items
+        .iter()
+        .any(|b| !b.subject_scope.also_includes.is_empty());
     assert!(
         has_relation,
         "AC-461.5b — parent_child (Account-only) fixture must include a non-empty subject_scope.also_includes"

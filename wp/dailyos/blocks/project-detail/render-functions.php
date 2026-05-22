@@ -143,9 +143,20 @@ if ( ! function_exists( 'dailyos_project_detail_render' ) ) {
 		// If the caller passed no inner content (e.g. direct programmatic
 		// render outside the block editor's template path), render the
 		// default template so the surface composes the 15 inner blocks.
+		//
+		// `do_blocks()` on raw markup does NOT propagate the outer block's
+		// providesContext to inner blocks — they each render top-level
+		// with empty context and short-circuit to empty-chip. Manually
+		// instantiate each inner block with explicit parent context per
+		// block.json's providesContext mapping.
 		$inner = $content;
-		if ( '' === trim( $inner ) && function_exists( 'do_blocks' ) ) {
-			$inner = do_blocks( dailyos_project_detail_default_template_markup() );
+		if ( '' === trim( $inner ) && class_exists( 'WP_Block' ) ) {
+			$ctx_for_inner = [
+				'dailyos/entityType'     => 'project',
+				'dailyos/entityId'       => $project_id,
+				'dailyos/envelopeHandle' => $envelope_handle,
+			];
+			$inner = dailyos_project_detail_render_default_inner( $ctx_for_inner );
 		}
 
 		$out  = '<section ' . $wrapper_attrs . '>';
@@ -194,6 +205,34 @@ if ( ! function_exists( 'dailyos_project_detail_render' ) ) {
 		$out = '';
 		foreach ( $blocks as $name ) {
 			$out .= '<!-- wp:' . $name . ' /-->';
+		}
+		return $out;
+	}
+
+	/**
+	 * Render each block from the default template as a `WP_Block` with
+	 * explicit context — propagates the outer block's providesContext to
+	 * inner blocks the way Gutenberg does when the inner blocks live in
+	 * saved post_content. Same pattern as meeting-detail / account-detail
+	 * helpers.
+	 *
+	 * @param array<string, mixed> $context Context map keyed as the inner
+	 *                                       blocks consume in `usesContext`.
+	 * @return string Concatenated rendered HTML.
+	 */
+	function dailyos_project_detail_render_default_inner( array $context ): string {
+		$markup = dailyos_project_detail_default_template_markup();
+		$parsed = function_exists( 'parse_blocks' ) ? parse_blocks( $markup ) : [];
+		if ( ! is_array( $parsed ) ) {
+			return '';
+		}
+		$out = '';
+		foreach ( $parsed as $block_data ) {
+			if ( ! is_array( $block_data ) || empty( $block_data['blockName'] ) ) {
+				continue;
+			}
+			$wp_block = new \WP_Block( $block_data, $context );
+			$out     .= $wp_block->render();
 		}
 		return $out;
 	}

@@ -14,10 +14,10 @@ use std::collections::BTreeMap;
 
 use abilities_runtime::abilities::get_entity_intelligence::{
     CandidateSetRef, EmptyReason, EntityFact, EntityIntelligenceEnvelope, EntityKind,
-    EnvelopeProvenance, EnvelopeProvenanceSource, EnvelopeSection, EnvelopeTrustSummary,
-    Freshness, InclusionReason, MetadataProposal, NormalizedSubject, OpenLoopWithReceipt,
-    Paginated, ProvenanceRef, ReceiptTargetRef, RecordEntry, SectionState, SubjectScope,
-    ThreadSummary, Touchpoint, TouchpointBundle, TouchpointKind, ENVELOPE_SCHEMA_VERSION,
+    EnvelopeProvenance, EnvelopeProvenanceSource, EnvelopeSection, EnvelopeTrustSummary, Freshness,
+    InclusionReason, MetadataProposal, NormalizedSubject, OpenLoopWithReceipt, Paginated,
+    ProvenanceRef, ReceiptTargetRef, RecordEntry, SectionState, SubjectScope, ThreadSummary,
+    Touchpoint, TouchpointBundle, TouchpointKind, ENVELOPE_SCHEMA_VERSION,
 };
 use abilities_runtime::abilities::provenance::SubjectRef;
 use abilities_runtime::abilities::trust::types::TrustBand;
@@ -240,9 +240,14 @@ fn account_stale_fact() -> EntityIntelligenceEnvelope {
         ClaimSensitivity::Internal,
         ClaimState::Active,
     );
-    env.sections.insert(EnvelopeSection::Facts, present_section_state(1));
+    env.sections
+        .insert(EnvelopeSection::Facts, present_section_state(1));
     env.facts = Paginated::stable(vec![f]);
-    env.provenance.sources.push(generic_source("src-1", "Synthetic email thread", "email_thread"));
+    env.provenance.sources.push(generic_source(
+        "src-1",
+        "Synthetic email thread",
+        "email_thread",
+    ));
     env
 }
 
@@ -273,16 +278,26 @@ fn account_corrected_superseded() -> EntityIntelligenceEnvelope {
         subject_ref: SubjectRef::Account("acct-zero".to_string()),
         claim_type: "account.profile.contract_tier".to_string(),
         recorded_at: now_anchor() - Duration::days(45),
-        rendered_text: rendered("claim-acct-superseded-1", "tier-bronze (superseded)", ClaimSensitivity::Internal),
+        rendered_text: rendered(
+            "claim-acct-superseded-1",
+            "tier-bronze (superseded)",
+            ClaimSensitivity::Internal,
+        ),
         trust_band: TrustBand::UseWithCaution,
         sensitivity: ClaimSensitivity::Internal,
         provenance: ProvenanceRef::from_ids(["src-1".to_string()]),
     };
-    env.sections.insert(EnvelopeSection::Facts, present_section_state(2));
-    env.sections.insert(EnvelopeSection::Record, present_section_state(1));
+    env.sections
+        .insert(EnvelopeSection::Facts, present_section_state(2));
+    env.sections
+        .insert(EnvelopeSection::Record, present_section_state(1));
     env.facts = Paginated::stable(vec![superseded, current]);
     env.record_entries = Paginated::stable(vec![recorded]);
-    env.provenance.sources.push(generic_source("src-1", "Salesforce sync (synthetic)", "salesforce"));
+    env.provenance.sources.push(generic_source(
+        "src-1",
+        "Salesforce sync (synthetic)",
+        "salesforce",
+    ));
     env
 }
 
@@ -298,9 +313,14 @@ fn account_low_trust() -> EntityIntelligenceEnvelope {
         ClaimSensitivity::Internal,
         ClaimState::Active,
     );
-    env.sections.insert(EnvelopeSection::Facts, present_section_state(1));
+    env.sections
+        .insert(EnvelopeSection::Facts, present_section_state(1));
     env.facts = Paginated::stable(vec![f]);
-    env.provenance.sources.push(generic_source("src-1", "Slack message (synthetic)", "slack"));
+    env.provenance.sources.push(generic_source(
+        "src-1",
+        "Slack message (synthetic)",
+        "slack",
+    ));
     env
 }
 
@@ -316,9 +336,14 @@ fn account_metadata_proposal() -> EntityIntelligenceEnvelope {
         sensitivity: ClaimSensitivity::Internal,
         provenance: ProvenanceRef::from_ids(["src-1".to_string()]),
     };
-    env.sections.insert(EnvelopeSection::MetadataProposals, present_section_state(1));
+    env.sections
+        .insert(EnvelopeSection::MetadataProposals, present_section_state(1));
     env.metadata_proposals = Paginated::stable(vec![p]);
-    env.provenance.sources.push(generic_source("src-1", "Inbound contract email (synthetic)", "email_thread"));
+    env.provenance.sources.push(generic_source(
+        "src-1",
+        "Inbound contract email (synthetic)",
+        "email_thread",
+    ));
     env
 }
 
@@ -349,9 +374,14 @@ fn account_open_loop() -> EntityIntelligenceEnvelope {
         freshness: Freshness::Current,
         provenance: ProvenanceRef::from_ids(["src-1".to_string()]),
     };
-    env.sections.insert(EnvelopeSection::OpenLoops, present_section_state(1));
+    env.sections
+        .insert(EnvelopeSection::OpenLoops, present_section_state(1));
     env.open_loops = Paginated::stable(vec![ol]);
-    env.provenance.sources.push(generic_source("src-1", "Synthetic email thread", "email_thread"));
+    env.provenance.sources.push(generic_source(
+        "src-1",
+        "Synthetic email thread",
+        "email_thread",
+    ));
     env
 }
 
@@ -360,10 +390,15 @@ fn account_upcoming_touchpoint() -> EntityIntelligenceEnvelope {
     let bundle = touchpoint_bundle(
         SubjectRef::Account("acct-zero".to_string()),
         Vec::new(),
-        vec![make_touchpoint(SubjectRef::Account("acct-zero".to_string()), 3, TouchpointKind::Meeting)],
+        vec![make_touchpoint(
+            SubjectRef::Account("acct-zero".to_string()),
+            3,
+            TouchpointKind::Meeting,
+        )],
         Vec::new(),
     );
-    env.sections.insert(EnvelopeSection::Touchpoints, present_section_state(1));
+    env.sections
+        .insert(EnvelopeSection::Touchpoints, present_section_state(1));
     env.touchpoints = Paginated::stable(vec![bundle]);
     env
 }
@@ -374,9 +409,14 @@ fn account_recent_touchpoint() -> EntityIntelligenceEnvelope {
         SubjectRef::Account("acct-zero".to_string()),
         Vec::new(),
         Vec::new(),
-        vec![make_touchpoint(SubjectRef::Account("acct-zero".to_string()), -5, TouchpointKind::EmailThread)],
+        vec![make_touchpoint(
+            SubjectRef::Account("acct-zero".to_string()),
+            -5,
+            TouchpointKind::EmailThread,
+        )],
     );
-    env.sections.insert(EnvelopeSection::Touchpoints, present_section_state(1));
+    env.sections
+        .insert(EnvelopeSection::Touchpoints, present_section_state(1));
     env.touchpoints = Paginated::stable(vec![bundle]);
     env
 }
@@ -390,9 +430,14 @@ fn account_thread_summary() -> EntityIntelligenceEnvelope {
         message_count: 4,
         provenance: ProvenanceRef::from_ids(["src-1".to_string()]),
     };
-    env.sections.insert(EnvelopeSection::Threads, present_section_state(1));
+    env.sections
+        .insert(EnvelopeSection::Threads, present_section_state(1));
     env.threads = Paginated::stable(vec![t]);
-    env.provenance.sources.push(generic_source("src-1", "Synthetic email thread", "email_thread"));
+    env.provenance.sources.push(generic_source(
+        "src-1",
+        "Synthetic email thread",
+        "email_thread",
+    ));
     env
 }
 
@@ -408,7 +453,8 @@ fn account_glean_citation() -> EntityIntelligenceEnvelope {
         ClaimSensitivity::Internal,
         ClaimState::Active,
     );
-    env.sections.insert(EnvelopeSection::Facts, present_section_state(1));
+    env.sections
+        .insert(EnvelopeSection::Facts, present_section_state(1));
     env.facts = Paginated::stable(vec![f]);
     env.provenance.sources.push(glean_source("src-glean-1"));
     env
@@ -430,10 +476,15 @@ fn account_confidential_user_only_claim() -> EntityIntelligenceEnvelope {
             ClaimState::Active,
         )
     };
-    env.sections.insert(EnvelopeSection::Facts, present_section_state(1));
+    env.sections
+        .insert(EnvelopeSection::Facts, present_section_state(1));
     env.facts = Paginated::stable(vec![confidential]);
     env.sensitivity = ClaimSensitivity::Confidential;
-    env.provenance.sources.push(generic_source("src-1", "Synthetic internal note", "internal_note"));
+    env.provenance.sources.push(generic_source(
+        "src-1",
+        "Synthetic internal note",
+        "internal_note",
+    ));
     env
 }
 
@@ -450,9 +501,14 @@ fn account_wrong_subject() -> EntityIntelligenceEnvelope {
         ClaimSensitivity::Internal,
         ClaimState::Active,
     );
-    env.sections.insert(EnvelopeSection::Facts, present_section_state(1));
+    env.sections
+        .insert(EnvelopeSection::Facts, present_section_state(1));
     env.facts = Paginated::stable(vec![foreign]);
-    env.provenance.sources.push(generic_source("src-1", "Synthetic miswired source", "email_thread"));
+    env.provenance.sources.push(generic_source(
+        "src-1",
+        "Synthetic miswired source",
+        "email_thread",
+    ));
     env
 }
 
@@ -461,10 +517,15 @@ fn account_project_account_overlap() -> EntityIntelligenceEnvelope {
     let bundle = touchpoint_bundle(
         SubjectRef::Account("acct-zero".to_string()),
         vec![SubjectRef::Project("project-zero".to_string())],
-        vec![make_touchpoint(SubjectRef::Account("acct-zero".to_string()), 2, TouchpointKind::Meeting)],
+        vec![make_touchpoint(
+            SubjectRef::Account("acct-zero".to_string()),
+            2,
+            TouchpointKind::Meeting,
+        )],
         Vec::new(),
     );
-    env.sections.insert(EnvelopeSection::Touchpoints, present_section_state(1));
+    env.sections
+        .insert(EnvelopeSection::Touchpoints, present_section_state(1));
     env.touchpoints = Paginated::stable(vec![bundle]);
     env
 }
@@ -475,9 +536,14 @@ fn account_parent_child() -> EntityIntelligenceEnvelope {
         SubjectRef::Account("acct-zero".to_string()),
         vec![SubjectRef::Account("acct-parent".to_string())],
         Vec::new(),
-        vec![make_touchpoint(SubjectRef::Account("acct-zero".to_string()), -7, TouchpointKind::Meeting)],
+        vec![make_touchpoint(
+            SubjectRef::Account("acct-zero".to_string()),
+            -7,
+            TouchpointKind::Meeting,
+        )],
     );
-    env.sections.insert(EnvelopeSection::Touchpoints, present_section_state(1));
+    env.sections
+        .insert(EnvelopeSection::Touchpoints, present_section_state(1));
     env.touchpoints = Paginated::stable(vec![bundle]);
     env
 }
@@ -498,9 +564,14 @@ fn account_claim_retracted_mid_render() -> EntityIntelligenceEnvelope {
         ClaimSensitivity::Internal,
         ClaimState::Active,
     );
-    env.sections.insert(EnvelopeSection::Facts, present_section_state(1));
+    env.sections
+        .insert(EnvelopeSection::Facts, present_section_state(1));
     env.facts = Paginated::stable(vec![f]);
-    env.provenance.sources.push(generic_source("src-1", "Synthetic email thread", "email_thread"));
+    env.provenance.sources.push(generic_source(
+        "src-1",
+        "Synthetic email thread",
+        "email_thread",
+    ));
     env
 }
 
@@ -522,9 +593,14 @@ fn project_stale_fact() -> EntityIntelligenceEnvelope {
         ClaimSensitivity::Internal,
         ClaimState::Active,
     );
-    env.sections.insert(EnvelopeSection::Facts, present_section_state(1));
+    env.sections
+        .insert(EnvelopeSection::Facts, present_section_state(1));
     env.facts = Paginated::stable(vec![f]);
-    env.provenance.sources.push(generic_source("src-1", "Synthetic project note", "internal_note"));
+    env.provenance.sources.push(generic_source(
+        "src-1",
+        "Synthetic project note",
+        "internal_note",
+    ));
     env
 }
 
@@ -535,14 +611,21 @@ fn project_corrected_superseded() -> EntityIntelligenceEnvelope {
         subject_ref: SubjectRef::Project("project-zero".to_string()),
         claim_type: "project.scope".to_string(),
         recorded_at: now_anchor() - Duration::days(30),
-        rendered_text: rendered("claim-proj-record-1", "Scope: deliver primitive blocks (superseded)", ClaimSensitivity::Internal),
+        rendered_text: rendered(
+            "claim-proj-record-1",
+            "Scope: deliver primitive blocks (superseded)",
+            ClaimSensitivity::Internal,
+        ),
         trust_band: TrustBand::UseWithCaution,
         sensitivity: ClaimSensitivity::Internal,
         provenance: ProvenanceRef::from_ids(["src-1".to_string()]),
     };
-    env.sections.insert(EnvelopeSection::Record, present_section_state(1));
+    env.sections
+        .insert(EnvelopeSection::Record, present_section_state(1));
     env.record_entries = Paginated::stable(vec![recorded]);
-    env.provenance.sources.push(generic_source("src-1", "Synthetic Linear update", "linear"));
+    env.provenance
+        .sources
+        .push(generic_source("src-1", "Synthetic Linear update", "linear"));
     env
 }
 
@@ -558,9 +641,12 @@ fn project_low_trust() -> EntityIntelligenceEnvelope {
         ClaimSensitivity::Internal,
         ClaimState::Active,
     );
-    env.sections.insert(EnvelopeSection::Facts, present_section_state(1));
+    env.sections
+        .insert(EnvelopeSection::Facts, present_section_state(1));
     env.facts = Paginated::stable(vec![f]);
-    env.provenance.sources.push(generic_source("src-1", "Synthetic Slack message", "slack"));
+    env.provenance
+        .sources
+        .push(generic_source("src-1", "Synthetic Slack message", "slack"));
     env
 }
 
@@ -576,9 +662,14 @@ fn project_metadata_proposal() -> EntityIntelligenceEnvelope {
         sensitivity: ClaimSensitivity::Internal,
         provenance: ProvenanceRef::from_ids(["src-1".to_string()]),
     };
-    env.sections.insert(EnvelopeSection::MetadataProposals, present_section_state(1));
+    env.sections
+        .insert(EnvelopeSection::MetadataProposals, present_section_state(1));
     env.metadata_proposals = Paginated::stable(vec![p]);
-    env.provenance.sources.push(generic_source("src-1", "Synthetic project email", "email_thread"));
+    env.provenance.sources.push(generic_source(
+        "src-1",
+        "Synthetic project email",
+        "email_thread",
+    ));
     env
 }
 
@@ -609,9 +700,12 @@ fn project_open_loop() -> EntityIntelligenceEnvelope {
         freshness: Freshness::Current,
         provenance: ProvenanceRef::from_ids(["src-1".to_string()]),
     };
-    env.sections.insert(EnvelopeSection::OpenLoops, present_section_state(1));
+    env.sections
+        .insert(EnvelopeSection::OpenLoops, present_section_state(1));
     env.open_loops = Paginated::stable(vec![ol]);
-    env.provenance.sources.push(generic_source("src-1", "Synthetic Linear issue", "linear"));
+    env.provenance
+        .sources
+        .push(generic_source("src-1", "Synthetic Linear issue", "linear"));
     env
 }
 
@@ -620,10 +714,15 @@ fn project_upcoming_touchpoint() -> EntityIntelligenceEnvelope {
     let bundle = touchpoint_bundle(
         SubjectRef::Project("project-zero".to_string()),
         Vec::new(),
-        vec![make_touchpoint(SubjectRef::Project("project-zero".to_string()), 4, TouchpointKind::Meeting)],
+        vec![make_touchpoint(
+            SubjectRef::Project("project-zero".to_string()),
+            4,
+            TouchpointKind::Meeting,
+        )],
         Vec::new(),
     );
-    env.sections.insert(EnvelopeSection::Touchpoints, present_section_state(1));
+    env.sections
+        .insert(EnvelopeSection::Touchpoints, present_section_state(1));
     env.touchpoints = Paginated::stable(vec![bundle]);
     env
 }
@@ -634,9 +733,14 @@ fn project_recent_touchpoint() -> EntityIntelligenceEnvelope {
         SubjectRef::Project("project-zero".to_string()),
         Vec::new(),
         Vec::new(),
-        vec![make_touchpoint(SubjectRef::Project("project-zero".to_string()), -4, TouchpointKind::Document)],
+        vec![make_touchpoint(
+            SubjectRef::Project("project-zero".to_string()),
+            -4,
+            TouchpointKind::Document,
+        )],
     );
-    env.sections.insert(EnvelopeSection::Touchpoints, present_section_state(1));
+    env.sections
+        .insert(EnvelopeSection::Touchpoints, present_section_state(1));
     env.touchpoints = Paginated::stable(vec![bundle]);
     env
 }
@@ -650,9 +754,14 @@ fn project_thread_summary() -> EntityIntelligenceEnvelope {
         message_count: 7,
         provenance: ProvenanceRef::from_ids(["src-1".to_string()]),
     };
-    env.sections.insert(EnvelopeSection::Threads, present_section_state(1));
+    env.sections
+        .insert(EnvelopeSection::Threads, present_section_state(1));
     env.threads = Paginated::stable(vec![t]);
-    env.provenance.sources.push(generic_source("src-1", "Synthetic project thread", "email_thread"));
+    env.provenance.sources.push(generic_source(
+        "src-1",
+        "Synthetic project thread",
+        "email_thread",
+    ));
     env
 }
 
@@ -668,9 +777,12 @@ fn project_glean_citation() -> EntityIntelligenceEnvelope {
         ClaimSensitivity::Internal,
         ClaimState::Active,
     );
-    env.sections.insert(EnvelopeSection::Facts, present_section_state(1));
+    env.sections
+        .insert(EnvelopeSection::Facts, present_section_state(1));
     env.facts = Paginated::stable(vec![f]);
-    env.provenance.sources.push(glean_source("src-glean-proj-1"));
+    env.provenance
+        .sources
+        .push(glean_source("src-glean-proj-1"));
     env
 }
 
@@ -690,10 +802,15 @@ fn project_confidential_user_only_claim() -> EntityIntelligenceEnvelope {
             ClaimState::Active,
         )
     };
-    env.sections.insert(EnvelopeSection::Facts, present_section_state(1));
+    env.sections
+        .insert(EnvelopeSection::Facts, present_section_state(1));
     env.facts = Paginated::stable(vec![f]);
     env.sensitivity = ClaimSensitivity::UserOnly;
-    env.provenance.sources.push(generic_source("src-1", "Synthetic private note", "internal_note"));
+    env.provenance.sources.push(generic_source(
+        "src-1",
+        "Synthetic private note",
+        "internal_note",
+    ));
     env
 }
 
@@ -709,9 +826,14 @@ fn project_wrong_subject() -> EntityIntelligenceEnvelope {
         ClaimSensitivity::Internal,
         ClaimState::Active,
     );
-    env.sections.insert(EnvelopeSection::Facts, present_section_state(1));
+    env.sections
+        .insert(EnvelopeSection::Facts, present_section_state(1));
     env.facts = Paginated::stable(vec![foreign]);
-    env.provenance.sources.push(generic_source("src-1", "Synthetic miswired source", "email_thread"));
+    env.provenance.sources.push(generic_source(
+        "src-1",
+        "Synthetic miswired source",
+        "email_thread",
+    ));
     env
 }
 
@@ -720,10 +842,15 @@ fn project_project_account_overlap() -> EntityIntelligenceEnvelope {
     let bundle = touchpoint_bundle(
         SubjectRef::Project("project-zero".to_string()),
         vec![SubjectRef::Account("acct-zero".to_string())],
-        vec![make_touchpoint(SubjectRef::Project("project-zero".to_string()), 1, TouchpointKind::Meeting)],
+        vec![make_touchpoint(
+            SubjectRef::Project("project-zero".to_string()),
+            1,
+            TouchpointKind::Meeting,
+        )],
         Vec::new(),
     );
-    env.sections.insert(EnvelopeSection::Touchpoints, present_section_state(1));
+    env.sections
+        .insert(EnvelopeSection::Touchpoints, present_section_state(1));
     env.touchpoints = Paginated::stable(vec![bundle]);
     env
 }
@@ -746,9 +873,12 @@ fn person_stale_fact() -> EntityIntelligenceEnvelope {
         ClaimSensitivity::Internal,
         ClaimState::Active,
     );
-    env.sections.insert(EnvelopeSection::Facts, present_section_state(1));
+    env.sections
+        .insert(EnvelopeSection::Facts, present_section_state(1));
     env.facts = Paginated::stable(vec![f]);
-    env.provenance.sources.push(generic_source("src-1", "Synthetic profile", "profile_note"));
+    env.provenance
+        .sources
+        .push(generic_source("src-1", "Synthetic profile", "profile_note"));
     env
 }
 
@@ -759,14 +889,23 @@ fn person_corrected_superseded() -> EntityIntelligenceEnvelope {
         subject_ref: SubjectRef::Person("person-zero".to_string()),
         claim_type: "person.profile.role".to_string(),
         recorded_at: now_anchor() - Duration::days(60),
-        rendered_text: rendered("claim-person-record-1", "Role: prior-title (superseded)", ClaimSensitivity::Internal),
+        rendered_text: rendered(
+            "claim-person-record-1",
+            "Role: prior-title (superseded)",
+            ClaimSensitivity::Internal,
+        ),
         trust_band: TrustBand::UseWithCaution,
         sensitivity: ClaimSensitivity::Internal,
         provenance: ProvenanceRef::from_ids(["src-1".to_string()]),
     };
-    env.sections.insert(EnvelopeSection::Record, present_section_state(1));
+    env.sections
+        .insert(EnvelopeSection::Record, present_section_state(1));
     env.record_entries = Paginated::stable(vec![recorded]);
-    env.provenance.sources.push(generic_source("src-1", "Synthetic profile note", "profile_note"));
+    env.provenance.sources.push(generic_source(
+        "src-1",
+        "Synthetic profile note",
+        "profile_note",
+    ));
     env
 }
 
@@ -782,9 +921,12 @@ fn person_low_trust() -> EntityIntelligenceEnvelope {
         ClaimSensitivity::Internal,
         ClaimState::Active,
     );
-    env.sections.insert(EnvelopeSection::Facts, present_section_state(1));
+    env.sections
+        .insert(EnvelopeSection::Facts, present_section_state(1));
     env.facts = Paginated::stable(vec![f]);
-    env.provenance.sources.push(generic_source("src-1", "Synthetic Slack message", "slack"));
+    env.provenance
+        .sources
+        .push(generic_source("src-1", "Synthetic Slack message", "slack"));
     env
 }
 
@@ -815,9 +957,14 @@ fn person_open_loop() -> EntityIntelligenceEnvelope {
         freshness: Freshness::Current,
         provenance: ProvenanceRef::from_ids(["src-1".to_string()]),
     };
-    env.sections.insert(EnvelopeSection::OpenLoops, present_section_state(1));
+    env.sections
+        .insert(EnvelopeSection::OpenLoops, present_section_state(1));
     env.open_loops = Paginated::stable(vec![ol]);
-    env.provenance.sources.push(generic_source("src-1", "Synthetic 1:1 notes", "internal_note"));
+    env.provenance.sources.push(generic_source(
+        "src-1",
+        "Synthetic 1:1 notes",
+        "internal_note",
+    ));
     env
 }
 
@@ -826,10 +973,15 @@ fn person_upcoming_touchpoint() -> EntityIntelligenceEnvelope {
     let bundle = touchpoint_bundle(
         SubjectRef::Person("person-zero".to_string()),
         Vec::new(),
-        vec![make_touchpoint(SubjectRef::Person("person-zero".to_string()), 1, TouchpointKind::Meeting)],
+        vec![make_touchpoint(
+            SubjectRef::Person("person-zero".to_string()),
+            1,
+            TouchpointKind::Meeting,
+        )],
         Vec::new(),
     );
-    env.sections.insert(EnvelopeSection::Touchpoints, present_section_state(1));
+    env.sections
+        .insert(EnvelopeSection::Touchpoints, present_section_state(1));
     env.touchpoints = Paginated::stable(vec![bundle]);
     env
 }
@@ -840,9 +992,14 @@ fn person_recent_touchpoint() -> EntityIntelligenceEnvelope {
         SubjectRef::Person("person-zero".to_string()),
         Vec::new(),
         Vec::new(),
-        vec![make_touchpoint(SubjectRef::Person("person-zero".to_string()), -3, TouchpointKind::EmailThread)],
+        vec![make_touchpoint(
+            SubjectRef::Person("person-zero".to_string()),
+            -3,
+            TouchpointKind::EmailThread,
+        )],
     );
-    env.sections.insert(EnvelopeSection::Touchpoints, present_section_state(1));
+    env.sections
+        .insert(EnvelopeSection::Touchpoints, present_section_state(1));
     env.touchpoints = Paginated::stable(vec![bundle]);
     env
 }
@@ -856,9 +1013,14 @@ fn person_thread_summary() -> EntityIntelligenceEnvelope {
         message_count: 3,
         provenance: ProvenanceRef::from_ids(["src-1".to_string()]),
     };
-    env.sections.insert(EnvelopeSection::Threads, present_section_state(1));
+    env.sections
+        .insert(EnvelopeSection::Threads, present_section_state(1));
     env.threads = Paginated::stable(vec![t]);
-    env.provenance.sources.push(generic_source("src-1", "Synthetic email thread", "email_thread"));
+    env.provenance.sources.push(generic_source(
+        "src-1",
+        "Synthetic email thread",
+        "email_thread",
+    ));
     env
 }
 
@@ -874,9 +1036,12 @@ fn person_glean_citation() -> EntityIntelligenceEnvelope {
         ClaimSensitivity::Internal,
         ClaimState::Active,
     );
-    env.sections.insert(EnvelopeSection::Facts, present_section_state(1));
+    env.sections
+        .insert(EnvelopeSection::Facts, present_section_state(1));
     env.facts = Paginated::stable(vec![f]);
-    env.provenance.sources.push(glean_source("src-glean-person-1"));
+    env.provenance
+        .sources
+        .push(glean_source("src-glean-person-1"));
     env
 }
 
@@ -896,10 +1061,15 @@ fn person_confidential_user_only_claim() -> EntityIntelligenceEnvelope {
             ClaimState::Active,
         )
     };
-    env.sections.insert(EnvelopeSection::Facts, present_section_state(1));
+    env.sections
+        .insert(EnvelopeSection::Facts, present_section_state(1));
     env.facts = Paginated::stable(vec![f]);
     env.sensitivity = ClaimSensitivity::UserOnly;
-    env.provenance.sources.push(generic_source("src-1", "Synthetic user-only note", "internal_note"));
+    env.provenance.sources.push(generic_source(
+        "src-1",
+        "Synthetic user-only note",
+        "internal_note",
+    ));
     env
 }
 
@@ -915,9 +1085,14 @@ fn person_wrong_subject() -> EntityIntelligenceEnvelope {
         ClaimSensitivity::Internal,
         ClaimState::Active,
     );
-    env.sections.insert(EnvelopeSection::Facts, present_section_state(1));
+    env.sections
+        .insert(EnvelopeSection::Facts, present_section_state(1));
     env.facts = Paginated::stable(vec![foreign]);
-    env.provenance.sources.push(generic_source("src-1", "Synthetic miswired source", "email_thread"));
+    env.provenance.sources.push(generic_source(
+        "src-1",
+        "Synthetic miswired source",
+        "email_thread",
+    ));
     env
 }
 
@@ -929,9 +1104,14 @@ fn person_ambiguous_association() -> EntityIntelligenceEnvelope {
         SubjectRef::Person("person-zero".to_string()),
         vec![SubjectRef::Person("person-zero-alt".to_string())],
         Vec::new(),
-        vec![make_touchpoint(SubjectRef::Person("person-zero".to_string()), -1, TouchpointKind::EmailThread)],
+        vec![make_touchpoint(
+            SubjectRef::Person("person-zero".to_string()),
+            -1,
+            TouchpointKind::EmailThread,
+        )],
     );
-    env.sections.insert(EnvelopeSection::Touchpoints, present_section_state(1));
+    env.sections
+        .insert(EnvelopeSection::Touchpoints, present_section_state(1));
     env.touchpoints = Paginated::stable(vec![bundle]);
     env
 }
@@ -950,9 +1130,14 @@ fn good_envelope_canonical() -> EntityIntelligenceEnvelope {
         ClaimSensitivity::Internal,
         ClaimState::Active,
     );
-    env.sections.insert(EnvelopeSection::Facts, present_section_state(1));
+    env.sections
+        .insert(EnvelopeSection::Facts, present_section_state(1));
     env.facts = Paginated::stable(vec![f]);
-    env.provenance.sources.push(generic_source("src-1", "Synthetic canonical source", "email_thread"));
+    env.provenance.sources.push(generic_source(
+        "src-1",
+        "Synthetic canonical source",
+        "email_thread",
+    ));
     env
 }
 
@@ -963,45 +1148,96 @@ fn good_envelope_canonical() -> EntityIntelligenceEnvelope {
 pub fn all_fixtures() -> Vec<(&'static str, EntityIntelligenceEnvelope)> {
     vec![
         // Account
-        ("account_metadata_proposal.json", account_metadata_proposal()),
-        ("account_upcoming_touchpoint.json", account_upcoming_touchpoint()),
-        ("account_recent_touchpoint.json", account_recent_touchpoint()),
+        (
+            "account_metadata_proposal.json",
+            account_metadata_proposal(),
+        ),
+        (
+            "account_upcoming_touchpoint.json",
+            account_upcoming_touchpoint(),
+        ),
+        (
+            "account_recent_touchpoint.json",
+            account_recent_touchpoint(),
+        ),
         ("account_thread_summary.json", account_thread_summary()),
         ("account_glean_citation.json", account_glean_citation()),
         ("account_wrong_subject.json", account_wrong_subject()),
-        ("account_project_account_overlap.json", account_project_account_overlap()),
+        (
+            "account_project_account_overlap.json",
+            account_project_account_overlap(),
+        ),
         ("account_parent_child.json", account_parent_child()),
         ("account_stale_fact.json", account_stale_fact()),
-        ("account_corrected_superseded.json", account_corrected_superseded()),
+        (
+            "account_corrected_superseded.json",
+            account_corrected_superseded(),
+        ),
         ("account_low_trust.json", account_low_trust()),
         ("account_open_loop.json", account_open_loop()),
-        ("account_confidential_user_only_claim.json", account_confidential_user_only_claim()),
-        ("account_claim_retracted_mid_render.json", account_claim_retracted_mid_render()),
+        (
+            "account_confidential_user_only_claim.json",
+            account_confidential_user_only_claim(),
+        ),
+        (
+            "account_claim_retracted_mid_render.json",
+            account_claim_retracted_mid_render(),
+        ),
         // Project
-        ("project_metadata_proposal.json", project_metadata_proposal()),
-        ("project_upcoming_touchpoint.json", project_upcoming_touchpoint()),
-        ("project_recent_touchpoint.json", project_recent_touchpoint()),
+        (
+            "project_metadata_proposal.json",
+            project_metadata_proposal(),
+        ),
+        (
+            "project_upcoming_touchpoint.json",
+            project_upcoming_touchpoint(),
+        ),
+        (
+            "project_recent_touchpoint.json",
+            project_recent_touchpoint(),
+        ),
         ("project_thread_summary.json", project_thread_summary()),
         ("project_glean_citation.json", project_glean_citation()),
         ("project_wrong_subject.json", project_wrong_subject()),
-        ("project_project_account_overlap.json", project_project_account_overlap()),
+        (
+            "project_project_account_overlap.json",
+            project_project_account_overlap(),
+        ),
         ("project_stale_fact.json", project_stale_fact()),
-        ("project_corrected_superseded.json", project_corrected_superseded()),
+        (
+            "project_corrected_superseded.json",
+            project_corrected_superseded(),
+        ),
         ("project_low_trust.json", project_low_trust()),
         ("project_open_loop.json", project_open_loop()),
-        ("project_confidential_user_only_claim.json", project_confidential_user_only_claim()),
+        (
+            "project_confidential_user_only_claim.json",
+            project_confidential_user_only_claim(),
+        ),
         // Person
-        ("person_upcoming_touchpoint.json", person_upcoming_touchpoint()),
+        (
+            "person_upcoming_touchpoint.json",
+            person_upcoming_touchpoint(),
+        ),
         ("person_recent_touchpoint.json", person_recent_touchpoint()),
         ("person_thread_summary.json", person_thread_summary()),
         ("person_glean_citation.json", person_glean_citation()),
         ("person_wrong_subject.json", person_wrong_subject()),
-        ("person_ambiguous_association.json", person_ambiguous_association()),
+        (
+            "person_ambiguous_association.json",
+            person_ambiguous_association(),
+        ),
         ("person_stale_fact.json", person_stale_fact()),
-        ("person_corrected_superseded.json", person_corrected_superseded()),
+        (
+            "person_corrected_superseded.json",
+            person_corrected_superseded(),
+        ),
         ("person_low_trust.json", person_low_trust()),
         ("person_open_loop.json", person_open_loop()),
-        ("person_confidential_user_only_claim.json", person_confidential_user_only_claim()),
+        (
+            "person_confidential_user_only_claim.json",
+            person_confidential_user_only_claim(),
+        ),
         // Red-first canonical good envelope
         ("__good_envelope_canonical.json", good_envelope_canonical()),
     ]

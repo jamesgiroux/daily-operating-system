@@ -108,8 +108,12 @@ mod tests {
         // Outside of Tauri context (unit tests), the bridge silently returns
         // false. This guarantees substrate writes are not blocked when the
         // bridge isn't wired.
-        let emitted =
-            emit_claim_receipt_invalidated("claim_verification_state_changed", "claim-1", None, None);
+        let emitted = emit_claim_receipt_invalidated(
+            "claim_verification_state_changed",
+            "claim-1",
+            None,
+            None,
+        );
         assert!(
             !emitted,
             "without app_handle installed, emit must return false (best-effort)"
@@ -128,8 +132,14 @@ mod tests {
             to: Some("contested".to_string()),
         };
         let json = serde_json::to_string(&payload).unwrap();
-        assert!(json.contains("\"signalType\""), "payload should emit signalType (camelCase): {json}");
-        assert!(json.contains("\"claimId\""), "payload should emit claimId (camelCase): {json}");
+        assert!(
+            json.contains("\"signalType\""),
+            "payload should emit signalType (camelCase): {json}"
+        );
+        assert!(
+            json.contains("\"claimId\""),
+            "payload should emit claimId (camelCase): {json}"
+        );
         assert!(!json.contains("snake_case"), "no snake_case keys: {json}");
     }
 

@@ -276,9 +276,9 @@ pub fn inspect_pairing() -> PairingDoctorReport {
                             }
                         }
                         Err(_) => {
-                            report.issues.push(
-                                "sentinel file present but JSON parse failed".to_string(),
-                            );
+                            report
+                                .issues
+                                .push("sentinel file present but JSON parse failed".to_string());
                             report.remediations.push(
                                 "Delete ~/.dailyos/runtime-endpoint.json and restart the DailyOS app.".to_string(),
                             );
@@ -287,9 +287,9 @@ pub fn inspect_pairing() -> PairingDoctorReport {
                 }
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                     report.sentinel_present = false;
-                    report.issues.push(
-                        "sentinel file absent — DailyOS runtime is not running".to_string(),
-                    );
+                    report
+                        .issues
+                        .push("sentinel file absent — DailyOS runtime is not running".to_string());
                     report.remediations.push(
                         "Launch the DailyOS app. The sentinel file is written on bind.".to_string(),
                     );
@@ -304,12 +304,12 @@ pub fn inspect_pairing() -> PairingDoctorReport {
             }
         }
         None => {
-            report.issues.push(
-                "HOME env var unset; cannot derive sentinel path".to_string(),
-            );
-            report.remediations.push(
-                "Set HOME or run dailyos doctor from a user shell.".to_string(),
-            );
+            report
+                .issues
+                .push("HOME env var unset; cannot derive sentinel path".to_string());
+            report
+                .remediations
+                .push("Set HOME or run dailyos doctor from a user shell.".to_string());
         }
     }
 
@@ -329,9 +329,9 @@ pub fn inspect_pairing() -> PairingDoctorReport {
             report.issues.push(
                 "audit log file at ~/.dailyos/audit.log cannot be opened for append".to_string(),
             );
-            report.remediations.push(
-                "Check ~/.dailyos/ permissions and disk space.".to_string(),
-            );
+            report
+                .remediations
+                .push("Check ~/.dailyos/ permissions and disk space.".to_string());
         }
     }
 
@@ -415,10 +415,7 @@ mod tests {
         // No issues from sentinel parsing; audit_log writeability may or may not pass
         // depending on temp dir permissions but the sentinel parse path is what we're asserting.
         assert!(
-            report
-                .issues
-                .iter()
-                .all(|i| !i.contains("sentinel")),
+            report.issues.iter().all(|i| !i.contains("sentinel")),
             "unexpected sentinel issue: {:?}",
             report.issues
         );
@@ -449,7 +446,10 @@ mod tests {
 
         assert!(report.sentinel_present);
         assert!(report.sentinel_port.is_none());
-        assert!(report.issues.iter().any(|i| i.contains("JSON parse failed")));
+        assert!(report
+            .issues
+            .iter()
+            .any(|i| i.contains("JSON parse failed")));
         assert!(report.remediations.iter().any(|r| r.contains("Delete")));
     }
 }

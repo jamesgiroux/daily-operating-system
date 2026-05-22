@@ -4,9 +4,7 @@ use abilities_runtime::sensitivity::{
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 
 use crate::services::claim_receipt::contracts::*;
-use crate::services::claim_receipt::privacy::{
-    build_receipt_for_audience, Audience, PrivacyError,
-};
+use crate::services::claim_receipt::privacy::{build_receipt_for_audience, Audience, PrivacyError};
 use crate::state::AppState;
 
 #[derive(Debug, thiserror::Error)]
@@ -445,7 +443,10 @@ mod tests {
         // Lock the cycle-2 wiring contract: Mcp → AgentMcp, all Tauri-class
         // surfaces → UserTauri. A future regression that broadens the Mcp
         // surface back to UserTauri (the cycle-1 F1 leak) fails this test.
-        assert_eq!(audience_for_surface(SurfaceContext::Mcp), Audience::AgentMcp);
+        assert_eq!(
+            audience_for_surface(SurfaceContext::Mcp),
+            Audience::AgentMcp
+        );
         for tauri_surface in [
             SurfaceContext::ActionsWork,
             SurfaceContext::EntityDetail,

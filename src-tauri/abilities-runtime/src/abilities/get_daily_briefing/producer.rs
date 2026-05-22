@@ -87,8 +87,7 @@ pub async fn build_daily_briefing(
     let meetings: Vec<&DailyReadinessMeetingSnapshot> = readiness.meetings.iter().collect();
 
     if meetings.is_empty() {
-        return empty_no_meetings(&input, workspace_id)
-            .into_envelope(ctx, input.schema_version);
+        return empty_no_meetings(&input, workspace_id).into_envelope(ctx, input.schema_version);
     }
 
     // ---- compose: per-meeting prep status ---------------------------------
@@ -190,7 +189,8 @@ pub async fn build_daily_briefing(
     let (current_meeting, next_meeting) = pick_current_and_next(&meeting_refs, &now);
 
     // ---- compose: pagination over upcoming meetings (AC-507.10) ----------
-    let upcoming_meetings = paginate_upcoming(&meeting_refs, input.upcoming_meetings_cursor.as_ref());
+    let upcoming_meetings =
+        paginate_upcoming(&meeting_refs, input.upcoming_meetings_cursor.as_ref());
 
     // ---- compose: candidate set -------------------------------------------
     let candidate_set = build_candidate_set(&readiness);
@@ -239,7 +239,11 @@ pub async fn build_daily_briefing(
         schema_version: BRIEFING_SCHEMA_VERSION,
         date: input.date,
         state,
-        current_meeting: section_or_none(&active_sections, BriefingSection::CurrentMeeting, current_meeting),
+        current_meeting: section_or_none(
+            &active_sections,
+            BriefingSection::CurrentMeeting,
+            current_meeting,
+        ),
         next_meeting: section_or_none(&active_sections, BriefingSection::NextMeeting, next_meeting),
         upcoming_meetings: if active_sections.contains(&BriefingSection::UpcomingMeetings) {
             upcoming_meetings
@@ -303,25 +307,24 @@ fn project_meeting_brief(
     meeting: &DailyReadinessMeetingSnapshot,
     prep: Option<&MeetingPrepStatusSnapshot>,
 ) -> MeetingBriefRef {
-    let (prep_status, blocking_reason, stale_reason, last_prepared_at, linked_entity_type, linked_entity_id) =
-        match prep {
-            Some(snapshot) => (
-                snapshot.status.clone(),
-                snapshot.blocking_reason.clone(),
-                snapshot.stale_reason.clone(),
-                snapshot.last_prepared_at.clone(),
-                snapshot.linked_entity_type.clone(),
-                snapshot.linked_entity_id.clone(),
-            ),
-            None => (
-                "prep_needed".to_string(),
-                None,
-                None,
-                None,
-                None,
-                None,
-            ),
-        };
+    let (
+        prep_status,
+        blocking_reason,
+        stale_reason,
+        last_prepared_at,
+        linked_entity_type,
+        linked_entity_id,
+    ) = match prep {
+        Some(snapshot) => (
+            snapshot.status.clone(),
+            snapshot.blocking_reason.clone(),
+            snapshot.stale_reason.clone(),
+            snapshot.last_prepared_at.clone(),
+            snapshot.linked_entity_type.clone(),
+            snapshot.linked_entity_id.clone(),
+        ),
+        None => ("prep_needed".to_string(), None, None, None, None, None),
+    };
     MeetingBriefRef {
         meeting_id: meeting.id.clone(),
         title: Some(meeting.title.clone()),
@@ -535,7 +538,9 @@ fn derive_freshness(
         let mut sorted = needs_prep_meeting_ids.to_vec();
         sorted.sort();
         sorted.dedup();
-        return BriefingFreshness::NeedsPreparation { meeting_ids: sorted };
+        return BriefingFreshness::NeedsPreparation {
+            meeting_ids: sorted,
+        };
     }
     // Walk stale_reasons in the order they arrive — first hit dictates the
     // stale reason. Consumers can drill into the per-meeting refs for the
@@ -625,7 +630,11 @@ fn derive_advisories(
     advisories
 }
 
-fn aggregate_trust_band(likely_current: u32, use_with_caution: u32, needs_verification: u32) -> TrustBand {
+fn aggregate_trust_band(
+    likely_current: u32,
+    use_with_caution: u32,
+    needs_verification: u32,
+) -> TrustBand {
     if likely_current + use_with_caution + needs_verification == 0 {
         return TrustBand::Unscored;
     }
@@ -880,7 +889,10 @@ mod state_matrix_fixtures {
             integrity: BriefingIntegrity::Clean,
             advisories: Vec::new(),
         };
-        assert!(matches!(state.availability, BriefingAvailability::Available));
+        assert!(matches!(
+            state.availability,
+            BriefingAvailability::Available
+        ));
         assert!(matches!(state.freshness, BriefingFreshness::Fresh));
         assert!(matches!(state.integrity, BriefingIntegrity::Clean));
         assert!(state.advisories.is_empty());
@@ -912,7 +924,10 @@ mod state_matrix_fixtures {
             integrity: BriefingIntegrity::Clean,
             advisories: Vec::new(),
         };
-        assert!(matches!(state.availability, BriefingAvailability::AuthLocked));
+        assert!(matches!(
+            state.availability,
+            BriefingAvailability::AuthLocked
+        ));
     }
 
     #[test]
@@ -1001,7 +1016,10 @@ mod state_matrix_fixtures {
                 summary: "tracked subject moved roles".into(),
             }],
         };
-        assert!(matches!(state.availability, BriefingAvailability::Available));
+        assert!(matches!(
+            state.availability,
+            BriefingAvailability::Available
+        ));
         assert!(matches!(state.freshness, BriefingFreshness::Stale { .. }));
         assert!(matches!(
             state.integrity,

@@ -1030,11 +1030,13 @@ async fn handle_hyper_request(
         return Ok(error_response(error.with_request_id(request_id)));
     }
 
-    let rate_decision = runtime.loopback_bucket.lock().try_acquire(Instant::now());
-    if let Err(retry_after) = rate_decision {
-        return Ok(error_response(
-            SurfaceHttpError::loopback_rate_limited(retry_after).with_request_id(request_id),
-        ));
+    if should_consume_loopback_bucket(&method, uri.path()) {
+        let rate_decision = runtime.loopback_bucket.lock().try_acquire(Instant::now());
+        if let Err(retry_after) = rate_decision {
+            return Ok(error_response(
+                SurfaceHttpError::loopback_rate_limited(retry_after).with_request_id(request_id),
+            ));
+        }
     }
 
     let headers = request.headers().clone();
@@ -1264,6 +1266,10 @@ async fn signed_transport_response(
 
 fn is_local_loopback_body_route(method: &Method, path: &str) -> bool {
     *method == Method::POST && matches!(path, "/v1/local/invoke" | "/v1/local/project-composition")
+}
+
+fn should_consume_loopback_bucket(method: &Method, path: &str) -> bool {
+    !(*method == Method::GET && path == "/v1/surface/health")
 }
 
 fn is_supported_signed_route(method: &Method, path: &str) -> bool {
@@ -3964,9 +3970,11 @@ fn bridge_surface_error_code(error: &BridgeSurfaceError) -> &'static str {
         BridgeSurfaceError::InputSchemaInvalid => "input_schema_invalid",
         BridgeSurfaceError::InputReservedField => "input_reserved_field",
         BridgeSurfaceError::Validation(_) => "validation_error",
-        BridgeSurfaceError::AbilityUnavailable | BridgeSurfaceError::Ownership(_) => {
-            "ability_unavailable"
-        }
+        BridgeSurfaceError::AbilityUnavailable => "ability_not_registered",
+        BridgeSurfaceError::ProducerUnavailable => "producer_unavailable",
+        BridgeSurfaceError::InputSchemaInvalid => "input_schema_invalid",
+        BridgeSurfaceError::InputReservedField => "input_reserved_field",
+        BridgeSurfaceError::Ownership(_) => "ownership_denied",
     }
 }
 
@@ -5879,6 +5887,22 @@ mod tests {
                 "health leaked {forbidden}: {text}"
             );
         }
+    }
+
+    #[test]
+    fn loopback_bucket_exempts_health_probe() {
+        assert!(!should_consume_loopback_bucket(
+            &Method::GET,
+            "/v1/surface/health"
+        ));
+        assert!(should_consume_loopback_bucket(
+            &Method::POST,
+            "/v1/local/invoke"
+        ));
+        assert!(should_consume_loopback_bucket(
+            &Method::POST,
+            "/v1/surface/invoke"
+        ));
     }
 
     #[test]

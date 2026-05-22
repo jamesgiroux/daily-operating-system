@@ -73,7 +73,11 @@ fn good_envelope_rendered_dom(claim_id: &str) -> String {
 fn red_first_bypass_fixture_fails_audit() {
     let env = load_envelope("__good_envelope_canonical.json")
         .unwrap_or_else(|e| panic!("canonical envelope load failed: {e}"));
-    let report = audit_render(LEGACY_BYPASS_RENDERER_SOURCE, LEGACY_BYPASS_RENDERED_DOM, &env);
+    let report = audit_render(
+        LEGACY_BYPASS_RENDERER_SOURCE,
+        LEGACY_BYPASS_RENDERED_DOM,
+        &env,
+    );
     assert!(
         !report.passes(),
         "red-first proof — bypass renderer source + unbound DOM MUST fail audit; report={report:?}"

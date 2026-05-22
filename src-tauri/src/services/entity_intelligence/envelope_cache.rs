@@ -72,9 +72,7 @@ pub enum EnvelopeCacheError {
     EnvelopeRequired(String),
     /// An entry for `envelope_render_id` exists, but actor or surface does not
     /// match. Cross-principal lookup attempt — surfaces as forbidden.
-    #[error(
-        "principal mismatch: envelope `{render_id}` was minted for a different actor/surface"
-    )]
+    #[error("principal mismatch: envelope `{render_id}` was minted for a different actor/surface")]
     PrincipalMismatch { render_id: String },
 }
 
@@ -298,10 +296,7 @@ mod tests {
         );
         let err = lookup_envelope_for_render(&render_id, "user:bob", "tauri_entity_detail")
             .expect_err("cross-actor lookup rejected");
-        assert!(matches!(
-            err,
-            EnvelopeCacheError::PrincipalMismatch { .. }
-        ));
+        assert!(matches!(err, EnvelopeCacheError::PrincipalMismatch { .. }));
     }
 
     #[test]
@@ -320,10 +315,7 @@ mod tests {
         );
         let err = lookup_envelope_for_render(&render_id, "user:alice", "mcp_tool")
             .expect_err("cross-surface lookup rejected");
-        assert!(matches!(
-            err,
-            EnvelopeCacheError::PrincipalMismatch { .. }
-        ));
+        assert!(matches!(err, EnvelopeCacheError::PrincipalMismatch { .. }));
     }
 
     #[test]

@@ -130,8 +130,7 @@ mod tests {
                 }
                 let total = rows.len() as u64;
                 let offset = query.offset as usize;
-                let end =
-                    (offset + query.page_size as usize).min(rows.len());
+                let end = (offset + query.page_size as usize).min(rows.len());
                 let items = if offset >= rows.len() {
                     Vec::new()
                 } else {
@@ -251,8 +250,10 @@ mod tests {
         assert_eq!(data["totalHint"].as_u64().unwrap(), 5);
         assert_eq!(data["cursorState"]["kind"], "stable");
         let cursor = data["nextCursor"].as_str().expect("next cursor present");
-        let payload = decode_cursor(&crate::abilities::get_entity_intelligence::contracts::Cursor::new(cursor))
-            .expect("cursor decodes");
+        let payload = decode_cursor(
+            &crate::abilities::get_entity_intelligence::contracts::Cursor::new(cursor),
+        )
+        .expect("cursor decodes");
         assert_eq!(payload.offset, 2);
         let expected_watermark = watermark_from_request(
             &json!({
@@ -323,8 +324,7 @@ mod tests {
     async fn watermark_mismatch_returns_invalidated_restart_required() {
         let reader = Arc::new(FixtureReader::new(five_accounts()));
         // Cursor watermark belongs to a different filter than what we send.
-        let cursor =
-            encode_cursor(2, "0000000000000000");
+        let cursor = encode_cursor(2, "0000000000000000");
         let response = invoke(
             reader,
             Actor::User,

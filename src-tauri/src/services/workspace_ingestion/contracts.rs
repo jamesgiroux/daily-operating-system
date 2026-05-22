@@ -255,4 +255,3 @@ impl SignalEmitter for NullSignalEmitter {
 
     fn emit_link_changed(&self, _file_id: &str, _entity_id: &str, _actor: &str) {}
 }
-

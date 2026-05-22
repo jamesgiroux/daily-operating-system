@@ -28,12 +28,12 @@
 pub mod contracts;
 pub mod producer;
 
-pub use contracts::ClaimReceiptInput;
 pub use crate::services::context::{
     ClaimReceiptAction, ClaimReceiptFreshness, ClaimReceiptLifecycle, ClaimReceiptProvenance,
     ClaimReceiptProvenanceSource, ClaimReceiptRedactionLevel, ClaimReceiptSnapshot,
     ClaimReceiptSurfaceContext, ClaimReceiptTarget, ClaimReceiptTrust,
 };
+pub use contracts::ClaimReceiptInput;
 
 use dailyos_abilities_macro::ability;
 
@@ -128,10 +128,7 @@ mod tests {
     #[test]
     fn category_is_read_with_may_publish_false() {
         let descriptor = registered_descriptor();
-        assert_eq!(
-            descriptor.category,
-            crate::abilities::AbilityCategory::Read
-        );
+        assert_eq!(descriptor.category, crate::abilities::AbilityCategory::Read);
         assert!(!descriptor.policy.may_publish);
         assert!(!descriptor.policy.requires_confirmation);
     }

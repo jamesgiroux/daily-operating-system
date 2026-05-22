@@ -304,7 +304,8 @@ mod tokenizer_unit_tests {
 
     #[test]
     fn nearest_ancestor_wins_for_nested_claim_ids() {
-        let html = r#"<div data-claim-id="outer"><section data-claim-id="inner">nested</section></div>"#;
+        let html =
+            r#"<div data-claim-id="outer"><section data-claim-id="inner">nested</section></div>"#;
         let texts = extract_text_with_bindings(html);
         assert_eq!(texts.len(), 1);
         assert_eq!(texts[0].binding.as_deref(), Some("inner"));

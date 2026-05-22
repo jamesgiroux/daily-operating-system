@@ -60,8 +60,7 @@ pub async fn list_accounts(
                     next_cursor: None,
                     total_hint: None,
                     cursor_state: CursorState::Invalidated {
-                        reason: "filter or page_size changed since cursor was issued"
-                            .to_string(),
+                        reason: "filter or page_size changed since cursor was issued".to_string(),
                         restart_required: true,
                     },
                 },
@@ -161,9 +160,7 @@ fn validate_page_size(page_size: u32) -> Result<u32, AbilityError> {
     }
 }
 
-fn normalize_filter(
-    filter: Option<&AccountListFilter>,
-) -> Result<NormalizedFilter, AbilityError> {
+fn normalize_filter(filter: Option<&AccountListFilter>) -> Result<NormalizedFilter, AbilityError> {
     let Some(filter) = filter else {
         return Ok(NormalizedFilter::default());
     };

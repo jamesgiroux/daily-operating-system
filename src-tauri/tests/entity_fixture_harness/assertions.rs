@@ -65,9 +65,7 @@ pub struct RenderAuditReport {
 
 impl RenderAuditReport {
     pub fn passes(&self) -> bool {
-        self.bypass_count == 0
-            && self.stale_render_count == 0
-            && self.unbound_text_count == 0
+        self.bypass_count == 0 && self.stale_render_count == 0 && self.unbound_text_count == 0
     }
 }
 

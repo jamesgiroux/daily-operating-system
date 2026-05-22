@@ -87,6 +87,25 @@ fn non_empty_join(parts: impl IntoIterator<Item = String>) -> Option<String> {
     }
 }
 
+fn optional_labeled(label: &str, value: Option<&String>) -> Option<String> {
+    value
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .map(|value| format!("{label}: {value}"))
+}
+
+fn optional_labeled_display<T: std::fmt::Display>(label: &str, value: Option<T>) -> Option<String> {
+    value.map(|value| format!("{label}: {value}"))
+}
+
+fn list_labeled(label: &str, values: &[String]) -> Option<String> {
+    if values.is_empty() {
+        None
+    } else {
+        Some(format!("{label}: {}", values.join("; ")))
+    }
+}
+
 fn current_state_projection_text(state: &crate::intelligence::io::CurrentState) -> Option<String> {
     non_empty_join(
         [
@@ -95,6 +114,179 @@ fn current_state_projection_text(state: &crate::intelligence::io::CurrentState) 
                 .then(|| format!("Not working: {}", state.not_working.join("; "))),
             (!state.unknowns.is_empty())
                 .then(|| format!("Unknowns: {}", state.unknowns.join("; "))),
+        ]
+        .into_iter()
+        .flatten(),
+    )
+}
+
+fn health_projection_text(health: &crate::intelligence::io::AccountHealth) -> Option<String> {
+    non_empty_join(
+        [
+            health.narrative.clone(),
+            Some(format!("Health band: {}", health.band)),
+            Some(format!("Health score: {:.0}", health.score)),
+            health
+                .trend
+                .rationale
+                .as_ref()
+                .map(|rationale| format!("Trend: {} - {rationale}", health.trend.direction)),
+            health
+                .divergence
+                .as_ref()
+                .map(|divergence| format!("Divergence: {}", divergence.description)),
+            list_labeled("Recommended actions", &health.recommended_actions),
+        ]
+        .into_iter()
+        .flatten(),
+    )
+}
+
+fn recommended_action_projection_text(
+    action: &crate::intelligence::io::RecommendedAction,
+) -> Option<String> {
+    non_empty_join(
+        [
+            (!action.title.trim().is_empty()).then(|| action.title.clone()),
+            (!action.rationale.trim().is_empty())
+                .then(|| format!("Rationale: {}", action.rationale)),
+            Some(format!("Priority: {}", action.priority)),
+            optional_labeled("Suggested due", action.suggested_due.as_ref()),
+        ]
+        .into_iter()
+        .flatten(),
+    )
+}
+
+fn strategic_priority_projection_text(
+    priority: &crate::intelligence::io::StrategicPriority,
+) -> Option<String> {
+    non_empty_join(
+        [
+            (!priority.priority.trim().is_empty()).then(|| priority.priority.clone()),
+            optional_labeled("Status", priority.status.as_ref()),
+            optional_labeled("Owner", priority.owner.as_ref()),
+            optional_labeled("Timeline", priority.timeline.as_ref()),
+            priority.context.clone(),
+            optional_labeled("Source", priority.source.as_ref()),
+        ]
+        .into_iter()
+        .flatten(),
+    )
+}
+
+fn blocker_projection_text(blocker: &crate::intelligence::io::Blocker) -> Option<String> {
+    non_empty_join(
+        [
+            (!blocker.description.trim().is_empty()).then(|| blocker.description.clone()),
+            optional_labeled("Impact", blocker.impact.as_ref()),
+            optional_labeled("Owner", blocker.owner.as_ref()),
+            optional_labeled("Since", blocker.since.as_ref()),
+            optional_labeled("Source", blocker.source.as_ref()),
+        ]
+        .into_iter()
+        .flatten(),
+    )
+}
+
+fn contract_context_projection_text(
+    context: &crate::intelligence::io::ContractContext,
+) -> Option<String> {
+    non_empty_join(
+        [
+            optional_labeled("Contract type", context.contract_type.as_ref()),
+            context
+                .auto_renew
+                .map(|value| format!("Auto-renew: {}", if value { "yes" } else { "no" })),
+            optional_labeled("Contract start", context.contract_start.as_ref()),
+            optional_labeled("Renewal date", context.renewal_date.as_ref()),
+            optional_labeled_display(
+                "Current ARR",
+                context.current_arr.map(|arr| format!("{arr:.0}")),
+            ),
+            optional_labeled_display("Years remaining", context.multi_year_remaining),
+            optional_labeled(
+                "Previous renewal outcome",
+                context.previous_renewal_outcome.as_ref(),
+            ),
+            optional_labeled("Procurement", context.procurement_notes.as_ref()),
+        ]
+        .into_iter()
+        .flatten(),
+    )
+}
+
+fn expansion_signal_projection_text(
+    signal: &crate::intelligence::io::ExpansionSignal,
+) -> Option<String> {
+    non_empty_join(
+        [
+            (!signal.opportunity.trim().is_empty()).then(|| signal.opportunity.clone()),
+            optional_labeled("Stage", signal.stage.as_ref()),
+            optional_labeled("Strength", signal.strength.as_ref()),
+            optional_labeled_display(
+                "ARR impact",
+                signal.arr_impact.map(|arr| format!("{arr:.0}")),
+            ),
+            optional_labeled("Source", signal.source.as_ref()),
+        ]
+        .into_iter()
+        .flatten(),
+    )
+}
+
+fn agreement_outlook_projection_text(
+    outlook: &crate::intelligence::io::AgreementOutlook,
+) -> Option<String> {
+    non_empty_join(
+        [
+            outlook.renewal_narrative.clone(),
+            optional_labeled("Confidence", outlook.confidence.as_ref()),
+            optional_labeled("Expansion potential", outlook.expansion_potential.as_ref()),
+            optional_labeled("Recommended start", outlook.recommended_start.as_ref()),
+            list_labeled("Risk factors", &outlook.risk_factors),
+            list_labeled("Negotiation leverage", &outlook.negotiation_leverage),
+            list_labeled("Negotiation risk", &outlook.negotiation_risk),
+            outlook.peer_benchmark.as_ref().map(|benchmark| {
+                format!(
+                    "Peer benchmark: {} ({} source{})",
+                    benchmark.narrative,
+                    benchmark.source_count,
+                    if benchmark.source_count == 1 { "" } else { "s" }
+                )
+            }),
+        ]
+        .into_iter()
+        .flatten(),
+    )
+}
+
+fn success_metric_projection_text(
+    metric: &crate::intelligence::io::SuccessMetric,
+) -> Option<String> {
+    non_empty_join(
+        [
+            (!metric.name.trim().is_empty()).then(|| metric.name.clone()),
+            optional_labeled("Target", metric.target.as_ref()),
+            optional_labeled("Current", metric.current.as_ref()),
+            optional_labeled("Status", metric.status.as_ref()),
+            optional_labeled("Owner", metric.owner.as_ref()),
+        ]
+        .into_iter()
+        .flatten(),
+    )
+}
+
+fn open_commitment_projection_text(
+    commitment: &crate::intelligence::io::OpenCommitment,
+) -> Option<String> {
+    non_empty_join(
+        [
+            (!commitment.description.trim().is_empty()).then(|| commitment.description.clone()),
+            optional_labeled("Owner", commitment.owner.as_ref()),
+            optional_labeled("Due", commitment.due_date.as_ref()),
+            optional_labeled("Status", commitment.status.as_ref()),
+            optional_labeled("Source", commitment.source.as_ref()),
         ]
         .into_iter()
         .flatten(),
@@ -210,6 +402,60 @@ pub(crate) fn commit_claim_shaped_intelligence_projection(
         )?;
     }
 
+    if let Some(pull_quote) = intel.pull_quote.as_deref() {
+        commit_projection_claim(
+            ctx,
+            db,
+            ProjectionClaimInput {
+                subject_ref: &subject_ref,
+                actor,
+                data_source,
+                source_asof,
+                claim_type: "entity_summary",
+                field_path: "pullQuote",
+                text: pull_quote,
+                legacy_value: serde_json::Value::String(pull_quote.to_string()),
+            },
+        )?;
+    }
+
+    if let Some(health) = intel.health.as_ref() {
+        if let Some(text) = health_projection_text(health) {
+            commit_projection_claim(
+                ctx,
+                db,
+                ProjectionClaimInput {
+                    subject_ref: &subject_ref,
+                    actor,
+                    data_source,
+                    source_asof,
+                    claim_type: "entity_current_state",
+                    field_path: "health",
+                    text: &text,
+                    legacy_value: serde_json::to_value(health)
+                        .unwrap_or_else(|_| serde_json::json!({ "narrative": text.clone() })),
+                },
+            )?;
+        }
+
+        for (idx, action) in health.recommended_actions.iter().enumerate() {
+            commit_projection_claim(
+                ctx,
+                db,
+                ProjectionClaimInput {
+                    subject_ref: &subject_ref,
+                    actor,
+                    data_source,
+                    source_asof,
+                    claim_type: "recommendation",
+                    field_path: &format!("health.recommendedActions[{idx}]"),
+                    text: action,
+                    legacy_value: serde_json::Value::String(action.clone()),
+                },
+            )?;
+        }
+    }
+
     for (idx, risk) in intel.risks.iter().enumerate() {
         commit_projection_claim(
             ctx,
@@ -224,6 +470,27 @@ pub(crate) fn commit_claim_shaped_intelligence_projection(
                 text: &risk.text,
                 legacy_value: serde_json::to_value(risk)
                     .unwrap_or_else(|_| serde_json::json!({ "text": &risk.text })),
+            },
+        )?;
+    }
+
+    for (idx, action) in intel.recommended_actions.iter().enumerate() {
+        let Some(text) = recommended_action_projection_text(action) else {
+            continue;
+        };
+        commit_projection_claim(
+            ctx,
+            db,
+            ProjectionClaimInput {
+                subject_ref: &subject_ref,
+                actor,
+                data_source,
+                source_asof,
+                claim_type: "recommendation",
+                field_path: &format!("recommendedActions[{idx}]"),
+                text: &text,
+                legacy_value: serde_json::to_value(action)
+                    .unwrap_or_else(|_| serde_json::json!({ "title": text.clone() })),
             },
         )?;
     }
@@ -266,6 +533,113 @@ pub(crate) fn commit_claim_shaped_intelligence_projection(
         }
     }
 
+    for (idx, priority) in intel.strategic_priorities.iter().enumerate() {
+        let Some(text) = strategic_priority_projection_text(priority) else {
+            continue;
+        };
+        commit_projection_claim(
+            ctx,
+            db,
+            ProjectionClaimInput {
+                subject_ref: &subject_ref,
+                actor,
+                data_source,
+                source_asof,
+                claim_type: "entity_current_state",
+                field_path: &format!("strategicPriorities[{idx}]"),
+                text: &text,
+                legacy_value: serde_json::to_value(priority)
+                    .unwrap_or_else(|_| serde_json::json!({ "priority": text.clone() })),
+            },
+        )?;
+    }
+
+    for (idx, blocker) in intel.blockers.iter().enumerate() {
+        let Some(text) = blocker_projection_text(blocker) else {
+            continue;
+        };
+        commit_projection_claim(
+            ctx,
+            db,
+            ProjectionClaimInput {
+                subject_ref: &subject_ref,
+                actor,
+                data_source,
+                source_asof,
+                claim_type: "entity_risk",
+                field_path: &format!("blockers[{idx}]"),
+                text: &text,
+                legacy_value: serde_json::to_value(blocker)
+                    .unwrap_or_else(|_| serde_json::json!({ "description": text.clone() })),
+            },
+        )?;
+    }
+
+    if let Some(context) = intel.contract_context.as_ref() {
+        if let Some(text) = contract_context_projection_text(context) {
+            commit_projection_claim(
+                ctx,
+                db,
+                ProjectionClaimInput {
+                    subject_ref: &subject_ref,
+                    actor,
+                    data_source,
+                    source_asof,
+                    claim_type: if intel.entity_type == "account" {
+                        "company_context"
+                    } else {
+                        "entity_current_state"
+                    },
+                    field_path: "contractContext",
+                    text: &text,
+                    legacy_value: serde_json::to_value(context)
+                        .unwrap_or_else(|_| serde_json::json!({ "summary": text.clone() })),
+                },
+            )?;
+        }
+    }
+
+    for (idx, signal) in intel.expansion_signals.iter().enumerate() {
+        let Some(text) = expansion_signal_projection_text(signal) else {
+            continue;
+        };
+        commit_projection_claim(
+            ctx,
+            db,
+            ProjectionClaimInput {
+                subject_ref: &subject_ref,
+                actor,
+                data_source,
+                source_asof,
+                claim_type: "entity_current_state",
+                field_path: &format!("expansionSignals[{idx}]"),
+                text: &text,
+                legacy_value: serde_json::to_value(signal)
+                    .unwrap_or_else(|_| serde_json::json!({ "opportunity": text.clone() })),
+            },
+        )?;
+    }
+
+    if let Some(outlook) = intel.agreement_outlook.as_ref() {
+        if let Some(text) = agreement_outlook_projection_text(outlook) {
+            commit_projection_claim(
+                ctx,
+                db,
+                ProjectionClaimInput {
+                    subject_ref: &subject_ref,
+                    actor,
+                    data_source,
+                    source_asof,
+                    claim_type: "entity_current_state",
+                    field_path: "agreementOutlook",
+                    text: &text,
+                    legacy_value: serde_json::to_value(outlook)
+                        .unwrap_or_else(|_| serde_json::json!({ "summary": text.clone() })),
+                },
+            )?;
+        }
+    }
+
     for (idx, value) in intel.value_delivered.iter().enumerate() {
         commit_projection_claim(
             ctx,
@@ -282,6 +656,56 @@ pub(crate) fn commit_claim_shaped_intelligence_projection(
                     .unwrap_or_else(|_| serde_json::json!({ "statement": &value.statement })),
             },
         )?;
+    }
+
+    if let Some(metrics) = intel.success_metrics.as_ref() {
+        for (idx, metric) in metrics.iter().enumerate() {
+            let Some(text) = success_metric_projection_text(metric) else {
+                continue;
+            };
+            commit_projection_claim(
+                ctx,
+                db,
+                ProjectionClaimInput {
+                    subject_ref: &subject_ref,
+                    actor,
+                    data_source,
+                    source_asof,
+                    claim_type: "entity_current_state",
+                    field_path: &format!("successMetrics[{idx}]"),
+                    text: &text,
+                    legacy_value: serde_json::to_value(metric)
+                        .unwrap_or_else(|_| serde_json::json!({ "name": text.clone() })),
+                },
+            )?;
+        }
+    }
+
+    if let Some(commitments) = intel.open_commitments.as_ref() {
+        for (idx, commitment) in commitments.iter().enumerate() {
+            let Some(text) = open_commitment_projection_text(commitment) else {
+                continue;
+            };
+            commit_projection_claim(
+                ctx,
+                db,
+                ProjectionClaimInput {
+                    subject_ref: &subject_ref,
+                    actor,
+                    data_source,
+                    source_asof,
+                    claim_type: if intel.entity_type == "account" {
+                        "commitment"
+                    } else {
+                        "entity_current_state"
+                    },
+                    field_path: &format!("openCommitments[{idx}]"),
+                    text: &text,
+                    legacy_value: serde_json::to_value(commitment)
+                        .unwrap_or_else(|_| serde_json::json!({ "description": text.clone() })),
+                },
+            )?;
+        }
     }
 
     for (idx, insight) in intel.stakeholder_insights.iter().enumerate() {
@@ -2347,7 +2771,9 @@ mod mutation_smoke_tests {
         run_enrichment_finalize_post_commit, EnrichmentInput, FinalizeMode,
     };
     use crate::intelligence::io::{
-        IntelRisk, IntelligenceJson, ItemSource, OrgHealthData, StakeholderInsight, SupportHealth,
+        AccountHealth, AgreementOutlook, Blocker, ContractContext, ExpansionSignal, IntelRisk,
+        IntelligenceJson, ItemSource, OpenCommitment, OrgHealthData, RecommendedAction,
+        StakeholderInsight, StrategicPriority, SuccessMetric, SupportHealth,
     };
     use crate::intelligence::prompts::InferredRelationship;
     use crate::intelligence::write_fence::post_commit_fenced_write;
@@ -2435,6 +2861,46 @@ mod mutation_smoke_tests {
                 |row| row.get(0),
             )
             .expect("sync success count")
+    }
+
+    fn projection_claim_rows(
+        db: &crate::db::ActionDb,
+        entity_id: &str,
+    ) -> Vec<(String, String, String)> {
+        let mut stmt = db
+            .conn_ref()
+            .prepare(
+                "SELECT claim_type, coalesce(field_path, ''), text
+                 FROM intelligence_claims
+                 WHERE json_valid(subject_ref) = 1
+                   AND json_extract(subject_ref, '$.id') = ?1
+                   AND claim_state = 'active'
+                   AND surfacing_state = 'active'",
+            )
+            .expect("prepare claim projection query");
+        stmt.query_map(params![entity_id], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })
+        .expect("query projection claims")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("collect projection claims")
+    }
+
+    fn assert_projection_claim(
+        rows: &[(String, String, String)],
+        claim_type: &str,
+        field_path: &str,
+        text_fragment: &str,
+    ) {
+        let expected_text = text_fragment.to_ascii_lowercase();
+        assert!(
+            rows.iter().any(|(row_type, row_path, row_text)| {
+                row_type == claim_type
+                    && row_path == field_path
+                    && row_text.to_ascii_lowercase().contains(&expected_text)
+            }),
+            "expected projected claim type={claim_type} field={field_path} containing {text_fragment:?}; got {rows:?}"
+        );
     }
 
     fn coherence_retry_count(db: &crate::db::ActionDb, entity_id: &str) -> i64 {
@@ -2792,6 +3258,172 @@ mod mutation_smoke_tests {
         assert!(
             signal_count(&db, "acc-intel", "entity_intelligence_updated") > 0,
             "Expected entity_intelligence_updated signal"
+        );
+    }
+
+    #[test]
+    fn upsert_assessment_projects_pty_dossier_fields_into_claims() {
+        let db = test_db();
+        let engine = PropagationEngine::default();
+        let account = make_account("acc-pty-projection");
+        db.upsert_account(&account).unwrap();
+
+        let intel = IntelligenceJson {
+            executive_assessment_render_policy: None,
+            entity_id: "acc-pty-projection".to_string(),
+            entity_type: "account".to_string(),
+            enriched_at: "2026-05-22T12:00:00Z".to_string(),
+            pull_quote: Some(
+                "Adoption is growing, but the renewal path needs attention.".to_string(),
+            ),
+            health: Some(AccountHealth {
+                narrative: Some(
+                    "Signals point to a workable but fragile account posture.".to_string(),
+                ),
+                recommended_actions: vec!["Schedule an executive alignment review.".to_string()],
+                ..Default::default()
+            }),
+            strategic_priorities: vec![StrategicPriority {
+                priority: "Expand the pilot into the operations team.".to_string(),
+                status: Some("active".to_string()),
+                owner: Some("customer operations".to_string()),
+                source: Some("meeting".to_string()),
+                timeline: Some("Q3".to_string()),
+                context: Some(
+                    "Operations adoption is the clearest route to durable value.".to_string(),
+                ),
+            }],
+            blockers: vec![Blocker {
+                description: "Procurement still needs security review artifacts.".to_string(),
+                owner: Some("account team".to_string()),
+                since: Some("2026-05-01".to_string()),
+                impact: Some("high".to_string()),
+                source: Some("meeting".to_string()),
+            }],
+            contract_context: Some(ContractContext {
+                renewal_date: Some("2026-09-30".to_string()),
+                procurement_notes: Some("Legal review needs a four-week lead time.".to_string()),
+                ..Default::default()
+            }),
+            expansion_signals: vec![ExpansionSignal {
+                opportunity: "Operations team expansion".to_string(),
+                arr_impact: Some(25000.0),
+                source: Some("meeting".to_string()),
+                stage: Some("evaluating".to_string()),
+                strength: Some("moderate".to_string()),
+                item_source: None,
+                discrepancy: None,
+            }],
+            agreement_outlook: Some(AgreementOutlook {
+                confidence: Some("moderate".to_string()),
+                renewal_narrative: Some(
+                    "The agreement can land if procurement work starts early.".to_string(),
+                ),
+                recommended_start: Some("June".to_string()),
+                risk_factors: vec!["Security review lead time".to_string()],
+                ..Default::default()
+            }),
+            success_metrics: Some(vec![SuccessMetric {
+                name: "Weekly active operators".to_string(),
+                target: Some("80%".to_string()),
+                current: Some("55%".to_string()),
+                status: Some("watch".to_string()),
+                owner: Some("customer operations".to_string()),
+            }]),
+            open_commitments: Some(vec![OpenCommitment {
+                commitment_id: Some("meeting:generic:1".to_string()),
+                description: "Send updated security documentation.".to_string(),
+                owner: Some("account team".to_string()),
+                due_date: Some("2026-06-01".to_string()),
+                source: Some("meeting".to_string()),
+                status: Some("open".to_string()),
+                item_source: None,
+                discrepancy: None,
+            }]),
+            recommended_actions: vec![RecommendedAction {
+                title: "Start procurement prep".to_string(),
+                rationale: "Security review lead time is the visible renewal risk.".to_string(),
+                priority: 2,
+                suggested_due: Some("2026-06-15".to_string()),
+            }],
+            ..Default::default()
+        };
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 22, 12, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+
+        super::upsert_assessment_from_enrichment(
+            &ctx,
+            &db,
+            &engine,
+            "account",
+            "acc-pty-projection",
+            &intel,
+        )
+        .expect("upsert rich pty assessment");
+
+        let rows = projection_claim_rows(&db, "acc-pty-projection");
+        assert_projection_claim(&rows, "entity_summary", "pullQuote", "Adoption is growing");
+        assert_projection_claim(
+            &rows,
+            "entity_current_state",
+            "health",
+            "fragile account posture",
+        );
+        assert_projection_claim(
+            &rows,
+            "recommendation",
+            "health.recommendedActions[0]",
+            "executive alignment",
+        );
+        assert_projection_claim(
+            &rows,
+            "recommendation",
+            "recommendedActions[0]",
+            "Start procurement prep",
+        );
+        assert_projection_claim(
+            &rows,
+            "entity_current_state",
+            "strategicPriorities[0]",
+            "operations team",
+        );
+        assert_projection_claim(
+            &rows,
+            "entity_risk",
+            "blockers[0]",
+            "security review artifacts",
+        );
+        assert_projection_claim(
+            &rows,
+            "company_context",
+            "contractContext",
+            "four-week lead time",
+        );
+        assert_projection_claim(
+            &rows,
+            "entity_current_state",
+            "expansionSignals[0]",
+            "Operations team expansion",
+        );
+        assert_projection_claim(
+            &rows,
+            "entity_current_state",
+            "agreementOutlook",
+            "procurement work starts early",
+        );
+        assert_projection_claim(
+            &rows,
+            "entity_current_state",
+            "successMetrics[0]",
+            "Weekly active operators",
+        );
+        assert_projection_claim(
+            &rows,
+            "commitment",
+            "openCommitments[0]",
+            "updated security documentation",
         );
     }
 

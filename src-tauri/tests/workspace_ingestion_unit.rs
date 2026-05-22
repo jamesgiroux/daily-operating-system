@@ -3,10 +3,10 @@
 //! also exercises the external import surface (the same `dailyos_lib::…` path
 //! W1-B/W1-C/W2-A/W3-A/W3-B/W3-C will use).
 
-use abilities_runtime::abilities::provenance::DocumentId;
 use abilities_runtime::abilities::provenance::source::{
     DataSource, SourceAttribution, SourceIdentifier,
 };
+use abilities_runtime::abilities::provenance::DocumentId;
 use chrono::Utc;
 use dailyos_lib::services::workspace_ingestion::contracts::{
     Extractor, FileIdentity, NullExtractor, NullSignalEmitter, RejectionReason, SignalEmitter,
@@ -31,7 +31,11 @@ fn lifecycle_state_has_exactly_seven_variants_with_canonical_serde_strings() {
         (LifecycleState::Quarantined, "quarantined"),
     ];
 
-    assert_eq!(pairs.len(), 7, "LifecycleState must have exactly 7 variants");
+    assert_eq!(
+        pairs.len(),
+        7,
+        "LifecycleState must have exactly 7 variants"
+    );
 
     for (state, expected_slug) in pairs {
         let serialized =
@@ -86,12 +90,12 @@ fn workspace_category_other_accepts_lex_valid_lowercase_ascii_slugs() {
 #[test]
 fn workspace_category_from_slug_rejects_malformed() {
     for bad in &[
-        "WithUpper",     // uppercase
-        "with spaces",   // whitespace
-        "with/slash",    // slash
-        "with.dot",      // dot
-        "",              // empty
-        "with!bang",     // punctuation
+        "WithUpper",   // uppercase
+        "with spaces", // whitespace
+        "with/slash",  // slash
+        "with.dot",    // dot
+        "",            // empty
+        "with!bang",   // punctuation
     ] {
         assert!(
             WorkspaceCategory::from_slug(bad).is_none(),

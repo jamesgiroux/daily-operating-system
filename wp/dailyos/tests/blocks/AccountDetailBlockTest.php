@@ -247,6 +247,36 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 		}
 	}
 
+	/**
+	 * Account hero vitals must render human-readable claim text; claim ids are
+	 * metadata only and must not become visible fallback content.
+	 */
+	public function test_account_hero_row_prefers_rendered_text_over_claim_id(): void {
+		include_once __DIR__ . '/../../blocks/account-detail/inner/account-hero/render-functions.php';
+
+		$html = dailyos_account_hero_render_row(
+			[ 'claim_id' => 'claim-test-hero-001' ],
+			[
+				'renderedText' => [
+					'text' => 'Readable hero row',
+				],
+				'trustBand'    => 'likely_current',
+			]
+		);
+
+		$this->assertStringContainsString( 'data-claim-id="claim-test-hero-001"', $html );
+		$this->assertStringContainsString( '>Readable hero row</span>', $html );
+		$this->assertStringNotContainsString( '>claim-test-hero-001</span>', $html );
+
+		$this->assertSame(
+			'',
+			dailyos_account_hero_render_row(
+				[ 'claim_id' => 'claim-test-hero-002' ],
+				[ 'trustBand' => 'likely_current' ]
+			)
+		);
+	}
+
 	// ---- envelope helpers: section state lookup -------------------------
 
 	/**
@@ -361,6 +391,275 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 		$this->assertIsArray( $cached, 'envelope cached under handle' );
 		$this->assertArrayHasKey( 'sections', $cached, 'cached value is the envelope, not the runtime wrapper' );
 		$this->assertSame( 'present', $cached['sections']['facts']['kind'] );
+	}
+
+	/**
+	 * Runtime DTOs use camelCase field names; WP inner blocks use snake-case
+	 * section aliases. The cache boundary normalizes both shapes.
+	 */
+	public function test_envelope_cache_normalizes_runtime_surface_payload_aliases(): void {
+		$runtime_response = [
+			'ok'      => true,
+			'ability' => [
+				'ability_name' => 'get_entity_intelligence',
+				'data'         => [
+					'envelopeRenderId'  => 'env-acct-test-alias-001',
+					'recordEntries'     => [
+						'items' => [
+							[
+								'claimId'      => 'claim-record-001',
+								'renderedText' => [
+									'text' => 'Readable record entry',
+								],
+							],
+						],
+					],
+					'metadataProposals' => [
+						'items' => [],
+					],
+					'openLoops'         => [
+						'items' => [],
+					],
+					'sections'          => [
+						'record'             => [
+							'kind'       => 'present',
+							'item_count' => 1,
+						],
+						'metadata_proposals' => [
+							'kind'   => 'empty',
+							'reason' => 'no_evidence_backed_proposal',
+						],
+						'open_loops'         => [
+							'kind'   => 'empty',
+							'reason' => 'stale',
+						],
+					],
+				],
+			],
+		];
+
+		$handle = dailyos_envelope_handle_from_response( $runtime_response, 'account', 'acct-test-alias' );
+		$cached = dailyos_envelope_cache_get( $handle );
+
+		$this->assertIsArray( $cached );
+		$this->assertArrayHasKey( 'record', $cached );
+		$this->assertArrayHasKey( 'record_entries', $cached );
+		$this->assertArrayHasKey( 'metadata_proposals', $cached );
+		$this->assertArrayHasKey( 'open_loops', $cached );
+		$this->assertSame( 'Readable record entry', dailyos_receipt_rendered_text( $cached['record']['items'][0], '' ) );
+	}
+
+	/**
+	 * Claim receipts arrive in the same runtime wrapper shape as other
+	 * abilities. Inner rows must render the display-safe text from
+	 * ability.data.renderedText, never the opaque claim id.
+	 */
+	public function test_receipt_helpers_unwrap_runtime_ability_data_shape(): void {
+		$receipt = [
+			'ok'      => true,
+			'ability' => [
+				'ability_name' => 'claim_receipt',
+				'data'         => [
+					'renderedText' => [
+						'text' => 'Readable account signal',
+					],
+					'trust'        => [
+						'band' => 'likely_current',
+					],
+				],
+			],
+		];
+
+		$this->assertSame( 'Readable account signal', dailyos_receipt_rendered_text( $receipt, 'claim-test-001' ) );
+		$this->assertSame( 'likely_current', dailyos_receipt_trust_band( $receipt ) );
+	}
+
+	/**
+	 * Envelope rows already carry renderedText from get_entity_intelligence;
+	 * WordPress should not fan out to claim_receipt when that text exists.
+	 */
+	public function test_envelope_consume_claim_uses_envelope_rendered_text_without_receipt_call(): void {
+		$client = $this->fake_runtime_client_with_envelope(
+			[
+				'ok'    => false,
+				'error' => [
+					'code'    => 'rate_limited',
+					'message' => 'Runtime is throttled.',
+				],
+			]
+		);
+		$this->register_runtime_client_filter( $client );
+
+		$receipt = dailyos_envelope_consume_claim(
+			[
+				'claim_id'     => 'claim-test-001',
+				'subject_ref'  => [ 'kind' => 'account', 'id' => 'acct-test-001' ],
+				'field_path'   => 'health.risk',
+				'renderedText' => [
+					'text' => 'Readable row from the envelope',
+				],
+				'trustBand'    => 'likely_current',
+			],
+			[ 'read.claim_receipt' ]
+		);
+
+		$this->assertIsArray( $receipt );
+		$this->assertSame( 'Readable row from the envelope', dailyos_receipt_rendered_text( $receipt, '' ) );
+		$this->assertSame( 'likely_current', dailyos_receipt_trust_band( $receipt ) );
+		$this->assertSame( 0, $client->calls );
+	}
+
+	/**
+	 * Generated inner selectors often pass only normalized claim metadata;
+	 * the request-scoped envelope cache backfills renderedText by claim id.
+	 */
+	public function test_envelope_consume_claim_backfills_rendered_text_from_cached_envelope(): void {
+		$envelope = [
+			'envelopeRenderId' => 'env-acct-test-cache-001',
+			'facts'            => [
+				'items' => [
+					[
+						'claimId'      => 'claim-test-cache-001',
+						'claimType'    => 'entity_summary',
+						'fieldPath'    => 'pullQuote',
+						'subjectRef'   => [ 'kind' => 'account', 'id' => 'acct-test-001' ],
+						'renderedText' => [
+							'policy' => [
+								'claimId'     => 'claim-test-cache-001',
+								'kind'        => 'render',
+								'sensitivity' => 'internal',
+								'surface'     => 'tauri_entity_detail',
+							],
+							'text' => 'Readable cached row',
+						],
+						'trustBand'    => 'likely_current',
+					],
+				],
+			],
+			'sections'         => [
+				'facts' => [
+					'kind'       => 'present',
+					'item_count' => 1,
+				],
+			],
+		];
+		dailyos_envelope_handle_from_response(
+			[
+				'ok'      => true,
+				'ability' => [
+					'ability_name' => 'get_entity_intelligence',
+					'data'         => $envelope,
+				],
+			],
+			'account',
+			'acct-test-001'
+		);
+		$client = $this->fake_runtime_client_with_envelope(
+			[
+				'ok'    => false,
+				'error' => [
+					'code'    => 'rate_limited',
+					'message' => 'Runtime is throttled.',
+				],
+			]
+		);
+		$this->register_runtime_client_filter( $client );
+
+		$receipt = dailyos_envelope_consume_claim(
+			[
+				'claim_id'    => 'claim-test-cache-001',
+				'subject_ref' => [ 'kind' => 'account', 'id' => 'acct-test-001' ],
+				'field_path'  => 'pullQuote',
+			],
+			[ 'read.claim_receipt' ]
+		);
+
+		$this->assertIsArray( $receipt );
+		$this->assertSame( 'Readable cached row', dailyos_receipt_rendered_text( $receipt, '' ) );
+		$this->assertSame( 'likely_current', dailyos_receipt_trust_band( $receipt ) );
+		$this->assertSame( 0, $client->calls );
+	}
+
+	/**
+	 * Failed receipt calls are not displayable rows; claim ids must remain
+	 * metadata only.
+	 */
+	public function test_envelope_consume_claim_skips_receipts_without_rendered_text(): void {
+		$client = $this->fake_runtime_client_with_envelope(
+			[
+				'ok'    => false,
+				'error' => [
+					'code'    => 'input_schema_invalid',
+					'message' => 'Invalid ability input.',
+				],
+			]
+		);
+		$this->register_runtime_client_filter( $client );
+
+		$receipt = dailyos_envelope_consume_claim(
+			[
+				'claim_id'    => 'claim-test-001',
+				'subject_ref' => [ 'kind' => 'account', 'id' => 'acct-test-001' ],
+				'field_path'  => 'health.risk',
+			],
+			[ 'read.claim_receipt' ]
+		);
+
+		$this->assertNull( $receipt );
+		$this->assertSame( 1, $client->calls );
+	}
+
+	/**
+	 * Claim-ref collection can select Tauri-style dossier fields from the
+	 * generic facts section without returning every claim in the envelope.
+	 */
+	public function test_envelope_claim_ref_collection_filters_by_field_path(): void {
+		$envelope = [
+			'facts' => [
+				'items' => [
+					[
+						'claimId'      => 'claim-pull-quote',
+						'claimType'    => 'entity_summary',
+						'fieldPath'    => 'pullQuote',
+						'subjectRef'   => [ 'kind' => 'account', 'id' => 'acct-test-001' ],
+						'renderedText' => [
+							'text' => 'Readable pull quote',
+						],
+					],
+					[
+						'claimId'    => 'claim-risk',
+						'claimType'  => 'entity_risk',
+						'fieldPath'  => 'risks[0]',
+						'subjectRef' => [ 'kind' => 'account', 'id' => 'acct-test-001' ],
+					],
+				],
+			],
+		];
+
+		$refs = dailyos_envelope_collect_claim_refs(
+			$envelope,
+			[ 'facts' ],
+			[ 'field_paths' => [ 'pullQuote' ] ]
+		);
+
+		$this->assertCount( 1, $refs );
+		$this->assertSame( 'claim-pull-quote', $refs[0]['claim_id'] );
+		$this->assertArrayHasKey( 'renderedText', $refs[0] );
+	}
+
+	/**
+	 * Regression guard for claim-backed rows: ids are machine metadata only.
+	 */
+	public function test_account_detail_inner_rows_do_not_render_claim_ids_as_visible_labels(): void {
+		$inner_dir = __DIR__ . '/../../blocks/account-detail/inner';
+		foreach ( glob( $inner_dir . '/*/render-functions.php' ) as $path ) {
+			$contents = (string) file_get_contents( $path );
+			$this->assertStringNotContainsString(
+				'esc_html( $claim_id )',
+				$contents,
+				basename( dirname( $path ) ) . ' must render receipt text, not the claim id'
+			);
+		}
 	}
 
 	/**

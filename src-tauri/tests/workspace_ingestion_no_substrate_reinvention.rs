@@ -42,8 +42,7 @@ fn no_substrate_reinvention_in_workspace_ingestion() {
         if path.extension().and_then(|s| s.to_str()) != Some("rs") {
             continue;
         }
-        let source = fs::read_to_string(&path)
-            .unwrap_or_else(|e| panic!("read {path:?}: {e}"));
+        let source = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {path:?}: {e}"));
         for (lineno_zero, line) in source.lines().enumerate() {
             let lineno = lineno_zero + 1;
             for name in REINVENTION_NAMES {

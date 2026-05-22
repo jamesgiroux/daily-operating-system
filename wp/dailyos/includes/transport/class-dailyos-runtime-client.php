@@ -84,6 +84,8 @@ final class DailyOS_Runtime_Client {
 	 */
 	public function invoke_ability( string $name, array $payload, array $scope_set ): array|\WP_Error {
 		unset( $scope_set );
+		$payload = $this->normalize_ability_payload( $name, $payload );
+
 		// Wire key is `input` per src-tauri/src/surface_runtime/mod.rs::SurfaceInvokeRequest.
 		// Sending `payload` (the legacy key) gets dropped during deserialization
 		// and invoke.input defaults to Value::Null, so the producer fails to
@@ -102,6 +104,256 @@ final class DailyOS_Runtime_Client {
 		}
 
 		return $this->local_post( '/v1/local/invoke', $body_bytes );
+	}
+
+	/**
+	 * Normalize ability-specific wire payloads before JSON encoding.
+	 *
+	 * @param string               $name Ability name.
+	 * @param array<string, mixed> $payload Ability payload.
+	 * @return array<string, mixed> Runtime wire payload.
+	 */
+	private function normalize_ability_payload( string $name, array $payload ): array {
+		if ( 'get_entity_intelligence' === $name ) {
+			return $this->normalize_entity_intelligence_payload( $payload );
+		}
+
+		if ( 'claim_receipt' === $name ) {
+			return $this->normalize_claim_receipt_payload( $payload );
+		}
+
+		return $payload;
+	}
+
+	/**
+	 * Normalize the WordPress-side entity intelligence request to the Rust DTO.
+	 *
+	 * The runtime contract is `EntityIntelligenceInput`:
+	 * `{ schemaVersion, entityType, entityId, depth, sections? }`.
+	 * Older block code used no schema version and sent depth values like
+	 * `Full`; the runtime now expects `deep` / `standard` / `shallow`.
+	 *
+	 * @param array<string, mixed> $payload Ability payload.
+	 * @return array<string, mixed> Runtime wire payload.
+	 */
+	private function normalize_entity_intelligence_payload( array $payload ): array {
+		if ( isset( $payload['schema_version'] ) && ! isset( $payload['schemaVersion'] ) ) {
+			$payload['schemaVersion'] = $payload['schema_version'];
+		}
+		unset( $payload['schema_version'] );
+
+		if ( ! isset( $payload['schemaVersion'] ) ) {
+			$payload['schemaVersion'] = 1;
+		}
+
+		if ( array_key_exists( 'sections', $payload ) && null === $payload['sections'] ) {
+			unset( $payload['sections'] );
+		}
+
+		if ( isset( $payload['entity_type'] ) && ! isset( $payload['entityType'] ) ) {
+			$payload['entityType'] = $payload['entity_type'];
+		}
+		unset( $payload['entity_type'] );
+
+		if ( isset( $payload['entity_id'] ) && ! isset( $payload['entityId'] ) ) {
+			$payload['entityId'] = $payload['entity_id'];
+		}
+		unset( $payload['entity_id'] );
+
+		if ( ! isset( $payload['depth'] ) || ! is_scalar( $payload['depth'] ) || '' === trim( (string) $payload['depth'] ) ) {
+			$payload['depth'] = 'deep';
+			return $payload;
+		}
+
+		$depth = strtolower( trim( (string) $payload['depth'] ) );
+		if ( in_array( $depth, [ 'full', 'deep' ], true ) ) {
+			$payload['depth'] = 'deep';
+		} elseif ( in_array( $depth, [ 'default', 'standard' ], true ) ) {
+			$payload['depth'] = 'standard';
+		} elseif ( 'shallow' === $depth ) {
+			$payload['depth'] = 'shallow';
+		}
+
+		return $payload;
+	}
+
+	/**
+	 * Normalize a WordPress claim receipt request to the Rust DTO.
+	 *
+	 * Runtime contract:
+	 * `{ schemaVersion, target: { kind: "claim", claimId, subject, fieldPath? }, surface }`.
+	 * WordPress envelope items and stored claim rows use `{ kind, id }` subject
+	 * refs, while the ability schema expects the serde shape for `SubjectRef`
+	 * (`{ account: "acct-test-001" }`, `{ person: "person-test-001" }`, etc.).
+	 *
+	 * @param array<string, mixed> $payload Ability payload.
+	 * @return array<string, mixed> Runtime wire payload.
+	 */
+	private function normalize_claim_receipt_payload( array $payload ): array {
+		if ( isset( $payload['schema_version'] ) && ! isset( $payload['schemaVersion'] ) ) {
+			$payload['schemaVersion'] = $payload['schema_version'];
+		}
+		unset( $payload['schema_version'] );
+
+		if ( ! isset( $payload['schemaVersion'] ) ) {
+			$payload['schemaVersion'] = 1;
+		}
+
+		if ( isset( $payload['target'] ) && is_array( $payload['target'] ) ) {
+			$target = $payload['target'];
+		} else {
+			$claim_id = $payload['claimId'] ?? $payload['claim_id'] ?? '';
+			$target   = [
+				'kind'    => 'claim',
+				'claimId' => $claim_id,
+				'subject' => $payload['subject'] ?? $payload['subjectRef'] ?? $payload['subject_ref'] ?? null,
+			];
+			$field_path = $payload['fieldPath'] ?? $payload['field_path'] ?? null;
+			if ( null !== $field_path && '' !== (string) $field_path ) {
+				$target['fieldPath'] = $field_path;
+			}
+		}
+
+		$payload['target']  = $this->normalize_claim_receipt_target( $target );
+		$payload['surface'] = $this->normalize_claim_receipt_surface( $payload['surface'] ?? 'entity_detail' );
+
+		unset(
+			$payload['claimId'],
+			$payload['claim_id'],
+			$payload['subject'],
+			$payload['subjectRef'],
+			$payload['subject_ref'],
+			$payload['fieldPath'],
+			$payload['field_path']
+		);
+
+		return $payload;
+	}
+
+	/**
+	 * Normalize a claim receipt target.
+	 *
+	 * @param array<string, mixed> $target Raw target.
+	 * @return array<string, mixed> Runtime target.
+	 */
+	private function normalize_claim_receipt_target( array $target ): array {
+		if ( isset( $target['claim_id'] ) && ! isset( $target['claimId'] ) ) {
+			$target['claimId'] = $target['claim_id'];
+		}
+		unset( $target['claim_id'] );
+
+		if ( isset( $target['field_path'] ) && ! isset( $target['fieldPath'] ) ) {
+			$target['fieldPath'] = $target['field_path'];
+		}
+		unset( $target['field_path'] );
+
+		if ( isset( $target['subject_ref'] ) && ! isset( $target['subject'] ) ) {
+			$target['subject'] = $target['subject_ref'];
+		}
+		if ( isset( $target['subjectRef'] ) && ! isset( $target['subject'] ) ) {
+			$target['subject'] = $target['subjectRef'];
+		}
+		unset( $target['subject_ref'], $target['subjectRef'] );
+
+		$target['kind'] = $this->normalize_claim_receipt_target_kind( $target['kind'] ?? 'claim' );
+		if ( array_key_exists( 'subject', $target ) ) {
+			$target['subject'] = $this->normalize_subject_ref( $target['subject'] );
+		}
+
+		return $target;
+	}
+
+	/**
+	 * Normalize the claim receipt target tag.
+	 *
+	 * @param mixed $kind Raw kind.
+	 * @return string Runtime target kind.
+	 */
+	private function normalize_claim_receipt_target_kind( mixed $kind ): string {
+		$value = strtolower( trim( (string) $kind ) );
+		return match ( $value ) {
+			'proposal' => 'proposal',
+			'work_item', 'workitem', 'work-item' => 'workItem',
+			default => 'claim',
+		};
+	}
+
+	/**
+	 * Normalize the receipt surface enum.
+	 *
+	 * @param mixed $surface Raw surface.
+	 * @return string Runtime surface.
+	 */
+	private function normalize_claim_receipt_surface( mixed $surface ): string {
+		$value = strtolower( trim( (string) $surface ) );
+		return match ( $value ) {
+			'actionswork', 'actions-work', 'action', 'actions' => 'actions_work',
+			'entitydetail', 'entity-detail', 'tauri_entity_detail' => 'entity_detail',
+			'dailybriefing', 'daily-briefing', 'briefing', 'briefing_prep' => 'daily_briefing',
+			'meetingdetail', 'meeting-detail', 'tauri_meeting_detail' => 'meeting_detail',
+			'mcptool', 'mcp-tool', 'mcp_tool' => 'mcp',
+			default => '' !== $value ? $value : 'entity_detail',
+		};
+	}
+
+	/**
+	 * Normalize WordPress/DB subject refs to the serde SubjectRef wire shape.
+	 *
+	 * @param mixed $subject_ref Raw subject ref.
+	 * @return mixed Runtime subject ref.
+	 */
+	private function normalize_subject_ref( mixed $subject_ref ): mixed {
+		if ( is_string( $subject_ref ) ) {
+			$value = strtolower( trim( $subject_ref ) );
+			if ( in_array( $value, [ 'global', 'unknown' ], true ) ) {
+				return $value;
+			}
+			return $subject_ref;
+		}
+
+		if ( ! is_array( $subject_ref ) ) {
+			return $subject_ref;
+		}
+
+		foreach ( [ 'account', 'project', 'person', 'meeting', 'user', 'multi' ] as $serde_key ) {
+			if ( array_key_exists( $serde_key, $subject_ref ) ) {
+				if ( 'multi' !== $serde_key || ! is_array( $subject_ref[ $serde_key ] ) ) {
+					return $subject_ref;
+				}
+				return [
+					'multi' => array_map(
+						fn ( mixed $item ): mixed => $this->normalize_subject_ref( $item ),
+						$subject_ref['multi']
+					),
+				];
+			}
+		}
+
+		$kind = strtolower( trim( (string) ( $subject_ref['kind'] ?? '' ) ) );
+		$id   = $subject_ref['id'] ?? null;
+		if ( in_array( $kind, [ 'global', 'unknown' ], true ) ) {
+			return $kind;
+		}
+		if ( 'multi' === $kind && isset( $subject_ref['subjects'] ) && is_array( $subject_ref['subjects'] ) ) {
+			return [
+				'multi' => array_map(
+					fn ( mixed $item ): mixed => $this->normalize_subject_ref( $item ),
+					$subject_ref['subjects']
+				),
+			];
+		}
+		if ( null === $id || '' === (string) $id ) {
+			return $subject_ref;
+		}
+
+		return match ( $kind ) {
+			'account', 'accounts' => [ 'account' => (string) $id ],
+			'project', 'projects' => [ 'project' => (string) $id ],
+			'person', 'people' => [ 'person' => (string) $id ],
+			'meeting', 'meetings' => [ 'meeting' => (string) $id ],
+			'user', 'users' => [ 'user' => (string) $id ],
+			default => $subject_ref,
+		};
 	}
 
 
@@ -289,7 +541,7 @@ final class DailyOS_Runtime_Client {
 			'body'        => $body_bytes,
 			'headers'     => $headers,
 			'redirection' => 0,
-			'timeout'     => 30,
+			'timeout'     => 90,
 			'sslverify'   => false,
 			'blocking'    => true,
 			'data_format' => 'body',
@@ -348,7 +600,7 @@ final class DailyOS_Runtime_Client {
 				'X-DailyOS-Request-Id' => $request_id,
 			],
 			'redirection' => 0,
-			'timeout'     => 30,
+			'timeout'     => 90,
 			'sslverify'   => false,
 			'blocking'    => true,
 			'data_format' => 'body',

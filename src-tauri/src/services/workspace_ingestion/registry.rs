@@ -39,15 +39,15 @@
 //! `RejectionReason::OutsideWorkspace` with a platform-not-supported log.
 
 use std::fs::File;
-use std::path::{Path, PathBuf};
 #[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
+use std::path::{Path, PathBuf};
 
 use rusqlite::{params, Connection, OptionalExtension};
 use unicode_normalization::UnicodeNormalization;
 
-use crate::entity::EntityType;
 use super::contracts::{FileIdentity, RejectionReason, WorkspaceCategory, WorkspaceFileKind};
+use crate::entity::EntityType;
 
 /// Frozen regex for `Other(slug)` slug shape validation. ASCII only, lowercase
 /// only, max 32 chars, must start with a letter, allows digits/underscore/hyphen.
@@ -80,7 +80,9 @@ impl std::error::Error for CategoryNotAllowed {}
 #[derive(Debug)]
 pub enum RegisterError {
     /// Slug fails the lex-shape regex.
-    MalformedSlug { slug: String },
+    MalformedSlug {
+        slug: String,
+    },
     /// Entity type not recognized.
     EntityTypeUnknown,
     DbError(String),
@@ -321,16 +323,12 @@ impl WorkspaceSourceRegistry {
 
 /// Validates a slug against `SLUG_REGEX`. Pure function — no DB access.
 fn is_valid_slug_shape(slug: &str) -> bool {
-    !slug.is_empty()
-        && slug.len() <= 32
-        && {
-            let mut chars = slug.chars();
-            let first = chars.next().expect("non-empty checked above");
-            first.is_ascii_lowercase()
-                && chars.all(|c| {
-                    c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-'
-                })
-        }
+    !slug.is_empty() && slug.len() <= 32 && {
+        let mut chars = slug.chars();
+        let first = chars.next().expect("non-empty checked above");
+        first.is_ascii_lowercase()
+            && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
+    }
 }
 
 /// Snake_case serde tag for `crate::entity::EntityType` — used as the
@@ -486,8 +484,10 @@ mod tests {
 
     fn fresh_conn() -> Connection {
         let conn = Connection::open_in_memory().expect("in-memory sqlite");
-        conn.execute_batch(include_str!("../../migrations/252_workspace_source_registry.sql"))
-            .expect("v252 apply");
+        conn.execute_batch(include_str!(
+            "../../migrations/252_workspace_source_registry.sql"
+        ))
+        .expect("v252 apply");
         conn
     }
 
@@ -502,14 +502,14 @@ mod tests {
     fn is_valid_slug_shape_rejects_malformed() {
         for s in &[
             "",
-            "1abc",       // starts with digit
-            "_abc",       // starts with underscore
-            "-abc",       // starts with hyphen
-            "ABC",        // uppercase
-            "abc DEF",    // space + uppercase
-            "abc/def",    // slash
-            "abc.def",    // dot
-            "abc!def",    // punctuation
+            "1abc",          // starts with digit
+            "_abc",          // starts with underscore
+            "-abc",          // starts with hyphen
+            "ABC",           // uppercase
+            "abc DEF",       // space + uppercase
+            "abc/def",       // slash
+            "abc.def",       // dot
+            "abc!def",       // punctuation
             &"x".repeat(33), // too long
         ] {
             assert!(!is_valid_slug_shape(s), "{s} should be invalid");
@@ -543,7 +543,10 @@ mod tests {
             EntityType::Other,
         )
         .expect_err("Other should be Err");
-        assert!(err.allowed.is_empty(), "Other should have empty allowed list");
+        assert!(
+            err.allowed.is_empty(),
+            "Other should have empty allowed list"
+        );
     }
 
     #[test]
@@ -669,9 +672,9 @@ mod tests {
 
     // ---- open_validated security fixtures (Unix; subset of L0 V1.3 §7) -----
 
+    use std::fs;
     #[cfg(unix)]
     use std::os::unix::fs::symlink as unix_symlink;
-    use std::fs;
     use tempfile::TempDir;
 
     fn make_workspace() -> TempDir {
@@ -684,11 +687,9 @@ mod tests {
         let ws = make_workspace();
         let target = ws.path().join("doc.md");
         fs::write(&target, b"hello").expect("write");
-        let (file, identity) = WorkspaceSourceRegistry::open_validated(
-            ws.path(),
-            std::path::Path::new("doc.md"),
-        )
-        .expect("Ok");
+        let (file, identity) =
+            WorkspaceSourceRegistry::open_validated(ws.path(), std::path::Path::new("doc.md"))
+                .expect("Ok");
         drop(file);
         assert!(identity.canonical_path.ends_with("doc.md"));
         assert!(identity.inode > 0);
@@ -710,11 +711,9 @@ mod tests {
     #[test]
     fn open_validated_rejects_absolute_path_outside_workspace() {
         let ws = make_workspace();
-        let err = WorkspaceSourceRegistry::open_validated(
-            ws.path(),
-            std::path::Path::new("/etc/passwd"),
-        )
-        .expect_err("absolute outside");
+        let err =
+            WorkspaceSourceRegistry::open_validated(ws.path(), std::path::Path::new("/etc/passwd"))
+                .expect_err("absolute outside");
         assert!(matches!(err, RejectionReason::OutsideWorkspace));
     }
 
@@ -722,11 +721,8 @@ mod tests {
     #[test]
     fn open_validated_rejects_workspace_root_equality() {
         let ws = make_workspace();
-        let err = WorkspaceSourceRegistry::open_validated(
-            ws.path(),
-            std::path::Path::new("."),
-        )
-        .expect_err("root equality");
+        let err = WorkspaceSourceRegistry::open_validated(ws.path(), std::path::Path::new("."))
+            .expect_err("root equality");
         assert!(matches!(err, RejectionReason::OutsideWorkspace));
     }
 
@@ -740,11 +736,9 @@ mod tests {
         // Create a symlink inside workspace pointing to outside file.
         let link_path = ws.path().join("escape");
         unix_symlink(&outside_file, &link_path).expect("symlink");
-        let err = WorkspaceSourceRegistry::open_validated(
-            ws.path(),
-            std::path::Path::new("escape"),
-        )
-        .expect_err("outside symlink");
+        let err =
+            WorkspaceSourceRegistry::open_validated(ws.path(), std::path::Path::new("escape"))
+                .expect_err("outside symlink");
         // Canonicalize resolves outside; strict-child check fails.
         assert!(matches!(err, RejectionReason::OutsideWorkspace));
     }
@@ -789,11 +783,8 @@ mod tests {
         let ws = make_workspace();
         // Build a path > 4096 bytes.
         let huge: String = "a".repeat(5000);
-        let err = WorkspaceSourceRegistry::open_validated(
-            ws.path(),
-            std::path::Path::new(&huge),
-        )
-        .expect_err("PATH_MAX overflow");
+        let err = WorkspaceSourceRegistry::open_validated(ws.path(), std::path::Path::new(&huge))
+            .expect_err("PATH_MAX overflow");
         assert!(matches!(err, RejectionReason::PathTraversalAttempt));
     }
 
@@ -802,11 +793,8 @@ mod tests {
     fn open_validated_rejects_trailing_space_component() {
         // L0 V1.3 §7 fixture #13: trailing-space → PathTraversalAttempt.
         let ws = make_workspace();
-        let err = WorkspaceSourceRegistry::open_validated(
-            ws.path(),
-            std::path::Path::new("foo "),
-        )
-        .expect_err("trailing space");
+        let err = WorkspaceSourceRegistry::open_validated(ws.path(), std::path::Path::new("foo "))
+            .expect_err("trailing space");
         assert!(matches!(err, RejectionReason::PathTraversalAttempt));
     }
 
@@ -822,11 +810,9 @@ mod tests {
         let a_link = ws.path().join("a_link");
         unix_symlink(&outside_file, &b_link).expect("symlink B → outside");
         unix_symlink(&b_link, &a_link).expect("symlink A → B");
-        let err = WorkspaceSourceRegistry::open_validated(
-            ws.path(),
-            std::path::Path::new("a_link"),
-        )
-        .expect_err("symlink chain");
+        let err =
+            WorkspaceSourceRegistry::open_validated(ws.path(), std::path::Path::new("a_link"))
+                .expect_err("symlink chain");
         assert!(matches!(err, RejectionReason::OutsideWorkspace));
     }
 
@@ -860,11 +846,9 @@ mod tests {
         // second file inside workspace and hardlinking the two so nlink=2.
         let alias = ws.path().join("alias.txt");
         fs::hard_link(&target_inside, &alias).expect("hardlink");
-        let err = WorkspaceSourceRegistry::open_validated(
-            ws.path(),
-            std::path::Path::new("alias.txt"),
-        )
-        .expect_err("multi-link");
+        let err =
+            WorkspaceSourceRegistry::open_validated(ws.path(), std::path::Path::new("alias.txt"))
+                .expect_err("multi-link");
         // nlink>1 triggers SymlinkRefused (path-aliasing class).
         assert!(matches!(err, RejectionReason::SymlinkRefused));
     }
@@ -874,8 +858,7 @@ mod tests {
     fn open_validated_rejects_nul_byte_in_path() {
         let ws = make_workspace();
         let bad = std::path::PathBuf::from("foo\0bar");
-        let err = WorkspaceSourceRegistry::open_validated(ws.path(), &bad)
-            .expect_err("NUL");
+        let err = WorkspaceSourceRegistry::open_validated(ws.path(), &bad).expect_err("NUL");
         assert!(matches!(err, RejectionReason::PathTraversalAttempt));
     }
 
@@ -884,11 +867,9 @@ mod tests {
     fn open_validated_rejects_name_max_overflow_component() {
         let ws = make_workspace();
         let oversized: String = "x".repeat(256);
-        let err = WorkspaceSourceRegistry::open_validated(
-            ws.path(),
-            std::path::Path::new(&oversized),
-        )
-        .expect_err("NAME_MAX overflow");
+        let err =
+            WorkspaceSourceRegistry::open_validated(ws.path(), std::path::Path::new(&oversized))
+                .expect_err("NAME_MAX overflow");
         assert!(matches!(err, RejectionReason::PathTraversalAttempt));
     }
 
@@ -896,11 +877,8 @@ mod tests {
     #[test]
     fn open_validated_rejects_trailing_dot_component() {
         let ws = make_workspace();
-        let err = WorkspaceSourceRegistry::open_validated(
-            ws.path(),
-            std::path::Path::new("foo."),
-        )
-        .expect_err("trailing dot");
+        let err = WorkspaceSourceRegistry::open_validated(ws.path(), std::path::Path::new("foo."))
+            .expect_err("trailing dot");
         assert!(matches!(err, RejectionReason::PathTraversalAttempt));
     }
 
@@ -924,16 +902,12 @@ mod tests {
         let b = ws.path().join("b.md");
         fs::write(&a, b"a").expect("write");
         fs::write(&b, b"b").expect("write");
-        let (_fa, id_a) = WorkspaceSourceRegistry::open_validated(
-            ws.path(),
-            std::path::Path::new("a.md"),
-        )
-        .expect("Ok");
-        let (_fb, id_b) = WorkspaceSourceRegistry::open_validated(
-            ws.path(),
-            std::path::Path::new("b.md"),
-        )
-        .expect("Ok");
+        let (_fa, id_a) =
+            WorkspaceSourceRegistry::open_validated(ws.path(), std::path::Path::new("a.md"))
+                .expect("Ok");
+        let (_fb, id_b) =
+            WorkspaceSourceRegistry::open_validated(ws.path(), std::path::Path::new("b.md"))
+                .expect("Ok");
         assert_ne!(id_a.inode, id_b.inode);
     }
 

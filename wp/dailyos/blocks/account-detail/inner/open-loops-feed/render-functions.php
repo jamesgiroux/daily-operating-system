@@ -172,11 +172,11 @@ if ( ! function_exists( 'dailyos_account_detail_open_loops_feed_render_row' ) ) 
 	 */
 	function dailyos_account_detail_open_loops_feed_render_row( array $claim_ref, array $receipt ): string {
 		$claim_id = isset( $claim_ref['claim_id'] ) ? (string) $claim_ref['claim_id'] : '';
-		$trust_band = isset( $receipt['trustBand'] ) ? (string) $receipt['trustBand'] : ( isset( $receipt['trust_band'] ) ? (string) $receipt['trust_band'] : 'unscored' );
+		$trust_band = dailyos_receipt_trust_band( $receipt );
 		return '<div class="RecommendedActions_action" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">'
 			. '<div class="RecommendedActions_content">'
 			. '<div class="RecommendedActions_metaRow"><span class="RecommendedActions_priority" data-priority="3">' . esc_html( $trust_band ) . '</span></div>'
-			. '<div class="RecommendedActions_title">' . esc_html( $claim_id ) . '</div>'
+			. '<div class="RecommendedActions_title">' . esc_html( dailyos_receipt_rendered_text( $receipt, $claim_id ) ) . '</div>'
 			. '<div class="RecommendedActions_source">' . esc_html__( 'Open account loop', 'dailyos' ) . '</div>'
 			. '</div>'
 			. '</div>';

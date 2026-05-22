@@ -351,9 +351,8 @@ pub async fn submit_claim_feedback(
             let clock = crate::services::context::SystemClock;
             let rng = crate::services::context::SystemRng;
             let external = crate::services::context::ExternalClients::default();
-            let ctx =
-                crate::services::context::ServiceContext::new_live(&clock, &rng, &external)
-                    .with_actor("user");
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &external)
+                .with_actor("user");
             record_claim_feedback(&ctx, db, input).map_err(|error| error.to_string())
         })
         .await
@@ -636,9 +635,7 @@ fn validate_and_sanitize_metadata(
                 .as_mut()
                 .expect("requires_metadata branch enforced presence");
             let obj = metadata.as_object_mut().ok_or_else(|| {
-                FeedbackError::BadRequest(
-                    "merge_intent metadata must be a JSON object".to_string(),
-                )
+                FeedbackError::BadRequest("merge_intent metadata must be a JSON object".to_string())
             })?;
             let target_value = obj.get("merge_target").cloned().ok_or_else(|| {
                 FeedbackError::BadRequest(
@@ -714,7 +711,8 @@ fn sanitize_freetext(field: &str, raw: &str) -> (String, Option<SanitizerWarning
             &field_path,
             raw,
         );
-    let warning = warning.map(|warning| match warning {
+    let warning = warning.map(|warning| {
+        match warning {
         abilities_runtime::abilities::provenance::envelope::ProvenanceWarning::ExplanationFiltered {
             reason,
             ..
@@ -726,6 +724,7 @@ fn sanitize_freetext(field: &str, raw: &str) -> (String, Option<SanitizerWarning
             field: field.to_string(),
             reason: format!("{other:?}"),
         },
+    }
     });
     (sanitized, warning)
 }
@@ -815,7 +814,13 @@ fn idempotency_scope(
     actor: &str,
     metadata_hash: &str,
 ) -> String {
-    format!("{}|{}|{}|{}", claim_id, action.as_str(), actor, metadata_hash)
+    format!(
+        "{}|{}|{}|{}",
+        claim_id,
+        action.as_str(),
+        actor,
+        metadata_hash
+    )
 }
 
 fn inherit_sensitivity_floor(claim_sensitivity: ClaimSensitivity) -> ClaimSensitivity {
@@ -1001,8 +1006,7 @@ mod tests {
             .expect("cannot_verify metadata is optional");
 
         // NeedsNuance: required corrected_text.
-        let err =
-            validate_and_sanitize_metadata(FeedbackAction::NeedsNuance, None).unwrap_err();
+        let err = validate_and_sanitize_metadata(FeedbackAction::NeedsNuance, None).unwrap_err();
         assert!(matches!(err, FeedbackError::BadRequest(_)));
         validate_and_sanitize_metadata(
             FeedbackAction::NeedsNuance,
@@ -1011,8 +1015,8 @@ mod tests {
         .expect("needs_nuance with corrected_text");
 
         // SurfaceInappropriate: required surface.
-        let err = validate_and_sanitize_metadata(FeedbackAction::SurfaceInappropriate, None)
-            .unwrap_err();
+        let err =
+            validate_and_sanitize_metadata(FeedbackAction::SurfaceInappropriate, None).unwrap_err();
         assert!(matches!(err, FeedbackError::BadRequest(_)));
         validate_and_sanitize_metadata(
             FeedbackAction::SurfaceInappropriate,
@@ -1053,7 +1057,9 @@ mod tests {
             Some(&serde_json::json!({"merge_target": 42})),
         )
         .unwrap_err();
-        assert!(matches!(err, FeedbackError::BadRequest(message) if message.contains("merge_target")));
+        assert!(
+            matches!(err, FeedbackError::BadRequest(message) if message.contains("merge_target"))
+        );
     }
 
     #[test]
@@ -1087,7 +1093,9 @@ mod tests {
             })),
         )
         .unwrap_err();
-        assert!(matches!(err, FeedbackError::BadRequest(message) if message.contains("supporting_evidence")));
+        assert!(
+            matches!(err, FeedbackError::BadRequest(message) if message.contains("supporting_evidence"))
+        );
     }
 
     #[test]
@@ -1121,9 +1129,7 @@ mod tests {
         // ADR-0123 §1 verbatim: the field is corrected_to, not intended_subject_ref.
         let err = validate_and_sanitize_metadata(
             FeedbackAction::WrongSubject,
-            Some(
-                &serde_json::json!({"intended_subject_ref": {"account": "acct-2"}}),
-            ),
+            Some(&serde_json::json!({"intended_subject_ref": {"account": "acct-2"}})),
         )
         .unwrap_err();
         assert!(
@@ -1366,10 +1372,14 @@ mod tests {
         .expect("merge_intent submit");
 
         assert!(!response.replayed);
-        assert!(!response.lifecycle_changed,
-            "MergeIntent must not mutate claim verification_state");
-        assert!(!response.repair_queued,
-            "MergeIntent must not enqueue a repair job");
+        assert!(
+            !response.lifecycle_changed,
+            "MergeIntent must not mutate claim verification_state"
+        );
+        assert!(
+            !response.repair_queued,
+            "MergeIntent must not enqueue a repair job"
+        );
 
         // claim_feedback row landed.
         let seed_claim_id = claim_id.to_string();
@@ -1605,5 +1615,4 @@ mod tests {
         assert!(is_opaque_hash("abcdef0123456789"));
         assert!(is_opaque_hash("dGVzdC1iYXNlNjQ="));
     }
-
 }

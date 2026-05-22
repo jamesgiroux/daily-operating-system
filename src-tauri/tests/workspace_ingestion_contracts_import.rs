@@ -13,7 +13,7 @@ use dailyos_lib::services::workspace_ingestion::contracts::{
     SourceAttribution, WorkspaceCategory, WorkspaceClaimProposal, WorkspaceFileKind,
 };
 use dailyos_lib::services::workspace_ingestion::lifecycle::{
-    LifecycleError, LifecycleState, UserOverride, WorkspaceFileLifecycle, escalate_to_pending,
+    escalate_to_pending, LifecycleError, LifecycleState, UserOverride, WorkspaceFileLifecycle,
 };
 
 #[test]

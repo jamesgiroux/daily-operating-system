@@ -137,6 +137,26 @@ if ( ! function_exists( 'dailyos_meeting_detail_render' ) ) {
 			)
 			: 'class="wp-block-dailyos-meeting-detail" data-dailyos-surface="meeting_detail"';
 
+		// If the caller passed no inner content (programmatic render or
+		// CPT single-template with a bare wrapper), render the default
+		// template so the 10-inner-block composition still produces.
+		//
+		// `do_blocks()` on raw markup does NOT propagate the outer block's
+		// providesContext to inner blocks — each block renders top-level
+		// with empty context, so inner blocks short-circuit to the
+		// `missing_meeting_context` empty-chip path. Manually instantiate
+		// each inner block with explicit parent context per block.json's
+		// providesContext mapping.
+		$inner = $content;
+		if ( '' === trim( $inner ) && class_exists( 'WP_Block' ) ) {
+			$ctx_for_inner = [
+				'dailyos/entityType'     => 'meeting',
+				'dailyos/entityId'       => $meeting_id,
+				'dailyos/envelopeHandle' => '',
+			];
+			$inner = dailyos_meeting_detail_render_default_inner( $ctx_for_inner );
+		}
+
 		$out  = '<section ' . $wrapper_attrs . '>';
 		// Inner-blocks slot. The W1 producers consumed across the 10 typed
 		// inner blocks are:
@@ -144,9 +164,64 @@ if ( ! function_exists( 'dailyos_meeting_detail_render' ) ) {
 		//   - meeting_prep_status (DOS-335 — prep DTO)
 		//   - claim_receipt (audience-keyed receipt per claim_ref)
 		//   - record_claim_feedback (per-claim feedback affordance)
-		$out .= '<div class="dailyos-inner-blocks-slot">' . $content . '</div>';
+		$out .= '<div class="dailyos-inner-blocks-slot">' . $inner . '</div>';
 		$out .= '</section>';
 
+		return $out;
+	}
+
+	/**
+	 * Default-template block markup for the meeting-detail surface. Mirrors
+	 * the `template` array in block.json so a direct programmatic render
+	 * (no editor inner-content path) still produces the canonical 10-inner-
+	 * block composition.
+	 */
+	function dailyos_meeting_detail_default_template_markup(): string {
+		$blocks = [
+			'dailyos/meeting-header',
+			'dailyos/meeting-prep-status',
+			'dailyos/meeting-agenda-draft',
+			'dailyos/meeting-attendees-section',
+			'dailyos/meeting-related-entities',
+			'dailyos/meeting-claims-for-review',
+			'dailyos/meeting-context-bundle',
+			'dailyos/meeting-post-meeting-capture',
+			'dailyos/meeting-touchpoints-feed',
+			'dailyos/meeting-recommended-actions',
+		];
+		$out = '';
+		foreach ( $blocks as $name ) {
+			$out .= '<!-- wp:' . $name . ' /-->';
+		}
+		return $out;
+	}
+
+	/**
+	 * Render each block from the default template as a `WP_Block` with
+	 * explicit context — propagates the outer block's providesContext to
+	 * inner blocks the way Gutenberg does when the inner blocks live in
+	 * saved post_content. `do_blocks()` on raw markup does NOT do this;
+	 * each block gets empty context and short-circuits to the missing-
+	 * context empty-chip path.
+	 *
+	 * @param array<string, mixed> $context Context map keyed as the inner
+	 *                                       blocks consume in `usesContext`.
+	 * @return string Concatenated rendered HTML.
+	 */
+	function dailyos_meeting_detail_render_default_inner( array $context ): string {
+		$markup = dailyos_meeting_detail_default_template_markup();
+		$parsed = function_exists( 'parse_blocks' ) ? parse_blocks( $markup ) : [];
+		if ( ! is_array( $parsed ) ) {
+			return '';
+		}
+		$out = '';
+		foreach ( $parsed as $block_data ) {
+			if ( ! is_array( $block_data ) || empty( $block_data['blockName'] ) ) {
+				continue;
+			}
+			$wp_block = new \WP_Block( $block_data, $context );
+			$out     .= $wp_block->render();
+		}
 		return $out;
 	}
 

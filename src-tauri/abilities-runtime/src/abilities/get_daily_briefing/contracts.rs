@@ -27,7 +27,9 @@ pub const BRIEFING_SCHEMA_VERSION: u32 = 1;
 // ---- input -----------------------------------------------------------------
 
 /// Briefing section discriminator. `None` (or empty list) requests all sections.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum BriefingSection {
     State,
@@ -147,12 +149,8 @@ pub enum BriefingStaleReason {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum BriefingIntegrity {
     Clean,
-    HasCorrections {
-        superseded_claim_ids: Vec<String>,
-    },
-    HasAmbiguity {
-        ambiguous_pairs: Vec<AmbiguityPair>,
-    },
+    HasCorrections { superseded_claim_ids: Vec<String> },
+    HasAmbiguity { ambiguous_pairs: Vec<AmbiguityPair> },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
@@ -169,7 +167,10 @@ pub struct AmbiguityPair {
 pub enum BriefingAdvisory {
     /// A watch proposal is available for review. Pairs with the
     /// `watch_proposals` envelope field.
-    WatchProposal { proposal_id: String, summary: String },
+    WatchProposal {
+        proposal_id: String,
+        summary: String,
+    },
     /// One or more meetings have no linked entity — render a relink CTA but
     /// don't block the rest of the briefing.
     UnlinkedMeetings { meeting_ids: Vec<String> },

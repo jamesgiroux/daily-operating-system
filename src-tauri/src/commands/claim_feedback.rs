@@ -104,8 +104,8 @@ pub async fn submit_claim_feedback_command(
         .filter(|s| !s.is_empty())
         .unwrap_or(DEFAULT_SURFACE_TAG);
 
-    let cached = lookup_envelope_for_render(render_id, principal, surface_tag).map_err(
-        |err| match err {
+    let cached =
+        lookup_envelope_for_render(render_id, principal, surface_tag).map_err(|err| match err {
             EnvelopeCacheError::EnvelopeRequired(_) => format!(
                 "bad request: envelope_required — no envelope binding for render id `{render_id}` \
                  (cache miss or expired); re-render and resubmit"
@@ -114,8 +114,7 @@ pub async fn submit_claim_feedback_command(
                 "forbidden: principal_mismatch — envelope `{render_id}` was minted for a \
                  different actor/surface"
             ),
-        },
-    )?;
+        })?;
 
     let envelope = CachedEnvelopeAdapter {
         origin: EnvelopeOrigin::new(cached.ability),

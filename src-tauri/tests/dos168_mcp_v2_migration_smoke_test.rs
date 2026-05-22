@@ -15,22 +15,40 @@ fn dos168_v255_v258_migrations_land_canonical_schema() {
 
     // ---- v255 mcp_client_manifest + mcp_tool_grant ----
     let manifest_cols = table_columns(&conn, "mcp_client_manifest");
-    assert!(manifest_cols.contains(&"client_id".to_string()), "manifest missing client_id");
-    assert!(manifest_cols.contains(&"paired_at".to_string()), "manifest missing paired_at");
-    assert!(manifest_cols.contains(&"revoked_at".to_string()), "manifest missing revoked_at");
+    assert!(
+        manifest_cols.contains(&"client_id".to_string()),
+        "manifest missing client_id"
+    );
+    assert!(
+        manifest_cols.contains(&"paired_at".to_string()),
+        "manifest missing paired_at"
+    );
+    assert!(
+        manifest_cols.contains(&"revoked_at".to_string()),
+        "manifest missing revoked_at"
+    );
     assert!(
         manifest_cols.contains(&"transport_key_ref".to_string()),
         "manifest missing transport_key_ref"
     );
 
     let grant_cols = table_columns(&conn, "mcp_tool_grant");
-    assert!(grant_cols.contains(&"client_id".to_string()), "grant missing client_id");
-    assert!(grant_cols.contains(&"tool_name".to_string()), "grant missing tool_name");
+    assert!(
+        grant_cols.contains(&"client_id".to_string()),
+        "grant missing client_id"
+    );
+    assert!(
+        grant_cols.contains(&"tool_name".to_string()),
+        "grant missing tool_name"
+    );
     assert!(
         grant_cols.contains(&"scopes_granted_json".to_string()),
         "grant missing scopes_granted_json"
     );
-    assert!(grant_cols.contains(&"exposure".to_string()), "grant missing exposure");
+    assert!(
+        grant_cols.contains(&"exposure".to_string()),
+        "grant missing exposure"
+    );
     assert!(
         grant_cols.contains(&"rate_limit_max".to_string()),
         "grant missing rate_limit_max"
