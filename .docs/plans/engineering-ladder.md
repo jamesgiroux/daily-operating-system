@@ -21,16 +21,20 @@ Used in chat: "L2 looks good." Used in docs/headings: "L2 (Diff) review verdict:
 | **L5 Drift** | Architecture drift | n/a | n/a | `/plan-eng-review` + `architect-reviewer` comparing integrated state to planned end-state | **K-out**: run `/ce-compound-refresh` on stale `.docs/decisions/` and `docs/solutions/` entries the drift sweep surfaces |
 | **L6 Human** | Escalation | n/a | n/a | James — decision posted as Linear comment on affected ticket | **K-out**: L6 decisions captured as Linear comments (existing) + ADR if decision is architecturally durable |
 
-## Pass rules (unchanged from waves.md)
+## Pass rules
 
-- **L0 Plan**: unanimous approval from the panel
-- **L2 Diff**: all three reviewers approve (codex review + code-reviewer + domain reviewer)
+- **L0 Plan**: unanimous approval from the panel sized to the scope tier (see "Scope-based ladder sizing" below)
+- **L2 Diff**: all reviewers approve at the scope tier
 - **L3 Wave**: codex challenge + architect-reviewer approve; Suites S / P / E green
 - **L4 Surface**: zero blockers
 - **L5 Drift**: no drift
 - **L6 Human**: James's call
 
 **Pacing rule.** No wave starts until prior wave clears L3 *and* L5 (where applicable). No agent codes before L0 clears unanimously. 2 revision cycles on the same plan or PR without convergence ⇒ L6 escalation.
+
+**Symptom-progress gate (debug-driven work).** If a user-visible symptom hasn't moved after a PR landing that claimed to address it, no new packet in the same surface area until a fresh trace lands. This prevents stacking adjacent substrate work on a misdiagnosed root cause. Memory `feedback_parallel_codex_for_diagnosis_when_vortexing`.
+
+**L4 before L2 for user-facing fixes.** Any work touching a user-visible surface (block render, chip content, UI affordance, page chrome) runs L4 hands-on validation BEFORE L2 reviewers dispatch. The L2 dispatch with no L4 evidence is structurally invalid — chips passing tests but rendering empty in browser is the failure mode this prevents. Memory `feedback_l4_before_l2_for_user_facing`.
 
 **Bounding.** L2 reviews are bounded by acceptance criteria (memory `feedback_l2_must_review_against_acceptance_criteria`).
 
@@ -57,6 +61,40 @@ When in doubt: if removing the finding from this PR would change whether the PR 
 
 **Threat-topology framing (L0 reviewer scoping).** Every L0 packet declares its trust topology in §1 header: `local-to-local single-user | local-to-local multi-user | remote-to-local | remote-to-remote`. `/cso`, `security-auditor`, and codex challenge scope their threat model to that topology — they do **not** enforce multi-actor gates on single-actor surfaces. DailyOS's WP block → loopback Tauri runtime is local-to-local single-user; most multi-actor gates (confirmation tokens, principal differentiation, cross-actor poisoning, scope-gated redaction of data the user already has filesystem access to) collapse to non-issues. What still applies regardless of topology: compile bugs, crate-boundary rules, slug/path validation for data hygiene, indirect prompt injection from untrusted document content (ADR-0093), and sensitivity redaction in logs/screenshots (ADR-0108). Reviewers who flag multi-actor gates on a single-actor surface waste a cycle; reviewer prompts must cite the topology and constrain accordingly. See memory entry on local-to-local security overreach for the full pattern.
 
+## Origination check (debug-driven vs greenfield vs extension)
+
+Every L0 packet declares an origination class in §0 before §1 header:
+
+- **Greenfield** — net-new substrate, no prior surface
+- **Extension** — extends or refines existing substrate
+- **Debug-driven** — work originates from a user-visible failure or stuck symptom
+
+**For debug-driven origination, §0 MUST include a symptom-to-failure trace.** The trace structure:
+
+1. **User-visible symptom** verbatim (the words the user said, not paraphrased)
+2. **Call path** from surface entry to substrate, with file:line at each hop
+3. **Suspected failure point** with file:line, found via instrumentation OR direct trace OR clean-context codex dispatch (NOT inferred from architectural intuition)
+4. **Hypotheses already explored and rejected** (so reviewers don't re-walk them)
+
+**The packet's implementation §3 must intersect the trace.** If §3 reshapes substrate that the trace doesn't implicate, reviewers cite the mismatch and the packet rejects with a **`wrong cure`** verdict (new disposition, alongside APPROVE / REQUEST_CHANGES / BLOCK). `wrong cure` is harsher than REQUEST_CHANGES because it means the packet's premise is broken — patching the implementation won't fix it; the packet must restart from a corrected trace.
+
+Trace can come from instrumentation, codex dispatch with a clean brief, or live debugging — but it must be evidence, not intuition. Memory `feedback_parallel_codex_for_diagnosis_when_vortexing`: **2h+ on the same user-visible symptom without resolution = dispatch codex with "trace, don't patch" brief BEFORE drafting any packet.**
+
+## Scope-based ladder sizing
+
+Not every packet warrants the full reviewer panel. Default sizing was tuned for wave-scoped substrate work and over-applies to small fixes; the cost is review-cycle overhead disproportionate to the change. Tier by scope:
+
+| Scope | What it looks like | L0 panel | L2 panel |
+|---|---|---|---|
+| **Trivial** | Single-file fix <50 LOC, no contract change, no user-facing impact (typo, comment, lint-fix, test-only) | Skip L0 — code straight | `/review` only |
+| **Small** | Single substrate change OR single UI fix, no architectural reshape, single domain | `/codex challenge` (1 reviewer) | `/codex review` + `code-reviewer` (2 reviewers) |
+| **Standard** | Multi-file scope, single domain, no cross-cutting contract changes | `/codex challenge` + domain reviewer (2 reviewers) | full L2 panel (`/review` + `/codex review` + `code-reviewer` + domain reviewer per matrix) |
+| **Wave** | Architecture, substrate reshape, multiple domains, ADR-touching | full L0 panel (4-5 reviewers + Amendment-3 panels) | full L2 panel + Suite S/P/E gates |
+
+**Scope tier declared in §0** alongside origination class. Reviewers can escalate the tier if scope is mis-declared (e.g., a "small" fix that touches an ADR-named contract → reviewer requests tier-up to standard before reviewing). Reviewers can also de-escalate if a wave-tier packet is actually doing standard-tier work.
+
+Memory `feedback_review_loop_diminishing_returns_means_scope_is_wrong` applies: if a tier-N L0 produces 5+ findings per cycle, the tier is likely wrong; reset to tier-N+1 rather than absorbing findings cycle by cycle. Tier mis-declaration is a packet-author error, not a reviewer-thoroughness error.
+
 ## The Knowledge Channel (K)
 
 `K` is a continuous feedback channel parallel to L0–L6, not a rung.
@@ -75,11 +113,16 @@ When in doubt: if removing the finding from this PR would change whether the PR 
                                   before drafting
 ```
 
-### K-in (consume) — substrate-grep obligation
+### K-in (consume) — substrate-grep + diagnostic-grep obligations
 
-**At L0 (mandatory).** Every L0 reviewer prompt includes this obligation:
+**At L0 (mandatory).** Every L0 reviewer prompt includes both obligations:
 
-> Before scoring this plan, grep `docs/solutions/` and `.docs/decisions/` for substrate this plan claims to be net new. Cite any hits in your verdict. Reinvented documented substrate = **BLOCKED**, cite the path.
+> 1. **Substrate-grep**: grep `docs/solutions/` and `.docs/decisions/` for substrate this plan claims to be net new. Cite any hits in your verdict. Reinvented documented substrate = **BLOCKED**, cite the path.
+> 2. **Diagnostic-grep** (debug-driven packets): grep `docs/solutions/workflow-issues/` for the symptom pattern named in §0's trace. If a prior diagnostic entry exists, cite it in your verdict. Ignored prior diagnostic pattern = **REQUEST_CHANGES** with the workflow-issue path cited; if the §0 trace contradicts a prior diagnostic, flag as **`wrong cure`** verdict.
+
+**Symptom-fit prompt (debug-driven packets, mandatory for at least one reviewer).** L0 reviewer prompts include:
+
+> Does this packet's implementation §3 directly move the user-visible symptom named in §0? Cite the specific change in §3 that intersects the failure point in §0's trace. If you can't cite a direct intersection, the packet is **`wrong cure`** — return that verdict, not REQUEST_CHANGES.
 
 **At L1 (advisory).** Implementing agents should grep these directories for the entity / module / pattern being touched before authoring. Memory `feedback_check_substrate_before_authoring_primitives` codifies this.
 
