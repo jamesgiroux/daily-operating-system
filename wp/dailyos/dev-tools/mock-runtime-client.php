@@ -207,6 +207,16 @@ final class DailyOS_Mock_Data {
 				'total_hint'  => 7,
 				'cursor_state' => [ 'kind' => 'stable' ],
 			],
+			// Attendees + risks + plan items are surfaced through the
+			// `record_entries` paginated list. The meeting-attendees-section,
+			// meeting-recommended-actions, meeting-context-bundle blocks
+			// project specific record_kind filters from this list.
+			'attendees' => self::meeting_attendees(),
+			'risks' => self::meeting_risks(),
+			'recent_wins' => self::meeting_recent_wins(),
+			'readiness_items' => self::meeting_readiness_items(),
+			'recommended_actions' => self::meeting_recommended_actions(),
+			'post_meeting_intelligence' => self::meeting_post_intel(),
 			'health_story' => [
 				'summary' => 'Acme validated the Q2 Launch path and narrowed the renewal risk to one legal owner and one launch dependency.',
 				'trust_band' => 'likely_current',
@@ -588,6 +598,187 @@ final class DailyOS_Mock_Data {
 			'meeting_kind' => $kind,
 			'attendee_count' => 6,
 			'primary_account' => 'Acme Corp',
+		];
+	}
+
+	// ---- meeting-surface specific data ---------------------------------
+
+	private static function meeting_attendees(): array {
+		return [
+			[
+				'person_id' => 'jen-park',
+				'display_name' => 'Jen Park',
+				'avatar_initial' => 'J',
+				'avatar_style' => 'default',
+				'role' => 'VP Customer Operations',
+				'organization' => 'Acme Corp',
+				'temperature' => 'warm',
+				'engagement' => 'champion',
+				'assessment' => 'Jen will sponsor the executive readout if the redline owner is explicit and the Q2 Launch value story stays concrete.',
+				'meeting_count' => 6,
+				'last_seen_label' => 'Last seen yesterday',
+				'tooltip_assessment' => 'Executive sponsor; wants the commercial story before legal review.',
+			],
+			[
+				'person_id' => 'dan-mitchell',
+				'display_name' => 'Dan Mitchell',
+				'avatar_initial' => 'D',
+				'avatar_style' => 'cold',
+				'role' => 'Procurement Lead',
+				'organization' => 'Acme Corp',
+				'temperature' => 'cold',
+				'engagement' => 'detractor',
+				'assessment' => 'Dan needs a bounded owner and timeline before he will stop reopening MSA language.',
+				'meeting_count' => 3,
+				'last_seen_label' => 'Last seen 2 weeks ago',
+			],
+			[
+				'person_id' => 'sara-wu',
+				'display_name' => 'Sara Wu',
+				'avatar_initial' => 'S',
+				'avatar_style' => 'new',
+				'role' => 'Technical Approver',
+				'organization' => 'Acme Corp',
+				'temperature' => 'cool',
+				'engagement' => 'new_contact',
+				'assessment' => 'Sara wants technical risk summarized separately from the commercial story.',
+				'meeting_count' => 1,
+				'last_seen_label' => 'New contact',
+			],
+			[
+				'person_id' => 'priya-raman',
+				'display_name' => 'Priya Raman',
+				'avatar_initial' => 'P',
+				'avatar_style' => 'default',
+				'role' => 'Director of Engineering',
+				'organization' => 'Acme Corp',
+				'temperature' => 'warm',
+				'engagement' => 'supporter',
+				'assessment' => 'Priya is the day-to-day partner; will reinforce technical commitments if framed concretely.',
+				'meeting_count' => 12,
+				'last_seen_label' => 'Last seen 3 days ago',
+			],
+			[
+				'person_id' => 'owen-carter',
+				'display_name' => 'Owen Carter',
+				'avatar_initial' => 'O',
+				'avatar_style' => 'default',
+				'role' => 'Legal Counsel',
+				'organization' => 'Acme Corp',
+				'temperature' => 'cool',
+				'engagement' => 'tentative',
+				'assessment' => 'Tentative attendee; only joins for procurement discussion.',
+				'meeting_count' => 2,
+				'last_seen_label' => 'Last seen 6 days ago',
+			],
+			[
+				'person_id' => 'james-giroux',
+				'display_name' => 'James Giroux',
+				'avatar_initial' => 'J',
+				'avatar_style' => 'self',
+				'role' => 'Customer Success Lead',
+				'organization' => 'DailyOS',
+				'temperature' => 'self',
+				'engagement' => 'self',
+				'assessment' => '',
+				'meeting_count' => 24,
+				'last_seen_label' => 'You',
+			],
+		];
+	}
+
+	private static function meeting_risks(): array {
+		return [
+			[
+				'rank' => 'featured',
+				'urgency' => 'high',
+				'text' => 'If the MSA redlines leave this meeting without one named owner, procurement will treat the renewal as slipping and reopen pricing pressure.',
+				'claim_id' => 'cl-risk-msa-redlines',
+			],
+			[
+				'rank' => 'subordinate',
+				'urgency' => 'high',
+				'text' => 'Dan has not accepted audit-log ownership; if you leave it implied, the Q2 Launch plan will still have a visible gap.',
+				'claim_id' => 'cl-risk-audit-log-owner',
+			],
+			[
+				'rank' => 'subordinate',
+				'urgency' => 'medium',
+				'text' => 'Sara is new to the renewal path; overloading her with commercial detail before the technical summary could dilute the architecture signal.',
+				'claim_id' => 'cl-risk-sara-onboarding',
+			],
+		];
+	}
+
+	private static function meeting_recent_wins(): array {
+		return [
+			[
+				'text' => 'Helpline Rollout rehearsal landed cleanly with support; Acme Corp no longer sees launch readiness as the blocker.',
+				'claim_id' => 'cl-win-helpline-rollout',
+			],
+			[
+				'text' => 'Jen volunteered to sponsor the executive readout if the legal owner and launch owner are explicit by end of day.',
+				'claim_id' => 'cl-win-jen-sponsor',
+			],
+		];
+	}
+
+	private static function meeting_readiness_items(): array {
+		return [
+			[
+				'text' => 'Have the MSA redline summary ready for Jen, with the two clauses legal still owns.',
+				'dot_tone' => 'turmeric_muted',
+			],
+			[
+				'text' => 'Bring the Q2 Launch dependency map so Dan can confirm the audit-log owner live.',
+				'dot_tone' => 'turmeric_muted',
+			],
+			[
+				'text' => 'Ask Sara whether the technical risk summary should go to the exec readout or stay in the renewal thread.',
+				'dot_tone' => 'turmeric_muted',
+			],
+		];
+	}
+
+	private static function meeting_recommended_actions(): array {
+		return [
+			[
+				'action_id' => 'act-confirm-msa-owner',
+				'headline' => 'Confirm the MSA redline owner before procurement re-engages.',
+				'urgency' => 'overdue',
+				'context' => '~15m · Acme Corp',
+				'why' => 'Blocks the legal close-out path Jen named.',
+			],
+			[
+				'action_id' => 'act-publish-launch-deps',
+				'headline' => 'Publish Q2 Launch dependency map with named owners.',
+				'urgency' => 'today',
+				'context' => '~20m · Beta Migration',
+				'why' => 'Lets Dan accept audit-log ownership live.',
+			],
+		];
+	}
+
+	private static function meeting_post_intel(): array {
+		// Post-meeting intelligence — replaces flat outcomes when available.
+		// Referenced by reference HTML lines 59-160 (PostMeetingIntelligence_*).
+		return [
+			'summary' => 'Acme validated the Q2 Launch path and narrowed the renewal risk to one legal owner and one launch dependency. Jen Park agreed to sponsor the executive follow-up once Dan Mitchell confirms the audit-log export owner.',
+			'thread_items' => [
+				[ 'kind' => 'confirmed', 'headline' => 'Finalize support workflow rehearsal', 'detail' => 'closed since the last meeting' ],
+				[ 'kind' => 'open', 'headline' => 'Review final MSA redlines', 'detail' => 'due Apr 23' ],
+				[ 'kind' => 'neutral', 'headline' => 'Health moved from 74 to 82', 'detail' => '' ],
+				[ 'kind' => 'new_face', 'headline' => 'Sara Wu', 'detail' => 'new attendee' ],
+			],
+			'predictions' => [
+				'risks' => [
+					[ 'matched' => true, 'prediction' => 'MSA redlines could stall procurement', 'reality' => 'Jen asked for one legal owner before procurement sees the package.' ],
+					[ 'matched' => false, 'prediction' => 'Pricing pressure would resurface', 'reality' => '' ],
+				],
+				'opportunities' => [
+					[ 'matched' => true, 'prediction' => 'Sara would surface technical depth on the audit-log path', 'reality' => 'Sara confirmed the export contract is the binding architectural decision.' ],
+				],
+			],
 		];
 	}
 
