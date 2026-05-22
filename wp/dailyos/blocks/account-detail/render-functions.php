@@ -173,15 +173,64 @@ if ( ! function_exists( 'dailyos_account_detail_render' ) ) {
 			$wrapper_attrs = implode( ' ', $pieces );
 		}
 
+		// If the caller passed no inner content (programmatic render or
+		// CPT single-template with a bare wrapper), render the default
+		// template so the 24-inner-block composition still produces.
+		// Mirrors project-detail's fallback (PR #358 codex P1 fix).
+		$inner = '' !== $content ? do_blocks( $content ) : '';
+		if ( '' === trim( $inner ) && function_exists( 'do_blocks' ) ) {
+			$inner = do_blocks( dailyos_account_detail_default_template_markup() );
+		}
+
 		$out  = '<section ' . $wrapper_attrs . ' data-dailyos-envelope-handle="' . esc_attr( $handle ) . '">';
 		// Inner blocks projection: 24 typed inner blocks. core emits
 		// $content from the InnerBlocks parse; we route through do_blocks()
 		// to ensure dynamic inner blocks re-render with current context.
 		$out .= '<div class="dailyos-inner-blocks-slot">';
-		$out .= '' !== $content ? do_blocks( $content ) : '';
+		$out .= $inner;
 		$out .= '</div>';
 		$out .= '</section>';
 
+		return $out;
+	}
+
+	/**
+	 * Default-template block markup for the account-detail surface. Mirrors
+	 * the `template` array in block.json so a direct programmatic render
+	 * (no editor inner-content path) still produces the canonical 24-inner-
+	 * block composition.
+	 */
+	function dailyos_account_detail_default_template_markup(): string {
+		$blocks = [
+			'dailyos/account-hero',
+			'dailyos/sentiment-hero',
+			'dailyos/triage-section',
+			'dailyos/divergence-section',
+			'dailyos/outlook-panel',
+			'dailyos/on-track-chapter',
+			'dailyos/supporting-tension',
+			'dailyos/about-intelligence',
+			'dailyos/account-pull-quote',
+			'dailyos/stakeholder-grid',
+			'dailyos/strategic-landscape',
+			'dailyos/value-commitments',
+			'dailyos/quote-wall',
+			'dailyos/commercial-shape',
+			'dailyos/account-technical-footprint',
+			'dailyos/relationship-fabric',
+			'dailyos/about-this-dossier',
+			'dailyos/account-detail-recommended-actions',
+			'dailyos/account-detail-touchpoints-feed',
+			'dailyos/account-detail-open-loops-feed',
+			'dailyos/file-list',
+			'dailyos/linear-issues-chapter',
+			'dailyos/account-detail-unified-timeline',
+			'dailyos/finis-marker',
+		];
+		$out = '';
+		foreach ( $blocks as $name ) {
+			$out .= '<!-- wp:' . $name . ' /-->';
+		}
 		return $out;
 	}
 

@@ -137,6 +137,15 @@ if ( ! function_exists( 'dailyos_meeting_detail_render' ) ) {
 			)
 			: 'class="wp-block-dailyos-meeting-detail" data-dailyos-surface="meeting_detail"';
 
+		// If the caller passed no inner content (programmatic render or
+		// CPT single-template with a bare wrapper), render the default
+		// template so the 10-inner-block composition still produces.
+		// Mirrors project-detail's fallback (PR #358 codex P1 fix).
+		$inner = $content;
+		if ( '' === trim( $inner ) && function_exists( 'do_blocks' ) ) {
+			$inner = do_blocks( dailyos_meeting_detail_default_template_markup() );
+		}
+
 		$out  = '<section ' . $wrapper_attrs . '>';
 		// Inner-blocks slot. The W1 producers consumed across the 10 typed
 		// inner blocks are:
@@ -144,9 +153,35 @@ if ( ! function_exists( 'dailyos_meeting_detail_render' ) ) {
 		//   - meeting_prep_status (DOS-335 — prep DTO)
 		//   - claim_receipt (audience-keyed receipt per claim_ref)
 		//   - record_claim_feedback (per-claim feedback affordance)
-		$out .= '<div class="dailyos-inner-blocks-slot">' . $content . '</div>';
+		$out .= '<div class="dailyos-inner-blocks-slot">' . $inner . '</div>';
 		$out .= '</section>';
 
+		return $out;
+	}
+
+	/**
+	 * Default-template block markup for the meeting-detail surface. Mirrors
+	 * the `template` array in block.json so a direct programmatic render
+	 * (no editor inner-content path) still produces the canonical 10-inner-
+	 * block composition.
+	 */
+	function dailyos_meeting_detail_default_template_markup(): string {
+		$blocks = [
+			'dailyos/meeting-header',
+			'dailyos/meeting-prep-status',
+			'dailyos/meeting-agenda-draft',
+			'dailyos/meeting-attendees-section',
+			'dailyos/meeting-related-entities',
+			'dailyos/meeting-claims-for-review',
+			'dailyos/meeting-context-bundle',
+			'dailyos/meeting-post-meeting-capture',
+			'dailyos/meeting-touchpoints-feed',
+			'dailyos/meeting-recommended-actions',
+		];
+		$out = '';
+		foreach ( $blocks as $name ) {
+			$out .= '<!-- wp:' . $name . ' /-->';
+		}
 		return $out;
 	}
 
