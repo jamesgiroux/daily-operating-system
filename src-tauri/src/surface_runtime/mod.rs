@@ -2261,6 +2261,13 @@ async fn surface_pairing_refresh_scopes_response(
         session_id: validated.session_id.clone(),
         surface_client_id: validated.surface_client_id.clone(),
         site_binding_digest: validated.site_binding_digest.clone(),
+        wp_user_id: validated
+            .wp_user_id
+            .expect("ValidatedSurfaceSession from signed-route invariant: wp_user_id is Some(_)"),
+        wp_user_hash: validated
+            .wp_user_hash
+            .clone()
+            .expect("ValidatedSurfaceSession from signed-route invariant: wp_user_hash is Some(_)"),
         now: Utc::now(),
     };
     let request_id_for_audit = request_id.clone();

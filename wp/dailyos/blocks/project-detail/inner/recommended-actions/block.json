@@ -1,7 +1,7 @@
 {
 	"$schema": "https://schemas.wp.org/trunk/block.json",
 	"apiVersion": 3,
-	"name": "dailyos/recommended-actions",
+	"name": "dailyos/project-detail-recommended-actions",
 	"title": "Recommended Actions",
 	"category": "dailyos",
 	"description": "Recommended subset of OpenLoops. Per-action trust band. Inserter-global per ADR-0129 §2 (no parent); default composition lives in the project-detail-default filesystem pattern.",

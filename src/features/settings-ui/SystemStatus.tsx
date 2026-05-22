@@ -32,9 +32,11 @@ function formatTime(iso?: string): string {
   if (!iso) return "--";
   try {
     const d = new Date(iso);
+    const sameYear = d.getFullYear() === new Date().getFullYear();
     return d.toLocaleString(undefined, {
       month: "short",
       day: "numeric",
+      year: sameYear ? undefined : "numeric",
       hour: "numeric",
       minute: "2-digit",
     });
@@ -320,11 +322,22 @@ function pairingMayBeRevoked(value: string): boolean {
   return value === "active" || value === "suspended";
 }
 
+function extractPairCode(pairingString: string): string | null {
+  try {
+    const url = new URL(pairingString);
+    const code = url.searchParams.get("code");
+    return code && code.length > 0 ? code : null;
+  } catch {
+    return null;
+  }
+}
+
 export function SurfaceRuntimeSection() {
   const [status, setStatus] = useState<SurfaceRuntimePairingStatus | null>(null);
   const [pairings, setPairings] = useState<SurfaceClientPairing[]>([]);
   const [pairingString, setPairingString] = useState<string | null>(null);
   const [pairingStringExpiresAt, setPairingStringExpiresAt] = useState<string | null>(null);
+  const [pairingCopied, setPairingCopied] = useState<"code" | "url" | null>(null);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [revokingId, setRevokingId] = useState<string | null>(null);
@@ -430,9 +443,9 @@ export function SurfaceRuntimeSection() {
       {pairingString && (
         <div className={formRowStyles.settingRow}>
           <div>
-            <span className={formRowStyles.fieldLabel}>Pairing String</span>
+            <span className={formRowStyles.fieldLabel}>Pairing code</span>
             <p className={formRowStyles.descriptionSmallTop2}>
-              Share this with the local surface client while it is valid.
+              Type or paste this into the WordPress plugin's pairing screen.
             </p>
             {pairingStringExpiresAt && (
               <p className={formRowStyles.descriptionTinyTop2}>
@@ -440,17 +453,52 @@ export function SurfaceRuntimeSection() {
               </p>
             )}
           </div>
-          <code
-            style={{
-              maxWidth: 360,
-              overflowWrap: "anywhere",
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              color: "var(--color-text-secondary)",
-            }}
-          >
-            {pairingString}
-          </code>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <code
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 18,
+                  letterSpacing: "0.05em",
+                  color: "var(--color-text-primary)",
+                  userSelect: "all",
+                }}
+              >
+                {extractPairCode(pairingString) ?? pairingString}
+              </code>
+              <SettingsButton
+                compact
+                onClick={() => {
+                  const code = extractPairCode(pairingString) ?? pairingString;
+                  void navigator.clipboard.writeText(code).then(() => {
+                    setPairingCopied("code");
+                    setTimeout(() => setPairingCopied(null), 1500);
+                  });
+                }}
+              >
+                {pairingCopied === "code" ? "Copied" : "Copy"}
+              </SettingsButton>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span
+                className={formRowStyles.descriptionTinyTop2}
+                style={{ margin: 0 }}
+              >
+                Or click the full URL
+              </span>
+              <SettingsButton
+                compact
+                onClick={() => {
+                  void navigator.clipboard.writeText(pairingString).then(() => {
+                    setPairingCopied("url");
+                    setTimeout(() => setPairingCopied(null), 1500);
+                  });
+                }}
+              >
+                {pairingCopied === "url" ? "Copied" : "Copy URL"}
+              </SettingsButton>
+            </div>
+          </div>
         </div>
       )}
 

@@ -187,6 +187,28 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 		}
 	}
 
+	/**
+	 * Block-name collision guard: the 4 feed-shape inner blocks that share
+	 * a slug with person-detail's top-level (de-facto person-detail-inner)
+	 * blocks MUST be surface-prefixed. register_block_type is first-wins,
+	 * so without the prefix the top-level wins, the account-detail inner
+	 * block silently fails to register, and the rendered surface emits
+	 * the wrong empty-state reason (`no_envelope` from the person-detail
+	 * renderer that calls a person-detail-specific envelope store).
+	 */
+	public function test_collision_slugs_are_surface_prefixed(): void {
+		$collision_slugs = [ 'recommended-actions', 'touchpoints-feed', 'open-loops-feed', 'unified-timeline' ];
+		foreach ( $collision_slugs as $slug ) {
+			$json_path = __DIR__ . '/../../blocks/account-detail/inner/' . $slug . '/block.json';
+			$json      = json_decode( (string) file_get_contents( $json_path ), true );
+			$this->assertSame(
+				'dailyos/account-detail-' . $slug,
+				$json['name'],
+				$slug . ' must carry the account-detail- surface prefix to avoid 3-way name collision'
+			);
+		}
+	}
+
 	// ---- inner blocks: empty-state pattern ------------------------------
 
 	/**
@@ -194,14 +216,19 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 	 * touchpoints-feed, open-loops-feed, unified-timeline) render the
 	 * dailyos-empty-chip with a data-empty-reason when the envelope is
 	 * absent — V1.1 §10 invariant "never silent-hidden".
+	 *
+	 * The 4 feed-shape blocks are surface-prefixed (dailyos/account-detail-*)
+	 * to avoid the 3-way name collision with person-detail's top-level
+	 * blocks of the same short slug, which would otherwise first-win at
+	 * register_block_type and starve the inner block of context.
 	 */
 	public function test_complex_inner_blocks_render_empty_chip_on_absent_envelope(): void {
 		$cases = [
 			'stakeholder-grid'    => 'dailyos_stakeholder_grid_render',
-			'recommended-actions' => 'dailyos_recommended_actions_render',
-			'touchpoints-feed'    => 'dailyos_touchpoints_feed_render',
-			'open-loops-feed'     => 'dailyos_open_loops_feed_render',
-			'unified-timeline'    => 'dailyos_unified_timeline_render',
+			'recommended-actions' => 'dailyos_account_detail_recommended_actions_render',
+			'touchpoints-feed'    => 'dailyos_account_detail_touchpoints_feed_render',
+			'open-loops-feed'     => 'dailyos_account_detail_open_loops_feed_render',
+			'unified-timeline'    => 'dailyos_account_detail_unified_timeline_render',
 		];
 		foreach ( $cases as $slug => $fn ) {
 			include_once __DIR__ . '/../../blocks/account-detail/inner/' . $slug . '/render-functions.php';
@@ -291,6 +318,49 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 		// And the envelope is fetchable under that handle from the cache.
 		$cached = dailyos_envelope_cache_get( $handle_a );
 		$this->assertNotNull( $cached, 'envelope cached under deterministic handle' );
+	}
+
+	/**
+	 * Production response shape: runtime returns
+	 * `{ ok, request_id, ability: { ability_name, data, ... } }` per
+	 * AbilityResponseJson::serialize in src-tauri/src/bridges/types.rs. The
+	 * envelope-handle extractor MUST unwrap `$response['ability']['data']`,
+	 * not fall through to the bare `$response` (which would cache the outer
+	 * wrapper as if it were the envelope and starve every inner block of
+	 * `sections`, triggering `not_available` chips).
+	 */
+	public function test_envelope_handle_unwraps_runtime_ability_data_shape(): void {
+		$envelope         = [
+			'envelopeRenderId' => 'env-acct-test-prod-001',
+			'subject'          => [
+				'kind' => 'account',
+				'id'   => 'acct-test-prod',
+			],
+			'sections'         => [
+				'facts' => [
+					'kind'       => 'present',
+					'item_count' => 1,
+				],
+			],
+		];
+		$runtime_response = [
+			'ok'         => true,
+			'request_id' => 'req-prod-001',
+			'ability'    => [
+				'ability_name'    => 'get_entity_intelligence',
+				'ability_version' => 'v1.0.0',
+				'schema_version'  => 1,
+				'data'            => $envelope,
+			],
+		];
+
+		$handle = dailyos_envelope_handle_from_response( $runtime_response, 'account', 'acct-test-prod' );
+		$this->assertSame( 'env-acct-test-prod-001', $handle, 'envelopeRenderId extracted from ability.data path' );
+
+		$cached = dailyos_envelope_cache_get( $handle );
+		$this->assertIsArray( $cached, 'envelope cached under handle' );
+		$this->assertArrayHasKey( 'sections', $cached, 'cached value is the envelope, not the runtime wrapper' );
+		$this->assertSame( 'present', $cached['sections']['facts']['kind'] );
 	}
 
 	/**

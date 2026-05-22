@@ -36,11 +36,11 @@
 <!-- wp:dailyos/account-technical-footprint /-->
 <!-- wp:dailyos/relationship-fabric /-->
 <!-- wp:dailyos/about-this-dossier /-->
-<!-- wp:dailyos/recommended-actions /-->
-<!-- wp:dailyos/touchpoints-feed /-->
-<!-- wp:dailyos/open-loops-feed /-->
+<!-- wp:dailyos/account-detail-recommended-actions /-->
+<!-- wp:dailyos/account-detail-touchpoints-feed /-->
+<!-- wp:dailyos/account-detail-open-loops-feed /-->
 <!-- wp:dailyos/file-list /-->
 <!-- wp:dailyos/linear-issues-chapter /-->
-<!-- wp:dailyos/unified-timeline /-->
+<!-- wp:dailyos/account-detail-unified-timeline /-->
 <!-- wp:dailyos/finis-marker /-->
 <!-- /wp:dailyos/account-detail -->

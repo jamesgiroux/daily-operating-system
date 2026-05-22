@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	return '';
 }
 
-if ( ! function_exists( 'dailyos_recommended_actions_render' ) ) {
+if ( ! function_exists( 'dailyos_account_detail_recommended_actions_render' ) ) {
 	require_once __DIR__ . '/render-functions.php';
 }
 
@@ -26,4 +26,4 @@ $attributes = isset( $attributes ) && is_array( $attributes ) ? $attributes : []
 $content    = isset( $content ) && is_string( $content ) ? $content : '';
 $block      = isset( $block ) && is_object( $block ) ? $block : null;
 // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- render functions escape output internally via esc_html / esc_attr.
-echo dailyos_recommended_actions_render( $attributes, $content, $block );
+echo dailyos_account_detail_recommended_actions_render( $attributes, $content, $block );

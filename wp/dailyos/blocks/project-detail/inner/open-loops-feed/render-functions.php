@@ -29,7 +29,7 @@ if ( ! function_exists( 'dailyos_resolve_envelope' ) ) {
 	require_once dirname( __DIR__, 3 ) . '/_shared/envelope/envelope-resolver.php';
 }
 
-if ( ! function_exists( 'dailyos_open_loops_feed_render' ) ) {
+if ( ! function_exists( 'dailyos_project_detail_open_loops_feed_render' ) ) {
 	/**
 	 * Render the open-loops-feed inner block.
 	 *
@@ -38,7 +38,7 @@ if ( ! function_exists( 'dailyos_open_loops_feed_render' ) ) {
 	 * @param \WP_Block|null       $block      Parsed block carrying usesContext.
 	 * @return string
 	 */
-	function dailyos_open_loops_feed_render( array $attributes, string $content = '', $block = null ): string {
+	function dailyos_project_detail_open_loops_feed_render( array $attributes, string $content = '', $block = null ): string {
 		unset( $attributes, $content );
 
 		$handle    = null;

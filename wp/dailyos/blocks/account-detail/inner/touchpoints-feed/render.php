@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	return '';
 }
 
-if ( ! function_exists( 'dailyos_touchpoints_feed_render' ) ) {
+if ( ! function_exists( 'dailyos_account_detail_touchpoints_feed_render' ) ) {
 	require_once __DIR__ . '/render-functions.php';
 }
 
@@ -26,4 +26,4 @@ $attributes = isset( $attributes ) && is_array( $attributes ) ? $attributes : []
 $content    = isset( $content ) && is_string( $content ) ? $content : '';
 $block      = isset( $block ) && is_object( $block ) ? $block : null;
 // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- render functions escape output internally via esc_html / esc_attr.
-echo dailyos_touchpoints_feed_render( $attributes, $content, $block );
+echo dailyos_account_detail_touchpoints_feed_render( $attributes, $content, $block );

@@ -28,10 +28,10 @@
 <!-- wp:dailyos/watch-list-milestones /-->
 <!-- wp:dailyos/stakeholder-gallery /-->
 <!-- wp:dailyos/the-work /-->
-<!-- wp:dailyos/touchpoints-feed /-->
-<!-- wp:dailyos/open-loops-feed /-->
+<!-- wp:dailyos/project-detail-touchpoints-feed /-->
+<!-- wp:dailyos/project-detail-open-loops-feed /-->
 <!-- wp:dailyos/linear-issues-chapter /-->
-<!-- wp:dailyos/unified-timeline /-->
-<!-- wp:dailyos/recommended-actions /-->
+<!-- wp:dailyos/project-detail-unified-timeline /-->
+<!-- wp:dailyos/project-detail-recommended-actions /-->
 <!-- wp:dailyos/project-appendix /-->
 <!-- /wp:dailyos/project-detail -->
