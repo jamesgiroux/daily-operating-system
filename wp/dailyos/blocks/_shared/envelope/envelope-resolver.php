@@ -61,6 +61,7 @@ if ( ! function_exists( 'dailyos_envelope_cache_put' ) ) {
 		}
 		$shared             = &dailyos_envelope_cache_storage();
 		$shared[ $handle ]  = $envelope;
+		dailyos_envelope_claim_item_cache_put_from_envelope( $envelope );
 	}
 }
 
@@ -72,6 +73,69 @@ if ( ! function_exists( 'dailyos_envelope_cache_storage' ) ) {
 	 * @return array<string,array<string,mixed>>
 	 */
 	function &dailyos_envelope_cache_storage(): array {
+		static $storage = [];
+		return $storage;
+	}
+}
+
+if ( ! function_exists( 'dailyos_envelope_claim_item_cache_get' ) ) {
+	/**
+	 * Read an indexed claim-backed envelope item by claim id.
+	 *
+	 * @param string $claim_id Claim identifier.
+	 * @return array<string,mixed>|null
+	 */
+	function dailyos_envelope_claim_item_cache_get( string $claim_id ): ?array {
+		if ( '' === $claim_id ) {
+			return null;
+		}
+		$storage = dailyos_envelope_claim_item_cache_storage();
+		return $storage[ $claim_id ] ?? null;
+	}
+}
+
+if ( ! function_exists( 'dailyos_envelope_claim_item_cache_put_from_envelope' ) ) {
+	/**
+	 * Index claim-backed envelope items so copied inner-block selectors that
+	 * only pass claim ids can recover producer-rendered text without receipt
+	 * fan-out.
+	 *
+	 * @param array<string,mixed> $envelope Cached EntityIntelligenceEnvelope.
+	 */
+	function dailyos_envelope_claim_item_cache_put_from_envelope( array $envelope ): void {
+		$storage = &dailyos_envelope_claim_item_cache_storage();
+		dailyos_envelope_claim_item_cache_walk( $envelope, $storage );
+	}
+
+	/**
+	 * Recursively index claim items from an envelope subtree.
+	 *
+	 * @param mixed                            $node Envelope subtree.
+	 * @param array<string,array<string,mixed>> $storage Cache storage.
+	 */
+	function dailyos_envelope_claim_item_cache_walk( mixed $node, array &$storage ): void {
+		if ( ! is_array( $node ) ) {
+			return;
+		}
+		$claim_id = $node['claimId'] ?? $node['claim_id'] ?? null;
+		if ( is_scalar( $claim_id ) && '' !== (string) $claim_id ) {
+			$storage[ (string) $claim_id ] = $node;
+		}
+		foreach ( $node as $child ) {
+			if ( is_array( $child ) ) {
+				dailyos_envelope_claim_item_cache_walk( $child, $storage );
+			}
+		}
+	}
+}
+
+if ( ! function_exists( 'dailyos_envelope_claim_item_cache_storage' ) ) {
+	/**
+	 * Backing storage for claim item lookup.
+	 *
+	 * @return array<string,array<string,mixed>>
+	 */
+	function &dailyos_envelope_claim_item_cache_storage(): array {
 		static $storage = [];
 		return $storage;
 	}
@@ -100,6 +164,7 @@ if ( ! function_exists( 'dailyos_envelope_handle_from_response' ) ) {
 		if ( ! is_array( $envelope ) ) {
 			return '';
 		}
+		$envelope = dailyos_envelope_normalize_surface_payload( $envelope );
 		$handle = '';
 		if ( isset( $envelope['envelopeRenderId'] ) && is_string( $envelope['envelopeRenderId'] ) ) {
 			$handle = $envelope['envelopeRenderId'];
@@ -134,6 +199,34 @@ if ( ! function_exists( 'dailyos_envelope_handle_from_response' ) ) {
 		}
 		dailyos_envelope_cache_put( $handle, $envelope );
 		return $handle;
+	}
+}
+
+if ( ! function_exists( 'dailyos_envelope_normalize_surface_payload' ) ) {
+	/**
+	 * Normalize runtime DTO aliases to the section keys used by WP inner blocks.
+	 *
+	 * @param array<string,mixed> $envelope EntityIntelligenceEnvelope payload.
+	 * @return array<string,mixed>
+	 */
+	function dailyos_envelope_normalize_surface_payload( array $envelope ): array {
+		$aliases = [
+			'recordEntries'     => [ 'record', 'record_entries' ],
+			'metadataProposals' => [ 'metadata_proposals' ],
+			'openLoops'         => [ 'open_loops' ],
+			'healthStory'       => [ 'health_story' ],
+		];
+		foreach ( $aliases as $source_key => $target_keys ) {
+			if ( ! array_key_exists( $source_key, $envelope ) ) {
+				continue;
+			}
+			foreach ( $target_keys as $target_key ) {
+				if ( ! array_key_exists( $target_key, $envelope ) ) {
+					$envelope[ $target_key ] = $envelope[ $source_key ];
+				}
+			}
+		}
+		return $envelope;
 	}
 }
 
@@ -361,6 +454,24 @@ if ( ! function_exists( 'dailyos_envelope_consume_claim' ) ) {
 	 * @return array<string,mixed>|null
 	 */
 	function dailyos_envelope_consume_claim( array $claim_ref, array $scope_set ): ?array {
+		// get_entity_intelligence now carries display-safe renderedText on
+		// claim-backed envelope rows. Use that first so WordPress does not
+		// fan out into dozens of claim_receipt calls and trip loopback limits.
+		if ( '' !== dailyos_receipt_rendered_text( $claim_ref, '' ) ) {
+			return $claim_ref;
+		}
+
+		$claim_id = isset( $claim_ref['claim_id'] ) ? (string) $claim_ref['claim_id'] : '';
+		if ( '' !== $claim_id ) {
+			$cached_item = dailyos_envelope_claim_item_cache_get( $claim_id );
+			if ( is_array( $cached_item ) ) {
+				$claim_ref = array_merge( $cached_item, $claim_ref );
+				if ( '' !== dailyos_receipt_rendered_text( $claim_ref, '' ) ) {
+					return $claim_ref;
+				}
+			}
+		}
+
 		$runtime_client = apply_filters( 'dailyos_runtime_client_for_block', null );
 		if ( ! is_object( $runtime_client ) || ! method_exists( $runtime_client, 'invoke_ability' ) ) {
 			return null;
@@ -370,7 +481,6 @@ if ( ! function_exists( 'dailyos_envelope_consume_claim' ) ) {
 		// input contract: { schemaVersion, target: { kind, claimId, ... },
 		// surface }. Without this shaping the ability decoder rejects the
 		// payload as a contract violation rather than rendering the receipt.
-		$claim_id = isset( $claim_ref['claim_id'] ) ? (string) $claim_ref['claim_id'] : '';
 		if ( '' === $claim_id ) {
 			return null;
 		}
@@ -501,12 +611,18 @@ if ( ! function_exists( 'dailyos_envelope_collect_claim_refs' ) ) {
 				if ( '' === $claim_id ) {
 					continue;
 				}
-				$refs[] = [
+				$ref = [
 					'claim_id'     => (string) $claim_id,
 					'audience_key' => $item['audienceKey'] ?? $item['audience_key'] ?? 'user',
 					'subject_ref'  => $item['subjectRef'] ?? $item['subject_ref'] ?? null,
 					'field_path'   => $item['fieldPath'] ?? $item['field_path'] ?? null,
 				];
+				foreach ( [ 'renderedText', 'rendered_text', 'text', 'trust', 'trustBand', 'trust_band', 'provenance', 'sensitivity' ] as $key ) {
+					if ( array_key_exists( $key, $item ) ) {
+						$ref[ $key ] = $item[ $key ];
+					}
+				}
+				$refs[] = $ref;
 			}
 		}
 		return $refs;
