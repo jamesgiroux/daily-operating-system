@@ -103,8 +103,41 @@ final class DailyOS_Mock_Runtime_Client {
 	}
 
 	/**
-	 * Forward any other method to the inner client (project_composition,
-	 * pairing helpers, etc).
+	 * Legacy v1.4.2 ProjectedComposition mock — intercepts
+	 * `project_composition_for_surface` calls with `composition_id`
+	 * starting with `showcase-` and returns canned per-block payloads
+	 * matching the pre-v1.4.4 `selected_known_type_id` + `payload` shape.
+	 *
+	 * Used by the restored `dailyos/account-overview` block (resurrected
+	 * for compare-against-known-good debugging during v1.4.4 W1 L4).
+	 */
+	public function project_composition_for_surface(
+		string $composition_id,
+		int $composition_version = 0,
+		?string $cache_hint_token = null
+	) {
+		if ( 0 === strpos( $composition_id, 'showcase-' ) ) {
+			$projection = DailyOS_Mock_Data::canned_projection( substr( $composition_id, strlen( 'showcase-' ) ) );
+			if ( null !== $projection ) {
+				return [
+					'ok'                => true,
+					'projection'        => $projection,
+					'cache_hint_token'  => 'mock-cache-hint',
+					'served_from_cache' => false,
+				];
+			}
+		}
+		if ( is_object( $this->inner ) && method_exists( $this->inner, 'project_composition_for_surface' ) ) {
+			return $this->inner->project_composition_for_surface( $composition_id, $composition_version, $cache_hint_token );
+		}
+		return [
+			'ok'    => false,
+			'error' => [ 'code' => 'mock_no_canned_composition', 'message' => sprintf( 'composition_id=%s', $composition_id ) ],
+		];
+	}
+
+	/**
+	 * Forward any other method (pairing helpers, etc) to the inner client.
 	 */
 	public function __call( string $name, array $args ) {
 		if ( is_object( $this->inner ) && method_exists( $this->inner, $name ) ) {
@@ -779,6 +812,79 @@ final class DailyOS_Mock_Data {
 					[ 'matched' => true, 'prediction' => 'Sara would surface technical depth on the audit-log path', 'reality' => 'Sara confirmed the export contract is the binding architectural decision.' ],
 				],
 			],
+		];
+	}
+
+	// ---- legacy v1.4.2 ProjectedComposition canned data -----------------
+	// Used by the resurrected `dailyos/account-overview` block for
+	// compare-against-known-good debugging. Each composition_id maps to
+	// a projection with `blocks[]` carrying `selected_known_type_id` +
+	// `payload` per the pre-v1.4.4 substrate shape.
+
+	public static function canned_projection( string $key ): ?array {
+		$recent_iso = gmdate( 'c', time() - 3600 );
+		$stale_iso  = gmdate( 'c', time() - 7 * 86400 );
+
+		$blocks_by_key = [
+			'account-overview' => [
+				[
+					'selected_known_type_id' => 'dailyos/account-overview-summary',
+					'trust_band'             => 'likely_current',
+					'payload'                => [
+						'title' => 'Acme Corp',
+						'text'  => 'Customer account currently renewing. Procurement engaged the renewal thread and asked for security evidence before approving the extension. Champion remains engaged; technical risk narrowed to one legal owner and one launch dependency.',
+					],
+				],
+				[
+					'selected_known_type_id' => 'dailyos/action-list',
+					'trust_band'             => 'likely_current',
+					'payload'                => [
+						'title' => 'Open actions',
+						'items' => [
+							'Send Acme Corp final MSA redlines to Jen Park',
+							'Confirm sponsor coverage before legal review',
+							'Publish Q2 Launch dependency map with named owners',
+						],
+					],
+				],
+			],
+			'entity-chip-account' => [
+				[ 'selected_known_type_id' => 'dailyos/entity-chip', 'payload' => [ 'entity_type' => 'account', 'text' => 'Acme Corp' ] ],
+			],
+			'entity-chip-project' => [
+				[ 'selected_known_type_id' => 'dailyos/entity-chip', 'payload' => [ 'entity_type' => 'project', 'text' => 'Beta Migration' ] ],
+			],
+			'entity-chip-person' => [
+				[ 'selected_known_type_id' => 'dailyos/entity-chip', 'payload' => [ 'entity_type' => 'person', 'text' => 'Priya Raman' ] ],
+			],
+			'health-badge-compact-green' => [
+				[ 'selected_known_type_id' => 'dailyos/health-badge', 'payload' => [ 'score' => 82, 'band' => 'green', 'size' => 'compact', 'sufficientData' => true, 'showScore' => true ] ],
+			],
+			'health-badge-standard-yellow' => [
+				[ 'selected_known_type_id' => 'dailyos/health-badge', 'payload' => [ 'score' => 71, 'band' => 'yellow', 'size' => 'standard', 'sufficientData' => true, 'showScore' => true, 'trend' => [ 'direction' => 'declining' ] ] ],
+			],
+			'health-badge-hero-red' => [
+				[ 'selected_known_type_id' => 'dailyos/health-badge', 'payload' => [ 'score' => 41, 'band' => 'red', 'size' => 'hero', 'sufficientData' => true, 'showScore' => true, 'trend' => [ 'direction' => 'declining' ] ] ],
+			],
+			'trust-band-current' => [
+				[ 'selected_known_type_id' => 'dailyos/trust-band-badge', 'payload' => [ 'band' => 'likely_current' ] ],
+			],
+			'trust-band-caution' => [
+				[ 'selected_known_type_id' => 'dailyos/trust-band-badge', 'payload' => [ 'band' => 'use_with_caution' ] ],
+			],
+			'freshness-recent' => [
+				[ 'selected_known_type_id' => 'dailyos/freshness-indicator', 'payload' => [ 'at' => $recent_iso, 'format' => 'relative', 'variant' => 'inline', 'verb' => 'Updated' ] ],
+			],
+			'freshness-stale' => [
+				[ 'selected_known_type_id' => 'dailyos/freshness-indicator', 'payload' => [ 'at' => $stale_iso, 'format' => 'relative', 'variant' => 'inline', 'verb' => 'Updated' ] ],
+			],
+		];
+
+		if ( ! isset( $blocks_by_key[ $key ] ) ) {
+			return null;
+		}
+		return [
+			'blocks' => $blocks_by_key[ $key ],
 		];
 	}
 
