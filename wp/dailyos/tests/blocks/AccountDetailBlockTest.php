@@ -494,6 +494,12 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 						'fieldPath'    => 'pullQuote',
 						'subjectRef'   => [ 'kind' => 'account', 'id' => 'acct-test-001' ],
 						'renderedText' => [
+							'policy' => [
+								'claimId'     => 'claim-test-cache-001',
+								'kind'        => 'render',
+								'sensitivity' => 'internal',
+								'surface'     => 'tauri_entity_detail',
+							],
 							'text' => 'Readable cached row',
 						],
 						'trustBand'    => 'likely_current',

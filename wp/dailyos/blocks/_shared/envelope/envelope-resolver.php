@@ -119,7 +119,12 @@ if ( ! function_exists( 'dailyos_envelope_claim_item_cache_put_from_envelope' ) 
 		}
 		$claim_id = $node['claimId'] ?? $node['claim_id'] ?? null;
 		if ( is_scalar( $claim_id ) && '' !== (string) $claim_id ) {
-			$storage[ (string) $claim_id ] = $node;
+			$existing          = $storage[ (string) $claim_id ] ?? null;
+			$node_has_text     = '' !== dailyos_receipt_rendered_text( $node, '' );
+			$existing_has_text = is_array( $existing ) && '' !== dailyos_receipt_rendered_text( $existing, '' );
+			if ( ! is_array( $existing ) || ( $node_has_text && ! $existing_has_text ) ) {
+				$storage[ (string) $claim_id ] = $node;
+			}
 		}
 		foreach ( $node as $child ) {
 			if ( is_array( $child ) ) {
