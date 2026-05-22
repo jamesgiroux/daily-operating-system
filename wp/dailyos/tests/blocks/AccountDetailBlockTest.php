@@ -247,6 +247,36 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 		}
 	}
 
+	/**
+	 * Account hero vitals must render human-readable claim text; claim ids are
+	 * metadata only and must not become visible fallback content.
+	 */
+	public function test_account_hero_row_prefers_rendered_text_over_claim_id(): void {
+		include_once __DIR__ . '/../../blocks/account-detail/inner/account-hero/render-functions.php';
+
+		$html = dailyos_account_hero_render_row(
+			[ 'claim_id' => 'claim-test-hero-001' ],
+			[
+				'renderedText' => [
+					'text' => 'Readable hero row',
+				],
+				'trustBand'    => 'likely_current',
+			]
+		);
+
+		$this->assertStringContainsString( 'data-claim-id="claim-test-hero-001"', $html );
+		$this->assertStringContainsString( '>Readable hero row</span>', $html );
+		$this->assertStringNotContainsString( '>claim-test-hero-001</span>', $html );
+
+		$this->assertSame(
+			'',
+			dailyos_account_hero_render_row(
+				[ 'claim_id' => 'claim-test-hero-002' ],
+				[ 'trustBand' => 'likely_current' ]
+			)
+		);
+	}
+
 	// ---- envelope helpers: section state lookup -------------------------
 
 	/**

@@ -260,8 +260,23 @@ if ( ! function_exists( 'dailyos_account_hero_render_row' ) ) {
 	function dailyos_account_hero_render_row( array $claim_ref, array $receipt ): string {
 		$claim_id   = isset( $claim_ref['claim_id'] ) ? (string) $claim_ref['claim_id'] : '';
 		$trust_band = dailyos_receipt_trust_band( $receipt );
-		$display    = isset( $receipt['value']['display'] ) ? (string) $receipt['value']['display'] : ( isset( $receipt['display'] ) ? (string) $receipt['display'] : $claim_id );
-		$source     = isset( $receipt['source']['name'] ) ? (string) $receipt['source']['name'] : ( isset( $receipt['sourceName'] ) ? (string) $receipt['sourceName'] : '' );
+		$payload    = dailyos_receipt_payload( $receipt );
+		$display    = dailyos_receipt_rendered_text( $receipt, '' );
+		if ( '' === trim( $display ) ) {
+			$value = $payload['value'] ?? null;
+			if ( is_array( $value ) && isset( $value['display'] ) && is_scalar( $value['display'] ) ) {
+				$display = (string) $value['display'];
+			} elseif ( isset( $payload['display'] ) && is_scalar( $payload['display'] ) ) {
+				$display = (string) $payload['display'];
+			}
+		}
+		if ( '' === trim( $display ) ) {
+			return '';
+		}
+		$source_payload = $payload['source'] ?? null;
+		$source         = is_array( $source_payload ) && isset( $source_payload['name'] ) && is_scalar( $source_payload['name'] )
+			? (string) $source_payload['name']
+			: ( isset( $payload['sourceName'] ) && is_scalar( $payload['sourceName'] ) ? (string) $payload['sourceName'] : '' );
 
 		$out  = '<span class="EditableVitalsStrip_itemWithSeparator" data-claim-id="' . esc_attr( $claim_id ) . '" data-trust-band="' . esc_attr( $trust_band ) . '">';
 		$out .= '<span class="EditableVitalsStrip_separatorDot"></span>';
