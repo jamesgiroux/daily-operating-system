@@ -176,10 +176,21 @@ if ( ! function_exists( 'dailyos_account_detail_render' ) ) {
 		// If the caller passed no inner content (programmatic render or
 		// CPT single-template with a bare wrapper), render the default
 		// template so the 24-inner-block composition still produces.
-		// Mirrors project-detail's fallback (PR #358 codex P1 fix).
+		//
+		// `do_blocks()` on raw markup does NOT propagate the outer block's
+		// providesContext to inner blocks — each block renders top-level
+		// with empty context, so inner blocks short-circuit to the
+		// `missing_account_context` empty-chip path. Manually instantiate
+		// each inner block with explicit parent context per block.json's
+		// providesContext mapping.
 		$inner = '' !== $content ? do_blocks( $content ) : '';
-		if ( '' === trim( $inner ) && function_exists( 'do_blocks' ) ) {
-			$inner = do_blocks( dailyos_account_detail_default_template_markup() );
+		if ( '' === trim( $inner ) && class_exists( 'WP_Block' ) ) {
+			$ctx_for_inner = [
+				'dailyos/entityType'     => 'account',
+				'dailyos/entityId'       => $account_id,
+				'dailyos/envelopeHandle' => $handle,
+			];
+			$inner = dailyos_account_detail_render_default_inner( $ctx_for_inner );
 		}
 
 		$out  = '<section ' . $wrapper_attrs . ' data-dailyos-envelope-handle="' . esc_attr( $handle ) . '">';
@@ -230,6 +241,33 @@ if ( ! function_exists( 'dailyos_account_detail_render' ) ) {
 		$out = '';
 		foreach ( $blocks as $name ) {
 			$out .= '<!-- wp:' . $name . ' /-->';
+		}
+		return $out;
+	}
+
+	/**
+	 * Render each block from the default template as a `WP_Block` with
+	 * explicit context — propagates the outer block's providesContext to
+	 * inner blocks the way Gutenberg does when the inner blocks live in
+	 * saved post_content. Same pattern as meeting-detail's helper.
+	 *
+	 * @param array<string, mixed> $context Context map keyed as the inner
+	 *                                       blocks consume in `usesContext`.
+	 * @return string Concatenated rendered HTML.
+	 */
+	function dailyos_account_detail_render_default_inner( array $context ): string {
+		$markup = dailyos_account_detail_default_template_markup();
+		$parsed = function_exists( 'parse_blocks' ) ? parse_blocks( $markup ) : [];
+		if ( ! is_array( $parsed ) ) {
+			return '';
+		}
+		$out = '';
+		foreach ( $parsed as $block_data ) {
+			if ( ! is_array( $block_data ) || empty( $block_data['blockName'] ) ) {
+				continue;
+			}
+			$wp_block = new \WP_Block( $block_data, $context );
+			$out     .= $wp_block->render();
 		}
 		return $out;
 	}

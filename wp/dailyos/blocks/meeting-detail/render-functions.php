@@ -140,10 +140,21 @@ if ( ! function_exists( 'dailyos_meeting_detail_render' ) ) {
 		// If the caller passed no inner content (programmatic render or
 		// CPT single-template with a bare wrapper), render the default
 		// template so the 10-inner-block composition still produces.
-		// Mirrors project-detail's fallback (PR #358 codex P1 fix).
+		//
+		// `do_blocks()` on raw markup does NOT propagate the outer block's
+		// providesContext to inner blocks — each block renders top-level
+		// with empty context, so inner blocks short-circuit to the
+		// `missing_meeting_context` empty-chip path. Manually instantiate
+		// each inner block with explicit parent context per block.json's
+		// providesContext mapping.
 		$inner = $content;
-		if ( '' === trim( $inner ) && function_exists( 'do_blocks' ) ) {
-			$inner = do_blocks( dailyos_meeting_detail_default_template_markup() );
+		if ( '' === trim( $inner ) && class_exists( 'WP_Block' ) ) {
+			$ctx_for_inner = [
+				'dailyos/entityType'     => 'meeting',
+				'dailyos/entityId'       => $meeting_id,
+				'dailyos/envelopeHandle' => '',
+			];
+			$inner = dailyos_meeting_detail_render_default_inner( $ctx_for_inner );
 		}
 
 		$out  = '<section ' . $wrapper_attrs . '>';
@@ -181,6 +192,35 @@ if ( ! function_exists( 'dailyos_meeting_detail_render' ) ) {
 		$out = '';
 		foreach ( $blocks as $name ) {
 			$out .= '<!-- wp:' . $name . ' /-->';
+		}
+		return $out;
+	}
+
+	/**
+	 * Render each block from the default template as a `WP_Block` with
+	 * explicit context — propagates the outer block's providesContext to
+	 * inner blocks the way Gutenberg does when the inner blocks live in
+	 * saved post_content. `do_blocks()` on raw markup does NOT do this;
+	 * each block gets empty context and short-circuits to the missing-
+	 * context empty-chip path.
+	 *
+	 * @param array<string, mixed> $context Context map keyed as the inner
+	 *                                       blocks consume in `usesContext`.
+	 * @return string Concatenated rendered HTML.
+	 */
+	function dailyos_meeting_detail_render_default_inner( array $context ): string {
+		$markup = dailyos_meeting_detail_default_template_markup();
+		$parsed = function_exists( 'parse_blocks' ) ? parse_blocks( $markup ) : [];
+		if ( ! is_array( $parsed ) ) {
+			return '';
+		}
+		$out = '';
+		foreach ( $parsed as $block_data ) {
+			if ( ! is_array( $block_data ) || empty( $block_data['blockName'] ) ) {
+				continue;
+			}
+			$wp_block = new \WP_Block( $block_data, $context );
+			$out     .= $wp_block->render();
 		}
 		return $out;
 	}
