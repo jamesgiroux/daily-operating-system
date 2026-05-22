@@ -1,3 +1,7 @@
+-- DOS-168 amended: transport_key_ref retained as nullable column for schema
+-- stability (DOS-758's McpHandlerContext interface references the column
+-- name); always NULL post-rip because the personal-tier model has no
+-- transport key material to bind. See L0 packet §3e.
 CREATE TABLE IF NOT EXISTS mcp_client_manifest (
     client_id TEXT PRIMARY KEY,
     paired_at INTEGER NOT NULL,
