@@ -26,6 +26,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, Mutex as StdMutex};
 use std::thread;
+use std::time::Instant;
 
 use rusqlite::Connection;
 use tokio::sync::oneshot;
@@ -37,6 +38,8 @@ use crate::db::DbError;
 
 /// Number of read connections in the pool.
 const NUM_READERS: usize = 2;
+const DB_QUEUE_LATENCY_BUDGET_MS: u128 = 100;
+const DB_EXECUTION_LATENCY_BUDGET_MS: u128 = 250;
 
 type CallResult = Result<Box<dyn Any + Send>, PooledCallError>;
 type WorkerTask =
@@ -44,10 +47,14 @@ type WorkerTask =
 
 enum CallMessage {
     Async {
+        label: &'static str,
+        enqueued_at: Instant,
         task: WorkerTask,
         respond_to: oneshot::Sender<CallResult>,
     },
     Sync {
+        label: &'static str,
+        enqueued_at: Instant,
         task: WorkerTask,
         respond_to: mpsc::Sender<CallResult>,
     },
@@ -226,6 +233,33 @@ fn run_task(task: WorkerTask, conn: &mut Connection) -> CallResult {
     }
 }
 
+fn record_worker_latency(label: &'static str, phase: &str, elapsed_ms: u128, budget_ms: u128) {
+    crate::latency::record_latency(&format!("{label}.{phase}"), elapsed_ms, budget_ms);
+}
+
+fn run_timed_task(
+    label: &'static str,
+    enqueued_at: Instant,
+    task: WorkerTask,
+    conn: &mut Connection,
+) -> CallResult {
+    record_worker_latency(
+        label,
+        "queue_wait",
+        enqueued_at.elapsed().as_millis(),
+        DB_QUEUE_LATENCY_BUDGET_MS,
+    );
+    let started = Instant::now();
+    let result = run_task(task, conn);
+    record_worker_latency(
+        label,
+        "execution",
+        started.elapsed().as_millis(),
+        DB_EXECUTION_LATENCY_BUDGET_MS,
+    );
+    result
+}
+
 impl PooledConnection {
     fn new(conn: Connection) -> Result<Self, DbError> {
         let (sender, receiver) = mpsc::channel();
@@ -235,13 +269,23 @@ impl PooledConnection {
                 let mut conn = conn;
                 while let Ok(message) = receiver.recv() {
                     match message {
-                        CallMessage::Async { task, respond_to } => {
+                        CallMessage::Async {
+                            label,
+                            enqueued_at,
+                            task,
+                            respond_to,
+                        } => {
                             #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
-                            let _ = respond_to.send(run_task(task, &mut conn));
+                            let _ = respond_to.send(run_timed_task(label, enqueued_at, task, &mut conn));
                         }
-                        CallMessage::Sync { task, respond_to } => {
+                        CallMessage::Sync {
+                            label,
+                            enqueued_at,
+                            task,
+                            respond_to,
+                        } => {
                             #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
-                            let _ = respond_to.send(run_task(task, &mut conn));
+                            let _ = respond_to.send(run_timed_task(label, enqueued_at, task, &mut conn));
                         }
                         CallMessage::Shutdown => {
                             break;
@@ -273,11 +317,22 @@ impl PooledConnection {
         F: FnOnce(&mut Connection) -> rusqlite::Result<T> + Send + 'static,
         T: Send + 'static,
     {
+        self.call_labeled("db.call", f).await
+    }
+
+    /// Async call with a stable PII-free latency label.
+    pub async fn call_labeled<F, T>(&self, label: &'static str, f: F) -> Result<T, PooledCallError>
+    where
+        F: FnOnce(&mut Connection) -> rusqlite::Result<T> + Send + 'static,
+        T: Send + 'static,
+    {
         let (tx, rx) = oneshot::channel();
         let task: WorkerTask = Box::new(move |conn| f(conn).map(|value| Box::new(value) as Box<_>));
         self.inner
             .sender
             .send(CallMessage::Async {
+                label,
+                enqueued_at: Instant::now(),
                 task,
                 respond_to: tx,
             })
@@ -292,11 +347,22 @@ impl PooledConnection {
         F: FnOnce(&mut Connection) -> rusqlite::Result<T> + Send + 'static,
         T: Send + 'static,
     {
+        self.call_sync_labeled("db.call_sync", f)
+    }
+
+    /// Sync call with a stable PII-free latency label.
+    pub fn call_sync_labeled<F, T>(&self, label: &'static str, f: F) -> Result<T, PooledCallError>
+    where
+        F: FnOnce(&mut Connection) -> rusqlite::Result<T> + Send + 'static,
+        T: Send + 'static,
+    {
         let (tx, rx) = mpsc::channel();
         let task: WorkerTask = Box::new(move |conn| f(conn).map(|value| Box::new(value) as Box<_>));
         self.inner
             .sender
             .send(CallMessage::Sync {
+                label,
+                enqueued_at: Instant::now(),
                 task,
                 respond_to: tx,
             })
@@ -554,9 +620,17 @@ impl DbService {
         path: PathBuf,
         encryption_key: EncryptionKey,
     ) -> Result<Connection, DbError> {
+        let started = Instant::now();
         let path = path.to_string_lossy().to_string();
         let writer = self.writer();
-        let result = writer.call_sync(move |_| open_encrypted_fresh(&path, &encryption_key, false));
+        let result = writer.call_sync_labeled("open_fresh_serialized", move |_| {
+            open_encrypted_fresh(&path, &encryption_key, false)
+        });
+        crate::latency::record_latency(
+            "open_fresh_serialized.total",
+            started.elapsed().as_millis(),
+            500,
+        );
         match result {
             Ok(conn) => Ok(conn),
             Err(PooledCallError::Rusqlite(error)) => Err(DbError::Sqlite(error)),

@@ -13,13 +13,11 @@ use rusqlite::OptionalExtension;
 use tauri::{AppHandle, Emitter};
 
 use crate::activity::ActivityLevel;
-use crate::db::DbPerson;
 use crate::google_api;
 use crate::people;
 use crate::pty::{AiUsageContext, ModelTier, PtyManager};
 use crate::state::AppState;
 use crate::types::{CalendarEvent, GoogleAuthStatus, MeetingType};
-use crate::util::{name_from_email, org_from_email, person_id_from_email};
 #[cfg(test)]
 use crate::workflow::deliver::make_meeting_id;
 use crate::workflow::deliver::{meeting_primary_id, write_json};
@@ -249,7 +247,7 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                 }
 
                 // Populate people from calendar attendees
-                let sync_intel = populate_people_from_events(&events, &state, &workspace);
+                let sync_intel = populate_people_from_events(&events, &state, &workspace).await;
 
                 // run deterministic entity linking for each event.
                 let clock = crate::services::context::SystemClock;
@@ -705,9 +703,9 @@ struct CalendarSyncIntelligence {
 /// - Auto-link to entity if meeting has an account field
 ///
 /// Returns sync intelligence for new/changed meetings that need intelligence triggers.
-fn populate_people_from_events(
+async fn populate_people_from_events(
     events: &[CalendarEvent],
-    state: &AppState,
+    state: &Arc<AppState>,
     workspace: &Path,
 ) -> CalendarSyncIntelligence {
     // Acquire config/auth locks first (short-lived), then DB lock
@@ -731,14 +729,7 @@ fn populate_people_from_events(
         changed_meetings: Vec::new(),
     };
 
-    let db = match crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())) {
-        Ok(d) => d,
-        Err(_) => return empty_result,
-    };
-
-    let mut new_people = 0;
-    let mut new_meetings = Vec::new();
-    let mut changed_meetings = Vec::new();
+    let mut batch_events = Vec::new();
 
     for event in events {
         // Skip all-hands (>50 attendees)
@@ -746,7 +737,7 @@ fn populate_people_from_events(
             continue;
         }
 
-        // Ensure meeting exists in DB so record_meeting_attendance can query start_time
+        // The service ensures meeting rows before attendance writes need start_time.
         let meeting_id = meeting_primary_id(
             Some(&event.id),
             &event.title,
@@ -754,220 +745,137 @@ fn populate_people_from_events(
             event.meeting_type.as_str(),
         );
 
-        // Snapshot old title before ensure_meeting_in_history updates it
-        let old_title: Option<String> = db
-            .conn_ref()
-            .query_row(
-                "SELECT title FROM meetings WHERE id = ?1",
-                rusqlite::params![meeting_id],
-                |row| row.get(0),
-            )
-            .ok();
-
         let attendees_json = serde_json::to_string(&event.attendees).unwrap_or_default();
-        match db.ensure_meeting_in_history(crate::db::EnsureMeetingHistoryInput {
-            id: &meeting_id,
-            title: &event.title,
-            meeting_type: event.meeting_type.as_str(),
-            start_time: &event.start.to_rfc3339(),
-            end_time: Some(&event.end.to_rfc3339()),
-            calendar_event_id: Some(&event.id),
-            attendees: Some(&attendees_json),
-            description: None, // Description flows through directive path
-        }) {
-            Ok(crate::db::MeetingSyncOutcome::New) => {
-                new_meetings.push(meeting_id.clone());
-            }
-            Ok(crate::db::MeetingSyncOutcome::Changed) => {
-                // Mark as having new signals so intelligence refreshes
-                #[allow(
-                    clippy::let_underscore_must_use,
-                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-                )]
-                let _ = db.mark_meeting_new_signals(&meeting_id);
-                changed_meetings.push(meeting_id.clone());
+        let mut attendee_emails: Vec<String> = event
+            .attendees
+            .iter()
+            .map(|email| email.to_lowercase())
+            .filter(|email| self_email.as_deref() != Some(email.as_str()))
+            .collect();
+        attendee_emails.sort();
+        attendee_emails.dedup();
 
-                // If title changed, check if entity links need reclassification.
-                // Compare the event's current account (from classification) with existing
-                // entity links in DB. If different, invalidate prep for regeneration.
-                if old_title.as_deref() != Some(&event.title) {
-                    let old_entities = db.get_meeting_entities(&meeting_id).unwrap_or_default();
-                    let old_account_ids: std::collections::HashSet<&str> = old_entities
-                        .iter()
-                        .filter(|e| matches!(e.entity_type, crate::entity::EntityType::Account))
-                        .map(|e| e.id.as_str())
-                        .collect();
+        let classified_account_ids = event
+            .classified_entities
+            .as_ref()
+            .map(|entities| {
+                let mut ids: Vec<String> = entities
+                    .iter()
+                    .filter(|(_, entity_type)| entity_type == "account")
+                    .map(|(id, _)| id.clone())
+                    .collect();
+                ids.sort();
+                ids.dedup();
+                ids
+            })
+            .unwrap_or_default();
 
-                    // Compare entity IDs, not name strings
-                    let new_entity_ids: std::collections::HashSet<&str> = event
-                        .classified_entities
-                        .as_ref()
-                        .map(|es| {
-                            es.iter()
-                                .filter(|(_, t)| t == "account")
-                                .map(|(id, _)| id.as_str())
-                                .collect()
-                        })
-                        .unwrap_or_default();
-                    let entity_changed = old_account_ids != new_entity_ids;
+        batch_events.push(crate::services::people::CalendarAttendanceBatchEvent {
+            meeting_id,
+            title: event.title.clone(),
+            meeting_type: event.meeting_type.as_str().to_string(),
+            start_time: event.start.to_rfc3339(),
+            end_time: Some(event.end.to_rfc3339()),
+            calendar_event_id: event.id.clone(),
+            attendees_json,
+            attendee_emails,
+            classified_account_ids,
+        });
+    }
 
-                    if entity_changed {
-                        log::info!(
-                            "Calendar sync: title change for '{}' caused entity reclassification, invalidating prep",
-                            meeting_id
-                        );
-                        {
-                            let mut queue = state.signals.prep_invalidation_queue.lock();
-                            queue.push(meeting_id.clone());
-                        }
-                    }
-                }
-            }
-            Ok(crate::db::MeetingSyncOutcome::Unchanged) => {}
-            Err(e) => {
-                log::warn!(
-                    "Failed to ensure meeting '{}' in history: {}",
-                    event.title,
-                    e
-                );
-            }
+    if batch_events.is_empty() {
+        return empty_result;
+    }
+
+    let engine = Arc::clone(&state.signals.engine);
+    let state_for_ctx = Arc::clone(state);
+    let self_email_for_write = self_email.clone();
+    let user_domains_for_write = user_domains.clone();
+    let outcome = match state
+        .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::people::record_calendar_attendance_batch(
+                &ctx,
+                db,
+                &engine,
+                &batch_events,
+                self_email_for_write.as_deref(),
+                &user_domains_for_write,
+            )
+        })
+        .await
+    {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            log::warn!("calendar_attendance_batch failed: {}", error);
+            return empty_result;
         }
+    };
 
-        // entity linking is now handled by evaluate_meeting in the
-        // async calendar poll loop (run_calendar_poller), which runs the
-        // deterministic P1-P11 engine and writes to linked_entities_raw.
-        // persist_classification_entities_scored / persist_classification_entities
-        // have been removed — they wrote to the old meeting_entities table and
-        // would conflict with the new engine's dismissal-wins-race guarantee.
+    for meeting_id in &outcome.prep_invalidation_meetings {
+        log::info!(
+            "Calendar sync: entity reclassification invalidating prep; meeting_id={}",
+            meeting_id
+        );
+        let mut queue = state.signals.prep_invalidation_queue.lock();
+        queue.push(meeting_id.clone());
+    }
 
-        for email in &event.attendees {
-            let email_lower = email.to_lowercase();
-
-            // Skip self
-            if self_email.as_deref() == Some(&email_lower) {
-                continue;
-            }
-
-            // Check if person already exists in DB (exact email or known alias)
-            let existing = db.get_person_by_email_or_alias(&email_lower).ok().flatten();
-            // If no exact/alias match, try domain-alias resolution
-            let existing = match existing {
-                Some(p) => Some(p),
-                None => {
-                    match db.get_sibling_domains_for_email(&email_lower, &user_domains) {
-                        Ok(siblings) if !siblings.is_empty() => {
-                            match db.find_person_by_domain_alias(&email_lower, &siblings) {
-                                Ok(Some(person)) => {
-                                    // Record this new email as an alias
-                                    #[allow(
-                                        clippy::let_underscore_must_use,
-                                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-                                    )]
-                                    let _ = db.add_person_email(&person.id, &email_lower, false);
-                                    Some(person)
-                                }
-                                _ => None,
-                            }
-                        }
-                        _ => None,
-                    }
-                }
-            };
-            if let Some(ref person) = existing {
-                // Record attendance (idempotent — safe across repeated polls)
-                #[allow(
-                    clippy::let_underscore_must_use,
-                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-                )]
-                let _ = db.record_meeting_attendance(&meeting_id, &person.id);
-                continue;
-            }
-
-            // New person — create
-            let id = person_id_from_email(&email_lower);
-            let name = name_from_email(&email_lower);
-            let org = org_from_email(&email_lower);
-            let relationship =
-                crate::util::classify_relationship_multi(&email_lower, &user_domains);
-
-            let person = DbPerson {
-                id: id.clone(),
-                email: email_lower,
-                name,
-                organization: Some(org),
-                role: None,
-                relationship,
-                notes: None,
-                tracker_path: None,
-                last_seen: Some(event.start.to_rfc3339()),
-                first_seen: Some(Utc::now().to_rfc3339()),
-                meeting_count: 0,
-                updated_at: Utc::now().to_rfc3339(),
-                archived: false,
-                linkedin_url: None,
-                twitter_handle: None,
-                phone: None,
-                photo_url: None,
-                bio: None,
-                title_history: None,
-                company_industry: None,
-                company_size: None,
-                company_hq: None,
-                last_enriched_at: None,
-                enrichment_sources: None,
-            };
-
-            if let Ok(is_new) = db.upsert_person(&person) {
-                if let Err(e) = people::write_person_json(workspace, &person, &db) {
-                    log::warn!("Failed to write person.json for '{}': {}", person.name, e);
-                }
-                if let Err(e) = people::write_person_markdown(workspace, &person, &db) {
-                    log::warn!("Failed to write person.md for '{}': {}", person.name, e);
-                }
-                new_people += 1;
-
-                // Emit person_created signal for hygiene feedback loop
-                if is_new {
-                    let ctx = state.live_service_context();
-                    crate::services::signals::emit_and_propagate_or_log(
-                        &ctx,
-                        &db,
-                        &state.signals.engine,
-                        "person",
-                        &person.id,
-                        "person_created",
-                        "calendar_sync",
-                        None,
-                        0.95,
-                    );
-                }
-
-                // Record attendance for the new person
-                #[allow(
-                    clippy::let_underscore_must_use,
-                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-                )]
-                let _ = db.record_meeting_attendance(&meeting_id, &id);
-            }
+    for person in &outcome.people_to_write {
+        if let Err(error) =
+            write_person_artifacts_after_calendar_batch(state, workspace, person).await
+        {
+            log::warn!(
+                "calendar_attendance_batch artifact write failed; person_id={}: {}",
+                person.id,
+                error
+            );
         }
     }
 
-    if new_people > 0 {
-        log::info!("People: discovered {} new people from calendar", new_people);
+    if outcome.new_people_count > 0 {
+        log::info!(
+            "People: discovered {} new people from calendar",
+            outcome.new_people_count
+        );
     }
 
-    if !new_meetings.is_empty() || !changed_meetings.is_empty() {
+    if !outcome.new_meetings.is_empty() || !outcome.changed_meetings.is_empty() {
         log::info!(
             "Calendar sync intelligence: {} new, {} changed meetings",
-            new_meetings.len(),
-            changed_meetings.len()
+            outcome.new_meetings.len(),
+            outcome.changed_meetings.len()
         );
     }
 
     CalendarSyncIntelligence {
-        new_meetings,
-        changed_meetings,
+        new_meetings: outcome.new_meetings,
+        changed_meetings: outcome.changed_meetings,
     }
+}
+
+async fn write_person_artifacts_after_calendar_batch(
+    state: &AppState,
+    workspace: &Path,
+    person: &crate::db::DbPerson,
+) -> Result<(), String> {
+    let person_for_json = person.clone();
+    let workspace_for_json = workspace.to_path_buf();
+    state
+        .db_read(move |db| people::write_person_json(&workspace_for_json, &person_for_json, db))
+        .await
+        .map_err(String::from)?;
+
+    let person_for_markdown = person.clone();
+    let workspace_for_markdown = workspace.to_path_buf();
+    state
+        .db_read(move |db| {
+            people::write_person_markdown(&workspace_for_markdown, &person_for_markdown, db)
+        })
+        .await
+        .map_err(String::from)?;
+
+    Ok(())
 }
 
 /// Detect meetings that were in the DB for today but disappeared from the calendar poll.

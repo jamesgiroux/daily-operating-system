@@ -3,12 +3,217 @@
 
 use std::path::Path;
 
+use chrono::Utc;
+
 use crate::commands::{EntitySummary, MeetingSummary, PersonDetailResult};
-use crate::db::ActionDb;
+use crate::db::{ActionDb, DbPerson};
 use crate::services::context::ServiceContext;
 use crate::services::stakeholder_writer;
 use crate::state::AppState;
 use rusqlite::OptionalExtension;
+
+#[derive(Debug, Clone)]
+pub(crate) struct CalendarAttendanceBatchEvent {
+    pub meeting_id: String,
+    pub title: String,
+    pub meeting_type: String,
+    pub start_time: String,
+    pub end_time: Option<String>,
+    pub calendar_event_id: String,
+    pub attendees_json: String,
+    pub attendee_emails: Vec<String>,
+    pub classified_account_ids: Vec<String>,
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct CalendarAttendanceBatchOutcome {
+    pub new_meetings: Vec<String>,
+    pub changed_meetings: Vec<String>,
+    pub prep_invalidation_meetings: Vec<String>,
+    pub people_to_write: Vec<DbPerson>,
+    pub new_people_count: usize,
+}
+
+/// Persist calendar meeting/person attendance changes from a precomputed poll
+/// batch. The caller owns any filesystem side effects after this DB-only
+/// service returns.
+pub(crate) fn record_calendar_attendance_batch(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    engine: &crate::signals::propagation::PropagationEngine,
+    events: &[CalendarAttendanceBatchEvent],
+    self_email: Option<&str>,
+    user_domains: &[String],
+) -> Result<CalendarAttendanceBatchOutcome, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+
+    db.with_transaction(|tx| {
+        let mut outcome = CalendarAttendanceBatchOutcome::default();
+        for event in events {
+            let old_title: Option<String> = tx
+                .conn_ref()
+                .query_row(
+                    "SELECT title FROM meetings WHERE id = ?1",
+                    rusqlite::params![event.meeting_id],
+                    |row| row.get(0),
+                )
+                .ok();
+
+            match tx.ensure_meeting_in_history(crate::db::EnsureMeetingHistoryInput {
+                id: &event.meeting_id,
+                title: &event.title,
+                meeting_type: &event.meeting_type,
+                start_time: &event.start_time,
+                end_time: event.end_time.as_deref(),
+                calendar_event_id: Some(&event.calendar_event_id),
+                attendees: Some(&event.attendees_json),
+                description: None,
+            }) {
+                Ok(crate::db::MeetingSyncOutcome::New) => {
+                    outcome.new_meetings.push(event.meeting_id.clone());
+                }
+                Ok(crate::db::MeetingSyncOutcome::Changed) => {
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
+                    let _ = tx.mark_meeting_new_signals(&event.meeting_id);
+                    outcome.changed_meetings.push(event.meeting_id.clone());
+
+                    if old_title.as_deref() != Some(&event.title) {
+                        let old_entities = tx
+                            .get_meeting_entities(&event.meeting_id)
+                            .unwrap_or_default();
+                        let old_account_ids: std::collections::HashSet<&str> = old_entities
+                            .iter()
+                            .filter(|e| matches!(e.entity_type, crate::entity::EntityType::Account))
+                            .map(|e| e.id.as_str())
+                            .collect();
+                        let new_entity_ids: std::collections::HashSet<&str> =
+                            event.classified_account_ids.iter().map(String::as_str).collect();
+
+                        if old_account_ids != new_entity_ids {
+                            outcome
+                                .prep_invalidation_meetings
+                                .push(event.meeting_id.clone());
+                        }
+                    }
+                }
+                Ok(crate::db::MeetingSyncOutcome::Unchanged) => {}
+                Err(error) => {
+                    log::warn!(
+                        "calendar_attendance_batch ensure_meeting_in_history failed; meeting_id={}: {}",
+                        event.meeting_id,
+                        error
+                    );
+                    continue;
+                }
+            }
+
+            for email_lower in &event.attendee_emails {
+                if self_email == Some(email_lower.as_str()) {
+                    continue;
+                }
+
+                let existing = tx
+                    .get_person_by_email_or_alias(email_lower)
+                    .map_err(|e| e.to_string())?;
+                let existing = match existing {
+                    Some(person) => Some(person),
+                    None => match tx.get_sibling_domains_for_email(email_lower, user_domains) {
+                        Ok(siblings) if !siblings.is_empty() => {
+                            match tx.find_person_by_domain_alias(email_lower, &siblings) {
+                                Ok(Some(person)) => {
+                                    #[allow(
+                                        clippy::let_underscore_must_use,
+                                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                                    )]
+                                    let _ = tx.add_person_email(&person.id, email_lower, false);
+                                    Some(person)
+                                }
+                                _ => None,
+                            }
+                        }
+                        _ => None,
+                    },
+                };
+
+                if let Some(person) = existing {
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
+                    let _ = tx.record_meeting_attendance(&event.meeting_id, &person.id);
+                    continue;
+                }
+
+                let person = DbPerson {
+                    id: crate::util::person_id_from_email(email_lower),
+                    email: email_lower.clone(),
+                    name: crate::util::name_from_email(email_lower),
+                    organization: Some(crate::util::org_from_email(email_lower)),
+                    role: None,
+                    relationship: crate::util::classify_relationship_multi(
+                        email_lower,
+                        user_domains,
+                    ),
+                    notes: None,
+                    tracker_path: None,
+                    last_seen: Some(event.start_time.clone()),
+                    first_seen: Some(Utc::now().to_rfc3339()),
+                    meeting_count: 0,
+                    updated_at: Utc::now().to_rfc3339(),
+                    archived: false,
+                    linkedin_url: None,
+                    twitter_handle: None,
+                    phone: None,
+                    photo_url: None,
+                    bio: None,
+                    title_history: None,
+                    company_industry: None,
+                    company_size: None,
+                    company_hq: None,
+                    last_enriched_at: None,
+                    enrichment_sources: None,
+                };
+
+                match tx.upsert_person(&person) {
+                    Ok(is_new) => {
+                        outcome.people_to_write.push(person.clone());
+                        outcome.new_people_count += 1;
+                        if is_new {
+                            crate::services::signals::emit_and_propagate_or_log(
+                                ctx,
+                                tx,
+                                engine,
+                                "person",
+                                &person.id,
+                                "person_created",
+                                "calendar_sync",
+                                None,
+                                0.95,
+                            );
+                        }
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
+                        let _ = tx.record_meeting_attendance(&event.meeting_id, &person.id);
+                    }
+                    Err(error) => {
+                        log::warn!(
+                            "calendar_attendance_batch upsert_person failed; person_id={}: {}",
+                            person.id,
+                            error
+                        );
+                    }
+                }
+            }
+        }
+
+        Ok(outcome)
+    })
+}
 
 /// Merge two people: transfer all references from `remove_id` to `keep_id`,
 /// then delete the removed person. Also cleans up filesystem directories

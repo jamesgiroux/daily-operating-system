@@ -1564,28 +1564,10 @@ pub fn dismiss_account_field_conflict(
 /// All data from DB — no filesystem reads on the detail page path.
 /// Fetches actions, meetings, people, team, signals, captures, and email signals.
 pub async fn get_account_detail(
-    ctx: &ServiceContext<'_>,
+    _ctx: &ServiceContext<'_>,
     account_id: &str,
     state: &std::sync::Arc<AppState>,
 ) -> Result<AccountDetailResult, String> {
-    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
-    let _config = state.config.read().clone();
-    let engine = std::sync::Arc::clone(&state.signals.engine);
-    let state_for_ctx = state.clone();
-
-    let lifecycle_account_id = account_id.to_string();
-    #[allow(
-        clippy::let_underscore_must_use,
-        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-    )]
-    let _ = state
-        .db_write(move |db| {
-            let ctx = state_for_ctx.live_service_context();
-            ensure_account_lifecycle_state(&ctx, db, &engine, &lifecycle_account_id)
-        })
-        .await
-        .map_err(String::from);
-
     let account_id = account_id.to_string();
     state
         .db_read(move |db| build_account_detail_result(db, &account_id))
