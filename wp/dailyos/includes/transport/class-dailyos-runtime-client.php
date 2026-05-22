@@ -84,6 +84,8 @@ final class DailyOS_Runtime_Client {
 	 */
 	public function invoke_ability( string $name, array $payload, array $scope_set ): array|\WP_Error {
 		unset( $scope_set );
+		$payload = $this->normalize_ability_payload( $name, $payload );
+
 		// Wire key is `input` per src-tauri/src/surface_runtime/mod.rs::SurfaceInvokeRequest.
 		// Sending `payload` (the legacy key) gets dropped during deserialization
 		// and invoke.input defaults to Value::Null, so the producer fails to
@@ -102,6 +104,73 @@ final class DailyOS_Runtime_Client {
 		}
 
 		return $this->local_post( '/v1/local/invoke', $body_bytes );
+	}
+
+	/**
+	 * Normalize ability-specific wire payloads before JSON encoding.
+	 *
+	 * @param string               $name Ability name.
+	 * @param array<string, mixed> $payload Ability payload.
+	 * @return array<string, mixed> Runtime wire payload.
+	 */
+	private function normalize_ability_payload( string $name, array $payload ): array {
+		if ( 'get_entity_intelligence' !== $name ) {
+			return $payload;
+		}
+
+		return $this->normalize_entity_intelligence_payload( $payload );
+	}
+
+	/**
+	 * Normalize the WordPress-side entity intelligence request to the Rust DTO.
+	 *
+	 * The runtime contract is `EntityIntelligenceInput`:
+	 * `{ schemaVersion, entityType, entityId, depth, sections? }`.
+	 * Older block code used no schema version and sent depth values like
+	 * `Full`; the runtime now expects `deep` / `standard` / `shallow`.
+	 *
+	 * @param array<string, mixed> $payload Ability payload.
+	 * @return array<string, mixed> Runtime wire payload.
+	 */
+	private function normalize_entity_intelligence_payload( array $payload ): array {
+		if ( isset( $payload['schema_version'] ) && ! isset( $payload['schemaVersion'] ) ) {
+			$payload['schemaVersion'] = $payload['schema_version'];
+		}
+		unset( $payload['schema_version'] );
+
+		if ( ! isset( $payload['schemaVersion'] ) ) {
+			$payload['schemaVersion'] = 1;
+		}
+
+		if ( array_key_exists( 'sections', $payload ) && null === $payload['sections'] ) {
+			unset( $payload['sections'] );
+		}
+
+		if ( isset( $payload['entity_type'] ) && ! isset( $payload['entityType'] ) ) {
+			$payload['entityType'] = $payload['entity_type'];
+		}
+		unset( $payload['entity_type'] );
+
+		if ( isset( $payload['entity_id'] ) && ! isset( $payload['entityId'] ) ) {
+			$payload['entityId'] = $payload['entity_id'];
+		}
+		unset( $payload['entity_id'] );
+
+		if ( ! isset( $payload['depth'] ) || ! is_scalar( $payload['depth'] ) || '' === trim( (string) $payload['depth'] ) ) {
+			$payload['depth'] = 'deep';
+			return $payload;
+		}
+
+		$depth = strtolower( trim( (string) $payload['depth'] ) );
+		if ( in_array( $depth, [ 'full', 'deep' ], true ) ) {
+			$payload['depth'] = 'deep';
+		} elseif ( in_array( $depth, [ 'default', 'standard' ], true ) ) {
+			$payload['depth'] = 'standard';
+		} elseif ( 'shallow' === $depth ) {
+			$payload['depth'] = 'shallow';
+		}
+
+		return $payload;
 	}
 
 
@@ -289,7 +358,7 @@ final class DailyOS_Runtime_Client {
 			'body'        => $body_bytes,
 			'headers'     => $headers,
 			'redirection' => 0,
-			'timeout'     => 30,
+			'timeout'     => 90,
 			'sslverify'   => false,
 			'blocking'    => true,
 			'data_format' => 'body',
@@ -348,7 +417,7 @@ final class DailyOS_Runtime_Client {
 				'X-DailyOS-Request-Id' => $request_id,
 			],
 			'redirection' => 0,
-			'timeout'     => 30,
+			'timeout'     => 90,
 			'sslverify'   => false,
 			'blocking'    => true,
 			'data_format' => 'body',
