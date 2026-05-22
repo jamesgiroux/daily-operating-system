@@ -295,6 +295,7 @@ fn placement_for_claim_type(kind: ClaimType) -> ClaimPlacement {
         | ClaimType::StakeholderRole => ClaimPlacement::Relationship,
         ClaimType::EntityCurrentState => ClaimPlacement::Health,
         ClaimType::CompanyContext
+        | ClaimType::AccountFact
         | ClaimType::EntityIdentity
         | ClaimType::EntitySummary
         | ClaimType::UserNote => ClaimPlacement::Overview,

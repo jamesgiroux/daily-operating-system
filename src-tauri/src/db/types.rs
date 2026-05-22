@@ -1142,6 +1142,7 @@ pub struct DbAccountSourceRef {
     pub source_kind: String,
     pub source_value: Option<String>,
     pub observed_at: String,
+    pub source_record_ref: Option<String>,
 }
 
 /// A row from the `entity_feedback_events` table.

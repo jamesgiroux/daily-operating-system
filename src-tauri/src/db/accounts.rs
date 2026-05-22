@@ -2953,7 +2953,8 @@ impl ActionDb {
         account_id: &str,
     ) -> Result<Vec<DbAccountSourceRef>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, account_id, field, source_system, source_kind, source_value, observed_at
+            "SELECT id, account_id, field, source_system, source_kind, source_value,
+                    observed_at, source_record_ref
              FROM account_source_refs
              WHERE account_id = ?1
              ORDER BY field, observed_at DESC",
@@ -2967,6 +2968,7 @@ impl ActionDb {
                 source_kind: row.get(4)?,
                 source_value: row.get(5)?,
                 observed_at: row.get(6)?,
+                source_record_ref: row.get(7)?,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)

@@ -1405,19 +1405,38 @@ pub fn emit_glean_signals(
         }
     }
 
-    // Promote high-confidence facts from Glean enrichment into accounts table
-    // columns with source tracking and provenance references.
-    if entity_type == "account" {
-        promote_glean_facts_to_accounts(db, entity_id, intel);
-    }
-
-    // Recompute health after Glean signals are emitted so that new CRM/Gong/Zendesk
-    // data flows immediately into the 6 health dimensions.
     if entity_type == "account" {
         let clock = crate::services::context::SystemClock;
         let rng = crate::services::context::SystemRng;
         let ext = crate::services::context::ExternalClients::default();
         let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+
+        // Promote high-confidence facts from Glean enrichment into account
+        // columns and claim-backed account facts. Keeping this service-owned
+        // gives MCP/WP/Tauri the same claim substrate instead of a schema-only
+        // side channel.
+        let report = crate::services::account_fact_claims::promote_glean_facts_from_intelligence(
+            &ctx, db, entity_id, intel,
+        );
+        if report.schema_promoted > 0 || report.schema_skipped_lower_priority > 0 {
+            log::info!(
+                "[I644] Fact promotion for {}: {} schema promoted, {} skipped, {} claims committed",
+                entity_id,
+                report.schema_promoted,
+                report.schema_skipped_lower_priority,
+                report.claims_committed,
+            );
+        }
+        for warning in report
+            .source_ref_errors
+            .iter()
+            .chain(report.claim_errors.iter())
+        {
+            log::warn!("[I644] {warning}");
+        }
+
+        // Recompute health after Glean signals and account fact claims are
+        // emitted so new CRM/Gong/Zendesk data flows into health dimensions.
         if let Err(e) = crate::services::intelligence::recompute_entity_health_with_preset(
             &ctx, db, entity_id, "account", preset,
         ) {
@@ -1427,163 +1446,6 @@ pub fn emit_glean_signals(
                 e
             );
         }
-    }
-}
-
-/// Promote high-confidence facts from Glean enrichment into accounts table columns.
-///
-/// Extracts structured data from `IntelligenceJson` (contract context, renewal outlook,
-/// org health, support health, product classification) and upserts each fact into the
-/// accounts table via `upsert_account_fact`. Each promoted fact also gets a source
-/// reference row in `account_source_refs` for provenance tracking.
-///
-/// Source attribution follows ADR-0100 confidence tiers:
-/// - CRM/REDACTED data (contract, ARR, renewal) → source "REDACTED"
-/// - Zendesk data (support tier, CSAT) → source "zendesk"
-/// - Glean AI synthesis (scores, status) → source "glean"
-///
-/// The `upsert_account_fact` function handles source priority (user:4 > REDACTED:3 >
-/// zendesk:2 > glean:1) so user edits are never overwritten.
-fn promote_glean_facts_to_accounts(
-    db: &crate::db::ActionDb,
-    entity_id: &str,
-    intel: &IntelligenceJson,
-) {
-    use crate::db::types::AccountSourceRef;
-    // dos259-grandfathered: fact-promotion observed_at timestamp; migrates to ctx.clock.now() when W2-A lands ServiceContext.
-    let now = chrono::Utc::now().to_rfc3339();
-    let mut promoted = 0u32;
-    let mut skipped = 0u32;
-
-    // Helper: upsert a fact + source ref, logging results.
-    macro_rules! promote_fact {
-        ($field:expr, $value:expr, $source_system:expr, $source_kind:expr) => {
-            match db.upsert_account_fact(entity_id, $field, $value, $source_system, &now) {
-                Ok(true) => {
-                    promoted += 1;
-                    // Write provenance row
-                    if let Err(e) = db.upsert_account_source_ref(&AccountSourceRef {
-                        account_id: entity_id,
-                        field: $field,
-                        source_system: $source_system,
-                        source_kind: $source_kind,
-                        source_value: Some($value),
-                        observed_at: &now,
-                        reference_id: None,
-                    }) {
-                        log::warn!(
-                            "[I644] Source ref write failed for {}.{}: {}",
-                            entity_id,
-                            $field,
-                            e
-                        );
-                    }
-                }
-                Ok(false) => {
-                    skipped += 1;
-                    log::debug!(
-                        "[I644] Skipped {}.{} — higher-priority source exists",
-                        entity_id,
-                        $field
-                    );
-                }
-                Err(e) => {
-                    log::warn!(
-                        "[I644] Fact upsert failed for {}.{}: {}",
-                        entity_id,
-                        $field,
-                        e
-                    );
-                }
-            }
-        };
-    }
-
-    // --- Financial dimension: contract_context ---
-    if let Some(ref ctx) = intel.contract_context {
-        if let Some(arr) = ctx.current_arr {
-            // ARR goes to arr_range_low = arr_range_high (exact value)
-            let arr_str = format!("{:.0}", arr);
-            promote_fact!("arr_range_low", &arr_str, "REDACTED", "fact");
-            promote_fact!("arr_range_high", &arr_str, "REDACTED", "fact");
-        }
-    }
-
-    // --- Financial dimension: agreement_outlook ---
-    if let Some(ref outlook) = intel.agreement_outlook {
-        if let Some(ref confidence) = outlook.confidence {
-            // Map "high"/"moderate"/"low" to numeric likelihood
-            let likelihood = match confidence.to_lowercase().as_str() {
-                "high" => "0.85",
-                "moderate" => "0.55",
-                "low" => "0.25",
-                _ => confidence.as_str(),
-            };
-            promote_fact!("renewal_likelihood", likelihood, "REDACTED", "inference");
-        }
-    }
-
-    // --- Org health (CRM overlay) ---
-    if let Some(ref org) = intel.org_health {
-        if let Some(ref tier) = org.support_tier {
-            promote_fact!("support_tier", tier, "zendesk", "fact");
-        }
-        if let Some(ref likelihood) = org.renewal_likelihood {
-            // Only promote if agreement_outlook didn't already set it —
-            // both are "REDACTED" priority so upsert_account_fact
-            // keeps the first write (same priority = overwrite).
-            promote_fact!("renewal_likelihood", likelihood, "REDACTED", "fact");
-        }
-        if let Some(ref stage) = org.customer_stage {
-            promote_fact!("customer_status", stage, "REDACTED", "fact");
-        }
-        if let Some(ref fit) = org.icp_fit {
-            // Parse ICP fit string to a numeric score if possible
-            let score = match fit.to_lowercase().as_str() {
-                "strong" | "high" => "85",
-                "moderate" | "medium" => "55",
-                "weak" | "low" => "25",
-                _ => fit.as_str(),
-            };
-            promote_fact!("icp_fit_score", score, "glean", "inference");
-        }
-        if let Some(ref growth) = org.growth_tier {
-            let score = match growth.to_lowercase().as_str() {
-                "high" => "85",
-                "moderate" | "medium" => "55",
-                "low" => "25",
-                _ => growth.as_str(),
-            };
-            promote_fact!("growth_potential_score", score, "glean", "inference");
-        }
-    }
-
-    // --- Product classification → primary_product + subscription count ---
-    if let Some(ref classification) = intel.product_classification {
-        if !classification.products.is_empty() {
-            let count_str = classification.products.len().to_string();
-            promote_fact!("active_subscription_count", &count_str, "REDACTED", "fact");
-
-            // Primary product = highest-ARR product, or first product if no ARR data
-            let primary = classification
-                .products
-                .iter()
-                .filter_map(|p| p.type_.as_ref().map(|t| (t.clone(), p.arr.unwrap_or(0.0))))
-                .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
-                .map(|(t, _)| t);
-            if let Some(ref product) = primary {
-                promote_fact!("primary_product", product, "REDACTED", "fact");
-            }
-        }
-    }
-
-    if promoted > 0 || skipped > 0 {
-        log::info!(
-            "[I644] Fact promotion for {}: {} promoted, {} skipped (source priority)",
-            entity_id,
-            promoted,
-            skipped,
-        );
     }
 }
 

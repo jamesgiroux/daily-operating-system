@@ -295,6 +295,47 @@ pub fn run() {
                                 }
                             }
                         }
+
+                        let account_fact_backfill = init_state
+                            .db_write(move |db| {
+                                let clock = crate::services::context::SystemClock;
+                                let rng = crate::services::context::SystemRng;
+                                let ext = crate::services::context::ExternalClients::default();
+                                let ctx = crate::services::context::ServiceContext::new_live(
+                                    &clock, &rng, &ext,
+                                );
+                                crate::services::account_fact_claims::backfill_account_fact_claims(
+                                    &ctx, db,
+                                )
+                            })
+                            .await
+                            .map_err(String::from);
+                        match account_fact_backfill {
+                            Ok(report)
+                                if report.claims_committed > 0
+                                    || !report.claim_errors.is_empty() =>
+                            {
+                                log::info!(
+                                    "[account_fact_claims] startup backfill: {} committed, {} already present, {} error(s)",
+                                    report.claims_committed,
+                                    report.claims_already_present,
+                                    report.claim_errors.len()
+                                );
+                                for error in report.claim_errors {
+                                    log::warn!("[account_fact_claims] startup backfill error: {error}");
+                                }
+                            }
+                            Ok(_) => {
+                                log::debug!(
+                                    "[account_fact_claims] startup backfill: no new account fact claims"
+                                );
+                            }
+                            Err(error) => {
+                                log::warn!(
+                                    "[account_fact_claims] startup backfill failed: {error}"
+                                );
+                            }
+                        }
                     }
                 });
             } else {

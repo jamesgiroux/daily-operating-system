@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use crate::state::AppState;
 
+pub mod account_fact_claims;
 pub mod accounts;
 pub mod actions;
 pub mod claim_receipt;
