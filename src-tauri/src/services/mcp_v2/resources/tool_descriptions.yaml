@@ -1,0 +1,769 @@
+[
+  {
+    "name": "dailyos.read.account_status",
+    "side": "Read",
+    "summary": "Returns the current state of an account the user works with.",
+    "when_to_call": "When the user asks about a specific account they work with.",
+    "when_NOT_to_call": "Do NOT call for broad enterprise or web corpus search.",
+    "scopesRequired": [
+      "dailyos.read.account_status"
+    ],
+    "parameters": [
+      {
+        "name": "subject",
+        "schema": {
+          "type": "string"
+        },
+        "required": true,
+        "description": "Account name or handle"
+      }
+    ],
+    "returns": {
+      "schema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "description": "Account status payload"
+    },
+    "examples": [
+      {
+        "prompt": "What's going on with Acme?",
+        "invocation": {
+          "name": "dailyos.read.account_status",
+          "arguments": {
+            "subject": "acme"
+          }
+        },
+        "expectedResponseShape": {
+          "account_id": "opaque",
+          "status": "enum",
+          "as_of": "iso8601"
+        }
+      }
+    ],
+    "selectionFixtures": {
+      "positive": [
+        {
+          "prompt": "What's going on with Acme?",
+          "expectedTool": "dailyos.read.account_status"
+        },
+        {
+          "prompt": "How are things looking with the Hooli deal?",
+          "expectedTool": "dailyos.read.account_status"
+        }
+      ],
+      "negativeBroadCorpus": [
+        {
+          "prompt": "Search the web for SaaS pricing benchmarks",
+          "expectedToolClass": "external"
+        },
+        {
+          "prompt": "What's the company's vacation policy?",
+          "expectedToolClass": "external"
+        }
+      ],
+      "negativeAdjacentTool": [
+        {
+          "prompt": "What did I write about the Q1 readout?",
+          "expectedTool": "dailyos.search.workspace_memory"
+        }
+      ]
+    }
+  },
+  {
+    "name": "dailyos.read.daily_briefing",
+    "side": "Read",
+    "summary": "Returns the user's current-day briefing.",
+    "when_to_call": "When the user asks about today's priorities.",
+    "when_NOT_to_call": "Do NOT call for general news or weather.",
+    "scopesRequired": [
+      "dailyos.read.daily_briefing"
+    ],
+    "parameters": [],
+    "returns": {
+      "schema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "description": "Daily briefing payload"
+    },
+    "examples": [
+      {
+        "prompt": "What's on my plate today?",
+        "invocation": {
+          "name": "dailyos.read.daily_briefing",
+          "arguments": {}
+        },
+        "expectedResponseShape": {
+          "date": "iso8601",
+          "priorities": []
+        }
+      }
+    ],
+    "selectionFixtures": {
+      "positive": [
+        {
+          "prompt": "What's on my plate today?",
+          "expectedTool": "dailyos.read.daily_briefing"
+        },
+        {
+          "prompt": "Give me my morning rundown",
+          "expectedTool": "dailyos.read.daily_briefing"
+        }
+      ],
+      "negativeBroadCorpus": [
+        {
+          "prompt": "What's the weather today?",
+          "expectedToolClass": "external"
+        },
+        {
+          "prompt": "Show me today's news headlines",
+          "expectedToolClass": "external"
+        }
+      ],
+      "negativeAdjacentTool": [
+        {
+          "prompt": "What should I prep for my 2pm with Acme?",
+          "expectedTool": "dailyos.read.meeting_briefing"
+        }
+      ]
+    }
+  },
+  {
+    "name": "dailyos.read.meeting_briefing",
+    "side": "Read",
+    "summary": "Returns the prep briefing for a specific meeting.",
+    "when_to_call": "When the user asks for prep notes on a specific meeting.",
+    "when_NOT_to_call": "Do NOT call for the user's overall day rundown.",
+    "scopesRequired": [
+      "dailyos.read.meeting_briefing"
+    ],
+    "parameters": [
+      {
+        "name": "meeting_id",
+        "schema": {
+          "type": "string"
+        },
+        "required": true,
+        "description": "Opaque meeting identifier"
+      }
+    ],
+    "returns": {
+      "schema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "description": "Meeting briefing payload"
+    },
+    "examples": [
+      {
+        "prompt": "What should I prep for my 2pm?",
+        "invocation": {
+          "name": "dailyos.read.meeting_briefing",
+          "arguments": {
+            "meeting_id": "opaque"
+          }
+        },
+        "expectedResponseShape": {
+          "meeting_id": "opaque",
+          "attendees": []
+        }
+      }
+    ],
+    "selectionFixtures": {
+      "positive": [
+        {
+          "prompt": "What should I prep for my 2pm with Acme?",
+          "expectedTool": "dailyos.read.meeting_briefing"
+        },
+        {
+          "prompt": "Brief me on my next call with Hooli",
+          "expectedTool": "dailyos.read.meeting_briefing"
+        }
+      ],
+      "negativeBroadCorpus": [
+        {
+          "prompt": "Show me the company holiday calendar",
+          "expectedToolClass": "external"
+        },
+        {
+          "prompt": "Search the web for meeting facilitation techniques",
+          "expectedToolClass": "external"
+        }
+      ],
+      "negativeAdjacentTool": [
+        {
+          "prompt": "What's on my plate today overall?",
+          "expectedTool": "dailyos.read.daily_briefing"
+        }
+      ]
+    }
+  },
+  {
+    "name": "dailyos.read.portfolio_attention",
+    "side": "Read",
+    "summary": "Returns accounts that currently need attention.",
+    "when_to_call": "When the user asks which accounts are at risk or need follow-up.",
+    "when_NOT_to_call": "Do NOT call for general account state of a specific named account.",
+    "scopesRequired": [
+      "dailyos.read.portfolio_attention"
+    ],
+    "parameters": [],
+    "returns": {
+      "schema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "description": "Ranked account attention list"
+    },
+    "examples": [
+      {
+        "prompt": "What accounts need my attention?",
+        "invocation": {
+          "name": "dailyos.read.portfolio_attention",
+          "arguments": {}
+        },
+        "expectedResponseShape": {
+          "accounts": []
+        }
+      }
+    ],
+    "selectionFixtures": {
+      "positive": [
+        {
+          "prompt": "What accounts need my attention?",
+          "expectedTool": "dailyos.read.portfolio_attention"
+        },
+        {
+          "prompt": "Where should I focus this week?",
+          "expectedTool": "dailyos.read.portfolio_attention"
+        }
+      ],
+      "negativeBroadCorpus": [
+        {
+          "prompt": "Show me the Q3 sales report",
+          "expectedToolClass": "external"
+        },
+        {
+          "prompt": "Search the web for customer churn benchmarks",
+          "expectedToolClass": "external"
+        }
+      ],
+      "negativeAdjacentTool": [
+        {
+          "prompt": "What's going on with Acme specifically?",
+          "expectedTool": "dailyos.read.account_status"
+        }
+      ]
+    }
+  },
+  {
+    "name": "dailyos.search.workspace_memory",
+    "side": "Read",
+    "summary": "Searches the user's working memory.",
+    "when_to_call": "When the user asks what they wrote, said, or noted about a topic.",
+    "when_NOT_to_call": "Do NOT call for general web search.",
+    "scopesRequired": [
+      "read.workspace_graph"
+    ],
+    "parameters": [
+      {
+        "name": "query",
+        "schema": {
+          "type": "string"
+        },
+        "required": true,
+        "description": "Natural-language search query"
+      }
+    ],
+    "returns": {
+      "schema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "description": "Workspace memory matches"
+    },
+    "examples": [
+      {
+        "prompt": "What did I write about the Q1 readout?",
+        "invocation": {
+          "name": "dailyos.search.workspace_memory",
+          "arguments": {
+            "query": "Q1 readout"
+          }
+        },
+        "expectedResponseShape": {
+          "matches": []
+        }
+      }
+    ],
+    "selectionFixtures": {
+      "positive": [
+        {
+          "prompt": "What did I write about the Q1 readout?",
+          "expectedTool": "dailyos.search.workspace_memory"
+        },
+        {
+          "prompt": "Find my notes on the Acme renewal",
+          "expectedTool": "dailyos.search.workspace_memory"
+        }
+      ],
+      "negativeBroadCorpus": [
+        {
+          "prompt": "Search the web for Q1 readout templates",
+          "expectedToolClass": "external"
+        },
+        {
+          "prompt": "Find company-wide Q1 reports in Glean",
+          "expectedToolClass": "external"
+        }
+      ],
+      "negativeAdjacentTool": [
+        {
+          "prompt": "What's the current state of the Acme account?",
+          "expectedTool": "dailyos.read.account_status"
+        }
+      ]
+    }
+  },
+  {
+    "name": "dailyos.read.workspace_source_provenance",
+    "side": "Read",
+    "summary": "Returns provenance metadata for a workspace memory entry.",
+    "when_to_call": "When the user asks where a specific memory entry came from.",
+    "when_NOT_to_call": "Do NOT call without a prior memory entry reference.",
+    "scopesRequired": [
+      "dailyos.read.workspace_source_provenance"
+    ],
+    "parameters": [
+      {
+        "name": "entry_id",
+        "schema": {
+          "type": "string"
+        },
+        "required": true,
+        "description": "Opaque memory entry identifier"
+      }
+    ],
+    "returns": {
+      "schema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "description": "Source attribution metadata"
+    },
+    "examples": [
+      {
+        "prompt": "Where did that note about Acme come from?",
+        "invocation": {
+          "name": "dailyos.read.workspace_source_provenance",
+          "arguments": {
+            "entry_id": "opaque"
+          }
+        },
+        "expectedResponseShape": {
+          "source": "string"
+        }
+      }
+    ],
+    "selectionFixtures": {
+      "positive": [
+        {
+          "prompt": "Where did that note about Acme come from?",
+          "expectedTool": "dailyos.read.workspace_source_provenance"
+        },
+        {
+          "prompt": "What's the source of this memory entry?",
+          "expectedTool": "dailyos.read.workspace_source_provenance"
+        }
+      ],
+      "negativeBroadCorpus": [
+        {
+          "prompt": "Search the web for source attribution best practices",
+          "expectedToolClass": "external"
+        },
+        {
+          "prompt": "Show me the org-wide data provenance policy",
+          "expectedToolClass": "external"
+        }
+      ],
+      "negativeAdjacentTool": [
+        {
+          "prompt": "Find the actual note about Acme",
+          "expectedTool": "dailyos.search.workspace_memory"
+        }
+      ]
+    }
+  },
+  {
+    "name": "dailyos.write.place_document",
+    "side": "Write",
+    "summary": "Places a document into working memory.",
+    "when_to_call": "When the user wants to save or file a document under a topic.",
+    "when_NOT_to_call": "Do NOT call for general file upload to shared drives.",
+    "scopesRequired": [
+      "write.workspace_place_document"
+    ],
+    "parameters": [
+      {
+        "name": "topic",
+        "schema": {
+          "type": "string"
+        },
+        "required": true,
+        "description": "Topic"
+      },
+      {
+        "name": "content",
+        "schema": {
+          "type": "string"
+        },
+        "required": true,
+        "description": "Document content"
+      }
+    ],
+    "returns": {
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "document_id": {
+            "type": "string"
+          },
+          "mutation_cursor": {
+            "type": "object"
+          }
+        }
+      },
+      "description": "New document identifier"
+    },
+    "examples": [
+      {
+        "prompt": "Save this Acme renewal context under the Acme topic",
+        "invocation": {
+          "name": "dailyos.write.place_document",
+          "arguments": {
+            "topic": "Acme",
+            "content": "opaque"
+          }
+        },
+        "expectedResponseShape": {
+          "document_id": "opaque",
+          "mutation_cursor": {
+            "document_id": "opaque"
+          }
+        }
+      }
+    ],
+    "selectionFixtures": {
+      "positive": [
+        {
+          "prompt": "Save this Acme renewal context under the Acme topic",
+          "expectedTool": "dailyos.write.place_document"
+        },
+        {
+          "prompt": "File this note under the Hooli deal",
+          "expectedTool": "dailyos.write.place_document"
+        }
+      ],
+      "negativeBroadCorpus": [
+        {
+          "prompt": "Upload this file to Drive",
+          "expectedToolClass": "external"
+        },
+        {
+          "prompt": "Save this to the company wiki",
+          "expectedToolClass": "external"
+        }
+      ],
+      "negativeAdjacentTool": [
+        {
+          "prompt": "Add a quick note about Acme",
+          "expectedTool": "dailyos.submit.note"
+        }
+      ]
+    }
+  },
+  {
+    "name": "dailyos.submit.note",
+    "side": "SubmitCorrection",
+    "summary": "Submits a free-form note.",
+    "when_to_call": "When the user wants to capture a quick thought or observation.",
+    "when_NOT_to_call": "Do NOT call for structured action items.",
+    "scopesRequired": [
+      "dailyos.submit.note"
+    ],
+    "parameters": [
+      {
+        "name": "text",
+        "schema": {
+          "type": "string"
+        },
+        "required": true,
+        "description": "Note text"
+      },
+      {
+        "name": "subject",
+        "schema": {
+          "type": "string"
+        },
+        "required": false,
+        "description": "Optional subject"
+      }
+    ],
+    "returns": {
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "note_id": {
+            "type": "string"
+          },
+          "mutation_cursor": {
+            "type": "object"
+          }
+        }
+      },
+      "description": "New note identifier"
+    },
+    "examples": [
+      {
+        "prompt": "Note that Acme is concerned about pricing",
+        "invocation": {
+          "name": "dailyos.submit.note",
+          "arguments": {
+            "text": "Acme concerned about pricing",
+            "subject": "Acme"
+          }
+        },
+        "expectedResponseShape": {
+          "note_id": "opaque",
+          "mutation_cursor": {
+            "note_id": "opaque"
+          }
+        }
+      }
+    ],
+    "selectionFixtures": {
+      "positive": [
+        {
+          "prompt": "Note that Acme is concerned about pricing",
+          "expectedTool": "dailyos.submit.note"
+        },
+        {
+          "prompt": "Quick observation that Hooli champion is moving teams",
+          "expectedTool": "dailyos.submit.note"
+        }
+      ],
+      "negativeBroadCorpus": [
+        {
+          "prompt": "Post this announcement to the company channel",
+          "expectedToolClass": "external"
+        },
+        {
+          "prompt": "Send this note to the team via email",
+          "expectedToolClass": "external"
+        }
+      ],
+      "negativeAdjacentTool": [
+        {
+          "prompt": "Save this full document under the Acme topic",
+          "expectedTool": "dailyos.write.place_document"
+        }
+      ]
+    }
+  },
+  {
+    "name": "dailyos.submit.action",
+    "side": "SubmitCorrection",
+    "summary": "Submits a structured action item.",
+    "when_to_call": "When the user wants to capture a task or follow-up.",
+    "when_NOT_to_call": "Do NOT call for free-form notes.",
+    "scopesRequired": [
+      "dailyos.submit.action"
+    ],
+    "parameters": [
+      {
+        "name": "description",
+        "schema": {
+          "type": "string"
+        },
+        "required": true,
+        "description": "Action description"
+      },
+      {
+        "name": "due_at",
+        "schema": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "required": false,
+        "description": "Optional due time"
+      },
+      {
+        "name": "subject",
+        "schema": {
+          "type": "string"
+        },
+        "required": false,
+        "description": "Optional subject"
+      }
+    ],
+    "returns": {
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "action_id": {
+            "type": "string"
+          },
+          "mutation_cursor": {
+            "type": "object"
+          }
+        }
+      },
+      "description": "New action identifier"
+    },
+    "examples": [
+      {
+        "prompt": "Remind me to follow up with Acme next Tuesday",
+        "invocation": {
+          "name": "dailyos.submit.action",
+          "arguments": {
+            "description": "Follow up with Acme",
+            "due_at": "iso8601",
+            "subject": "Acme"
+          }
+        },
+        "expectedResponseShape": {
+          "action_id": "opaque",
+          "mutation_cursor": {
+            "action_id": "opaque"
+          }
+        }
+      }
+    ],
+    "selectionFixtures": {
+      "positive": [
+        {
+          "prompt": "Remind me to follow up with Acme next Tuesday",
+          "expectedTool": "dailyos.submit.action"
+        },
+        {
+          "prompt": "Add a task to send the Hooli proposal by Friday",
+          "expectedTool": "dailyos.submit.action"
+        }
+      ],
+      "negativeBroadCorpus": [
+        {
+          "prompt": "Add this to the team's Jira backlog",
+          "expectedToolClass": "external"
+        },
+        {
+          "prompt": "Create a calendar invite for the meeting",
+          "expectedToolClass": "external"
+        }
+      ],
+      "negativeAdjacentTool": [
+        {
+          "prompt": "Note that Acme is concerned about pricing",
+          "expectedTool": "dailyos.submit.note"
+        }
+      ]
+    }
+  },
+  {
+    "name": "dailyos.submit.action_status",
+    "side": "SubmitCorrection",
+    "summary": "Updates the status of an existing action.",
+    "when_to_call": "When the user reports an action as done, deferred, or dropped.",
+    "when_NOT_to_call": "Do NOT call to create a new action.",
+    "scopesRequired": [
+      "dailyos.submit.action_status"
+    ],
+    "parameters": [
+      {
+        "name": "action_id",
+        "schema": {
+          "type": "string"
+        },
+        "required": true,
+        "description": "Opaque action identifier"
+      },
+      {
+        "name": "status",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "done",
+            "deferred",
+            "dropped"
+          ]
+        },
+        "required": true,
+        "description": "New status"
+      }
+    ],
+    "returns": {
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "action_id": {
+            "type": "string"
+          },
+          "mutation_cursor": {
+            "type": "object"
+          }
+        }
+      },
+      "description": "Updated action identifier"
+    },
+    "examples": [
+      {
+        "prompt": "I finished the Acme follow-up",
+        "invocation": {
+          "name": "dailyos.submit.action_status",
+          "arguments": {
+            "action_id": "opaque",
+            "status": "done"
+          }
+        },
+        "expectedResponseShape": {
+          "action_id": "opaque",
+          "mutation_cursor": {
+            "action_id": "opaque"
+          }
+        }
+      }
+    ],
+    "selectionFixtures": {
+      "positive": [
+        {
+          "prompt": "I finished the Acme follow-up",
+          "expectedTool": "dailyos.submit.action_status"
+        },
+        {
+          "prompt": "Mark the Hooli proposal task as dropped",
+          "expectedTool": "dailyos.submit.action_status"
+        }
+      ],
+      "negativeBroadCorpus": [
+        {
+          "prompt": "Mark this Jira ticket as done",
+          "expectedToolClass": "external"
+        },
+        {
+          "prompt": "Update the project status in the company wiki",
+          "expectedToolClass": "external"
+        }
+      ],
+      "negativeAdjacentTool": [
+        {
+          "prompt": "Add a new task to call Hooli tomorrow",
+          "expectedTool": "dailyos.submit.action"
+        }
+      ]
+    }
+  }
+]

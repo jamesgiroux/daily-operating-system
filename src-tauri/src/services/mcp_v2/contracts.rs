@@ -211,6 +211,28 @@ impl std::fmt::Display for OpaqueConversationHandle {
     }
 }
 
+/// Reserved opaque nonce newtype retained for compatibility with older local
+/// callers. The simplified local MCP v2 envelopes do not carry nonce fields.
+#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct OpaqueNonce(pub String);
+
+impl OpaqueNonce {
+    pub fn new(nonce: impl Into<String>) -> Self {
+        Self(nonce.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for OpaqueNonce {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
 /// wire envelope mirror of the runtime type.
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -311,12 +333,12 @@ pub trait McpToolHandler: Send + Sync {
 ///
 /// `ConversationRequired` is intentionally absent — the gateway mints
 /// handles transparently on first write per ADR-0102 §D (2026-05-19
-/// amendment). Auth-state-revocation cases (`PairingRevoked`,
-/// `ConversationRevoked`) live as their own variants rather than abusing
-/// `Unauthorized::missing_scope` with sentinel strings: the [`Scope`]
-/// type is reserved for `<namespace>.<verb>.<noun>` (or pre-amendment
-/// substrate) values per §E, so auth-state sentinels do not belong on
-/// that field.
+/// amendment). Auth-state cases — `PairingRevoked`,
+/// `ConversationRevoked`, `ExposureForbidden` — live as their own
+/// variants rather than abusing `Unauthorized::missing_scope` with
+/// sentinel strings: the [`Scope`] type is reserved for
+/// `<namespace>.<verb>.<noun>` (or pre-amendment substrate) values
+/// per §E, so auth-state sentinels do not belong on that field.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(
     tag = "kind",
@@ -340,6 +362,15 @@ pub enum ToolError {
     /// caller must restart with a fresh conversation (the gateway will
     /// mint a new handle on the next call).
     ConversationRevoked,
+    /// The caller's manifest does not include an invocable grant for
+    /// this tool — either no grant exists for `tool_name` OR the grant's
+    /// `exposure` tier is `None` / `MetadataOnly` per ADR-0102 §G. Use
+    /// this rather than abusing `Unauthorized::missing_scope` with a
+    /// sentinel `Scope` value: exposure is an auth-state distinct from
+    /// scope-deficit (per ADR-0102 §C/§G cycle-7 amendment).
+    ExposureForbidden {
+        tool_name: ScopedName,
+    },
     NotFound {
         resource: String,
     },
@@ -674,6 +705,28 @@ mod tests {
     }
 
     #[test]
+    fn tool_error_exposure_forbidden_wire_shape() {
+        // Per ADR-0102 §C/§G cycle-7 amendment: absent grant or
+        // exposure tier of None / MetadataOnly returns a dedicated
+        // variant rather than abusing `Unauthorized::missing_scope`
+        // with a sentinel `Scope` value. Wire shape mirrors the other
+        // typed errors: snake_case tag + camelCase fields.
+        let err = ToolError::ExposureForbidden {
+            tool_name: ScopedName::new("dailyos.read.account_status"),
+        };
+        let encoded = serde_json::to_value(&err).expect("serializes");
+        assert_eq!(
+            encoded,
+            json!({
+                "kind": "exposure_forbidden",
+                "toolName": "dailyos.read.account_status",
+            })
+        );
+        let decoded: ToolError = serde_json::from_value(encoded).expect("deserializes");
+        assert_eq!(decoded, err);
+    }
+
+    #[test]
     fn mcp_tool_request_envelope_wire_shape() {
         let envelope = McpToolRequestEnvelope {
             conversation_handle: Some(OpaqueConversationHandle::new("conv-abc-123")),
@@ -754,5 +807,16 @@ mod tests {
                 },
             })
         );
+    }
+
+    #[test]
+    fn opaque_nonce_wire_is_transparent_string() {
+        // Kept as a transparent string for compatibility; simplified local
+        // MCP v2 envelopes do not carry this value.
+        let nonce = OpaqueNonce::new("nonce-abc-123");
+        let encoded = serde_json::to_string(&nonce).expect("serializes");
+        assert_eq!(encoded, "\"nonce-abc-123\"");
+        let decoded: OpaqueNonce = serde_json::from_str(&encoded).expect("deserializes");
+        assert_eq!(decoded, nonce);
     }
 }
