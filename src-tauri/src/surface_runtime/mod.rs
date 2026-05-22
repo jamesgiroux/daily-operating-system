@@ -3990,9 +3990,6 @@ fn bridge_surface_error_code(error: &BridgeSurfaceError) -> &'static str {
         BridgeSurfaceError::InputReservedField => "input_reserved_field",
         BridgeSurfaceError::Validation(_) => "validation_error",
         BridgeSurfaceError::AbilityUnavailable => "ability_not_registered",
-        BridgeSurfaceError::ProducerUnavailable => "producer_unavailable",
-        BridgeSurfaceError::InputSchemaInvalid => "input_schema_invalid",
-        BridgeSurfaceError::InputReservedField => "input_reserved_field",
         BridgeSurfaceError::Ownership(_) => "ownership_denied",
     }
 }
