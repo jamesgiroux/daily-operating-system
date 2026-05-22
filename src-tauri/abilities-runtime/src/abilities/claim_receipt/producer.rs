@@ -48,6 +48,12 @@ pub async fn build_claim_receipt(
     let subject_attribution = SubjectAttribution::direct_confident(subject_ref);
     builder.set_subject(subject_attribution.clone());
     builder
+        .attribute_subtree(
+            FieldPath::root(),
+            FieldAttribution::constant(subject_attribution.clone()),
+        )
+        .map_err(provenance_error)?;
+    builder
         .attribute(
             FieldPath::new("/target").map_err(field_error)?,
             FieldAttribution::constant(subject_attribution.clone()),
@@ -73,9 +79,7 @@ fn validate_schema_version(schema_version: u32) -> Result<(), AbilityError> {
     }
 }
 
-fn subject_ref_for_target(
-    target: &crate::services::context::ClaimReceiptTarget,
-) -> SubjectRef {
+fn subject_ref_for_target(target: &crate::services::context::ClaimReceiptTarget) -> SubjectRef {
     use crate::services::context::ClaimReceiptTarget;
     match target {
         ClaimReceiptTarget::Claim { subject, .. } => subject.clone(),
@@ -156,7 +160,37 @@ fn provenance_actor(actor: Actor) -> crate::abilities::provenance::Actor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
+
+    use chrono::TimeZone;
+
+    use crate::abilities::registry::AbilityContext;
+    use crate::abilities::{Actor, NOOP_ABILITY_TRACER};
+    use crate::intelligence::provider::ReplayProvider;
     use crate::services::context::ClaimReceiptTarget;
+    use crate::services::context::{
+        ClaimReceiptFreshness, ClaimReceiptLifecycle, ClaimReceiptProvenance,
+        ClaimReceiptReadFuture, ClaimReceiptReadHandle, ClaimReceiptRedactionLevel,
+        ClaimReceiptSnapshot, ClaimReceiptSurfaceContext, ClaimReceiptTrust, FixedClock,
+        ServiceContext, SystemRng,
+    };
+    use crate::types::{ClaimState, SurfacingState};
+    use crate::{abilities::trust::types::TrustBand, sensitivity::ClaimVerificationState};
+
+    struct StaticReceiptReader {
+        snapshot: ClaimReceiptSnapshot,
+    }
+
+    impl ClaimReceiptReadHandle for StaticReceiptReader {
+        fn read_claim_receipt<'a>(
+            &'a self,
+            _target: ClaimReceiptTarget,
+            _surface: ClaimReceiptSurfaceContext,
+        ) -> ClaimReceiptReadFuture<'a> {
+            let snapshot = self.snapshot.clone();
+            Box::pin(async move { Ok(snapshot) })
+        }
+    }
 
     #[test]
     fn schema_version_validation_rejects_wrong_version() {
@@ -173,6 +207,74 @@ mod tests {
     #[test]
     fn schema_version_validation_accepts_v1() {
         assert!(validate_schema_version(1).is_ok());
+    }
+
+    #[tokio::test]
+    async fn producer_finalizes_receipt_with_outer_provenance() {
+        let target = ClaimReceiptTarget::Claim {
+            claim_id: "claim-test-001".into(),
+            subject: SubjectRef::Account("acct-test-001".into()),
+            field_path: Some("status".into()),
+        };
+        let surface = ClaimReceiptSurfaceContext::EntityDetail;
+        let snapshot = ClaimReceiptSnapshot {
+            target: target.clone(),
+            surface_context: surface,
+            rendered_text: None,
+            trust: ClaimReceiptTrust {
+                band: TrustBand::LikelyCurrent,
+                source_asof: None,
+                freshness: ClaimReceiptFreshness::Current,
+                caveat: None,
+                rationale: None,
+            },
+            lifecycle: ClaimReceiptLifecycle {
+                claim_state: ClaimState::Active,
+                surfacing_state: SurfacingState::Active,
+                verification_state: ClaimVerificationState::Active,
+                updated_at: None,
+            },
+            provenance: ClaimReceiptProvenance {
+                sources: Vec::new(),
+                field_path: Some("status".into()),
+                evidence_summary: None,
+                redaction: ClaimReceiptRedactionLevel::None,
+            },
+            actions: Vec::new(),
+        };
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 22, 12, 0, 0).unwrap());
+        let rng = SystemRng;
+        let services = ServiceContext::new_evaluate_default(&clock, &rng)
+            .with_claim_receipt_reader(Arc::new(StaticReceiptReader { snapshot }));
+        let provider = ReplayProvider::new(std::collections::HashMap::new());
+        let ctx = AbilityContext::new(
+            &services,
+            &provider,
+            &NOOP_ABILITY_TRACER,
+            Actor::User,
+            None,
+            crate::services::context::ClaimDismissalSurface::TauriEntityDetail,
+        );
+
+        let output = build_claim_receipt(
+            &ctx,
+            ClaimReceiptInput {
+                schema_version: 1,
+                target,
+                surface,
+            },
+        )
+        .await
+        .expect("producer should return a finalized receipt");
+
+        assert_eq!(
+            output.data().target,
+            ClaimReceiptTarget::Claim {
+                claim_id: "claim-test-001".into(),
+                subject: SubjectRef::Account("acct-test-001".into()),
+                field_path: Some("status".into()),
+            }
+        );
     }
 
     #[test]

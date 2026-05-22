@@ -23,10 +23,6 @@ use super::contracts::{
     SubjectScope, ThreadSummary, Touchpoint, TouchpointBundle, TouchpointKind,
     ENVELOPE_SCHEMA_VERSION,
 };
-use crate::services::context::{
-    EntityTouchpointSnapshot, EntityTouchpointsQuery, EntityTouchpointsReadError,
-    EntityTouchpointsSnapshot, TouchpointInclusionReason,
-};
 use crate::abilities::list_open_loops::{ListOpenLoopsInput, OpenLoopSubject, OpenLoopsResult};
 use crate::abilities::provenance::source_time::{parse_source_timestamp, SourceTimestampStatus};
 use crate::abilities::provenance::trust::claim_trust_band_from_score;
@@ -40,6 +36,10 @@ use crate::abilities::{
 };
 use crate::sensitivity::{
     renderable_claim_text_with_value, ClaimDismissalSurface, RenderActor, RenderSurface,
+};
+use crate::services::context::{
+    EntityTouchpointSnapshot, EntityTouchpointsQuery, EntityTouchpointsReadError,
+    EntityTouchpointsSnapshot, TouchpointInclusionReason,
 };
 use crate::types::{claim_allowed_for_prompt_input, IntelligenceClaim};
 
@@ -86,7 +86,13 @@ pub async fn build_entity_intelligence(
     let mut envelope_provenance = EnvelopeProvenance::empty();
 
     let facts = if active_sections.contains(&EnvelopeSection::Facts) {
-        build_facts(&claims, &subject_ref, &render_actor, render_surface, &mut envelope_provenance)?
+        build_facts(
+            &claims,
+            &subject_ref,
+            &render_actor,
+            render_surface,
+            &mut envelope_provenance,
+        )?
     } else {
         Paginated::empty_stable()
     };
@@ -100,7 +106,12 @@ pub async fn build_entity_intelligence(
 
     // ---- compose: record entries -------------------------------------------
     let record_entries = if active_sections.contains(&EnvelopeSection::Record) {
-        build_record_entries(&claims, &render_actor, render_surface, &mut envelope_provenance)?
+        build_record_entries(
+            &claims,
+            &render_actor,
+            render_surface,
+            &mut envelope_provenance,
+        )?
     } else {
         Paginated::empty_stable()
     };
@@ -180,6 +191,12 @@ pub async fn build_entity_intelligence(
     let mut builder = ProvenanceBuilder::new(provenance_config(ctx, input.schema_version));
     let subject_attr = SubjectAttribution::direct_confident(subject_ref);
     builder.set_subject(subject_attr.clone());
+    builder
+        .attribute_subtree(
+            FieldPath::root(),
+            FieldAttribution::constant(subject_attr.clone()),
+        )
+        .map_err(provenance_error)?;
     builder
         .attribute(
             FieldPath::new("/schemaVersion").map_err(field_error)?,
@@ -1001,7 +1018,10 @@ fn aggregate_sensitivity(
 
 // ---- provenance index helpers ---------------------------------------------
 
-fn upsert_provenance_source(provenance: &mut EnvelopeProvenance, claim: &IntelligenceClaim) -> String {
+fn upsert_provenance_source(
+    provenance: &mut EnvelopeProvenance,
+    claim: &IntelligenceClaim,
+) -> String {
     let id = format!("claim_source:{}", claim.id);
     if provenance.sources.iter().any(|s| s.id == id) {
         return id;
@@ -1128,9 +1148,33 @@ mod tests {
     //! empty sections carry typed reasons, sections map enumerates all variants.
 
     use super::*;
-    use super::super::contracts::{
-        ExclusionReason, InclusionReason, Touchpoint, TouchpointKind,
+    use std::sync::Arc;
+
+    use chrono::TimeZone;
+
+    use super::super::contracts::{ExclusionReason, InclusionReason, Touchpoint, TouchpointKind};
+    use crate::abilities::registry::AbilityContext;
+    use crate::abilities::{Actor, NOOP_ABILITY_TRACER};
+    use crate::intelligence::provider::ReplayProvider;
+    use crate::services::context::{
+        ClaimDismissalSurface, EntityContextClaimReadFuture, EntityContextClaimReadHandle,
+        FixedClock, ServiceContext, SystemRng,
     };
+    use crate::types::IntelligenceClaim;
+
+    struct EmptyClaimReader;
+
+    impl EntityContextClaimReadHandle for EmptyClaimReader {
+        fn read_entity_context_claims<'a>(
+            &'a self,
+            _entity_type: String,
+            _entity_id: String,
+            _surface: ClaimDismissalSurface,
+            _depth: usize,
+        ) -> EntityContextClaimReadFuture<'a> {
+            Box::pin(async { Ok(Vec::<IntelligenceClaim>::new()) })
+        }
+    }
 
     fn fill(facts: u64, open_loops: u64) -> SectionFill {
         SectionFill {
@@ -1151,6 +1195,39 @@ mod tests {
         for section in EnvelopeSection::ALL {
             assert!(map.contains_key(section), "missing section {section:?}");
         }
+    }
+
+    #[tokio::test]
+    async fn producer_finalizes_empty_claim_envelope_with_outer_provenance() {
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 22, 12, 0, 0).unwrap());
+        let rng = SystemRng;
+        let services = ServiceContext::new_evaluate_default(&clock, &rng)
+            .with_entity_context_claim_reader(Arc::new(EmptyClaimReader));
+        let provider = ReplayProvider::new(std::collections::HashMap::new());
+        let ctx = AbilityContext::new(
+            &services,
+            &provider,
+            &NOOP_ABILITY_TRACER,
+            Actor::User,
+            None,
+            ClaimDismissalSurface::TauriEntityDetail,
+        );
+
+        let output = build_entity_intelligence(
+            &ctx,
+            EntityIntelligenceInput {
+                schema_version: 1,
+                entity_type: EntityKind::Account,
+                entity_id: "acct-test-001".to_string(),
+                depth: EnvelopeContextDepth::Deep,
+                sections: Some(vec![EnvelopeSection::Facts, EnvelopeSection::Record]),
+            },
+        )
+        .await
+        .expect("producer should return a typed empty envelope");
+
+        assert_eq!(output.data().subject.id, "acct-test-001");
+        assert!(output.data().facts.items.is_empty());
     }
 
     #[test]
@@ -1279,7 +1356,10 @@ mod tests {
         let json = serde_json::to_string(&original).expect("serializes");
         let parsed: Touchpoint = serde_json::from_str(&json).expect("round trips");
         assert_eq!(parsed.inclusion_reason, InclusionReason::SubjectMatch);
-        assert_eq!(parsed.exclusion_reason, Some(ExclusionReason::OutsideWindow));
+        assert_eq!(
+            parsed.exclusion_reason,
+            Some(ExclusionReason::OutsideWindow)
+        );
     }
 
     #[test]
@@ -1363,7 +1443,10 @@ mod tests {
             &render_actor,
             &mut prov,
         );
-        assert_eq!(bundle.empty_reason, Some(EmptyReason::NoRelevantTouchpoints));
+        assert_eq!(
+            bundle.empty_reason,
+            Some(EmptyReason::NoRelevantTouchpoints)
+        );
         assert!(bundle.upcoming.items.is_empty());
         assert!(bundle.recent.items.is_empty());
         assert!(bundle.subject_scope.also_includes.is_empty());
@@ -1540,12 +1623,30 @@ mod tests {
 
     #[test]
     fn classify_touchpoint_kind_falls_back_to_meeting_for_unknown_strings() {
-        assert_eq!(classify_touchpoint_kind("internal"), TouchpointKind::Meeting);
-        assert_eq!(classify_touchpoint_kind("team_sync"), TouchpointKind::Meeting);
-        assert_eq!(classify_touchpoint_kind("email_thread"), TouchpointKind::EmailThread);
-        assert_eq!(classify_touchpoint_kind("salesforce_call"), TouchpointKind::Salesforce);
-        assert_eq!(classify_touchpoint_kind("linear_update"), TouchpointKind::Linear);
-        assert_eq!(classify_touchpoint_kind("google_doc"), TouchpointKind::Document);
+        assert_eq!(
+            classify_touchpoint_kind("internal"),
+            TouchpointKind::Meeting
+        );
+        assert_eq!(
+            classify_touchpoint_kind("team_sync"),
+            TouchpointKind::Meeting
+        );
+        assert_eq!(
+            classify_touchpoint_kind("email_thread"),
+            TouchpointKind::EmailThread
+        );
+        assert_eq!(
+            classify_touchpoint_kind("salesforce_call"),
+            TouchpointKind::Salesforce
+        );
+        assert_eq!(
+            classify_touchpoint_kind("linear_update"),
+            TouchpointKind::Linear
+        );
+        assert_eq!(
+            classify_touchpoint_kind("google_doc"),
+            TouchpointKind::Document
+        );
         // Defensive: empty + garbage strings → Meeting, never panic.
         assert_eq!(classify_touchpoint_kind(""), TouchpointKind::Meeting);
         assert_eq!(classify_touchpoint_kind("???"), TouchpointKind::Meeting);
@@ -1553,10 +1654,22 @@ mod tests {
 
     #[test]
     fn parse_exclusion_reason_strict_allowlist() {
-        assert_eq!(parse_exclusion_reason("subject_mismatch"), Some(ExclusionReason::SubjectMismatch));
-        assert_eq!(parse_exclusion_reason("outside_window"), Some(ExclusionReason::OutsideWindow));
-        assert_eq!(parse_exclusion_reason("low_confidence"), Some(ExclusionReason::LowConfidence));
-        assert_eq!(parse_exclusion_reason("suppressed"), Some(ExclusionReason::Suppressed));
+        assert_eq!(
+            parse_exclusion_reason("subject_mismatch"),
+            Some(ExclusionReason::SubjectMismatch)
+        );
+        assert_eq!(
+            parse_exclusion_reason("outside_window"),
+            Some(ExclusionReason::OutsideWindow)
+        );
+        assert_eq!(
+            parse_exclusion_reason("low_confidence"),
+            Some(ExclusionReason::LowConfidence)
+        );
+        assert_eq!(
+            parse_exclusion_reason("suppressed"),
+            Some(ExclusionReason::Suppressed)
+        );
         // Unknown values must NOT round-trip to a fake reason.
         assert_eq!(parse_exclusion_reason("unknown"), None);
         assert_eq!(parse_exclusion_reason(""), None);
@@ -1602,7 +1715,10 @@ mod tests {
             bundle.empty_reason,
             Some(EmptyReason::PartialFailure { .. })
         ));
-        assert!(bundle.candidate_set.filter_description.contains("reader unavailable"));
+        assert!(bundle
+            .candidate_set
+            .filter_description
+            .contains("reader unavailable"));
     }
 
     #[test]
@@ -1725,7 +1841,9 @@ mod tests {
 
     // ---- W2 F2 Meeting health projection (prep status) -------------------
 
-    fn meeting_prep_snapshot_ready(meeting_id: &str) -> crate::services::context::MeetingPrepStatusSnapshot {
+    fn meeting_prep_snapshot_ready(
+        meeting_id: &str,
+    ) -> crate::services::context::MeetingPrepStatusSnapshot {
         crate::services::context::MeetingPrepStatusSnapshot {
             meeting_id: meeting_id.to_string(),
             event_id: None,
@@ -1739,7 +1857,9 @@ mod tests {
         }
     }
 
-    fn meeting_prep_snapshot_blocked(meeting_id: &str) -> crate::services::context::MeetingPrepStatusSnapshot {
+    fn meeting_prep_snapshot_blocked(
+        meeting_id: &str,
+    ) -> crate::services::context::MeetingPrepStatusSnapshot {
         crate::services::context::MeetingPrepStatusSnapshot {
             meeting_id: meeting_id.to_string(),
             event_id: None,
@@ -1768,7 +1888,10 @@ mod tests {
         // Provenance index upserted once with the meeting_prep id.
         assert_eq!(prov.sources.len(), 1);
         assert_eq!(prov.sources[0].id, "meeting_prep:m-1");
-        assert_eq!(prov.sources[0].source_type.as_deref(), Some("meeting_prep_status"));
+        assert_eq!(
+            prov.sources[0].source_type.as_deref(),
+            Some("meeting_prep_status")
+        );
         assert!(!prov.sources[0].redacted);
     }
 
