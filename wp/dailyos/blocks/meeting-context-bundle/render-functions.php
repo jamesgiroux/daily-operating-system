@@ -108,7 +108,7 @@ if ( ! function_exists( 'dailyos_meeting_context_bundle_render' ) ) {
 			)
 			: 'class="wp-block-dailyos-meeting-context-bundle PostMeetingIntelligence_container" data-ds-tier="pattern" data-ds-name="PostMeetingIntelligence"';
 
-		$thread_icons = [
+		$thread_icons               = [
 			'confirmed' => '<svg class="PostMeetingIntelligence_threadIcon PostMeetingIntelligence_threadIconConfirmed" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>',
 			'open'      => '<svg class="PostMeetingIntelligence_threadIcon PostMeetingIntelligence_threadIconOpen" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/></svg>',
 			'neutral'   => '<span class="PostMeetingIntelligence_threadIcon PostMeetingIntelligence_threadIconNeutral"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="1"/></svg></span>',

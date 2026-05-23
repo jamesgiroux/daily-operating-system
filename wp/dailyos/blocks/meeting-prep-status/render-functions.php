@@ -93,10 +93,10 @@ if ( ! function_exists( 'dailyos_meeting_prep_status_render' ) ) {
 		$wrapper_attrs = function_exists( 'get_block_wrapper_attributes' )
 			? get_block_wrapper_attributes(
 				[
-					'class'              => 'wp-block-dailyos-meeting-prep-status meeting-intel_prepStatusWrap',
-					'data-ds-tier'       => 'primitive',
-					'data-ds-name'       => 'MeetingPrepStatus',
-					'data-prep-status'   => $status,
+					'class'            => 'wp-block-dailyos-meeting-prep-status meeting-intel_prepStatusWrap',
+					'data-ds-tier'     => 'primitive',
+					'data-ds-name'     => 'MeetingPrepStatus',
+					'data-prep-status' => $status,
 				]
 			)
 			: 'class="wp-block-dailyos-meeting-prep-status meeting-intel_prepStatusWrap" data-prep-status="' . esc_attr( $status ) . '"';
@@ -133,14 +133,25 @@ if ( ! function_exists( 'dailyos_meeting_prep_status_unwrap' ) ) {
 }
 
 if ( ! function_exists( 'dailyos_meeting_prep_status_label' ) ) {
+	/**
+	 * Human-readable label for a prep-status chip.
+	 *
+	 * @param string $status          Prep status enum value.
+	 * @param string $blocking_reason Reason text when status is prep_needed.
+	 * @param string $stale_reason    Reason text when status is stale.
+	 *
+	 * @return string Localized chip label.
+	 */
 	function dailyos_meeting_prep_status_label( string $status, string $blocking_reason, string $stale_reason ): string {
 		switch ( $status ) {
 			case 'preparing':
 				return __( 'Preparing briefing…', 'dailyos' );
 			case 'stale':
-				return '' === $stale_reason
-					? __( 'Briefing stale — refresh recommended', 'dailyos' )
-					: sprintf( __( 'Briefing stale (%s)', 'dailyos' ), str_replace( '_', ' ', $stale_reason ) );
+				if ( '' === $stale_reason ) {
+					return __( 'Briefing stale — refresh recommended', 'dailyos' );
+				}
+				/* translators: %s: stale reason slug, underscores converted to spaces. */
+				return sprintf( __( 'Briefing stale (%s)', 'dailyos' ), str_replace( '_', ' ', $stale_reason ) );
 			case 'limited':
 				return __( 'Briefing limited — partial data', 'dailyos' );
 			case 'failed':
@@ -153,14 +164,23 @@ if ( ! function_exists( 'dailyos_meeting_prep_status_label' ) ) {
 				return __( 'Briefing dismissed', 'dailyos' );
 			case 'prep_needed':
 			default:
-				return '' === $blocking_reason
-					? __( 'No briefing yet', 'dailyos' )
-					: sprintf( __( 'Briefing needed (%s)', 'dailyos' ), str_replace( '_', ' ', $blocking_reason ) );
+				if ( '' === $blocking_reason ) {
+					return __( 'No briefing yet', 'dailyos' );
+				}
+				/* translators: %s: blocking reason slug, underscores converted to spaces. */
+				return sprintf( __( 'Briefing needed (%s)', 'dailyos' ), str_replace( '_', ' ', $blocking_reason ) );
 		}
 	}
 }
 
 if ( ! function_exists( 'dailyos_meeting_prep_status_tone' ) ) {
+	/**
+	 * Tone token for a prep-status chip.
+	 *
+	 * @param string $status Prep status enum value.
+	 *
+	 * @return string Design-token tone slug.
+	 */
 	function dailyos_meeting_prep_status_tone( string $status ): string {
 		switch ( $status ) {
 			case 'preparing':
@@ -184,6 +204,11 @@ if ( ! function_exists( 'dailyos_meeting_prep_status_tone' ) ) {
 if ( ! function_exists( 'dailyos_meeting_prep_status_silent' ) ) {
 	/**
 	 * Silent wrapper for ready / running / queued — chrome.js still observes.
+	 *
+	 * @param string $status            Prep status enum value.
+	 * @param string $last_prepared_at  ISO-8601 timestamp of last successful prep.
+	 *
+	 * @return string Hidden div with data attributes for chrome.js to read.
 	 */
 	function dailyos_meeting_prep_status_silent( string $status, string $last_prepared_at ): string {
 		return sprintf(
@@ -198,6 +223,11 @@ if ( ! function_exists( 'dailyos_meeting_prep_status_empty' ) ) {
 	/**
 	 * Visible empty-state chip per §10 invariant — never silent-hidden when
 	 * we genuinely have no data to project.
+	 *
+	 * @param string $reason Empty-state reason slug.
+	 * @param string $label  Optional override label; falls back to slug-derived label.
+	 *
+	 * @return string Rendered empty-state chip HTML.
 	 */
 	function dailyos_meeting_prep_status_empty( string $reason, string $label = '' ): string {
 		if ( '' === $label ) {
@@ -213,6 +243,13 @@ if ( ! function_exists( 'dailyos_meeting_prep_status_empty' ) ) {
 }
 
 if ( ! function_exists( 'dailyos_meeting_prep_status_empty_label' ) ) {
+	/**
+	 * Default empty-state label for a reason slug.
+	 *
+	 * @param string $reason Empty-state reason slug.
+	 *
+	 * @return string Localized label.
+	 */
 	function dailyos_meeting_prep_status_empty_label( string $reason ): string {
 		switch ( $reason ) {
 			case 'missing_meeting_context':

@@ -92,6 +92,7 @@ attach_meeting_transcript
 reprocess_meeting_transcript
 get_meeting_outcomes
 get_meeting_post_intelligence
+mark_meeting_intelligence_viewed
 update_capture
 update_action_priority
 create_action

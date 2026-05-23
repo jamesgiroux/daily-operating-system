@@ -100,7 +100,7 @@ if ( ! function_exists( 'dailyos_meeting_header_render' ) ) {
 			[ $time_local, $meeting_type, $primary_account ],
 			static fn( $value ) => '' !== (string) $value
 		);
-		$metadata_text = implode( ' · ', array_map( 'esc_html', $metadata_parts ) );
+		$metadata_text  = implode( ' · ', array_map( 'esc_html', $metadata_parts ) );
 
 		$out  = '<header ' . $wrapper_attrs . '>';
 		$out .= '<p class="meeting-intel_recordOverline">'

@@ -80,7 +80,7 @@ if ( ! function_exists( 'dailyos_meeting_attendees_section_render' ) ) {
 			)
 			: 'class="wp-block-dailyos-meeting-attendees-section meeting-intel_chapterSection" data-ds-tier="pattern" data-ds-name="MeetingAttendeesSection" data-ds-spec="patterns/MeetingAttendeesSection.md"';
 
-		$avatar_classes = [
+		$avatar_classes      = [
 			'default' => 'meeting-intel_attendeeAvatarDefault',
 			'cold'    => 'meeting-intel_attendeeAvatarCold',
 			'new'     => 'meeting-intel_attendeeAvatarNew',
@@ -91,7 +91,7 @@ if ( ! function_exists( 'dailyos_meeting_attendees_section_render' ) ) {
 			'cold' => 'Cold',
 			'cool' => 'Cool',
 		];
-		$engagement_classes = [
+		$engagement_classes  = [
 			'champion'  => 'Champion',
 			'detractor' => 'Detractor',
 			'supporter' => 'Supporter',
@@ -112,7 +112,7 @@ if ( ! function_exists( 'dailyos_meeting_attendees_section_render' ) ) {
 				return dailyos_meeting_attendees_section_empty_chip( 'invalid_attendee', __( 'Attendee data unavailable.', 'dailyos' ) );
 			}
 
-			$is_self = ( isset( $attendee['temperature'] ) && 'self' === (string) $attendee['temperature'] )
+			$is_self         = ( isset( $attendee['temperature'] ) && 'self' === (string) $attendee['temperature'] )
 				|| ( isset( $attendee['engagement'] ) && 'self' === (string) $attendee['engagement'] )
 				|| ( isset( $attendee['avatar_style'] ) && 'self' === (string) $attendee['avatar_style'] );
 			$required_fields = [ 'person_id', 'display_name', 'avatar_initial', 'avatar_style' ];
@@ -158,19 +158,19 @@ if ( ! function_exists( 'dailyos_meeting_attendees_section_render' ) ) {
 
 			if ( ! $is_self && isset( $attendee['tooltip_assessment'] ) && '' !== (string) $attendee['tooltip_assessment'] ) {
 				$meeting_count_label = (string) $attendee['meeting_count'] . ' meetings';
-				$out .= '<span class="attendee-tooltip-wrap">';
-				$out .= '<p class="meeting-intel_attendeeName">' . esc_html( $display_name ) . '</p>';
-				$out .= '<span class="attendee-tooltip">';
-				$out .= '<span class="meeting-intel_attendeeMetaMono meeting-intel_tooltipMetaBlockSpaced">'
+				$out                .= '<span class="attendee-tooltip-wrap">';
+				$out                .= '<p class="meeting-intel_attendeeName">' . esc_html( $display_name ) . '</p>';
+				$out                .= '<span class="attendee-tooltip">';
+				$out                .= '<span class="meeting-intel_attendeeMetaMono meeting-intel_tooltipMetaBlockSpaced">'
 					. esc_html( (string) $attendee['last_seen_label'] )
 					. ' &middot; '
 					. esc_html( $meeting_count_label )
 					. '</span>';
-				$out .= '<span class="meeting-intel_tooltipAssessment">'
+				$out                .= '<span class="meeting-intel_tooltipAssessment">'
 					. esc_html( (string) $attendee['tooltip_assessment'] )
 					. '</span>';
-				$out .= '</span>';
-				$out .= '</span>';
+				$out                .= '</span>';
+				$out                .= '</span>';
 			} else {
 				$out .= '<p class="meeting-intel_attendeeName">' . esc_html( $display_name ) . '</p>';
 			}
@@ -219,17 +219,17 @@ if ( ! function_exists( 'dailyos_meeting_attendees_section_render' ) ) {
 			}
 
 			$meeting_count_label = (string) $attendee['meeting_count'] . ' meetings';
-			$out .= '</div>';
-			$out .= '<p class="meeting-intel_attendeeAssessment">' . esc_html( (string) $attendee['assessment'] ) . '</p>';
-			$out .= '<div class="meeting-intel_attendeeMeta">';
-			$out .= '<span class="meeting-intel_attendeeOrg">' . esc_html( (string) $attendee['organization'] ) . '</span>';
-			$out .= '<span class="meeting-intel_attendeeMetaMono">' . esc_html( $meeting_count_label ) . '</span>';
-			$out .= '<span class="meeting-intel_attendeeMetaMono">' . esc_html( (string) $attendee['last_seen_label'] ) . '</span>';
-			$out .= '</div>';
-			$out .= '</div>';
-			$out .= '</div>';
-			$out .= '</a>';
-			$out .= '</div>';
+			$out                .= '</div>';
+			$out                .= '<p class="meeting-intel_attendeeAssessment">' . esc_html( (string) $attendee['assessment'] ) . '</p>';
+			$out                .= '<div class="meeting-intel_attendeeMeta">';
+			$out                .= '<span class="meeting-intel_attendeeOrg">' . esc_html( (string) $attendee['organization'] ) . '</span>';
+			$out                .= '<span class="meeting-intel_attendeeMetaMono">' . esc_html( $meeting_count_label ) . '</span>';
+			$out                .= '<span class="meeting-intel_attendeeMetaMono">' . esc_html( (string) $attendee['last_seen_label'] ) . '</span>';
+			$out                .= '</div>';
+			$out                .= '</div>';
+			$out                .= '</div>';
+			$out                .= '</a>';
+			$out                .= '</div>';
 		}
 
 		$out .= '</div>';

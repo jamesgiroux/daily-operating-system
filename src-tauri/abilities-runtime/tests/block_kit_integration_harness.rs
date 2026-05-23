@@ -527,6 +527,8 @@ fn escape_pointer_segment(segment: &str) -> String {
 
 #[path = "fixtures/account_detail_integration_fixture.rs"]
 mod account_detail_integration_fixture;
+#[path = "fixtures/account_overview_integration_fixture.rs"]
+mod account_overview_integration_fixture;
 #[path = "fixtures/accounts_index_integration_fixture.rs"]
 mod accounts_index_integration_fixture;
 #[path = "fixtures/avatar_integration_fixture.rs"]
