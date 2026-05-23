@@ -19,8 +19,7 @@
 <div class="plans-shell">
 
 <!-- ============================================================
-     TOP NAV — copies foundation-topnav pattern from product surface
-     TODO(ds): needs pattern — consider .docs/plans/_patterns/topnav.html if reused 2+ times
+     TOP NAV
      ============================================================ -->
 <nav class="plans-topnav" aria-label="Planning surface">
   <a class="plans-mark" href="index.html">
@@ -37,35 +36,60 @@
 </nav>
 
 <!-- ============================================================
-     COVER — hero / lede / meta
-     Reusing foundation-cover pattern; if it appears in 2+ plan docs, extract to _patterns/cover.html
+     COVER
      ============================================================ -->
 <section class="plans-cover">
   <p class="plans-eyebrow">DailyOS · Engineering Ladder</p>
   <h1 class="plans-title">From plan to merge, in seven gates.</h1>
-  <p class="plans-kicker">L0–L6 with Plan, Implement, Review, and Capture roles per rung.</p>
+  <p class="plans-kicker">L0–L6 with Plan, Implement, Review, and Capture roles per rung. Reviewer composition trimmed 2026-05-23 — defaults small, specialists routed in by concern.</p>
   <p class="plans-lede">
-    The Engineering Ladder is how work moves from intake to merge. Each rung names the skills that apply at that phase — not just review. A continuous Knowledge Channel feeds findings into L0 and captures findings out of L3 / L5 so the same drift doesn't surface twice.
+    The Engineering Ladder is how work moves from intake to merge. Each rung names the skills that apply at that phase — not just review. A continuous Knowledge Channel feeds findings into L0 and captures findings out of L3 / L5 so the same drift doesn't surface twice. The reviewer composition rule is <strong>one default reviewer per gate plus router-selected specialists</strong> — not every reviewer on every change.
   </p>
   <div class="plans-meta">
     <span>Adopted 2026-05-18</span>
+    <span>Reviewer composition revised 2026-05-23</span>
     <span>L0–L6 numbering preserved</span>
-    <span>Plan / Implement / Review / Capture per rung</span>
     <span>K-channel: docs/solutions/ + .docs/decisions/</span>
   </div>
 </section>
 
 <!-- ============================================================
+     COMPOSITION PRINCIPLE
+     ============================================================ -->
+<section class="plans-section" aria-labelledby="composition">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Composition principle</p>
+    <h2 id="composition" class="plans-section-title">Compose installed agents. Don't run every reviewer on every change.</h2>
+    <p class="plans-section-lede">
+      Default reviewer counts are deliberately small. The cost of a 4-reviewer L0 × 5–6 convergence cycles drove this revision (W1 v1.4.5 burned ~27 review cycles across 3 lanes). The library of installed agents — <code>ce-*</code> and <code>pr-review-toolkit:*</code> — is large; the ladder composes specific agents per concern.
+    </p>
+  </header>
+
+  <div class="callout-grid">
+    <article class="callout">
+      <h3 class="callout-title">One default + routed specialists</h3>
+      <p class="callout-prose">L0 default is 2 reviewers (codex challenge + 1 planning reviewer). L2 default is 1 (codex review via the bounded-reviewer orchestrator) plus 0–2 router-selected specialists keyed to what the diff actually touches.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Advisory ≠ blocking</h3>
+      <p class="callout-prose">Code-quality concerns (maintainability, simplicity, duplication) run in parallel as advisory. Findings file to the maintenance project, not back to the cycle-N+1 reviewer loop. Tracked, not skipped — but not bottlenecking.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Scope tier picks panel size</h3>
+      <p class="callout-prose">Trivial fixes skip L0 entirely. Small fixes get 1 reviewer at L0. Standard gets 2. Wave gets 3 + K-in. Most work isn't wave-tier.</p>
+    </article>
+  </div>
+</section>
+
+<!-- ============================================================
      SKILL MATRIX — the heart of the ladder
-     Each rung is a card with 4 role quadrants: Plan / Implement / Review / Capture
-     TODO(ds): needs pattern — ladder-rung-card with role quadrants. First use; consider promoting to _patterns/ if used in wave dashboards.
      ============================================================ -->
 <section class="plans-section" aria-labelledby="skill-matrix">
   <header class="plans-section-header">
     <p class="plans-section-eyebrow">Skill matrix</p>
     <h2 id="skill-matrix" class="plans-section-title">Each rung, four roles.</h2>
     <p class="plans-section-lede">
-      Plan, Implement, Review, and Capture skills per rung. <strong>K-in</strong> (substrate-grep at L0) and <strong>K-out</strong> (`/ce-compound` capture at L3 retro) are mandatory.
+      Plan, Implement, Review, and Capture skills per rung. <strong>K-in</strong> (via <code>ce-learnings-researcher</code> at L0) and <strong>K-out</strong> (autonomous <code>/ce-compound</code> at L3 retro) are mandatory.
     </p>
   </header>
 
@@ -112,7 +136,7 @@
       <div class="ladder-rung-header">
         <span class="ladder-rung-id">L0 Plan</span>
         <h3 class="ladder-rung-title">Plan review (gate)</h3>
-        <p class="ladder-rung-blurb">Pre-code review of the hardened plan. K-in mandatory: reviewers grep <code>docs/solutions/</code> + <code>.docs/decisions/</code> before scoring.</p>
+        <p class="ladder-rung-blurb">Pre-code review of the hardened plan. Default 2 reviewers; +1 at Wave tier or Amendment 3 paths.</p>
         <div class="ladder-rung-pass-rule">
           <span class="pass-rule-label">Pass rule</span>
           <span class="pass-rule-badge pass-rule-unanimous">Unanimous required</span>
@@ -129,17 +153,13 @@
         </div>
         <div class="ladder-role" data-role="review">
           <span class="ladder-role-label">Review</span>
-          <ul class="ladder-role-skills">
-            <li><code>/codex challenge</code></li>
-            <li><code>architect-reviewer</code> (default domain)</li>
-            <li><code>security-auditor</code> when paths match Amendment 3</li>
-            <li><code>/codex consult</code></li>
-            <li><code>/ce-doc-review</code> optional fifth opinion</li>
-          </ul>
+          <p class="ladder-role-prose"><strong>Default (2):</strong> <code>/codex challenge</code> + ONE planning reviewer from the matrix below.</p>
+          <p class="ladder-role-prose"><strong>Conditional (+1):</strong> add second planning reviewer at Wave scope tier or when Amendment 3 paths touched.</p>
+          <p class="ladder-role-prose"><code>ce-learnings-researcher</code> runs in <strong>parallel</strong> — not a panel slot, a consumed K-in signal.</p>
         </div>
         <div class="ladder-role ladder-role-kin" data-role="capture">
           <span class="ladder-role-label">Capture <span class="role-tag role-tag-kin">K-in</span></span>
-          <p class="ladder-role-prose">Each L0 reviewer greps <code>docs/solutions/</code> + <code>.docs/decisions/</code> for substrate the plan claims is net new. Cite hits in verdict. <strong>Reinvented documented substrate = BLOCKED.</strong></p>
+          <p class="ladder-role-prose"><code>ce-learnings-researcher</code> cites <code>docs/solutions/</code> + <code>.docs/decisions/</code> hits in verdict. Reinvented substrate = <strong>BLOCKED</strong>.</p>
         </div>
       </div>
     </article>
@@ -149,7 +169,7 @@
       <div class="ladder-rung-header">
         <span class="ladder-rung-id">L1 Implementation</span>
         <h3 class="ladder-rung-title">Build the work, then validate</h3>
-        <p class="ladder-rung-blurb">The implementing agent codes against the plan, runs tests, captures proof artifacts before opening the PR. Self-validation lives in the Review column — tests pass, proof artifacts captured, demo evidence captured.</p>
+        <p class="ladder-rung-blurb">The implementing agent codes against the plan, runs tests, captures proof artifacts before opening the PR.</p>
       </div>
       <div class="ladder-rung-roles">
         <div class="ladder-role ladder-role-empty" data-role="plan">
@@ -183,10 +203,10 @@
       <div class="ladder-rung-header">
         <span class="ladder-rung-id">L2 Diff</span>
         <h3 class="ladder-rung-title">PR review (gate)</h3>
-        <p class="ladder-rung-blurb">Pre-merge review of the PR. Bounded by acceptance criteria; runs locally before pushing the PR. Path-α findings → maintenance project, not cycle-N+1.</p>
+        <p class="ladder-rung-blurb">Pre-merge review of the PR. Bounded by acceptance criteria. Default 1 reviewer + 0–2 routed specialists. Advisory parallel reviewers file to maintenance project.</p>
         <div class="ladder-rung-pass-rule">
           <span class="pass-rule-label">Pass rule</span>
-          <span class="pass-rule-badge pass-rule-unanimous">All three approve</span>
+          <span class="pass-rule-badge pass-rule-unanimous">All blocking reviewers approve</span>
         </div>
       </div>
       <div class="ladder-rung-roles">
@@ -200,17 +220,14 @@
         </div>
         <div class="ladder-role" data-role="review">
           <span class="ladder-role-label">Review</span>
-          <ul class="ladder-role-skills">
-            <li><code>/review</code> (gstack pre-landing)</li>
-            <li><code>/codex review</code></li>
-            <li><code>code-reviewer</code> subagent</li>
-            <li>Domain reviewer per matrix</li>
-            <li><code>/ce-resolve-pr-feedback</code> for review-thread loop</li>
-          </ul>
+          <p class="ladder-role-prose"><strong>Default (1):</strong> <code>/codex review</code> orchestrated via <code>l2-bounded-reviewer</code> agent (AC-scoped, path-α routing).</p>
+          <p class="ladder-role-prose"><strong>Router-selected (0–2):</strong> see L2 reviewer router below.</p>
+          <p class="ladder-role-prose"><strong>Advisory parallel (always-on, non-blocking):</strong> <code>ce-maintainability-reviewer</code> + <code>ce-code-simplicity-reviewer</code> file to maintenance project.</p>
+          <p class="ladder-role-prose"><code>/ce-resolve-pr-feedback</code> handles review-thread loops after L2 verdict.</p>
         </div>
         <div class="ladder-role ladder-role-kin" data-role="capture">
           <span class="ladder-role-label">Capture <span class="role-tag role-tag-kin">K-in</span></span>
-          <p class="ladder-role-prose">Domain reviewer cites matching <code>docs/solutions/</code> entries when a finding repeats a known class.</p>
+          <p class="ladder-role-prose">Router reviewer cites matching <code>docs/solutions/</code> entries when a finding repeats a known class.</p>
         </div>
       </div>
     </article>
@@ -220,10 +237,10 @@
       <div class="ladder-rung-header">
         <span class="ladder-rung-id">L3 Wave</span>
         <h3 class="ladder-rung-title">Integrated review (gate)</h3>
-        <p class="ladder-rung-blurb">After all wave PRs merge: codex challenge against integrated diff + ADRs, architect-reviewer on integrated state, Suites S / P / E.</p>
+        <p class="ladder-rung-blurb">After all wave PRs merge: codex challenge + <code>ce-architecture-strategist</code> on integrated state, Suites S/P/E gate-by-need. For non-major versions, L5 folds in here.</p>
         <div class="ladder-rung-pass-rule">
           <span class="pass-rule-label">Pass rule</span>
-          <span class="pass-rule-badge pass-rule-unanimous">All approve + suites green</span>
+          <span class="pass-rule-badge pass-rule-unanimous">All approve + firing suites green</span>
         </div>
       </div>
       <div class="ladder-rung-roles">
@@ -239,13 +256,15 @@
           <span class="ladder-role-label">Review</span>
           <ul class="ladder-role-skills">
             <li><code>/codex challenge</code> against integrated wave + ADRs</li>
-            <li><code>architect-reviewer</code> on integrated state</li>
-            <li>Suite S / P / E</li>
+            <li><code>ce-architecture-strategist</code> on integrated state</li>
+            <li><code>ce-schema-drift-detector</code> (waves with migrations)</li>
+            <li><code>ce-deployment-verification-agent</code> (production-touching)</li>
+            <li>Suites S / P / E per firing rules</li>
           </ul>
         </div>
         <div class="ladder-role ladder-role-kout" data-role="capture">
           <span class="ladder-role-label">Capture <span class="role-tag role-tag-kout">K-out</span></span>
-          <p class="ladder-role-prose">At retro close, run <code>/ce-compound</code> for each class-pattern finding and each substrate-already-existed finding. Output committed to <code>docs/solutions/&lt;category&gt;/</code>.</p>
+          <p class="ladder-role-prose">At retro close, autonomous <code>/ce-compound mode:headless</code> run for each class-pattern + substrate-already-existed finding. Output committed to <code>docs/solutions/&lt;category&gt;/</code>.</p>
         </div>
       </div>
     </article>
@@ -290,8 +309,8 @@
     <article class="ladder-rung" data-rung="l5-drift" data-tone="olive">
       <div class="ladder-rung-header">
         <span class="ladder-rung-id">L5 Drift</span>
-        <h3 class="ladder-rung-title">Architecture drift</h3>
-        <p class="ladder-rung-blurb">Compare integrated state to planned end-state. Runs at checkpoints named in the wave plan and before release for multi-wave projects.</p>
+        <h3 class="ladder-rung-title">Architecture drift (major versions only)</h3>
+        <p class="ladder-rung-blurb">For v1.x.0 (major) only: compare integrated state to planned end-state. For v1.x.y (minor/patch), L5 folds into L3 — separate rung does not fire.</p>
         <div class="ladder-rung-pass-rule">
           <span class="pass-rule-label">Pass rule</span>
           <span class="pass-rule-badge pass-rule-drift">No drift</span>
@@ -310,7 +329,7 @@
           <span class="ladder-role-label">Review</span>
           <ul class="ladder-role-skills">
             <li><code>/plan-eng-review</code></li>
-            <li><code>architect-reviewer</code> comparing integrated state to planned end-state</li>
+            <li><code>ce-architecture-strategist</code> comparing integrated state to planned end-state</li>
           </ul>
         </div>
         <div class="ladder-role ladder-role-kout" data-role="capture">
@@ -355,9 +374,229 @@
 </section>
 
 <!-- ============================================================
-     KNOWLEDGE CHANNEL — visual diagram
-     Two-zone: knowledge store (left) flowing both directions to ladder rungs (right)
-     TODO(ds): needs pattern — k-channel-diagram. Composed of zones + arrows + labels. Likely reusable for any "feedback loop" visualization.
+     L0 REVIEWER ROUTER
+     ============================================================ -->
+<section class="plans-section" aria-labelledby="l0-router">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">L0 reviewer router</p>
+    <h2 id="l0-router" class="plans-section-title">Pick the planning reviewer that matches what the plan touches.</h2>
+    <p class="plans-section-lede">
+      Default L0 panel is <code>/codex challenge</code> + ONE planning reviewer. <code>ce-learnings-researcher</code> runs in parallel as K-in (not counted as a panel slot).
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Plan touches</th>
+        <th>Planning reviewer</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>Internal consistency, terminology drift, ambiguity</td><td><code>ce-coherence-reviewer</code></td></tr>
+      <tr><td>Scope creep, premature abstraction, unjustified complexity</td><td><code>ce-scope-guardian-reviewer</code></td></tr>
+      <tr><td>Architectural feasibility, dependency gaps, migration risk</td><td><code>ce-feasibility-reviewer</code></td></tr>
+      <tr><td>Product strategy, premise claims, trajectory</td><td><code>ce-product-lens-reviewer</code></td></tr>
+      <tr><td>UI/workflow, interaction states, design slop risk</td><td><code>ce-design-lens-reviewer</code></td></tr>
+      <tr><td>Security gaps at plan level (auth, data exposure, API surface)</td><td><code>ce-security-lens-reviewer</code></td></tr>
+    </tbody>
+  </table>
+
+  <p class="plans-footnote">
+    At Wave scope tier or when Amendment 3 paths are touched (<code>services/**</code>, <code>abilities/**</code>, <code>intelligence/**</code>, schema, prompt templates, MCP configs, gate workflows, wave-protocol docs, orchestration docs), add a second planning reviewer from the table.
+  </p>
+</section>
+
+<!-- ============================================================
+     L2 REVIEWER ROUTER
+     ============================================================ -->
+<section class="plans-section" aria-labelledby="l2-router">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">L2 reviewer router</p>
+    <h2 id="l2-router" class="plans-section-title">Default 1 + 0–2 routed specialists. Advisory parallel always-on but non-blocking.</h2>
+    <p class="plans-section-lede">
+      Default L2 panel is <code>/codex review</code> via <code>l2-bounded-reviewer</code>. Router adds 0–2 specialists based on what the diff actually touches.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Diff touches</th>
+        <th>Reviewer to add</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>New types, structs, enums, type signatures</td><td><code>pr-review-toolkit:type-design-analyzer</code></td></tr>
+      <tr><td>Error handling, fallbacks, catch blocks, suppress paths</td><td><code>pr-review-toolkit:silent-failure-hunter</code></td></tr>
+      <tr><td>Hot paths, queries, loops over collections, I/O</td><td><code>ce-performance-reviewer</code></td></tr>
+      <tr><td>Database migrations, schema changes, backfills</td><td><code>ce-data-migrations-reviewer</code></td></tr>
+      <tr><td>API routes, request/response types, serialization, versioning</td><td><code>ce-api-contract-reviewer</code></td></tr>
+      <tr><td>Auth middleware, public endpoints, user input, permission checks</td><td><code>ce-security-reviewer</code></td></tr>
+      <tr><td>Retries, circuit breakers, timeouts, background jobs</td><td><code>ce-reliability-reviewer</code></td></tr>
+      <tr><td>TypeScript (frontend), high-risk</td><td><code>ce-kieran-typescript-reviewer</code></td></tr>
+      <tr><td>Migration safety + data integrity together</td><td><code>ce-data-integrity-guardian</code></td></tr>
+    </tbody>
+  </table>
+
+  <h3 class="plans-subhead">Advisory parallel (always-on, non-blocking)</h3>
+  <p class="plans-section-lede">
+    These run in parallel on every L2. Findings file to the <strong>Codebase Maintenance &amp; Production Quality</strong> Linear project, not back to the L2 cycle. They DO NOT block merge.
+  </p>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Concern</th>
+        <th>Agent</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>DRY / duplication / anti-patterns</td><td><code>ce-pattern-recognition-specialist</code></td></tr>
+      <tr><td>Premature abstraction, dead code, coupling</td><td><code>ce-maintainability-reviewer</code></td></tr>
+      <tr><td>YAGNI / simplification</td><td><code>ce-code-simplicity-reviewer</code></td></tr>
+      <tr><td>CLAUDE.md / AGENTS.md compliance</td><td><code>ce-project-standards-reviewer</code></td></tr>
+      <tr><td>Test coverage gaps</td><td><code>ce-testing-reviewer</code></td></tr>
+      <tr><td>Comment rot, stale docstrings</td><td><code>pr-review-toolkit:comment-analyzer</code></td></tr>
+      <tr><td>Correctness sanity check</td><td><code>ce-correctness-reviewer</code></td></tr>
+    </tbody>
+  </table>
+
+  <p class="plans-footnote">
+    The old <code>code-reviewer</code> slot blocked merges on theoretical findings — the cycle-N+1 problem path-α was supposed to solve. Moving these to advisory closes the loop: quality concerns tracked, not skipped, but not bottlenecking the substrate PR.
+  </p>
+</section>
+
+<!-- ============================================================
+     SCOPE-BASED LADDER SIZING
+     ============================================================ -->
+<section class="plans-section" aria-labelledby="scope-sizing">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Scope-based sizing</p>
+    <h2 id="scope-sizing" class="plans-section-title">Not every packet warrants the full reviewer panel.</h2>
+    <p class="plans-section-lede">
+      Tier by scope. Declared in §0 alongside origination class. Reviewers can escalate or de-escalate at intake.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Scope</th>
+        <th>What it looks like</th>
+        <th>L0 panel</th>
+        <th>L2 panel</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Trivial</strong></td>
+        <td>Single-file fix &lt;50 LOC, no contract change, no user-facing impact</td>
+        <td>Skip L0</td>
+        <td><code>/codex review</code> only</td>
+      </tr>
+      <tr>
+        <td><strong>Small</strong></td>
+        <td>Single substrate or UI change, single domain</td>
+        <td><code>/codex challenge</code> (1)</td>
+        <td><code>/codex review</code> + 0–1 router</td>
+      </tr>
+      <tr>
+        <td><strong>Standard</strong></td>
+        <td>Multi-file scope, single domain, no cross-cutting contract changes</td>
+        <td><code>/codex challenge</code> + 1 planning (2)</td>
+        <td><code>/codex review</code> + 1–2 router</td>
+      </tr>
+      <tr>
+        <td><strong>Wave</strong></td>
+        <td>Architecture, substrate reshape, multiple domains, ADR-touching</td>
+        <td><code>/codex challenge</code> + 2 planning (3) + K-in parallel</td>
+        <td><code>/codex review</code> + 1–2 router + Suites at L3</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p class="plans-footnote">
+    Memory <code>feedback_review_loop_diminishing_returns_means_scope_is_wrong</code>: if a tier-N L0 produces 5+ findings per cycle, the tier is likely wrong — reset to tier-N+1 rather than absorbing findings cycle by cycle. Tier mis-declaration is a packet-author error, not a reviewer-thoroughness error.
+  </p>
+</section>
+
+<!-- ============================================================
+     ORIGINATION + THREAT TOPOLOGY (synced from .md)
+     ============================================================ -->
+<section class="plans-section" aria-labelledby="origination">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Origination check</p>
+    <h2 id="origination" class="plans-section-title">Debug-driven, greenfield, or extension.</h2>
+    <p class="plans-section-lede">
+      Every L0 packet declares an origination class in §0 before §1 header. Debug-driven packets must include a symptom-to-failure trace.
+    </p>
+  </header>
+
+  <div class="callout-grid">
+    <article class="callout">
+      <h3 class="callout-title">Greenfield</h3>
+      <p class="callout-prose">Net-new substrate, no prior surface. Reviewer focus: substrate-grep K-in (don't reinvent), ADR fit, contract design.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Extension</h3>
+      <p class="callout-prose">Extends or refines existing substrate. Reviewer focus: backward compat, migration safety, ADR alignment.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Debug-driven</h3>
+      <p class="callout-prose">Originates from a user-visible failure. §0 MUST include symptom verbatim + call-path trace + suspected failure point (file:line) + hypotheses already rejected. §3 implementation must intersect the trace, or verdict = <strong><code>wrong cure</code></strong>.</p>
+    </article>
+  </div>
+
+  <p class="plans-footnote">
+    <strong>Wrong-cure verdict</strong> — new disposition alongside APPROVE / REQUEST_CHANGES / BLOCK. Harsher than REQUEST_CHANGES because it means the packet's premise is broken; patching the implementation won't fix it. The packet must restart from a corrected trace. Memory <code>feedback_parallel_codex_for_diagnosis_when_vortexing</code>: 2h+ on the same symptom = dispatch codex with "trace, don't patch" brief BEFORE drafting any packet.
+  </p>
+</section>
+
+<section class="plans-section" aria-labelledby="topology">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Threat-topology framing</p>
+    <h2 id="topology" class="plans-section-title">L0 reviewer threat models scope to declared topology.</h2>
+    <p class="plans-section-lede">
+      Every L0 packet declares its trust topology in §1 header. <code>ce-security-lens-reviewer</code>, <code>ce-security-reviewer</code>, and <code>/codex challenge</code> scope their threat model to that topology — they do NOT enforce multi-actor gates on single-actor surfaces.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr><th>Topology</th><th>Example</th><th>Gates that DO apply</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>local-to-local single-user</code></td>
+        <td>WP block → loopback Tauri runtime, single OS user</td>
+        <td>Compile, crate boundaries, slug/path validation, indirect prompt injection (ADR-0093), sensitivity redaction in logs (ADR-0108)</td>
+      </tr>
+      <tr>
+        <td><code>local-to-local multi-user</code></td>
+        <td>Shared workstation, multiple OS users</td>
+        <td>Above + cross-user data isolation + permission gates</td>
+      </tr>
+      <tr>
+        <td><code>remote-to-local</code></td>
+        <td>External MCP client → Tauri runtime</td>
+        <td>Above + transport auth + scope-gated access + actor allowlists</td>
+      </tr>
+      <tr>
+        <td><code>remote-to-remote</code></td>
+        <td>External service → external service</td>
+        <td>Above + principal differentiation + cross-actor poisoning + full multi-actor threat model</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p class="plans-footnote">
+    Reviewers who flag multi-actor gates on a single-actor surface waste a cycle. Memory <code>feedback_local_to_local_security_overreach_primary_concern</code>: surface topology FIRST in every cross-surface architectural decision.
+  </p>
+</section>
+
+<!-- ============================================================
+     KNOWLEDGE CHANNEL — diagram + single-tier K-out
      ============================================================ -->
 <section class="plans-section" aria-labelledby="k-channel">
   <header class="plans-section-header">
@@ -387,7 +626,7 @@
       <div class="k-flow k-flow-in">
         <div class="k-flow-arrow" aria-hidden="true">↑</div>
         <div class="k-flow-label">K-in</div>
-        <p class="k-flow-prose">L0 reviewer obligation: grep before scoring. Reinvented substrate = BLOCKED.</p>
+        <p class="k-flow-prose"><code>ce-learnings-researcher</code> runs parallel to L0 panel; cites hits in verdict. Reinvented substrate = BLOCKED.</p>
         <div class="k-flow-rungs">
           <span class="k-flow-rung">L0</span>
           <span class="k-flow-rung k-flow-rung-soft">L1</span>
@@ -397,7 +636,7 @@
       <div class="k-flow k-flow-out">
         <div class="k-flow-arrow" aria-hidden="true">↓</div>
         <div class="k-flow-label">K-out</div>
-        <p class="k-flow-prose"><code>/ce-compound</code> captures class-pattern + substrate-already-existed findings at retro close. Output: one doc per finding to <code>docs/solutions/&lt;category&gt;/</code>.</p>
+        <p class="k-flow-prose">Autonomous <code>/ce-compound mode:headless</code> at L3 retro close — single tier. Output: one doc per finding to <code>docs/solutions/&lt;category&gt;/</code>.</p>
         <div class="k-flow-rungs">
           <span class="k-flow-rung">L3</span>
           <span class="k-flow-rung">L5</span>
@@ -408,90 +647,20 @@
     </div>
   </div>
 
-  <!-- K-out automation tiers — three-layer defense-in-depth -->
-  <div class="k-tiers" aria-label="K-out automation tiers">
-    <h3 class="plans-subhead">K-out automation — three tiers, defense-in-depth</h3>
-    <div class="k-tier-grid">
-      <article class="k-tier" data-tier="1">
-        <span class="k-tier-id">Tier 1</span>
-        <h4 class="k-tier-name">Autonomous</h4>
-        <p class="k-tier-prose">Claude runs <code>/ce-compound mode:headless</code> for each qualifying finding as part of L3 retro work. Same set-and-forget authorization as impl→L1→commit→L2→fix→retro→tag.</p>
-        <span class="k-tier-coverage">Handles ~90% silently</span>
-      </article>
-      <article class="k-tier" data-tier="2">
-        <span class="k-tier-id">Tier 2</span>
-        <h4 class="k-tier-name">Reminder hook</h4>
-        <p class="k-tier-prose"><code>.claude/hooks/k-out-reminder.sh</code> (Stop hook) scans the last assistant turn for trigger phrases — <em>class-pattern finding</em>, <em>same-shape twice</em>, <em>substrate already existed</em>, <em>L3 retro complete</em> — and prints a one-line nudge.</p>
-        <span class="k-tier-coverage">Catches mid-conversation surfacing</span>
-      </article>
-      <article class="k-tier" data-tier="3">
-        <span class="k-tier-id">Tier 3</span>
-        <h4 class="k-tier-name">Retro template gate</h4>
-        <p class="k-tier-prose">Proof-bundle template includes a <strong>K-out captures</strong> section that must be filled before retro-close. Blocks retro-close with the list of <code>/ce-compound</code> docs created.</p>
-        <span class="k-tier-coverage">Audit trail; can't ship without filling it</span>
-      </article>
-    </div>
-  </div>
-</section>
-
-<!-- ============================================================
-     REVIEWER MATRIX — domain specialist by agent profile
-     TODO(ds): needs pattern — domain-reviewer-grid. Likely useful for wave plans too.
-     ============================================================ -->
-<section class="plans-section" aria-labelledby="reviewer-matrix">
-  <header class="plans-section-header">
-    <p class="plans-section-eyebrow">Reviewer matrix</p>
-    <h2 id="reviewer-matrix" class="plans-section-title">Third slot at L0 / L2 is a domain specialist.</h2>
-    <p class="plans-section-lede">
-      Keyed to the agent's risk profile. Slots stack — a single agent can pull multiple domain reviewers if it touches multiple risk dimensions.
-    </p>
-  </header>
-
-  <table class="reviewer-matrix">
-    <thead>
-      <tr>
-        <th>Agent profile</th>
-        <th>Domain reviewer</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td>Substrate / schema</td>
-        <td><code>architect-reviewer</code></td>
-      </tr>
-      <tr>
-        <td>New SQL write path or Tauri command</td>
-        <td><code>security-auditor</code></td>
-      </tr>
-      <tr>
-        <td>Migration / projection / hot-path</td>
-        <td><code>performance-engineer</code></td>
-      </tr>
-      <tr>
-        <td>User-facing surface</td>
-        <td><code>accessibility-tester</code></td>
-      </tr>
-      <tr>
-        <td>Test infrastructure</td>
-        <td><code>qa-expert</code></td>
-      </tr>
-    </tbody>
-  </table>
-
   <p class="plans-footnote">
-    L0 panel becomes a quartet (codex challenge + architect + <code>security-auditor</code> + codex consult) when Amendment 3 paths are touched: <code>services/**</code>, <code>abilities/**</code>, <code>intelligence/**</code>, schema, prompt templates, MCP configs, gate workflows, wave-protocol docs, orchestration docs.
+    K-out previously had three tiers (autonomous + Stop hook reminder + retro template gate). Tiers 2 and 3 removed 2026-05-23 — duplicate layers on already-defended work. Autonomous run handles ~90% silently; the retro template still names a K-out captures section but no longer blocks retro-close (visibility, not enforcement).
   </p>
 </section>
 
 <!-- ============================================================
-     TEST SUITES S / P / E — three cards
+     L3 + SUITE FIRING RULES
      ============================================================ -->
-<section class="plans-section" aria-labelledby="suites">
+<section class="plans-section" aria-labelledby="l3-composition">
   <header class="plans-section-header">
-    <p class="plans-section-eyebrow">Test suites</p>
-    <h2 id="suites" class="plans-section-title">S, P, E feed into L3.</h2>
+    <p class="plans-section-eyebrow">L3 composition + Suite firing rules</p>
+    <h2 id="l3-composition" class="plans-section-title">Suites S / P / E fire by need, not by default.</h2>
     <p class="plans-section-lede">
-      Three dedicated suites run at specified gates. Each has an owner agent separate from the implementing agent.
+      Most waves only need Suite E plus one other. Suite S and P fire only when wave AC names the concern.
     </p>
   </header>
 
@@ -500,29 +669,28 @@
       <span class="suite-letter">S</span>
       <h3 class="suite-name">Security</h3>
       <p class="suite-prose">SQL injection on new write sites, cross-tenant exposure, PII / secrets in logs, immutability-allowlist bypass.</p>
-      <p class="suite-owner"><span class="suite-owner-label">Owner</span> <code>penetration-tester</code> + <code>security-auditor</code></p>
-      <p class="suite-pass-rule"><span class="suite-pass-label">Pass</span> zero unaddressed Critical / High</p>
+      <p class="suite-owner"><span class="suite-owner-label">Owner</span> <code>ce-security-reviewer</code> + <code>ce-security-sentinel</code></p>
+      <p class="suite-pass-rule"><span class="suite-pass-label">Fires when</span> wave AC names auth/permission/data-exposure OR Amendment 3 paths touched</p>
     </article>
     <article class="suite-card" data-suite="p">
       <span class="suite-letter">P</span>
       <h3 class="suite-name">Performance</h3>
       <p class="suite-prose">Migration overhead, projection latency, backfill scale, hot-path budgets. Budgets locked at end of W1 baseline.</p>
-      <p class="suite-owner"><span class="suite-owner-label">Owner</span> <code>performance-engineer</code> + benchmarks</p>
-      <p class="suite-pass-rule"><span class="suite-pass-label">Pass</span> no regression vs. baseline</p>
+      <p class="suite-owner"><span class="suite-owner-label">Owner</span> <code>ce-performance-oracle</code> + benchmarks</p>
+      <p class="suite-pass-rule"><span class="suite-pass-label">Fires when</span> wave AC names perf budget OR touches migrations / hot paths / projections</p>
     </article>
     <article class="suite-card" data-suite="e">
       <span class="suite-letter">E</span>
       <h3 class="suite-name">Edge cases</h3>
       <p class="suite-prose">Property tests on invariants; fuzz on validators; adversarial bundle coverage.</p>
-      <p class="suite-owner"><span class="suite-owner-label">Owner</span> <code>qa-expert</code> + harness</p>
-      <p class="suite-pass-rule"><span class="suite-pass-label">Pass</span> bundles + property tests green</p>
+      <p class="suite-owner"><span class="suite-owner-label">Owner</span> <code>ce-testing-reviewer</code> + harness</p>
+      <p class="suite-pass-rule"><span class="suite-pass-label">Fires when</span> always (cheap; catches the long tail)</p>
     </article>
   </div>
 </section>
 
 <!-- ============================================================
-     L6 ESCALATION POLICY — two-column MUST / MUST NOT
-     TODO(ds): needs pattern — must-list / must-not-list two-column layout. Useful anywhere policy is binary.
+     L6 ESCALATION POLICY
      ============================================================ -->
 <section class="plans-section" aria-labelledby="l6-policy">
   <header class="plans-section-header">
@@ -542,7 +710,7 @@
       <ol class="l6-list-items">
         <li>Cycle cap exceeded (Amendment 1)</li>
         <li>Reviewer flags "needs human judgment" with a specific structural question</li>
-        <li>L5 drift detected without remediation path</li>
+        <li>L5 drift detected without remediation path (major versions only)</li>
         <li>Suite gate failure requiring regression acceptance or budget relaxation</li>
         <li>Reviewer infrastructure failure (codex outage after 3 retries)</li>
         <li>Net new scope expansion (NOT scope discovery within the agreed outcome)</li>
@@ -574,7 +742,7 @@
 </section>
 
 <!-- ============================================================
-     PACING + BOUNDING — small callout strip
+     PACING + BOUNDING
      ============================================================ -->
 <section class="plans-section plans-section-callouts" aria-label="Operational rules">
   <div class="callout-grid">
@@ -584,7 +752,7 @@
     </article>
     <article class="callout">
       <h3 class="callout-title">Bounding</h3>
-      <p class="callout-prose">L2 reviews are bounded by acceptance criteria. Path-α findings (theoretical hardening beyond AC) file to the <strong>maintenance project</strong>, not cycle-N+1. Substrate PRs unblock once AC violations are closed.</p>
+      <p class="callout-prose">L2 reviews are bounded by acceptance criteria, enforced by the <code>l2-bounded-reviewer</code> orchestrator agent. Path-α findings (theoretical hardening beyond AC) file to the <strong>maintenance project</strong>, not cycle-N+1.</p>
     </article>
     <article class="callout">
       <h3 class="callout-title">Wave</h3>
@@ -594,7 +762,7 @@
 </section>
 
 <!-- ============================================================
-     RELATED DOCS — footer with cross-references
+     RELATED DOCS
      ============================================================ -->
 <section class="plans-section plans-section-footer">
   <header class="plans-section-header">
@@ -602,31 +770,23 @@
     <h2 class="plans-section-title">How this doc relates to others.</h2>
   </header>
   <ul class="plans-related">
-    <li>
-      <strong>CLAUDE.md</strong> — keeps a stub section pointing here for the matrix.
-    </li>
-    <li>
-      <strong>.docs/plans/v1.4.0-waves.md</strong> — wave protocol + reviewer matrix; references this doc for the skill assignments per rung.
-    </li>
-    <li>
-      <strong>docs/solutions/README.md</strong> — knowledge store structure and K-in / K-out flow from the consumer side.
-    </li>
-    <li>
-      <strong>.docs/plans/AUTHORING.md</strong> — three-tier doc ruleset (HTML-first / markdown+render / markdown-only); this doc is the first Tier 1 pilot.
-    </li>
-    <li>
-      <strong>.docs/plans/orchestration/v1-lite.md</strong> — async orchestration design (cloud routines, claudebot, daily digest). Design archive — none of it has shipped; local invocation is the operating model.
-    </li>
+    <li><strong>CLAUDE.md</strong> — keeps a stub section pointing here for the matrix.</li>
+    <li><strong>.docs/plans/engineering-ladder.md</strong> — canonical text source; this HTML mirrors it for visual reference.</li>
+    <li><strong>.docs/plans/v1.4.0-waves.md</strong> — wave protocol + reviewer matrix; references this doc for the skill assignments per rung.</li>
+    <li><strong>.github/reviewer-prompts/</strong> — custom DailyOS prompts (architect, security-auditor, code-reviewer, accessibility, performance, l3-architect, l3-codex-challenge) where DailyOS-specific topology/origination context is required.</li>
+    <li><strong>docs/solutions/README.md</strong> — knowledge store structure and K-in / K-out flow from the consumer side.</li>
+    <li><strong>.docs/plans/AUTHORING.md</strong> — three-tier doc ruleset (HTML-first / markdown+render / markdown-only); this doc is the first Tier 1 pilot.</li>
+    <li><strong>.docs/plans/orchestration/v1-lite.md</strong> — async orchestration design archive — none of it has shipped; local invocation is the operating model.</li>
   </ul>
 </section>
 
 <!-- ============================================================
-     FINIS — close marker
+     FINIS
      ============================================================ -->
 <div class="finis">
   <div class="finis-mark">L0 · L1 · L2 · L3 · L4 · L5 · L6</div>
-  <div class="finis-date">Engineering Ladder · 2026-05-18</div>
-  <div class="finis-caption">The bar is methodical, not fast. Human review is the last layer, never the first.</div>
+  <div class="finis-date">Engineering Ladder · revised 2026-05-23</div>
+  <div class="finis-caption">The bar is methodical, not fast. Human review is the last layer, never the first. Compose installed agents; don't run every reviewer on every change.</div>
 </div>
 
 </div><!-- /.plans-shell -->

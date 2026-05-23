@@ -691,11 +691,15 @@
    ========================================================================= */
 .reviewer-matrix {
   width: 100%;
+  max-width: 100%;
   border-collapse: collapse;
   background: var(--color-paper-warm-white);
   border: 1px solid var(--color-rule-heavy);
   border-radius: 6px;
   overflow: hidden;
+  /* Constrain to viewport — long AC content was creating horizontal scroll
+     on the whole page. Cells wrap; code identifiers break at any character. */
+  table-layout: auto;
 }
 
 .reviewer-matrix thead th {
@@ -719,6 +723,14 @@
   color: var(--color-text-secondary);
   border-bottom: 1px solid var(--color-rule-light);
   vertical-align: top;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  min-width: 0;
+}
+
+.reviewer-matrix thead th {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .reviewer-matrix tbody tr:last-child td {
@@ -737,6 +749,9 @@
   padding: 2px 8px;
   border-radius: 3px;
   color: var(--color-text-primary);
+  /* Long agent/skill identifiers must wrap, not push table wider. */
+  overflow-wrap: anywhere;
+  word-break: break-all;
 }
 
 /* =========================================================================
