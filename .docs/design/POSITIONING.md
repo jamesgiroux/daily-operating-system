@@ -37,7 +37,7 @@ Then computing evolved — and the "personal" part got lost.
 |-----|------------------|-----------------|---------------|
 | **Personal** (DOS, early Mac) | Direct. Your machine, your files, your commands. | Ownership, privacy, directness | — |
 | **Networked** (Web, email) | Connected. Your machine talks to other machines. | Communication, reach | Isolation |
-| **Cloud/SaaS** (Notion, REDACTED, Slack) | Tenancy. Your data lives in their database. | Collaboration, scale | Ownership, privacy, directness |
+| **Cloud/SaaS** (Notion, Salesforce, Slack) | Tenancy. Your data lives in their database. | Collaboration, scale | Ownership, privacy, directness |
 | **AI-Native** (DailyOS) | Personal again. Your machine, your files — but now it *knows*. | Everything from every era, plus intelligence | — |
 
 The AI-native era doesn't go backward. It synthesizes: the ownership and directness of the personal computer, the connectivity of the networked era, the intelligence that AI makes possible — all running locally, on your machine, in files you control.

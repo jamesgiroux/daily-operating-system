@@ -279,7 +279,7 @@ if ( ! function_exists( 'dailyos_meeting_attendees_section_empty_chip' ) ) {
 	 */
 	function dailyos_meeting_attendees_section_empty_chip( string $reason, string $label ): string {
 		return sprintf(
-			'<section class="wp-block-dailyos-meeting-attendees-section is-empty" data-empty-reason="%s"><p class="meeting-intel_attendeeAssessment">%s</p></section>',
+			'<span class="dailyos-empty-chip wp-block-dailyos-meeting-attendees-section is-empty" data-empty-reason="%s">%s</span>',
 			esc_attr( $reason ),
 			esc_html( $label )
 		);

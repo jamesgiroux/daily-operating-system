@@ -208,7 +208,7 @@ if ( ! function_exists( 'dailyos_meeting_touchpoints_feed_empty_chip' ) ) {
 	 */
 	function dailyos_meeting_touchpoints_feed_empty_chip( string $reason, string $label ): string {
 		return sprintf(
-			'<section class="meeting-intel_chapterSection is-empty" data-ds-name="MeetingTouchpointsFeed" data-empty-reason="%s"><span class="dailyos-empty-chip">%s</span></section>',
+			'<span class="dailyos-empty-chip wp-block-dailyos-meeting-touchpoints-feed is-empty" data-empty-reason="%s">%s</span>',
 			esc_attr( $reason ),
 			esc_html( $label )
 		);

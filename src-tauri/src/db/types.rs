@@ -326,7 +326,7 @@ pub struct DbAccountProduct {
     /// When this product classification was last verified from Glean
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_verified_at: Option<String>,
-    /// Source system for product data (e.g., "REDACTED", "glean")
+    /// Source system for product data (e.g., "Salesforce", "glean")
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data_source: Option<String>,
     pub created_at: String,

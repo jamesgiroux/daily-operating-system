@@ -146,7 +146,7 @@ pub fn build_glean_dimension_prompt(
     // System role — Glean-specific with entity grounding
     prompt.push_str(&format!(
         "You are {} for the {} \"{}\". \
-         Search ALL available data sources (REDACTED, Zendesk, Gong, Slack, \
+         Search ALL available data sources (Salesforce, Zendesk, Gong, Slack, \
          internal docs, org directory) for this dimension.\n\n",
         role_desc, entity_label, entity_name,
     ));
@@ -154,7 +154,7 @@ pub fn build_glean_dimension_prompt(
     // Structured entity disambiguation — replaces the soft
     // "do not include other companies" instruction with an inclusion filter
     // keyed on explicit identifiers (domains, stakeholder emails, parent,
-    // REDACTED ID). Followed by an explicit retrieval-scope exclusion
+    // Salesforce ID). Followed by an explicit retrieval-scope exclusion
     // heuristic and a grounding rule requiring every output sentence to
     // trace back to a document mentioning one of these identifiers.
     push_disambiguation_block(&mut prompt, entity_name, entity_type, ctx);
@@ -216,8 +216,8 @@ pub fn build_glean_dimension_prompt(
     // Dimension-specific instructions for commercial_financial
     if dimension == "commercial_financial" && entity_type == "account" {
         prompt.push_str(
-            "## Product Classification (REDACTED)\n\n\
-             For the `productClassification.products` array, search REDACTED for:\n\
+            "## Product Classification (Salesforce)\n\n\
+             For the `productClassification.products` array, search Salesforce for:\n\
              - Customer Account Subscription Status (current active subscriptions)\n\
              - Support Package (tier level: Enhanced, Signature, Standard, Basic, Premier)\n\
              - Estimated ARR or Estimated CMS ARR (annual recurring revenue)\n\
@@ -225,7 +225,7 @@ pub fn build_glean_dimension_prompt(
              - Parsely Customer flag (include if true; if false, omit analytics)\n\
              - Parsely Premier flag (include if true)\n\n\
              Return one product object per active subscription:\n\
-             - type: \"cms\" or \"analytics\" (match REDACTED product names)\n\
+             - type: \"cms\" or \"analytics\" (match Salesforce product names)\n\
              - tier: null or one of (enhanced|signature|standard|basic|premier|unknown)\n\
              - arr: null or the annual revenue number as a float\n\
              - billingTerms: null or one of (annual|monthly|multi_year)\n\n\
@@ -250,7 +250,7 @@ pub fn build_glean_dimension_prompt(
          ```json\n\
          \"itemSource\": { \"source\": \"glean_crm|glean_zendesk|glean_gong|glean_chat|transcript\", \
          \"confidence\": 0.9, \"sourcedAt\": \"2026-03-15T00:00:00Z\", \
-         \"reference\": \"REDACTED opportunity\" }\n\
+         \"reference\": \"Salesforce opportunity\" }\n\
          ```\n\n",
     );
 
@@ -419,7 +419,7 @@ pub fn merge_dimension_into(
 // These three blocks ship together as the preamble for every dimension prompt:
 //
 //   ## Entity disambiguation      — known identifiers (name, domains, contacts,
-//                                    parent, REDACTED ID)
+//                                    parent, Salesforce ID)
 //   ## Retrieval scope            — inclusion bias + exclusion heuristics
 //                                    (foreign vip-*.com hosts, shared bot emails)
 //   ## Grounding rule             — every output sentence must cite a document
@@ -474,8 +474,8 @@ fn push_disambiguation_block(
     // for account entities — it's meaningless for person/project.
     if entity_type == "account" {
         match d.account_id.as_deref() {
-            Some(id) => prompt.push_str(&format!("- REDACTED account ID: {}\n", id)),
-            None => prompt.push_str("- REDACTED account ID: not provided\n"),
+            Some(id) => prompt.push_str(&format!("- Salesforce account ID: {}\n", id)),
+            None => prompt.push_str("- Salesforce account ID: not provided\n"),
         }
     }
 
@@ -489,14 +489,14 @@ fn push_retrieval_scope_block(prompt: &mut String, entity_name: &str, ctx: &Inte
     prompt.push_str(&format!(
         "- Prefer documents that reference at least one identifier listed \
          under Entity disambiguation above (name \"{}\", a known domain, a \
-         known contact email, the parent company, or the REDACTED account \
+         known contact email, the parent company, or the Salesforce account \
          ID). Treat those as first-class evidence.\n",
         entity_name
     ));
     prompt.push_str(
         "- EXCLUDE documents whose only signal is a different customer's \
          identifier. A document mentioning a different `vip-*.com` host, a \
-         different REDACTED account ID, a different customer name, or a \
+         different Salesforce account ID, a different customer name, or a \
          different company domain is evidence that document is NOT about this \
          entity — do not draw from it even if a shared tool or bot appears in \
          the thread.\n",
@@ -748,7 +748,7 @@ RECONCILIATION RULES:\n\
 - If your data CONTRADICTS an existing item, include BOTH with \"discrepancy\": true on yours\n\
 - Tag every item in your output with \"itemSource\": {\"source\": \"pty_synthesis\", \"confidence\": 0.5, \"sourcedAt\": \"ISO timestamp\"}\n\n\
 ACCOUNT TRUTH rules:\n\
-- Fields marked \"(source: REDACTED, fact)\" or \"(source: user, fact)\" are ground truth. Do not contradict them.\n\
+- Fields marked \"(source: Salesforce, fact)\" or \"(source: user, fact)\" are ground truth. Do not contradict them.\n\
 - Fields marked \"(source: user, fact \u{2014} do not reassign)\" are explicitly locked by the user. Never change the assignment.\n\
 - You may add context, evidence, or assessments about these fields but do not change the underlying value.\n\n";
 
@@ -759,7 +759,7 @@ RECONCILIATION RULES:\n\
 - If your data CONTRADICTS an existing item, include BOTH with \"discrepancy\": true on yours\n\
 - Tag every item with \"itemSource\": {\"source\": \"glean_crm|glean_zendesk|glean_gong|glean_chat\", \"confidence\": 0.7-0.9, \"sourcedAt\": \"ISO timestamp\", \"reference\": \"data source name\"}\n\n\
 ACCOUNT TRUTH rules:\n\
-- Fields marked \"(source: REDACTED, fact)\" or \"(source: user, fact)\" are ground truth. Do not contradict them.\n\
+- Fields marked \"(source: Salesforce, fact)\" or \"(source: user, fact)\" are ground truth. Do not contradict them.\n\
 - Fields marked \"(source: user, fact \u{2014} do not reassign)\" are explicitly locked by the user. Never change the assignment.\n\
 - You may add context, evidence, or assessments about these fields but do not change the underlying value.\n\n";
 
@@ -1579,7 +1579,7 @@ mod tests {
             false,
             None,
         );
-        assert!(p.contains("REDACTED account ID: 001Abc000012345"));
+        assert!(p.contains("Salesforce account ID: 001Abc000012345"));
     }
 
     #[test]
@@ -1594,7 +1594,7 @@ mod tests {
             false,
             None,
         );
-        assert!(p.contains("REDACTED account ID: not provided"));
+        assert!(p.contains("Salesforce account ID: not provided"));
     }
 
     #[test]
@@ -1652,7 +1652,7 @@ mod tests {
         );
         assert!(p.contains("## Entity disambiguation"));
         assert!(p.contains("Known domains: acme.com"));
-        assert!(p.contains("REDACTED account ID: 001xyz"));
+        assert!(p.contains("Salesforce account ID: 001xyz"));
         assert!(p.contains("## Grounding rule"));
         assert!(p.contains("OMIT the claim"));
     }
@@ -1672,7 +1672,7 @@ mod tests {
         assert!(!p.contains("Known domains:"));
         assert!(!p.contains("Known contacts:"));
         assert!(!p.contains("Parent company:"));
-        assert!(p.contains("REDACTED account ID: not provided"));
+        assert!(p.contains("Salesforce account ID: not provided"));
     }
 
     #[test]
@@ -1767,7 +1767,7 @@ mod eval_tests {
             "TestCo", "account", None, &ctx, false, None,
         );
         assert!(
-            prompt.contains("CRM") || prompt.contains("REDACTED"),
+            prompt.contains("CRM") || prompt.contains("Salesforce"),
             "Glean prompt must reference CRM source"
         );
         assert!(

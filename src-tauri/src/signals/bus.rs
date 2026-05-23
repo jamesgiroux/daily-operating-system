@@ -215,7 +215,8 @@ fn coalescing_state() -> &'static Mutex<CoalescingState> {
 /// Tier 3: third-party enrichment (Clay, Gravatar)
 /// Tier 4 (lowest): keyword heuristics, AI inference
 pub fn source_base_weight(source: &str) -> f64 {
-    match source {
+    let normalized = source.to_ascii_lowercase();
+    match normalized.as_str() {
         "user_correction" | "user_feedback" | "explicit" => 1.0,
         "user_curation" => 0.9, // I530: curation signals — no weight penalty but high trust
         "transcript" | "notes" => 0.9,
@@ -223,9 +224,9 @@ pub fn source_base_weight(source: &str) -> f64 {
         "group_pattern" => 0.75,
         "proactive" => 0.7,
         // /ADR-0100: Tiered Glean source confidence
-        "glean_crm" | "glean_REDACTED" => 0.9, // REDACTED — system of record
+        "salesforce" | "glean_crm" | "glean_salesforce" | "glean_redacted" => 0.9, // Salesforce — system of record
         "glean_zendesk" | "glean_support" => 0.85, // Zendesk — ticket data is factual
-        "glean_gong" => 0.8,                   // Gong — recorded calls, AI summaries synthesized
+        "glean_gong" => 0.8, // Gong — recorded calls, AI summaries synthesized
         "glean" | "glean_search" | "glean_org" => 0.7,
         "glean_chat" | "glean_synthesis" => 0.7, // Glean AI synthesis — same tier as PTY
         "glean_slack" => 0.5,                    // Slack — context signal, noisy
@@ -237,7 +238,8 @@ pub fn source_base_weight(source: &str) -> f64 {
 
 /// Default half-life in days for a signal source.
 pub fn default_half_life(source: &str) -> i32 {
-    match source {
+    let normalized = source.to_ascii_lowercase();
+    match normalized.as_str() {
         "user_correction" | "user_feedback" | "explicit" => 365,
         "user_curation" => 180, // I530: curation decays faster than corrections
         "transcript" | "notes" => 60,
@@ -245,9 +247,9 @@ pub fn default_half_life(source: &str) -> i32 {
         "group_pattern" => 60,
         "proactive" => 3,
         // /ADR-0100: Tiered Glean half-lives
-        "glean_crm" | "glean_REDACTED" => 90, // CRM data refreshes on enrichment cycle
+        "salesforce" | "glean_crm" | "glean_salesforce" | "glean_redacted" => 90, // CRM data refreshes on enrichment cycle
         "glean_zendesk" | "glean_support" => 30, // Support health is dynamic
-        "glean_gong" => 60,                   // Call patterns are stable-ish
+        "glean_gong" => 60,                      // Call patterns are stable-ish
         "glean" | "glean_search" | "glean_org" => 60,
         "glean_chat" | "glean_synthesis" => 60, // AI synthesis stable
         "glean_slack" => 14,                    // Slack context decays fast

@@ -474,7 +474,7 @@ function DevToolsPanelInner({
                 <ScenarioButton
                   icon={Brain}
                   label="Glean-Enriched"
-                  description="Gong summaries, REDACTED context, source attribution"
+                  description="Gong summaries, Salesforce context, source attribution"
                   variant="outline"
                   loading={loading === "glean_enriched"}
                   disabled={loading !== null}

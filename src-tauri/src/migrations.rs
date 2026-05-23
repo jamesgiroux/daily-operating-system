@@ -1011,13 +1011,12 @@ const MIGRATIONS: &[Migration] = &[
         version: 258,
         sql: include_str!("migrations/258_mcp_rate_limit_and_audit_outbox.sql"),
     },
-    // v1.4.7 W1-A repair: some DBs reached v258 from the simplified MCP
-    // substrate line without recording/running v257. Re-create the nonce
-    // ledger idempotently at the next forward slot so pairing can seed
-    // transport nonces.
+    // Migration 259 (mcp_transport_nonce_ledger repair) is intentionally
+    // absent. It briefly reintroduced the remote transport nonce ledger after
+    // DOS-168 removed transport ceremony for local MCP.
     Migration::Sql {
-        version: 259,
-        sql: include_str!("migrations/259_mcp_transport_nonce_ledger_repair.sql"),
+        version: 260,
+        sql: include_str!("migrations/260_drop_mcp_transport_nonce_ledger.sql"),
     },
 ];
 
@@ -2472,7 +2471,6 @@ fn verify_required_schema(conn: &Connection) -> Result<(), String> {
             "mcp_client_manifest",
             "mcp_tool_grant",
             "mcp_conversation_handle",
-            "mcp_transport_nonce_ledger",
             "mcp_tool_call_ledger",
             "mcp_audit_outbox",
         ] {
@@ -4990,41 +4988,47 @@ mod tests {
     }
 
     #[test]
-    fn migration_259_repairs_missing_mcp_transport_nonce_ledger_after_v258() {
+    fn migration_260_drops_reintroduced_mcp_transport_nonce_ledger() {
         let conn = mem_db();
         run_migrations(&conn).expect("build current schema");
         conn.execute_batch(
-            "DROP TABLE mcp_transport_nonce_ledger;
-             DELETE FROM schema_version WHERE version = 259;",
+            "CREATE TABLE mcp_transport_nonce_ledger (
+                 nonce TEXT NOT NULL,
+                 client_id TEXT NOT NULL,
+                 issued_at INTEGER NOT NULL,
+                 expires_at INTEGER NOT NULL,
+                 consumed_at INTEGER NULL,
+                 UNIQUE (nonce, client_id)
+             );
+             DELETE FROM schema_version WHERE version = 260;
+             INSERT OR IGNORE INTO schema_version (version) VALUES (259);",
         )
-        .expect("simulate v258 DB that skipped nonce ledger migration");
-        assert_eq!(current_version(&conn).expect("current version"), 258);
-        assert!(
-            !table_exists(&conn, "mcp_transport_nonce_ledger").expect("table lookup"),
-            "test precondition: nonce ledger should be missing"
-        );
-
-        let applied = run_migrations(&conn).expect("repair migration should succeed");
-        assert_eq!(applied, 1, "only v259 repair should be pending");
+        .expect("simulate DB that briefly applied the obsolete nonce ledger repair");
+        assert_eq!(current_version(&conn).expect("current version"), 259);
         assert!(
             table_exists(&conn, "mcp_transport_nonce_ledger").expect("table lookup"),
-            "v259 should recreate the nonce ledger"
+            "test precondition: nonce ledger should exist before cleanup"
+        );
+
+        let applied = run_migrations(&conn).expect("cleanup migration should succeed");
+        assert_eq!(applied, 1, "only v260 cleanup should be pending");
+        assert!(
+            !table_exists(&conn, "mcp_transport_nonce_ledger").expect("table lookup"),
+            "v260 should drop the obsolete nonce ledger"
         );
     }
 
     #[test]
-    fn verify_required_schema_rejects_missing_mcp_transport_nonce_ledger() {
+    fn verify_required_schema_allows_absent_mcp_transport_nonce_ledger() {
         let conn = mem_db();
         run_migrations(&conn).expect("build current schema");
-        conn.execute("DROP TABLE mcp_transport_nonce_ledger", [])
-            .expect("drop nonce ledger");
 
-        let err = verify_required_schema(&conn)
-            .expect_err("missing MCP nonce ledger must fail startup schema verifier");
         assert!(
-            err.contains("mcp_transport_nonce_ledger"),
-            "error should report missing MCP nonce ledger: {err}"
+            !table_exists(&conn, "mcp_transport_nonce_ledger").expect("table lookup"),
+            "local MCP schema should not include the remote transport nonce ledger"
         );
+        verify_required_schema(&conn)
+            .expect("absent MCP nonce ledger should pass startup schema verifier");
     }
 
     #[test]

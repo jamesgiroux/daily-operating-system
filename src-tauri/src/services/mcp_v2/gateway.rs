@@ -5,7 +5,7 @@
 //! implementations; records audit attribution on success; emits
 //! `McpToolInvoked` / `McpInvocationRejected` signals on success / rejection
 //! respectively via the [`SignalEmitter`] trait (W2+ wires a production
-//! emitter that calls `crate::signals::bus::emit_signal_and_propagate`).
+//! emitter through the service signal facade).
 //!
 //! Per ADR-0102 §C authorization machinery and the local MCP trust model:
 //! authorization and operational controls live here; local transport ceremony
@@ -43,8 +43,7 @@ const MUTATION_CURSOR_TRUNCATION_SENTINEL: &str = "truncated_oversize";
 /// Abstract signal-emission seam between the gateway and the production
 /// signals bus. The default `StderrSignalEmitter` is for tests and dev
 /// dispatch (so the gateway doesn't take a hard `ActionDb` dependency in
-/// W1-A); W2+ supplies a real emitter that calls
-/// `crate::signals::bus::emit_signal_and_propagate` with a real `ActionDb`.
+/// W1-A); W2+ supplies a real emitter through the service signal facade.
 ///
 /// Both methods MUST be infallible from the gateway's perspective — the
 /// emit-or-log discipline (L0 packet AC-7) means emission failure logs +

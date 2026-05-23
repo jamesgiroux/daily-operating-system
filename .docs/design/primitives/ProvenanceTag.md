@@ -28,7 +28,7 @@ Render a muted source-attribution label for a piece of intelligence — "where d
 
 ## States / variants
 
-- **default** — small muted label with source name (e.g., "Glean", "REDACTED", "Email")
+- **default** — small muted label with source name (e.g., "Glean", "Salesforce", "Email")
 - **discrepancy** — when sources disagree on a fact, render with attention treatment (subtle outline or warn color)
 
 Note from Audit 04: production behavior intentionally hides `pty_synthesis` provenance — synthesized intelligence renders without the tag by default. Document this explicitly.
@@ -44,7 +44,7 @@ Note from Audit 04: production behavior intentionally hides `pty_synthesis` prov
 
 ```tsx
 <ProvenanceTag itemSource="glean" />
-<ProvenanceTag itemSource="REDACTED" discrepancy />
+<ProvenanceTag itemSource="Salesforce" discrepancy />
 {/* Renders nothing for synthesized: */}
 <ProvenanceTag itemSource="pty_synthesis" />
 ```

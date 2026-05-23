@@ -2,7 +2,7 @@
 //!
 //! When Glean is connected, this provider uses the MCP `chat` tool as the
 //! primary intelligence computation engine. It produces the same `IntelligenceJson`
-//! output as the PTY path, but with data from REDACTED, Zendesk, Gong, Slack,
+//! output as the PTY path, but with data from Salesforce, Zendesk, Gong, Slack,
 //! and org directories that local-only enrichment can't access.
 //!
 //! The provider is called from `intel_queue.rs` when `context_provider.is_remote()`.
@@ -723,7 +723,7 @@ impl GleanIntelligenceProvider {
 
     /// Discover accounts associated with a user's email.
     ///
-    /// Searches REDACTED, Gong, Zendesk for account associations.
+    /// Searches Salesforce, Gong, Zendesk for account associations.
     /// Returns a list of accounts with role attribution and evidence.
     pub async fn discover_accounts(
         &self,
@@ -1121,7 +1121,7 @@ pub fn emit_glean_signals(
 
     let mut slack_context: Vec<String> = Vec::new();
 
-    // CRM / REDACTED data at 0.9 — system of record
+    // CRM / Salesforce data at 0.9 — system of record
     if let Some(ref org) = intel.org_health {
         if let Ok(value) = serde_json::to_string(org) {
             if let Err(e) = emit_signal_and_propagate(
@@ -1898,7 +1898,7 @@ pub fn upsert_products_to_db(
             tier.as_deref(),
             arr,
             billing_terms.as_deref(),
-            "REDACTED",
+            "Salesforce",
         ) {
             Ok(_) => {
                 count += 1;

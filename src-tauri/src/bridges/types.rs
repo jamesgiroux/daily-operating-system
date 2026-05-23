@@ -1015,8 +1015,8 @@ fn render_ability_data(
         BridgeSurface::TauriApp
         | BridgeSurface::Worker
         | BridgeSurface::Eval
-        | BridgeSurface::SurfaceClient
-        | BridgeSurface::LocalLoopback => data,
+        | BridgeSurface::SurfaceClient => data,
+        BridgeSurface::LocalLoopback => data,
     }
 }
 

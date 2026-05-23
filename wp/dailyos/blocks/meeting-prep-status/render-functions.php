@@ -200,9 +200,14 @@ if ( ! function_exists( 'dailyos_meeting_prep_status_empty' ) ) {
 	 * we genuinely have no data to project.
 	 */
 	function dailyos_meeting_prep_status_empty( string $reason ): string {
+		$label = 'missing_meeting_context' === $reason
+			? __( 'No meeting context.', 'dailyos' )
+			: __( 'Prep status unavailable.', 'dailyos' );
+
 		return sprintf(
-			'<div class="wp-block-dailyos-meeting-prep-status is-empty" data-empty-reason="%s"></div>',
-			esc_attr( $reason )
+			'<span class="dailyos-empty-chip wp-block-dailyos-meeting-prep-status is-empty" data-empty-reason="%s">%s</span>',
+			esc_attr( $reason ),
+			esc_html( $label )
 		);
 	}
 }

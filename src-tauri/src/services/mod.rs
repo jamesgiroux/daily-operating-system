@@ -53,6 +53,7 @@ pub mod surface_session_keychain;
 pub mod temporal;
 pub mod threads;
 pub mod trust_extraction;
+pub mod trust_recompute;
 pub mod user_entity;
 pub mod version_dispatcher;
 pub mod versioning;

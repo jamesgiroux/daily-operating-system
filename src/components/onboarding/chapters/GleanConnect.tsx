@@ -2,7 +2,7 @@
  * GleanConnect.tsx — Wizard step: Connect company knowledge via Glean.
  *
  * Optional connector. When connected, enables account discovery and
- * profile pre-fill from enterprise tools (REDACTED, Zendesk, Gong, Slack).
+ * profile pre-fill from enterprise tools (Salesforce, Zendesk, Gong, Slack).
  */
 
 import { useState, useEffect, useRef } from "react";
@@ -59,7 +59,7 @@ export function GleanConnect({ onNext, onSkip }: GleanConnectProps) {
           Enterprise Intelligence
         </div>
         <p className={styles.bodyText}>
-          Glean connects DailyOS to your company's tools — REDACTED, Zendesk, Gong,
+          Glean connects DailyOS to your company's tools — Salesforce, Zendesk, Gong,
           Slack, and more. With Glean, your briefings include real CRM data, support
           ticket history, and call insights instead of just calendar context.
         </p>

@@ -41,7 +41,7 @@ if ( ! function_exists( 'dailyos_meeting_context_bundle_render' ) ) {
 		if ( '' === $meeting_id ) {
 			return dailyos_meeting_context_bundle_empty_chip(
 				'missing_meeting_context',
-				__( 'Post-meeting intelligence is not generated yet.', 'dailyos' )
+				__( 'No meeting context.', 'dailyos' )
 			);
 		}
 

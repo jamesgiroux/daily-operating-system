@@ -34,7 +34,7 @@ export function formatProvenanceSource(source?: string | null): string | null {
   if (normalized === "pty_synthesis" || normalized === "pty") return "AI";
   if (normalized === "glean_chat") return "Glean";
   if (normalized === "glean") return "Glean";
-  if (normalized === "REDACTED") return "REDACTED";
+  if (normalized === "salesforce" || normalized === "redacted") return "Salesforce";
   if (normalized === "zendesk") return "Zendesk";
   if (normalized === "gong") return "Gong";
   if (normalized === "google") return "Google Calendar";
@@ -43,7 +43,11 @@ export function formatProvenanceSource(source?: string | null): string | null {
   if (normalized === "inference") return "AI synthesis";
 
   // Substring matches for compound source names
-  if (normalized.includes("REDACTED") || normalized.includes("glean_crm")) return "REDACTED";
+  if (
+    normalized.includes("salesforce")
+    || normalized.includes("redacted")
+    || normalized.includes("glean_crm")
+  ) return "Salesforce";
   if (normalized.includes("gong")) return "Gong";
   if (normalized.includes("zendesk")) return "Zendesk";
   if (normalized.includes("glean")) return "Glean";

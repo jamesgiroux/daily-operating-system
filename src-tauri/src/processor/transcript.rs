@@ -4820,7 +4820,7 @@ ENGAGEMENT_SIGNALS:
 - monologue_risk: no
 END_ENGAGEMENT_SIGNALS
 COMPETITOR_MENTIONS:
-- REDACTED: Mentioned as current CRM provider
+- Salesforce: Mentioned as current CRM provider
 - HubSpot: Evaluated but rejected last quarter
 END_COMPETITOR_MENTIONS
 ESCALATION_LANGUAGE:
@@ -4851,7 +4851,7 @@ END_INTERACTION_DYNAMICS";
         assert_eq!(eng.monologue_risk, Some(false));
 
         assert_eq!(result.competitor_mentions.len(), 2);
-        assert_eq!(result.competitor_mentions[0].competitor, "REDACTED");
+        assert_eq!(result.competitor_mentions[0].competitor, "Salesforce");
         assert_eq!(
             result.competitor_mentions[0].context,
             "Mentioned as current CRM provider"

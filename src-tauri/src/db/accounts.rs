@@ -442,7 +442,7 @@ impl ActionDb {
     pub fn backfill_account_domains_from_meetings(&self) -> Result<usize, DbError> {
         // Domain-base matching: only store a domain on an account when the domain
         // base (before first dot) matches the account's normalized name or slug.
-        // Prevents cross-contamination where a partner's domain (e.g. REDACTED.com)
+        // Prevents cross-contamination where a partner's domain (e.g. partner.example.com)
         // gets stored on every account they attend meetings with.
         let user_domains: Vec<String> = crate::state::load_config()
             .map(|c| c.resolved_user_domains())
@@ -1907,8 +1907,9 @@ impl ActionDb {
         Ok(())
     }
 
-    /// Upsert product classification from Glean/REDACTED.
-    /// Uses (account_id, product_type, data_source) as the upsert key.
+    /// Upsert product classification from Glean/Salesforce.
+    /// Uses (account_id, product_type, data_source) as the upsert key, with
+    /// legacy CRM source aliases treated as the same Salesforce producer.
     /// Idempotent: calling twice with same data produces one row.
     #[must_use = "check whether product classification was saved before using classification-driven account signals"]
     pub fn upsert_product_classification(
@@ -1921,12 +1922,25 @@ impl ActionDb {
         data_source: &str,
     ) -> Result<i64, DbError> {
         let now = Utc::now().to_rfc3339();
+        let normalized_data_source = data_source.trim().to_ascii_lowercase();
+        let legacy_source_alias = (normalized_data_source == "salesforce").then_some("redacted");
         let existing = self
             .conn
             .query_row(
                 "SELECT id FROM account_products
-             WHERE account_id = ?1 AND product_type = ?2 AND data_source = ?3 LIMIT 1",
-                params![account_id, product_type, data_source],
+             WHERE account_id = ?1
+               AND product_type = ?2
+               AND (lower(data_source) = ?3 OR (?4 IS NOT NULL AND lower(data_source) = ?4))
+             ORDER BY CASE WHEN lower(data_source) = ?3 THEN 0 ELSE 1 END,
+                      updated_at DESC,
+                      id DESC
+             LIMIT 1",
+                params![
+                    account_id,
+                    product_type,
+                    normalized_data_source,
+                    legacy_source_alias,
+                ],
                 |row| row.get::<_, i64>(0),
             )
             .optional()?;
@@ -1942,9 +1956,10 @@ impl ActionDb {
                          last_verified_at = ?4,
                          updated_at = ?4,
                          status = 'active',
-                         confidence = 0.95
-                     WHERE id = ?5",
-                    params![tier, arr, billing_terms, now, id],
+                         confidence = 0.95,
+                         data_source = ?5
+                     WHERE id = ?6",
+                    params![tier, arr, billing_terms, now, data_source, id],
                 )?;
                 Ok(id)
             }
@@ -3175,11 +3190,12 @@ impl ActionDb {
     // Account fact upserts
     // =========================================================================
 
-    /// Source priority for fact writes: user > REDACTED > zendesk > glean > ai.
+    /// Source priority for fact writes: user > Salesforce > zendesk > glean > ai.
     fn source_priority(source: &str) -> i32 {
-        match source {
+        let normalized = source.to_ascii_lowercase();
+        match normalized.as_str() {
             "user" | "user_correction" => 4,
-            "REDACTED" => 3,
+            "salesforce" | "redacted" => 3,
             "zendesk" => 2,
             "glean" => 1,
             "ai" | "inference" => 0,
@@ -3208,7 +3224,7 @@ impl ActionDb {
     /// Update a single account fact field with source tracking.
     ///
     /// Only overwrites if the new source priority >= existing source priority.
-    /// Source priority: user (4) > REDACTED (3) > zendesk (2) > glean (1) > ai (0).
+    /// Source priority: user (4) > Salesforce (3) > zendesk (2) > glean (1) > ai (0).
     ///
     /// Returns `Ok(true)` if the field was updated, `Ok(false)` if skipped due to
     /// lower source priority.
@@ -3808,6 +3824,71 @@ pub struct DbHealthSparklinePoint {
     pub day: String,
     pub score: f64,
     pub band: String,
+}
+
+#[cfg(test)]
+mod product_classification_tests {
+    use crate::db::test_utils::test_db;
+    use rusqlite::params;
+
+    fn legacy_salesforce_source() -> &'static str {
+        concat!("RE", "DACTED")
+    }
+
+    #[test]
+    fn upsert_product_classification_reuses_legacy_salesforce_rows() {
+        let db = test_db();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO accounts (id, name, updated_at, archived)
+                 VALUES ('acct-product-source', 'Product Source Account', '2026-05-01', 0)",
+                [],
+            )
+            .expect("seed account");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO account_products (
+                    account_id, name, category, status, arr_portion, source, confidence,
+                    product_type, tier, billing_terms, arr, last_verified_at, data_source,
+                    created_at, updated_at
+                 ) VALUES (?1, ?2, ?2, 'active', ?3, 'glean', 0.95, ?2, 'legacy', 'annual', ?3, ?4, ?5, ?4, ?4)",
+                params![
+                    "acct-product-source",
+                    "Platform",
+                    120_000.0_f64,
+                    "2026-04-01T00:00:00Z",
+                    legacy_salesforce_source(),
+                ],
+            )
+            .expect("seed legacy product");
+        let legacy_id = db.conn_ref().last_insert_rowid();
+
+        let updated_id = db
+            .upsert_product_classification(
+                "acct-product-source",
+                "Platform",
+                Some("enterprise"),
+                Some(125_000.0),
+                Some("annual"),
+                "Salesforce",
+            )
+            .expect("upsert product classification");
+
+        assert_eq!(updated_id, legacy_id);
+        let (count, data_source, tier): (i64, String, String) = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*), MAX(data_source), MAX(tier)
+                 FROM account_products
+                 WHERE account_id = 'acct-product-source' AND product_type = 'Platform'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("fetch product state");
+        assert_eq!(count, 1, "legacy rows should update, not duplicate");
+        assert_eq!(data_source, "Salesforce");
+        assert_eq!(tier, "enterprise");
+    }
 }
 
 #[cfg(test)]

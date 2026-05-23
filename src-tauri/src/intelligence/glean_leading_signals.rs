@@ -412,7 +412,7 @@ pub fn build_leading_signals_prompt(
     let preamble = build_disambiguation_preamble(account_name, disambiguators);
 
     format!(
-        r#"You are a customer success intelligence system. For the customer account "{account_name}", search ALL available data sources (REDACTED, Zendesk, Gong, Slack, internal documents, LinkedIn data if indexed, org directory, Google Workspace, Notion/Confluence if configured) and extract HIGH-LEVERAGE leading signals that are often missed by standard enrichment.
+        r#"You are a customer success intelligence system. For the customer account "{account_name}", search ALL available data sources (Salesforce, Zendesk, Gong, Slack, internal documents, LinkedIn data if indexed, org directory, Google Workspace, Notion/Confluence if configured) and extract HIGH-LEVERAGE leading signals that are often missed by standard enrichment.
 
 {preamble}
 
@@ -538,20 +538,20 @@ fn build_disambiguation_preamble(
             }
         }
         match d.account_id.as_deref() {
-            Some(id) => out.push_str(&format!("- REDACTED account ID: {}\n", id)),
-            None => out.push_str("- REDACTED account ID: not provided\n"),
+            Some(id) => out.push_str(&format!("- Salesforce account ID: {}\n", id)),
+            None => out.push_str("- Salesforce account ID: not provided\n"),
         }
     } else {
-        out.push_str("- REDACTED account ID: not provided\n");
+        out.push_str("- Salesforce account ID: not provided\n");
     }
 
     out.push_str("\n## Retrieval scope\n");
     out.push_str(&format!(
-        "- Prefer documents that reference at least one identifier above (name \"{}\", a known domain, a known contact email, the parent company, or the REDACTED account ID). Treat those as first-class evidence.\n",
+        "- Prefer documents that reference at least one identifier above (name \"{}\", a known domain, a known contact email, the parent company, or the Salesforce account ID). Treat those as first-class evidence.\n",
         account_name
     ));
     out.push_str(
-        "- EXCLUDE documents whose only signal is a different customer's identifier. A document mentioning a different `vip-*.com` host, a different REDACTED account ID, a different customer name, or a different company domain is evidence that document is NOT about this entity — do not draw from it.\n",
+        "- EXCLUDE documents whose only signal is a different customer's identifier. A document mentioning a different `vip-*.com` host, a different Salesforce account ID, a different customer name, or a different company domain is evidence that document is NOT about this entity — do not draw from it.\n",
     );
     out.push_str(
         "- `wordpress-test@assistant.gong.io` and similar shared Gong/Slack bots are multi-tenant note-takers. Their presence in a document says nothing about which specific customer the document concerns.\n",

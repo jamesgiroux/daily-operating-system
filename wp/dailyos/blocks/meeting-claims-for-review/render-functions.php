@@ -194,7 +194,7 @@ if ( ! function_exists( 'dailyos_meeting_claims_for_review_empty_chip' ) ) {
 	 */
 	function dailyos_meeting_claims_for_review_empty_chip( string $reason, string $label ): string {
 		return sprintf(
-			'<section class="wp-block-dailyos-meeting-claims-for-review is-empty" data-empty-reason="%s"><p class="meeting-intel_recordOverline">%s</p></section>',
+			'<span class="dailyos-empty-chip wp-block-dailyos-meeting-claims-for-review is-empty" data-empty-reason="%s">%s</span>',
 			esc_attr( $reason ),
 			esc_html( $label )
 		);

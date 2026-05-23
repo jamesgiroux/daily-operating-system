@@ -68,7 +68,7 @@ Composes:
   dossierType="account"
   enrichedAt="2026-05-02T08:00:00Z"
   sources={[
-    { source: "REDACTED", status: "covered", label: "CRM fields" },
+    { source: "Salesforce", status: "covered", label: "CRM fields" },
     { source: "meetings", status: "partial", label: "Recent meeting notes" },
     { source: "glean", status: "missing", label: "Related docs" },
   ]}

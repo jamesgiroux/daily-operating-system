@@ -11,6 +11,7 @@ use crate::db::types::{AccountSourceRef, DbAccountSourceRef};
 use crate::db::{ActionDb, DbAccount};
 use crate::services::claims::{self, ClaimProposal};
 use crate::services::context::ServiceContext;
+use sha2::{Digest, Sha256};
 
 const CLAIM_TYPE: &str = "account_fact";
 const CLAIM_ACTOR: &str = "agent:account_fact_claims";
@@ -23,8 +24,10 @@ pub struct AccountFactPromotionReport {
     pub schema_skipped_lower_priority: u32,
     pub claims_committed: u32,
     pub claims_already_present: u32,
+    pub recompute_jobs_enqueued: u32,
     pub source_ref_errors: Vec<String>,
     pub claim_errors: Vec<String>,
+    pub recompute_enqueue_errors: Vec<String>,
 }
 
 impl AccountFactPromotionReport {
@@ -64,6 +67,12 @@ struct AccountFactPromotionOutcome {
     claim_outcome: ClaimPromotionOutcome,
     source_ref_errors: Vec<String>,
     claim_errors: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SchemaFactPromotion {
+    outcome: SchemaPromotionOutcome,
+    reference_id: Option<String>,
 }
 
 impl AccountFactPromotionOutcome {
@@ -111,6 +120,13 @@ struct ExistingAccountFactInput<'a> {
     reference_id: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct AccountFactSourceInput<'a> {
+    source_system: &'a str,
+    source_kind: &'a str,
+    observed_at: &'a str,
+}
+
 /// Promote high-confidence facts from Glean enrichment into account columns and
 /// claim-backed facts. This replaces the previous provider-local schema-only
 /// promotion path.
@@ -124,8 +140,13 @@ pub fn promote_glean_facts_from_intelligence(
     let mut report = AccountFactPromotionReport::default();
     if let Some(contract) = intel.contract_context.as_ref() {
         if let Some(arr) = contract.current_arr {
+            let source = AccountFactSourceInput {
+                source_system: "Salesforce",
+                source_kind: "fact",
+                observed_at: &now,
+            };
             report.merge(promote_account_arr_range(
-                ctx, db, account_id, arr, arr, "REDACTED", "fact", &now,
+                ctx, db, account_id, arr, arr, source,
             ));
         }
     }
@@ -146,7 +167,7 @@ pub fn promote_glean_facts_from_intelligence(
                     schema_field: "renewal_likelihood",
                     claim_field: "renewal_likelihood",
                     value: likelihood,
-                    source_system: "REDACTED",
+                    source_system: "Salesforce",
                     source_kind: "inference",
                     source_asof: None,
                     observed_at: &now,
@@ -157,6 +178,7 @@ pub fn promote_glean_facts_from_intelligence(
     }
 
     if let Some(org) = intel.org_health.as_ref() {
+        let org_source_asof = non_empty_asof(&org.gathered_at);
         if let Some(tier) = org.support_tier.as_deref() {
             report.merge(promote_account_fact(
                 ctx,
@@ -168,7 +190,7 @@ pub fn promote_glean_facts_from_intelligence(
                     value: tier,
                     source_system: "zendesk",
                     source_kind: "fact",
-                    source_asof: None,
+                    source_asof: org_source_asof,
                     observed_at: &now,
                     reference_id: None,
                 },
@@ -183,9 +205,9 @@ pub fn promote_glean_facts_from_intelligence(
                     schema_field: "renewal_likelihood",
                     claim_field: "renewal_likelihood",
                     value: likelihood,
-                    source_system: "REDACTED",
+                    source_system: "Salesforce",
                     source_kind: "fact",
-                    source_asof: None,
+                    source_asof: org_source_asof,
                     observed_at: &now,
                     reference_id: None,
                 },
@@ -200,9 +222,9 @@ pub fn promote_glean_facts_from_intelligence(
                     schema_field: "customer_status",
                     claim_field: "customer_status",
                     value: stage,
-                    source_system: "REDACTED",
+                    source_system: "Salesforce",
                     source_kind: "fact",
-                    source_asof: None,
+                    source_asof: org_source_asof,
                     observed_at: &now,
                     reference_id: None,
                 },
@@ -220,7 +242,7 @@ pub fn promote_glean_facts_from_intelligence(
                     value: &score,
                     source_system: "glean",
                     source_kind: "inference",
-                    source_asof: None,
+                    source_asof: org_source_asof,
                     observed_at: &now,
                     reference_id: None,
                 },
@@ -238,7 +260,7 @@ pub fn promote_glean_facts_from_intelligence(
                     value: &score,
                     source_system: "glean",
                     source_kind: "inference",
-                    source_asof: None,
+                    source_asof: org_source_asof,
                     observed_at: &now,
                     reference_id: None,
                 },
@@ -257,7 +279,7 @@ pub fn promote_glean_facts_from_intelligence(
                     schema_field: "active_subscription_count",
                     claim_field: "active_subscription_count",
                     value: &count,
-                    source_system: "REDACTED",
+                    source_system: "Salesforce",
                     source_kind: "fact",
                     source_asof: None,
                     observed_at: &now,
@@ -289,7 +311,7 @@ pub fn promote_glean_facts_from_intelligence(
                         schema_field: "primary_product",
                         claim_field: "primary_product",
                         value: product,
-                        source_system: "REDACTED",
+                        source_system: "Salesforce",
                         source_kind: "fact",
                         source_asof: None,
                         observed_at: &now,
@@ -300,6 +322,16 @@ pub fn promote_glean_facts_from_intelligence(
         }
     }
 
+    let claims_committed = report.claims_committed;
+    enqueue_recompute_if_needed(
+        ctx,
+        db,
+        &mut report,
+        account_id,
+        "glean_fact_promotion",
+        claims_committed,
+    );
+
     report
 }
 
@@ -308,48 +340,76 @@ fn promote_account_fact(
     db: &ActionDb,
     input: AccountFactInput<'_>,
 ) -> AccountFactPromotionOutcome {
-    match upsert_schema_account_fact(db, &input) {
-        Ok((true, source_ref_errors)) => {
-            let claim = ExistingAccountFactInput {
-                account_id: input.account_id,
-                claim_field: input.claim_field,
-                value: input.value.to_string(),
-                source_system: input.source_system.to_string(),
-                source_kind: input.source_kind.to_string(),
-                source_asof: input.source_asof.map(str::to_string),
-                observed_at: input.observed_at.to_string(),
-                reference_id: input.reference_id.map(str::to_string),
-            };
-            let (claim_outcome, claim_errors) = commit_existing_account_fact_claim(ctx, db, &claim);
-            AccountFactPromotionOutcome {
-                schema_outcome: SchemaPromotionOutcome::Promoted,
-                claim_outcome,
-                source_ref_errors,
-                claim_errors,
+    match db.with_transaction(|tx| {
+        let schema = upsert_schema_account_fact_atomic(tx, &input)?;
+        match schema.outcome {
+            SchemaPromotionOutcome::Promoted => {
+                let claim = ExistingAccountFactInput {
+                    account_id: input.account_id,
+                    claim_field: input.claim_field,
+                    value: input.value.to_string(),
+                    source_system: input.source_system.to_string(),
+                    source_kind: input.source_kind.to_string(),
+                    source_asof: input.source_asof.map(str::to_string),
+                    observed_at: input.observed_at.to_string(),
+                    reference_id: schema.reference_id,
+                };
+                let (claim_outcome, claim_errors) =
+                    commit_existing_account_fact_claim(ctx, tx, &claim);
+                if !claim_errors.is_empty() {
+                    return Err(claim_errors.join("; "));
+                }
+                Ok(AccountFactPromotionOutcome {
+                    schema_outcome: SchemaPromotionOutcome::Promoted,
+                    claim_outcome,
+                    source_ref_errors: Vec::new(),
+                    claim_errors: Vec::new(),
+                })
             }
+            SchemaPromotionOutcome::SkippedLowerPriority => {
+                Ok(AccountFactPromotionOutcome::schema_skipped())
+            }
+            SchemaPromotionOutcome::NotWritten => Ok(AccountFactPromotionOutcome {
+                schema_outcome: SchemaPromotionOutcome::NotWritten,
+                claim_outcome: ClaimPromotionOutcome::NotAttempted,
+                source_ref_errors: Vec::new(),
+                claim_errors: Vec::new(),
+            }),
         }
-        Ok((false, _)) => AccountFactPromotionOutcome::schema_skipped(),
-        Err(error) => AccountFactPromotionOutcome::schema_error(format!(
-            "{}.{} schema promotion failed: {error}",
-            input.account_id, input.schema_field
-        )),
+    }) {
+        Ok(outcome) => outcome,
+        Err(error) => AccountFactPromotionOutcome {
+            schema_outcome: SchemaPromotionOutcome::NotWritten,
+            claim_outcome: ClaimPromotionOutcome::NotAttempted,
+            source_ref_errors: Vec::new(),
+            claim_errors: vec![format!(
+                "{}.{} fact promotion rolled back: {error}",
+                input.account_id, input.schema_field
+            )],
+        },
     }
 }
 
-fn upsert_schema_account_fact(
+fn upsert_schema_account_fact_atomic(
     db: &ActionDb,
     input: &AccountFactInput<'_>,
-) -> Result<(bool, Vec<String>), crate::db::DbError> {
-    let promoted = db.upsert_account_fact(
-        input.account_id,
-        input.schema_field,
-        input.value,
-        input.source_system,
-        input.observed_at,
-    )?;
-    let mut source_ref_errors = Vec::new();
+) -> Result<SchemaFactPromotion, String> {
+    let promoted = db
+        .upsert_account_fact(
+            input.account_id,
+            input.schema_field,
+            input.value,
+            input.source_system,
+            input.observed_at,
+        )
+        .map_err(|error| {
+            format!(
+                "{}.{} schema promotion failed: {error}",
+                input.account_id, input.schema_field
+            )
+        })?;
     if promoted {
-        if let Err(error) = db.upsert_account_source_ref(&AccountSourceRef {
+        db.upsert_account_source_ref(&AccountSourceRef {
             account_id: input.account_id,
             field: input.schema_field,
             source_system: input.source_system,
@@ -357,14 +417,52 @@ fn upsert_schema_account_fact(
             source_value: Some(input.value),
             observed_at: input.observed_at,
             reference_id: input.reference_id,
-        }) {
-            source_ref_errors.push(format!(
+        })
+        .map_err(|error| {
+            format!(
                 "{}.{} source ref write failed: {error}",
                 input.account_id, input.schema_field
-            ));
-        }
+            )
+        })?;
+        return Ok(SchemaFactPromotion {
+            outcome: SchemaPromotionOutcome::Promoted,
+            reference_id: Some(stable_account_fact_reference_id(
+                input.account_id,
+                input.schema_field,
+                input.source_system,
+                input.source_kind,
+                input.value,
+                input.reference_id,
+            )),
+        });
     }
-    Ok((promoted, source_ref_errors))
+    Ok(SchemaFactPromotion {
+        outcome: SchemaPromotionOutcome::SkippedLowerPriority,
+        reference_id: None,
+    })
+}
+
+fn promote_schema_only_fact_atomic(
+    db: &ActionDb,
+    input: AccountFactInput<'_>,
+) -> Result<AccountFactPromotionOutcome, String> {
+    match upsert_schema_account_fact_atomic(db, &input)?.outcome {
+        SchemaPromotionOutcome::Promoted => Ok(AccountFactPromotionOutcome {
+            schema_outcome: SchemaPromotionOutcome::Promoted,
+            claim_outcome: ClaimPromotionOutcome::NotAttempted,
+            source_ref_errors: Vec::new(),
+            claim_errors: Vec::new(),
+        }),
+        SchemaPromotionOutcome::SkippedLowerPriority => {
+            Ok(AccountFactPromotionOutcome::schema_skipped())
+        }
+        SchemaPromotionOutcome::NotWritten => Ok(AccountFactPromotionOutcome {
+            schema_outcome: SchemaPromotionOutcome::NotWritten,
+            claim_outcome: ClaimPromotionOutcome::NotAttempted,
+            source_ref_errors: Vec::new(),
+            claim_errors: Vec::new(),
+        }),
+    }
 }
 
 fn promote_account_arr_range(
@@ -373,105 +471,98 @@ fn promote_account_arr_range(
     account_id: &str,
     low: f64,
     high: f64,
-    source_system: &str,
-    source_kind: &str,
-    observed_at: &str,
+    source: AccountFactSourceInput<'_>,
 ) -> AccountFactPromotionOutcome {
     let low_value = format!("{low:.0}");
     let high_value = format!("{high:.0}");
-    let low_outcome = promote_schema_only_fact(
-        db,
-        AccountFactInput {
-            account_id,
-            schema_field: "arr_range_low",
-            claim_field: "arr_range_low",
-            value: &low_value,
-            source_system,
-            source_kind,
-            source_asof: None,
-            observed_at,
-            reference_id: None,
-        },
-    );
-    let high_outcome = promote_schema_only_fact(
-        db,
-        AccountFactInput {
-            account_id,
-            schema_field: "arr_range_high",
-            claim_field: "arr_range_high",
-            value: &high_value,
-            source_system,
-            source_kind,
-            source_asof: None,
-            observed_at,
-            reference_id: None,
-        },
-    );
+    match db.with_transaction(|tx| {
+        let low_schema = upsert_schema_account_fact_atomic(
+            tx,
+            &AccountFactInput {
+                account_id,
+                schema_field: "arr_range_low",
+                claim_field: "arr_range_low",
+                value: &low_value,
+                source_system: source.source_system,
+                source_kind: source.source_kind,
+                source_asof: None,
+                observed_at: source.observed_at,
+                reference_id: None,
+            },
+        )?;
+        let high_schema = upsert_schema_account_fact_atomic(
+            tx,
+            &AccountFactInput {
+                account_id,
+                schema_field: "arr_range_high",
+                claim_field: "arr_range_high",
+                value: &high_value,
+                source_system: source.source_system,
+                source_kind: source.source_kind,
+                source_asof: None,
+                observed_at: source.observed_at,
+                reference_id: None,
+            },
+        )?;
 
-    let mut outcome = AccountFactPromotionOutcome {
-        schema_outcome: match (low_outcome.schema_outcome, high_outcome.schema_outcome) {
-            (SchemaPromotionOutcome::Promoted, _) | (_, SchemaPromotionOutcome::Promoted) => {
-                SchemaPromotionOutcome::Promoted
-            }
-            (SchemaPromotionOutcome::SkippedLowerPriority, _)
-            | (_, SchemaPromotionOutcome::SkippedLowerPriority) => {
-                SchemaPromotionOutcome::SkippedLowerPriority
-            }
-            _ => SchemaPromotionOutcome::NotWritten,
-        },
-        claim_outcome: ClaimPromotionOutcome::NotAttempted,
-        source_ref_errors: low_outcome
-            .source_ref_errors
-            .into_iter()
-            .chain(high_outcome.source_ref_errors)
-            .collect(),
-        claim_errors: low_outcome
-            .claim_errors
-            .into_iter()
-            .chain(high_outcome.claim_errors)
-            .collect(),
-    };
-
-    if matches!(outcome.schema_outcome, SchemaPromotionOutcome::Promoted) {
-        let value = if (low - high).abs() < f64::EPSILON {
-            low_value
-        } else {
-            format!("{low_value}-{high_value}")
-        };
-        let claim = ExistingAccountFactInput {
-            account_id,
-            claim_field: "arr",
-            value,
-            source_system: source_system.to_string(),
-            source_kind: source_kind.to_string(),
-            source_asof: None,
-            observed_at: observed_at.to_string(),
-            reference_id: None,
-        };
-        let (claim_outcome, claim_errors) = commit_existing_account_fact_claim(ctx, db, &claim);
-        outcome.claim_outcome = claim_outcome;
-        outcome.claim_errors.extend(claim_errors);
-    }
-
-    outcome
-}
-
-fn promote_schema_only_fact(
-    db: &ActionDb,
-    input: AccountFactInput<'_>,
-) -> AccountFactPromotionOutcome {
-    match upsert_schema_account_fact(db, &input) {
-        Ok((true, source_ref_errors)) => AccountFactPromotionOutcome {
-            schema_outcome: SchemaPromotionOutcome::Promoted,
+        let mut outcome = AccountFactPromotionOutcome {
+            schema_outcome: match (low_schema.outcome, high_schema.outcome) {
+                (SchemaPromotionOutcome::Promoted, _) | (_, SchemaPromotionOutcome::Promoted) => {
+                    SchemaPromotionOutcome::Promoted
+                }
+                (SchemaPromotionOutcome::SkippedLowerPriority, _)
+                | (_, SchemaPromotionOutcome::SkippedLowerPriority) => {
+                    SchemaPromotionOutcome::SkippedLowerPriority
+                }
+                _ => SchemaPromotionOutcome::NotWritten,
+            },
             claim_outcome: ClaimPromotionOutcome::NotAttempted,
-            source_ref_errors,
+            source_ref_errors: Vec::new(),
             claim_errors: Vec::new(),
+        };
+
+        if matches!(outcome.schema_outcome, SchemaPromotionOutcome::Promoted) {
+            let value = if (low - high).abs() < f64::EPSILON {
+                low_value
+            } else {
+                format!("{low_value}-{high_value}")
+            };
+            let refs = tx
+                .get_account_source_refs(account_id)
+                .map_err(|error| format!("{account_id}.arr source ref lookup failed: {error}"))?;
+            let refs_by_field = latest_source_refs_by_field(refs);
+            let reference_id = source_ref_for_field("arr", &refs_by_field)
+                .map(account_source_ref_reference_id)
+                .or_else(|| low_schema.reference_id.clone())
+                .or_else(|| high_schema.reference_id.clone());
+            let claim = ExistingAccountFactInput {
+                account_id,
+                claim_field: "arr",
+                value,
+                source_system: source.source_system.to_string(),
+                source_kind: source.source_kind.to_string(),
+                source_asof: None,
+                observed_at: source.observed_at.to_string(),
+                reference_id,
+            };
+            let (claim_outcome, claim_errors) = commit_existing_account_fact_claim(ctx, tx, &claim);
+            if !claim_errors.is_empty() {
+                return Err(claim_errors.join("; "));
+            }
+            outcome.claim_outcome = claim_outcome;
+        }
+
+        Ok(outcome)
+    }) {
+        Ok(outcome) => outcome,
+        Err(error) => AccountFactPromotionOutcome {
+            schema_outcome: SchemaPromotionOutcome::NotWritten,
+            claim_outcome: ClaimPromotionOutcome::NotAttempted,
+            source_ref_errors: Vec::new(),
+            claim_errors: vec![format!(
+                "{account_id}.arr fact promotion rolled back: {error}"
+            )],
         },
-        Ok((false, _)) => AccountFactPromotionOutcome::schema_skipped(),
-        Err(error) => AccountFactPromotionOutcome::schema_error(format!(
-            "{}.{} schema promotion failed: {error}",
-            input.account_id, input.schema_field
-        )),
     }
 }
 
@@ -485,6 +576,7 @@ pub fn backfill_account_fact_claims(
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let mut report = AccountFactPromotionReport::default();
     for account in db.get_all_accounts().map_err(|e| e.to_string())? {
+        let mut account_claims_committed = 0;
         let refs = db
             .get_account_source_refs(&account.id)
             .map_err(|e| e.to_string())?;
@@ -508,14 +600,147 @@ pub fn backfill_account_fact_claims(
         ) {
             let (claim_outcome, claim_errors) = commit_existing_account_fact_claim(ctx, db, &input);
             match claim_outcome {
-                ClaimPromotionOutcome::Committed => report.claims_committed += 1,
+                ClaimPromotionOutcome::Committed => {
+                    report.claims_committed += 1;
+                    account_claims_committed += 1;
+                }
                 ClaimPromotionOutcome::AlreadyPresent => report.claims_already_present += 1,
                 ClaimPromotionOutcome::NotAttempted => {}
             }
             report.claim_errors.extend(claim_errors);
         }
+
+        let has_unscored = match account_has_unscored_account_fact_claims(db, &account.id) {
+            Ok(value) => value,
+            Err(error) => {
+                report.claim_errors.push(format!(
+                    "{} account_fact unscored scan failed: {error}",
+                    account.id
+                ));
+                false
+            }
+        };
+        if account_claims_committed > 0 || has_unscored {
+            enqueue_recompute_if_needed(
+                ctx,
+                db,
+                &mut report,
+                &account.id,
+                "account_fact_backfill",
+                account_claims_committed,
+            );
+        }
     }
     Ok(report)
+}
+
+fn enqueue_recompute_if_needed(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    report: &mut AccountFactPromotionReport,
+    account_id: &str,
+    reason: &str,
+    claims_committed: u32,
+) {
+    if claims_committed == 0
+        && !account_has_unscored_account_fact_claims(db, account_id).unwrap_or(false)
+    {
+        return;
+    }
+
+    match enqueue_account_fact_claim_recompute(ctx, db, account_id, reason, claims_committed) {
+        Ok(()) => report.recompute_jobs_enqueued += 1,
+        Err(error) => {
+            report.recompute_enqueue_errors.push(format!(
+                "{account_id} account_fact recompute enqueue failed: {error}"
+            ));
+            record_recompute_enqueue_failure(
+                ctx,
+                db,
+                account_id,
+                "recompute_enqueue_failed",
+                &error,
+            );
+        }
+    }
+}
+
+fn enqueue_account_fact_claim_recompute(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    account_id: &str,
+    reason: &str,
+    claims_committed: u32,
+) -> Result<(), String> {
+    let payload = serde_json::json!({
+        "reason": reason,
+        "claims_committed": claims_committed,
+    })
+    .to_string();
+    db.with_transaction(|tx| {
+        let signal_id = crate::services::signals::emit(
+            ctx,
+            tx,
+            "account",
+            account_id,
+            "account_fact_claims_updated",
+            "account_fact_claims",
+            Some(&payload),
+            0.8,
+        )
+        .map_err(|error| format!("signal emit failed: {error}"))?;
+
+        crate::services::invalidation_jobs::enqueue_signal_claim_recompute_in_tx(
+            tx, &signal_id, "account", account_id,
+        )
+        .map(|_| ())
+    })
+}
+
+fn account_has_unscored_account_fact_claims(
+    db: &ActionDb,
+    account_id: &str,
+) -> Result<bool, crate::db::DbError> {
+    db.conn_ref()
+        .query_row(
+            "SELECT EXISTS(
+                SELECT 1
+                  FROM intelligence_claims
+                 WHERE claim_type = ?1
+                   AND claim_state = 'active'
+                   AND surfacing_state = 'active'
+                   AND trust_score IS NULL
+                   AND json_valid(subject_ref) = 1
+                   AND lower(json_extract(subject_ref, '$.kind')) = 'account'
+                   AND json_extract(subject_ref, '$.id') = ?2
+            )",
+            rusqlite::params![CLAIM_TYPE, account_id],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(crate::db::DbError::Sqlite)
+}
+
+fn record_recompute_enqueue_failure(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    account_id: &str,
+    error_type: &str,
+    error: &str,
+) {
+    if let Err(record_error) = crate::services::mutations::record_pipeline_failure(
+        ctx,
+        db,
+        "account_fact_claims",
+        Some(account_id),
+        Some("account"),
+        error_type,
+        Some(error),
+        0,
+    ) {
+        log::warn!(
+            "account_fact_claims: failed to record recompute enqueue failure for {account_id}: {record_error}"
+        );
+    }
 }
 
 fn commit_existing_account_fact_claim(
@@ -540,6 +765,7 @@ fn commit_existing_account_fact_claim(
             if claims.iter().any(|claim| {
                 claim.field_path.as_deref() == Some(field_path.as_str())
                     && claim.text == canonical_text
+                    && account_fact_claim_provenance_matches(claim, input)
             }) {
                 return (ClaimPromotionOutcome::AlreadyPresent, Vec::new());
             }
@@ -616,6 +842,45 @@ fn commit_existing_account_fact_claim(
             )],
         ),
     }
+}
+
+fn account_fact_claim_provenance_matches(
+    claim: &crate::db::claims::IntelligenceClaim,
+    input: &ExistingAccountFactInput<'_>,
+) -> bool {
+    claim.data_source == input.source_system
+        && claim.source_ref.as_deref() == input.reference_id.as_deref()
+        && input
+            .source_asof
+            .as_deref()
+            .map(|source_asof| claim.source_asof.as_deref() == Some(source_asof))
+            .unwrap_or(true)
+        && account_fact_claim_source_kind(claim).as_deref() == Some(input.source_kind.as_str())
+}
+
+fn account_fact_claim_source_kind(claim: &crate::db::claims::IntelligenceClaim) -> Option<String> {
+    claim
+        .metadata_json
+        .as_deref()
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
+        .and_then(|value| {
+            value
+                .get("account_fact")
+                .and_then(|fact| fact.get("source_kind"))
+                .and_then(|kind| kind.as_str())
+                .map(str::to_string)
+        })
+        .or_else(|| {
+            serde_json::from_str::<serde_json::Value>(&claim.provenance_json)
+                .ok()
+                .and_then(|value| {
+                    value
+                        .get("source")
+                        .and_then(|source| source.get("kind"))
+                        .and_then(|kind| kind.as_str())
+                        .map(str::to_string)
+                })
+        })
 }
 
 fn latest_source_refs_by_field(
@@ -907,15 +1172,33 @@ fn existing_input<'a>(
     let provenance = provenance.get(field);
     let source_system = provenance
         .map(|row| row.source.clone())
-        .or_else(|| source_ref.map(|row| row.source_system.clone()))?;
+        .or_else(|| source_ref.map(|row| row.source_system.clone()))
+        .unwrap_or_else(|| "account_schema".to_string());
+    let source_kind = source_ref
+        .map(|row| row.source_kind.clone())
+        .unwrap_or_else(|| {
+            if provenance.is_some() {
+                "fact".to_string()
+            } else {
+                "schema_snapshot".to_string()
+            }
+        });
+    let reference_id = source_ref.map(account_source_ref_reference_id).or_else(|| {
+        Some(stable_account_fact_reference_id(
+            account.id.as_str(),
+            field,
+            &source_system,
+            &source_kind,
+            &value,
+            None,
+        ))
+    });
     Some(ExistingAccountFactInput {
         account_id: account.id.as_str(),
         claim_field: field,
         value,
         source_system,
-        source_kind: source_ref
-            .map(|row| row.source_kind.clone())
-            .unwrap_or_else(|| "fact".to_string()),
+        source_kind,
         source_asof: None,
         observed_at: provenance
             .and_then(|row| row.updated_at.clone())
@@ -928,12 +1211,7 @@ fn existing_input<'a>(
                     account.updated_at.clone()
                 }
             }),
-        reference_id: source_ref.and_then(|row| {
-            row.source_record_ref
-                .clone()
-                .filter(|value| !value.trim().is_empty())
-                .or_else(|| Some(row.id.clone()))
-        }),
+        reference_id,
     })
 }
 
@@ -952,6 +1230,38 @@ fn source_ref_for_field<'a>(
     })
 }
 
+fn account_source_ref_reference_id(source_ref: &DbAccountSourceRef) -> String {
+    stable_account_fact_reference_id(
+        &source_ref.account_id,
+        &source_ref.field,
+        &source_ref.source_system,
+        &source_ref.source_kind,
+        source_ref.source_value.as_deref().unwrap_or(""),
+        source_ref.source_record_ref.as_deref(),
+    )
+}
+
+fn stable_account_fact_reference_id(
+    account_id: &str,
+    field: &str,
+    source_system: &str,
+    source_kind: &str,
+    value: &str,
+    source_record_ref: Option<&str>,
+) -> String {
+    if let Some(source_record_ref) = source_record_ref.filter(|value| !value.trim().is_empty()) {
+        return source_record_ref.to_string();
+    }
+
+    let mut hasher = Sha256::new();
+    for component in [account_id, field, source_system, source_kind, value] {
+        hasher.update((component.len() as u64).to_be_bytes());
+        hasher.update(component.as_bytes());
+    }
+    let digest = hasher.finalize();
+    format!("account_fact:{}", hex::encode(&digest[..16]))
+}
+
 fn account_fact_text(field: &str, raw_value: &str) -> String {
     match field {
         "arr" => format!("ARR: {}", display_number_or_range(raw_value)),
@@ -966,6 +1276,15 @@ fn account_fact_text(field: &str, raw_value: &str) -> String {
             format!("Active subscriptions: {}", raw_value.trim())
         }
         other => format!("{}: {}", label_for_field(other), raw_value.trim()),
+    }
+}
+
+fn non_empty_asof(value: &str) -> Option<&str> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
     }
 }
 
@@ -1090,6 +1409,16 @@ mod tests {
         }
     }
 
+    fn claim_recompute_job_count(db: &ActionDb) -> i64 {
+        db.conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM invalidation_jobs WHERE job_kind = 'claim_recompute'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count claim recompute jobs")
+    }
+
     #[test]
     fn promote_account_fact_writes_schema_source_ref_and_claim() {
         let db = test_db();
@@ -1120,7 +1449,16 @@ mod tests {
         let stored = db.get_account("acct-fact").unwrap().unwrap();
         assert_eq!(stored.renewal_likelihood, Some(0.85));
         assert_eq!(stored.renewal_likelihood_source.as_deref(), Some("glean"));
-        assert_eq!(db.get_account_source_refs("acct-fact").unwrap().len(), 1);
+        let source_refs = db.get_account_source_refs("acct-fact").unwrap();
+        assert_eq!(source_refs.len(), 1);
+        let source_ref_id = stable_account_fact_reference_id(
+            "acct-fact",
+            "renewal_likelihood",
+            "glean",
+            "inference",
+            "0.85",
+            None,
+        );
         let source_asof: String = db
             .conn_ref()
             .query_row(
@@ -1133,14 +1471,62 @@ mod tests {
 
         let subject_ref = serde_json::json!({"kind": "account", "id": "acct-fact"}).to_string();
         let active_claims = load_claims_active(&db, &subject_ref, Some(CLAIM_TYPE)).unwrap();
-        assert!(
-            active_claims.iter().any(|claim| {
-                claim.field_path.as_deref() == Some("account.renewal_likelihood")
-                    && claim.text == "renewal likelihood: 85%"
-                    && claim.trust_score.is_none()
-                    && claim.source_asof.as_deref() == Some("2026-05-20T12:00:00Z")
-            }),
-            "active account fact claim missing: {active_claims:?}"
+        let field_claims: Vec<_> = active_claims
+            .iter()
+            .filter(|claim| claim.field_path.as_deref() == Some("account.renewal_likelihood"))
+            .collect();
+        assert_eq!(field_claims.len(), 1);
+        assert_eq!(field_claims[0].text, "renewal likelihood: 85%");
+        assert!(field_claims[0].trust_score.is_none());
+        assert_eq!(
+            field_claims[0].source_asof.as_deref(),
+            Some("2026-05-20T12:00:00Z")
+        );
+        assert_eq!(
+            field_claims[0].source_ref.as_deref(),
+            Some(source_ref_id.as_str())
+        );
+
+        let backfill = backfill_account_fact_claims(&ctx, &db).unwrap();
+        assert_eq!(backfill.claims_committed, 0);
+        let active_claims_after = load_claims_active(&db, &subject_ref, Some(CLAIM_TYPE)).unwrap();
+        let field_claims_after: Vec<_> = active_claims_after
+            .iter()
+            .filter(|claim| claim.field_path.as_deref() == Some("account.renewal_likelihood"))
+            .collect();
+        assert_eq!(field_claims_after.len(), 1);
+        assert_eq!(
+            field_claims_after[0].source_ref.as_deref(),
+            Some(source_ref_id.as_str())
+        );
+
+        let repeated = promote_account_fact(
+            &ctx,
+            &db,
+            AccountFactInput {
+                account_id: "acct-fact",
+                schema_field: "renewal_likelihood",
+                claim_field: "renewal_likelihood",
+                value: "0.85",
+                source_system: "glean",
+                source_kind: "inference",
+                source_asof: Some("2026-05-20T12:00:00Z"),
+                observed_at: "2026-05-22T12:00:00Z",
+                reference_id: None,
+            },
+        );
+        assert_eq!(
+            repeated.claim_outcome,
+            ClaimPromotionOutcome::AlreadyPresent
+        );
+        let active_claims_after_repeat =
+            load_claims_active(&db, &subject_ref, Some(CLAIM_TYPE)).unwrap();
+        assert_eq!(
+            active_claims_after_repeat
+                .iter()
+                .filter(|claim| claim.field_path.as_deref() == Some("account.renewal_likelihood"))
+                .count(),
+            1
         );
 
         let claims = load_entity_context_claims_active_for_surface(
@@ -1156,6 +1542,155 @@ mod tests {
                 && claim.field_path.as_deref() == Some("account.renewal_likelihood")
                 && claim.text == "renewal likelihood: 85%"
         }));
+    }
+
+    #[test]
+    fn promote_glean_facts_carries_org_gathered_at_into_claim_source_asof() {
+        let db = test_db();
+        db.upsert_account(&account("acct-org-asof")).unwrap();
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 22, 12, 0, 0).unwrap());
+        let rng = SeedableRng::new(17);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+        let intel = crate::intelligence::IntelligenceJson {
+            org_health: Some(crate::intelligence::io::OrgHealthData {
+                renewal_likelihood: Some("0.80".to_string()),
+                growth_tier: Some("high".to_string()),
+                customer_stage: Some("active".to_string()),
+                support_tier: Some("premium".to_string()),
+                gathered_at: "2026-05-19T09:30:00Z".to_string(),
+                source: "glean".to_string(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let report = promote_glean_facts_from_intelligence(&ctx, &db, "acct-org-asof", &intel);
+
+        assert_eq!(report.claim_errors, Vec::<String>::new());
+        assert_eq!(report.claims_committed, 4);
+        let subject_ref = serde_json::json!({"kind": "account", "id": "acct-org-asof"}).to_string();
+        let active_claims = load_claims_active(&db, &subject_ref, Some(CLAIM_TYPE)).unwrap();
+        for field in [
+            "account.support_tier",
+            "account.renewal_likelihood",
+            "account.customer_status",
+            "account.growth_potential_score",
+        ] {
+            let claim = active_claims
+                .iter()
+                .find(|claim| claim.field_path.as_deref() == Some(field))
+                .unwrap_or_else(|| panic!("missing promoted claim for {field}"));
+            assert_eq!(
+                claim.source_asof.as_deref(),
+                Some("2026-05-19T09:30:00Z"),
+                "{field} should use orgHealth.gatheredAt as source_asof"
+            );
+        }
+        for field in ["account.renewal_likelihood", "account.customer_status"] {
+            let claim = active_claims
+                .iter()
+                .find(|claim| claim.field_path.as_deref() == Some(field))
+                .unwrap_or_else(|| panic!("missing promoted claim for {field}"));
+            assert_eq!(
+                claim.data_source, "Salesforce",
+                "{field} should preserve CRM system-of-record provenance"
+            );
+        }
+    }
+
+    #[test]
+    fn promote_glean_product_classification_keeps_system_of_record_source() {
+        let db = test_db();
+        db.upsert_account(&account("acct-product-source")).unwrap();
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 22, 12, 0, 0).unwrap());
+        let rng = SeedableRng::new(18);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+        let intel = crate::intelligence::IntelligenceJson {
+            product_classification: Some(crate::intelligence::io::ProductClassification {
+                products: vec![
+                    crate::intelligence::io::ProductInfo {
+                        type_: Some("cms".to_string()),
+                        arr: Some(120_000.0),
+                        ..Default::default()
+                    },
+                    crate::intelligence::io::ProductInfo {
+                        type_: Some("analytics".to_string()),
+                        arr: Some(50_000.0),
+                        ..Default::default()
+                    },
+                ],
+            }),
+            ..Default::default()
+        };
+
+        let report =
+            promote_glean_facts_from_intelligence(&ctx, &db, "acct-product-source", &intel);
+
+        assert_eq!(report.claim_errors, Vec::<String>::new());
+        assert_eq!(report.claims_committed, 2);
+        let subject_ref =
+            serde_json::json!({"kind": "account", "id": "acct-product-source"}).to_string();
+        let active_claims = load_claims_active(&db, &subject_ref, Some(CLAIM_TYPE)).unwrap();
+        for field in [
+            "account.active_subscription_count",
+            "account.primary_product",
+        ] {
+            let claim = active_claims
+                .iter()
+                .find(|claim| claim.field_path.as_deref() == Some(field))
+                .unwrap_or_else(|| panic!("missing promoted claim for {field}"));
+            assert_eq!(claim.data_source, "Salesforce");
+        }
+        let source_refs = db.get_account_source_refs("acct-product-source").unwrap();
+        for field in ["active_subscription_count", "primary_product"] {
+            let source_ref = source_refs
+                .iter()
+                .find(|source_ref| source_ref.field == field)
+                .unwrap_or_else(|| panic!("missing source ref for {field}"));
+            assert_eq!(source_ref.source_system, "Salesforce");
+        }
+    }
+
+    #[test]
+    fn promote_glean_contract_arr_keeps_system_of_record_source() {
+        let db = test_db();
+        db.upsert_account(&account("acct-contract-source")).unwrap();
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 22, 12, 0, 0).unwrap());
+        let rng = SeedableRng::new(19);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+        let intel = crate::intelligence::IntelligenceJson {
+            contract_context: Some(crate::intelligence::io::ContractContext {
+                current_arr: Some(125_000.0),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let report =
+            promote_glean_facts_from_intelligence(&ctx, &db, "acct-contract-source", &intel);
+
+        assert_eq!(report.claim_errors, Vec::<String>::new());
+        assert_eq!(report.claims_committed, 1);
+        let subject_ref =
+            serde_json::json!({"kind": "account", "id": "acct-contract-source"}).to_string();
+        let active_claims = load_claims_active(&db, &subject_ref, Some(CLAIM_TYPE)).unwrap();
+        let arr_claim = active_claims
+            .iter()
+            .find(|claim| claim.field_path.as_deref() == Some("account.arr"))
+            .expect("missing promoted ARR claim");
+        assert_eq!(arr_claim.data_source, "Salesforce");
+
+        let source_refs = db.get_account_source_refs("acct-contract-source").unwrap();
+        for field in ["arr_range_low", "arr_range_high"] {
+            let source_ref = source_refs
+                .iter()
+                .find(|source_ref| source_ref.field == field)
+                .unwrap_or_else(|| panic!("missing source ref for {field}"));
+            assert_eq!(source_ref.source_system, "Salesforce");
+        }
     }
 
     #[test]
@@ -1217,10 +1752,17 @@ mod tests {
         let first = backfill_account_fact_claims(&ctx, &db).unwrap();
         assert_eq!(first.claim_errors, Vec::<String>::new());
         assert_eq!(first.claims_committed, 2);
+        assert_eq!(first.recompute_jobs_enqueued, 1);
+        assert_eq!(claim_recompute_job_count(&db), 1);
 
         let second = backfill_account_fact_claims(&ctx, &db).unwrap();
         assert_eq!(second.claims_committed, 0);
         assert!(second.claims_already_present >= 2);
+        assert_eq!(
+            claim_recompute_job_count(&db),
+            1,
+            "unscored recovery enqueue should coalesce by subject"
+        );
 
         let claims = load_entity_context_claims_active_for_surface(
             &db,
@@ -1234,6 +1776,58 @@ mod tests {
         assert!(claims
             .iter()
             .any(|claim| claim.text == "customer status: active"));
+    }
+
+    #[test]
+    fn backfill_account_fact_claims_promotes_source_less_schema_facts() {
+        let db = test_db();
+        db.upsert_account(&account("acct-schema-fallback")).unwrap();
+        db.conn_ref()
+            .execute(
+                "UPDATE accounts
+                    SET arr_range_low = 125000,
+                        arr_range_high = 125000,
+                        customer_status = 'active',
+                        customer_status_source = NULL,
+                        customer_status_updated_at = NULL
+                  WHERE id = 'acct-schema-fallback'",
+                [],
+            )
+            .expect("seed source-less schema facts");
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 22, 12, 0, 0).unwrap());
+        let rng = SeedableRng::new(11);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+
+        let report = backfill_account_fact_claims(&ctx, &db).unwrap();
+
+        assert_eq!(report.claim_errors, Vec::<String>::new());
+        assert_eq!(report.claims_committed, 2);
+        let subject_ref =
+            serde_json::json!({"kind": "account", "id": "acct-schema-fallback"}).to_string();
+        let active_claims = load_claims_active(&db, &subject_ref, Some(CLAIM_TYPE)).unwrap();
+        let arr_claim = active_claims
+            .iter()
+            .find(|claim| claim.field_path.as_deref() == Some("account.arr"))
+            .expect("missing ARR claim");
+        assert_eq!(arr_claim.data_source, "account_schema");
+        assert_eq!(arr_claim.text, "arr: 125,000");
+        assert_eq!(arr_claim.observed_at, "2026-05-20T00:00:00Z");
+        assert!(arr_claim
+            .source_ref
+            .as_deref()
+            .is_some_and(|reference| { reference.starts_with("account_fact:") }));
+        assert_eq!(
+            account_fact_claim_source_kind(arr_claim).as_deref(),
+            Some("schema_snapshot")
+        );
+
+        let customer_status_claim = active_claims
+            .iter()
+            .find(|claim| claim.field_path.as_deref() == Some("account.customer_status"))
+            .expect("missing customer status claim");
+        assert_eq!(customer_status_claim.data_source, "account_schema");
+        assert_eq!(customer_status_claim.text, "customer status: active");
     }
 
     #[test]
@@ -1290,5 +1884,71 @@ mod tests {
         assert_eq!(field_claims.len(), 1);
         assert_eq!(field_claims[0].text, "renewal likelihood: 85%");
         assert_eq!(field_claims[0].source_ref.as_deref(), Some("src-2"));
+    }
+
+    #[test]
+    fn same_text_account_fact_supersedes_when_provenance_changes() {
+        let db = test_db();
+        db.upsert_account(&account("acct-same-text-source"))
+            .unwrap();
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 22, 12, 0, 0).unwrap());
+        let rng = SeedableRng::new(10);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+
+        let first = promote_account_fact(
+            &ctx,
+            &db,
+            AccountFactInput {
+                account_id: "acct-same-text-source",
+                schema_field: "renewal_likelihood",
+                claim_field: "renewal_likelihood",
+                value: "0.85",
+                source_system: "ai",
+                source_kind: "inference",
+                source_asof: Some("2026-05-20T12:00:00Z"),
+                observed_at: "2026-05-22T12:00:00Z",
+                reference_id: Some("src-ai"),
+            },
+        );
+        assert_eq!(first.claim_outcome, ClaimPromotionOutcome::Committed);
+
+        let second = promote_account_fact(
+            &ctx,
+            &db,
+            AccountFactInput {
+                account_id: "acct-same-text-source",
+                schema_field: "renewal_likelihood",
+                claim_field: "renewal_likelihood",
+                value: "0.85",
+                source_system: "glean",
+                source_kind: "fact",
+                source_asof: Some("2026-05-21T12:00:00Z"),
+                observed_at: "2026-05-22T12:00:00Z",
+                reference_id: Some("src-glean"),
+            },
+        );
+        assert_eq!(second.claim_outcome, ClaimPromotionOutcome::Committed);
+
+        let subject_ref =
+            serde_json::json!({"kind": "account", "id": "acct-same-text-source"}).to_string();
+        let active_claims = load_claims_active(&db, &subject_ref, Some(CLAIM_TYPE)).unwrap();
+        let field_claims: Vec<_> = active_claims
+            .iter()
+            .filter(|claim| claim.field_path.as_deref() == Some("account.renewal_likelihood"))
+            .collect();
+
+        assert_eq!(field_claims.len(), 1);
+        assert_eq!(field_claims[0].text, "renewal likelihood: 85%");
+        assert_eq!(field_claims[0].data_source, "glean");
+        assert_eq!(field_claims[0].source_ref.as_deref(), Some("src-glean"));
+        assert_eq!(
+            field_claims[0].source_asof.as_deref(),
+            Some("2026-05-21T12:00:00Z")
+        );
+        assert_eq!(
+            account_fact_claim_source_kind(field_claims[0]).as_deref(),
+            Some("fact")
+        );
     }
 }

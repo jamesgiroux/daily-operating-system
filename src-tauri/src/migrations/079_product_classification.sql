@@ -1,5 +1,5 @@
 -- Product classification enrichment from Glean.
--- Extends account_products with REDACTED product classification fields.
+-- Extends account_products with Salesforce product classification fields.
 
 ALTER TABLE account_products ADD COLUMN product_type TEXT;
 ALTER TABLE account_products ADD COLUMN tier TEXT;

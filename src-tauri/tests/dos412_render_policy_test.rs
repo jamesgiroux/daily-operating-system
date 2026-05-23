@@ -211,8 +211,28 @@ fn setup_migration_runner_state(conn: &Connection) {
         );
         INSERT INTO schema_version (version) VALUES (143);
 
-        CREATE TABLE IF NOT EXISTS meetings (id TEXT PRIMARY KEY);
-        CREATE TABLE IF NOT EXISTS meeting_prep (id TEXT PRIMARY KEY);
+        CREATE TABLE IF NOT EXISTS meetings (
+            id TEXT PRIMARY KEY,
+            calendar_event_id TEXT,
+            title TEXT,
+            start_time TEXT,
+            end_time TEXT
+        );
+        CREATE TABLE IF NOT EXISTS meeting_entities (
+            meeting_id TEXT NOT NULL,
+            entity_id TEXT NOT NULL,
+            entity_type TEXT NOT NULL DEFAULT 'account',
+            PRIMARY KEY (meeting_id, entity_id)
+        );
+        CREATE TABLE IF NOT EXISTS meeting_prep (
+            id TEXT PRIMARY KEY,
+            meeting_id TEXT,
+            prep_context_json TEXT,
+            user_agenda_json TEXT,
+            user_notes TEXT,
+            prep_frozen_at TEXT,
+            prep_snapshot_hash TEXT
+        );
         CREATE TABLE IF NOT EXISTS meeting_transcripts (id TEXT PRIMARY KEY);
         CREATE TABLE IF NOT EXISTS account_stakeholders (
             id TEXT PRIMARY KEY,
@@ -286,6 +306,27 @@ fn setup_migration_runner_state(conn: &Connection) {
             trust_score REAL,
             trust_computed_at TEXT,
             trust_version INTEGER
+        );
+        CREATE TABLE IF NOT EXISTS claim_feedback (
+            id              TEXT PRIMARY KEY,
+            claim_id        TEXT NOT NULL REFERENCES intelligence_claims(id),
+            feedback_type   TEXT NOT NULL
+                              CHECK (feedback_type IN (
+                                  'confirm_current',
+                                  'mark_outdated',
+                                  'mark_false',
+                                  'wrong_subject',
+                                  'wrong_source',
+                                  'cannot_verify',
+                                  'needs_nuance',
+                                  'surface_inappropriate',
+                                  'not_relevant_here'
+                              )),
+            actor           TEXT NOT NULL,
+            actor_id        TEXT,
+            payload_json    TEXT,
+            submitted_at    TEXT NOT NULL DEFAULT (datetime('now')),
+            applied_at      TEXT NULL
         );",
     )
     .expect("create migration runner fixture state");
