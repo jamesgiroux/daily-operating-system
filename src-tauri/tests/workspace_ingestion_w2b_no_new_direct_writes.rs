@@ -183,10 +183,11 @@ fn ingest_request_compile_shape_uses_canonical_w2a_fields_and_test_pipeline() {
         "entity,",
         "mode: IngestionMode::Realtime",
         "category_hint: None",
+        "invocation_actor:",
     ] {
         assert!(helper.contains(field), "missing canonical field {field}");
     }
-    assert!(helper.contains("pipeline.run(conn, request)"));
+    assert!(helper.contains("pipeline.run(&ctx, db, request)"));
     assert!(!helper.contains("source_path"));
     assert!(!helper.contains("data_source"));
 }
