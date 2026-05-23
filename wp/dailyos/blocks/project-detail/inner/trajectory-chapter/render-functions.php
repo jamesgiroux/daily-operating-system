@@ -72,7 +72,6 @@ if ( ! function_exists( 'dailyos_trajectory_chapter_render' ) ) {
 			}
 		}
 
-
 		if ( ! $any_present ) {
 			$reason = '' !== $first_empty_reason ? $first_empty_reason : 'no_trajectory_read';
 			if ( function_exists( 'dailyos_empty_chip' ) ) {

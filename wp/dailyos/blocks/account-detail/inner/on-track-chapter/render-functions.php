@@ -59,7 +59,7 @@ if ( ! function_exists( 'dailyos_on_track_chapter_render' ) ) {
 		}
 
 		$envelope = dailyos_resolve_envelope( $handle, 'account', $entity_id, $scope_set );
-		$projected_sections = ['facts'];
+		$projected_sections = [ 'facts' ];
 		$any_present = false;
 		$first_empty_reason = '';
 		foreach ( $projected_sections as $section_key ) {
@@ -89,7 +89,7 @@ if ( ! function_exists( 'dailyos_on_track_chapter_render' ) ) {
 		}
 
 		$out .= '<p class="health_ontrackBody">' . esc_html__( 'No active friction surfaced in the current account intelligence.', 'dailyos' ) . '</p>';
-		$out .= '<div class="health_peerStrip" data-dailyos-projection="on-track-chapter" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['facts'] ) ) . '">';
+		$out .= '<div class="health_peerStrip" data-dailyos-projection="on-track-chapter" data-dailyos-envelope-sections="' . esc_attr( implode( ',', [ 'facts' ] ) ) . '">';
 		$out .= '<div class="health_peerNumber">&mdash;</div>';
 		$out .= '<div class="health_peerLabel">' . esc_html__( 'Account read', 'dailyos' ) . '</div>';
 		$out .= '<div>';

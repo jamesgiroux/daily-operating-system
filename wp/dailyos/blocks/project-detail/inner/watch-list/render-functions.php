@@ -72,7 +72,6 @@ if ( ! function_exists( 'dailyos_watch_list_render' ) ) {
 			}
 		}
 
-
 		if ( ! $any_present ) {
 			$reason = '' !== $first_empty_reason ? $first_empty_reason : 'empty_watch_list';
 			if ( function_exists( 'dailyos_empty_chip' ) ) {

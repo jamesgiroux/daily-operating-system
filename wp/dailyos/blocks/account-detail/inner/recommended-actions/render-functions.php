@@ -59,7 +59,7 @@ if ( ! function_exists( 'dailyos_account_detail_recommended_actions_render' ) ) 
 		}
 
 		$envelope = dailyos_resolve_envelope( $handle, 'account', $entity_id, $scope_set );
-		$projected_sections = ['facts', 'open_loops'];
+		$projected_sections = [ 'facts', 'open_loops' ];
 		$any_present = false;
 		$first_empty_reason = '';
 		foreach ( $projected_sections as $section_key ) {
@@ -73,7 +73,7 @@ if ( ! function_exists( 'dailyos_account_detail_recommended_actions_render' ) ) 
 			}
 		}
 		$out  = '<section id="recommended-actions" class="entity-detail_chapterSection" data-ds-tier="pattern" data-ds-name="RecommendedActions" data-ds-spec="patterns/RecommendedActions.md">';
-		$out .= '<div class="RecommendedActions_root" data-dailyos-projection="recommended-actions" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['facts', 'open_loops'] ) ) . '">';
+		$out .= '<div class="RecommendedActions_root" data-dailyos-projection="recommended-actions" data-dailyos-envelope-sections="' . esc_attr( implode( ',', [ 'facts', 'open_loops' ] ) ) . '">';
 		$out .= '<div class="RecommendedActions_label">' . esc_html__( 'Recommended', 'dailyos' ) . '</div>';
 		if ( ! $any_present ) {
 			$reason = '' !== $first_empty_reason ? $first_empty_reason : 'no_recommended_actions';

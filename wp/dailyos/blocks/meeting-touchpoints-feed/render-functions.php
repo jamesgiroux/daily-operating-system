@@ -148,10 +148,11 @@ if ( ! function_exists( 'dailyos_meeting_touchpoints_feed_render' ) ) {
 			$out .= '<span class="meeting-intel_touchpointTitle">' . esc_html( $row['title'] ) . '</span>';
 			$out .= '<span class="meeting-intel_touchpointMeta">';
 			$out .= '<span class="meeting-intel_touchpointDate">' . esc_html( $row['date'] ) . '</span>';
-			$out .= '<span class="meeting-intel_touchpointSeparator">&middot;</span>';
-			$out .= '<span class="meeting-intel_touchpointAttendees">'
-				. esc_html( sprintf( __( '%d attendees', 'dailyos' ), $row['attendee_count'] ) )
-				. '</span>';
+				$out .= '<span class="meeting-intel_touchpointSeparator">&middot;</span>';
+				$out .= '<span class="meeting-intel_touchpointAttendees">'
+					/* translators: %d: attendee count. */
+					. esc_html( sprintf( __( '%d attendees', 'dailyos' ), $row['attendee_count'] ) )
+					. '</span>';
 			$out .= '</span>';
 			$out .= '</a>';
 			$out .= '</li>';

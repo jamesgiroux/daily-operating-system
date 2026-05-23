@@ -72,7 +72,6 @@ if ( ! function_exists( 'dailyos_project_appendix_render' ) ) {
 			}
 		}
 
-
 		if ( ! $any_present ) {
 			$reason = '' !== $first_empty_reason ? $first_empty_reason : 'no_appendix_data';
 			if ( function_exists( 'dailyos_empty_chip' ) ) {

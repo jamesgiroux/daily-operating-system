@@ -493,7 +493,10 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 		$receipt = dailyos_envelope_consume_claim(
 			[
 				'claim_id'     => 'claim-test-001',
-				'subject_ref'  => [ 'kind' => 'account', 'id' => 'acct-test-001' ],
+				'subject_ref'  => [
+					'kind' => 'account',
+					'id' => 'acct-test-001',
+				],
 				'field_path'   => 'health.risk',
 				'renderedText' => [
 					'text' => 'Readable row from the envelope',
@@ -522,7 +525,10 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 						'claimId'      => 'claim-test-cache-001',
 						'claimType'    => 'entity_summary',
 						'fieldPath'    => 'pullQuote',
-						'subjectRef'   => [ 'kind' => 'account', 'id' => 'acct-test-001' ],
+						'subjectRef'   => [
+							'kind' => 'account',
+							'id' => 'acct-test-001',
+						],
 						'renderedText' => [
 							'policy' => [
 								'claimId'     => 'claim-test-cache-001',
@@ -568,7 +574,10 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 		$receipt = dailyos_envelope_consume_claim(
 			[
 				'claim_id'    => 'claim-test-cache-001',
-				'subject_ref' => [ 'kind' => 'account', 'id' => 'acct-test-001' ],
+				'subject_ref' => [
+					'kind' => 'account',
+					'id' => 'acct-test-001',
+				],
 				'field_path'  => 'pullQuote',
 			],
 			[ 'read.claim_receipt' ]
@@ -599,7 +608,10 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 		$receipt = dailyos_envelope_consume_claim(
 			[
 				'claim_id'    => 'claim-test-001',
-				'subject_ref' => [ 'kind' => 'account', 'id' => 'acct-test-001' ],
+				'subject_ref' => [
+					'kind' => 'account',
+					'id' => 'acct-test-001',
+				],
 				'field_path'  => 'health.risk',
 			],
 			[ 'read.claim_receipt' ]
@@ -621,7 +633,10 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 						'claimId'      => 'claim-pull-quote',
 						'claimType'    => 'entity_summary',
 						'fieldPath'    => 'pullQuote',
-						'subjectRef'   => [ 'kind' => 'account', 'id' => 'acct-test-001' ],
+						'subjectRef'   => [
+							'kind' => 'account',
+							'id' => 'acct-test-001',
+						],
 						'renderedText' => [
 							'text' => 'Readable pull quote',
 						],
@@ -630,7 +645,10 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 						'claimId'    => 'claim-risk',
 						'claimType'  => 'entity_risk',
 						'fieldPath'  => 'risks[0]',
-						'subjectRef' => [ 'kind' => 'account', 'id' => 'acct-test-001' ],
+						'subjectRef' => [
+							'kind' => 'account',
+							'id' => 'acct-test-001',
+						],
 					],
 				],
 			],

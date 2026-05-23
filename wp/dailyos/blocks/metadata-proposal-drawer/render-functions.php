@@ -251,21 +251,21 @@ if ( ! function_exists( 'dailyos_metadata_proposal_drawer_render_affordances' ) 
 
 		$out  = '<div class="wp-block-dailyos-metadata-proposal-drawer__affordances" data-dailyos-affordance="metadata-proposal">';
 
-		// Accept → ConfirmCurrent
+		// Accept → ConfirmCurrent.
 		$out .= '<button type="button" class="dailyos-button dailyos-button--accept-proposal"';
 		$out .= ' data-dailyos-action="accept-proposal"';
 		$out .= ' data-proposal-id="' . $id_attr . '"';
 		$out .= ' data-feedback-action="confirm_current"';
 		$out .= '>' . esc_html__( 'Accept', 'dailyos' ) . '</button>';
 
-		// Dismiss → MarkFalse
+		// Dismiss → MarkFalse.
 		$out .= '<button type="button" class="dailyos-button dailyos-button--dismiss-proposal"';
 		$out .= ' data-dailyos-action="dismiss-proposal"';
 		$out .= ' data-proposal-id="' . $id_attr . '"';
 		$out .= ' data-feedback-action="mark_false"';
 		$out .= '>' . esc_html__( 'Dismiss', 'dailyos' ) . '</button>';
 
-		// Edit → NeedsNuance (corrected_text routed through ADR-0108 §3 sanitizer)
+		// Edit → NeedsNuance (corrected_text routed through ADR-0108 §3 sanitizer).
 		$out .= '<button type="button" class="dailyos-button dailyos-button--edit-proposal"';
 		$out .= ' data-dailyos-action="edit-proposal"';
 		$out .= ' data-proposal-id="' . $id_attr . '"';
