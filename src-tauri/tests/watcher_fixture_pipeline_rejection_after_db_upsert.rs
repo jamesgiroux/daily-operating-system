@@ -4,6 +4,7 @@ use abilities_runtime::abilities::provenance::source::{EntityId, WorkspaceFileKi
 use chrono::{DateTime, Utc};
 use dailyos_lib::db::{ActionDb, DbAccount};
 use dailyos_lib::entity::EntityType;
+use dailyos_lib::services::context::{ExternalClients, ServiceContext, SystemClock, SystemRng};
 use dailyos_lib::services::workspace_ingestion::contracts::{
     NullExtractor, NullSignalEmitter, RejectionReason,
 };
@@ -50,7 +51,7 @@ fn pipeline_rejection_after_db_upsert_preserves_entity_row_and_markdown() {
     );
     let err = run_pipeline(
         &pipeline,
-        &conn,
+        &db,
         &workspace_root,
         &dashboard,
         WorkspaceFileKind::EntityDoc,
@@ -72,7 +73,7 @@ fn pipeline_rejection_after_db_upsert_preserves_entity_row_and_markdown() {
 
 fn run_pipeline(
     pipeline: &IngestPipeline,
-    conn: &Connection,
+    db: &ActionDb,
     workspace_root: &Path,
     path: &Path,
     source_type: WorkspaceFileKind,
@@ -98,8 +99,14 @@ fn run_pipeline(
         entity,
         mode: IngestionMode::Realtime,
         category_hint: None,
+        invocation_actor: "system:test".to_string(),
+        validated_content: None,
     };
-    pipeline.run(conn, request).map(|_| ())
+    let clock = SystemClock;
+    let rng = SystemRng;
+    let external = ExternalClients::default();
+    let ctx = ServiceContext::new_live(&clock, &rng, &external).with_actor("system:test");
+    pipeline.run(&ctx, db, request).map(|_| ())
 }
 
 fn entity_ref(entity_type: EntityType, id: &str, name: Option<&str>) -> EntityRef {

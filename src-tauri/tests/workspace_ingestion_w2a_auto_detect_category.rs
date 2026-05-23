@@ -45,6 +45,18 @@ fn auto_detect_category_uses_frozen_priority_table() {
     );
 }
 
+#[test]
+fn auto_detect_category_reads_crlf_frontmatter_doc_type() {
+    assert_eq!(
+        IngestPipeline::auto_detect_category_pure(
+            "meeting-notes.md",
+            "---\r\ndoc_type: deck\r\n---\r\nbody"
+        ),
+        Some(WorkspaceCategory::Presentations),
+        "CRLF frontmatter must use doc_type priority instead of falling through to filename"
+    );
+}
+
 /// Regression for L2 cycle-1 codex BLOCK: a SHAPE-INVALID frontmatter
 /// `doc_type` MUST resolve to terminal None at priority 1, not fall through
 /// to filename-glob at priority 2. §7 security gate requires user-supplied
