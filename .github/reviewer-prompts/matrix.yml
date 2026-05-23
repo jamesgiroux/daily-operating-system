@@ -1,44 +1,104 @@
 # L2 reviewer matrix — maps changed-file path globs to which domain reviewer(s)
-# the L2 GitHub Action invokes for a given PR.
+# the L2 panel invokes for a given PR.
 #
-# Resolver: .github/scripts/resolve-reviewers.py
+# REVISION 2026-05-23: aligns with engineering-ladder.md reviewer-composition
+# revision. The ladder now composes installed agents (`ce-*` and
+# `pr-review-toolkit:*`) per concern rather than running every reviewer on
+# every change. This matrix documents that composition.
+#
+# What this file enforces (mechanical):
+#   - validate-pr-template.py reads `security-auditor.when_changed` and
+#     enforces `security_auditor_invoked: true` in PR body when any matching
+#     path is in the diff. That's the only field this file mechanically gates.
+#
+# What this file documents (informational, for local L2 panel orchestration):
+#   - L2 router-selected specialists keyed to diff content
+#   - L2 advisory-parallel reviewers that always run but never block merge
+#   - L0 planning reviewers (subset; the canonical list lives in
+#     engineering-ladder.md § L0 reviewer router)
+#
+# Resolver: `.github/scripts/validate-pr-template.py` (security-auditor only);
+# `.github/scripts/detect-l3-suite-firing.py` (suite-s + suite-p firing).
 # Loaded from BASE ref by the workflow (NOT the PR head — see workflow comment).
 #
 # An entry can declare:
 #   - reviewer: <name>
+#     advisory: true|false    # advisory means always-on, non-blocking, files to maintenance project
 #     always: true            # always invoked, regardless of changed files
 #     when_changed: [...]     # globs that trigger this reviewer
 #
 # Multiple matches are additive — a PR that touches services/ AND src/components/
-# pulls both security-auditor AND accessibility-tester.
+# pulls both ce-security-reviewer AND accessibility-tester.
 #
 # To add a new reviewer:
-#   1. Drop a `<name>.md` prompt in this directory (and `_common-preamble.md` is shared)
-#   2. Add an entry below
-#   3. Add a job block in .github/workflows/l2-review.yml referencing the prompt
+#   1. If it's a `ce-*` or `pr-review-toolkit:*` agent already installed, just add an entry here
+#   2. If it's a DailyOS-specific custom prompt, drop a `<name>.md` prompt in this directory
+#   3. Update engineering-ladder.md's router table if the new reviewer is part of the routed default
 #   4. Re-run configure-branch-protection.sh if the new reviewer should block merge
 #
-# Glob syntax (per resolve-reviewers.py): `**/` recursive, `*` non-slash, `?` single char.
+# Glob syntax (per validate-pr-template.py): `**/` recursive, `*` non-slash, `?` single char.
 
 reviewers:
-  - reviewer: code-reviewer
+  # ─── L2 default ──────────────────────────────────────────────────────────
+  - reviewer: l2-bounded-reviewer
     description: |
-      General code-quality reviewer. Always runs — every PR gets this slot.
+      Default L2 reviewer (2026-05-23 revision). Orchestrates /codex review
+      against the diff bounded by the ticket's acceptance criteria. Routes
+      theoretical findings to the Codebase Maintenance Linear project
+      (b8e6aea4-d47e-4f3a-b03d-a05bec914aeb). Always invoked.
     always: true
 
-  - reviewer: architect-reviewer
+  # ─── L2 advisory parallel (always-on, non-blocking) ─────────────────────
+  - reviewer: ce-maintainability-reviewer
     description: |
-      Architectural / structural reviewer. Always runs — every PR gets architect's
-      eyes on the design implications, even small ones.
+      Advisory (non-blocking). Reviews for premature abstraction, dead code,
+      coupling between unrelated modules, naming that obscures intent.
+      Findings file to maintenance project, never gate merge.
+    advisory: true
     always: true
 
+  - reviewer: ce-pattern-recognition-specialist
+    description: |
+      Advisory (non-blocking). DRY / duplication / anti-pattern detector
+      across files. Findings file to maintenance project.
+    advisory: true
+    always: true
+
+  - reviewer: ce-code-simplicity-reviewer
+    description: |
+      Advisory (non-blocking). YAGNI + simplification pass. Identifies
+      unnecessary complexity introduced by the diff. Findings file to
+      maintenance project.
+    advisory: true
+    always: true
+
+  - reviewer: ce-project-standards-reviewer
+    description: |
+      Advisory (non-blocking). Audits diff against CLAUDE.md + AGENTS.md
+      standards. Findings file to maintenance project.
+    advisory: true
+    always: true
+
+  - reviewer: ce-testing-reviewer
+    description: |
+      Advisory (non-blocking). Reviews for test coverage gaps, weak
+      assertions, brittle implementation-coupled tests, missing edge cases.
+      Findings file to maintenance project.
+    advisory: true
+    always: true
+
+  # ─── L2 router-selected (blocking when triggered) ───────────────────────
   - reviewer: security-auditor
     description: |
-      Mandatory for plans/PRs touching trust boundaries, claim substrate,
-      privileged actions, schema, orchestration system itself, or governance.
-      Per Amendment 3 of v1.4.0-waves-amendments.md, plus paths surfaced in
-      L2 cycle-1 review of Phase 2 (release_gate.rs, build.rs, .github/scripts/**,
-      pull_request_template.md).
+      Blocking. Triggered for PRs touching trust boundaries, claim
+      substrate, privileged actions, schema, orchestration system itself,
+      or governance. Per Amendment 3 of v1.4.0-waves-amendments.md.
+
+      Routes to /cso (DailyOS-specific) and/or ce-security-reviewer.
+      Matrix key kept as `security-auditor` for validate-pr-template.py
+      compat — that script reads `security-auditor.when_changed` as SSOT
+      for the `security_auditor_invoked: true` PR-body field, and
+      detect-l3-suite-firing.py reads the same key for Suite S firing.
     when_changed:
       # Backend privileged paths
       - "src-tauri/src/services/**"
@@ -84,14 +144,20 @@ reviewers:
 
   - reviewer: performance-engineer
     description: |
-      Triggered when the diff touches performance-budgeted hot paths,
-      DB query layers, IPC boundaries, or async orchestration.
+      Blocking. Triggered when the diff touches performance-budgeted hot
+      paths, DB query layers, IPC boundaries, or async orchestration.
+
+      Routes to ce-performance-reviewer (diff scope) and/or
+      ce-performance-oracle (deep scope). detect-l3-suite-firing.py reads
+      this entry's when_changed to gate Suite P firing.
     when_changed:
       - "src-tauri/src/services/**"
       - "src-tauri/src/intelligence/**"
       - "src-tauri/src/db/**"
       - "src-tauri/src/commands/**"
       - "src-tauri/src/abilities/**"
+      - "src-tauri/src/migrations.rs"
+      - "src-tauri/migrations/**"
       - "src/hooks/**"
       - "src/components/**/*.tsx"
       - "src/pages/**/*.tsx"
@@ -100,7 +166,8 @@ reviewers:
     description: |
       Triggered for any user-facing surface change. Broad globs over `src/**`
       catch global layout, routing, providers, and root-level styles in
-      addition to components/pages — all of which can affect a11y.
+      addition to components/pages — all of which can affect a11y. Used at
+      L4 hands-on validation (not blocking at L2).
     when_changed:
       - "src/**/*.tsx"
       - "src/**/*.ts"
@@ -108,6 +175,18 @@ reviewers:
       - "src/**/*.module.css"
       - "src/**/*.html"
       - "index.html"
+
+  # ─── L2 router-selected diff-content reviewers (informational) ──────────
+  # Per engineering-ladder.md § L2 reviewer router. These are invoked locally
+  # by the L2 orchestrator based on diff content; not currently gated by CI.
+  #
+  # - pr-review-toolkit:type-design-analyzer → new types/structs/enums
+  # - pr-review-toolkit:silent-failure-hunter → error handling / fallbacks
+  # - ce-data-migrations-reviewer → migrations / schema / backfills
+  # - ce-api-contract-reviewer → API routes / request-response types
+  # - ce-reliability-reviewer → retries / circuit breakers / timeouts / background jobs
+  # - ce-kieran-typescript-reviewer → high-risk TypeScript diffs
+  # - ce-data-integrity-guardian → migration safety + data integrity together
 
 # Notes:
 #
@@ -121,6 +200,8 @@ reviewers:
 #   matrix changes themselves go through a manual-review path; the matrix
 #   doesn't review its own modifications.
 #
-# - matrix.yml is the single source of truth for security-auditor trigger
-#   paths. validate-pr-template.py reads `security-auditor.when_changed`
-#   from this file at runtime — no parallel list to maintain.
+# - matrix.yml is the single source of truth for:
+#   1. security-auditor trigger paths (validate-pr-template.py reads at runtime)
+#   2. L3 Suite S firing (detect-l3-suite-firing.py reads at runtime)
+#   3. L3 Suite P firing (detect-l3-suite-firing.py reads performance-engineer key)
+#   No parallel path lists to maintain.
