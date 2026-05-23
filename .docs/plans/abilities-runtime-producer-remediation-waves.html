@@ -44,7 +44,7 @@
     <span>Target: next v1.4.7 remediation train</span>
     <span>Waves: 5</span>
     <span>Parallel agents: 3 peak</span>
-    <span>Source: audit + Linear follow-ups</span>
+    <span>Status: L0 cycle 1 remediated</span>
   </div>
 </section>
 
@@ -58,11 +58,73 @@
     </p>
   </header>
   <ul class="plans-related">
+    <li><strong>Origination:</strong> debug-driven extension. The visible symptom is that headless surfaces can identify an entity but cannot compose a complete executive briefing from DailyOS evidence.</li>
+    <li><strong>Scope tier:</strong> wave. This touches the ability runtime contract, MCP projection, claim provenance, trust, and production backfill behavior.</li>
+    <li><strong>Threat topology:</strong> local-to-local single-user. MCP runs locally under the user's OS/keychain boundary; sensitivity render policy, source hygiene, prompt-injection defenses, and log redaction still apply.</li>
+    <li><strong>Failure trace:</strong> <code>dailyos.read.account_status</code> calls <code>get_entity_intelligence</code> for facts/open loops/touchpoints/record, but the handler returns only part of that envelope; the runtime also lacks neighborhood, participation, threads, metadata, and section-caveat producers.</li>
     <li><strong>Origin audit:</strong> <code>.docs/plans/abilities-runtime-producer-audit-2026-05-23.md</code></li>
-    <li><strong>K-in:</strong> ADR-0102, ADR-0128, ADR-0057, ADR-0081, ADR-0088, ADR-0097, ADR-0098, plus the claim-producer trust audit solution note.</li>
+    <li><strong>K-in:</strong> ADR-0102, ADR-0128, ADR-0057, ADR-0081, ADR-0088, ADR-0097, ADR-0098, ADR-0093, ADR-0108, ADR-0110, ADR-0111, plus the claim-producer trust audit solution note.</li>
     <li><strong>Non-goal:</strong> do not teach MCP or WordPress to bypass the runtime by reading account-shaped schema fields directly.</li>
     <li><strong>Architecture constraint:</strong> every durable assertion enters the claim substrate with provenance, temporal scope, sensitivity, lifecycle, and trust recomputation.</li>
   </ul>
+</section>
+
+<section class="plans-section" aria-labelledby="l0-hardening">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">L0 hardening</p>
+    <h2 id="l0-hardening" class="plans-section-title">The plan now freezes the contracts reviewers blocked on.</h2>
+    <p class="plans-section-lede">
+      L0 cycle 1 blocked on W2 being too vague, the MCP output shape being account-shaped, and trust/render-policy gates landing too late.
+      These decisions are now first-class acceptance criteria before implementation starts.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Contract</th>
+        <th>Decision</th>
+        <th>Required by</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Runtime relationship section</td>
+        <td>Add a first-class <code>relationships</code> section to the <code>get_entity_intelligence</code> envelope v2 instead of overloading <code>record</code>. Existing v1 section consumers keep backward-compatible handling.</td>
+        <td>W0</td>
+      </tr>
+      <tr>
+        <td>Neighborhood read seam</td>
+        <td>All graph-like evidence flows through a services-owned <code>EntityNeighborhoodSnapshot</code>: edge type, related subject ref, source refs, observed/source dates, confidence, sensitivity/render policy, inclusion reason, traversal depth, and truncation state. It is a projection over existing substrate only; new canonical relationship storage requires separate L0 proof.</td>
+        <td>W0 / W1</td>
+      </tr>
+      <tr>
+        <td>Participation DTO</td>
+        <td>Participation is deterministic evidence in <code>relationships.participants</code>: related subject ref, role when known, normalized touchpoint count, recent touchpoints, last-seen date, source refs, and caveats for partial normalization.</td>
+        <td>W0 / W1</td>
+      </tr>
+      <tr>
+        <td>Section trust and caveats</td>
+        <td>Every non-fact section exposes section-state, trust band, freshness, and caveats before MCP renders it. W4 may refine aggregation, but W2 cannot ship uncaveated derived assessments.</td>
+        <td>W0 / W1 / W2</td>
+      </tr>
+      <tr>
+        <td>MCP render policy</td>
+        <td>Every MCP-projected text, identity, source label, and provenance ref must pass through <code>RenderableClaimText</code> or a renderable evidence wrapper with sensitivity, provenance, and sanitizer semantics. Static allowlists are compile-time literals only, never DB/source text. Raw envelopes stay disabled for host-model evals.</td>
+        <td>W0 / W2</td>
+      </tr>
+      <tr>
+        <td>Prompt-injection gate</td>
+        <td>W2 and Suite S must include adversarial external text fixtures: instruction-like content, invisible Unicode, poisoned prior intelligence, and hostile thread/calendar text. The MCP payload must preserve evidence value while blocking model-steering instructions.</td>
+        <td>W0 / W2</td>
+      </tr>
+      <tr>
+        <td>Production-data protocol</td>
+        <td>Fixtures and docs remain synthetic. Local production runs require user approval, sanitized diagnostics, no raw row dumps, and no host-model output persistence unless it re-enters through the claim pipeline.</td>
+        <td>W0 / W2</td>
+      </tr>
+    </tbody>
+  </table>
 </section>
 
 <section class="plans-section" aria-labelledby="wave-overview">
@@ -88,7 +150,7 @@
     <tbody>
       <tr>
         <td>W0 — Contract hardening</td>
-        <td>producer audit, Linear issue split, fixture contract</td>
+        <td>producer matrix, relationship envelope, render policy, fixture contract</td>
         <td>1</td>
         <td>reviewable L0 packet</td>
       </tr>
@@ -100,7 +162,7 @@
       </tr>
       <tr>
         <td>W2 — MCP executive briefing</td>
-        <td>account-status projection, entity resolver, host eval fixture</td>
+        <td>shared MCP projection, entity resolver, host eval fixture</td>
         <td>3</td>
         <td>comparison prompt is testable</td>
       </tr>
@@ -112,7 +174,7 @@
       </tr>
       <tr>
         <td>W4 — Trust, health, cleanup</td>
-        <td>section-aware trust, generic health story, source-label backfill</td>
+        <td>trust audit/refinement, generic health story, safe source-label backfill</td>
         <td>2</td>
         <td>full audit remediation closes</td>
       </tr>
@@ -129,30 +191,256 @@
   <div class="callout-grid">
     <article class="callout">
       <h3 class="callout-title">W0 — Contract hardening</h3>
-      <p class="callout-prose">Split Linear follow-ups from the audit, assign migration slots if needed, freeze fixture names, and define the producer contract for neighborhood edges, participation rows, section caveats, and MCP projections.</p>
-      <p class="callout-prose"><strong>Pass:</strong> L0 approves the wave plan; no open product blockers; fixtures avoid customer-specific data; every producer has a services-owned read/write boundary.</p>
+      <p class="callout-prose">Split Linear follow-ups from the audit, assign migration slots if needed, freeze fixture names, and define the producer contract for neighborhood edges, participation rows, section caveats, trust recomputation, and MCP projections.</p>
+      <p class="callout-prose"><strong>Pass:</strong> L0 approves the wave plan; fixtures avoid customer-specific data; every producer has a services-owned boundary; every MCP field has render-policy coverage; every durable claim writer names its same-wave trust recomputation path.</p>
     </article>
     <article class="callout">
       <h3 class="callout-title">W1 — Entity neighborhood</h3>
-      <p class="callout-prose">Add a generic read model for hierarchy, explicit entity links, meetings, attendees, people, actions, email threads, and content relationships. Add participation summary composition without account-only joins.</p>
-      <p class="callout-prose"><strong>Pass:</strong> account, project, person, and meeting fixtures return relationship edges with source, recency, confidence, inclusion reason, and sensitivity-safe subject refs.</p>
+      <p class="callout-prose">Add a generic read model for hierarchy, explicit entity links, meetings, attendees, people, actions, email threads, and content relationships over existing substrate tables. Add participation summary composition without account-only joins, new canonical graph storage, or MCP schema bypasses.</p>
+      <p class="callout-prose"><strong>Pass:</strong> account, project, person, and meeting fixtures return bounded relationship edges with source, recency, confidence, inclusion reason, section caveats, and sensitivity-safe subject refs. Default traversal depth is no more than 2, with per-edge caps and truncation metadata. Duplicate attendees collapse by canonical person/email key; internal participants are included only when the subject kind or explicit relationship makes them relevant.</p>
     </article>
     <article class="callout">
       <h3 class="callout-title">W2 — MCP executive briefing</h3>
-      <p class="callout-prose">Widen `dailyos.read.account_status` to return touchpoints, record entries, participation/stakeholder candidates, caveats, and provenance refs. Add subject resolution for natural account names or slugs.</p>
-      <p class="callout-prose"><strong>Pass:</strong> the executive-briefing prompt can be run in Claude Desktop and receives enough structured DailyOS output to compare against a broad-corpus answer.</p>
+      <p class="callout-prose">Implement a shared MCP projection for the ability envelope, then make <code>dailyos.read.account_status</code> consume it. Return touchpoints, record entries, relationship participants, section caveats, priorities, trust, freshness, and provenance refs. Add subject resolution for natural names, slugs, and ids.</p>
+      <p class="callout-prose"><strong>Pass:</strong> the source-safe executive-briefing fixture runs in Claude Desktop, calls the DailyOS MCP tool, and receives enough structured DailyOS output to compare against a broad-corpus answer without direct DB reads or uncaveated derived claims.</p>
     </article>
     <article class="callout">
       <h3 class="callout-title">W3 — Remaining producers</h3>
-      <p class="callout-prose">Fill `threads`, `metadata_proposals`, and work/open-loop producer gaps from linked communication, structured source refs, corrections, conflicts, actions, and captured work evidence.</p>
-      <p class="callout-prose"><strong>Pass:</strong> envelope sections are no longer empty by default when relevant evidence exists, and deterministic evidence remains a read-model section unless it is a durable assertion.</p>
+      <p class="callout-prose">Fill <code>threads</code>, <code>metadata_proposals</code>, and work/open-loop producer gaps from linked communication, structured source refs, corrections, conflicts, actions, and captured work evidence. Expose or prepare <code>dailyos.read.entity_intelligence</code> over the same projection contract.</p>
+      <p class="callout-prose"><strong>Pass:</strong> envelope sections are no longer empty by default when relevant evidence exists, deterministic evidence remains a read-model section unless it is a durable assertion, and the generic projection has contract tests for account, project, person, and meeting subjects.</p>
     </article>
     <article class="callout">
       <h3 class="callout-title">W4 — Trust, health, cleanup</h3>
-      <p class="callout-prose">Generalize health story beyond meeting prep, add section-aware trust/caveats, validate trust recomputation across claim types, and run source-label cleanup through a service-owned backfill.</p>
-      <p class="callout-prose"><strong>Pass:</strong> trust bands and caveats reflect facts plus derived sections; no legacy placeholder source labels remain in user-visible source summaries after backfill.</p>
+      <p class="callout-prose">Generalize health story beyond meeting prep, audit section-aware trust/caveats across every producer, validate trust recomputation across claim types, and run source-label cleanup through a service-owned backfill.</p>
+      <p class="callout-prose"><strong>Pass:</strong> trust bands and caveats reflect facts plus derived sections; source-label cleanup supports dry-run, known-placeholder allowlist, explicit user-approved mutation mode, typed-source-ref derivation, chunked transactions, audit/failure records, and rollback; no legacy placeholder source labels remain in user-visible source summaries after approved backfill.</p>
     </article>
   </div>
+</section>
+
+<section class="plans-section" aria-labelledby="producer-matrix">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Producer matrix</p>
+    <h2 id="producer-matrix" class="plans-section-title">Each evidence class gets an owner and a trust rule.</h2>
+    <p class="plans-section-lede">
+      W0 turns this into the Linear issue split. The key rule is simple: deterministic read-model evidence can stay a section,
+      while durable assertions must become claims and trigger trust recomputation in the same wave.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Evidence class</th>
+        <th>Producer classification</th>
+        <th>Owner / source</th>
+        <th>Runtime projection</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Structured entity facts</td>
+        <td>Durable claim writer</td>
+        <td><code>services::entity_facts</code>; source refs, source-as-of dates, field attribution</td>
+        <td><code>facts</code>, <code>record</code>, commercial/current-state summaries; trust recompute required</td>
+      </tr>
+      <tr>
+        <td>Entity neighborhood</td>
+        <td>Read-model snapshot</td>
+        <td><code>services::entity_neighborhood</code>; existing <code>meeting_entities</code>, <code>meeting_attendees</code>, <code>entity_people</code>, <code>person_relationships</code>, actions, captures, transcripts, email threads, content links, and account/project hierarchy</td>
+        <td><code>relationships</code>, touchpoint inclusion reasons; no durable claim unless an assessment is produced</td>
+      </tr>
+      <tr>
+        <td>Participation and attendance</td>
+        <td>Read-model evidence plus optional assessment claims</td>
+        <td><code>services::participation</code>; normalized attendees plus legacy attendee payload fallback</td>
+        <td><code>relationships.participants</code>; counts/recency as evidence, influence as caveated assessment</td>
+      </tr>
+      <tr>
+        <td>Work, actions, and open loops</td>
+        <td>Mixed: deterministic work rows plus durable claim writers for interpreted risk/priority</td>
+        <td><code>services::work_evidence</code>; actions, commitments, corrections, captured work</td>
+        <td><code>open_loops</code>, <code>record</code>, <code>priorities</code>; claim-backed assessments recompute trust</td>
+      </tr>
+      <tr>
+        <td>Communication threads and content</td>
+        <td>Read-model summaries; durable claims only for produced assertions</td>
+        <td><code>services::communications</code>; email threads, transcripts, captures, linked content</td>
+        <td><code>threads</code>, <code>touchpoints</code>, provenance refs, prompt-injection caveats</td>
+      </tr>
+      <tr>
+        <td>Metadata proposals and conflicts</td>
+        <td>Durable proposal/conflict records with claim linkage where assertive</td>
+        <td><code>services::metadata_proposals</code>; source facts, corrections, contradictions</td>
+        <td><code>metadata_proposals</code>, section caveats, source conflict language</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="plans-section" aria-labelledby="trust-sequencing">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Trust sequencing</p>
+    <h2 id="trust-sequencing" class="plans-section-title">Durable producers name the recompute trigger before code starts.</h2>
+    <p class="plans-section-lede">
+      W0 must turn this into per-issue acceptance criteria. The existing <code>services::trust_recompute::recompute_claim_trust_for_subject</code>
+      path is the default; a new trigger is allowed only when the W0 packet proves the existing path cannot cover the producer.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Producer class</th>
+        <th>Recompute trigger</th>
+        <th>Invalidation / failure behavior</th>
+        <th>Required proof</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Structured entity facts</td>
+        <td>After claim commit or backfill chunk, call <code>recompute_claim_trust_for_subject</code> before projecting to MCP/WP.</td>
+        <td>Emit <code>ClaimTrustChanged</code> when score changes; failed recompute records a pipeline failure and renders the section as <code>needs_verification</code> with a caveat.</td>
+        <td><code>entity_fact_write_recomputes_before_projection</code></td>
+      </tr>
+      <tr>
+        <td>Participation assessment claims</td>
+        <td>Counts remain read-model evidence; any influence/relationship assessment claim recomputes trust immediately after write.</td>
+        <td>Unscored assessment is not eligible for top-three influence prose; MCP returns participation evidence plus an unsupported-influence caveat.</td>
+        <td><code>participation_assessment_requires_scored_claim_or_caveat</code></td>
+      </tr>
+      <tr>
+        <td>Work/risk/priority claims</td>
+        <td>Commitment, risk, and priority claim writers recompute trust in the same service transaction boundary or mark the claim pending recompute.</td>
+        <td>Pending recompute invalidates derived priority sections and projects <code>use_with_caution</code> until trust is current.</td>
+        <td><code>work_claim_write_updates_priority_caveats</code></td>
+      </tr>
+      <tr>
+        <td>Thread/content summaries</td>
+        <td>Read-model summaries do not score. Any durable summary claim recomputes after sanitizer/provenance attribution succeeds.</td>
+        <td>Prompt-injection sanitizer failure drops the dynamic text, keeps source refs when renderable, and emits a section caveat.</td>
+        <td><code>thread_summary_poisoned_text_does_not_enter_mcp_payload</code></td>
+      </tr>
+      <tr>
+        <td>Metadata proposals/conflicts</td>
+        <td>Proposal/conflict claim or record writes recompute trust after source refs and field attribution are attached.</td>
+        <td>Missing source refs fail closed: proposal remains hidden from MCP until provenance is complete.</td>
+        <td><code>metadata_proposal_requires_source_refs_for_projection</code></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="plans-section" aria-labelledby="w2-eval-contract">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">W2 eval contract</p>
+    <h2 id="w2-eval-contract" class="plans-section-title">Claude Desktop comparison is a concrete acceptance test.</h2>
+    <p class="plans-section-lede">
+      W2 is done when a source-safe fixture proves that Claude Desktop can ask DailyOS for an executive briefing and receive
+      assessed, provenance-aware evidence that a broad-corpus answer does not have by itself.
+    </p>
+  </header>
+
+  <ul class="plans-related">
+    <li><strong>Fixture prompt:</strong> "Please prepare an executive briefing for the Example account. It should include an executive summary/overview of the account and its commercial status with us, current risks and wins and the top three stakeholders by meeting attendance and a two to three line analysis of their influence on the account. Please also include two to three top priorities for this account."</li>
+    <li><strong>Fixture subject:</strong> synthetic account with linked people, projects, meetings, actions, source refs, mixed freshness, and at least one caveated/low-trust item. Production subjects are tested only by an approved local run and are not committed to docs, logs, fixtures, or screenshots.</li>
+    <li><strong>Expected tool behavior:</strong> Claude Desktop selects the DailyOS MCP tool for personal working context; <code>dailyos.read.account_status</code> resolves the subject, uses the shared runtime projection, and returns a payload under 64 KiB unless truncation metadata is present.</li>
+    <li><strong>Tool metadata:</strong> the MCP v2 tool description, input schema descriptions, result description, and host guidance must tell Claude that DailyOS returns assessed working-state evidence with provenance, not a raw search index. It must state when to call DailyOS, when not to call it, and how to interpret trust bands, freshness, caveats, and source refs.</li>
+    <li><strong>Host-selection fixtures:</strong> positive fixture selects DailyOS for personal working-state evidence. Negative fixture avoids DailyOS for broad-corpus, web, or enterprise-search questions that should go to Glean/search instead.</li>
+    <li><strong>Required test names:</strong> <code>account_status_exec_briefing_fixture_uses_runtime_projection</code>, <code>account_status_subject_resolution_edges</code>, <code>account_status_host_selection_positive_negative</code>, <code>entity_neighborhood_snapshot_covers_account_project_person_meeting</code>, <code>mcp_projection_redacts_non_renderable_fields</code>, and <code>mcp_projection_blocks_prompt_injection_text</code>.</li>
+    <li><strong>Negative render fixtures:</strong> confidential text, user-only notes, paraphrased private text, attendee names or emails, owner labels, source labels, provenance refs, instruction-like external text, invisible Unicode, poisoned prior intelligence, and hostile thread/calendar text must each prove blocked fields are omitted, sanitized, or replaced with a render-policy caveat.</li>
+    <li><strong>Comparison rubric:</strong> pass requires tool selected for the DailyOS-appropriate prompt, all required briefing sections present, no raw DB/schema request, at least five provenance-backed claims or evidence rows, stakeholder candidates sourced from participation, stale/low-trust sections hedged, no prompt-injection instruction carried into the host answer, and broad-corpus answer lacks DailyOS-only working-state evidence. Anything below all required sections or any raw-claim-id/DB-row answer fails W2.</li>
+    <li><strong>Failure examples:</strong> returns only claim ids or hashes; omits touchpoints/record/relationships; invents influence without evidence; treats stale or low-trust sections as current; asks the host model to inspect raw DB rows; leaks fields blocked by render policy.</li>
+  </ul>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>MCP field</th>
+        <th>W2 response contract</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>schemaVersion</code>, <code>toolName</code>, <code>status</code></td>
+        <td>Every response declares the MCP projection schema, exact tool name, and one of <code>ok</code>, <code>clarification_required</code>, <code>not_found</code>, <code>unavailable</code>, or <code>error</code>.</td>
+      </tr>
+      <tr>
+        <td><code>invocationId</code>, <code>provenanceHandle</code></td>
+        <td>Returned when available so authorized follow-up provenance inspection can fetch detail without embedding raw provenance trees in the host payload.</td>
+      </tr>
+      <tr>
+        <td><code>truncation</code>, <code>sectionStates</code></td>
+        <td>Payload includes truncation metadata, omitted-section reasons, and per-section state so Claude can avoid treating missing data as negative evidence.</td>
+      </tr>
+      <tr>
+        <td><code>subject</code></td>
+        <td>Resolved subject ref, display label when renderable, kind, match confidence, and resolver caveats.</td>
+      </tr>
+      <tr>
+        <td><code>assessment.facts</code></td>
+        <td>Human-readable claim text, trust band, freshness, source refs, and field attribution. No ids-only rendering.</td>
+      </tr>
+      <tr>
+        <td><code>assessment.touchpoints</code></td>
+        <td>Recent touchpoint summaries with renderable labels, dates, evidence refs, and stale/missing-source caveats.</td>
+      </tr>
+      <tr>
+        <td><code>assessment.recordEntries</code></td>
+        <td>Timeline-ready record entries from claims and deterministic evidence, with section state and provenance refs.</td>
+      </tr>
+      <tr>
+        <td><code>assessment.relationships.participants</code></td>
+        <td>Top participant candidates with subject refs, meeting/touchpoint counts, last seen date, evidence refs, and caveats for partial attendance normalization.</td>
+      </tr>
+      <tr>
+        <td><code>assessment.priorities</code></td>
+        <td>Two or three priorities only when supported by claims/work evidence; otherwise an explicit unsupported or use-with-caution caveat.</td>
+      </tr>
+      <tr>
+        <td><code>assessment.caveats</code></td>
+        <td>Section-level caveats for stale data, low-trust claims, missing stakeholder evidence, partial normalization, unsupported influence, and redacted fields.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="plans-section" aria-labelledby="subject-resolution">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Subject resolution</p>
+    <h2 id="subject-resolution" class="plans-section-title">The host model gets clear success and failure shapes.</h2>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Input case</th>
+        <th>Required behavior</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Exact id or slug</td>
+        <td>Return <code>status: ok</code>, <code>resolution.kind: exact</code>, matched subject ref, match basis, and confidence; continue without clarification.</td>
+      </tr>
+      <tr>
+        <td>Exact renderable name</td>
+        <td>Return <code>status: ok</code>, <code>resolution.kind: name</code> when one active subject matches; include renderable display label, match basis, and confidence.</td>
+      </tr>
+      <tr>
+        <td>Ambiguous match</td>
+        <td>Return <code>status: clarification_required</code>, <code>resolution.kind: ambiguous</code>, safe <code>candidates[]</code> with subject refs/display labels only when renderable, <code>retryGuidance</code>, and caveats. No raw row dumps.</td>
+      </tr>
+      <tr>
+        <td>No match</td>
+        <td>Return <code>status: not_found</code>, <code>resolution.kind: none</code>, <code>retryGuidance</code>, and no broad schema probing.</td>
+      </tr>
+      <tr>
+        <td>Inactive, hidden, or blocked by render policy</td>
+        <td>Return <code>status: unavailable</code>, <code>resolution.kind: blocked</code>, redacted/empty candidates, and caveats; do not leak blocked identity or source details.</td>
+      </tr>
+    </tbody>
+  </table>
 </section>
 
 <section class="plans-section" aria-labelledby="reviewer-matrix">
@@ -203,21 +491,21 @@
     <article class="suite-card" data-suite="s">
       <span class="suite-letter">S</span>
       <h3 class="suite-name">Security</h3>
-      <p class="suite-prose">Verify source labels, subject refs, provenance, sensitivity render policy, MCP actor scopes, and no customer-specific fixture leakage.</p>
+      <p class="suite-prose">Verify source labels, subject refs, provenance, sensitivity render policy, MCP actor scopes, prompt-injection fixtures, production-data protocol, and no customer-specific fixture leakage.</p>
       <p class="suite-owner"><span class="suite-owner-label">Owner</span> <code>security-auditor</code></p>
       <p class="suite-pass-rule"><span class="suite-pass-label">Pass</span> zero Critical/High</p>
     </article>
     <article class="suite-card" data-suite="p">
       <span class="suite-letter">P</span>
       <h3 class="suite-name">Performance</h3>
-      <p class="suite-prose">Measure neighborhood reads, participation summaries, MCP payload size, and backfill runtime against existing claim and touchpoint baselines.</p>
+      <p class="suite-prose">Measure neighborhood reads, participation summaries, MCP payload size, and backfill runtime against existing claim and touchpoint baselines. Default caps: depth 2, per edge type 50, total edges 250 before truncation, MCP host payload 64 KiB before pagination/truncation.</p>
       <p class="suite-owner"><span class="suite-owner-label">Owner</span> <code>performance-engineer</code></p>
       <p class="suite-pass-rule"><span class="suite-pass-label">Pass</span> no unbounded graph walks or payload blowups</p>
     </article>
     <article class="suite-card" data-suite="e">
       <span class="suite-letter">E</span>
       <h3 class="suite-name">Edge cases</h3>
-      <p class="suite-prose">Cover missing source dates, duplicate attendees, internal participants, stale meetings, orphan actions, conflicting source refs, and non-account subjects.</p>
+      <p class="suite-prose">Cover missing source dates, duplicate attendees, internal participants, stale meetings, orphan actions, conflicting source refs, ambiguous subjects, inactive subjects, partial attendance normalization, and non-account subjects.</p>
       <p class="suite-owner"><span class="suite-owner-label">Owner</span> <code>qa-expert</code></p>
       <p class="suite-pass-rule"><span class="suite-pass-label">Pass</span> fixture bundles and property tests green</p>
     </article>
@@ -233,11 +521,13 @@
     </p>
   </header>
   <ul class="plans-related">
-    <li>`get_entity_intelligence` returns claim-backed facts, open loops, touchpoints, participation evidence, threads, metadata proposals, health story, record entries, section caveats, trust, and provenance when supporting evidence exists.</li>
-    <li>MCP and WordPress consume abilities/runtime output, not parallel schema adapters.</li>
+    <li><code>get_entity_intelligence</code> returns claim-backed facts, open loops, touchpoints, relationships/participation evidence, threads, metadata proposals, health story, record entries, section caveats, trust, and provenance when supporting evidence exists.</li>
+    <li>MCP and WordPress consume abilities/runtime output, not parallel schema adapters or direct DB joins.</li>
     <li>The same producer/read-model shape works for account, project, person, and meeting fixtures.</li>
-    <li>The host-model comparison prompt can produce a useful executive briefing with commercial status, risks, wins, stakeholder candidates, influence analysis, and priorities.</li>
+    <li>The host-model comparison prompt can produce a useful executive briefing with commercial status, risks, wins, stakeholder candidates, caveated influence analysis, priorities, trust/freshness language, and source refs.</li>
     <li>Trust recomputation and section caveats prevent unsupported assertions from rendering as equally certain as source-backed facts.</li>
+    <li>Every durable producer has same-wave trust recomputation; W4 audits and refines trust behavior rather than becoming the first trust gate.</li>
+    <li>Source-label cleanup is service-owned, dry-run first, known-placeholder allowlisted, chunked, audited, reversible, and behind an explicit user-approved mutation gate before touching encrypted production rows. Replacement labels derive only from typed source refs; ambiguous rows fail closed with pre/post counts and partial-failure remediation.</li>
     <li>All gates pass: <code>cargo clippy -- -D warnings</code>, <code>cargo test</code>, <code>pnpm tsc --noEmit</code>, L2 unanimous, L3 S/P/E, and L5 drift check.</li>
   </ul>
 </section>

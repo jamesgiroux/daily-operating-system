@@ -7,6 +7,7 @@ Audit whether the current `get_entity_intelligence` runtime is receiving the ent
 This audit is intentionally entity-general. Accounts are the visible failing surface today, but the design target is a runtime that works for accounts, people, projects, meetings, and future entity kinds without adding one surface-specific producer per entity type.
 
 Wave plan: `.docs/plans/abilities-runtime-producer-remediation-waves.html`.
+L0 review artifact: `.docs/plans/abilities-runtime-producer-remediation-l0-cycle1.md`.
 
 ## K-in
 
