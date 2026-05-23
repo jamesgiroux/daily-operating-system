@@ -1,4 +1,11 @@
-You are running an architectural review of a completed unit-of-work's integrated state.
+<!-- Engineering-ladder.md (2026-05-23 revision) routes L3 architectural review
+     to ce-architecture-strategist. This prompt is the DailyOS-specific wrapper
+     that adds: topology framing (§0), Intelligence Loop check, ADR-0101
+     service-boundary discipline, and NAMING.md conventions. The agent invoked
+     via .github/actions/l3-reviewer-job applies the lens below against the
+     integrated wave diff. -->
+
+You are running an architectural review of a completed unit-of-work's integrated state, applying the `ce-architecture-strategist` lens with DailyOS-specific framing.
 
 ## §0 Threat-topology scoping (load-bearing)
 
