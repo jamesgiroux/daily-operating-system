@@ -3,8 +3,8 @@ use crate::{minimal_block_kit_fixture, BlockIntegrationFixture};
 pub fn meeting_attendees_section_fixture() -> BlockIntegrationFixture {
     minimal_block_kit_fixture(
         "meeting-attendees-section",
-        "span",
-        "dailyos-empty-chip",
+        "section",
+        "wp-block-dailyos-meeting-attendees-section is-empty",
         &[("data-empty-reason", "missing_meeting_context")],
         "empty-state",
         "No meeting context.",
