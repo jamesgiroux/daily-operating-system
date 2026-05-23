@@ -22,6 +22,8 @@ use crate::types::{CalendarEvent, GoogleAuthStatus, MeetingType};
 use crate::workflow::deliver::make_meeting_id;
 use crate::workflow::deliver::{meeting_primary_id, write_json};
 
+const CALENDAR_ATTENDANCE_BATCH_EVENT_CHUNK: usize = 10;
+
 /// Run the Google OAuth flow via native Rust.
 ///
 /// Opens the user's browser, captures the redirect, saves the token.
@@ -43,7 +45,7 @@ pub fn disconnect() -> Result<(), String> {
 ///
 /// Fetches events for today, classifies them using the 10-rule algorithm,
 /// and converts to CalendarEvent for AppState storage.
-async fn poll_calendar(state: &AppState) -> Result<Vec<CalendarEvent>, PollError> {
+async fn poll_calendar(state: &Arc<AppState>) -> Result<Vec<CalendarEvent>, PollError> {
     let access_token = google_api::get_valid_access_token()
         .await
         .map_err(|e| match e {
@@ -73,10 +75,10 @@ async fn poll_calendar(state: &AppState) -> Result<Vec<CalendarEvent>, PollError
         .map(|c| c.resolved_user_domains())
         .unwrap_or_default();
 
-    let entity_hints = build_entity_hints_from_state(state);
+    let entity_hints = build_entity_hints_from_state(state).await;
 
     // Save attendee display names for hygiene name resolution
-    save_attendee_display_names(&raw_events, state);
+    save_attendee_display_names(&raw_events, state).await;
 
     // Classify and convert (: multi-domain, entity-generic)
     let events: Vec<CalendarEvent> = raw_events
@@ -92,48 +94,49 @@ async fn poll_calendar(state: &AppState) -> Result<Vec<CalendarEvent>, PollError
 }
 
 /// Build entity hints from DB for meeting classification.
-fn build_entity_hints_from_state(_state: &AppState) -> Vec<google_api::classify::EntityHint> {
-    if let Ok(db) = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-    {
-        return crate::helpers::build_entity_hints(&db);
-    }
-    Vec::new()
+async fn build_entity_hints_from_state(
+    state: &Arc<AppState>,
+) -> Vec<google_api::classify::EntityHint> {
+    state
+        .db_read(|db| Ok(crate::helpers::build_entity_hints(db)))
+        .await
+        .map_err(String::from)
+        .unwrap_or_default()
 }
 
 /// Save attendee display names from raw Google Calendar events into the DB
 /// for hygiene name resolution. Upserts into `attendee_display_names`.
-fn save_attendee_display_names(
+async fn save_attendee_display_names(
     raw_events: &[google_api::calendar::GoogleCalendarEvent],
-    _state: &AppState,
+    state: &Arc<AppState>,
 ) {
-    let db = match crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())) {
-        Ok(d) => d,
-        Err(_) => return,
-    };
-
-    let mut saved = 0;
+    let mut names = Vec::new();
     for event in raw_events {
         for (email, name) in &event.attendee_names {
             // Only store names that look like real display names (contain a space, no @)
             if !name.contains(' ') || name.contains('@') {
                 continue;
             }
-            if db
-                .conn_ref()
-                .execute(
-                    "INSERT INTO attendee_display_names (email, display_name, last_seen)
-                     VALUES (?1, ?2, datetime('now'))
-                     ON CONFLICT(email) DO UPDATE SET
-                         display_name = excluded.display_name,
-                         last_seen = excluded.last_seen",
-                    rusqlite::params![email, name],
-                )
-                .is_ok()
-            {
-                saved += 1;
-            }
+            names.push((email.to_lowercase(), name.clone()));
         }
     }
+
+    names.sort();
+    names.dedup();
+    if names.is_empty() {
+        return;
+    }
+
+    let state_for_ctx = Arc::clone(state);
+    let saved = state
+        .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::people::record_attendee_display_names(&ctx, db, &names)
+        })
+        .await
+        .map_err(String::from)
+        .unwrap_or(0);
+
     if saved > 0 {
         log::debug!("Calendar sync: saved {} attendee display names", saved);
     }
@@ -205,7 +208,7 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
         let poll_interval = Duration::from_secs(get_poll_interval(&state) * 60);
         if next_due_at.is_none() {
             let remaining = remaining_until_next_poll(
-                load_last_sync_success("google_calendar"),
+                load_last_sync_success(&state, "google_calendar").await,
                 poll_interval,
                 Utc::now(),
             );
@@ -241,7 +244,7 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                     );
                 }
                 // Check for new prep-eligible meetings before storing
-                let new_preps = generate_preps_for_new_meetings(&events, &state, &workspace);
+                let new_preps = generate_preps_for_new_meetings(&events, &state, &workspace).await;
                 if new_preps > 0 {
                     log::info!("Calendar poll: generated {} new preps", new_preps);
                 }
@@ -266,8 +269,7 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                         .await
                     {
                         log::debug!(
-                            "entity_linking: evaluate_meeting '{}' ({}): {}",
-                            event.title,
+                            "entity_linking: evaluate_meeting calendar_event_id={} failed: {}",
                             event.id,
                             e,
                         );
@@ -340,7 +342,7 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                 }
 
                 // Detect cancelled meetings: today's DB meetings not in current poll (ADR-0081)
-                detect_cancelled_meetings(&events, &state);
+                detect_cancelled_meetings(&events, &state).await;
 
                 {
                     let mut guard = state.calendar.events.write();
@@ -349,33 +351,27 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
 
                 // Pre-meeting intelligence refresh (ADR-0058)
                 let cfg_for_hygiene = state.config.read().clone();
-                if let Ok(db) =
-                    crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-                {
-                    let refreshed = crate::hygiene::check_upcoming_meeting_readiness(
-                        &db,
-                        &state.intel_queue,
-                        cfg_for_hygiene.as_ref(),
+                let intel_queue = state.intel_queue.clone();
+                let refreshed = state
+                    .db_read(move |db| {
+                        Ok(crate::hygiene::check_upcoming_meeting_readiness(
+                            db,
+                            &intel_queue,
+                            cfg_for_hygiene.as_ref(),
+                        ))
+                    })
+                    .await
+                    .map_err(String::from)
+                    .unwrap_or_default();
+                if !refreshed.is_empty() {
+                    log::info!(
+                        "Calendar poll: enqueued {} pre-meeting intelligence refreshes",
+                        refreshed.len()
                     );
-                    if !refreshed.is_empty() {
-                        log::info!(
-                            "Calendar poll: enqueued {} pre-meeting intelligence refreshes",
-                            refreshed.len()
-                        );
-                    }
                 }
 
                 // Record successful calendar sync
-                if let Ok(db) =
-                    crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-                {
-                    #[allow(
-                        clippy::let_underscore_must_use,
-                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-                    )]
-                    let _ =
-                        crate::connectivity::record_sync_success(db.conn_ref(), "google_calendar");
-                }
+                record_calendar_sync_success(&state).await;
 
                 #[allow(
                     clippy::let_underscore_must_use,
@@ -401,19 +397,7 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
             Err(PollError::AuthExpired) => {
                 log::warn!("Calendar poll: token expired");
                 // Record calendar sync failure
-                if let Ok(db) =
-                    crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-                {
-                    #[allow(
-                        clippy::let_underscore_must_use,
-                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-                    )]
-                    let _ = crate::connectivity::record_sync_failure(
-                        db.conn_ref(),
-                        "google_calendar",
-                        "Auth token expired",
-                    );
-                }
+                record_calendar_sync_failure(&state, "Auth token expired").await;
                 {
                     let mut guard = state.calendar.google_auth.lock();
                     *guard = GoogleAuthStatus::TokenExpired;
@@ -436,19 +420,7 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
             }
             Err(PollError::ApiError(ref e)) => {
                 // Record calendar sync failure
-                if let Ok(db) =
-                    crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-                {
-                    #[allow(
-                        clippy::let_underscore_must_use,
-                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-                    )]
-                    let _ = crate::connectivity::record_sync_failure(
-                        db.conn_ref(),
-                        "google_calendar",
-                        e,
-                    );
-                }
+                record_calendar_sync_failure(&state, e).await;
                 log::warn!("Calendar poll error: {}", e);
             }
         }
@@ -472,21 +444,25 @@ fn get_poll_interval(state: &AppState) -> u64 {
         .unwrap_or(5)
 }
 
-fn load_last_sync_success(source: &str) -> Option<DateTime<Utc>> {
-    let db =
-        crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())).ok()?;
-    let raw: Option<String> = db
-        .conn_ref()
-        .query_row(
-            "SELECT last_success_at FROM sync_metadata WHERE source = ?1",
-            rusqlite::params![source],
-            |row| row.get(0),
-        )
-        .optional()
+async fn load_last_sync_success(state: &AppState, source: &'static str) -> Option<DateTime<Utc>> {
+    let raw = state
+        .db_read(move |db| {
+            db.conn_ref()
+                .query_row(
+                    "SELECT last_success_at FROM sync_metadata WHERE source = ?1",
+                    rusqlite::params![source],
+                    |row| row.get::<_, Option<String>>(0),
+                )
+                .optional()
+                .map(|value| value.flatten())
+                .map_err(|e| e.to_string())
+        })
+        .await
+        .map_err(String::from)
         .ok()
         .flatten()?;
 
-    raw.and_then(|value| value.parse::<DateTime<Utc>>().ok())
+    raw.parse::<DateTime<Utc>>().ok()
 }
 
 fn remaining_until_next_poll(
@@ -520,9 +496,9 @@ const PREP_ELIGIBLE_TYPES: &[MeetingType] = &[
 /// Called after each calendar poll. Checks if prep-eligible meetings (customer, qbr, partnership)
 /// have a prep JSON in `_today/data/preps/`. If not, generates a lightweight prep from
 /// account data in SQLite.
-fn generate_preps_for_new_meetings(
+async fn generate_preps_for_new_meetings(
     events: &[CalendarEvent],
-    _state: &AppState,
+    state: &AppState,
     workspace: &Path,
 ) -> usize {
     let preps_dir = workspace.join("_today").join("data").join("preps");
@@ -577,30 +553,48 @@ fn generate_preps_for_new_meetings(
                 obj.insert("account".to_string(), serde_json::json!(account));
             }
 
-            // Try to pull account data from SQLite
-            if let Ok(db) =
-                crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-            {
-                enrich_prep_from_db(&mut prep, account, &db);
-            }
+            enrich_prep_from_state(&mut prep, account.clone(), state).await;
         }
 
         match write_json(&prep_path, &prep) {
             Ok(()) => {
                 log::info!(
-                    "Generated reactive prep for '{}' ({})",
-                    event.title,
+                    "Generated reactive prep for calendar_event_id={} meeting_id={}",
+                    event.id,
                     meeting_id
                 );
                 generated += 1;
             }
             Err(e) => {
-                log::warn!("Failed to write reactive prep for '{}': {}", event.title, e);
+                log::warn!(
+                    "Failed to write reactive prep for calendar_event_id={}: {}",
+                    event.id,
+                    e
+                );
             }
         }
     }
 
     generated
+}
+
+async fn enrich_prep_from_state(
+    prep: &mut serde_json::Value,
+    account_id: String,
+    state: &AppState,
+) {
+    if let Ok(Some(enrichment)) = state
+        .db_read(move |db| Ok(build_prep_enrichment_from_db(&account_id, db)))
+        .await
+        .map_err(String::from)
+    {
+        apply_prep_enrichment(prep, enrichment);
+    }
+}
+
+struct PrepDbEnrichment {
+    quick_context: serde_json::Map<String, serde_json::Value>,
+    open_items: Vec<serde_json::Value>,
 }
 
 /// Check if any existing prep file already covers this calendar event ID.
@@ -634,36 +628,41 @@ fn has_existing_prep_for_event(preps_dir: &Path, event_id: &str) -> bool {
 
 /// Enrich a prep JSON with account data from SQLite (quick context + open actions).
 fn enrich_prep_from_db(prep: &mut serde_json::Value, account_id: &str, db: &crate::db::ActionDb) {
+    if let Some(enrichment) = build_prep_enrichment_from_db(account_id, db) {
+        apply_prep_enrichment(prep, enrichment);
+    }
+}
+
+fn build_prep_enrichment_from_db(
+    account_id: &str,
+    db: &crate::db::ActionDb,
+) -> Option<PrepDbEnrichment> {
     // Quick context from account data
+    let mut quick_context = serde_json::Map::new();
     if let Ok(Some(account)) = db.get_account(account_id) {
-        let mut qc = serde_json::Map::new();
         if let Some(ref lifecycle) = account.lifecycle {
-            qc.insert("Lifecycle".to_string(), serde_json::json!(lifecycle));
+            quick_context.insert("Lifecycle".to_string(), serde_json::json!(lifecycle));
         }
         if let Some(arr) = account.arr {
-            qc.insert(
+            quick_context.insert(
                 "ARR".to_string(),
                 serde_json::json!(format!("${:.0}k", arr / 1000.0)),
             );
         }
         if let Some(ref health) = account.health {
-            qc.insert("Health".to_string(), serde_json::json!(health));
+            quick_context.insert("Health".to_string(), serde_json::json!(health));
         }
         if let Some(ref contract_end) = account.contract_end {
-            qc.insert("Renewal".to_string(), serde_json::json!(contract_end));
-        }
-        if !qc.is_empty() {
-            if let Some(obj) = prep.as_object_mut() {
-                obj.insert("quickContext".to_string(), serde_json::Value::Object(qc));
-            }
+            quick_context.insert("Renewal".to_string(), serde_json::json!(contract_end));
         }
     }
 
     // Open actions for this account
+    let mut open_items = Vec::new();
     if let Ok(actions) = db.get_account_actions(account_id) {
         if !actions.is_empty() {
             let today = Utc::now().format("%Y-%m-%d").to_string();
-            let items: Vec<serde_json::Value> = actions
+            open_items = actions
                 .iter()
                 .take(5)
                 .map(|a| {
@@ -675,11 +674,32 @@ fn enrich_prep_from_db(prep: &mut serde_json::Value, account_id: &str, db: &crat
                     })
                 })
                 .collect();
-            if !items.is_empty() {
-                if let Some(obj) = prep.as_object_mut() {
-                    obj.insert("openItems".to_string(), serde_json::json!(items));
-                }
-            }
+        }
+    }
+
+    if quick_context.is_empty() && open_items.is_empty() {
+        None
+    } else {
+        Some(PrepDbEnrichment {
+            quick_context,
+            open_items,
+        })
+    }
+}
+
+fn apply_prep_enrichment(prep: &mut serde_json::Value, enrichment: PrepDbEnrichment) {
+    if let Some(obj) = prep.as_object_mut() {
+        if !enrichment.quick_context.is_empty() {
+            obj.insert(
+                "quickContext".to_string(),
+                serde_json::Value::Object(enrichment.quick_context),
+            );
+        }
+        if !enrichment.open_items.is_empty() {
+            obj.insert(
+                "openItems".to_string(),
+                serde_json::json!(enrichment.open_items),
+            );
         }
     }
 }
@@ -791,46 +811,61 @@ async fn populate_people_from_events(
     let state_for_ctx = Arc::clone(state);
     let self_email_for_write = self_email.clone();
     let user_domains_for_write = user_domains.clone();
-    let outcome = match state
-        .db_write(move |db| {
-            let ctx = state_for_ctx.live_service_context();
-            crate::services::people::record_calendar_attendance_batch(
-                &ctx,
-                db,
-                &engine,
-                &batch_events,
-                self_email_for_write.as_deref(),
-                &user_domains_for_write,
-            )
-        })
-        .await
-    {
-        Ok(outcome) => outcome,
-        Err(error) => {
-            log::warn!("calendar_attendance_batch failed: {}", error);
-            return empty_result;
-        }
-    };
+    let mut outcome = crate::services::people::CalendarAttendanceBatchOutcome::default();
+    for chunk in batch_events.chunks(CALENDAR_ATTENDANCE_BATCH_EVENT_CHUNK) {
+        let chunk_events = chunk.to_vec();
+        let engine = Arc::clone(&engine);
+        let state_for_ctx = Arc::clone(&state_for_ctx);
+        let self_email_for_write = self_email_for_write.clone();
+        let user_domains_for_write = user_domains_for_write.clone();
+        let chunk_outcome = match state
+            .db_write(move |db| {
+                let ctx = state_for_ctx.live_service_context();
+                crate::services::people::record_calendar_attendance_batch(
+                    &ctx,
+                    db,
+                    &engine,
+                    &chunk_events,
+                    self_email_for_write.as_deref(),
+                    &user_domains_for_write,
+                )
+            })
+            .await
+        {
+            Ok(chunk_outcome) => chunk_outcome,
+            Err(error) => {
+                log::warn!("calendar_attendance_batch failed: {}", error);
+                break;
+            }
+        };
+        outcome.merge(chunk_outcome);
+    }
 
-    for meeting_id in &outcome.prep_invalidation_meetings {
+    if !outcome.prep_invalidation_meetings.is_empty() {
         log::info!(
-            "Calendar sync: entity reclassification invalidating prep; meeting_id={}",
-            meeting_id
+            "Calendar sync: entity reclassification invalidating {} prep records",
+            outcome.prep_invalidation_meetings.len()
         );
+    }
+    for meeting_id in &outcome.prep_invalidation_meetings {
         let mut queue = state.signals.prep_invalidation_queue.lock();
         queue.push(meeting_id.clone());
     }
 
+    let mut artifact_failures = 0usize;
     for person in &outcome.people_to_write {
-        if let Err(error) =
-            write_person_artifacts_after_calendar_batch(state, workspace, person).await
+        if write_person_artifacts_after_calendar_batch(state, workspace, person)
+            .await
+            .is_err()
         {
-            log::warn!(
-                "calendar_attendance_batch artifact write failed; person_id={}: {}",
-                person.id,
-                error
-            );
+            artifact_failures += 1;
         }
+    }
+    if artifact_failures > 0 {
+        log::warn!(
+            "calendar_attendance_batch artifact writes failed; count={}",
+            artifact_failures
+        );
     }
 
     if outcome.new_people_count > 0 {
@@ -859,94 +894,78 @@ async fn write_person_artifacts_after_calendar_batch(
     workspace: &Path,
     person: &crate::db::DbPerson,
 ) -> Result<(), String> {
-    let person_for_json = person.clone();
-    let workspace_for_json = workspace.to_path_buf();
-    state
-        .db_read(move |db| people::write_person_json(&workspace_for_json, &person_for_json, db))
-        .await
-        .map_err(String::from)?;
-
-    let person_for_markdown = person.clone();
-    let workspace_for_markdown = workspace.to_path_buf();
-    state
+    let person_for_snapshot = person.clone();
+    let snapshot = state
         .db_read(move |db| {
-            people::write_person_markdown(&workspace_for_markdown, &person_for_markdown, db)
+            Ok(people::build_person_artifact_snapshot(
+                &person_for_snapshot,
+                db,
+            ))
         })
         .await
         .map_err(String::from)?;
 
-    Ok(())
+    people::write_person_artifacts_from_snapshot(workspace, &snapshot)
 }
 
 /// Detect meetings that were in the DB for today but disappeared from the calendar poll.
 ///
 /// These are likely cancelled meetings. Updates their intelligence_state to "archived".
-fn detect_cancelled_meetings(current_events: &[CalendarEvent], state: &AppState) {
+async fn detect_cancelled_meetings(current_events: &[CalendarEvent], state: &Arc<AppState>) {
     // Use local date — consistent with poll range (which also uses local date).
     let today = chrono::Local::now().date_naive();
     let range_start = today.to_string(); // "YYYY-MM-DD"
     let range_end = (today + chrono::Duration::days(8)).to_string();
 
-    let db = match crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())) {
-        Ok(d) => d,
-        Err(_) => return,
-    };
-
     // Build set of current calendar event IDs from this poll
-    let current_ids: std::collections::HashSet<&str> =
-        current_events.iter().map(|e| e.id.as_str()).collect();
-
-    // Query meetings in the polled range from DB that have a calendar_event_id
-    let mut stmt = match db.conn_ref().prepare(
-        "SELECT m.id, m.calendar_event_id FROM meetings m
-         LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
-         WHERE m.start_time >= ?1 AND m.start_time < ?2
-         AND m.calendar_event_id IS NOT NULL
-         AND (mt.intelligence_state IS NULL OR mt.intelligence_state != 'archived')",
-    ) {
-        Ok(s) => s,
-        Err(_) => return,
-    };
-
-    let cancelled: Vec<String> = stmt
-        .query_map(rusqlite::params![range_start, range_end], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    let current_ids: std::collections::HashSet<String> =
+        current_events.iter().map(|e| e.id.clone()).collect();
+    let state_for_ctx = Arc::clone(state);
+    let engine = Arc::clone(&state.signals.engine);
+    let archived = state
+        .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::meetings::record_cancelled_calendar_meetings(
+                &ctx,
+                db,
+                &engine,
+                &current_ids,
+                &range_start,
+                &range_end,
+            )
         })
-        .ok()
-        .into_iter()
-        .flatten()
-        .filter_map(|r| r.ok())
-        .filter(|(_id, cal_id)| !current_ids.contains(cal_id.as_str()))
-        .map(|(id, _)| id)
-        .collect();
-
-    for meeting_id in &cancelled {
-        if let Err(e) = db.update_intelligence_state(meeting_id, "archived", None, None) {
-            log::warn!(
-                "Failed to archive cancelled meeting '{}': {}",
-                meeting_id,
-                e
-            );
-        } else {
-            log::info!(
-                "Calendar poll: meeting '{}' cancelled, intelligence archived",
-                meeting_id
-            );
-        }
-        // Emit cancellation signal  with propagation
-        let ctx = state.live_service_context();
-        crate::services::signals::emit_and_propagate_or_log(
-            &ctx,
-            &db,
-            &state.signals.engine,
-            "meeting",
-            meeting_id,
-            "meeting_cancelled",
-            "calendar",
-            None,
-            0.9,
+        .await
+        .map_err(String::from)
+        .unwrap_or(0);
+    if archived > 0 {
+        log::info!(
+            "Calendar poll: archived {} cancelled meeting intelligence records",
+            archived
         );
     }
+}
+
+async fn record_calendar_sync_success(state: &AppState) {
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "best-effort freshness metadata must not fail the calendar poll"
+    )]
+    let _ = state
+        .db_write(|db| crate::connectivity::record_sync_success(db.conn_ref(), "google_calendar"))
+        .await;
+}
+
+async fn record_calendar_sync_failure(state: &AppState, error: &str) {
+    let error = error.to_string();
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "best-effort freshness metadata must not fail the calendar poll"
+    )]
+    let _ = state
+        .db_write(move |db| {
+            crate::connectivity::record_sync_failure(db.conn_ref(), "google_calendar", &error)
+        })
+        .await;
 }
 
 /// Get workspace path from config
@@ -1220,7 +1239,7 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
         let poll_interval = Duration::from_secs(get_email_poll_interval(&state) * 60);
         if next_due_at.is_none() {
             let remaining = remaining_until_next_poll(
-                load_last_sync_success("gmail"),
+                load_last_sync_success(&state, "gmail").await,
                 poll_interval,
                 Utc::now(),
             );

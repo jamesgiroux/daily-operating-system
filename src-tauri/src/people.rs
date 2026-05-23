@@ -9,12 +9,13 @@
 //!   External edit to JSON → detected by watcher or startup scan → syncs to SQLite
 //!   External edit to markdown → "externally modified" indicator (no auto-reconcile)
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
-use crate::db::{ActionDb, DbPerson};
+use crate::db::{ActionDb, DbMeeting, DbPerson, PersonSignals};
 use crate::util::{classify_relationship_multi, person_id_from_email};
 
 /// JSON schema for person.json files.
@@ -222,6 +223,200 @@ pub fn write_person_json(workspace: &Path, person: &DbPerson, db: &ActionDb) -> 
     crate::util::atomic_write_str(&path, &content).map_err(|e| format!("Write error: {}", e))?;
 
     Ok(())
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct PersonArtifactSnapshot {
+    person: DbPerson,
+    linked_entities: Vec<crate::entity::DbEntity>,
+    intelligence: Option<crate::intelligence::IntelligenceJson>,
+    recent_meetings: Vec<DbMeeting>,
+    meeting_account_names: HashMap<String, String>,
+    signals: Option<PersonSignals>,
+}
+
+pub(crate) fn build_person_artifact_snapshot(
+    person: &DbPerson,
+    db: &ActionDb,
+) -> PersonArtifactSnapshot {
+    let linked_entities = db.get_entities_for_person(&person.id).unwrap_or_default();
+    let intelligence = db.get_entity_intelligence(&person.id).ok().flatten();
+    let recent_meetings = db.get_person_meetings(&person.id, 10).unwrap_or_default();
+    let meeting_account_names = recent_meetings
+        .iter()
+        .filter_map(|meeting| {
+            let account_name = db
+                .get_meeting_entities(&meeting.id)
+                .ok()?
+                .into_iter()
+                .find(|entity| entity.entity_type == crate::entity::EntityType::Account)?
+                .name;
+            Some((meeting.id.clone(), account_name))
+        })
+        .collect();
+    let signals = db.get_person_signals(&person.id).ok();
+
+    PersonArtifactSnapshot {
+        person: person.clone(),
+        linked_entities,
+        intelligence,
+        recent_meetings,
+        meeting_account_names,
+        signals,
+    }
+}
+
+pub(crate) fn write_person_artifacts_from_snapshot(
+    workspace: &Path,
+    snapshot: &PersonArtifactSnapshot,
+) -> Result<(), String> {
+    write_person_json_from_snapshot(workspace, snapshot)?;
+    write_person_markdown_from_snapshot(workspace, snapshot)
+}
+
+fn write_person_json_from_snapshot(
+    workspace: &Path,
+    snapshot: &PersonArtifactSnapshot,
+) -> Result<(), String> {
+    let person = &snapshot.person;
+    let dir = person_dir(workspace, &person.name);
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create {}: {}", dir.display(), e))?;
+
+    let linked_entities = snapshot
+        .linked_entities
+        .iter()
+        .map(|entity| entity.id.clone())
+        .collect();
+
+    let json = PersonJson {
+        version: 1,
+        entity_type: "person".to_string(),
+        structured: PersonStructured {
+            email: person.email.clone(),
+            organization: person.organization.clone(),
+            role: person.role.clone(),
+            relationship: person.relationship.clone(),
+            linkedin_url: person.linkedin_url.clone(),
+            twitter_handle: person.twitter_handle.clone(),
+            phone: person.phone.clone(),
+            photo_url: person.photo_url.clone(),
+            bio: person.bio.clone(),
+            company_industry: person.company_industry.clone(),
+            company_size: person.company_size.clone(),
+            company_hq: person.company_hq.clone(),
+        },
+        notes: person.notes.clone(),
+        linked_entities,
+        custom_sections: Vec::new(),
+    };
+
+    let path = dir.join("person.json");
+    let content =
+        serde_json::to_string_pretty(&json).map_err(|e| format!("Serialize error: {}", e))?;
+    crate::util::atomic_write_str(&path, &content).map_err(|e| format!("Write error: {}", e))
+}
+
+fn write_person_markdown_from_snapshot(
+    workspace: &Path,
+    snapshot: &PersonArtifactSnapshot,
+) -> Result<(), String> {
+    let person = &snapshot.person;
+    let dir = person_dir(workspace, &person.name);
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create {}: {}", dir.display(), e))?;
+
+    let mut md = String::new();
+    md.push_str(&format!("# {}\n\n", person.name));
+    if let Some(ref org) = person.organization {
+        md.push_str(&format!("**Organization:** {}  \n", org));
+    }
+    if let Some(ref role) = person.role {
+        md.push_str(&format!("**Role:** {}  \n", role));
+    }
+    md.push_str(&format!("**Relationship:** {}  \n", person.relationship));
+    md.push_str(&format!("**Email:** {}  \n", person.email));
+    md.push('\n');
+
+    if let Some(ref notes) = person.notes {
+        if !notes.is_empty() {
+            md.push_str("## Notes\n\n");
+            md.push_str(notes);
+            md.push_str("\n\n");
+        }
+    }
+
+    if let Some(ref intel) = snapshot.intelligence {
+        let intel_md = crate::intelligence::format_intelligence_markdown(intel);
+        if !intel_md.is_empty() {
+            md.push_str(&intel_md);
+        }
+    }
+
+    md.push_str("<!-- auto-generated -->\n");
+    md.push_str("## Recent Meetings\n\n");
+    if snapshot.recent_meetings.is_empty() {
+        md.push_str("_No meetings recorded yet._\n\n");
+    } else {
+        for meeting in &snapshot.recent_meetings {
+            let account_part = snapshot
+                .meeting_account_names
+                .get(&meeting.id)
+                .map(|name| format!(" ({})", name))
+                .unwrap_or_default();
+            md.push_str(&format!(
+                "- **{}** — {}{}\n",
+                meeting
+                    .start_time
+                    .split('T')
+                    .next()
+                    .unwrap_or(&meeting.start_time),
+                meeting.title,
+                account_part,
+            ));
+        }
+        md.push('\n');
+    }
+
+    md.push_str("## Meeting Signals\n\n");
+    if let Some(ref signals) = snapshot.signals {
+        md.push_str(&format!(
+            "- **30-day frequency:** {} meetings\n",
+            signals.meeting_frequency_30d
+        ));
+        md.push_str(&format!(
+            "- **90-day frequency:** {} meetings\n",
+            signals.meeting_frequency_90d
+        ));
+        md.push_str(&format!("- **Temperature:** {}\n", signals.temperature));
+        md.push_str(&format!("- **Trend:** {}\n", signals.trend));
+        if let Some(ref last) = signals.last_meeting {
+            md.push_str(&format!(
+                "- **Last meeting:** {}\n",
+                last.split('T').next().unwrap_or(last)
+            ));
+        }
+        md.push('\n');
+    } else {
+        md.push_str("_No signal data available._\n\n");
+    }
+
+    md.push_str("## Linked Entities\n\n");
+    if snapshot.linked_entities.is_empty() {
+        md.push_str("_No linked accounts or projects._\n\n");
+    } else {
+        for entity in &snapshot.linked_entities {
+            md.push_str(&format!(
+                "- {} ({})\n",
+                entity.name,
+                entity.entity_type.as_str()
+            ));
+        }
+        md.push('\n');
+    }
+
+    let path = dir.join("person.md");
+    crate::util::atomic_write_str(&path, &md).map_err(|e| format!("Write error: {}", e))
 }
 
 /// Write `person.md` for a person (generated artifact).

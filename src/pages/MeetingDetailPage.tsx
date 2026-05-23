@@ -268,6 +268,18 @@ export default function MeetingDetailPage() {
       setLinkedEntities(intel.linkedEntities ?? []);
       setEntityHealthMap(intel.entityHealthMap ?? {});
       setIntelligenceQuality(intel.intelligenceQuality);
+      const hadNewSignals = Boolean(intel.intelligenceQuality?.hasNewSignals);
+      void invoke("mark_meeting_intelligence_viewed", { meetingId })
+        .then(() => {
+          if (hadNewSignals) {
+            setIntelligenceQuality((current) =>
+              current ? { ...current, hasNewSignals: false } : current,
+            );
+          }
+        })
+        .catch((error) => {
+          console.warn("Unable to mark meeting intelligence viewed", error);
+        });
       const formatRange = (startRaw?: string, endRaw?: string) => {
         if (!startRaw) return "";
         const start = parseDate(startRaw);

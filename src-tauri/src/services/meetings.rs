@@ -53,6 +53,89 @@ pub fn set_meeting_prep_context(
         .map_err(|e| e.to_string())
 }
 
+pub async fn mark_meeting_intelligence_viewed(
+    ctx: &ServiceContext<'_>,
+    state: &AppState,
+    meeting_id: &str,
+) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    let meeting_id = meeting_id.to_string();
+    state
+        .db_write(move |db| {
+            let Some(meeting) = db
+                .get_meeting_intelligence_row(&meeting_id)
+                .map_err(|e| e.to_string())?
+            else {
+                return Ok(());
+            };
+
+            db.mark_prep_reviewed(
+                &meeting.id,
+                meeting.calendar_event_id.as_deref(),
+                &meeting.title,
+            )
+            .map_err(|e| e.to_string())?;
+            db.clear_meeting_new_signals(&meeting.id)
+                .map_err(|e| e.to_string())?;
+            Ok(())
+        })
+        .await
+        .map_err(String::from)
+}
+
+pub(crate) fn record_cancelled_calendar_meetings(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    engine: &crate::signals::propagation::PropagationEngine,
+    current_calendar_event_ids: &HashSet<String>,
+    range_start: &str,
+    range_end: &str,
+) -> Result<usize, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    db.with_transaction(|tx| {
+        let mut stmt = tx
+            .conn_ref()
+            .prepare(
+                "SELECT m.id, m.calendar_event_id FROM meetings m
+                 LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
+                 WHERE m.start_time >= ?1 AND m.start_time < ?2
+                 AND m.calendar_event_id IS NOT NULL
+                 AND (mt.intelligence_state IS NULL OR mt.intelligence_state != 'archived')",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(rusqlite::params![range_start, range_end], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| e.to_string())?;
+        let mut cancelled = Vec::new();
+        for row in rows {
+            let (id, calendar_event_id) = row.map_err(|e| e.to_string())?;
+            if !current_calendar_event_ids.contains(&calendar_event_id) {
+                cancelled.push(id);
+            }
+        }
+
+        for meeting_id in &cancelled {
+            tx.update_intelligence_state(meeting_id, "archived", None, None)
+                .map_err(|e| e.to_string())?;
+            crate::services::signals::emit_and_propagate_or_log(
+                ctx,
+                tx,
+                engine,
+                "meeting",
+                meeting_id,
+                "meeting_cancelled",
+                "calendar",
+                None,
+                0.9,
+            );
+        }
+
+        Ok(cancelled.len())
+    })
+}
+
 pub fn update_capture_content(
     ctx: &ServiceContext<'_>,
     db: &ActionDb,
@@ -2509,7 +2592,7 @@ fn build_live_calendar_meeting_intelligence(
         is_past,
         is_current,
         is_frozen: false,
-        can_edit_user_layer: !is_past,
+        can_edit_user_layer: false,
         user_agenda: None,
         user_notes: None,
         dismissed_topics: Vec::new(),

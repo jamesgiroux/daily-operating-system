@@ -931,7 +931,11 @@ pub async fn get_gravatar_status(
     let status = GravatarStatus {
         enabled: gravatar_config.enabled,
         cached_count,
-        api_key_set: crate::gravatar::keychain::get_gravatar_api_key().is_some(),
+        api_key_set: tokio::task::spawn_blocking(crate::gravatar::keychain::get_gravatar_api_key)
+            .await
+            .ok()
+            .flatten()
+            .is_some(),
     };
     log_command_latency("get_gravatar_status", started, READ_CMD_LATENCY_BUDGET_MS);
     Ok(status)
