@@ -59,7 +59,7 @@ if ( ! function_exists( 'dailyos_supporting_tension_render' ) ) {
 		}
 
 		$envelope = dailyos_resolve_envelope( $handle, 'account', $entity_id, $scope_set );
-		$projected_sections = ['facts'];
+		$projected_sections = [ 'facts' ];
 		$any_present = false;
 		$first_empty_reason = '';
 		foreach ( $projected_sections as $section_key ) {
@@ -77,7 +77,7 @@ if ( ! function_exists( 'dailyos_supporting_tension_render' ) ) {
 		$out .= '<hr class="ChapterHeading_rule" />';
 		$out .= '<div class="ChapterHeading_titleRow"><h2 class="ChapterHeading_title">' . esc_html__( 'Health Score vs. Signals', 'dailyos' ) . '</h2></div>';
 		$out .= '</div>';
-		$out .= '<div class="health_supportingTension" data-dailyos-projection="supporting-tension" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['facts'] ) ) . '">';
+		$out .= '<div class="health_supportingTension" data-dailyos-projection="supporting-tension" data-dailyos-envelope-sections="' . esc_attr( implode( ',', [ 'facts' ] ) ) . '">';
 		$out .= '<div><div class="health_tensionBlockLabel">' . esc_html__( 'Computed score', 'dailyos' ) . '</div><div class="health_tensionBlockValue health_tensionValueNeutral">--</div><div class="health_tensionBlockMeta">' . esc_html__( 'Awaiting account score', 'dailyos' ) . '</div></div>';
 		$out .= '<div><div class="health_tensionBlockLabel">' . esc_html__( 'Signal trend', 'dailyos' ) . '</div><div class="health_tensionBlockValue health_tensionValueNeutral">' . esc_html__( 'Unknown', 'dailyos' ) . '</div><div class="health_tensionBlockMeta">' . esc_html__( 'Projected from account intelligence', 'dailyos' ) . '</div></div>';
 		$out .= '</div>';

@@ -72,7 +72,6 @@ if ( ! function_exists( 'dailyos_project_detail_recommended_actions_render' ) ) 
 			}
 		}
 
-
 		if ( ! $any_present ) {
 			$reason = '' !== $first_empty_reason ? $first_empty_reason : 'no_recommended_actions';
 			if ( function_exists( 'dailyos_empty_chip' ) ) {

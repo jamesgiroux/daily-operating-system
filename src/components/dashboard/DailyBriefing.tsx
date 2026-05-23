@@ -18,6 +18,7 @@ import { useSuggestedActions } from "@/hooks/useSuggestedActions";
 // SuggestedActionRow removed from briefing — suggestions live on /actions page
 import clsx from "clsx";
 import { useCalendar } from "@/hooks/useCalendar";
+import { useDailyBriefingAbility } from "@/hooks/useDailyBriefingAbility";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import type { ReadinessStat } from "@/components/layout/FolioBar";
 import {
@@ -42,13 +43,16 @@ import type {
   DashboardData,
   DashboardLifecycleUpdate,
   DataFreshness,
+  RenderedProvenanceSummary,
   Meeting,
   Action,
   Email,
   PrioritizedAction,
 } from "@/types";
 import { HealthBadge } from "@/components/shared/HealthBadge";
+import { TrustBandIndicator } from "@/components/ui/TrustBandIndicator";
 import { compareEmailRank } from "@/lib/email-ranking";
+import type { DailyBriefingOutput } from "@/services/daily-briefing/contracts";
 import s from "@/styles/editorial-briefing.module.css";
 import briefingStyles from "./DailyBriefing.module.css";
 
@@ -125,6 +129,99 @@ function computeReadiness(meetings: Meeting[], actions: Action[]) {
   return { preppedCount, totalExternal, overdueCount: overdueActions.length };
 }
 
+function renderedProvenanceSourceCount(renderedProvenance?: RenderedProvenanceSummary | null): number {
+  const value = renderedProvenance?.value;
+  const sources = value?.sources;
+  if (Array.isArray(sources)) {
+    return sources.length;
+  }
+  const aboutThis = value?.about_this;
+  if (aboutThis && typeof aboutThis === "object") {
+    const summary = (aboutThis as { summary?: unknown }).summary;
+    if (summary && typeof summary === "object") {
+      const sourceCount = (summary as { source_count?: unknown; sourceCount?: unknown }).source_count
+        ?? (summary as { source_count?: unknown; sourceCount?: unknown }).sourceCount;
+      if (typeof sourceCount === "number") {
+        return sourceCount;
+      }
+    }
+  }
+  return 0;
+}
+
+function briefingFreshnessLabel(state: DailyBriefingOutput["state"]): string {
+  switch (state.freshness.kind) {
+    case "fresh":
+      return "Current";
+    case "stale":
+      return "Context may be stale";
+    case "needs_preparation": {
+      const count = state.freshness.meetingIds.length;
+      return `${count} briefing${count === 1 ? "" : "s"} need prep`;
+    }
+    default:
+      return "Current";
+  }
+}
+
+function briefingAdvisoryLabel(state: DailyBriefingOutput["state"]): string | null {
+  const advisory = state.advisories[0];
+  if (!advisory) return null;
+  switch (advisory.kind) {
+    case "unlinked_meetings":
+      return `Link ${advisory.meetingIds.length} meeting${advisory.meetingIds.length === 1 ? "" : "s"} for fuller context`;
+    case "partial_read_failure":
+      return "Some sources are unavailable";
+    case "watch_proposal":
+      return advisory.summary;
+    default:
+      return null;
+  }
+}
+
+function DailyBriefingAbilityStrip({
+  output,
+  renderedProvenance,
+  error,
+}: {
+  output?: DailyBriefingOutput | null;
+  renderedProvenance?: RenderedProvenanceSummary | null;
+  error?: string | null;
+}) {
+  if (!output) {
+    return error ? (
+      <div className={briefingStyles.abilityStrip} data-testid="daily-briefing-ability-strip">
+        <span className={briefingStyles.abilityStripLabel}>Briefing context unavailable</span>
+      </div>
+    ) : null;
+  }
+
+  const sourceCount = renderedProvenanceSourceCount(renderedProvenance);
+  const advisory = briefingAdvisoryLabel(output.state);
+  const trustBand = output.trustSummary.aggregateBand;
+
+  return (
+    <div className={briefingStyles.abilityStrip} data-testid="daily-briefing-ability-strip">
+      <span className={briefingStyles.abilityStripLabel}>
+        {briefingFreshnessLabel(output.state)}
+      </span>
+      <span className={briefingStyles.abilityStripMeta}>
+        Trust
+        <TrustBandIndicator band={trustBand} />
+        <span>{trustBand.replace(/_/g, " ")}</span>
+      </span>
+      {sourceCount > 0 && (
+        <span className={briefingStyles.abilityStripMeta}>
+          {sourceCount} source{sourceCount === 1 ? "" : "s"}
+        </span>
+      )}
+      {advisory && (
+        <span className={briefingStyles.abilityStripAdvisory}>{advisory}</span>
+      )}
+    </div>
+  );
+}
+
 // ─── Capacity Formatting ─────────────────────────────────────────────────────
 
 function formatMinutes(minutes: number): string {
@@ -138,6 +235,7 @@ function formatMinutes(minutes: number): string {
 
 export function DailyBriefing({ data, freshness: _freshness, onRunBriefing, isRunning, workflowStatus, onRefresh }: DailyBriefingProps) {
   const { now, currentMeeting } = useCalendar();
+  const dailyBriefingAbility = useDailyBriefingAbility();
   const [completedIds, setCompletedIds] = useState<Set<string>>(new Set());
   const [pendingLifecycleChangeId, setPendingLifecycleChangeId] = useState<number | null>(null);
   const [correctionTarget, setCorrectionTarget] = useState<DashboardLifecycleUpdate | null>(null);
@@ -382,6 +480,12 @@ export function DailyBriefing({ data, freshness: _freshness, onRunBriefing, isRu
             <div className={s.focusText}>{data.overview.focus}</div>
           </div>
         )}
+
+        <DailyBriefingAbilityStrip
+          output={dailyBriefingAbility.response?.data}
+          renderedProvenance={dailyBriefingAbility.response?.rendered_provenance}
+          error={dailyBriefingAbility.error}
+        />
 
         {/* Staleness indicator removed — orphaned "Last updated" with no date
             was confusing. The hero headline already communicates state. */}

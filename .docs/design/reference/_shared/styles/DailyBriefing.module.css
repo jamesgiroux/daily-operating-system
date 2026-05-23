@@ -33,6 +33,40 @@
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
+   CLAIM-BACKED BRIEFING STATE
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.DailyBriefing_abilityStrip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  margin-top: 18px;
+  max-width: 720px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--color-text-tertiary);
+}
+
+.DailyBriefing_abilityStripLabel {
+  color: var(--color-text-secondary);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.DailyBriefing_abilityStripMeta {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.DailyBriefing_abilityStripAdvisory {
+  color: var(--color-text-secondary);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
    LIFECYCLE CORRECTION MODAL
    ───────────────────────────────────────────────────────────────────────────── */
 

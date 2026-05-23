@@ -59,7 +59,7 @@ if ( ! function_exists( 'dailyos_outlook_panel_render' ) ) {
 		}
 
 		$envelope = dailyos_resolve_envelope( $handle, 'account', $entity_id, $scope_set );
-		$projected_sections = ['facts'];
+		$projected_sections = [ 'facts' ];
 		$any_present = false;
 		$first_empty_reason = '';
 		foreach ( $projected_sections as $section_key ) {
@@ -77,7 +77,7 @@ if ( ! function_exists( 'dailyos_outlook_panel_render' ) ) {
 		$out .= '<hr class="ChapterHeading_rule" />';
 		$out .= '<div class="ChapterHeading_titleRow"><h2 class="ChapterHeading_title">' . esc_html__( 'Outlook', 'dailyos' ) . '</h2></div>';
 		$out .= '</div>';
-		$out .= '<section class="AccountOutlook_section" data-dailyos-projection="outlook-panel" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['facts'] ) ) . '">';
+		$out .= '<section class="AccountOutlook_section" data-dailyos-projection="outlook-panel" data-dailyos-envelope-sections="' . esc_attr( implode( ',', [ 'facts' ] ) ) . '">';
 		if ( ! $any_present ) {
 			$reason = '' !== $first_empty_reason ? $first_empty_reason : 'no_outlook_factor';
 			$out .= dailyos_empty_chip(

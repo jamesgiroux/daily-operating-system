@@ -3,8 +3,23 @@ import clsx from "clsx";
 import { Eye, LockKeyhole } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import type { RenderableClaimText } from "@/types";
 import { Button } from "./button";
+
+type RenderableClaimText = {
+  text: string;
+  policy: {
+    kind: "render" | "redacted" | "drop";
+    sensitivity: string;
+    surface: string;
+    claimId?: string | null;
+    affordance?: {
+      kind: string;
+      claim_id?: string | null;
+      claimId?: string | null;
+      label?: string | null;
+    } | null;
+  };
+};
 
 export interface ClaimTextRendererProps {
   value?: RenderableClaimText | string | null;
@@ -43,9 +58,9 @@ function revealClaim(
 function affordanceClaimId(value: RenderableClaimText): string | undefined {
   const affordance = value.policy.affordance;
   if (affordance?.kind !== "confidential_click_to_reveal") {
-    return value.policy.claimId;
+    return value.policy.claimId ?? undefined;
   }
-  return affordance.claimId ?? affordance.claim_id ?? value.policy.claimId;
+  return affordance.claimId ?? affordance.claim_id ?? value.policy.claimId ?? undefined;
 }
 
 export function ClaimTextRenderer({

@@ -1,0 +1,222 @@
+wp/dailyos/blocks/_shared/envelope/envelope-resolver.php				// W1W2 L2 cycle-2 MEDIUM fix: the previous fallback used
+wp/dailyos/blocks/_shared/envelope/envelope-resolver.php				// envelope_render_id once DOS-477 envelope-cache wire-up surfaces
+wp/dailyos/blocks/_shared/envelope/envelope-resolver.php		 * (which itself short-circuits via the DOS-477 producer cache when keyed
+wp/dailyos/blocks/_shared/envelope/envelope-resolver.php		 * build_receipt_for_audience per DOS-341). Returns the receipt payload
+wp/dailyos/blocks/_shared/envelope/envelope-resolver.php	 *   2. The producer-side DOS-477 envelope_cache keys the result by
+wp/dailyos/blocks/_shared/envelope/envelope-resolver.php	 * Shared envelope resolver — per-request DOS-477 envelope cache shim.
+wp/dailyos/blocks/_shared/envelope/envelope-resolver.php	 * request; evicts on response close). DOS-477 owns the producer-side cache.
+wp/dailyos/blocks/account-detail/inner/about-intelligence/render-functions.php			// Per AC-462.3 + DOS-341: every claim-bearing inner block routes
+wp/dailyos/blocks/account-detail/inner/about-intelligence/render-functions.php			// is applied inside the producer (DOS-341 boundary).
+wp/dailyos/blocks/account-detail/inner/about-intelligence/render-functions.php	 * (DOS-341 AgentMcp audience filter) via dailyos_envelope_consume_claim().
+wp/dailyos/blocks/account-detail/inner/about-this-dossier/render-functions.php			// Per AC-462.3 + DOS-341: every claim-bearing inner block routes
+wp/dailyos/blocks/account-detail/inner/about-this-dossier/render-functions.php			// is applied inside the producer (DOS-341 boundary).
+wp/dailyos/blocks/account-detail/inner/about-this-dossier/render-functions.php	 * (DOS-341 AgentMcp audience filter) via dailyos_envelope_consume_claim().
+wp/dailyos/blocks/account-detail/inner/account-pull-quote/render-functions.php			// Per AC-462.3 + DOS-341: every claim-bearing inner block routes
+wp/dailyos/blocks/account-detail/inner/account-pull-quote/render-functions.php			// is applied inside the producer (DOS-341 boundary).
+wp/dailyos/blocks/account-detail/inner/account-pull-quote/render-functions.php	 * (DOS-341 AgentMcp audience filter) via dailyos_envelope_consume_claim().
+wp/dailyos/blocks/account-detail/inner/account-technical-footprint/render-functions.php			// Per AC-462.3 + DOS-341: every claim-bearing inner block routes
+wp/dailyos/blocks/account-detail/inner/account-technical-footprint/render-functions.php			// is applied inside the producer (DOS-341 boundary).
+wp/dailyos/blocks/account-detail/inner/account-technical-footprint/render-functions.php	 * (DOS-341 AgentMcp audience filter) via dailyos_envelope_consume_claim().
+wp/dailyos/blocks/account-detail/inner/commercial-shape/render-functions.php			// Per AC-462.3 + DOS-341: every claim-bearing inner block routes
+wp/dailyos/blocks/account-detail/inner/commercial-shape/render-functions.php			// is applied inside the producer (DOS-341 boundary).
+wp/dailyos/blocks/account-detail/inner/commercial-shape/render-functions.php	 * (DOS-341 AgentMcp audience filter) via dailyos_envelope_consume_claim().
+wp/dailyos/blocks/account-detail/inner/divergence-section/render-functions.php			// Per AC-462.3 + DOS-341: every claim-bearing inner block routes
+wp/dailyos/blocks/account-detail/inner/divergence-section/render-functions.php			// is applied inside the producer (DOS-341 boundary).
+wp/dailyos/blocks/account-detail/inner/divergence-section/render-functions.php	 * (DOS-341 AgentMcp audience filter) via dailyos_envelope_consume_claim().
+wp/dailyos/blocks/account-detail/inner/file-list/render-functions.php			// Per AC-462.3 + DOS-341: every claim-bearing inner block routes
+wp/dailyos/blocks/account-detail/inner/file-list/render-functions.php			// is applied inside the producer (DOS-341 boundary).
+wp/dailyos/blocks/account-detail/inner/file-list/render-functions.php	 * (DOS-341 AgentMcp audience filter) via dailyos_envelope_consume_claim().
+wp/dailyos/blocks/account-detail/inner/finis-marker/render-functions.php	 * (DOS-341 AgentMcp audience filter) via dailyos_envelope_consume_claim().
+wp/dailyos/blocks/account-detail/inner/linear-issues-chapter/render-functions.php			// Per AC-462.3 + DOS-341: every claim-bearing inner block routes
+wp/dailyos/blocks/account-detail/inner/linear-issues-chapter/render-functions.php			// is applied inside the producer (DOS-341 boundary).
+wp/dailyos/blocks/account-detail/inner/linear-issues-chapter/render-functions.php	 * (DOS-341 AgentMcp audience filter) via dailyos_envelope_consume_claim().
+wp/dailyos/blocks/account-detail/inner/on-track-chapter/render-functions.php			// Per AC-462.3 + DOS-341: every claim-bearing inner block routes
+wp/dailyos/blocks/account-detail/inner/on-track-chapter/render-functions.php			// is applied inside the producer (DOS-341 boundary).
+wp/dailyos/blocks/account-detail/inner/on-track-chapter/render-functions.php	 * (DOS-341 AgentMcp audience filter) via dailyos_envelope_consume_claim().
+wp/dailyos/blocks/account-detail/inner/open-loops-feed/render-functions.php			// Per AC-462.3 + DOS-341: every claim-bearing inner block routes
+wp/dailyos/blocks/account-detail/inner/open-loops-feed/render-functions.php			// is applied inside the producer (DOS-341 boundary).
+wp/dailyos/blocks/account-detail/inner/open-loops-feed/render-functions.php	 * (DOS-341 AgentMcp audience filter) via dailyos_envelope_consume_claim().
+wp/dailyos/blocks/account-detail/inner/outlook-panel/render-functions.php			// Per AC-462.3 + DOS-341: every claim-bearing inner block routes
+wp/dailyos/blocks/account-detail/inner/outlook-panel/render-functions.php			// is applied inside the producer (DOS-341 boundary).
+wp/dailyos/blocks/account-detail/inner/outlook-panel/render-functions.php	 * (DOS-341 AgentMcp audience filter) via dailyos_envelope_consume_claim().
+wp/dailyos/blocks/account-detail/inner/quote-wall/render-functions.php			// Per AC-462.3 + DOS-341: every claim-bearing inner block routes
+wp/dailyos/blocks/account-detail/inner/quote-wall/render-functions.php			// is applied inside the producer (DOS-341 boundary).
+wp/dailyos/blocks/account-detail/inner/quote-wall/render-functions.php	 * (DOS-341 AgentMcp audience filter) via dailyos_envelope_consume_claim().
+wp/dailyos/blocks/account-detail/inner/recommended-actions/render-functions.php			// Per AC-462.3 + DOS-341: every claim-bearing inner block routes
+wp/dailyos/blocks/account-detail/inner/recommended-actions/render-functions.php			// is applied inside the producer (DOS-341 boundary).
+wp/dailyos/blocks/account-detail/inner/recommended-actions/render-functions.php	 * (DOS-341 AgentMcp audience filter) via dailyos_envelope_consume_claim().
+wp/dailyos/blocks/account-detail/inner/relationship-fabric/render-functions.php			// Per AC-462.3 + DOS-341: every claim-bearing inner block routes
+wp/dailyos/blocks/account-detail/inner/relationship-fabric/render-functions.php			// is applied inside the producer (DOS-341 boundary).
+wp/dailyos/blocks/account-detail/inner/relationship-fabric/render-functions.php	 * (DOS-341 AgentMcp audience filter) via dailyos_envelope_consume_claim().
+wp/dailyos/blocks/account-detail/inner/sentiment-hero/render-functions.php			// Per AC-462.3 + DOS-341: every claim-bearing inner block routes
+wp/dailyos/blocks/account-detail/inner/sentiment-hero/render-functions.php			// is applied inside the producer (DOS-341 boundary).
+wp/dailyos/blocks/account-detail/inner/sentiment-hero/render-functions.php	 * (DOS-341 AgentMcp audience filter) via dailyos_envelope_consume_claim().
+wp/dailyos/blocks/account-detail/inner/stakeholder-grid/render-functions.php			// Per AC-462.3 + DOS-341: every claim-bearing inner block routes
+wp/dailyos/blocks/account-detail/inner/stakeholder-grid/render-functions.php			// is applied inside the producer (DOS-341 boundary).
+wp/dailyos/blocks/account-detail/inner/stakeholder-grid/render-functions.php	 * (DOS-341 AgentMcp audience filter) via dailyos_envelope_consume_claim().
+wp/dailyos/blocks/account-detail/inner/strategic-landscape/render-functions.php			// Per AC-462.3 + DOS-341: every claim-bearing inner block routes
+wp/dailyos/blocks/account-detail/inner/strategic-landscape/render-functions.php			// is applied inside the producer (DOS-341 boundary).
+wp/dailyos/blocks/account-detail/inner/strategic-landscape/render-functions.php	 * (DOS-341 AgentMcp audience filter) via dailyos_envelope_consume_claim().
+wp/dailyos/blocks/account-detail/inner/supporting-tension/render-functions.php			// Per AC-462.3 + DOS-341: every claim-bearing inner block routes
+wp/dailyos/blocks/account-detail/inner/supporting-tension/render-functions.php			// is applied inside the producer (DOS-341 boundary).
+wp/dailyos/blocks/account-detail/inner/supporting-tension/render-functions.php	 * (DOS-341 AgentMcp audience filter) via dailyos_envelope_consume_claim().
+wp/dailyos/blocks/account-detail/inner/touchpoints-feed/render-functions.php			// Per AC-462.3 + DOS-341: every claim-bearing inner block routes
+wp/dailyos/blocks/account-detail/inner/touchpoints-feed/render-functions.php			// is applied inside the producer (DOS-341 boundary).
+wp/dailyos/blocks/account-detail/inner/touchpoints-feed/render-functions.php	 * (DOS-341 AgentMcp audience filter) via dailyos_envelope_consume_claim().
+wp/dailyos/blocks/account-detail/inner/triage-section/render-functions.php			// Per AC-462.3 + DOS-341: every claim-bearing inner block routes
+wp/dailyos/blocks/account-detail/inner/triage-section/render-functions.php			// is applied inside the producer (DOS-341 boundary).
+wp/dailyos/blocks/account-detail/inner/triage-section/render-functions.php	 * (DOS-341 AgentMcp audience filter) via dailyos_envelope_consume_claim().
+wp/dailyos/blocks/account-detail/inner/unified-timeline/render-functions.php			// Per AC-462.3 + DOS-341: every claim-bearing inner block routes
+wp/dailyos/blocks/account-detail/inner/unified-timeline/render-functions.php			// is applied inside the producer (DOS-341 boundary).
+wp/dailyos/blocks/account-detail/inner/unified-timeline/render-functions.php	 * (DOS-341 AgentMcp audience filter) via dailyos_envelope_consume_claim().
+wp/dailyos/blocks/account-detail/inner/value-commitments/render-functions.php			// Per AC-462.3 + DOS-341: every claim-bearing inner block routes
+wp/dailyos/blocks/account-detail/inner/value-commitments/render-functions.php			// is applied inside the producer (DOS-341 boundary).
+wp/dailyos/blocks/account-detail/inner/value-commitments/render-functions.php	 * (DOS-341 AgentMcp audience filter) via dailyos_envelope_consume_claim().
+wp/dailyos/blocks/account-detail/render-functions.php			// invariant (DOS-725) — only --dailyos-* names allowed. No other
+wp/dailyos/blocks/account-detail/render-functions.php		 * Inner-block READ helper (W1W2 L2 cycle-2 split): claim-row inner blocks
+wp/dailyos/blocks/account-detail/render-functions.php		 * Inner-block WRITE helper (W1W2 L2 cycle-2 split): explicit feedback
+wp/dailyos/blocks/account-detail/render-functions.php		 * build_receipt_for_audience per DOS-341) through this hook to fetch
+wp/dailyos/blocks/account-detail/render-functions.php	 * Account detail outer-block server-side render (W2 L1 DOS-462).
+wp/dailyos/blocks/account-detail/render-functions.php	 * is enforced server-side by `build_receipt_for_audience` (DOS-341).
+wp/dailyos/blocks/account-detail/render-functions.php	 * via the request-scoped DOS-477 envelope_cache shim, emits the
+wp/dailyos/blocks/daily-briefing/render-functions.php			// W1 producer: get_daily_briefing (DOS-507 BriefingState envelope).
+wp/dailyos/blocks/daily-briefing/render-functions.php	 * of the composed BriefingState envelope (DOS-507 / V1.1 §13).
+wp/dailyos/blocks/evidence-drawer/render-functions.php	 * Disallowed (per DOS-689 AC, ADR-0108 actor-filtered render projection):
+wp/dailyos/blocks/evidence-drawer/render-functions.php	 * EvidenceDrawer primitive server-side render (DOS-689).
+wp/dailyos/blocks/evidence-drawer/render.php	 * EvidenceDrawer primitive dynamic block render entrypoint (DOS-689).
+wp/dailyos/blocks/evidence-drawer/render.php	 * Per L0 packet W2 V1.2.1 §5.7 DOS-689:
+wp/dailyos/blocks/health-badge/render-functions.php			// (shared with ScoreBand) per DOS-693 AC.
+wp/dailyos/blocks/health-badge/render-functions.php			// DOS-693: canonical band-label vocabulary via vocabulary registry
+wp/dailyos/blocks/health-badge/render-functions.php			// true AND showScore is true (DOS-325: no raw numerics on headline).
+wp/dailyos/blocks/health-badge/render-functions.php		 *    band vocabularies (per W2 V1.2.1 §5.7 DOS-693 packet decision).
+wp/dailyos/blocks/health-badge/render-functions.php		 * DOS-693 label discipline (DOS-325 voice rule):
+wp/dailyos/blocks/meeting-agenda-draft/render.php	 * Meeting Agenda Draft inner block render entrypoint (W2 §5.4 / DOS-752).
+wp/dailyos/blocks/meeting-attendees-section/render.php	 * Meeting Attendees Section inner block render entrypoint (W2 §5.4 / DOS-752).
+wp/dailyos/blocks/meeting-claims-for-review/render.php	 * Meeting Claims For Review inner block render entrypoint (W2 §5.4 / DOS-752).
+wp/dailyos/blocks/meeting-context-bundle/render.php	 * Meeting Context Bundle inner block render entrypoint (W2 §5.4 / DOS-752).
+wp/dailyos/blocks/meeting-detail/render-functions.php			// - meeting_prep_status (DOS-335 — prep DTO)
+wp/dailyos/blocks/meeting-detail/render-functions.php			// W1 producer #2: meeting_prep_status (DOS-335). Two-call composition
+wp/dailyos/blocks/meeting-detail/render-functions.php			// the DOS-477 envelope cache de-duplicates the call.
+wp/dailyos/blocks/meeting-detail/render-functions.php		 * Inner-block WRITE helper for meeting-detail (W1W2 L2 cycle-2 split):
+wp/dailyos/blocks/meeting-detail/render-functions.php		 * W1W2 L2 cycle-2 split). Per-claim render path invokes `claim_receipt`
+wp/dailyos/blocks/meeting-detail/render-functions.php		 * `meeting_prep_status` (DOS-335) via the runtime client (no direct
+wp/dailyos/blocks/meeting-detail/render-functions.php	 *   2. `meeting_prep_status` (DOS-335) for the Health composition's
+wp/dailyos/blocks/meeting-detail/render-functions.php	 * (envelope_render_id, actor_principal_id, surface) tuple per DOS-477.
+wp/dailyos/blocks/meeting-detail/render-functions.php	 * Meeting detail outer-block server-side render (W2 §5.4 / DOS-752).
+wp/dailyos/blocks/meeting-detail/render.php	 * Meeting detail dynamic block render entrypoint (W2 §5.4 / DOS-752).
+wp/dailyos/blocks/meeting-header/render-functions.php	 * section. The DOS-477 envelope cache de-duplicates the call within a
+wp/dailyos/blocks/meeting-header/render.php	 * Meeting Header inner block render entrypoint (W2 §5.4 / DOS-752).
+wp/dailyos/blocks/meeting-post-meeting-capture/render-functions.php	 * (W2 §5.4 / DOS-752 / AC-MD.3).
+wp/dailyos/blocks/meeting-post-meeting-capture/render.php	 * Meeting Post-Meeting Capture inner block render entrypoint (W2 §5.4 / DOS-752).
+wp/dailyos/blocks/meeting-prep-status/render-functions.php	 * `dailyos/meeting-detail`), invokes `meeting_prep_status` (DOS-335)
+wp/dailyos/blocks/meeting-prep-status/render.php	 * Meeting Prep Status inner block render entrypoint (W2 §5.4 / DOS-752 / AC-MD.2).
+wp/dailyos/blocks/meeting-recommended-actions/render.php	 * Meeting Recommended Actions inner block render entrypoint (W2 §5.4 / DOS-752).
+wp/dailyos/blocks/meeting-related-entities/render-functions.php	 * MeetingRelatedEntities inner-block server-side render (W2 §5.4 / DOS-752).
+wp/dailyos/blocks/meeting-related-entities/render.php	 * Meeting Related Entities inner block render entrypoint (W2 §5.4 / DOS-752).
+wp/dailyos/blocks/meeting-touchpoints-feed/render.php	 * Meeting Touchpoints Feed inner block render entrypoint (W2 §5.4 / DOS-752).
+wp/dailyos/blocks/metadata-proposal-cue/render-functions.php			// interactive cue (aggregate-only per W1 cycle-2 F2 pattern).
+wp/dailyos/blocks/metadata-proposal-cue/render-functions.php	 * Per L0-packet-W2-entity-surfaces.md V1.2.1 §5.6 (DOS-328). Projects from
+wp/dailyos/blocks/metadata-proposal-cue/render.php	 * Metadata Proposal Cue dynamic block render entrypoint (W2 L1 — DOS-328 / §5.6).
+wp/dailyos/blocks/metadata-proposal-drawer/render-functions.php			// (no per-proposal interactive affordances). Per W1 cycle-2 F2 pattern.
+wp/dailyos/blocks/metadata-proposal-drawer/render-functions.php	 * render-functions (DOS-328 / §5.6).
+wp/dailyos/blocks/metadata-proposal-drawer/render.php	 * Metadata Proposal Drawer dynamic block render entrypoint (W2 L1 — DOS-328 / §5.6).
+wp/dailyos/blocks/open-loops-feed/render-functions.php	 * (published by `dailyos/person-detail` per DOS-477 cache contract).
+wp/dailyos/blocks/open-loops-feed/render-functions.php	 * Open Loops Feed inner-block server-side render (W2 L1 — DOS-484).
+wp/dailyos/blocks/open-loops-feed/render.php	 * Open Loops Feed dynamic block render entrypoint (W2 L1 — DOS-484).
+wp/dailyos/blocks/person-appendix/render-functions.php	 * (published by `dailyos/person-detail` per DOS-477 cache contract).
+wp/dailyos/blocks/person-appendix/render-functions.php	 * Person Appendix inner-block server-side render (W2 L1 — DOS-484).
+wp/dailyos/blocks/person-appendix/render.php	 * Person Appendix dynamic block render entrypoint (W2 L1 — DOS-484).
+wp/dailyos/blocks/person-detail/render-functions.php			// envelope without re-invoking the producer (DOS-477 cache key).
+wp/dailyos/blocks/person-detail/render-functions.php		 * Inner-block READ helper (W1W2 L2 cycle-2 split): claim-row inner blocks
+wp/dailyos/blocks/person-detail/render-functions.php		 * Inner-block WRITE helper (W1W2 L2 cycle-2 split): explicit feedback
+wp/dailyos/blocks/person-detail/render-functions.php		 * once per render (DOS-477 cache contract). Static-scoped to the
+wp/dailyos/blocks/person-detail/render-functions.php	 * Person detail outer-block server-side render (W2 L1 — DOS-484).
+wp/dailyos/blocks/person-detail/render-functions.php	 * producer (DOS-477 / DOS-690 contract).
+wp/dailyos/blocks/person-hero/render-functions.php	 * (published by `dailyos/person-detail` per DOS-477 cache contract).
+wp/dailyos/blocks/person-hero/render-functions.php	 * Person Hero inner-block server-side render (W2 L1 — DOS-484).
+wp/dailyos/blocks/person-hero/render.php	 * Person Hero dynamic block render entrypoint (W2 L1 — DOS-484).
+wp/dailyos/blocks/person-insight-chapter/render-functions.php	 * (published by `dailyos/person-detail` per DOS-477 cache contract).
+wp/dailyos/blocks/person-insight-chapter/render-functions.php	 * Person Insight Chapter inner-block server-side render (W2 L1 — DOS-484).
+wp/dailyos/blocks/person-insight-chapter/render.php	 * Person Insight Chapter dynamic block render entrypoint (W2 L1 — DOS-484).
+wp/dailyos/blocks/person-network/render-functions.php	 * (published by `dailyos/person-detail` per DOS-477 cache contract).
+wp/dailyos/blocks/person-network/render-functions.php	 * Person Network inner-block server-side render (W2 L1 — DOS-484).
+wp/dailyos/blocks/person-network/render.php	 * Person Network dynamic block render entrypoint (W2 L1 — DOS-484).
+wp/dailyos/blocks/person-relationships/render-functions.php	 * (published by `dailyos/person-detail` per DOS-477 cache contract).
+wp/dailyos/blocks/person-relationships/render-functions.php	 * Person Relationships inner-block server-side render (W2 L1 — DOS-484).
+wp/dailyos/blocks/person-relationships/render.php	 * Person Relationships dynamic block render entrypoint (W2 L1 — DOS-484).
+wp/dailyos/blocks/project-detail/inner/horizon-chapter/render-functions.php	 * Horizon Chapter (horizon-chapter) — W2 L1 inner block render-functions (DOS-483).
+wp/dailyos/blocks/project-detail/inner/horizon-chapter/render-functions.php	 * `build_receipt_for_audience` (DOS-341 AgentMcp audience filter) via the
+wp/dailyos/blocks/project-detail/inner/linear-issues-chapter/render-functions.php	 * Linear Issues Chapter (linear-issues-chapter) — W2 L1 inner block render-functions (DOS-483).
+wp/dailyos/blocks/project-detail/inner/linear-issues-chapter/render-functions.php	 * `build_receipt_for_audience` (DOS-341 AgentMcp audience filter) via the
+wp/dailyos/blocks/project-detail/inner/open-loops-feed/render-functions.php	 * Open Loops Feed (open-loops-feed) — W2 L1 inner block render-functions (DOS-483).
+wp/dailyos/blocks/project-detail/inner/open-loops-feed/render-functions.php	 * `build_receipt_for_audience` (DOS-341 AgentMcp audience filter) via the
+wp/dailyos/blocks/project-detail/inner/portfolio-chapter/render-functions.php	 * Portfolio Chapter (portfolio-chapter) — W2 L1 inner block render-functions (DOS-483).
+wp/dailyos/blocks/project-detail/inner/portfolio-chapter/render-functions.php	 * `build_receipt_for_audience` (DOS-341 AgentMcp audience filter) via the
+wp/dailyos/blocks/project-detail/inner/project-appendix/render-functions.php	 * Project Appendix (project-appendix) — W2 L1 inner block render-functions (DOS-483).
+wp/dailyos/blocks/project-detail/inner/project-appendix/render-functions.php	 * `build_receipt_for_audience` (DOS-341 AgentMcp audience filter) via the
+wp/dailyos/blocks/project-detail/inner/project-hero/render-functions.php	 * Project Hero (project-hero) — W2 L1 inner block render-functions (DOS-483).
+wp/dailyos/blocks/project-detail/inner/project-hero/render-functions.php	 * `build_receipt_for_audience` (DOS-341 AgentMcp audience filter) via the
+wp/dailyos/blocks/project-detail/inner/recommended-actions/render-functions.php	 * Recommended Actions (recommended-actions) — W2 L1 inner block render-functions (DOS-483).
+wp/dailyos/blocks/project-detail/inner/recommended-actions/render-functions.php	 * `build_receipt_for_audience` (DOS-341 AgentMcp audience filter) via the
+wp/dailyos/blocks/project-detail/inner/stakeholder-gallery/render-functions.php	 * Stakeholder Gallery (stakeholder-gallery) — W2 L1 inner block render-functions (DOS-483).
+wp/dailyos/blocks/project-detail/inner/stakeholder-gallery/render-functions.php	 * `build_receipt_for_audience` (DOS-341 AgentMcp audience filter) via the
+wp/dailyos/blocks/project-detail/inner/the-work/render-functions.php	 * The Work (the-work) — W2 L1 inner block render-functions (DOS-483).
+wp/dailyos/blocks/project-detail/inner/the-work/render-functions.php	 * `build_receipt_for_audience` (DOS-341 AgentMcp audience filter) via the
+wp/dailyos/blocks/project-detail/inner/touchpoints-feed/render-functions.php	 * Touchpoints Feed (touchpoints-feed) — W2 L1 inner block render-functions (DOS-483).
+wp/dailyos/blocks/project-detail/inner/touchpoints-feed/render-functions.php	 * `build_receipt_for_audience` (DOS-341 AgentMcp audience filter) via the
+wp/dailyos/blocks/project-detail/inner/trajectory-chapter/render-functions.php	 * Trajectory Chapter (trajectory-chapter) — W2 L1 inner block render-functions (DOS-483).
+wp/dailyos/blocks/project-detail/inner/trajectory-chapter/render-functions.php	 * `build_receipt_for_audience` (DOS-341 AgentMcp audience filter) via the
+wp/dailyos/blocks/project-detail/inner/unified-timeline/render-functions.php	 * Unified Timeline (unified-timeline) — W2 L1 inner block render-functions (DOS-483).
+wp/dailyos/blocks/project-detail/inner/unified-timeline/render-functions.php	 * `build_receipt_for_audience` (DOS-341 AgentMcp audience filter) via the
+wp/dailyos/blocks/project-detail/inner/vitals-strip/render-functions.php	 * Vitals Strip (vitals-strip) — W2 L1 inner block render-functions (DOS-483).
+wp/dailyos/blocks/project-detail/inner/vitals-strip/render-functions.php	 * `build_receipt_for_audience` (DOS-341 AgentMcp audience filter) via the
+wp/dailyos/blocks/project-detail/inner/watch-list-milestones/render-functions.php	 * Watch List Milestones (watch-list-milestones) — W2 L1 inner block render-functions (DOS-483).
+wp/dailyos/blocks/project-detail/inner/watch-list-milestones/render-functions.php	 * `build_receipt_for_audience` (DOS-341 AgentMcp audience filter) via the
+wp/dailyos/blocks/project-detail/inner/watch-list/render-functions.php	 * Watch List (watch-list) — W2 L1 inner block render-functions (DOS-483).
+wp/dailyos/blocks/project-detail/inner/watch-list/render-functions.php	 * `build_receipt_for_audience` (DOS-341 AgentMcp audience filter) via the
+wp/dailyos/blocks/project-detail/render-functions.php			// DOS-725: per-project tint via CSS custom property on outer wrapper.
+wp/dailyos/blocks/project-detail/render-functions.php			// DOS-761 codex P1: surface-prefixed inner block names per PR #351
+wp/dailyos/blocks/project-detail/render-functions.php			// an opaque handle (envelope_render_id when DOS-477 surfaces it on
+wp/dailyos/blocks/project-detail/render-functions.php		 * Inner-block READ helper (W1W2 L2 cycle-2 split): claim-row inner blocks
+wp/dailyos/blocks/project-detail/render-functions.php		 * Inner-block WRITE helper (W1W2 L2 cycle-2 split): explicit feedback
+wp/dailyos/blocks/project-detail/render-functions.php		 * Per W2 V1.2.1 §5.2 cycle-2 F1 fix: `linear-issues-chapter` is
+wp/dailyos/blocks/project-detail/render-functions.php	 * DOS-725 tint (V1.1 lock — wave §10 invariant "Per-project tint via CSS
+wp/dailyos/blocks/project-detail/render-functions.php	 * Project detail outer-block server-side render (W2 V1.2.1 §5.2 — DOS-483).
+wp/dailyos/blocks/project-detail/render-functions.php	 * composed envelope rather than each re-invoking the producer (DOS-477
+wp/dailyos/blocks/provenance-tag/render-functions.php			// (no surface-local computation). Tooltip body stays inside the DOS-477
+wp/dailyos/blocks/provenance-tag/render-functions.php			// DOS-691: envelope-wired tooltip branch. When the block is composed
+wp/dailyos/blocks/provenance-tag/render-functions.php		 * @param array<string, mixed> $ctx        Block context (DOS-691 envelopeHandle).
+wp/dailyos/blocks/provenance-tag/render-functions.php		 * DOS-691: Render the provenance-tag with envelope-wired tooltip.
+wp/dailyos/blocks/provenance-tag/render-functions.php		 * Tooltip body stays inside the DOS-477 10-channel allowlist:
+wp/dailyos/blocks/provenance-tag/render.php	 * @var array<string, mixed> $block      Block instance (carries envelopeHandle ctx — DOS-691).
+wp/dailyos/blocks/recommended-actions/render-functions.php	 * Recommended Actions inner-block server-side render (W2 L1 — DOS-484).
+wp/dailyos/blocks/recommended-actions/render.php	 * Recommended Actions dynamic block render entrypoint (W2 L1 — DOS-484).
+wp/dailyos/blocks/the-work/render-functions.php	 * (published by `dailyos/person-detail` per DOS-477 cache contract).
+wp/dailyos/blocks/the-work/render-functions.php	 * The Work inner-block server-side render (W2 L1 — DOS-484).
+wp/dailyos/blocks/the-work/render.php	 * The Work dynamic block render entrypoint (W2 L1 — DOS-484).
+wp/dailyos/blocks/touchpoints-feed/render-functions.php	 * (published by `dailyos/person-detail` per DOS-477 cache contract).
+wp/dailyos/blocks/touchpoints-feed/render-functions.php	 * Touchpoints Feed inner-block server-side render (W2 L1 — DOS-484).
+wp/dailyos/blocks/touchpoints-feed/render.php	 * Touchpoints Feed dynamic block render entrypoint (W2 L1 — DOS-484).
+wp/dailyos/blocks/trend-strip/render-functions.php	 * Acceptance (W2 V1.2.1 §5.7 DOS-688):
+wp/dailyos/blocks/trend-strip/render-functions.php	 * TrendStrip primitive server-side render (DOS-688).
+wp/dailyos/blocks/trend-strip/render-functions.php	 * Voice-rule (DOS-325): the only headline text is the configured label
+wp/dailyos/blocks/trend-strip/render.php	 *    headline (DOS-325 voice rule).
+wp/dailyos/blocks/trend-strip/render.php	 *  - Consumes envelope via dailyos/envelopeHandle context (DOS-477 cache).
+wp/dailyos/blocks/trend-strip/render.php	 * Per L0 packet W2 V1.2.1 §5.7 DOS-688:
+wp/dailyos/blocks/trend-strip/render.php	 * TrendStrip primitive dynamic block render entrypoint (DOS-688).
+wp/dailyos/blocks/trust-band-badge/render-functions.php			// DOS-692 a11y: aria-label per band + screen-reader announcement of
+wp/dailyos/blocks/unified-timeline/render-functions.php	 * (published by `dailyos/person-detail` per DOS-477 cache contract).
+wp/dailyos/blocks/unified-timeline/render-functions.php	 * Unified Timeline inner-block server-side render (W2 L1 — DOS-484).
+wp/dailyos/blocks/unified-timeline/render.php	 * Unified Timeline dynamic block render entrypoint (W2 L1 — DOS-484).
+wp/dailyos/blocks/vitals-strip/render-functions.php	 * (published by `dailyos/person-detail` per DOS-477 cache contract).
+wp/dailyos/blocks/vitals-strip/render-functions.php	 * Vitals Strip inner-block server-side render (W2 L1 — DOS-484).
+wp/dailyos/blocks/vitals-strip/render.php	 * Vitals Strip dynamic block render entrypoint (W2 L1 — DOS-484).
+wp/dailyos/blocks/watch-list/render-functions.php	 * (published by `dailyos/person-detail` per DOS-477 cache contract).
+wp/dailyos/blocks/watch-list/render-functions.php	 * Watch List inner-block server-side render (W2 L1 — DOS-484).
+wp/dailyos/blocks/watch-list/render.php	 * Watch List dynamic block render entrypoint (W2 L1 — DOS-484).
+wp/dailyos/includes/transport/class-dailyos-runtime-client.php			// deserialize EntityIntelligenceInput. With the DOS-762 wire-code split
+wp/dailyos/patterns/account-detail-default.php	 * Description: Canonical 24-chapter composition for an Account entity surface (W2 V1.2.1 §5.1 — DOS-462). Insert-then-detach semantics — user reordering does not affect other instances (NOT a synced pattern).
+wp/dailyos/patterns/metadata-proposal-default.php			'description' => __( 'Default Metadata Proposals composition (DOS-328 / W2 §5.6). Peripheral cue plus accept/dismiss/edit drawer. Inserts into any entity-detail outer block; consumes envelope via usesContext envelopeHandle.', 'dailyos' ),
+wp/dailyos/patterns/project-detail-default.php	 * Description: Canonical 15-chapter composition for a Project entity surface (W2 V1.2.1 §5.2 — DOS-483). Insert-then-detach semantics — user reordering does not affect other instances (NOT a synced pattern).
+wp/dailyos/tests/blocks/AccountDetailBlockTest.php		// ---- envelope handle determinism (W1W2 L2 cycle-2 MEDIUM fix) -------
+wp/dailyos/tests/blocks/AccountDetailBlockTest.php	 * W2 L1 DOS-462 account-detail composite block tests.

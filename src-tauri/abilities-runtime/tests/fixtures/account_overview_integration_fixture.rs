@@ -10,8 +10,8 @@ pub fn account_overview_fixture() -> BlockIntegrationFixture {
             ("data-ds-name", "AccountOverview"),
             ("data-dailyos-surface", "account_overview"),
         ],
-        "surface-marker",
-        r#"data-dailyos-surface="account_overview""#,
+        "projected-block",
+        "dailyos-block-pill",
     )
 }
 

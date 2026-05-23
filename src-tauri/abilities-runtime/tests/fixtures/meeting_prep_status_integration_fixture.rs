@@ -3,11 +3,11 @@ use crate::{minimal_block_kit_fixture, BlockIntegrationFixture};
 pub fn meeting_prep_status_fixture() -> BlockIntegrationFixture {
     minimal_block_kit_fixture(
         "meeting-prep-status",
-        "span",
-        "dailyos-empty-chip",
-        &[("data-empty-reason", "missing_meeting_context")],
+        "div",
+        "wp-block-dailyos-meeting-prep-status is-empty",
+        &[],
         "empty-state",
-        "No meeting context.",
+        r#"data-empty-reason="missing_meeting_context""#,
     )
 }
 

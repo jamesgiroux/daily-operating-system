@@ -72,7 +72,6 @@ if ( ! function_exists( 'dailyos_portfolio_chapter_render' ) ) {
 			}
 		}
 
-
 		if ( ! $any_present ) {
 			$reason = '' !== $first_empty_reason ? $first_empty_reason : 'leaf_project_no_portfolio';
 			if ( function_exists( 'dailyos_empty_chip' ) ) {

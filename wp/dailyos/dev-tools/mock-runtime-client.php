@@ -1,4 +1,5 @@
 <?php
+// phpcs:ignoreFile -- Dev-only mock combines runtime hook glue, a composite client, and canned fixture data.
 /**
  * DailyOS Mock Runtime Client — dev-only intercept for visual development.
  *
@@ -132,7 +133,10 @@ final class DailyOS_Mock_Runtime_Client {
 		}
 		return [
 			'ok'    => false,
-			'error' => [ 'code' => 'mock_no_canned_composition', 'message' => sprintf( 'composition_id=%s', $composition_id ) ],
+			'error' => [
+				'code' => 'mock_no_canned_composition',
+				'message' => sprintf( 'composition_id=%s', $composition_id ),
+			],
 		];
 	}
 
@@ -228,13 +232,41 @@ final class DailyOS_Mock_Data {
 			'sections' => self::sections_all_present(),
 			'facts' => [
 				'items' => [
-					[ 'key' => 'title', 'value' => 'Acme Corp renewal checkpoint', 'trust_band' => 'likely_current' ],
-					[ 'key' => 'time_local', 'value' => '10:00 AM - 10:45 AM', 'trust_band' => 'likely_current' ],
-					[ 'key' => 'duration_minutes', 'value' => '45', 'trust_band' => 'likely_current' ],
-					[ 'key' => 'meeting_type', 'value' => 'customer', 'trust_band' => 'likely_current' ],
-					[ 'key' => 'primary_account', 'value' => 'Acme Corp', 'trust_band' => 'likely_current' ],
-					[ 'key' => 'organizer', 'value' => 'Priya Raman', 'trust_band' => 'likely_current' ],
-					[ 'key' => 'attendee_count', 'value' => '6', 'trust_band' => 'likely_current' ],
+					[
+						'key' => 'title',
+						'value' => 'Acme Corp renewal checkpoint',
+						'trust_band' => 'likely_current',
+					],
+					[
+						'key' => 'time_local',
+						'value' => '10:00 AM - 10:45 AM',
+						'trust_band' => 'likely_current',
+					],
+					[
+						'key' => 'duration_minutes',
+						'value' => '45',
+						'trust_band' => 'likely_current',
+					],
+					[
+						'key' => 'meeting_type',
+						'value' => 'customer',
+						'trust_band' => 'likely_current',
+					],
+					[
+						'key' => 'primary_account',
+						'value' => 'Acme Corp',
+						'trust_band' => 'likely_current',
+					],
+					[
+						'key' => 'organizer',
+						'value' => 'Priya Raman',
+						'trust_band' => 'likely_current',
+					],
+					[
+						'key' => 'attendee_count',
+						'value' => '6',
+						'trust_band' => 'likely_current',
+					],
 				],
 				'next_cursor' => null,
 				'total_hint'  => 7,
@@ -276,10 +308,30 @@ final class DailyOS_Mock_Data {
 			],
 			'threads' => [
 				'items' => [
-					[ 'thread_id' => 'th-msa-redlines', 'headline' => 'Review final MSA redlines', 'detail' => 'due Apr 23', 'kind' => 'open' ],
-					[ 'thread_id' => 'th-workflow-rehearsal', 'headline' => 'Finalize support workflow rehearsal', 'detail' => 'closed since the last meeting', 'kind' => 'confirmed' ],
-					[ 'thread_id' => 'th-health-delta', 'headline' => 'Health moved from 74 to 82', 'detail' => '', 'kind' => 'neutral' ],
-					[ 'thread_id' => 'th-new-attendee-sara', 'headline' => 'Sara Wu', 'detail' => 'new attendee', 'kind' => 'new_face' ],
+					[
+						'thread_id' => 'th-msa-redlines',
+						'headline' => 'Review final MSA redlines',
+						'detail' => 'due Apr 23',
+						'kind' => 'open',
+					],
+					[
+						'thread_id' => 'th-workflow-rehearsal',
+						'headline' => 'Finalize support workflow rehearsal',
+						'detail' => 'closed since the last meeting',
+						'kind' => 'confirmed',
+					],
+					[
+						'thread_id' => 'th-health-delta',
+						'headline' => 'Health moved from 74 to 82',
+						'detail' => '',
+						'kind' => 'neutral',
+					],
+					[
+						'thread_id' => 'th-new-attendee-sara',
+						'headline' => 'Sara Wu',
+						'detail' => 'new attendee',
+						'kind' => 'new_face',
+					],
 				],
 				'next_cursor' => null,
 				'total_hint' => 4,
@@ -310,12 +362,36 @@ final class DailyOS_Mock_Data {
 			'sections' => self::sections_all_present(),
 			'facts' => [
 				'items' => [
-					[ 'key' => 'lifecycle', 'value' => 'renewing', 'trust_band' => 'likely_current' ],
-					[ 'key' => 'health', 'value' => 'yellow', 'trust_band' => 'likely_current' ],
-					[ 'key' => 'arr', 'value' => '$280,000', 'trust_band' => 'likely_current' ],
-					[ 'key' => 'renewal_date', 'value' => '2026-07-15', 'trust_band' => 'likely_current' ],
-					[ 'key' => 'stage', 'value' => 'negotiating', 'trust_band' => 'likely_current' ],
-					[ 'key' => 'nps', 'value' => '32', 'trust_band' => 'use_with_caution' ],
+					[
+						'key' => 'lifecycle',
+						'value' => 'renewing',
+						'trust_band' => 'likely_current',
+					],
+					[
+						'key' => 'health',
+						'value' => 'yellow',
+						'trust_band' => 'likely_current',
+					],
+					[
+						'key' => 'arr',
+						'value' => '$280,000',
+						'trust_band' => 'likely_current',
+					],
+					[
+						'key' => 'renewal_date',
+						'value' => '2026-07-15',
+						'trust_band' => 'likely_current',
+					],
+					[
+						'key' => 'stage',
+						'value' => 'negotiating',
+						'trust_band' => 'likely_current',
+					],
+					[
+						'key' => 'nps',
+						'value' => '32',
+						'trust_band' => 'use_with_caution',
+					],
 				],
 				'next_cursor' => null,
 				'total_hint' => 6,
@@ -373,11 +449,31 @@ final class DailyOS_Mock_Data {
 			'sections' => self::sections_all_present(),
 			'facts' => [
 				'items' => [
-					[ 'key' => 'status', 'value' => 'active', 'trust_band' => 'likely_current' ],
-					[ 'key' => 'trajectory', 'value' => 'improving', 'trust_band' => 'likely_current' ],
-					[ 'key' => 'parent_account', 'value' => 'Acme Corp', 'trust_band' => 'likely_current' ],
-					[ 'key' => 'milestone', 'value' => 'Q2 Launch', 'trust_band' => 'likely_current' ],
-					[ 'key' => 'target_date', 'value' => '2026-06-30', 'trust_band' => 'likely_current' ],
+					[
+						'key' => 'status',
+						'value' => 'active',
+						'trust_band' => 'likely_current',
+					],
+					[
+						'key' => 'trajectory',
+						'value' => 'improving',
+						'trust_band' => 'likely_current',
+					],
+					[
+						'key' => 'parent_account',
+						'value' => 'Acme Corp',
+						'trust_band' => 'likely_current',
+					],
+					[
+						'key' => 'milestone',
+						'value' => 'Q2 Launch',
+						'trust_band' => 'likely_current',
+					],
+					[
+						'key' => 'target_date',
+						'value' => '2026-06-30',
+						'trust_band' => 'likely_current',
+					],
 				],
 				'next_cursor' => null,
 				'total_hint' => 5,
@@ -424,11 +520,31 @@ final class DailyOS_Mock_Data {
 			'sections' => self::sections_all_present(),
 			'facts' => [
 				'items' => [
-					[ 'key' => 'display_name', 'value' => 'Priya Raman', 'trust_band' => 'likely_current' ],
-					[ 'key' => 'role', 'value' => 'Director of Engineering', 'trust_band' => 'likely_current' ],
-					[ 'key' => 'organization', 'value' => 'Acme Corp', 'trust_band' => 'likely_current' ],
-					[ 'key' => 'email', 'value' => 'priya@subsidiary.com', 'trust_band' => 'likely_current' ],
-					[ 'key' => 'last_seen', 'value' => '2026-05-22T10:00:00Z', 'trust_band' => 'likely_current' ],
+					[
+						'key' => 'display_name',
+						'value' => 'Priya Raman',
+						'trust_band' => 'likely_current',
+					],
+					[
+						'key' => 'role',
+						'value' => 'Director of Engineering',
+						'trust_band' => 'likely_current',
+					],
+					[
+						'key' => 'organization',
+						'value' => 'Acme Corp',
+						'trust_band' => 'likely_current',
+					],
+					[
+						'key' => 'email',
+						'value' => 'priya@subsidiary.com',
+						'trust_band' => 'likely_current',
+					],
+					[
+						'key' => 'last_seen',
+						'value' => '2026-05-22T10:00:00Z',
+						'trust_band' => 'likely_current',
+					],
 				],
 				'next_cursor' => null,
 				'total_hint' => 5,
@@ -493,8 +609,14 @@ final class DailyOS_Mock_Data {
 			'stale_reason' => null,
 			'last_prepared_at' => '2026-05-22T09:42:00Z',
 			'source_asof_inputs' => [
-				[ 'source' => 'gmail', 'as_of' => '2026-05-22T09:42:00Z' ],
-				[ 'source' => 'calendar', 'as_of' => '2026-05-22T09:30:00Z' ],
+				[
+					'source' => 'gmail',
+					'as_of' => '2026-05-22T09:42:00Z',
+				],
+				[
+					'source' => 'calendar',
+					'as_of' => '2026-05-22T09:30:00Z',
+				],
 			],
 		];
 	}
@@ -533,8 +655,14 @@ final class DailyOS_Mock_Data {
 			'provenance' => self::provenance_now(),
 			'sensitivity' => [ 'kind' => 'normal' ],
 			'source_asof_inputs' => [
-				[ 'source' => 'gmail', 'as_of' => '2026-05-22T09:42:00Z' ],
-				[ 'source' => 'calendar', 'as_of' => '2026-05-22T09:30:00Z' ],
+				[
+					'source' => 'gmail',
+					'as_of' => '2026-05-22T09:42:00Z',
+				],
+				[
+					'source' => 'calendar',
+					'as_of' => '2026-05-22T09:30:00Z',
+				],
 			],
 		];
 	}
@@ -553,9 +681,30 @@ final class DailyOS_Mock_Data {
 	public static function list_accounts( array $payload ): array {
 		return [
 			'items' => [
-				[ 'account_id' => 'acme-corp', 'name' => 'Acme Corp', 'status' => 'renewing', 'health_band' => 'use_with_caution', 'last_touchpoint_at' => '2026-05-22T10:00:00Z', 'open_loops_count' => 3 ],
-				[ 'account_id' => 'globex-holdings', 'name' => 'Globex Holdings', 'status' => 'paused', 'health_band' => 'needs_verification', 'last_touchpoint_at' => '2026-05-18T14:00:00Z', 'open_loops_count' => 1 ],
-				[ 'account_id' => 'northstar-inc', 'name' => 'Northstar Inc', 'status' => 'active', 'health_band' => 'likely_current', 'last_touchpoint_at' => '2026-05-21T16:30:00Z', 'open_loops_count' => 0 ],
+				[
+					'account_id' => 'acme-corp',
+					'name' => 'Acme Corp',
+					'status' => 'renewing',
+					'health_band' => 'use_with_caution',
+					'last_touchpoint_at' => '2026-05-22T10:00:00Z',
+					'open_loops_count' => 3,
+				],
+				[
+					'account_id' => 'globex-holdings',
+					'name' => 'Globex Holdings',
+					'status' => 'paused',
+					'health_band' => 'needs_verification',
+					'last_touchpoint_at' => '2026-05-18T14:00:00Z',
+					'open_loops_count' => 1,
+				],
+				[
+					'account_id' => 'northstar-inc',
+					'name' => 'Northstar Inc',
+					'status' => 'active',
+					'health_band' => 'likely_current',
+					'last_touchpoint_at' => '2026-05-21T16:30:00Z',
+					'open_loops_count' => 0,
+				],
 			],
 			'total_after_filter' => 3,
 			'data_shifted_advisory' => null,
@@ -565,8 +714,20 @@ final class DailyOS_Mock_Data {
 	public static function list_open_loops( array $payload ): array {
 		return [
 			'claims' => [
-				[ 'claim_id' => 'cl-msa-redlines', 'subject_kind' => 'account', 'subject_id' => 'acme-corp', 'headline' => 'Send Acme Corp final MSA redlines', 'urgency' => 'overdue' ],
-				[ 'claim_id' => 'cl-sponsor-coverage', 'subject_kind' => 'account', 'subject_id' => 'acme-corp', 'headline' => 'Confirm sponsor coverage', 'urgency' => 'today' ],
+				[
+					'claim_id' => 'cl-msa-redlines',
+					'subject_kind' => 'account',
+					'subject_id' => 'acme-corp',
+					'headline' => 'Send Acme Corp final MSA redlines',
+					'urgency' => 'overdue',
+				],
+				[
+					'claim_id' => 'cl-sponsor-coverage',
+					'subject_kind' => 'account',
+					'subject_id' => 'acme-corp',
+					'headline' => 'Confirm sponsor coverage',
+					'urgency' => 'today',
+				],
 			],
 		];
 	}
@@ -576,7 +737,10 @@ final class DailyOS_Mock_Data {
 	private static function sections_all_present(): array {
 		$sections = [];
 		foreach ( [ 'facts', 'health', 'metadata_proposals', 'open_loops', 'touchpoints', 'threads', 'record' ] as $section ) {
-			$sections[ $section ] = [ 'kind' => 'present', 'item_count' => 1 ];
+			$sections[ $section ] = [
+				'kind' => 'present',
+				'item_count' => 1,
+			];
 		}
 		return $sections;
 	}
@@ -584,7 +748,10 @@ final class DailyOS_Mock_Data {
 	private static function sections_all_empty( string $reason ): array {
 		$sections = [];
 		foreach ( [ 'facts', 'health', 'metadata_proposals', 'open_loops', 'touchpoints', 'threads', 'record' ] as $section ) {
-			$sections[ $section ] = [ 'kind' => 'empty', 'reason' => $reason ];
+			$sections[ $section ] = [
+				'kind' => 'empty',
+				'reason' => $reason,
+			];
 		}
 		return $sections;
 	}
@@ -606,7 +773,10 @@ final class DailyOS_Mock_Data {
 			'estimate' => $estimate,
 			'subject_kind' => 'account',
 			'subject_id' => 'acme-corp',
-			'receipt' => [ 'rows' => [], 'audience' => 'open_loops' ],
+			'receipt' => [
+				'rows' => [],
+				'audience' => 'open_loops',
+			],
 		];
 	}
 
@@ -798,18 +968,46 @@ final class DailyOS_Mock_Data {
 		return [
 			'summary' => 'Acme validated the Q2 Launch path and narrowed the renewal risk to one legal owner and one launch dependency. Jen Park agreed to sponsor the executive follow-up once Dan Mitchell confirms the audit-log export owner.',
 			'thread_items' => [
-				[ 'kind' => 'confirmed', 'headline' => 'Finalize support workflow rehearsal', 'detail' => 'closed since the last meeting' ],
-				[ 'kind' => 'open', 'headline' => 'Review final MSA redlines', 'detail' => 'due Apr 23' ],
-				[ 'kind' => 'neutral', 'headline' => 'Health moved from 74 to 82', 'detail' => '' ],
-				[ 'kind' => 'new_face', 'headline' => 'Sara Wu', 'detail' => 'new attendee' ],
+				[
+					'kind' => 'confirmed',
+					'headline' => 'Finalize support workflow rehearsal',
+					'detail' => 'closed since the last meeting',
+				],
+				[
+					'kind' => 'open',
+					'headline' => 'Review final MSA redlines',
+					'detail' => 'due Apr 23',
+				],
+				[
+					'kind' => 'neutral',
+					'headline' => 'Health moved from 74 to 82',
+					'detail' => '',
+				],
+				[
+					'kind' => 'new_face',
+					'headline' => 'Sara Wu',
+					'detail' => 'new attendee',
+				],
 			],
 			'predictions' => [
 				'risks' => [
-					[ 'matched' => true, 'prediction' => 'MSA redlines could stall procurement', 'reality' => 'Jen asked for one legal owner before procurement sees the package.' ],
-					[ 'matched' => false, 'prediction' => 'Pricing pressure would resurface', 'reality' => '' ],
+					[
+						'matched' => true,
+						'prediction' => 'MSA redlines could stall procurement',
+						'reality' => 'Jen asked for one legal owner before procurement sees the package.',
+					],
+					[
+						'matched' => false,
+						'prediction' => 'Pricing pressure would resurface',
+						'reality' => '',
+					],
 				],
 				'opportunities' => [
-					[ 'matched' => true, 'prediction' => 'Sara would surface technical depth on the audit-log path', 'reality' => 'Sara confirmed the export contract is the binding architectural decision.' ],
+					[
+						'matched' => true,
+						'prediction' => 'Sara would surface technical depth on the audit-log path',
+						'reality' => 'Sara confirmed the export contract is the binding architectural decision.',
+					],
 				],
 			],
 		];
@@ -849,34 +1047,103 @@ final class DailyOS_Mock_Data {
 				],
 			],
 			'entity-chip-account' => [
-				[ 'selected_known_type_id' => 'dailyos/entity-chip', 'payload' => [ 'entity_type' => 'account', 'text' => 'Acme Corp' ] ],
+				[
+					'selected_known_type_id' => 'dailyos/entity-chip',
+					'payload' => [
+						'entity_type' => 'account',
+						'text' => 'Acme Corp',
+					],
+				],
 			],
 			'entity-chip-project' => [
-				[ 'selected_known_type_id' => 'dailyos/entity-chip', 'payload' => [ 'entity_type' => 'project', 'text' => 'Beta Migration' ] ],
+				[
+					'selected_known_type_id' => 'dailyos/entity-chip',
+					'payload' => [
+						'entity_type' => 'project',
+						'text' => 'Beta Migration',
+					],
+				],
 			],
 			'entity-chip-person' => [
-				[ 'selected_known_type_id' => 'dailyos/entity-chip', 'payload' => [ 'entity_type' => 'person', 'text' => 'Priya Raman' ] ],
+				[
+					'selected_known_type_id' => 'dailyos/entity-chip',
+					'payload' => [
+						'entity_type' => 'person',
+						'text' => 'Priya Raman',
+					],
+				],
 			],
 			'health-badge-compact-green' => [
-				[ 'selected_known_type_id' => 'dailyos/health-badge', 'payload' => [ 'score' => 82, 'band' => 'green', 'size' => 'compact', 'sufficientData' => true, 'showScore' => true ] ],
+				[
+					'selected_known_type_id' => 'dailyos/health-badge',
+					'payload' => [
+						'score' => 82,
+						'band' => 'green',
+						'size' => 'compact',
+						'sufficientData' => true,
+						'showScore' => true,
+					],
+				],
 			],
 			'health-badge-standard-yellow' => [
-				[ 'selected_known_type_id' => 'dailyos/health-badge', 'payload' => [ 'score' => 71, 'band' => 'yellow', 'size' => 'standard', 'sufficientData' => true, 'showScore' => true, 'trend' => [ 'direction' => 'declining' ] ] ],
+				[
+					'selected_known_type_id' => 'dailyos/health-badge',
+					'payload' => [
+						'score' => 71,
+						'band' => 'yellow',
+						'size' => 'standard',
+						'sufficientData' => true,
+						'showScore' => true,
+						'trend' => [ 'direction' => 'declining' ],
+					],
+				],
 			],
 			'health-badge-hero-red' => [
-				[ 'selected_known_type_id' => 'dailyos/health-badge', 'payload' => [ 'score' => 41, 'band' => 'red', 'size' => 'hero', 'sufficientData' => true, 'showScore' => true, 'trend' => [ 'direction' => 'declining' ] ] ],
+				[
+					'selected_known_type_id' => 'dailyos/health-badge',
+					'payload' => [
+						'score' => 41,
+						'band' => 'red',
+						'size' => 'hero',
+						'sufficientData' => true,
+						'showScore' => true,
+						'trend' => [ 'direction' => 'declining' ],
+					],
+				],
 			],
 			'trust-band-current' => [
-				[ 'selected_known_type_id' => 'dailyos/trust-band-badge', 'payload' => [ 'band' => 'likely_current' ] ],
+				[
+					'selected_known_type_id' => 'dailyos/trust-band-badge',
+					'payload' => [ 'band' => 'likely_current' ],
+				],
 			],
 			'trust-band-caution' => [
-				[ 'selected_known_type_id' => 'dailyos/trust-band-badge', 'payload' => [ 'band' => 'use_with_caution' ] ],
+				[
+					'selected_known_type_id' => 'dailyos/trust-band-badge',
+					'payload' => [ 'band' => 'use_with_caution' ],
+				],
 			],
 			'freshness-recent' => [
-				[ 'selected_known_type_id' => 'dailyos/freshness-indicator', 'payload' => [ 'at' => $recent_iso, 'format' => 'relative', 'variant' => 'inline', 'verb' => 'Updated' ] ],
+				[
+					'selected_known_type_id' => 'dailyos/freshness-indicator',
+					'payload' => [
+						'at' => $recent_iso,
+						'format' => 'relative',
+						'variant' => 'inline',
+						'verb' => 'Updated',
+					],
+				],
 			],
 			'freshness-stale' => [
-				[ 'selected_known_type_id' => 'dailyos/freshness-indicator', 'payload' => [ 'at' => $stale_iso, 'format' => 'relative', 'variant' => 'inline', 'verb' => 'Updated' ] ],
+				[
+					'selected_known_type_id' => 'dailyos/freshness-indicator',
+					'payload' => [
+						'at' => $stale_iso,
+						'format' => 'relative',
+						'variant' => 'inline',
+						'verb' => 'Updated',
+					],
+				],
 			],
 		];
 
@@ -892,8 +1159,14 @@ final class DailyOS_Mock_Data {
 		return [
 			'source_asof' => '2026-05-22T09:42:00Z',
 			'sources' => [
-				[ 'source' => 'gmail', 'as_of' => '2026-05-22T09:42:00Z' ],
-				[ 'source' => 'calendar', 'as_of' => '2026-05-22T09:30:00Z' ],
+				[
+					'source' => 'gmail',
+					'as_of' => '2026-05-22T09:42:00Z',
+				],
+				[
+					'source' => 'calendar',
+					'as_of' => '2026-05-22T09:30:00Z',
+				],
 			],
 		];
 	}

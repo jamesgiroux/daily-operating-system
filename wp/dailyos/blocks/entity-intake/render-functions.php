@@ -11,7 +11,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	return '';
 }
 
-require_once dirname( __DIR__ ) . '/_shared/dailyos_block_error_panel.php';
+require_once dirname( __DIR__ ) . '/_shared/dailyos-block-error-panel.php';
 require_once dirname( __DIR__ ) . '/trust-band-badge/render-functions.php';
 
 if ( ! function_exists( 'dailyos_entity_intake_render' ) ) {
@@ -72,6 +72,9 @@ if ( ! function_exists( 'dailyos_entity_intake_render' ) ) {
 	/**
 	 * Validate durable block attributes before invoking the read ability.
 	 *
+	 * @param string $entity_type Entity type.
+	 * @param string $entity_id Entity id.
+	 * @param string $file_ref File reference.
 	 * @return true|\WP_Error
 	 */
 	function dailyos_entity_intake_validate_attrs( string $entity_type, string $entity_id, string $file_ref ) {
@@ -138,6 +141,9 @@ if ( ! function_exists( 'dailyos_entity_intake_render' ) ) {
 
 	/**
 	 * Map WP_Error codes to public block states.
+	 *
+	 * @param WP_Error $error Error instance.
+	 * @return string
 	 */
 	function dailyos_entity_intake_error_kind( WP_Error $error ): string {
 		$code = $error->get_error_code();

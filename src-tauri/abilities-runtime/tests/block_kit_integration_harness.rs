@@ -631,6 +631,7 @@ fn expected_block_fixtures_cover_requested_ci_block() {
     }
     let known = [
         account_detail_integration_fixture::account_detail_fixture(),
+        account_overview_integration_fixture::account_overview_fixture(),
         accounts_index_integration_fixture::accounts_index_fixture(),
         entity_chip_integration_fixture::entity_chip_fixture(),
         entity_intake_integration_fixture::entity_intake_fixture(),

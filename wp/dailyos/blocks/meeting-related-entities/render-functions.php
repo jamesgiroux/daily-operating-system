@@ -14,6 +14,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 if ( ! function_exists( 'dailyos_meeting_related_entities_render' ) ) {
+	/**
+	 * Render the related entities inner block.
+	 *
+	 * @param array<string, mixed> $attributes Block attributes.
+	 * @param mixed                $block Block instance.
+	 * @return string
+	 */
 	function dailyos_meeting_related_entities_render( array $attributes, $block = null ): string {
 		$meeting_id = '';
 		if ( is_object( $block ) && isset( $block->context ) && is_array( $block->context ) ) {

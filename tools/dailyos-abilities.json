@@ -128,8 +128,7 @@
       "annotations": {},
       "wp_permission": "none",
       "allowed_actors": [
-        "user",
-        "surface_client"
+        "user"
       ],
       "required_scopes": [
         "read.daily_briefing"

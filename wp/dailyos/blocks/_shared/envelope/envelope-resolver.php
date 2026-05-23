@@ -51,9 +51,9 @@ if ( ! function_exists( 'dailyos_envelope_cache_put' ) ) {
 	/**
 	 * Store an envelope by handle for the remainder of the request.
 	 *
-	 * @param string               $handle Envelope handle.
-	 * @param array<string,mixed>  $envelope Envelope payload (full
-	 *                                       EntityIntelligenceEnvelope shape).
+	 * @param string              $handle Envelope handle.
+	 * @param array<string,mixed> $envelope Envelope payload (full
+	 *                                      EntityIntelligenceEnvelope shape).
 	 */
 	function dailyos_envelope_cache_put( string $handle, array $envelope ): void {
 		if ( '' === $handle ) {
@@ -110,7 +110,7 @@ if ( ! function_exists( 'dailyos_envelope_claim_item_cache_put_from_envelope' ) 
 	/**
 	 * Recursively index claim items from an envelope subtree.
 	 *
-	 * @param mixed                            $node Envelope subtree.
+	 * @param mixed                             $node Envelope subtree.
 	 * @param array<string,array<string,mixed>> $storage Cache storage.
 	 */
 	function dailyos_envelope_claim_item_cache_walk( mixed $node, array &$storage ): void {
@@ -414,9 +414,9 @@ if ( ! function_exists( 'dailyos_inner_block_wrapper_attrs' ) ) {
 	 * --dailyos-project-tint), forwards it onto inner blocks via
 	 * get_block_wrapper_attributes — never raw inline styles.
 	 *
-	 * @param string                 $block_class Block-scoped CSS class.
-	 * @param array<string,string>   $custom_properties Optional inline-style
-	 *                                                 custom-property pairs.
+	 * @param string               $block_class Block-scoped CSS class.
+	 * @param array<string,string> $custom_properties Optional inline-style
+	 *                                               custom-property pairs.
 	 * @return string Rendered attribute string suitable for echo.
 	 */
 	function dailyos_inner_block_wrapper_attrs( string $block_class, array $custom_properties = [] ): string {
@@ -427,7 +427,7 @@ if ( ! function_exists( 'dailyos_inner_block_wrapper_attrs' ) ) {
 			$style_segments = [];
 			foreach ( $custom_properties as $key => $value ) {
 				if ( 0 !== strpos( $key, '--dailyos-' ) ) {
-					continue; // discipline per §10 inline-style allowlist
+					continue; // Discipline per §10 inline-style allowlist.
 				}
 				$style_segments[] = $key . ': ' . $value;
 			}
@@ -454,7 +454,7 @@ if ( ! function_exists( 'dailyos_envelope_consume_claim' ) ) {
 	 * or null on failure / unavailable runtime. Inner blocks invoke this
 	 * for the rendered claim-row receipts called out in AC-462.3.
 	 *
-	 * @param array<string,mixed> $claim_ref { claim_id, audience_key, ... }.
+	 * @param array<string,mixed>     $claim_ref { claim_id, audience_key, ... }.
 	 * @param array<string|int,mixed> $scope_set Resolved scope set.
 	 * @return array<string,mixed>|null
 	 */
