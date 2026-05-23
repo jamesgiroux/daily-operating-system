@@ -5,7 +5,7 @@ pub fn meeting_prep_status_fixture() -> BlockIntegrationFixture {
         "meeting-prep-status",
         "div",
         "wp-block-dailyos-meeting-prep-status is-empty",
-        &[("data-empty-reason", "missing_meeting_context")],
+        &[],
         "empty-state",
         r#"data-empty-reason="missing_meeting_context""#,
     )

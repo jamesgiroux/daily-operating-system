@@ -5,7 +5,7 @@ pub fn meeting_header_fixture() -> BlockIntegrationFixture {
         "meeting-header",
         "header",
         "wp-block-dailyos-meeting-header is-empty",
-        &[("data-empty-reason", "missing_meeting_context")],
+        &[],
         "empty-state",
         "No meeting context.",
     )

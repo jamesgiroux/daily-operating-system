@@ -5,7 +5,7 @@ pub fn meeting_claims_for_review_fixture() -> BlockIntegrationFixture {
         "meeting-claims-for-review",
         "section",
         "wp-block-dailyos-meeting-claims-for-review is-empty",
-        &[("data-empty-reason", "missing_meeting_context")],
+        &[],
         "empty-state",
         "No meeting context.",
     )

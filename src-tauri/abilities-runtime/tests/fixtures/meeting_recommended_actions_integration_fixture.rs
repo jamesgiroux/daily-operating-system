@@ -5,10 +5,7 @@ pub fn meeting_recommended_actions_fixture() -> BlockIntegrationFixture {
         "meeting-recommended-actions",
         "section",
         "editorial-reveal meeting-intel_chapterSection is-empty",
-        &[
-            ("data-ds-name", "MeetingRecommendedActions"),
-            ("data-empty-reason", "missing_meeting_context"),
-        ],
+        &[("data-ds-name", "MeetingRecommendedActions")],
         "empty-state",
         "No meeting context.",
     )

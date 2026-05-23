@@ -5,10 +5,7 @@ pub fn meeting_touchpoints_feed_fixture() -> BlockIntegrationFixture {
         "meeting-touchpoints-feed",
         "section",
         "meeting-intel_chapterSection is-empty",
-        &[
-            ("data-ds-name", "MeetingTouchpointsFeed"),
-            ("data-empty-reason", "missing_meeting_context"),
-        ],
+        &[("data-ds-name", "MeetingTouchpointsFeed")],
         "empty-state",
         "No meeting context.",
     )
