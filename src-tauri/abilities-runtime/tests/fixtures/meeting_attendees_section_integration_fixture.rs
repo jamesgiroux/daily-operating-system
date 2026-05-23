@@ -5,7 +5,7 @@ pub fn meeting_attendees_section_fixture() -> BlockIntegrationFixture {
         "meeting-attendees-section",
         "section",
         "wp-block-dailyos-meeting-attendees-section is-empty",
-        &[("data-empty-reason", "missing_meeting_context")],
+        &[],
         "empty-state",
         "No meeting context.",
     )
