@@ -76,6 +76,9 @@ pub fn attach_live_workspace_readers(ctx: ServiceContext<'_>) -> ServiceContext<
         .with_entity_touchpoints_reader(Arc::new(
             crate::services::entity_intelligence::touchpoints::LiveEntityTouchpointsReader,
         ))
+        .with_entity_neighborhood_reader(Arc::new(
+            crate::services::entity_intelligence::neighborhood::LiveEntityNeighborhoodReader,
+        ))
         .with_meeting_prep_status_reader(Arc::new(LiveMeetingPrepStatusReader))
         .with_claim_receipt_reader(Arc::new(LiveClaimReceiptReader))
         .with_workspace_intake(Arc::new(

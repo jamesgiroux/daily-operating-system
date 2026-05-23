@@ -115,7 +115,7 @@ fn present_section_state(count: u64) -> SectionState {
 
 fn default_sections() -> BTreeMap<EnvelopeSection, SectionState> {
     let mut map = BTreeMap::new();
-    for s in EnvelopeSection::ALL.iter() {
+    for s in EnvelopeSection::all_for_schema(ENVELOPE_SCHEMA_VERSION).iter() {
         map.insert(*s, empty_section_state());
     }
     map
@@ -157,6 +157,7 @@ fn base_envelope(subject: NormalizedSubject) -> EntityIntelligenceEnvelope {
         health_story: None,
         metadata_proposals: Paginated::empty_stable(),
         open_loops: Paginated::empty_stable(),
+        relationships: Some(Paginated::empty_stable()),
         touchpoints: Paginated::empty_stable(),
         threads: Paginated::empty_stable(),
         record_entries: Paginated::empty_stable(),

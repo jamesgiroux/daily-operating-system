@@ -20,8 +20,10 @@ use crate::abilities::trust::types::TrustBand;
 use crate::sensitivity::{ClaimVerificationState, RenderableClaimText};
 use crate::types::{ClaimSensitivity, ClaimState, SurfacingState};
 
-/// Schema version for `get_entity_intelligence` envelope.
-pub const ENVELOPE_SCHEMA_VERSION: u32 = 1;
+/// Current schema version for `get_entity_intelligence` envelope.
+pub const ENVELOPE_SCHEMA_VERSION: u32 = ENVELOPE_SCHEMA_VERSION_V2;
+pub const ENVELOPE_SCHEMA_VERSION_V1: u32 = 1;
+pub const ENVELOPE_SCHEMA_VERSION_V2: u32 = 2;
 
 // ---- input -----------------------------------------------------------------
 
@@ -79,14 +81,15 @@ pub enum EnvelopeSection {
     Health,
     MetadataProposals,
     OpenLoops,
+    Relationships,
     Touchpoints,
     Threads,
     Record,
 }
 
 impl EnvelopeSection {
-    /// All section variants in canonical order — `sections` map enumerates these per AC-459.2.
-    pub const ALL: &'static [EnvelopeSection] = &[
+    /// Schema v1 section variants in canonical order — kept stable for existing consumers.
+    pub const V1: &'static [EnvelopeSection] = &[
         EnvelopeSection::Facts,
         EnvelopeSection::Health,
         EnvelopeSection::MetadataProposals,
@@ -95,6 +98,26 @@ impl EnvelopeSection {
         EnvelopeSection::Threads,
         EnvelopeSection::Record,
     ];
+
+    /// Schema v2 section variants in canonical order.
+    pub const V2: &'static [EnvelopeSection] = &[
+        EnvelopeSection::Facts,
+        EnvelopeSection::Health,
+        EnvelopeSection::MetadataProposals,
+        EnvelopeSection::OpenLoops,
+        EnvelopeSection::Relationships,
+        EnvelopeSection::Touchpoints,
+        EnvelopeSection::Threads,
+        EnvelopeSection::Record,
+    ];
+
+    pub fn all_for_schema(schema_version: u32) -> &'static [EnvelopeSection] {
+        if schema_version >= ENVELOPE_SCHEMA_VERSION_V2 {
+            Self::V2
+        } else {
+            Self::V1
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -186,6 +209,7 @@ pub enum EmptyReason {
     NotProcessedYet,
     FilteredOutBySubject,
     NoRelevantTouchpoints,
+    NoRelevantRelationships,
     Stale,
     NoEvidenceBackedProposal,
     UnsupportedForSubject,
@@ -446,6 +470,80 @@ pub struct TouchpointBundle {
     pub subject_scope: SubjectScope,
 }
 
+// ---- relationships + participation ---------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RelationshipInclusionReason {
+    SubjectMatch,
+    Hierarchy,
+    ExplicitLink,
+    AttendeeMatch,
+    CoAttendance,
+    WorkItem,
+    ContentLink,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RelationshipEdge {
+    pub edge_id: String,
+    pub edge_type: String,
+    pub subject_ref: SubjectRef,
+    pub related_subject_ref: SubjectRef,
+    pub related_display_label: Option<RenderableClaimText>,
+    #[schemars(with = "Option<String>")]
+    pub observed_at: Option<DateTime<Utc>>,
+    #[schemars(with = "Option<String>")]
+    pub source_asof: Option<DateTime<Utc>>,
+    pub confidence: f32,
+    pub sensitivity: ClaimSensitivity,
+    pub inclusion_reason: RelationshipInclusionReason,
+    pub traversal_depth: u8,
+    pub trust_band: TrustBand,
+    pub freshness: Freshness,
+    pub provenance: ProvenanceRef,
+    pub caveats: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RelationshipParticipant {
+    pub subject_ref: SubjectRef,
+    pub display_label: Option<RenderableClaimText>,
+    pub role: Option<RenderableClaimText>,
+    pub relationship: Option<RenderableClaimText>,
+    pub sensitivity: ClaimSensitivity,
+    pub normalized_touchpoint_count: u32,
+    pub recent_touchpoint_ids: Vec<String>,
+    #[schemars(with = "Option<String>")]
+    pub last_seen_at: Option<DateTime<Utc>>,
+    pub trust_band: TrustBand,
+    pub freshness: Freshness,
+    pub provenance: ProvenanceRef,
+    pub caveats: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RelationshipTruncation {
+    pub edges_truncated: bool,
+    pub participants_truncated: bool,
+    pub per_edge_cap: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RelationshipsBundle {
+    pub edges: Paginated<RelationshipEdge>,
+    pub participants: Paginated<RelationshipParticipant>,
+    pub candidate_set: CandidateSetRef,
+    pub empty_reason: Option<EmptyReason>,
+    pub subject_scope: SubjectScope,
+    pub truncation: RelationshipTruncation,
+    pub caveats: Vec<String>,
+}
+
 // ---- threads + record entries --------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
@@ -485,6 +583,8 @@ pub struct EntityIntelligenceEnvelope {
     pub health_story: Option<HealthStory>,
     pub metadata_proposals: Paginated<MetadataProposal>,
     pub open_loops: Paginated<OpenLoopWithReceipt>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relationships: Option<Paginated<RelationshipsBundle>>,
     pub touchpoints: Paginated<TouchpointBundle>,
     pub threads: Paginated<ThreadSummary>,
     pub record_entries: Paginated<RecordEntry>,

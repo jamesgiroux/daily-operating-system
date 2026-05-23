@@ -1391,7 +1391,7 @@ mod tests {
         }
 
         assert_eq!(
-            crate::services::fail_improve::signal_type_llm_calls_for_test(),
+            crate::services::fail_improve::signal_type_llm_calls_for_test(&signal_type),
             1,
             "concurrent misses for the same signal_type should share one LLM fallback"
         );
@@ -1413,7 +1413,7 @@ mod tests {
         )
         .expect("emit cached unknown signal");
         assert_eq!(
-            crate::services::fail_improve::signal_type_llm_calls_for_test(),
+            crate::services::fail_improve::signal_type_llm_calls_for_test(&signal_type),
             1,
             "cached second emission should not call the LLM again"
         );

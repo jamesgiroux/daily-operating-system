@@ -378,6 +378,19 @@ SAFE_STRING_FIELDS = {
     "Touchpoint": {
         "meeting_id": "identifier metadata",
     },
+    "RelationshipEdge": {
+        "edge_id": "identifier metadata",
+        "edge_type": "enum metadata",
+        "caveats": "constant relationship caveat metadata",
+    },
+    "RelationshipParticipant": {
+        "relationship": "relationship metadata",
+        "recent_touchpoint_ids": "identifier metadata",
+        "caveats": "constant relationship caveat metadata",
+    },
+    "RelationshipsBundle": {
+        "caveats": "constant relationship caveat metadata",
+    },
     "CandidateSetRef": {
         "filter_description": "query/filter metadata",
     },
@@ -497,6 +510,12 @@ NESTED_OUTPUT_STRUCTS = {
     "HealthStory": ["HealthStoryRow"],
     "OpenLoopWithReceipt": ["OpenLoop", "ReceiptTargetRef"],
     "TouchpointBundle": ["CandidateSetRef", "SubjectScope", "EmptyReason"],
+    "RelationshipsBundle": [
+        "CandidateSetRef",
+        "SubjectScope",
+        "EmptyReason",
+        "RelationshipTruncation",
+    ],
     "ClaimReceiptSnapshot": [
         "ClaimReceiptTarget",
         "ClaimReceiptTrust",

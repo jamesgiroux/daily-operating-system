@@ -55,7 +55,7 @@ use crate::services::external_replay::{
 };
 use crate::services::workspace_intake::WorkspaceIntakeService;
 use crate::types::{
-    subject_ref_from_json, ClaimSubjectRef, EntityContextEntry, EntityContextText,
+    subject_ref_from_json, ClaimSensitivity, ClaimSubjectRef, EntityContextEntry, EntityContextText,
     IntelligenceClaim,
 };
 
@@ -845,6 +845,7 @@ pub struct ServiceContext<'a> {
     temporal_maintenance: Option<Arc<dyn TemporalMaintenanceHandle>>,
     composition_commit: Option<Arc<dyn CompositionCommitHandle>>,
     entity_touchpoints_reader: Option<Arc<dyn EntityTouchpointsReadHandle>>,
+    entity_neighborhood_reader: Option<Arc<dyn EntityNeighborhoodReadHandle>>,
     meeting_prep_status_reader: Option<Arc<dyn MeetingPrepStatusReadHandle>>,
     claim_receipt_reader: Option<Arc<dyn ClaimReceiptReadHandle>>,
     account_list_reader: Option<Arc<dyn AccountListReadHandle>>,
@@ -1207,6 +1208,116 @@ pub trait EntityTouchpointsReadHandle: Send + Sync {
         &'a self,
         query: EntityTouchpointsQuery,
     ) -> EntityTouchpointsReadFuture<'a>;
+}
+
+// -----------------------------------------------------------------------------
+// Canonical entity-neighborhood read seam.
+//
+// Read-only projection over existing relationship substrate. This is not a new
+// canonical graph store; app-side readers assemble bounded relationship and
+// participation evidence from existing tables (meeting_entities,
+// meeting_attendees, account_stakeholders/entity_members, person_relationships,
+// hierarchy links, actions/content/email where available).
+// -----------------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EntityNeighborhoodQuery {
+    pub entity_type: String,
+    pub entity_id: String,
+    pub now: DateTime<Utc>,
+    /// Maximum traversal depth. Default callers should use <= 2.
+    pub max_depth: u8,
+    /// Hard cap per evidence class to keep envelope projection bounded.
+    pub per_edge_cap: usize,
+    /// Number of recent touchpoint ids retained per participant.
+    pub recent_touchpoint_cap: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EntityRelationshipInclusionReason {
+    SubjectMatch,
+    Hierarchy,
+    ExplicitLink,
+    AttendeeMatch,
+    CoAttendance,
+    WorkItem,
+    ContentLink,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EntityRelationshipEdgeSnapshot {
+    pub edge_type: String,
+    pub related_entity_type: String,
+    pub related_entity_id: String,
+    pub related_display_label: Option<String>,
+    pub source_id: String,
+    pub source_type: String,
+    pub observed_at: Option<String>,
+    pub source_asof: Option<String>,
+    pub confidence: f32,
+    pub sensitivity: ClaimSensitivity,
+    pub inclusion_reason: EntityRelationshipInclusionReason,
+    pub traversal_depth: u8,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EntityParticipantSnapshot {
+    pub person_id: String,
+    pub display_label: Option<String>,
+    pub role: Option<String>,
+    pub relationship: Option<String>,
+    pub normalized_touchpoint_count: u32,
+    pub recent_touchpoint_ids: Vec<String>,
+    pub last_seen_at: Option<String>,
+    pub source_id: String,
+    pub source_type: String,
+    pub source_asof: Option<String>,
+    pub confidence: f32,
+    pub sensitivity: ClaimSensitivity,
+    pub caveats: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EntityNeighborhoodTruncation {
+    pub edges_truncated: bool,
+    pub participants_truncated: bool,
+    pub per_edge_cap: usize,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EntityNeighborhoodSnapshot {
+    pub subject_entity_type: String,
+    pub subject_entity_id: String,
+    pub edges: Vec<EntityRelationshipEdgeSnapshot>,
+    pub participants: Vec<EntityParticipantSnapshot>,
+    pub truncation: EntityNeighborhoodTruncation,
+    pub caveats: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum EntityNeighborhoodReadError {
+    #[error("subject is not owned by this workspace: {entity_type}:{entity_id}")]
+    SubjectNotOwned {
+        entity_type: String,
+        entity_id: String,
+    },
+    #[error("{0}")]
+    ReadFailed(String),
+}
+
+pub type EntityNeighborhoodReadFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<EntityNeighborhoodSnapshot, EntityNeighborhoodReadError>>
+            + Send
+            + 'a,
+    >,
+>;
+
+pub trait EntityNeighborhoodReadHandle: Send + Sync {
+    fn read_entity_neighborhood<'a>(
+        &'a self,
+        query: EntityNeighborhoodQuery,
+    ) -> EntityNeighborhoodReadFuture<'a>;
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1674,6 +1785,7 @@ impl<'a> ServiceContext<'a> {
             temporal_maintenance: None,
             composition_commit: None,
             entity_touchpoints_reader: None,
+            entity_neighborhood_reader: None,
             meeting_prep_status_reader: None,
             claim_receipt_reader: None,
             account_list_reader: None,
@@ -1707,6 +1819,7 @@ impl<'a> ServiceContext<'a> {
             temporal_maintenance: None,
             composition_commit: None,
             entity_touchpoints_reader: None,
+            entity_neighborhood_reader: None,
             meeting_prep_status_reader: None,
             claim_receipt_reader: None,
             account_list_reader: None,
@@ -1751,6 +1864,7 @@ impl<'a> ServiceContext<'a> {
             temporal_maintenance: None,
             composition_commit: None,
             entity_touchpoints_reader: None,
+            entity_neighborhood_reader: None,
             meeting_prep_status_reader: None,
             claim_receipt_reader: None,
             account_list_reader: None,
@@ -1843,6 +1957,14 @@ impl<'a> ServiceContext<'a> {
         self
     }
 
+    pub fn with_entity_neighborhood_reader(
+        mut self,
+        reader: Arc<dyn EntityNeighborhoodReadHandle>,
+    ) -> Self {
+        self.entity_neighborhood_reader = Some(reader);
+        self
+    }
+
     pub fn with_meeting_prep_status_reader(
         mut self,
         reader: Arc<dyn MeetingPrepStatusReadHandle>,
@@ -1896,6 +2018,21 @@ impl<'a> ServiceContext<'a> {
             ));
         };
         reader.read_entity_touchpoints(query).await
+    }
+
+    /// Reader-backed generic relationship and participation evidence. Missing
+    /// readers are surfaced as typed read failures so producers can render
+    /// section caveats instead of silently treating absent readers as no data.
+    pub async fn read_entity_neighborhood(
+        &self,
+        query: EntityNeighborhoodQuery,
+    ) -> Result<EntityNeighborhoodSnapshot, EntityNeighborhoodReadError> {
+        let Some(reader) = &self.entity_neighborhood_reader else {
+            return Err(EntityNeighborhoodReadError::ReadFailed(
+                self.missing_reader_error("entity_neighborhood_reader"),
+            ));
+        };
+        reader.read_entity_neighborhood(query).await
     }
 
     /// Read per-meeting prep status. Returns

@@ -44,8 +44,7 @@ static SIGNAL_TYPE_RESOLUTION_IN_FLIGHT: OnceLock<SignalTypeResolutionInFlight> 
 type SignalTypeResolutionInFlight = Arc<Mutex<HashMap<String, Vec<oneshot::Sender<SignalType>>>>>;
 
 #[cfg(test)]
-static SIGNAL_TYPE_LLM_CALLS_FOR_TEST: std::sync::atomic::AtomicUsize =
-    std::sync::atomic::AtomicUsize::new(0);
+static SIGNAL_TYPE_LLM_CALLS_FOR_TEST: OnceLock<Mutex<HashMap<String, usize>>> = OnceLock::new();
 
 #[cfg(test)]
 static SIGNAL_TYPE_LLM_DELAY_MS_FOR_TEST: std::sync::atomic::AtomicU64 =
@@ -118,13 +117,22 @@ pub(crate) fn replace_unknown_signal_observation_sender_for_test(
 pub(crate) fn reset_signal_type_resolution_state_for_test() {
     signal_type_resolution_cache().write().clear();
     signal_type_resolution_in_flight().lock().clear();
-    SIGNAL_TYPE_LLM_CALLS_FOR_TEST.store(0, std::sync::atomic::Ordering::SeqCst);
+    signal_type_llm_calls_for_test_map().lock().clear();
     SIGNAL_TYPE_LLM_DELAY_MS_FOR_TEST.store(0, std::sync::atomic::Ordering::SeqCst);
 }
 
 #[cfg(test)]
-pub(crate) fn signal_type_llm_calls_for_test() -> usize {
-    SIGNAL_TYPE_LLM_CALLS_FOR_TEST.load(std::sync::atomic::Ordering::SeqCst)
+fn signal_type_llm_calls_for_test_map() -> &'static Mutex<HashMap<String, usize>> {
+    SIGNAL_TYPE_LLM_CALLS_FOR_TEST.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+#[cfg(test)]
+pub(crate) fn signal_type_llm_calls_for_test(signal_type: &str) -> usize {
+    signal_type_llm_calls_for_test_map()
+        .lock()
+        .get(signal_type)
+        .copied()
+        .unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -910,18 +918,22 @@ impl IntelligenceProvider for SignalTypingTestProvider {
         prompt: PromptInput,
         _tier: ModelTier,
     ) -> std::result::Result<Completion, ProviderError> {
-        SIGNAL_TYPE_LLM_CALLS_FOR_TEST.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let delay_ms = SIGNAL_TYPE_LLM_DELAY_MS_FOR_TEST.load(std::sync::atomic::Ordering::SeqCst);
-        if delay_ms > 0 {
-            tokio::time::sleep(Duration::from_millis(delay_ms)).await;
-        }
-
         let signal_type = prompt
             .canonical_json_inputs
             .as_ref()
             .and_then(|value| value.get("signal_type"))
             .and_then(Value::as_str)
             .unwrap_or_default();
+        *signal_type_llm_calls_for_test_map()
+            .lock()
+            .entry(signal_type.to_string())
+            .or_insert(0) += 1;
+
+        let delay_ms = SIGNAL_TYPE_LLM_DELAY_MS_FOR_TEST.load(std::sync::atomic::Ordering::SeqCst);
+        if delay_ms > 0 {
+            tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+        }
+
         let response = serde_json::json!({
             "signal_type": serde_json::Value::Null,
             "original": signal_type,
