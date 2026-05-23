@@ -176,7 +176,7 @@ if ( ! function_exists( 'dailyos_meeting_header_empty_chip' ) ) {
 	 */
 	function dailyos_meeting_header_empty_chip( string $reason, string $label ): string {
 		return sprintf(
-			'<header class="wp-block-dailyos-meeting-header is-empty" data-empty-reason="%s"><p class="meeting-intel_recordOverline">%s</p></header>',
+			'<header class="wp-block-dailyos-meeting-header wp-block-dailyos-meeting-header--empty is-empty"><span class="dailyos-empty-chip" data-empty-reason="%s">%s</span></header>',
 			esc_attr( $reason ),
 			esc_html( $label )
 		);

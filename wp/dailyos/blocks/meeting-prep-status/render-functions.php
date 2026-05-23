@@ -199,10 +199,31 @@ if ( ! function_exists( 'dailyos_meeting_prep_status_empty' ) ) {
 	 * Visible empty-state chip per §10 invariant — never silent-hidden when
 	 * we genuinely have no data to project.
 	 */
-	function dailyos_meeting_prep_status_empty( string $reason ): string {
+	function dailyos_meeting_prep_status_empty( string $reason, string $label = '' ): string {
+		if ( '' === $label ) {
+			$label = dailyos_meeting_prep_status_empty_label( $reason );
+		}
+
 		return sprintf(
-			'<div class="wp-block-dailyos-meeting-prep-status is-empty" data-empty-reason="%s"></div>',
-			esc_attr( $reason )
+			'<div class="wp-block-dailyos-meeting-prep-status wp-block-dailyos-meeting-prep-status--empty is-empty"><span class="dailyos-empty-chip" data-empty-reason="%s">%s</span></div>',
+			esc_attr( $reason ),
+			esc_html( $label )
 		);
+	}
+}
+
+if ( ! function_exists( 'dailyos_meeting_prep_status_empty_label' ) ) {
+	function dailyos_meeting_prep_status_empty_label( string $reason ): string {
+		switch ( $reason ) {
+			case 'missing_meeting_context':
+				return __( 'No meeting context.', 'dailyos' );
+			case 'runtime_unavailable':
+				return __( 'Briefing status unavailable.', 'dailyos' );
+			case 'prep_status_error':
+				return __( 'Briefing status unavailable.', 'dailyos' );
+			case 'no_dto':
+			default:
+				return __( 'No briefing status yet.', 'dailyos' );
+		}
 	}
 }
