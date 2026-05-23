@@ -914,22 +914,31 @@ pub struct GravatarStatus {
 
 /// Get Gravatar integration status.
 #[tauri::command]
-pub fn get_gravatar_status(state: State<'_, Arc<AppState>>) -> GravatarStatus {
+pub async fn get_gravatar_status(
+    state: State<'_, Arc<AppState>>,
+) -> Result<GravatarStatus, String> {
+    let started = std::time::Instant::now();
     let config = state.config.read().as_ref().map(|c| c.gravatar.clone());
 
     let gravatar_config = config.unwrap_or_default();
 
-    let cached_count =
-        crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-            .ok()
-            .map(|db| crate::gravatar::cache::count_cached(db.conn_ref()))
-            .unwrap_or(0);
+    let cached_count = state
+        .db_read(|db| Ok(crate::gravatar::cache::count_cached(db.conn_ref())))
+        .await
+        .map_err(String::from)
+        .unwrap_or(0);
 
-    GravatarStatus {
+    let status = GravatarStatus {
         enabled: gravatar_config.enabled,
         cached_count,
-        api_key_set: crate::gravatar::keychain::get_gravatar_api_key().is_some(),
-    }
+        api_key_set: tokio::task::spawn_blocking(crate::gravatar::keychain::get_gravatar_api_key)
+            .await
+            .ok()
+            .flatten()
+            .is_some(),
+    };
+    log_command_latency("get_gravatar_status", started, READ_CMD_LATENCY_BUDGET_MS);
+    Ok(status)
 }
 
 /// Enable or disable Gravatar integration.
@@ -1649,41 +1658,46 @@ pub struct LinearStatusData {
 
 /// Get Linear integration status.
 #[tauri::command]
-pub fn get_linear_status(state: State<'_, Arc<AppState>>) -> LinearStatusData {
+pub async fn get_linear_status(
+    state: State<'_, Arc<AppState>>,
+) -> Result<LinearStatusData, String> {
+    let started = std::time::Instant::now();
     let config = state.config.read().as_ref().map(|c| c.linear.clone());
 
     let linear_config = config.unwrap_or_default();
 
-    let (issue_count, project_count, last_sync) =
-        crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-            .ok()
-            .map(|db| {
-                let issues: i64 = db
-                    .conn_ref()
-                    .query_row("SELECT COUNT(*) FROM linear_issues", [], |row| row.get(0))
-                    .unwrap_or(0);
-                let projects: i64 = db
-                    .conn_ref()
-                    .query_row("SELECT COUNT(*) FROM linear_projects", [], |row| row.get(0))
-                    .unwrap_or(0);
-                let last: Option<String> = db
-                    .conn_ref()
-                    .query_row("SELECT MAX(synced_at) FROM linear_issues", [], |row| {
-                        row.get(0)
-                    })
-                    .unwrap_or(None);
-                (issues, projects, last)
-            })
-            .unwrap_or((0, 0, None));
+    let (issue_count, project_count, last_sync) = state
+        .db_read(|db| {
+            let issues: i64 = db
+                .conn_ref()
+                .query_row("SELECT COUNT(*) FROM linear_issues", [], |row| row.get(0))
+                .unwrap_or(0);
+            let projects: i64 = db
+                .conn_ref()
+                .query_row("SELECT COUNT(*) FROM linear_projects", [], |row| row.get(0))
+                .unwrap_or(0);
+            let last: Option<String> = db
+                .conn_ref()
+                .query_row("SELECT MAX(synced_at) FROM linear_issues", [], |row| {
+                    row.get(0)
+                })
+                .unwrap_or(None);
+            Ok((issues, projects, last))
+        })
+        .await
+        .map_err(String::from)
+        .unwrap_or((0, 0, None));
 
-    LinearStatusData {
+    let status = LinearStatusData {
         enabled: linear_config.enabled,
         api_key_set: linear_config.api_key.is_some(),
         poll_interval_minutes: linear_config.poll_interval_minutes,
         issue_count,
         project_count,
         last_sync_at: last_sync,
-    }
+    };
+    log_command_latency("get_linear_status", started, READ_CMD_LATENCY_BUDGET_MS);
+    Ok(status)
 }
 
 /// Enable or disable Linear integration.
@@ -2943,9 +2957,13 @@ pub fn get_audit_log_records(
     category_filter: Option<String>,
     state: State<'_, Arc<AppState>>,
 ) -> Vec<crate::audit_log::AuditRecord> {
+    let started = std::time::Instant::now();
     let path = state.audit_log.lock().path().to_path_buf();
 
-    crate::audit_log::read_records(&path, limit.unwrap_or(100), category_filter.as_deref())
+    let records =
+        crate::audit_log::read_records(&path, limit.unwrap_or(100), category_filter.as_deref());
+    log_command_latency("get_audit_log_records", started, READ_CMD_LATENCY_BUDGET_MS);
+    records
 }
 
 /// Export the audit log to a user-selected path.
@@ -2988,10 +3006,21 @@ pub fn verify_audit_log_integrity(state: State<'_, Arc<AppState>>) -> Result<Str
 
 /// Get the current context mode (Local or Glean).
 #[tauri::command]
-pub fn get_context_mode(state: State<'_, Arc<AppState>>) -> Result<serde_json::Value, String> {
-    let mode = state.with_db(|db| Ok(crate::context_provider::read_context_mode(db)))?;
+pub async fn get_context_mode(
+    state: State<'_, Arc<AppState>>,
+) -> Result<serde_json::Value, String> {
+    let started = std::time::Instant::now();
+    let result = async {
+        let mode = state
+            .db_read(|db| Ok(crate::context_provider::read_context_mode(db)))
+            .await
+            .map_err(String::from)?;
 
-    serde_json::to_value(&mode).map_err(|e| format!("Serialization error: {}", e))
+        serde_json::to_value(&mode).map_err(|e| format!("Serialization error: {}", e))
+    }
+    .await;
+    log_command_latency("get_context_mode", started, READ_CMD_LATENCY_BUDGET_MS);
+    result
 }
 
 /// Set the context mode and hot-swap the provider immediately.

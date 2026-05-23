@@ -53,6 +53,89 @@ pub fn set_meeting_prep_context(
         .map_err(|e| e.to_string())
 }
 
+pub async fn mark_meeting_intelligence_viewed(
+    ctx: &ServiceContext<'_>,
+    state: &AppState,
+    meeting_id: &str,
+) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    let meeting_id = meeting_id.to_string();
+    state
+        .db_write(move |db| {
+            let Some(meeting) = db
+                .get_meeting_intelligence_row(&meeting_id)
+                .map_err(|e| e.to_string())?
+            else {
+                return Ok(());
+            };
+
+            db.mark_prep_reviewed(
+                &meeting.id,
+                meeting.calendar_event_id.as_deref(),
+                &meeting.title,
+            )
+            .map_err(|e| e.to_string())?;
+            db.clear_meeting_new_signals(&meeting.id)
+                .map_err(|e| e.to_string())?;
+            Ok(())
+        })
+        .await
+        .map_err(String::from)
+}
+
+pub(crate) fn record_cancelled_calendar_meetings(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    engine: &crate::signals::propagation::PropagationEngine,
+    current_calendar_event_ids: &HashSet<String>,
+    range_start: &str,
+    range_end: &str,
+) -> Result<usize, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    db.with_transaction(|tx| {
+        let mut stmt = tx
+            .conn_ref()
+            .prepare(
+                "SELECT m.id, m.calendar_event_id FROM meetings m
+                 LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
+                 WHERE m.start_time >= ?1 AND m.start_time < ?2
+                 AND m.calendar_event_id IS NOT NULL
+                 AND (mt.intelligence_state IS NULL OR mt.intelligence_state != 'archived')",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(rusqlite::params![range_start, range_end], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| e.to_string())?;
+        let mut cancelled = Vec::new();
+        for row in rows {
+            let (id, calendar_event_id) = row.map_err(|e| e.to_string())?;
+            if !current_calendar_event_ids.contains(&calendar_event_id) {
+                cancelled.push(id);
+            }
+        }
+
+        for meeting_id in &cancelled {
+            tx.update_intelligence_state(meeting_id, "archived", None, None)
+                .map_err(|e| e.to_string())?;
+            crate::services::signals::emit_and_propagate_or_log(
+                ctx,
+                tx,
+                engine,
+                "meeting",
+                meeting_id,
+                "meeting_cancelled",
+                "calendar",
+                None,
+                0.9,
+            );
+        }
+
+        Ok(cancelled.len())
+    })
+}
+
 pub fn update_capture_content(
     ctx: &ServiceContext<'_>,
     db: &ActionDb,
@@ -2235,16 +2318,14 @@ pub fn resolve_prep_path(meeting_id: &str, state: &AppState) -> Result<std::path
 
 /// Get full meeting intelligence for the detail page.
 ///
-/// Uses db_read for the heavy lifting (queries + prep loading), then a
-/// lightweight db_write only for the two trivial UPDATEs (mark_prep_reviewed,
-/// clear_meeting_new_signals). Disk I/O for prep files happens inside the
-/// read closure to avoid a second round-trip, but doesn't block the writer.
+/// Uses db_read for the heavy lifting (queries + prep loading). Disk I/O for
+/// prep files happens inside the read closure to avoid a second round-trip,
+/// but this foreground read never triggers a DB write.
 pub async fn get_meeting_intelligence(
     ctx: &ServiceContext<'_>,
     state: &AppState,
     meeting_id: &str,
 ) -> Result<MeetingIntelligence, String> {
-    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let config = state
         .config
         .read()
@@ -2252,10 +2333,10 @@ pub async fn get_meeting_intelligence(
         .ok_or("No configuration loaded")?;
 
     let meeting_id_owned = meeting_id.to_string();
+    let current_time = ctx.clock.now();
 
-    // Pre-check: if meeting doesn't exist in DB, try to persist it from the
-    // live calendar cache. This covers the race where calendar_merge shows a
-    // "New" event on the briefing before the poller has written it to SQLite.
+    // Pre-check: if meeting doesn't exist in DB, render from the live calendar
+    // cache without auto-persisting from this foreground read.
     let mid_check = meeting_id_owned.clone();
     let exists = state
         .db_read(move |db| {
@@ -2288,48 +2369,15 @@ pub async fn get_meeting_intelligence(
         };
 
         if let Some(event) = live_event {
-            let primary_id = crate::workflow::deliver::meeting_primary_id(
-                Some(&event.id),
-                &event.title,
-                &event.start.to_rfc3339(),
-                event.meeting_type.as_str(),
-            );
-            let attendees_json = serde_json::to_string(&event.attendees).unwrap_or_default();
-            let start_rfc = event.start.to_rfc3339();
-            let end_rfc = event.end.to_rfc3339();
-            let mtype = event.meeting_type.as_str().to_string();
-            let title = event.title.clone();
-            let eid = event.id.clone();
-            #[allow(
-                clippy::let_underscore_must_use,
-                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-            )]
-            let _ = state
-                .db_write(move |db| {
-                    db.ensure_meeting_in_history(crate::db::EnsureMeetingHistoryInput {
-                        id: &primary_id,
-                        title: &title,
-                        meeting_type: &mtype,
-                        start_time: &start_rfc,
-                        end_time: Some(&end_rfc),
-                        calendar_event_id: Some(&eid),
-                        attendees: Some(&attendees_json),
-                        description: None,
-                    })
-                    .map_err(|e| e.to_string())?;
-                    Ok(())
-                })
-                .await
-                .map_err(String::from);
-            log::info!(
-                "Auto-persisted meeting from live calendar cache: {}",
-                meeting_id
-            );
+            return Ok(build_live_calendar_meeting_intelligence(
+                &config.workspace_path,
+                current_time,
+                &event,
+            ));
         }
     }
 
     // Phase 1: Read-only — all queries, prep loading, quality assessment
-    let current_time = ctx.clock.now();
     let intel = state
         .db_read(move |db| {
             let workspace = Path::new(&config.workspace_path);
@@ -2481,43 +2529,84 @@ pub async fn get_meeting_intelligence(
         })
         .await?;
 
-    // Step 2: Lightweight writes — mark reviewed + clear new-signal flag
-    let write_meeting_id = intel.meeting.id.clone();
-    let write_prep_event_id = intel
-        .prep
-        .as_ref()
-        .and_then(|p| p.calendar_event_id.clone());
-    let write_prep_title = intel
-        .prep
-        .as_ref()
-        .map(|p| p.title.clone())
-        .unwrap_or_default();
-    #[allow(
-        clippy::let_underscore_must_use,
-        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-    )]
-    let _ = state
-        .db_write(move |db| {
-            #[allow(
-                clippy::let_underscore_must_use,
-                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-            )]
-            let _ = db.mark_prep_reviewed(
-                &write_meeting_id,
-                write_prep_event_id.as_deref(),
-                &write_prep_title,
-            );
-            #[allow(
-                clippy::let_underscore_must_use,
-                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-            )]
-            let _ = db.clear_meeting_new_signals(&write_meeting_id);
-            Ok::<(), String>(())
-        })
-        .await
-        .map_err(String::from);
-
     Ok(intel)
+}
+
+fn build_live_calendar_meeting_intelligence(
+    workspace_path: &str,
+    current_time: DateTime<Utc>,
+    event: &crate::types::CalendarEvent,
+) -> MeetingIntelligence {
+    let meeting_id = crate::workflow::deliver::meeting_primary_id(
+        Some(&event.id),
+        &event.title,
+        &event.start.to_rfc3339(),
+        event.meeting_type.as_str(),
+    );
+    let attendees_json = serde_json::to_string(&event.attendees).ok();
+    let meeting = crate::db::DbMeeting {
+        id: meeting_id,
+        title: event.title.clone(),
+        meeting_type: event.meeting_type.as_str().to_string(),
+        start_time: event.start.to_rfc3339(),
+        end_time: Some(event.end.to_rfc3339()),
+        attendees: attendees_json,
+        notes_path: None,
+        summary: None,
+        created_at: current_time.to_rfc3339(),
+        calendar_event_id: Some(event.id.clone()),
+        description: None,
+        prep_context_json: None,
+        user_agenda_json: None,
+        user_notes: None,
+        prep_frozen_json: None,
+        prep_frozen_at: None,
+        prep_snapshot_path: None,
+        prep_snapshot_hash: None,
+        transcript_path: None,
+        transcript_processed_at: None,
+        intelligence_state: None,
+        intelligence_quality: None,
+        last_enriched_at: None,
+        signal_count: None,
+        has_new_signals: None,
+        last_viewed_at: None,
+    };
+
+    let today_dir = Path::new(workspace_path).join("_today");
+    let prep = load_meeting_prep_from_sources(&today_dir, &meeting);
+    let start_dt = parse_meeting_datetime(&meeting.start_time);
+    let end_dt = meeting
+        .end_time
+        .as_deref()
+        .and_then(parse_meeting_datetime)
+        .or(start_dt.map(|s| s + chrono::Duration::hours(1)));
+    let is_current = start_dt
+        .zip(end_dt)
+        .is_some_and(|(s, e)| s <= current_time && current_time <= e);
+    let is_past = end_dt.is_some_and(|e| e < current_time);
+
+    MeetingIntelligence {
+        meeting,
+        prep,
+        is_past,
+        is_current,
+        is_frozen: false,
+        can_edit_user_layer: false,
+        user_agenda: None,
+        user_notes: None,
+        dismissed_topics: Vec::new(),
+        hidden_attendees: Vec::new(),
+        outcomes: None,
+        captures: Vec::new(),
+        actions: Vec::new(),
+        linked_entities: Vec::new(),
+        prep_snapshot_path: None,
+        prep_frozen_at: None,
+        transcript_path: None,
+        transcript_processed_at: None,
+        intelligence_quality: None,
+    }
 }
 
 /// Link meeting entity: DB link, clear prep, enqueue re-assembly.
