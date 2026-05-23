@@ -50,6 +50,7 @@ pub struct LivePersonListReader;
 pub struct LiveProjectListReader;
 pub struct LiveEntityContextClaimReader;
 pub struct LivePrepareMeetingContextReader;
+pub struct LiveDailyReadinessContextReader;
 pub struct LiveTemporalWorkspaceReader;
 pub struct LiveCompositionCommitter;
 /// Live adapter projecting `services::meeting_prep_status::read`
@@ -70,6 +71,7 @@ pub fn attach_live_workspace_readers(ctx: ServiceContext<'_>) -> ServiceContext<
         .with_project_list_reader(Arc::new(LiveProjectListReader))
         .with_entity_context_claim_reader(Arc::new(LiveEntityContextClaimReader))
         .with_prepare_meeting_context_reader(Arc::new(LivePrepareMeetingContextReader))
+        .with_daily_readiness_context_reader(Arc::new(LiveDailyReadinessContextReader))
         .with_trajectory_reader(Arc::new(LiveTemporalWorkspaceReader))
         .with_temporal_maintenance(Arc::new(LiveTemporalWorkspaceReader))
         .with_composition_commit_handle(Arc::new(LiveCompositionCommitter))
@@ -579,6 +581,153 @@ impl PrepareMeetingContextReadHandle for LivePrepareMeetingContextReader {
             .await
             .map_err(|error| format!("prepare_meeting context read task failed: {error}"))?
         })
+    }
+}
+
+impl DailyReadinessContextReadHandle for LiveDailyReadinessContextReader {
+    fn read_daily_readiness_context<'a>(
+        &'a self,
+        workspace_scope: String,
+        date: String,
+    ) -> DailyReadinessContextReadFuture<'a> {
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                let db = open_action_db()?;
+                project_daily_readiness_context_snapshot(&db, &workspace_scope, &date)
+            })
+            .await
+            .map_err(|error| format!("daily readiness context read task failed: {error}"))?
+        })
+    }
+}
+
+fn project_daily_readiness_context_snapshot(
+    db: &crate::db::ActionDb,
+    workspace_scope: &str,
+    date: &str,
+) -> Result<DailyReadinessContextSnapshot, String> {
+    let parsed_date = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+        .map_err(|error| format!("invalid daily readiness date `{date}`: {error}"))?;
+    let next_date = parsed_date
+        .checked_add_days(chrono::Days::new(1))
+        .ok_or_else(|| format!("invalid next-day range for daily readiness date `{date}`"))?;
+    let start = parsed_date.format("%Y-%m-%d").to_string();
+    let end = next_date.format("%Y-%m-%d").to_string();
+    let conn = db.conn_ref();
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, title, start_time, end_time
+             FROM meetings
+             WHERE start_time >= ?1 AND start_time < ?2
+             ORDER BY start_time ASC",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = stmt
+        .query_map(rusqlite::params![start, end], |row| {
+            Ok(DailyReadinessMeetingSnapshot {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                starts_at: row.get(2)?,
+                ends_at: row.get(3)?,
+                workspace_scope: workspace_scope.to_string(),
+            })
+        })
+        .map_err(|error| error.to_string())?;
+    let meetings: Vec<DailyReadinessMeetingSnapshot> = rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    let meeting_ids = meetings
+        .iter()
+        .map(|meeting| meeting.id.clone())
+        .collect::<Vec<_>>();
+    let mut coverage_warnings = Vec::new();
+    let entity_map = match db.get_linked_entities_map_for_meetings(&meeting_ids) {
+        Ok(entity_map) => entity_map,
+        Err(_) => {
+            coverage_warnings.push(DailyReadinessCoverageWarningSnapshot {
+                kind: "linked_entities_read_failed".to_string(),
+                message: "Linked meeting subjects could not be read for this briefing.".to_string(),
+                count: meeting_ids.len() as u32,
+                workspace_scope: workspace_scope.to_string(),
+            });
+            Default::default()
+        }
+    };
+    let mut seen_subjects = HashSet::new();
+    let mut tracked_subjects = Vec::new();
+    for linked_entities in entity_map.values() {
+        for entity in linked_entities {
+            let key = format!("{}:{}", entity.entity_type, entity.id);
+            if !seen_subjects.insert(key) {
+                continue;
+            }
+            tracked_subjects.push(DailyReadinessSubjectSnapshot {
+                kind: entity.entity_type.clone(),
+                id: entity.id.clone(),
+                display_name: entity.name.clone(),
+                workspace_scope: workspace_scope.to_string(),
+            });
+        }
+    }
+
+    Ok(DailyReadinessContextSnapshot {
+        workspace_scope: workspace_scope.to_string(),
+        date: date.to_string(),
+        meetings,
+        tracked_subjects,
+        overnight_changes: Vec::new(),
+        risk_shifts: Vec::new(),
+        open_loops: Vec::new(),
+        coverage_warnings,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::params;
+
+    #[test]
+    fn daily_readiness_context_warns_when_linked_subjects_cannot_be_read() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let db = crate::db::ActionDb::open_at_unencrypted(
+            tempdir.path().join("daily-readiness-context.db"),
+        )
+        .expect("open db");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO meetings (id, title, meeting_type, start_time, end_time, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    "meeting-1",
+                    "Daily Review",
+                    "customer",
+                    "2026-05-23T09:00:00Z",
+                    "2026-05-23T09:30:00Z",
+                    "2026-05-23T08:00:00Z",
+                ],
+            )
+            .expect("insert meeting");
+        db.conn_ref()
+            .execute_batch("DROP VIEW IF EXISTS linked_entities;")
+            .expect("drop linked_entities view");
+
+        let snapshot = project_daily_readiness_context_snapshot(&db, "local", "2026-05-23")
+            .expect("read daily readiness context");
+
+        assert_eq!(snapshot.meetings.len(), 1);
+        assert!(snapshot.tracked_subjects.is_empty());
+        assert_eq!(snapshot.coverage_warnings.len(), 1);
+        assert_eq!(
+            snapshot.coverage_warnings[0].kind,
+            "linked_entities_read_failed"
+        );
+        assert_eq!(
+            snapshot.coverage_warnings[0].message,
+            "Linked meeting subjects could not be read for this briefing."
+        );
+        assert_eq!(snapshot.coverage_warnings[0].count, 1);
+        assert_eq!(snapshot.coverage_warnings[0].workspace_scope, "local");
     }
 }
 
