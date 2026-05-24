@@ -23,7 +23,7 @@ mod abilities {
 
 mod services {
     pub mod accounts {
-        pub fn update_account_field() {}
+        pub fn update_account_field_inner() {}
     }
 
     pub mod context {
@@ -100,7 +100,7 @@ async fn dos210_descriptor_parent(
     _ctx: &AbilityContext<'_>,
     _input: DescriptorInput,
 ) -> AbilityResult<DescriptorOutput> {
-    services::accounts::update_account_field();
+    services::accounts::update_account_field_inner();
     descriptor_output("dos210_descriptor_parent")
 }
 
@@ -128,7 +128,7 @@ fn macro_emitted_descriptor_carries_full_policy_into_inventory() {
     assert_eq!(descriptor.composes[0].ability, "dos210_descriptor_child");
     assert_eq!(
         descriptor.mutates,
-        &["services::accounts::update_account_field"]
+        &["services::accounts::update_account_field_inner"]
     );
     assert_eq!(
         descriptor.signal_policy.emits_on_output_change,

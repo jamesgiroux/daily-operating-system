@@ -1,15 +1,16 @@
-//! Smoke test for the MCP v2 migrations after dev-reconciliation renumbering.
+//! Smoke test for the MCP v2 migrations after dev-reconciliation renumbering
+//! and the v259 nonce-ledger repair.
 //!
 //! Runs the full migration chain against an in-memory SQLite and asserts the
 //! schema landed correctly: tables exist, expected columns are present, and
-//! the composite UNIQUE constraints + indexes from ADR-0102 §C.bis.schema are
-//! enforced.
+//! the composite UNIQUE constraints + indexes from ADR-0102 §C.bis.schema and
+//! the follow-up repair are enforced.
 
 use dailyos_lib::migration_test_api::run_migrations;
 use rusqlite::Connection;
 
 #[test]
-fn dos168_v255_v258_migrations_land_canonical_schema() {
+fn dos168_v255_v259_migrations_land_canonical_schema() {
     let conn = Connection::open_in_memory().expect("open in-memory database");
     run_migrations(&conn).expect("migrations apply cleanly");
 
@@ -76,27 +77,24 @@ fn dos168_v255_v258_migrations_land_canonical_schema() {
         "missing handle index per ADR-0102 §D.bis"
     );
 
-    // ---- Transport-ceremony rip verification ----
-    // Migration 257 (mcp_transport_nonce_ledger) was never introduced — the
-    // nonce-replay defense applied to a transport that doesn't have a wire to
-    // capture (stdio MCP / loopback). Proving its absence here keeps a future
-    // re-introduction loud.
-    let nonce_table_exists: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM sqlite_master \
-             WHERE type = 'table' AND name = 'mcp_transport_nonce_ledger'",
-            [],
-            |row| row.get(0),
-        )
-        .expect("query sqlite_master");
-    assert_eq!(
-        nonce_table_exists, 0,
-        "mcp_transport_nonce_ledger reintroduced — transport-ceremony rip regressed"
+    // ---- v259 nonce-ledger repair ----
+    // Migration 257 stayed absent after the simplified MCP substrate line, but
+    // v259 repairs DBs that reached v258 without the table needed for pairing
+    // transport nonces.
+    let nonce_cols = table_columns(&conn, "mcp_transport_nonce_ledger");
+    assert!(nonce_cols.contains(&"nonce".to_string()));
+    assert!(nonce_cols.contains(&"client_id".to_string()));
+    assert!(nonce_cols.contains(&"issued_at".to_string()));
+    assert!(nonce_cols.contains(&"expires_at".to_string()));
+    assert!(nonce_cols.contains(&"consumed_at".to_string()));
+    assert!(
+        has_index(&conn, "mcp_transport_nonce_ledger", "idx_mcp_nonce_lookup"),
+        "missing idx_mcp_nonce_lookup from v259 repair"
     );
 
     // Seed a manifest row so subsequent assertions can reference a client_id.
-    // transport_key_ref is retained for schema stability but is always NULL
-    // post-rip (no transport key material in the personal-tier model).
+    // transport_key_ref is retained for schema stability but is always NULL in
+    // this smoke fixture.
     conn.execute(
         "INSERT INTO mcp_client_manifest (client_id, paired_at, revoked_at, transport_key_ref) \
          VALUES ('smoke-client', 1, NULL, NULL)",

@@ -7,6 +7,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useNavigate } from "@tanstack/react-router";
 import type { Person, PersonDetail, DuplicateCandidate, ContentFile } from "@/types";
+import { mergeEntityDetailIntelligence } from "@/services/entity-intelligence/entity-detail-mapper";
+import { useEntityDetailIntelligence } from "./useEntityDetailIntelligence";
 import { useTauriEvent } from "./useTauriEvent";
 
 type IntelligenceUpdatedPayload = {
@@ -361,7 +363,11 @@ export function usePersonDetail(personId: string | undefined) {
 
   // ─── Derived ──────────────────────────────────────────────────────────
 
-  const intelligence = detail?.intelligence ?? null;
+  const entityIntelligence = useEntityDetailIntelligence("person", personId);
+  const intelligence = mergeEntityDetailIntelligence(
+    detail?.intelligence ?? null,
+    entityIntelligence.response,
+  );
 
   return {
     // Core data

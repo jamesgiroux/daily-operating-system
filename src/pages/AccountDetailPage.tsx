@@ -390,7 +390,6 @@ export default function AccountDetailPage() {
             />
             <StrategicLandscape
               intelligence={intelligence}
-              onUpdateField={page.handleUpdateIntelField}
               onItemFeedback={fb.submit}
             />
           </MarginSection>
@@ -405,7 +404,6 @@ export default function AccountDetailPage() {
             />
             <ValueCommitments
               intelligence={intelligence}
-              onUpdateField={page.handleUpdateIntelField}
               onItemFeedback={fb.submit}
             />
           </MarginSection>
