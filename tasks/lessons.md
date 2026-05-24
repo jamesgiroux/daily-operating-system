@@ -1,4 +1,7 @@
 # Lessons
 
+- 2026-05-23: Treat workspace JSON/MD artifacts as write-only projections unless a migration/backfill/import path explicitly says otherwise. Runtime, MCP, prompt-input, and surface reads must use DB/runtime services first, with regression gates to stop `intelligence.json`, `dashboard.json`, or derived markdown from becoming authority again.
 - 2026-05-22: When a surface starts rendering claim-backed rows, treat opaque claim ids as machine metadata only. Visible block copy must come from rendered claim text or a surface-specific assessment composer, and class-wide row renderer sweeps need a regression gate so one fixed block does not leave sibling blocks leaking ids.
 - 2026-05-22: Do not assume another agent session still owns dirty branch state after a handoff. Re-check the worktree and commit the active branch state directly when the user confirms no peer session is running.
+- 2026-05-22: When a new producer exposes a substrate gap, investigate the full abilities-runtime contract before narrowing the fix to the first affected claim type. Trust recomputation, producer triggers, and required provenance inputs are runtime-wide concerns. K-out: `docs/solutions/architecture-patterns/claim-producers-require-runtime-wide-trust-audit-2026-05-22.md`.
+- 2026-05-22: Do not preserve a generic scrub token as a source-system label when it is standing in for an allowed platform name. Salesforce is product/platform vocabulary, not customer PII, and provenance/trust code should carry the real source label.

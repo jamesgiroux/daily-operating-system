@@ -515,7 +515,7 @@ export function SuggestionCard({
 
 /* ─────────────────────────────────────────────────────────────────────────
  * SharedRefRow — Chapter 5 "Shared with the team".
- * Mirror of externally-visible state — Linear, REDACTED, Slack.
+ * Mirror of externally-visible state — Linear, Salesforce, Slack.
  * ──────────────────────────────────────────────────────────────────────── */
 export interface SharedRefRowProps {
   id: string;

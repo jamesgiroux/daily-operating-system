@@ -19,9 +19,11 @@ use super::contracts::{
     EntityFact, EntityIntelligenceEnvelope, EntityIntelligenceInput, EntityKind,
     EnvelopeProvenance, EnvelopeProvenanceSource, EnvelopeSection, EnvelopeTrustSummary,
     ExclusionReason, Freshness, HealthStory, InclusionReason, MetadataProposal, NormalizedSubject,
-    OpenLoopWithReceipt, Paginated, ProvenanceRef, ReceiptTargetRef, RecordEntry, SectionState,
-    SubjectScope, ThreadSummary, Touchpoint, TouchpointBundle, TouchpointKind,
-    ENVELOPE_SCHEMA_VERSION,
+    OpenLoopWithReceipt, Paginated, ProvenanceRef, ReceiptTargetRef, RecordEntry, RelationshipEdge,
+    RelationshipInclusionReason, RelationshipParticipant, RelationshipTruncation,
+    RelationshipsBundle, SectionState, SubjectScope, ThreadSummary, Touchpoint, TouchpointBundle,
+    TouchpointKind, ENVELOPE_SCHEMA_VERSION, ENVELOPE_SCHEMA_VERSION_V1,
+    ENVELOPE_SCHEMA_VERSION_V2,
 };
 use crate::abilities::list_open_loops::{ListOpenLoopsInput, OpenLoopSubject, OpenLoopsResult};
 use crate::abilities::provenance::source_time::{parse_source_timestamp, SourceTimestampStatus};
@@ -36,13 +38,16 @@ use crate::abilities::{
     AbilityCategory, AbilityContext, AbilityError, AbilityErrorKind, AbilityResult, Actor,
 };
 use crate::sensitivity::{
-    renderable_claim_text_with_value, ClaimDismissalSurface, RenderActor, RenderSurface,
+    renderable_claim_text_with_value, ClaimDismissalSurface, RenderActor, RenderPolicy,
+    RenderPolicyKind, RenderSurface, RenderableClaimText,
 };
 use crate::services::context::{
+    EntityNeighborhoodQuery, EntityNeighborhoodReadError, EntityNeighborhoodSnapshot,
+    EntityParticipantSnapshot, EntityRelationshipEdgeSnapshot, EntityRelationshipInclusionReason,
     EntityTouchpointSnapshot, EntityTouchpointsQuery, EntityTouchpointsReadError,
     EntityTouchpointsSnapshot, TouchpointInclusionReason,
 };
-use crate::types::{claim_allowed_for_prompt_input, IntelligenceClaim};
+use crate::types::{claim_allowed_for_prompt_input, ClaimSensitivity, IntelligenceClaim};
 
 const ABILITY_NAME: &str = "get_entity_intelligence";
 
@@ -50,12 +55,16 @@ const ABILITY_NAME: &str = "get_entity_intelligence";
 /// kicks in when the underlying reader returns more than this; W1 reads are bounded
 /// by `ContextDepth.claim_levels()` so the cap is informational at this stage.
 const DEFAULT_PAGE_SIZE: usize = 50;
+const NEIGHBORHOOD_MAX_DEPTH: u8 = 2;
+const NEIGHBORHOOD_PER_EDGE_CAP: usize = 50;
+const NEIGHBORHOOD_RECENT_TOUCHPOINT_CAP: usize = 5;
 
 pub async fn build_entity_intelligence(
     ctx: &AbilityContext<'_>,
     input: EntityIntelligenceInput,
 ) -> AbilityResult<EntityIntelligenceEnvelope> {
     validate_schema_version(input.schema_version)?;
+    validate_requested_sections(input.schema_version, input.sections.as_ref())?;
 
     let entity_type_str = input.entity_type.as_lower_str().to_string();
     let entity_id = input.entity_id.trim();
@@ -71,7 +80,7 @@ pub async fn build_entity_intelligence(
         display_label: display_label_for(&input.entity_type, entity_id),
     };
 
-    let active_sections = active_section_set(input.sections.as_ref());
+    let active_sections = active_section_set(input.schema_version, input.sections.as_ref());
 
     // ---- compose: facts -----------------------------------------------------
     let facts_active = active_sections.contains(&EnvelopeSection::Facts)
@@ -116,6 +125,25 @@ pub async fn build_entity_intelligence(
         Paginated::empty_stable()
     };
 
+    // ---- compose: relationships -------------------------------------------
+    let relationships = if input.schema_version >= ENVELOPE_SCHEMA_VERSION_V2
+        && active_sections.contains(&EnvelopeSection::Relationships)
+    {
+        compose_relationships(
+            ctx,
+            &input.entity_type,
+            entity_id,
+            &render_actor,
+            render_surface,
+            &mut envelope_provenance,
+        )
+        .await?
+    } else if input.schema_version >= ENVELOPE_SCHEMA_VERSION_V2 {
+        not_requested_relationships_bundle(&subject_ref)
+    } else {
+        None
+    };
+
     // ---- compose: touchpoints ---------------------------------------------
     let touchpoints = if active_sections.contains(&EnvelopeSection::Touchpoints) {
         compose_touchpoints(
@@ -150,12 +178,15 @@ pub async fn build_entity_intelligence(
 
     // ---- sections map enumerates ALL EnvelopeSection variants (AC-459.2) ---
     let sections_map = build_sections_map(
+        input.schema_version,
         &input.sections,
         SectionFill {
             facts_count: facts.items.len() as u64,
             health_present: health_story.is_some(),
             metadata_proposals_count: metadata_proposals.items.len() as u64,
             open_loops_count: open_loops.items.len() as u64,
+            relationships_count: relationships.as_ref().map(count_relationships).unwrap_or(0),
+            relationships_empty_reason: relationship_empty_reason(relationships.as_ref()),
             touchpoints_count: count_touchpoints(&touchpoints),
             threads_count: threads.items.len() as u64,
             record_entries_count: record_entries.items.len() as u64,
@@ -163,19 +194,20 @@ pub async fn build_entity_intelligence(
     );
 
     // ---- aggregate trust summary -------------------------------------------
-    let trust = aggregate_trust(&facts);
+    let trust = aggregate_trust(&facts, relationships.as_ref());
 
     // ---- aggregate sensitivity = max across facts (defaults to Public) -----
-    let sensitivity = aggregate_sensitivity(&facts, &record_entries);
+    let sensitivity = aggregate_sensitivity(&facts, &record_entries, relationships.as_ref());
 
     let envelope = EntityIntelligenceEnvelope {
-        schema_version: ENVELOPE_SCHEMA_VERSION,
+        schema_version: input.schema_version,
         subject: normalized_subject.clone(),
         sections: sections_map,
         facts,
         health_story,
         metadata_proposals,
         open_loops,
+        relationships,
         touchpoints,
         threads,
         record_entries,
@@ -214,13 +246,29 @@ pub async fn build_entity_intelligence(
 // ---- helpers ---------------------------------------------------------------
 
 fn validate_schema_version(schema_version: u32) -> Result<(), AbilityError> {
-    if schema_version == ENVELOPE_SCHEMA_VERSION {
+    if schema_version == ENVELOPE_SCHEMA_VERSION_V1 || schema_version == ENVELOPE_SCHEMA_VERSION {
         Ok(())
     } else {
         Err(validation_error(format!(
             "unsupported schema_version `{schema_version}` for `{ABILITY_NAME}`"
         )))
     }
+}
+
+fn validate_requested_sections(
+    schema_version: u32,
+    requested: Option<&Vec<EnvelopeSection>>,
+) -> Result<(), AbilityError> {
+    if schema_version < ENVELOPE_SCHEMA_VERSION_V2
+        && requested
+            .map(|sections| sections.contains(&EnvelopeSection::Relationships))
+            .unwrap_or(false)
+    {
+        return Err(validation_error(
+            "relationships section requires get_entity_intelligence schema_version 2",
+        ));
+    }
+    Ok(())
 }
 
 fn subject_ref_for(entity_type: EntityKind, entity_id: &str) -> SubjectRef {
@@ -241,11 +289,18 @@ fn display_label_for(entity_type: &EntityKind, entity_id: &str) -> String {
 }
 
 fn active_section_set(
+    schema_version: u32,
     requested: Option<&Vec<EnvelopeSection>>,
 ) -> std::collections::BTreeSet<EnvelopeSection> {
     match requested {
-        None => EnvelopeSection::ALL.iter().copied().collect(),
-        Some(list) if list.is_empty() => EnvelopeSection::ALL.iter().copied().collect(),
+        None => EnvelopeSection::all_for_schema(schema_version)
+            .iter()
+            .copied()
+            .collect(),
+        Some(list) if list.is_empty() => EnvelopeSection::all_for_schema(schema_version)
+            .iter()
+            .copied()
+            .collect(),
         Some(list) => list.iter().copied().collect(),
     }
 }
@@ -821,6 +876,507 @@ fn read_failed_touchpoints_bundle(
     }
 }
 
+// ---- relationships -------------------------------------------------------
+
+async fn compose_relationships(
+    ctx: &AbilityContext<'_>,
+    entity_type: &EntityKind,
+    entity_id: &str,
+    render_actor: &RenderActor,
+    render_surface: RenderSurface,
+    provenance: &mut EnvelopeProvenance,
+) -> Result<Option<Paginated<RelationshipsBundle>>, AbilityError> {
+    let now = ctx.services().clock.now();
+    let subject_ref = subject_ref_for(entity_type.clone(), entity_id);
+    let query = EntityNeighborhoodQuery {
+        entity_type: entity_type.as_lower_str().to_string(),
+        entity_id: entity_id.to_string(),
+        now,
+        max_depth: NEIGHBORHOOD_MAX_DEPTH,
+        per_edge_cap: NEIGHBORHOOD_PER_EDGE_CAP,
+        recent_touchpoint_cap: NEIGHBORHOOD_RECENT_TOUCHPOINT_CAP,
+    };
+
+    let snapshot = match ctx.services().read_entity_neighborhood(query).await {
+        Ok(snapshot) => snapshot,
+        Err(EntityNeighborhoodReadError::SubjectNotOwned { .. }) => {
+            return Ok(Some(Paginated::stable(vec![
+                filtered_out_relationships_bundle(&subject_ref),
+            ])));
+        }
+        Err(EntityNeighborhoodReadError::ReadFailed(message)) => {
+            return Ok(Some(Paginated::stable(vec![
+                read_failed_relationships_bundle(&subject_ref, message),
+            ])));
+        }
+    };
+
+    Ok(Some(Paginated::stable(vec![project_relationships_bundle(
+        &snapshot,
+        &subject_ref,
+        &now,
+        render_actor,
+        render_surface,
+        provenance,
+    )])))
+}
+
+fn not_requested_relationships_bundle(
+    subject_ref: &SubjectRef,
+) -> Option<Paginated<RelationshipsBundle>> {
+    Some(Paginated::stable(vec![RelationshipsBundle {
+        edges: Paginated::empty_stable(),
+        participants: Paginated::empty_stable(),
+        candidate_set: CandidateSetRef {
+            window_start: None,
+            window_end: None,
+            filter_description: "relationships section not requested".to_string(),
+        },
+        empty_reason: Some(EmptyReason::NotRequested),
+        subject_scope: SubjectScope {
+            primary: subject_ref.clone(),
+            also_includes: Vec::new(),
+        },
+        truncation: RelationshipTruncation {
+            edges_truncated: false,
+            participants_truncated: false,
+            per_edge_cap: NEIGHBORHOOD_PER_EDGE_CAP,
+        },
+        caveats: Vec::new(),
+    }]))
+}
+
+fn filtered_out_relationships_bundle(subject_ref: &SubjectRef) -> RelationshipsBundle {
+    RelationshipsBundle {
+        edges: Paginated::empty_stable(),
+        participants: Paginated::empty_stable(),
+        candidate_set: CandidateSetRef {
+            window_start: None,
+            window_end: None,
+            filter_description: "subject filtered out by workspace scope".to_string(),
+        },
+        empty_reason: Some(EmptyReason::FilteredOutBySubject),
+        subject_scope: SubjectScope {
+            primary: subject_ref.clone(),
+            also_includes: Vec::new(),
+        },
+        truncation: RelationshipTruncation {
+            edges_truncated: false,
+            participants_truncated: false,
+            per_edge_cap: NEIGHBORHOOD_PER_EDGE_CAP,
+        },
+        caveats: vec!["subject filtered out by workspace scope".to_string()],
+    }
+}
+
+fn read_failed_relationships_bundle(
+    subject_ref: &SubjectRef,
+    message: String,
+) -> RelationshipsBundle {
+    RelationshipsBundle {
+        edges: Paginated::empty_stable(),
+        participants: Paginated::empty_stable(),
+        candidate_set: CandidateSetRef {
+            window_start: None,
+            window_end: None,
+            filter_description: message,
+        },
+        empty_reason: Some(EmptyReason::PartialFailure {
+            advisory: "relationships reader unavailable".to_string(),
+        }),
+        subject_scope: SubjectScope {
+            primary: subject_ref.clone(),
+            also_includes: Vec::new(),
+        },
+        truncation: RelationshipTruncation {
+            edges_truncated: false,
+            participants_truncated: false,
+            per_edge_cap: NEIGHBORHOOD_PER_EDGE_CAP,
+        },
+        caveats: vec!["relationships reader unavailable".to_string()],
+    }
+}
+
+fn project_relationships_bundle(
+    snapshot: &EntityNeighborhoodSnapshot,
+    subject_ref: &SubjectRef,
+    now: &DateTime<Utc>,
+    render_actor: &RenderActor,
+    render_surface: RenderSurface,
+    provenance: &mut EnvelopeProvenance,
+) -> RelationshipsBundle {
+    let mut caveats = snapshot.caveats.clone();
+    let edges = snapshot
+        .edges
+        .iter()
+        .map(|edge| {
+            project_relationship_edge(
+                edge,
+                subject_ref,
+                now,
+                render_actor,
+                render_surface,
+                provenance,
+                &mut caveats,
+            )
+        })
+        .collect::<Vec<_>>();
+    let participants = snapshot
+        .participants
+        .iter()
+        .map(|participant| {
+            project_relationship_participant(
+                participant,
+                now,
+                render_actor,
+                render_surface,
+                provenance,
+                &mut caveats,
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let mut also_includes = Vec::new();
+    for edge in &edges {
+        if edge.traversal_depth <= 1
+            && edge.related_subject_ref != *subject_ref
+            && !also_includes.contains(&edge.related_subject_ref)
+        {
+            also_includes.push(edge.related_subject_ref.clone());
+        }
+    }
+
+    let empty_reason = if edges.is_empty() && participants.is_empty() {
+        Some(EmptyReason::NoRelevantRelationships)
+    } else {
+        None
+    };
+
+    RelationshipsBundle {
+        edges: Paginated::stable(edges),
+        participants: Paginated::stable(participants),
+        candidate_set: CandidateSetRef {
+            window_start: None,
+            window_end: Some(*now),
+            filter_description: format!(
+                "{}:{} neighborhood depth <= {} over existing relationship substrate",
+                snapshot.subject_entity_type, snapshot.subject_entity_id, NEIGHBORHOOD_MAX_DEPTH
+            ),
+        },
+        empty_reason,
+        subject_scope: SubjectScope {
+            primary: subject_ref.clone(),
+            also_includes,
+        },
+        truncation: RelationshipTruncation {
+            edges_truncated: snapshot.truncation.edges_truncated,
+            participants_truncated: snapshot.truncation.participants_truncated,
+            per_edge_cap: snapshot.truncation.per_edge_cap,
+        },
+        caveats,
+    }
+}
+
+fn project_relationship_edge(
+    raw: &EntityRelationshipEdgeSnapshot,
+    subject_ref: &SubjectRef,
+    now: &DateTime<Utc>,
+    render_actor: &RenderActor,
+    render_surface: RenderSurface,
+    provenance: &mut EnvelopeProvenance,
+    caveats: &mut Vec<String>,
+) -> RelationshipEdge {
+    let source_id = relationship_source_id(&raw.source_type, &raw.source_id);
+    let source_id = upsert_static_provenance_source(
+        provenance,
+        EnvelopeProvenanceSource {
+            id: source_id,
+            label: source_label_for_relationship(&raw.source_type, render_actor),
+            source_type: Some(raw.source_type.clone()),
+            as_of: parse_optional_timestamp(raw.source_asof.as_deref()),
+            redacted: !render_actor.is_user(),
+        },
+    );
+    let related_display_label = raw
+        .related_display_label
+        .as_deref()
+        .and_then(|label| {
+            renderable_evidence_text(label, &raw.sensitivity, render_surface, render_actor)
+        })
+        .or_else(|| {
+            if raw.related_display_label.is_some() {
+                push_unique_caveat(caveats, "relationship label blocked by render policy");
+            }
+            None
+        });
+
+    let freshness = freshness_for_evidence(
+        raw.source_asof.as_deref().or(raw.observed_at.as_deref()),
+        now,
+    );
+    RelationshipEdge {
+        edge_id: format!(
+            "{}:{}:{}:{}",
+            raw.edge_type, raw.related_entity_type, raw.related_entity_id, raw.source_id
+        ),
+        edge_type: raw.edge_type.clone(),
+        subject_ref: subject_ref.clone(),
+        related_subject_ref: subject_ref_from_pair(
+            &raw.related_entity_type,
+            &raw.related_entity_id,
+        ),
+        related_display_label,
+        observed_at: parse_optional_timestamp(raw.observed_at.as_deref()),
+        source_asof: parse_optional_timestamp(raw.source_asof.as_deref()),
+        confidence: raw.confidence,
+        sensitivity: raw.sensitivity.clone(),
+        inclusion_reason: map_relationship_inclusion(raw.inclusion_reason),
+        traversal_depth: raw.traversal_depth,
+        trust_band: trust_band_for_confidence(raw.confidence, freshness),
+        freshness,
+        provenance: ProvenanceRef::from_ids([source_id]),
+        caveats: Vec::new(),
+    }
+}
+
+fn project_relationship_participant(
+    raw: &EntityParticipantSnapshot,
+    now: &DateTime<Utc>,
+    render_actor: &RenderActor,
+    render_surface: RenderSurface,
+    provenance: &mut EnvelopeProvenance,
+    caveats: &mut Vec<String>,
+) -> RelationshipParticipant {
+    let source_id = relationship_source_id(&raw.source_type, &raw.source_id);
+    let source_id = upsert_static_provenance_source(
+        provenance,
+        EnvelopeProvenanceSource {
+            id: source_id,
+            label: source_label_for_relationship(&raw.source_type, render_actor),
+            source_type: Some(raw.source_type.clone()),
+            as_of: parse_optional_timestamp(raw.source_asof.as_deref()),
+            redacted: !render_actor.is_user(),
+        },
+    );
+    let display_label = raw
+        .display_label
+        .as_deref()
+        .and_then(|label| {
+            renderable_evidence_text(label, &raw.sensitivity, render_surface, render_actor)
+        })
+        .or_else(|| {
+            if raw.display_label.is_some() {
+                push_unique_caveat(caveats, "participant label blocked by render policy");
+            }
+            None
+        });
+    let role = raw
+        .role
+        .as_deref()
+        .and_then(|role| {
+            renderable_evidence_text(role, &raw.sensitivity, render_surface, render_actor)
+        })
+        .or_else(|| {
+            if raw.role.is_some() {
+                push_unique_caveat(caveats, "participant role blocked by render policy");
+            }
+            None
+        });
+    let relationship = raw
+        .relationship
+        .as_deref()
+        .and_then(|relationship| {
+            renderable_evidence_text(
+                relationship,
+                &raw.sensitivity,
+                render_surface,
+                render_actor,
+            )
+        })
+        .or_else(|| {
+            if raw.relationship.is_some() {
+                push_unique_caveat(caveats, "participant relationship blocked by render policy");
+            }
+            None
+        });
+
+    let freshness = freshness_for_evidence(
+        raw.last_seen_at.as_deref().or(raw.source_asof.as_deref()),
+        now,
+    );
+    RelationshipParticipant {
+        subject_ref: SubjectRef::Person(raw.person_id.clone()),
+        display_label,
+        role,
+        relationship,
+        sensitivity: raw.sensitivity.clone(),
+        normalized_touchpoint_count: raw.normalized_touchpoint_count,
+        recent_touchpoint_ids: raw.recent_touchpoint_ids.clone(),
+        last_seen_at: parse_optional_timestamp(raw.last_seen_at.as_deref()),
+        trust_band: trust_band_for_confidence(raw.confidence, freshness),
+        freshness,
+        provenance: ProvenanceRef::from_ids([source_id]),
+        caveats: raw.caveats.clone(),
+    }
+}
+
+fn relationship_source_id(source_type: &str, source_id: &str) -> String {
+    format!("relationship:{source_type}:{source_id}")
+}
+
+fn source_label_for_relationship(source_type: &str, render_actor: &RenderActor) -> String {
+    if render_actor.is_user() {
+        source_type.to_string()
+    } else {
+        "Relationship evidence".to_string()
+    }
+}
+
+fn renderable_evidence_text(
+    value: &str,
+    sensitivity: &ClaimSensitivity,
+    render_surface: RenderSurface,
+    render_actor: &RenderActor,
+) -> Option<RenderableClaimText> {
+    let text = sanitize_evidence_text(value);
+    if text.is_empty() {
+        return None;
+    }
+    if render_surface.is_agent_surface() && looks_like_prompt_injection(&text) {
+        return None;
+    }
+    if matches!(
+        sensitivity,
+        ClaimSensitivity::Confidential | ClaimSensitivity::UserOnly
+    ) && !render_actor.is_user()
+    {
+        return Some(RenderableClaimText {
+            text: "[redacted]".to_string(),
+            policy: RenderPolicy {
+                kind: RenderPolicyKind::Redacted,
+                sensitivity: sensitivity.clone(),
+                surface: render_surface,
+                claim_id: None,
+                affordance: None,
+            },
+        });
+    }
+    Some(RenderableClaimText {
+        text,
+        policy: RenderPolicy {
+            kind: RenderPolicyKind::Render,
+            sensitivity: sensitivity.clone(),
+            surface: render_surface,
+            claim_id: None,
+            affordance: None,
+        },
+    })
+}
+
+fn sanitize_evidence_text(value: &str) -> String {
+    value
+        .chars()
+        .filter(|ch| {
+            !ch.is_control()
+                && !matches!(
+                    *ch,
+                    '\u{200B}' | '\u{200C}' | '\u{200D}' | '\u{2060}' | '\u{FEFF}'
+                )
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn looks_like_prompt_injection(value: &str) -> bool {
+    let lowered = value.to_ascii_lowercase();
+    [
+        "ignore previous",
+        "ignore all previous",
+        "system prompt",
+        "developer message",
+        "tool output",
+        "do not follow",
+        "reveal secrets",
+        "<script",
+    ]
+    .iter()
+    .any(|needle| lowered.contains(needle))
+}
+
+fn map_relationship_inclusion(
+    reason: EntityRelationshipInclusionReason,
+) -> RelationshipInclusionReason {
+    match reason {
+        EntityRelationshipInclusionReason::SubjectMatch => {
+            RelationshipInclusionReason::SubjectMatch
+        }
+        EntityRelationshipInclusionReason::Hierarchy => RelationshipInclusionReason::Hierarchy,
+        EntityRelationshipInclusionReason::ExplicitLink => {
+            RelationshipInclusionReason::ExplicitLink
+        }
+        EntityRelationshipInclusionReason::AttendeeMatch => {
+            RelationshipInclusionReason::AttendeeMatch
+        }
+        EntityRelationshipInclusionReason::CoAttendance => {
+            RelationshipInclusionReason::CoAttendance
+        }
+        EntityRelationshipInclusionReason::WorkItem => RelationshipInclusionReason::WorkItem,
+        EntityRelationshipInclusionReason::ContentLink => RelationshipInclusionReason::ContentLink,
+    }
+}
+
+fn trust_band_for_confidence(confidence: f32, freshness: Freshness) -> TrustBand {
+    match freshness {
+        Freshness::Current => {
+            if confidence >= 0.8 {
+                TrustBand::LikelyCurrent
+            } else if confidence >= 0.55 {
+                TrustBand::UseWithCaution
+            } else {
+                TrustBand::NeedsVerification
+            }
+        }
+        Freshness::Aging | Freshness::Unknown => {
+            if confidence >= 0.55 {
+                TrustBand::UseWithCaution
+            } else {
+                TrustBand::NeedsVerification
+            }
+        }
+        Freshness::Stale => TrustBand::NeedsVerification,
+    }
+}
+
+fn freshness_for_evidence(candidate: Option<&str>, now: &DateTime<Utc>) -> Freshness {
+    let Some(when) = parse_optional_timestamp(candidate) else {
+        return Freshness::Unknown;
+    };
+    let age = now.signed_duration_since(when);
+    if age.num_days() < 30 {
+        Freshness::Current
+    } else if age.num_days() < 180 {
+        Freshness::Aging
+    } else {
+        Freshness::Stale
+    }
+}
+
+fn push_unique_caveat(caveats: &mut Vec<String>, caveat: &str) {
+    if !caveats.iter().any(|existing| existing == caveat) {
+        caveats.push(caveat.to_string());
+    }
+}
+
+fn count_relationships(relationships: &Paginated<RelationshipsBundle>) -> u64 {
+    relationships
+        .items
+        .iter()
+        .map(|bundle| (bundle.edges.items.len() + bundle.participants.items.len()) as u64)
+        .sum()
+}
+
 // ---- meeting health (W2 F2 prep status) ---------------------------------
 
 /// Compose `HealthStory` for a Meeting subject from the prep status
@@ -920,12 +1476,15 @@ struct SectionFill {
     health_present: bool,
     metadata_proposals_count: u64,
     open_loops_count: u64,
+    relationships_count: u64,
+    relationships_empty_reason: Option<EmptyReason>,
     touchpoints_count: u64,
     threads_count: u64,
     record_entries_count: u64,
 }
 
 fn build_sections_map(
+    schema_version: u32,
     requested: &Option<Vec<EnvelopeSection>>,
     fill: SectionFill,
 ) -> BTreeMap<EnvelopeSection, SectionState> {
@@ -942,7 +1501,7 @@ fn build_sections_map(
             }
         });
     let mut sections = BTreeMap::new();
-    for section in EnvelopeSection::ALL {
+    for section in EnvelopeSection::all_for_schema(schema_version) {
         let state = if let Some(set) = requested_set.as_ref() {
             if !set.contains(section) {
                 SectionState::Empty {
@@ -976,6 +1535,12 @@ fn section_state_for(section: &EnvelopeSection, fill: &SectionFill) -> SectionSt
             EmptyReason::NoEvidenceBackedProposal,
         ),
         EnvelopeSection::OpenLoops => count_or_empty(fill.open_loops_count, EmptyReason::Stale),
+        EnvelopeSection::Relationships => count_or_empty(
+            fill.relationships_count,
+            fill.relationships_empty_reason
+                .clone()
+                .unwrap_or(EmptyReason::NoRelevantRelationships),
+        ),
         EnvelopeSection::Touchpoints => {
             count_or_empty(fill.touchpoints_count, EmptyReason::NoRelevantTouchpoints)
         }
@@ -998,21 +1563,72 @@ fn count_or_empty(count: u64, empty_reason: EmptyReason) -> SectionState {
     }
 }
 
+fn relationship_empty_reason(
+    relationships: Option<&Paginated<RelationshipsBundle>>,
+) -> Option<EmptyReason> {
+    let relationships = relationships?;
+    if count_relationships(relationships) > 0 {
+        return None;
+    }
+    relationships
+        .items
+        .iter()
+        .find_map(|bundle| bundle.empty_reason.clone())
+}
+
 // ---- aggregate trust + sensitivity ----------------------------------------
 
-fn aggregate_trust(facts: &Paginated<EntityFact>) -> EnvelopeTrustSummary {
-    if facts.items.is_empty() {
-        return EnvelopeTrustSummary::unscored();
+fn aggregate_trust(
+    facts: &Paginated<EntityFact>,
+    relationships: Option<&Paginated<RelationshipsBundle>>,
+) -> EnvelopeTrustSummary {
+    let relationship_bands = relationships
+        .into_iter()
+        .flat_map(|bundles| bundles.items.iter())
+        .flat_map(|bundle| {
+            bundle.edges.items.iter().map(|edge| edge.trust_band).chain(
+                bundle
+                    .participants
+                    .items
+                    .iter()
+                    .map(|participant| participant.trust_band),
+            )
+        });
+
+    let mut section_caveats = BTreeMap::new();
+    if let Some(relationships) = relationships {
+        let caveats = relationships
+            .items
+            .iter()
+            .flat_map(|bundle| bundle.caveats.iter())
+            .cloned()
+            .collect::<Vec<_>>();
+        if !caveats.is_empty() {
+            section_caveats.insert(EnvelopeSection::Relationships, caveats.join("; "));
+        }
     }
-    let aggregate_band = facts
+
+    let mut bands = facts
         .items
         .iter()
         .map(|fact| fact.trust_band)
+        .chain(relationship_bands)
+        .collect::<Vec<_>>();
+
+    if bands.is_empty() {
+        return EnvelopeTrustSummary {
+            aggregate_band: TrustBand::Unscored,
+            section_caveats,
+        };
+    }
+
+    let aggregate_band = bands
+        .drain(..)
         .reduce(min_trust_band)
         .unwrap_or(TrustBand::Unscored);
     EnvelopeTrustSummary {
         aggregate_band,
-        section_caveats: BTreeMap::new(),
+        section_caveats,
     }
 }
 
@@ -1036,6 +1652,7 @@ fn min_trust_band(left: TrustBand, right: TrustBand) -> TrustBand {
 fn aggregate_sensitivity(
     facts: &Paginated<EntityFact>,
     record_entries: &Paginated<RecordEntry>,
+    relationships: Option<&Paginated<RelationshipsBundle>>,
 ) -> crate::types::ClaimSensitivity {
     use crate::types::ClaimSensitivity::*;
     fn rank(s: &crate::types::ClaimSensitivity) -> u8 {
@@ -1060,6 +1677,24 @@ fn aggregate_sensitivity(
         if r > max_rank {
             max_rank = r;
             max = entry.sensitivity.clone();
+        }
+    }
+    if let Some(relationships) = relationships {
+        for bundle in &relationships.items {
+            for edge in &bundle.edges.items {
+                let r = rank(&edge.sensitivity);
+                if r > max_rank {
+                    max_rank = r;
+                    max = edge.sensitivity.clone();
+                }
+            }
+            for participant in &bundle.participants.items {
+                let r = rank(&participant.sensitivity);
+                if r > max_rank {
+                    max_rank = r;
+                    max = participant.sensitivity.clone();
+                }
+            }
         }
     }
     max
@@ -1208,7 +1843,10 @@ mod tests {
     use crate::sensitivity::ClaimVerificationState;
     use crate::services::context::{
         ClaimDismissalSurface, EntityContextClaimReadFuture, EntityContextClaimReadHandle,
-        FixedClock, ServiceContext, SystemRng,
+        EntityNeighborhoodQuery, EntityNeighborhoodReadError, EntityNeighborhoodReadFuture,
+        EntityNeighborhoodReadHandle, EntityNeighborhoodSnapshot, EntityNeighborhoodTruncation,
+        EntityParticipantSnapshot, EntityRelationshipEdgeSnapshot,
+        EntityRelationshipInclusionReason, FixedClock, ServiceContext, SystemRng,
     };
     use crate::types::{
         ClaimSensitivity, ClaimState, IntelligenceClaim, SurfacingState, TemporalScope,
@@ -1228,12 +1866,118 @@ mod tests {
         }
     }
 
+    struct FixtureNeighborhoodReader;
+
+    impl EntityNeighborhoodReadHandle for FixtureNeighborhoodReader {
+        fn read_entity_neighborhood<'a>(
+            &'a self,
+            query: EntityNeighborhoodQuery,
+        ) -> EntityNeighborhoodReadFuture<'a> {
+            Box::pin(async move {
+                Ok(EntityNeighborhoodSnapshot {
+                    subject_entity_type: query.entity_type.clone(),
+                    subject_entity_id: query.entity_id.clone(),
+                    edges: vec![EntityRelationshipEdgeSnapshot {
+                        edge_type: "stakeholder".to_string(),
+                        related_entity_type: "person".to_string(),
+                        related_entity_id: "person-1".to_string(),
+                        related_display_label: Some("Example Person".to_string()),
+                        source_id: "relationship-source-1".to_string(),
+                        source_type: "account_stakeholders".to_string(),
+                        observed_at: Some("2026-05-22T15:00:00Z".to_string()),
+                        source_asof: Some("2026-05-22T15:00:00Z".to_string()),
+                        confidence: 0.95,
+                        sensitivity: ClaimSensitivity::Internal,
+                        inclusion_reason: EntityRelationshipInclusionReason::ExplicitLink,
+                        traversal_depth: 1,
+                    }],
+                    participants: vec![EntityParticipantSnapshot {
+                        person_id: "person-1".to_string(),
+                        display_label: Some("Example Person".to_string()),
+                        role: Some("Executive sponsor".to_string()),
+                        relationship: Some("stakeholder".to_string()),
+                        normalized_touchpoint_count: 3,
+                        recent_touchpoint_ids: vec!["meeting-1".to_string()],
+                        last_seen_at: Some("2026-05-22T15:00:00Z".to_string()),
+                        source_id: "participant-source-1".to_string(),
+                        source_type: "meeting_attendees".to_string(),
+                        source_asof: Some("2026-05-22T15:00:00Z".to_string()),
+                        confidence: 0.9,
+                        sensitivity: ClaimSensitivity::Internal,
+                        caveats: vec!["attendance is not influence".to_string()],
+                    }],
+                    truncation: EntityNeighborhoodTruncation {
+                        edges_truncated: false,
+                        participants_truncated: false,
+                        per_edge_cap: query.per_edge_cap,
+                    },
+                    caveats: vec!["fixture caveat".to_string()],
+                })
+            })
+        }
+    }
+
+    struct ParticipantOnlyNeighborhoodReader;
+
+    impl EntityNeighborhoodReadHandle for ParticipantOnlyNeighborhoodReader {
+        fn read_entity_neighborhood<'a>(
+            &'a self,
+            query: EntityNeighborhoodQuery,
+        ) -> EntityNeighborhoodReadFuture<'a> {
+            Box::pin(async move {
+                Ok(EntityNeighborhoodSnapshot {
+                    subject_entity_type: query.entity_type.clone(),
+                    subject_entity_id: query.entity_id.clone(),
+                    edges: Vec::new(),
+                    participants: vec![EntityParticipantSnapshot {
+                        person_id: "person-confidential".to_string(),
+                        display_label: Some("Confidential Person".to_string()),
+                        role: Some("Executive sponsor".to_string()),
+                        relationship: Some("stakeholder".to_string()),
+                        normalized_touchpoint_count: 2,
+                        recent_touchpoint_ids: vec!["meeting-1".to_string()],
+                        last_seen_at: Some("2026-05-22T15:00:00Z".to_string()),
+                        source_id: "participant-source-1".to_string(),
+                        source_type: "meeting_attendees".to_string(),
+                        source_asof: Some("2026-05-22T15:00:00Z".to_string()),
+                        confidence: 0.9,
+                        sensitivity: ClaimSensitivity::Confidential,
+                        caveats: Vec::new(),
+                    }],
+                    truncation: EntityNeighborhoodTruncation {
+                        edges_truncated: false,
+                        participants_truncated: false,
+                        per_edge_cap: query.per_edge_cap,
+                    },
+                    caveats: Vec::new(),
+                })
+            })
+        }
+    }
+
+    struct FailingNeighborhoodReader;
+
+    impl EntityNeighborhoodReadHandle for FailingNeighborhoodReader {
+        fn read_entity_neighborhood<'a>(
+            &'a self,
+            _query: EntityNeighborhoodQuery,
+        ) -> EntityNeighborhoodReadFuture<'a> {
+            Box::pin(async {
+                Err(EntityNeighborhoodReadError::ReadFailed(
+                    "fixture relationship read failed".to_string(),
+                ))
+            })
+        }
+    }
+
     fn fill(facts: u64, open_loops: u64) -> SectionFill {
         SectionFill {
             facts_count: facts,
             health_present: false,
             metadata_proposals_count: 0,
             open_loops_count: open_loops,
+            relationships_count: 0,
+            relationships_empty_reason: None,
             touchpoints_count: 0,
             threads_count: 0,
             record_entries_count: 0,
@@ -1289,9 +2033,9 @@ mod tests {
 
     #[test]
     fn sections_map_enumerates_all_variants_when_no_filter() {
-        let map = build_sections_map(&None, fill(0, 0));
-        assert_eq!(map.len(), EnvelopeSection::ALL.len());
-        for section in EnvelopeSection::ALL {
+        let map = build_sections_map(ENVELOPE_SCHEMA_VERSION_V1, &None, fill(0, 0));
+        assert_eq!(map.len(), EnvelopeSection::V1.len());
+        for section in EnvelopeSection::V1 {
             assert!(map.contains_key(section), "missing section {section:?}");
         }
     }
@@ -1329,6 +2073,195 @@ mod tests {
         assert!(output.data().facts.items.is_empty());
     }
 
+    #[tokio::test]
+    async fn schema_v2_relationships_section_projects_neighborhood_evidence() {
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 22, 12, 0, 0).unwrap());
+        let rng = SystemRng;
+        let services = ServiceContext::new_evaluate_default(&clock, &rng)
+            .with_entity_context_claim_reader(Arc::new(EmptyClaimReader))
+            .with_entity_neighborhood_reader(Arc::new(FixtureNeighborhoodReader));
+        let provider = ReplayProvider::new(std::collections::HashMap::new());
+        let ctx = AbilityContext::new(
+            &services,
+            &provider,
+            &NOOP_ABILITY_TRACER,
+            Actor::User,
+            None,
+            ClaimDismissalSurface::McpTool,
+        );
+
+        let output = build_entity_intelligence(
+            &ctx,
+            EntityIntelligenceInput {
+                schema_version: ENVELOPE_SCHEMA_VERSION_V2,
+                entity_type: EntityKind::Account,
+                entity_id: "acct-test-001".to_string(),
+                depth: EnvelopeContextDepth::Standard,
+                sections: Some(vec![EnvelopeSection::Relationships]),
+            },
+        )
+        .await
+        .expect("schema v2 should project relationship evidence");
+
+        let relationships = output
+            .data()
+            .relationships
+            .as_ref()
+            .expect("schema v2 output should include relationships");
+        let bundle = relationships.items.first().expect("relationship bundle");
+        assert_eq!(bundle.edges.items.len(), 1);
+        assert_eq!(bundle.participants.items.len(), 1);
+        assert_eq!(bundle.participants.items[0].normalized_touchpoint_count, 3);
+        assert!(matches!(
+            output.data().sections.get(&EnvelopeSection::Relationships),
+            Some(SectionState::Present { item_count: 2 })
+        ));
+        assert!(output
+            .data()
+            .sections
+            .contains_key(&EnvelopeSection::Relationships));
+    }
+
+    #[tokio::test]
+    async fn relationship_reader_failure_marks_relationship_section_partial_failure() {
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 22, 12, 0, 0).unwrap());
+        let rng = SystemRng;
+        let services = ServiceContext::new_evaluate_default(&clock, &rng)
+            .with_entity_context_claim_reader(Arc::new(EmptyClaimReader))
+            .with_entity_neighborhood_reader(Arc::new(FailingNeighborhoodReader));
+        let provider = ReplayProvider::new(std::collections::HashMap::new());
+        let ctx = AbilityContext::new(
+            &services,
+            &provider,
+            &NOOP_ABILITY_TRACER,
+            Actor::User,
+            None,
+            ClaimDismissalSurface::McpTool,
+        );
+
+        let output = build_entity_intelligence(
+            &ctx,
+            EntityIntelligenceInput {
+                schema_version: ENVELOPE_SCHEMA_VERSION_V2,
+                entity_type: EntityKind::Account,
+                entity_id: "acct-test-001".to_string(),
+                depth: EnvelopeContextDepth::Standard,
+                sections: Some(vec![EnvelopeSection::Relationships]),
+            },
+        )
+        .await
+        .expect("relationship read failure should not fail the whole envelope");
+
+        assert!(matches!(
+            output.data().sections.get(&EnvelopeSection::Relationships),
+            Some(SectionState::Empty {
+                reason: EmptyReason::PartialFailure { .. }
+            })
+        ));
+        assert!(output
+            .data()
+            .trust
+            .section_caveats
+            .get(&EnvelopeSection::Relationships)
+            .is_some_and(|caveat| caveat.contains("relationships reader unavailable")));
+    }
+
+    #[tokio::test]
+    async fn relationship_participants_contribute_to_envelope_sensitivity() {
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 22, 12, 0, 0).unwrap());
+        let rng = SystemRng;
+        let services = ServiceContext::new_evaluate_default(&clock, &rng)
+            .with_entity_context_claim_reader(Arc::new(EmptyClaimReader))
+            .with_entity_neighborhood_reader(Arc::new(ParticipantOnlyNeighborhoodReader));
+        let provider = ReplayProvider::new(std::collections::HashMap::new());
+        let ctx = AbilityContext::new(
+            &services,
+            &provider,
+            &NOOP_ABILITY_TRACER,
+            Actor::User,
+            None,
+            ClaimDismissalSurface::McpTool,
+        );
+
+        let output = build_entity_intelligence(
+            &ctx,
+            EntityIntelligenceInput {
+                schema_version: ENVELOPE_SCHEMA_VERSION_V2,
+                entity_type: EntityKind::Account,
+                entity_id: "acct-test-001".to_string(),
+                depth: EnvelopeContextDepth::Standard,
+                sections: Some(vec![EnvelopeSection::Relationships]),
+            },
+        )
+        .await
+        .expect("participant-only relationship evidence should compose");
+
+        assert_eq!(output.data().sensitivity, ClaimSensitivity::Confidential);
+        let participant = output
+            .data()
+            .relationships
+            .as_ref()
+            .and_then(|relationships| relationships.items.first())
+            .and_then(|bundle| bundle.participants.items.first())
+            .expect("participant relationship evidence");
+        assert_eq!(participant.sensitivity, ClaimSensitivity::Confidential);
+        assert_eq!(
+            participant
+                .relationship
+                .as_ref()
+                .map(|relationship| relationship.text.as_str()),
+            Some("[redacted]")
+        );
+    }
+
+    #[tokio::test]
+    async fn schema_v1_rejects_relationships_section_request() {
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 22, 12, 0, 0).unwrap());
+        let rng = SystemRng;
+        let services = ServiceContext::new_evaluate_default(&clock, &rng)
+            .with_entity_context_claim_reader(Arc::new(EmptyClaimReader));
+        let provider = ReplayProvider::new(std::collections::HashMap::new());
+        let ctx = AbilityContext::new(
+            &services,
+            &provider,
+            &NOOP_ABILITY_TRACER,
+            Actor::User,
+            None,
+            ClaimDismissalSurface::McpTool,
+        );
+
+        let err = build_entity_intelligence(
+            &ctx,
+            EntityIntelligenceInput {
+                schema_version: ENVELOPE_SCHEMA_VERSION_V1,
+                entity_type: EntityKind::Account,
+                entity_id: "acct-test-001".to_string(),
+                depth: EnvelopeContextDepth::Standard,
+                sections: Some(vec![EnvelopeSection::Relationships]),
+            },
+        )
+        .await
+        .expect_err("schema v1 must reject relationships requests");
+
+        assert!(err.message.contains("schema_version 2"));
+    }
+
+    #[test]
+    fn relationship_trust_is_capped_by_freshness() {
+        assert_eq!(
+            trust_band_for_confidence(0.95, Freshness::Current),
+            TrustBand::LikelyCurrent
+        );
+        assert_eq!(
+            trust_band_for_confidence(0.95, Freshness::Unknown),
+            TrustBand::UseWithCaution
+        );
+        assert_eq!(
+            trust_band_for_confidence(0.95, Freshness::Stale),
+            TrustBand::NeedsVerification
+        );
+    }
+
     #[test]
     fn facts_keep_their_claim_subject_instead_of_request_subject() {
         let claims = vec![claim_fixture(
@@ -1357,7 +2290,7 @@ mod tests {
 
     #[test]
     fn empty_sections_carry_typed_reasons() {
-        let map = build_sections_map(&None, fill(0, 0));
+        let map = build_sections_map(ENVELOPE_SCHEMA_VERSION_V1, &None, fill(0, 0));
         for state in map.values() {
             match state {
                 SectionState::Empty { reason } => {
@@ -1371,7 +2304,11 @@ mod tests {
 
     #[test]
     fn requested_subset_marks_excluded_as_not_requested() {
-        let map = build_sections_map(&Some(vec![EnvelopeSection::Facts]), fill(2, 0));
+        let map = build_sections_map(
+            ENVELOPE_SCHEMA_VERSION_V1,
+            &Some(vec![EnvelopeSection::Facts]),
+            fill(2, 0),
+        );
         assert!(matches!(
             map.get(&EnvelopeSection::Facts),
             Some(SectionState::Present { item_count: 2 })
@@ -1391,8 +2328,8 @@ mod tests {
         // this, callers asking for "all" via empty list see every section
         // marked `NotRequested` here while `active_section_set()` happily
         // populates the corresponding fields, causing producer/consumer drift.
-        let map_empty = build_sections_map(&Some(vec![]), fill(3, 0));
-        let map_none = build_sections_map(&None, fill(3, 0));
+        let map_empty = build_sections_map(ENVELOPE_SCHEMA_VERSION_V1, &Some(vec![]), fill(3, 0));
+        let map_none = build_sections_map(ENVELOPE_SCHEMA_VERSION_V1, &None, fill(3, 0));
         assert_eq!(map_empty, map_none, "empty list must equal None semantics");
         // Facts has count=3, so it should be Present (not NotRequested) when
         // caller passes the empty-list form.
@@ -1447,10 +2384,15 @@ mod tests {
 
     #[test]
     fn envelope_section_all_is_canonical_order() {
-        let all = EnvelopeSection::ALL;
-        assert_eq!(all[0], EnvelopeSection::Facts);
-        assert_eq!(all[1], EnvelopeSection::Health);
-        assert_eq!(all[6], EnvelopeSection::Record);
+        let v1 = EnvelopeSection::V1;
+        assert_eq!(v1[0], EnvelopeSection::Facts);
+        assert_eq!(v1[1], EnvelopeSection::Health);
+        assert_eq!(v1[6], EnvelopeSection::Record);
+
+        let v2 = EnvelopeSection::V2;
+        assert_eq!(v2[0], EnvelopeSection::Facts);
+        assert_eq!(v2[4], EnvelopeSection::Relationships);
+        assert_eq!(v2[7], EnvelopeSection::Record);
     }
 
     #[test]

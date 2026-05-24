@@ -295,6 +295,71 @@ pub fn run() {
                                 }
                             }
                         }
+
+                        let account_fact_backfill = init_state
+                            .db_write(move |db| {
+                                let clock = crate::services::context::SystemClock;
+                                let rng = crate::services::context::SystemRng;
+                                let ext = crate::services::context::ExternalClients::default();
+                                let ctx = crate::services::context::ServiceContext::new_live(
+                                    &clock, &rng, &ext,
+                                );
+                                crate::services::account_fact_claims::backfill_account_fact_claims(
+                                    &ctx, db,
+                                )
+                            })
+                            .await
+                            .map_err(String::from);
+                        match account_fact_backfill {
+                            Ok(report) => {
+                                let error_count = report.claim_errors.len()
+                                    + report.recompute_enqueue_errors.len();
+                                let should_log_info = report.claims_committed > 0
+                                    || report.recompute_jobs_enqueued > 0
+                                    || error_count > 0;
+                                if should_log_info {
+                                    log::info!(
+                                        "[account_fact_claims] startup backfill: {} committed, {} already present, {} recompute job(s), {} error(s)",
+                                        report.claims_committed,
+                                        report.claims_already_present,
+                                        report.recompute_jobs_enqueued,
+                                        error_count
+                                    );
+                                    for error in report.claim_errors {
+                                        log::warn!(
+                                            "[account_fact_claims] startup backfill error: {error}"
+                                        );
+                                    }
+                                    for error in report.recompute_enqueue_errors {
+                                        log::warn!(
+                                            "[account_fact_claims] startup recompute enqueue error: {error}"
+                                        );
+                                    }
+                                } else {
+                                    log::debug!(
+                                        "[account_fact_claims] startup backfill: no new account fact claims"
+                                    );
+                                }
+                                if report.recompute_jobs_enqueued > 0 {
+                                    crate::services::invalidation_jobs::drain_pending_claim_recomputes(
+                                        &init_state,
+                                    )
+                                    .await;
+                                }
+                            }
+                            Err(error) => {
+                                log::warn!(
+                                    "[account_fact_claims] startup backfill failed: {error}"
+                                );
+                            }
+                        }
+                        let claim_recompute_worker_state = init_state.clone();
+                        tauri::async_runtime::spawn(async move {
+                            crate::services::invalidation_jobs::run_claim_recompute_worker(
+                                claim_recompute_worker_state,
+                            )
+                            .await;
+                        });
                     }
                 });
             } else {

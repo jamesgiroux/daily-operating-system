@@ -41,21 +41,21 @@ From `_archive/` meeting history:
 - Duration trends — are meetings getting shorter?
 
 ### Meeting Attendance Gaps
-Cross-reference `data/schedule.json` attendee lists with `_archive/` actual attendance:
+Cross-reference DailyOS schedule attendee lists with `_archive/` actual attendance:
 - Who was invited but did not attend
 - Who used to attend regularly but stopped
 - Who started attending meetings they were not previously in
 - Who sends delegates instead of attending personally
 
 ### Communication Signals
-From `data/emails.json` and meeting notes:
+From DailyOS email/context tools and meeting notes:
 - Response time patterns — who responds quickly, who has slowed
 - CC/BCC patterns — who is being kept in the loop, who has been dropped
 - Escalation patterns — who escalates to whom
 - Topic avoidance — subjects that were discussed and then stopped being discussed
 
 ### Action Trail
-From `data/actions.json`:
+From DailyOS action/work tools:
 - Who follows through on commitments and who does not
 - Who takes on actions and who deflects them
 - Completion patterns — reliable vs. unreliable actors

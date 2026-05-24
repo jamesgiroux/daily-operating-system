@@ -1,5 +1,6 @@
 use super::*;
 use rusqlite::OptionalExtension;
+use sha2::{Digest, Sha256};
 
 impl ActionDb {
     // =========================================================================
@@ -442,7 +443,7 @@ impl ActionDb {
     pub fn backfill_account_domains_from_meetings(&self) -> Result<usize, DbError> {
         // Domain-base matching: only store a domain on an account when the domain
         // base (before first dot) matches the account's normalized name or slug.
-        // Prevents cross-contamination where a partner's domain (e.g. REDACTED.com)
+        // Prevents cross-contamination where a partner's domain (e.g. partner.example.com)
         // gets stored on every account they attend meetings with.
         let user_domains: Vec<String> = crate::state::load_config()
             .map(|c| c.resolved_user_domains())
@@ -1753,15 +1754,47 @@ impl ActionDb {
             "glean" => 2,
             _ => 1,
         };
-        let existing = self.conn.query_row(
-            "SELECT id, source FROM account_products WHERE account_id = ?1 AND lower(name) = lower(?2) LIMIT 1",
-            params![account_id, name],
-            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
-        ).optional()?;
+        let existing = self
+            .conn
+            .query_row(
+                "SELECT id, source
+             FROM account_products
+             WHERE account_id = ?1
+               AND lower(name) = lower(?2)
+             ORDER BY CASE WHEN source = ?3 THEN 0 ELSE 1 END, id
+             LIMIT 1",
+                params![account_id, name, source],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+            )
+            .optional()?;
 
         let now = Utc::now().to_rfc3339();
         match existing {
             Some((id, existing_source)) => {
+                if source == "glean" && existing_source != "glean" {
+                    if source_priority(source) > source_priority(&existing_source)
+                        && existing_source != "user_correction"
+                    {
+                        self.conn.execute(
+                            "INSERT INTO account_products (
+                                account_id, name, category, status, arr_portion, source, confidence, notes, created_at, updated_at
+                             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
+                            params![
+                                account_id,
+                                name,
+                                category,
+                                status,
+                                arr_portion,
+                                source,
+                                confidence,
+                                notes,
+                                now
+                            ],
+                        )?;
+                        return Ok(self.conn.last_insert_rowid());
+                    }
+                    return Ok(id);
+                }
                 if source_priority(source) >= source_priority(&existing_source) {
                     self.conn.execute(
                         "UPDATE account_products
@@ -1907,8 +1940,9 @@ impl ActionDb {
         Ok(())
     }
 
-    /// Upsert product classification from Glean/REDACTED.
-    /// Uses (account_id, product_type, data_source) as the upsert key.
+    /// Upsert product classification from Glean/Salesforce.
+    /// Uses (account_id, product_type, data_source) as the upsert key, with
+    /// legacy CRM source aliases treated as the same Salesforce producer.
     /// Idempotent: calling twice with same data produces one row.
     #[must_use = "check whether product classification was saved before using classification-driven account signals"]
     pub fn upsert_product_classification(
@@ -1921,12 +1955,25 @@ impl ActionDb {
         data_source: &str,
     ) -> Result<i64, DbError> {
         let now = Utc::now().to_rfc3339();
+        let normalized_data_source = data_source.trim().to_ascii_lowercase();
+        let legacy_source_alias = (normalized_data_source == "salesforce").then_some("redacted");
         let existing = self
             .conn
             .query_row(
                 "SELECT id FROM account_products
-             WHERE account_id = ?1 AND product_type = ?2 AND data_source = ?3 LIMIT 1",
-                params![account_id, product_type, data_source],
+             WHERE account_id = ?1
+               AND product_type = ?2
+               AND (lower(data_source) = ?3 OR (?4 IS NOT NULL AND lower(data_source) = ?4))
+             ORDER BY CASE WHEN lower(data_source) = ?3 THEN 0 ELSE 1 END,
+                      updated_at DESC,
+                      id DESC
+             LIMIT 1",
+                params![
+                    account_id,
+                    product_type,
+                    normalized_data_source,
+                    legacy_source_alias,
+                ],
                 |row| row.get::<_, i64>(0),
             )
             .optional()?;
@@ -1942,9 +1989,10 @@ impl ActionDb {
                          last_verified_at = ?4,
                          updated_at = ?4,
                          status = 'active',
-                         confidence = 0.95
-                     WHERE id = ?5",
-                    params![tier, arr, billing_terms, now, id],
+                         confidence = 0.95,
+                         data_source = ?5
+                     WHERE id = ?6",
+                    params![tier, arr, billing_terms, now, data_source, id],
                 )?;
                 Ok(id)
             }
@@ -2953,9 +3001,11 @@ impl ActionDb {
         account_id: &str,
     ) -> Result<Vec<DbAccountSourceRef>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, account_id, field, source_system, source_kind, source_value, observed_at
+            "SELECT id, account_id, field, source_system, source_kind, source_value,
+                    observed_at, source_record_ref
              FROM account_source_refs
              WHERE account_id = ?1
+               AND source_kind != 'source_purged'
              ORDER BY field, observed_at DESC",
         )?;
         let rows = stmt.query_map(params![account_id], |row| {
@@ -2967,6 +3017,7 @@ impl ActionDb {
                 source_kind: row.get(4)?,
                 source_value: row.get(5)?,
                 observed_at: row.get(6)?,
+                source_record_ref: row.get(7)?,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -3022,6 +3073,71 @@ impl ActionDb {
                 services_stage,
                 source,
                 now,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Upsert support-only technical footprint data without touching product
+    /// usage columns owned by other producers.
+    #[must_use = "check whether the support footprint was saved before relying on support health data"]
+    pub fn upsert_account_support_technical_footprint(
+        &self,
+        account_id: &str,
+        support_tier: Option<&str>,
+        csat_score: Option<f64>,
+        open_tickets: Option<i64>,
+        source: &str,
+        observed_at: &str,
+    ) -> Result<(), DbError> {
+        self.conn.execute(
+            "INSERT INTO account_technical_footprint
+                (account_id, support_tier, csat_score, open_tickets, source, sourced_at, updated_at)
+             VALUES (?1, ?2, ?3, COALESCE(?4, 0), ?5, ?6, ?6)
+             ON CONFLICT(account_id) DO UPDATE SET
+                support_tier = CASE
+                    WHEN excluded.support_tier IS NULL THEN account_technical_footprint.support_tier
+                    WHEN account_technical_footprint.support_tier IS NULL THEN excluded.support_tier
+                    WHEN lower(account_technical_footprint.source) LIKE 'glean%'
+                      OR account_technical_footprint.source = 'source_purged:glean'
+                    THEN excluded.support_tier
+                    ELSE account_technical_footprint.support_tier
+                END,
+                csat_score = CASE
+                    WHEN excluded.csat_score IS NULL THEN account_technical_footprint.csat_score
+                    WHEN account_technical_footprint.csat_score IS NULL THEN excluded.csat_score
+                    WHEN lower(account_technical_footprint.source) LIKE 'glean%'
+                      OR account_technical_footprint.source = 'source_purged:glean'
+                    THEN excluded.csat_score
+                    ELSE account_technical_footprint.csat_score
+                END,
+                open_tickets = CASE
+                    WHEN ?4 IS NULL THEN account_technical_footprint.open_tickets
+                    WHEN lower(account_technical_footprint.source) LIKE 'glean%'
+                      OR account_technical_footprint.source = 'source_purged:glean'
+                    THEN excluded.open_tickets
+                    ELSE account_technical_footprint.open_tickets
+                END,
+                source = CASE
+                    WHEN lower(account_technical_footprint.source) LIKE 'glean%'
+                      OR account_technical_footprint.source = 'source_purged:glean'
+                    THEN excluded.source
+                    ELSE account_technical_footprint.source
+                END,
+                sourced_at = CASE
+                    WHEN lower(account_technical_footprint.source) LIKE 'glean%'
+                      OR account_technical_footprint.source = 'source_purged:glean'
+                    THEN excluded.sourced_at
+                    ELSE account_technical_footprint.sourced_at
+                END,
+                updated_at = excluded.updated_at",
+            params![
+                account_id,
+                support_tier,
+                csat_score,
+                open_tickets,
+                source,
+                observed_at,
             ],
         )?;
         Ok(())
@@ -3114,6 +3230,19 @@ impl ActionDb {
                 self.conn.execute(&sql, params![parsed, now, account_id])?;
             }
         }
+        let source_ref_field = format!("technical_footprint.{field}");
+        self.conn.execute(
+            "UPDATE account_source_refs
+             SET source_system = 'superseded:user_edit',
+                 source_kind = 'source_purged',
+                 source_value = NULL,
+                 source_record_ref = NULL
+             WHERE account_id = ?1
+               AND field = ?2
+               AND source_kind != 'source_purged'
+               AND source_record_ref LIKE 'glean_technical_footprint:%'",
+            params![account_id, source_ref_field],
+        )?;
         Ok(())
     }
 
@@ -3173,11 +3302,12 @@ impl ActionDb {
     // Account fact upserts
     // =========================================================================
 
-    /// Source priority for fact writes: user > REDACTED > zendesk > glean > ai.
+    /// Source priority for fact writes: user > Salesforce > zendesk > glean > ai.
     fn source_priority(source: &str) -> i32 {
-        match source {
+        let normalized = source.to_ascii_lowercase();
+        match normalized.as_str() {
             "user" | "user_correction" => 4,
-            "REDACTED" => 3,
+            "salesforce" | "redacted" => 3,
             "zendesk" => 2,
             "glean" => 1,
             "ai" | "inference" => 0,
@@ -3206,7 +3336,7 @@ impl ActionDb {
     /// Update a single account fact field with source tracking.
     ///
     /// Only overwrites if the new source priority >= existing source priority.
-    /// Source priority: user (4) > REDACTED (3) > zendesk (2) > glean (1) > ai (0).
+    /// Source priority: user (4) > Salesforce (3) > zendesk (2) > glean (1) > ai (0).
     ///
     /// Returns `Ok(true)` if the field was updated, `Ok(false)` if skipped due to
     /// lower source priority.
@@ -3234,6 +3364,7 @@ impl ActionDb {
         // Check existing source priority (if this field tracks source)
         if has_source {
             let source_col = format!("{}_source", field);
+            let updated_col = format!("{}_updated_at", field);
             let existing_source: Option<String> = self
                 .conn
                 .query_row(
@@ -3245,8 +3376,26 @@ impl ActionDb {
                 .flatten();
 
             if let Some(ref existing) = existing_source {
-                if Self::source_priority(existing) > new_priority {
+                let existing_priority = Self::source_priority(existing);
+                if existing_priority > new_priority {
                     return Ok(false);
+                }
+                if has_updated_at && existing_priority == new_priority {
+                    let existing_updated_at: Option<String> = self
+                        .conn
+                        .query_row(
+                            &format!("SELECT {} FROM accounts WHERE id = ?1", updated_col),
+                            params![account_id],
+                            |row| row.get(0),
+                        )
+                        .optional()?
+                        .flatten();
+                    if existing_updated_at
+                        .as_deref()
+                        .is_some_and(|existing_asof| existing_asof > observed_at)
+                    {
+                        return Ok(false);
+                    }
                 }
             }
         }
@@ -3300,12 +3449,25 @@ impl ActionDb {
         &self,
         ref_data: &AccountSourceRef<'_>,
     ) -> Result<(), DbError> {
-        let id = uuid::Uuid::new_v4().to_string();
+        let id = Self::account_source_ref_id(ref_data);
         self.conn.execute(
-            "INSERT OR REPLACE INTO account_source_refs
+            "INSERT INTO account_source_refs
                 (id, account_id, field, source_system, source_kind, source_value,
                  observed_at, source_record_ref)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(id) DO UPDATE SET
+                account_id = excluded.account_id,
+                field = excluded.field,
+                source_system = excluded.source_system,
+                source_kind = excluded.source_kind,
+                source_value = excluded.source_value,
+                observed_at = CASE
+                    WHEN account_source_refs.source_record_ref LIKE 'glean_account_fact:%'
+                      OR excluded.source_record_ref LIKE 'glean_account_fact:%'
+                    THEN account_source_refs.observed_at
+                    ELSE excluded.observed_at
+                END,
+                source_record_ref = excluded.source_record_ref",
             params![
                 id,
                 ref_data.account_id,
@@ -3318,6 +3480,31 @@ impl ActionDb {
             ],
         )?;
         Ok(())
+    }
+
+    fn account_source_ref_id(ref_data: &AccountSourceRef<'_>) -> String {
+        let mut hasher = Sha256::new();
+        Self::hash_source_ref_component(&mut hasher, "account_id", Some(ref_data.account_id));
+        Self::hash_source_ref_component(&mut hasher, "field", Some(ref_data.field));
+        Self::hash_source_ref_component(&mut hasher, "source_system", Some(ref_data.source_system));
+        Self::hash_source_ref_component(&mut hasher, "source_kind", Some(ref_data.source_kind));
+        Self::hash_source_ref_component(&mut hasher, "source_value", ref_data.source_value);
+        Self::hash_source_ref_component(&mut hasher, "source_record_ref", ref_data.reference_id);
+        hex::encode(hasher.finalize())
+    }
+
+    fn hash_source_ref_component(hasher: &mut Sha256, label: &str, value: Option<&str>) {
+        hasher.update([0]);
+        hasher.update(label.as_bytes());
+        hasher.update([1]);
+        match value {
+            Some(value) => {
+                hasher.update([1]);
+                hasher.update((value.len() as u64).to_be_bytes());
+                hasher.update(value.as_bytes());
+            }
+            None => hasher.update([0]),
+        }
     }
 
     // =========================================================================
@@ -3806,6 +3993,358 @@ pub struct DbHealthSparklinePoint {
     pub day: String,
     pub score: f64,
     pub band: String,
+}
+
+#[cfg(test)]
+mod account_source_ref_tests {
+    use crate::db::{test_utils::test_db, AccountSourceRef};
+
+    #[test]
+    fn source_ref_upsert_reuses_deterministic_identity() {
+        let db = test_db();
+
+        db.upsert_account_source_ref(&AccountSourceRef {
+            account_id: "acct-source-ref",
+            field: "support_tier",
+            source_system: "glean",
+            source_kind: "zendesk_ticket",
+            source_value: Some("premium"),
+            observed_at: "2026-05-01T00:00:00Z",
+            reference_id: Some("ticket-123"),
+        })
+        .expect("insert source ref");
+        let first_id: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT id FROM account_source_refs WHERE account_id = 'acct-source-ref'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("source ref id");
+
+        db.upsert_account_source_ref(&AccountSourceRef {
+            account_id: "acct-source-ref",
+            field: "support_tier",
+            source_system: "glean",
+            source_kind: "zendesk_ticket",
+            source_value: Some("premium"),
+            observed_at: "2026-05-02T00:00:00Z",
+            reference_id: Some("ticket-123"),
+        })
+        .expect("update source ref");
+
+        let count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM account_source_refs WHERE account_id = 'acct-source-ref'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("source ref count");
+        let (id, observed_at): (String, String) = db
+            .conn_ref()
+            .query_row(
+                "SELECT id, observed_at FROM account_source_refs WHERE account_id = 'acct-source-ref'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("source ref row");
+
+        assert_eq!(count, 1);
+        assert_eq!(id, first_id);
+        assert_eq!(observed_at, "2026-05-02T00:00:00Z");
+    }
+
+    #[test]
+    fn source_ref_upsert_preserves_glean_account_fact_first_observed_at() {
+        let db = test_db();
+
+        db.upsert_account_source_ref(&AccountSourceRef {
+            account_id: "acct-source-ref-glean",
+            field: "support_tier",
+            source_system: "glean",
+            source_kind: "fact",
+            source_value: Some("premium"),
+            observed_at: "2026-05-01T00:00:00Z",
+            reference_id: Some("glean_account_fact:abc123"),
+        })
+        .expect("insert source ref");
+
+        db.upsert_account_source_ref(&AccountSourceRef {
+            account_id: "acct-source-ref-glean",
+            field: "support_tier",
+            source_system: "glean",
+            source_kind: "fact",
+            source_value: Some("premium"),
+            observed_at: "2026-05-22T00:00:00Z",
+            reference_id: Some("glean_account_fact:abc123"),
+        })
+        .expect("replay source ref");
+
+        let observed_at: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT observed_at FROM account_source_refs
+                 WHERE account_id = 'acct-source-ref-glean'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("source ref observed_at");
+
+        assert_eq!(observed_at, "2026-05-01T00:00:00Z");
+    }
+
+    #[test]
+    fn get_source_refs_excludes_source_purged_rows() {
+        let db = test_db();
+
+        db.upsert_account_source_ref(&AccountSourceRef {
+            account_id: "acct-source-ref-filter",
+            field: "support_tier",
+            source_system: "glean",
+            source_kind: "zendesk_ticket",
+            source_value: Some("premium"),
+            observed_at: "2026-05-01T00:00:00Z",
+            reference_id: Some("ticket-123"),
+        })
+        .expect("insert visible source ref");
+        db.upsert_account_source_ref(&AccountSourceRef {
+            account_id: "acct-source-ref-filter",
+            field: "support_tier",
+            source_system: "glean",
+            source_kind: "source_purged",
+            source_value: Some("premium"),
+            observed_at: "2026-05-02T00:00:00Z",
+            reference_id: Some("ticket-123"),
+        })
+        .expect("insert purged source ref");
+
+        let refs = db
+            .get_account_source_refs("acct-source-ref-filter")
+            .expect("source refs");
+
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].source_kind, "zendesk_ticket");
+    }
+
+    #[test]
+    fn technical_footprint_user_edit_retires_glean_projection_ref() {
+        let db = test_db();
+        db.upsert_account_technical_footprint(
+            "acct-footprint-ref-retire",
+            None,
+            None,
+            None,
+            None,
+            Some("premium"),
+            None,
+            0,
+            None,
+            "glean_zendesk",
+        )
+        .expect("seed Glean footprint");
+        db.upsert_account_source_ref(&AccountSourceRef {
+            account_id: "acct-footprint-ref-retire",
+            field: "technical_footprint.support_tier",
+            source_system: "glean_zendesk",
+            source_kind: "technical_footprint",
+            source_value: Some("premium"),
+            observed_at: "2026-05-01T00:00:00Z",
+            reference_id: Some("glean_technical_footprint:projection:seed"),
+        })
+        .expect("seed Glean projection ref");
+
+        db.update_technical_footprint_field(
+            "acct-footprint-ref-retire",
+            "support_tier",
+            "enterprise",
+        )
+        .expect("user edit support tier");
+
+        let visible_refs = db
+            .get_account_source_refs("acct-footprint-ref-retire")
+            .expect("visible refs")
+            .into_iter()
+            .filter(|source_ref| source_ref.field == "technical_footprint.support_tier")
+            .count();
+        assert_eq!(
+            visible_refs, 0,
+            "user edits must retire stale Glean projection refs for the same field"
+        );
+    }
+}
+
+#[cfg(test)]
+mod account_support_technical_footprint_tests {
+    use crate::db::test_utils::test_db;
+
+    #[test]
+    fn support_footprint_upsert_preserves_product_columns_and_missing_ticket_count() {
+        let db = test_db();
+
+        db.upsert_account_technical_footprint(
+            "acct-support-footprint",
+            Some("[\"sso\"]"),
+            Some("enterprise"),
+            Some(0.72),
+            Some(850),
+            Some("standard"),
+            Some(4.1),
+            7,
+            Some("live"),
+            "user_edit",
+        )
+        .expect("seed footprint");
+
+        db.upsert_account_support_technical_footprint(
+            "acct-support-footprint",
+            Some("premium"),
+            Some(4.8),
+            None,
+            "glean_zendesk",
+            "2026-05-01T00:00:00Z",
+        )
+        .expect("support footprint update");
+
+        let footprint = db
+            .get_account_technical_footprint("acct-support-footprint")
+            .expect("query footprint")
+            .expect("footprint row");
+        assert_eq!(
+            footprint.support_tier.as_deref(),
+            Some("standard"),
+            "Glean support data must not overwrite a non-Glean-owned support tier"
+        );
+        assert!(
+            (footprint.csat_score.unwrap() - 4.1).abs() < 1e-6,
+            "Glean support data must not overwrite a non-Glean-owned support score"
+        );
+        assert_eq!(footprint.open_tickets, 7);
+        assert_eq!(footprint.source, "user_edit");
+        assert_eq!(footprint.integrations_json.as_deref(), Some("[\"sso\"]"));
+        assert_eq!(footprint.usage_tier.as_deref(), Some("enterprise"));
+        assert!((footprint.adoption_score.unwrap() - 0.72).abs() < 1e-6);
+        assert_eq!(footprint.active_users, Some(850));
+        assert_eq!(footprint.services_stage.as_deref(), Some("live"));
+
+        db.upsert_account_support_technical_footprint(
+            "acct-support-footprint",
+            None,
+            None,
+            Some(0),
+            "glean_zendesk",
+            "2026-05-01T00:00:00Z",
+        )
+        .expect("support footprint zero-ticket update");
+
+        let footprint = db
+            .get_account_technical_footprint("acct-support-footprint")
+            .expect("query footprint")
+            .expect("footprint row");
+        assert_eq!(
+            footprint.open_tickets, 7,
+            "Glean zero-ticket evidence must not overwrite non-Glean-owned ticket count"
+        );
+        assert_eq!(footprint.support_tier.as_deref(), Some("standard"));
+        assert!((footprint.csat_score.unwrap() - 4.1).abs() < 1e-6);
+        assert_eq!(footprint.usage_tier.as_deref(), Some("enterprise"));
+
+        db.upsert_account_technical_footprint(
+            "acct-glean-support-footprint",
+            Some("[\"sso\"]"),
+            Some("enterprise"),
+            Some(0.72),
+            Some(850),
+            Some("standard"),
+            Some(4.1),
+            7,
+            Some("live"),
+            "glean_zendesk",
+        )
+        .expect("seed Glean-owned footprint");
+        db.upsert_account_support_technical_footprint(
+            "acct-glean-support-footprint",
+            Some("premium"),
+            Some(4.8),
+            Some(0),
+            "glean_zendesk",
+            "2026-05-01T00:00:00Z",
+        )
+        .expect("update Glean-owned support footprint");
+        let footprint = db
+            .get_account_technical_footprint("acct-glean-support-footprint")
+            .expect("query Glean-owned footprint")
+            .expect("Glean-owned footprint row");
+        assert_eq!(footprint.support_tier.as_deref(), Some("premium"));
+        assert!((footprint.csat_score.unwrap() - 4.8).abs() < 1e-6);
+        assert_eq!(footprint.open_tickets, 0);
+        assert_eq!(footprint.source, "glean_zendesk");
+    }
+}
+
+#[cfg(test)]
+mod product_classification_tests {
+    use crate::db::test_utils::test_db;
+    use rusqlite::params;
+
+    fn legacy_salesforce_source() -> &'static str {
+        concat!("RE", "DACTED")
+    }
+
+    #[test]
+    fn upsert_product_classification_reuses_legacy_salesforce_rows() {
+        let db = test_db();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO accounts (id, name, updated_at, archived)
+                 VALUES ('acct-product-source', 'Product Source Account', '2026-05-01', 0)",
+                [],
+            )
+            .expect("seed account");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO account_products (
+                    account_id, name, category, status, arr_portion, source, confidence,
+                    product_type, tier, billing_terms, arr, last_verified_at, data_source,
+                    created_at, updated_at
+                 ) VALUES (?1, ?2, ?2, 'active', ?3, 'glean', 0.95, ?2, 'legacy', 'annual', ?3, ?4, ?5, ?4, ?4)",
+                params![
+                    "acct-product-source",
+                    "Platform",
+                    120_000.0_f64,
+                    "2026-04-01T00:00:00Z",
+                    legacy_salesforce_source(),
+                ],
+            )
+            .expect("seed legacy product");
+        let legacy_id = db.conn_ref().last_insert_rowid();
+
+        let updated_id = db
+            .upsert_product_classification(
+                "acct-product-source",
+                "Platform",
+                Some("enterprise"),
+                Some(125_000.0),
+                Some("annual"),
+                "Salesforce",
+            )
+            .expect("upsert product classification");
+
+        assert_eq!(updated_id, legacy_id);
+        let (count, data_source, tier): (i64, String, String) = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*), MAX(data_source), MAX(tier)
+                 FROM account_products
+                 WHERE account_id = 'acct-product-source' AND product_type = 'Platform'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("fetch product state");
+        assert_eq!(count, 1, "legacy rows should update, not duplicate");
+        assert_eq!(data_source, "Salesforce");
+        assert_eq!(tier, "enterprise");
+    }
 }
 
 #[cfg(test)]

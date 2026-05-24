@@ -36,7 +36,7 @@ pub struct ItemSource {
     pub confidence: f64,
     /// When this item was sourced (ISO 8601 timestamp)
     pub sourced_at: String,
-    /// Human-readable reference: "meeting 2026-03-10", "REDACTED", "you edited this"
+    /// Human-readable reference: "meeting 2026-03-10", "Salesforce", "you edited this"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reference: Option<String>,
 }
@@ -865,7 +865,7 @@ pub struct SatisfactionData {
     pub source: Option<String>,
 }
 
-/// Product classification from REDACTED via Glean.
+/// Product classification from Salesforce via Glean.
 /// Contains current product subscriptions and tier information.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -875,7 +875,7 @@ pub struct ProductClassification {
     pub products: Vec<ProductInfo>,
 }
 
-/// Individual product information from REDACTED.
+/// Individual product information from Salesforce.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ProductInfo {
@@ -1065,7 +1065,7 @@ pub struct IntelligenceJson {
         skip_serializing_if = "Option::is_none"
     )]
     pub agreement_outlook: Option<AgreementOutlook>,
-    /// Product classification from REDACTED (Glean-only)
+    /// Product classification from Salesforce (Glean-only)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub product_classification: Option<ProductClassification>,
 
@@ -1146,7 +1146,7 @@ pub(crate) struct DimensionsBlob {
         skip_serializing_if = "Option::is_none"
     )]
     pub agreement_outlook: Option<AgreementOutlook>,
-    /// Product classification from REDACTED (Glean-only)
+    /// Product classification from Salesforce (Glean-only)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub product_classification: Option<ProductClassification>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

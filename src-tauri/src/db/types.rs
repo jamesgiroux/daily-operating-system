@@ -326,7 +326,7 @@ pub struct DbAccountProduct {
     /// When this product classification was last verified from Glean
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_verified_at: Option<String>,
-    /// Source system for product data (e.g., "REDACTED", "glean")
+    /// Source system for product data (e.g., "Salesforce", "glean")
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data_source: Option<String>,
     pub created_at: String,
@@ -1152,6 +1152,7 @@ pub struct DbAccountSourceRef {
     pub source_kind: String,
     pub source_value: Option<String>,
     pub observed_at: String,
+    pub source_record_ref: Option<String>,
 }
 
 /// A row from the `entity_feedback_events` table.

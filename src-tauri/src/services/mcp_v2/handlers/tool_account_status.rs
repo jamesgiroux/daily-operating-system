@@ -34,7 +34,7 @@ const ACTOR_LABEL: &str = concat!("agent:dailyos-mcp-v2:", env!("CARGO_PKG_VERSI
 const ABILITY_NAME: &str = "get_entity_intelligence";
 
 /// `EntityIntelligenceInput` schema version pinned by the ability contract.
-const ENTITY_INTELLIGENCE_SCHEMA_VERSION: u32 = 1;
+const ENTITY_INTELLIGENCE_SCHEMA_VERSION: u32 = 2;
 const ACCOUNT_STATUS_RESPONSE_SCHEMA_VERSION: u32 = 1;
 const MAX_ASSESSMENT_ITEMS: usize = 8;
 
@@ -117,7 +117,7 @@ impl McpToolHandler for AccountStatusHandler {
                 "entityType": "account",
                 "entityId": subject.clone(),
                 "depth": "standard",
-                "sections": ["facts", "open_loops", "touchpoints", "record"],
+                "sections": ["facts", "open_loops", "relationships", "touchpoints", "record"],
             });
 
             // Use the request-scoped dispatch path — V2 MCP needs to pass
@@ -166,22 +166,50 @@ fn extract_subject(params: &Value) -> Result<String, ToolError> {
     Ok(subject.to_string())
 }
 
-fn present_account_status_response(subject: &str, envelope: Value) -> Value {
+pub fn present_account_status_response(subject: &str, envelope: Value) -> Value {
+    present_account_status_response_with_label(subject, envelope, None)
+}
+
+pub fn present_account_status_response_with_label(
+    subject: &str,
+    envelope: Value,
+    display_label_override: Option<&str>,
+) -> Value {
     let subject_value = envelope
         .get("subject")
         .cloned()
         .unwrap_or_else(|| fallback_subject(subject));
-    let label = subject_value
-        .get("displayLabel")
-        .and_then(Value::as_str)
+    let label = display_label_override
         .map(compact_text)
         .filter(|value| !value.is_empty())
+        .or_else(|| {
+            subject_value
+                .get("displayLabel")
+                .and_then(Value::as_str)
+                .map(compact_text)
+                .filter(|value| !value.is_empty())
+        })
         .unwrap_or_else(|| subject.to_string());
+    let subject_value = if display_label_override.is_some() {
+        let mut subject_map = subject_value.as_object().cloned().unwrap_or_default();
+        subject_map.insert("displayLabel".to_string(), Value::String(label.clone()));
+        Value::Object(subject_map)
+    } else {
+        subject_value
+    };
 
     let (provenance, source_id_map) = build_provenance_summary(&envelope);
     let facts = collect_fact_summaries(&envelope, &source_id_map);
     let open_loops = collect_open_loop_summaries(&envelope, &source_id_map);
-    let answer = build_account_status_answer(&label, &facts, &open_loops, &envelope, &provenance);
+    let relationships = collect_relationship_summaries(&envelope, &source_id_map);
+    let answer = build_account_status_answer(
+        &label,
+        &facts,
+        &open_loops,
+        &relationships,
+        &envelope,
+        &provenance,
+    );
 
     json!({
         "schemaVersion": ACCOUNT_STATUS_RESPONSE_SCHEMA_VERSION,
@@ -192,6 +220,7 @@ fn present_account_status_response(subject: &str, envelope: Value) -> Value {
         "assessment": {
             "facts": facts,
             "openLoops": open_loops,
+            "relationships": relationships,
         },
         "trust": envelope.get("trust").cloned().unwrap_or(Value::Null),
         "sensitivity": envelope.get("sensitivity").cloned().unwrap_or(Value::Null),
@@ -311,6 +340,152 @@ fn collect_open_loop_summaries(
         .unwrap_or_default()
 }
 
+fn collect_relationship_summaries(
+    envelope: &Value,
+    source_id_map: &BTreeMap<String, String>,
+) -> Vec<Value> {
+    envelope
+        .pointer("/relationships/items")
+        .and_then(Value::as_array)
+        .map(|bundles| {
+            let mut summaries = Vec::new();
+            for bundle in bundles {
+                if let Some(participants) = bundle
+                    .pointer("/participants/items")
+                    .and_then(Value::as_array)
+                {
+                    summaries.extend(
+                        participants.iter().filter_map(|item| {
+                            relationship_participant_summary(item, source_id_map)
+                        }),
+                    );
+                }
+                if let Some(edges) = bundle.pointer("/edges/items").and_then(Value::as_array) {
+                    summaries.extend(
+                        edges
+                            .iter()
+                            .filter_map(|item| relationship_edge_summary(item, source_id_map)),
+                    );
+                }
+            }
+            summaries.truncate(MAX_ASSESSMENT_ITEMS);
+            summaries
+        })
+        .unwrap_or_default()
+}
+
+fn relationship_participant_summary(
+    item: &Value,
+    source_id_map: &BTreeMap<String, String>,
+) -> Option<Value> {
+    let display_label = string_at(item, "/displayLabel/text")
+        .map(compact_text)
+        .filter(|value| !value.is_empty())?;
+
+    let mut summary = Map::new();
+    summary.insert("kind".to_string(), Value::String("participant".to_string()));
+    summary.insert("displayLabel".to_string(), Value::String(display_label));
+    if let Some(role) = string_at(item, "/role/text")
+        .map(compact_text)
+        .filter(|value| !value.is_empty())
+    {
+        summary.insert("role".to_string(), Value::String(role));
+    }
+    if let Some(relationship) = string_at(item, "/relationship/text")
+        .map(compact_text)
+        .filter(|value| !value.is_empty())
+    {
+        summary.insert("relationship".to_string(), Value::String(relationship));
+    }
+    if let Some(count) = item
+        .get("normalizedTouchpointCount")
+        .and_then(Value::as_u64)
+    {
+        summary.insert(
+            "normalizedTouchpointCount".to_string(),
+            Value::Number(count.into()),
+        );
+    }
+    insert_string_or_clone(&mut summary, "lastSeenAt", item, "/lastSeenAt");
+    insert_string_or_clone(&mut summary, "trustBand", item, "/trustBand");
+    insert_string_or_clone(&mut summary, "freshness", item, "/freshness");
+    insert_source_refs(&mut summary, item, source_id_map);
+    Some(Value::Object(summary))
+}
+
+fn relationship_edge_summary(
+    item: &Value,
+    source_id_map: &BTreeMap<String, String>,
+) -> Option<Value> {
+    let relationship = string_at(item, "/edgeType")
+        .map(compact_text)
+        .filter(|value| !value.is_empty())
+        .map(|value| relationship_label_for_edge_type(&value))
+        .unwrap_or_else(|| "Relationship".to_string());
+    let mut summary = Map::new();
+    summary.insert("kind".to_string(), Value::String("edge".to_string()));
+    summary.insert("relationship".to_string(), Value::String(relationship));
+    if let Some(display_label) = string_at(item, "/relatedDisplayLabel/text")
+        .map(compact_text)
+        .filter(|value| !value.is_empty())
+    {
+        summary.insert("displayLabel".to_string(), Value::String(display_label));
+    }
+    if let Some(related_entity_type) = relationship_subject_type(item.get("relatedSubjectRef")) {
+        summary.insert(
+            "relatedEntityType".to_string(),
+            Value::String(related_entity_type.to_string()),
+        );
+    }
+    insert_string_or_clone(&mut summary, "inclusionReason", item, "/inclusionReason");
+    insert_string_or_clone(&mut summary, "observedAt", item, "/observedAt");
+    insert_string_or_clone(&mut summary, "sourceAsOf", item, "/sourceAsof");
+    insert_string_or_clone(&mut summary, "trustBand", item, "/trustBand");
+    insert_string_or_clone(&mut summary, "freshness", item, "/freshness");
+    insert_source_refs(&mut summary, item, source_id_map);
+    Some(Value::Object(summary))
+}
+
+fn relationship_label_for_edge_type(edge_type: &str) -> String {
+    match edge_type {
+        "hierarchy_parent" => "Parent relationship",
+        "hierarchy_child" => "Child relationship",
+        "stakeholder" => "Stakeholder",
+        "member" => "Member",
+        "meeting_subject" => "Meeting subject",
+        "meeting_attendance" => "Meeting attendance",
+        "meeting_link" => "Meeting link",
+        "person_relationship" => "Person relationship",
+        _ => "Relationship",
+    }
+    .to_string()
+}
+
+fn relationship_subject_type(subject_ref: Option<&Value>) -> Option<&'static str> {
+    subject_ref.and_then(|value| {
+        if let Some(value) = value.as_str() {
+            return value
+                .split_once(':')
+                .map(|(entity_type, _)| entity_type)
+                .or(Some(value))
+                .and_then(known_entity_type);
+        }
+        value
+            .as_object()
+            .and_then(|object| object.keys().find_map(|key| known_entity_type(key)))
+    })
+}
+
+fn known_entity_type(entity_type: &str) -> Option<&'static str> {
+    match entity_type {
+        "account" => Some("account"),
+        "project" => Some("project"),
+        "person" => Some("person"),
+        "meeting" => Some("meeting"),
+        _ => None,
+    }
+}
+
 fn open_loop_summary(item: &Value, source_id_map: &BTreeMap<String, String>) -> Option<Value> {
     let open_loop = item.get("openLoop").unwrap_or(item);
     let description = string_at(open_loop, "/description")
@@ -335,10 +510,16 @@ fn build_account_status_answer(
     label: &str,
     facts: &[Value],
     open_loops: &[Value],
+    relationships: &[Value],
     envelope: &Value,
     provenance: &Value,
 ) -> String {
-    if facts.is_empty() && open_loops.is_empty() {
+    if facts.is_empty() && open_loops.is_empty() && relationships.is_empty() {
+        if let Some(advisory) = relationship_partial_failure_advisory(envelope) {
+            return format!(
+                "DailyOS could not read relationship intelligence for {label}: {advisory}."
+            );
+        }
         return format!("DailyOS does not yet have claim-backed account intelligence for {label}.");
     }
 
@@ -364,6 +545,51 @@ fn build_account_status_answer(
         }
     }
 
+    if !relationships.is_empty() {
+        let participants = relationships
+            .iter()
+            .filter(|item| string_at(item, "/kind") == Some("participant"))
+            .take(3)
+            .collect::<Vec<_>>();
+        if !participants.is_empty() {
+            lines.push(String::new());
+            lines.push("Top participants by meeting attendance:".to_string());
+        }
+        for participant in participants {
+            if let Some(display_label) = string_at(participant, "/displayLabel") {
+                let touchpoint_count = participant
+                    .get("normalizedTouchpointCount")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0);
+                let role = string_at(participant, "/role")
+                    .map(|value| format!("; role: {value}"))
+                    .unwrap_or_default();
+                lines.push(format!(
+                    "- {display_label}: {touchpoint_count} touchpoint(s){role}{}",
+                    evidence_suffix(participant)
+                ));
+            }
+        }
+
+        let edges = relationships
+            .iter()
+            .filter(|item| string_at(item, "/kind") == Some("edge"))
+            .take(3)
+            .collect::<Vec<_>>();
+        if !edges.is_empty() {
+            lines.push(String::new());
+            lines.push("Relationship evidence:".to_string());
+        }
+        for edge in edges {
+            if let Some(relationship) = string_at(edge, "/relationship") {
+                let label = string_at(edge, "/displayLabel")
+                    .map(|value| format!(" with {value}"))
+                    .unwrap_or_default();
+                lines.push(format!("- {relationship}{label}{}", evidence_suffix(edge)));
+            }
+        }
+    }
+
     let source_count = provenance
         .pointer("/sources")
         .and_then(Value::as_array)
@@ -377,6 +603,23 @@ fn build_account_status_answer(
         "Provenance: {source_count} source(s) surfaced; trust posture {trust}."
     ));
     lines.join("\n")
+}
+
+fn relationship_partial_failure_advisory(envelope: &Value) -> Option<String> {
+    envelope
+        .pointer("/relationships/items")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .find_map(|bundle| {
+            bundle
+                .get("emptyReason")
+                .and_then(|reason| reason.get("partial_failure"))
+                .and_then(|failure| failure.get("advisory"))
+                .and_then(Value::as_str)
+                .map(compact_text)
+                .filter(|value| !value.is_empty())
+        })
 }
 
 fn evidence_suffix(item: &Value) -> String {
@@ -529,7 +772,7 @@ mod tests {
     #[test]
     fn account_status_presenter_returns_prose_and_display_provenance() {
         let envelope = serde_json::json!({
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "subject": {
                 "kind": "account",
                 "id": "acct-1",
@@ -577,6 +820,53 @@ mod tests {
                     }
                 }]
             },
+            "relationships": {
+                "items": [{
+                    "edges": {
+                        "items": [{
+                            "edgeId": "stakeholder:person:person-2:raw-edge-source",
+                            "edgeType": "stakeholder",
+                            "relatedSubjectRef": { "person": "person-2" },
+                            "relatedDisplayLabel": {
+                                "text": "Commercial Sponsor",
+                                "policy": {}
+                            },
+                            "observedAt": "2026-05-22T15:00:00Z",
+                            "sourceAsof": "2026-05-22T15:00:00Z",
+                            "trustBand": "likely_current",
+                            "freshness": "current",
+                            "provenance": {
+                                "sourceIds": ["relationship_source:edge-1"]
+                            }
+                        }]
+                    },
+                    "participants": {
+                        "items": [{
+                            "subjectRef": { "person": "person-1" },
+                            "displayLabel": {
+                                "text": "Example Person",
+                                "policy": {}
+                            },
+                            "role": {
+                                "text": "Executive sponsor",
+                                "policy": {}
+                            },
+                            "relationship": {
+                                "text": "stakeholder",
+                                "policy": {}
+                            },
+                            "normalizedTouchpointCount": 4,
+                            "recentTouchpointIds": ["meeting-1", "meeting-2"],
+                            "lastSeenAt": "2026-05-22T15:00:00Z",
+                            "trustBand": "likely_current",
+                            "freshness": "current",
+                            "provenance": {
+                                "sourceIds": ["relationship_source:person-1"]
+                            }
+                        }]
+                    }
+                }]
+            },
             "trust": {
                 "aggregateBand": "likely_current",
                 "sectionCaveats": {}
@@ -597,6 +887,20 @@ mod tests {
                         "sourceType": "open_loop",
                         "asOf": "2026-05-22T15:00:00Z",
                         "redacted": false
+                    },
+                    {
+                        "id": "relationship_source:person-1",
+                        "label": "meeting participation",
+                        "sourceType": "meeting_attendees",
+                        "asOf": "2026-05-22T15:00:00Z",
+                        "redacted": false
+                    },
+                    {
+                        "id": "relationship_source:edge-1",
+                        "label": "account stakeholder",
+                        "sourceType": "account_stakeholders",
+                        "asOf": "2026-05-22T15:00:00Z",
+                        "redacted": false
                     }
                 ],
                 "redactionApplied": false
@@ -613,16 +917,161 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("Confirm commercial owner"));
+        assert!(payload["answer"]
+            .as_str()
+            .unwrap()
+            .contains("Example Person"));
+        assert!(payload["answer"]
+            .as_str()
+            .unwrap()
+            .contains("Commercial Sponsor"));
         assert_eq!(
             payload["assessment"]["facts"][0]["sourceRefs"][0],
             "source_1"
+        );
+        assert_eq!(
+            payload["assessment"]["relationships"][0]["sourceRefs"][0],
+            "source_3"
         );
         assert_eq!(payload["provenance"]["sources"][0]["id"], "source_1");
         assert_eq!(payload["provenance"]["rawClaimIdsIncluded"], false);
 
         let serialized = serde_json::to_string(&payload).unwrap();
         assert!(!serialized.contains("claim_source:claim-1"));
+        assert!(!serialized.contains("relationship_source:person-1"));
+        assert!(!serialized.contains("relationship_source:edge-1"));
+        assert!(!serialized.contains("raw-edge-source"));
+        assert!(!serialized.contains("meeting-1"));
         assert!(!serialized.contains("\"claimId\""));
+    }
+
+    #[test]
+    fn account_status_presenter_keeps_edge_only_relationships_readable() {
+        let envelope = json!({
+            "schemaVersion": 2,
+            "subject": {
+                "kind": "account",
+                "id": "acct-1",
+                "displayLabel": "account:acct-1"
+            },
+            "facts": { "items": [] },
+            "openLoops": { "items": [] },
+            "relationships": {
+                "items": [{
+                    "edges": {
+                        "items": [{
+                            "edgeId": "stakeholder:person:person-1:raw-source",
+                            "edgeType": "stakeholder",
+                            "relatedSubjectRef": { "person": "person-1" },
+                            "relatedDisplayLabel": {
+                                "text": "Commercial Sponsor",
+                                "policy": {}
+                            },
+                            "trustBand": "use_with_caution",
+                            "freshness": "unknown",
+                            "provenance": {
+                                "sourceIds": ["relationship_source:edge-1"]
+                            }
+                        }]
+                    },
+                    "participants": { "items": [] }
+                }]
+            },
+            "trust": {
+                "aggregateBand": "use_with_caution",
+                "sectionCaveats": {}
+            },
+            "sensitivity": "internal",
+            "provenance": {
+                "sources": [{
+                    "id": "relationship_source:edge-1",
+                    "label": "account stakeholder",
+                    "sourceType": "account_stakeholders",
+                    "redacted": false
+                }],
+                "redactionApplied": false
+            },
+            "sections": {}
+        });
+
+        let payload =
+            present_account_status_response_with_label("acct-1", envelope, Some("Example Account"));
+
+        assert!(payload["answer"]
+            .as_str()
+            .unwrap()
+            .contains("DailyOS account briefing for Example Account"));
+        assert!(payload["answer"]
+            .as_str()
+            .unwrap()
+            .contains("Commercial Sponsor"));
+        assert_eq!(payload["assessment"]["relationships"][0]["kind"], "edge");
+        assert_eq!(
+            payload["assessment"]["relationships"][0]["sourceRefs"][0],
+            "source_1"
+        );
+
+        let serialized = serde_json::to_string(&payload).unwrap();
+        assert!(!serialized.contains("relationship_source:edge-1"));
+        assert!(!serialized.contains("raw-source"));
+        assert!(!serialized.contains("person-1"));
+    }
+
+    #[test]
+    fn account_status_presenter_surfaces_relationship_partial_failure() {
+        let envelope = json!({
+            "schemaVersion": 2,
+            "subject": {
+                "kind": "account",
+                "id": "acct-1",
+                "displayLabel": "Example Account"
+            },
+            "facts": { "items": [] },
+            "openLoops": { "items": [] },
+            "relationships": {
+                "items": [{
+                    "edges": { "items": [] },
+                    "participants": { "items": [] },
+                    "emptyReason": {
+                        "partial_failure": {
+                            "advisory": "relationships reader unavailable"
+                        }
+                    }
+                }]
+            },
+            "trust": {
+                "aggregateBand": "unscored",
+                "sectionCaveats": {
+                    "relationships": "relationships reader unavailable"
+                }
+            },
+            "sensitivity": "internal",
+            "provenance": {
+                "sources": [],
+                "redactionApplied": false
+            },
+            "sections": {
+                "relationships": {
+                    "kind": "empty",
+                    "reason": {
+                        "partial_failure": {
+                            "advisory": "relationships reader unavailable"
+                        }
+                    }
+                }
+            }
+        });
+
+        let payload = present_account_status_response("acct-1", envelope);
+
+        assert!(payload["answer"]
+            .as_str()
+            .unwrap()
+            .contains("could not read relationship intelligence"));
+        assert!(!payload["answer"]
+            .as_str()
+            .unwrap()
+            .contains("does not yet have claim-backed account intelligence"));
     }
 
     #[test]

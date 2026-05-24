@@ -322,9 +322,11 @@ if ( ! function_exists( 'dailyos_provenance_tag_render' ) ) {
 			case 'glean':
 			case 'glean_chat':
 				return 'from Glean';
+			case 'salesforce':
 			case 'redacted':
 			case 'glean_crm':
-				return 'from REDACTED';
+			case 'glean_salesforce':
+				return 'from Salesforce';
 			case 'zendesk':
 			case 'glean_zendesk':
 				return 'from Zendesk';

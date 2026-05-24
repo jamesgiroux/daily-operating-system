@@ -22,7 +22,7 @@ Activate when:
 2. Match the mentioned name against directory names (case-insensitive, partial match, handle "first last" and "last, first" formats)
 3. If exact match found, load silently
 4. If multiple partial matches, clarify: "Did you mean People/Sarah-Chen or People/Sarah-Martinez?"
-5. If no match in People/, check `data/emails.json` for email address matching — the person may exist in email signals but not yet have a profile
+5. If no match in People/, check DailyOS email/context tools for email address matching — the person may exist in email signals but not yet have a profile
 
 ## Profile Loading
 

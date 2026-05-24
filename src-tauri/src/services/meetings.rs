@@ -793,7 +793,7 @@ fn subject_ref_json(kind: &str, id: &str) -> Result<String, String> {
         other => {
             return Err(format!(
                 "unsupported prepare_meeting subject kind `{other}`"
-            ))
+            ));
         }
     };
     crate::services::claims::canonical_subject_ref(&subject)
@@ -3477,7 +3477,8 @@ pub fn update_meeting_user_agenda(
             .unwrap_or_else(|| ("meeting".to_string(), meeting_id.to_string()));
         crate::services::signals::emit_and_propagate_or_log(
             ctx,
-            db, &state.signals.engine,
+            db,
+            &state.signals.engine,
             &etype,
             &eid,
             "prep_edited",

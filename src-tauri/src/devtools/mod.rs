@@ -525,7 +525,7 @@ pub fn apply_scenario(scenario: &str, state: &AppState) -> Result<String, String
                 .map_err(|e| format!("DB open failed: {e}"))?;
             seed_intelligence_data(&db)?;
             seed_glean_enriched_data(&db)?;
-            Ok("Glean enriched: Gong summaries + REDACTED context + source attribution".into())
+            Ok("Glean enriched: Gong summaries + Salesforce context + source attribution".into())
         }
         "empty_portfolio" => {
             reset_all(state)?;
@@ -1133,7 +1133,7 @@ fn seed_linear_mock_data(db: &ActionDb) -> Result<(), String> {
     Ok(())
 }
 
-/// Seed Glean-enriched intelligence data: Gong summaries, REDACTED context, support health.
+/// Seed Glean-enriched intelligence data: Gong summaries, Salesforce context, support health.
 fn seed_glean_enriched_data(db: &ActionDb) -> Result<(), String> {
     assert_dev_db_connection(db)?;
     let conn = db.conn_ref();
@@ -1151,7 +1151,7 @@ fn seed_glean_enriched_data(db: &ActionDb) -> Result<(), String> {
             "adoptionRate": 0.82, "trend": "growing",
             "featureAdoption": { "cms": 0.95, "analytics": 0.65, "search": 0.35 },
             "lastActive": "2026-04-14",
-            "source": { "source": "glean_crm", "confidence": 0.9, "reference": "REDACTED" }
+            "source": { "source": "glean_crm", "confidence": 0.9, "reference": "Salesforce" }
         },
         "supportHealth": {
             "openTickets": 2, "recentTrend": "stable", "criticalIssues": 0,
@@ -1161,12 +1161,12 @@ fn seed_glean_enriched_data(db: &ActionDb) -> Result<(), String> {
     });
     patch_entity_intelligence(conn, "mock-acme-corp", &acme_patch);
 
-    // Patch Globex with REDACTED context + at-risk signals
+    // Patch Globex with Salesforce context + at-risk signals
     let globex_patch = serde_json::json!({
         "salesforceContext": {
             "renewalProbability": 0.65, "dealStage": "Negotiation",
             "forecastCloseDate": "2026-06-15", "pipelineValue": 840000,
-            "source": { "source": "glean_crm", "confidence": 0.9, "reference": "REDACTED" }
+            "source": { "source": "glean_crm", "confidence": 0.9, "reference": "Salesforce" }
         },
         "gongCallSummaries": [{
             "title": "Renewal Discussion", "date": "2026-04-08",
@@ -1184,12 +1184,12 @@ fn seed_glean_enriched_data(db: &ActionDb) -> Result<(), String> {
             "adoptionRate": 0.45, "trend": "declining",
             "featureAdoption": { "cms": 0.7, "analytics": 0.3, "search": 0.1 },
             "lastActive": "2026-04-11",
-            "source": { "source": "glean_crm", "confidence": 0.9, "reference": "REDACTED" }
+            "source": { "source": "glean_crm", "confidence": 0.9, "reference": "Salesforce" }
         }
     });
     patch_entity_intelligence(conn, "mock-globex-industries", &globex_patch);
 
-    log::info!("seed_glean_enriched_data: Gong + REDACTED + Zendesk data patched");
+    log::info!("seed_glean_enriched_data: Gong + Salesforce + Zendesk data patched");
     Ok(())
 }
 
@@ -1692,7 +1692,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
 
     // --- Source references  ---
     for (account_id, field, system, kind, value) in [
-        ("mock-acme-corp", "arr", "REDACTED", "fact", "1200000"),
+        ("mock-acme-corp", "arr", "Salesforce", "fact", "1200000"),
         (
             "mock-acme-corp",
             "renewal_date",
@@ -1704,7 +1704,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         (
             "mock-globex-industries",
             "arr",
-            "REDACTED",
+            "Salesforce",
             "fact",
             "800000",
         ),
@@ -4692,10 +4692,10 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
             "Globex Check-in",
             Some("mock-globex-industries"),
             "risk",
-            "Active competitor evaluation with REDACTED",
+            "Active competitor evaluation with Salesforce",
             Some("displacement"),
             Some("red"),
-            Some("We've been piloting REDACTED for the last two weeks"),
+            Some("We've been piloting Salesforce for the last two weeks"),
         ),
         // YELLOW risks
         (
@@ -5017,7 +5017,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
         pull_quote: Some("Acme is expanding — new department rollout signals 40% ARR growth opportunity if we land the technical win.".into()),
         risks: vec![
             IntelRisk { render_policy: None, claim_id: None, text: "Alex Torres departing March — critical knowledge transfer gap".into(), source: Some("meeting notes".into()), urgency: "act_now".into(), item_source: Some(ItemSource { source: "transcript".into(), confidence: 0.8, sourced_at: days_ago_rfc(5), reference: Some("meeting Mar 10".into()) }), discrepancy: None, ..Default::default() },
-            IntelRisk { render_policy: None, claim_id: None, text: "NPS trending down: 3 detractors in engineering team".into(), source: Some("NPS survey".into()), urgency: "watch".into(), item_source: Some(ItemSource { source: "glean_crm".into(), confidence: 0.9, sourced_at: days_ago_rfc(7), reference: Some("REDACTED".into()) }), discrepancy: None, ..Default::default() },
+            IntelRisk { render_policy: None, claim_id: None, text: "NPS trending down: 3 detractors in engineering team".into(), source: Some("NPS survey".into()), urgency: "watch".into(), item_source: Some(ItemSource { source: "glean_crm".into(), confidence: 0.9, sourced_at: days_ago_rfc(7), reference: Some("Salesforce".into()) }), discrepancy: None, ..Default::default() },
             IntelRisk { render_policy: None, claim_id: None, text: "Legal review of MSA amendment stalled for 10 days".into(), source: Some("email signal".into()), urgency: "act_now".into(), item_source: Some(ItemSource { source: "user_correction".into(), confidence: 1.0, sourced_at: days_ago_rfc(2), reference: Some("you edited this".into()) }), discrepancy: None, ..Default::default() },
         ],
         recent_wins: vec![
@@ -5035,7 +5035,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             StakeholderInsight { render_policy: None, claim_id: None, name: "Pat Kim".into(), role: Some("CTO".into()), assessment: Some("Strategic decision maker. Focused on APAC and cost consolidation.".into()), engagement: Some("periodic".into()), source: None, person_id: Some("mock-pat-kim".into()), suggested_person_id: None, item_source: Some(ItemSource { source: "glean_chat".into(), confidence: 0.7, sourced_at: days_ago_rfc(5), reference: Some("Glean AI synthesis".into()) }), discrepancy: None, ..Default::default() },
         ],
         value_delivered: vec![
-            ValueItem { render_policy: None, claim_id: None, date: Some(days_ago_rfc(90)), statement: "Phase 1 deployment drove $200K ARR expansion".into(), source: Some("contract".into()), impact: Some("High".into()), item_source: Some(ItemSource { source: "glean_crm".into(), confidence: 0.9, sourced_at: days_ago_rfc(90), reference: Some("REDACTED".into()) }), discrepancy: None },
+            ValueItem { render_policy: None, claim_id: None, date: Some(days_ago_rfc(90)), statement: "Phase 1 deployment drove $200K ARR expansion".into(), source: Some("contract".into()), impact: Some("High".into()), item_source: Some(ItemSource { source: "glean_crm".into(), confidence: 0.9, sourced_at: days_ago_rfc(90), reference: Some("Salesforce".into()) }), discrepancy: None },
             ValueItem { render_policy: None, claim_id: None, date: Some(days_ago_rfc(60)), statement: "Performance benchmarks exceeded targets by 15%".into(), source: Some("analytics".into()), impact: Some("Strong ROI narrative".into()), item_source: None, discrepancy: None },
         ],
         company_context: Some(CompanyContext { render_policy: None, claim_id: None,
@@ -5236,7 +5236,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
         pull_quote: Some("Globex is at risk — champion departed, no executive sponsor identified, and renewal is 90 days out.".into()),
         risks: vec![
             IntelRisk { render_policy: None, claim_id: None, text: "Pat Reynolds (executive sponsor) departing Q2 — successor unknown".into(), source: Some("direct communication".into()), urgency: "act_now".into(), item_source: Some(ItemSource { source: "transcript".into(), confidence: 0.8, sourced_at: days_ago_rfc(10), reference: Some("meeting Mar 5".into()) }), discrepancy: Some(true), ..Default::default() },
-            IntelRisk { render_policy: None, claim_id: None, text: "Team B usage declining 20% month-over-month".into(), source: Some("usage analytics".into()), urgency: "act_now".into(), item_source: Some(ItemSource { source: "glean_crm".into(), confidence: 0.9, sourced_at: days_ago_rfc(3), reference: Some("REDACTED".into()) }), discrepancy: None, ..Default::default() },
+            IntelRisk { render_policy: None, claim_id: None, text: "Team B usage declining 20% month-over-month".into(), source: Some("usage analytics".into()), urgency: "act_now".into(), item_source: Some(ItemSource { source: "glean_crm".into(), confidence: 0.9, sourced_at: days_ago_rfc(3), reference: Some("Salesforce".into()) }), discrepancy: None, ..Default::default() },
             IntelRisk { render_policy: None, claim_id: None, text: "Contoso actively pitching to Globex leadership".into(), source: Some("email intel from Jamie Morrison".into()), urgency: "watch".into(), item_source: Some(ItemSource { source: "user_correction".into(), confidence: 1.0, sourced_at: days_ago_rfc(1), reference: Some("you edited this".into()) }), discrepancy: None, ..Default::default() },
         ],
         recent_wins: vec![
@@ -5688,7 +5688,7 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
         pull_quote: Some("Initech is stable but autopilot — usage is flat, engagement is minimal, and we have no expansion signals.".into()),
         risks: vec![
             IntelRisk { render_policy: None, claim_id: None, text: "Phase 2 budget approval pending from finance — 7 days with no response".into(), source: Some("email from Dana Patel".into()), urgency: "watch".into(), item_source: Some(ItemSource { source: "transcript".into(), confidence: 0.8, sourced_at: days_ago_rfc(7), reference: Some("meeting Mar 8".into()) }), discrepancy: None, ..Default::default() },
-            IntelRisk { render_policy: None, claim_id: None, text: "Team bandwidth constraints for Q2 — Priya Sharma flagged".into(), source: Some("meeting notes".into()), urgency: "watch".into(), item_source: Some(ItemSource { source: "glean_crm".into(), confidence: 0.9, sourced_at: days_ago_rfc(5), reference: Some("REDACTED".into()) }), discrepancy: None, ..Default::default() },
+            IntelRisk { render_policy: None, claim_id: None, text: "Team bandwidth constraints for Q2 — Priya Sharma flagged".into(), source: Some("meeting notes".into()), urgency: "watch".into(), item_source: Some(ItemSource { source: "glean_crm".into(), confidence: 0.9, sourced_at: days_ago_rfc(5), reference: Some("Salesforce".into()) }), discrepancy: None, ..Default::default() },
         ],
         recent_wins: vec![
             IntelWin { render_policy: None, claim_id: None, text: "Phase 1 delivered on time and under budget".into(), source: Some("project tracker".into()), impact: Some("Strong proof point for Phase 2 business case".into()), item_source: Some(ItemSource { source: "transcript".into(), confidence: 0.8, sourced_at: days_ago_rfc(10), reference: Some("kickoff meeting".into()) }), discrepancy: None },

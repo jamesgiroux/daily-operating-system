@@ -46,7 +46,7 @@ When running in a DailyOS workspace, the writer gains workspace-first evidence g
 
 - **Research phase** reads entity intelligence, meeting archives, and stakeholder quotes before web search
 - **Customer communications** ground claims in actual dashboard metrics and meeting history
-- **Scrutiny review** checks `dashboard.json` for available metrics when flagging unquantified impact
+- **Scrutiny review** checks DailyOS runtime/MCP for available metrics when flagging unquantified impact
 - **Evidence inventory** includes workspace sources with file paths and dates
 
 ## Resources

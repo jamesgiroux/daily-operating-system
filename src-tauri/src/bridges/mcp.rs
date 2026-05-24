@@ -21,7 +21,9 @@ use crate::db::ActionDb;
 use crate::intelligence::provider::IntelligenceProvider;
 use crate::services::context::{
     EntityContextClaimReadFuture, EntityContextClaimReadHandle, EntityContextReadFuture,
-    EntityContextReadHandle, ExecutionMode, ExternalClients, PrepareMeetingContextReadFuture,
+    EntityContextReadHandle, EntityNeighborhoodQuery, EntityNeighborhoodReadFuture,
+    EntityNeighborhoodReadHandle, EntityTouchpointsQuery, EntityTouchpointsReadFuture,
+    EntityTouchpointsReadHandle, ExecutionMode, ExternalClients, PrepareMeetingContextReadFuture,
     PrepareMeetingContextReadHandle, ServiceContext, SystemClock, SystemRng,
 };
 use parking_lot::Mutex as ParkingMutex;
@@ -44,6 +46,8 @@ type ConfirmationTokenCacheKey = (McpSessionId, String, [u8; 32]);
 pub struct McpWorkspaceReaders {
     entity_context_reader: Arc<dyn EntityContextReadHandle>,
     entity_context_claim_reader: Arc<dyn EntityContextClaimReadHandle>,
+    entity_touchpoints_reader: Arc<dyn EntityTouchpointsReadHandle>,
+    entity_neighborhood_reader: Arc<dyn EntityNeighborhoodReadHandle>,
     prepare_meeting_context_reader: Arc<dyn PrepareMeetingContextReadHandle>,
     trajectory_reader: Arc<dyn TrajectoryReadHandle>,
     temporal_maintenance: Arc<dyn TemporalMaintenanceHandle>,
@@ -54,6 +58,8 @@ impl McpWorkspaceReaders {
         let reader = Arc::new(McpActionDbWorkspaceReader { db });
         let entity_context_reader: Arc<dyn EntityContextReadHandle> = reader.clone();
         let entity_context_claim_reader: Arc<dyn EntityContextClaimReadHandle> = reader.clone();
+        let entity_touchpoints_reader: Arc<dyn EntityTouchpointsReadHandle> = reader.clone();
+        let entity_neighborhood_reader: Arc<dyn EntityNeighborhoodReadHandle> = reader.clone();
         let prepare_meeting_context_reader: Arc<dyn PrepareMeetingContextReadHandle> =
             reader.clone();
         let trajectory_reader: Arc<dyn TrajectoryReadHandle> = reader.clone();
@@ -62,6 +68,8 @@ impl McpWorkspaceReaders {
         Self {
             entity_context_reader,
             entity_context_claim_reader,
+            entity_touchpoints_reader,
+            entity_neighborhood_reader,
             prepare_meeting_context_reader,
             trajectory_reader,
             temporal_maintenance,
@@ -71,6 +79,8 @@ impl McpWorkspaceReaders {
     fn attach_to<'a>(&self, ctx: ServiceContext<'a>) -> ServiceContext<'a> {
         ctx.with_entity_context_reader(self.entity_context_reader.clone())
             .with_entity_context_claim_reader(self.entity_context_claim_reader.clone())
+            .with_entity_touchpoints_reader(self.entity_touchpoints_reader.clone())
+            .with_entity_neighborhood_reader(self.entity_neighborhood_reader.clone())
             .with_prepare_meeting_context_reader(self.prepare_meeting_context_reader.clone())
             .with_trajectory_reader(self.trajectory_reader.clone())
             .with_temporal_maintenance(self.temporal_maintenance.clone())
@@ -117,6 +127,36 @@ impl EntityContextClaimReadHandle for McpActionDbWorkspaceReader {
                 surface.as_str(),
             )
             .map_err(|error| format!("Entity context claim read failed: {error}"))
+        };
+        Box::pin(std::future::ready(result))
+    }
+}
+
+impl EntityTouchpointsReadHandle for McpActionDbWorkspaceReader {
+    fn read_entity_touchpoints<'a>(
+        &'a self,
+        query: EntityTouchpointsQuery,
+    ) -> EntityTouchpointsReadFuture<'a> {
+        let result = {
+            let db = self.db.lock();
+            crate::services::entity_intelligence::touchpoints::read_entity_touchpoints_from_db(
+                &db, &query,
+            )
+        };
+        Box::pin(std::future::ready(result))
+    }
+}
+
+impl EntityNeighborhoodReadHandle for McpActionDbWorkspaceReader {
+    fn read_entity_neighborhood<'a>(
+        &'a self,
+        query: EntityNeighborhoodQuery,
+    ) -> EntityNeighborhoodReadFuture<'a> {
+        let result = {
+            let db = self.db.lock();
+            crate::services::entity_intelligence::neighborhood::read_entity_neighborhood_from_db(
+                &db, &query,
+            )
         };
         Box::pin(std::future::ready(result))
     }

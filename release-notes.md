@@ -130,13 +130,13 @@ v1.1.0 introduced lifecycle intelligence and stakeholder management. v1.1.1 make
 
 This release makes DailyOS act on what it learns. The system now detects lifecycle transitions — renewals confirmed, accounts going quiet, contracts approaching — and reports what it did in your daily briefing. You confirm with one click or correct what's wrong. No pipeline to manage. No stages to update. It just knows.
 
-**Lifecycle intelligence.** When a renewal is confirmed (order form signed, REDACTED opportunity closed), DailyOS automatically updates the account, rescores health, and tells you in the morning briefing. Approaching renewals, engagement drops, and at-risk signals surface the same way. You click "Looks good" or "Fix something" — corrections teach the system to do better next time.
+**Lifecycle intelligence.** When a renewal is confirmed (order form signed, Salesforce opportunity closed), DailyOS automatically updates the account, rescores health, and tells you in the morning briefing. Approaching renewals, engagement drops, and at-risk signals surface the same way. You click "Looks good" or "Fix something" — corrections teach the system to do better next time.
 
 **Stakeholder roles that stick.** Designate a champion, set engagement levels, assign multiple roles per person — your designations survive every refresh. The system suggests new stakeholders it discovers from meetings and Glean, but never overwrites what you've set. Manage stakeholder roles from the account page or the person detail page.
 
-**Products appear automatically.** DailyOS discovers your customer's products from REDACTED via Glean and shows them on the account page. No inventory to manage. Wrong product? Correct it inline and the system learns.
+**Products appear automatically.** DailyOS discovers your customer's products from Salesforce via Glean and shows them on the account page. No inventory to manage. Wrong product? Correct it inline and the system learns.
 
-**Source attribution everywhere.** Key account fields now show where their data came from — "via REDACTED," "via Zendesk," "you noted." When the system finds a different value than what you entered, it shows the conflict and lets you accept or dismiss. Your edits always win.
+**Source attribution everywhere.** Key account fields now show where their data came from — "via Salesforce," "via Zendesk," "you noted." When the system finds a different value than what you entered, it shows the conflict and lets you accept or dismiss. Your edits always win.
 
 **Smarter with your time.** Background AI work now runs on a budget with pause guards. Stale intelligence automatically fades from active views. Dismissed items don't bounce back. The daily briefing generates faster with email processing running in the background instead of blocking.
 
@@ -230,7 +230,7 @@ This is the 1.0 release. The architecture is solid, the intelligence is real, an
 
 **Your data, explained and exportable.** Settings tells you exactly what's stored and for how long. Export everything as a ZIP. Clear your data or delete everything with one click. This is your brain — you own it completely.
 
-**Glean integration (for enterprise teams).** If your company uses Glean, DailyOS pulls from REDACTED, Zendesk, Gong, Slack, and your org directory — producing richer context than local-only analysis. Everything still runs on your Mac; Glean just gives it more to work with. Connect during onboarding or in Settings.
+**Glean integration (for enterprise teams).** If your company uses Glean, DailyOS pulls from Salesforce, Zendesk, Gong, Slack, and your org directory — producing richer context than local-only analysis. Everything still runs on your Mac; Glean just gives it more to work with. Connect during onboarding or in Settings.
 
 **Built to stay out of your way.** Background work runs on dedicated threads — no beach balls during updates. If something fails in the background, it restarts automatically. The app launches to a branded welcome screen instantly, not a blank window. Errors tell you what happened instead of failing silently.
 

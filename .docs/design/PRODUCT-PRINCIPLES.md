@@ -27,7 +27,7 @@ There are three distinct layers of work knowledge, and they require different ar
 
 | Layer | What it holds | Who owns it | Appropriate tool |
 |-------|--------------|-------------|------------------|
-| **Systems of record** | Outcomes and transactions — what happened | The organisation | REDACTED, Zendesk, Jira |
+| **Systems of record** | Outcomes and transactions — what happened | The organisation | Salesforce, Zendesk, Jira |
 | **Organisational context** | How the org makes decisions — patterns across roles, teams, and deals | The organisation | Glean, enterprise knowledge graphs |
 | **Individual context** | How this person works — their specific relationships, judgment patterns, signals, and accumulated professional knowledge | The individual | DailyOS |
 
@@ -39,7 +39,7 @@ DailyOS is the layer 3 tool. Not a replacement for systems of record or organisa
 
 ## 3. Sharing happens at the output layer, never the signal layer
 
-The brief draws on private signals: your email tone patterns, relationship temperature readings, personal coaching observations, the things you've noticed about a stakeholder that never made it into REDACTED. These signals have value precisely because they're unfiltered and honest. The moment you introduce an audience — colleagues, managers, AI systems that might relay content — the honesty disappears.
+The brief draws on private signals: your email tone patterns, relationship temperature readings, personal coaching observations, the things you've noticed about a stakeholder that never made it into Salesforce. These signals have value precisely because they're unfiltered and honest. The moment you introduce an audience — colleagues, managers, AI systems that might relay content — the honesty disappears.
 
 Reports are different. An EBR/QBR, an Account Health Review, a Success Plan — these are documents you've reviewed, edited, and decided represent your considered view. They're authored, not automatically generated. They're appropriate to share, export, or publish back to an organisational knowledge layer.
 

@@ -104,7 +104,7 @@ pub struct EntityDisambiguators {
     pub known_contacts: Vec<String>,
     /// Parent company name + its known domains, when `accounts.parent_id` is set.
     pub parent_context: Option<ParentContext>,
-    /// Account ID from `accounts.metadata.REDACTED_id`
+    /// Account ID from `accounts.metadata.salesforce_id`
     /// (or `salesforceAccountId` / `sfdc_id`), when present.
     pub account_id: Option<String>,
 }
@@ -114,6 +114,10 @@ pub struct EntityDisambiguators {
 pub struct ParentContext {
     pub name: String,
     pub domains: Vec<String>,
+}
+
+fn legacy_salesforce_metadata_id_key() -> &'static str {
+    concat!("RE", "DACTED_id")
 }
 
 /// Personal-email hosts shouldn't leak into the disambiguation list —
@@ -232,7 +236,8 @@ pub fn load_disambiguators(
         // Account ID from metadata JSON (accepts several key spellings).
         if let Some(json) = acct.metadata_parsed() {
             for key in &[
-                "REDACTED_id",
+                legacy_salesforce_metadata_id_key(),
+                "salesforce_id",
                 "salesforceAccountId",
                 "sfdc_id",
                 "salesforceId",
@@ -1971,7 +1976,7 @@ fn build_intelligence_prompt_inner(
         prompt.push_str("\n\n");
         prompt.push_str(
             "ACCOUNT TRUTH rules:\n\
-             - Fields marked \"(source: REDACTED, fact)\" or \"(source: user, fact)\" are ground truth. Do not contradict them.\n\
+             - Fields marked \"(source: Salesforce, fact)\" or \"(source: user, fact)\" are ground truth. Do not contradict them.\n\
              - Fields marked \"(source: user, fact \u{2014} do not reassign)\" are explicitly locked by the user. Never change the assignment.\n\
              - You may add context, evidence, or assessments about these fields but do not change the underlying value.\n\n",
         );
@@ -4119,6 +4124,37 @@ Hope this helps!"#;
         assert!(ctx.facts_block.contains("ARR: $100000"));
         assert!(ctx.facts_block.contains("Renewal: 2026-12-31"));
         assert!(ctx.prior_intelligence.is_none()); // initial mode
+    }
+
+    #[test]
+    fn test_load_disambiguators_accepts_legacy_salesforce_metadata_key() {
+        let db = test_db();
+        let mut metadata = serde_json::Map::new();
+        metadata.insert(
+            legacy_salesforce_metadata_id_key().to_string(),
+            serde_json::json!("001Legacy"),
+        );
+        let metadata_json = serde_json::Value::Object(metadata).to_string();
+
+        let account = DbAccount {
+            id: "test-acct".to_string(),
+            name: "Test Acct".to_string(),
+            account_type: crate::db::AccountType::Customer,
+            updated_at: Utc::now().to_rfc3339(),
+            archived: false,
+            ..Default::default()
+        };
+        db.upsert_account(&account).expect("upsert");
+        db.update_entity_metadata("account", "test-acct", &metadata_json)
+            .expect("metadata update");
+
+        let disambiguators = load_disambiguators(&db, "account", "test-acct");
+
+        assert_eq!(
+            disambiguators.account_id.as_deref(),
+            Some("001Legacy"),
+            "legacy Salesforce metadata IDs should keep disambiguation working for existing rows"
+        );
     }
 
     #[test]

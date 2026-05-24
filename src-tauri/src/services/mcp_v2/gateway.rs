@@ -5,7 +5,7 @@
 //! implementations; records audit attribution on success; emits
 //! `McpToolInvoked` / `McpInvocationRejected` signals on success / rejection
 //! respectively via the [`SignalEmitter`] trait (W2+ wires a production
-//! emitter through the service-layer signal facade).
+//! service-layer signal emitter through the service signal facade).
 //!
 //! Per ADR-0102 §C authorization machinery and the local MCP trust model:
 //! authorization and operational controls live here; local transport ceremony

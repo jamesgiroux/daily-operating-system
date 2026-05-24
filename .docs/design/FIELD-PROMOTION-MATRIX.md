@@ -6,9 +6,9 @@ Classifies every Glean-accessible field family by authority, freshness, promotio
 
 | Field | Authority Source | Freshness Window | Promotion Destination | Target Surfaces | Notes |
 |-------|----------------|------------------|----------------------|-----------------|-------|
-| ARR | REDACTED (fact) | 30 days | accounts.arr + account_source_refs | Hero vitals, reports, health scoring | User override always wins |
-| Lifecycle | REDACTED/Glean CRM (fact) | 7 days | accounts.lifecycle + lifecycle_changes | Hero vitals, briefing attention | Auto-transition via I623 |
-| Renewal Date | REDACTED (fact) | 30 days | accounts.contract_end + account_source_refs | Hero vitals, renewal countdown | User override always wins |
+| ARR | Salesforce (fact) | 30 days | accounts.arr + account_source_refs | Hero vitals, reports, health scoring | User override always wins |
+| Lifecycle | Salesforce/Glean CRM (fact) | 7 days | accounts.lifecycle + lifecycle_changes | Hero vitals, briefing attention | Auto-transition via I623 |
+| Renewal Date | Salesforce (fact) | 30 days | accounts.contract_end + account_source_refs | Hero vitals, renewal countdown | User override always wins |
 | NPS | Survey tool (fact) | 90 days | accounts.nps + account_source_refs | Hero vitals, health scoring | |
 | Champion | User designation (fact) | Indefinite | account_stakeholders.role | Stakeholder gallery, health scoring, prompts | SACRED -- never overwritten |
 | Products | Glean/AI (inference) | 14 days | account_products | Products chapter | User correction promotes to fact |

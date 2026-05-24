@@ -177,6 +177,7 @@ import re
 
 ROOTS = [
     Path("src-tauri/abilities-runtime/src/abilities"),
+    Path("src-tauri/abilities-runtime/src/services/context.rs"),
     Path("src-tauri/abilities-runtime/src/types.rs"),
     Path("src-tauri/abilities-runtime/src/services/context.rs"),
 ]
@@ -337,9 +338,103 @@ SAFE_STRING_FIELDS = {
     },
     "Paginated": {},
     "CursorState": {
-        "advisory": "cursor metadata",
-        "reason": "cursor metadata",
+        "advisory": "pagination advisory metadata",
+        "reason": "pagination invalidation metadata",
     },
+    "EmptyReason": {
+        "advisory": "constant empty-state advisory metadata",
+    },
+    "NormalizedSubject": {
+        "id": "identifier metadata",
+        "display_label": "entity name metadata",
+    },
+    "EnvelopeProvenanceSource": {
+        "id": "source identifier metadata",
+        "label": "render-policy-safe provenance label",
+        "source_type": "enum metadata",
+    },
+    "EnvelopeProvenance": {},
+    "EnvelopeTrustSummary": {},
+    "SectionState": {},
+    "ProvenanceRef": {
+        "source_ids": "source identifier metadata",
+    },
+    "EntityFact": {
+        "claim_id": "identifier metadata",
+        "field_path": "schema path metadata",
+        "claim_type": "enum metadata",
+    },
+    "HealthStory": {
+        "headline": "claim/provenance-attested",
+    },
+    "HealthStoryRow": {
+        "label": "claim/provenance-attested",
+        "body": "claim/provenance-attested",
+        "evidence_claim_ids": "identifier metadata",
+    },
+    "MetadataProposal": {
+        "proposal_id": "identifier metadata",
+        "field_path": "schema path metadata",
+        "current_value": "render-policy-gated metadata value",
+        "proposed_value": "render-policy-gated metadata value",
+    },
+    "ReceiptTargetRef": {
+        "claim_id": "identifier metadata",
+        "field_path": "schema path metadata",
+    },
+    "Touchpoint": {
+        "meeting_id": "identifier metadata",
+    },
+    "RelationshipEdge": {
+        "edge_id": "identifier metadata",
+        "edge_type": "enum metadata",
+        "caveats": "constant relationship caveat metadata",
+    },
+    "RelationshipParticipant": {
+        "relationship": "relationship metadata",
+        "recent_touchpoint_ids": "identifier metadata",
+        "caveats": "constant relationship caveat metadata",
+    },
+    "RelationshipTruncation": {},
+    "RelationshipsBundle": {
+        "caveats": "constant relationship caveat metadata",
+    },
+    "CandidateSetRef": {
+        "filter_description": "query/filter metadata",
+    },
+    "SubjectScope": {},
+    "ThreadSummary": {
+        "thread_id": "identifier metadata",
+        "title": "claim/provenance-attested",
+    },
+    "RecordEntry": {
+        "claim_id": "identifier metadata",
+        "claim_type": "enum metadata",
+    },
+    "ClaimReceiptTarget": {
+        "claim_id": "identifier metadata",
+        "proposal_id": "identifier metadata",
+        "action_id": "identifier metadata",
+    },
+    "ClaimReceiptTrust": {
+        "caveat": "claim/provenance-attested",
+        "rationale": "claim/provenance-attested",
+    },
+    "ClaimReceiptLifecycle": {},
+    "ClaimReceiptProvenanceSource": {
+        "label": "render-policy-safe provenance label",
+        "source_type": "enum metadata",
+        "href": "render-policy-gated link metadata",
+    },
+    "ClaimReceiptProvenance": {
+        "field_path": "schema path metadata",
+        "evidence_summary": "claim/provenance-attested",
+    },
+    "ClaimReceiptAction": {
+        "label": "constant action label metadata",
+        "disabled_reason": "constant action state metadata",
+    },
+    "ClaimReceiptSnapshot": {},
     "AccountSummary": {
         "account_id": "identifier metadata",
         "name": "entity name metadata",
@@ -359,90 +454,6 @@ SAFE_STRING_FIELDS = {
         "parent_account_id": "identifier metadata",
         "status": "enum metadata",
         "last_touchpoint_at": "timestamp metadata",
-    },
-    "EntityIntelligenceEnvelope": {},
-    "NormalizedSubject": {
-        "id": "identifier metadata",
-        "display_label": "entity name metadata",
-    },
-    "ProvenanceRef": {
-        "source_ids": "source identifier metadata",
-    },
-    "EnvelopeProvenanceSource": {
-        "id": "identifier metadata",
-        "label": "source label metadata",
-        "source_type": "enum metadata",
-    },
-    "EnvelopeProvenance": {},
-    "EnvelopeTrustSummary": {},
-    "EmptyReason": {
-        "advisory": "constant advisory metadata",
-    },
-    "SectionState": {},
-    "EntityFact": {
-        "claim_id": "identifier metadata",
-        "field_path": "field path metadata",
-        "claim_type": "enum metadata",
-    },
-    "HealthStory": {
-        "headline": "claim/provenance-attested",
-    },
-    "HealthStoryRow": {
-        "label": "claim/provenance-attested",
-        "body": "claim/provenance-attested",
-        "evidence_claim_ids": "identifier metadata",
-    },
-    "MetadataProposal": {
-        "proposal_id": "identifier metadata",
-        "field_path": "field path metadata",
-        "current_value": "claim/provenance-attested",
-        "proposed_value": "claim/provenance-attested",
-    },
-    "ReceiptTargetRef": {
-        "claim_id": "identifier metadata",
-        "field_path": "field path metadata",
-    },
-    "OpenLoopWithReceipt": {},
-    "Touchpoint": {
-        "meeting_id": "identifier metadata",
-    },
-    "CandidateSetRef": {
-        "filter_description": "constant filter metadata",
-    },
-    "SubjectScope": {},
-    "TouchpointBundle": {},
-    "ThreadSummary": {
-        "thread_id": "identifier metadata",
-        "title": "claim/provenance-attested",
-    },
-    "RecordEntry": {
-        "claim_id": "identifier metadata",
-        "claim_type": "enum metadata",
-    },
-    "ClaimReceiptSnapshot": {},
-    "ClaimReceiptTarget": {
-        "claim_id": "identifier metadata",
-        "proposal_id": "identifier metadata",
-        "action_id": "identifier metadata",
-        "field_path": "field path metadata",
-    },
-    "ClaimReceiptTrust": {
-        "caveat": "claim/provenance-attested",
-        "rationale": "claim/provenance-attested",
-    },
-    "ClaimReceiptLifecycle": {},
-    "ClaimReceiptProvenanceSource": {
-        "label": "source label metadata",
-        "source_type": "enum metadata",
-        "href": "source link metadata",
-    },
-    "ClaimReceiptProvenance": {
-        "field_path": "field path metadata",
-        "evidence_summary": "claim/provenance-attested",
-    },
-    "ClaimReceiptAction": {
-        "label": "constant action label metadata",
-        "disabled_reason": "constant action state metadata",
     },
 }
 
@@ -506,6 +517,7 @@ NESTED_OUTPUT_STRUCTS = {
         "HealthStory",
         "MetadataProposal",
         "OpenLoopWithReceipt",
+        "RelationshipsBundle",
         "TouchpointBundle",
         "ThreadSummary",
         "RecordEntry",
@@ -518,7 +530,17 @@ NESTED_OUTPUT_STRUCTS = {
     "HealthStoryRow": ["ProvenanceRef"],
     "MetadataProposal": ["ProvenanceRef"],
     "OpenLoopWithReceipt": ["OpenLoop", "ReceiptTargetRef", "ProvenanceRef"],
-    "TouchpointBundle": ["Touchpoint", "CandidateSetRef", "SubjectScope"],
+    "RelationshipsBundle": [
+        "RelationshipEdge",
+        "RelationshipParticipant",
+        "CandidateSetRef",
+        "SubjectScope",
+        "EmptyReason",
+        "RelationshipTruncation",
+    ],
+    "RelationshipEdge": ["ProvenanceRef"],
+    "RelationshipParticipant": ["ProvenanceRef"],
+    "TouchpointBundle": ["Touchpoint", "CandidateSetRef", "SubjectScope", "EmptyReason"],
     "Touchpoint": ["ProvenanceRef"],
     "ThreadSummary": ["ProvenanceRef"],
     "RecordEntry": ["ProvenanceRef"],
@@ -632,7 +654,7 @@ def inspect_struct(struct_name: str, seen: set[str], violations: list[str]):
     generic = re.fullmatch(r"Paginated<(.+)>", struct_name)
     if generic:
         inspect_struct("Paginated", seen, violations)
-        inspect_struct(generic.group(1), seen, violations)
+        inspect_struct(normalize_type(generic.group(1)), seen, violations)
         return
     fields = struct_fields(struct_name)
     enum_fields = enum_string_fields(struct_name)
@@ -646,7 +668,11 @@ def inspect_struct(struct_name: str, seen: set[str], violations: list[str]):
                 f"{struct_name}.{field_name}: raw `{type_text.strip()}` is not RenderableMcpClaimText, RenderableMcpEntityName, or an audited metadata/fail-closed field"
             )
         nested = normalize_type(type_text)
-        if nested in SAFE_STRING_FIELDS or nested in NESTED_OUTPUT_STRUCTS:
+        if (
+            re.fullmatch(r"Paginated<.+>", nested)
+            or nested in SAFE_STRING_FIELDS
+            or nested in NESTED_OUTPUT_STRUCTS
+        ):
             inspect_struct(nested, seen, violations)
     for field_name in enum_fields:
         if field_name not in SAFE_STRING_FIELDS.get(struct_name, {}):

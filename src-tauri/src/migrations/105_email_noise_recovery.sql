@@ -3,7 +3,7 @@
 --
 -- Migration 102 + the original `should_suppress_email` rule treated any
 -- email with a List-Unsubscribe header from an untracked domain as noise.
--- That over-fires: legitimate 1:1 customer email sent via REDACTED,
+-- That over-fires: legitimate 1:1 customer email sent via Salesforce,
 -- HubSpot, Outreach, Google Groups, etc. all carry that header.
 --
 -- This migration restores `is_noise = 0` for any row whose sender domain

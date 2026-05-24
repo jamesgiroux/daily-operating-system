@@ -28,11 +28,11 @@ Generate a rigorous, evidence-backed assessment of an entity. Every claim source
 
 ### Step 1: Resolve Entity
 
-Search `Accounts/` and `Projects/` for the named entity. The entity-intelligence skill will auto-fire and load full context:
-- `dashboard.json` — Quantitative vitals
-- `intelligence.json` — Qualitative intelligence
+Resolve the named entity with DailyOS runtime/MCP when available. The entity-intelligence skill will auto-fire and load full context:
+- Runtime entity facts — Quantitative vitals
+- Runtime entity intelligence — Qualitative intelligence
 - `stakeholders.md` — Relationship map
-- Filtered actions from `data/actions.json`
+- Filtered actions from DailyOS action/work tools
 - Recent `_archive/` meeting summaries
 
 If entity not found, list available entities and ask the user to clarify.
@@ -51,7 +51,7 @@ Go beyond what entity-intelligence auto-loads:
 1. **Stakeholder deep-dive** — For each person in `stakeholders.md`, load their People/ profile (relationship-context skill fires). Note temperature, engagement patterns, follow-through history.
 2. **Action trail analysis** — Not just open actions, but the pattern. Are actions being completed on time? Are the same issues recurring? Is there a completion rate trend?
 3. **Meeting trajectory** — Read the last 3-5 meeting summaries from `_archive/`. Are meetings getting more or less productive? Are topics progressing or recycling? Is attendance strengthening or thinning?
-4. **Email signals** — Check `data/emails.json` for recent signals related to this entity. Escalations, sentiment shifts, volume changes.
+4. **Email signals** — Check DailyOS email/context tools for recent signals related to this entity. Escalations, sentiment shifts, volume changes.
 5. **Timeline pressure** — Calculate days to key dates (renewal, contract end, next milestone). Flag if within critical windows.
 
 ### Step 4: Generate Assessment
@@ -128,8 +128,8 @@ Present the assessment to the user. Then offer loop-back options:
 ```
 Would you like me to:
 1. Save this assessment to Accounts/Acme-Corp/health-assessment-2026-02.md
-2. Update Accounts/Acme-Corp/intelligence.json with the revised risk factors and executive assessment
-3. Create {N} actions in data/actions.json from the recommendations
+2. Promote the revised risk factors and executive assessment through DailyOS runtime/services
+3. Create {N} DailyOS actions from the recommendations
 
 Or adjust anything first?
 ```

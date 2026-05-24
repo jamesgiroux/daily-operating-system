@@ -105,5 +105,8 @@ async fn invalid_entity_type_slug_maps_to_typed_error() {
     .await
     .expect_err("invalid slug should fail");
 
-    assert_eq!(err.kind, AbilityErrorKind::HardError("InvalidEntityType".to_string()));
+    assert_eq!(
+        err.kind,
+        AbilityErrorKind::HardError("InvalidEntityType".to_string())
+    );
 }

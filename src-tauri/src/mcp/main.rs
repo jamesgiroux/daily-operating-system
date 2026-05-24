@@ -27,6 +27,7 @@ use dailyos_lib::bridges::tauri::TauriAbilityBridge;
 use dailyos_lib::bridges::{BridgeSurfaceError, McpSessionId};
 use dailyos_lib::db::ActionDb;
 use dailyos_lib::embeddings::EmbeddingModel;
+use dailyos_lib::services::mcp_v2::handlers::tool_account_status::present_account_status_response_with_label;
 use dailyos_lib::services::sensitivity::{
     render_mcp_static_json_for_surface, render_mcp_static_text_for_surface, McpStaticTextClass,
     RenderableMcpClaimText, RenderableMcpStaticText, RenderableMcpText,
@@ -132,8 +133,15 @@ struct EntityResult {
     lifecycle: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     intelligence_summary: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    intelligence: Option<serde_json::Value>,
     open_actions: Vec<ActionSummary>,
     upcoming_meetings: Vec<MeetingSummary>,
+}
+
+struct AccountQuerySnapshot {
+    id: String,
+    entity: EntityResult,
 }
 
 #[derive(Serialize)]
@@ -233,8 +241,7 @@ impl DailyOsMcp {
     #[tool(
         description = "Look up a specific account, project, or person in the DailyOS workspace. Returns entity details, intelligence summary, open actions, and upcoming meetings. Use this when the user asks about a specific customer, project, or contact."
     )]
-    fn query_entity(&self, #[tool(aggr)] params: QueryEntityParams) -> String {
-        let db = self.db.lock();
+    async fn query_entity(&self, #[tool(aggr)] params: QueryEntityParams) -> String {
         let query_lower = params.query.to_lowercase();
         let entity_type = params.entity_type.as_deref().unwrap_or("all");
 
@@ -242,41 +249,60 @@ impl DailyOsMcp {
 
         // Search accounts
         if entity_type == "all" || entity_type == "account" {
-            if let Ok(accounts) = db.get_all_accounts() {
-                for acct in &accounts {
-                    if acct.id == params.query || acct.name.to_lowercase().contains(&query_lower) {
-                        let actions = db.get_account_actions(&acct.id).unwrap_or_default();
-                        let meetings = db
-                            .get_upcoming_meetings_for_account(&acct.id, 5)
-                            .unwrap_or_default();
-                        let legacy_intel = db
-                            .get_entity_intelligence(&acct.id)
-                            .ok()
-                            .flatten()
-                            .and_then(|i| i.executive_assessment);
-                        let intel =
-                            mcp_entity_summary(&db, "account", &acct.id, legacy_intel.as_deref());
+            let account = {
+                let db = self.db.lock();
+                db.get_all_accounts().ok().and_then(|accounts| {
+                    accounts.into_iter().find_map(|acct| {
+                        if acct.id == params.query
+                            || acct.name.to_lowercase().contains(&query_lower)
+                        {
+                            let actions = db.get_account_actions(&acct.id).unwrap_or_default();
+                            let meetings = db
+                                .get_upcoming_meetings_for_account(&acct.id, 5)
+                                .unwrap_or_default();
+                            let entity = build_entity_result(
+                                &db,
+                                &acct.id,
+                                &acct.name,
+                                "account",
+                                acct.health.as_deref(),
+                                None,
+                                acct.lifecycle.as_deref(),
+                                None,
+                                &actions,
+                                &meetings,
+                            );
 
-                        result = Some(build_entity_result(
-                            &db,
-                            &acct.id,
-                            &acct.name,
-                            "account",
-                            acct.health.as_deref(),
-                            None,
-                            acct.lifecycle.as_deref(),
-                            intel.as_deref(),
-                            &actions,
-                            &meetings,
-                        ));
-                        break;
-                    }
-                }
+                            Some(AccountQuerySnapshot {
+                                id: acct.id,
+                                entity,
+                            })
+                        } else {
+                            None
+                        }
+                    })
+                })
+            };
+
+            if let Some(account) = account {
+                let intelligence_result = self
+                    .query_account_intelligence(&account.id, &account.entity.name)
+                    .await;
+                let (intelligence_summary, intelligence) = match intelligence_result {
+                    Ok(value) => (account_intelligence_summary(&value), Some(value)),
+                    Err(_error) => (None, None),
+                };
+
+                let mut entity = account.entity;
+                entity.intelligence_summary = intelligence_summary;
+                entity.intelligence = intelligence;
+                result = Some(entity);
             }
         }
 
         // Search projects
         if result.is_none() && (entity_type == "all" || entity_type == "project") {
+            let db = self.db.lock();
             if let Ok(projects) = db.get_all_projects() {
                 for proj in &projects {
                     if proj.id == params.query || proj.name.to_lowercase().contains(&query_lower) {
@@ -310,6 +336,7 @@ impl DailyOsMcp {
 
         // Search people
         if result.is_none() && (entity_type == "all" || entity_type == "person") {
+            let db = self.db.lock();
             if let Ok(people) = db.get_people(None) {
                 for person in &people {
                     if person.id == params.query
@@ -344,6 +371,7 @@ impl DailyOsMcp {
                             ),
                             lifecycle: None,
                             intelligence_summary: intel, // dos412-render-policy-covered: intel is returned by mcp_entity_summary.
+                            intelligence: None,
                             open_actions: Vec::new(),
                             upcoming_meetings: Vec::new(),
                         });
@@ -361,6 +389,35 @@ impl DailyOsMcp {
                 params.query
             ),
         }
+    }
+
+    async fn query_account_intelligence(
+        &self,
+        account_id: &str,
+        account_label: &str,
+    ) -> Result<serde_json::Value, BridgeSurfaceError> {
+        let input = serde_json::json!({
+            "schemaVersion": 2,
+            "entityType": "account",
+            "entityId": account_id,
+            "depth": "standard",
+            "sections": ["facts", "open_loops", "relationships", "touchpoints", "record"],
+        });
+        let response = self
+            .ability_bridge
+            .invoke_ability(
+                self.mcp_session_id,
+                "get_entity_intelligence",
+                input,
+                false,
+                None,
+            )
+            .await?;
+        Ok(present_account_status_response_with_label(
+            account_id,
+            response.data,
+            Some(account_label),
+        ))
     }
 
     #[tool(
@@ -1232,6 +1289,7 @@ fn build_entity_result(
             )
         }),
         intelligence_summary: intelligence_summary.map(str::to_string), // dos412-render-policy-covered: caller supplies mcp_entity_summary-rendered text.
+        intelligence: None,
         open_actions: actions
             .iter()
             .filter(|a| matches!(a.status.as_str(), "backlog" | "unstarted" | "started"))
@@ -1301,6 +1359,34 @@ fn build_entity_result(
             })
             .collect(),
     }
+}
+
+fn account_intelligence_summary(value: &serde_json::Value) -> Option<String> {
+    if !account_status_has_assessment_content(value) {
+        return None;
+    }
+
+    value
+        .pointer("/answer")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|answer| !answer.is_empty())
+        .map(str::to_string)
+}
+
+fn account_status_has_assessment_content(value: &serde_json::Value) -> bool {
+    [
+        "/assessment/facts",
+        "/assessment/openLoops",
+        "/assessment/relationships",
+    ]
+    .iter()
+    .any(|pointer| {
+        value
+            .pointer(pointer)
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|items| !items.is_empty())
+    })
 }
 
 // =============================================================================
@@ -1395,7 +1481,7 @@ mod tests {
     use dailyos_lib::abilities::provenance::{provenance_for_test, SubjectAttribution, SubjectRef};
     use dailyos_lib::abilities::registry::{AbilityPolicy, McpExposure, SignalPolicy};
     use dailyos_lib::abilities::{
-        AbilityCategory, AbilityContext, AbilityError, AbilityRegistry, Actor, ActorKind,
+        AbilityCategory, AbilityContext, AbilityError, AbilityRegistry, ActorKind,
     };
     use dailyos_lib::bridges::tauri::UserAttestationHost;
     use dailyos_lib::bridges::UserAttestationRequest;
@@ -1515,6 +1601,37 @@ mod tests {
     fn tool_result_json(result: &CallToolResult) -> serde_json::Value {
         let text = result.content[0].as_text().unwrap().text.as_str();
         serde_json::from_str(text).unwrap()
+    }
+
+    #[test]
+    fn account_intelligence_summary_omits_no_data_answer() {
+        let payload = json!({
+            "answer": "DailyOS does not yet have claim-backed account intelligence for Example Account.",
+            "assessment": {
+                "facts": [],
+                "openLoops": [],
+                "relationships": []
+            }
+        });
+
+        assert_eq!(account_intelligence_summary(&payload), None);
+    }
+
+    #[test]
+    fn account_intelligence_summary_uses_answer_when_assessment_has_content() {
+        let payload = json!({
+            "answer": "DailyOS account briefing for Example Account.",
+            "assessment": {
+                "facts": [],
+                "openLoops": [],
+                "relationships": [{ "relationship": "Stakeholder" }]
+            }
+        });
+
+        assert_eq!(
+            account_intelligence_summary(&payload),
+            Some("DailyOS account briefing for Example Account.".to_string())
+        );
     }
 
     #[derive(Default)]

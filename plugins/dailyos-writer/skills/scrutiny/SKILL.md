@@ -24,11 +24,11 @@ Skip for: Internal drafts, thought leadership (different audience), status repor
 
 ## DailyOS Workspace Awareness
 
-When in a DailyOS workspace, check dashboard.json for available metrics when flagging unquantified impact. If the entity has ARR, health scores, NPS, or other metrics, suggest using the actual numbers rather than vague claims.
+When in a DailyOS workspace, check DailyOS runtime/MCP for available metrics when flagging unquantified impact. If the entity has ARR, health scores, NPS, or other metrics, suggest using the actual numbers rather than vague claims. Generated JSON files are export projections, not the primary authority.
 
 Specifically:
-- Read entity intelligence files (Accounts/*/intelligence.json) for real metrics (ARR, health scores, engagement data)
-- Check action trails (data/actions.json) for specific timelines and committed dates
+- Read runtime entity intelligence for real metrics (ARR, health scores, engagement data)
+- Check DailyOS action/work tools for specific timelines and committed dates
 - Review meeting archives for exact quotes from stakeholders rather than paraphrased claims
 - Look up stakeholder files for named owners rather than "the team"
 

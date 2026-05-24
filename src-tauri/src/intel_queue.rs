@@ -583,11 +583,25 @@ pub struct EnrichmentInput {
     pub active_preset: Option<RolePreset>,
 }
 
+/// The producer that generated an enrichment result.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EnrichmentProducer {
+    Glean,
+    Pty,
+}
+
+impl EnrichmentProducer {
+    fn is_glean(self) -> bool {
+        matches!(self, EnrichmentProducer::Glean)
+    }
+}
+
 /// Parsed enrichment output from one model response section.
 #[derive(Debug, Clone)]
 pub struct EnrichmentParseResult {
     pub intel: IntelligenceJson,
     pub inferred_relationships: Vec<InferredRelationship>,
+    pub producer: EnrichmentProducer,
 }
 
 async fn drain_projection_resign_queue_once(state: &Arc<AppState>) {
@@ -1087,6 +1101,7 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                 &parsed.inferred_relationships,
                 FinalizeMode::QueueWorker {
                     is_background: is_background_priority(request.priority),
+                    producer: parsed.producer,
                 },
             ) {
                 log::warn!(
@@ -1560,6 +1575,7 @@ async fn run_glean_enrichment_with_fallback(
                         EnrichmentParseResult {
                             intel,
                             inferred_relationships,
+                            producer: EnrichmentProducer::Glean,
                         },
                     ));
                     continue;
@@ -1900,6 +1916,7 @@ fn run_parallel_enrichment(
     Ok(EnrichmentParseResult {
         intel: combined,
         inferred_relationships,
+        producer: EnrichmentProducer::Pty,
     })
 }
 
@@ -2022,6 +2039,7 @@ fn run_enrichment_legacy(
     Ok(EnrichmentParseResult {
         intel,
         inferred_relationships,
+        producer: EnrichmentProducer::Pty,
     })
 }
 
@@ -2079,6 +2097,7 @@ fn run_background_enrichment(
     Ok(EnrichmentParseResult {
         intel,
         inferred_relationships,
+        producer: EnrichmentProducer::Pty,
     })
 }
 
@@ -2602,7 +2621,8 @@ pub fn run_enrichment_post_commit_side_effects(
     input: &EnrichmentInput,
     db: &crate::db::ActionDb,
     final_intel: &IntelligenceJson,
-) {
+    producer: EnrichmentProducer,
+) -> Result<(), String> {
     // Invalidate cached reports when entity intelligence is refreshed.
     #[allow(
         clippy::let_underscore_must_use,
@@ -2610,10 +2630,46 @@ pub fn run_enrichment_post_commit_side_effects(
     )]
     let _ = crate::reports::invalidation::mark_reports_stale(db, &input.entity_id);
 
-    // Dual-write commitments from Glean enrichment to captured_commitments.
     if input.entity_type == "account" {
-        dual_write_enrichment_commitments(db, &state.signals.engine, &input.entity_id, final_intel);
-        dual_write_enrichment_products(db, &state.signals.engine, &input.entity_id, final_intel);
+        let ctx = state.live_service_context();
+        let (commitment_source_label, signal_source, product_source) = match producer {
+            EnrichmentProducer::Glean => (
+                format!("glean_enrichment:{}", input.entity_id),
+                "glean",
+                "glean",
+            ),
+            EnrichmentProducer::Pty => (
+                format!("pty_enrichment:{}", input.entity_id),
+                "ai_enrichment",
+                "ai_inference",
+            ),
+        };
+        if let Err(error) =
+            crate::services::enrichment_side_effects::sync_account_enrichment_side_effects(
+                &ctx,
+                db,
+                state.signals.engine.as_ref(),
+                &input.entity_id,
+                final_intel,
+                crate::services::enrichment_side_effects::EnrichmentSideEffectSource {
+                    commitment_source_label: &commitment_source_label,
+                    signal_source,
+                    product_source,
+                },
+            )
+        {
+            log::warn!(
+                "IntelProcessor: enrichment side-effect sync failed for {}: {}",
+                input.entity_id,
+                error
+            );
+            if producer.is_glean() {
+                return Err(format!(
+                    "Glean enrichment side-effect sync failed for {}: {}",
+                    input.entity_id, error
+                ));
+            }
+        }
     }
 
     // Regenerate person files after intelligence enrichment.
@@ -2686,6 +2742,7 @@ pub fn run_enrichment_post_commit_side_effects(
         "IntelProcessor: wrote intelligence for {} to DB + post-commit file cache",
         input.entity_id,
     );
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2694,15 +2751,20 @@ pub(crate) enum FinalizeMode {
     QueueWorker {
         /// True for scheduled/background priorities; false for queued manual work.
         is_background: bool,
+        /// Actual producer for the completed result, after any Glean-to-PTY fallback.
+        producer: EnrichmentProducer,
     },
     /// Manual user-driven refresh: run the minimal shared finalize chain.
     ///
-    /// Skips queue-only post-commit work: Glean signal emission, leading-signal
-    /// and peer-benchmark async spawns, `intelligence-updated` event emission,
+    /// Skips queue-only post-commit work: supplemental Glean passes,
+    /// `intelligence-updated` event emission,
     /// self-healing scheduler hook, and `claude_code` sync-success recording.
     /// Manual refresh emits `background-work-status:completed` from its command
     /// path and is a different actor than the background sync loop.
-    ManualRefresh,
+    ManualRefresh {
+        /// Actual producer for the completed result, after any Glean-to-PTY fallback.
+        producer: EnrichmentProducer,
+    },
     /// Explicit trust recompute: run shared finalize work plus claim trust scoring.
     TrustRecompute,
 }
@@ -2715,18 +2777,52 @@ pub(crate) fn run_enrichment_finalize_post_commit(
     inferred_relationships: &[InferredRelationship],
     mode: FinalizeMode,
 ) -> Result<(), String> {
-    fenced_write_enrichment_intelligence(db, &input.entity_dir, intel);
-    run_enrichment_post_commit_side_effects(state.as_ref(), input, db, intel);
+    let side_effect_producer = match mode {
+        FinalizeMode::QueueWorker { producer, .. } | FinalizeMode::ManualRefresh { producer } => {
+            producer
+        }
+        FinalizeMode::TrustRecompute => EnrichmentProducer::Pty,
+    };
+    let is_glean_producer = side_effect_producer.is_glean();
+    if is_glean_producer {
+        run_enrichment_post_commit_side_effects(
+            state.as_ref(),
+            input,
+            db,
+            intel,
+            side_effect_producer,
+        )?;
+    }
 
     match mode {
-        FinalizeMode::QueueWorker { is_background } => {
-            emit_queue_worker_glean_signals(state.as_ref(), db, input, intel);
-            spawn_queue_worker_supplemental_glean_finalize(state, input, is_background);
+        FinalizeMode::QueueWorker {
+            is_background,
+            producer,
+        } => {
+            if producer.is_glean() {
+                run_shared_glean_finalization(state.as_ref(), db, input, intel)?;
+                spawn_queue_worker_supplemental_glean_finalize(state, input, is_background);
+            }
         }
         FinalizeMode::TrustRecompute => {
             run_finalize_trust_recompute(state.as_ref(), db, input)?;
         }
-        FinalizeMode::ManualRefresh => {}
+        FinalizeMode::ManualRefresh { producer } => {
+            if producer.is_glean() {
+                run_shared_glean_finalization(state.as_ref(), db, input, intel)?;
+            }
+        }
+    }
+
+    fenced_write_enrichment_intelligence(db, &input.entity_dir, intel);
+    if !is_glean_producer {
+        run_enrichment_post_commit_side_effects(
+            state.as_ref(),
+            input,
+            db,
+            intel,
+            side_effect_producer,
+        )?;
     }
 
     if !inferred_relationships.is_empty() {
@@ -2758,7 +2854,7 @@ pub(crate) fn run_enrichment_finalize_post_commit(
     }
 
     // Invalidate + requeue meeting preps for future meetings linked to this entity.
-    // intelligence.json changed -> meeting briefings that consume it need regeneration.
+    // The entity intelligence snapshot changed, so dependent briefings need regeneration.
     invalidate_and_requeue_meeting_preps_with_db(state.as_ref(), db, &input.entity_id);
 
     crate::self_healing::feedback::record_enrichment_success(db, &input.entity_id);
@@ -2791,1135 +2887,55 @@ fn run_finalize_trust_recompute(
     db: &crate::db::ActionDb,
     input: &EnrichmentInput,
 ) -> Result<(), String> {
-    let Some(subject_ref) = claim_subject_ref_json_for_entity(&input.entity_type, &input.entity_id)
-    else {
-        log::debug!(
-            "TrustRecompute: skipping unsupported entity subject {}:{}",
-            input.entity_type,
-            input.entity_id
-        );
-        return Ok(());
-    };
-
-    let claims = crate::services::claims::load_claims_active(db, &subject_ref, None)
-        .map_err(|e| format!("load claims for trust recompute: {e}"))?;
-    if claims.is_empty() {
-        return Ok(());
-    }
-
     let ctx = state.live_service_context();
-    let extraction_context =
-        match crate::services::trust_extraction::build_account_extraction_context(
-            db,
-            &input.entity_type,
-            &input.entity_id,
-        ) {
-            Ok(context) => context,
-            Err(e) => {
-                log::warn!(
-                    "TrustRecompute: extractor context error on {}:{}: {}",
-                    input.entity_type,
-                    input.entity_id,
-                    e
-                );
-                for claim in claims {
-                    record_trust_recompute_pipeline_failure(
-                        &ctx,
-                        db,
-                        input,
-                        "extractor_error",
-                        Some(&format!("claim_id={} error={e}", claim.id)),
-                    );
-                }
-                return Ok(());
-            }
-        };
-
-    for claim in claims {
-        let subject = match trust_subject_from_claim_json(&claim.subject_ref) {
-            Ok(subject) => subject,
-            Err(e) => {
-                log::warn!(
-                    "TrustRecompute: skipping claim {} with invalid subject_ref: {}",
-                    claim.id,
-                    e
-                );
-                continue;
-            }
-        };
-
-        let extraction_outcome = extraction_context.as_ref().map_or(
-            crate::services::trust_extraction::ExtractionOutcome::SkipExtractorMismatch {
-                reason: crate::services::trust_extraction::ExtractionMismatchReason::TargetNotFound,
-            },
-            |context| {
-                crate::services::trust_extraction::extract_target_footprint_from_context(
-                    context, &subject,
-                )
-            },
-        );
-
-        match extraction_outcome {
-            crate::services::trust_extraction::ExtractionOutcome::SkipExtractorMismatch {
-                reason,
-            } => {
-                log::debug!(
-                    "TrustRecompute: extractor mismatch for claim {} on {}:{} ({:?}); preserving prior trust",
-                    claim.id,
-                    input.entity_type,
-                    input.entity_id,
-                    reason
-                );
-                record_trust_recompute_pipeline_failure(
-                    &ctx,
-                    db,
-                    input,
-                    "extractor_mismatch",
-                    Some(&format!("claim_id={} reason={reason:?}", claim.id)),
-                );
-                continue;
-            }
-            crate::services::trust_extraction::ExtractionOutcome::Ok {
-                footprint,
-                portfolio_footprints,
-            } => {
-                let (trust_ctx, indeterminate_reasons) = build_trust_context_for_claim(
-                    &ctx,
-                    db,
-                    input,
-                    &claim,
-                    footprint,
-                    portfolio_footprints,
-                );
-                if !indeterminate_reasons.is_empty() {
-                    record_trust_recompute_pipeline_failure(
-                        &ctx,
-                        db,
-                        input,
-                        "trust_read_state_indeterminate",
-                        Some(&format!(
-                            "claim_id={} reasons={}",
-                            claim.id,
-                            indeterminate_reasons.join(",")
-                        )),
-                    );
-                }
-                let previous_score = claim.trust_score;
-                let previous_band =
-                    previous_score.and_then(|score| trust_band_for_score(score, &trust_ctx.config));
-                let trust_version = claim.trust_version.unwrap_or(0) + 1;
-
-                let computation = match crate::abilities::trust::compile_trust(&claim, trust_ctx) {
-                    Ok(computation) => computation,
-                    Err(e) => {
-                        log::error!(
-                            "TrustRecompute: compile_trust failed for claim {}; preserving prior trust: {}",
-                            claim.id,
-                            e
-                        );
-                        record_trust_recompute_pipeline_failure(
-                            &ctx,
-                            db,
-                            input,
-                            "trust_compile_failed",
-                            Some(&format!("claim_id={} error={e}", claim.id)),
-                        );
-                        continue;
-                    }
-                };
-
-                if let Err(e) = crate::services::claims::update_claim_trust(
-                    db,
-                    &claim.id,
-                    computation.score,
-                    trust_version,
-                    &ctx,
-                ) {
-                    log::error!(
-                        "TrustRecompute: update_claim_trust failed for claim {}; preserving prior signals: {}",
-                        claim.id,
-                        e
-                    );
-                    record_trust_recompute_pipeline_failure(
-                        &ctx,
-                        db,
-                        input,
-                        "trust_update_failed",
-                        Some(&format!("claim_id={} error={e}", claim.id)),
-                    );
-                    continue;
-                }
-
-                if previous_band.is_some() && previous_band != Some(computation.band) {
-                    emit_claim_trust_changed_signal(
-                        &ctx,
-                        db,
-                        input,
-                        &claim,
-                        previous_score,
-                        previous_band,
-                        computation.score.value(),
-                        computation.band,
-                        trust_version,
-                    );
-                }
-                emit_confidence_evidence_signals(&ctx, db, input, &claim.id, &computation.evidence);
-            }
-        }
-    }
-
-    Ok(())
-}
-
-/// Result of a single trust input read. Carries the value plus an optional
-/// reason string for why the read couldn't be trusted as authoritative.
-/// `Some(reason)` triggers IndeterminateReadState in compile_trust and gets
-/// recorded as a pipeline_failure for observability — the reviewer-cited
-/// gap was that bool tuples couldn't carry the reason and the indeterminate
-/// path emitted no metric. Reasons are static strings to keep allocation
-/// cheap on the hot path.
-#[derive(Debug, Clone)]
-struct TrustInput<T> {
-    value: T,
-    indeterminate_reason: Option<&'static str>,
-}
-
-impl<T> TrustInput<T> {
-    fn ok(value: T) -> Self {
-        Self {
-            value,
-            indeterminate_reason: None,
-        }
-    }
-    fn indeterminate(value: T, reason: &'static str) -> Self {
-        Self {
-            value,
-            indeterminate_reason: Some(reason),
-        }
-    }
-    fn into_parts(self) -> (T, Option<&'static str>) {
-        (self.value, self.indeterminate_reason)
-    }
-}
-
-/// Aggregate a TrustInput into the reasons sink and return the value. Wired
-/// from build_trust_context_for_claim once per helper.
-fn collect_trust_input<T>(input: TrustInput<T>, reasons: &mut Vec<&'static str>) -> T {
-    let (value, reason) = input.into_parts();
-    if let Some(r) = reason {
-        reasons.push(r);
-    }
-    value
-}
-
-fn build_trust_context_for_claim(
-    ctx: &crate::services::context::ServiceContext<'_>,
-    db: &crate::db::ActionDb,
-    input: &EnrichmentInput,
-    claim: &crate::db::claims::IntelligenceClaim,
-    footprint: crate::abilities::trust::TargetFootprint,
-    portfolio_footprints: Vec<crate::abilities::trust::EntityFootprint>,
-) -> (crate::abilities::trust::TrustContext, Vec<&'static str>) {
-    let mut indeterminate_reasons: Vec<&'static str> = Vec::new();
-
-    let feedback_signal = collect_trust_input(
-        trust_feedback_signal_for_claim(db, &claim.id),
-        &mut indeterminate_reasons,
-    );
-    let corroborators = collect_trust_input(
-        source_reliability_corroborators_for_claim(db, &claim.id),
-        &mut indeterminate_reasons,
-    );
-    let contradiction_count = collect_trust_input(
-        contradiction_count_for_claim(db, &claim.id),
-        &mut indeterminate_reasons,
-    );
-    let corroboration_strength = collect_trust_input(
-        corroboration_strength_for_claim(db, &claim.id),
-        &mut indeterminate_reasons,
-    );
-    let source_reliability = collect_trust_input(
-        source_reliability_for_claim(db, input, claim),
-        &mut indeterminate_reasons,
-    );
-    let now = ctx.clock.now();
-    let freshness = collect_trust_input(
-        freshness_context_for_claim(now, claim),
-        &mut indeterminate_reasons,
-    );
-    let source_lifecycle = collect_trust_input(
-        source_lifecycle_for_claim(claim),
-        &mut indeterminate_reasons,
-    );
-    let internal_consistency = collect_trust_input(
-        internal_consistency_for_claim(claim),
-        &mut indeterminate_reasons,
-    );
-    let read_state_indeterminate = !indeterminate_reasons.is_empty();
-    if read_state_indeterminate {
-        log::warn!(
-            "TrustRecompute: claim {} reads indeterminate, reasons: {}",
-            claim.id,
-            indeterminate_reasons.join(",")
-        );
-    }
-    let trust_ctx = crate::abilities::trust::TrustContext {
-        now,
-        renewal_context: renewal_context_for_claim(now, db, input),
-        config: crate::abilities::trust::TrustConfig::default(),
-        factor_inputs: crate::abilities::trust::TrustFactorInputs {
-            source_reliability,
-            source_reliability_corroborators: corroborators,
-            freshness,
-            corroboration_strength,
-            contradiction_count,
-            user_feedback: feedback_signal,
-            subject_fit_confidence: subject_fit_confidence_for_feedback(feedback_signal),
-            internal_consistency,
-            source_lifecycle,
-            linear_issue_state: crate::abilities::trust::LinearIssueStateContext::default(),
-            read_state_indeterminate,
-        },
-        cross_entity: crate::abilities::trust::CrossEntityCoherenceInput {
-            claim_text: claim.text.clone(),
-            target_footprint: footprint,
-            portfolio_footprints,
-            cross_entity_context_expected: cross_entity_context_expected(claim),
-        },
-        target_surface: None,
-    };
-    (trust_ctx, indeterminate_reasons)
-}
-
-fn renewal_context_for_claim(
-    now: chrono::DateTime<Utc>,
-    db: &crate::db::ActionDb,
-    input: &EnrichmentInput,
-) -> Option<crate::abilities::trust::RenewalContext> {
-    if input.entity_type != "account" {
-        return None;
-    }
-
-    let account = db.get_account(&input.entity_id).ok().flatten()?;
-    let contract_end = account.contract_end.as_deref()?;
-    let renewal_date = chrono::NaiveDate::parse_from_str(contract_end, "%Y-%m-%d").ok()?;
-    let renewal_at = renewal_date.and_hms_opt(0, 0, 0)?.and_utc();
-    let days_to_renewal = renewal_date
-        .signed_duration_since(now.date_naive())
-        .num_days();
-
-    Some(crate::abilities::trust::RenewalContext {
-        renewal_at: Some(renewal_at),
-        days_to_renewal: Some(days_to_renewal),
-    })
-}
-
-fn claim_subject_ref_json_for_entity(entity_type: &str, entity_id: &str) -> Option<String> {
-    let kind = match entity_type.trim().to_ascii_lowercase().as_str() {
-        "account" | "accounts" => "account",
-        "meeting" | "meetings" => "meeting",
-        "person" | "people" => "person",
-        "project" | "projects" => "project",
-        "email" | "emails" => "email",
-        _ => return None,
-    };
-    Some(serde_json::json!({ "kind": kind, "id": entity_id }).to_string())
-}
-
-fn trust_subject_from_claim_json(
-    subject_ref: &str,
-) -> Result<crate::abilities::provenance::SubjectRef, String> {
-    let value: serde_json::Value =
-        serde_json::from_str(subject_ref).map_err(|e| format!("not JSON: {e}"))?;
-
-    if let Some(id) = value.get("account").and_then(|v| v.as_str()) {
-        return Ok(crate::abilities::provenance::SubjectRef::Account(
-            id.to_string(),
-        ));
-    }
-    if let Some(id) = value.get("project").and_then(|v| v.as_str()) {
-        return Ok(crate::abilities::provenance::SubjectRef::Project(
-            id.to_string(),
-        ));
-    }
-    if let Some(id) = value.get("person").and_then(|v| v.as_str()) {
-        return Ok(crate::abilities::provenance::SubjectRef::Person(
-            id.to_string(),
-        ));
-    }
-    if let Some(id) = value.get("meeting").and_then(|v| v.as_str()) {
-        return Ok(crate::abilities::provenance::SubjectRef::Meeting(
-            id.to_string(),
-        ));
-    }
-    if value.get("global").is_some() {
-        return Ok(crate::abilities::provenance::SubjectRef::Global);
-    }
-
-    let kind = value
-        .get("kind")
-        .or_else(|| value.get("type"))
-        .or_else(|| value.get("entity_type"))
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| "missing kind/type".to_string())?
-        .to_ascii_lowercase();
-    let id = value
-        .get("id")
-        .or_else(|| value.get("entity_id"))
-        .and_then(|v| v.as_str())
-        .unwrap_or_default()
-        .to_string();
-
-    match kind.as_str() {
-        "account" | "accounts" => Ok(crate::abilities::provenance::SubjectRef::Account(id)),
-        "project" | "projects" => Ok(crate::abilities::provenance::SubjectRef::Project(id)),
-        "person" | "people" => Ok(crate::abilities::provenance::SubjectRef::Person(id)),
-        "meeting" | "meetings" => Ok(crate::abilities::provenance::SubjectRef::Meeting(id)),
-        "user" | "users" => Ok(crate::abilities::provenance::SubjectRef::User(id)),
-        "global" => Ok(crate::abilities::provenance::SubjectRef::Global),
-        other => Err(format!("unsupported subject kind/type '{other}'")),
-    }
-}
-
-/// Reads source reliability from signal_weights. Returns TrustInput so the
-/// caller can route corruption (negative components, non-finite values,
-/// out-of-range computed reliability) through IndeterminateReadState while
-/// retaining the legacy 1.0 fallback for compatibility.
-fn source_reliability_for_claim(
-    db: &crate::db::ActionDb,
-    input: &EnrichmentInput,
-    claim: &crate::db::claims::IntelligenceClaim,
-) -> TrustInput<f64> {
-    match claim_projection_signature_signal(db, &claim.id) {
-        Ok(Some(signal))
-            if signal
-                == crate::services::projection_signing::PROJECTION_SIGNATURE_INVALID_SIGNAL =>
-        {
-            return TrustInput::indeterminate(0.2, "projection_signature_invalid");
-        }
-        Ok(Some(signal))
-            if signal
-                == crate::services::projection_signing::PROJECTION_SIGNATURE_RETIRED_KEY_SIGNAL =>
-        {
-            return TrustInput::indeterminate(0.6, "projection_signature_retired_key");
-        }
-        Ok(Some(_)) | Ok(None) => {}
-        Err(e) => {
-            log::warn!(
-                "TrustRecompute: failed to read projection signature signal for {}: {e}",
-                claim.id
-            );
-            return TrustInput::indeterminate(1.0, "projection_signature_signal_read_failed");
-        }
-    }
-
-    match db.get_signal_weight(&claim.data_source, &input.entity_type, "enrichment_quality") {
-        Ok(Some((alpha, beta, _))) => {
-            let denom = alpha + beta;
-            if !alpha.is_finite()
-                || !beta.is_finite()
-                || alpha < 0.0
-                || beta < 0.0
-                || !denom.is_finite()
-                || denom <= 0.0
-            {
-                log::warn!(
-                    "TrustRecompute: malformed signal_weights row for source={} entity_type={} on {}: alpha={alpha} beta={beta}",
-                    claim.data_source,
-                    input.entity_type,
-                    claim.id
-                );
-                return TrustInput::indeterminate(1.0, "source_reliability_malformed_components");
-            }
-            let value = alpha / denom;
-            if !value.is_finite() || !(0.0..=1.0).contains(&value) {
-                log::warn!(
-                    "TrustRecompute: out-of-range source_reliability computed for {} (alpha={alpha} beta={beta} value={value})",
-                    claim.id
-                );
-                return TrustInput::indeterminate(1.0, "source_reliability_out_of_range");
-            }
-            TrustInput::ok(value)
-        }
-        Ok(None) => TrustInput::ok(1.0),
-        Err(e) => {
-            log::warn!(
-                "TrustRecompute: failed to read signal_weights for source={} entity_type={} on {}: {e}",
-                claim.data_source,
-                input.entity_type,
-                claim.id
-            );
-            TrustInput::indeterminate(1.0, "source_reliability_read_failed")
-        }
-    }
-}
-
-fn claim_projection_signature_signal(
-    db: &crate::db::ActionDb,
-    claim_id: &str,
-) -> Result<Option<String>, rusqlite::Error> {
-    db.conn_ref()
-        .query_row(
-            "SELECT signal_type
-               FROM signal_events
-              WHERE entity_type = ?2
-                AND entity_id = ?1
-                AND signal_type IN (?3, ?4)
-              ORDER BY created_at DESC
-              LIMIT 1",
-            rusqlite::params![
-                claim_id,
-                "claim",
-                crate::services::projection_signing::PROJECTION_SIGNATURE_INVALID_SIGNAL,
-                crate::services::projection_signing::PROJECTION_SIGNATURE_RETIRED_KEY_SIGNAL,
-            ],
-            |row| row.get::<_, String>(0),
-        )
-        .optional()
-}
-
-fn source_lifecycle_for_claim(
-    claim: &crate::db::claims::IntelligenceClaim,
-) -> TrustInput<crate::abilities::trust::SourceLifecycleState> {
-    let mut indeterminate: Option<&'static str> = None;
-    let lifecycle_field = match claim.metadata_json.as_deref() {
-        None => None,
-        Some(raw) => match serde_json::from_str::<serde_json::Value>(raw) {
-            Ok(value) => value
-                .get("source_lifecycle_state")
-                .or_else(|| value.get("source_lifecycle"))
-                .or_else(|| value.get("lifecycle_state"))
-                .cloned(),
-            Err(e) => {
-                log::warn!(
-                    "TrustRecompute: malformed metadata_json on lifecycle read for {}: {e}",
-                    claim.id
-                );
-                indeterminate = Some("source_lifecycle_metadata_malformed");
-                None
-            }
-        },
-    };
-
-    let normalized_state = match &lifecycle_field {
-        None => None,
-        Some(serde_json::Value::Null) => None,
-        Some(serde_json::Value::String(s)) => {
-            let normalized = s.trim().to_ascii_lowercase().replace('-', "_");
-            if normalized.is_empty() {
-                log::warn!(
-                    "TrustRecompute: empty/whitespace lifecycle field for {}",
-                    claim.id
-                );
-                indeterminate = Some("source_lifecycle_empty_field");
-                None
-            } else {
-                Some(normalized)
-            }
-        }
-        Some(other) => {
-            log::warn!(
-                "TrustRecompute: non-string lifecycle field for {}: {other}",
-                claim.id
-            );
-            indeterminate = Some("source_lifecycle_non_string_field");
-            None
-        }
-    };
-
-    let lifecycle = match normalized_state.as_deref() {
-        Some("withdrawn") => crate::abilities::trust::SourceLifecycleState::Withdrawn,
-        Some("dismissed") | Some("user_dismissed") => {
-            crate::abilities::trust::SourceLifecycleState::Dismissed
-        }
-        Some("active") => crate::abilities::trust::SourceLifecycleState::Active,
-        Some(unknown) => {
-            log::warn!(
-                "TrustRecompute: unknown lifecycle value '{unknown}' for {}; routing through indeterminate gate",
-                claim.id
-            );
-            indeterminate = Some("source_lifecycle_unknown_value");
-            crate::abilities::trust::SourceLifecycleState::Active
-        }
-        None if matches!(&claim.claim_state, crate::db::claims::ClaimState::Withdrawn) => {
-            crate::abilities::trust::SourceLifecycleState::Withdrawn
-        }
-        None => crate::abilities::trust::SourceLifecycleState::Active,
-    };
-    match indeterminate {
-        Some(reason) => TrustInput::indeterminate(lifecycle, reason),
-        None => TrustInput::ok(lifecycle),
-    }
-}
-
-fn freshness_context_for_claim(
-    now: chrono::DateTime<Utc>,
-    claim: &crate::db::claims::IntelligenceClaim,
-) -> TrustInput<crate::abilities::trust::FreshnessContext> {
-    let mut indeterminate: Option<&'static str> = None;
-
-    if let Some(source_asof) = claim.source_asof.as_deref() {
-        match chrono::DateTime::parse_from_rfc3339(source_asof) {
-            Ok(parsed) => {
-                return TrustInput::ok(crate::abilities::trust::FreshnessContext {
-                    timestamp_known: true,
-                    age_days: age_days(now, parsed.with_timezone(&Utc)),
-                });
-            }
-            Err(e) => {
-                log::warn!(
-                    "TrustRecompute: malformed source_asof on {}: {e}; falling back to observed_at",
-                    claim.id
-                );
-                indeterminate = Some("freshness_source_asof_malformed");
-            }
-        }
-    }
-
-    for (label, fallback) in [
-        ("observed_at", &claim.observed_at),
-        ("created_at", &claim.created_at),
-    ] {
-        match chrono::DateTime::parse_from_rfc3339(fallback) {
-            Ok(parsed) => {
-                let value = crate::abilities::trust::FreshnessContext {
-                    timestamp_known: false,
-                    age_days: age_days(now, parsed.with_timezone(&Utc)),
-                };
-                return match indeterminate {
-                    Some(reason) => TrustInput::indeterminate(value, reason),
-                    None => TrustInput::ok(value),
-                };
-            }
-            Err(e) => {
-                log::warn!("TrustRecompute: malformed {label} on {}: {e}", claim.id);
-                indeterminate = Some("freshness_fallback_malformed");
-            }
-        }
-    }
-
-    let value = crate::abilities::trust::FreshnessContext {
-        timestamp_known: false,
-        age_days: 0.0,
-    };
-    match indeterminate {
-        Some(reason) => TrustInput::indeterminate(value, reason),
-        None => TrustInput::ok(value),
-    }
-}
-
-fn age_days(now: chrono::DateTime<Utc>, source_time: chrono::DateTime<Utc>) -> f64 {
-    (now - source_time).num_seconds() as f64 / 86_400.0
-}
-
-fn corroboration_strength_for_claim(db: &crate::db::ActionDb, claim_id: &str) -> TrustInput<f64> {
-    let mut stmt = match db
-        .conn_ref()
-        .prepare("SELECT strength FROM claim_corroborations WHERE claim_id = ?1")
-    {
-        Ok(stmt) => stmt,
-        Err(e) => {
-            log::warn!("TrustRecompute: failed to prepare corroboration read for {claim_id}: {e}");
-            return TrustInput::indeterminate(0.0, "corroboration_strength_prepare_failed");
-        }
-    };
-    let strengths = match stmt.query_map(rusqlite::params![claim_id], |row| row.get::<_, f64>(0)) {
-        Ok(rows) => rows,
-        Err(e) => {
-            log::warn!("TrustRecompute: failed to read corroborations for {claim_id}: {e}");
-            return TrustInput::indeterminate(0.0, "corroboration_strength_query_failed");
-        }
-    };
-
-    let mut any = false;
-    let mut had_error = false;
-    let mut had_out_of_range = false;
-    let mut miss_probability = 1.0;
-    for strength in strengths {
-        match strength {
-            Ok(value) if value.is_finite() && (0.0..=1.0).contains(&value) => {
-                any = true;
-                miss_probability *= 1.0 - value;
-            }
-            Ok(value) => {
-                log::warn!(
-                    "TrustRecompute: corroboration strength {value} out of [0.0, 1.0] for {claim_id}; clamping into noisy-OR but marking read indeterminate"
-                );
-                let clamped = value.clamp(0.0, 1.0);
-                if clamped.is_finite() {
-                    any = true;
-                    miss_probability *= 1.0 - clamped;
-                }
-                had_out_of_range = true;
-            }
-            Err(e) => {
-                log::warn!("TrustRecompute: malformed corroboration for {claim_id}: {e}");
-                had_error = true;
-            }
-        }
-    }
-
-    let value = if any { 1.0 - miss_probability } else { 0.0 };
-    if had_error {
-        TrustInput::indeterminate(value, "corroboration_strength_row_decode_failed")
-    } else if had_out_of_range {
-        TrustInput::indeterminate(value, "corroboration_strength_out_of_range")
-    } else {
-        TrustInput::ok(value)
-    }
-}
-
-/// Build the per-claim corroborator list for source_reliability_aggregated.
-/// Confirming entries come from claim_corroborations.strength; contradicting
-/// entries come from unreconciled rows in claim_contradictions where this
-/// claim sits on either side. Contradictions don't carry a strength column, so
-/// we treat each unreconciled link as a single high-weight (1.0) contradicting
-/// signal — matches the ADR-0114 default for authoritative-contradicting
-/// evidence and lets the AuthoritativeContradiction gate fire when the
-/// contradicting side outweighs the confirming side.
-fn source_reliability_corroborators_for_claim(
-    db: &crate::db::ActionDb,
-    claim_id: &str,
-) -> TrustInput<Vec<crate::abilities::trust::CorroboratorWeight>> {
-    let mut out = Vec::new();
-    let mut indeterminate: Option<&'static str> = None;
-
-    match db
-        .conn_ref()
-        .prepare("SELECT strength FROM claim_corroborations WHERE claim_id = ?1")
-    {
-        Ok(mut stmt) => {
-            match stmt.query_map(rusqlite::params![claim_id], |row| row.get::<_, f64>(0)) {
-                Ok(rows) => {
-                    for row in rows {
-                        match row {
-                            Ok(strength)
-                                if strength.is_finite() && (0.0..=1.0).contains(&strength) =>
-                            {
-                                out.push(crate::abilities::trust::CorroboratorWeight {
-                                    evidence_weight: strength,
-                                    confirms: true,
-                                });
-                            }
-                            Ok(strength) if strength.is_finite() => {
-                                // Out-of-range but finite — clamp + mark indeterminate so
-                                // we don't silently feed corrupt weights into the
-                                // aggregation.
-                                log::warn!(
-                                    "TrustRecompute: corroborator strength {strength} out of [0.0, 1.0] for {claim_id}; clamping but marking read indeterminate"
-                                );
-                                out.push(crate::abilities::trust::CorroboratorWeight {
-                                    evidence_weight: strength.clamp(0.0, 1.0),
-                                    confirms: true,
-                                });
-                                indeterminate = Some("corroborators_strength_out_of_range");
-                            }
-                            Ok(other) => {
-                                log::warn!(
-                                    "TrustRecompute: discarding non-finite corroboration strength {other} for {claim_id}"
-                                );
-                                indeterminate = Some("corroborators_row_decode_failed");
-                            }
-                            Err(e) => {
-                                log::warn!(
-                                    "TrustRecompute: malformed corroboration row for {claim_id}: {e}"
-                                );
-                                indeterminate = Some("corroborators_row_decode_failed");
-                            }
-                        }
-                    }
-                }
-                Err(e) => {
-                    log::warn!(
-                        "TrustRecompute: failed to query corroborations for {claim_id}: {e}"
-                    );
-                    indeterminate = Some("corroborators_query_failed");
-                }
-            }
-        }
-        Err(e) => {
-            log::warn!("TrustRecompute: failed to prepare corroboration query for {claim_id}: {e}");
-            indeterminate = Some("corroborators_prepare_failed");
-        }
-    }
-
-    match db.conn_ref().query_row(
-        "SELECT COUNT(*) FROM claim_contradictions \
-         WHERE (primary_claim_id = ?1 OR contradicting_claim_id = ?1) \
-           AND reconciled_at IS NULL \
-           AND winner_claim_id IS NULL \
-           AND merged_claim_id IS NULL",
-        rusqlite::params![claim_id],
-        |row| row.get::<_, i64>(0),
-    ) {
-        Ok(count) => {
-            for _ in 0..count.max(0) {
-                out.push(crate::abilities::trust::CorroboratorWeight {
-                    evidence_weight: 1.0,
-                    confirms: false,
-                });
-            }
-        }
-        Err(e) => {
-            log::warn!("TrustRecompute: failed to count contradictions for {claim_id}: {e}");
-            indeterminate = Some("corroborators_contradiction_count_failed");
-        }
-    }
-
-    match indeterminate {
-        Some(reason) => TrustInput::indeterminate(out, reason),
-        None => TrustInput::ok(out),
-    }
-}
-
-/// Producing abilities can stamp metadata_json.internal_consistency on a
-/// claim when they detect tension between its sub-statements (e.g. transcript
-/// extraction noticing self-contradicting language). Anything in [0.0, 1.0] is
-/// honored; anything missing or malformed defaults to 1.0 (no signal).
-fn internal_consistency_for_claim(claim: &crate::db::claims::IntelligenceClaim) -> TrustInput<f64> {
-    let raw = match claim.metadata_json.as_deref() {
-        Some(s) => s,
-        None => return TrustInput::ok(1.0),
-    };
-    // Cap metadata_json size before parsing to avoid pathological inputs
-    // (deeply nested JSON, gigabyte strings) consuming the trust recompute
-    // hot path. 64 KiB is well above any legitimate consistency hint.
-    const MAX_METADATA_BYTES: usize = 64 * 1024;
-    if raw.len() > MAX_METADATA_BYTES {
-        log::warn!(
-            "TrustRecompute: metadata_json oversized ({} bytes) for {}, defaulting internal_consistency to 1.0",
-            raw.len(),
-            claim.id
-        );
-        return TrustInput::indeterminate(1.0, "internal_consistency_metadata_oversized");
-    }
-    let value: serde_json::Value = match serde_json::from_str(raw) {
-        Ok(v) => v,
-        Err(e) => {
-            log::warn!(
-                "TrustRecompute: malformed metadata_json for {}: {e}; defaulting internal_consistency to 1.0",
-                claim.id
-            );
-            return TrustInput::indeterminate(1.0, "internal_consistency_metadata_malformed");
-        }
-    };
-    let hint = value.get("internal_consistency");
-    match hint.and_then(|v| v.as_f64()) {
-        Some(v) if v.is_finite() && (0.0..=1.0).contains(&v) => TrustInput::ok(v),
-        Some(v) => {
-            log::warn!(
-                "TrustRecompute: internal_consistency hint {v} out of range for {}; defaulting to 1.0",
-                claim.id
-            );
-            TrustInput::indeterminate(1.0, "internal_consistency_hint_out_of_range")
-        }
-        None if hint.is_some() => {
-            log::warn!(
-                "TrustRecompute: internal_consistency hint not a number for {}; defaulting to 1.0",
-                claim.id
-            );
-            TrustInput::indeterminate(1.0, "internal_consistency_hint_not_numeric")
-        }
-        None => TrustInput::ok(1.0),
-    }
-}
-
-fn contradiction_count_for_claim(db: &crate::db::ActionDb, claim_id: &str) -> TrustInput<u32> {
-    match db.conn_ref().query_row(
-        "SELECT COUNT(*) FROM claim_contradictions
-         WHERE (primary_claim_id = ?1 OR contradicting_claim_id = ?1)
-           AND reconciled_at IS NULL
-           AND winner_claim_id IS NULL
-           AND merged_claim_id IS NULL",
-        rusqlite::params![claim_id],
-        |row| row.get::<_, i64>(0),
-    ) {
-        Ok(count) => TrustInput::ok(count.max(0) as u32),
-        Err(e) => {
-            log::warn!("TrustRecompute: failed to count contradictions for {claim_id}: {e}");
-            TrustInput::indeterminate(0, "contradiction_count_query_failed")
-        }
-    }
-}
-
-fn trust_feedback_signal_for_claim(
-    db: &crate::db::ActionDb,
-    claim_id: &str,
-) -> TrustInput<crate::abilities::trust::UserFeedbackSignal> {
-    let mut stmt = match db.conn_ref().prepare(
-        "SELECT feedback_type FROM claim_feedback
-         WHERE claim_id = ?1
-         ORDER BY submitted_at DESC, rowid DESC",
-    ) {
-        Ok(stmt) => stmt,
-        Err(e) => {
-            log::warn!("TrustRecompute: failed to prepare feedback read for {claim_id}: {e}");
-            return TrustInput::indeterminate(
-                crate::abilities::trust::UserFeedbackSignal::None,
-                "feedback_prepare_failed",
-            );
-        }
-    };
-    let rows = match stmt.query_map(rusqlite::params![claim_id], |row| row.get::<_, String>(0)) {
-        Ok(rows) => rows,
-        Err(e) => {
-            log::warn!("TrustRecompute: failed to read feedback for {claim_id}: {e}");
-            return TrustInput::indeterminate(
-                crate::abilities::trust::UserFeedbackSignal::None,
-                "feedback_query_failed",
-            );
-        }
-    };
-
-    let mut had_row_error = false;
-    for row in rows {
-        match row {
-            Ok(value) => {
-                let signal = match value.as_str() {
-                    "confirm_current" => {
-                        Some(crate::abilities::trust::UserFeedbackSignal::Confirmed)
-                    }
-                    "mark_false" => Some(crate::abilities::trust::UserFeedbackSignal::Retracted),
-                    "wrong_subject" => {
-                        Some(crate::abilities::trust::UserFeedbackSignal::WrongSubject)
-                    }
-                    "mark_outdated" | "wrong_source" | "needs_nuance" => {
-                        Some(crate::abilities::trust::UserFeedbackSignal::Corrected)
-                    }
-                    _ => None,
-                };
-                if let Some(s) = signal {
-                    return if had_row_error {
-                        TrustInput::indeterminate(s, "feedback_row_decode_failed")
-                    } else {
-                        TrustInput::ok(s)
-                    };
-                }
-            }
-            Err(e) => {
-                log::warn!("TrustRecompute: malformed claim_feedback row for {claim_id}: {e}");
-                had_row_error = true;
-            }
-        }
-    }
-
-    if had_row_error {
-        TrustInput::indeterminate(
-            crate::abilities::trust::UserFeedbackSignal::None,
-            "feedback_row_decode_failed",
-        )
-    } else {
-        TrustInput::ok(crate::abilities::trust::UserFeedbackSignal::None)
-    }
-}
-
-fn subject_fit_confidence_for_feedback(
-    feedback: crate::abilities::trust::UserFeedbackSignal,
-) -> f64 {
-    match feedback {
-        crate::abilities::trust::UserFeedbackSignal::WrongSubject => 0.05,
-        _ => 1.0,
-    }
-}
-
-fn cross_entity_context_expected(claim: &crate::db::claims::IntelligenceClaim) -> bool {
-    if claim
-        .field_path
-        .as_deref()
-        .is_some_and(|path| path.contains("peer_benchmark"))
-    {
-        return true;
-    }
-
-    claim
-        .metadata_json
-        .as_deref()
-        .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
-        .and_then(|value| {
-            value
-                .get("cross_entity_context_expected")
-                .and_then(|flag| flag.as_bool())
-        })
-        .unwrap_or(false)
-}
-
-fn trust_band_for_score(
-    score: f64,
-    config: &crate::abilities::trust::TrustConfig,
-) -> Option<crate::abilities::trust::TrustBand> {
-    if !score.is_finite() {
-        return None;
-    }
-    if score >= config.likely_current_min {
-        Some(crate::abilities::trust::TrustBand::LikelyCurrent)
-    } else if score >= config.use_with_caution_min {
-        Some(crate::abilities::trust::TrustBand::UseWithCaution)
-    } else {
-        Some(crate::abilities::trust::TrustBand::NeedsVerification)
-    }
-}
-
-fn trust_band_label(band: crate::abilities::trust::TrustBand) -> &'static str {
-    match band {
-        crate::abilities::trust::TrustBand::LikelyCurrent => "likely_current",
-        crate::abilities::trust::TrustBand::UseWithCaution => "use_with_caution",
-        crate::abilities::trust::TrustBand::NeedsVerification => "needs_verification",
-        crate::abilities::trust::TrustBand::Unscored => "unscored",
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn emit_claim_trust_changed_signal(
-    ctx: &crate::services::context::ServiceContext<'_>,
-    db: &crate::db::ActionDb,
-    input: &EnrichmentInput,
-    claim: &crate::db::claims::IntelligenceClaim,
-    previous_score: Option<f64>,
-    previous_band: Option<crate::abilities::trust::TrustBand>,
-    score: f64,
-    band: crate::abilities::trust::TrustBand,
-    trust_version: i64,
-) {
-    let payload = serde_json::json!({
-        "claim_id": &claim.id,
-        "from_score": previous_score,
-        "to_score": score,
-        "from_band": previous_band.map(trust_band_label),
-        "to_band": trust_band_label(band),
-        "trust_version": trust_version,
-    })
-    .to_string();
-
-    let signal_id = match crate::services::signals::emit(
-        ctx,
+    crate::services::trust_recompute::recompute_claim_trust_for_subject(
+        &ctx,
         db,
         &input.entity_type,
         &input.entity_id,
-        "ClaimTrustChanged",
-        "trust_recompute",
-        Some(&payload),
-        1.0,
-    ) {
-        Ok(id) => id,
-        Err(e) => {
-            log::warn!(
-                "TrustRecompute: failed to emit ClaimTrustChanged for claim {}: {}",
-                claim.id,
-                e
-            );
-            return;
-        }
-    };
-
-    // Enqueue durable invalidation job so downstream outputs recompute or are
-    // marked stale. Coalescing + queue cap enforced inside the enqueue path.
-    // If the queue is over-capacity AND no aggressive-coalesce target exists,
-    // enqueue returns InvalidArgument. The signal row is already committed at
-    // this point, so swallowing the error would create a silent-stale path
-    // (signal recorded → no recompute → downstream outputs drift). Instead,
-    // record a durable pipeline_failure so the failure is queryable and
-    // surfaces in operator-visible state — preserves the no-silent-stale
-    // contract for trust recompute under queue overload.
-    if let Err(e) = crate::services::invalidation_jobs::enqueue_signal_claim_recompute_in_tx(
-        db,
-        &signal_id,
-        &input.entity_type,
-        &input.entity_id,
-    ) {
-        log::error!(
-            "TrustRecompute: failed to enqueue claim_recompute job for signal {} (claim {}): {}",
-            signal_id,
-            claim.id,
-            e
-        );
-        record_trust_recompute_pipeline_failure(
-            ctx,
-            db,
-            input,
-            "invalidation_enqueue_failed",
-            Some(&format!(
-                "claim_id={} signal_id={signal_id} error={e}",
-                claim.id
-            )),
-        );
-    }
+    )
+    .map(|_| ())
 }
 
-fn emit_confidence_evidence_signals(
-    ctx: &crate::services::context::ServiceContext<'_>,
-    db: &crate::db::ActionDb,
-    input: &EnrichmentInput,
-    claim_id: &str,
-    evidence: &crate::abilities::trust::ConfidenceEvidence,
-) {
-    for factor in &evidence.factor_breakdown {
-        let payload = serde_json::json!({
-            "claim_id": claim_id,
-            "score": evidence.score,
-            "band_label": &evidence.band_label,
-            "factor": factor,
-            "caveats": &evidence.caveats,
-        })
-        .to_string();
-        if let Err(e) = crate::services::signals::emit(
-            ctx,
-            db,
-            &input.entity_type,
-            &input.entity_id,
-            "ConfidenceEvidence",
-            "trust_recompute",
-            Some(&payload),
-            evidence.score,
-        ) {
-            log::warn!(
-                "TrustRecompute: failed to emit ConfidenceEvidence for claim {claim_id}: {e}"
-            );
-        }
-    }
-}
-
-fn record_trust_recompute_pipeline_failure(
-    ctx: &crate::services::context::ServiceContext<'_>,
-    db: &crate::db::ActionDb,
-    input: &EnrichmentInput,
-    error_type: &str,
-    error_message: Option<&str>,
-) {
-    if let Err(e) = crate::services::mutations::record_pipeline_failure(
-        ctx,
-        db,
-        "trust_recompute",
-        Some(&input.entity_id),
-        Some(&input.entity_type),
-        error_type,
-        error_message,
-        0,
-    ) {
-        log::warn!(
-            "TrustRecompute: failed to record pipeline failure for {}:{}: {}",
-            input.entity_type,
-            input.entity_id,
-            e
-        );
-    }
-}
-
-fn emit_queue_worker_glean_signals(
+fn run_shared_glean_finalization(
     state: &AppState,
     db: &crate::db::ActionDb,
     input: &EnrichmentInput,
     intel: &IntelligenceJson,
-) {
-    if state.context_provider().is_remote() {
-        crate::intelligence::glean_provider::emit_glean_signals(
-            db,
-            &state.signals.engine,
-            &input.entity_type,
-            &input.entity_id,
+) -> Result<(), String> {
+    let ctx = state.live_service_context();
+    let report = crate::services::glean_finalization::finalize_glean_enrichment(
+        &ctx,
+        db,
+        state.signals.engine.as_ref(),
+        crate::services::glean_finalization::GleanFinalizationInput {
+            entity_type: &input.entity_type,
+            entity_id: &input.entity_id,
             intel,
-            input.active_preset.as_ref(),
+            preset: input.active_preset.as_ref(),
+        },
+    )
+    .map_err(|error| error.to_string())?;
+
+    if report.signals_emitted > 0
+        || report.schema_promoted > 0
+        || report.claims_committed > 0
+        || report.recompute_jobs_enqueued > 0
+        || report.health_recomputed
+        || !report.degraded_classes.is_empty()
+    {
+        log::info!(
+            "[I644] Glean finalization for {}: {} signal(s) emitted, {} schema fact(s), {} claim(s), {} recompute job(s), health_recomputed={}, degraded_classes={}",
+            input.entity_id,
+            report.signals_emitted,
+            report.schema_promoted,
+            report.claims_committed,
+            report.recompute_jobs_enqueued,
+            report.health_recomputed,
+            report.degraded_classes.len(),
         );
     }
+    Ok(())
 }
 
 fn spawn_queue_worker_supplemental_glean_finalize(
@@ -4411,172 +3427,6 @@ pub(crate) fn invalidate_and_requeue_meeting_preps_with_db(
     );
 }
 
-/// Dual-write commitments from Glean enrichment to `captured_commitments`.
-///
-/// Writes `open_commitments` and `success_plan_signals.stated_objectives` from the
-/// intelligence output, mirroring the pattern in `transcript.rs:556-598`.
-/// Uses INSERT OR IGNORE to avoid duplicates.
-fn dual_write_enrichment_commitments(
-    db: &crate::db::ActionDb,
-    engine: &crate::signals::propagation::PropagationEngine,
-    account_id: &str,
-    intel: &IntelligenceJson,
-) {
-    let now = Utc::now().to_rfc3339();
-    let source_label = format!("glean_enrichment:{}", account_id);
-
-    // 1. Write open_commitments
-    if let Some(ref commitments) = intel.open_commitments {
-        for commitment in commitments {
-            let commit_id = uuid::Uuid::new_v4().to_string();
-            let owner = commitment.owner.as_deref().unwrap_or("joint");
-            if let Err(e) = db.conn_ref().execute(
-                "INSERT OR IGNORE INTO captured_commitments (id, account_id, meeting_id, title, owner, target_date, confidence, source, consumed, created_at)
-                 VALUES (?1, ?2, NULL, ?3, ?4, ?5, 'medium', ?6, 0, ?7)",
-                rusqlite::params![
-                    commit_id,
-                    account_id,
-                    commitment.description,
-                    owner,
-                    commitment.due_date,
-                    source_label,
-                    now,
-                ],
-            ) {
-                log::warn!("Failed to insert captured_commitment from Glean enrichment: {}", e);
-            }
-        }
-    }
-
-    // 2. Write stated_objectives from success_plan_signals
-    if let Some(ref signals) = intel.success_plan_signals {
-        for objective in &signals.stated_objectives {
-            let commit_id = uuid::Uuid::new_v4().to_string();
-            let owner = objective.owner.as_deref().unwrap_or("joint");
-            if let Err(e) = db.conn_ref().execute(
-                "INSERT OR IGNORE INTO captured_commitments (id, account_id, meeting_id, title, owner, target_date, confidence, source, consumed, created_at)
-                 VALUES (?1, ?2, NULL, ?3, ?4, ?5, ?6, ?7, 0, ?8)",
-                rusqlite::params![
-                    commit_id,
-                    account_id,
-                    objective.objective,
-                    owner,
-                    objective.target_date,
-                    objective.confidence,
-                    source_label,
-                    now,
-                ],
-            ) {
-                log::warn!("Failed to insert stated_objective from Glean enrichment: {}", e);
-            }
-        }
-    }
-
-    // 3. Emit signal for the dual-write
-    let commitment_count = intel.open_commitments.as_ref().map_or(0, |c| c.len())
-        + intel
-            .success_plan_signals
-            .as_ref()
-            .map_or(0, |s| s.stated_objectives.len());
-    if commitment_count > 0 {
-        let value = serde_json::json!({
-            "count": commitment_count,
-            "source": "glean_enrichment",
-        })
-        .to_string();
-        if let Err(e) = crate::signals::bus::emit_signal_and_propagate(
-            db,
-            engine,
-            "account",
-            account_id,
-            "commitment_captured",
-            "glean",
-            Some(&value),
-            0.7,
-        ) {
-            log::warn!("Failed to emit commitment_captured signal: {}", e);
-        }
-    }
-}
-
-/// Dual-write product adoption data from enrichment intelligence into the
-/// `account_products` table, keeping the relational surface in sync with
-/// the intelligence JSON blob.
-fn dual_write_enrichment_products(
-    db: &crate::db::ActionDb,
-    engine: &crate::signals::propagation::PropagationEngine,
-    entity_id: &str,
-    intel: &IntelligenceJson,
-) {
-    let adoption = match intel.product_adoption.as_ref() {
-        Some(a) => a,
-        None => return,
-    };
-
-    let source = adoption.source.as_deref().unwrap_or("ai_inference");
-    let mut upserted = 0usize;
-
-    for feature in &adoption.feature_adoption {
-        // Parse "Core platform: 95%" → name = "Core platform", adoption_pct ~0.95
-        let (name, adoption_pct) = if let Some(colon_pos) = feature.find(':') {
-            let raw_name = feature[..colon_pos].trim();
-            let pct_str = feature[colon_pos + 1..].trim().trim_end_matches('%');
-            let pct = pct_str.parse::<f64>().ok().map(|v| v / 100.0);
-            (raw_name.to_string(), pct)
-        } else {
-            (feature.trim().to_string(), None)
-        };
-
-        if name.is_empty() {
-            continue;
-        }
-
-        match db.upsert_account_product(
-            entity_id,
-            &name,
-            None,
-            "active",
-            adoption_pct,
-            source,
-            0.55,
-            None,
-        ) {
-            Ok(_) => upserted += 1,
-            Err(e) => {
-                log::warn!(
-                    "Failed to upsert account product '{}' for {}: {}",
-                    name,
-                    entity_id,
-                    e
-                );
-            }
-        }
-    }
-
-    if upserted > 0 {
-        log::info!(
-            "IntelProcessor: dual-wrote {} products for {} from enrichment",
-            upserted,
-            entity_id,
-        );
-        // Intelligence Loop: every mutation emits a signal (AC7)
-        #[allow(
-            clippy::let_underscore_must_use,
-            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-        )]
-        let _ = crate::signals::bus::emit_signal_and_propagate(
-            db,
-            engine,
-            "account",
-            entity_id,
-            "product_data_updated",
-            source,
-            Some(&format!("{{\"count\":{upserted}}}")),
-            0.55,
-        );
-    }
-}
-
 // =============================================================================
 // Tests
 // =============================================================================
@@ -4592,6 +3442,12 @@ mod tests {
     };
     use crate::services::context::{
         ClaimDismissalSurface, ExternalClients, FixedClock, SeedableRng, ServiceContext,
+    };
+    use crate::services::trust_recompute::{
+        corroboration_strength_for_claim, cross_entity_context_expected,
+        freshness_context_for_claim, internal_consistency_for_claim,
+        source_reliability_corroborators_for_claim, source_reliability_for_claim,
+        trust_feedback_signal_for_claim,
     };
     use chrono::TimeZone;
     use rusqlite::params;
@@ -4682,8 +3538,7 @@ mod tests {
         db: &crate::db::ActionDb,
         account_id: &str,
     ) -> crate::db::claims::IntelligenceClaim {
-        let subject_ref =
-            claim_subject_ref_json_for_entity("account", account_id).expect("account subject ref");
+        let subject_ref = serde_json::json!({ "kind": "account", "id": account_id }).to_string();
         let mut claims = crate::services::claims::load_claims_active(db, &subject_ref, None)
             .expect("load active trust claims");
         assert_eq!(claims.len(), 1, "expected one active trust claim");
@@ -4770,13 +3625,20 @@ mod tests {
         }
     }
 
-    fn run_trust_finalize(db: &crate::db::ActionDb, account_id: &str, mode: FinalizeMode) {
+    fn run_trust_finalize_result(
+        db: &crate::db::ActionDb,
+        account_id: &str,
+        mode: FinalizeMode,
+    ) -> Result<(), String> {
         let state = Arc::new(AppState::new());
         let dir = tempfile::tempdir().expect("tempdir");
         let input = trust_input(account_id, dir.path());
         let intel = trust_intel(account_id);
         run_enrichment_finalize_post_commit(&state, db, &input, &intel, &[], mode)
-            .expect("run finalize");
+    }
+
+    fn run_trust_finalize(db: &crate::db::ActionDb, account_id: &str, mode: FinalizeMode) {
+        run_trust_finalize_result(db, account_id, mode).expect("run finalize");
     }
 
     fn read_trust_columns(
@@ -4967,8 +3829,7 @@ mod tests {
         seed_trust_corroboration(&db, &claim_id, "glean");
         dismiss_trust_claim_on_surface(&db, &claim_id, ClaimDismissalSurface::TauriReport);
 
-        let subject_ref =
-            claim_subject_ref_json_for_entity("account", account_id).expect("account subject ref");
+        let subject_ref = serde_json::json!({ "kind": "account", "id": account_id }).to_string();
         let report_visible = crate::services::claims::load_claims_active_for_surface(
             &db,
             &subject_ref,
@@ -5319,7 +4180,13 @@ mod tests {
         );
         seed_trust_corroboration(&db, &claim_id, "glean");
 
-        run_trust_finalize(&db, account_id, FinalizeMode::ManualRefresh);
+        run_trust_finalize(
+            &db,
+            account_id,
+            FinalizeMode::ManualRefresh {
+                producer: EnrichmentProducer::Pty,
+            },
+        );
         assert_eq!(read_trust_columns(&db, &claim_id), (None, None, None));
 
         run_trust_finalize(&db, account_id, FinalizeMode::TrustRecompute);
@@ -5327,9 +4194,8 @@ mod tests {
         assert!(score.is_some_and(|value| value > 0.75));
         assert!(computed_at.is_some());
         assert_eq!(version, Some(1));
-        // ConfidenceEvidence emits one signal per factor in evidence.factor_breakdown
-        // (see emit_confidence_evidence_signals at intel_queue.rs:3847). Factor count
-        // is determined by the trust extractor and reflects current scoring features.
+        // ConfidenceEvidence emits one signal per factor in evidence.factor_breakdown.
+        // Factor count is determined by the trust extractor and reflects current scoring features.
         // Asserting the exact count would couple this test to the factor-list shape;
         // assert non-zero + bounded growth instead.
         let n = signal_count(&db, "ConfidenceEvidence");
@@ -5385,7 +4251,13 @@ mod tests {
         seed_prior_trust(&db, &claim_id, 0.82, 7);
         let before = read_trust_columns(&db, &claim_id);
 
-        run_trust_finalize(&db, account_id, FinalizeMode::ManualRefresh);
+        run_trust_finalize(
+            &db,
+            account_id,
+            FinalizeMode::ManualRefresh {
+                producer: EnrichmentProducer::Pty,
+            },
+        );
 
         assert_eq!(read_trust_columns(&db, &claim_id), before);
         assert_eq!(signal_count(&db, "ConfidenceEvidence"), 0);
@@ -5411,6 +4283,7 @@ mod tests {
             account_id,
             FinalizeMode::QueueWorker {
                 is_background: false,
+                producer: EnrichmentProducer::Pty,
             },
         );
         assert_eq!(read_trust_columns(&db, &claim_id), before);
@@ -5420,6 +4293,7 @@ mod tests {
             account_id,
             FinalizeMode::QueueWorker {
                 is_background: true,
+                producer: EnrichmentProducer::Pty,
             },
         );
         assert_eq!(read_trust_columns(&db, &claim_id), before);
@@ -5546,7 +4420,12 @@ mod tests {
             .execute(&trigger_sql, [])
             .expect("install update failure trigger");
 
-        run_trust_finalize(&db, update_account_id, FinalizeMode::TrustRecompute);
+        let result =
+            run_trust_finalize_result(&db, update_account_id, FinalizeMode::TrustRecompute);
+        assert!(
+            result.is_err(),
+            "trust update failure should fail the claim_recompute job so it retries or dead-letters"
+        );
 
         assert_eq!(pipeline_failure_count(&db, "trust_update_failed"), 1);
         assert_eq!(signal_count(&db, "ClaimTrustChanged"), 0);
@@ -6128,9 +5007,7 @@ mod tests {
             verification_reason: None,
             needs_user_decision_at: None,
         };
-        let tmp = std::path::PathBuf::from(".");
-        let input = trust_input("a-1", &tmp);
-        let (_value, reason) = source_reliability_for_claim(&db, &input, &claim).into_parts();
+        let (_value, reason) = source_reliability_for_claim(&db, "account", &claim).into_parts();
         assert!(
             reason.is_some(),
             "missing signal_weights table must propagate an indeterminate reason"

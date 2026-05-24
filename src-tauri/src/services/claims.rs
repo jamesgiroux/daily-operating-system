@@ -50,7 +50,8 @@ use crate::services::context::{ClaimDismissalSurface, ServiceContext};
 use crate::services::versioning::{
     checked_next_version, insert_committed_secondary_attempt, insert_version_event,
     mark_mutation_attempt_committed, mark_mutation_attempt_committed_noop, version_to_i64,
-    MutationGuard, SignalCursor, VersionActorKind, VersionEventInsert, VersionEventKind,
+    MutationAttempt, MutationGuard, MutationSubject, SignalCursor, VersionActorKind,
+    VersionEventInsert, VersionEventKind,
 };
 use abilities_runtime::predicates::registry::{PredicateRef, PREDICATE_REGISTRY_VERSION};
 use abilities_runtime::structured_claim::{
@@ -9671,6 +9672,84 @@ pub fn withdraw_email_subject_claims_for_existing_emails(
     )
 }
 
+/// Withdraw account-fact claims whose evidence came through Glean finalization.
+///
+/// Runs in the caller's transaction and uses the normal claim lifecycle side
+/// effects: subject claim-version bump, claim-version event, and edge
+/// tombstoning. The claim assertion rows remain for audit.
+pub fn withdraw_glean_account_fact_claims_for_source_purge_in_tx(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+) -> Result<usize, ClaimError> {
+    ctx.check_mutation_allowed()
+        .map_err(|e| ClaimError::Mode(e.to_string()))?;
+    let mut stmt = db.conn_ref().prepare(
+        "SELECT ic.id
+           FROM intelligence_claims ic
+          WHERE ic.claim_type = 'account_fact'
+            AND ic.claim_state IN ('active', 'tombstoned', 'dormant')
+            AND json_valid(ic.subject_ref) = 1
+            AND lower(json_extract(ic.subject_ref, '$.kind')) = 'account'
+            AND ic.source_ref LIKE 'glean_account_fact:%'
+          ORDER BY ic.id",
+    )?;
+    let claim_ids = stmt
+        .query_map([], |row| row.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let mut withdrawn = 0usize;
+    let now = ctx.clock.now().to_rfc3339();
+    let actor_kind = VersionActorKind::from_service_actor(ctx.actor);
+    for claim_id in claim_ids {
+        let claim = load_claim_by_id(db.conn_ref(), &claim_id)?
+            .ok_or_else(|| ClaimError::UnknownClaimId(claim_id.clone()))?;
+        let subject_value = serde_json::from_str::<serde_json::Value>(&claim.subject_ref)?;
+        let subject = subject_ref_from_json(&subject_value)?;
+        let attempt = MutationAttempt {
+            mutation_id: uuid::Uuid::new_v4().to_string(),
+            subject: MutationSubject::Claim(claim_id.clone()),
+            cursor: SignalCursor::new(),
+        };
+        db.conn_ref().execute(
+            "INSERT INTO mutation_attempts
+                (mutation_id, claim_id, composition_id, cursor, started_at, status, finalized_at)
+             VALUES (?1, ?2, NULL, ?3, ?4, 'in_flight', NULL)",
+            params![
+                &attempt.mutation_id,
+                &claim_id,
+                attempt.cursor.as_str(),
+                &now
+            ],
+        )?;
+        execute_claims_update(
+            db.conn_ref(),
+            "UPDATE intelligence_claims
+             SET claim_state = 'withdrawn',
+                 surfacing_state = 'dormant',
+                 retraction_reason = coalesce(retraction_reason, 'source_purged:glean')
+             WHERE id = ?1",
+            params![claim_id],
+        )?;
+        mark_claim_edges_tombstoned(db, &claim_id, &now)?;
+        db.bump_for_subject(&subject)?;
+        let (previous, current) = bump_existing_claim_version_tx(db, &claim_id)?;
+        finish_claim_version_event_tx(
+            db,
+            &attempt,
+            ClaimVersionEventWrite {
+                claim_id: &claim_id,
+                previous_version: Some(previous),
+                current_version: current,
+                event_kind: VersionEventKind::ClaimTombstoned,
+                now: &now,
+                actor_kind,
+            },
+        )?;
+        withdrawn += 1;
+    }
+    Ok(withdrawn)
+}
+
 pub fn withdraw_tombstones_for(
     db: &ActionDb,
     filter: WithdrawTombstoneFilter<'_>,
@@ -13890,9 +13969,9 @@ mod tests {
         assert_eq!(jobs.len(), 2);
         assert_eq!(jobs[0].id, original_job_id);
         assert_eq!(jobs[0].status, "completed");
-        assert!(jobs[0].stale_marker_json.as_deref().is_some_and(
-            |marker| marker.contains("targeted_repair_completed_with_newer_claim_version")
-        ));
+        assert!(jobs[0].stale_marker_json.as_deref().is_some_and(|marker| {
+            marker.contains("targeted_repair_completed_with_newer_claim_version")
+        }));
         assert_eq!(jobs[1].status, "pending");
         assert_eq!(jobs[1].latest_source_claim_version, current_claim_version);
         assert_eq!(

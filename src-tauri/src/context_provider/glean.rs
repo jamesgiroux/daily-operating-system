@@ -47,7 +47,7 @@ pub struct GleanSearchResult {
     pub title: Option<String>,
     pub url: Option<String>,
     pub snippet: Option<String>,
-    /// Document type in Glean (e.g., "confluence_page", "google_doc", "REDACTED_account")
+    /// Document type in Glean (e.g., "confluence_page", "google_doc", "salesforce_account")
     #[serde(rename = "type")]
     pub doc_type: Option<String>,
     /// Author/owner of the document
@@ -342,7 +342,7 @@ impl GleanMcpClient {
     /// AI-powered chat for structured intelligence queries.
     ///
     /// Calls the Glean MCP `chat` tool which synthesizes across all connected
-    /// data sources (REDACTED, Zendesk, Gong, Slack, etc.) with multi-step
+    /// data sources (Salesforce, Zendesk, Gong, Slack, etc.) with multi-step
     /// reasoning. Returns the final AI-generated text response.
     ///
     /// Uses a longer timeout (60s) than search (10s) because AI synthesis
@@ -541,7 +541,7 @@ pub struct ChatResponse {
 /// 3. A top-level `citations` / `citationList` array on the envelope
 ///
 /// Citation entries are deduped by URL (or `documentId`/`opaqueRef` when no
-/// URL is present) so a multi-fragment citation of the same REDACTED
+/// URL is present) so a multi-fragment citation of the same Salesforce
 /// record counts once. Returns 0 when no recognised citation field is
 /// present — callers treat that as "unknown" and render the cell without
 /// a source-count footer.
@@ -620,8 +620,8 @@ fn count_citations(msg: &serde_json::Value, envelope: &serde_json::Value) -> u32
 
 /// Parse org-level health data from Glean search results.
 ///
-/// Looks for health signals in REDACTED, Zendesk, and other CRM-type documents.
-/// Priority: REDACTED_account > zendesk_organization > other doc types.
+/// Looks for health signals in Salesforce, Zendesk, and other CRM-type documents.
+/// Priority: salesforce_account > zendesk_organization > other doc types.
 fn parse_org_health_data(
     results: &[GleanSearchResult],
     _account_name: &str,
@@ -632,7 +632,14 @@ fn parse_org_health_data(
 
     prioritized.sort_by(|a, b| {
         let priority = |dt: Option<&str>| match dt {
-            Some(t) if t.contains("REDACTED") => 0,
+            Some(t)
+                if {
+                    let lower = t.to_ascii_lowercase();
+                    lower.contains("salesforce") || lower.contains("redacted")
+                } =>
+            {
+                0
+            }
             Some(t) if t.contains("zendesk") => 1,
             Some(t) if t.contains("hubspot") || t.contains("gainsight") => 2,
             _ => 3,

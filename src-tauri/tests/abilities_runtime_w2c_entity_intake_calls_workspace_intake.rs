@@ -145,11 +145,17 @@ async fn calls_workspace_intake_with_entity_seeded_dto() {
     assert_eq!(request.mode_slug, "entity_seeded");
     assert_eq!(request.category_slug.as_deref(), Some("briefs"));
     assert_eq!(
-        request.entity.as_ref().map(|entity| entity.entity_type_slug.as_str()),
+        request
+            .entity
+            .as_ref()
+            .map(|entity| entity.entity_type_slug.as_str()),
         Some("account")
     );
     assert_eq!(
-        request.entity.as_ref().map(|entity| entity.entity_id.as_str()),
+        request
+            .entity
+            .as_ref()
+            .map(|entity| entity.entity_id.as_str()),
         Some("acct_acme")
     );
 }

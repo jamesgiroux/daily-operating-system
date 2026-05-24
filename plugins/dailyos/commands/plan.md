@@ -29,17 +29,17 @@ Create a time-bound strategy with milestones, actions, and owners — all connec
 ### Step 1: Read Entity Intelligence
 
 Resolve the entity. The entity-intelligence skill loads full context:
-- `dashboard.json` — Current vitals, key dates, lifecycle stage
-- `intelligence.json` — Risks, wins, current state, stakeholder insights
+- Runtime entity facts — Current vitals, key dates, lifecycle stage
+- Runtime entity intelligence — Risks, wins, current state, stakeholder insights
 - `stakeholders.md` — Relationship map with engagement levels
-- Filtered actions from `data/actions.json` — What has been promised, delivered, is overdue
+- Filtered actions from DailyOS action/work tools — What has been promised, delivered, is overdue
 - Recent `_archive/` meeting summaries — Trajectory and recent developments
 
 ### Step 2: Assess Current State
 
 Before planning forward, establish where things stand:
 
-**What is the current health/status?** Read from dashboard.json.
+**What is the current health/status?** Read from DailyOS runtime facts.
 
 **What is the trajectory?** Compare recent meeting summaries — is the entity improving, stable, or declining?
 
@@ -101,7 +101,7 @@ Structure the plan with these sections:
 ## Risk Mitigations
 | Risk | Likelihood | Impact | Mitigation | Owner |
 |---|---|---|---|---|
-| {Risk from intelligence.json or newly identified} | High/Med/Low | {Impact} | {Specific mitigation action} | {Name} |
+| {Risk from runtime intelligence or newly identified} | High/Med/Low | {Impact} | {Specific mitigation action} | {Name} |
 
 ## Stakeholder Engagement Plan
 {How to engage key stakeholders throughout the plan timeline.}
@@ -119,7 +119,7 @@ Structure the plan with these sections:
 Ground every element in workspace evidence:
 
 - Milestones should reference actual relationship context: "Based on last 3 meetings, Sarah responds well to data-driven presentations. The March EBR should lead with metrics rather than narrative."
-- Risk mitigations should address real risks from intelligence.json, not hypothetical ones
+- Risk mitigations should address real risks from runtime intelligence, not hypothetical ones
 - Stakeholder engagement should reflect actual temperature and preferences from People/ profiles
 - Dates should account for known constraints (budget cycles, vacation patterns, other entity commitments)
 
@@ -129,7 +129,7 @@ Before presenting:
 - Is every milestone achievable given current resources and relationships?
 - Do the dates account for dependencies (milestone 2 cannot start before milestone 1 finishes)?
 - Are owners identified for every action? If not, flag: "Owner TBD — needs assignment"
-- Does the plan address the top risks from intelligence.json?
+- Does the plan address the top risks from runtime intelligence?
 - Is the stakeholder engagement realistic given their current temperature and engagement level?
 
 ### Step 7: Output and Loop-Back
@@ -139,12 +139,12 @@ Present the plan. Then offer:
 ```
 Would you like me to:
 1. Save this plan to Accounts/Acme-Corp/renewal-plan-2026-q1.md
-2. Create {N} actions in data/actions.json from the milestones
+2. Create {N} DailyOS actions from the milestones
    - "Prepare adoption metrics deck for EBR" — You, due Feb 28
    - "Schedule executive alignment meeting with Elena" — You, due Mar 5
    - "Complete integration testing review" — Sarah Chen, due Mar 12
    - ... (list all)
-3. Update Accounts/Acme-Corp/intelligence.json with the plan's risk mitigations
+3. Promote the plan's durable intelligence updates through DailyOS runtime/services
 
 Create all, or adjust first?
 ```

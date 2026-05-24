@@ -558,7 +558,7 @@ export default function AccountDetailPage() {
       const isInternal = /internal|^program\b|\bteam\b/i.test(c.title) || /internal/.test(contextLower);
 
       // Linear link on the action row = shared with the team. Only the
-      // linear_identifier + linear_url flavour is wired today; REDACTED
+      // linear_identifier + linear_url flavour is wired today; Salesforce
       // / Slack writeback lands later.
       const linearHref = c.linearUrl;
       const visibility: "shared" | "private" = linearHref ? "shared" : "private";
@@ -719,7 +719,7 @@ export default function AccountDetailPage() {
     const hasRecentlyLanded = recentlyLanded.length > 0;
     const hasReports = reports.length > 0;
     // Shared chapter: any open commitment with a Linear link present on the
-    // action row surfaces the "Shared with the team" chapter. REDACTED /
+    // action row surfaces the "Shared with the team" chapter. Salesforce /
     // Slack writeback sources will extend this check when wired.
     const hasSharedData = work.commitments.some((c) => !!c.linearUrl);
 

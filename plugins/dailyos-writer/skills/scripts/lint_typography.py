@@ -6,7 +6,7 @@ Checks for:
 - Em dashes (should use parentheses or periods)
 - Straight quotes (should use curly quotes)
 - WordPress VIP terminology
-- REDACTED product names
+- Salesforce product names
 - Oxford comma issues
 
 Usage:
@@ -47,7 +47,7 @@ def check_wordpress_terminology(line: str, line_num: int) -> List[TypographyIssu
         (r'\bWordpress\b', "WordPress", "Use 'WordPress' (capital P)"),
         (r'\bWordPress-VIP\b', "WordPress VIP", "Use 'WordPress VIP' (no hyphen)"),
         (r'\bWP VIP\b', "WordPress VIP", "Use full 'WordPress VIP' in formal content"),
-        (r'\bAgent Force\b', "Agentforce", "REDACTED product is 'Agentforce' (one word)"),
+        (r'\bAgent Force\b', "Agentforce", "Salesforce product is 'Agentforce' (one word)"),
         (r'\bAgentForce\b', "Agentforce", "Use 'Agentforce' (not camelCase)"),
         (r'\bDataCloud\b', "Data Cloud", "Use 'Data Cloud' (two words)"),
     ]

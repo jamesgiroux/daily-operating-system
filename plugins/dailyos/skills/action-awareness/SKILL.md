@@ -16,9 +16,9 @@ Activate when:
 - User asks about what is due, overdue, or pending
 - Meeting prep is being generated (open actions are relevant context)
 
-## Action Schema
+## Action Source
 
-Actions in `data/actions.json` follow this structure:
+Use DailyOS action/work tools as the source of truth for actions. Generated `data/actions.json` is an export projection and may use this structure:
 
 ```json
 {
@@ -42,7 +42,7 @@ An action is overdue when `status` is "open" or "in_progress" and `due_date` is 
 When actions are relevant to the current conversation, surface them naturally rather than dumping a full list.
 
 ### During Entity Discussion
-When an entity is being discussed (entity-intelligence skill active), filter `data/actions.json` for that entity and surface:
+When an entity is being discussed (entity-intelligence skill active), filter DailyOS actions for that entity and surface:
 - Overdue items first (these represent broken commitments)
 - Items due this week (approaching deadlines)
 - Recently completed items (momentum indicators)
@@ -111,5 +111,5 @@ Actions are the connective tissue between entities, people, and meetings:
 - **entity-intelligence** provides entity context for filtering actions
 - **relationship-context** provides person context and follow-through patterns
 - **meeting-intelligence** uses actions for pre-meeting briefing and post-meeting capture
-- **loop-back** handles writing new actions to `data/actions.json`
+- **loop-back** handles creating DailyOS actions
 - **role-vocabulary** shapes how actions are described (urgency signals vary by preset)

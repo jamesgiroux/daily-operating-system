@@ -88,7 +88,7 @@ The scrutiny skill activates for executive briefings, success plans, EBRs, QBRs,
 - Flag missing proof points (claims without evidence)
 - Flag resource hand-waving (vague resource asks)
 - Flag ownership ambiguity (actions without named owners)
-- When in a DailyOS workspace, suggest actual metrics from dashboard.json/intelligence files
+- When in a DailyOS workspace, suggest actual metrics from DailyOS runtime/MCP; generated dashboard/intelligence files are export projections
 
 **Output**: Specificity score, executive readiness assessment, vagueness inventory.
 

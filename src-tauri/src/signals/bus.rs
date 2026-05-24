@@ -23,8 +23,9 @@ use std::time::{Duration, Instant};
 
 use chrono::Utc;
 use parking_lot::Mutex;
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::db::{ActionDb, DbError};
@@ -67,12 +68,22 @@ pub struct SignalEvent {
 enum SignalInsertMode {
     Insert,
     InsertOrReplace,
+    InsertOrIgnore,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SignalEmitOutcome {
     pub id: String,
     pub coalesced: bool,
+}
+
+/// Caller-provided identity for idempotent signal emission.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SignalIdempotency<'a> {
+    /// Use a precomputed deterministic signal id.
+    Id(&'a str),
+    /// Derive a deterministic signal id from an idempotency key.
+    Key(&'a str),
 }
 
 #[derive(Debug)]
@@ -215,7 +226,8 @@ fn coalescing_state() -> &'static Mutex<CoalescingState> {
 /// Tier 3: third-party enrichment (Clay, Gravatar)
 /// Tier 4 (lowest): keyword heuristics, AI inference
 pub fn source_base_weight(source: &str) -> f64 {
-    match source {
+    let normalized = source.to_ascii_lowercase();
+    match normalized.as_str() {
         "user_correction" | "user_feedback" | "explicit" => 1.0,
         "user_curation" => 0.9, // I530: curation signals — no weight penalty but high trust
         "transcript" | "notes" => 0.9,
@@ -223,9 +235,9 @@ pub fn source_base_weight(source: &str) -> f64 {
         "group_pattern" => 0.75,
         "proactive" => 0.7,
         // /ADR-0100: Tiered Glean source confidence
-        "glean_crm" | "glean_REDACTED" => 0.9, // REDACTED — system of record
+        "salesforce" | "glean_crm" | "glean_salesforce" | "glean_redacted" => 0.9, // Salesforce — system of record
         "glean_zendesk" | "glean_support" => 0.85, // Zendesk — ticket data is factual
-        "glean_gong" => 0.8,                   // Gong — recorded calls, AI summaries synthesized
+        "glean_gong" => 0.8, // Gong — recorded calls, AI summaries synthesized
         "glean" | "glean_search" | "glean_org" => 0.7,
         "glean_chat" | "glean_synthesis" => 0.7, // Glean AI synthesis — same tier as PTY
         "glean_slack" => 0.5,                    // Slack — context signal, noisy
@@ -237,7 +249,8 @@ pub fn source_base_weight(source: &str) -> f64 {
 
 /// Default half-life in days for a signal source.
 pub fn default_half_life(source: &str) -> i32 {
-    match source {
+    let normalized = source.to_ascii_lowercase();
+    match normalized.as_str() {
         "user_correction" | "user_feedback" | "explicit" => 365,
         "user_curation" => 180, // I530: curation decays faster than corrections
         "transcript" | "notes" => 60,
@@ -245,9 +258,9 @@ pub fn default_half_life(source: &str) -> i32 {
         "group_pattern" => 60,
         "proactive" => 3,
         // /ADR-0100: Tiered Glean half-lives
-        "glean_crm" | "glean_REDACTED" => 90, // CRM data refreshes on enrichment cycle
+        "salesforce" | "glean_crm" | "glean_salesforce" | "glean_redacted" => 90, // CRM data refreshes on enrichment cycle
         "glean_zendesk" | "glean_support" => 30, // Support health is dynamic
-        "glean_gong" => 60,                   // Call patterns are stable-ish
+        "glean_gong" => 60,                      // Call patterns are stable-ish
         "glean" | "glean_search" | "glean_org" => 60,
         "glean_chat" | "glean_synthesis" => 60, // AI synthesis stable
         "glean_slack" => 14,                    // Slack context decays fast
@@ -346,6 +359,77 @@ pub fn emit_signal(
         },
     )?;
     Ok(outcome.event.id)
+}
+
+/// Emit a signal event with a deterministic id.
+///
+/// If the id already exists, the existing evidence is kept and the outcome is
+/// marked coalesced so callers do not propagate or count the same evidence
+/// twice.
+#[allow(clippy::too_many_arguments)]
+pub fn emit_signal_once(
+    db: &ActionDb,
+    idempotency: SignalIdempotency<'_>,
+    entity_type: &str,
+    entity_id: &str,
+    signal_type: &str,
+    source: &str,
+    value: Option<&str>,
+    confidence: f64,
+) -> Result<SignalEmitOutcome, DbError> {
+    let id = signal_id_for_idempotency(idempotency)?;
+    let outcome = emit_signal_event(
+        db,
+        EmitSignalEvent {
+            entity_type,
+            entity_id,
+            signal_type,
+            source,
+            value,
+            confidence,
+            source_context: None,
+            id: Some(&id),
+            created_at: None,
+            decay_half_life_days: None,
+            insert_mode: SignalInsertMode::InsertOrIgnore,
+            channel: SignalEmissionChannel::Infrastructure,
+            refresh_meetings: true,
+        },
+    )?;
+    Ok(SignalEmitOutcome {
+        id: outcome.event.id,
+        coalesced: outcome.coalesced,
+    })
+}
+
+/// Derive the stable row id used for idempotent signal emission.
+///
+/// This lets producers keep a semantic side-effect key while the bus owns the
+/// `signal_events.id` format.
+pub fn signal_id_for_idempotency(idempotency: SignalIdempotency<'_>) -> Result<String, DbError> {
+    match idempotency {
+        SignalIdempotency::Id(id) => validated_signal_id(id).map(str::to_string),
+        SignalIdempotency::Key(key) => {
+            let key = key.trim();
+            if key.is_empty() {
+                return Err(DbError::InvalidArgument(
+                    "signal idempotency key must not be empty".to_string(),
+                ));
+            }
+            let digest = Sha256::digest(key.as_bytes());
+            Ok(format!("sig-once-{digest:x}"))
+        }
+    }
+}
+
+fn validated_signal_id(id: &str) -> Result<&str, DbError> {
+    let id = id.trim();
+    if id.is_empty() {
+        return Err(DbError::InvalidArgument(
+            "signal idempotency id must not be empty".to_string(),
+        ));
+    }
+    Ok(id)
 }
 
 /// Emit a signal row inside the caller's active transaction.
@@ -483,12 +567,14 @@ fn emit_signal_event(
     record_unknown_signal_type_observation(&typed_signal, policy.payload_privacy, &signal);
 
     let coalescing_key = CoalescingKey::new(&typed_signal, signal.entity_id);
-    let coalescing_window =
-        if typed_signal.uses_emit_path_coalescing() && channel_allows_coalescing(signal.channel) {
-            propagation_coalescing_window(policy.propagation)
-        } else {
-            None
-        };
+    let coalescing_window = if signal.id.is_none()
+        && typed_signal.uses_emit_path_coalescing()
+        && channel_allows_coalescing(signal.channel)
+    {
+        propagation_coalescing_window(policy.propagation)
+    } else {
+        None
+    };
     let emitted_at = Instant::now();
     if let Some(window) = coalescing_window {
         if let Some(id) = coalescing_state().lock().coalesced_signal_id(
@@ -531,22 +617,32 @@ fn emit_signal_event(
         .decay_half_life_days
         .unwrap_or_else(|| default_half_life(signal.source));
 
-    emit_signal_insert_event_row(
-        db,
-        &InsertSignalRow {
-            id: &id,
-            entity_type: signal.entity_type,
-            entity_id: signal.entity_id,
-            signal_type: signal.signal_type,
-            source: signal.source,
-            value: signal.value,
-            confidence: signal.confidence,
-            decay_half_life_days,
-            created_at: &created_at,
-            source_context: signal.source_context,
-        },
-        signal.insert_mode,
-    )?;
+    let row = InsertSignalRow {
+        id: &id,
+        entity_type: signal.entity_type,
+        entity_id: signal.entity_id,
+        signal_type: signal.signal_type,
+        source: signal.source,
+        value: signal.value,
+        confidence: signal.confidence,
+        decay_half_life_days,
+        created_at: &created_at,
+        source_context: signal.source_context,
+    };
+
+    let inserted = emit_signal_insert_event_row(db, &row, signal.insert_mode)?;
+    if !inserted {
+        let existing = get_signal_event_by_id(db, &id)?.ok_or_else(|| {
+            DbError::Migration(format!(
+                "idempotent signal {id} was not inserted but no existing row was found"
+            ))
+        })?;
+        ensure_idempotent_signal_matches(&existing, &row)?;
+        return Ok(EmitSignalEventOutcome {
+            event: existing,
+            coalesced: true,
+        });
+    }
 
     if coalescing_window.is_some() {
         coalescing_state()
@@ -625,11 +721,49 @@ fn channel_allows_coalescing(channel: SignalEmissionChannel) -> bool {
     )
 }
 
+fn get_signal_event_by_id(db: &ActionDb, id: &str) -> Result<Option<SignalEvent>, DbError> {
+    db.conn_ref()
+        .query_row(
+            "SELECT id, entity_type, entity_id, signal_type, data_source, value,
+                    confidence, decay_half_life_days, created_at, superseded_by,
+                    source_context
+             FROM signal_events
+             WHERE id = ?1",
+            params![id],
+            ActionDb::map_signal_event_row,
+        )
+        .optional()
+        .map_err(DbError::Sqlite)
+}
+
+fn ensure_idempotent_signal_matches(
+    existing: &SignalEvent,
+    requested: &InsertSignalRow<'_>,
+) -> Result<(), DbError> {
+    let same_identity = existing.entity_type == requested.entity_type
+        && existing.entity_id == requested.entity_id
+        && existing.signal_type == requested.signal_type
+        && existing.source == requested.source
+        && existing.value.as_deref() == requested.value
+        && (existing.confidence - requested.confidence).abs() <= f64::EPSILON
+        && existing.decay_half_life_days == requested.decay_half_life_days
+        && existing.source_context.as_deref() == requested.source_context;
+
+    if same_identity {
+        return Ok(());
+    }
+
+    Err(DbError::InvalidArgument(format!(
+        "idempotent signal id {} already exists with different evidence identity",
+        requested.id
+    )))
+}
+
 fn emit_signal_insert_event_row(
     db: &ActionDb,
     row: &InsertSignalRow<'_>,
     mode: SignalInsertMode,
-) -> Result<(), DbError> {
+) -> Result<bool, DbError> {
     let sql = match mode {
         SignalInsertMode::Insert => {
             "INSERT INTO signal_events
@@ -641,9 +775,14 @@ fn emit_signal_insert_event_row(
                 (id, entity_type, entity_id, signal_type, data_source, value, confidence, decay_half_life_days, created_at, source_context)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"
         }
+        SignalInsertMode::InsertOrIgnore => {
+            "INSERT OR IGNORE INTO signal_events
+                (id, entity_type, entity_id, signal_type, data_source, value, confidence, decay_half_life_days, created_at, source_context)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"
+        }
     };
 
-    db.conn_ref().execute(
+    let changed = db.conn_ref().execute(
         sql,
         params![
             row.id,
@@ -658,7 +797,7 @@ fn emit_signal_insert_event_row(
             row.source_context,
         ],
     )?;
-    Ok(())
+    Ok(changed > 0)
 }
 
 fn emit_signal_flag_upcoming_meetings(db: &ActionDb, entity_type: &str, entity_id: &str) {
@@ -738,6 +877,61 @@ pub fn emit_signal_and_propagate(
         }
 
         Ok((id, derived_ids))
+    })
+    .map_err(DbError::Migration)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn emit_signal_once_and_propagate(
+    db: &ActionDb,
+    engine: &super::propagation::PropagationEngine,
+    idempotency: SignalIdempotency<'_>,
+    entity_type: &str,
+    entity_id: &str,
+    signal_type: &str,
+    source: &str,
+    value: Option<&str>,
+    confidence: f64,
+) -> Result<(SignalEmitOutcome, Vec<String>), DbError> {
+    let id = signal_id_for_idempotency(idempotency)?;
+    db.with_transaction(|tx_db| {
+        let outcome = emit_signal_event(
+            tx_db,
+            EmitSignalEvent {
+                entity_type,
+                entity_id,
+                signal_type,
+                source,
+                value,
+                confidence,
+                source_context: None,
+                id: Some(&id),
+                created_at: None,
+                decay_half_life_days: None,
+                insert_mode: SignalInsertMode::InsertOrIgnore,
+                channel: SignalEmissionChannel::Infrastructure,
+                refresh_meetings: false,
+            },
+        )
+        .map_err(|e| e.to_string())?;
+        let signal = outcome.event;
+        let signal_outcome = SignalEmitOutcome {
+            id: signal.id.clone(),
+            coalesced: outcome.coalesced,
+        };
+        if signal_outcome.coalesced {
+            return Ok((signal_outcome, Vec::new()));
+        }
+
+        let derived_ids = engine
+            .propagate(tx_db, &signal)
+            .map_err(|e| e.to_string())?;
+
+        if let Err(e) = propagate_signal_to_meetings(tx_db, entity_id) {
+            log::warn!("Failed to propagate signal to meetings: {}", e);
+        }
+
+        Ok((signal_outcome, derived_ids))
     })
     .map_err(DbError::Migration)
 }
@@ -1024,6 +1218,154 @@ mod tests {
         assert_eq!(signals[0].signal_type, "entity_resolution");
         assert_eq!(signals[0].source, "keyword");
         assert!((signals[0].confidence - 0.8).abs() < 0.01);
+    }
+
+    #[test]
+    fn emit_signal_once_accepts_keys_and_rejects_identity_drift() {
+        let db = test_db();
+        let key = "glean-finalization:account:generic-account:renewal-data:v1";
+        let payload = r#"{"renewalStage":"evaluation"}"#;
+
+        let first = emit_signal_once(
+            &db,
+            SignalIdempotency::Key(key),
+            "account",
+            "generic-account",
+            "renewal_data_updated",
+            "glean_crm",
+            Some(payload),
+            0.9,
+        )
+        .expect("first emit");
+        assert!(first.id.starts_with("sig-once-"));
+        assert!(!first.coalesced);
+
+        let second = emit_signal_once(
+            &db,
+            SignalIdempotency::Key(key),
+            "account",
+            "generic-account",
+            "renewal_data_updated",
+            "glean_crm",
+            Some(payload),
+            0.9,
+        )
+        .expect("second emit");
+        assert_eq!(second.id, first.id);
+        assert!(second.coalesced);
+
+        let rows: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(*) FROM signal_events WHERE id = ?1",
+                [first.id.as_str()],
+                |row| row.get(0),
+            )
+            .expect("count idempotent row");
+        assert_eq!(rows, 1);
+
+        let drift = emit_signal_once(
+            &db,
+            SignalIdempotency::Key(key),
+            "account",
+            "generic-account",
+            "renewal_data_updated",
+            "glean_crm",
+            Some(r#"{"renewalStage":"changed"}"#),
+            0.9,
+        )
+        .expect_err("same idempotency key with different evidence must fail");
+        assert!(matches!(drift, DbError::InvalidArgument(_)));
+    }
+
+    fn idempotent_propagation_test_rule(
+        signal: &SignalEvent,
+        _db: &ActionDb,
+    ) -> Vec<crate::signals::propagation::DerivedSignal> {
+        if signal.signal_type != "glean_org_change" {
+            return Vec::new();
+        }
+
+        vec![crate::signals::propagation::DerivedSignal {
+            entity_type: "account".to_string(),
+            entity_id: "generic-account-derived".to_string(),
+            signal_type: "stakeholder_change".to_string(),
+            source: "glean_propagation".to_string(),
+            value: None,
+            confidence: signal.confidence * 0.9,
+        }]
+    }
+
+    #[test]
+    fn emit_signal_once_and_propagate_skips_duplicate_propagation() {
+        let db = test_db();
+        let mut engine = crate::signals::propagation::PropagationEngine::new();
+        engine.register(
+            "idempotent_propagation_test_rule",
+            idempotent_propagation_test_rule,
+        );
+
+        let key = "glean-finalization:account:generic-account:org-change:v1";
+        let first = emit_signal_once_and_propagate(
+            &db,
+            &engine,
+            SignalIdempotency::Key(key),
+            "account",
+            "generic-account",
+            "glean_org_change",
+            "glean_chat",
+            Some(r#"[{"kind":"role_change"}]"#),
+            0.8,
+        )
+        .expect("first emit");
+        assert!(!first.0.coalesced);
+        assert_eq!(first.1.len(), 1);
+
+        let second = emit_signal_once_and_propagate(
+            &db,
+            &engine,
+            SignalIdempotency::Key(key),
+            "account",
+            "generic-account",
+            "glean_org_change",
+            "glean_chat",
+            Some(r#"[{"kind":"role_change"}]"#),
+            0.8,
+        )
+        .expect("second emit");
+        assert_eq!(second.0.id, first.0.id);
+        assert!(second.0.coalesced);
+        assert!(second.1.is_empty());
+
+        let source_rows: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(*) FROM signal_events WHERE id = ?1",
+                [first.0.id.as_str()],
+                |row| row.get(0),
+            )
+            .expect("count source rows");
+        assert_eq!(source_rows, 1);
+
+        let derived_rows: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(*) FROM signal_events WHERE signal_type = 'stakeholder_change'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count derived rows");
+        assert_eq!(derived_rows, 1);
+
+        let derivation_rows: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(*) FROM signal_derivations WHERE source_signal_id = ?1",
+                [first.0.id.as_str()],
+                |row| row.get(0),
+            )
+            .expect("count derivation rows");
+        assert_eq!(derivation_rows, 1);
     }
 
     #[test]
@@ -1389,7 +1731,7 @@ mod tests {
         }
 
         assert_eq!(
-            crate::services::fail_improve::signal_type_llm_calls_for_test(),
+            crate::services::fail_improve::signal_type_llm_calls_for_test(&signal_type),
             1,
             "concurrent misses for the same signal_type should share one LLM fallback"
         );
@@ -1411,7 +1753,7 @@ mod tests {
         )
         .expect("emit cached unknown signal");
         assert_eq!(
-            crate::services::fail_improve::signal_type_llm_calls_for_test(),
+            crate::services::fail_improve::signal_type_llm_calls_for_test(&signal_type),
             1,
             "cached second emission should not call the LLM again"
         );

@@ -63,9 +63,9 @@ Composes trust primitives in a short explanatory stack:
 <AboutThisIntelligencePanel
   title="About this intelligence"
   trustBand="use_with_caution"
-  trustReason="REDACTED is current, but meeting notes are incomplete."
+  trustReason="Salesforce is current, but meeting notes are incomplete."
   sources={[
-    { source: "REDACTED", status: "covered", detail: "Opportunity and account fields" },
+    { source: "Salesforce", status: "covered", detail: "Opportunity and account fields" },
     { source: "glean", status: "partial", detail: "3 related docs" },
   ]}
   gaps={[

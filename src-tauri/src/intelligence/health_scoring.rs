@@ -1152,7 +1152,7 @@ fn compute_financial_proximity(db: &ActionDb, account: &DbAccount) -> DimensionS
         "stable".to_string()
     };
 
-    // Augment with Glean CRM signals (REDACTED renewal probability)
+    // Augment with Glean CRM signals (Salesforce renewal probability)
     let crm_signals: Vec<(String, f64)> = db
         .conn
         .prepare(

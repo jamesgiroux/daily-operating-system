@@ -154,13 +154,17 @@ pub fn schedule_recompute(
                 // Clear the durable marker so the next startup drain does
                 // not redo this work.
                 let clear_id = account_id.clone();
-                #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = state_clone
                     .db_write(move |db| {
                         db.clear_health_recompute_pending(&clear_id)
                             .map_err(|e| e.to_string())
                     })
-                    .await.map_err(String::from);
+                    .await
+                    .map_err(String::from);
             }
             Err(e) => log::warn!(
                 "DOS-228: debounced health recompute failed for {}: {} (marker retained for startup retry)",
