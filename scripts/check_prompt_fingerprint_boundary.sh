@@ -45,7 +45,7 @@ check_line() {
 while IFS= read -r line; do
   check_line "$line"
 done < <(
-  grep -RInE '\bcanonical_prompt_hash[[:space:]]*\(|\bCanonicalPromptRequest[[:space:]]*\{|\bPromptFingerprint[[:space:]]*\{' \
+  grep -RInE 'canonical_prompt_hash[[:space:]]*\(|CanonicalPromptRequest[[:space:]]*[{]|PromptFingerprint[[:space:]]*[{]' \
     "$ROOT_DIR/src-tauri/src" \
     "$ROOT_DIR/src-tauri/abilities-runtime/src" 2>/dev/null || true
 )

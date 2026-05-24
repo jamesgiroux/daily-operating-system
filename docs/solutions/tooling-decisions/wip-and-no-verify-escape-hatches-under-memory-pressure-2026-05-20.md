@@ -5,6 +5,7 @@ track: knowledge
 module: .githooks/pre-commit + .githooks/pre-push (escape-hatch policy)
 tags: [pre-commit, pre-push, cargo-test, memory-pressure, disk-pressure, wip-flag, no-verify, ship-velocity]
 date: 2026-05-20
+last_updated: 2026-05-24
 related_linear: DOS-741, DOS-742, DOS-743, DOS-576, DOS-577
 related_memories: [feedback_disk_pressure_from_worktree_targets, feedback_5min_heartbeat_for_long_jobs]
 ---
@@ -44,7 +45,7 @@ From `.githooks/pre-push` header:
 # Bypass: git push --no-verify (use sparingly; surface to user).
 ```
 
-Pre-push has a tree-SHA cache: if pre-commit ran the gauntlet on the same tree SHA, pre-push skips. Under WIP=1, the cache is empty, so pre-push runs cargo test from scratch.
+Pre-push has a tier-aware tree cache: if pre-commit or an earlier pre-push ran the required gauntlet on the same tree SHA, pre-push skips. Under `WIP=1`, the first pre-push still pays the gauntlet cost, but a successful pre-push now records the tree so retries skip instead of rerunning cargo from scratch.
 
 When pre-push itself hangs under memory pressure, `--no-verify` is the documented bypass — but only when manual `cargo test --lib` has already passed clean on the same tree.
 

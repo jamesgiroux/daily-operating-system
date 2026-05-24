@@ -7,12 +7,12 @@ component: development_workflow
 severity: medium
 tags: [pre-push, ssh, github, cargo-test, idle-timeout, rebase, pipestatus]
 date: 2026-05-19
-last_updated: 2026-05-19
+last_updated: 2026-05-24
 related_linear: DOS-713
 applies_when:
   - "Pushing a Rust-touching branch that triggers the full pre-push gauntlet"
   - "Cargo target/ is cold or partially cold (rebuild time is long)"
-  - "Pushing immediately after a rebase (rebased commits never trigger pre-commit, so the last-green-tree cache is always cold)"
+  - "Pushing immediately after a rebase before the tier-aware gauntlet cache has been warmed for the rebased tree"
   - "Multiple parallel sessions are running pre-push gauntlets simultaneously (resource contention)"
 ---
 
@@ -20,7 +20,7 @@ applies_when:
 
 Surfaced during the 2026-05-19 parallel-session fan-out. Session 4 hit this on PR #320 push attempts — deterministic failure, 3 retries on the same commit, identical symptom each time. Session 2 corroborated on PR #323 — same pattern, ~60 min lost across 3 attempts before authorizing the `--no-verify` workaround. The repeatability across independent sessions on the same day is strong evidence this is a structural hook + transport interaction, not a flaky network.
 
-**Why the cache always misses on rebase-then-push.** The pre-push hook reads `<git-dir>/hooks-state/last-green-tree` and skips the gauntlet when HEAD's tree matches. That cache file is written only by **pre-commit**, not by pre-push. A `git rebase` replays commits without invoking pre-commit, so even though the file contents are byte-identical to the pre-rebase commit, the new commit object's tree-SHA hasn't been recorded in the cache. Every post-rebase push pays the full gauntlet cost.
+**Historical rebase cache miss.** The old pre-push hook read `<git-dir>/hooks-state/last-green-tree`, which was written only by **pre-commit**. A `git rebase` replays commits without invoking pre-commit, so even byte-identical content was not recorded under the rebased tree SHA. As of 2026-05-24, pre-push writes the shared tier-aware cache after a successful gauntlet, so the first post-rebase push may still pay the cost but same-tree retries do not.
 
 The pre-push hook (`.githooks/pre-push`) on Rust-touching pushes runs:
 
@@ -34,7 +34,7 @@ Total: 7–15+ minutes of local work **before** git invokes the SSH transport.
 
 **Don't rely on the SSH connection staying alive through the full gauntlet.** Three mitigations, in increasing cost:
 
-1. **Trust the tree-SHA cache.** The hook already prints `pre-push: HEAD tree <sha> already passed pre-commit gauntlet — skipping clippy/test/tsc` when the same tree was pre-commit-validated earlier. Retry the push without changing anything — if the cache fires, the gauntlet skips and the push lands. If it doesn't fire on retry (e.g., after a rebase changed the tree SHA), investigate why before assuming the network is at fault.
+1. **Trust the tier-aware tree cache.** The hook prints `pre-push: HEAD tree <sha> already passed required gauntlet — skipping clippy/test/tsc` when the same tree already passed the required Rust/frontend tier. Retry the push without changing anything — if the cache fires, the gauntlet skips and the push lands. If it doesn't fire on retry, investigate why before assuming the network is at fault.
 2. **Pre-validate the gauntlet locally, then push with `--no-verify`** when you've already manually run clippy + test + tsc and have explicit authorization (per CLAUDE.md "Never skip hooks unless the user explicitly requests it"). The hook is duplicating work you've already done.
 3. **Configure SSH keepalive** for the `github.com` host (`ServerAliveInterval 60` in `~/.ssh/config`). Lower-friction long-term fix.
 
@@ -53,7 +53,7 @@ The hook gates aren't catching anything — `ssh -T git@github.com` in isolation
 
 ## When to apply
 
-- **Always**: prefer the tree-SHA cache path. If you already ran clippy + test + tsc locally, the hook should skip them on push.
+- **Always**: prefer the tier-aware tree-cache path. If the required Rust/frontend tiers already passed on the same tree, the hook should skip them on push.
 - **As a fallback** when the cache misses and you've manually validated: `--no-verify` is justified, but only after surfacing the call to the user per CLAUDE.md.
 - **Long-term**: file a Maintenance ticket to investigate either the cache-miss path or SSH keepalive. DOS-713 covers both.
 
@@ -111,11 +111,7 @@ grep -E "ssh.*disconnect|broken pipe|EOF|closed by remote" /tmp/push.log
 
 ## Tracking
 
-- DOS-713 — investigate tree-SHA cache miss on retry path; optionally configure SSH keepalive for github.com.
-- **Structural fix candidate**: teach `.githooks/pre-push` to write `<git-dir>/hooks-state/last-green-tree` on its own successful gauntlet pass, not just pre-commit. That closes the rebase-then-push cache gap permanently — after one expensive gauntlet run on the rebased tree, subsequent pushes from the same tree (e.g., retry, force-push of identical content) short-circuit in <1s instead of re-running the 17-min suite. Approximate one-liner to append to the hook's success path:
-  ```bash
-  git_dir="$(git rev-parse --git-dir)"
-  mkdir -p "$git_dir/hooks-state"
-  git rev-parse HEAD^{tree} > "$git_dir/hooks-state/last-green-tree"
-  ```
+- DOS-713 — originally tracked the tree-cache miss on retry path and optional SSH keepalive for github.com.
+- **Resolved 2026-05-24:** `.githooks/pre-commit` and `.githooks/pre-push` now share `<git-dir>/hooks-state/last-green-gauntlet-v2`. The marker records the tree plus which tiers passed (`rust`, `frontend`), so repeated commit attempts and pre-push retries skip duplicate clippy/test/tsc only when the required tier has already passed for that exact tree. Pre-push writes the marker after its own successful gauntlet, closing the rebase-then-retry cache gap without letting doc-only commits bless Rust or frontend changes.
+- Related pre-commit improvement: cheap/path-local gates now run before clippy/test/tsc, and heavy checks fail fast with a log path and tail output. A cheap PII/stub/schema/boundary failure should return before the Rust gauntlet starts.
 - Related: long pre-push duration is exacerbated when parallel worktrees both invoke the gauntlet at the same time (cargo target/ contention). Coordinate pushes serially across sessions if running the parallel-session protocol.
