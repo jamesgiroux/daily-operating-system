@@ -38,7 +38,7 @@ describe("invokeEntityIntelligenceAbility", () => {
     expect(invokeMock).toHaveBeenCalledWith("invoke_ability", {
       abilityName: "get_entity_intelligence",
       inputJson: {
-        schemaVersion: 1,
+        schemaVersion: 2,
         entityType: "meeting",
         entityId: "meeting-1",
         depth: "standard",
