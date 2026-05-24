@@ -190,14 +190,11 @@ while IFS= read -r file; do
   [ -z "$file" ] && continue
   case "$file" in
     src-tauri/src/migrations/*.sql)
-      added_lines="$(staged_added_lines "$file")"
-      if printf '%s\n' "$added_lines" | grep -qiE 'CREATE[[:space:]]+TABLE|ALTER[[:space:]]+TABLE|DROP[[:space:]]+TABLE|ADD[[:space:]]+COLUMN|DROP[[:space:]]+COLUMN'; then
-        HAS_SCHEMA_CHANGE=true
-      fi
+      HAS_SCHEMA_CHANGE=true
       ;;
     src-tauri/src/db/*.rs|src-tauri/src/types.rs|src-tauri/src/intelligence/io.rs)
       added_lines="$(staged_added_lines "$file")"
-      if printf '%s\n' "$added_lines" | grep -qiE 'CREATE TABLE|ALTER TABLE|DROP TABLE|ADD COLUMN|DROP COLUMN|^\+[[:space:]]*pub (struct|enum) |INSERT (INTO|OR)|UPDATE [a-zA-Z_]+ SET|DELETE FROM'; then
+      if printf '%s\n' "$added_lines" | grep -qiE 'CREATE TABLE|ALTER TABLE|DROP TABLE|ADD COLUMN|DROP COLUMN|CREATE INDEX|DROP INDEX|^\+[[:space:]]*pub (struct|enum) |INSERT (INTO|OR)|UPDATE [a-zA-Z_]+ SET|DELETE FROM'; then
         HAS_SCHEMA_CHANGE=true
       fi
       ;;
