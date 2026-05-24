@@ -1,0 +1,13 @@
+BLOCKING — §4 contract drift with downstream MCP plan/live taxonomy.
+[L0 packet §4](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/.docs/plans/v1.4.5-workspace-memory/L0-packet-W4-C-DOS-474.md:134) requires `entity`, `content_b64`, `content_type`, and required `category`, but [v1.4.7 waves](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/.docs/plans/v1.4.7-waves.md:174) still names `category: Option<String>` / `category?`, and live [tool_descriptions.yaml](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/src-tauri/src/services/mcp_v2/resources/tool_descriptions.yaml:399) advertises `topic` + `content` and `document_id`.
+Concrete action: before L1, fold a coordination blocker requiring DOS-480/v1.4.7 docs and taxonomy to match W4-C exactly: required `category`, full request/receipt/error shape, no `topic`/`content`/`document_id`, and the W4-C idempotency key.
+
+BLOCKING — §7 placement fence transaction scope is unsafe/underspecified.
+[L0 packet §7](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/.docs/plans/v1.4.5-workspace-memory/L0-packet-W4-C-DOS-474.md:397) says `BEGIN IMMEDIATE` inserts `in_progress` before file write, but does not require committing before file I/O and `IngestPipeline::run`. Holding a SQLite write transaction across filesystem writes/ingestion risks writer-lock stalls or nested transaction failure.
+Concrete action: revise the algorithm to require short transactions only: rate reservation commit/rollback; idempotency insert/conflict check commit before file write; success/failure status + audit in separate short transactions. Add a test proving no DB transaction is held across file write or pipeline execution.
+
+BLOCKING — §6 requires `McpPlacement` link attribution, but current flow cannot produce it.
+[L0 packet §6](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/.docs/plans/v1.4.5-workspace-memory/L0-packet-W4-C-DOS-474.md:288) requires `LinkAttributionSource::McpPlacement`, but live [pipeline.rs](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/src-tauri/src/services/workspace_ingestion/pipeline.rs:600) hardcodes `LinkAttributionSource::EntityIntake` for entity-seeded links.
+Concrete action: amend §6/§8 to specify the implementation seam: either extend `IngestRequest`/workspace intake DTO with a service-owned link attribution source, or pre-create the link through `LinkRepo` as an explicit service step with safe transaction ordering. Add an L2 test asserting `document_entity_links.attribution_source = 'mcp_placement'`.
+
+Final verdict: HOLD.

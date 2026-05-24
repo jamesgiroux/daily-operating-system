@@ -594,6 +594,7 @@ fn resolve_entity_seeded_subject(
         return Ok(None);
     }
 
+    let attribution_source = link_attribution_source_for_kind(&request.source_type);
     let link_id = if let Some(existing) = active_links.first() {
         existing.link_id.0.clone()
     } else {
@@ -602,9 +603,9 @@ fn resolve_entity_seeded_subject(
             &request.file_id,
             entity.entity_type,
             &entity.entity_id.0,
-            LinkAttributionSource::EntityIntake,
+            attribution_source,
             1.0,
-            Some("entity-seeded workspace intake"),
+            Some(link_rationale(attribution_source)),
             "system:workspace_ingestion",
         )
         .map_err(link_error_to_ingest)?
@@ -617,6 +618,21 @@ fn resolve_entity_seeded_subject(
         entity_name: Some(canonical_name),
         link_id,
     }))
+}
+
+fn link_attribution_source_for_kind(source_type: &WorkspaceFileKind) -> LinkAttributionSource {
+    if matches!(source_type, WorkspaceFileKind::McpPlacement) {
+        LinkAttributionSource::McpPlacement
+    } else {
+        LinkAttributionSource::EntityIntake
+    }
+}
+
+fn link_rationale(source: LinkAttributionSource) -> &'static str {
+    match source {
+        LinkAttributionSource::McpPlacement => "MCP workspace placement",
+        _ => "entity-seeded workspace intake",
+    }
 }
 
 fn subject_from_link(
@@ -956,3 +972,20 @@ impl std::fmt::Display for IngestError {
 }
 
 impl std::error::Error for IngestError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn workspace_placement_uses_dedicated_link_attribution() {
+        assert_eq!(
+            link_attribution_source_for_kind(&WorkspaceFileKind::McpPlacement),
+            LinkAttributionSource::McpPlacement
+        );
+        assert_eq!(
+            link_attribution_source_for_kind(&WorkspaceFileKind::EntityDoc),
+            LinkAttributionSource::EntityIntake
+        );
+    }
+}

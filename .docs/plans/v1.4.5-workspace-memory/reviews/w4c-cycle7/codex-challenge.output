@@ -1,0 +1,9 @@
+Scope check: current source diff only touches wave docs and the coordinated MCP resource metadata. I found no forbidden edits to account/Glean, claims, signal bus, MCP handler/gateway/auth/transport, or workspace ingestion implementation.
+
+[HIGH] `src-tauri/src/services/mcp_v2/resources/tool_descriptions.yaml:583` — placement example still contradicts the frozen receipt. It advertises `workspace_file_kind: "memory_document"`, `lifecycle_state: "active"`, `mutation_cursor.kind: "workspace_place_document"`, and omits `mutation_cursor.idempotency_id`. Packet requires `mcp_placement`, `ingested`, cursor kind `workspace_placement`, and `idempotency_id` at `.docs/plans/v1.4.5-workspace-memory/L0-packet-W4-C-DOS-474.md:206`. This is the only authorized MCP v2 edit, so it has to mirror exactly before L1.
+
+[HIGH] `.docs/plans/v1.4.7-waves.md:110` and `.docs/plans/v1.4.7-waves.md:499` still point W1-B at `src-tauri/resources/mcp_v2/tool_descriptions.yaml`, but the coordinated/live path is `src-tauri/src/services/mcp_v2/resources/tool_descriptions.yaml` per packet `.docs/plans/v1.4.5-workspace-memory/L0-packet-W4-C-DOS-474.md:326` and `:474`. That is an ownership collision waiting to happen: DOS-480/W1-B can edit or create the wrong catalog.
+
+[MEDIUM] `.docs/plans/v1.4.5-workspace-memory/L0-packet-W4-C-DOS-474.md:20` and `:370` still name PR #366 as a future lower migration blocker, while the same packet says #366 merged/rebased at `:56` and `:640`. Keep the migration slot TBD, but rewrite the blocker around current live max plus unresolved v1.4.6/lower slots, not a merged PR.
+
+HOLD

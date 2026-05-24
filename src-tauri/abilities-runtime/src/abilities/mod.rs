@@ -25,6 +25,7 @@ pub mod temporal;
 pub mod threads;
 pub mod tracer;
 pub mod trust;
+pub mod workspace_place_document;
 
 pub use claims::{
     metadata_for_claim_type, metadata_for_name, subject_kind_is_canonical_for, CanonicalStatus,

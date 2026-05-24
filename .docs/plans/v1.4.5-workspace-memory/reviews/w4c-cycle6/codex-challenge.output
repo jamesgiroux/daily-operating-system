@@ -1,0 +1,21 @@
+- BLOCKER: Cycle 5 stale MCP docs/taxonomy is not closed.
+  Sections: L0 §0 / §4 / §16; `.docs/plans/v1.4.7-waves.md` DOS-480 supersession.
+  Evidence: `src-tauri/src/services/mcp_v2/resources/tool_descriptions.yaml` still advertises `dailyos.write.place_document` with `topic`, plain `content`, and `document_id`. L0 explicitly says W4-C L1 may not start while that old placement surface remains.
+  Action: DOS-480 must update/remove that placeholder to the final `workspace_place_document` contract, or James must explicitly re-scope ownership before W4-C proceeds.
+
+- BLOCKER: `source_handle` is internally contradictory.
+  Sections: L0 §4 receipt examples, §7 idempotency schema/fence algorithm, §10 security tests, §16 cycle 5 fold.
+  Evidence: the success receipt requires a non-null opaque `source_handle`, and the fence algorithm says to update the idempotency row with it, but the proposed `workspace_placement_idempotency` schema has no `source_handle` column.
+  Action: choose one model: persist `source_handle` in the idempotency table, or define it as deterministic render-time HMAC/random mapping derived from stored fields. Add replay tests proving the same opaque handle is returned without exposing raw `run_id`/`file_id`.
+
+- BLOCKER: v1.4.5 supersession still leaves W4-C gated on an unowned/nonexistent MCP write allowlist.
+  Sections: `.docs/plans/v1.4.5-waves.md` architecture invariant and W4-C lane; L0 §1 / §6 / §8.
+  Evidence: the wave plan still references `src-tauri/scripts/check_mcp_write_allowlist.sh` and W4-C “allowlist entry present,” but the script is absent and L0 forbids W4-C from editing `src-tauri/src/services/mcp_v2/**`; DOS-480 owns grants/tools-list/MCP exposure.
+  Action: remove or supersede the W4-C allowlist gate, or assign a real owner/file outside W4-C’s forbidden surface. If this is MCP v2 taxonomy/grants work, move it wholly to DOS-480.
+
+- BLOCKER: target authorization remains under-specified for implementation and tests.
+  Sections: L0 §4 “Target resolution,” §6 “Ability/service substrate,” §10 authorization tests, §16 cycle 5 fold.
+  Evidence: the packet requires authorization on `actor_id + entity_type + entity_id`, but does not name the substrate or rule that decides authorized vs missing vs redacted. Current v1.4.7 MCP work is per-tool/per-scope, not per-entity ACL, so implementers can’t produce stable non-enumerating tests.
+  Action: freeze the auth rule before L1: either “tool write grant + existing local entity row is sufficient” for this release, or DOS-480/account work must provide an entity visibility/ACL API. Then bind missing/unauthorized to the same public error behavior with audit-only detail.
+
+Final verdict: HOLD

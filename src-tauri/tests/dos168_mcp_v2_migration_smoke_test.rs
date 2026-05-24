@@ -1,10 +1,10 @@
 //! Smoke test for the MCP v2 migrations after dev-reconciliation renumbering
-//! and the v259 nonce-ledger repair.
+//! and the local-transport nonce-ledger cleanup.
 //!
 //! Runs the full migration chain against an in-memory SQLite and asserts the
 //! schema landed correctly: tables exist, expected columns are present, and
-//! the composite UNIQUE constraints + indexes from ADR-0102 §C.bis.schema and
-//! the follow-up repair are enforced.
+//! the composite UNIQUE constraints + indexes from ADR-0102 §C.bis.schema are
+//! enforced while the removed remote-transport nonce ledger stays absent.
 
 use dailyos_lib::migration_test_api::run_migrations;
 use rusqlite::Connection;
@@ -77,19 +77,13 @@ fn dos168_v255_v259_migrations_land_canonical_schema() {
         "missing handle index per ADR-0102 §D.bis"
     );
 
-    // ---- v259 nonce-ledger repair ----
-    // Migration 257 stayed absent after the simplified MCP substrate line, but
-    // v259 repairs DBs that reached v258 without the table needed for pairing
-    // transport nonces.
-    let nonce_cols = table_columns(&conn, "mcp_transport_nonce_ledger");
-    assert!(nonce_cols.contains(&"nonce".to_string()));
-    assert!(nonce_cols.contains(&"client_id".to_string()));
-    assert!(nonce_cols.contains(&"issued_at".to_string()));
-    assert!(nonce_cols.contains(&"expires_at".to_string()));
-    assert!(nonce_cols.contains(&"consumed_at".to_string()));
+    // ---- v261 local transport cleanup ----
+    // Migration 257 and the later v259 repair are intentionally absent after
+    // MCP moved to local stdio / loopback transport. v261 also drops the nonce
+    // ledger for DBs that briefly received it.
     assert!(
-        has_index(&conn, "mcp_transport_nonce_ledger", "idx_mcp_nonce_lookup"),
-        "missing idx_mcp_nonce_lookup from v259 repair"
+        !table_exists(&conn, "mcp_transport_nonce_ledger"),
+        "fresh local MCP schema should not include the obsolete nonce ledger"
     );
 
     // Seed a manifest row so subsequent assertions can reference a client_id.
@@ -147,4 +141,17 @@ fn has_index(conn: &Connection, table: &str, index_name: &str) -> bool {
     indexes_for(conn, table)
         .iter()
         .any(|name| name == index_name)
+}
+
+fn table_exists(conn: &Connection, table: &str) -> bool {
+    conn.query_row(
+        "SELECT EXISTS (
+             SELECT 1
+             FROM sqlite_master
+             WHERE type = 'table' AND name = ?1
+         )",
+        [table],
+        |row| row.get::<_, bool>(0),
+    )
+    .expect("table existence query")
 }

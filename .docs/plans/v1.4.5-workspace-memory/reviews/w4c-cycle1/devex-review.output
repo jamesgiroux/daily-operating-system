@@ -1,0 +1,13 @@
+**Unresolved Findings**
+
+1. `.docs/plans/v1.4.5-workspace-memory/L0-packet-W4-C-DOS-474.md` §4-§5: no public error taxonomy. The plan defines request/receipt shape but not typed client-visible errors for invalid entity, invalid category, unsupported content type, bad filename, size limit, idempotency replay/conflict, ingestion failure, or quarantine. v1.4.7 transport currently collapses `BadParams` into generic `invalid_params`, so clients would not know how to recover.
+
+2. §4 Receipt: missing `mutation_cursor`. MCP v2 write handlers are expected to return `mutation_cursor`; otherwise the gateway emits `mcp_write_handler_missing_cursor` and audit loses write-ordering material. Add it to the receipt contract and tests.
+
+3. §4 Request / §9 Test Plan: `dry_run = true` says “no DB rows,” but v1.4.7 gateway rate-limit reservation happens before handler dispatch and writes `mcp_tool_call_ledger`. Clarify “no placement/ingestion/idempotency rows,” and define whether dry-run consumes rate limit, returns prior idempotent receipts, or only previews candidates.
+
+4. §3 / §9: dual rate limit `10/minute and 200/hour` is underspecified against the current single-window `mcp_tool_grant` model. The packet needs either a grant schema amendment, a service-level second limiter, or a downgraded single-window contract.
+
+5. §4 Request: schema is not frozen enough for future `tools/list` clients. It needs exact JSON Schema constraints: required fields, closed nested `entity`, `content_type` enum, `content_b64` max size, filename/category patterns, and how clients obtain a valid `entity_id`.
+
+**Final Verdict: HOLD**

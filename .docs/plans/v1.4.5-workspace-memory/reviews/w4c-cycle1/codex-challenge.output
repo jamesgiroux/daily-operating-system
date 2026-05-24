@@ -1,0 +1,13 @@
+**Unresolved findings**
+
+- HOLD: Dual rate-limit requirement does not fit the live MCP gateway. The packet requires both `10/minute` and `200/hour`, but the manifest/gateway currently support only one `max/window` pair per tool grant.
+
+- HOLD: `dry_run` acceptance is too broad. The packet says dry-run writes no DB rows, but the live gateway can mint/update conversation handles and reserve rate-limit ledger rows before the handler sees params.
+
+- HOLD: Idempotency receipt caching can replay scope-dependent fields. The proposed `receipt_json` cache is keyed without client/scope, while `resolved_path` depends on `read.entity_names`; receipts should be rendered from neutral facts per current grant.
+
+- HOLD: Placement ownership still conflicts with W1-A fixed mod shape. The packet allows a new `workspace_ingestion` submodule or `mod.rs` change, but the live gate requires the module shape to stay fixed.
+
+- HOLD: PR #366 overlap is under-scoped. The packet only blocks account/Glean/claims/trust/signal areas, but the active local PR ref also overlaps W4-C-sensitive context, migration, MCP gateway, and MCP handler files.
+
+**Final verdict: HOLD**

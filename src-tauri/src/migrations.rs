@@ -1025,6 +1025,13 @@ const MIGRATIONS: &[Migration] = &[
         version: 261,
         sql: include_str!("migrations/261_drop_mcp_transport_nonce_ledger.sql"),
     },
+    // v1.4.5 W4-C — workspace placement idempotency, service rate ledger,
+    // and sanitized attempt audit. Uses the next contiguous slot on current
+    // dev so the max-version runner cannot skip future lower migrations.
+    Migration::Sql {
+        version: 262,
+        sql: include_str!("migrations/262_workspace_placement_idempotency.sql"),
+    },
 ];
 
 const V155_SHADOW_TRUST_VERSION: i64 = 1_401_003;
@@ -3918,6 +3925,34 @@ mod tests {
         }
     }
 
+    #[test]
+    fn migration_262_creates_workspace_placement_ledgers() {
+        let conn = mem_db();
+        let migration = MIGRATIONS
+            .iter()
+            .find(|migration| migration.version() == 262)
+            .expect("migration 262 registered");
+        match migration {
+            Migration::Sql { sql, .. } => conn.execute_batch(sql).expect("migration 262 applies"),
+            Migration::Fn { .. } => panic!("migration 262 should be SQL"),
+        }
+
+        for table in [
+            "workspace_placement_idempotency",
+            "workspace_placement_rate_ledger",
+            "workspace_placement_attempt_audit",
+        ] {
+            let exists: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                    [table],
+                    |row| row.get(0),
+                )
+                .expect("table lookup");
+            assert_eq!(exists, 1, "{table} should exist");
+        }
+    }
+
     fn sqlite_failure_with_message(code: i32, msg: &str) -> SqliteError {
         SqliteError::SqliteFailure(rusqlite::ffi::Error::new(code), Some(msg.to_string()))
     }
@@ -5048,10 +5083,14 @@ mod tests {
             "test precondition: nonce ledger should exist before cleanup"
         );
 
+        let expected_pending = MIGRATIONS
+            .iter()
+            .filter(|migration| migration.version() > 259)
+            .count();
         let applied = run_migrations(&conn).expect("cleanup migration should succeed");
         assert_eq!(
-            applied, 2,
-            "v260 context evidence and v261 cleanup should be pending"
+            applied, expected_pending,
+            "all migrations after the simulated v259 state should be pending"
         );
         assert!(
             !table_exists(&conn, "mcp_transport_nonce_ledger").expect("table lookup"),

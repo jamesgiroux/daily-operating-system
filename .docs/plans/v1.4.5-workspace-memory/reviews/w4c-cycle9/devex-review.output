@@ -1,0 +1,9 @@
+Findings: none. I did not find a blocking L0 issue in the scoped files.
+
+The W4-C packet freezes the required request fields, closed-object behavior, opaque `entity_id`, receipt fields, dry-run receipt, and typed `PlacementError` envelope at `.docs/plans/v1.4.5-workspace-memory/L0-packet-W4-C-DOS-474.md:155`, `:188`, `:196`, `:200`, `:236`, and `:262`.
+
+Downstream ownership is aligned: W4-C stays at the ability/service boundary, while DOS-480 owns MCP exposure, tool handler, grants, public error transport, and conversation behavior at `.docs/plans/v1.4.5-workspace-memory/L0-packet-W4-C-DOS-474.md:128` and `.docs/plans/v1.4.7-waves.md:597`. The v1.4.7 DOS-480 lane also requires exact request/receipt/error fidelity and removal of the old `topic` / `content` / `document_id` / optional-category shape at `.docs/plans/v1.4.7-waves.md:600` and `:611`.
+
+The tool description metadata now mirrors the placement request and live/dry-run receipt examples, including `content_b64`, required `category`, public opaque entity wording, and the split `mutation_cursor` `oneOf` variants at `src-tauri/src/services/mcp_v2/resources/tool_descriptions.yaml:399`, `:435`, `:445`, `:467`, `:582`, `:633`, and `:674`.
+
+VERDICT: PASS

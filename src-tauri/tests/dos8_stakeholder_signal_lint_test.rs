@@ -236,6 +236,44 @@ mod tests {
 }
 
 #[test]
+fn lint_stakeholder_writer_allows_test_fixture_seed_writes() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let src_dir = tmp.path().join("src-tauri/src/services");
+    std::fs::create_dir_all(&src_dir).expect("mkdir fixture");
+    std::fs::write(
+        src_dir.join("test_fixture_seed.rs"),
+        r#"
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn direct_seed_in_test_is_allowed(tx: &ActionDb) {
+        tx.conn_ref()
+            .execute(
+                "INSERT INTO account_stakeholders (account_id, person_id) VALUES (?1, ?2)",
+                params,
+            )
+            .unwrap();
+    }
+
+    fn seed_candidate_pair(tx: &ActionDb) {
+        tx.add_account_team_member("acc-1", "p-1", "associated").unwrap();
+    }
+}
+"#,
+    )
+    .expect("write fixture");
+
+    let output = run_lint(tmp.path());
+
+    assert!(
+        output.status.success(),
+        "lint must allow explicit test fixture seed writes while still checking cfg(test) modules. stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
+#[test]
 fn lint_stakeholder_writer_rejects_direct_stakeholders_changed_emit() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let src_dir = tmp.path().join("src-tauri/src/services");

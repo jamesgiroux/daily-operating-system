@@ -1,0 +1,13 @@
+**Findings**
+
+- **HIGH**: `tool_descriptions.yaml` still does not mirror the frozen W4-C receipt. The expected response shape uses `workspace_file_kind: "memory_document"`, `lifecycle_state: "active"`, `mutation_cursor.kind: "workspace_place_document"`, omits `mutation_cursor.idempotency_id`, and shows `resolved_path: "opaque"`. The packet freezes `workspace_file_kind: "mcp_placement"`, `lifecycle_state: "ingested"`, `mutation_cursor.kind: "workspace_placement"`, requires `idempotency_id`, and defaults `resolved_path` to `null` unless `read.entity_names` is proven. Anchors: `src-tauri/src/services/mcp_v2/resources/tool_descriptions.yaml:583`, `:590`, `:592`, `:596-600`; packet `L0-packet-W4-C-DOS-474.md:198-218`, `:224-229`.
+
+- **MEDIUM**: The resource metadata says it “mirrors” the W4-C shape, but the success schema is still too loose for exact downstream discovery: no `required` list, no const/enum on `workspace_file_kind`, no structured `mutation_cursor` shape, and no dry-run receipt variant. The authoritative packet is sharp enough, but the coordinated metadata is not yet exact enough to serve as a faithful DOS-480 fixture/source. Anchors: packet `L0-packet-W4-C-DOS-474.md:231-255`, `:472-474`, `:638-641`; metadata `tool_descriptions.yaml:501-562`.
+
+**Assessment**
+
+The V0.8 packet itself is sharp on request validation, content limits, failure-code mapping, idempotent replay, opaque handles, service rate limiting, and the W4-C/DOS-480 ownership split. The v1.4.7 wave text now assigns DOS-480/W1-A the MCP handler, limits, grants, transport-visible error projection, and conversation behavior without making W4-C own MCP implementation. Anchors: packet `:124-126`, `:321-328`, `:432-448`; v1.4.7 waves `:597-609`.
+
+But the coordinated `tool_descriptions.yaml` reconciliation still has receipt drift, so the “frozen W4-C shape” is not fully reflected in the discoverability metadata yet.
+
+HOLD

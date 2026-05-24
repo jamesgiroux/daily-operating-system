@@ -1,0 +1,8 @@
+No blocking findings.
+
+- Dry-run receipt blocker is resolved: the packet requires top-level `document_handle = null` and `source_handle = null`, while the preview cursor omits durable handles and `idempotency_id`; YAML schema/examples match. Refs: `.docs/.../L0-packet-W4-C-DOS-474.md:236`, `src-tauri/.../tool_descriptions.yaml:506`, `src-tauri/.../tool_descriptions.yaml:582`, `src-tauri/.../tool_descriptions.yaml:691`.
+- v280 migration exception is resolved: packet, v1.4.5 table/footer, and v1.4.7 migration text all record provisional v280 with lower-slot/global-renumber merge gate. Refs: `.docs/.../L0-packet-W4-C-DOS-474.md:373`, `.docs/plans/v1.4.5-waves.md:353`, `.docs/plans/v1.4.5-waves.md:1218`, `.docs/plans/v1.4.7-waves.md:144`.
+- ToolDescription/YAML camelCase compatibility is resolved: v1.4.7 plan calls out serde renames, YAML uses `scopesRequired`/`expectedResponseShape`, and local DTO code maps `selectionFixtures` cleanly. Refs: `.docs/plans/v1.4.7-waves.md:376`, `src-tauri/src/services/mcp_v2/resources/tool_descriptions.yaml:403`, `src-tauri/src/services/mcp_v2/contracts.rs:3`, `src-tauri/src/services/mcp_v2/taxonomy.rs:229`.
+- Post-PR-366 boundaries hold: changed files are docs plus coordinated `tool_descriptions.yaml`; no handler/gateway/auth/transport, account/Glean, claims, lifecycle, substrate, or signal-bus files are in the diff. Refs: `.docs/.../L0-packet-W4-C-DOS-474.md:100`, `.docs/.../L0-packet-W4-C-DOS-474.md:475`, `.docs/.../L0-packet-W4-C-DOS-474.md:479`, `.docs/plans/v1.4.5-waves.md:1058`.
+
+VERDICT: PASS

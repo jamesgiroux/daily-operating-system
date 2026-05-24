@@ -1,0 +1,9 @@
+Blocking findings:
+
+- **§7 Fence algorithm step 4 conflicts with §3, §6, and §10 dry-run guarantees.** As written, `dry_run = true` can return after schema parse and rate reservation, before entity existence, category allow-list, content decoding/size, filename, and path-boundary validation. Concrete action: move the dry-run branch after all non-mutating validations, audit success only after those pass, audit validation failures with safe error codes, and explicitly forbid dry-run directory/file creation.
+
+- **§6 Write-side path boundary does not bind a race-safe traversal algorithm.** Final no-follow/no-reparse open is not enough if a parent directory can be swapped after validation. Concrete action: require handle-relative traversal/opening (`openat`/`mkdirat` style or Windows equivalent), no-follow/reparse checks on every component, retained parent handles, fail-closed unsupported platforms, and symlink/reparse swap tests.
+
+- **§4 Request / §6 Entity path source rely on client-obtained `entity_id` but only require existence checking.** That leaves guessed IDs as a write target and existence oracle for write-scoped clients. Concrete action: add a server-side target authorization/capability check for `(client_id, entity_type, entity_id)` before path resolution, idempotency, or raw target audit fields; map unauthorized/missing targets to a non-enumerating error and redact/HMAC target audit fields until authorized.
+
+Final verdict: HOLD

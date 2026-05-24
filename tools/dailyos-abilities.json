@@ -334,6 +334,26 @@
         "produces_blocks": false,
         "block_types": []
       }
+    },
+    {
+      "name": "workspace_place_document",
+      "description": "",
+      "category": "transform",
+      "annotations": {},
+      "wp_permission": "none",
+      "allowed_actors": [
+        "mcp_client"
+      ],
+      "required_scopes": [
+        "write.workspace_place_document"
+      ],
+      "mcp_exposure": "invocable",
+      "client_side_executable": false,
+      "idempotency_class": "idempotent",
+      "composition_kind": {
+        "produces_blocks": false,
+        "block_types": []
+      }
     }
   ]
 }

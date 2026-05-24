@@ -1,0 +1,7 @@
+1. **§4 Request / §7 Idempotency And Rate-Limit Storage / §10 Test Plan:** `category` is optional, but the idempotency key and SQL schema require a normalized `category_slug`, and receipts always return `category`. Missing-category behavior is not defined.
+Action: make `category` required, or freeze the exact default/normalization path before dry-run, path resolution, receipt rendering, and idempotency.
+
+2. **§5 Placement Error Taxonomy / §10 Test Plan:** the sample error object includes `allowed`, `retry_after_seconds`, and `trace_id` as nullable fields, but the rules say those fields are present only for specific codes.
+Action: choose one stable contract, either omit non-applicable optional fields or always include nullable fields, then update the sample and tests.
+
+Final verdict: HOLD.

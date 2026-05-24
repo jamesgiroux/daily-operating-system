@@ -1,0 +1,7 @@
+- BLOCKER — DOS-480 cannot expose the W4-C `PlacementError` envelope with the current v1.4.7 ownership/scope. Packet §4/§5 requires transport-visible `code`, safe `message`, and optional fields; v1.4.7 §W3-B requires exact error fidelity but owns only `tool_placement.rs`. Current MCP `ToolError` has no domain-error carrier and hides `BadParams`/`UpstreamFailure` detail. Action: amend DOS-480 or W1-A to own/add a transport-visible placement/domain error variant plus golden MCP error-data mapping for every `PlacementError.code`.
+
+- BLOCKER — receipt replay storage is inconsistent for `source_handle`. Packet §4 requires live success `source_handle != null`; §7 says replay renders from stored scope-neutral facts, but the SQL table has no `source_handle` column while the fence algorithm says to update the row with `source_handle`. Action: either add `source_handle TEXT` to the idempotency row, or freeze deterministic HMAC-over-`run_id` rendering and update §7/tests to say the handle is recomputed, not stored.
+
+- BLOCKER — v1.4.5 supersession still leaves the old W4-C contract labelled “Frozen ability contract” in the active wave doc, including optional `category`, `client_source_asof`, raw `ingestion_run_id`/`file_id`, and old idempotency. Action: replace that block with a non-copyable “superseded; see L0 packet §§4-7” pointer, or update it to the V0.6 contract so DOS-480 implementers have only one active schema.
+
+Final verdict: HOLD

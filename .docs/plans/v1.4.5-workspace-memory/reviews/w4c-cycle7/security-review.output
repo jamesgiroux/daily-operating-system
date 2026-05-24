@@ -1,0 +1,14 @@
+Found three issues. The core V0.8 boundary is close, but I would not start L1 implementation yet.
+
+- **MEDIUM** — MCP tool metadata still does not mirror the frozen receipt. Packet §4 requires `workspace_file_kind: "mcp_placement"`, `lifecycle_state: "ingested"`, cursor kind `workspace_placement`, and `idempotency_id`; the metadata example has `memory_document`, `active`, `workspace_place_document`, and omits `idempotency_id`. It also shows `resolved_path: "opaque"` despite the redaction gate.
+  Anchors: [packet §4 Receipt](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/.docs/plans/v1.4.5-workspace-memory/L0-packet-W4-C-DOS-474.md:206), [tool metadata](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/src-tauri/src/services/mcp_v2/resources/tool_descriptions.yaml:590)
+
+- **MEDIUM** — Audit privacy is still ambiguous for target IDs. The packet allows raw `entity_type` / `entity_id` in `workspace_placement_attempt_audit` after authorization. That is only safe if `entity_id` is guaranteed to be a public opaque handle, not an internal DB id. Otherwise audit should store the HMAC target key for all outcomes.
+  Anchors: [attempt audit schema](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/.docs/plans/v1.4.5-workspace-memory/L0-packet-W4-C-DOS-474.md:415), [audit rule](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/.docs/plans/v1.4.5-workspace-memory/L0-packet-W4-C-DOS-474.md:448)
+
+- **MEDIUM** — Signal payload privacy is not reconciled with the “no internal ids in signals” requirement. W4-C relies on existing workspace signals, but the wave plan still documents `file_id`, `ingestion_run_id`, and `entity_id` in signal payloads. Either classify these as internal-only and non-exportable, or switch placement-triggered signal surfaces to opaque/HMAC handles.
+  Anchors: [W4-C signal reliance](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/.docs/plans/v1.4.5-workspace-memory/L0-packet-W4-C-DOS-474.md:493), [existing signal payload](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/.docs/plans/v1.4.5-waves.md:818)
+
+No new blocker found in the base64/request bounds, path traversal/reparse handling, target authorization order, JSON trust boundary, or short-transaction design.
+
+HOLD

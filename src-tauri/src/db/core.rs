@@ -12,7 +12,8 @@ use std::sync::Arc;
 
 use super::types::*;
 use crate::db::encryption;
-use crate::db::key_provider::{DbKeyProvider, EncryptionKey, UserIdentity};
+use crate::db::key_provider::{DbKeyProvider, EncryptionKey, LocalKeychain, UserIdentity};
+use ring::hmac;
 use rusqlite::{params, Connection, OpenFlags};
 
 // ---------------------------------------------------------------------------
@@ -69,6 +70,44 @@ impl DbKeyProvider for FixtureDbKeyProvider {
     fn rotate_key(&self, _user: &UserIdentity) -> crate::db::key_provider::Result<EncryptionKey> {
         Ok(self.key.clone())
     }
+}
+
+pub(crate) fn local_db_keyed_audit_tag(
+    tag_prefix: &str,
+    domain: &str,
+    components: &[&str],
+) -> Result<String, String> {
+    let db_path = ActionDb::db_path_public().map_err(|e| e.to_string())?;
+    let provider = LocalKeychain::new();
+    let key = provider.get_or_create_key(&UserIdentity::local(db_path))?;
+    Ok(keyed_audit_tag(
+        tag_prefix,
+        domain,
+        components,
+        key.as_hex().as_bytes(),
+    ))
+}
+
+#[cfg(test)]
+pub(crate) fn local_db_keyed_audit_tag_for_tests(
+    secret: &str,
+    tag_prefix: &str,
+    domain: &str,
+    components: &[&str],
+) -> String {
+    keyed_audit_tag(tag_prefix, domain, components, secret.as_bytes())
+}
+
+fn keyed_audit_tag(tag_prefix: &str, domain: &str, components: &[&str], secret: &[u8]) -> String {
+    let key = hmac::Key::new(hmac::HMAC_SHA256, secret);
+    let mut context = hmac::Context::with_key(&key);
+    context.update(domain.as_bytes());
+    for component in components {
+        context.update(&[0]);
+        context.update(component.as_bytes());
+    }
+    let tag = context.sign();
+    format!("{tag_prefix}_{}", hex::encode(&tag.as_ref()[..16]))
 }
 
 impl ActionDb {

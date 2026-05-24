@@ -1,0 +1,18 @@
+**Blocking findings**
+
+1. **Section 4 / Request, Section 5 / Placement Error Taxonomy:** `schema_version` is fixed to `1`, but unsupported future versions have no stable error behavior. DOS-480 needs to distinguish malformed v1 JSON from a valid request for an unsupported schema.
+Action: add an `unsupported_schema_version` code, define missing/non-integer `schema_version` as `invalid_request_shape`, and add golden tests.
+
+2. **Section 4 / Request:** client-visible validation is still partly implementation-defined: `DEFAULT_MAX_FILE_BYTES (10 MiB today)`, RFC 4648 base64 variant, `filename_hint` shell metacharacters, and `client_dedup_key` trim/charset/normalization are not frozen enough for replay-safe clients.
+Action: replace these with exact byte limits, base64 rules, allowlist regexes, trim/null handling, and failure-code mapping.
+
+3. **Section 4 / Receipt:** live success receipt nullability is ambiguous. The sample says `source_handle` can be `"ingestion-run-uuid-or-null"`, while the service flow always runs ingestion before success and dry-run already owns `null`.
+Action: make live success `source_handle` and `mutation_cursor.source_handle` non-null public-safe handles, or define the exact successful state where null is legal.
+
+4. **Sections 6-7 / Idempotency And Rate-Limit Storage:** `client_id` is underspecified and conflates MCP client id / actor id. The contract says rate limit is per actor/tool, but the ledger and idempotency key use `client_id/tool`.
+Action: define the stable DOS-480 identity source and granularity, separate `actor_id` from `mcp_client_id` if both matter, and test replay across sessions plus isolation across clients/actors.
+
+5. **Sections 3, 6, 7 / Dry Run Flow:** dry-run is promised as a validating preview, but the fence algorithm returns the dry-run receipt immediately after rate reservation, before the explicit entity/category/content/path validation steps.
+Action: state that dry-run performs the same post-schema validations as live writes, then stops before idempotency/file/lifecycle/run writes; add tests for dry-run validation failures and audit behavior.
+
+Final verdict: HOLD
