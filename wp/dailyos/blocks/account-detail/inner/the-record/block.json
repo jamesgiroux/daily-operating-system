@@ -1,0 +1,20 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "dailyos/the-record",
+	"title": "The Record",
+	"category": "dailyos",
+	"description": "The Record chapter — TimelineEntry list of meetings/emails/notes/values shaping the account's recent history. Inserter-global per ADR-0129 §2 (no parent); default composition lives in the account-detail-default filesystem pattern.",
+	"supports": {
+		"html": false,
+		"reusable": false,
+		"inserter": true
+	},
+	"usesContext": [
+		"dailyos/entityType",
+		"dailyos/entityId",
+		"dailyos/envelopeHandle"
+	],
+	"editorScript": "file:./edit.js",
+	"render": "file:./render.php"
+}

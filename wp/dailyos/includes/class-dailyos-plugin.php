@@ -208,7 +208,7 @@ final class DailyOS_Plugin {
 
 		// Depth-2 globs for W2 entity-detail composites: each outer block has
 		// a sibling inner/ directory containing one subdirectory per inner
-		// block (24 for account-detail, 15 for project-detail, etc.). Inner
+		// block (account-detail, project-detail, etc.). Inner
 		// blocks register inserter-global per ADR-0129 §2 — no parent field
 		// in their block.json.
 		$inner_files = glob( DAILYOS_PLUGIN_DIR . 'blocks/*/inner/*/block.json' );

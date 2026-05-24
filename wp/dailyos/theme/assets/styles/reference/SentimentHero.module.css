@@ -190,6 +190,29 @@
   margin-top: var(--space-md, 16px);
 }
 
+.SentimentHero_metaTrigger {
+  font: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px dotted currentColor;
+  border-radius: 0;
+  padding: 0 0 1px;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.SentimentHero_metaTrigger:hover {
+  color: var(--color-text-secondary);
+}
+
+.SentimentHero_metaTrigger:focus-visible {
+  outline: 2px solid var(--color-spice-turmeric);
+  outline-offset: 3px;
+}
+
 /* ── Pull quote (latest journal note) ───────────────────────────────── */
 
 .SentimentHero_pullquote {

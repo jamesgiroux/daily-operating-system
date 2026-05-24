@@ -1,0 +1,20 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "dailyos/account-detail-reports",
+	"title": "Account Reports",
+	"category": "dailyos",
+	"description": "Reports chapter — Account Health / Risk Briefing / EBR / QBR report-row chrome. Inserter-global per ADR-0129 §2.",
+	"supports": {
+		"html": false,
+		"reusable": false,
+		"inserter": true
+	},
+	"usesContext": [
+		"dailyos/entityType",
+		"dailyos/entityId",
+		"dailyos/envelopeHandle"
+	],
+	"editorScript": "file:./edit.js",
+	"render": "file:./render.php"
+}

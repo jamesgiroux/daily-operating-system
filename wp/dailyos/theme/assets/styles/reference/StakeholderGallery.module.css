@@ -64,16 +64,30 @@
 /* ── Avatar ring ── */
 
 .StakeholderGallery_avatarRing {
+  align-items: center;
   border-radius: 50%;
+  box-sizing: border-box;
+  display: inline-flex;
   flex-shrink: 0;
+  height: 32px;
+  justify-content: center;
+  line-height: 0;
+  width: 32px;
   border: 2px solid transparent;
 }
 
 .StakeholderGallery_avatarRingLinked {
+  align-items: center;
   border-radius: 50%;
+  box-sizing: border-box;
+  display: inline-flex;
   flex-shrink: 0;
+  height: 32px;
+  justify-content: center;
+  line-height: 0;
   padding: 2px;
   border: 2px solid var(--color-garden-larkspur);
+  width: 32px;
 }
 
 /* ── Name ── */

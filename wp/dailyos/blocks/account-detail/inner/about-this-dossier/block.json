@@ -15,5 +15,6 @@
 		"dailyos/entityId",
 		"dailyos/envelopeHandle"
 	],
+	"editorScript": "file:./edit.js",
 	"render": "file:./render.php"
 }

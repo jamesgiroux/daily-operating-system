@@ -1,0 +1,115 @@
+<!-- wp:template-part {"slug":"header","tagName":"header"} /-->
+<!-- wp:group {"className":"MagazinePageLayout_magazinePage","layout":{"type":"default"}} -->
+<div class="wp-block-group MagazinePageLayout_magazinePage" data-ds-tier="surface" data-ds-name="ActionsPage" data-ds-spec="surfaces/ActionsPage.md">
+	<!-- wp:group {"className":"MagazinePageLayout_pageContainer","layout":{"type":"constrained"}} -->
+	<div class="wp-block-group MagazinePageLayout_pageContainer">
+		<!-- wp:html -->
+		<div class="ActionsPage_pageContainer" data-ds-name="ActionsPage" data-ds-tier="surface" data-ds-spec="surfaces/ActionsPage.md">
+			<section class="EditorialPageHeader_header EditorialPageHeader_scaleStandard EditorialPageHeader_widthStandard EditorialPageHeader_ruleSubtle">
+				<div class="EditorialPageHeader_topRow">
+					<div class="EditorialPageHeader_titleBlock">
+						<h1 class="EditorialPageHeader_title">Actions</h1>
+					</div>
+					<div class="EditorialPageHeader_meta">5 items</div>
+				</div>
+				<div class="EditorialPageHeader_rule"></div>
+				<div class="EditorialPageHeader_after">
+					<div class="ActionsPage_tabRow">
+						<button class="ActionsPage_tabButton" type="button"><span class="ActionsPage_statusTabInner">Suggested</span></button>
+						<button class="ActionsPage_tabButton ActionsPage_tabButtonActive" type="button"><span class="ActionsPage_statusTabInner">Active <span class="ActionsPage_countBadge">5</span></span></button>
+						<button class="ActionsPage_tabButton" type="button"><span class="ActionsPage_statusTabInner">Completed <span class="ActionsPage_countBadge">2</span></span></button>
+					</div>
+					<div class="ActionsPage_tabRowPriority">
+						<button class="ActionsPage_tabButton ActionsPage_tabButtonActive" type="button">All</button>
+						<button class="ActionsPage_tabButton" type="button">Urgent</button>
+						<button class="ActionsPage_tabButton" type="button">High</button>
+						<button class="ActionsPage_tabButton" type="button">Medium</button>
+						<button class="ActionsPage_tabButton" type="button">Low</button>
+					</div>
+					<input type="text" value="" placeholder="Search actions..." class="ActionsPage_searchInput" />
+				</div>
+			</section>
+
+			<section id="active" aria-label="Active actions">
+				<div class="ActionsPage_groupBlock">
+					<div class="ChapterHeading_heading">
+						<hr class="ChapterHeading_rule" />
+						<div class="ChapterHeading_titleRow"><h2 class="ChapterHeading_title">Acme Corp renewal checkpoint &middot; Today</h2></div>
+						<p class="ChapterHeading_epigraph">2 actions</p>
+					</div>
+					<div class="ActionsPage_actionColumn">
+						<div class="action-row action-row--bordered">
+							<button class="action-row__check action-row__check--overdue" aria-label="Complete action" type="button"></button>
+							<div class="action-row__content">
+								<a href="/actions/" class="action-row__title">Send Jen Park final MSA redline owner summary</a>
+								<div class="action-row__context">Procurement needs one owner before Friday's package.</div>
+								<div class="action-row__meta action-row__meta--overdue">3 days overdue &middot; Acme Corp &middot; Acme Corp renewal checkpoint</div>
+							</div>
+							<span class="action-row__priority action-row__priority--urgent">Urgent</span>
+						</div>
+						<div class="action-row">
+							<button class="action-row__check" aria-label="Complete action" type="button"></button>
+							<div class="action-row__content">
+								<a href="/actions/" class="action-row__title">Confirm Dan Mitchell owns audit-log export</a>
+								<div class="action-row__context">Launch readout depends on a named support owner.</div>
+								<div class="action-row__meta">In 3 days &middot; Acme Corp &middot; Acme Corp renewal checkpoint</div>
+							</div>
+							<span class="action-row__priority action-row__priority--high">High</span>
+						</div>
+					</div>
+				</div>
+
+				<div class="ActionsPage_groupBlock">
+					<div class="ChapterHeading_heading">
+						<hr class="ChapterHeading_rule" />
+						<div class="ChapterHeading_titleRow"><h2 class="ChapterHeading_title">Northwind Q2 Launch prep &middot; Tomorrow</h2></div>
+						<p class="ChapterHeading_epigraph">1 action</p>
+					</div>
+					<div class="ActionsPage_actionColumn">
+						<div class="action-row">
+							<button class="action-row__check" aria-label="Complete action" type="button"></button>
+							<div class="action-row__content">
+								<a href="/actions/" class="action-row__title">Capture launch blocker owners for Sara Wu</a>
+								<div class="action-row__context">Northwind prep surfaced two owners still missing dates.</div>
+								<div class="action-row__meta">In 6 days &middot; Northwind Traders &middot; Q2 Launch prep</div>
+							</div>
+							<span class="action-row__priority">Medium</span>
+						</div>
+					</div>
+				</div>
+
+				<div class="ActionsPage_groupBlock">
+					<div class="ChapterHeading_heading">
+						<hr class="ChapterHeading_rule" />
+						<div class="ChapterHeading_titleRow"><h2 class="ChapterHeading_title">Everything Else</h2></div>
+						<p class="ChapterHeading_epigraph">2 actions</p>
+					</div>
+					<div class="ActionsPage_actionColumn">
+						<div class="action-row action-row--bordered">
+							<button class="action-row__check" aria-label="Complete action" type="button"></button>
+							<div class="action-row__content">
+								<a href="/actions/" class="action-row__title">Schedule renewal forecast review with Revenue Operations</a>
+								<div class="action-row__context">Finance wants the account-level view before pipeline review.</div>
+								<div class="action-row__meta">In 10 days &middot; Revenue Operations &middot; Slack #cs-team</div>
+							</div>
+							<span class="action-row__priority action-row__priority--high">High</span>
+						</div>
+						<div class="action-row">
+							<button class="action-row__check" aria-label="Complete action" type="button"></button>
+							<div class="action-row__content">
+								<a href="/actions/" class="action-row__title">Update CRM notes from Globex rollout call</a>
+								<div class="action-row__context">Add support-owner map and rollout sequence from the helpline sync.</div>
+								<div class="action-row__meta">Globex Inc &middot; Globex helpline rollout sync</div>
+							</div>
+							<span class="action-row__priority">Low</span>
+						</div>
+					</div>
+				</div>
+			</section>
+		</div>
+		<!-- /wp:html -->
+	</div>
+	<!-- /wp:group -->
+</div>
+<!-- /wp:group -->
+<!-- wp:template-part {"slug":"footer","tagName":"footer"} /-->

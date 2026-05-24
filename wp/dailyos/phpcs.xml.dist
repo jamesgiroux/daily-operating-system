@@ -11,6 +11,13 @@
 	     syntax that's not valid PHP until the kit substitutes it. -->
 	<exclude-pattern>scripts/templates/*</exclude-pattern>
 
+	<!-- Dev-only mock runtime client: NOT shipped in the plugin. Filename
+	     intentionally mirrors the MU-plugin target name; exempt from
+	     WordPress class-file naming convention. -->
+	<rule ref="WordPress.Files.FileName.InvalidClassFileName">
+		<exclude-pattern>dev-tools/mock-runtime-client.php</exclude-pattern>
+	</rule>
+
 	<arg name="extensions" value="php"/>
 	<arg value="p"/>
 

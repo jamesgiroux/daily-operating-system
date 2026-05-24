@@ -1,0 +1,54 @@
+.LinearIssuesChapter_chapter {
+  margin-top: var(--space-4xl, 96px);
+}
+
+.LinearIssuesChapter_chapter > div:not([class]) {
+  max-width: 560px;
+  padding: var(--space-lg, 24px) var(--space-xl, 32px);
+  color: var(--color-text-secondary);
+  background: var(--color-paper-warm-white);
+  border: 1px solid var(--color-rule-light);
+  border-left: 2px solid var(--color-text-tertiary);
+  border-radius: 0 var(--radius-md, 10px) var(--radius-md, 10px) 0;
+}
+
+.LinearIssuesChapter_chapter > div:not([class]) p {
+  margin: 0 0 var(--space-md, 16px);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+}
+
+.LinearIssuesChapter_chapter > div:not([class]) button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 7px 14px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: 1px solid var(--color-rule-heavy);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.LinearIssuesChapter_chapter > div:not([class]) button:hover {
+  color: var(--color-text-primary);
+  background: var(--color-desk-charcoal-4);
+}
+
+.LinearIssuesChapter_chapter > div:not([class]) button:focus-visible {
+  outline: 2px solid var(--color-spice-turmeric);
+  outline-offset: 3px;
+}
+
+.LinearIssuesChapter_chapter > .FinisMarker_root {
+  display: none;
+}

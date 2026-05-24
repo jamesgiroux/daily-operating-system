@@ -740,6 +740,37 @@ namespace {
 		}
 	}
 
+	if ( ! function_exists( 'wp_kses_post' ) ) {
+		function wp_kses_post( mixed $data ): string {
+			return strip_tags( (string) $data, '<br>' );
+		}
+	}
+
+	if ( ! class_exists( 'WP_Block', false ) ) {
+		$wp_block_stub = new class( [], [] ) {
+			public array $parsed_block;
+			public array $context;
+
+			public function __construct( array $parsed_block = [], array $context = [] ) {
+				$this->parsed_block = $parsed_block;
+				$this->context      = $context;
+			}
+
+			public function render(): string {
+				$attrs = isset( $this->parsed_block['attrs'] ) && is_array( $this->parsed_block['attrs'] )
+					? $this->parsed_block['attrs']
+					: [];
+				if ( isset( $attrs['__test_html'] ) && is_string( $attrs['__test_html'] ) ) {
+					return $attrs['__test_html'];
+				}
+				$name = isset( $this->parsed_block['blockName'] ) ? (string) $this->parsed_block['blockName'] : '';
+				return '<div data-test-wp-block="' . htmlspecialchars( $name, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' ) . '"></div>';
+			}
+		};
+		class_alias( get_class( $wp_block_stub ), 'WP_Block' );
+		unset( $wp_block_stub );
+	}
+
 	if ( ! function_exists( '__' ) ) {
 		function __( string $text, string $domain = 'default' ): string {
 			unset( $domain );

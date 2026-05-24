@@ -41,32 +41,13 @@ if ( ! function_exists( 'dailyos_finis_marker_render' ) ) {
 	 * @return string
 	 */
 	function dailyos_finis_marker_render( array $attributes, string $content = '', $block = null ): string {
-		unset( $attributes, $content );
-
-		$handle    = null;
-		$entity_id = '';
-		if ( null !== $block && isset( $block->context ) && is_array( $block->context ) ) {
-			$handle    = isset( $block->context['dailyos/envelopeHandle'] ) ? (string) $block->context['dailyos/envelopeHandle'] : null;
-			$entity_id = isset( $block->context['dailyos/entityId'] ) ? (string) $block->context['dailyos/entityId'] : '';
-		}
-		if ( ( null === $handle || '' === $handle ) && isset( $GLOBALS['dailyos_envelope_handle_for_request'] ) ) {
-			$handle = (string) $GLOBALS['dailyos_envelope_handle_for_request'];
-		}
-
-		$scope_set = apply_filters( 'dailyos_surfaceclient_resolved_scopes', [] );
-		if ( ! is_array( $scope_set ) ) {
-			$scope_set = [];
-		}
-
-		$mark = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>';
-		$out  = '<div class="editorial-reveal" data-ds-tier="pattern" data-ds-name="FinisMarker" data-ds-spec="patterns/FinisMarker.md" data-dailyos-projection="chrome">';
-		$out .= '<div class="FinisMarker_root">';
-		$out .= '<div class="FinisMarker_marks">';
-		$out .= $mark . $mark . $mark;
-		$out .= '</div>';
-		$out .= '<div class="FinisMarker_timestamp">' . esc_html__( 'End of dossier', 'dailyos' ) . '</div>';
-		$out .= '</div>';
-		$out .= '</div>';
-		return $out;
+		// FinisMarker now ships only in the site footer (wp/dailyos/theme/parts/footer.html).
+		// This inner block is preserved as a no-op so saved post_content that
+		// references `<!-- wp:dailyos/finis-marker /-->` stays valid without
+		// rendering a duplicate. Block.json template + default-template
+		// fallback have already dropped the entry; this guard catches the
+		// existing-post case.
+		unset( $attributes, $content, $block );
+		return '';
 	}
 }

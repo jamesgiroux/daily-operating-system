@@ -1,0 +1,20 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "dailyos/account-detail-watch-list",
+	"title": "Account Watch List",
+	"category": "dailyos",
+	"description": "Watch List chapter for the account-detail surface — Wins / Unknowns + Active Initiatives. Distinct from the person-detail watch-list variant. Inserter-global per ADR-0129 §2.",
+	"supports": {
+		"html": false,
+		"reusable": false,
+		"inserter": true
+	},
+	"usesContext": [
+		"dailyos/entityType",
+		"dailyos/entityId",
+		"dailyos/envelopeHandle"
+	],
+	"editorScript": "file:./edit.js",
+	"render": "file:./render.php"
+}

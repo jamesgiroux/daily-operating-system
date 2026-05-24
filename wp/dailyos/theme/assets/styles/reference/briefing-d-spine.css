@@ -1,0 +1,176 @@
+@import "./design-tokens.css";
+
+.dspine-sharp {
+	color: var(--color-spice-turmeric);
+}
+
+.dspine-section-heading {
+	margin: 0;
+	font-family: var(--font-serif);
+	font-size: 32px;
+	font-weight: 400;
+	letter-spacing: 0;
+	line-height: 1.15;
+	color: var(--color-text-primary);
+}
+
+.dspine-section-summary {
+	max-width: 660px;
+	margin: var(--space-xs) 0 var(--space-lg);
+	font-family: var(--font-serif);
+	font-size: 16px;
+	font-style: italic;
+	font-weight: 300;
+	letter-spacing: 0;
+	line-height: 1.5;
+	color: var(--color-text-secondary);
+}
+
+.dspine-stack,
+.dspine-moving-list {
+	display: grid;
+	gap: 0;
+}
+
+.dspine-moving-row {
+	display: grid;
+	grid-template-columns: minmax(120px, 0.2fr) minmax(0, 1fr) minmax(120px, auto);
+	gap: var(--space-md);
+	align-items: start;
+	padding: var(--space-md) 0;
+	border-bottom: 1px solid var(--color-rule-light);
+	position: relative;
+}
+
+.dspine-moving-row:last-child {
+	border-bottom: none;
+}
+
+.dspine-moving-row::before {
+	content: "";
+	position: absolute;
+	left: -28px;
+	top: 12px;
+	bottom: 12px;
+	width: 3px;
+	border-radius: 2px;
+	background: var(--moving-accent, transparent);
+}
+
+.dspine-moving-row[data-kind="customer"] {
+	--moving-accent: var(--color-spice-turmeric);
+}
+
+.dspine-moving-row[data-kind="person"] {
+	--moving-accent: var(--color-garden-larkspur);
+}
+
+.dspine-moving-name {
+	min-width: 0;
+	font-family: var(--font-mono);
+	font-size: 11px;
+	font-weight: 700;
+	letter-spacing: 0;
+	text-transform: uppercase;
+	color: var(--moving-accent, var(--color-text-tertiary));
+}
+
+.dspine-moving-copy {
+	min-width: 0;
+}
+
+.dspine-moving-title {
+	font-family: var(--font-sans);
+	font-size: 15px;
+	font-weight: 500;
+	line-height: 1.45;
+	color: var(--color-text-primary);
+}
+
+.dspine-moving-context {
+	margin-top: 3px;
+	max-width: 620px;
+	font-family: var(--font-serif);
+	font-size: 15px;
+	font-style: italic;
+	font-weight: 300;
+	line-height: 1.45;
+	color: var(--color-text-secondary);
+}
+
+.dspine-moving-meta {
+	justify-self: end;
+	font-family: var(--font-mono);
+	font-size: 11px;
+	font-weight: 500;
+	letter-spacing: 0;
+	color: var(--color-text-tertiary);
+	white-space: nowrap;
+}
+
+.dspine-watch-list {
+	display: grid;
+	gap: 0;
+	margin-top: var(--space-md);
+}
+
+.dspine-watch-row {
+	display: grid;
+	grid-template-columns: minmax(110px, 0.22fr) minmax(0, 1fr) auto;
+	gap: var(--space-md);
+	align-items: center;
+	padding: var(--space-md) 0;
+	border-bottom: 1px solid var(--color-rule-light);
+}
+
+.dspine-watch-row:last-child {
+	border-bottom: none;
+}
+
+.dspine-watch-who {
+	min-width: 0;
+	font-family: var(--font-mono);
+	font-size: 11px;
+	font-weight: 700;
+	letter-spacing: 0;
+	text-transform: uppercase;
+	color: var(--color-text-tertiary);
+}
+
+.dspine-watch-what {
+	min-width: 0;
+	font-family: var(--font-serif);
+	font-size: 16px;
+	font-style: italic;
+	font-weight: 300;
+	letter-spacing: 0;
+	line-height: 1.45;
+	color: var(--color-text-secondary);
+}
+
+.dspine-watch-quiet {
+	color: var(--color-text-tertiary);
+}
+
+@media (max-width: 720px) {
+	.dspine-section-heading {
+		font-size: 26px;
+	}
+
+	.dspine-watch-row,
+	.dspine-moving-row {
+		grid-template-columns: 1fr;
+	}
+
+	.dspine-watch-row {
+		gap: var(--space-xs);
+	}
+
+	.dspine-moving-row::before {
+		left: -16px;
+	}
+
+	.dspine-moving-meta {
+		justify-self: start;
+	}
+}

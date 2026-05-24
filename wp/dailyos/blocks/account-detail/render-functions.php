@@ -8,8 +8,8 @@
  * paired DailyOS runtime client (3-arg invoke_ability signature enforced by
  * `src-tauri/scripts/check_w1_consumer_skeleton.sh`), caches the envelope
  * via the request-scoped DOS-477 envelope_cache shim, emits the
- * `dailyos/envelopeHandle` context value, and renders the 24-block
- * `<InnerBlocks />` slot via `do_blocks( $content )`.
+ * `dailyos/envelopeHandle` context value, and renders the account-detail
+ * `<InnerBlocks />` slot.
  *
  * Inner blocks declare `usesContext: ["dailyos/envelopeHandle"]` and read
  * their slice via `dailyos_resolve_envelope( $handle, 'account', $id, $scope_set )`,
@@ -134,7 +134,7 @@ if ( ! function_exists( 'dailyos_account_detail_render' ) ) {
 		// blocks rendered through do_blocks( $content ) can read it even
 		// when block-context attribute wiring is editor-only.
 		if ( '' !== $handle ) {
-			$attributes['envelope_handle'] = $handle;
+			$attributes['envelope_handle']                  = $handle;
 			$GLOBALS['dailyos_envelope_handle_for_request'] = $handle;
 		}
 
@@ -150,7 +150,7 @@ if ( ! function_exists( 'dailyos_account_detail_render' ) ) {
 		];
 		// Optional tint from the envelope (subject's chrome). Only emits the
 		// allowlisted --dailyos-* custom property; nothing else inline.
-		$tint = '';
+		$tint     = '';
 		$envelope = dailyos_envelope_cache_get( $handle );
 		if ( is_array( $envelope ) ) {
 			$subject = $envelope['subject'] ?? [];
@@ -187,23 +187,26 @@ if ( ! function_exists( 'dailyos_account_detail_render' ) ) {
 
 		// Core passes `$content` to dynamic render files after rendering
 		// inner blocks. That is too early for this surface: the inner blocks
-		// need the envelope handle produced above. Re-render the parsed inner
-		// block tree with explicit parent context after the envelope is cached.
-		$ctx_for_inner = [
+		// need the envelope handle produced above. Re-render the saved parsed
+		// inner-block tree with explicit parent context after the envelope is
+		// cached; fall back to the default template only when no saved inner
+		// block tree exists yet.
+		$ctx_for_inner   = [
 			'dailyos/entityType'     => 'account',
 			'dailyos/entityId'       => $account_id,
 			'dailyos/envelopeHandle' => $handle,
 		];
-		$inner = dailyos_account_detail_render_parsed_inner( $ctx_for_inner, $block );
+		$has_saved_inner = dailyos_account_detail_has_parsed_inner( $block );
+		$inner           = $has_saved_inner ? dailyos_account_detail_render_parsed_inner( $ctx_for_inner, $block ) : '';
+		if ( '' === trim( $inner ) && ! $has_saved_inner && '' !== $content ) {
+			$inner = $content;
+		}
 		if ( '' === trim( $inner ) ) {
 			$inner = dailyos_account_detail_render_default_inner( $ctx_for_inner );
 		}
-		if ( '' === trim( $inner ) && '' !== $content ) {
-			$inner = $content;
-		}
 
-		$out  = '<section ' . $wrapper_attrs . ' data-dailyos-envelope-handle="' . esc_attr( $handle ) . '">';
-		// Inner blocks projection: 24 typed inner blocks rendered after the
+		$out = '<section ' . $wrapper_attrs . ' data-dailyos-envelope-handle="' . esc_attr( $handle ) . '">';
+		// Inner blocks projection: typed chapter blocks rendered after the
 		// account envelope handle exists in request-scoped cache.
 		$out .= '<div class="dailyos-inner-blocks-slot">';
 		$out .= $inner;
@@ -216,17 +219,15 @@ if ( ! function_exists( 'dailyos_account_detail_render' ) ) {
 	/**
 	 * Default-template block markup for the account-detail surface. Mirrors
 	 * the `template` array in block.json so a direct programmatic render
-	 * (no editor inner-content path) still produces the canonical 24-inner-
-	 * block composition.
+	 * (no editor inner-content path) still produces the canonical inner-block
+	 * composition.
 	 */
 	function dailyos_account_detail_default_template_markup(): string {
 		$blocks = [
 			'dailyos/account-hero',
 			'dailyos/sentiment-hero',
 			'dailyos/triage-section',
-			'dailyos/divergence-section',
 			'dailyos/outlook-panel',
-			'dailyos/on-track-chapter',
 			'dailyos/supporting-tension',
 			'dailyos/about-intelligence',
 			'dailyos/account-pull-quote',
@@ -238,15 +239,13 @@ if ( ! function_exists( 'dailyos_account_detail_render' ) ) {
 			'dailyos/account-technical-footprint',
 			'dailyos/relationship-fabric',
 			'dailyos/about-this-dossier',
-			'dailyos/account-detail-recommended-actions',
-			'dailyos/account-detail-touchpoints-feed',
-			'dailyos/account-detail-open-loops-feed',
+			'dailyos/account-detail-unified-timeline',
+			'dailyos/account-detail-reports',
+			'dailyos/the-record',
 			'dailyos/file-list',
 			'dailyos/linear-issues-chapter',
-			'dailyos/account-detail-unified-timeline',
-			'dailyos/finis-marker',
 		];
-		$out = '';
+		$out    = '';
 		foreach ( $blocks as $name ) {
 			$out .= '<!-- wp:' . $name . ' /-->';
 		}
@@ -262,18 +261,31 @@ if ( ! function_exists( 'dailyos_account_detail_render' ) ) {
 	 * @return string Concatenated rendered HTML.
 	 */
 	function dailyos_account_detail_render_parsed_inner( array $context, $block = null ): string {
-		if ( ! class_exists( 'WP_Block' ) || ! is_object( $block ) || ! isset( $block->parsed_block ) || ! is_array( $block->parsed_block ) ) {
+		if ( ! class_exists( 'WP_Block' ) || ! dailyos_account_detail_has_parsed_inner( $block ) ) {
 			return '';
 		}
 
 		$inner_blocks = $block->parsed_block['innerBlocks'] ?? [];
-		if ( ! is_array( $inner_blocks ) || empty( $inner_blocks ) ) {
-			return '';
-		}
+		// Old saved account-detail patterns may still carry pre-parity
+		// chapter blocks that were folded into the current canonical chapters
+		// or moved to the theme footer. Keep filtering only those obsolete
+		// blocks; current canonical blocks must render from saved post_content
+		// so Gutenberg reordering/removal has real front-end effect.
+		$obsolete = [
+			'dailyos/divergence-section'                 => true,
+			'dailyos/on-track-chapter'                   => true,
+			'dailyos/finis-marker'                       => true,
+			'dailyos/account-detail-recommended-actions' => true,
+			'dailyos/account-detail-touchpoints-feed'    => true,
+			'dailyos/account-detail-open-loops-feed'     => true,
+		];
 
 		$out = '';
 		foreach ( $inner_blocks as $block_data ) {
 			if ( ! is_array( $block_data ) || empty( $block_data['blockName'] ) ) {
+				continue;
+			}
+			if ( isset( $obsolete[ $block_data['blockName'] ] ) ) {
 				continue;
 			}
 			$wp_block = new \WP_Block( $block_data, $context );
@@ -283,13 +295,61 @@ if ( ! function_exists( 'dailyos_account_detail_render' ) ) {
 	}
 
 	/**
-	 * Render each block from the default template as a `WP_Block` with
-	 * explicit context — propagates the outer block's providesContext to
-	 * inner blocks the way Gutenberg does when the inner blocks live in
-	 * saved post_content. Same pattern as meeting-detail's helper.
+	 * Whether a parsed account-detail block carries saved inner blocks.
 	 *
-	 * @param array<string, mixed> $context Context map keyed as the inner
-	 *                                       blocks consume in `usesContext`.
+	 * @param \WP_Block|null $block Parsed account-detail block.
+	 * @return bool True when saved inner blocks are available.
+	 */
+	function dailyos_account_detail_has_parsed_inner( $block = null ): bool {
+		if ( ! is_object( $block ) || ! isset( $block->parsed_block ) || ! is_array( $block->parsed_block ) ) {
+			return false;
+		}
+		$inner_blocks = $block->parsed_block['innerBlocks'] ?? [];
+		return is_array( $inner_blocks ) && ! empty( $inner_blocks );
+	}
+
+	/**
+	 * Render only the default-template blocks that are missing from the
+	 * saved parsed inner-blocks tree. Used to surface chapters added to the
+	 * template after a post was saved without forcing the editor to re-save.
+	 *
+	 * @param array<string, mixed> $context Context map for inner blocks.
+	 * @param \WP_Block|null       $block   Parsed account-detail block.
+	 * @return string Concatenated rendered HTML for the missing blocks only.
+	 */
+	function dailyos_account_detail_render_missing_default_inner( array $context, $block = null ): string {
+		if ( ! is_object( $block ) || ! isset( $block->parsed_block ) || ! is_array( $block->parsed_block ) ) {
+			return '';
+		}
+		$parsed_names = [];
+		foreach ( (array) ( $block->parsed_block['innerBlocks'] ?? [] ) as $b ) {
+			if ( is_array( $b ) && ! empty( $b['blockName'] ) ) {
+				$parsed_names[ $b['blockName'] ] = true;
+			}
+		}
+		$markup = dailyos_account_detail_default_template_markup();
+		$parsed = function_exists( 'parse_blocks' ) ? parse_blocks( $markup ) : [];
+		if ( ! is_array( $parsed ) ) {
+			return '';
+		}
+		$out = '';
+		foreach ( $parsed as $block_data ) {
+			if ( ! is_array( $block_data ) || empty( $block_data['blockName'] ) ) {
+				continue;
+			}
+			if ( isset( $parsed_names[ $block_data['blockName'] ] ) ) {
+				continue;
+			}
+			$wp_block = new \WP_Block( $block_data, $context );
+			$out     .= $wp_block->render();
+		}
+		return $out;
+	}
+
+	/**
+	 * Render each canonical default-template block with explicit context.
+	 *
+	 * @param array<string, mixed> $context Context map for inner blocks.
 	 * @return string Concatenated rendered HTML.
 	 */
 	function dailyos_account_detail_render_default_inner( array $context ): string {
@@ -397,7 +457,7 @@ if ( ! function_exists( 'dailyos_account_detail_render' ) ) {
 		// W1 producer: record_claim_feedback — explicit feedback write. The
 		// action + metadata are carried alongside the claim_ref so the
 		// runtime persists the typed feedback row.
-		$payload = $claim_ref;
+		$payload             = $claim_ref;
 		$payload['action']   = $action;
 		$payload['metadata'] = $metadata;
 

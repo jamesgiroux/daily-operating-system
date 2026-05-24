@@ -2,7 +2,7 @@
 /**
  * Template registration tests for the DailyOS magazine theme.
  *
- * Verifies that the five FSE block-theme templates exist on disk, that
+ * Verifies that the FSE block-theme templates exist on disk, that
  * the three required template parts (header, footer, sidebar-account-summary)
  * are present, and that theme.json keeps the `customTemplates` array empty —
  * per L0 Packet E §5.2 / §14 AC N. Custom templates are CPT-bound via
@@ -35,7 +35,7 @@ final class DailyOS_TemplateRegistrationTest extends TestCase {
 	}
 
 	/**
-	 * Asserts all five FSE templates are present on disk.
+	 * Asserts the FSE templates used by mock parity surfaces are present on disk.
 	 *
 	 * @return void
 	 */
@@ -44,14 +44,45 @@ final class DailyOS_TemplateRegistrationTest extends TestCase {
 			'index.html',
 			'front-page.html',
 			'single-dailyos_account.html',
+			'single-dailyos_project.html',
+			'single-dailyos_person.html',
+			'single-dailyos_meeting.html',
 			'archive-dailyos_account.html',
 			'single-dailyos_briefing.html',
+			'page-actions.html',
+			'page-emails.html',
+			'page-mock-surfaces.html',
 		];
 
 		foreach ( $templates as $template ) {
 			$path = $this->theme_dir . '/templates/' . $template;
 			$this->assertFileExists( $path, "Missing template: {$template}" );
 			$this->assertNotSame( '', trim( (string) file_get_contents( $path ) ), "Empty template: {$template}" );
+		}
+	}
+
+	/**
+	 * Asserts the mock-surface review page points at every seeded surface.
+	 *
+	 * @return void
+	 */
+	public function test_mock_surfaces_template_links_seeded_review_targets(): void {
+		$template_path = $this->theme_dir . '/templates/page-mock-surfaces.html';
+		$this->assertFileExists( $template_path );
+
+		$template = (string) file_get_contents( $template_path );
+		foreach (
+			[
+				'/accounts/acme-corp/',
+				'/entities/projects/beta-migration/',
+				'/entities/people/priya-raman/',
+				'/entities/meetings/mtg-acme-renewal-checkpoint/',
+				'/briefings/briefing-today/',
+				'/actions/',
+				'/emails/',
+			] as $href
+		) {
+			$this->assertStringContainsString( 'href="' . $href . '"', $template );
 		}
 	}
 

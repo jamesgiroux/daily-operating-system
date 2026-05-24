@@ -104,6 +104,7 @@ if ( ! function_exists( 'dailyos_meeting_agenda_draft_render' ) ) {
 		$wrapper_attrs = function_exists( 'get_block_wrapper_attributes' )
 			? get_block_wrapper_attributes(
 				[
+					'id'           => 'your-plan',
 					'class'        => 'wp-block-dailyos-meeting-agenda-draft meeting-intel_readinessWrap',
 					'data-ds-tier' => 'primitive',
 					'data-ds-name' => 'MeetingAgendaDraft',
@@ -164,7 +165,7 @@ if ( ! function_exists( 'dailyos_meeting_agenda_draft_empty_chip' ) ) {
 	 */
 	function dailyos_meeting_agenda_draft_empty_chip( string $reason, string $label ): string {
 		return sprintf(
-			'<div class="wp-block-dailyos-meeting-agenda-draft meeting-intel_readinessWrap meeting-intel_readinessWrap--empty is-empty"><span class="dailyos-empty-chip" data-empty-reason="%s">%s</span></div>',
+			'<div id="your-plan" class="wp-block-dailyos-meeting-agenda-draft meeting-intel_readinessWrap meeting-intel_readinessWrap--empty is-empty"><span class="dailyos-empty-chip" data-empty-reason="%s">%s</span></div>',
 			esc_attr( $reason ),
 			esc_html( $label )
 		);

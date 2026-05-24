@@ -522,6 +522,19 @@
   color: var(--color-text-tertiary);
   margin-top: 4px;
 }
+.WorkSurface_timelineSource a {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px dotted currentColor;
+  padding-bottom: 1px;
+}
+.WorkSurface_timelineSource a:hover {
+  color: var(--color-spice-turmeric);
+}
+.WorkSurface_timelineSource a:focus-visible {
+  outline: 2px solid var(--color-spice-turmeric);
+  outline-offset: 3px;
+}
 .WorkSurface_timelineDelivered {
   color: var(--color-garden-rosemary);
 }

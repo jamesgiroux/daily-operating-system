@@ -3,9 +3,8 @@
  *
  * Provides the editor-side `edit` implementation for the server-registered
  * `dailyos/account-detail` block. The InspectorControls panel lets editors
- * type an `account_id` directly — when left blank the front-end renderer
- * falls back to `dailyos_entity_id` post-meta, then the post slug, when
- * rendering inside a `dailyos_account` post (L4 quick-setup path).
+ * type an `account_id` directly, and the canvas exposes the chapter blocks as
+ * a real InnerBlocks slot so they can be moved, removed, and inserted.
  *
  * Browser-side never reaches into runtime credentials; the actual entity
  * envelope fetch happens server-side at render time via the paired
@@ -15,10 +14,33 @@
 ( function ( wp ) {
 	const { __ } = wp.i18n;
 	const { registerBlockType } = wp.blocks;
-	const { InspectorControls, useBlockProps } = wp.blockEditor;
+	const { InnerBlocks, InspectorControls, useBlockProps } = wp.blockEditor;
 	const { PanelBody, TextControl } = wp.components;
 
 	const BLOCK_NAME = 'dailyos/account-detail';
+	const TEMPLATE = [
+		[ 'dailyos/account-hero' ],
+		[ 'dailyos/sentiment-hero' ],
+		[ 'dailyos/triage-section' ],
+		[ 'dailyos/outlook-panel' ],
+		[ 'dailyos/supporting-tension' ],
+		[ 'dailyos/about-intelligence' ],
+		[ 'dailyos/account-pull-quote' ],
+		[ 'dailyos/stakeholder-grid' ],
+		[ 'dailyos/strategic-landscape' ],
+		[ 'dailyos/value-commitments' ],
+		[ 'dailyos/quote-wall' ],
+		[ 'dailyos/commercial-shape' ],
+		[ 'dailyos/account-technical-footprint' ],
+		[ 'dailyos/relationship-fabric' ],
+		[ 'dailyos/about-this-dossier' ],
+		[ 'dailyos/account-detail-unified-timeline' ],
+		[ 'dailyos/account-detail-reports' ],
+		[ 'dailyos/the-record' ],
+		[ 'dailyos/file-list' ],
+		[ 'dailyos/linear-issues-chapter' ],
+	];
+	const ALLOWED_BLOCKS = TEMPLATE.map( ( entry ) => entry[ 0 ] );
 
 	function AccountDetailEdit( props ) {
 		const { attributes, setAttributes } = props;
@@ -48,25 +70,34 @@
 			),
 			wp.element.createElement(
 				'section',
-				blockProps,
+				{
+					...blockProps,
+					'data-dailyos-editor-surface': 'account-detail',
+				},
 				wp.element.createElement(
-					'p',
-					null,
-					accountId
-						? __( 'Rendering account: ', 'dailyos' ) + accountId
-						: __(
-							'Account ID will auto-fill from post context (slug or meta) at render time.',
+					'div',
+					{ className: 'dailyos-account-detail-editor__header' },
+					wp.element.createElement(
+						'strong',
+						null,
+						accountId
+							? __( 'Account detail: ', 'dailyos' ) + accountId
+							: __( 'Account detail', 'dailyos' )
+					),
+					wp.element.createElement(
+						'span',
+						null,
+						__(
+							'Chapters render from DailyOS intelligence on the front end.',
 							'dailyos'
 						)
-				),
-				wp.element.createElement(
-					'p',
-					null,
-					__(
-						'Inner blocks render the full account composition at front-end (envelope fetched via runtime).',
-						'dailyos'
 					)
-				)
+				),
+				wp.element.createElement( InnerBlocks, {
+					template: TEMPLATE,
+					allowedBlocks: ALLOWED_BLOCKS,
+					templateLock: false,
+				} )
 			)
 		);
 	}

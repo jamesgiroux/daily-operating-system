@@ -20,7 +20,7 @@ if ( ! function_exists( 'dailyos_block_error_panel' ) ) {
 	 * @return string
 	 */
 	function dailyos_block_error_panel( string $block_name, string $error_code ): string {
-		$labels = [
+		$labels  = [
 			'InvalidEntityType'    => __( 'Choose a supported entity type.', 'dailyos' ),
 			'InvalidEntityId'      => __( 'Choose a valid entity.', 'dailyos' ),
 			'EntityNotFound'       => __( 'This entity is unavailable.', 'dailyos' ),

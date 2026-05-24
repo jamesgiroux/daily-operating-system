@@ -81,9 +81,9 @@
   gap: var(--space-md);
 }
 
-/* Primary variant — spans both columns, full detail. */
+/* Primary variant — full-detail card in the two-column room grid. */
 .StakeholderGrid_personCardPrimary {
-  grid-column: span 2;
+  grid-column: auto;
 }
 
 /* Internal variant — charcoal tint, smaller padding/fonts. */

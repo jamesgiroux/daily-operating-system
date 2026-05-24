@@ -108,7 +108,7 @@ final class DailyOS_EditorialShellPresenceTest extends TestCase {
 
 	/**
 	 * Single-account template composes the folio bar + magazine page wraps
-	 * + footer FinisMarker AND mounts the account summary sidebar.
+	 * + footer FinisMarker.
 	 *
 	 * @return void
 	 */
@@ -122,15 +122,10 @@ final class DailyOS_EditorialShellPresenceTest extends TestCase {
 		$this->assertStringContainsString( 'FinisMarker_root', $composed, 'Missing FinisMarker_root end-of-page finis.' );
 		// `dailyos-end-mark` + literal `* * *` were part of the v1.4.2 account-overview-page
 		// pattern (deleted in v1.4.4 W2 substrate trim). The new account-detail-default
-		// composition ends with FinisMarker via the `dailyos/finis-marker` inner block;
+		// composition now uses the footer template part for the FinisMarker;
 		// FinisMarker_root assertion above covers the canonical end-of-page sign-off.
-		$this->assertStringContainsString(
-			'template-part {"slug":"sidebar-account-summary"}',
-			$template,
-			'single-account template must mount sidebar-account-summary part.'
-		);
 		// V2 wave: single-account template references the account-detail-default pattern
-		// (which expands to the 24-chapter canonical composition).
+		// (which expands to the canonical account-detail composition).
 		$this->assertStringContainsString(
 			'wp:pattern',
 			$template,

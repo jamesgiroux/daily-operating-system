@@ -9,8 +9,8 @@
  *  - outer block invokes get_entity_intelligence ONCE per render with the
  *    3-arg invoke_ability signature (AC-W1.9 / check_w1_consumer_skeleton).
  *  - outer block.json declares apiVersion 3, parent null, providesContext
- *    {entityType, entityId, envelopeHandle}, templateLock false, 24-entry
- *    default template (AC-462.2).
+ *    {entityType, entityId, envelopeHandle}, templateLock false, canonical
+ *    account-detail default template (AC-462.2).
  *  - every inner block.json registers apiVersion 3, no parent,
  *    usesContext envelope binding (AC-462.2).
  *  - empty envelope renders the dailyos-empty-chip with data-empty-reason
@@ -72,14 +72,119 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 		$this->assertNull( $block_json['parent'] );
 		$this->assertSame( 'file:./render.php', $block_json['render'] );
 		$this->assertFalse( $block_json['templateLock'] );
-		$this->assertCount( 24, $block_json['template'] );
+		$this->assertCount( 20, $block_json['template'] );
 		$this->assertSame( [ 'dailyos/account-hero' ], $block_json['template'][0] );
-		$this->assertSame( [ 'dailyos/finis-marker' ], $block_json['template'][23] );
+		$this->assertSame( [ 'dailyos/linear-issues-chapter' ], $block_json['template'][19] );
+		$this->assertSame( 'file:./view.js', $block_json['viewScript'] );
+
+		$view_asset = include __DIR__ . '/../../blocks/account-detail/view.asset.php';
+		$this->assertIsArray( $view_asset );
+		$this->assertContains( 'dailyos-chrome', $view_asset['dependencies'] );
 
 		$context = $block_json['providesContext'];
 		$this->assertArrayHasKey( 'dailyos/entityType', $context );
 		$this->assertArrayHasKey( 'dailyos/entityId', $context );
 		$this->assertArrayHasKey( 'dailyos/envelopeHandle', $context );
+	}
+
+	/**
+	 * Account-detail local chapter navigation must mirror the Tauri
+	 * AccountViewSwitcher tabs. The shared headline stays visible above tabs
+	 * but must not appear in the local chapter island.
+	 */
+	public function test_local_nav_chapter_contract_matches_account_tabs(): void {
+		$view_js = (string) file_get_contents( __DIR__ . '/../../blocks/account-detail/view.js' );
+
+		$this->assertSame(
+			[
+				'your-assessment',
+				'needs-attention',
+				'on-track',
+				'outlook',
+				'relationship-health',
+				'portfolio',
+				'about-intelligence',
+			],
+			$this->extract_view_chapter_ids( $view_js, 'health' )
+		);
+		$this->assertSame(
+			[
+				'thesis',
+				'the-room',
+				'what-matters',
+				'value-commitments',
+				'their-voice',
+				'commercial-shape',
+				'technical-shape',
+				'relationship-fabric',
+				'about-dossier',
+			],
+			$this->extract_view_chapter_ids( $view_js, 'context' )
+		);
+		$this->assertSame(
+			[
+				'commitments',
+				'suggestions',
+				'programs',
+				'shared',
+				'recently-landed',
+				'outputs',
+				'the-record',
+				'files',
+				'linear-issues',
+			],
+			$this->extract_view_chapter_ids( $view_js, 'work' )
+		);
+		$this->assertStringContainsString(
+			"const SHARED_VISIBLE_CHAPTERS = [ 'headline' ];",
+			$view_js
+		);
+
+		require_once __DIR__ . '/../../theme/functions.php';
+		$specs = \DailyOS\Theme\account_detail_chapter_specs();
+		$this->assertSame(
+			$this->extract_chapter_ids_from_specs( $specs['health'] ),
+			$this->extract_view_chapter_ids( $view_js, 'health' )
+		);
+		$this->assertSame(
+			$this->extract_chapter_ids_from_specs( $specs['context'] ),
+			$this->extract_view_chapter_ids( $view_js, 'context' )
+		);
+		$this->assertSame(
+			$this->extract_chapter_ids_from_specs( $specs['work'] ),
+			$this->extract_view_chapter_ids( $view_js, 'work' )
+		);
+		$this->assertNotContains(
+			'headline',
+			array_merge(
+				...array_values(
+					array_map(
+						fn( array $items ): array => $this->extract_chapter_ids_from_specs( $items ),
+						$specs
+					)
+				)
+			)
+		);
+	}
+
+	/**
+	 * Other entity chrome helpers expose canonical chapter ids for local nav.
+	 */
+	public function test_entity_chrome_chapter_helpers_expose_canonical_ids(): void {
+		require_once __DIR__ . '/../../theme/functions.php';
+
+		$this->assertSame(
+			[ 'headline', 'portfolio', 'trajectory', 'the-horizon', 'the-landscape', 'the-room', 'the-record', 'the-work' ],
+			$this->extract_chapter_ids_from_pipe( \DailyOS\Theme\project_detail_chapters() )
+		);
+		$this->assertSame(
+			[ 'headline', 'the-dynamic', 'their-orbit', 'their-network', 'the-landscape', 'the-record', 'the-work' ],
+			$this->extract_chapter_ids_from_pipe( \DailyOS\Theme\person_detail_chapters() )
+		);
+		$this->assertSame(
+			[ 'headline', 'risks', 'the-room', 'your-plan' ],
+			$this->extract_chapter_ids_from_pipe( \DailyOS\Theme\meeting_detail_chapters() )
+		);
 	}
 
 	// ---- outer block: render --------------------------------------------
@@ -163,7 +268,45 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 		);
 	}
 
-	// ---- 24 inner blocks: block.json contract ---------------------------
+	/**
+	 * Saved inner-block content must win over the fallback default template so
+	 * Gutenberg reorder/remove operations affect the rendered surface.
+	 */
+	public function test_render_uses_saved_inner_blocks_before_default_template(): void {
+		$client = $this->fake_runtime_client_with_envelope( $this->envelope_response_present() );
+		$this->register_runtime_client_filter( $client );
+
+		$block               = new \stdClass();
+		$block->parsed_block = [
+			'innerBlocks' => [
+				[
+					'blockName' => 'dailyos/account-hero',
+					'attrs'     => [
+						'__test_html' => '<div id="saved-account-hero"></div>',
+					],
+				],
+				[
+					'blockName' => 'dailyos/finis-marker',
+					'attrs'     => [
+						'__test_html' => '<div id="obsolete-finis"></div>',
+					],
+				],
+			],
+		];
+
+		$html = dailyos_account_detail_render(
+			[ 'account_id' => 'acct-test-001' ],
+			'',
+			$block
+		);
+
+		$this->assertStringContainsString( 'id="saved-account-hero"', $html );
+		$this->assertStringNotContainsString( 'id="obsolete-finis"', $html );
+		$this->assertStringNotContainsString( 'data-test-wp-block="dailyos/sentiment-hero"', $html );
+		$this->assertSame( 1, $client->calls, 'producer still invoked once before rendering saved inner blocks' );
+	}
+
+	// ---- inner blocks: block.json contract ------------------------------
 
 	/**
 	 * Every inner block declares the V1.2.1 §5.1 inner-block contract.
@@ -172,7 +315,7 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 	public function test_all_inner_blocks_declare_v1_2_1_contract(): void {
 		$inner_dir = __DIR__ . '/../../blocks/account-detail/inner';
 		$dirs      = glob( $inner_dir . '/*', GLOB_ONLYDIR );
-		$this->assertCount( 24, $dirs, '24 inner blocks per L0 packet V1.2.1 §5.1' );
+		$this->assertGreaterThanOrEqual( 20, count( $dirs ), 'account-detail inner block directories present' );
 		foreach ( $dirs as $dir ) {
 			$json_path = $dir . '/block.json';
 			$this->assertFileExists( $json_path );
@@ -183,6 +326,15 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 			$this->assertContains( 'dailyos/envelopeHandle', $json['usesContext'], $json_path );
 			$this->assertContains( 'dailyos/entityId', $json['usesContext'], $json_path );
 			$this->assertContains( 'dailyos/entityType', $json['usesContext'], $json_path );
+			$this->assertSame( 'file:./edit.js', $json['editorScript'], $json_path );
+			$this->assertFileExists( $dir . '/edit.js', $json_path . ' editor implementation missing' );
+			$this->assertFileExists( $dir . '/edit.asset.php', $json_path . ' editor asset manifest missing' );
+			$asset = include $dir . '/edit.asset.php';
+			$this->assertIsArray( $asset, $json_path . ' edit.asset.php must return array' );
+			$this->assertContains( 'wp-blocks', $asset['dependencies'], $json_path );
+			$this->assertContains( 'wp-block-editor', $asset['dependencies'], $json_path );
+			$this->assertContains( 'wp-element', $asset['dependencies'], $json_path );
+			$this->assertContains( 'wp-i18n', $asset['dependencies'], $json_path );
 			$this->assertSame( 'file:./render.php', $json['render'], $json_path );
 		}
 	}
@@ -212,8 +364,8 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 	// ---- inner blocks: empty-state pattern ------------------------------
 
 	/**
-	 * 5 inner blocks (stakeholder-grid, recommended-actions,
-	 * touchpoints-feed, open-loops-feed, unified-timeline) render the
+	 * Feed-shaped inner blocks (recommended-actions, touchpoints-feed,
+	 * open-loops-feed) render the
 	 * dailyos-empty-chip with a data-empty-reason when the envelope is
 	 * absent — V1.1 §10 invariant "never silent-hidden".
 	 *
@@ -224,11 +376,9 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 	 */
 	public function test_complex_inner_blocks_render_empty_chip_on_absent_envelope(): void {
 		$cases = [
-			'stakeholder-grid'    => 'dailyos_stakeholder_grid_render',
 			'recommended-actions' => 'dailyos_account_detail_recommended_actions_render',
 			'touchpoints-feed'    => 'dailyos_account_detail_touchpoints_feed_render',
 			'open-loops-feed'     => 'dailyos_account_detail_open_loops_feed_render',
-			'unified-timeline'    => 'dailyos_account_detail_unified_timeline_render',
 		];
 		foreach ( $cases as $slug => $fn ) {
 			include_once __DIR__ . '/../../blocks/account-detail/inner/' . $slug . '/render-functions.php';
@@ -251,17 +401,25 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 	 * Account hero vitals must render human-readable claim text; claim ids are
 	 * metadata only and must not become visible fallback content.
 	 */
-	public function test_account_hero_row_prefers_rendered_text_over_claim_id(): void {
+	public function test_account_hero_vital_prefers_rendered_text_over_claim_id(): void {
 		include_once __DIR__ . '/../../blocks/account-detail/inner/account-hero/render-functions.php';
 
-		$html = dailyos_account_hero_render_row(
-			[ 'claim_id' => 'claim-test-hero-001' ],
+		$html = dailyos_account_hero_vital_item(
 			[
-				'renderedText' => [
-					'text' => 'Readable hero row',
+				'arr' => [
+					'claim_id'     => 'claim-test-hero-001',
+					'fieldPath'    => 'arr',
+					'renderedText' => [
+						'text' => 'Readable hero row',
+					],
+					'trustBand'    => 'likely_current',
 				],
-				'trustBand'    => 'likely_current',
-			]
+			],
+			'arr',
+			'turmeric',
+			false,
+			true,
+			false
 		);
 
 		$this->assertStringContainsString( 'data-claim-id="claim-test-hero-001"', $html );
@@ -270,9 +428,19 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 
 		$this->assertSame(
 			'',
-			dailyos_account_hero_render_row(
-				[ 'claim_id' => 'claim-test-hero-002' ],
-				[ 'trustBand' => 'likely_current' ]
+			dailyos_account_hero_vital_item(
+				[
+					'arr' => [
+						'claim_id'  => 'claim-test-hero-002',
+						'fieldPath' => 'arr',
+						'trustBand' => 'likely_current',
+					],
+				],
+				'arr',
+				'turmeric',
+				false,
+				true,
+				false
 			)
 		);
 	}
@@ -495,7 +663,7 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 				'claim_id'     => 'claim-test-001',
 				'subject_ref'  => [
 					'kind' => 'account',
-					'id' => 'acct-test-001',
+					'id'   => 'acct-test-001',
 				],
 				'field_path'   => 'health.risk',
 				'renderedText' => [
@@ -527,7 +695,7 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 						'fieldPath'    => 'pullQuote',
 						'subjectRef'   => [
 							'kind' => 'account',
-							'id' => 'acct-test-001',
+							'id'   => 'acct-test-001',
 						],
 						'renderedText' => [
 							'policy' => [
@@ -536,7 +704,7 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 								'sensitivity' => 'internal',
 								'surface'     => 'tauri_entity_detail',
 							],
-							'text' => 'Readable cached row',
+							'text'   => 'Readable cached row',
 						],
 						'trustBand'    => 'likely_current',
 					],
@@ -576,7 +744,7 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 				'claim_id'    => 'claim-test-cache-001',
 				'subject_ref' => [
 					'kind' => 'account',
-					'id' => 'acct-test-001',
+					'id'   => 'acct-test-001',
 				],
 				'field_path'  => 'pullQuote',
 			],
@@ -610,7 +778,7 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 				'claim_id'    => 'claim-test-001',
 				'subject_ref' => [
 					'kind' => 'account',
-					'id' => 'acct-test-001',
+					'id'   => 'acct-test-001',
 				],
 				'field_path'  => 'health.risk',
 			],
@@ -635,7 +803,7 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 						'fieldPath'    => 'pullQuote',
 						'subjectRef'   => [
 							'kind' => 'account',
-							'id' => 'acct-test-001',
+							'id'   => 'acct-test-001',
 						],
 						'renderedText' => [
 							'text' => 'Readable pull quote',
@@ -647,7 +815,7 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 						'fieldPath'  => 'risks[0]',
 						'subjectRef' => [
 							'kind' => 'account',
-							'id' => 'acct-test-001',
+							'id'   => 'acct-test-001',
 						],
 					],
 				],
@@ -735,9 +903,10 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 			'pattern declares a Title header'
 		);
 		$this->assertStringContainsString( '<!-- wp:dailyos/account-detail -->', $contents );
-		// Mirrors the canonical 24-chapter ordering.
+		// Mirrors the canonical account-detail ordering.
 		$this->assertStringContainsString( '<!-- wp:dailyos/account-hero /-->', $contents );
-		$this->assertStringContainsString( '<!-- wp:dailyos/finis-marker /-->', $contents );
+		$this->assertStringContainsString( '<!-- wp:dailyos/linear-issues-chapter /-->', $contents );
+		$this->assertStringNotContainsString( '<!-- wp:dailyos/finis-marker /-->', $contents );
 	}
 
 	// ---- helpers --------------------------------------------------------
@@ -834,6 +1003,54 @@ final class DailyOS_AccountDetailBlockTest extends TestCase {
 			static function () use ( $client ) {
 				return $client;
 			}
+		);
+	}
+
+	/**
+	 * Extract one view's chapter ids from account-detail/view.js.
+	 *
+	 * @param string $source JavaScript source.
+	 * @param string $view   View key.
+	 * @return array<int,string>
+	 */
+	private function extract_view_chapter_ids( string $source, string $view ): array {
+		$this->assertMatchesRegularExpression(
+			'/' . preg_quote( $view, '/' ) . ':\s*\[/',
+			$source,
+			"{$view} chapter block missing"
+		);
+		preg_match(
+			'/' . preg_quote( $view, '/' ) . ':\s*\[(.*?)\]/s',
+			$source,
+			$matches
+		);
+		$this->assertNotEmpty( $matches[1] ?? '', "{$view} chapter block missing" );
+		preg_match_all( "/'([^']+)'/", $matches[1], $ids );
+		return $ids[1];
+	}
+
+	/**
+	 * Extract chapter ids from chrome.js chapter specs.
+	 *
+	 * @param array<int,string> $specs Chapter specs (`id:icon:label`).
+	 * @return array<int,string>
+	 */
+	private function extract_chapter_ids_from_specs( array $specs ): array {
+		return array_map(
+			static fn( string $spec ): string => explode( ':', $spec, 2 )[0],
+			$specs
+		);
+	}
+
+	/**
+	 * Extract chapter ids from a pipe-delimited chrome chapter spec string.
+	 *
+	 * @return array<int,string>
+	 */
+	private function extract_chapter_ids_from_pipe( string $specs ): array {
+		return array_map(
+			static fn( string $spec ): string => explode( ':', $spec, 2 )[0],
+			explode( '|', $specs )
 		);
 	}
 }

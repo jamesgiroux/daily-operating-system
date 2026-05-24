@@ -48,6 +48,42 @@
   font-weight: 600;
 }
 
+.ReferenceGrid_value button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 5px 10px 5px 12px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  background: var(--color-paper-warm-white);
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-sm, 4px);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ReferenceGrid_value button:hover {
+  color: var(--color-text-primary);
+  border-color: var(--color-rule-heavy);
+}
+
+.ReferenceGrid_value button:focus-visible {
+  outline: 2px solid var(--color-spice-turmeric);
+  outline-offset: 2px;
+}
+
+.ReferenceGrid_value button svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+}
+
 /* -- Feature adoption list (Technical shape only) -------------------------- */
 
 .ReferenceGrid_featureHeading {

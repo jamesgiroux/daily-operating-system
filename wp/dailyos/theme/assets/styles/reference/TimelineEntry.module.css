@@ -101,3 +101,40 @@
   text-decoration: none;
   color: inherit;
 }
+
+.TimelineEntry_toggleButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-top: var(--space-sm, 8px);
+  margin-left: -2px;
+  color: var(--color-text-tertiary);
+  background: transparent;
+  border: 1px solid var(--color-rule-light);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.TimelineEntry_toggleButton:hover {
+  color: var(--color-text-primary);
+  border-color: var(--color-rule-heavy);
+  background: var(--color-desk-charcoal-4);
+}
+
+.TimelineEntry_toggleButton:focus-visible {
+  outline: 2px solid var(--color-spice-turmeric);
+  outline-offset: 2px;
+}
+
+.TimelineEntry_chevron {
+  display: block;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}

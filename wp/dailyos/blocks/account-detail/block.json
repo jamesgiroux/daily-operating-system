@@ -4,7 +4,7 @@
 	"name": "dailyos/account-detail",
 	"title": "Account Detail",
 	"category": "dailyos",
-	"description": "Outer block for an Account entity surface — consumes get_entity_intelligence and hosts 24 inner blocks projecting from the EntityIntelligenceEnvelope per ADR-0130 §4.",
+	"description": "Outer block for an Account entity surface — consumes get_entity_intelligence and hosts the canonical account-detail chapter blocks projecting from the EntityIntelligenceEnvelope per ADR-0130 §4.",
 	"supports": {
 		"html": false,
 		"reusable": false,
@@ -25,9 +25,7 @@
 		["dailyos/account-hero"],
 		["dailyos/sentiment-hero"],
 		["dailyos/triage-section"],
-		["dailyos/divergence-section"],
 		["dailyos/outlook-panel"],
-		["dailyos/on-track-chapter"],
 		["dailyos/supporting-tension"],
 		["dailyos/about-intelligence"],
 		["dailyos/account-pull-quote"],
@@ -39,14 +37,13 @@
 		["dailyos/account-technical-footprint"],
 		["dailyos/relationship-fabric"],
 		["dailyos/about-this-dossier"],
-		["dailyos/account-detail-recommended-actions"],
-		["dailyos/account-detail-touchpoints-feed"],
-		["dailyos/account-detail-open-loops-feed"],
-		["dailyos/file-list"],
-		["dailyos/linear-issues-chapter"],
 		["dailyos/account-detail-unified-timeline"],
-		["dailyos/finis-marker"]
+		["dailyos/account-detail-reports"],
+		["dailyos/the-record"],
+		["dailyos/file-list"],
+		["dailyos/linear-issues-chapter"]
 	],
 	"render": "file:./render.php",
-	"editorScript": "file:./edit.js"
+	"editorScript": "file:./edit.js",
+	"viewScript": "file:./view.js"
 }

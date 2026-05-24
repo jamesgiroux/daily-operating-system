@@ -125,8 +125,13 @@ if ( ! function_exists( 'dailyos_person_detail_render' ) ) {
 		// render outside the block editor's template path), render the
 		// default template so the surface composes the 12 inner blocks.
 		$inner = $content;
-		if ( '' === trim( $inner ) && function_exists( 'do_blocks' ) ) {
-			$inner = do_blocks( dailyos_person_detail_default_template_markup() );
+		if ( '' === trim( $inner ) && class_exists( 'WP_Block' ) ) {
+			$ctx_for_inner = [
+				'dailyos/entityType'     => 'person',
+				'dailyos/entityId'       => $person_id,
+				'dailyos/envelopeHandle' => $envelope_handle,
+			];
+			$inner         = dailyos_person_detail_render_default_inner( $ctx_for_inner );
 		}
 
 		$out  = '<section ' . $wrapper_attrs . '>';
@@ -180,9 +185,33 @@ if ( ! function_exists( 'dailyos_person_detail_render' ) ) {
 			'dailyos/recommended-actions',
 			'dailyos/person-appendix',
 		];
-		$out = '';
+		$out    = '';
 		foreach ( $blocks as $name ) {
 			$out .= '<!-- wp:' . $name . ' /-->';
+		}
+		return $out;
+	}
+
+	/**
+	 * Render each block from the default template as a `WP_Block` with
+	 * explicit context, matching the project and meeting outer-block paths.
+	 *
+	 * @param array<string, mixed> $context Context consumed by inner blocks.
+	 * @return string Concatenated rendered HTML.
+	 */
+	function dailyos_person_detail_render_default_inner( array $context ): string {
+		$markup = dailyos_person_detail_default_template_markup();
+		$parsed = function_exists( 'parse_blocks' ) ? parse_blocks( $markup ) : [];
+		if ( ! is_array( $parsed ) ) {
+			return '';
+		}
+		$out = '';
+		foreach ( $parsed as $block_data ) {
+			if ( ! is_array( $block_data ) || empty( $block_data['blockName'] ) ) {
+				continue;
+			}
+			$wp_block = new \WP_Block( $block_data, $context );
+			$out     .= $wp_block->render();
 		}
 		return $out;
 	}
@@ -263,7 +292,7 @@ if ( ! function_exists( 'dailyos_person_detail_render' ) ) {
 			$scope_set = [];
 		}
 
-		$payload = $claim_ref;
+		$payload             = $claim_ref;
 		$payload['action']   = $action;
 		$payload['metadata'] = $metadata;
 

@@ -184,6 +184,125 @@ function enqueue_styles_dir( string $prefix, string $relative, array $deps ): vo
 }
 
 /**
+ * Account-detail local chapter map, grouped by active AccountViewSwitcher tab.
+ *
+ * Mirrors `src/components/account/account-detail-utils.ts` per-view chapter
+ * builders. The shared account headline is intentionally omitted: it stays
+ * visible above the tabs, but it is not a local chapter-nav item.
+ *
+ * @return array<string,array<int,string>> Chapter specs formatted for
+ *                                        chrome.js (`id:icon:label`).
+ */
+function account_detail_chapter_specs(): array {
+	return array(
+		'health'  => array(
+			'your-assessment:notebookpen:Your Assessment',
+			'needs-attention:alerttriangle:Needs attention',
+			'on-track:hearthandshake:On Track',
+			'outlook:target:Outlook',
+			'relationship-health:hearthandshake:The Read',
+			'portfolio:briefcase:Portfolio',
+			'about-intelligence:bookopen:About intelligence',
+		),
+		'context' => array(
+			'thesis:alignleft:Thesis',
+			'the-room:users:The Room',
+			'what-matters:compass:What matters',
+			'value-commitments:star:What we\'ve built',
+			'their-voice:mail:Their voice',
+			'commercial-shape:building:Commercial shape',
+			'technical-shape:monitor:Technical shape',
+			'relationship-fabric:hearthandshake:Relationship fabric',
+			'about-dossier:bookopen:About the dossier',
+		),
+		'work'    => array(
+			'commitments:checksquare:Commitments',
+			'suggestions:sparkles:Suggestions',
+			'programs:briefcase:Programs & motions',
+			'shared:link2:Shared with team',
+			'recently-landed:activity:Recently landed',
+			'outputs:filetext:Outputs',
+			'the-record:activity:The Record',
+			'files:paperclip:Files',
+			'linear-issues:checksquare:Linear Issues',
+		),
+	);
+}
+
+/**
+ * Flatten account-detail chapter specs for the chrome injector.
+ *
+ * @return string Pipe-delimited chapter spec string.
+ */
+function account_detail_chapters(): string {
+	return implode(
+		'|',
+		array_merge(
+			...array_values( account_detail_chapter_specs() )
+		)
+	);
+}
+
+/**
+ * Project-detail canonical local chapter map.
+ *
+ * Mirrors `.docs/design/reference/surfaces/project.html` and
+ * `src/pages/ProjectDetailEditorial.tsx`.
+ *
+ * @return string Pipe-delimited chapter spec string.
+ */
+function project_detail_chapters(): string {
+	return implode(
+		'|',
+		array(
+			'headline:alignleft:The Mission',
+			'portfolio:briefcase:Portfolio',
+			'trajectory:trendingup:Trajectory',
+			'the-horizon:compass:The Horizon',
+			'the-landscape:eye:The Landscape',
+			'the-room:users:The Team',
+			'the-record:activity:The Record',
+			'the-work:checksquare:The Work',
+		)
+	);
+}
+
+/**
+ * Person-detail canonical local chapter map.
+ *
+ * Mirrors `.docs/design/reference/surfaces/person.html` and the external
+ * person branch in `src/pages/PersonDetailEditorial.tsx`.
+ *
+ * @return string Pipe-delimited chapter spec string.
+ */
+function person_detail_chapters(): string {
+	return implode(
+		'|',
+		array(
+			'headline:alignleft:The Profile',
+			'the-dynamic:activity:The Dynamic',
+			'their-orbit:network:Their Orbit',
+			'their-network:users:Their Network',
+			'the-landscape:eye:The Landscape',
+			'the-record:activity:The Record',
+			'the-work:checksquare:The Work',
+		)
+	);
+}
+
+/**
+ * Meeting-detail canonical local chapter map.
+ *
+ * Mirrors `.docs/design/reference/surfaces/meeting.html` and
+ * `src/pages/MeetingDetailPage.tsx`.
+ *
+ * @return string Pipe-delimited chapter spec string.
+ */
+function meeting_detail_chapters(): string {
+	return 'headline:alignleft:The Brief|risks:alerttriangle:Risks|the-room:users:The Room|your-plan:target:Your Plan';
+}
+
+/**
  * Per-surface chrome config — emitted as `window.dailyosChrome` and merged
  * into `body.dataset.*` by chrome.js (via Patch 2). Drives FolioBar label,
  * breadcrumbs, tint, and actions slot.
@@ -211,20 +330,26 @@ function chrome_config(): array {
 	);
 
 	// dailyos_account — primary v1.4.4 W3 surface.
-	if ( is_singular( 'dailyos_account' ) ) {
+	if ( function_exists( 'is_singular' ) && is_singular( 'dailyos_account' ) ) {
 		$post = get_post();
+		// Chapters mirror src/components/account/account-detail-utils.ts
+		// buildHealthChapters/buildContextChapters/buildWorkChapters. The
+		// account-detail view script subsets this superset per active tab.
 		return array_merge(
 			$base,
 			array(
-				'active-page'  => 'accounts',
-				'tint'         => 'turmeric',
-				'folio-label'  => 'Account',
-				'folio-crumbs' => $post ? get_the_title( $post ) : 'Account',
+				'active-page'         => 'accounts',
+				'tint'                => 'turmeric',
+				'folio-label'         => 'Account',
+				'folio-crumbs'        => $post ? get_the_title( $post ) : 'Account',
+				'folio-actions'       => 'refresh,reports,tools',
+				'folio-refresh-title' => 'Refresh account',
+				'chapters'            => account_detail_chapters(),
 			)
 		);
 	}
 
-	if ( is_post_type_archive( 'dailyos_account' ) ) {
+	if ( function_exists( 'is_post_type_archive' ) && is_post_type_archive( 'dailyos_account' ) ) {
 		return array_merge(
 			$base,
 			array(
@@ -236,9 +361,54 @@ function chrome_config(): array {
 		);
 	}
 
-	// Stub branches for W2 entity CPTs — neutral defaults until W2 ships.
-	// Project surface gets its tint resolved at W2 L0 alongside the other entity tints.
-	if ( is_singular( 'dailyos_briefing' ) ) {
+	if ( function_exists( 'is_page' ) && is_page( 'actions' ) ) {
+		return array_merge(
+			$base,
+			array(
+				'active-page'     => 'actions',
+				'tint'            => 'terracotta',
+				'folio-label'     => 'Actions',
+				'folio-crumbs'    => 'Actions',
+				'folio-readiness' => '5 active,sage|1 overdue,terracotta',
+				'folio-actions'   => 'add',
+				'nav-home-id'     => 'actions',
+				'nav-home-label'  => 'Actions',
+				'nav-home-href'   => trailingslashit( home_url( '/' ) ) . 'actions/',
+			)
+		);
+	}
+
+	if ( function_exists( 'is_page' ) && is_page( 'emails' ) ) {
+		return array_merge(
+			$base,
+			array(
+				'active-page'         => 'emails',
+				'tint'                => 'turmeric',
+				'folio-label'         => 'The Correspondent',
+				'folio-crumbs'        => 'Emails',
+				'folio-actions'       => 'refresh',
+				'folio-refresh-title' => 'Check for new emails',
+				'nav-home-id'         => 'emails',
+				'nav-home-label'      => 'Emails',
+				'nav-home-href'       => trailingslashit( home_url( '/' ) ) . 'emails/',
+				'chapters'            => 'lead:alignleft:Lead|priority:alerttriangle:Priority|commitments:checksquare:Commitments|gone-quiet:eye:Gone quiet|updates:activity:Updates|inbox:mail:Inbox',
+			)
+		);
+	}
+
+	if ( function_exists( 'is_page' ) && is_page( 'mock-surfaces' ) ) {
+		return array_merge(
+			$base,
+			array(
+				'active-page'  => 'home',
+				'tint'         => 'eucalyptus',
+				'folio-label'  => 'Mock Surfaces',
+				'folio-crumbs' => 'Review',
+			)
+		);
+	}
+
+	if ( function_exists( 'is_singular' ) && is_singular( 'dailyos_briefing' ) ) {
 		// Match the canonical DailyBriefingDSpine reference (briefing-d-spine.html):
 		// FolioBar carries date + actions + chapters; DayStrip renders as a
 		// secondary chrome bar via the briefing template part. Readiness pills
@@ -258,30 +428,48 @@ function chrome_config(): array {
 			)
 		);
 	}
-	if ( is_singular( 'dailyos_person' ) ) {
+	if ( function_exists( 'is_singular' ) && is_singular( 'dailyos_person' ) ) {
+		$post = get_post();
 		return array_merge(
 			$base,
 			array(
-				'active-page' => 'people',
-				'folio-label' => 'Person',
+				'active-page'         => 'people',
+				'tint'                => 'larkspur',
+				'folio-label'         => 'Person',
+				'folio-crumbs'        => $post ? get_the_title( $post ) : 'Person',
+				'folio-actions'       => 'refresh',
+				'folio-refresh-title' => 'Refresh person',
+				'chapters'            => person_detail_chapters(),
 			)
 		);
 	}
-	if ( is_singular( 'dailyos_project' ) ) {
+	if ( function_exists( 'is_singular' ) && is_singular( 'dailyos_project' ) ) {
+		$post = get_post();
 		return array_merge(
 			$base,
 			array(
-				'active-page' => 'projects',
-				'folio-label' => 'Project',
+				'active-page'         => 'projects',
+				'tint'                => 'olive',
+				'folio-label'         => 'Project',
+				'folio-crumbs'        => $post ? get_the_title( $post ) : 'Project',
+				'folio-actions'       => 'refresh',
+				'folio-refresh-title' => 'Refresh project',
+				'chapters'            => project_detail_chapters(),
 			)
 		);
 	}
-	if ( is_singular( 'dailyos_meeting' ) ) {
+	if ( function_exists( 'is_singular' ) && is_singular( 'dailyos_meeting' ) ) {
+		$post = get_post();
 		return array_merge(
 			$base,
 			array(
-				'active-page' => 'meetings',
-				'folio-label' => 'Meeting',
+				'active-page'         => 'meetings',
+				'tint'                => 'turmeric',
+				'folio-label'         => 'Meeting Briefing',
+				'folio-crumbs'        => $post ? get_the_title( $post ) : 'Meeting',
+				'folio-actions'       => 'refresh',
+				'folio-refresh-title' => 'Refresh meeting',
+				'chapters'            => meeting_detail_chapters(),
 			)
 		);
 	}

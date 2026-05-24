@@ -3,7 +3,7 @@
  * Title: Account Detail Default
  * Slug: dailyos/account-detail-default
  * Categories: dailyos
- * Description: Canonical 24-chapter composition for an Account entity surface (W2 V1.2.1 §5.1 — DOS-462). Insert-then-detach semantics — user reordering does not affect other instances (NOT a synced pattern).
+ * Description: Canonical chapter composition for an Account entity surface (W2 V1.2.1 §5.1 — DOS-462). Insert-then-detach semantics — user reordering does not affect other instances (NOT a synced pattern).
  * Block Types: core/post-content
  * Inserter: no
  *
@@ -25,9 +25,7 @@
 <!-- wp:dailyos/account-hero /-->
 <!-- wp:dailyos/sentiment-hero /-->
 <!-- wp:dailyos/triage-section /-->
-<!-- wp:dailyos/divergence-section /-->
 <!-- wp:dailyos/outlook-panel /-->
-<!-- wp:dailyos/on-track-chapter /-->
 <!-- wp:dailyos/supporting-tension /-->
 <!-- wp:dailyos/about-intelligence /-->
 <!-- wp:dailyos/account-pull-quote /-->
@@ -39,11 +37,9 @@
 <!-- wp:dailyos/account-technical-footprint /-->
 <!-- wp:dailyos/relationship-fabric /-->
 <!-- wp:dailyos/about-this-dossier /-->
-<!-- wp:dailyos/account-detail-recommended-actions /-->
-<!-- wp:dailyos/account-detail-touchpoints-feed /-->
-<!-- wp:dailyos/account-detail-open-loops-feed /-->
+<!-- wp:dailyos/account-detail-unified-timeline /-->
+<!-- wp:dailyos/account-detail-reports /-->
+<!-- wp:dailyos/the-record /-->
 <!-- wp:dailyos/file-list /-->
 <!-- wp:dailyos/linear-issues-chapter /-->
-<!-- wp:dailyos/account-detail-unified-timeline /-->
-<!-- wp:dailyos/finis-marker /-->
 <!-- /wp:dailyos/account-detail -->

@@ -324,8 +324,8 @@ final class DailyOS_EntityDetailAutoFillTest extends TestCase {
 				$found_marker,
 				$template . ' must reference the outer block (direct or via wp:pattern slug)'
 			);
-			// Templates use the same shell as single-dailyos_account.html.
-			$this->assertStringContainsString( 'sidebar-account-summary', $contents, $template . ' must include sidebar template-part' );
+			$this->assertStringContainsString( 'MagazinePageLayout_magazinePage', $contents, $template . ' must use the magazine shell.' );
+			$this->assertStringNotContainsString( 'sidebar-account-summary', $contents, $template . ' must not use the legacy sidebar shell.' );
 		}
 	}
 

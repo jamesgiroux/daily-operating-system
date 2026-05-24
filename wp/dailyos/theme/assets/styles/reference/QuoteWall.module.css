@@ -59,22 +59,31 @@
   border: 1px solid var(--color-rule-light);
   border-radius: var(--radius-sm, 4px);
   color: var(--color-text-tertiary);
+  background: var(--color-paper-warm-white);
 }
 
 .QuoteWall_positive {
   color: var(--color-garden-sage);
+  background: var(--color-garden-sage-15);
+  border-color: var(--color-garden-sage);
 }
 
 .QuoteWall_negative {
-  color: var(--color-danger, #a94442);
+  color: var(--color-spice-terracotta);
+  background: var(--color-spice-terracotta-10);
+  border-color: var(--color-spice-terracotta);
 }
 
 .QuoteWall_mixed {
   color: var(--color-spice-turmeric);
+  background: var(--color-spice-turmeric-10);
+  border-color: var(--color-spice-turmeric);
 }
 
 .QuoteWall_neutral {
   color: var(--color-text-tertiary);
+  background: var(--color-desk-charcoal-4);
+  border-color: var(--color-rule-light);
 }
 
 @media (max-width: 760px) {
