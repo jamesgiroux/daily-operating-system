@@ -89,6 +89,32 @@ describe("SuggestionCard", () => {
     );
     expect(screen.getByRole("button", { name: /accepting/i })).toBeDisabled();
   });
+
+  it("renders claim-backed trust and source count for suggestions", () => {
+    render(
+      <SuggestionCard
+        headline="Propose an EBR"
+        rationale="Renewal is 60 days out."
+        trustBand="use_with_caution"
+        sourceCount={2}
+      />,
+    );
+
+    expect(screen.getByRole("img", { name: /trust band: use with caution/i })).toBeInTheDocument();
+    expect(screen.getByText("2 sources")).toBeInTheDocument();
+  });
+
+  it("does not render an empty evidence row for likely-current suggestions without sources", () => {
+    render(
+      <SuggestionCard
+        headline="Propose an EBR"
+        rationale="Renewal is 60 days out."
+        trustBand="likely_current"
+      />,
+    );
+
+    expect(screen.queryByText("Evidence")).not.toBeInTheDocument();
+  });
 });
 
 /**

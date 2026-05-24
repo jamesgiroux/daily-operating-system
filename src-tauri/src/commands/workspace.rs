@@ -1070,6 +1070,8 @@ fn db_email_to_email(dbe: crate::db::DbEmail) -> crate::types::Email {
         is_unread: dbe.is_unread,
         avatar_url: None,
         summary: dbe.contextual_summary,
+        summary_context_trust_band: None,
+        summary_context_source_count: None,
         recommended_action: None,
         conversation_arc: None,
         email_type: None,

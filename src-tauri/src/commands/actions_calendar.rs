@@ -123,6 +123,7 @@ pub async fn reject_suggested_action(
             "actions_page",
             "daily_briefing",
             "meeting_detail",
+            "account_detail_work",
         ],
     )?;
     let engine = state.signals.engine.clone();
@@ -162,6 +163,7 @@ pub async fn dismiss_suggested_action(
             "actions_page",
             "daily_briefing",
             "meeting_detail",
+            "account_detail_work",
         ],
     )?;
     let engine = state.signals.engine.clone();

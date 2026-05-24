@@ -73,6 +73,8 @@ export interface IntelligenceCorrectionProps {
   prompt?: string;
   /** Override for the post-submit done copy. */
   doneLabel?: string;
+  /** Surface that submitted the correction, for feedback provenance. */
+  source?: string | null;
 }
 
 type CorrectionMode =
@@ -110,6 +112,7 @@ export function IntelligenceCorrection({
   onCorrected,
   prompt = "Is this accurate?",
   doneLabel = "Recorded.",
+  source,
 }: IntelligenceCorrectionProps) {
   const { submit, submitting, reset } = useIntelligenceCorrection();
   const [mode, setMode] = useState<CorrectionMode>("idle");
@@ -120,14 +123,14 @@ export function IntelligenceCorrection({
 
   // ── Yes ─────────────────────────────────────────────────────────────────────
   const onYes = useCallback(async (): Promise<AccuracyPromptOutcome> => {
-    const ok = await submit({ entityId, entityType, field, action: "confirmed" });
+    const ok = await submit({ entityId, entityType, field, action: "confirmed", source });
     if (ok) {
       await onConfirmed?.();
       setMode("done");
       return "done";
     }
     return "stay";
-  }, [entityId, entityType, field, onConfirmed, submit]);
+  }, [entityId, entityType, field, onConfirmed, source, submit]);
 
   // ── No (dismiss variant) ────────────────────────────────────────────────────
   const onNoDismiss = useCallback(async (): Promise<AccuracyPromptOutcome> => {
@@ -137,13 +140,14 @@ export function IntelligenceCorrection({
       field,
       action: "dismissed",
       itemKey,
+      source,
     });
     if (ok) {
       await onDismissed?.();
       return "done";
     }
     return "stay";
-  }, [entityId, entityType, field, itemKey, onDismissed, submit]);
+  }, [entityId, entityType, field, itemKey, onDismissed, source, submit]);
 
   // ── Partially (correct variant) ─────────────────────────────────────────────
   const handleOpenAnnotation = useCallback(() => {
@@ -161,11 +165,12 @@ export function IntelligenceCorrection({
       field,
       action: "annotated",
       annotation: annotation.trim(),
+      source,
     });
     if (ok) {
       setMode("done");
     }
-  }, [annotation, entityId, entityType, field, submit]);
+  }, [annotation, entityId, entityType, field, source, submit]);
 
   // ── No (correct variant) ─────────────────────────────────────────────────────
   const handleOpenEditor = useCallback(() => {
@@ -183,12 +188,13 @@ export function IntelligenceCorrection({
       field,
       action: "corrected",
       correctedValue: trimmed,
+      source,
     });
     if (ok) {
       await onCorrected?.(trimmed);
       setMode("done");
     }
-  }, [correctedText, entityId, entityType, field, onCorrected, submit]);
+  }, [correctedText, entityId, entityType, field, onCorrected, source, submit]);
 
   const handleUndo = useCallback(() => {
     reset();

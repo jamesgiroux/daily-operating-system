@@ -13,6 +13,7 @@ impl From<String> for DbError {
 /// source of truth means the stats UI and the retry pass agree on which rows
 /// are "permanently" failed.
 pub const STALE_FAILED_MAX_AUTO_RETRIES: i32 = 5;
+pub const EMAIL_SUMMARY_CONTEXT_PROMPT_VERSION: &str = "v1.4.4a.w5.claim_context.v1";
 
 impl ActionDb {
     // =========================================================================
@@ -276,7 +277,10 @@ impl ActionDb {
                         contextual_summary, sentiment, urgency, user_is_last_sender,
                         last_sender_email, message_count, created_at, updated_at,
                         relevance_score, score_reason,
-                        pinned_at, commitments, questions, is_noise, to_recipients, cc_recipients
+                        pinned_at, commitments, questions, is_noise, to_recipients, cc_recipients,
+                        summary_context_prompt_version, summary_context_trust_band,
+                        summary_context_source_count, summary_context_source_keys_json,
+                        summary_context_generated_at
                  FROM emails
                  WHERE enrichment_state IN ('pending', 'pending_retry', 'failed')
                    AND enrichment_attempts < 3
@@ -322,8 +326,13 @@ impl ActionDb {
                     sentiment = COALESCE(?6, sentiment),
                     urgency = COALESCE(?7, urgency),
                     is_noise = COALESCE(?8, is_noise),
+                    summary_context_prompt_version = CASE WHEN ?3 IS NOT NULL THEN ?9 ELSE NULL END,
+                    summary_context_trust_band = CASE WHEN ?3 IS NOT NULL THEN ?10 ELSE NULL END,
+                    summary_context_source_count = CASE WHEN ?3 IS NOT NULL THEN ?11 ELSE NULL END,
+                    summary_context_source_keys_json = CASE WHEN ?3 IS NOT NULL THEN ?12 ELSE NULL END,
+                    summary_context_generated_at = CASE WHEN ?3 IS NOT NULL THEN ?13 ELSE NULL END,
                     updated_at = ?2
-                 WHERE email_id = ?9",
+                 WHERE email_id = ?14",
                 params![
                     state,
                     now,
@@ -333,6 +342,11 @@ impl ActionDb {
                     enrichment.sentiment,
                     enrichment.urgency,
                     is_noise_param,
+                    enrichment.summary_context_prompt_version,
+                    enrichment.summary_context_trust_band,
+                    enrichment.summary_context_source_count.map(|count| count as i64),
+                    enrichment.summary_context_source_keys_json,
+                    enrichment.summary_context_generated_at,
                     email_id,
                 ],
             )
@@ -351,7 +365,10 @@ impl ActionDb {
                         contextual_summary, sentiment, urgency, user_is_last_sender,
                         last_sender_email, message_count, created_at, updated_at,
                         relevance_score, score_reason,
-                        pinned_at, commitments, questions, is_noise, to_recipients, cc_recipients
+                        pinned_at, commitments, questions, is_noise, to_recipients, cc_recipients,
+                        summary_context_prompt_version, summary_context_trust_band,
+                        summary_context_source_count, summary_context_source_keys_json,
+                        summary_context_generated_at
                  FROM emails
                  WHERE resolved_at IS NULL
                    AND is_noise = 0
@@ -381,7 +398,10 @@ impl ActionDb {
                         contextual_summary, sentiment, urgency, user_is_last_sender,
                         last_sender_email, message_count, created_at, updated_at,
                         relevance_score, score_reason,
-                        pinned_at, commitments, questions, is_noise, to_recipients, cc_recipients
+                        pinned_at, commitments, questions, is_noise, to_recipients, cc_recipients,
+                        summary_context_prompt_version, summary_context_trust_band,
+                        summary_context_source_count, summary_context_source_keys_json,
+                        summary_context_generated_at
                  FROM emails
                  WHERE entity_id = ?1 AND resolved_at IS NULL AND is_noise = 0
                  ORDER BY received_at DESC",
@@ -935,7 +955,10 @@ impl ActionDb {
                         contextual_summary, sentiment, urgency, user_is_last_sender,
                         last_sender_email, message_count, created_at, updated_at,
                         relevance_score, score_reason,
-                        pinned_at, commitments, questions, is_noise, to_recipients, cc_recipients
+                        pinned_at, commitments, questions, is_noise, to_recipients, cc_recipients,
+                        summary_context_prompt_version, summary_context_trust_band,
+                        summary_context_source_count, summary_context_source_keys_json,
+                        summary_context_generated_at
                  FROM emails
                  WHERE resolved_at IS NULL
                    AND is_noise = 0
@@ -968,7 +991,10 @@ impl ActionDb {
                         contextual_summary, sentiment, urgency, user_is_last_sender,
                         last_sender_email, message_count, created_at, updated_at,
                         relevance_score, score_reason,
-                        pinned_at, commitments, questions, is_noise, to_recipients, cc_recipients
+                        pinned_at, commitments, questions, is_noise, to_recipients, cc_recipients,
+                        summary_context_prompt_version, summary_context_trust_band,
+                        summary_context_source_count, summary_context_source_keys_json,
+                        summary_context_generated_at
                  FROM emails
                  WHERE user_is_last_sender = 0
                    AND resolved_at IS NULL
@@ -1354,13 +1380,18 @@ pub struct EmailEnrichmentUpdate<'a> {
     pub entity_type: Option<&'a str>,
     pub sentiment: Option<&'a str>,
     pub urgency: Option<&'a str>,
+    pub summary_context_prompt_version: Option<&'a str>,
+    pub summary_context_trust_band: Option<&'a str>,
+    pub summary_context_source_count: Option<usize>,
+    pub summary_context_source_keys_json: Option<&'a str>,
+    pub summary_context_generated_at: Option<&'a str>,
     /// LLM-determined noise verdict. None = no opinion (don't
     /// change the deterministic value); Some(true) = AI says noise;
     /// Some(false) = AI says signal (overrides any prior is_noise=1).
     pub is_noise: Option<bool>,
 }
 
-/// Row mapper for emails SELECT queries (33 columns).
+/// Row mapper for emails SELECT queries (38 columns).
 fn map_email_row(row: &rusqlite::Row) -> rusqlite::Result<DbEmail> {
     Ok(DbEmail {
         email_id: row.get(0)?,
@@ -1398,5 +1429,10 @@ fn map_email_row(row: &rusqlite::Row) -> rusqlite::Result<DbEmail> {
         // columns added by migration 120. Default None on legacy rows.
         to_recipients: row.get(31).ok(),
         cc_recipients: row.get(32).ok(),
+        summary_context_prompt_version: row.get(33).ok(),
+        summary_context_trust_band: row.get(34).ok(),
+        summary_context_source_count: row.get(35).ok(),
+        summary_context_source_keys_json: row.get(36).ok(),
+        summary_context_generated_at: row.get(37).ok(),
     })
 }

@@ -1394,6 +1394,12 @@ pub struct Email {
     /// AI-generated one-line summary of the email
     #[serde(skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
+    /// Trust band for the claim-backed context used by the AI-generated summary.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary_context_trust_band: Option<String>,
+    /// Number of prompt-safe claim sources available for the summary's linked entity.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary_context_source_count: Option<usize>,
     /// Suggested next action (e.g. "Reply with counter-proposal")
     #[serde(skip_serializing_if = "Option::is_none")]
     pub recommended_action: Option<String>,

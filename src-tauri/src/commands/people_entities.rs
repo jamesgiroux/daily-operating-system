@@ -764,6 +764,7 @@ pub struct SubmitIntelligenceCorrectionRequest {
     pub corrected_value: Option<String>,
     pub annotation: Option<String>,
     pub item_key: Option<String>,
+    pub source: Option<String>,
 }
 
 #[allow(
@@ -776,6 +777,19 @@ pub async fn submit_intelligence_correction(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let parsed = crate::db::feedback::CorrectionAction::parse(&request.action)?;
+    if let Some(source) = request.source.as_deref() {
+        crate::util::validate_enum_string(
+            source,
+            "source",
+            &[
+                "unknown",
+                "actions_page",
+                "daily_briefing",
+                "meeting_detail",
+                "account_detail_work",
+            ],
+        )?;
+    }
     //  construct ServiceContext at the command boundary.
     let state_for_ctx = Arc::clone(&state);
     state
@@ -792,6 +806,7 @@ pub async fn submit_intelligence_correction(
                     corrected_value: request.corrected_value.as_deref(),
                     annotation: request.annotation.as_deref(),
                     item_key: request.item_key.as_deref(),
+                    source_system: request.source.as_deref(),
                 },
             )
         })

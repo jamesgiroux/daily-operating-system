@@ -29,6 +29,8 @@ export interface SubmitCorrectionArgs {
   correctedValue?: string | null;
   /** User-authored note. Required for `annotated`; optional on others. */
   annotation?: string | null;
+  /** Surface that submitted the correction, for feedback provenance. */
+  source?: string | null;
 }
 
 export interface UseIntelligenceCorrectionResult {
@@ -74,6 +76,7 @@ export function useIntelligenceCorrection(): UseIntelligenceCorrectionResult {
         itemKey,
         correctedValue,
         annotation,
+        source,
       } = args;
 
       // Client-side guards — keep parity with backend expectations.
@@ -113,6 +116,7 @@ export function useIntelligenceCorrection(): UseIntelligenceCorrectionResult {
             itemKey: itemKey ?? null,
             correctedValue: correctedValue ?? null,
             annotation: annotation ?? null,
+            source: source ?? null,
           },
         });
         setSuccess(true);

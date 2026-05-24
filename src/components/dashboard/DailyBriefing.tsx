@@ -694,7 +694,7 @@ function AttentionSection({
   acceptAction: (id: string) => void;
   rejectAction: (
     id: string,
-    source?: "actions_page" | "daily_briefing" | "meeting_detail"
+    source?: "actions_page" | "daily_briefing" | "meeting_detail" | "account_detail_work"
   ) => void;
   focus: DashboardData["focus"];
   pendingActions: Action[];
@@ -1038,6 +1038,14 @@ function PriorityEmailItem({ email }: { email: Email }) {
               {/* Only show sender when it adds info beyond entity name */}
               {(!email.entityName || !email.sender.includes(email.entityName)) && (
                 <span>{email.sender}</span>
+              )}
+              {email.summaryContextTrustBand && (
+                <TrustBandIndicator band={email.summaryContextTrustBand} />
+              )}
+              {email.summaryContextSourceCount && email.summaryContextSourceCount > 0 && (
+                <span>
+                  claim context · {email.summaryContextSourceCount} source{email.summaryContextSourceCount === 1 ? "" : "s"}
+                </span>
               )}
               {email.scoreReason && (() => {
                 // Strip entity name from reason when chip already shows it
