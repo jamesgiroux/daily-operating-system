@@ -16,5 +16,6 @@ pub mod auth;
 pub mod contracts;
 pub mod gateway;
 pub mod handlers;
+pub mod runtime_projection;
 pub mod taxonomy;
 pub mod transport;

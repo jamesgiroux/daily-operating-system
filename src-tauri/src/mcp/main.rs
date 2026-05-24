@@ -27,7 +27,7 @@ use dailyos_lib::bridges::tauri::TauriAbilityBridge;
 use dailyos_lib::bridges::{BridgeSurfaceError, McpSessionId};
 use dailyos_lib::db::ActionDb;
 use dailyos_lib::embeddings::EmbeddingModel;
-use dailyos_lib::services::mcp_v2::handlers::tool_account_status::present_account_status_response_with_label;
+use dailyos_lib::services::mcp_v2::handlers::tool_account_status::present_account_status_response_with_context;
 use dailyos_lib::services::sensitivity::{
     render_mcp_static_json_for_surface, render_mcp_static_text_for_surface, McpStaticTextClass,
     RenderableMcpClaimText, RenderableMcpStaticText, RenderableMcpText,
@@ -413,10 +413,13 @@ impl DailyOsMcp {
                 None,
             )
             .await?;
-        Ok(present_account_status_response_with_label(
+        let invocation_id = response.invocation_id.0.to_string();
+        Ok(present_account_status_response_with_context(
             account_id,
             response.data,
             Some(account_label),
+            Some(&invocation_id),
+            Some("get_provenance"),
         ))
     }
 
@@ -1002,14 +1005,9 @@ fn get_provenance_invocation_id(request: &CallToolRequestParam) -> Result<Invoca
         ));
     };
 
-    if arguments.len() != 1 {
-        return Err(mcp_error_from_bridge_surface_error(
-            BridgeSurfaceError::AbilityUnavailable,
-        ));
-    }
-
     let Some(invocation_id) = arguments
         .get("invocation_id")
+        .or_else(|| arguments.get("invocationId"))
         .and_then(serde_json::Value::as_str)
     else {
         return Err(mcp_error_from_bridge_surface_error(
@@ -1379,6 +1377,9 @@ fn account_status_has_assessment_content(value: &serde_json::Value) -> bool {
         "/assessment/facts",
         "/assessment/openLoops",
         "/assessment/relationships",
+        "/assessment/touchpoints",
+        "/assessment/recordEntries",
+        "/assessment/priorities",
     ]
     .iter()
     .any(|pointer| {
@@ -1625,6 +1626,26 @@ mod tests {
                 "facts": [],
                 "openLoops": [],
                 "relationships": [{ "relationship": "Stakeholder" }]
+            }
+        });
+
+        assert_eq!(
+            account_intelligence_summary(&payload),
+            Some("DailyOS account briefing for Example Account.".to_string())
+        );
+    }
+
+    #[test]
+    fn account_intelligence_summary_uses_answer_for_touchpoint_only_content() {
+        let payload = json!({
+            "answer": "DailyOS account briefing for Example Account.",
+            "assessment": {
+                "facts": [],
+                "openLoops": [],
+                "relationships": [],
+                "touchpoints": [{ "kind": "meeting", "when": "2026-05-22T15:00:00Z" }],
+                "recordEntries": [],
+                "priorities": []
             }
         });
 
@@ -1980,6 +2001,21 @@ mod tests {
         assert_eq!(provenance_result.is_error, Some(false));
         assert_eq!(provenance_value["surface"], "mcp_tool_detail");
         assert_eq!(provenance_value["value"]["invocation_id"], invocation_id);
+
+        let camel_case_handle_result = invoke_mcp_get_provenance_tool(
+            &bridge,
+            session_id,
+            request(
+                "get_provenance",
+                json!({
+                    "invocationId": invocation_id,
+                    "detailAvailable": true,
+                    "detailTool": "get_provenance"
+                }),
+            ),
+        )
+        .unwrap();
+        assert_eq!(camel_case_handle_result.is_error, Some(false));
 
         let cross_session = invoke_mcp_get_provenance_tool(
             &bridge,

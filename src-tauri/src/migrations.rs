@@ -1013,7 +1013,7 @@ const MIGRATIONS: &[Migration] = &[
     },
     // Migration 259 (mcp_transport_nonce_ledger repair) is intentionally
     // absent. It briefly reintroduced the remote transport nonce ledger after
-    // DOS-168 removed transport ceremony for local MCP.
+    // local MCP moved to OS/user trust instead of remote transport ceremony.
     // v1.4.4a W5 — email summary trust/source badges must be tied to the
     // enrichment pass that produced the summary, not computed from a later
     // entity-claim snapshot.

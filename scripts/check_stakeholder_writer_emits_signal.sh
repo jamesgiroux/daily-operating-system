@@ -267,7 +267,7 @@ while IFS= read -r -d '' file; do
         }
         stop = min(n, i + 30)
         fn_idx = enclosing_function(i)
-        if (allowlisted_writer || is_non_graph_update(i, stop) ||
+        if (in_cfg_test_line[i] || allowlisted_writer || is_non_graph_update(i, stop) ||
             has_write_level_stakeholder_signal(i, fn_idx)) {
           continue
         }
