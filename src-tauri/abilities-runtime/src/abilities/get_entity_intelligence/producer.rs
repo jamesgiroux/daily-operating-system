@@ -362,16 +362,28 @@ async fn read_claims(
         crate::abilities::get_entity_context::ContextDepth::Standard => 2,
         crate::abilities::get_entity_context::ContextDepth::Deep => 3,
     };
-    let claims = ctx
-        .services()
-        .read_entity_context_claims(
-            entity_type.to_string(),
-            entity_id.to_string(),
-            ctx.entity_context_claim_surface(),
-            levels,
-        )
-        .await
-        .map_err(|error| hard_error("entity_intelligence_claim_read_failed", error))?;
+    let claims = if matches!(ctx.actor, Actor::Agent | Actor::McpClient { .. }) {
+        ctx.services()
+            .read_entity_context_prompt_claims_limited(
+                entity_type.to_string(),
+                entity_id.to_string(),
+                ctx.entity_context_claim_surface(),
+                levels,
+                DEFAULT_PAGE_SIZE + 1,
+            )
+            .await
+    } else {
+        ctx.services()
+            .read_entity_context_claims_limited(
+                entity_type.to_string(),
+                entity_id.to_string(),
+                ctx.entity_context_claim_surface(),
+                levels,
+                DEFAULT_PAGE_SIZE + 1,
+            )
+            .await
+    }
+    .map_err(|error| hard_error("entity_intelligence_claim_read_failed", error))?;
     Ok(filter_claims_for_actor(ctx.actor.clone(), claims))
 }
 
@@ -1186,12 +1198,7 @@ fn project_relationship_participant(
         .relationship
         .as_deref()
         .and_then(|relationship| {
-            renderable_evidence_text(
-                relationship,
-                &raw.sensitivity,
-                render_surface,
-                render_actor,
-            )
+            renderable_evidence_text(relationship, &raw.sensitivity, render_surface, render_actor)
         })
         .or_else(|| {
             if raw.relationship.is_some() {
@@ -1837,7 +1844,7 @@ mod tests {
     use chrono::TimeZone;
 
     use super::super::contracts::{ExclusionReason, InclusionReason, Touchpoint, TouchpointKind};
-    use crate::abilities::registry::AbilityContext;
+    use crate::abilities::registry::{AbilityContext, McpClientId};
     use crate::abilities::{Actor, NOOP_ABILITY_TRACER};
     use crate::intelligence::provider::ReplayProvider;
     use crate::sensitivity::ClaimVerificationState;
@@ -1863,6 +1870,36 @@ mod tests {
             _depth: usize,
         ) -> EntityContextClaimReadFuture<'a> {
             Box::pin(async { Ok(Vec::<IntelligenceClaim>::new()) })
+        }
+    }
+
+    struct PromptSafeBeforeCapClaimReader;
+
+    impl EntityContextClaimReadHandle for PromptSafeBeforeCapClaimReader {
+        fn read_entity_context_claims<'a>(
+            &'a self,
+            _entity_type: String,
+            _entity_id: String,
+            _surface: ClaimDismissalSurface,
+            _depth: usize,
+        ) -> EntityContextClaimReadFuture<'a> {
+            Box::pin(async { Ok(prompt_safe_before_cap_claims()) })
+        }
+
+        fn read_entity_context_prompt_claims_limited<'a>(
+            &'a self,
+            _entity_type: String,
+            _entity_id: String,
+            _surface: ClaimDismissalSurface,
+            _depth: usize,
+            limit: usize,
+        ) -> EntityContextClaimReadFuture<'a> {
+            Box::pin(async move {
+                let mut claims = prompt_safe_before_cap_claims();
+                claims.retain(crate::types::claim_allowed_for_prompt_input);
+                claims.truncate(limit);
+                Ok(claims)
+            })
         }
     }
 
@@ -2031,6 +2068,32 @@ mod tests {
         }
     }
 
+    fn prompt_safe_before_cap_claims() -> Vec<IntelligenceClaim> {
+        let mut claims = Vec::new();
+        for index in 0..=DEFAULT_PAGE_SIZE {
+            let mut claim = claim_fixture(
+                &format!("claim-confidential-newer-{index}"),
+                "account",
+                "acct-test-001",
+                &format!("Confidential claim {index}"),
+            );
+            claim.sensitivity = ClaimSensitivity::Confidential;
+            claim.created_at = format!("2026-05-23T11:{index:02}:00Z");
+            claims.push(claim);
+        }
+
+        let mut safe_claim = claim_fixture(
+            "claim-internal-older",
+            "account",
+            "acct-test-001",
+            "Older prompt-safe claim should survive the MCP bounded read.",
+        );
+        safe_claim.sensitivity = ClaimSensitivity::Internal;
+        safe_claim.created_at = "2026-05-23T10:00:00Z".to_string();
+        claims.push(safe_claim);
+        claims
+    }
+
     #[test]
     fn sections_map_enumerates_all_variants_when_no_filter() {
         let map = build_sections_map(ENVELOPE_SCHEMA_VERSION_V1, &None, fill(0, 0));
@@ -2071,6 +2134,58 @@ mod tests {
 
         assert_eq!(output.data().subject.id, "acct-test-001");
         assert!(output.data().facts.items.is_empty());
+    }
+
+    #[tokio::test]
+    async fn agent_and_mcp_producer_read_prompt_safe_claims_before_page_cap() {
+        for actor in [
+            Actor::Agent,
+            Actor::McpClient {
+                client_id: McpClientId::new("mcp-test"),
+                conversation_handle: None,
+            },
+        ] {
+            let actor_label = format!("{actor:?}");
+            let clock =
+                FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 22, 12, 0, 0).unwrap());
+            let rng = SystemRng;
+            let services = ServiceContext::new_evaluate_default(&clock, &rng)
+                .with_entity_context_claim_reader(Arc::new(PromptSafeBeforeCapClaimReader));
+            let provider = ReplayProvider::new(std::collections::HashMap::new());
+            let ctx = AbilityContext::new(
+                &services,
+                &provider,
+                &NOOP_ABILITY_TRACER,
+                actor,
+                None,
+                ClaimDismissalSurface::McpTool,
+            );
+
+            let output = build_entity_intelligence(
+                &ctx,
+                EntityIntelligenceInput {
+                    schema_version: ENVELOPE_SCHEMA_VERSION_V2,
+                    entity_type: EntityKind::Account,
+                    entity_id: "acct-test-001".to_string(),
+                    depth: EnvelopeContextDepth::Standard,
+                    sections: Some(vec![EnvelopeSection::Facts]),
+                },
+            )
+            .await
+            .expect("prompt actors should preserve prompt-safe claims behind confidential rows");
+
+            assert_eq!(
+                output
+                    .data()
+                    .facts
+                    .items
+                    .iter()
+                    .map(|fact| fact.claim_id.as_str())
+                    .collect::<Vec<_>>(),
+                vec!["claim-internal-older"],
+                "{actor_label} entity intelligence must call the prompt-safe reader before applying the page cap"
+            );
+        }
     }
 
     #[tokio::test]

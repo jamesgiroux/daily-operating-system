@@ -16,7 +16,7 @@
 //! `call_graph_lint::briefing_producer_contains_no_mutations` test below
 //! (AC-507.7).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::contracts::{
     AmbiguityPair, BriefingAdvisory, BriefingAvailability, BriefingEmptyReason, BriefingFreshness,
@@ -84,18 +84,37 @@ pub async fn build_daily_briefing(
         }
     };
 
-    let meetings: Vec<&DailyReadinessMeetingSnapshot> = readiness.meetings.iter().collect();
+    let mut meetings: Vec<&DailyReadinessMeetingSnapshot> = readiness.meetings.iter().collect();
+    sort_meeting_snapshots(&mut meetings);
 
     if meetings.is_empty() {
         return empty_no_meetings(&input, workspace_id).into_envelope(ctx, input.schema_version);
     }
+
+    // Daily Briefing may run on unusually dense calendar days. Keep the
+    // authoritative meeting list for cursor totals, but only expand prep
+    // status and entity envelopes for what this invocation can render:
+    // current + next + the requested upcoming page.
+    let now = ctx.services().clock.now();
+    let (current_meeting_seed, next_meeting_seed) =
+        pick_current_and_next_snapshots(&meetings, &now);
+    let upcoming_meeting_seeds =
+        paginate_upcoming_snapshots(&meetings, input.upcoming_meetings_cursor.as_ref());
+    let expansion_ids = collect_expansion_meeting_ids(
+        current_meeting_seed.as_ref(),
+        next_meeting_seed.as_ref(),
+        &upcoming_meeting_seeds.items,
+    );
 
     // ---- compose: per-meeting prep status ---------------------------------
     let mut prep_snapshots: BTreeMap<String, MeetingPrepStatusSnapshot> = BTreeMap::new();
     let mut prep_read_failures: Vec<String> = Vec::new();
     let mut needs_prep_meeting_ids: Vec<String> = Vec::new();
 
-    for meeting in &meetings {
+    for meeting in meetings
+        .iter()
+        .filter(|meeting| expansion_ids.contains(&meeting.id))
+    {
         match ctx
             .services()
             .read_meeting_prep_status(meeting.id.clone())
@@ -120,20 +139,18 @@ pub async fn build_daily_briefing(
     }
 
     // ---- compose: meeting brief refs --------------------------------------
-    let mut meeting_refs: Vec<MeetingBriefRef> = meetings
-        .iter()
-        .map(|meeting| project_meeting_brief(meeting, prep_snapshots.get(&meeting.id)))
-        .collect();
-    // Sort by starts_at with undated meetings (None) sorted AFTER dated
-    // ones (cycle-2 fix for codex P3 — `Option::cmp` defaults to None < Some
-    // which pushed undated meetings to the FRONT of the cursor, contradicting
-    // the comment + AC-507.6 stable-cursor expectation).
-    meeting_refs.sort_by(|a, b| match (a.starts_at.as_ref(), b.starts_at.as_ref()) {
-        (Some(left), Some(right)) => left.cmp(right),
-        (Some(_), None) => std::cmp::Ordering::Less,
-        (None, Some(_)) => std::cmp::Ordering::Greater,
-        (None, None) => std::cmp::Ordering::Equal,
-    });
+    let current_meeting = current_meeting_seed
+        .as_ref()
+        .map(|meeting| project_meeting_brief(meeting, prep_snapshots.get(&meeting.id)));
+    let next_meeting = next_meeting_seed
+        .as_ref()
+        .map(|meeting| project_meeting_brief(meeting, prep_snapshots.get(&meeting.id)));
+    let upcoming_meetings = project_upcoming_meetings(upcoming_meeting_seeds, &prep_snapshots);
+    let expanded_meeting_refs = collect_expanded_meeting_refs(
+        current_meeting.as_ref(),
+        next_meeting.as_ref(),
+        &upcoming_meetings.items,
+    );
 
     // ---- compose: per-linked-entity envelopes -----------------------------
     // The L0 contract calls for per-subject `get_entity_intelligence`
@@ -141,7 +158,7 @@ pub async fn build_daily_briefing(
     // of building the integrity + trust summary; they do not need to be
     // emitted back through this envelope verbatim because the W3 briefing
     // block re-invokes `get_entity_intelligence` for any deeper drill-in.
-    let linked_entities = collect_linked_entities(&meeting_refs);
+    let linked_entities = collect_linked_entities(&expanded_meeting_refs);
     let mut envelope_provenance = EnvelopeProvenance::empty();
     let mut superseded_claim_ids: Vec<String> = Vec::new();
     let mut aggregate_sensitivity = ClaimSensitivity::Public;
@@ -157,7 +174,7 @@ pub async fn build_daily_briefing(
             entity_type: entity_type.clone(),
             entity_id: entity_id.clone(),
             depth: ContextDepth::Shallow,
-            sections: Some(vec![EnvelopeSection::Facts, EnvelopeSection::OpenLoops]),
+            sections: Some(daily_briefing_entity_sections()),
         };
         match build_entity_intelligence(ctx, env_input).await {
             Ok(envelope_output) => {
@@ -184,19 +201,11 @@ pub async fn build_daily_briefing(
         }
     }
 
-    // ---- compose: current + next meeting ----------------------------------
-    let now = ctx.services().clock.now();
-    let (current_meeting, next_meeting) = pick_current_and_next(&meeting_refs, &now);
-
-    // ---- compose: pagination over upcoming meetings (AC-507.10) ----------
-    let upcoming_meetings =
-        paginate_upcoming(&meeting_refs, input.upcoming_meetings_cursor.as_ref());
-
     // ---- compose: candidate set -------------------------------------------
     let candidate_set = build_candidate_set(&readiness);
 
     // ---- compose: state (4-tuple) -----------------------------------------
-    let availability = if matches!(meeting_refs.len(), 0) {
+    let availability = if matches!(meetings.len(), 0) {
         BriefingAvailability::Empty {
             reason: BriefingEmptyReason::NoMeetings,
         }
@@ -208,7 +217,7 @@ pub async fn build_daily_briefing(
     let integrity = derive_integrity(&superseded_claim_ids);
     let advisories = derive_advisories(
         &readiness,
-        &meeting_refs,
+        &expanded_meeting_refs,
         &prep_read_failures,
         &envelope_failures,
     );
@@ -339,6 +348,49 @@ fn project_meeting_brief(
     }
 }
 
+fn sort_meeting_snapshots(meetings: &mut Vec<&DailyReadinessMeetingSnapshot>) {
+    // Sort by starts_at with undated meetings (None) sorted AFTER dated ones.
+    // `Option::cmp` defaults to None < Some, which would push undated
+    // meetings to the front and make the cursor unstable.
+    meetings.sort_by(|a, b| match (a.starts_at.as_ref(), b.starts_at.as_ref()) {
+        (Some(left), Some(right)) => left.cmp(right),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => std::cmp::Ordering::Equal,
+    });
+}
+
+fn collect_expansion_meeting_ids(
+    current: Option<&DailyReadinessMeetingSnapshot>,
+    next: Option<&DailyReadinessMeetingSnapshot>,
+    upcoming: &[DailyReadinessMeetingSnapshot],
+) -> BTreeSet<String> {
+    let mut ids = BTreeSet::new();
+    if let Some(meeting) = current {
+        ids.insert(meeting.id.clone());
+    }
+    if let Some(meeting) = next {
+        ids.insert(meeting.id.clone());
+    }
+    ids.extend(upcoming.iter().map(|meeting| meeting.id.clone()));
+    ids
+}
+
+fn collect_expanded_meeting_refs(
+    current: Option<&MeetingBriefRef>,
+    next: Option<&MeetingBriefRef>,
+    upcoming: &[MeetingBriefRef],
+) -> Vec<MeetingBriefRef> {
+    let mut seen = BTreeSet::new();
+    let mut refs = Vec::new();
+    for meeting in current.into_iter().chain(next).chain(upcoming.iter()) {
+        if seen.insert(meeting.meeting_id.clone()) {
+            refs.push(meeting.clone());
+        }
+    }
+    refs
+}
+
 fn collect_linked_entities(meetings: &[MeetingBriefRef]) -> Vec<(EntityKind, String)> {
     let mut seen = std::collections::BTreeSet::new();
     let mut out = Vec::new();
@@ -367,6 +419,10 @@ fn parse_entity_kind(kind: &str) -> Option<EntityKind> {
         "person" => Some(EntityKind::Person),
         _ => None,
     }
+}
+
+fn daily_briefing_entity_sections() -> Vec<EnvelopeSection> {
+    vec![EnvelopeSection::Facts]
 }
 
 fn prep_status_is_needs_preparation(status: &str) -> bool {
@@ -448,12 +504,15 @@ fn rank_sensitivity(sensitivity: &ClaimSensitivity) -> u8 {
     }
 }
 
-fn pick_current_and_next(
-    meetings: &[MeetingBriefRef],
+fn pick_current_and_next_snapshots(
+    meetings: &[&DailyReadinessMeetingSnapshot],
     now: &chrono::DateTime<chrono::Utc>,
-) -> (Option<MeetingBriefRef>, Option<MeetingBriefRef>) {
-    let mut current: Option<MeetingBriefRef> = None;
-    let mut next: Option<MeetingBriefRef> = None;
+) -> (
+    Option<DailyReadinessMeetingSnapshot>,
+    Option<DailyReadinessMeetingSnapshot>,
+) {
+    let mut current: Option<DailyReadinessMeetingSnapshot> = None;
+    let mut next: Option<DailyReadinessMeetingSnapshot> = None;
     for meeting in meetings {
         let Some(starts_at) = meeting.starts_at.as_deref() else {
             continue;
@@ -470,21 +529,21 @@ fn pick_current_and_next(
 
         if let Some(end) = ends_at_utc {
             if starts_at_utc <= *now && *now < end && current.is_none() {
-                current = Some(meeting.clone());
+                current = Some((*meeting).clone());
                 continue;
             }
         }
         if starts_at_utc > *now && next.is_none() {
-            next = Some(meeting.clone());
+            next = Some((*meeting).clone());
         }
     }
     (current, next)
 }
 
-fn paginate_upcoming(
-    meetings: &[MeetingBriefRef],
+fn paginate_upcoming_snapshots(
+    meetings: &[&DailyReadinessMeetingSnapshot],
     cursor: Option<&Cursor>,
-) -> Paginated<MeetingBriefRef> {
+) -> Paginated<DailyReadinessMeetingSnapshot> {
     let offset = cursor
         .and_then(|c| parse_cursor_offset(c.as_str()))
         .unwrap_or(0);
@@ -493,7 +552,7 @@ fn paginate_upcoming(
         .iter()
         .skip(offset)
         .take(UPCOMING_MEETINGS_PAGE_SIZE)
-        .cloned()
+        .map(|meeting| (*meeting).clone())
         .collect::<Vec<_>>();
     let consumed = offset + slice.len();
     let next_cursor = if consumed < meetings.len() {
@@ -506,6 +565,22 @@ fn paginate_upcoming(
         next_cursor,
         total_hint: Some(total),
         cursor_state: CursorState::Stable,
+    }
+}
+
+fn project_upcoming_meetings(
+    page: Paginated<DailyReadinessMeetingSnapshot>,
+    prep_snapshots: &BTreeMap<String, MeetingPrepStatusSnapshot>,
+) -> Paginated<MeetingBriefRef> {
+    Paginated {
+        items: page
+            .items
+            .iter()
+            .map(|meeting| project_meeting_brief(meeting, prep_snapshots.get(&meeting.id)))
+            .collect(),
+        next_cursor: page.next_cursor,
+        total_hint: page.total_hint,
+        cursor_state: page.cursor_state,
     }
 }
 
@@ -733,6 +808,12 @@ fn finalize_with_provenance(
     let subject_attr = SubjectAttribution::direct_confident(SubjectRef::Unknown);
     builder.set_subject(subject_attr.clone());
     builder
+        .attribute_subtree(
+            FieldPath::root(),
+            FieldAttribution::constant(subject_attr.clone()),
+        )
+        .map_err(provenance_error)?;
+    builder
         .attribute(
             FieldPath::new("/schemaVersion").map_err(field_error)?,
             FieldAttribution::constant(subject_attr),
@@ -865,19 +946,120 @@ mod state_matrix_fixtures {
     //! anyone collapsing it back to a flat enum.
 
     use super::*;
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex};
 
-    fn empty_meeting_brief() -> MeetingBriefRef {
-        MeetingBriefRef {
-            meeting_id: "m-1".into(),
-            title: Some("Meeting 1".into()),
-            starts_at: None,
+    use crate::abilities::NOOP_ABILITY_TRACER;
+    use crate::intelligence::provider::ReplayProvider;
+    use crate::services::context::{
+        ClaimDismissalSurface, DailyReadinessContextReadFuture, DailyReadinessContextReadHandle,
+        EntityContextClaimReadFuture, EntityContextClaimReadHandle, ExternalClients, FixedClock,
+        MeetingPrepStatusReadFuture, MeetingPrepStatusReadHandle, SeedableRng, ServiceContext,
+    };
+    use crate::types::IntelligenceClaim;
+    use chrono::TimeZone;
+
+    #[derive(Clone)]
+    struct FixtureDailyReadinessReader {
+        snapshot: DailyReadinessContextSnapshot,
+    }
+
+    impl DailyReadinessContextReadHandle for FixtureDailyReadinessReader {
+        fn read_daily_readiness_context<'a>(
+            &'a self,
+            _workspace_scope: String,
+            _date: String,
+        ) -> DailyReadinessContextReadFuture<'a> {
+            let snapshot = self.snapshot.clone();
+            Box::pin(async move { Ok(snapshot) })
+        }
+    }
+
+    struct RecordingPrepReader {
+        seen: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl MeetingPrepStatusReadHandle for RecordingPrepReader {
+        fn read_meeting_prep_status<'a>(
+            &'a self,
+            meeting_id: String,
+        ) -> MeetingPrepStatusReadFuture<'a> {
+            self.seen
+                .lock()
+                .expect("record prep read")
+                .push(meeting_id.clone());
+            Box::pin(async move {
+                Ok(MeetingPrepStatusSnapshot {
+                    meeting_id: meeting_id.clone(),
+                    event_id: Some(format!("event-{meeting_id}")),
+                    linked_entity_type: Some("account".to_string()),
+                    linked_entity_id: Some(format!("acct-{meeting_id}")),
+                    status: "ready".to_string(),
+                    blocking_reason: None,
+                    stale_reason: None,
+                    last_prepared_at: Some("2026-05-20T09:00:00Z".to_string()),
+                    source_asof_inputs: Vec::new(),
+                })
+            })
+        }
+    }
+
+    struct RecordingClaimReader {
+        seen: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl EntityContextClaimReadHandle for RecordingClaimReader {
+        fn read_entity_context_claims<'a>(
+            &'a self,
+            _entity_type: String,
+            entity_id: String,
+            _surface: ClaimDismissalSurface,
+            _depth: usize,
+        ) -> EntityContextClaimReadFuture<'a> {
+            self.seen
+                .lock()
+                .expect("record entity claim read")
+                .push(entity_id);
+            Box::pin(async move { Ok(Vec::<IntelligenceClaim>::new()) })
+        }
+
+        fn read_entity_context_claims_limited<'a>(
+            &'a self,
+            _entity_type: String,
+            entity_id: String,
+            _surface: ClaimDismissalSurface,
+            _depth: usize,
+            _limit: usize,
+        ) -> EntityContextClaimReadFuture<'a> {
+            self.seen
+                .lock()
+                .expect("record limited entity claim read")
+                .push(entity_id);
+            Box::pin(async move { Ok(Vec::<IntelligenceClaim>::new()) })
+        }
+    }
+
+    fn daily_meeting(id: &str, starts_at: Option<String>) -> DailyReadinessMeetingSnapshot {
+        DailyReadinessMeetingSnapshot {
+            id: id.to_string(),
+            title: id.to_string(),
+            starts_at,
             ends_at: None,
-            linked_entity_type: None,
-            linked_entity_id: None,
-            prep_status: "ready".into(),
-            blocking_reason: None,
-            stale_reason: None,
-            last_prepared_at: None,
+            workspace_scope: "local".to_string(),
+        }
+    }
+
+    fn daily_meeting_with_end(
+        id: &str,
+        starts_at: &str,
+        ends_at: Option<&str>,
+    ) -> DailyReadinessMeetingSnapshot {
+        DailyReadinessMeetingSnapshot {
+            id: id.to_string(),
+            title: id.to_string(),
+            starts_at: Some(starts_at.to_string()),
+            ends_at: ends_at.map(str::to_string),
+            workspace_scope: "local".to_string(),
         }
     }
 
@@ -1035,18 +1217,166 @@ mod state_matrix_fixtures {
     fn upcoming_meetings_cursor_roundtrip() {
         let meetings = (0..30)
             .map(|i| {
-                let mut m = empty_meeting_brief();
-                m.meeting_id = format!("m-{i}");
-                m.starts_at = Some(format!("2026-05-20T{:02}:00:00Z", i % 24));
-                m
+                daily_meeting(
+                    &format!("m-{i}"),
+                    Some(format!("2026-05-20T{:02}:00:00Z", i % 24)),
+                )
             })
             .collect::<Vec<_>>();
-        let page_one = paginate_upcoming(&meetings, None);
+        let meeting_refs = meetings.iter().collect::<Vec<_>>();
+        let page_one = paginate_upcoming_snapshots(&meeting_refs, None);
         assert_eq!(page_one.items.len(), UPCOMING_MEETINGS_PAGE_SIZE);
         let next = page_one.next_cursor.clone().expect("cursor present");
-        let page_two = paginate_upcoming(&meetings, Some(&next));
+        let page_two = paginate_upcoming_snapshots(&meeting_refs, Some(&next));
         assert_eq!(page_two.items.len(), 30 - UPCOMING_MEETINGS_PAGE_SIZE);
         assert!(page_two.next_cursor.is_none());
+    }
+
+    #[test]
+    fn daily_briefing_expansion_ids_are_bounded_to_visible_page_current_and_next() {
+        let mut meetings = vec![
+            daily_meeting_with_end(
+                "current",
+                "2026-05-20T10:00:00Z",
+                Some("2026-05-20T11:00:00Z"),
+            ),
+            daily_meeting("next", Some("2026-05-20T11:30:00Z".to_string())),
+        ];
+        meetings.extend((0..80).map(|i| {
+            daily_meeting(
+                &format!("future-{i:02}"),
+                Some(format!("2026-05-20T12:{:02}:00Z", i % 60)),
+            )
+        }));
+        let mut refs = meetings.iter().collect::<Vec<_>>();
+        sort_meeting_snapshots(&mut refs);
+        let now = chrono::DateTime::parse_from_rfc3339("2026-05-20T10:30:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let (current, next) = pick_current_and_next_snapshots(&refs, &now);
+        let page = paginate_upcoming_snapshots(&refs, None);
+        let expansion_ids =
+            collect_expansion_meeting_ids(current.as_ref(), next.as_ref(), &page.items);
+
+        assert!(expansion_ids.len() <= UPCOMING_MEETINGS_PAGE_SIZE + 2);
+        assert!(expansion_ids.contains("current"));
+        assert!(expansion_ids.contains("next"));
+    }
+
+    #[tokio::test]
+    async fn daily_briefing_producer_expands_only_current_next_and_requested_page() {
+        let mut meetings = vec![
+            daily_meeting_with_end(
+                "current",
+                "2026-05-20T10:00:00Z",
+                Some("2026-05-20T11:00:00Z"),
+            ),
+            daily_meeting("next", Some("2026-05-20T11:30:00Z".to_string())),
+        ];
+        meetings.extend((0..80).map(|i| {
+            daily_meeting(
+                &format!("future-{i:02}"),
+                Some(format!("2026-05-20T12:{:02}:00Z", i % 60)),
+            )
+        }));
+        let snapshot = DailyReadinessContextSnapshot {
+            workspace_scope: "local".to_string(),
+            date: "2026-05-20".to_string(),
+            meetings,
+            tracked_subjects: Vec::new(),
+            overnight_changes: Vec::new(),
+            risk_shifts: Vec::new(),
+            open_loops: Vec::new(),
+            coverage_warnings: Vec::new(),
+        };
+        let prep_seen = Arc::new(Mutex::new(Vec::new()));
+        let entity_seen = Arc::new(Mutex::new(Vec::new()));
+        let clock = FixedClock::new(
+            chrono::Utc
+                .with_ymd_and_hms(2026, 5, 20, 10, 30, 0)
+                .unwrap(),
+        );
+        let rng = SeedableRng::new(507);
+        let external = ExternalClients::default();
+        let services = ServiceContext::test_live(&clock, &rng, &external)
+            .with_daily_readiness_context_reader(Arc::new(FixtureDailyReadinessReader { snapshot }))
+            .with_meeting_prep_status_reader(Arc::new(RecordingPrepReader {
+                seen: prep_seen.clone(),
+            }))
+            .with_entity_context_claim_reader(Arc::new(RecordingClaimReader {
+                seen: entity_seen.clone(),
+            }));
+        let provider = ReplayProvider::new(HashMap::new());
+        let ctx = AbilityContext::new(
+            &services,
+            &provider,
+            &NOOP_ABILITY_TRACER,
+            Actor::User,
+            None,
+            ClaimDismissalSurface::TauriEntityDetail,
+        );
+
+        let output = build_daily_briefing(
+            &ctx,
+            DailyBriefingInput {
+                schema_version: BRIEFING_SCHEMA_VERSION,
+                date: chrono::NaiveDate::from_ymd_opt(2026, 5, 20).unwrap(),
+                workspace_id: "local".to_string(),
+                sections: None,
+                upcoming_meetings_cursor: Some(Cursor::new("upcoming_meetings:offset=25")),
+            },
+        )
+        .await
+        .expect("daily briefing builds")
+        .into_data();
+
+        let mut expected_meeting_ids = BTreeSet::new();
+        expected_meeting_ids.insert(output.current_meeting.as_ref().unwrap().meeting_id.clone());
+        expected_meeting_ids.insert(output.next_meeting.as_ref().unwrap().meeting_id.clone());
+        expected_meeting_ids.extend(
+            output
+                .upcoming_meetings
+                .items
+                .iter()
+                .map(|meeting| meeting.meeting_id.clone()),
+        );
+        let actual_prep_ids = prep_seen
+            .lock()
+            .expect("prep reads")
+            .iter()
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        let actual_entity_ids = entity_seen
+            .lock()
+            .expect("entity reads")
+            .iter()
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        let expected_entity_ids = expected_meeting_ids
+            .iter()
+            .map(|meeting_id| format!("acct-{meeting_id}"))
+            .collect::<BTreeSet<_>>();
+
+        assert_eq!(
+            output.upcoming_meetings.items.len(),
+            UPCOMING_MEETINGS_PAGE_SIZE
+        );
+        assert_eq!(
+            actual_prep_ids, expected_meeting_ids,
+            "producer must not read prep for meetings outside current, next, and the requested page"
+        );
+        assert_eq!(
+            actual_entity_ids, expected_entity_ids,
+            "producer must not compose entity intelligence for meetings outside the bounded expansion set"
+        );
+    }
+
+    #[test]
+    fn daily_briefing_entity_sections_omit_open_loops_for_aggregate_pass() {
+        assert_eq!(
+            daily_briefing_entity_sections(),
+            vec![EnvelopeSection::Facts]
+        );
     }
 
     #[test]

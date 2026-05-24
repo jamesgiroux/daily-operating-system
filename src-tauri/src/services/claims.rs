@@ -5070,6 +5070,10 @@ fn load_claims_where(
     claim_type: Option<&str>,
     lifecycle_where: &str,
 ) -> Result<Vec<IntelligenceClaim>, ClaimError> {
+    load_claims_where_limited(db, subject_ref, claim_type, lifecycle_where, None)
+}
+
+fn claim_subject_lookup_parts(subject_ref: &str) -> Result<Option<(String, String)>, ClaimError> {
     // L2 cycle-13 fix #2: parse the caller's subject_ref into the
     // typed SubjectRef and query by json_extract on $.kind+$.id
     // (with json_valid guard) so the reader matches the same
@@ -5085,24 +5089,200 @@ fn load_claims_where(
         // Multi/Global readers aren't supported through this path —
         // they're a future addition (matching commit_claim's
         // behavior, which also returns no PRE-GATE match for them).
-        return Ok(Vec::new());
+        return Ok(None);
     };
     let Some(id) = subject_id_for_lookup(&subject) else {
+        return Ok(None);
+    };
+    Ok(Some((kind.to_string(), id.to_string())))
+}
+
+fn load_claims_where_limited(
+    db: &ActionDb,
+    subject_ref: &str,
+    claim_type: Option<&str>,
+    lifecycle_where: &str,
+    limit: Option<usize>,
+) -> Result<Vec<IntelligenceClaim>, ClaimError> {
+    let Some((kind, id)) = claim_subject_lookup_parts(subject_ref)? else {
         return Ok(Vec::new());
     };
     let surface_columns = claim_surface_shadow_columns(db.conn_ref(), "current_claim")?;
+    let claim_type_filter = if claim_type.is_some() {
+        "AND claim_type = ?3"
+    } else {
+        ""
+    };
+    let limit_clause = match (claim_type, limit) {
+        (Some(_), Some(_)) => " LIMIT ?4",
+        (None, Some(_)) => " LIMIT ?3",
+        _ => "",
+    };
     let sql = format!(
         "SELECT {CLAIM_COLUMNS}, {surface_columns}
          FROM intelligence_claims current_claim
          WHERE json_valid(subject_ref) = 1
            AND lower(json_extract(subject_ref, '$.kind')) = lower(?1)
            AND json_extract(subject_ref, '$.id') = ?2
-           AND (?3 IS NULL OR claim_type = ?3)
+           {claim_type_filter}
            AND {lifecycle_where}
-         ORDER BY created_at DESC"
+         ORDER BY created_at DESC{limit_clause}"
     );
     let mut stmt = db.conn_ref().prepare(&sql)?;
-    let mut rows = stmt.query(params![kind, id, claim_type])?;
+    let mut rows = match (claim_type, limit) {
+        (Some(claim_type), Some(limit)) => {
+            stmt.query(params![kind, id, claim_type, limit as i64])?
+        }
+        (Some(claim_type), None) => stmt.query(params![kind, id, claim_type])?,
+        (None, Some(limit)) => stmt.query(params![kind, id, limit as i64])?,
+        (None, None) => stmt.query(params![kind, id])?,
+    };
+    let mut claims = Vec::new();
+    while let Some(row) = rows.next()? {
+        claims.push(read_claim_row_with_surface_shadow_state(row)?);
+    }
+    Ok(claims)
+}
+
+fn load_claims_where_for_surface_limited(
+    db: &ActionDb,
+    subject_ref: &str,
+    claim_type: Option<&str>,
+    lifecycle_where: &str,
+    surface: &str,
+    limit: Option<usize>,
+) -> Result<Vec<IntelligenceClaim>, ClaimError> {
+    load_claims_where_for_surface_limited_filtered(
+        db,
+        subject_ref,
+        claim_type,
+        lifecycle_where,
+        surface,
+        limit,
+        false,
+    )
+}
+
+fn load_claims_where_for_surface_limited_filtered(
+    db: &ActionDb,
+    subject_ref: &str,
+    claim_type: Option<&str>,
+    lifecycle_where: &str,
+    surface: &str,
+    limit: Option<usize>,
+    prompt_safe_only: bool,
+) -> Result<Vec<IntelligenceClaim>, ClaimError> {
+    let surface = normalize_claim_surface(surface)?;
+    if !table_exists_sqlite(db.conn_ref(), "claim_surface_dismissals")? {
+        if prompt_safe_only {
+            return load_claims_where_limited_prompt_safe(
+                db,
+                subject_ref,
+                claim_type,
+                lifecycle_where,
+                limit,
+            );
+        }
+        return load_claims_where_limited(db, subject_ref, claim_type, lifecycle_where, limit);
+    }
+    let Some((kind, id)) = claim_subject_lookup_parts(subject_ref)? else {
+        return Ok(Vec::new());
+    };
+    let surface_columns = claim_surface_shadow_columns(db.conn_ref(), "current_claim")?;
+    let claim_type_filter = if claim_type.is_some() {
+        "AND claim_type = ?3"
+    } else {
+        ""
+    };
+    let prompt_safe_filter = if prompt_safe_only {
+        "AND sensitivity IN ('public', 'internal')"
+    } else {
+        ""
+    };
+    let surface_placeholder = if claim_type.is_some() { "?4" } else { "?3" };
+    let limit_clause = match (claim_type, limit) {
+        (Some(_), Some(_)) => " LIMIT ?5",
+        (None, Some(_)) => " LIMIT ?4",
+        _ => "",
+    };
+    let sql = format!(
+        "SELECT {CLAIM_COLUMNS}, {surface_columns}
+         FROM intelligence_claims current_claim
+         WHERE json_valid(subject_ref) = 1
+           AND lower(json_extract(subject_ref, '$.kind')) = lower(?1)
+           AND json_extract(subject_ref, '$.id') = ?2
+           {claim_type_filter}
+           AND {lifecycle_where}
+           {prompt_safe_filter}
+           AND NOT EXISTS (
+               SELECT 1
+               FROM claim_surface_dismissals dismissal
+               WHERE dismissal.claim_id = current_claim.id
+                 AND dismissal.surface = {surface_placeholder}
+           )
+         ORDER BY created_at DESC{limit_clause}"
+    );
+    let mut stmt = db.conn_ref().prepare(&sql)?;
+    let mut rows = match (claim_type, limit) {
+        (Some(claim_type), Some(limit)) => stmt.query(params![
+            kind,
+            id,
+            claim_type,
+            surface.as_str(),
+            limit as i64
+        ])?,
+        (Some(claim_type), None) => stmt.query(params![kind, id, claim_type, surface.as_str()])?,
+        (None, Some(limit)) => stmt.query(params![kind, id, surface.as_str(), limit as i64])?,
+        (None, None) => stmt.query(params![kind, id, surface.as_str()])?,
+    };
+    let mut claims = Vec::new();
+    while let Some(row) = rows.next()? {
+        claims.push(read_claim_row_with_surface_shadow_state(row)?);
+    }
+    Ok(claims)
+}
+
+fn load_claims_where_limited_prompt_safe(
+    db: &ActionDb,
+    subject_ref: &str,
+    claim_type: Option<&str>,
+    lifecycle_where: &str,
+    limit: Option<usize>,
+) -> Result<Vec<IntelligenceClaim>, ClaimError> {
+    let Some((kind, id)) = claim_subject_lookup_parts(subject_ref)? else {
+        return Ok(Vec::new());
+    };
+    let surface_columns = claim_surface_shadow_columns(db.conn_ref(), "current_claim")?;
+    let claim_type_filter = if claim_type.is_some() {
+        "AND claim_type = ?3"
+    } else {
+        ""
+    };
+    let limit_clause = match (claim_type, limit) {
+        (Some(_), Some(_)) => " LIMIT ?4",
+        (None, Some(_)) => " LIMIT ?3",
+        _ => "",
+    };
+    let sql = format!(
+        "SELECT {CLAIM_COLUMNS}, {surface_columns}
+         FROM intelligence_claims current_claim
+         WHERE json_valid(subject_ref) = 1
+           AND lower(json_extract(subject_ref, '$.kind')) = lower(?1)
+           AND json_extract(subject_ref, '$.id') = ?2
+           {claim_type_filter}
+           AND {lifecycle_where}
+           AND sensitivity IN ('public', 'internal')
+         ORDER BY created_at DESC{limit_clause}"
+    );
+    let mut stmt = db.conn_ref().prepare(&sql)?;
+    let mut rows = match (claim_type, limit) {
+        (Some(claim_type), Some(limit)) => {
+            stmt.query(params![kind, id, claim_type, limit as i64])?
+        }
+        (Some(claim_type), None) => stmt.query(params![kind, id, claim_type])?,
+        (None, Some(limit)) => stmt.query(params![kind, id, limit as i64])?,
+        (None, None) => stmt.query(params![kind, id])?,
+    };
     let mut claims = Vec::new();
     while let Some(row) = rows.next()? {
         claims.push(read_claim_row_with_surface_shadow_state(row)?);
@@ -9069,13 +9249,34 @@ pub fn load_claims_active_for_surface(
     claim_type: Option<&str>,
     surface: &str,
 ) -> Result<Vec<IntelligenceClaim>, ClaimError> {
-    let mut visible = Vec::new();
-    for claim in load_claims_active(db, subject_ref, claim_type)? {
-        if !is_claim_dismissed_on_surface(db, &claim.id, surface)? {
-            visible.push(claim);
-        }
+    load_claims_where_for_surface_limited(
+        db,
+        subject_ref,
+        claim_type,
+        "claim_state = 'active' AND surfacing_state = 'active'",
+        surface,
+        None,
+    )
+}
+
+pub fn load_claims_active_for_surface_limited(
+    db: &ActionDb,
+    subject_ref: &str,
+    claim_type: Option<&str>,
+    surface: &str,
+    limit: usize,
+) -> Result<Vec<IntelligenceClaim>, ClaimError> {
+    if limit == 0 {
+        return Ok(Vec::new());
     }
-    Ok(visible)
+    load_claims_where_for_surface_limited(
+        db,
+        subject_ref,
+        claim_type,
+        "claim_state = 'active' AND surfacing_state = 'active'",
+        surface,
+        Some(limit),
+    )
 }
 
 pub fn load_claims_active_by_source_ref_for_surface(
@@ -9219,14 +9420,118 @@ pub fn load_entity_context_claims_active_for_surface(
     depth: usize,
     surface: &str,
 ) -> Result<Vec<IntelligenceClaim>, ClaimError> {
+    load_entity_context_claims_active_for_surface_inner(
+        db,
+        entity_type,
+        entity_id,
+        depth,
+        surface,
+        None,
+    )
+}
+
+pub fn load_entity_context_claims_active_for_surface_limited(
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+    depth: usize,
+    surface: &str,
+    limit: usize,
+) -> Result<Vec<IntelligenceClaim>, ClaimError> {
+    if limit == 0 {
+        return Ok(Vec::new());
+    }
+    load_entity_context_claims_active_for_surface_inner(
+        db,
+        entity_type,
+        entity_id,
+        depth,
+        surface,
+        Some(limit),
+    )
+}
+
+pub fn load_entity_context_prompt_claims_active_for_surface_limited(
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+    depth: usize,
+    surface: &str,
+    limit: usize,
+) -> Result<Vec<IntelligenceClaim>, ClaimError> {
+    if limit == 0 {
+        return Ok(Vec::new());
+    }
+    load_entity_context_claims_active_for_surface_inner_filtered(
+        db,
+        entity_type,
+        entity_id,
+        depth,
+        surface,
+        Some(limit),
+        true,
+    )
+}
+
+fn load_entity_context_claims_active_for_surface_inner(
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+    depth: usize,
+    surface: &str,
+    limit: Option<usize>,
+) -> Result<Vec<IntelligenceClaim>, ClaimError> {
+    load_entity_context_claims_active_for_surface_inner_filtered(
+        db,
+        entity_type,
+        entity_id,
+        depth,
+        surface,
+        limit,
+        false,
+    )
+}
+
+fn load_entity_context_claims_active_for_surface_inner_filtered(
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+    depth: usize,
+    surface: &str,
+    limit: Option<usize>,
+    prompt_safe_only: bool,
+) -> Result<Vec<IntelligenceClaim>, ClaimError> {
     let root = entity_context_subject(entity_type, entity_id)?;
     let subjects = entity_context_subjects_within_depth(db, root, depth.max(1))?;
+    if let Some(limit) = limit {
+        return load_entity_context_claims_for_subjects_limited(
+            db,
+            &subjects,
+            surface,
+            limit,
+            prompt_safe_only,
+        );
+    }
+
     let mut seen_claims = HashSet::new();
     let mut claims = Vec::new();
 
     for subject in subjects {
         let subject_ref = entity_context_subject_ref_json(&subject);
-        for claim in load_claims_active_for_surface(db, &subject_ref, None, surface)? {
+        let subject_claims = if prompt_safe_only {
+            load_claims_where_for_surface_limited_filtered(
+                db,
+                &subject_ref,
+                None,
+                "claim_state = 'active' AND surfacing_state = 'active'",
+                surface,
+                None,
+                true,
+            )?
+        } else {
+            load_claims_active_for_surface(db, &subject_ref, None, surface)?
+        };
+        for claim in subject_claims {
             if seen_claims.insert(claim.id.clone()) {
                 claims.push(claim);
             }
@@ -9234,6 +9539,79 @@ pub fn load_entity_context_claims_active_for_surface(
     }
 
     claims.sort_by(|left, right| right.created_at.cmp(&left.created_at));
+    Ok(claims)
+}
+
+fn load_entity_context_claims_for_subjects_limited(
+    db: &ActionDb,
+    subjects: &[EntityContextSubject],
+    surface: &str,
+    limit: usize,
+    prompt_safe_only: bool,
+) -> Result<Vec<IntelligenceClaim>, ClaimError> {
+    if limit == 0 || subjects.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let surface = normalize_claim_surface(surface)?;
+    let has_surface_dismissals = table_exists_sqlite(db.conn_ref(), "claim_surface_dismissals")?;
+    let surface_columns = claim_surface_shadow_columns(db.conn_ref(), "current_claim")?;
+    let mut bound_params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+    let mut subject_predicates = Vec::with_capacity(subjects.len());
+
+    for subject in subjects {
+        let kind_position = bound_params.len() + 1;
+        bound_params.push(Box::new(subject.kind.to_string()));
+        let id_position = bound_params.len() + 1;
+        bound_params.push(Box::new(subject.id.clone()));
+        subject_predicates.push(format!(
+            "(lower(json_extract(current_claim.subject_ref, '$.kind')) = ?{kind_position} \
+             AND json_extract(current_claim.subject_ref, '$.id') = ?{id_position})"
+        ));
+    }
+
+    let prompt_safe_filter = if prompt_safe_only {
+        "AND current_claim.sensitivity IN ('public', 'internal')"
+    } else {
+        ""
+    };
+    let dismissal_filter = if has_surface_dismissals {
+        let surface_position = bound_params.len() + 1;
+        bound_params.push(Box::new(surface.as_str().to_string()));
+        format!(
+            "AND NOT EXISTS (
+                SELECT 1
+                FROM claim_surface_dismissals dismissal
+                WHERE dismissal.claim_id = current_claim.id
+                  AND dismissal.surface = ?{surface_position}
+            )"
+        )
+    } else {
+        String::new()
+    };
+    let limit_position = bound_params.len() + 1;
+    bound_params.push(Box::new(limit as i64));
+    let subject_filter = subject_predicates.join(" OR ");
+    let sql = format!(
+        "SELECT {CLAIM_COLUMNS}, {surface_columns}
+         FROM intelligence_claims current_claim
+         WHERE json_valid(current_claim.subject_ref) = 1
+           AND ({subject_filter})
+           AND current_claim.claim_state = 'active'
+           AND current_claim.surfacing_state = 'active'
+           {prompt_safe_filter}
+           {dismissal_filter}
+         ORDER BY current_claim.created_at DESC
+         LIMIT ?{limit_position}"
+    );
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+        bound_params.iter().map(|param| param.as_ref()).collect();
+    let mut stmt = db.conn_ref().prepare(&sql)?;
+    let mut rows = stmt.query(rusqlite::params_from_iter(param_refs))?;
+    let mut claims = Vec::new();
+    while let Some(row) = rows.next()? {
+        claims.push(read_claim_row_with_surface_shadow_state(row)?);
+    }
     Ok(claims)
 }
 
@@ -14264,6 +14642,206 @@ mod tests {
         .map(|claim| claim.id)
         .collect::<Vec<_>>();
         assert!(entity_detail_ids.contains(&claim_id));
+    }
+
+    #[test]
+    fn entity_context_surface_limited_reader_caps_visible_claims() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        for index in 0..8 {
+            let claim_text = format!("Visible claim {index} belongs on the account detail page.");
+            let mut p = proposal(&claim_text);
+            p.field_path = Some(format!("health.limit_fixture_{index}"));
+            p.source_ref = Some(format!("fixture-email-{index}"));
+            p.observed_at = format!("2026-05-02T12:{index:02}:00Z");
+            inserted_claim_id(commit_claim(&ctx, &db, p).unwrap());
+        }
+
+        let visible = load_entity_context_claims_active_for_surface_limited(
+            &db,
+            "account",
+            "acct-1",
+            1,
+            ClaimDismissalSurface::TauriEntityDetail.as_str(),
+            3,
+        )
+        .unwrap();
+
+        assert_eq!(
+            visible.len(),
+            3,
+            "entity intelligence must not load the full claim set before applying the render page cap"
+        );
+    }
+
+    #[test]
+    fn entity_context_surface_limited_reader_applies_global_cap_across_related_subjects() {
+        let db = test_db();
+        seed_account(&db);
+        for index in 0..8 {
+            let child_id = format!("acct-child-{index}");
+            db.conn_ref()
+                .execute(
+                    "INSERT INTO accounts (id, name, parent_id, updated_at)
+                     VALUES (?1, ?2, 'acct-1', ?3)",
+                    params![child_id, format!("Child Account {index}"), TS],
+                )
+                .expect("seed child account");
+            let subject_ref = format!(r#"{{"kind":"account","id":"acct-child-{index}"}}"#);
+            insert_fixture_claim(
+                &db,
+                &format!("claim-child-{index}"),
+                &subject_ref,
+                "risk",
+                &format!("Child account claim {index}"),
+                ClaimState::Active,
+                SurfacingState::Active,
+            );
+            db.conn_ref()
+                .execute(
+                    "UPDATE intelligence_claims
+                     SET created_at = ?1
+                     WHERE id = ?2",
+                    params![
+                        format!("2026-05-02T13:{index:02}:00Z"),
+                        format!("claim-child-{index}")
+                    ],
+                )
+                .expect("set child claim recency");
+        }
+
+        let visible = load_entity_context_claims_active_for_surface_limited(
+            &db,
+            "account",
+            "acct-1",
+            2,
+            ClaimDismissalSurface::TauriEntityDetail.as_str(),
+            3,
+        )
+        .unwrap();
+
+        assert_eq!(
+            visible
+                .iter()
+                .map(|claim| claim.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["claim-child-7", "claim-child-6", "claim-child-5"],
+            "related-subject entity reads must apply one global recency cap, not one cap per subject"
+        );
+    }
+
+    #[test]
+    fn entity_context_subject_lookup_uses_expression_index() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        inserted_claim_id(
+            commit_claim(&ctx, &db, proposal("Indexed claim lookup fixture")).unwrap(),
+        );
+
+        let mut stmt = db
+            .conn_ref()
+            .prepare(
+                "EXPLAIN QUERY PLAN
+                 SELECT id
+                 FROM intelligence_claims current_claim
+                 WHERE json_valid(subject_ref) = 1
+                   AND lower(json_extract(subject_ref, '$.kind')) = lower(?1)
+                   AND json_extract(subject_ref, '$.id') = ?2
+                   AND claim_state = 'active'
+                   AND surfacing_state = 'active'
+                 ORDER BY created_at DESC
+                 LIMIT ?3",
+            )
+            .expect("prepare plan probe");
+        let details = stmt
+            .query_map(params!["account", "acct-1", 3_i64], |row| {
+                row.get::<_, String>(3)
+            })
+            .expect("query plan")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect query plan");
+
+        assert!(
+            details.iter().any(|detail| {
+                detail.contains("idx_claims_subject_kind_id_lifecycle_untyped_created")
+            }),
+            "untyped entity claim reads should use the order-covering subject lookup index, got plan: {details:?}"
+        );
+        assert!(
+            details
+                .iter()
+                .all(|detail| !detail.contains("USE TEMP B-TREE")),
+            "untyped entity claim reads should not temp-sort before the page cap, got plan: {details:?}"
+        );
+    }
+
+    #[test]
+    fn entity_context_prompt_claim_reader_filters_sensitivity_before_cap() {
+        let db = test_db();
+        seed_account(&db);
+
+        for index in 0..51 {
+            let id = format!("claim-confidential-newer-{index}");
+            insert_fixture_claim(
+                &db,
+                &id,
+                SUBJECT,
+                "risk",
+                &format!("Confidential fixture claim {index}"),
+                ClaimState::Active,
+                SurfacingState::Active,
+            );
+            db.conn_ref()
+                .execute(
+                    "UPDATE intelligence_claims
+                     SET sensitivity = 'confidential', created_at = ?1
+                     WHERE id = ?2",
+                    params![format!("2026-05-02T12:{index:02}:00Z"), id],
+                )
+                .expect("mark fixture claim confidential and newer");
+        }
+
+        insert_fixture_claim(
+            &db,
+            "claim-internal-older",
+            SUBJECT,
+            "risk",
+            "Older prompt-safe claim should survive the bounded read.",
+            ClaimState::Active,
+            SurfacingState::Active,
+        );
+        db.conn_ref()
+            .execute(
+                "UPDATE intelligence_claims
+                 SET sensitivity = 'internal', created_at = ?1
+                 WHERE id = 'claim-internal-older'",
+                params!["2026-05-02T11:00:00Z"],
+            )
+            .expect("mark prompt-safe fixture older");
+
+        let claims = load_entity_context_prompt_claims_active_for_surface_limited(
+            &db,
+            "account",
+            "acct-1",
+            1,
+            ClaimDismissalSurface::McpTool.as_str(),
+            51,
+        )
+        .expect("prompt-safe entity context read");
+
+        assert_eq!(
+            claims
+                .iter()
+                .map(|claim| claim.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["claim-internal-older"],
+            "MCP/agent readers must filter prompt-unsafe claims before the page cap"
+        );
     }
 
     #[test]

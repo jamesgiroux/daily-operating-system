@@ -1,0 +1,29 @@
+{
+  "baseline_version": "suite_p_baseline_v1",
+  "suite": "suite_p",
+  "lane": "DOS-348",
+  "scope": "v1.4.4a-W6",
+  "run_id": "v1.4.4a-w6-published",
+  "generated_at": "2026-05-24T20:37:01Z",
+  "threshold_pct": 10,
+  "benchmarks": [
+    {
+      "bench": "context_mode_atomic_local_snapshot",
+      "mean_ns": 52.01133734954785,
+      "median_ns": 51.69016277515381,
+      "std_dev_ns": 0.8878184897512243
+    },
+    {
+      "bench": "fenced_write_intelligence_json",
+      "mean_ns": 161358.82420696266,
+      "median_ns": 159902.45692567568,
+      "std_dev_ns": 4692.295503392031
+    },
+    {
+      "bench": "mutation_gate_mode_check",
+      "mean_ns": 47.57418581115251,
+      "median_ns": 47.571148073756,
+      "std_dev_ns": 0.39795167691043065
+    }
+  ]
+}

@@ -372,6 +372,16 @@ fn open_loop_claim_for_action(
     action: crate::db::DbAction,
     query: &ListOpenLoopsQuery,
 ) -> Option<abilities_runtime::types::IntelligenceClaim> {
+    // Action rows do not carry the source claim sensitivity that MCP/agent
+    // prompt surfaces need. Keep them visible to first-party Tauri surfaces,
+    // but do not synthesize them as Public claim text for MCP.
+    if matches!(
+        query.surface,
+        ClaimDismissalSurface::McpTool | ClaimDismissalSurface::McpToolDetail
+    ) {
+        return None;
+    }
+
     let (entity_type, entity_id) = open_loop_subject_for_action(&action, query)?;
     let claim_type = if action.action_kind == crate::action_status::KIND_COMMITMENT {
         abilities_runtime::ClaimType::Commitment.as_str()
@@ -478,6 +488,62 @@ impl EntityContextClaimReadHandle for LiveEntityContextClaimReader {
                     &entity_id,
                     depth,
                     surface.as_str(),
+                )
+                .map_err(|error| format!("Entity context claim read failed: {error}"))
+            })
+            .await
+            .map_err(|error| format!("Entity context claim read task failed: {error}"))?
+        })
+    }
+
+    fn read_entity_context_claims_limited<'a>(
+        &'a self,
+        entity_type: String,
+        entity_id: String,
+        surface: ClaimDismissalSurface,
+        depth: usize,
+        limit: usize,
+    ) -> EntityContextClaimReadFuture<'a> {
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                let db =
+                    crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                        .map_err(|error| format!("Database unavailable: {error}"))?;
+                crate::services::claims::load_entity_context_claims_active_for_surface_limited(
+                    &db,
+                    &entity_type,
+                    &entity_id,
+                    depth,
+                    surface.as_str(),
+                    limit,
+                )
+                .map_err(|error| format!("Entity context claim read failed: {error}"))
+            })
+            .await
+            .map_err(|error| format!("Entity context claim read task failed: {error}"))?
+        })
+    }
+
+    fn read_entity_context_prompt_claims_limited<'a>(
+        &'a self,
+        entity_type: String,
+        entity_id: String,
+        surface: ClaimDismissalSurface,
+        depth: usize,
+        limit: usize,
+    ) -> EntityContextClaimReadFuture<'a> {
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                let db =
+                    crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                        .map_err(|error| format!("Database unavailable: {error}"))?;
+                crate::services::claims::load_entity_context_prompt_claims_active_for_surface_limited(
+                    &db,
+                    &entity_type,
+                    &entity_id,
+                    depth,
+                    surface.as_str(),
+                    limit,
                 )
                 .map_err(|error| format!("Entity context claim read failed: {error}"))
             })
@@ -689,6 +755,77 @@ fn project_daily_readiness_context_snapshot(
 mod tests {
     use super::*;
     use rusqlite::params;
+
+    fn fixture_action() -> crate::db::DbAction {
+        crate::db::DbAction {
+            id: "action-1".to_string(),
+            title: "Follow up on renewal risk".to_string(),
+            priority: 1,
+            status: crate::action_status::UNSTARTED.to_string(),
+            created_at: "2026-05-23T08:00:00Z".to_string(),
+            due_date: None,
+            completed_at: None,
+            account_id: Some("acct-1".to_string()),
+            project_id: None,
+            source_type: Some("transcript".to_string()),
+            source_id: Some("meeting-1".to_string()),
+            source_label: Some("meeting".to_string()),
+            action_kind: crate::action_status::KIND_TASK.to_string(),
+            commitment_id: None,
+            owner_raw: Some("Alex".to_string()),
+            owner_entity_id: None,
+            owner_confidence: None,
+            owner_source: None,
+            trust_score: Some(0.8),
+            trust_band: Some("likely_current".to_string()),
+            commitment_source_count: Some(1),
+            context: None,
+            waiting_on: None,
+            updated_at: "2026-05-23T08:00:00Z".to_string(),
+            person_id: None,
+            account_name: None,
+            next_meeting_title: None,
+            next_meeting_start: None,
+            needs_decision: false,
+            decision_owner: None,
+            decision_stakes: None,
+            linear_identifier: None,
+            linear_url: None,
+        }
+    }
+
+    #[test]
+    fn action_open_loop_synthesis_is_not_mcp_visible_without_claim_sensitivity() {
+        let action = fixture_action();
+        let mcp_query = ListOpenLoopsQuery {
+            entity_type: Some("account".to_string()),
+            entity_id: Some("acct-1".to_string()),
+            surface: ClaimDismissalSurface::McpTool,
+        };
+        assert!(
+            open_loop_claim_for_action(action.clone(), &mcp_query).is_none(),
+            "action rows must not become MCP prompt context without source claim sensitivity"
+        );
+        let mcp_detail_query = ListOpenLoopsQuery {
+            entity_type: Some("account".to_string()),
+            entity_id: Some("acct-1".to_string()),
+            surface: ClaimDismissalSurface::McpToolDetail,
+        };
+        assert!(
+            open_loop_claim_for_action(action.clone(), &mcp_detail_query).is_none(),
+            "MCP detail provenance must not synthesize action rows without source claim sensitivity"
+        );
+
+        let tauri_query = ListOpenLoopsQuery {
+            entity_type: Some("account".to_string()),
+            entity_id: Some("acct-1".to_string()),
+            surface: ClaimDismissalSurface::TauriEntityDetail,
+        };
+        assert!(
+            open_loop_claim_for_action(action, &tauri_query).is_some(),
+            "first-party Tauri surfaces can still render local action open loops"
+        );
+    }
 
     #[test]
     fn daily_readiness_context_warns_when_linked_subjects_cannot_be_read() {

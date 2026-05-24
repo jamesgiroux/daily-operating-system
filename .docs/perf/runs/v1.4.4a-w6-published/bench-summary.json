@@ -1,0 +1,51 @@
+{
+  "suite": "suite_p",
+  "lane": "DOS-348",
+  "mode": "published",
+  "scope": "v1.4.4a-W6",
+  "run_id": "v1.4.4a-w6-published",
+  "generated_at": "2026-05-24T20:37:01Z",
+  "criterion_baseline": "v1.4.4a-w6-published",
+  "prior_baseline": ".docs/perf/baselines/scope-v1.4.1-W8.json",
+  "threshold_pct": 10,
+  "manifest_benches": [
+    "context_mode_atomic_local_snapshot",
+    "fenced_write_intelligence_json",
+    "mutation_gate_mode_check"
+  ],
+  "bench_count": 3,
+  "missing_bench_count": 0,
+  "extra_bench_count": 0,
+  "regression_count": 0,
+  "benchmarks": [
+    {
+      "bench": "context_mode_atomic_local_snapshot",
+      "mean_ns": 52.01133734954785,
+      "median_ns": 51.69016277515381,
+      "std_dev_ns": 0.8878184897512243
+    },
+    {
+      "bench": "fenced_write_intelligence_json",
+      "mean_ns": 161358.82420696266,
+      "median_ns": 159902.45692567568,
+      "std_dev_ns": 4692.295503392031
+    },
+    {
+      "bench": "mutation_gate_mode_check",
+      "mean_ns": 47.57418581115251,
+      "median_ns": 47.571148073756,
+      "std_dev_ns": 0.39795167691043065
+    }
+  ],
+  "missing_benches": [],
+  "extra_benches": [],
+  "current_invalid_numeric_bench_count": 0,
+  "current_invalid_numeric_benches": [],
+  "prior_missing_bench_count": 0,
+  "prior_extra_bench_count": 0,
+  "prior_missing_benches": [],
+  "prior_extra_benches": [],
+  "prior_invalid_numeric_bench_count": 0,
+  "prior_invalid_numeric_benches": [],
+  "regressions": []
+}

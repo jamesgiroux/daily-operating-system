@@ -4,13 +4,13 @@
 //! Runs the full migration chain against an in-memory SQLite and asserts the
 //! schema landed correctly: tables exist, expected columns are present, and
 //! the composite UNIQUE constraints + indexes from ADR-0102 §C.bis.schema are
-//! enforced while the removed remote-transport nonce ledger stays absent.
+//! enforced while obsolete transient transport state is absent.
 
 use dailyos_lib::migration_test_api::run_migrations;
 use rusqlite::Connection;
 
 #[test]
-fn dos168_v255_v259_migrations_land_canonical_schema() {
+fn dos168_v255_v261_migrations_land_canonical_schema() {
     let conn = Connection::open_in_memory().expect("open in-memory database");
     run_migrations(&conn).expect("migrations apply cleanly");
 

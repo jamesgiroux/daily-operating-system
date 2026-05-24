@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { ENVELOPE_SCHEMA_VERSION } from "./contracts";
 import { invokeEntityIntelligenceAbility } from "./invoke";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -38,7 +39,7 @@ describe("invokeEntityIntelligenceAbility", () => {
     expect(invokeMock).toHaveBeenCalledWith("invoke_ability", {
       abilityName: "get_entity_intelligence",
       inputJson: {
-        schemaVersion: 2,
+        schemaVersion: ENVELOPE_SCHEMA_VERSION,
         entityType: "meeting",
         entityId: "meeting-1",
         depth: "standard",

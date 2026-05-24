@@ -415,8 +415,12 @@ fn parse_enrichment_response(
         .map(|s| s.to_string());
     // AI noise verdict. Optional — older responses won't have it.
     let is_noise = parsed.get("is_noise").and_then(|v| v.as_bool());
-    if let Some(reason) = parsed.get("noise_reason").and_then(|v| v.as_str()) {
-        log::debug!("email_enrich: AI is_noise={is_noise:?} reason={reason}");
+    if parsed
+        .get("noise_reason")
+        .and_then(|v| v.as_str())
+        .is_some()
+    {
+        log::debug!("email_enrich: AI is_noise={is_noise:?} reason_present=true");
     }
 
     (summary, sentiment, urgency, is_noise)

@@ -1,8 +1,8 @@
+use crate::abilities::provenance::trust::claim_trust_band_from_score;
 use crate::abilities::provenance::{
     AbilityExecutionMode, AbilityVersion, FieldAttribution, FieldPath, ProvenanceBuilder,
     ProvenanceBuilderConfig, SchemaVersion, SubjectAttribution, SubjectRef,
 };
-use crate::abilities::provenance::trust::claim_trust_band_from_score;
 use crate::abilities::{
     AbilityCategory, AbilityContext, AbilityError, AbilityErrorKind, AbilityResult, Actor,
 };
@@ -22,7 +22,12 @@ pub async fn entity_intake(
     let receipt = ctx
         .services()
         .workspace_intake()
-        .ok_or_else(|| hard_error("WorkspaceIntakeUnavailable", "workspace intake service unavailable"))?
+        .ok_or_else(|| {
+            hard_error(
+                "WorkspaceIntakeUnavailable",
+                "workspace intake service unavailable",
+            )
+        })?
         .ingest(
             ctx,
             WorkspaceIntakeRequest {
@@ -101,7 +106,10 @@ async fn read_claims_for_block_render(
         .collect())
 }
 
-fn project_claim(claim: IntelligenceClaim, render_actor: &RenderActor) -> Option<EntityIntakeClaim> {
+fn project_claim(
+    claim: IntelligenceClaim,
+    render_actor: &RenderActor,
+) -> Option<EntityIntakeClaim> {
     let rendered = renderable_claim_text_with_value(
         &claim,
         &claim.text,
@@ -149,7 +157,9 @@ fn workspace_intake_error(error: WorkspaceIntakeError) -> AbilityError {
         WorkspaceIntakeError::InvalidEntityTypeSlug(value) => {
             hard_error("InvalidEntityType", value)
         }
-        WorkspaceIntakeError::InvalidEntityId => hard_error("InvalidEntityId", "entity_id is invalid"),
+        WorkspaceIntakeError::InvalidEntityId => {
+            hard_error("InvalidEntityId", "entity_id is invalid")
+        }
         WorkspaceIntakeError::EntityNotFound => hard_error("EntityNotFound", "entity not found"),
         WorkspaceIntakeError::InvalidCategorySlug(value) => {
             hard_error("InvalidCategorySlug", value)
