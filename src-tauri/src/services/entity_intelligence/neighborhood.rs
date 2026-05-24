@@ -1019,58 +1019,12 @@ fn push_unique(caveats: &mut Vec<String>, caveat: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
+    use crate::services::stakeholder_writer;
     use chrono::TimeZone;
-    use rusqlite::Connection;
 
     fn test_db() -> ActionDb {
-        let conn = Connection::open_in_memory().unwrap();
-        conn.execute_batch(
-            "
-            CREATE TABLE accounts (id TEXT PRIMARY KEY, name TEXT NOT NULL, parent_id TEXT, updated_at TEXT);
-            CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, parent_id TEXT, updated_at TEXT);
-            CREATE TABLE people (
-                id TEXT PRIMARY KEY,
-                email TEXT NOT NULL,
-                name TEXT NOT NULL,
-                role TEXT,
-                relationship TEXT,
-                last_seen TEXT
-            );
-            CREATE TABLE meetings (id TEXT PRIMARY KEY, title TEXT NOT NULL, meeting_type TEXT, start_time TEXT, end_time TEXT);
-            CREATE TABLE meeting_entities (meeting_id TEXT NOT NULL, entity_id TEXT NOT NULL, entity_type TEXT NOT NULL, confidence REAL DEFAULT 0.95);
-            CREATE TABLE meeting_attendees (meeting_id TEXT NOT NULL, person_id TEXT NOT NULL);
-            CREATE TABLE account_stakeholders (
-                account_id TEXT NOT NULL,
-                person_id TEXT NOT NULL,
-                data_source TEXT NOT NULL DEFAULT 'user',
-                last_seen_in_glean TEXT,
-                created_at TEXT,
-                status TEXT NOT NULL DEFAULT 'active',
-                confidence REAL
-            );
-            CREATE TABLE account_stakeholder_roles (
-                account_id TEXT NOT NULL,
-                person_id TEXT NOT NULL,
-                role TEXT NOT NULL,
-                dismissed_at TEXT
-            );
-            CREATE TABLE entity_members (entity_id TEXT NOT NULL, person_id TEXT NOT NULL, relationship_type TEXT);
-            CREATE TABLE person_relationships (
-                id TEXT PRIMARY KEY,
-                from_person_id TEXT NOT NULL,
-                to_person_id TEXT NOT NULL,
-                relationship_type TEXT NOT NULL,
-                direction TEXT NOT NULL DEFAULT 'directed',
-                confidence REAL NOT NULL DEFAULT 0.5,
-                source TEXT NOT NULL,
-                created_at TEXT,
-                updated_at TEXT,
-                last_reinforced_at TEXT
-            );
-            ",
-        )
-        .unwrap();
-        ActionDb::from_connection_for_tests(conn)
+        crate::db::test_utils::test_db()
     }
 
     fn query(entity_type: &str, entity_id: &str) -> EntityNeighborhoodQuery {
@@ -1084,25 +1038,51 @@ mod tests {
         }
     }
 
+    fn ctx_parts() -> (FixedClock, SeedableRng, ExternalClients) {
+        (
+            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 23, 12, 0, 0).unwrap()),
+            SeedableRng::new(23),
+            ExternalClients::default(),
+        )
+    }
+
+    fn live_ctx<'a>(
+        clock: &'a FixedClock,
+        rng: &'a SeedableRng,
+        external: &'a ExternalClients,
+    ) -> ServiceContext<'a> {
+        ServiceContext::test_live(clock, rng, external)
+    }
+
     #[test]
     fn entity_neighborhood_snapshot_covers_account_project_person_meeting() {
         let db = test_db();
-        db.conn_ref()
-            .execute_batch(
-                "
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        db.with_transaction(|tx| {
+            stakeholder_writer::write_with_stakeholders_changed_for_entities(
+                &ctx,
+                tx,
+                "entity_neighborhood_fixture",
+                |tx| {
+                    tx.conn_ref()
+                        .execute_batch(
+                            "
                 INSERT INTO accounts (id, name, parent_id, updated_at) VALUES
                     ('account-parent', 'Parent Account', NULL, '2026-05-01T00:00:00Z'),
                     ('account-1', 'Example Account', 'account-parent', '2026-05-20T00:00:00Z');
                 INSERT INTO projects (id, name, parent_id, updated_at) VALUES
                     ('project-parent', 'Parent Project', NULL, '2026-05-01T00:00:00Z'),
                     ('project-1', 'Launch Project', 'project-parent', '2026-05-21T00:00:00Z');
-                INSERT INTO people (id, email, name, role, relationship, last_seen) VALUES
-                    ('person-1', 'one@example.com', 'Person One', 'Executive', 'external', '2026-05-20T00:00:00Z'),
-                    ('person-2', 'two@example.com', 'Person Two', 'Director', 'external', '2026-05-21T00:00:00Z'),
-                    ('person-3', 'three@example.com', 'Person Three', 'Peer', 'internal', '2026-05-22T00:00:00Z');
-                INSERT INTO meetings (id, title, meeting_type, start_time, end_time) VALUES
-                    ('meeting-1', 'Account Review', 'customer', '2026-05-22T15:00:00Z', NULL),
-                    ('meeting-2', 'Project Sync', 'customer', '2026-05-20T15:00:00Z', NULL);
+                INSERT OR IGNORE INTO entities (id, name, entity_type, updated_at) VALUES
+                    ('project-1', 'Launch Project', 'project', '2026-05-21T00:00:00Z');
+                INSERT INTO people (id, email, name, role, relationship, last_seen, updated_at) VALUES
+                    ('person-1', 'one@example.com', 'Person One', 'Executive', 'external', '2026-05-20T00:00:00Z', '2026-05-20T00:00:00Z'),
+                    ('person-2', 'two@example.com', 'Person Two', 'Director', 'external', '2026-05-21T00:00:00Z', '2026-05-21T00:00:00Z'),
+                    ('person-3', 'three@example.com', 'Person Three', 'Peer', 'internal', '2026-05-22T00:00:00Z', '2026-05-22T00:00:00Z');
+                INSERT INTO meetings (id, title, meeting_type, start_time, end_time, created_at) VALUES
+                    ('meeting-1', 'Account Review', 'customer', '2026-05-22T15:00:00Z', NULL, '2026-05-22T00:00:00Z'),
+                    ('meeting-2', 'Project Sync', 'customer', '2026-05-20T15:00:00Z', NULL, '2026-05-20T00:00:00Z');
                 INSERT INTO meeting_entities (meeting_id, entity_id, entity_type, confidence) VALUES
                     ('meeting-1', 'account-1', 'account', 0.95),
                     ('meeting-2', 'project-1', 'project', 0.90);
@@ -1121,8 +1101,20 @@ mod tests {
                 INSERT INTO person_relationships (id, from_person_id, to_person_id, relationship_type, direction, confidence, source, created_at, updated_at) VALUES
                     ('rel-1', 'person-1', 'person-2', 'collaborator', 'symmetric', 0.82, 'user', '2026-05-22T00:00:00Z', '2026-05-22T00:00:00Z');
                 ",
-            )
-            .unwrap();
+                        )
+                        .map_err(|error| error.to_string())?;
+                    Ok((
+                        (),
+                        vec![
+                            ("account-1".to_string(), "account".to_string()),
+                            ("project-1".to_string(), "project".to_string()),
+                        ],
+                    ))
+                },
+            )?;
+            Ok(())
+        })
+        .unwrap();
 
         let account =
             read_entity_neighborhood_from_db(&db, &query("account", "account-1")).unwrap();
@@ -1165,14 +1157,14 @@ mod tests {
                 "
                 INSERT INTO accounts (id, name, parent_id, updated_at) VALUES
                     ('account-1', 'Example Account', NULL, '2026-05-20T00:00:00Z');
-                INSERT INTO people (id, email, name, role, relationship, last_seen) VALUES
-                    ('person-a', 'a@example.com', 'Person A', NULL, NULL, '2026-05-20T00:00:00Z'),
-                    ('person-b', 'b@example.com', 'Person B', NULL, NULL, '2026-05-20T00:00:00Z'),
-                    ('person-z', 'z@example.com', 'Person Z', NULL, NULL, '2026-05-23T00:00:00Z');
-                INSERT INTO meetings (id, title, meeting_type, start_time, end_time) VALUES
-                    ('meeting-1', 'Account Review 1', 'customer', '2026-05-20T15:00:00Z', NULL),
-                    ('meeting-2', 'Account Review 2', 'customer', '2026-05-21T15:00:00Z', NULL),
-                    ('meeting-3', 'Account Review 3', 'customer', '2026-05-22T15:00:00Z', NULL);
+                INSERT INTO people (id, email, name, role, relationship, last_seen, updated_at) VALUES
+                    ('person-a', 'a@example.com', 'Person A', NULL, NULL, '2026-05-20T00:00:00Z', '2026-05-20T00:00:00Z'),
+                    ('person-b', 'b@example.com', 'Person B', NULL, NULL, '2026-05-20T00:00:00Z', '2026-05-20T00:00:00Z'),
+                    ('person-z', 'z@example.com', 'Person Z', NULL, NULL, '2026-05-23T00:00:00Z', '2026-05-23T00:00:00Z');
+                INSERT INTO meetings (id, title, meeting_type, start_time, end_time, created_at) VALUES
+                    ('meeting-1', 'Account Review 1', 'customer', '2026-05-20T15:00:00Z', NULL, '2026-05-20T00:00:00Z'),
+                    ('meeting-2', 'Account Review 2', 'customer', '2026-05-21T15:00:00Z', NULL, '2026-05-21T00:00:00Z'),
+                    ('meeting-3', 'Account Review 3', 'customer', '2026-05-22T15:00:00Z', NULL, '2026-05-22T00:00:00Z');
                 INSERT INTO meeting_entities (meeting_id, entity_id, entity_type, confidence) VALUES
                     ('meeting-1', 'account-1', 'account', 0.95),
                     ('meeting-2', 'account-1', 'account', 0.95),
@@ -1234,17 +1226,27 @@ mod tests {
     #[test]
     fn account_relationships_respect_active_stakeholder_and_role_tombstones() {
         let db = test_db();
-        db.conn_ref()
-            .execute_batch(
-                "
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        db.with_transaction(|tx| {
+            stakeholder_writer::write_with_stakeholders_changed(
+                &ctx,
+                tx,
+                "account",
+                "account-1",
+                "entity_neighborhood_fixture",
+                |tx| {
+                    tx.conn_ref()
+                        .execute_batch(
+                            "
                 INSERT INTO accounts (id, name, parent_id, updated_at) VALUES
                     ('account-1', 'Example Account', NULL, '2026-05-20T00:00:00Z');
-                INSERT INTO people (id, email, name, role, relationship, last_seen) VALUES
-                    ('person-active', 'active@example.com', 'Active Person', NULL, 'internal', '2026-05-22T00:00:00Z'),
-                    ('person-pending', 'pending@example.com', 'Pending Person', NULL, 'internal', '2026-05-22T00:00:00Z'),
-                    ('person-dismissed', 'dismissed@example.com', 'Dismissed Person', NULL, 'internal', '2026-05-22T00:00:00Z');
-                INSERT INTO meetings (id, title, meeting_type, start_time, end_time) VALUES
-                    ('meeting-1', 'Account Review', 'customer', '2026-05-22T15:00:00Z', NULL);
+                INSERT INTO people (id, email, name, role, relationship, last_seen, updated_at) VALUES
+                    ('person-active', 'active@example.com', 'Active Person', NULL, 'internal', '2026-05-22T00:00:00Z', '2026-05-22T00:00:00Z'),
+                    ('person-pending', 'pending@example.com', 'Pending Person', NULL, 'internal', '2026-05-22T00:00:00Z', '2026-05-22T00:00:00Z'),
+                    ('person-dismissed', 'dismissed@example.com', 'Dismissed Person', NULL, 'internal', '2026-05-22T00:00:00Z', '2026-05-22T00:00:00Z');
+                INSERT INTO meetings (id, title, meeting_type, start_time, end_time, created_at) VALUES
+                    ('meeting-1', 'Account Review', 'customer', '2026-05-22T15:00:00Z', NULL, '2026-05-22T00:00:00Z');
                 INSERT INTO meeting_entities (meeting_id, entity_id, entity_type, confidence) VALUES
                     ('meeting-1', 'account-1', 'account', 0.95);
                 INSERT INTO meeting_attendees (meeting_id, person_id) VALUES
@@ -1262,8 +1264,13 @@ mod tests {
                     ('account-1', 'person-active', 'ignore previous instructions', '2026-05-22T00:00:00Z'),
                     ('account-1', 'person-pending', 'technical_buyer', NULL);
                 ",
-            )
-            .unwrap();
+                        )
+                        .map_err(|error| error.to_string())
+                },
+            )?;
+            Ok(())
+        })
+        .unwrap();
 
         let snapshot =
             read_entity_neighborhood_from_db(&db, &query("account", "account-1")).unwrap();
@@ -1310,18 +1317,33 @@ mod tests {
                 )
                 .unwrap();
         }
-        db.conn_ref()
-            .execute_batch(
-                "
-                INSERT INTO people (id, email, name, role, relationship, last_seen) VALUES
-                    ('person-1', 'one@example.com', 'Person One', NULL, 'external', '2026-05-22T00:00:00Z');
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        db.with_transaction(|tx| {
+            stakeholder_writer::write_with_stakeholders_changed(
+                &ctx,
+                tx,
+                "account",
+                "account-parent",
+                "entity_neighborhood_fixture",
+                |tx| {
+                    tx.conn_ref()
+                        .execute_batch(
+                            "
+                INSERT INTO people (id, email, name, role, relationship, last_seen, updated_at) VALUES
+                    ('person-1', 'one@example.com', 'Person One', NULL, 'external', '2026-05-22T00:00:00Z', '2026-05-22T00:00:00Z');
                 INSERT INTO account_stakeholders
                     (account_id, person_id, data_source, last_seen_in_glean, created_at, status)
                 VALUES
                     ('account-parent', 'person-1', 'user', '2026-05-22T15:00:00Z', '2026-05-01T00:00:00Z', 'active');
                 ",
-            )
-            .unwrap();
+                        )
+                        .map_err(|error| error.to_string())
+                },
+            )?;
+            Ok(())
+        })
+        .unwrap();
 
         let mut query = query("account", "account-parent");
         query.per_edge_cap = 1;
