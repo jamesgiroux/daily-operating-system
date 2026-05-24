@@ -1036,13 +1036,16 @@ mod tests {
             .await
             .expect("writer call before rotation");
 
-        install_global(svc.clone());
-        let _global_guard = GlobalServiceGuard;
-        let rotated = provider
-            .rotate_key(&UserIdentity::local(path.clone()))
-            .expect("rotate through global DbService");
-        assert_eq!(rotated, EncryptionKey::from_hex(new_key.to_string()));
-        uninstall_global();
+        {
+            let _rotation_test_guard = crate::db::key_provider::rotation_test_guard();
+            install_global(svc.clone());
+            let _global_guard = GlobalServiceGuard;
+            let rotated = provider
+                .rotate_key(&UserIdentity::local(path.clone()))
+                .expect("rotate through global DbService");
+            assert_eq!(rotated, EncryptionKey::from_hex(new_key.to_string()));
+            uninstall_global();
+        }
 
         let email = sample_email("em-rotate-after", "acc-after");
         svc.writer()
@@ -1084,59 +1087,62 @@ mod tests {
             .await
             .expect("open svc");
 
-        install_global(svc);
-        let _global_guard = GlobalServiceGuard;
+        {
+            let _rotation_test_guard = crate::db::key_provider::rotation_test_guard();
+            install_global(svc);
+            let _global_guard = GlobalServiceGuard;
 
-        let (key_fetched_tx, key_fetched_rx) = mpsc::channel();
-        let (release_get_tx, release_get_rx) = mpsc::channel();
-        provider.block_next_get(key_fetched_tx, release_get_rx);
+            let (key_fetched_tx, key_fetched_rx) = mpsc::channel();
+            let (release_get_tx, release_get_rx) = mpsc::channel();
+            provider.block_next_get(key_fetched_tx, release_get_rx);
 
-        let open_provider = provider.clone();
-        let open_path = path.clone();
-        let open_handle = std::thread::spawn(move || {
-            let db = ActionDb::open_resolved_path_for_tests(open_path, open_provider)?;
-            drop(db);
-            Ok::<(), DbError>(())
-        });
+            let open_provider = provider.clone();
+            let open_path = path.clone();
+            let open_handle = std::thread::spawn(move || {
+                let db = ActionDb::open_resolved_path_for_tests(open_path, open_provider)?;
+                drop(db);
+                Ok::<(), DbError>(())
+            });
 
-        key_fetched_rx
-            .recv_timeout(Duration::from_secs(2))
-            .expect("open fetched key before rotation attempt");
+            key_fetched_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("open fetched key before rotation attempt");
 
-        let rotate_provider = provider.clone();
-        let rotate_user = UserIdentity::local(path.clone());
-        let (rotation_started_tx, rotation_started_rx) = mpsc::channel();
-        let (rotation_done_tx, rotation_done_rx) = mpsc::channel();
-        let rotate_handle = std::thread::spawn(move || {
-            rotation_started_tx
-                .send(())
-                .expect("signal rotation started");
-            let result = rotate_provider.rotate_key(&rotate_user);
-            rotation_done_tx.send(()).expect("signal rotation done");
-            result
-        });
+            let rotate_provider = provider.clone();
+            let rotate_user = UserIdentity::local(path.clone());
+            let (rotation_started_tx, rotation_started_rx) = mpsc::channel();
+            let (rotation_done_tx, rotation_done_rx) = mpsc::channel();
+            let rotate_handle = std::thread::spawn(move || {
+                rotation_started_tx
+                    .send(())
+                    .expect("signal rotation started");
+                let result = rotate_provider.rotate_key(&rotate_user);
+                rotation_done_tx.send(()).expect("signal rotation done");
+                result
+            });
 
-        rotation_started_rx
-            .recv_timeout(Duration::from_secs(2))
-            .expect("rotation thread started");
-        assert!(
-            rotation_done_rx
-                .recv_timeout(Duration::from_millis(100))
-                .is_err(),
-            "rotation completed while ActionDb::open held a fetched key"
-        );
+            rotation_started_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("rotation thread started");
+            assert!(
+                rotation_done_rx
+                    .recv_timeout(Duration::from_millis(100))
+                    .is_err(),
+                "rotation completed while ActionDb::open held a fetched key"
+            );
 
-        release_get_tx.send(()).expect("release blocked key fetch");
-        open_handle
-            .join()
-            .expect("open thread joined")
-            .expect("open should complete with the pre-rotation key");
+            release_get_tx.send(()).expect("release blocked key fetch");
+            open_handle
+                .join()
+                .expect("open thread joined")
+                .expect("open should complete with the pre-rotation key");
 
-        let rotated = rotate_handle
-            .join()
-            .expect("rotation thread joined")
-            .expect("rotation completed after open connection acquisition");
-        assert_eq!(rotated, EncryptionKey::from_hex(new_key.to_string()));
+            let rotated = rotate_handle
+                .join()
+                .expect("rotation thread joined")
+                .expect("rotation completed after open connection acquisition");
+            assert_eq!(rotated, EncryptionKey::from_hex(new_key.to_string()));
+        }
         assert!(!encrypted_db_can_read(
             &path,
             &EncryptionKey::from_hex(old_key.to_string())

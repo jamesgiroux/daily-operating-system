@@ -50,6 +50,16 @@ static ROTATION_LOCK: RwLock<()> = parking_lot::const_rwlock(());
 /// allowed to replace the cached value.
 static CACHED_KEY: OnceLock<RwLock<Option<EncryptionKey>>> = OnceLock::new();
 
+#[cfg(test)]
+static ROTATION_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[cfg(test)]
+pub(crate) fn rotation_test_guard() -> std::sync::MutexGuard<'static, ()> {
+    ROTATION_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 pub(crate) fn rotation_lock_read() -> parking_lot::RwLockReadGuard<'static, ()> {
     ROTATION_LOCK.read()
 }
@@ -1256,6 +1266,7 @@ mod tests {
 
     #[test]
     fn get_or_create_waits_for_in_flight_rotation() {
+        let _rotation_test_guard = rotation_test_guard();
         let dir = tempfile::tempdir().expect("tempdir");
         let db_path = dir.path().join("blocked_rotation.db");
         let old_key = fixed_key("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
@@ -1276,7 +1287,7 @@ mod tests {
         let rotate_handle = thread::spawn(move || rotate_provider.rotate_key(&rotate_user));
 
         primary_started_rx
-            .recv_timeout(Duration::from_secs(2))
+            .recv_timeout(Duration::from_secs(30))
             .expect("rotation reached blocked primary upsert");
 
         let get_provider = LocalKeychain::with_keychain_for_tests(keychain.clone());
@@ -1341,6 +1352,7 @@ mod tests {
 
     #[test]
     fn startup_recovers_crash_after_rekey_before_primary_key_update() {
+        let _rotation_test_guard = rotation_test_guard();
         let dir = tempfile::tempdir().expect("tempdir");
         let db_path = dir.path().join("rotation_recovery.db");
         let old_key = fixed_key("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
@@ -1379,6 +1391,7 @@ mod tests {
 
     #[test]
     fn startup_recovers_crash_after_primary_key_update_before_rekey() {
+        let _rotation_test_guard = rotation_test_guard();
         let dir = tempfile::tempdir().expect("tempdir");
         let db_path = dir.path().join("primary_first_rotation_recovery.db");
         let old_key = fixed_key("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
@@ -1421,6 +1434,7 @@ mod tests {
 
     #[test]
     fn verify_existing_key_preserves_staged_entry_while_rotation_flag_is_set() {
+        let _rotation_test_guard = rotation_test_guard();
         let dir = tempfile::tempdir().expect("tempdir");
         let db_path = dir.path().join("preserve_staged_during_rotation.db");
         let old_key = fixed_key("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");

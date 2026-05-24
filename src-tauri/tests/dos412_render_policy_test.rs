@@ -335,6 +335,9 @@ fn setup_migration_runner_state(conn: &Connection) {
             confidence REAL NOT NULL,
             decay_half_life_days REAL NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS emails (
+            email_id TEXT PRIMARY KEY
+        );
         CREATE TABLE IF NOT EXISTS intelligence_claims (
             id TEXT PRIMARY KEY,
             text TEXT NOT NULL DEFAULT '',

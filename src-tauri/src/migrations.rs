@@ -1032,6 +1032,13 @@ const MIGRATIONS: &[Migration] = &[
         version: 262,
         sql: include_str!("migrations/262_workspace_placement_idempotency.sql"),
     },
+    // v1.4.4a W6 — claim-backed surface readers query SubjectRef by semantic
+    // kind/id instead of exact JSON text, so support the json_extract lookup
+    // path with an expression index.
+    Migration::Fn {
+        version: 263,
+        apply: migrate_v263_claim_subject_lookup_index,
+    },
 ];
 
 const V155_SHADOW_TRUST_VERSION: i64 = 1_401_003;
@@ -2806,6 +2813,30 @@ fn migrate_v260_email_summary_context_evidence(conn: &Connection) -> Result<(), 
         conn,
         include_str!("migrations/260_email_summary_context_evidence.sql"),
         "v1.4.4a W5 email summary context evidence",
+    )
+}
+
+fn migrate_v263_claim_subject_lookup_index(conn: &Connection) -> Result<(), MigrationError> {
+    if !table_exists(conn, "intelligence_claims")? {
+        return Ok(());
+    }
+
+    let columns = table_columns(conn, "intelligence_claims")?;
+    let required = [
+        "subject_ref",
+        "claim_state",
+        "surfacing_state",
+        "claim_type",
+        "created_at",
+    ];
+    if required.iter().any(|column| !columns.contains(*column)) {
+        return Ok(());
+    }
+
+    apply_idempotent_sql_migration(
+        conn,
+        include_str!("migrations/263_claim_subject_lookup_index.sql"),
+        "v1.4.4a W6 claim subject lookup index",
     )
 }
 
@@ -6497,6 +6528,36 @@ mod tests {
         assert!(
             current_version(&conn).expect("current version") >= 244,
             "schema version is at least v244"
+        );
+    }
+
+    #[test]
+    fn migration_263_adds_claim_subject_lookup_index() {
+        let conn = mem_db();
+        run_migrations(&conn).expect("build current schema");
+
+        for index_name in [
+            "idx_claims_subject_kind_id_lifecycle_created",
+            "idx_claims_subject_kind_id_lifecycle_untyped_created",
+        ] {
+            let index_count: i64 = conn
+                .query_row(
+                    "SELECT count(*) FROM sqlite_master \
+                     WHERE type = 'index' \
+                       AND name = ?1",
+                    [index_name],
+                    |row| row.get(0),
+                )
+                .expect("query sqlite_master for claim subject lookup index");
+            assert_eq!(
+                index_count, 1,
+                "claim-backed surface reads have indexed subject lookup path {index_name}"
+            );
+        }
+
+        assert!(
+            current_version(&conn).expect("current version") >= 263,
+            "schema version is at least v263"
         );
     }
 }

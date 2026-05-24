@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>v1.4.4a Tauri Briefing Entity Intelligence - DailyOS Planning</title>
+  <link rel="stylesheet" href="../design/reference/_shared/fonts.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/design-tokens.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/MagazinePageLayout.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/chrome.css">
+  <link rel="stylesheet" href="plans.css">
+</head>
+<body data-tint="sage">
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+<div class="plans-shell">
+
+<nav class="plans-topnav" aria-label="Planning surface">
+  <a class="plans-mark" href="index.html">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="16" height="16" aria-hidden="true">
+      <path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/>
+    </svg>
+    DailyOS - Planning
+  </a>
+  <div class="plans-topnav-links">
+    <a href="engineering-ladder.html">Engineering Ladder</a>
+    <a href="v1.4.4a-tauri-briefing-entity-intelligence-waves.html" data-active="true">Tauri Briefing Cutover</a>
+    <a href="AUTHORING.md">Authoring Ruleset</a>
+  </div>
+</nav>
+
+<section class="plans-cover">
+  <p class="plans-eyebrow">DailyOS - v1.4.4a - Parallel Wave Plan</p>
+  <h1 class="plans-title">Tauri briefings consume scored entity intelligence.</h1>
+  <p class="plans-kicker">Start with Daily Briefing and Meeting Briefing, then roll the same substrate-backed read contract into entity detail, actions, and email.</p>
+  <p class="plans-lede">
+    This plan turns the app surfaces into consumers of the abilities runtime instead of parallel readers of legacy intelligence projections.
+    The first proof is not WordPress or MCP: it is the shipped Tauri experience.
+    Daily Briefing and Meeting Briefing become the first two surfaces that read scored claims, provenance, trust bands, source-as-of dates, and sensitivity policy through runtime envelopes.
+  </p>
+  <div class="plans-meta">
+    <span>Target: v1.4.4a parallel app-surface lane</span>
+    <span>Current revision: V1.2 L0 approved</span>
+    <span>Waves: 7 (W0 gate + W1-W6)</span>
+    <span>Parallel agents: 3 peak</span>
+    <span>Source: Linear v1.4.4 project</span>
+  </div>
+</section>
+
+<section class="plans-section" aria-labelledby="source-and-scope">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Source and scope</p>
+    <h2 id="source-and-scope" class="plans-section-title">This is the consumer half of the substrate repair.</h2>
+    <p class="plans-section-lede">
+      A parallel producer-remediation plan is making <code>get_entity_intelligence</code> richer.
+      This plan makes the app consume that envelope for claim-backed briefing content, without replacing operational shell data or inventing a cache database.
+    </p>
+  </header>
+  <ul class="plans-related">
+    <li><strong>Problem:</strong> app surfaces and PTY prompt builders still mix raw detail commands, cached prep blobs, legacy <code>db.get_entity_intelligence</code>, and page-local composition as sources for claim-backed intelligence.</li>
+    <li><strong>First surfaces:</strong> Daily Briefing at <code>src/components/dashboard/DailyBriefing.tsx</code> and Meeting Briefing through <code>prepare_meeting</code>, <code>refresh_meeting_briefing_full</code>, and <code>src/pages/MeetingDetailPage.tsx</code>.</li>
+    <li><strong>Next surfaces:</strong> Account, Project, and Person detail pages. After that, Actions and Email.</li>
+    <li><strong>Lane authority:</strong> v1.4.4a is a W0-approved exception/amendment to the v1.4.4 WordPress Surface Migration Tauri-freeze rule. It may touch existing Tauri React surfaces only to change claim-backed data sourcing, trust/provenance rendering, and prompt-input plumbing; no new routes, visual patterns, or UI features. W0 records the exception in Linear and mirrors it into the main v1.4.4 wave packet before W1 starts.</li>
+    <li><strong>Upstream dependency:</strong> producer remediation for <code>get_entity_intelligence</code> fills the envelope with neighborhood, touchpoints, relationships, health, threads, metadata proposals, and section caveats.</li>
+    <li><strong>Non-goal:</strong> no WordPress migration, no remote processing, no new read-cache database, no wholesale rewrite of dashboard shell data, and no prompt-template redesign beyond the minimum needed for substrate-fed inputs.</li>
+    <li><strong>Threat topology:</strong> local-to-local single-user. No new loopback endpoint, remote endpoint, MCP exposure, or SurfaceClient pairing scope ships in this lane. Prompt channels, sensitivity gates, source hygiene, provenance rendering, and log redaction still apply.</li>
+    <li><strong>Authority surfaces:</strong> Linear remains canonical for issue approval and reviewer verdicts. Durable review artifacts live under <code>.docs/plans/v1.4.4a-tauri-briefing-entity-intelligence/reviews/</code>.</li>
+    <li><strong>WordPress boundary:</strong> v1.4.4a may consume v1.4.4 W1 substrate, but it does not satisfy, replace, or change any W2-W6 WordPress migration acceptance criteria. Any cross-surface contract change reopens or amends the v1.4.4 master/sub-L0 packet before code starts.</li>
+    <li><strong>Composition boundary:</strong> this lane is a temporary envelope-rendered Tauri consumer exception, not a new composition-producing wave. If implementation creates substrate-authored composed page output, it must use ADR-0130 <code>Composition</code>; otherwise W6 records whether a later ReactBlockRenderer-over-Composition cutover is required.</li>
+    <li><strong>K-in:</strong> <code>docs/solutions/security-issues/prompt-channel-sensitivity-class-sweep-2026-05-18.md</code>, ADR-0093, ADR-0102, ADR-0106, ADR-0108, ADR-0111, ADR-0125, ADR-0130.</li>
+  </ul>
+</section>
+
+<section class="plans-section" aria-labelledby="l0-status">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">L0 status</p>
+    <h2 id="l0-status" class="plans-section-title">Cycle-1 review folds are part of the approved plan.</h2>
+    <p class="plans-section-lede">
+      Final L0 status: approved after cycle-1 folds on 2026-05-23.
+      The fold-ins are not optional notes; they are W0/W1 gates so later waves do not have to guess.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Fold</th>
+        <th>Decision</th>
+        <th>Where enforced</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Minimum producer gate</td>
+        <td>W2/W3 may start before all producer remediation is done only if their required envelope fields are present or explicitly degraded.</td>
+        <td>W0, W1, W2, W3</td>
+      </tr>
+      <tr>
+        <td>Tauri-freeze exception</td>
+        <td>This lane is an explicit v1.4.4 exception for data sourcing, trust/provenance rendering, and prompt plumbing only; no new Tauri UI scope.</td>
+        <td>W0, main v1.4.4 packet</td>
+      </tr>
+      <tr>
+        <td>Cache vs authority</td>
+        <td><code>prep_context_json</code> and <code>prep_frozen_json</code> remain valid cached read models for already-rendered meeting prep, but not authoritative prompt input for new claim-backed analysis.</td>
+        <td>Operating principles, W3, CI invariants</td>
+      </tr>
+      <tr>
+        <td>Daily split</td>
+        <td>W0 freezes which dashboard fields are shell data and which are claim-backed sections before W2 starts.</td>
+        <td>W0, W2</td>
+      </tr>
+      <tr>
+        <td>Actor and surface policy</td>
+        <td>The shipped Tauri app invokes through <code>invoke_ability</code> as <code>Actor::User</code>; render surfaces are <code>tauri_briefing_prep</code>, <code>tauri_meeting_detail</code>, and <code>tauri_entity_detail</code>. Existing MCP/SurfaceClient exposure is frozen and regression-tested.</td>
+        <td>W1-W4, Suite S</td>
+      </tr>
+      <tr>
+        <td>Prompt fingerprints</td>
+        <td>Any meeting prompt-input shape change bumps <code>prepare_meeting_prep</code> template version and records canonical JSON / fingerprint drift per ADR-0106.</td>
+        <td>W3, Suite S/E</td>
+      </tr>
+      <tr>
+        <td>Prompt-safe projection</td>
+        <td>Only a Rust projection built from <code>EntityIntelligenceEnvelope</code> after the centralized prompt-channel sensitivity gate may enter canonical prompt JSON.</td>
+        <td>W1, W3</td>
+      </tr>
+      <tr>
+        <td>Live Daily Briefing path</td>
+        <td>W1 proves populated Tauri <code>invoke_ability("get_daily_briefing")</code> works with the live daily-readiness reader and complete outer provenance attribution.</td>
+        <td>W1, W2</td>
+      </tr>
+      <tr>
+        <td>Rendered provenance boundary</td>
+        <td>UI renders trust/provenance from <code>AbilityResponseJson.rendered_provenance</code>; DTO-local provenance is for refs, source counts, and diagnostics only unless explicitly actor-rendered.</td>
+        <td>W1-W4</td>
+      </tr>
+      <tr>
+        <td><code>prepare_meeting</code> composition</td>
+        <td>W3 must update descriptor/provenance/prompt fixtures so <code>get_entity_intelligence</code> is the claim-backed composed source; remaining raw reads are allowlisted shell/cache reads only.</td>
+        <td>W3</td>
+      </tr>
+      <tr>
+        <td>Performance budgets</td>
+        <td>W0 captures root-route and Meeting Detail baseline plus cardinality caps; W2/W3 fail if the ability path adds visible render delay, exceeds fan-out caps, or regresses the measured baseline by more than 10% without an L6 call.</td>
+        <td>Suite P, W6</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="plans-section" aria-labelledby="actor-exposure-matrix">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Actor and exposure matrix</p>
+    <h2 id="actor-exposure-matrix" class="plans-section-title">Tauri is the target, but other heads already exist.</h2>
+    <p class="plans-section-lede">
+      The lane must not treat "no new exposure" as sufficient.
+      W0 freezes the current descriptor shape for every touched ability, then W1-W4 add regressions so Tauri output changes do not leak through MCP, SurfaceClient, diagnostics, or audit sinks.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Ability</th>
+        <th>Current actor/exposure contract</th>
+        <th>v1.4.4a rule</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>get_entity_intelligence</code></td>
+        <td><code>User</code>, <code>Agent</code>, <code>System</code>, <code>SurfaceClient</code>, <code>McpClient</code>; scope <code>read.entity_intelligence</code>; <code>mcp_exposure = Invocable</code>; <code>client_side_executable</code> frozen from descriptor.</td>
+        <td>Any output-shape change needs User/MCP/SurfaceClient golden fixtures for data, rendered text, provenance redaction, diagnostics omission, and source-id masking.</td>
+      </tr>
+      <tr>
+        <td><code>get_daily_briefing</code></td>
+        <td>v1.4.4a target authority is <code>User</code> only; scope <code>read.daily_briefing</code>; <code>mcp_exposure = None</code>; <code>client_side_executable = false</code> unless the main W3/sub-L0 packet separately approves SurfaceClient execution.</td>
+        <td>W0 resolves any descriptor drift before W1: either narrow runtime metadata to User-only for this lane, or amend the main W3/sub-L0 with explicit SurfaceClient scope/render/audit policy. Tauri proof cannot count as WordPress block proof.</td>
+      </tr>
+      <tr>
+        <td><code>prepare_meeting</code></td>
+        <td><code>User</code>, <code>Agent</code>, <code>System</code>; Transform ability with prompt input and provider output; no SurfaceClient or MCP descriptor exposure in this lane.</td>
+        <td>Prompt-input changes require ADR-0093/0106 fixtures plus Agent-vs-User response checks; no SurfaceClient or MCP exposure is added in this lane.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="plans-section" aria-labelledby="principles">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Operating principles</p>
+    <h2 id="principles" class="plans-section-title">Consume the substrate; keep the shell pragmatic.</h2>
+  </header>
+  <div class="callout-grid">
+    <article class="callout">
+      <h3 class="callout-title">Claim-backed means ability-backed</h3>
+      <p class="callout-prose">Facts, risks, open loops, touchpoints, relationship context, trust summaries, and provenance must come from <code>get_entity_intelligence</code> or abilities that compose it. Legacy detail commands may still provide names, navigation, timestamps, meetings, and explicit mutation affordances.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Prompt input is a trust boundary</h3>
+      <p class="callout-prose">Meeting briefing PTY inputs must use a prompt-safe Rust projection of entity intelligence. The projection applies the centralized <code>services::claims</code> prompt-channel sensitivity gate, a subject allowlist, structural sanitization or equivalent JSON-boundary defense, length/invisible-character handling, prompt-version bumping, and canonical fingerprint fixtures. Derived prior intelligence is treated as untrusted input under ADR-0093.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Prompt authority is Rust-only</h3>
+      <p class="callout-prose">Only the prompt-safe projection built from <code>EntityIntelligenceEnvelope</code> may enter canonical prompt JSON. Tauri React components, <code>get_dashboard_data</code>, cached <code>prep_*</code> blobs, and page-local composers are never prompt authorities.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">No silent bypasses</h3>
+      <p class="callout-prose">If a briefing section renders claim-backed intelligence, tests and lint must fail when it sources that section from raw SQL, <code>db.get_entity_intelligence</code>, page-local composers, or legacy AI JSON. Cached meeting output may still render as a read model; it cannot become the source of truth for newly generated claim-backed prompt input.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Cache means stale display, not authority</h3>
+      <p class="callout-prose">Current ability envelopes are authoritative for new prompt input and new claim-backed rendering. <code>prep_context_json</code> and <code>prep_frozen_json</code> may keep a previous briefing visible during rebuild only when rendered as stale and bound to the envelope or claim ids that produced it. An unresolved cached claim id is a stale-render failure; a claim-substantive string with no current-or-stale claim binding is a bypass.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Render actor-filtered provenance</h3>
+      <p class="callout-prose">Tauri UI uses <code>AbilityResponseJson.rendered_provenance</code> for user-visible provenance and trust treatment. DTO-local <code>data.provenance</code> and per-fact provenance refs can drive counts, bindings, and detail fetches, but cannot be rendered as raw provenance unless passed through the actor/surface renderer.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Actor and surface stay narrow</h3>
+      <p class="callout-prose">The Tauri app path uses <code>invoke_ability</code> as <code>Actor::User</code>. This lane does not broaden <code>Agent</code>, <code>McpClient</code>, or <code>SurfaceClient</code> exposure for briefing abilities. Any exposure change needs a fresh <code>/cso</code> pass.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Producers can degrade, not disappear</h3>
+      <p class="callout-prose">When a producer slice is unavailable, the envelope must return typed empty, stale, or caveated state with trust and provenance context. A missing producer cannot silently fall back to legacy projections for a claim-backed section.</p>
+    </article>
+  </div>
+</section>
+
+<section class="plans-section" aria-labelledby="wave-overview">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Wave shape</p>
+    <h2 id="wave-overview" class="plans-section-title">7 waves: W0 gate plus W1-W6 implementation and release.</h2>
+    <p class="plans-section-lede">
+      W0 freezes the boundary. W1 builds the shared consumer seam. W2 and W3 prove it on Daily Briefing and Meeting Briefing.
+      W4 applies the same pattern to entity detail. W5 applies it to actions and email. W6 closes drift and performance.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Wave</th>
+        <th>Issues</th>
+        <th>Parallel agents</th>
+        <th>Target</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>W0 - Boundary and inventory</td>
+        <td>surface inventory, prompt-channel matrix, no-bypass contract</td>
+        <td>1</td>
+        <td>L0-ready packet</td>
+      </tr>
+      <tr>
+        <td>W1 - Shared consumer seam</td>
+        <td>frontend hook, Rust prompt projection, test fixtures, lint gates</td>
+        <td>3</td>
+        <td>shared contract merged</td>
+      </tr>
+      <tr>
+        <td>W2 - Daily Briefing</td>
+        <td>Tauri dashboard consumes <code>get_daily_briefing</code> / entity envelopes for claim-backed sections</td>
+        <td>2</td>
+        <td>first rendered app proof</td>
+      </tr>
+      <tr>
+        <td>W3 - Meeting Briefing</td>
+        <td><code>prepare_meeting</code> prompt input and meeting-detail render cutover</td>
+        <td>3</td>
+        <td>first PTY prompt proof</td>
+      </tr>
+      <tr>
+        <td>W4 - Entity Detail</td>
+        <td>Account, Project, Person detail pages consume the envelope</td>
+        <td>3</td>
+        <td>legacy detail split complete</td>
+      </tr>
+      <tr>
+        <td>W5 - Actions and Email</td>
+        <td>action surfaces and email summaries consume scored claims</td>
+        <td>2</td>
+        <td>downstream surfaces aligned</td>
+      </tr>
+      <tr>
+        <td>W6 - Release gate</td>
+        <td>drift, performance, no-bypass sweep, proof bundle</td>
+        <td>1</td>
+        <td>ship-ready cutover</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="plans-section" aria-labelledby="reviewer-matrix">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Reviewer matrix</p>
+    <h2 id="reviewer-matrix" class="plans-section-title">Prompt and privacy scope make security non-optional.</h2>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Agent profile</th>
+        <th>L0 domain reviewer</th>
+        <th>L2 domain reviewer</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Ability runtime / envelope contract</td>
+        <td><code>/plan-eng-review</code></td>
+        <td><code>architect-reviewer</code></td>
+      </tr>
+      <tr>
+        <td>Prompt-channel / PTY input</td>
+        <td><code>/cso</code></td>
+        <td><code>/cso</code> + <code>code-reviewer</code></td>
+      </tr>
+      <tr>
+        <td>Tauri user-facing render</td>
+        <td><code>/plan-design-review</code></td>
+        <td><code>accessibility-tester</code></td>
+      </tr>
+      <tr>
+        <td>Performance-sensitive read path</td>
+        <td><code>/plan-eng-review</code> with Suite P focus</td>
+        <td><code>performance-engineer</code></td>
+      </tr>
+      <tr>
+        <td>No-bypass / fixture gates</td>
+        <td><code>qa-expert</code></td>
+        <td><code>qa-expert</code></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="plans-section" aria-labelledby="suites">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Test suites</p>
+    <h2 id="suites" class="plans-section-title">S, P, and E feed L3 and W6.</h2>
+  </header>
+
+  <div class="suite-grid">
+    <article class="suite-card" data-suite="s">
+      <span class="suite-letter">S</span>
+      <h3 class="suite-name">Security</h3>
+      <p class="suite-prose">Prompt-input sensitivity, source-subject allowlists, ADR-0093 injection fixtures, provenance redaction, actor/exposure golden fixtures, and no raw prompt/output/claim text in app logs, MCP audit rows, SurfaceClient/local-loopback audit, PTY errors, diagnostics, or structured telemetry. Audit payloads are allowlisted to invocation ids, hashes, counts, byte sizes, enum states, source classes, and redaction flags.</p>
+      <p class="suite-owner"><span class="suite-owner-label">Owner</span> <code>/cso</code></p>
+      <p class="suite-pass-rule"><span class="suite-pass-label">Pass</span> zero Critical/High</p>
+    </article>
+    <article class="suite-card" data-suite="p">
+      <span class="suite-letter">P</span>
+      <h3 class="suite-name">Performance</h3>
+      <p class="suite-prose">Daily Briefing and Meeting Detail render latency budgets, DB lock hold-time checks, explicit meeting/entity cardinality caps before pagination, maximum frontend ability calls per route refresh, ability envelope fan-out caps, and no repeated per-card/per-row ability calls.</p>
+      <p class="suite-owner"><span class="suite-owner-label">Owner</span> <code>performance-engineer</code></p>
+      <p class="suite-pass-rule"><span class="suite-pass-label">Pass</span> no regression vs baseline</p>
+    </article>
+    <article class="suite-card" data-suite="e">
+      <span class="suite-letter">E</span>
+      <h3 class="suite-name">Edge cases</h3>
+      <p class="suite-prose">Empty envelopes, stale claims, superseded claims, revoked sources, partial producer availability, prompt drift, unlinked meetings, and cross-entity subject bleed.</p>
+      <p class="suite-owner"><span class="suite-owner-label">Owner</span> <code>qa-expert</code></p>
+      <p class="suite-pass-rule"><span class="suite-pass-label">Pass</span> fixtures + no-bypass checks green</p>
+    </article>
+  </div>
+</section>
+
+<section class="plans-section" aria-labelledby="wave-details">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Wave details</p>
+    <h2 id="wave-details" class="plans-section-title">Acceptance criteria by wave.</h2>
+  </header>
+
+  <div class="callout-grid">
+    <article class="callout">
+      <h3 class="callout-title">W0 - Boundary and inventory</h3>
+      <p class="callout-prose">Inventory every Daily Briefing, Meeting Briefing, entity-detail, action, and email path that currently reads claim-backed intelligence. Classify each read as shell data, rendered claim-backed intelligence, prompt input, cached output, mutation, or operational telemetry.</p>
+      <p class="callout-prose"><strong>Pass:</strong> Linear issues exist for W1-W6; the main v1.4.4 packet records this Tauri-freeze exception; the no-bypass allowlist distinguishes shell/cache reads, stale bound snapshots, and claim-backed authority; prompt-channel matrix enumerates every channel touched by W1-W5 and cites the gate function plus fixture/lint for each; actor/exposure matrix freezes <code>allowed_actors</code>, <code>required_scopes</code>, <code>mcp_exposure</code>, and <code>client_side_executable</code> descriptor values; Daily Briefing shell-vs-claim split is frozen; W2/W3 minimum producer fields and degraded-state behavior are named; composition exception is recorded; root-route and Meeting Detail baselines plus Suite P cardinality caps are captured.</p>
+      <p class="callout-prose"><strong>Likely files:</strong> <code>.docs/plans/v1.4.4a-tauri-briefing-entity-intelligence-waves.html</code>, Linear issue bodies, and optional L0 packets under <code>.docs/plans/v1.4.4a-tauri-briefing-entity-intelligence/</code>.</p>
+    </article>
+
+    <article class="callout">
+      <h3 class="callout-title">W1 - Shared consumer seam</h3>
+      <p class="callout-prose">Create a small shared app-side consumer contract: a frontend ability hook for briefing/entity envelopes, a Rust prompt-safe projection from <code>EntityIntelligenceEnvelope</code>, and lint/tests that keep claim-backed briefing sections off legacy projection reads.</p>
+      <p class="callout-prose"><strong>Pass:</strong> <code>invoke_ability</code> can fetch briefing/entity envelopes for Tauri surfaces as <code>Actor::User</code>; a populated live <code>invoke_ability("get_daily_briefing", renderSurface="tauri_briefing_prep")</code> fixture succeeds with the daily-readiness reader registered and complete outer provenance attribution; prompt-safe projection contains scored facts, open loops, touchpoints, trust, caveats, sensitivity, and provenance refs; high-sensitivity claims are absent from prompt JSON through the centralized sensitivity gate; any abilities-runtime mirror of the gate has a parity test against <code>services::claims</code>; projection applies subject allowlist, wrapping/sanitization or equivalent JSON-boundary defense, length and invisible-character controls; no-bypass test fails red against at least one known legacy source before implementation makes it green; no <code>Agent</code>, <code>McpClient</code>, or new <code>SurfaceClient</code> exposure is introduced; existing MCP/SurfaceClient reachable abilities get golden response/redaction regressions.</p>
+      <p class="callout-prose"><strong>Likely files:</strong> <code>src/hooks/useEntityIntelligence.ts</code>, <code>src/services/entity-intelligence/contracts.ts</code>, <code>src/services/daily-briefing/contracts.ts</code>, <code>src-tauri/abilities-runtime/src/abilities/get_entity_intelligence/*</code>, <code>src-tauri/abilities-runtime/src/abilities/prepare_meeting/*</code>, <code>src-tauri/src/services/context.rs</code>, and new scoped lint/tests.</p>
+    </article>
+
+    <article class="callout">
+      <h3 class="callout-title">W2 - Daily Briefing</h3>
+      <p class="callout-prose">Move claim-backed Daily Briefing intelligence to runtime envelopes while keeping dashboard shell data in the existing fast dashboard service. The dashboard may still load schedule, actions, emails, and UI shell through <code>get_dashboard_data</code>; claim-backed attention, trust, source-as-of, watch proposals, and linked-entity readiness come from the ability path.</p>
+      <p class="callout-prose"><strong>Pass:</strong> <code>DailyBriefing.tsx</code> renders ability-backed briefing state/trust/provenance for the W0-frozen claim-backed sections using <code>rendered_provenance</code> for user-visible provenance; existing dashboard tests cover empty/loading/stale states; new tests prove the rendered intelligence does not come from legacy AI JSON or legacy DB entity-intelligence projection; root-route render does not regress beyond the W0 budget; Suite P fails per-card ability fan-out in <code>DailyBriefing</code> or <code>BriefingMeetingCard</code>; missing producer fields show typed degraded state instead of empty confidence.</p>
+      <p class="callout-prose"><strong>Likely files:</strong> <code>src/hooks/useDashboardData.ts</code>, <code>src/components/dashboard/DailyBriefing.tsx</code>, <code>src/components/dashboard/BriefingMeetingCard.tsx</code>, <code>src-tauri/src/services/dashboard.rs</code>, <code>src-tauri/abilities-runtime/src/abilities/get_daily_briefing/*</code>, and daily-briefing golden tests.</p>
+    </article>
+
+    <article class="callout">
+      <h3 class="callout-title">W3 - Meeting Briefing</h3>
+      <p class="callout-prose">Feed <code>prepare_meeting</code> from scored entity-intelligence envelopes instead of raw claim/context assemblers where the content is claim-backed. Preserve <code>prep_context_json</code> and <code>prep_frozen_json</code> as cached output/read models, not as authoritative prompt input. Bump prompt template versions when prompt input shape changes. W3 chooses one Meeting Detail render seam before coding: extend <code>get_meeting_intelligence</code> with a meeting/entity envelope adjunct, or add a separate <code>useMeetingEntityIntelligence(meetingId)</code> hook.</p>
+      <p class="callout-prose"><strong>Pass:</strong> <code>prepare_meeting</code> descriptor, provenance, and prompt fixtures prove <code>get_entity_intelligence</code> or a named projection ability is the claim-backed composed source; any remaining direct <code>get_entity_context</code> or raw claim reads are explicitly allowlisted as shell/cache reads; meeting briefing generation includes prompt-safe entity intelligence in canonical prompt JSON; <code>prepare_meeting_prep</code> template version and fingerprint drift are updated per ADR-0106; existing prompt sensitivity fixtures still pass; new fixtures prove revoked/private/adjacent-subject claims are excluded; Meeting Detail render uses <code>rendered_provenance</code> for claim-backed briefing sections; the chosen render seam names merge precedence with <code>prep_context_json</code>/<code>prep_frozen_json</code> and partial/failure behavior keeps the prior briefing visible while rebuilding.</p>
+      <p class="callout-prose"><strong>Likely files:</strong> <code>src-tauri/abilities-runtime/src/abilities/prepare_meeting/synthesis.rs</code>, <code>src-tauri/abilities-runtime/src/abilities/prepare_meeting/prompts.rs</code>, <code>src-tauri/src/services/meetings.rs</code>, <code>src-tauri/src/meeting_prep_queue.rs</code>, <code>src/pages/MeetingDetailPage.tsx</code>, and prepare-meeting fixtures.</p>
+    </article>
+
+    <article class="callout">
+      <h3 class="callout-title">W4 - Entity Detail</h3>
+      <p class="callout-prose">Apply the same split to Account, Project, and Person detail pages: operational detail commands remain for shell/navigation/mutations; claim-backed intelligence sections consume <code>get_entity_intelligence</code> through the shared frontend hook.</p>
+      <p class="callout-prose"><strong>Pass:</strong> Account, Project, and Person detail pages render facts, open loops, touchpoints, health/relationship sections, trust, and provenance from the envelope; no-bypass tests reject legacy detail command intelligence as the rendered source; existing editor/mutation workflows keep working.</p>
+      <p class="callout-prose"><strong>Likely files:</strong> <code>src/hooks/useAccountDetail.ts</code>, <code>src/hooks/useProjectDetail.ts</code>, <code>src/hooks/usePersonDetail.ts</code>, <code>src/pages/AccountDetailPage.tsx</code>, <code>src/pages/ProjectDetailEditorial.tsx</code>, <code>src/pages/PersonDetailEditorial.tsx</code>, and entity-intelligence contract tests.</p>
+    </article>
+
+    <article class="callout">
+      <h3 class="callout-title">W5 - Actions and Email</h3>
+      <p class="callout-prose">Move action and email surfaces to the same scored-claim read policy for suggestions, summaries, and claim receipts. Keep action/email operational rows and mutations in their existing services, but route claim-backed analysis through runtime envelopes or dedicated abilities that compose them.</p>
+      <p class="callout-prose"><strong>Pass:</strong> action suggestions and email summaries show trust/provenance where they depend on claims; correction/dismissal feedback carries surface context; prompt-input email enrichment does not reintroduce raw entity-intelligence projection reads.</p>
+      <p class="callout-prose"><strong>Likely files:</strong> <code>src/pages/ActionsPage.tsx</code>, <code>src/pages/EmailsPage.tsx</code>, <code>src-tauri/src/prepare/email_enrich.rs</code>, <code>src-tauri/src/commands/actions_calendar.rs</code>, <code>src-tauri/src/services/claim_receipt/*</code>, and action/email surface tests.</p>
+    </article>
+
+    <article class="callout">
+      <h3 class="callout-title">W6 - Release gate</h3>
+      <p class="callout-prose">Run the integrated no-bypass, prompt-safety, performance, and drift sweeps. Capture proof that the two kickstart surfaces and the downstream surfaces agree on the same scored claims rather than diverging projections.</p>
+      <p class="callout-prose"><strong>Pass:</strong> <code>cargo clippy -- -D warnings</code>, <code>cargo test</code>, <code>pnpm tsc --noEmit</code>, briefing surface QA, Suite S/P/E, L5 drift, and proof bundle all pass. Any Path-alpha findings move to maintenance instead of blocking once acceptance criteria are met.</p>
+      <p class="callout-prose"><strong>Likely files:</strong> proof bundle and retro under <code>.docs/plans/v1.4.4a-tauri-briefing-entity-intelligence/</code>, plus any CI lint scripts created in W1.</p>
+    </article>
+  </div>
+</section>
+
+<section class="plans-section" aria-labelledby="invariants">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">CI invariants</p>
+    <h2 id="invariants" class="plans-section-title">The plan needs structural gates, not reviewer memory.</h2>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Invariant</th>
+        <th>Mechanism</th>
+        <th>Activated by</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Prompt input uses centralized sensitivity policy</td>
+        <td>Rust tests over canonical prompt JSON plus scoped grep/lint for new prompt assemblers using <code>prompt_input_sensitivity_allowed</code> and <code>prompt_input_sensitivity_name_allowed</code></td>
+        <td>W1</td>
+      </tr>
+      <tr>
+        <td>Existing non-Tauri exposure does not regress</td>
+        <td>Actor/exposure matrix fixture for User, Agent/MCP, and SurfaceClient paths; asserts actor-filtered response shape, diagnostics omission, source-id masking, and provenance redaction</td>
+        <td>W1-W4</td>
+      </tr>
+      <tr>
+        <td>Audit sinks never persist prompt or raw rendered intelligence</td>
+        <td>Fixture scans app logs, MCP audit rows, SurfaceClient/local-loopback audit, PTY errors, diagnostics, and structured telemetry. Allowed payload: invocation ids, hashes, counts, byte sizes, enum states, source classes, redaction flags. Forbidden payload: raw prompt JSON, provider output, raw ability data, raw source ids, raw provenance labels, and claim text outside intentional actor-filtered render.</td>
+        <td>W1, W3, W6</td>
+      </tr>
+      <tr>
+        <td>Daily Briefing claim-backed sections do not source legacy projections</td>
+        <td>Frontend tests + scoped no-bypass script covering dashboard and daily briefing paths</td>
+        <td>W2</td>
+      </tr>
+      <tr>
+        <td>Meeting Briefing prompt inputs include scored envelope context</td>
+        <td>Prepare-meeting descriptor/provenance/prompt fixture asserts <code>get_entity_intelligence</code> composition, prompt canonical JSON shape, prompt-template version/fingerprint drift, and redaction behavior</td>
+        <td>W3</td>
+      </tr>
+      <tr>
+        <td>Entity detail pages consume envelope for intelligence sections</td>
+        <td>Hook/component tests and no-bypass script for Account, Project, and Person paths</td>
+        <td>W4</td>
+      </tr>
+      <tr>
+        <td>Actions/email do not bypass claim substrate for analysis text</td>
+        <td>Scoped lint over action/email prompt builders and render selectors</td>
+        <td>W5</td>
+      </tr>
+      <tr>
+        <td>Surface render latency does not regress</td>
+        <td>Suite P baseline for root route and meeting detail before/after cutover; fail on &gt;10% regression or visible ability-path delay without L6 decision</td>
+        <td>W2, W3, W6</td>
+      </tr>
+      <tr>
+        <td>Daily Briefing avoids fan-out regression</td>
+        <td>Suite P fixture pins maximum meetings/entities processed before pagination, maximum frontend ability calls per root-route refresh, DB lock hold threshold, and representative fixture size</td>
+        <td>W0, W1, W2</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="plans-section plans-section-callouts">
+  <div class="callout-grid">
+    <article class="callout">
+      <h3 class="callout-title">Pacing</h3>
+      <p class="callout-prose">W2 and W3 can run in parallel after W1 only if the prompt-safe projection contract, no-bypass allowlist, Daily split, and minimum producer gates are frozen. W4 does not start until Daily and Meeting proof both pass L2.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Bounding</h3>
+      <p class="callout-prose">The first PRs should not chase every PTY caller. They prove two surfaces and add the shared seam. Reports, entity detail, actions, and email follow in named waves.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Migration slots</h3>
+      <p class="callout-prose">None expected. If W1 discovers a needed schema or cache table, pause for a W0 amendment and claim slots from the active v1.4.4 migration block before coding.</p>
+    </article>
+  </div>
+</section>
+
+<section class="plans-section" aria-labelledby="review-ladder">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Review ladder</p>
+    <h2 id="review-ladder" class="plans-section-title">L0 through L6 for this train.</h2>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Level</th>
+        <th>Applies</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>L0 Prep</td>
+        <td>Every wave packet</td>
+        <td><code>/plan-eng-review</code> default; add <code>/cso</code> for prompt/input/privacy waves and <code>/plan-design-review</code> for rendered surface changes.</td>
+      </tr>
+      <tr>
+        <td>L0 Plan</td>
+        <td>Every issue</td>
+        <td>Codex challenge + domain reviewer + Codex consult. <code>/cso</code> required for W1, W3, W5 and any wave that changes render policy or prompt inputs.</td>
+      </tr>
+      <tr>
+        <td>L1 Self</td>
+        <td>Every issue</td>
+        <td>Implementer proves acceptance with real fixtures. Passing clippy/tsc/tests is necessary but not sufficient.</td>
+      </tr>
+      <tr>
+        <td>L2 Diff</td>
+        <td>Every wave PR</td>
+        <td>Run locally before push. Codex review + code-reviewer + domain reviewer. Security re-review for prompt/privacy diffs.</td>
+      </tr>
+      <tr>
+        <td>L3 Wave</td>
+        <td>W1, W2+W3 integrated, W6</td>
+        <td>Codex challenge + architect-reviewer + Suite S/P/E. W2 and W3 may share an integrated L3 because the proof surfaces interlock.</td>
+      </tr>
+      <tr>
+        <td>L4 Surface</td>
+        <td>W2, W3, W4, W5</td>
+        <td><code>/qa-only</code> first, then <code>/qa</code> if remediation needed. Browser proof required for Daily Briefing and Meeting Detail.</td>
+      </tr>
+      <tr>
+        <td>L5 Drift</td>
+        <td>W6 close</td>
+        <td>Compare integrated state to this wave plan and the producer-remediation dependency list.</td>
+      </tr>
+      <tr>
+        <td>L6 Human</td>
+        <td>If escalated</td>
+        <td>James decides scope tradeoffs if prompt quality, latency, or surface completeness conflict.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="plans-section" aria-labelledby="open-questions">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Open questions</p>
+    <h2 id="open-questions" class="plans-section-title">Resolve at W0, not during implementation.</h2>
+  </header>
+  <ul class="plans-related">
+    <li><strong>Linear topology:</strong> W0 should decide whether this lands as new v1.4.4a issues/milestones, as an amendment to existing W1/W3/W6 issues, or as a named parallel lane under the current v1.4.4 project. It is part of the v1.4.4 build window either way.</li>
+    <li><strong>Producer dependency gate:</strong> W0 must declare minimum producer fields for W2/W3 and the visible degraded state for each absent field.</li>
+    <li><strong>Prompt quality drift:</strong> W3 must decide whether meeting-briefing output parity means exact section parity or improved output with documented prompt-version drift and replay-fixture classification.</li>
+    <li><strong>Daily Briefing data split:</strong> W0 must pin which dashboard fields remain shell data from <code>get_dashboard_data</code> and which become ability-backed claim intelligence.</li>
+    <li><strong>No-bypass scope:</strong> W0 must freeze the exact file/path allowlist for legacy reads so legitimate shell/cache reads do not get blocked by overbroad grep tests.</li>
+    <li><strong>Workspace-memory adjacency:</strong> v1.4.5 file-ingestion substrate is adjacent producer work, not owned by this lane. If W2/W3 chooses file-derived claims as required inputs, W0 names that as a producer dependency instead of editing the v1.4.5 plan.</li>
+  </ul>
+</section>
+
+<section class="plans-section plans-section-footer">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Related</p>
+    <h2 class="plans-section-title">Cross-references.</h2>
+  </header>
+  <ul class="plans-related">
+    <li><strong><code>engineering-ladder.html</code></strong> L0-L6 + K-channel + review matrix.</li>
+    <li><strong><code>src-tauri/abilities-runtime/src/abilities/get_entity_intelligence/</code></strong> runtime envelope consumed by this plan.</li>
+    <li><strong><code>src-tauri/abilities-runtime/src/abilities/get_daily_briefing/</code></strong> existing daily briefing ability.</li>
+    <li><strong><code>src-tauri/abilities-runtime/src/abilities/prepare_meeting/</code></strong> meeting briefing transform ability and prompt fixtures.</li>
+    <li><strong><code>docs/solutions/security-issues/prompt-channel-sensitivity-class-sweep-2026-05-18.md</code></strong> required K-in for new prompt channels.</li>
+    <li><strong><code>v1.4.4a-tauri-briefing-entity-intelligence/reviews/L0-cycle1-summary.md</code></strong> L0 reviewer verdicts, folds, and final approval trail.</li>
+  </ul>
+</section>
+
+<div class="finis">
+  <div class="finis-mark">W0 - W1 - W2 - W3 - W4 - W5 - W6</div>
+  <div class="finis-date">v1.4.4a Tauri Briefing Entity Intelligence - 2026-05-23</div>
+  <div class="finis-caption">The substrate only matters if the app reads from it.</div>
+</div>
+
+</div>
+</main>
+</div>
+</body>
+</html>

@@ -55,8 +55,8 @@ use crate::services::external_replay::{
 };
 use crate::services::workspace_intake::WorkspaceIntakeService;
 use crate::types::{
-    subject_ref_from_json, ClaimSensitivity, ClaimSubjectRef, EntityContextEntry, EntityContextText,
-    IntelligenceClaim,
+    subject_ref_from_json, ClaimSensitivity, ClaimSubjectRef, EntityContextEntry,
+    EntityContextText, IntelligenceClaim,
 };
 
 const DEFAULT_EVALUATE_AUTH_SCOPE_ID: &str = "test-tenant-default";
@@ -884,6 +884,47 @@ pub trait EntityContextClaimReadHandle: Send + Sync {
         surface: ClaimDismissalSurface,
         depth: usize,
     ) -> EntityContextClaimReadFuture<'a>;
+
+    /// Read at most `limit` active entity-context claims. Implementations that
+    /// can push the limit into their backing store should override this; the
+    /// default preserves compatibility for test readers.
+    fn read_entity_context_claims_limited<'a>(
+        &'a self,
+        entity_type: String,
+        entity_id: String,
+        surface: ClaimDismissalSurface,
+        depth: usize,
+        limit: usize,
+    ) -> EntityContextClaimReadFuture<'a> {
+        Box::pin(async move {
+            let mut claims = self
+                .read_entity_context_claims(entity_type, entity_id, surface, depth)
+                .await?;
+            claims.truncate(limit);
+            Ok(claims)
+        })
+    }
+
+    /// Read prompt-safe claims before applying the render page cap. Agent and
+    /// MCP paths use this so confidential/user-only rows cannot occupy the
+    /// bounded window and hide older prompt-safe claims.
+    fn read_entity_context_prompt_claims_limited<'a>(
+        &'a self,
+        entity_type: String,
+        entity_id: String,
+        surface: ClaimDismissalSurface,
+        depth: usize,
+        limit: usize,
+    ) -> EntityContextClaimReadFuture<'a> {
+        Box::pin(async move {
+            let mut claims = self
+                .read_entity_context_claims(entity_type, entity_id, surface, depth)
+                .await?;
+            claims.retain(crate::types::claim_allowed_for_prompt_input);
+            claims.truncate(limit);
+            Ok(claims)
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -2128,6 +2169,46 @@ impl<'a> ServiceContext<'a> {
         if let Some(reader) = &self.entity_context_claim_reader {
             return reader
                 .read_entity_context_claims(entity_type, entity_id, surface, depth)
+                .await;
+        }
+
+        Err(self.missing_reader_error("entity_context_claim_reader"))
+    }
+
+    pub async fn read_entity_context_claims_limited(
+        &self,
+        entity_type: String,
+        entity_id: String,
+        surface: ClaimDismissalSurface,
+        depth: usize,
+        limit: usize,
+    ) -> Result<Vec<IntelligenceClaim>, String> {
+        if let Some(reader) = &self.entity_context_claim_reader {
+            return reader
+                .read_entity_context_claims_limited(entity_type, entity_id, surface, depth, limit)
+                .await;
+        }
+
+        Err(self.missing_reader_error("entity_context_claim_reader"))
+    }
+
+    pub async fn read_entity_context_prompt_claims_limited(
+        &self,
+        entity_type: String,
+        entity_id: String,
+        surface: ClaimDismissalSurface,
+        depth: usize,
+        limit: usize,
+    ) -> Result<Vec<IntelligenceClaim>, String> {
+        if let Some(reader) = &self.entity_context_claim_reader {
+            return reader
+                .read_entity_context_prompt_claims_limited(
+                    entity_type,
+                    entity_id,
+                    surface,
+                    depth,
+                    limit,
+                )
                 .await;
         }
 

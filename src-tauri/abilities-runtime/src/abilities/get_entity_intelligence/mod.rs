@@ -14,9 +14,9 @@ pub use contracts::{
     EntityIntelligenceEnvelope, EntityIntelligenceInput, EntityKind, EnvelopeProvenance,
     EnvelopeProvenanceSource, EnvelopeSection, EnvelopeTrustSummary, ExclusionReason, Freshness,
     HealthStory, HealthStoryRow, InclusionReason, MetadataProposal, NormalizedSubject,
-    OpenLoopWithReceipt, Paginated, ProvenanceRef, ReceiptTargetRef, RecordEntry,
-    RelationshipEdge, RelationshipParticipant, RelationshipTruncation, RelationshipsBundle,
-    SectionState, SubjectScope, ThreadSummary, Touchpoint, TouchpointBundle, TouchpointKind,
+    OpenLoopWithReceipt, Paginated, ProvenanceRef, ReceiptTargetRef, RecordEntry, RelationshipEdge,
+    RelationshipParticipant, RelationshipTruncation, RelationshipsBundle, SectionState,
+    SubjectScope, ThreadSummary, Touchpoint, TouchpointBundle, TouchpointKind,
     ENVELOPE_SCHEMA_VERSION, ENVELOPE_SCHEMA_VERSION_V1, ENVELOPE_SCHEMA_VERSION_V2,
 };
 
