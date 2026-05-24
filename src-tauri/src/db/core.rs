@@ -740,16 +740,13 @@ impl ActionDb {
 pub mod test_utils {
     use super::ActionDb;
 
-    /// Create a temporary database for testing.
+    /// Create an isolated migrated in-memory database for testing.
     ///
-    /// We leak the `TempDir` so the directory persists for the duration of the test.
-    /// Test temp dirs are cleaned up by the OS. FK enforcement is disabled so that
-    /// unit tests can insert rows without satisfying every foreign key constraint.
+    /// FK enforcement is disabled so unit tests can insert rows without satisfying
+    /// every foreign key constraint.
     pub fn test_db() -> ActionDb {
-        let dir = tempfile::tempdir().expect("Failed to create temp dir");
-        let path = dir.path().join("test.db");
-        std::mem::forget(dir);
-        let db = ActionDb::open_at_unencrypted(path).expect("Failed to open test database");
+        let db =
+            ActionDb::from_connection_for_tests(crate::migrations::migrated_in_memory_for_tests());
         db.conn_ref()
             .execute_batch("PRAGMA foreign_keys = OFF;")
             .expect("disable FK for tests");

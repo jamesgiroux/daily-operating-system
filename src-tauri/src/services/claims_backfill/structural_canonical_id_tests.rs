@@ -17,9 +17,7 @@ fn fixture_ctx<'a>(
 }
 
 fn fresh_full_db() -> Connection {
-    let conn = Connection::open_in_memory().unwrap();
-    crate::migrations::run_migrations(&conn).unwrap();
-    conn
+    crate::migrations::migrated_in_memory_for_tests()
 }
 
 fn expected_structural_id(values: [&str; 4]) -> String {

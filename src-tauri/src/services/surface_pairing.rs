@@ -2811,13 +2811,11 @@ mod tests {
         load_session_master_key, set_keychain_for_tests, MockKeychain, SessionKeyLookup,
     };
     use abilities_runtime::abilities::registry::ScopeSet;
-    use rusqlite::Connection;
     use std::sync::Arc;
     use std::time::{Duration as StdDuration, Instant};
 
     fn db() -> ActionDb {
-        let conn = Connection::open_in_memory().unwrap();
-        crate::migrations::run_migrations(&conn).unwrap();
+        let conn = crate::migrations::migrated_in_memory_for_tests();
         ActionDb::from_connection_for_tests(conn)
     }
 

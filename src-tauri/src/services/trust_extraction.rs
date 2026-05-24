@@ -446,9 +446,7 @@ mod tests {
     use rusqlite::Connection;
 
     fn fresh_db() -> Connection {
-        let conn = Connection::open_in_memory().expect("open in-memory db");
-        crate::migrations::run_migrations(&conn).expect("apply migrations");
-        conn
+        crate::migrations::migrated_in_memory_for_tests()
     }
 
     fn db_view(conn: &Connection) -> &ActionDb {
