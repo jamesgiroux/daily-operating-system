@@ -3333,9 +3333,7 @@ mod tests {
     // ---------------------------------------------------------------------
 
     fn fresh_full_db() -> Connection {
-        let conn = Connection::open_in_memory().unwrap();
-        crate::migrations::run_migrations(&conn).unwrap();
-        conn
+        crate::migrations::migrated_in_memory_for_tests()
     }
 
     #[test]

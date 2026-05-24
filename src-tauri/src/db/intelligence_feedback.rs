@@ -732,8 +732,7 @@ mod tests {
     }
 
     fn setup_pair_db() -> Connection {
-        let conn = Connection::open_in_memory().expect("in-memory db");
-        crate::migrations::run_migrations(&conn).expect("apply migrations");
+        let conn = crate::migrations::migrated_in_memory_for_tests();
         conn.execute_batch("PRAGMA foreign_keys = OFF;")
             .expect("disable FK for tests");
         conn

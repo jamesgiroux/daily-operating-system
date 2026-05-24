@@ -3600,6 +3600,28 @@ pub fn run_migrations(conn: &Connection) -> Result<usize, String> {
     run_migrations_with_key(conn, None)
 }
 
+#[cfg(test)]
+pub(crate) fn migrated_in_memory_for_tests() -> Connection {
+    static TEMPLATE: std::sync::OnceLock<std::sync::Mutex<Connection>> = std::sync::OnceLock::new();
+
+    let template = TEMPLATE.get_or_init(|| {
+        let conn = Connection::open_in_memory().expect("open migrated test template");
+        run_migrations(&conn).expect("migrate test template");
+        std::sync::Mutex::new(conn)
+    });
+
+    let template = template
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut conn = Connection::open_in_memory().expect("open test db clone");
+    {
+        let backup =
+            rusqlite::backup::Backup::new(&template, &mut conn).expect("start test db clone");
+        backup.step(-1).expect("clone migrated test db");
+    }
+    conn
+}
+
 pub(crate) fn run_migrations_with_key(
     conn: &Connection,
     encryption_key: Option<&crate::db::EncryptionKey>,

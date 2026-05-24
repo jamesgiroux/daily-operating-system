@@ -19,13 +19,54 @@ cd "$CWD"
 
 BACKEND_DIR="${CWD}/src-tauri"
 ZERO_SHA="0000000000000000000000000000000000000000"
-ERRORS=""
 
-append_error() {
-  if [ -z "$ERRORS" ]; then
-    ERRORS="$1"
-  else
-    ERRORS="${ERRORS}"$'\n'"$1"
+GIT_DIR_RESOLVED="$(git rev-parse --git-dir 2>/dev/null || true)"
+HOOK_STATE_DIR=""
+HOOK_GAUNTLET_CACHE=""
+if [ -n "$GIT_DIR_RESOLVED" ]; then
+  HOOK_STATE_DIR="${GIT_DIR_RESOLVED}/hooks-state"
+  HOOK_GAUNTLET_CACHE="${HOOK_STATE_DIR}/last-green-gauntlet-v2"
+fi
+
+cache_field() {
+  local key="$1"
+  [ -n "$HOOK_GAUNTLET_CACHE" ] && [ -f "$HOOK_GAUNTLET_CACHE" ] || return 0
+  grep -E "^${key}=" "$HOOK_GAUNTLET_CACHE" 2>/dev/null | head -1 | cut -d= -f2- || true
+}
+
+write_gauntlet_cache() {
+  local tree="$1"
+  local rust_passed="$2"
+  local frontend_passed="$3"
+  [ -n "$HOOK_STATE_DIR" ] && [ -n "$HOOK_GAUNTLET_CACHE" ] && [ -n "$tree" ] || return 0
+  mkdir -p "$HOOK_STATE_DIR" 2>/dev/null || true
+  {
+    printf 'version=2\n'
+    printf 'tree=%s\n' "$tree"
+    printf 'rust=%s\n' "$rust_passed"
+    printf 'frontend=%s\n' "$frontend_passed"
+  } > "$HOOK_GAUNTLET_CACHE" 2>/dev/null || true
+}
+
+run_silenced_check() {
+  local label="$1"
+  local exit_code="$2"
+  shift 2
+
+  local log_dir="${HOOK_STATE_DIR:-/tmp}"
+  mkdir -p "$log_dir" 2>/dev/null || true
+  local safe_label
+  safe_label="$(printf '%s' "$label" | tr -c '[:alnum:]_.-' '_')"
+  local log_file="${log_dir}/${safe_label}.log"
+
+  echo "pre-push: ${label}" >&2
+  if ! "$@" >"$log_file" 2>&1; then
+    printf '🚫 Pre-push gate FAILED. Fix before pushing:\n❌ %s FAILED\n' "$label" >&2
+    printf '   Log: %s\n' "$log_file" >&2
+    tail -40 "$log_file" >&2 || true
+    echo "" >&2
+    echo "If you really need to push (rare), bypass with: git push --no-verify" >&2
+    exit "$exit_code"
   fi
 }
 
@@ -79,45 +120,43 @@ if [ "$HAS_RUST" = true ] && [ -d "$BACKEND_DIR" ] && [ -f "${BACKEND_DIR}/scrip
   fi
 fi
 
-# Cache check: if pre-commit just ran the gauntlet against the same tree
-# that's now at HEAD, skip the duplicate run. Pre-commit writes the tree
-# SHA to <git-dir>/hooks-state/last-green-tree after a clean gauntlet
-# pass. Pushing an unmodified commit takes pre-push to ~0s; WIP=1 commits
-# and amended trees still pay the full gauntlet cost. Use --git-dir so
-# the marker is per-worktree.
-GIT_DIR_RESOLVED="$(git rev-parse --git-dir 2>/dev/null)"
-LAST_GREEN_TREE=""
-if [ -n "$GIT_DIR_RESOLVED" ] && [ -f "${GIT_DIR_RESOLVED}/hooks-state/last-green-tree" ]; then
-  LAST_GREEN_TREE="$(tr -d '[:space:]' < "${GIT_DIR_RESOLVED}/hooks-state/last-green-tree" 2>/dev/null || echo "")"
-fi
+# Cache check: if pre-commit or an earlier pre-push ran the required gauntlet
+# against the same HEAD tree, skip the duplicate run. The cache records which
+# tiers passed so a frontend-only pass cannot bless a Rust-touching push.
 CURRENT_TREE="$(git rev-parse HEAD^{tree} 2>/dev/null || echo "")"
-if [ -n "$LAST_GREEN_TREE" ] && [ -n "$CURRENT_TREE" ] && [ "$LAST_GREEN_TREE" = "$CURRENT_TREE" ]; then
-  echo "pre-push: HEAD tree ${CURRENT_TREE} already passed pre-commit gauntlet — skipping clippy/test/tsc" >&2
-  exit 0
+if [ -n "$CURRENT_TREE" ] && [ "$(cache_field tree)" = "$CURRENT_TREE" ]; then
+  CACHED_RUST="$(cache_field rust)"
+  CACHED_FRONTEND="$(cache_field frontend)"
+  RUST_COVERED=false
+  FRONTEND_COVERED=false
+  if [ "$HAS_RUST" = false ] || [ "$CACHED_RUST" = true ]; then
+    RUST_COVERED=true
+  fi
+  if [ "$HAS_FRONTEND" = false ] || [ "$CACHED_FRONTEND" = true ]; then
+    FRONTEND_COVERED=true
+  fi
+  if [ "$RUST_COVERED" = true ] && [ "$FRONTEND_COVERED" = true ]; then
+    echo "pre-push: HEAD tree ${CURRENT_TREE} already passed required gauntlet — skipping clippy/test/tsc" >&2
+    exit 0
+  fi
 fi
+
+RUST_GAUNTLET_PASSED=false
+FRONTEND_GAUNTLET_PASSED=false
 
 if [ "$HAS_RUST" = true ] && [ -d "$BACKEND_DIR" ]; then
   # Silence cargo output. When git push wraps the hook, ~2500 lines of
   # cargo test stdout streamed through git push's stdio caused git push
-  # to die with SIGPIPE (exit 141) before reaching the transmit phase,
-  # even though the hook itself returned 0 standalone. Matches the
-  # pattern pre-commit already uses for the same reason.
-  echo "pre-push: cargo clippy -- -D warnings" >&2
-  if ! cargo clippy --manifest-path "$BACKEND_DIR/Cargo.toml" -- -D warnings >/dev/null 2>&1; then
-    append_error "❌ cargo clippy -- -D warnings FAILED"
-  fi
-
-  echo "pre-push: cargo test --lib" >&2
-  if ! cargo test --lib --manifest-path "$BACKEND_DIR/Cargo.toml" >/dev/null 2>&1; then
-    append_error "❌ cargo test --lib FAILED"
-  fi
+  # to die with SIGPIPE (exit 141) before reaching the transmit phase.
+  # Failure tails are still printed from the per-check log.
+  run_silenced_check "cargo clippy -- -D warnings" 1 cargo clippy --manifest-path "$BACKEND_DIR/Cargo.toml" -- -D warnings
+  run_silenced_check "cargo test --lib" 1 cargo test --lib --manifest-path "$BACKEND_DIR/Cargo.toml"
+  RUST_GAUNTLET_PASSED=true
 fi
 
 if [ "$HAS_FRONTEND" = true ] && [ -f "${CWD}/package.json" ]; then
-  echo "pre-push: pnpm tsc --noEmit" >&2
-  if ! pnpm tsc --noEmit >/dev/null 2>&1; then
-    append_error "❌ pnpm tsc --noEmit FAILED"
-  fi
+  run_silenced_check "pnpm tsc --noEmit" 1 pnpm tsc --noEmit
+  FRONTEND_GAUNTLET_PASSED=true
 fi
 
 # When neither tier is touched, the push is metadata-only (docs, hooks, etc.) — no gauntlet.
@@ -125,11 +164,8 @@ if [ "$HAS_RUST" = false ] && [ "$HAS_FRONTEND" = false ]; then
   echo "pre-push: no Rust or frontend files in push diff — skipping gauntlet" >&2
 fi
 
-if [ -n "$ERRORS" ]; then
-  printf '🚫 Pre-push gate FAILED. Fix before pushing:\n%s\n' "$ERRORS" >&2
-  echo "" >&2
-  echo "If you really need to push (rare), bypass with: git push --no-verify" >&2
-  exit 1
+if [ -n "$CURRENT_TREE" ]; then
+  write_gauntlet_cache "$CURRENT_TREE" "$RUST_GAUNTLET_PASSED" "$FRONTEND_GAUNTLET_PASSED"
 fi
 
 exit 0
