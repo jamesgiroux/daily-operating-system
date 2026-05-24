@@ -23,11 +23,11 @@ When this skill activates:
 
 Before any external search, when in a DailyOS workspace:
 
-1. **Read entity intelligence** (Accounts/*/intelligence.json, Projects/*/intelligence.json) for relationship context, health scores, strategic priorities, and historical patterns
+1. **Read entity intelligence through DailyOS runtime/MCP** for relationship context, health scores, strategic priorities, and historical patterns. Generated `intelligence.json` files are export projections; use them only when runtime tools are unavailable or the user asks for file artifacts.
 2. **Search meeting archives** (_archive/) for relevant quotes, decisions, outcomes, and discussion context
 3. **Check stakeholder files** (People/*/person.md) for relationship context, direct quotes, communication preferences, and influence maps
-4. **Review action trails** (data/actions.json) for commitment history, follow-through patterns, and outstanding obligations
-5. **Check email signals** (data/emails.json) for recent communications, sentiment, and topic threads
+4. **Review action trails through DailyOS action/work tools** for commitment history, follow-through patterns, and outstanding obligations
+5. **Check email signals through DailyOS email/context tools** for recent communications, sentiment, and topic threads
 
 This workspace-first approach ensures content is grounded in real organizational context rather than generic external sources. Workspace evidence often provides the most compelling and specific material for content creation.
 
@@ -112,10 +112,10 @@ External:
 ## Search Approach
 
 ### Workspace Search (DailyOS)
-1. **Entity intelligence first**: Read intelligence.json files for the entities relevant to the content
+1. **Entity intelligence first**: Use DailyOS runtime/MCP tools for the entities relevant to the content
 2. **Meeting archives**: Search _archive/ for keywords related to the thesis
 3. **Stakeholder context**: Check person.md files for named individuals in the content
-4. **Action and email data**: Review data/ files for recent activity signals
+4. **Action and email data**: Review DailyOS action/email tools for recent activity signals
 5. **Cross-reference**: Look for patterns across multiple entities
 
 ### Internal Search
@@ -191,7 +191,7 @@ Always structure your response as:
 #### Entity Intelligence
 | Entity | Key Finding | Source | Confidence |
 |--------|-------------|--------|------------|
-| [entity name] | [insight/metric] | [intelligence.json path] | Verified/Likely |
+| [entity name] | [insight/metric] | [runtime/source reference] | Verified/Likely |
 
 #### Meeting Archives
 | Quote/Decision | Context | Source | Date |

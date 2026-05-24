@@ -28,7 +28,9 @@ pub enum AuditError {
     Serialization(#[from] serde_json::Error),
     #[error("audit log append failed: {0}")]
     Append(String),
-    #[error("audit log append failed and audit outbox insert also failed: append={append_error}; outbox={outbox_error}")]
+    #[error(
+        "audit log append failed and audit outbox insert also failed: append={append_error}; outbox={outbox_error}"
+    )]
     DoubleFailure {
         append_error: String,
         outbox_error: String,

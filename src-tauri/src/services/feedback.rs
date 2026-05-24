@@ -36,7 +36,7 @@ pub fn submit_intelligence_feedback(
         other => {
             return Err(format!(
                 "invalid feedback_type '{other}' (expected positive|negative)"
-            ))
+            ));
         }
     };
 

@@ -57,6 +57,61 @@ pub fn emit(
     .map_err(|e| e.to_string())
 }
 
+/// Emit a signal with a deterministic id. Duplicate ids return a coalesced
+/// outcome and do not append another row.
+#[allow(clippy::too_many_arguments)]
+pub fn emit_once(
+    ctx: &crate::services::context::ServiceContext<'_>,
+    db: &ActionDb,
+    id: &str,
+    entity_type: &str,
+    entity_id: &str,
+    signal_type: &str,
+    source: &str,
+    value: Option<&str>,
+    confidence: f64,
+) -> Result<bus::SignalEmitOutcome, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    bus::emit_signal_once(
+        db,
+        bus::SignalIdempotency::Id(id),
+        entity_type,
+        entity_id,
+        signal_type,
+        source,
+        value,
+        confidence,
+    )
+    .map_err(|e| e.to_string())
+}
+
+/// Emit a signal with a deterministic id derived from an idempotency key.
+#[allow(clippy::too_many_arguments)]
+pub fn emit_once_for_key(
+    ctx: &crate::services::context::ServiceContext<'_>,
+    db: &ActionDb,
+    idempotency_key: &str,
+    entity_type: &str,
+    entity_id: &str,
+    signal_type: &str,
+    source: &str,
+    value: Option<&str>,
+    confidence: f64,
+) -> Result<bus::SignalEmitOutcome, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    bus::emit_signal_once(
+        db,
+        bus::SignalIdempotency::Key(idempotency_key),
+        entity_type,
+        entity_id,
+        signal_type,
+        source,
+        value,
+        confidence,
+    )
+    .map_err(|e| e.to_string())
+}
+
 /// Emit a signal inside the active transaction and run sync derived-state
 /// subscribers for that signal type.
 ///
@@ -129,6 +184,100 @@ pub fn emit_and_propagate(
             value,
         },
     );
+    Ok(result)
+}
+
+/// Emit a deterministic signal and run cross-entity propagation only when the
+/// signal row is newly inserted.
+#[allow(clippy::too_many_arguments)]
+pub fn emit_once_and_propagate(
+    ctx: &crate::services::context::ServiceContext<'_>,
+    db: &ActionDb,
+    engine: &PropagationEngine,
+    id: &str,
+    entity_type: &str,
+    entity_id: &str,
+    signal_type: &str,
+    source: &str,
+    value: Option<&str>,
+    confidence: f64,
+) -> Result<(bus::SignalEmitOutcome, Vec<String>), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    let result = bus::emit_signal_once_and_propagate(
+        db,
+        engine,
+        bus::SignalIdempotency::Id(id),
+        entity_type,
+        entity_id,
+        signal_type,
+        source,
+        value,
+        confidence,
+    )
+    .map_err(|e| e.to_string())?;
+
+    if !result.0.coalesced {
+        run_temporal_maintenance_for_signal(
+            ctx,
+            db,
+            TemporalSignalMaintenanceInput {
+                entity_type,
+                entity_id,
+                signal_type,
+                source,
+                signal_id: &result.0.id,
+                value,
+            },
+        );
+    }
+
+    Ok(result)
+}
+
+/// Emit a deterministic-key signal and run cross-entity propagation only when
+/// the signal row is newly inserted.
+#[allow(clippy::too_many_arguments)]
+pub fn emit_once_for_key_and_propagate(
+    ctx: &crate::services::context::ServiceContext<'_>,
+    db: &ActionDb,
+    engine: &PropagationEngine,
+    idempotency_key: &str,
+    entity_type: &str,
+    entity_id: &str,
+    signal_type: &str,
+    source: &str,
+    value: Option<&str>,
+    confidence: f64,
+) -> Result<(bus::SignalEmitOutcome, Vec<String>), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    let result = bus::emit_signal_once_and_propagate(
+        db,
+        engine,
+        bus::SignalIdempotency::Key(idempotency_key),
+        entity_type,
+        entity_id,
+        signal_type,
+        source,
+        value,
+        confidence,
+    )
+    .map_err(|e| e.to_string())?;
+
+    if !result.0.coalesced {
+        run_temporal_maintenance_for_signal(
+            ctx,
+            db,
+            TemporalSignalMaintenanceInput {
+                entity_type,
+                entity_id,
+                signal_type,
+                source,
+                signal_id: &result.0.id,
+                value,
+            },
+        );
+    }
+
     Ok(result)
 }
 

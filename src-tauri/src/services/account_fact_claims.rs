@@ -6,6 +6,8 @@
 
 use std::collections::HashMap;
 
+use chrono::DateTime;
+
 use crate::db::claims::ClaimSensitivity;
 use crate::db::types::{AccountSourceRef, DbAccountSourceRef};
 use crate::db::{ActionDb, DbAccount};
@@ -28,6 +30,14 @@ pub struct AccountFactPromotionReport {
     pub source_ref_errors: Vec<String>,
     pub claim_errors: Vec<String>,
     pub recompute_enqueue_errors: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AccountFactSourcePurgeReport {
+    pub source_refs_masked: usize,
+    pub claims_withdrawn: usize,
+    pub schema_facts_cleared: usize,
+    pub recompute_jobs_enqueued: usize,
 }
 
 impl AccountFactPromotionReport {
@@ -136,14 +146,14 @@ pub fn promote_glean_facts_from_intelligence(
     account_id: &str,
     intel: &crate::intelligence::IntelligenceJson,
 ) -> AccountFactPromotionReport {
-    let now = ctx.clock.now().to_rfc3339();
+    let observed_at = intelligence_observed_at(ctx, intel);
     let mut report = AccountFactPromotionReport::default();
     if let Some(contract) = intel.contract_context.as_ref() {
         if let Some(arr) = contract.current_arr {
             let source = AccountFactSourceInput {
                 source_system: "Salesforce",
                 source_kind: "fact",
-                observed_at: &now,
+                observed_at: &observed_at,
             };
             report.merge(promote_account_arr_range(
                 ctx, db, account_id, arr, arr, source,
@@ -170,7 +180,7 @@ pub fn promote_glean_facts_from_intelligence(
                     source_system: "Salesforce",
                     source_kind: "inference",
                     source_asof: None,
-                    observed_at: &now,
+                    observed_at: &observed_at,
                     reference_id: None,
                 },
             ));
@@ -179,6 +189,7 @@ pub fn promote_glean_facts_from_intelligence(
 
     if let Some(org) = intel.org_health.as_ref() {
         let org_source_asof = non_empty_asof(&org.gathered_at);
+        let org_observed_at = org_source_asof.unwrap_or(observed_at.as_str());
         if let Some(tier) = org.support_tier.as_deref() {
             report.merge(promote_account_fact(
                 ctx,
@@ -191,7 +202,7 @@ pub fn promote_glean_facts_from_intelligence(
                     source_system: "zendesk",
                     source_kind: "fact",
                     source_asof: org_source_asof,
-                    observed_at: &now,
+                    observed_at: org_observed_at,
                     reference_id: None,
                 },
             ));
@@ -208,7 +219,7 @@ pub fn promote_glean_facts_from_intelligence(
                     source_system: "Salesforce",
                     source_kind: "fact",
                     source_asof: org_source_asof,
-                    observed_at: &now,
+                    observed_at: org_observed_at,
                     reference_id: None,
                 },
             ));
@@ -225,7 +236,7 @@ pub fn promote_glean_facts_from_intelligence(
                     source_system: "Salesforce",
                     source_kind: "fact",
                     source_asof: org_source_asof,
-                    observed_at: &now,
+                    observed_at: org_observed_at,
                     reference_id: None,
                 },
             ));
@@ -243,7 +254,7 @@ pub fn promote_glean_facts_from_intelligence(
                     source_system: "glean",
                     source_kind: "inference",
                     source_asof: org_source_asof,
-                    observed_at: &now,
+                    observed_at: org_observed_at,
                     reference_id: None,
                 },
             ));
@@ -261,7 +272,7 @@ pub fn promote_glean_facts_from_intelligence(
                     source_system: "glean",
                     source_kind: "inference",
                     source_asof: org_source_asof,
-                    observed_at: &now,
+                    observed_at: org_observed_at,
                     reference_id: None,
                 },
             ));
@@ -282,7 +293,7 @@ pub fn promote_glean_facts_from_intelligence(
                     source_system: "Salesforce",
                     source_kind: "fact",
                     source_asof: None,
-                    observed_at: &now,
+                    observed_at: &observed_at,
                     reference_id: None,
                 },
             ));
@@ -314,7 +325,7 @@ pub fn promote_glean_facts_from_intelligence(
                         source_system: "Salesforce",
                         source_kind: "fact",
                         source_asof: None,
-                        observed_at: &now,
+                        observed_at: &observed_at,
                         reference_id: None,
                     },
                 ));
@@ -341,41 +352,55 @@ fn promote_account_fact(
     input: AccountFactInput<'_>,
 ) -> AccountFactPromotionOutcome {
     match db.with_transaction(|tx| {
-        let schema = upsert_schema_account_fact_atomic(tx, &input)?;
-        match schema.outcome {
-            SchemaPromotionOutcome::Promoted => {
-                let claim = ExistingAccountFactInput {
-                    account_id: input.account_id,
-                    claim_field: input.claim_field,
-                    value: input.value.to_string(),
-                    source_system: input.source_system.to_string(),
-                    source_kind: input.source_kind.to_string(),
-                    source_asof: input.source_asof.map(str::to_string),
-                    observed_at: input.observed_at.to_string(),
-                    reference_id: schema.reference_id,
-                };
-                let (claim_outcome, claim_errors) =
-                    commit_existing_account_fact_claim(ctx, tx, &claim);
-                if !claim_errors.is_empty() {
-                    return Err(claim_errors.join("; "));
-                }
-                Ok(AccountFactPromotionOutcome {
-                    schema_outcome: SchemaPromotionOutcome::Promoted,
-                    claim_outcome,
-                    source_ref_errors: Vec::new(),
-                    claim_errors: Vec::new(),
-                })
-            }
-            SchemaPromotionOutcome::SkippedLowerPriority => {
-                Ok(AccountFactPromotionOutcome::schema_skipped())
-            }
-            SchemaPromotionOutcome::NotWritten => Ok(AccountFactPromotionOutcome {
-                schema_outcome: SchemaPromotionOutcome::NotWritten,
-                claim_outcome: ClaimPromotionOutcome::NotAttempted,
-                source_ref_errors: Vec::new(),
-                claim_errors: Vec::new(),
-            }),
+        if has_newer_same_source_account_fact_ref(tx, &input)? {
+            return Ok(AccountFactPromotionOutcome::schema_skipped());
         }
+        let schema_blocked_by_user_claim = if is_source_less_schema_field(input.schema_field) {
+            active_user_account_fact_claim_exists(tx, input.account_id, input.claim_field)?
+        } else {
+            active_user_claim_conflicts_with_input(
+                tx,
+                input.account_id,
+                input.claim_field,
+                input.value,
+            )?
+        };
+        let schema = if schema_blocked_by_user_claim {
+            SchemaFactPromotion {
+                outcome: SchemaPromotionOutcome::SkippedLowerPriority,
+                reference_id: None,
+            }
+        } else {
+            upsert_schema_account_fact_atomic(tx, &input)?
+        };
+        let claim = ExistingAccountFactInput {
+            account_id: input.account_id,
+            claim_field: input.claim_field,
+            value: input.value.to_string(),
+            source_system: input.source_system.to_string(),
+            source_kind: input.source_kind.to_string(),
+            source_asof: input.source_asof.map(str::to_string),
+            observed_at: input.observed_at.to_string(),
+            reference_id: schema.reference_id.clone().or_else(|| {
+                Some(stable_glean_account_fact_reference_id(
+                    input.account_id,
+                    input.schema_field,
+                    input.source_system,
+                    input.source_kind,
+                    input.value,
+                ))
+            }),
+        };
+        let (claim_outcome, claim_errors) = commit_existing_account_fact_claim(ctx, tx, &claim);
+        if !claim_errors.is_empty() {
+            return Err(claim_errors.join("; "));
+        }
+        Ok(AccountFactPromotionOutcome {
+            schema_outcome: schema.outcome,
+            claim_outcome,
+            source_ref_errors: Vec::new(),
+            claim_errors: Vec::new(),
+        })
     }) {
         Ok(outcome) => outcome,
         Err(error) => AccountFactPromotionOutcome {
@@ -409,6 +434,15 @@ fn upsert_schema_account_fact_atomic(
             )
         })?;
     if promoted {
+        let reference_id = input.reference_id.map(str::to_string).unwrap_or_else(|| {
+            stable_glean_account_fact_reference_id(
+                input.account_id,
+                input.schema_field,
+                input.source_system,
+                input.source_kind,
+                input.value,
+            )
+        });
         db.upsert_account_source_ref(&AccountSourceRef {
             account_id: input.account_id,
             field: input.schema_field,
@@ -416,7 +450,7 @@ fn upsert_schema_account_fact_atomic(
             source_kind: input.source_kind,
             source_value: Some(input.value),
             observed_at: input.observed_at,
-            reference_id: input.reference_id,
+            reference_id: Some(reference_id.as_str()),
         })
         .map_err(|error| {
             format!(
@@ -426,14 +460,7 @@ fn upsert_schema_account_fact_atomic(
         })?;
         return Ok(SchemaFactPromotion {
             outcome: SchemaPromotionOutcome::Promoted,
-            reference_id: Some(stable_account_fact_reference_id(
-                input.account_id,
-                input.schema_field,
-                input.source_system,
-                input.source_kind,
-                input.value,
-                input.reference_id,
-            )),
+            reference_id: Some(reference_id),
         });
     }
     Ok(SchemaFactPromotion {
@@ -476,34 +503,56 @@ fn promote_account_arr_range(
     let low_value = format!("{low:.0}");
     let high_value = format!("{high:.0}");
     match db.with_transaction(|tx| {
-        let low_schema = upsert_schema_account_fact_atomic(
-            tx,
-            &AccountFactInput {
-                account_id,
-                schema_field: "arr_range_low",
-                claim_field: "arr_range_low",
-                value: &low_value,
-                source_system: source.source_system,
-                source_kind: source.source_kind,
-                source_asof: None,
-                observed_at: source.observed_at,
+        let claim_value = if (low - high).abs() < f64::EPSILON {
+            low_value.clone()
+        } else {
+            format!("{low_value}-{high_value}")
+        };
+        let low_input = AccountFactInput {
+            account_id,
+            schema_field: "arr_range_low",
+            claim_field: "arr_range_low",
+            value: &low_value,
+            source_system: source.source_system,
+            source_kind: source.source_kind,
+            source_asof: None,
+            observed_at: source.observed_at,
+            reference_id: None,
+        };
+        let high_input = AccountFactInput {
+            account_id,
+            schema_field: "arr_range_high",
+            claim_field: "arr_range_high",
+            value: &high_value,
+            source_system: source.source_system,
+            source_kind: source.source_kind,
+            source_asof: None,
+            observed_at: source.observed_at,
+            reference_id: None,
+        };
+        if has_newer_same_source_account_fact_ref(tx, &low_input)?
+            || has_newer_same_source_account_fact_ref(tx, &high_input)?
+        {
+            return Ok(AccountFactPromotionOutcome::schema_skipped());
+        }
+        let skip_schema_for_user_claim =
+            active_user_account_fact_claim_exists(tx, account_id, "arr")?;
+        let low_schema = if skip_schema_for_user_claim {
+            SchemaFactPromotion {
+                outcome: SchemaPromotionOutcome::SkippedLowerPriority,
                 reference_id: None,
-            },
-        )?;
-        let high_schema = upsert_schema_account_fact_atomic(
-            tx,
-            &AccountFactInput {
-                account_id,
-                schema_field: "arr_range_high",
-                claim_field: "arr_range_high",
-                value: &high_value,
-                source_system: source.source_system,
-                source_kind: source.source_kind,
-                source_asof: None,
-                observed_at: source.observed_at,
+            }
+        } else {
+            upsert_schema_account_fact_atomic(tx, &low_input)?
+        };
+        let high_schema = if skip_schema_for_user_claim {
+            SchemaFactPromotion {
+                outcome: SchemaPromotionOutcome::SkippedLowerPriority,
                 reference_id: None,
-            },
-        )?;
+            }
+        } else {
+            upsert_schema_account_fact_atomic(tx, &high_input)?
+        };
 
         let mut outcome = AccountFactPromotionOutcome {
             schema_outcome: match (low_schema.outcome, high_schema.outcome) {
@@ -521,12 +570,10 @@ fn promote_account_arr_range(
             claim_errors: Vec::new(),
         };
 
-        if matches!(outcome.schema_outcome, SchemaPromotionOutcome::Promoted) {
-            let value = if (low - high).abs() < f64::EPSILON {
-                low_value
-            } else {
-                format!("{low_value}-{high_value}")
-            };
+        if matches!(
+            outcome.schema_outcome,
+            SchemaPromotionOutcome::Promoted | SchemaPromotionOutcome::SkippedLowerPriority
+        ) {
             let refs = tx
                 .get_account_source_refs(account_id)
                 .map_err(|error| format!("{account_id}.arr source ref lookup failed: {error}"))?;
@@ -534,11 +581,20 @@ fn promote_account_arr_range(
             let reference_id = source_ref_for_field("arr", &refs_by_field)
                 .map(account_source_ref_reference_id)
                 .or_else(|| low_schema.reference_id.clone())
-                .or_else(|| high_schema.reference_id.clone());
+                .or_else(|| high_schema.reference_id.clone())
+                .or_else(|| {
+                    Some(stable_glean_account_fact_reference_id(
+                        account_id,
+                        "arr",
+                        source.source_system,
+                        source.source_kind,
+                        &claim_value,
+                    ))
+                });
             let claim = ExistingAccountFactInput {
                 account_id,
                 claim_field: "arr",
-                value,
+                value: claim_value,
                 source_system: source.source_system.to_string(),
                 source_kind: source.source_kind.to_string(),
                 source_asof: None,
@@ -634,6 +690,290 @@ pub fn backfill_account_fact_claims(
     Ok(report)
 }
 
+pub fn purge_glean_account_fact_projections_for_source_purge(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+) -> Result<AccountFactSourcePurgeReport, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+
+    let refs = load_glean_account_fact_projection_refs(db)?;
+    let mut affected_accounts: std::collections::HashSet<String> = refs
+        .iter()
+        .map(|source_ref| source_ref.account_id.clone())
+        .collect();
+    affected_accounts.extend(load_glean_account_fact_claim_accounts(db)?);
+
+    let mut schema_facts_cleared = 0usize;
+    for source_ref in &refs {
+        schema_facts_cleared += clear_glean_schema_projection_if_current(db, source_ref)?;
+    }
+
+    let claims_withdrawn = claims::withdraw_glean_account_fact_claims_for_source_purge_in_tx(
+        ctx, db,
+    )
+    .map_err(|e| format!("withdraw Glean account fact claims for source purge failed: {e}"))?;
+
+    let source_refs_masked = db
+        .conn_ref()
+        .execute(
+            "UPDATE account_source_refs
+             SET source_system = 'purged:glean',
+                 source_kind = 'source_purged',
+                 source_value = NULL,
+                 source_record_ref = NULL
+             WHERE source_kind != 'source_purged'
+               AND source_record_ref LIKE 'glean_account_fact:%'",
+            [],
+        )
+        .map_err(|e| format!("mask Glean account source refs failed: {e}"))?;
+
+    let mut recompute_jobs_enqueued = 0usize;
+    if claims_withdrawn > 0 || schema_facts_cleared > 0 || source_refs_masked > 0 {
+        let mut account_ids = affected_accounts.into_iter().collect::<Vec<_>>();
+        account_ids.sort();
+        for account_id in account_ids {
+            match enqueue_account_fact_claim_recompute_in_tx(
+                ctx,
+                db,
+                &account_id,
+                "glean_source_purge",
+                0,
+            ) {
+                Ok(true) => recompute_jobs_enqueued += 1,
+                Ok(false) => {}
+                Err(error) => {
+                    record_recompute_enqueue_failure(
+                        ctx,
+                        db,
+                        &account_id,
+                        "source_purge_recompute_enqueue_failed",
+                        &error,
+                    );
+                    return Err(error);
+                }
+            }
+        }
+    }
+
+    Ok(AccountFactSourcePurgeReport {
+        source_refs_masked,
+        claims_withdrawn,
+        schema_facts_cleared,
+        recompute_jobs_enqueued,
+    })
+}
+
+#[derive(Debug, Clone)]
+struct GleanAccountFactProjectionRef {
+    id: String,
+    account_id: String,
+    field: String,
+    source_value: Option<String>,
+    observed_at: String,
+}
+
+fn load_glean_account_fact_projection_refs(
+    db: &ActionDb,
+) -> Result<Vec<GleanAccountFactProjectionRef>, String> {
+    let mut stmt = db
+        .conn_ref()
+        .prepare(
+            "SELECT id, account_id, field, source_value, observed_at
+             FROM account_source_refs
+             WHERE source_kind != 'source_purged'
+               AND source_record_ref LIKE 'glean_account_fact:%'",
+        )
+        .map_err(|e| format!("prepare Glean source ref projection scan failed: {e}"))?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(GleanAccountFactProjectionRef {
+                id: row.get(0)?,
+                account_id: row.get(1)?,
+                field: row.get(2)?,
+                source_value: row.get(3)?,
+                observed_at: row.get(4)?,
+            })
+        })
+        .map_err(|e| format!("query Glean source ref projections failed: {e}"))?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("collect Glean source ref projections failed: {e}"))
+}
+
+fn load_glean_account_fact_claim_accounts(db: &ActionDb) -> Result<Vec<String>, String> {
+    let mut stmt = db
+        .conn_ref()
+        .prepare(
+            "SELECT DISTINCT json_extract(subject_ref, '$.id')
+             FROM intelligence_claims
+             WHERE claim_type = 'account_fact'
+               AND source_ref LIKE 'glean_account_fact:%'
+               AND json_valid(subject_ref) = 1
+               AND lower(json_extract(subject_ref, '$.kind')) = 'account'",
+        )
+        .map_err(|e| format!("prepare Glean account fact claim account scan failed: {e}"))?;
+    let rows = stmt
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|e| format!("query Glean account fact claim accounts failed: {e}"))?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("collect Glean account fact claim accounts failed: {e}"))
+}
+
+fn clear_glean_schema_projection_if_current(
+    db: &ActionDb,
+    source_ref: &GleanAccountFactProjectionRef,
+) -> Result<usize, String> {
+    let Some(source_value) = source_ref.source_value.as_deref() else {
+        return Ok(0);
+    };
+    if has_newer_non_glean_account_source_ref(db, source_ref)? {
+        return Ok(0);
+    }
+    if is_source_less_schema_field(&source_ref.field)
+        && active_user_account_fact_claim_exists(
+            db,
+            &source_ref.account_id,
+            claim_field_for_schema_projection(&source_ref.field),
+        )?
+    {
+        return Ok(0);
+    }
+    let now = chrono::Utc::now().to_rfc3339();
+    let (sql, value) = match source_ref.field.as_str() {
+        "arr_range_low" => (
+            "UPDATE accounts
+             SET arr_range_low = NULL,
+                 updated_at = ?1
+             WHERE id = ?2
+               AND arr_range_low IS NOT NULL
+               AND printf('%.0f', arr_range_low) = ?3",
+            source_value,
+        ),
+        "arr_range_high" => (
+            "UPDATE accounts
+             SET arr_range_high = NULL,
+                 updated_at = ?1
+             WHERE id = ?2
+               AND arr_range_high IS NOT NULL
+               AND printf('%.0f', arr_range_high) = ?3",
+            source_value,
+        ),
+        "renewal_likelihood" => (
+            "UPDATE accounts
+             SET renewal_likelihood = NULL,
+                 renewal_likelihood_source = NULL,
+                 renewal_likelihood_updated_at = NULL,
+                 updated_at = ?1
+             WHERE id = ?2
+               AND coalesce(renewal_likelihood_source, '') NOT IN ('user', 'user_correction', 'user_edit')
+               AND renewal_likelihood IS NOT NULL
+               AND ABS(renewal_likelihood - CAST(?3 AS REAL)) < 0.000001",
+            source_value,
+        ),
+        "support_tier" => (
+            "UPDATE accounts
+             SET support_tier = NULL,
+                 support_tier_source = NULL,
+                 support_tier_updated_at = NULL,
+                 updated_at = ?1
+             WHERE id = ?2
+               AND coalesce(support_tier_source, '') NOT IN ('user', 'user_correction', 'user_edit')
+               AND support_tier = ?3",
+            source_value,
+        ),
+        "customer_status" => (
+            "UPDATE accounts
+             SET customer_status = NULL,
+                 customer_status_source = NULL,
+                 customer_status_updated_at = NULL,
+                 updated_at = ?1
+             WHERE id = ?2
+               AND coalesce(customer_status_source, '') NOT IN ('user', 'user_correction', 'user_edit')
+               AND customer_status = ?3",
+            source_value,
+        ),
+        "growth_potential_score" => (
+            "UPDATE accounts
+             SET growth_potential_score = NULL,
+                 growth_potential_score_source = NULL,
+                 updated_at = ?1
+             WHERE id = ?2
+               AND coalesce(growth_potential_score_source, '') NOT IN ('user', 'user_correction', 'user_edit')
+               AND growth_potential_score IS NOT NULL
+               AND ABS(growth_potential_score - CAST(?3 AS REAL)) < 0.000001",
+            source_value,
+        ),
+        "icp_fit_score" => (
+            "UPDATE accounts
+             SET icp_fit_score = NULL,
+                 icp_fit_score_source = NULL,
+                 updated_at = ?1
+             WHERE id = ?2
+               AND coalesce(icp_fit_score_source, '') NOT IN ('user', 'user_correction', 'user_edit')
+               AND icp_fit_score IS NOT NULL
+               AND ABS(icp_fit_score - CAST(?3 AS REAL)) < 0.000001",
+            source_value,
+        ),
+        "active_subscription_count" => (
+            "UPDATE accounts
+             SET active_subscription_count = NULL,
+                 updated_at = ?1
+             WHERE id = ?2
+               AND active_subscription_count IS NOT NULL
+               AND CAST(active_subscription_count AS TEXT) = ?3",
+            source_value,
+        ),
+        "primary_product" => (
+            "UPDATE accounts
+             SET primary_product = NULL,
+                 updated_at = ?1
+             WHERE id = ?2
+               AND primary_product = ?3",
+            source_value,
+        ),
+        _ => return Ok(0),
+    };
+    db.conn_ref()
+        .execute(sql, rusqlite::params![now, source_ref.account_id, value])
+        .map_err(|e| {
+            format!(
+                "{}.{} Glean schema projection clear failed: {e}",
+                source_ref.account_id, source_ref.field
+            )
+        })
+}
+
+fn has_newer_non_glean_account_source_ref(
+    db: &ActionDb,
+    source_ref: &GleanAccountFactProjectionRef,
+) -> Result<bool, String> {
+    let count: i64 = db
+        .conn_ref()
+        .query_row(
+            "SELECT COUNT(*)
+             FROM account_source_refs
+             WHERE account_id = ?1
+               AND field = ?2
+               AND source_kind != 'source_purged'
+               AND observed_at > ?3
+               AND id != ?4
+               AND (source_record_ref IS NULL OR source_record_ref NOT LIKE 'glean_account_fact:%')",
+            rusqlite::params![
+                source_ref.account_id,
+                source_ref.field,
+                source_ref.observed_at,
+                source_ref.id,
+            ],
+            |row| row.get(0),
+        )
+        .map_err(|e| {
+            format!(
+                "{}.{} newer source ref check failed: {e}",
+                source_ref.account_id, source_ref.field
+            )
+        })?;
+    Ok(count > 0)
+}
+
 fn enqueue_recompute_if_needed(
     ctx: &ServiceContext<'_>,
     db: &ActionDb,
@@ -670,31 +1010,51 @@ fn enqueue_account_fact_claim_recompute(
     db: &ActionDb,
     account_id: &str,
     reason: &str,
-    claims_committed: u32,
+    _claims_committed: u32,
 ) -> Result<(), String> {
+    db.with_transaction(|tx| {
+        enqueue_account_fact_claim_recompute_in_tx(ctx, tx, account_id, reason, 0).map(|_| ())
+    })
+}
+
+fn enqueue_account_fact_claim_recompute_in_tx(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    account_id: &str,
+    reason: &str,
+    _claims_committed: u32,
+) -> Result<bool, String> {
+    let source_claim_version = db
+        .current_subject_claim_version("account", account_id)
+        .map_err(|error| format!("read account claim version failed: {error}"))?;
     let payload = serde_json::json!({
         "reason": reason,
-        "claims_committed": claims_committed,
+        "source_claim_version": source_claim_version,
     })
     .to_string();
-    db.with_transaction(|tx| {
-        let signal_id = crate::services::signals::emit(
-            ctx,
-            tx,
-            "account",
-            account_id,
-            "account_fact_claims_updated",
-            "account_fact_claims",
-            Some(&payload),
-            0.8,
-        )
-        .map_err(|error| format!("signal emit failed: {error}"))?;
+    let outcome = crate::services::signals::emit_once_for_key(
+        ctx,
+        db,
+        &format!("account_fact_claims:{reason}:{account_id}:{source_claim_version}"),
+        "account",
+        account_id,
+        "account_fact_claims_updated",
+        "account_fact_claims",
+        Some(&payload),
+        0.8,
+    )
+    .map_err(|error| format!("signal emit failed: {error}"))?;
+    if outcome.coalesced {
+        return Ok(false);
+    }
 
-        crate::services::invalidation_jobs::enqueue_signal_claim_recompute_in_tx(
-            tx, &signal_id, "account", account_id,
-        )
-        .map(|_| ())
-    })
+    crate::services::invalidation_jobs::enqueue_signal_claim_recompute_in_tx(
+        db,
+        &outcome.id,
+        "account",
+        account_id,
+    )?;
+    Ok(true)
 }
 
 fn account_has_unscored_account_fact_claims(
@@ -771,7 +1131,10 @@ fn commit_existing_account_fact_claim(
             }
             claims
                 .iter()
-                .find(|claim| claim.field_path.as_deref() == Some(field_path.as_str()))
+                .find(|claim| {
+                    claim.field_path.as_deref() == Some(field_path.as_str())
+                        && can_supersede_existing_account_fact_claim(claim, input, &canonical_text)
+                })
                 .map(|claim| claim.id.clone())
         }
         Err(error) => {
@@ -842,6 +1205,174 @@ fn commit_existing_account_fact_claim(
             )],
         ),
     }
+}
+
+fn intelligence_observed_at(
+    ctx: &ServiceContext<'_>,
+    intel: &crate::intelligence::IntelligenceJson,
+) -> String {
+    non_empty_asof(&intel.enriched_at)
+        .map(str::to_string)
+        .unwrap_or_else(|| ctx.clock.now().to_rfc3339())
+}
+
+fn active_user_claim_conflicts_with_input(
+    db: &ActionDb,
+    account_id: &str,
+    claim_field: &str,
+    value: &str,
+) -> Result<bool, String> {
+    let subject_ref = serde_json::json!({
+        "kind": "account",
+        "id": account_id,
+    })
+    .to_string();
+    let field_path = format!("account.{claim_field}");
+    let canonical_text = claims::normalize_claim_text(&account_fact_text(claim_field, value));
+    let claims =
+        claims::load_claims_active(db, &subject_ref, Some(CLAIM_TYPE)).map_err(|error| {
+            format!("{account_id}.{claim_field} user-claim conflict scan failed: {error}")
+        })?;
+    Ok(claims.iter().any(|claim| {
+        claim.field_path.as_deref() == Some(field_path.as_str())
+            && is_user_authored_account_fact_claim(claim)
+            && claim.text != canonical_text
+    }))
+}
+
+fn active_user_account_fact_claim_exists(
+    db: &ActionDb,
+    account_id: &str,
+    claim_field: &str,
+) -> Result<bool, String> {
+    let subject_ref = serde_json::json!({
+        "kind": "account",
+        "id": account_id,
+    })
+    .to_string();
+    let field_path = format!("account.{claim_field}");
+    let claims =
+        claims::load_claims_active(db, &subject_ref, Some(CLAIM_TYPE)).map_err(|error| {
+            format!("{account_id}.{claim_field} user-claim ownership scan failed: {error}")
+        })?;
+    Ok(claims.iter().any(|claim| {
+        claim.field_path.as_deref() == Some(field_path.as_str())
+            && is_user_authored_account_fact_claim(claim)
+    }))
+}
+
+fn is_source_less_schema_field(field: &str) -> bool {
+    matches!(
+        field,
+        "arr_range_low"
+            | "arr_range_high"
+            | "renewal_model"
+            | "renewal_pricing_method"
+            | "active_subscription_count"
+            | "primary_product"
+            | "commercial_stage"
+            | "renewal_stage"
+    )
+}
+
+fn claim_field_for_schema_projection(field: &str) -> &str {
+    match field {
+        "arr_range_low" | "arr_range_high" => "arr",
+        other => other,
+    }
+}
+
+fn can_supersede_existing_account_fact_claim(
+    claim: &crate::db::claims::IntelligenceClaim,
+    input: &ExistingAccountFactInput<'_>,
+    canonical_text: &str,
+) -> bool {
+    if claim.text == canonical_text || is_user_authored_account_fact_claim(claim) {
+        return false;
+    }
+
+    claim
+        .data_source
+        .eq_ignore_ascii_case(input.source_system.as_str())
+        && account_fact_claim_source_kind(claim).as_deref() == Some(input.source_kind.as_str())
+        && !timestamp_after(
+            claim.source_asof.as_deref().unwrap_or(&claim.observed_at),
+            input
+                .source_asof
+                .as_deref()
+                .unwrap_or(input.observed_at.as_str()),
+        )
+}
+
+fn has_newer_same_source_account_fact_ref(
+    db: &ActionDb,
+    input: &AccountFactInput<'_>,
+) -> Result<bool, String> {
+    let incoming_observed_at = input.observed_at;
+    let refs = db
+        .get_account_source_refs(input.account_id)
+        .map_err(|error| {
+            format!(
+                "{}.{} source freshness scan failed: {error}",
+                input.account_id, input.schema_field
+            )
+        })?;
+    Ok(refs.iter().any(|source_ref| {
+        source_ref.field == input.schema_field
+            && source_ref
+                .source_system
+                .eq_ignore_ascii_case(input.source_system)
+            && source_ref
+                .source_kind
+                .eq_ignore_ascii_case(input.source_kind)
+            && timestamp_after(source_ref.observed_at.as_str(), incoming_observed_at)
+    }))
+}
+
+fn timestamp_after(left: &str, right: &str) -> bool {
+    match (
+        DateTime::parse_from_rfc3339(left),
+        DateTime::parse_from_rfc3339(right),
+    ) {
+        (Ok(left), Ok(right)) => left > right,
+        _ => left > right,
+    }
+}
+
+pub(crate) fn has_active_account_fact_tombstone(
+    db: &ActionDb,
+    account_id: &str,
+    claim_field: &str,
+) -> Result<bool, String> {
+    let field_path = format!("account.{claim_field}");
+    db.conn_ref()
+        .query_row(
+            "SELECT EXISTS(
+                SELECT 1
+                  FROM intelligence_claims ic
+                 WHERE ic.claim_state = 'tombstoned'
+                   AND ic.claim_type = ?1
+                   AND ic.field_path = ?2
+                   AND json_valid(ic.subject_ref) = 1
+                   AND lower(json_extract(ic.subject_ref, '$.kind')) = 'account'
+                   AND json_extract(ic.subject_ref, '$.id') = ?3
+                   AND (ic.expires_at IS NULL OR ic.expires_at > datetime('now'))
+            )",
+            rusqlite::params![CLAIM_TYPE, field_path, account_id],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(|error| {
+            format!("{account_id}.{claim_field} active tombstone scan failed: {error}")
+        })
+}
+
+fn is_user_authored_account_fact_claim(claim: &crate::db::claims::IntelligenceClaim) -> bool {
+    claim.actor.trim().to_ascii_lowercase().starts_with("user:")
+        || claim
+            .data_source
+            .trim()
+            .to_ascii_lowercase()
+            .starts_with("user")
 }
 
 fn account_fact_claim_provenance_matches(
@@ -1262,6 +1793,22 @@ fn stable_account_fact_reference_id(
     format!("account_fact:{}", hex::encode(&digest[..16]))
 }
 
+fn stable_glean_account_fact_reference_id(
+    account_id: &str,
+    field: &str,
+    source_system: &str,
+    source_kind: &str,
+    value: &str,
+) -> String {
+    let mut hasher = Sha256::new();
+    for component in [account_id, field, source_system, source_kind, value] {
+        hasher.update((component.len() as u64).to_be_bytes());
+        hasher.update(component.as_bytes());
+    }
+    let digest = hasher.finalize();
+    format!("glean_account_fact:{}", hex::encode(&digest[..16]))
+}
+
 fn account_fact_text(field: &str, raw_value: &str) -> String {
     match field {
         "arr" => format!("ARR: {}", display_number_or_range(raw_value)),
@@ -1451,13 +1998,12 @@ mod tests {
         assert_eq!(stored.renewal_likelihood_source.as_deref(), Some("glean"));
         let source_refs = db.get_account_source_refs("acct-fact").unwrap();
         assert_eq!(source_refs.len(), 1);
-        let source_ref_id = stable_account_fact_reference_id(
+        let source_ref_id = stable_glean_account_fact_reference_id(
             "acct-fact",
             "renewal_likelihood",
             "glean",
             "inference",
             "0.85",
-            None,
         );
         let source_asof: String = db
             .conn_ref()
@@ -1887,7 +2433,7 @@ mod tests {
     }
 
     #[test]
-    fn same_text_account_fact_supersedes_when_provenance_changes() {
+    fn same_text_account_fact_corroborates_when_provenance_changes() {
         let db = test_db();
         db.upsert_account(&account("acct-same-text-source"))
             .unwrap();
@@ -1940,15 +2486,33 @@ mod tests {
 
         assert_eq!(field_claims.len(), 1);
         assert_eq!(field_claims[0].text, "renewal likelihood: 85%");
-        assert_eq!(field_claims[0].data_source, "glean");
-        assert_eq!(field_claims[0].source_ref.as_deref(), Some("src-glean"));
+        assert_eq!(field_claims[0].data_source, "ai");
+        assert_eq!(field_claims[0].source_ref.as_deref(), Some("src-ai"));
         assert_eq!(
             field_claims[0].source_asof.as_deref(),
-            Some("2026-05-21T12:00:00Z")
+            Some("2026-05-20T12:00:00Z")
         );
         assert_eq!(
             account_fact_claim_source_kind(field_claims[0]).as_deref(),
-            Some("fact")
+            Some("inference")
+        );
+        let corroborating_sources: Vec<String> = db
+            .conn_ref()
+            .prepare(
+                "SELECT data_source
+                 FROM claim_corroborations
+                 WHERE claim_id = ?1
+                 ORDER BY data_source",
+            )
+            .expect("prepare corroboration query")
+            .query_map([field_claims[0].id.as_str()], |row| row.get::<_, String>(0))
+            .expect("query corroborations")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect corroborations");
+        assert_eq!(
+            corroborating_sources,
+            vec!["glean".to_string()],
+            "same text from another source should corroborate instead of replacing the claim"
         );
     }
 }

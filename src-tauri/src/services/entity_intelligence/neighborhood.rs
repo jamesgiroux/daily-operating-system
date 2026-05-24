@@ -258,7 +258,9 @@ fn read_member_edges(
                     ""
                 };
             let role_expr = if object_exists(db, "account_stakeholder_roles")? {
-                format!("(SELECT role FROM account_stakeholder_roles r WHERE r.account_id = s.account_id AND r.person_id = s.person_id {role_dismissal_filter} ORDER BY role LIMIT 1)")
+                format!(
+                    "(SELECT role FROM account_stakeholder_roles r WHERE r.account_id = s.account_id AND r.person_id = s.person_id {role_dismissal_filter} ORDER BY role LIMIT 1)"
+                )
             } else {
                 "NULL".to_string()
             };

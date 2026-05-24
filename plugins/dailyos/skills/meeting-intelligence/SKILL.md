@@ -12,7 +12,7 @@ This skill fires when meeting preparation, scheduling, or post-meeting processin
 Activate when:
 - User mentions a specific meeting or asks about upcoming meetings
 - User asks for meeting prep, talking points, or agenda
-- `data/schedule.json` or `data/prep.json` is referenced
+- DailyOS schedule or prep data is referenced
 - A transcript or meeting notes appear in `_inbox/`
 - User mentions a meeting they just finished
 
@@ -65,8 +65,8 @@ Each template type drives what prep is generated and what output structure is ex
 When the user asks for meeting prep, go beyond the app's auto-generated prep by layering these intelligence passes:
 
 ### Pass 1: Context Assembly
-1. Read the meeting entry from `data/schedule.json`
-2. Read any existing prep from `data/prep.json` for this meeting
+1. Read the meeting entry from DailyOS schedule tools
+2. Read any existing prep from DailyOS prep tools for this meeting
 3. Identify the meeting template type (from `meeting_type` field or infer from title/attendees)
 4. Resolve the entity if one is associated
 
@@ -81,7 +81,7 @@ When the user asks for meeting prep, go beyond the app's auto-generated prep by 
 1. If an entity is associated, the entity-intelligence skill will have loaded full context
 2. Pull relevant vitals, risks, wins, and stakeholder dynamics
 3. Identify open actions tied to this entity, especially any that are overdue or due soon
-4. Check recent email signals from `data/emails.json` related to this entity
+4. Check recent email signals from DailyOS email/context tools related to this entity
 
 ### Pass 4: Strategic Layer
 Based on template type, add:

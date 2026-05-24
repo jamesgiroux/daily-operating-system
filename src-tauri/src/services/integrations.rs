@@ -21,7 +21,7 @@ pub fn get_claude_desktop_status() -> ClaudeDesktopConfigResult {
                 message: "Could not find home directory".to_string(),
                 config_path: None,
                 binary_path: None,
-            }
+            };
         }
     };
 
@@ -48,7 +48,7 @@ pub fn get_claude_desktop_status() -> ClaudeDesktopConfigResult {
                 message: "Could not read config".to_string(),
                 config_path: Some(config_path.to_string_lossy().to_string()),
                 binary_path: None,
-            }
+            };
         }
     };
 
@@ -60,7 +60,7 @@ pub fn get_claude_desktop_status() -> ClaudeDesktopConfigResult {
                 message: "Config file is not valid JSON".to_string(),
                 config_path: Some(config_path.to_string_lossy().to_string()),
                 binary_path: None,
-            }
+            };
         }
     };
 

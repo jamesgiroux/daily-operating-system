@@ -4,11 +4,11 @@
 
 Applied when the meeting classification returns `customer` -- meaning at least one external attendee matches a known account contact in the workspace's `Accounts/` directory. This is the most common prep-intensive template for CSM profiles.
 
-## Required Context (from directive refs)
+## Required Context (from directive refs and DailyOS runtime)
 
-Claude should read the following files referenced in the directive's `meeting_contexts` entry for this meeting:
+Claude should use DailyOS runtime/MCP for current account intelligence and read only the source files referenced in the directive's `meeting_contexts` entry for this meeting. Generated dashboard and intelligence files are export projections, not authority, when runtime tools are available.
 
-1. **Account dashboard** -- `Accounts/{account}/dashboard.md` -- ARR, ring, health, renewal date, strategic programs
+1. **Account runtime context** -- ARR, ring, health, renewal date, strategic programs
 2. **Recent meeting summaries** -- Last 2-3 files matching `_archive/*/XX-HHMM-*{account}*` -- What was discussed previously
 3. **Stakeholder map** -- `Accounts/{account}/stakeholders.md` (if exists) -- Roles, champions, detractors
 4. **Account actions** -- `Accounts/{account}/actions.md` or entries in master task list filtered by account -- Open items, overdue tasks
@@ -37,7 +37,7 @@ A key-value table of account health metrics:
 | Health | {Green/Yellow/Red} |
 | Renewal | {date} |
 
-If any metric is unavailable from the dashboard, omit the row rather than guessing.
+If any metric is unavailable from runtime context, omit the row rather than guessing.
 
 ### 3. Recent History
 

@@ -5,31 +5,31 @@ description: "Auto-loads full entity context when any entity name is mentioned"
 
 # Entity Intelligence
 
-This skill fires automatically whenever an entity name is mentioned in conversation. It silently reads all available intelligence for that entity so context is loaded before any command executes. The user should never be asked for information that exists in the workspace.
+This skill fires automatically whenever an entity name is mentioned in conversation. It silently loads available DailyOS runtime context for that entity so context is available before any command executes. The user should never be asked for information that DailyOS runtime or MCP tools can provide.
 
 ## Activation Trigger
 
 Activate when:
 - A user mentions a name that matches an `Accounts/` or `Projects/` directory
 - A command is invoked with an entity argument
-- A meeting from `data/schedule.json` references an entity
-- An action from `data/actions.json` references an entity
+- A DailyOS meeting/schedule tool references an entity
+- A DailyOS action/work tool references an entity
 
 ## Entity Resolution
 
-1. Read directory listings of `Accounts/` and `Projects/`
-2. Match the mentioned name against directory names (case-insensitive, partial match)
-3. If exact match found, proceed silently
-4. If multiple partial matches, ask user to clarify: "Did you mean Accounts/Acme-Corp or Accounts/Acme-Analytics?"
-5. If no match, inform user: "No entity found matching '{name}'. Would you like me to search People/ instead?"
+1. Use DailyOS MCP/runtime entity resolution when available.
+2. Match by id, slug, or renderable name.
+3. If exact match found, proceed silently.
+4. If multiple matches, ask the user to clarify.
+5. If runtime tools are unavailable, directory names under `Accounts/` and `Projects/` may be used as a fallback locator, not as authority.
 
 ## Silent Context Loading
 
-When an entity is resolved, read the following files without prompting the user. Load them into context so they are available for any subsequent command or question.
+When an entity is resolved, load the following context without prompting the user. Use DailyOS runtime/MCP tools first. Generated JSON and markdown files are export projections for portability; read them only when runtime tools are unavailable or the user explicitly asks for file artifacts. User-authored transcripts, notes, and documents remain source material.
 
-### 1. dashboard.json
+### 1. Runtime Vitals
 
-Read `{entity-path}/dashboard.json` for quantitative vitals:
+Use DailyOS entity tools for quantitative vitals:
 - Financial metrics (ARR, revenue, deal size)
 - Health status (Green/Yellow/Red)
 - Key dates (renewal, contract end, next milestone)
@@ -38,9 +38,9 @@ Read `{entity-path}/dashboard.json` for quantitative vitals:
 
 Note any missing fields — they represent data gaps to flag if relevant.
 
-### 2. intelligence.json
+### 2. Runtime Intelligence
 
-Read `{entity-path}/intelligence.json` for qualitative intelligence:
+Use DailyOS entity intelligence tools for qualitative intelligence:
 - Executive assessment — the current narrative
 - Risks — each with evidence source and impact level
 - Wins — recent positive signals and their significance
@@ -64,7 +64,7 @@ Cross-reference stakeholder names against `People/` directories for deeper profi
 
 ### 4. Filtered Actions
 
-Read `data/actions.json` and filter for actions where the `entity` field matches. Surface:
+Use DailyOS action/work tools and filter for actions where the entity matches. Surface:
 - Open actions (especially overdue ones)
 - Recently completed actions
 - Actions assigned to specific people
@@ -119,7 +119,7 @@ Meeting History:
 ## Behavior Rules
 
 1. **Silent loading.** Never announce "I'm loading entity intelligence for Acme Corp." Just have it ready.
-2. **No redundant asks.** If the user says "How is Acme Corp doing?" and dashboard.json has the health status, answer from workspace data. Do not ask the user to tell you.
+2. **No redundant asks.** If the user says "How is Acme Corp doing?" and DailyOS runtime has the health status, answer from runtime data. Do not ask the user to tell you.
 3. **Staleness flagging.** If intelligence is stale (>14 days), mention it naturally: "Based on intelligence last updated January 3rd..."
 4. **Gap awareness.** If a file is missing or empty, note it internally. If the user asks about something in a missing file, explain the gap: "Acme Corp doesn't have stakeholders mapped yet. Would you like me to create a stakeholder map?"
 5. **Multi-entity support.** If multiple entities are mentioned, load context for each. Keep them distinct in your working memory.

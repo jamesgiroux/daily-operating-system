@@ -28,8 +28,8 @@ After producing a deliverable, present the user with specific options for what c
 ```
 Would you like me to:
 1. Save this report to Accounts/Acme Corp/risk-assessment-2026-02.md
-2. Create 3 actions in data/actions.json from the recommendations
-3. Update Accounts/Acme Corp/intelligence.json with the revised risk assessment
+2. Create 3 DailyOS actions from the recommendations
+3. Promote the revised risk assessment through DailyOS runtime/services
 
 Or would you prefer to handle these manually?
 ```
@@ -42,10 +42,10 @@ Never silently write to workspace files. Never assume the user wants artifacts s
 **Destination:** `{entity-path}/`
 - Risk assessments, health checks, deal reviews save as named markdown files in the entity directory
 - Filename convention: `{type}-{YYYY-MM}.md` (e.g., `risk-assessment-2026-02.md`)
-- If the assessment updates the executive narrative, offer to update `intelligence.json`
+- If the assessment updates the executive narrative, offer to promote the update through DailyOS runtime/services
 
 ### Entity Intelligence Updates
-**Destination:** `{entity-path}/intelligence.json`
+**Destination:** DailyOS runtime/services
 - When new risks are identified, offer to append to the risks array
 - When new wins are identified, offer to append to the wins array
 - When the executive assessment changes, offer to update it
@@ -82,11 +82,11 @@ Never silently write to workspace files. Never assume the user wants artifacts s
 - If saving: `_archive/YYYY-MM/draft-{recipient}-{YYYY-MM-DD}.md`
 
 ### Actions
-**Destination:** `data/actions.json`
+**Destination:** DailyOS action service/tool
 - When recommendations include specific next steps, offer to create action items
 - Each action needs: text, entity (if applicable), person (if applicable), due_date (if stated), status "open", source context
 - Generate a unique id for each new action
-- Append to the existing array — never overwrite
+- Generated `actions.json` is an export projection; do not edit it directly unless the user explicitly asks for file-artifact repair.
 
 ## Creating Actions from Recommendations
 
@@ -114,7 +114,7 @@ Create all three, or adjust first?
 When analysis produces new understanding that changes the entity or person picture:
 
 ### Entity Intelligence
-- If a new risk was identified, offer to add it to `intelligence.json` risks array
+- If a new risk was identified, offer to promote it through DailyOS runtime/services
 - If a risk was resolved, offer to move it to resolved/historical
 - If the executive assessment narrative has changed, offer to update it
 - If stakeholder dynamics shifted, offer to update `stakeholders.md`
@@ -129,7 +129,7 @@ When analysis produces new understanding that changes the entity or person pictu
 After processing a meeting transcript or notes (via capture command):
 
 1. Offer to save the summary to `_archive/YYYY-MM/`
-2. Offer to create extracted actions in `data/actions.json`
+2. Offer to create extracted DailyOS actions
 3. Offer to update relevant People/ profiles with new signals
 4. Offer to update entity intelligence if the meeting revealed new risks, wins, or state changes
 
@@ -141,7 +141,7 @@ Present all options together so the user can approve or modify the full set.
 2. **Batch related writes.** If an assessment produces a report, actions, and intelligence updates, present them all at once rather than asking three separate times.
 3. **Respect the decline.** If the user says no, move on. Do not ask again.
 4. **Create directories as needed.** If `_archive/2026-02/` does not exist, create it as part of the write.
-5. **Preserve existing content.** When updating JSON files (actions, intelligence), read the current content, merge the new data, and write back. Never overwrite blindly.
+5. **Preserve generated exports.** Do not edit generated JSON exports directly for runtime mutations. Use DailyOS tools/services when available; generated files should be regenerated from runtime state.
 
 ## Interaction with Other Skills
 

@@ -1410,7 +1410,7 @@ pub fn get_week_data(_state: &AppState) -> WeekResult {
         Err(e) => {
             return WeekResult::Error {
                 message: format!("Failed to open DB: {}", e),
-            }
+            };
         }
     };
 

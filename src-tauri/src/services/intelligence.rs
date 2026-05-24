@@ -57,6 +57,19 @@ fn merge_user_confirmed_values(
     new_intel.value_delivered = merged;
 }
 
+fn blank_entity_intelligence_snapshot(
+    entity_id: &str,
+    entity_type: &str,
+    enriched_at: &str,
+) -> crate::intelligence::IntelligenceJson {
+    crate::intelligence::IntelligenceJson {
+        entity_id: entity_id.to_string(),
+        entity_type: entity_type.to_string(),
+        enriched_at: enriched_at.to_string(),
+        ..Default::default()
+    }
+}
+
 fn subject_ref_for_entity(entity_type: &str, entity_id: &str) -> Result<String, String> {
     match entity_type {
         "account" | "project" | "person" | "meeting" => Ok(serde_json::json!({
@@ -1796,7 +1809,7 @@ pub async fn update_intelligence_field(
                     return Err(format!(
                         "I644: no DB intelligence row for {} — cannot update field",
                         entity_id
-                    ))
+                    ));
                 }
             };
 
@@ -1953,22 +1966,18 @@ pub async fn update_stakeholders(
                 Vec::new()
             };
 
-            // DB-first: prefer intelligence from DB over disk
-            // propagate DB read errors instead of collapsing them.
+            // DB-first: generated intelligence.json is an export projection,
+            // not a fallback authority. If this entity has no intelligence row
+            // yet, compose a minimal DB snapshot and let the post-commit
+            // projection writer create/refresh the file from canonical state.
             let existing_intel = db
                 .get_entity_intelligence(&entity_id)
                 .map_err(|e| format!("DB read failed for entity {entity_id}: {e}"))?;
-            // Compose IntelligenceJson in memory only. Disk write is deferred
-            // to post_commit_fenced_write below so disk and DB stay consistent
-            // under transaction rollback. Pre-cycle-10 the disk-fallback branch
-            // wrote the file BEFORE the transaction, which could leave disk ahead
-            // of DB if the new error-propagating subscriber rolled back.
-            let intel = if let Some(existing) = existing_intel {
-                crate::intelligence::apply_stakeholders_update_in_memory(existing, stakeholders)?
-            } else {
-                let disk_intel = crate::intelligence::io::read_intelligence_json(&dir)?;
-                crate::intelligence::apply_stakeholders_update_in_memory(disk_intel, stakeholders)?
-            };
+            let base_intel = existing_intel.unwrap_or_else(|| {
+                blank_entity_intelligence_snapshot(&entity_id, &entity_type, &sourced_at)
+            });
+            let intel =
+                crate::intelligence::apply_stakeholders_update_in_memory(base_intel, stakeholders)?;
 
             // DB-first ordering. The legacy file cache is written AFTER
             // the transaction commits.
@@ -2860,8 +2869,10 @@ mod mutation_smoke_tests {
         run_enrichment_finalize_post_commit, EnrichmentInput, FinalizeMode,
     };
     use crate::intelligence::io::{
-        AccountHealth, AgreementOutlook, Blocker, ContractContext, ExpansionSignal, IntelRisk,
-        IntelligenceJson, ItemSource, OpenCommitment, OrgHealthData, RecommendedAction,
+        AccountHealth, AdoptionSignals, AgreementOutlook, Blocker, CompetitiveInsight,
+        ContractContext, DimensionScore, ExpansionSignal, GongCallSummary, IntelRisk,
+        IntelligenceJson, ItemSource, OpenCommitment, OrgChange, OrgHealthData,
+        ProductClassification, ProductInfo, RecommendedAction, RelationshipDimensions,
         StakeholderInsight, StrategicPriority, SuccessMetric, SupportHealth,
     };
     use crate::intelligence::prompts::InferredRelationship;
@@ -2870,7 +2881,7 @@ mod mutation_smoke_tests {
     use crate::signals::propagation::PropagationEngine;
     use crate::state::AppState;
     use chrono::TimeZone;
-    use rusqlite::params;
+    use rusqlite::{params, OptionalExtension};
     use std::path::Path;
     use std::sync::Arc;
 
@@ -2902,6 +2913,20 @@ mod mutation_smoke_tests {
             metadata: None,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn blank_entity_intelligence_snapshot_has_entity_identity_without_disk() {
+        let intel = super::blank_entity_intelligence_snapshot(
+            "acct-no-disk-fallback",
+            "account",
+            "2026-05-23T12:00:00Z",
+        );
+
+        assert_eq!(intel.entity_id, "acct-no-disk-fallback");
+        assert_eq!(intel.entity_type, "account");
+        assert_eq!(intel.enriched_at, "2026-05-23T12:00:00Z");
+        assert!(intel.stakeholder_insights.is_empty());
     }
 
     fn signal_count(db: &crate::db::ActionDb, entity_id: &str, signal_type: &str) -> i64 {
@@ -2954,6 +2979,83 @@ mod mutation_smoke_tests {
                 |row| row.get(0),
             )
             .expect("account source ref count")
+    }
+
+    fn visible_account_source_ref_count(db: &crate::db::ActionDb, account_id: &str) -> usize {
+        db.get_account_source_refs(account_id)
+            .expect("account source refs")
+            .len()
+    }
+
+    fn purged_account_source_ref_count(db: &crate::db::ActionDb, account_id: &str) -> i64 {
+        db.conn_ref()
+            .query_row(
+                "SELECT COUNT(*)
+                   FROM account_source_refs
+                  WHERE account_id = ?1
+                    AND source_kind = 'source_purged'",
+                params![account_id],
+                |row| row.get(0),
+            )
+            .expect("purged account source ref count")
+    }
+
+    fn active_glean_account_fact_claim_count(db: &crate::db::ActionDb, account_id: &str) -> i64 {
+        db.conn_ref()
+            .query_row(
+                "SELECT COUNT(*)
+                   FROM intelligence_claims
+                  WHERE claim_type = 'account_fact'
+                    AND claim_state = 'active'
+                    AND surfacing_state = 'active'
+                    AND source_ref LIKE 'glean_account_fact:%'
+                    AND json_valid(subject_ref) = 1
+                    AND lower(json_extract(subject_ref, '$.kind')) = 'account'
+                    AND json_extract(subject_ref, '$.id') = ?1",
+                params![account_id],
+                |row| row.get(0),
+            )
+            .expect("active Glean account fact claim count")
+    }
+
+    fn withdrawn_glean_account_fact_claim_count(db: &crate::db::ActionDb, account_id: &str) -> i64 {
+        db.conn_ref()
+            .query_row(
+                "SELECT COUNT(*)
+                   FROM intelligence_claims
+                  WHERE claim_type = 'account_fact'
+                    AND claim_state = 'withdrawn'
+                    AND surfacing_state = 'dormant'
+                    AND source_ref LIKE 'glean_account_fact:%'
+                    AND json_valid(subject_ref) = 1
+                    AND lower(json_extract(subject_ref, '$.kind')) = 'account'
+                    AND json_extract(subject_ref, '$.id') = ?1",
+                params![account_id],
+                |row| row.get(0),
+            )
+            .expect("withdrawn Glean account fact claim count")
+    }
+
+    fn withdrawn_account_fact_claim_count_by_source_ref(
+        db: &crate::db::ActionDb,
+        account_id: &str,
+        source_ref: &str,
+    ) -> i64 {
+        db.conn_ref()
+            .query_row(
+                "SELECT COUNT(*)
+                   FROM intelligence_claims
+                  WHERE claim_type = 'account_fact'
+                    AND claim_state = 'withdrawn'
+                    AND surfacing_state = 'dormant'
+                    AND source_ref = ?2
+                    AND json_valid(subject_ref) = 1
+                    AND lower(json_extract(subject_ref, '$.kind')) = 'account'
+                    AND json_extract(subject_ref, '$.id') = ?1",
+                params![account_id, source_ref],
+                |row| row.get(0),
+            )
+            .expect("withdrawn account fact claim count by source ref")
     }
 
     fn seed_account_domain(db: &crate::db::ActionDb, account_id: &str, domain: &str) {
@@ -3122,6 +3224,312 @@ mod mutation_smoke_tests {
             .expect("technical footprint count")
     }
 
+    fn technical_footprint_projection(
+        db: &crate::db::ActionDb,
+        account_id: &str,
+    ) -> Option<(Option<String>, Option<String>, i64, String, String, String)> {
+        db.conn_ref()
+            .query_row(
+                "SELECT support_tier, CAST(csat_score AS TEXT), open_tickets, source, sourced_at, updated_at
+                 FROM account_technical_footprint
+                 WHERE account_id = ?1",
+                params![account_id],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                    ))
+                },
+            )
+            .optional()
+            .expect("technical footprint projection")
+    }
+
+    fn technical_footprint_source_ref_rows(
+        db: &crate::db::ActionDb,
+        account_id: &str,
+    ) -> Vec<(
+        String,
+        String,
+        String,
+        Option<String>,
+        String,
+        Option<String>,
+    )> {
+        let mut stmt = db
+            .conn_ref()
+            .prepare(
+                "SELECT field, source_system, source_kind, source_value, observed_at, source_record_ref
+                 FROM account_source_refs
+                 WHERE account_id = ?1
+                   AND field LIKE 'technical_footprint.%'
+                   AND source_kind != 'source_purged'
+                 ORDER BY field, source_system, source_kind, coalesce(source_value, '')",
+            )
+            .expect("prepare technical footprint source refs");
+        stmt.query_map(params![account_id], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                row.get(5)?,
+            ))
+        })
+        .expect("query technical footprint source refs")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("collect technical footprint source refs")
+    }
+
+    fn technical_footprint_marker_ref_count(db: &crate::db::ActionDb, account_id: &str) -> i64 {
+        db.conn_ref()
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM account_source_refs
+                 WHERE account_id = ?1
+                   AND source_record_ref LIKE 'glean_technical_footprint:%'",
+                params![account_id],
+                |row| row.get(0),
+            )
+            .expect("technical footprint marker source ref count")
+    }
+
+    fn purged_technical_footprint_ref_count(db: &crate::db::ActionDb, account_id: &str) -> i64 {
+        db.conn_ref()
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM account_source_refs
+                 WHERE account_id = ?1
+                   AND field LIKE 'technical_footprint.%'
+                   AND source_kind = 'source_purged'",
+                params![account_id],
+                |row| row.get(0),
+            )
+            .expect("purged technical footprint source ref count")
+    }
+
+    fn account_fact_source_ref_rows(
+        db: &crate::db::ActionDb,
+        account_id: &str,
+    ) -> Vec<(String, String, String, Option<String>, Option<String>)> {
+        let mut stmt = db
+            .conn_ref()
+            .prepare(
+                "SELECT field, source_system, source_kind, source_value, source_record_ref
+                 FROM account_source_refs
+                 WHERE account_id = ?1
+                   AND field NOT LIKE 'technical_footprint.%'
+                   AND source_kind != 'source_purged'
+                 ORDER BY field, source_system, source_kind, coalesce(source_value, ''), coalesce(source_record_ref, '')",
+            )
+            .expect("prepare account fact source refs");
+        stmt.query_map(params![account_id], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+            ))
+        })
+        .expect("query account fact source refs")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("collect account fact source refs")
+    }
+
+    fn health_projection(
+        db: &crate::db::ActionDb,
+        account_id: &str,
+    ) -> (Option<String>, Option<String>, Option<String>) {
+        let health_json = db
+            .conn_ref()
+            .query_row(
+                "SELECT health_json FROM entity_assessment WHERE entity_id = ?1",
+                params![account_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .expect("health_json");
+        let quality = db
+            .conn_ref()
+            .query_row(
+                "SELECT CAST(health_score AS TEXT), health_trend
+                 FROM entity_quality
+                 WHERE entity_id = ?1",
+                params![account_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .expect("health quality");
+        let (health_score, health_trend) = quality.unwrap_or((None, None));
+        (health_json, health_score, health_trend)
+    }
+
+    fn seed_finalize_account(db: &crate::db::ActionDb, entity_id: &str) {
+        let account = make_account(entity_id);
+        db.upsert_account(&account).unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO entity_assessment (entity_id, entity_type)
+                 VALUES (?1, 'account')",
+                params![entity_id],
+            )
+            .expect("seed entity assessment");
+        crate::self_healing::quality::ensure_quality_row(db, entity_id, "account");
+    }
+
+    fn glean_signal_evidence_rows(
+        db: &crate::db::ActionDb,
+        entity_id: &str,
+    ) -> Vec<(String, String, String, Option<String>, String)> {
+        let mut stmt = db
+            .conn_ref()
+            .prepare(
+                "SELECT id, signal_type, data_source, value, printf('%.6f', confidence)
+                   FROM signal_events
+                  WHERE entity_id = ?1
+                    AND data_source LIKE 'glean%'
+                  ORDER BY signal_type, data_source, id",
+            )
+            .expect("prepare Glean signal evidence query");
+        stmt.query_map(params![entity_id], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+            ))
+        })
+        .expect("query Glean signal evidence")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("collect Glean signal evidence")
+    }
+
+    fn glean_signal_evidence_projection_rows(
+        db: &crate::db::ActionDb,
+        entity_id: &str,
+    ) -> Vec<(String, String, Option<String>, String)> {
+        glean_signal_evidence_rows(db, entity_id)
+            .into_iter()
+            .map(|(_, signal_type, data_source, value, confidence)| {
+                (signal_type, data_source, value, confidence)
+            })
+            .collect()
+    }
+
+    fn account_fact_claim_evidence_rows(
+        db: &crate::db::ActionDb,
+        account_id: &str,
+    ) -> Vec<(
+        String,
+        String,
+        String,
+        String,
+        Option<String>,
+        Option<String>,
+    )> {
+        let mut stmt = db
+            .conn_ref()
+            .prepare(
+                "SELECT claim_type, coalesce(field_path, ''), text, data_source, source_ref, source_asof
+                   FROM intelligence_claims
+                  WHERE claim_type = 'account_fact'
+                    AND claim_state = 'active'
+                    AND surfacing_state = 'active'
+                    AND json_valid(subject_ref) = 1
+                    AND lower(json_extract(subject_ref, '$.kind')) = 'account'
+                    AND json_extract(subject_ref, '$.id') = ?1
+                  ORDER BY field_path, text, data_source, coalesce(source_ref, '')",
+            )
+            .expect("prepare account fact claim evidence query");
+        stmt.query_map(params![account_id], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                row.get(5)?,
+            ))
+        })
+        .expect("query account fact claim evidence")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("collect account fact claim evidence")
+    }
+
+    fn active_account_fact_claim_count_for_field(
+        db: &crate::db::ActionDb,
+        account_id: &str,
+        field_path: &str,
+    ) -> i64 {
+        db.conn_ref()
+            .query_row(
+                "SELECT COUNT(*)
+                   FROM intelligence_claims
+                  WHERE claim_type = 'account_fact'
+                    AND claim_state = 'active'
+                    AND surfacing_state = 'active'
+                    AND field_path = ?2
+                    AND json_valid(subject_ref) = 1
+                    AND lower(json_extract(subject_ref, '$.kind')) = 'account'
+                    AND json_extract(subject_ref, '$.id') = ?1",
+                params![account_id, field_path],
+                |row| row.get(0),
+            )
+            .expect("active account fact claim count")
+    }
+
+    fn seed_account_fact_tombstone(
+        db: &crate::db::ActionDb,
+        account_id: &str,
+        field: &str,
+        text: &str,
+    ) {
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 23, 12, 0, 0).unwrap());
+        let rng = SeedableRng::new(23);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+        crate::services::claims::commit_claim(
+            &ctx,
+            db,
+            crate::services::claims::ClaimProposal {
+                id: None,
+                expected_claim_version: None,
+                subject_ref: serde_json::json!({
+                    "kind": "account",
+                    "id": account_id,
+                })
+                .to_string(),
+                claim_type: "account_fact".to_string(),
+                field_path: Some(format!("account.{field}")),
+                topic_key: Some(field.to_string()),
+                text: text.to_string(),
+                actor: "user:account_fact_claims".to_string(),
+                data_source: "user_input".to_string(),
+                source_ref: None,
+                source_asof: None,
+                observed_at: "2026-05-23T12:00:00Z".to_string(),
+                provenance_json: "{}".to_string(),
+                metadata_json: None,
+                thread_id: None,
+                temporal_scope: Some(crate::db::claims::TemporalScope::State),
+                sensitivity: Some(crate::db::claims::ClaimSensitivity::Internal),
+                supersedes: None,
+                tombstone: Some(crate::services::claims::TombstoneSpec {
+                    retraction_reason: "user_removal".to_string(),
+                    expires_at: None,
+                }),
+            },
+        )
+        .expect("seed account fact tombstone");
+    }
+
     fn make_enrichment_input(entity_id: &str, entity_dir: &Path) -> EnrichmentInput {
         EnrichmentInput {
             workspace: entity_dir.to_path_buf(),
@@ -3171,8 +3579,2208 @@ mod mutation_smoke_tests {
                 csat: Some(92.0),
                 source: Some("glean_zendesk".to_string()),
             }),
+            contract_context: Some(ContractContext {
+                current_arr: Some(125_000.0),
+                ..Default::default()
+            }),
+            agreement_outlook: Some(AgreementOutlook {
+                confidence: Some("high".to_string()),
+                ..Default::default()
+            }),
+            product_classification: Some(ProductClassification {
+                products: vec![ProductInfo {
+                    type_: Some("cms".to_string()),
+                    arr: Some(125_000.0),
+                    ..Default::default()
+                }],
+            }),
             ..Default::default()
         }
+    }
+
+    fn make_glean_full_finalization_intel(entity_id: &str) -> IntelligenceJson {
+        IntelligenceJson {
+            organizational_changes: vec![OrgChange {
+                change_type: "role_change".to_string(),
+                person: "Fixture Stakeholder".to_string(),
+                from: Some("legacy owner".to_string()),
+                to: Some("new owner".to_string()),
+                detected_at: Some("2026-05-03T01:00:00Z".to_string()),
+                source: Some("glean_slack".to_string()),
+                item_source: None,
+                discrepancy: None,
+            }],
+            ..make_glean_signal_intel(entity_id)
+        }
+    }
+
+    #[test]
+    fn glean_queue_and_manual_refresh_share_finalization_side_effects() {
+        let state = remote_glean_state();
+        let entity_id = "acc-finalize-shared-side-effects";
+        let intel = make_glean_full_finalization_intel(entity_id);
+
+        let queue_db = test_db();
+        seed_finalize_account(&queue_db, entity_id);
+        let queue_dir = tempfile::tempdir().expect("queue tempdir");
+        let queue_input = make_enrichment_input(entity_id, queue_dir.path());
+        run_enrichment_finalize_post_commit(
+            &state,
+            &queue_db,
+            &queue_input,
+            &intel,
+            &[],
+            FinalizeMode::QueueWorker {
+                is_background: false,
+                producer: crate::intel_queue::EnrichmentProducer::Glean,
+            },
+        )
+        .expect("queue Glean finalize");
+
+        let manual_db = test_db();
+        seed_finalize_account(&manual_db, entity_id);
+        let manual_dir = tempfile::tempdir().expect("manual tempdir");
+        let manual_input = make_enrichment_input(entity_id, manual_dir.path());
+        run_enrichment_finalize_post_commit(
+            &state,
+            &manual_db,
+            &manual_input,
+            &intel,
+            &[],
+            FinalizeMode::ManualRefresh {
+                producer: crate::intel_queue::EnrichmentProducer::Glean,
+            },
+        )
+        .expect("manual Glean finalize");
+
+        let queue_signals = glean_signal_evidence_rows(&queue_db, entity_id);
+        assert!(
+            !queue_signals.is_empty(),
+            "Glean finalization should emit shared signal evidence"
+        );
+        assert_eq!(
+            glean_signal_evidence_projection_rows(&queue_db, entity_id),
+            glean_signal_evidence_projection_rows(&manual_db, entity_id),
+            "queue and manual Glean finalization must feed identical signal evidence"
+        );
+        assert_eq!(
+            account_fact_claim_evidence_rows(&queue_db, entity_id),
+            account_fact_claim_evidence_rows(&manual_db, entity_id),
+            "queue and manual Glean finalization must commit identical account fact claims"
+        );
+        assert_eq!(
+            account_fact_source_ref_rows(&queue_db, entity_id),
+            account_fact_source_ref_rows(&manual_db, entity_id),
+            "queue and manual Glean finalization must write identical account fact source refs"
+        );
+        assert_eq!(
+            claim_recompute_job_count(&queue_db, "account", entity_id),
+            claim_recompute_job_count(&manual_db, "account", entity_id),
+            "queue and manual Glean finalization must enqueue the same trust recompute jobs"
+        );
+        assert!(
+            claim_recompute_job_count(&queue_db, "account", entity_id) > 0,
+            "full finalization fixture should enqueue trust recompute"
+        );
+        assert_eq!(
+            health_projection(&queue_db, entity_id),
+            health_projection(&manual_db, entity_id),
+            "queue and manual Glean finalization must recompute identical health projections"
+        );
+        assert_eq!(technical_footprint_count(&queue_db, entity_id), 1);
+        assert_eq!(technical_footprint_count(&manual_db, entity_id), 1);
+        assert_eq!(
+            technical_footprint_projection(&queue_db, entity_id),
+            technical_footprint_projection(&manual_db, entity_id),
+            "queue and manual Glean finalization must write the same technical footprint fields"
+        );
+        let slack_payload: String = queue_db
+            .conn_ref()
+            .query_row(
+                "SELECT value FROM signal_events
+                 WHERE entity_id = ?1
+                   AND signal_type = 'slack_context_updated'",
+                params![entity_id],
+                |row| row.get(0),
+            )
+            .expect("Slack context payload");
+        assert!(
+            slack_payload.contains("itemHashes") && slack_payload.contains("categories"),
+            "Slack context signals should persist metadata and identity hashes"
+        );
+        assert!(
+            !slack_payload.contains("Fixture Stakeholder"),
+            "Slack context signals must not persist raw source excerpts"
+        );
+        assert_eq!(
+            technical_footprint_source_ref_rows(&queue_db, entity_id),
+            technical_footprint_source_ref_rows(&manual_db, entity_id),
+            "queue and manual Glean finalization must write the same technical footprint provenance"
+        );
+    }
+
+    #[test]
+    fn glean_finalize_blocks_export_when_glean_side_effects_fail() {
+        let state = remote_glean_state();
+        let db = test_db();
+        let entity_id = "acc-finalize-side-effect-failure";
+        seed_finalize_account(&db, entity_id);
+        db.conn_ref()
+            .execute_batch(
+                "CREATE TRIGGER fail_glean_commitment_insert
+                 BEFORE INSERT ON captured_commitments
+                 WHEN NEW.account_id = 'acc-finalize-side-effect-failure'
+                 BEGIN
+                   SELECT RAISE(ABORT, 'forced Glean side effect failure');
+                 END;",
+            )
+            .expect("install side-effect failure trigger");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let input = make_enrichment_input(entity_id, dir.path());
+        let mut intel = make_glean_signal_intel(entity_id);
+        intel.open_commitments = Some(vec![OpenCommitment {
+            commitment_id: None,
+            description: "Send lifecycle-safe recap".to_string(),
+            owner: Some("vendor".to_string()),
+            due_date: Some("2026-06-01".to_string()),
+            source: Some("glean".to_string()),
+            status: None,
+            item_source: None,
+            discrepancy: None,
+        }]);
+
+        let result = run_enrichment_finalize_post_commit(
+            &state,
+            &db,
+            &input,
+            &intel,
+            &[],
+            FinalizeMode::ManualRefresh {
+                producer: crate::intel_queue::EnrichmentProducer::Glean,
+            },
+        );
+
+        assert!(
+            result.is_err_and(|error| error.contains("Glean enrichment side-effect sync failed")),
+            "Glean side-effect failure must stop finalize success"
+        );
+        assert!(
+            !dir.path().join("intelligence.json").exists(),
+            "generated exports must wait until Glean substrate side effects complete"
+        );
+    }
+
+    #[test]
+    fn glean_finalization_same_run_key_is_idempotent_across_queue_and_manual() {
+        let state = remote_glean_state();
+        let db = test_db();
+        let entity_id = "acc-finalize-idempotent";
+        seed_finalize_account(&db, entity_id);
+        let dir = tempfile::tempdir().expect("tempdir");
+        let input = make_enrichment_input(entity_id, dir.path());
+        let intel = make_glean_signal_intel(entity_id);
+
+        run_enrichment_finalize_post_commit(
+            &state,
+            &db,
+            &input,
+            &intel,
+            &[],
+            FinalizeMode::ManualRefresh {
+                producer: crate::intel_queue::EnrichmentProducer::Glean,
+            },
+        )
+        .expect("manual Glean finalize");
+        let signals_after_manual = glean_signal_evidence_rows(&db, entity_id);
+        let claims_after_manual = account_fact_claim_evidence_rows(&db, entity_id);
+        let recompute_after_manual = claim_recompute_job_count(&db, "account", entity_id);
+        assert_eq!(
+            signal_count(&db, entity_id, "renewal_data_updated"),
+            1,
+            "first finalization should emit renewal evidence once"
+        );
+
+        run_enrichment_finalize_post_commit(
+            &state,
+            &db,
+            &input,
+            &intel,
+            &[],
+            FinalizeMode::QueueWorker {
+                is_background: false,
+                producer: crate::intel_queue::EnrichmentProducer::Glean,
+            },
+        )
+        .expect("queue Glean finalize retry");
+
+        assert_eq!(
+            glean_signal_evidence_rows(&db, entity_id),
+            signals_after_manual,
+            "queue/manual overlap must not double-count signal evidence"
+        );
+        assert_eq!(
+            account_fact_claim_evidence_rows(&db, entity_id),
+            claims_after_manual,
+            "queue/manual overlap must not double-promote account fact claims"
+        );
+        assert_eq!(
+            claim_recompute_job_count(&db, "account", entity_id),
+            recompute_after_manual,
+            "queue/manual overlap must not enqueue duplicate trust recompute jobs"
+        );
+        assert_eq!(technical_footprint_count(&db, entity_id), 1);
+    }
+
+    #[test]
+    fn glean_finalization_same_evidence_different_timestamp_is_idempotent() {
+        let state = remote_glean_state();
+        let db = test_db();
+        let entity_id = "acc-finalize-evidence-idempotent";
+        seed_finalize_account(&db, entity_id);
+        let dir = tempfile::tempdir().expect("tempdir");
+        let input = make_enrichment_input(entity_id, dir.path());
+        let mut first = make_glean_full_finalization_intel(entity_id);
+        first.enriched_at = "2026-05-03T01:00:00Z".to_string();
+        first.executive_assessment = Some("first generated assessment".to_string());
+
+        run_enrichment_finalize_post_commit(
+            &state,
+            &db,
+            &input,
+            &first,
+            &[],
+            FinalizeMode::ManualRefresh {
+                producer: crate::intel_queue::EnrichmentProducer::Glean,
+            },
+        )
+        .expect("first Glean finalize");
+        let signals_after_first = glean_signal_evidence_rows(&db, entity_id);
+        let source_refs_after_first = account_source_ref_count(&db, entity_id);
+        let claims_after_first = account_fact_claim_evidence_rows(&db, entity_id);
+
+        let mut second = first.clone();
+        second.enriched_at = "2026-05-04T01:00:00Z".to_string();
+        second.executive_assessment = Some("second generated assessment".to_string());
+        run_enrichment_finalize_post_commit(
+            &state,
+            &db,
+            &input,
+            &second,
+            &[],
+            FinalizeMode::QueueWorker {
+                is_background: false,
+                producer: crate::intel_queue::EnrichmentProducer::Glean,
+            },
+        )
+        .expect("second Glean finalize");
+
+        assert_eq!(
+            glean_signal_evidence_rows(&db, entity_id),
+            signals_after_first,
+            "volatile render metadata must not change Glean side-effect identity"
+        );
+        assert_eq!(
+            account_source_ref_count(&db, entity_id),
+            source_refs_after_first,
+            "same Glean evidence must not duplicate account source refs"
+        );
+        assert_eq!(
+            account_fact_claim_evidence_rows(&db, entity_id),
+            claims_after_first,
+            "same Glean evidence must not duplicate account fact claims"
+        );
+    }
+
+    #[test]
+    fn glean_finalization_same_evidence_different_context_clock_is_idempotent() {
+        let state = remote_glean_state();
+        let db = test_db();
+        let entity_id = "acc-finalize-clock-idempotent";
+        seed_finalize_account(&db, entity_id);
+        let mut intel = make_glean_full_finalization_intel(entity_id);
+        intel.enriched_at.clear();
+        if let Some(org_health) = intel.org_health.as_mut() {
+            org_health.gathered_at.clear();
+        }
+
+        let ext = ExternalClients::default();
+        let first_clock =
+            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 23, 12, 0, 0).unwrap());
+        let first_rng = SeedableRng::new(11);
+        let first_ctx = test_ctx(&first_clock, &first_rng, &ext);
+        crate::services::glean_finalization::finalize_glean_enrichment(
+            &first_ctx,
+            &db,
+            state.signals.engine.as_ref(),
+            crate::services::glean_finalization::GleanFinalizationInput {
+                entity_type: "account",
+                entity_id,
+                intel: &intel,
+                preset: None,
+            },
+        )
+        .expect("first Glean finalization");
+        let signals_after_first = glean_signal_evidence_rows(&db, entity_id);
+        let source_refs_after_first = account_source_ref_count(&db, entity_id);
+        let claims_after_first = account_fact_claim_evidence_rows(&db, entity_id);
+        let recompute_after_first = claim_recompute_job_count(&db, "account", entity_id);
+        let technical_footprint_after_first = technical_footprint_projection(&db, entity_id);
+        let technical_source_refs_after_first = technical_footprint_source_ref_rows(&db, entity_id);
+        assert!(
+            !technical_source_refs_after_first.is_empty(),
+            "fixture should exercise technical footprint source refs"
+        );
+        assert!(
+            technical_source_refs_after_first
+                .iter()
+                .all(|(_, _, _, _, observed_at, _)| observed_at == "1970-01-01T00:00:00Z"),
+            "missing Glean source timestamps should use a stable unknown-source timestamp"
+        );
+
+        let second_clock =
+            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 24, 12, 0, 0).unwrap());
+        let second_rng = SeedableRng::new(12);
+        let second_ctx = test_ctx(&second_clock, &second_rng, &ext);
+        crate::services::glean_finalization::finalize_glean_enrichment(
+            &second_ctx,
+            &db,
+            state.signals.engine.as_ref(),
+            crate::services::glean_finalization::GleanFinalizationInput {
+                entity_type: "account",
+                entity_id,
+                intel: &intel,
+                preset: None,
+            },
+        )
+        .expect("second Glean finalization");
+
+        assert_eq!(
+            glean_signal_evidence_rows(&db, entity_id),
+            signals_after_first,
+            "service clock changes must not duplicate Glean signal evidence"
+        );
+        assert_eq!(
+            account_source_ref_count(&db, entity_id),
+            source_refs_after_first,
+            "service clock changes must not duplicate account source refs"
+        );
+        assert_eq!(
+            account_fact_claim_evidence_rows(&db, entity_id),
+            claims_after_first,
+            "service clock changes must not duplicate account fact claims"
+        );
+        assert_eq!(
+            claim_recompute_job_count(&db, "account", entity_id),
+            recompute_after_first,
+            "service clock changes must not enqueue duplicate recompute jobs"
+        );
+        assert_eq!(
+            technical_footprint_projection(&db, entity_id),
+            technical_footprint_after_first,
+            "service clock changes must not churn technical footprint timestamps"
+        );
+        assert_eq!(
+            technical_footprint_source_ref_rows(&db, entity_id),
+            technical_source_refs_after_first,
+            "service clock changes must not churn technical source-ref provenance timestamps"
+        );
+    }
+
+    #[test]
+    fn glean_finalization_signal_ids_are_local_to_each_evidence_class() {
+        let state = remote_glean_state();
+        let db = test_db();
+        let entity_id = "acc-finalize-evidence-local";
+        seed_finalize_account(&db, entity_id);
+        let dir = tempfile::tempdir().expect("tempdir");
+        let input = make_enrichment_input(entity_id, dir.path());
+        let first = make_glean_signal_intel(entity_id);
+
+        run_enrichment_finalize_post_commit(
+            &state,
+            &db,
+            &input,
+            &first,
+            &[],
+            FinalizeMode::ManualRefresh {
+                producer: crate::intel_queue::EnrichmentProducer::Glean,
+            },
+        )
+        .expect("first Glean finalize");
+        assert_eq!(signal_count(&db, entity_id, "renewal_data_updated"), 1);
+        assert_eq!(signal_count(&db, entity_id, "support_health_updated"), 1);
+
+        let mut second = first.clone();
+        if let Some(support_health) = second.support_health.as_mut() {
+            support_health.open_tickets = Some(4);
+        }
+        run_enrichment_finalize_post_commit(
+            &state,
+            &db,
+            &input,
+            &second,
+            &[],
+            FinalizeMode::QueueWorker {
+                is_background: false,
+                producer: crate::intel_queue::EnrichmentProducer::Glean,
+            },
+        )
+        .expect("second Glean finalize");
+
+        assert_eq!(
+            signal_count(&db, entity_id, "renewal_data_updated"),
+            1,
+            "unchanged renewal evidence must not be duplicated when support evidence changes"
+        );
+        assert_eq!(
+            signal_count(&db, entity_id, "support_health_updated"),
+            2,
+            "changed support evidence should emit a new support signal"
+        );
+    }
+
+    #[test]
+    fn purge_source_glean_withdraws_finalizer_account_facts_and_preserves_user_fields() {
+        let state = remote_glean_state();
+        let db = test_db();
+        let entity_id = "acc-finalize-purge";
+        seed_finalize_account(&db, entity_id);
+        db.upsert_account_fact(
+            entity_id,
+            "support_tier",
+            "user-premium",
+            "user",
+            "2026-05-01T00:00:00Z",
+        )
+        .expect("seed user-owned support tier");
+        db.upsert_account_technical_footprint(
+            entity_id,
+            Some("[\"sso\"]"),
+            Some("enterprise"),
+            Some(0.72),
+            Some(850),
+            None,
+            None,
+            11,
+            Some("live"),
+            "user_edit",
+        )
+        .expect("seed user-owned technical footprint fields");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let input = make_enrichment_input(entity_id, dir.path());
+        let mut intel = make_glean_full_finalization_intel(entity_id);
+        if let Some(support_health) = intel.support_health.as_mut() {
+            support_health.open_tickets = None;
+        }
+
+        run_enrichment_finalize_post_commit(
+            &state,
+            &db,
+            &input,
+            &intel,
+            &[],
+            FinalizeMode::ManualRefresh {
+                producer: crate::intel_queue::EnrichmentProducer::Glean,
+            },
+        )
+        .expect("Glean finalize before purge");
+        assert!(
+            active_glean_account_fact_claim_count(&db, entity_id) > 0,
+            "fixture should create active Glean account fact claims"
+        );
+        assert!(
+            visible_account_source_ref_count(&db, entity_id) > 0,
+            "fixture should create visible Glean source refs"
+        );
+        assert_eq!(
+            signal_count(&db, entity_id, "stakeholder_change"),
+            1,
+            "fixture should create a Glean propagation signal"
+        );
+        assert_eq!(
+            signal_count(&db, entity_id, "slack_context_updated"),
+            1,
+            "fixture should create a Glean Slack-context signal"
+        );
+        assert!(
+            technical_footprint_marker_ref_count(&db, entity_id) > 0,
+            "fixture should create technical footprint source refs"
+        );
+        let ctx = state.live_service_context();
+        crate::services::signals::emit(
+            &ctx,
+            &db,
+            "account",
+            entity_id,
+            "glean_finalization_degraded",
+            "glean_synthesis",
+            Some("{\"degradedClasses\":[\"account_fact\"]}"),
+            0.5,
+        )
+        .expect("seed degraded marker signal");
+        assert_eq!(
+            signal_count(&db, entity_id, "glean_finalization_degraded"),
+            1,
+            "fixture should include a Glean degraded marker signal"
+        );
+
+        let report = crate::db::data_lifecycle::purge_source(
+            &db,
+            crate::db::data_lifecycle::DataSource::Glean,
+        )
+        .expect("purge Glean");
+
+        assert!(
+            report.account_fact_claims_withdrawn > 0,
+            "purge should withdraw Glean-produced account fact claims"
+        );
+        assert!(
+            report.account_source_refs_masked > 0,
+            "purge should mask Glean-produced source refs"
+        );
+        assert!(
+            report.account_schema_facts_cleared > 0,
+            "purge should clear schema projections that are still Glean-owned"
+        );
+        assert!(
+            report.account_fact_recompute_jobs_enqueued > 0,
+            "purge should enqueue claim trust recompute after withdrawing Glean facts"
+        );
+        assert_eq!(
+            active_glean_account_fact_claim_count(&db, entity_id),
+            0,
+            "Glean-produced account fact claims must stop surfacing"
+        );
+        assert!(
+            withdrawn_glean_account_fact_claim_count(&db, entity_id) > 0,
+            "Glean-produced account fact claims should remain as withdrawn audit rows"
+        );
+        assert_eq!(
+            visible_account_source_ref_count(&db, entity_id),
+            0,
+            "masked source refs must be excluded from runtime source refs"
+        );
+        assert!(
+            purged_account_source_ref_count(&db, entity_id) > 0,
+            "masked source refs should remain as non-surfacing lifecycle audit rows"
+        );
+        let account = db
+            .get_account(entity_id)
+            .expect("read account")
+            .expect("account remains");
+        assert_eq!(
+            account.support_tier.as_deref(),
+            Some("user-premium"),
+            "user-owned schema fact should not be cleared by Glean purge"
+        );
+        assert_eq!(account.arr_range_low, None);
+        assert_eq!(account.arr_range_high, None);
+        assert_eq!(
+            account.primary_product, None,
+            "Glean-mediated source-less schema projection should be cleared"
+        );
+        let footprint = db
+            .get_account_technical_footprint(entity_id)
+            .expect("read footprint")
+            .expect("technical footprint row remains");
+        assert_eq!(footprint.integrations_json.as_deref(), Some("[\"sso\"]"));
+        assert_eq!(footprint.usage_tier.as_deref(), Some("enterprise"));
+        assert_eq!(footprint.active_users, Some(850));
+        assert_eq!(footprint.services_stage.as_deref(), Some("live"));
+        assert_eq!(
+            footprint.support_tier, None,
+            "Glean-projected support footprint field should be cleared"
+        );
+        assert_eq!(
+            footprint.csat_score, None,
+            "Glean-projected support score should be cleared"
+        );
+        assert_eq!(
+            footprint.open_tickets, 11,
+            "pre-existing ticket count should not be overwritten when Glean had no ticket evidence"
+        );
+        assert_eq!(
+            signal_count(&db, entity_id, "stakeholder_change"),
+            0,
+            "Glean propagation signals must be included in Glean purge"
+        );
+        assert_eq!(
+            signal_count(&db, entity_id, "slack_context_updated"),
+            0,
+            "Glean Slack-context signals must be included in Glean purge"
+        );
+        assert_eq!(
+            signal_count(&db, entity_id, "glean_finalization_degraded"),
+            0,
+            "Glean degraded markers must be included in Glean purge"
+        );
+        assert_eq!(
+            technical_footprint_marker_ref_count(&db, entity_id),
+            0,
+            "purge must remove surfacing technical footprint source refs"
+        );
+        assert!(
+            purged_technical_footprint_ref_count(&db, entity_id) > 0,
+            "purge should retain masked technical footprint lifecycle refs"
+        );
+
+        crate::db::data_lifecycle::purge_source(&db, crate::db::data_lifecycle::DataSource::Glean)
+            .expect("second Glean purge");
+        let footprint = db
+            .get_account_technical_footprint(entity_id)
+            .expect("read footprint after retry")
+            .expect("technical footprint row remains after retry");
+        assert_eq!(footprint.integrations_json.as_deref(), Some("[\"sso\"]"));
+        assert_eq!(footprint.usage_tier.as_deref(), Some("enterprise"));
+        assert_eq!(footprint.active_users, Some(850));
+        assert_eq!(footprint.services_stage.as_deref(), Some("live"));
+        assert_eq!(
+            footprint.open_tickets, 11,
+            "repeated Glean purge must not clear preserved non-Glean ticket counts"
+        );
+    }
+
+    #[test]
+    fn purge_source_glean_preserves_ambiguous_downstream_account_fact_claims() {
+        let db = test_db();
+        let entity_id = "acc-legacy-glean-purge";
+        seed_finalize_account(&db, entity_id);
+        db.upsert_account_fact(
+            entity_id,
+            "arr_range_low",
+            "100",
+            "Salesforce",
+            "2026-05-01T00:00:00Z",
+        )
+        .expect("seed legacy schema fact");
+        db.upsert_account_source_ref(&crate::db::types::AccountSourceRef {
+            account_id: entity_id,
+            field: "arr_range_low",
+            source_system: "Salesforce",
+            source_kind: "fact",
+            source_value: Some("100"),
+            observed_at: "2026-05-01T00:00:00Z",
+            reference_id: None,
+        })
+        .expect("seed downstream source ref without Glean provenance");
+        db.upsert_account_fact(
+            entity_id,
+            "renewal_likelihood",
+            "0.80",
+            "Salesforce",
+            "2026-05-01T00:00:00Z",
+        )
+        .expect("seed legacy numeric schema fact");
+        db.upsert_account_source_ref(&crate::db::types::AccountSourceRef {
+            account_id: entity_id,
+            field: "renewal_likelihood",
+            source_system: "Salesforce",
+            source_kind: "fact",
+            source_value: Some("0.80"),
+            observed_at: "2026-05-01T00:00:00Z",
+            reference_id: None,
+        })
+        .expect("seed downstream numeric source ref without Glean provenance");
+
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 23, 12, 0, 0).unwrap());
+        let rng = SeedableRng::new(31);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+        crate::services::claims::commit_claim(
+            &ctx,
+            &db,
+            crate::services::claims::ClaimProposal {
+                id: None,
+                expected_claim_version: None,
+                subject_ref: serde_json::json!({
+                    "kind": "account",
+                    "id": entity_id,
+                })
+                .to_string(),
+                claim_type: "account_fact".to_string(),
+                field_path: Some("account.arr_range_low".to_string()),
+                topic_key: Some("arr_range_low".to_string()),
+                text: "ARR lower bound: 100".to_string(),
+                actor: "system:account_fact_claims".to_string(),
+                data_source: "salesforce".to_string(),
+                source_ref: Some("account_fact:legacy-arr-low".to_string()),
+                source_asof: Some("2026-05-01T00:00:00Z".to_string()),
+                observed_at: "2026-05-01T00:00:00Z".to_string(),
+                provenance_json: "{}".to_string(),
+                metadata_json: None,
+                thread_id: None,
+                temporal_scope: Some(crate::db::claims::TemporalScope::State),
+                sensitivity: Some(crate::db::claims::ClaimSensitivity::Internal),
+                supersedes: None,
+                tombstone: None,
+            },
+        )
+        .expect("seed legacy account fact claim");
+
+        let report = crate::db::data_lifecycle::purge_source(
+            &db,
+            crate::db::data_lifecycle::DataSource::Glean,
+        )
+        .expect("purge Glean");
+
+        assert_eq!(
+            report.account_fact_claims_withdrawn, 0,
+            "ambiguous downstream account fact claims must not be withdrawn as Glean"
+        );
+        assert_eq!(
+            report.account_source_refs_masked, 0,
+            "source refs without an explicit Glean record ref must not be masked"
+        );
+        assert_eq!(
+            report.account_schema_facts_cleared, 0,
+            "schema facts without explicit Glean provenance must not be cleared"
+        );
+        assert_eq!(
+            report.account_fact_recompute_jobs_enqueued, 0,
+            "preserving ambiguous downstream facts should not enqueue recompute"
+        );
+        let account = db
+            .get_account(entity_id)
+            .expect("read account")
+            .expect("account remains");
+        assert_eq!(account.arr_range_low, Some(100.0));
+        assert_eq!(
+            account.renewal_likelihood,
+            Some(0.80),
+            "numeric downstream schema facts should be preserved when Glean provenance is absent"
+        );
+        assert_eq!(visible_account_source_ref_count(&db, entity_id), 2);
+        assert_eq!(
+            withdrawn_account_fact_claim_count_by_source_ref(
+                &db,
+                entity_id,
+                "account_fact:legacy-arr-low"
+            ),
+            0,
+            "downstream account fact claim should not withdraw during Glean purge"
+        );
+    }
+
+    #[test]
+    fn purge_source_glean_preserves_newer_downstream_numeric_account_fact_ref() {
+        let db = test_db();
+        let entity_id = "acc-glean-purge-newer-downstream-ref";
+        seed_finalize_account(&db, entity_id);
+        db.upsert_account_fact(
+            entity_id,
+            "renewal_likelihood",
+            "0.80",
+            "Salesforce",
+            "2026-05-02T00:00:00Z",
+        )
+        .expect("seed downstream schema fact");
+        db.upsert_account_source_ref(&crate::db::types::AccountSourceRef {
+            account_id: entity_id,
+            field: "renewal_likelihood",
+            source_system: "glean",
+            source_kind: "fact",
+            source_value: Some("0.8"),
+            observed_at: "2026-05-01T00:00:00Z",
+            reference_id: Some("glean_account_fact:numeric-replay"),
+        })
+        .expect("seed older Glean source ref");
+        db.upsert_account_source_ref(&crate::db::types::AccountSourceRef {
+            account_id: entity_id,
+            field: "renewal_likelihood",
+            source_system: "Salesforce",
+            source_kind: "fact",
+            source_value: Some("0.80"),
+            observed_at: "2026-05-02T00:00:00Z",
+            reference_id: Some("salesforce:order-form"),
+        })
+        .expect("seed newer downstream source ref");
+
+        let report = crate::db::data_lifecycle::purge_source(
+            &db,
+            crate::db::data_lifecycle::DataSource::Glean,
+        )
+        .expect("purge Glean");
+
+        assert_eq!(
+            report.account_source_refs_masked, 1,
+            "explicit Glean source refs should still be masked"
+        );
+        assert_eq!(
+            report.account_schema_facts_cleared, 0,
+            "newer downstream source refs should protect schema projection even when numeric text differs"
+        );
+        let account = db
+            .get_account(entity_id)
+            .expect("read account")
+            .expect("account remains");
+        assert_eq!(account.renewal_likelihood, Some(0.80));
+        assert_eq!(
+            account.renewal_likelihood_source.as_deref(),
+            Some("Salesforce")
+        );
+    }
+
+    #[test]
+    fn enrichment_side_effects_are_service_owned_idempotent_and_source_aware() {
+        let state = remote_glean_state();
+        let db = test_db();
+        let entity_id = "acc-enrichment-side-effects";
+        db.upsert_account(&make_account(entity_id)).unwrap();
+        let dir = tempfile::tempdir().expect("tempdir");
+        let input = make_enrichment_input(entity_id, dir.path());
+        let intel = IntelligenceJson {
+            entity_id: entity_id.to_string(),
+            entity_type: "account".to_string(),
+            open_commitments: Some(vec![OpenCommitment {
+                commitment_id: None,
+                description: "Send reliability recap".to_string(),
+                owner: Some("vendor".to_string()),
+                due_date: Some("2026-06-01".to_string()),
+                source: Some("local".to_string()),
+                status: None,
+                item_source: None,
+                discrepancy: None,
+            }]),
+            product_adoption: Some(AdoptionSignals {
+                feature_adoption: vec!["Core platform: 75%".to_string()],
+                source: Some("user_correction".to_string()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        for _ in 0..2 {
+            crate::intel_queue::run_enrichment_post_commit_side_effects(
+                &state,
+                &input,
+                &db,
+                &intel,
+                crate::intel_queue::EnrichmentProducer::Pty,
+            )
+            .expect("PTY side effects");
+        }
+
+        let commitment_rows: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM captured_commitments WHERE account_id = ?1",
+                params![entity_id],
+                |row| row.get(0),
+            )
+            .expect("commitment count");
+        assert_eq!(
+            commitment_rows, 1,
+            "retries should not duplicate semantic commitments"
+        );
+        let commitment_source: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT source FROM captured_commitments WHERE account_id = ?1",
+                params![entity_id],
+                |row| row.get(0),
+            )
+            .expect("commitment source");
+        assert!(
+            commitment_source.starts_with("pty_enrichment:"),
+            "PTY side effects must not be mislabeled as Glean"
+        );
+        let product_rows: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM account_products WHERE account_id = ?1",
+                params![entity_id],
+                |row| row.get(0),
+            )
+            .expect("product count");
+        assert_eq!(product_rows, 1);
+        let product_source: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT source FROM account_products WHERE account_id = ?1",
+                params![entity_id],
+                |row| row.get(0),
+            )
+            .expect("product source");
+        assert_eq!(
+            product_source, "ai_inference",
+            "PTY product side effects must use producer-owned source, not model-owned source text"
+        );
+        let glean_signal_rows: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM signal_events
+                 WHERE entity_id = ?1
+                   AND data_source = 'glean'",
+                params![entity_id],
+                |row| row.get(0),
+            )
+            .expect("Glean signal count");
+        assert_eq!(
+            glean_signal_rows, 0,
+            "PTY side effects must not emit Glean-scoped signals"
+        );
+        let user_correction_signal_rows: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM signal_events
+                 WHERE entity_id = ?1
+                   AND data_source = 'user_correction'",
+                params![entity_id],
+                |row| row.get(0),
+            )
+            .expect("user correction signal count");
+        assert_eq!(
+            user_correction_signal_rows, 0,
+            "PTY side effects must not trust model-provided product source labels"
+        );
+        assert_eq!(
+            signal_count(&db, entity_id, "commitment_captured"),
+            1,
+            "commitment signal should be idempotent"
+        );
+        assert_eq!(
+            signal_count(&db, entity_id, "product_data_updated"),
+            1,
+            "product signal should be idempotent"
+        );
+
+        for _ in 0..2 {
+            crate::intel_queue::run_enrichment_post_commit_side_effects(
+                &state,
+                &input,
+                &db,
+                &intel,
+                crate::intel_queue::EnrichmentProducer::Glean,
+            )
+            .expect("Glean side effects");
+        }
+
+        let commitment_sources: Vec<String> = {
+            let mut stmt = db
+                .conn_ref()
+                .prepare(
+                    "SELECT source FROM captured_commitments
+                     WHERE account_id = ?1
+                     ORDER BY source",
+                )
+                .expect("prepare commitment source query");
+            stmt.query_map(params![entity_id], |row| row.get::<_, String>(0))
+                .expect("query commitment sources")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("collect commitment sources")
+        };
+        assert_eq!(
+            commitment_sources.len(),
+            2,
+            "PTY and Glean commitments should coexist as producer-owned evidence"
+        );
+        assert!(commitment_sources
+            .iter()
+            .any(|source| source.starts_with("pty_enrichment:")));
+        assert!(commitment_sources
+            .iter()
+            .any(|source| source.starts_with("glean_enrichment:")));
+
+        let product_sources: Vec<String> = {
+            let mut stmt = db
+                .conn_ref()
+                .prepare(
+                    "SELECT source FROM account_products
+                     WHERE account_id = ?1
+                     ORDER BY source",
+                )
+                .expect("prepare product source query");
+            stmt.query_map(params![entity_id], |row| row.get::<_, String>(0))
+                .expect("query product sources")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("collect product sources")
+        };
+        assert_eq!(
+            product_sources,
+            vec!["ai_inference".to_string(), "glean".to_string()],
+            "Glean product evidence should not take ownership of existing non-Glean product rows"
+        );
+
+        let report = crate::db::data_lifecycle::purge_source(
+            &db,
+            crate::db::data_lifecycle::DataSource::Glean,
+        )
+        .expect("purge Glean side effects");
+        assert_eq!(report.enrichment_commitments_deleted, 1);
+        assert_eq!(report.account_products_deleted, 1);
+
+        let remaining_commitment_sources: Vec<String> = {
+            let mut stmt = db
+                .conn_ref()
+                .prepare(
+                    "SELECT source FROM captured_commitments
+                     WHERE account_id = ?1
+                     ORDER BY source",
+                )
+                .expect("prepare remaining commitment query");
+            stmt.query_map(params![entity_id], |row| row.get::<_, String>(0))
+                .expect("query remaining commitments")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("collect remaining commitments")
+        };
+        assert_eq!(remaining_commitment_sources.len(), 1);
+        assert!(
+            remaining_commitment_sources[0].starts_with("pty_enrichment:"),
+            "Glean purge should leave non-Glean commitment evidence intact"
+        );
+
+        let remaining_product_sources: Vec<String> = {
+            let mut stmt = db
+                .conn_ref()
+                .prepare(
+                    "SELECT source FROM account_products
+                     WHERE account_id = ?1
+                     ORDER BY source",
+                )
+                .expect("prepare remaining product query");
+            stmt.query_map(params![entity_id], |row| row.get::<_, String>(0))
+                .expect("query remaining products")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("collect remaining products")
+        };
+        assert_eq!(
+            remaining_product_sources,
+            vec!["ai_inference".to_string()],
+            "Glean purge should leave non-Glean product evidence intact"
+        );
+    }
+
+    #[test]
+    fn intel_queue_keeps_enrichment_side_effect_writes_behind_service_boundary() {
+        let source = include_str!("../intel_queue.rs");
+        assert!(
+            !source.contains("INSERT OR IGNORE INTO captured_commitments"),
+            "queue orchestration must not write captured commitments directly"
+        );
+        assert!(
+            !source.contains("upsert_account_product("),
+            "queue orchestration must not write account products directly"
+        );
+    }
+
+    #[test]
+    fn glean_finalization_preserves_tombstone_and_reports_pii_safe_degraded_marker() {
+        let state = remote_glean_state();
+        let db = test_db();
+        let entity_id = "acc-finalize-tombstone";
+        seed_finalize_account(&db, entity_id);
+        seed_account_fact_tombstone(&db, entity_id, "support_tier", "Support tier: enterprise");
+        let intel = IntelligenceJson {
+            executive_assessment_render_policy: None,
+            entity_id: entity_id.to_string(),
+            entity_type: "account".to_string(),
+            enriched_at: "2026-05-23T12:00:00Z".to_string(),
+            executive_assessment: Some("raw finalization prose must not leak".to_string()),
+            org_health: Some(OrgHealthData {
+                support_tier: Some("enterprise".to_string()),
+                source: "glean_crm".to_string(),
+                gathered_at: "2026-05-23T12:00:00Z".to_string(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let ctx = state.live_service_context();
+
+        let report = crate::services::glean_finalization::finalize_glean_enrichment(
+            &ctx,
+            &db,
+            state.signals.engine.as_ref(),
+            crate::services::glean_finalization::GleanFinalizationInput {
+                entity_type: "account",
+                entity_id,
+                intel: &intel,
+                preset: None,
+            },
+        )
+        .expect("Glean finalization should degrade, not bypass lifecycle");
+
+        assert!(
+            report.warnings.iter().any(|warning| {
+                warning.code == "account_fact_claim_write_failed"
+                    && warning.pii_safe_detail.is_some()
+            }),
+            "blocked account fact claim should produce a typed PII-safe warning"
+        );
+        assert!(
+            report.degraded_classes.contains(
+                &crate::services::glean_finalization::GleanFinalizationSideEffect::AccountFact
+            ),
+            "account fact lifecycle block should be represented as degraded account_fact"
+        );
+        assert_eq!(
+            active_account_fact_claim_count_for_field(&db, entity_id, "account.support_tier"),
+            0,
+            "Glean finalization must not resurrect a tombstoned account fact"
+        );
+        let footprint_support_tier: Option<String> = db
+            .get_account_technical_footprint(entity_id)
+            .expect("read technical footprint")
+            .and_then(|footprint| footprint.support_tier);
+        assert_eq!(
+            footprint_support_tier, None,
+            "technical footprint must not bypass a tombstoned support-tier account fact"
+        );
+        assert_eq!(
+            signal_count(&db, entity_id, "glean_finalization_degraded"),
+            1,
+            "degraded finalization should leave a durable marker"
+        );
+        let marker_payload: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT value FROM signal_events
+                 WHERE entity_id = ?1
+                   AND signal_type = 'glean_finalization_degraded'",
+                params![entity_id],
+                |row| row.get(0),
+            )
+            .expect("degraded marker payload");
+        assert!(marker_payload.contains("account_fact"));
+        assert!(!marker_payload.contains("enterprise"));
+        assert!(!marker_payload.contains("raw finalization prose"));
+    }
+
+    #[test]
+    fn glean_finalization_signal_payloads_are_metadata_only() {
+        let state = remote_glean_state();
+        let db = test_db();
+        let entity_id = "acc-finalize-signal-metadata";
+        seed_finalize_account(&db, entity_id);
+        let mut intel = make_glean_signal_intel(entity_id);
+        intel.org_health = Some(OrgHealthData {
+            support_tier: Some("raw support tier token".to_string()),
+            renewal_likelihood: Some("raw renewal likelihood token".to_string()),
+            source: "glean_crm".to_string(),
+            gathered_at: "2026-05-23T12:00:00Z".to_string(),
+            ..Default::default()
+        });
+        intel.support_health = Some(SupportHealth {
+            open_tickets: Some(4),
+            avg_resolution_time: Some("raw support health token".to_string()),
+            trend: Some("raw support trend token".to_string()),
+            csat: Some(91.0),
+            source: Some("glean_zendesk".to_string()),
+            critical_tickets: None,
+        });
+        intel.competitive_context = vec![CompetitiveInsight {
+            competitor: "raw competitor token".to_string(),
+            threat_level: Some("evaluation".to_string()),
+            context: Some("raw competitive context token".to_string()),
+            source: Some("glean_slack".to_string()),
+            detected_at: Some("2026-05-23".to_string()),
+            item_source: None,
+            discrepancy: None,
+        }];
+        intel.organizational_changes = vec![OrgChange {
+            change_type: "role_change".to_string(),
+            person: "raw person token".to_string(),
+            from: Some("raw from token".to_string()),
+            to: Some("raw to token".to_string()),
+            detected_at: Some("2026-05-23T12:00:00Z".to_string()),
+            source: Some("glean_slack".to_string()),
+            item_source: None,
+            discrepancy: None,
+        }];
+        intel.gong_call_summaries = vec![GongCallSummary {
+            title: "raw gong title token".to_string(),
+            date: "2026-05-23".to_string(),
+            participants: vec!["raw participant token".to_string()],
+            key_topics: "raw gong topics token".to_string(),
+            sentiment: "negative".to_string(),
+        }];
+        intel.health = Some(AccountHealth {
+            dimensions: RelationshipDimensions {
+                key_advocate_health: DimensionScore {
+                    score: 10.0,
+                    weight: 1.0,
+                    evidence: vec!["raw champion evidence token".to_string()],
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+
+        crate::services::glean_finalization::finalize_glean_enrichment(
+            &state.live_service_context(),
+            &db,
+            state.signals.engine.as_ref(),
+            crate::services::glean_finalization::GleanFinalizationInput {
+                entity_type: "account",
+                entity_id,
+                intel: &intel,
+                preset: None,
+            },
+        )
+        .expect("Glean finalization");
+
+        let signal_values: Vec<String> = db
+            .conn_ref()
+            .prepare(
+                "SELECT coalesce(value, '')
+                   FROM signal_events
+                  WHERE entity_id = ?1
+                  ORDER BY signal_type",
+            )
+            .expect("prepare signal value query")
+            .query_map(params![entity_id], |row| row.get::<_, String>(0))
+            .expect("query signal values")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect signal values");
+        let all_values = signal_values.join("\n");
+        assert!(
+            all_values.contains("payloadHash"),
+            "Glean signals should carry metadata-only payload identities"
+        );
+        for forbidden in [
+            "raw support tier token",
+            "raw renewal likelihood token",
+            "raw support health token",
+            "raw support trend token",
+            "raw competitor token",
+            "raw competitive context token",
+            "raw person token",
+            "raw from token",
+            "raw to token",
+            "raw gong title token",
+            "raw participant token",
+            "raw gong topics token",
+            "raw champion evidence token",
+        ] {
+            assert!(
+                !all_values.contains(forbidden),
+                "Glean signal payload leaked raw source text: {forbidden}"
+            );
+        }
+    }
+
+    #[test]
+    fn support_tier_tombstone_clears_mixed_source_technical_footprint_ref() {
+        let state = remote_glean_state();
+        let db = test_db();
+        let entity_id = "acc-finalize-tombstone-mixed-footprint";
+        seed_finalize_account(&db, entity_id);
+        let intel = make_glean_signal_intel(entity_id);
+
+        crate::services::glean_finalization::finalize_glean_enrichment(
+            &state.live_service_context(),
+            &db,
+            state.signals.engine.as_ref(),
+            crate::services::glean_finalization::GleanFinalizationInput {
+                entity_type: "account",
+                entity_id,
+                intel: &intel,
+                preset: None,
+            },
+        )
+        .expect("initial Glean finalization");
+        assert!(
+            db.get_account_source_refs(entity_id)
+                .expect("source refs")
+                .iter()
+                .any(|source_ref| source_ref.field == "technical_footprint.support_tier"),
+            "initial Glean finalization should create support-tier provenance"
+        );
+
+        db.update_technical_footprint_field(entity_id, "csat_score", "88")
+            .expect("user edits a different technical footprint field");
+        seed_account_fact_tombstone(&db, entity_id, "support_tier", "Support tier: enterprise");
+
+        crate::services::glean_finalization::finalize_glean_enrichment(
+            &state.live_service_context(),
+            &db,
+            state.signals.engine.as_ref(),
+            crate::services::glean_finalization::GleanFinalizationInput {
+                entity_type: "account",
+                entity_id,
+                intel: &intel,
+                preset: None,
+            },
+        )
+        .expect("tombstoned Glean finalization");
+
+        let footprint = db
+            .get_account_technical_footprint(entity_id)
+            .expect("read technical footprint")
+            .expect("technical footprint row remains");
+        assert_eq!(
+            footprint.support_tier, None,
+            "support-tier tombstone must clear Glean projection even on mixed-source rows"
+        );
+        assert_eq!(
+            footprint.csat_score,
+            Some(88.0),
+            "clearing tombstoned support tier must preserve unrelated user edits"
+        );
+        assert!(
+            db.get_account_source_refs(entity_id)
+                .expect("source refs after tombstone")
+                .iter()
+                .all(|source_ref| source_ref.field != "technical_footprint.support_tier"),
+            "support-tier tombstone must retire live technical-footprint source refs"
+        );
+    }
+
+    #[test]
+    fn glean_finalization_preserves_user_corrected_account_facts() {
+        let state = remote_glean_state();
+        let db = test_db();
+        let entity_id = "acc-finalize-user-correction";
+        seed_finalize_account(&db, entity_id);
+        db.upsert_account_fact(
+            entity_id,
+            "support_tier",
+            "standard",
+            "user_correction",
+            "2026-05-20T00:00:00Z",
+        )
+        .expect("seed user-corrected support tier");
+        db.upsert_account_fact(
+            entity_id,
+            "renewal_likelihood",
+            "0.20",
+            "user",
+            "2026-05-20T00:00:00Z",
+        )
+        .expect("seed user-owned renewal likelihood");
+        db.upsert_account_fact(
+            entity_id,
+            "active_subscription_count",
+            "2",
+            "user",
+            "2026-05-20T00:00:00Z",
+        )
+        .expect("seed user-owned source-less subscription count");
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 23, 12, 0, 0).unwrap());
+        let rng = SeedableRng::new(24);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+        crate::services::claims::commit_claim(
+            &ctx,
+            &db,
+            crate::services::claims::ClaimProposal {
+                id: None,
+                expected_claim_version: None,
+                subject_ref: serde_json::json!({
+                    "kind": "account",
+                    "id": entity_id,
+                })
+                .to_string(),
+                claim_type: "account_fact".to_string(),
+                field_path: Some("account.support_tier".to_string()),
+                topic_key: Some("support_tier".to_string()),
+                text: "Support tier: standard".to_string(),
+                actor: "user:account_fact_claims".to_string(),
+                data_source: "user_input".to_string(),
+                source_ref: None,
+                source_asof: Some("2026-05-20T00:00:00Z".to_string()),
+                observed_at: "2026-05-20T00:00:00Z".to_string(),
+                provenance_json: "{}".to_string(),
+                metadata_json: None,
+                thread_id: None,
+                temporal_scope: Some(crate::db::claims::TemporalScope::State),
+                sensitivity: Some(crate::db::claims::ClaimSensitivity::Internal),
+                supersedes: None,
+                tombstone: None,
+            },
+        )
+        .expect("seed user-corrected claim");
+        crate::services::claims::commit_claim(
+            &ctx,
+            &db,
+            crate::services::claims::ClaimProposal {
+                id: None,
+                expected_claim_version: None,
+                subject_ref: serde_json::json!({
+                    "kind": "account",
+                    "id": entity_id,
+                })
+                .to_string(),
+                claim_type: "account_fact".to_string(),
+                field_path: Some("account.active_subscription_count".to_string()),
+                topic_key: Some("active_subscription_count".to_string()),
+                text: "Active subscriptions: 2".to_string(),
+                actor: "user:account_fact_claims".to_string(),
+                data_source: "user_input".to_string(),
+                source_ref: None,
+                source_asof: Some("2026-05-20T00:00:00Z".to_string()),
+                observed_at: "2026-05-20T00:00:00Z".to_string(),
+                provenance_json: "{}".to_string(),
+                metadata_json: None,
+                thread_id: None,
+                temporal_scope: Some(crate::db::claims::TemporalScope::State),
+                sensitivity: Some(crate::db::claims::ClaimSensitivity::Internal),
+                supersedes: None,
+                tombstone: None,
+            },
+        )
+        .expect("seed user-corrected source-less claim");
+
+        let intel = make_glean_signal_intel(entity_id);
+        crate::services::glean_finalization::finalize_glean_enrichment(
+            &state.live_service_context(),
+            &db,
+            state.signals.engine.as_ref(),
+            crate::services::glean_finalization::GleanFinalizationInput {
+                entity_type: "account",
+                entity_id,
+                intel: &intel,
+                preset: None,
+            },
+        )
+        .expect("Glean finalization");
+
+        let account = db
+            .get_account(entity_id)
+            .expect("read account")
+            .expect("account remains");
+        assert_eq!(
+            account.support_tier.as_deref(),
+            Some("standard"),
+            "Glean support tier must not overwrite a user correction"
+        );
+        assert_eq!(
+            account.support_tier_source.as_deref(),
+            Some("user_correction")
+        );
+        assert_eq!(
+            account.renewal_likelihood,
+            Some(0.20),
+            "Glean renewal likelihood must not overwrite a user-owned schema fact"
+        );
+        assert_eq!(account.renewal_likelihood_source.as_deref(), Some("user"));
+        assert_eq!(
+            account.active_subscription_count,
+            Some(2),
+            "Glean source-less schema facts must not overwrite a conflicting user claim"
+        );
+        assert_eq!(
+            active_account_fact_claim_count_for_field(&db, entity_id, "account.support_tier"),
+            2,
+            "Glean finalization should preserve the user claim and land the competing source claim"
+        );
+        let support_claim_sources: Vec<String> = db
+            .conn_ref()
+            .prepare(
+                "SELECT data_source
+                   FROM intelligence_claims
+                  WHERE claim_type = 'account_fact'
+                    AND field_path = 'account.support_tier'
+                    AND claim_state = 'active'
+                    AND surfacing_state = 'active'
+                    AND json_extract(subject_ref, '$.id') = ?1
+                  ORDER BY data_source",
+            )
+            .expect("prepare support claim source query")
+            .query_map(params![entity_id], |row| row.get::<_, String>(0))
+            .expect("query support claim sources")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect support claim sources");
+        assert_eq!(
+            support_claim_sources,
+            vec!["user_input".to_string(), "zendesk".to_string()]
+        );
+        assert_eq!(
+            active_account_fact_claim_count_for_field(
+                &db,
+                entity_id,
+                "account.active_subscription_count"
+            ),
+            2,
+            "source-less facts should also compete in claims instead of overwriting user input"
+        );
+        let subscription_claim_sources: Vec<String> = db
+            .conn_ref()
+            .prepare(
+                "SELECT data_source
+                   FROM intelligence_claims
+                  WHERE claim_type = 'account_fact'
+                    AND field_path = 'account.active_subscription_count'
+                    AND claim_state = 'active'
+                    AND surfacing_state = 'active'
+                    AND json_extract(subject_ref, '$.id') = ?1
+                  ORDER BY data_source",
+            )
+            .expect("prepare subscription claim source query")
+            .query_map(params![entity_id], |row| row.get::<_, String>(0))
+            .expect("query subscription claim sources")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect subscription claim sources");
+        assert_eq!(
+            subscription_claim_sources,
+            vec!["Salesforce".to_string(), "user_input".to_string()]
+        );
+    }
+
+    #[test]
+    fn glean_finalization_preserves_user_owned_arr_projection() {
+        let state = remote_glean_state();
+        let db = test_db();
+        let entity_id = "acc-finalize-user-arr";
+        seed_finalize_account(&db, entity_id);
+        db.upsert_account_fact(
+            entity_id,
+            "arr_range_low",
+            "100000",
+            "user",
+            "2026-05-20T00:00:00Z",
+        )
+        .expect("seed user-owned ARR low");
+        db.upsert_account_fact(
+            entity_id,
+            "arr_range_high",
+            "100000",
+            "user",
+            "2026-05-20T00:00:00Z",
+        )
+        .expect("seed user-owned ARR high");
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 23, 12, 0, 0).unwrap());
+        let rng = SeedableRng::new(25);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+        crate::services::claims::commit_claim(
+            &ctx,
+            &db,
+            crate::services::claims::ClaimProposal {
+                id: None,
+                expected_claim_version: None,
+                subject_ref: serde_json::json!({
+                    "kind": "account",
+                    "id": entity_id,
+                })
+                .to_string(),
+                claim_type: "account_fact".to_string(),
+                field_path: Some("account.arr".to_string()),
+                topic_key: Some("arr".to_string()),
+                text: "arr: 100,000".to_string(),
+                actor: "user:account_fact_claims".to_string(),
+                data_source: "user_input".to_string(),
+                source_ref: None,
+                source_asof: Some("2026-05-20T00:00:00Z".to_string()),
+                observed_at: "2026-05-20T00:00:00Z".to_string(),
+                provenance_json: "{}".to_string(),
+                metadata_json: None,
+                thread_id: None,
+                temporal_scope: Some(crate::db::claims::TemporalScope::State),
+                sensitivity: Some(crate::db::claims::ClaimSensitivity::Internal),
+                supersedes: None,
+                tombstone: None,
+            },
+        )
+        .expect("seed user-owned ARR claim");
+
+        let intel = make_glean_signal_intel(entity_id);
+        crate::services::glean_finalization::finalize_glean_enrichment(
+            &state.live_service_context(),
+            &db,
+            state.signals.engine.as_ref(),
+            crate::services::glean_finalization::GleanFinalizationInput {
+                entity_type: "account",
+                entity_id,
+                intel: &intel,
+                preset: None,
+            },
+        )
+        .expect("Glean finalization");
+
+        let account = db
+            .get_account(entity_id)
+            .expect("read account")
+            .expect("account remains");
+        assert_eq!(
+            account.arr_range_low,
+            Some(100_000.0),
+            "Glean ARR must not overwrite source-less schema owned by a user claim"
+        );
+        assert_eq!(account.arr_range_high, Some(100_000.0));
+        assert_eq!(
+            active_account_fact_claim_count_for_field(&db, entity_id, "account.arr"),
+            2,
+            "Glean ARR should land as competing evidence without taking over the schema projection"
+        );
+        let arr_claim_sources: Vec<String> = db
+            .conn_ref()
+            .prepare(
+                "SELECT data_source
+                   FROM intelligence_claims
+                  WHERE claim_type = 'account_fact'
+                    AND field_path = 'account.arr'
+                    AND claim_state = 'active'
+                    AND surfacing_state = 'active'
+                    AND json_extract(subject_ref, '$.id') = ?1
+                  ORDER BY data_source",
+            )
+            .expect("prepare ARR claim source query")
+            .query_map(params![entity_id], |row| row.get::<_, String>(0))
+            .expect("query ARR claim sources")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect ARR claim sources");
+        assert_eq!(
+            arr_claim_sources,
+            vec!["Salesforce".to_string(), "user_input".to_string()]
+        );
+    }
+
+    #[test]
+    fn older_same_source_replay_does_not_fork_account_fact_claims() {
+        let state = remote_glean_state();
+        let db = test_db();
+        let entity_id = "acc-finalize-stale-replay";
+        seed_finalize_account(&db, entity_id);
+        let newer_intel = make_glean_signal_intel(entity_id);
+        crate::services::glean_finalization::finalize_glean_enrichment(
+            &state.live_service_context(),
+            &db,
+            state.signals.engine.as_ref(),
+            crate::services::glean_finalization::GleanFinalizationInput {
+                entity_type: "account",
+                entity_id,
+                intel: &newer_intel,
+                preset: None,
+            },
+        )
+        .expect("newer Glean finalization");
+
+        let mut older_intel = make_glean_signal_intel(entity_id);
+        older_intel.enriched_at = "2026-05-01T01:00:00Z".to_string();
+        if let Some(org_health) = older_intel.org_health.as_mut() {
+            org_health.gathered_at = "2026-05-01T01:00:00Z".to_string();
+            org_health.support_tier = Some("standard".to_string());
+        }
+        if let Some(contract) = older_intel.contract_context.as_mut() {
+            contract.current_arr = Some(100_000.0);
+        }
+        crate::services::glean_finalization::finalize_glean_enrichment(
+            &state.live_service_context(),
+            &db,
+            state.signals.engine.as_ref(),
+            crate::services::glean_finalization::GleanFinalizationInput {
+                entity_type: "account",
+                entity_id,
+                intel: &older_intel,
+                preset: None,
+            },
+        )
+        .expect("older Glean replay");
+
+        let account = db
+            .get_account(entity_id)
+            .expect("read account")
+            .expect("account remains");
+        assert_eq!(account.support_tier.as_deref(), Some("enterprise"));
+        assert_eq!(account.arr_range_low, Some(125_000.0));
+        assert_eq!(account.arr_range_high, Some(125_000.0));
+        let stale_claims: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*)
+                   FROM intelligence_claims
+                  WHERE claim_type = 'account_fact'
+                    AND claim_state = 'active'
+                    AND surfacing_state = 'active'
+                    AND json_extract(subject_ref, '$.id') = ?1
+                    AND (
+                        (field_path = 'account.support_tier' AND text LIKE '%standard%')
+                        OR (field_path = 'account.arr' AND text LIKE '%100,000%')
+                    )",
+                params![entity_id],
+                |row| row.get(0),
+            )
+            .expect("stale claim count");
+        assert_eq!(
+            stale_claims, 0,
+            "older same-source replay must not fork stale active account fact claims"
+        );
+    }
+
+    #[test]
+    fn glean_finalization_successful_retry_clears_degraded_marker() {
+        let state = remote_glean_state();
+        let db = test_db();
+        let entity_id = "acc-finalize-recovery";
+        seed_finalize_account(&db, entity_id);
+        let intel = make_glean_signal_intel(entity_id);
+        let ctx = state.live_service_context();
+
+        db.conn_ref()
+            .execute_batch(
+                "CREATE TRIGGER fail_account_fact_claim_insert
+                 BEFORE INSERT ON intelligence_claims
+                 WHEN NEW.claim_type = 'account_fact'
+                   AND json_valid(NEW.subject_ref) = 1
+                   AND json_extract(NEW.subject_ref, '$.id') = 'acc-finalize-recovery'
+                 BEGIN
+                   SELECT RAISE(ABORT, 'forced account fact claim failure');
+                 END;",
+            )
+            .expect("install account fact failure trigger");
+
+        let first = crate::services::glean_finalization::finalize_glean_enrichment(
+            &ctx,
+            &db,
+            state.signals.engine.as_ref(),
+            crate::services::glean_finalization::GleanFinalizationInput {
+                entity_type: "account",
+                entity_id,
+                intel: &intel,
+                preset: None,
+            },
+        )
+        .expect("degraded Glean finalization");
+        assert!(
+            first.degraded_classes.contains(
+                &crate::services::glean_finalization::GleanFinalizationSideEffect::AccountFact
+            ),
+            "first run should record account-fact degradation"
+        );
+        assert_eq!(
+            signal_count(&db, entity_id, "glean_finalization_degraded"),
+            1
+        );
+        assert_eq!(
+            signal_count(&db, entity_id, "renewal_data_updated"),
+            1,
+            "successful signal classes should be emitted once before retry"
+        );
+
+        db.conn_ref()
+            .execute("DROP TRIGGER fail_account_fact_claim_insert", [])
+            .expect("remove account fact failure trigger");
+        let second = crate::services::glean_finalization::finalize_glean_enrichment(
+            &ctx,
+            &db,
+            state.signals.engine.as_ref(),
+            crate::services::glean_finalization::GleanFinalizationInput {
+                entity_type: "account",
+                entity_id,
+                intel: &intel,
+                preset: None,
+            },
+        )
+        .expect("successful Glean finalization retry");
+
+        assert!(
+            second.degraded_classes.is_empty(),
+            "successful retry should not report stale degradation"
+        );
+        assert_eq!(
+            signal_count(&db, entity_id, "glean_finalization_degraded"),
+            0,
+            "successful retry should clear the durable degraded marker for the same run key"
+        );
+        assert_eq!(
+            signal_count(&db, entity_id, "renewal_data_updated"),
+            1,
+            "retry must not duplicate signal evidence that already succeeded"
+        );
+        assert!(
+            account_fact_claim_count(&db, entity_id) > 0,
+            "retry should complete previously failed account fact claim writes"
+        );
+    }
+
+    #[test]
+    fn glean_finalization_successful_changed_retry_clears_stale_degraded_marker() {
+        let state = remote_glean_state();
+        let db = test_db();
+        let entity_id = "acc-finalize-recovery-changed";
+        seed_finalize_account(&db, entity_id);
+        let intel = make_glean_signal_intel(entity_id);
+        let ctx = state.live_service_context();
+
+        db.conn_ref()
+            .execute_batch(
+                "CREATE TRIGGER fail_changed_account_fact_claim_insert
+                 BEFORE INSERT ON intelligence_claims
+                 WHEN NEW.claim_type = 'account_fact'
+                   AND json_valid(NEW.subject_ref) = 1
+                   AND json_extract(NEW.subject_ref, '$.id') = 'acc-finalize-recovery-changed'
+                 BEGIN
+                   SELECT RAISE(ABORT, 'forced account fact claim failure');
+                 END;",
+            )
+            .expect("install account fact failure trigger");
+
+        let first = crate::services::glean_finalization::finalize_glean_enrichment(
+            &ctx,
+            &db,
+            state.signals.engine.as_ref(),
+            crate::services::glean_finalization::GleanFinalizationInput {
+                entity_type: "account",
+                entity_id,
+                intel: &intel,
+                preset: None,
+            },
+        )
+        .expect("degraded Glean finalization");
+        assert!(
+            first.degraded_classes.contains(
+                &crate::services::glean_finalization::GleanFinalizationSideEffect::AccountFact
+            ),
+            "first run should record account-fact degradation"
+        );
+        assert_eq!(
+            signal_count(&db, entity_id, "glean_finalization_degraded"),
+            1
+        );
+
+        db.conn_ref()
+            .execute("DROP TRIGGER fail_changed_account_fact_claim_insert", [])
+            .expect("remove account fact failure trigger");
+        let mut second_intel = make_glean_signal_intel(entity_id);
+        second_intel.enriched_at = "2026-05-23T12:05:00Z".to_string();
+        if let Some(org_health) = second_intel.org_health.as_mut() {
+            org_health.support_tier = Some("premium".to_string());
+        }
+        let second = crate::services::glean_finalization::finalize_glean_enrichment(
+            &ctx,
+            &db,
+            state.signals.engine.as_ref(),
+            crate::services::glean_finalization::GleanFinalizationInput {
+                entity_type: "account",
+                entity_id,
+                intel: &second_intel,
+                preset: None,
+            },
+        )
+        .expect("successful changed Glean finalization retry");
+
+        assert!(
+            second.degraded_classes.is_empty(),
+            "successful changed retry should not report stale degradation"
+        );
+        assert_eq!(
+            signal_count(&db, entity_id, "glean_finalization_degraded"),
+            0,
+            "successful changed retry should clear older degraded markers for the entity"
+        );
+    }
+
+    #[test]
+    fn recovered_marker_clear_failure_leaves_durable_marker() {
+        let state = remote_glean_state();
+        let db = test_db();
+        let entity_id = "acc-finalize-marker-clear-failure";
+        seed_finalize_account(&db, entity_id);
+        let intel = make_glean_signal_intel(entity_id);
+        let ctx = state.live_service_context();
+        crate::services::signals::emit(
+            &ctx,
+            &db,
+            "account",
+            entity_id,
+            "glean_finalization_degraded",
+            "glean_synthesis",
+            Some("{\"degradedClasses\":[\"account_fact\"]}"),
+            0.5,
+        )
+        .expect("seed stale degraded marker");
+        db.conn_ref()
+            .execute_batch(
+                "CREATE TRIGGER fail_degraded_marker_delete
+                 BEFORE DELETE ON signal_events
+                 WHEN OLD.entity_id = 'acc-finalize-marker-clear-failure'
+                   AND OLD.signal_type = 'glean_finalization_degraded'
+                 BEGIN
+                   SELECT RAISE(ABORT, 'forced marker clear failure');
+                 END;",
+            )
+            .expect("install marker delete failure trigger");
+
+        let report = crate::services::glean_finalization::finalize_glean_enrichment(
+            &ctx,
+            &db,
+            state.signals.engine.as_ref(),
+            crate::services::glean_finalization::GleanFinalizationInput {
+                entity_type: "account",
+                entity_id,
+                intel: &intel,
+                preset: None,
+            },
+        )
+        .expect("marker-clear-degraded Glean finalization");
+
+        assert!(
+            report.degraded_classes.contains(
+                &crate::services::glean_finalization::GleanFinalizationSideEffect::DegradedMarker
+            ),
+            "marker clear failure should be represented as degraded marker work"
+        );
+        assert!(
+            report.durable_degraded_marker_emitted,
+            "marker clear failure must not return success without a durable marker"
+        );
+        assert_eq!(
+            signal_count(&db, entity_id, "glean_finalization_degraded"),
+            2,
+            "failed stale-marker cleanup should retain the old marker and emit a current durable marker"
+        );
+    }
+
+    #[test]
+    fn glean_finalization_reports_signal_and_marker_degradation() {
+        let state = remote_glean_state();
+        let db = test_db();
+        let entity_id = "acc-finalize-signal-failure";
+        seed_finalize_account(&db, entity_id);
+        let intel = make_glean_signal_intel(entity_id);
+        let ctx = state.live_service_context();
+
+        db.conn_ref()
+            .execute_batch(
+                "CREATE TRIGGER fail_glean_signal_and_marker_insert
+                 BEFORE INSERT ON signal_events
+                 WHEN NEW.entity_id = 'acc-finalize-signal-failure'
+                   AND NEW.signal_type IN (
+                     'renewal_data_updated',
+                     'glean_finalization_degraded'
+                   )
+                 BEGIN
+                   SELECT RAISE(ABORT, 'forced signal failure');
+                 END;",
+            )
+            .expect("install signal failure trigger");
+
+        let error = crate::services::glean_finalization::finalize_glean_enrichment(
+            &ctx,
+            &db,
+            state.signals.engine.as_ref(),
+            crate::services::glean_finalization::GleanFinalizationInput {
+                entity_type: "account",
+                entity_id,
+                intel: &intel,
+                preset: None,
+            },
+        )
+        .expect_err("marker-less degradation must fail finalization");
+
+        assert!(
+            error
+                .to_string()
+                .contains("degraded without durable marker"),
+            "marker-less degradation must report the durable marker failure"
+        );
+        assert_eq!(
+            signal_count(&db, entity_id, "glean_finalization_degraded"),
+            0,
+            "forced marker insert failure should not be hidden behind success"
+        );
+    }
+
+    #[test]
+    fn glean_finalization_reports_signal_degradation_with_durable_marker() {
+        let state = remote_glean_state();
+        let db = test_db();
+        let entity_id = "acc-finalize-signal-only-failure";
+        seed_finalize_account(&db, entity_id);
+        let intel = make_glean_signal_intel(entity_id);
+        let ctx = state.live_service_context();
+
+        db.conn_ref()
+            .execute_batch(
+                "CREATE TRIGGER fail_glean_renewal_signal_insert
+                 BEFORE INSERT ON signal_events
+                 WHEN NEW.entity_id = 'acc-finalize-signal-only-failure'
+                   AND NEW.signal_type = 'renewal_data_updated'
+                 BEGIN
+                   SELECT RAISE(ABORT, 'forced renewal signal failure');
+                 END;",
+            )
+            .expect("install signal failure trigger");
+
+        let report = crate::services::glean_finalization::finalize_glean_enrichment(
+            &ctx,
+            &db,
+            state.signals.engine.as_ref(),
+            crate::services::glean_finalization::GleanFinalizationInput {
+                entity_type: "account",
+                entity_id,
+                intel: &intel,
+                preset: None,
+            },
+        )
+        .expect("signal-degraded Glean finalization");
+
+        assert!(
+            report.degraded_classes.contains(
+                &crate::services::glean_finalization::GleanFinalizationSideEffect::Signal
+            ),
+            "signal failure should be represented as degraded signal work"
+        );
+        assert!(report.warnings.iter().any(|warning| {
+            warning.code == "signal_propagation_failed"
+                && warning.signal_type == Some("renewal_data_updated")
+                && warning.pii_safe_detail.is_some()
+        }));
+        assert_eq!(
+            signal_count(&db, entity_id, "glean_finalization_degraded"),
+            1,
+            "signal degradation should leave a durable marker when marker insert succeeds"
+        );
+        let marker_payload: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT value FROM signal_events
+                 WHERE entity_id = ?1
+                   AND signal_type = 'glean_finalization_degraded'",
+                params![entity_id],
+                |row| row.get(0),
+            )
+            .expect("degraded marker payload");
+        assert!(marker_payload.contains("signal"));
+        assert!(!marker_payload.contains("enterprise"));
+    }
+
+    #[test]
+    fn glean_finalization_reports_technical_footprint_degradation() {
+        let state = remote_glean_state();
+        let db = test_db();
+        let entity_id = "acc-finalize-technical-failure";
+        seed_finalize_account(&db, entity_id);
+        let intel = make_glean_signal_intel(entity_id);
+        let ctx = state.live_service_context();
+
+        db.conn_ref()
+            .execute_batch(
+                "CREATE TRIGGER fail_technical_footprint_insert
+                 BEFORE INSERT ON account_technical_footprint
+                 WHEN NEW.account_id = 'acc-finalize-technical-failure'
+                 BEGIN
+                   SELECT RAISE(ABORT, 'forced technical footprint failure');
+                 END;",
+            )
+            .expect("install technical footprint failure trigger");
+
+        let report = crate::services::glean_finalization::finalize_glean_enrichment(
+            &ctx,
+            &db,
+            state.signals.engine.as_ref(),
+            crate::services::glean_finalization::GleanFinalizationInput {
+                entity_type: "account",
+                entity_id,
+                intel: &intel,
+                preset: None,
+            },
+        )
+        .expect("technical-footprint-degraded Glean finalization");
+
+        assert!(report.degraded_classes.contains(
+            &crate::services::glean_finalization::GleanFinalizationSideEffect::TechnicalFootprint
+        ));
+        assert!(report
+            .warnings
+            .iter()
+            .any(|warning| warning.code == "technical_footprint_write_failed"));
+        assert_eq!(
+            signal_count(&db, entity_id, "glean_finalization_degraded"),
+            1,
+            "technical footprint degradation should leave a durable marker"
+        );
+    }
+
+    #[test]
+    fn glean_finalization_reports_trust_recompute_degradation() {
+        let state = remote_glean_state();
+        let db = test_db();
+        let entity_id = "acc-finalize-trust-recompute-failure";
+        seed_finalize_account(&db, entity_id);
+        let intel = make_glean_signal_intel(entity_id);
+        let ctx = state.live_service_context();
+
+        db.conn_ref()
+            .execute_batch(
+                "CREATE TRIGGER fail_account_fact_recompute_signal_insert
+                 BEFORE INSERT ON signal_events
+                 WHEN NEW.entity_id = 'acc-finalize-trust-recompute-failure'
+                   AND NEW.signal_type = 'account_fact_claims_updated'
+                 BEGIN
+                   SELECT RAISE(ABORT, 'forced trust recompute enqueue failure');
+                 END;",
+            )
+            .expect("install trust recompute failure trigger");
+
+        let report = crate::services::glean_finalization::finalize_glean_enrichment(
+            &ctx,
+            &db,
+            state.signals.engine.as_ref(),
+            crate::services::glean_finalization::GleanFinalizationInput {
+                entity_type: "account",
+                entity_id,
+                intel: &intel,
+                preset: None,
+            },
+        )
+        .expect("trust-recompute-degraded Glean finalization");
+
+        assert!(
+            report.degraded_classes.contains(
+                &crate::services::glean_finalization::GleanFinalizationSideEffect::TrustRecompute
+            ),
+            "trust recompute enqueue failure should be represented as degraded trust work"
+        );
+        assert!(report
+            .warnings
+            .iter()
+            .any(|warning| warning.code == "account_fact_recompute_enqueue_failed"));
+        assert_eq!(
+            signal_count(&db, entity_id, "glean_finalization_degraded"),
+            1,
+            "trust recompute degradation should leave a durable marker"
+        );
+    }
+
+    #[test]
+    fn glean_finalization_reports_health_recompute_degradation() {
+        let state = remote_glean_state();
+        let db = test_db();
+        let entity_id = "acc-finalize-health-failure";
+        seed_finalize_account(&db, entity_id);
+        let intel = make_glean_signal_intel(entity_id);
+        db.upsert_entity_intelligence(&intel)
+            .expect("seed entity intelligence for health recompute");
+        let ctx = state.live_service_context();
+
+        db.conn_ref()
+            .execute_batch(
+                "CREATE TRIGGER fail_health_projection_update
+                 BEFORE UPDATE OF health_score ON entity_quality
+                 WHEN OLD.entity_id = 'acc-finalize-health-failure'
+                 BEGIN
+                   SELECT RAISE(ABORT, 'forced health recompute failure');
+                 END;",
+            )
+            .expect("install health recompute failure trigger");
+
+        let report = crate::services::glean_finalization::finalize_glean_enrichment(
+            &ctx,
+            &db,
+            state.signals.engine.as_ref(),
+            crate::services::glean_finalization::GleanFinalizationInput {
+                entity_type: "account",
+                entity_id,
+                intel: &intel,
+                preset: None,
+            },
+        )
+        .expect("health-recompute-degraded Glean finalization");
+
+        assert!(report.degraded_classes.contains(
+            &crate::services::glean_finalization::GleanFinalizationSideEffect::HealthRecompute
+        ));
+        assert!(report
+            .warnings
+            .iter()
+            .any(|warning| warning.code == "account_health_recompute_failed"));
+        assert_eq!(
+            signal_count(&db, entity_id, "glean_finalization_degraded"),
+            1,
+            "health recompute degradation should leave a durable marker"
+        );
     }
 
     fn assert_finalize_mode_contract(
@@ -3223,21 +5831,22 @@ mod mutation_smoke_tests {
         let technical_footprint_after = technical_footprint_count(&db, entity_id);
         let retry_after = coherence_retry_count(&db, entity_id);
 
+        assert_eq!(
+            glean_signal_after,
+            glean_signal_before + 1,
+            "Glean finalize should emit shared Glean signals for queue and manual refresh"
+        );
+        assert_eq!(
+            technical_footprint_after,
+            technical_footprint_before + 1,
+            "Glean finalize should run shared technical footprint writes for queue and manual refresh"
+        );
+
         if expect_queue_only_effects {
-            assert_eq!(
-                glean_signal_after,
-                glean_signal_before + 1,
-                "QueueWorker finalize should emit Glean signals"
-            );
             assert_eq!(
                 sync_success_after,
                 sync_success_before + 1,
                 "QueueWorker finalize should record claude_code sync success"
-            );
-            assert_eq!(
-                technical_footprint_after,
-                technical_footprint_before + 1,
-                "QueueWorker finalize should run Glean technical footprint writes"
             );
             assert_eq!(
                 retry_after, 0,
@@ -3245,16 +5854,8 @@ mod mutation_smoke_tests {
             );
         } else {
             assert_eq!(
-                glean_signal_after, glean_signal_before,
-                "ManualRefresh finalize should skip queue-only Glean signals"
-            );
-            assert_eq!(
                 sync_success_after, sync_success_before,
                 "ManualRefresh finalize should skip claude_code sync success"
-            );
-            assert_eq!(
-                technical_footprint_after, technical_footprint_before,
-                "ManualRefresh finalize should skip Glean technical footprint writes"
             );
             assert_eq!(
                 retry_after, retry_before,
@@ -4046,7 +6647,9 @@ mod mutation_smoke_tests {
                 &input,
                 &db,
                 prepared.intelligence(),
-            );
+                crate::intel_queue::EnrichmentProducer::Pty,
+            )
+            .expect("post-commit side effects");
         }
 
         assert!(
@@ -4375,6 +6978,65 @@ mod mutation_smoke_tests {
             0,
             "PTY fallback must not write Glean source refs"
         );
+        assert_eq!(
+            signal_count(&pty_db, pty_account_id, "renewal_data_updated"),
+            0,
+            "PTY fallback must not emit Glean renewal signals"
+        );
+        assert_eq!(
+            technical_footprint_count(&pty_db, pty_account_id),
+            0,
+            "PTY fallback must not write Glean technical footprint"
+        );
+
+        let queue_pty_db = test_db();
+        let queue_pty_account_id = "acc-queue-pty-producer";
+        queue_pty_db
+            .upsert_account(&make_account(queue_pty_account_id))
+            .unwrap();
+        let input = make_enrichment_input(queue_pty_account_id, dir.path());
+        let intel = make_glean_signal_intel(queue_pty_account_id);
+        run_enrichment_finalize_post_commit(
+            &state,
+            &queue_pty_db,
+            &input,
+            &intel,
+            &[],
+            FinalizeMode::QueueWorker {
+                is_background: false,
+                producer: crate::intel_queue::EnrichmentProducer::Pty,
+            },
+        )
+        .expect("finalize PTY queue fallback");
+        assert_eq!(
+            account_fact_claim_count(&queue_pty_db, queue_pty_account_id),
+            0,
+            "PTY queue fallback must not stamp Glean account fact claims"
+        );
+        assert_eq!(
+            account_source_ref_count(&queue_pty_db, queue_pty_account_id),
+            0,
+            "PTY queue fallback must not write Glean source refs"
+        );
+        assert_eq!(
+            signal_count(&queue_pty_db, queue_pty_account_id, "renewal_data_updated"),
+            0,
+            "PTY queue fallback must not emit Glean renewal signals"
+        );
+        assert_eq!(
+            technical_footprint_count(&queue_pty_db, queue_pty_account_id),
+            0,
+            "PTY queue fallback must not write Glean technical footprint"
+        );
+        assert_eq!(
+            signal_count(
+                &queue_pty_db,
+                queue_pty_account_id,
+                "glean_finalization_degraded"
+            ),
+            0,
+            "PTY queue fallback must not emit Glean degraded markers"
+        );
 
         let glean_db = test_db();
         let glean_account_id = "acc-manual-glean-producer";
@@ -4408,6 +7070,16 @@ mod mutation_smoke_tests {
             claim_recompute_job_count(&glean_db, "account", glean_account_id),
             1,
             "Glean fact promotion should enqueue one account trust recompute job"
+        );
+        assert_eq!(
+            signal_count(&glean_db, glean_account_id, "renewal_data_updated"),
+            1,
+            "Glean manual refresh should emit Glean renewal signals"
+        );
+        assert_eq!(
+            technical_footprint_count(&glean_db, glean_account_id),
+            1,
+            "Glean manual refresh should write technical footprint evidence"
         );
     }
 
@@ -5214,7 +7886,8 @@ mod live_acceptance_tests {
             .expect("previous DB read failed");
         let previous_file = previous_db.clone();
 
-        let contradictory = IntelligenceJson { executive_assessment_render_policy: None,
+        let contradictory = IntelligenceJson {
+            executive_assessment_render_policy: None,
             version: 1,
             entity_id: entity_id.clone(),
             entity_type: entity_type.clone(),
@@ -5223,11 +7896,10 @@ mod live_acceptance_tests {
                 "{} has never appeared in a recorded meeting and no new progress signals since the prior assessment.",
                 stakeholder
             )),
-            risks: vec![IntelRisk { render_policy: None, claim_id: None,
-                text: format!(
-                    "{} has never appeared in a recorded meeting.",
-                    stakeholder
-                ),
+            risks: vec![IntelRisk {
+                render_policy: None,
+                claim_id: None,
+                text: format!("{} has never appeared in a recorded meeting.", stakeholder),
                 source: Some("live-acceptance-test".to_string()),
                 urgency: "critical".to_string(),
                 item_source: None,
@@ -5273,7 +7945,14 @@ mod live_acceptance_tests {
         })
         .expect("first enrichment DB persistence failed");
         fenced_write_enrichment_intelligence(&db, &input.entity_dir, first_prepared.intelligence());
-        run_enrichment_post_commit_side_effects(&state, &input, &db, first_prepared.intelligence());
+        run_enrichment_post_commit_side_effects(
+            &state,
+            &input,
+            &db,
+            first_prepared.intelligence(),
+            crate::intel_queue::EnrichmentProducer::Pty,
+        )
+        .expect("first post-commit side effects");
         let first = first_prepared.into_intelligence();
 
         let first_assessment = first
@@ -5333,7 +8012,9 @@ mod live_acceptance_tests {
             &input,
             &db,
             second_prepared.intelligence(),
-        );
+            crate::intel_queue::EnrichmentProducer::Pty,
+        )
+        .expect("second post-commit side effects");
         let second = second_prepared.into_intelligence();
 
         assert!(

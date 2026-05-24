@@ -113,6 +113,26 @@ Important shape findings:
 - Email and content links exist, but thread summaries are not currently produced into the `threads` section.
 - Historical source-reference rows may still contain legacy placeholder source labels; the code cleanup does not rewrite existing encrypted DB rows.
 
+## Prompt Producer Inventory
+
+The source of the thin MCP answer is not only the MCP projection. DailyOS already runs several Glean and local PTY producers that ask for richer analysis, but their outputs are unevenly normalized into substrate.
+
+| Producer path | Provider | Output | Current persistence | Substrate behavior | Gap |
+| --- | --- | --- | --- | --- | --- |
+| `intelligence/glean_provider.rs::enrich_entity_parallel()` | Glean MCP `chat`, six dimension prompts | `IntelligenceJson` dimension slices with `itemSource` | Progressive `entity_assessment` snapshot and `intelligence.json` projection | Commits a subset through `commit_claim_shaped_intelligence_projection()`, emits Glean signals, promotes selected account facts | Prompt asks for source-rich output, but many fields lose `source_asof`, `source_ref`, and provenance when committed as claims |
+| `intelligence/glean_provider.rs::enrich_entity_legacy()` | Glean MCP `chat`, monolithic prompt | `IntelligenceJson` | `entity_assessment` snapshot and export projection | Same projection path after parse/reconcile | Same source/provenance loss; debug response file is diagnostic only |
+| `intel_queue.rs::run_parallel_enrichment()` | local Claude PTY, six dimension prompts | `IntelligenceJson` dimension slices | Progressive `entity_assessment` snapshot and export projection | Same projection path, source is `ai_enrichment` | Local transcript/file-derived assertions enter claims, but source refs are mostly opaque and field-level source dates are partial |
+| `intel_queue.rs::run_enrichment_legacy()` | local Claude PTY, monolithic synthesis prompt | `IntelligenceJson` plus extracted keywords | `entity_assessment`, export projection, keyword rows | Same projection path | Legacy fallback can still produce broad synthesized claims without enough field-level provenance |
+| `prepare/email_enrich.rs` | local Claude PTY extraction | email summary, sentiment, urgency, noise flag | email enrichment columns | No claim or signal producer found in this path | Email sentiment/urgency can affect relationship state but currently does not enter entity runtime directly |
+| `risk_briefing.rs` | local Claude PTY section synthesis | `risk-briefing.json` | cached JSON report | Report-only; not a claim producer | This is downstream analysis unless its extracted findings are promoted through a services-owned claim/signal producer |
+| `reports/*` and `workflow/deliver.rs` | local Claude PTY synthesis | report/prose artifacts | report or deliverable output | Mostly report-only | These should consume substrate; they should not become hidden producers unless a services-owned extraction path commits durable assertions |
+| `reports/book_of_business.rs::prefetch_glean_portfolio_context()` | Glean MCP `chat` | free-text portfolio context | prompt input to report synthesis | No claim/signal producer | Valuable cross-account signals are used transiently and then disappear from substrate |
+| `processor/transcript.rs` | local Claude PTY phases | meeting summary, risks, wins, decisions, commitments, dynamics | meeting metadata, captures, actions, key-advocate health, commitment/dynamics rows | Emits transcript outcomes, but no direct claim producer found | Transcript-derived account/person facts can update side tables without entering runtime claims |
+| `processor/email_actions.rs` and `prepare/email_enrich.rs` | local Claude PTY extraction | commitments, summary, sentiment, urgency | actions and email enrichment columns | No claim/signal producer found | Email-derived work and relationship signals do not reliably feed entity intelligence |
+| `context_provider/glean.rs` | Glean search / people search | `GleanEntityData`, field suggestions, documents | Glean cache, people/account links, org health JSON | Emits Glean document / field-suggestion signals, no claims found | Glean context can shape future prompts without creating durable substrate assertions |
+
+The important distinction is producer intent. Enrichment producers should turn extracted facts and assessments into claims/signals with provenance. Report producers should be downstream consumers unless they explicitly run a services-owned extraction/promotion step. Otherwise DailyOS quietly creates another authority layer outside the abilities runtime.
+
 ## Gap Findings
 
 ### F1 — Account facts were schema-backed but not substrate-backed
@@ -183,6 +203,49 @@ Trust recomputation work in the current branch is generic enough to build on, bu
 
 Actions, captures, transcripts, email threads, linked entities, and content index rows are populated. Much of that is not claim-backed or summarized into runtime sections. This prevents DailyOS from showing its core advantage over retrieval-only systems: it has the user’s working state, not just documents.
 
+### F10 — Glean/PTY prompts ask for provenance that projection does not fully keep
+
+The Glean dimension prompt explicitly asks for `itemSource.source`, `itemSource.confidence`, `itemSource.sourcedAt`, and `itemSource.reference` for every array item. The current claim projection only maps `source_asof` for selected itemized arrays such as risks, wins, expansion signals, value delivered, open commitments, and stakeholder insights. Summary fields, current-state fields, recommendations, success metrics, contract context, agreement outlook, and company context generally commit with `source_asof: None`, `source_ref: None`, and empty provenance JSON.
+
+This means the model may have seen recent Salesforce, Gong, Zendesk, Slack, P2, Drive, or transcript evidence, but the runtime cannot reliably prove or prioritize that evidence later.
+
+### F11 — Several AI producers are analysis-only by accident
+
+Email enrichment, risk briefing, book-of-business Glean prefetch, SWOT/account-health report synthesis, file enrichment, transcript processing, and workflow deliverable prompts all run local or Glean model calls. Some are correctly downstream reports. Others extract facts, sentiment, urgency, commitments, risks, or stakeholder context that should be signals or claims.
+
+Each producer needs an explicit classification:
+
+- `durable producer`: commits claims/signals through `services/`
+- `read-model producer`: writes deterministic evidence or bounded summaries consumed by abilities
+- `downstream report`: consumes substrate and writes an artifact, but does not create authority
+
+Anything in the first two categories needs provenance and trust behavior. Anything in the third category must not be read back as runtime authority.
+
+### F12 — Generated JSON/markdown still leaks into prompt-input paths
+
+The workspace `CLAUDE.md` and entity README guidance now need to say generated JSON/markdown files are export projections, not authority. That removes the immediate Claude Desktop failure mode where the host model chooses `dashboard.json` over MCP/runtime.
+
+However, code paths still read generated artifacts as prompt inputs or cached surface state, including meeting context dashboard reads, the legacy MCP daily briefing JSON reader, cached `risk-briefing.json`, and skip-today `_today/data/intelligence.json`. These paths need a follow-up allowlist: migration/backfill/import/export reads are allowed; runtime/MCP/prompt-input reads should use DB/runtime services unless explicitly operating in file-artifact mode.
+
+### F13 — Queue and manual Glean refresh do not run the same producers
+
+The Glean enrichment trigger matters today:
+
+- Queue-worker Glean finalization emits the broader Glean signal set, including org health, support health, technical footprint, competitors, org changes, Gong summaries, Slack context, and champion-health signals.
+- Manual Glean refresh promotes selected account facts into schema and `account_fact` claims.
+
+Those paths should converge. The same Glean response should not produce different substrate depending on whether it came from background queue work or a manual app refresh. This is a producer orchestration bug, not a rendering bug.
+
+### F14 — User corrections can leave old projection claims behind
+
+User-facing correction paths update intelligence snapshots and emit correction/curation signals, but do not consistently supersede, tombstone, or recompute the matching projection claims. Recommendation accept/reject paths can remove persisted recommendations while leaving old recommendation claims active.
+
+For MCP/WP surfaces that read claims, that means corrected app state can still render stale claim-backed intelligence. Corrections must participate in the same claim lifecycle as enrichment output.
+
+### F15 — Some provider writes still bypass services-owned claim/signal promotion
+
+Glean product classification and several transcript/email/file processing paths write useful structured data to relational tables, captures, or action rows without an obvious services-owned claim/signal producer. Some of those writes may be correct deterministic state, but the audit needs an explicit rule: if a write changes the intelligence picture, it either emits deterministic evidence for the runtime read model or commits a durable claim/signal with provenance.
+
 ## Recommended Next Work
 
 ### P0 — Add an entity-neighborhood reader
@@ -243,6 +306,38 @@ Avoid account-specific health math in the first pass. Let account-specific label
 ### P6 — Add production source-label cleanup/backfill
 
 The source-label code cleanup does not rewrite old encrypted DB values. Add an idempotent service-owned maintenance/backfill path if those legacy labels need to be normalized for display or trust evaluation.
+
+### P7 — Add producer classification and provenance gates
+
+Inventory every Glean/local PTY call and mark it as durable producer, read-model producer, or downstream report. Add tests or lints that prevent new AI producers from persisting durable assertions without a services-owned claim/signal path, source attribution, temporal handling, and trust recomputation behavior.
+
+For the main enrichment path, normalize item-level source metadata into claim provenance consistently:
+
+- carry `itemSource.sourcedAt` into `source_asof` wherever available
+- carry `itemSource.reference` into a renderable provenance/source-ref handle when allowed
+- preserve source system labels as typed source data rather than free-text display strings
+- add section caveats when a field is synthesized from multiple sources and cannot safely name one source date
+
+### P8 — Replace generated-artifact prompt inputs with runtime context builders
+
+Replace live prompt-input reads of `dashboard.json`, `dashboard.md`, `intelligence.json`, and cached briefing/risk artifacts with DB/runtime context builders. Keep generated files as export projections for portability and explicit user file-inspection workflows.
+
+### P9 — Unify Glean finalization across triggers
+
+Create a single services-owned Glean finalization path used by queue-worker enrichment and manual refresh. It should:
+
+- persist the intelligence snapshot
+- commit projection claims with provenance
+- promote sourced structured facts where applicable
+- emit Glean-specific signals
+- enqueue trust/health recompute
+- write generated exports only after the runtime state is committed
+
+This should close the current queue-vs-manual asymmetry.
+
+### P10 — Route corrections through claim lifecycle
+
+When a user corrects intelligence, stakeholders, or recommendations, update the runtime snapshot and also supersede, tombstone, or recompute the corresponding claim records. The corrected state must be what MCP/WP see through `get_entity_intelligence`.
 
 ## Acceptance Criteria
 

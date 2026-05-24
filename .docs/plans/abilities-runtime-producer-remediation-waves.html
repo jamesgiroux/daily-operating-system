@@ -132,7 +132,7 @@
     <p class="plans-section-eyebrow">Wave shape</p>
     <h2 id="wave-overview" class="plans-section-title">5 waves, hard ordering across, parallel within.</h2>
     <p class="plans-section-lede">
-      W0 freezes the contract and fixtures. W1 builds the generic neighborhood. W2 makes MCP useful for the
+      W0 freezes the contract and fixtures. W1 builds the generic neighborhood and producer orchestration seams. W2 makes MCP useful for the
       comparison prompt. W3 and W4 finish the promised runtime sections and trust semantics. L3 + L5 gate each
       wave before the next starts.
     </p>
@@ -150,13 +150,13 @@
     <tbody>
       <tr>
         <td>W0 — Contract hardening</td>
-        <td>producer matrix, relationship envelope, render policy, fixture contract</td>
+        <td>producer matrix, AI prompt producer classification, relationship envelope, render policy, fixture contract</td>
         <td>1</td>
         <td>reviewable L0 packet</td>
       </tr>
       <tr>
         <td>W1 — Entity neighborhood</td>
-        <td>generic related-subject reader, participation evidence</td>
+        <td>generic related-subject reader, participation evidence, unified Glean finalization seam</td>
         <td>2</td>
         <td>read-model substrate lands</td>
       </tr>
@@ -191,13 +191,13 @@
   <div class="callout-grid">
     <article class="callout">
       <h3 class="callout-title">W0 — Contract hardening</h3>
-      <p class="callout-prose">Split Linear follow-ups from the audit, assign migration slots if needed, freeze fixture names, and define the producer contract for neighborhood edges, participation rows, section caveats, trust recomputation, and MCP projections.</p>
-      <p class="callout-prose"><strong>Pass:</strong> L0 approves the wave plan; fixtures avoid customer-specific data; every producer has a services-owned boundary; every MCP field has render-policy coverage; every durable claim writer names its same-wave trust recomputation path.</p>
+      <p class="callout-prose">Split Linear follow-ups from the audit, assign migration slots if needed, freeze fixture names, and define the producer contract for AI prompt outputs, neighborhood edges, participation rows, section caveats, trust recomputation, and MCP projections.</p>
+      <p class="callout-prose"><strong>Pass:</strong> L0 approves the wave plan; fixtures avoid customer-specific data; every Glean/local PTY prompt path is classified as durable producer, read-model producer, or downstream report; every producer has a services-owned boundary; every MCP field has render-policy coverage; every durable claim writer names its same-wave trust recomputation path.</p>
     </article>
     <article class="callout">
       <h3 class="callout-title">W1 — Entity neighborhood</h3>
-      <p class="callout-prose">Add a generic read model for hierarchy, explicit entity links, meetings, attendees, people, actions, email threads, and content relationships over existing substrate tables. Add participation summary composition without account-only joins, new canonical graph storage, or MCP schema bypasses.</p>
-      <p class="callout-prose"><strong>Pass:</strong> account, project, person, and meeting fixtures return bounded relationship edges with source, recency, confidence, inclusion reason, section caveats, and sensitivity-safe subject refs. Default traversal depth is no more than 2, with per-edge caps and truncation metadata. Duplicate attendees collapse by canonical person/email key; internal participants are included only when the subject kind or explicit relationship makes them relevant.</p>
+      <p class="callout-prose">Add a generic read model for hierarchy, explicit entity links, meetings, attendees, people, actions, email threads, and content relationships over existing substrate tables. Add participation summary composition without account-only joins, new canonical graph storage, or MCP schema bypasses. Consolidate queue and manual Glean finalization so the same Glean output runs the same claim, signal, fact-promotion, trust, and export steps.</p>
+      <p class="callout-prose"><strong>Pass:</strong> account, project, person, and meeting fixtures return bounded relationship edges with source, recency, confidence, inclusion reason, section caveats, and sensitivity-safe subject refs. Default traversal depth is no more than 2, with per-edge caps and truncation metadata. Duplicate attendees collapse by canonical person/email key; internal participants are included only when the subject kind or explicit relationship makes them relevant. Queue and manual Glean refresh produce equivalent claim/signal/fact side effects for the same fixture output.</p>
     </article>
     <article class="callout">
       <h3 class="callout-title">W2 — MCP executive briefing</h3>
@@ -268,6 +268,18 @@
         <td><code>threads</code>, <code>touchpoints</code>, provenance refs, prompt-injection caveats</td>
       </tr>
       <tr>
+        <td>Glean/local PTY prompt outputs</td>
+        <td>Classified per call site: durable producer, read-model producer, or downstream report</td>
+        <td><code>intel_queue</code>, <code>intelligence::glean_provider</code>, <code>prepare</code>, <code>processor</code>, <code>reports</code>, and <code>workflow</code>; source-rich output must pass through <code>services/</code> before it becomes authority</td>
+        <td>Durable assertions become claims/signals with source-as-of, source refs, provenance, and trust recompute; downstream reports consume runtime output and stay out of authority paths</td>
+      </tr>
+      <tr>
+        <td>Glean enrichment finalization</td>
+        <td>Shared producer orchestration</td>
+        <td><code>services::glean_finalization</code> or equivalent shared service; used by queue-worker and manual refresh triggers</td>
+        <td>Projection claims, Glean-specific signals, structured fact promotion, health/trust recompute, and post-commit exports happen consistently regardless of trigger</td>
+      </tr>
+      <tr>
         <td>Metadata proposals and conflicts</td>
         <td>Durable proposal/conflict records with claim linkage where assertive</td>
         <td><code>services::metadata_proposals</code>; source facts, corrections, contradictions</td>
@@ -320,6 +332,18 @@
         <td>Read-model summaries do not score. Any durable summary claim recomputes after sanitizer/provenance attribution succeeds.</td>
         <td>Prompt-injection sanitizer failure drops the dynamic text, keeps source refs when renderable, and emits a section caveat.</td>
         <td><code>thread_summary_poisoned_text_does_not_enter_mcp_payload</code></td>
+      </tr>
+      <tr>
+        <td>AI prompt extraction claims</td>
+        <td>Every Glean/local PTY path classified as a durable producer must recompute after claim/signal commit; report-only prompt outputs never become runtime authority.</td>
+        <td>Missing source metadata marks the affected section <code>use_with_caution</code> or <code>needs_verification</code>; generated JSON/markdown exports are not allowed as a trust shortcut.</td>
+        <td><code>ai_prompt_producer_requires_services_claim_or_report_only_classification</code></td>
+      </tr>
+      <tr>
+        <td>Glean finalization side effects</td>
+        <td>Queue-worker and manual refresh triggers use the same finalization service, so the same parsed Glean output creates the same claims, signals, fact promotions, and recompute jobs.</td>
+        <td>If one side effect fails, finalization reports the failed class and renders affected sections with caveats rather than silently producing a partial substrate.</td>
+        <td><code>glean_queue_and_manual_refresh_share_finalization_side_effects</code></td>
       </tr>
       <tr>
         <td>Metadata proposals/conflicts</td>

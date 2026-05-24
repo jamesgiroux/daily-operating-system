@@ -35,17 +35,17 @@ Parse the arguments to determine:
 ### Step 2: Read Workspace Context
 
 For single-entity deliverables:
-- Entity dashboard.json, intelligence.json, stakeholders.md
-- Filtered actions from data/actions.json
+- Runtime entity facts and intelligence, plus relationship context
+- Filtered actions from DailyOS action/work tools
 - Recent _archive/ meeting summaries for this entity
 - People/ profiles for key stakeholders
-- Email signals from data/emails.json related to this entity
+- Email signals from DailyOS email/context tools related to this entity
 
 For portfolio-wide deliverables:
-- All entity dashboards (scan Accounts/ and Projects/)
+- All entity vitals from DailyOS runtime
 - Portfolio-level metrics (aggregate health, ARR, renewal timeline)
-- Cross-entity patterns from intelligence files
-- data/actions.json for portfolio-wide action status
+- Cross-entity patterns from runtime intelligence
+- DailyOS action/work tools for portfolio-wide action status
 
 ### Step 3: Structure the Deliverable
 
@@ -108,7 +108,7 @@ After presenting the deliverable:
 ```
 Would you like me to:
 1. Save this to Accounts/Acme-Corp/board-update-2026-q1.md
-2. Create actions for the "Next Steps" items in data/actions.json
+2. Create DailyOS actions for the "Next Steps" items
 
 Or adjust anything before finalizing?
 ```

@@ -2621,7 +2621,8 @@ pub fn run_enrichment_post_commit_side_effects(
     input: &EnrichmentInput,
     db: &crate::db::ActionDb,
     final_intel: &IntelligenceJson,
-) {
+    producer: EnrichmentProducer,
+) -> Result<(), String> {
     // Invalidate cached reports when entity intelligence is refreshed.
     #[allow(
         clippy::let_underscore_must_use,
@@ -2629,10 +2630,46 @@ pub fn run_enrichment_post_commit_side_effects(
     )]
     let _ = crate::reports::invalidation::mark_reports_stale(db, &input.entity_id);
 
-    // Dual-write commitments from Glean enrichment to captured_commitments.
     if input.entity_type == "account" {
-        dual_write_enrichment_commitments(db, &state.signals.engine, &input.entity_id, final_intel);
-        dual_write_enrichment_products(db, &state.signals.engine, &input.entity_id, final_intel);
+        let ctx = state.live_service_context();
+        let (commitment_source_label, signal_source, product_source) = match producer {
+            EnrichmentProducer::Glean => (
+                format!("glean_enrichment:{}", input.entity_id),
+                "glean",
+                "glean",
+            ),
+            EnrichmentProducer::Pty => (
+                format!("pty_enrichment:{}", input.entity_id),
+                "ai_enrichment",
+                "ai_inference",
+            ),
+        };
+        if let Err(error) =
+            crate::services::enrichment_side_effects::sync_account_enrichment_side_effects(
+                &ctx,
+                db,
+                state.signals.engine.as_ref(),
+                &input.entity_id,
+                final_intel,
+                crate::services::enrichment_side_effects::EnrichmentSideEffectSource {
+                    commitment_source_label: &commitment_source_label,
+                    signal_source,
+                    product_source,
+                },
+            )
+        {
+            log::warn!(
+                "IntelProcessor: enrichment side-effect sync failed for {}: {}",
+                input.entity_id,
+                error
+            );
+            if producer.is_glean() {
+                return Err(format!(
+                    "Glean enrichment side-effect sync failed for {}: {}",
+                    input.entity_id, error
+                ));
+            }
+        }
     }
 
     // Regenerate person files after intelligence enrichment.
@@ -2705,6 +2742,7 @@ pub fn run_enrichment_post_commit_side_effects(
         "IntelProcessor: wrote intelligence for {} to DB + post-commit file cache",
         input.entity_id,
     );
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2718,8 +2756,8 @@ pub(crate) enum FinalizeMode {
     },
     /// Manual user-driven refresh: run the minimal shared finalize chain.
     ///
-    /// Skips queue-only post-commit work: Glean signal emission, leading-signal
-    /// and peer-benchmark async spawns, `intelligence-updated` event emission,
+    /// Skips queue-only post-commit work: supplemental Glean passes,
+    /// `intelligence-updated` event emission,
     /// self-healing scheduler hook, and `claude_code` sync-success recording.
     /// Manual refresh emits `background-work-status:completed` from its command
     /// path and is a different actor than the background sync loop.
@@ -2739,8 +2777,22 @@ pub(crate) fn run_enrichment_finalize_post_commit(
     inferred_relationships: &[InferredRelationship],
     mode: FinalizeMode,
 ) -> Result<(), String> {
-    fenced_write_enrichment_intelligence(db, &input.entity_dir, intel);
-    run_enrichment_post_commit_side_effects(state.as_ref(), input, db, intel);
+    let side_effect_producer = match mode {
+        FinalizeMode::QueueWorker { producer, .. } | FinalizeMode::ManualRefresh { producer } => {
+            producer
+        }
+        FinalizeMode::TrustRecompute => EnrichmentProducer::Pty,
+    };
+    let is_glean_producer = side_effect_producer.is_glean();
+    if is_glean_producer {
+        run_enrichment_post_commit_side_effects(
+            state.as_ref(),
+            input,
+            db,
+            intel,
+            side_effect_producer,
+        )?;
+    }
 
     match mode {
         FinalizeMode::QueueWorker {
@@ -2748,7 +2800,7 @@ pub(crate) fn run_enrichment_finalize_post_commit(
             producer,
         } => {
             if producer.is_glean() {
-                emit_queue_worker_glean_signals(state.as_ref(), db, input, intel);
+                run_shared_glean_finalization(state.as_ref(), db, input, intel)?;
                 spawn_queue_worker_supplemental_glean_finalize(state, input, is_background);
             }
         }
@@ -2756,8 +2808,21 @@ pub(crate) fn run_enrichment_finalize_post_commit(
             run_finalize_trust_recompute(state.as_ref(), db, input)?;
         }
         FinalizeMode::ManualRefresh { producer } => {
-            promote_manual_refresh_glean_account_facts(state.as_ref(), db, input, intel, producer);
+            if producer.is_glean() {
+                run_shared_glean_finalization(state.as_ref(), db, input, intel)?;
+            }
         }
+    }
+
+    fenced_write_enrichment_intelligence(db, &input.entity_dir, intel);
+    if !is_glean_producer {
+        run_enrichment_post_commit_side_effects(
+            state.as_ref(),
+            input,
+            db,
+            intel,
+            side_effect_producer,
+        )?;
     }
 
     if !inferred_relationships.is_empty() {
@@ -2789,7 +2854,7 @@ pub(crate) fn run_enrichment_finalize_post_commit(
     }
 
     // Invalidate + requeue meeting preps for future meetings linked to this entity.
-    // intelligence.json changed -> meeting briefings that consume it need regeneration.
+    // The entity intelligence snapshot changed, so dependent briefings need regeneration.
     invalidate_and_requeue_meeting_preps_with_db(state.as_ref(), db, &input.entity_id);
 
     crate::self_healing::feedback::record_enrichment_success(db, &input.entity_id);
@@ -2832,78 +2897,45 @@ fn run_finalize_trust_recompute(
     .map(|_| ())
 }
 
-fn promote_manual_refresh_glean_account_facts(
+fn run_shared_glean_finalization(
     state: &AppState,
     db: &crate::db::ActionDb,
     input: &EnrichmentInput,
     intel: &IntelligenceJson,
-    producer: EnrichmentProducer,
-) {
-    if !producer.is_glean() || input.entity_type != "account" {
-        return;
-    }
-
+) -> Result<(), String> {
     let ctx = state.live_service_context();
-    let report = crate::services::account_fact_claims::promote_glean_facts_from_intelligence(
+    let report = crate::services::glean_finalization::finalize_glean_enrichment(
         &ctx,
         db,
-        &input.entity_id,
-        intel,
-    );
-    if report.schema_promoted > 0
-        || report.schema_skipped_lower_priority > 0
+        state.signals.engine.as_ref(),
+        crate::services::glean_finalization::GleanFinalizationInput {
+            entity_type: &input.entity_type,
+            entity_id: &input.entity_id,
+            intel,
+            preset: input.active_preset.as_ref(),
+        },
+    )
+    .map_err(|error| error.to_string())?;
+
+    if report.signals_emitted > 0
+        || report.schema_promoted > 0
         || report.claims_committed > 0
         || report.recompute_jobs_enqueued > 0
+        || report.health_recomputed
+        || !report.degraded_classes.is_empty()
     {
         log::info!(
-            "[I644] Manual refresh fact promotion for {}: {} schema promoted, {} skipped, {} claims committed, {} recompute job(s)",
+            "[I644] Glean finalization for {}: {} signal(s) emitted, {} schema fact(s), {} claim(s), {} recompute job(s), health_recomputed={}, degraded_classes={}",
             input.entity_id,
+            report.signals_emitted,
             report.schema_promoted,
-            report.schema_skipped_lower_priority,
             report.claims_committed,
             report.recompute_jobs_enqueued,
+            report.health_recomputed,
+            report.degraded_classes.len(),
         );
     }
-    for warning in report
-        .source_ref_errors
-        .iter()
-        .chain(report.claim_errors.iter())
-        .chain(report.recompute_enqueue_errors.iter())
-    {
-        log::warn!("[I644] {warning}");
-    }
-
-    if let Err(e) = crate::services::intelligence::recompute_entity_health_with_preset(
-        &ctx,
-        db,
-        &input.entity_id,
-        "account",
-        input.active_preset.as_ref(),
-    ) {
-        log::warn!(
-            "Health recompute failed for {} after manual refresh fact promotion: {}",
-            input.entity_id,
-            e
-        );
-    }
-}
-
-fn emit_queue_worker_glean_signals(
-    state: &AppState,
-    db: &crate::db::ActionDb,
-    input: &EnrichmentInput,
-    intel: &IntelligenceJson,
-) {
-    if state.context_provider().is_remote() {
-        crate::intelligence::glean_provider::emit_glean_signals(
-            db,
-            &state.signals.engine,
-            &input.entity_type,
-            &input.entity_id,
-            intel,
-            input.active_preset.as_ref(),
-        );
-    }
+    Ok(())
 }
 
 fn spawn_queue_worker_supplemental_glean_finalize(
@@ -3393,172 +3425,6 @@ pub(crate) fn invalidate_and_requeue_meeting_preps_with_db(
         meeting_ids.len(),
         entity_id,
     );
-}
-
-/// Dual-write commitments from Glean enrichment to `captured_commitments`.
-///
-/// Writes `open_commitments` and `success_plan_signals.stated_objectives` from the
-/// intelligence output, mirroring the pattern in `transcript.rs:556-598`.
-/// Uses INSERT OR IGNORE to avoid duplicates.
-fn dual_write_enrichment_commitments(
-    db: &crate::db::ActionDb,
-    engine: &crate::signals::propagation::PropagationEngine,
-    account_id: &str,
-    intel: &IntelligenceJson,
-) {
-    let now = Utc::now().to_rfc3339();
-    let source_label = format!("glean_enrichment:{}", account_id);
-
-    // 1. Write open_commitments
-    if let Some(ref commitments) = intel.open_commitments {
-        for commitment in commitments {
-            let commit_id = uuid::Uuid::new_v4().to_string();
-            let owner = commitment.owner.as_deref().unwrap_or("joint");
-            if let Err(e) = db.conn_ref().execute(
-                "INSERT OR IGNORE INTO captured_commitments (id, account_id, meeting_id, title, owner, target_date, confidence, source, consumed, created_at)
-                 VALUES (?1, ?2, NULL, ?3, ?4, ?5, 'medium', ?6, 0, ?7)",
-                rusqlite::params![
-                    commit_id,
-                    account_id,
-                    commitment.description,
-                    owner,
-                    commitment.due_date,
-                    source_label,
-                    now,
-                ],
-            ) {
-                log::warn!("Failed to insert captured_commitment from Glean enrichment: {}", e);
-            }
-        }
-    }
-
-    // 2. Write stated_objectives from success_plan_signals
-    if let Some(ref signals) = intel.success_plan_signals {
-        for objective in &signals.stated_objectives {
-            let commit_id = uuid::Uuid::new_v4().to_string();
-            let owner = objective.owner.as_deref().unwrap_or("joint");
-            if let Err(e) = db.conn_ref().execute(
-                "INSERT OR IGNORE INTO captured_commitments (id, account_id, meeting_id, title, owner, target_date, confidence, source, consumed, created_at)
-                 VALUES (?1, ?2, NULL, ?3, ?4, ?5, ?6, ?7, 0, ?8)",
-                rusqlite::params![
-                    commit_id,
-                    account_id,
-                    objective.objective,
-                    owner,
-                    objective.target_date,
-                    objective.confidence,
-                    source_label,
-                    now,
-                ],
-            ) {
-                log::warn!("Failed to insert stated_objective from Glean enrichment: {}", e);
-            }
-        }
-    }
-
-    // 3. Emit signal for the dual-write
-    let commitment_count = intel.open_commitments.as_ref().map_or(0, |c| c.len())
-        + intel
-            .success_plan_signals
-            .as_ref()
-            .map_or(0, |s| s.stated_objectives.len());
-    if commitment_count > 0 {
-        let value = serde_json::json!({
-            "count": commitment_count,
-            "source": "glean_enrichment",
-        })
-        .to_string();
-        if let Err(e) = crate::signals::bus::emit_signal_and_propagate(
-            db,
-            engine,
-            "account",
-            account_id,
-            "commitment_captured",
-            "glean",
-            Some(&value),
-            0.7,
-        ) {
-            log::warn!("Failed to emit commitment_captured signal: {}", e);
-        }
-    }
-}
-
-/// Dual-write product adoption data from enrichment intelligence into the
-/// `account_products` table, keeping the relational surface in sync with
-/// the intelligence JSON blob.
-fn dual_write_enrichment_products(
-    db: &crate::db::ActionDb,
-    engine: &crate::signals::propagation::PropagationEngine,
-    entity_id: &str,
-    intel: &IntelligenceJson,
-) {
-    let adoption = match intel.product_adoption.as_ref() {
-        Some(a) => a,
-        None => return,
-    };
-
-    let source = adoption.source.as_deref().unwrap_or("ai_inference");
-    let mut upserted = 0usize;
-
-    for feature in &adoption.feature_adoption {
-        // Parse "Core platform: 95%" → name = "Core platform", adoption_pct ~0.95
-        let (name, adoption_pct) = if let Some(colon_pos) = feature.find(':') {
-            let raw_name = feature[..colon_pos].trim();
-            let pct_str = feature[colon_pos + 1..].trim().trim_end_matches('%');
-            let pct = pct_str.parse::<f64>().ok().map(|v| v / 100.0);
-            (raw_name.to_string(), pct)
-        } else {
-            (feature.trim().to_string(), None)
-        };
-
-        if name.is_empty() {
-            continue;
-        }
-
-        match db.upsert_account_product(
-            entity_id,
-            &name,
-            None,
-            "active",
-            adoption_pct,
-            source,
-            0.55,
-            None,
-        ) {
-            Ok(_) => upserted += 1,
-            Err(e) => {
-                log::warn!(
-                    "Failed to upsert account product '{}' for {}: {}",
-                    name,
-                    entity_id,
-                    e
-                );
-            }
-        }
-    }
-
-    if upserted > 0 {
-        log::info!(
-            "IntelProcessor: dual-wrote {} products for {} from enrichment",
-            upserted,
-            entity_id,
-        );
-        // Intelligence Loop: every mutation emits a signal (AC7)
-        #[allow(
-            clippy::let_underscore_must_use,
-            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-        )]
-        let _ = crate::signals::bus::emit_signal_and_propagate(
-            db,
-            engine,
-            "account",
-            entity_id,
-            "product_data_updated",
-            source,
-            Some(&format!("{{\"count\":{upserted}}}")),
-            0.55,
-        );
-    }
 }
 
 // =============================================================================

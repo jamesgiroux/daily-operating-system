@@ -2630,7 +2630,8 @@ fn create_backup_via_sqlcipher_export(
 fn should_try_encrypted_backup_fallback(encrypted: bool, err: &str) -> bool {
     encrypted
         && (err.contains("backup is not supported with encrypted databases")
-            || err.contains("encrypted databases"))
+            || err.contains("encrypted databases")
+            || err.contains("not an error"))
 }
 
 fn is_no_such_actions_table_error(err: &SqliteError) -> bool {
@@ -6004,9 +6005,17 @@ mod tests {
             true,
             "sqlite error: encrypted databases"
         ));
+        assert!(should_try_encrypted_backup_fallback(
+            true,
+            "Pre-migration backup failed: not an error"
+        ));
         assert!(!should_try_encrypted_backup_fallback(
             false,
             "backup is not supported with encrypted databases"
+        ));
+        assert!(!should_try_encrypted_backup_fallback(
+            false,
+            "Pre-migration backup failed: not an error"
         ));
         assert!(!should_try_encrypted_backup_fallback(
             true,

@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 
 use chrono::Utc;
-use rusqlite::params;
+use rusqlite::{params, params_from_iter};
 use serde::{Deserialize, Serialize};
 
 use super::{ActionDb, DbError};
@@ -343,6 +343,28 @@ impl DataSource {
     }
 }
 
+const GLEAN_SIGNAL_DATA_SOURCES: &[&str] = &[
+    "glean",
+    "glean_search",
+    "glean_org",
+    "glean_org_directory",
+    "glean_crm",
+    "glean_salesforce",
+    "glean_redacted",
+    "glean_zendesk",
+    "glean_support",
+    "glean_gong",
+    "glean_chat",
+    "glean_synthesis",
+    "glean_propagation",
+    "glean_slack",
+    "glean_documents",
+    "glean_p2",
+    "glean_wordpress",
+    "glean_unknown",
+    "glean_intercom",
+];
+
 /// Purge result counts for audit logging.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -362,6 +384,24 @@ pub struct PurgeReport {
     pub caches_deleted: usize,
     #[serde(default)]
     pub temporal_rows_invalidated: usize,
+    #[serde(default)]
+    pub account_source_refs_masked: usize,
+    #[serde(default)]
+    pub account_fact_claims_withdrawn: usize,
+    #[serde(default)]
+    pub account_schema_facts_cleared: usize,
+    #[serde(default)]
+    pub account_fact_recompute_jobs_enqueued: usize,
+    #[serde(default)]
+    pub technical_footprint_fields_cleared: usize,
+    #[serde(default)]
+    pub enrichment_commitments_deleted: usize,
+    #[serde(default)]
+    pub account_products_deleted: usize,
+    #[serde(default)]
+    pub signal_derivations_deleted: usize,
+    #[serde(default)]
+    pub briefing_callouts_deleted: usize,
 }
 
 fn is_profile_field(field: &str) -> bool {
@@ -465,6 +505,334 @@ fn table_exists(db: &ActionDb, table: &str) -> bool {
         .unwrap_or(false)
 }
 
+#[derive(Debug, Default)]
+struct GleanSignalPurgeReport {
+    signals_deleted: usize,
+    signal_derivations_deleted: usize,
+    briefing_callouts_deleted: usize,
+}
+
+fn purge_glean_signal_events(db: &ActionDb) -> Result<GleanSignalPurgeReport, rusqlite::Error> {
+    let signal_ids = collect_glean_signal_ids_for_purge(db)?;
+    if signal_ids.is_empty() {
+        return Ok(GleanSignalPurgeReport::default());
+    }
+
+    db.conn_ref().execute(
+        "CREATE TEMP TABLE IF NOT EXISTS temp_glean_purge_signal_ids (
+            id TEXT PRIMARY KEY
+        )",
+        [],
+    )?;
+    db.conn_ref()
+        .execute("DELETE FROM temp_glean_purge_signal_ids", [])?;
+    {
+        let mut stmt = db
+            .conn_ref()
+            .prepare("INSERT OR IGNORE INTO temp_glean_purge_signal_ids (id) VALUES (?1)")?;
+        for signal_id in &signal_ids {
+            stmt.execute([signal_id])?;
+        }
+    }
+
+    let briefing_callouts_deleted = if table_exists(db, "briefing_callouts") {
+        db.conn_ref().execute(
+            "DELETE FROM briefing_callouts
+             WHERE signal_id IN (SELECT id FROM temp_glean_purge_signal_ids)",
+            [],
+        )?
+    } else {
+        0
+    };
+    let signal_derivations_deleted = if table_exists(db, "signal_derivations") {
+        db.conn_ref().execute(
+            "DELETE FROM signal_derivations
+             WHERE source_signal_id IN (SELECT id FROM temp_glean_purge_signal_ids)
+                OR derived_signal_id IN (SELECT id FROM temp_glean_purge_signal_ids)",
+            [],
+        )?
+    } else {
+        0
+    };
+    let signals_deleted = db.conn_ref().execute(
+        "DELETE FROM signal_events
+         WHERE id IN (SELECT id FROM temp_glean_purge_signal_ids)",
+        [],
+    )?;
+    db.conn_ref()
+        .execute("DELETE FROM temp_glean_purge_signal_ids", [])?;
+
+    Ok(GleanSignalPurgeReport {
+        signals_deleted,
+        signal_derivations_deleted,
+        briefing_callouts_deleted,
+    })
+}
+
+fn collect_glean_signal_ids_for_purge(db: &ActionDb) -> Result<Vec<String>, rusqlite::Error> {
+    let placeholders = std::iter::repeat_n("?", GLEAN_SIGNAL_DATA_SOURCES.len())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql = if table_exists(db, "signal_derivations") {
+        format!(
+            "WITH RECURSIVE purge_signal_ids(id) AS (
+                SELECT id FROM signal_events WHERE data_source IN ({placeholders})
+                UNION
+                SELECT sd.derived_signal_id
+                FROM signal_derivations sd
+                JOIN purge_signal_ids psi ON psi.id = sd.source_signal_id
+            )
+            SELECT id FROM purge_signal_ids"
+        )
+    } else {
+        format!("SELECT id FROM signal_events WHERE data_source IN ({placeholders})")
+    };
+    let mut stmt = db.conn_ref().prepare(&sql)?;
+    let rows = stmt.query_map(
+        params_from_iter(GLEAN_SIGNAL_DATA_SOURCES.iter().copied()),
+        |row| row.get::<_, String>(0),
+    )?;
+    rows.collect::<Result<Vec<_>, _>>()
+}
+
+fn purge_glean_technical_footprint(db: &ActionDb) -> Result<usize, rusqlite::Error> {
+    let mut fields_cleared = 0usize;
+    let has_source_refs = table_exists(db, "account_source_refs");
+    if has_source_refs {
+        let refs = load_glean_technical_footprint_refs(db)?;
+        for source_ref in &refs {
+            fields_cleared += clear_glean_technical_footprint_field_if_current(db, source_ref)?;
+        }
+    }
+
+    fields_cleared += purge_legacy_glean_technical_footprint_rows(db, has_source_refs)?;
+
+    if has_source_refs {
+        fields_cleared += db.conn_ref().execute(
+            "UPDATE account_source_refs
+             SET source_system = 'purged:glean',
+                 source_kind = 'source_purged',
+                 source_value = NULL,
+                 source_record_ref = NULL
+             WHERE source_record_ref LIKE 'glean_technical_footprint:%'
+               AND source_kind != 'source_purged'",
+            [],
+        )?;
+    }
+    Ok(fields_cleared)
+}
+
+fn purge_glean_enrichment_side_effects(db: &ActionDb) -> Result<(usize, usize), rusqlite::Error> {
+    let commitments_deleted = if table_exists(db, "captured_commitments") {
+        db.conn_ref().execute(
+            "DELETE FROM captured_commitments
+             WHERE source LIKE 'glean_enrichment:%'",
+            [],
+        )?
+    } else {
+        0
+    };
+
+    let products_deleted = if table_exists(db, "account_products") {
+        db.conn_ref().execute(
+            "DELETE FROM account_products
+             WHERE source = 'glean'",
+            [],
+        )?
+    } else {
+        0
+    };
+
+    Ok((commitments_deleted, products_deleted))
+}
+
+fn purge_legacy_glean_technical_footprint_rows(
+    db: &ActionDb,
+    has_source_refs: bool,
+) -> Result<usize, rusqlite::Error> {
+    let placeholders = std::iter::repeat_n("?", GLEAN_SIGNAL_DATA_SOURCES.len())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let support_ref_guard =
+        active_technical_footprint_ref_guard(has_source_refs, "technical_footprint.support_tier");
+    let csat_ref_guard =
+        active_technical_footprint_ref_guard(has_source_refs, "technical_footprint.csat_score");
+    let open_tickets_ref_guard =
+        active_technical_footprint_ref_guard(has_source_refs, "technical_footprint.open_tickets");
+    let sql = format!(
+        "UPDATE account_technical_footprint
+         SET support_tier = CASE
+                WHEN support_tier IS NOT NULL AND {support_ref_guard}
+                THEN NULL
+                ELSE support_tier
+             END,
+             csat_score = CASE
+                WHEN csat_score IS NOT NULL AND {csat_ref_guard}
+                THEN NULL
+                ELSE csat_score
+             END,
+             open_tickets = CASE
+                WHEN coalesce(open_tickets, 0) != 0 AND {open_tickets_ref_guard}
+                THEN 0
+                ELSE open_tickets
+             END,
+             source = 'source_purged:glean',
+             updated_at = datetime('now')
+         WHERE source IN ({placeholders})
+           AND (
+                (support_tier IS NOT NULL AND {support_ref_guard})
+                OR (csat_score IS NOT NULL AND {csat_ref_guard})
+                OR (coalesce(open_tickets, 0) != 0 AND {open_tickets_ref_guard})
+           )"
+    );
+    let mut fields_cleared = db.conn_ref().execute(
+        &sql,
+        params_from_iter(GLEAN_SIGNAL_DATA_SOURCES.iter().copied()),
+    )?;
+
+    if has_source_refs {
+        fields_cleared += mark_empty_glean_technical_rows_purged(db)?;
+    }
+
+    Ok(fields_cleared)
+}
+
+fn active_technical_footprint_ref_guard(has_source_refs: bool, field: &str) -> String {
+    if has_source_refs {
+        format!(
+            "NOT EXISTS (
+                SELECT 1
+                FROM account_source_refs sr
+                WHERE sr.account_id = account_technical_footprint.account_id
+                  AND sr.field = '{field}'
+                  AND sr.source_record_ref LIKE 'glean_technical_footprint:%'
+                  AND sr.source_kind != 'source_purged'
+            )"
+        )
+    } else {
+        "1 = 1".to_string()
+    }
+}
+
+fn mark_empty_glean_technical_rows_purged(db: &ActionDb) -> Result<usize, rusqlite::Error> {
+    let placeholders = std::iter::repeat_n("?", GLEAN_SIGNAL_DATA_SOURCES.len())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql = format!(
+        "UPDATE account_technical_footprint
+         SET source = 'source_purged:glean',
+             updated_at = datetime('now')
+         WHERE source IN ({placeholders})
+           AND support_tier IS NULL
+           AND csat_score IS NULL
+           AND coalesce(open_tickets, 0) = 0"
+    );
+    db.conn_ref().execute(
+        &sql,
+        params_from_iter(GLEAN_SIGNAL_DATA_SOURCES.iter().copied()),
+    )
+}
+
+#[derive(Debug, Clone)]
+struct GleanTechnicalFootprintRef {
+    account_id: String,
+    field: String,
+    source_value: Option<String>,
+    observed_at: String,
+    source_record_ref: Option<String>,
+}
+
+fn load_glean_technical_footprint_refs(
+    db: &ActionDb,
+) -> Result<Vec<GleanTechnicalFootprintRef>, rusqlite::Error> {
+    let mut stmt = db.conn_ref().prepare(
+        "SELECT account_id, field, source_value, observed_at, source_record_ref
+         FROM account_source_refs
+         WHERE source_record_ref LIKE 'glean_technical_footprint:%'
+           AND source_kind != 'source_purged'",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok(GleanTechnicalFootprintRef {
+            account_id: row.get(0)?,
+            field: row.get(1)?,
+            source_value: row.get(2)?,
+            observed_at: row.get(3)?,
+            source_record_ref: row.get(4)?,
+        })
+    })?;
+    rows.collect::<Result<Vec<_>, _>>()
+}
+
+fn clear_glean_technical_footprint_field_if_current(
+    db: &ActionDb,
+    source_ref: &GleanTechnicalFootprintRef,
+) -> Result<usize, rusqlite::Error> {
+    let Some(source_value) = source_ref.source_value.as_deref() else {
+        return Ok(0);
+    };
+    let projection_ref = source_ref
+        .source_record_ref
+        .as_deref()
+        .is_some_and(|reference| reference.starts_with("glean_technical_footprint:projection:"));
+    let ownership_guard = if projection_ref {
+        "(
+            lower(coalesce(source, '')) LIKE 'glean%'
+            OR coalesce(source, '') = 'source_purged:glean'
+            OR NOT (
+                coalesce(source, '') IN ('user', 'user_edit', 'user_correction')
+                AND datetime(coalesce(updated_at, '1970-01-01T00:00:00Z')) > datetime(?3)
+            )
+        )"
+    } else {
+        "(
+            (
+                lower(coalesce(source, '')) LIKE 'glean%'
+                OR coalesce(source, '') = 'source_purged:glean'
+            )
+            AND ?3 IS NOT NULL
+        )"
+    };
+    let (sql, value) = match source_ref.field.as_str() {
+        "technical_footprint.support_tier" => (
+            format!(
+                "UPDATE account_technical_footprint
+             SET support_tier = NULL
+             WHERE account_id = ?1
+               AND support_tier = ?2
+               AND {ownership_guard}",
+            ),
+            source_value,
+        ),
+        "technical_footprint.csat_score" => (
+            format!(
+                "UPDATE account_technical_footprint
+             SET csat_score = NULL
+             WHERE account_id = ?1
+               AND csat_score IS NOT NULL
+               AND ABS(csat_score - CAST(?2 AS REAL)) < 0.000001
+               AND {ownership_guard}",
+            ),
+            source_value,
+        ),
+        "technical_footprint.open_tickets" => (
+            format!(
+                "UPDATE account_technical_footprint
+             SET open_tickets = 0
+             WHERE account_id = ?1
+               AND open_tickets IS NOT NULL
+               AND CAST(open_tickets AS TEXT) = ?2
+               AND {ownership_guard}",
+            ),
+            source_value,
+        ),
+        _ => return Ok(0),
+    };
+    db.conn_ref().execute(
+        &sql,
+        rusqlite::params![source_ref.account_id, value, source_ref.observed_at],
+    )
+}
+
 /// Purge data originating from a revoked source.
 ///
 /// Notes:
@@ -531,23 +899,14 @@ pub fn purge_source(db: &ActionDb, source: DataSource) -> Result<PurgeReport, Db
         )
         .map_err(|e| format!("emit stakeholder purge signal failed: {e}"))?;
 
+        let mut signal_derivations_deleted = 0usize;
+        let mut briefing_callouts_deleted = 0usize;
         let signals_deleted = if source == DataSource::Glean {
-            tx.conn_ref()
-                .execute(
-                    "DELETE FROM signal_events
-                     WHERE data_source IN (
-                        'glean',
-                        'glean_search',
-                        'glean_org',
-                        'glean_crm',
-                        'glean_zendesk',
-                        'glean_gong',
-                        'glean_chat',
-                        'glean_synthesis'
-                     )",
-                    [],
-                )
-                .map_err(|e| format!("purge signal_events failed: {e}"))?
+            let signal_purge = purge_glean_signal_events(tx)
+                .map_err(|e| format!("purge signal_events failed: {e}"))?;
+            signal_derivations_deleted = signal_purge.signal_derivations_deleted;
+            briefing_callouts_deleted = signal_purge.briefing_callouts_deleted;
+            signal_purge.signals_deleted
         } else {
             tx.conn_ref()
                 .execute("DELETE FROM signal_events WHERE data_source = ?1", [source_str])
@@ -563,9 +922,37 @@ pub fn purge_source(db: &ActionDb, source: DataSource) -> Result<PurgeReport, Db
         let mut emails_deleted = 0usize;
         let mut email_signals_deleted = 0usize;
         let mut caches_deleted = 0usize;
+        let mut account_source_refs_masked = 0usize;
+        let mut account_fact_claims_withdrawn = 0usize;
+        let mut account_schema_facts_cleared = 0usize;
+        let mut account_fact_recompute_jobs_enqueued = 0usize;
+        let mut technical_footprint_fields_cleared = 0usize;
+        let mut enrichment_commitments_deleted = 0usize;
+        let mut account_products_deleted = 0usize;
 
         match source {
             DataSource::Glean => {
+                let (commitments_deleted, products_deleted) =
+                    purge_glean_enrichment_side_effects(tx)
+                        .map_err(|e| format!("purge Glean enrichment side effects failed: {e}"))?;
+                enrichment_commitments_deleted = commitments_deleted;
+                account_products_deleted = products_deleted;
+
+                if table_exists(tx, "account_source_refs") && table_exists(tx, "intelligence_claims")
+                {
+                    let account_fact_purge =
+                        crate::services::account_fact_claims::purge_glean_account_fact_projections_for_source_purge(
+                            &ctx,
+                            tx,
+                        )
+                        .map_err(|e| format!("purge Glean account fact projections failed: {e}"))?;
+                    account_source_refs_masked = account_fact_purge.source_refs_masked;
+                    account_fact_claims_withdrawn = account_fact_purge.claims_withdrawn;
+                    account_schema_facts_cleared = account_fact_purge.schema_facts_cleared;
+                    account_fact_recompute_jobs_enqueued =
+                        account_fact_purge.recompute_jobs_enqueued;
+                }
+
                 if table_exists(tx, "entity_assessment") {
                     assessments_cleared = tx
                         .conn_ref()
@@ -589,6 +976,11 @@ pub fn purge_source(db: &ActionDb, source: DataSource) -> Result<PurgeReport, Db
                         .conn_ref()
                         .execute("DELETE FROM glean_document_cache", [])
                         .map_err(|e| format!("purge glean_document_cache failed: {e}"))?;
+                }
+
+                if table_exists(tx, "account_technical_footprint") {
+                    technical_footprint_fields_cleared = purge_glean_technical_footprint(tx)
+                        .map_err(|e| format!("purge account_technical_footprint failed: {e}"))?;
                 }
             }
             DataSource::Google => {
@@ -665,6 +1057,15 @@ pub fn purge_source(db: &ActionDb, source: DataSource) -> Result<PurgeReport, Db
             email_signals_deleted,
             caches_deleted,
             temporal_rows_invalidated,
+            account_source_refs_masked,
+            account_fact_claims_withdrawn,
+            account_schema_facts_cleared,
+            account_fact_recompute_jobs_enqueued,
+            technical_footprint_fields_cleared,
+            enrichment_commitments_deleted,
+            account_products_deleted,
+            signal_derivations_deleted,
+            briefing_callouts_deleted,
         })
     })
     .map_err(DbError::Migration)
@@ -871,6 +1272,275 @@ mod tests {
             )
             .expect("count invalidated temporal rows");
         assert_eq!(invalidated_temporal_rows, 1);
+    }
+
+    #[test]
+    fn purge_source_glean_removes_all_known_glean_signal_sources() {
+        let db = test_db();
+        for (index, source) in GLEAN_SIGNAL_DATA_SOURCES.iter().enumerate() {
+            seed_signal(
+                &db,
+                &format!("s-glean-{index}"),
+                "account",
+                "generic-account",
+                "renewal_data_updated",
+                source,
+                0.8,
+                None,
+            );
+        }
+        seed_signal(
+            &db,
+            "s-google",
+            "account",
+            "generic-account",
+            "renewal_data_updated",
+            "google",
+            0.8,
+            None,
+        );
+        db.conn_ref()
+            .execute(
+                "INSERT INTO signal_events
+                    (id, entity_type, entity_id, signal_type, data_source, value, confidence, created_at)
+                 VALUES
+                    ('s-glean-root', 'account', 'generic-account', 'support_health_updated', 'glean_zendesk', '{\"summary\":\"purge-sentinel-root\"}', 0.9, '2026-05-01T00:00:00Z'),
+                    ('s-derived-root', 'account', 'child-account', 'support_health_updated', 'propagation:hierarchy_down', '{\"detail\":\"purge-sentinel-root\"}', 0.45, '2026-05-01T00:00:00Z')",
+                [],
+            )
+            .expect("seed derived signal");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO signal_derivations
+                    (id, source_signal_id, derived_signal_id, rule_name)
+                 VALUES
+                    ('sd-glean-derived', 's-glean-root', 's-derived-root', 'rule_hierarchy_down')",
+                [],
+            )
+            .expect("seed signal derivation");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO briefing_callouts
+                    (id, signal_id, entity_type, entity_id, severity, headline, detail)
+                 VALUES
+                    ('callout-derived', 's-derived-root', 'account', 'child-account', 'warning', 'Derived Glean callout', 'purge-sentinel-root')",
+                [],
+            )
+            .expect("seed derived callout");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO accounts (id, name, updated_at)
+                 VALUES ('generic-account', 'Generic Account', '2026-05-01T00:00:00Z')",
+                [],
+            )
+            .expect("seed account");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO account_technical_footprint
+                 (account_id, support_tier, csat_score, open_tickets, source)
+                 VALUES
+                 ('generic-account', 'standard', NULL, 2, 'glean_zendesk'),
+                 ('user-owned-account', 'premium', NULL, 0, 'user'),
+                 ('user-owned-same-value-account', 'premium', NULL, 0, 'user_edit'),
+                 ('mixed-legacy-account', 'premium', 91.0, 4, 'glean_zendesk')",
+                [],
+            )
+            .expect("seed technical footprint");
+        db.conn_ref()
+            .execute(
+                "UPDATE account_technical_footprint
+                 SET updated_at = '2026-04-01T00:00:00Z'
+                 WHERE account_id = 'user-owned-same-value-account'",
+                [],
+            )
+            .expect("backdate user-owned footprint");
+        db.upsert_account_source_ref(&crate::db::types::AccountSourceRef {
+            account_id: "user-owned-same-value-account",
+            field: "technical_footprint.support_tier",
+            source_system: "glean_zendesk",
+            source_kind: "technical_footprint",
+            source_value: Some("premium"),
+            observed_at: "2026-05-01T00:00:00Z",
+            reference_id: Some("glean_technical_footprint:user-owned-same-value"),
+        })
+        .expect("seed same-value Glean technical footprint ref");
+        db.upsert_account_source_ref(&crate::db::types::AccountSourceRef {
+            account_id: "mixed-legacy-account",
+            field: "technical_footprint.support_tier",
+            source_system: "glean_zendesk",
+            source_kind: "technical_footprint",
+            source_value: Some("premium"),
+            observed_at: "2026-05-01T00:00:00Z",
+            reference_id: Some("glean_technical_footprint:mixed-support-tier"),
+        })
+        .expect("seed mixed technical footprint ref");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO captured_commitments
+                    (id, account_id, title, owner, source, created_at)
+                 VALUES
+                    ('glean-commitment', 'generic-account', 'Glean-owned commitment', 'vendor', 'glean_enrichment:generic-account', '2026-05-01T00:00:00Z'),
+                    ('user-commitment', 'generic-account', 'User-owned commitment', 'vendor', 'user', '2026-05-01T00:00:00Z')",
+                [],
+            )
+            .expect("seed commitments");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO account_products
+                    (account_id, name, status, source, confidence)
+                 VALUES
+                    ('generic-account', 'Glean product', 'active', 'glean', 0.7),
+                    ('generic-account', 'User product', 'active', 'user_correction', 0.9)",
+                [],
+            )
+            .expect("seed products");
+
+        let report = purge_source(&db, DataSource::Glean).expect("purge glean");
+        assert_eq!(report.signals_deleted, GLEAN_SIGNAL_DATA_SOURCES.len() + 2);
+        assert_eq!(report.signal_derivations_deleted, 1);
+        assert_eq!(report.briefing_callouts_deleted, 1);
+        assert_eq!(report.enrichment_commitments_deleted, 1);
+        assert_eq!(report.account_products_deleted, 1);
+
+        for source in GLEAN_SIGNAL_DATA_SOURCES {
+            let remaining: i64 = db
+                .conn_ref()
+                .query_row(
+                    "SELECT COUNT(*) FROM signal_events WHERE data_source = ?1",
+                    [*source],
+                    |row| row.get(0),
+                )
+                .expect("count glean signal source");
+            assert_eq!(remaining, 0, "{source} signals must be purged");
+        }
+
+        let remaining_google: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM signal_events WHERE data_source = 'google'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count non-glean signals");
+        assert_eq!(remaining_google, 1, "non-Glean signals must remain");
+        let remaining_derived_signal: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM signal_events WHERE id = 's-derived-root'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count derived signal");
+        assert_eq!(
+            remaining_derived_signal, 0,
+            "Glean-derived propagation signals must be purged"
+        );
+        let remaining_callout: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM briefing_callouts WHERE detail LIKE '%purge-sentinel-root%'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count derived callout");
+        assert_eq!(
+            remaining_callout, 0,
+            "callouts materialized from Glean-derived signals must be purged"
+        );
+
+        let remaining_glean_footprint: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM account_technical_footprint WHERE source = 'glean_zendesk'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count Glean technical footprint");
+        assert_eq!(
+            remaining_glean_footprint, 0,
+            "Glean technical footprint must be purged"
+        );
+
+        let remaining_user_footprint: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM account_technical_footprint WHERE source = 'user'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count user technical footprint");
+        assert_eq!(
+            remaining_user_footprint, 1,
+            "non-Glean technical footprint must remain"
+        );
+        let user_owned_same_value: (Option<String>, String) = db
+            .conn_ref()
+            .query_row(
+                "SELECT support_tier, source
+                 FROM account_technical_footprint
+                 WHERE account_id = 'user-owned-same-value-account'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read same-value user footprint");
+        assert_eq!(
+            user_owned_same_value,
+            (Some("premium".to_string()), "user_edit".to_string()),
+            "Glean purge must not clear non-Glean-owned technical footprint values even when values match"
+        );
+        let mixed_legacy: (Option<String>, Option<f64>, i64, String) = db
+            .conn_ref()
+            .query_row(
+                "SELECT support_tier, csat_score, open_tickets, source
+                 FROM account_technical_footprint
+                 WHERE account_id = 'mixed-legacy-account'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .expect("read mixed technical footprint");
+        assert_eq!(
+            mixed_legacy,
+            (None, None, 0, "source_purged:glean".to_string()),
+            "mixed ref-backed and legacy Glean technical fields should all be cleared"
+        );
+
+        let remaining_glean_commitments: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM captured_commitments WHERE source LIKE 'glean_enrichment:%'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count Glean commitments");
+        assert_eq!(remaining_glean_commitments, 0);
+        let remaining_user_commitments: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM captured_commitments WHERE source = 'user'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count user commitments");
+        assert_eq!(remaining_user_commitments, 1);
+
+        let remaining_glean_products: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM account_products WHERE source = 'glean'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count Glean products");
+        assert_eq!(remaining_glean_products, 0);
+        let remaining_user_products: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM account_products WHERE source = 'user_correction'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count user products");
+        assert_eq!(remaining_user_products, 1);
     }
 
     // --- Age-based purge tests ---
