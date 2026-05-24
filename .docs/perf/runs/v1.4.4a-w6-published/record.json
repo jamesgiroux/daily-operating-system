@@ -5,12 +5,12 @@
   "mode": "published",
   "scope": "v1.4.4a-W6",
   "run_id": "v1.4.4a-w6-published",
-  "commit": "943ff92829e6f3873e8ec3174efc9b780b742e39",
+  "commit": "07cd4dfe21050720dd9b3f7ff237d5177d1d901f",
   "branch": "codex/v1.4.4a-w6-release-gate",
   "dirty": false,
   "command": "pnpm suite:p -- --mode published --scope v1.4.4a-W6 --run-id v1.4.4a-w6-published --out .docs/perf/runs/v1.4.4a-w6-published/record.json --baseline .docs/perf/baselines/scope-v1.4.1-W8.json",
-  "started_at": "2026-05-24T20:26:30Z",
-  "finished_at": "2026-05-24T20:37:01Z",
+  "started_at": "2026-05-24T21:04:27Z",
+  "finished_at": "2026-05-24T21:14:09Z",
   "environment": {
     "os": "Darwin 25.5.0",
     "arch": "arm64",
@@ -23,7 +23,7 @@
     "schema": "sha256:f83ae06b4eda04bd638c6a98bd8127d526cd01997527a89b41e5dad8662f6127",
     "bench_manifest": "sha256:33677f6f8f0c0cc441d14313ab748897902bbbb3005446cb71bb7ae6ac9f8bab",
     "bench_config": "sha256:574a4ed45b17786ccd0d1f59e065c6ea31234b88c714ee58aba59cba932612f4",
-    "baseline": "sha256:5b9c7a8dec49d7133b3091f050e2830ade577ad6a3e01588f50e760320b1ee76",
+    "baseline": "sha256:ac5f8382ddc6aed2e13ab3c3c6022763f992e3f92c6ca10ec85b35369a84c086",
     "prior_baseline": "sha256:f44d1be9846b6d75a2f98ffc192ed2b3ff65d72ac82d262e5a6d4de611334f1b"
   },
   "metric_definitions": [
@@ -165,21 +165,21 @@
     {
       "namespace": "performance_regression",
       "name": "criterion_mean_ns_context_mode_atomic_local_snapshot",
-      "value": 52.01133734954785,
+      "value": 49.33288338771727,
       "unit": "ns",
       "status": "info"
     },
     {
       "namespace": "performance_regression",
       "name": "criterion_mean_ns_fenced_write_intelligence_json",
-      "value": 161358.82420696266,
+      "value": 154279.16688111136,
       "unit": "ns",
       "status": "info"
     },
     {
       "namespace": "performance_regression",
       "name": "criterion_mean_ns_mutation_gate_mode_check",
-      "value": 47.57418581115251,
+      "value": 46.52128059982657,
       "unit": "ns",
       "status": "info"
     }
@@ -224,7 +224,7 @@
     {
       "path": ".docs/perf/runs/v1.4.4a-w6-published/bench-summary.json",
       "kind": "suite-p-summary",
-      "sha256": "sha256:5d29e8a10561ce18dabd8b463babb2dee60c7c2913dce43ce18136563d44b853",
+      "sha256": "sha256:8f6eca8d1d8be2b59cae495bcb289b5e353791e6f292308175892ead1826c0c3",
       "privacy_class": "public",
       "publishable": true,
       "redaction_status": "synthetic"
@@ -240,7 +240,7 @@
     {
       "path": ".docs/perf/baselines/scope-v1.4.4a-W6.json",
       "kind": "suite-p-baseline",
-      "sha256": "sha256:5b9c7a8dec49d7133b3091f050e2830ade577ad6a3e01588f50e760320b1ee76",
+      "sha256": "sha256:ac5f8382ddc6aed2e13ab3c3c6022763f992e3f92c6ca10ec85b35369a84c086",
       "privacy_class": "public",
       "publishable": true,
       "redaction_status": "synthetic"
@@ -258,7 +258,7 @@
       "bench_count": 3
     },
     "baseline_binding": {
-      "baseline_hash": "sha256:5b9c7a8dec49d7133b3091f050e2830ade577ad6a3e01588f50e760320b1ee76",
+      "baseline_hash": "sha256:ac5f8382ddc6aed2e13ab3c3c6022763f992e3f92c6ca10ec85b35369a84c086",
       "prior_baseline_hash": "sha256:f44d1be9846b6d75a2f98ffc192ed2b3ff65d72ac82d262e5a6d4de611334f1b"
     }
   }
