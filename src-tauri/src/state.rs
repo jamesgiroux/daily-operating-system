@@ -1456,6 +1456,7 @@ impl AppState {
         F: FnOnce(&crate::db::ActionDb) -> Result<T, String> + Send + 'static,
         T: Send + 'static,
     {
+        let started = std::time::Instant::now();
         // If the async service hasn't finished startup init yet, try to
         // initialize it on-demand before falling back.
         {
@@ -1473,14 +1474,21 @@ impl AppState {
         {
             let guard = self.db_service.read().await;
             if let Some(svc) = guard.as_ref() {
-                return svc
+                let result = svc
                     .reader()
-                    .call(move |conn| {
+                    .call_labeled("db_read", move |conn| {
                         let db = crate::db::ActionDb::from_conn(conn);
                         Ok(f(db).map_err(DbAccessError::from))
                     })
                     .await
-                    .map_err(DbAccessError::db_read)?;
+                    .map_err(DbAccessError::db_read)
+                    .and_then(|inner| inner);
+                crate::latency::record_latency(
+                    "app_state.db_read.total",
+                    started.elapsed().as_millis(),
+                    250,
+                );
+                return result;
             }
         }
 
@@ -1490,7 +1498,13 @@ impl AppState {
             .map_err(|e| {
                 DbAccessError::from(format!("Database unavailable: failed to open DB ({e})"))
             })?;
-        f(&db).map_err(DbAccessError::from)
+        let result = f(&db).map_err(DbAccessError::from);
+        crate::latency::record_latency(
+            "app_state.db_read.total",
+            started.elapsed().as_millis(),
+            250,
+        );
+        result
     }
 
     /// Run a mutating closure on the writer connection. Serialized -- only one
@@ -1500,6 +1514,7 @@ impl AppState {
         F: FnOnce(&crate::db::ActionDb) -> Result<T, String> + Send + 'static,
         T: Send + 'static,
     {
+        let started = std::time::Instant::now();
         // If the async service hasn't finished startup init yet, try to
         // initialize it on-demand before falling back.
         {
@@ -1517,14 +1532,21 @@ impl AppState {
         {
             let guard = self.db_service.read().await;
             if let Some(svc) = guard.as_ref() {
-                return svc
+                let result = svc
                     .writer()
-                    .call(move |conn| {
+                    .call_labeled("db_write", move |conn| {
                         let db = crate::db::ActionDb::from_conn(conn);
                         Ok(f(db).map_err(DbAccessError::from))
                     })
                     .await
-                    .map_err(DbAccessError::db_write)?;
+                    .map_err(DbAccessError::db_write)
+                    .and_then(|inner| inner);
+                crate::latency::record_latency(
+                    "app_state.db_write.total",
+                    started.elapsed().as_millis(),
+                    500,
+                );
+                return result;
             }
         }
 
@@ -1534,7 +1556,13 @@ impl AppState {
             .map_err(|e| {
                 DbAccessError::from(format!("Database unavailable: failed to open DB ({e})"))
             })?;
-        f(&db).map_err(DbAccessError::from)
+        let result = f(&db).map_err(DbAccessError::from);
+        crate::latency::record_latency(
+            "app_state.db_write.total",
+            started.elapsed().as_millis(),
+            500,
+        );
+        result
     }
 
     /// Save execution history to disk

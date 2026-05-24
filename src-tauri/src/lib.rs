@@ -767,6 +767,7 @@ pub fn run() {
             commands::get_execution_history,
             commands::get_next_run_time,
             commands::get_meeting_intelligence,
+            commands::mark_meeting_intelligence_viewed,
             commands::refresh_meeting_briefing,
             commands::generate_meeting_intelligence,
             commands::enrich_meeting_background,

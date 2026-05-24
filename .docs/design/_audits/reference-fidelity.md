@@ -48,7 +48,6 @@ vs `src/pages/MeetingDetailPage.tsx`
 
 **Missing imports** (TSX imports a component whose CSS prefix isn't in HTML):
 - `FinisMarker` — expected `FinisMarker_*` classes
-- `TrustBandIndicator` — expected `TrustBandIndicator_*` classes
 
 ---
 

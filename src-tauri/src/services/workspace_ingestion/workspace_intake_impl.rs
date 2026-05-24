@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use abilities_runtime::abilities::provenance::source::EntityId;
+use abilities_runtime::abilities::registry::Actor;
 use abilities_runtime::services::workspace_intake::{
     EntityRefDto, WorkspaceIntakeError, WorkspaceIntakeReceipt, WorkspaceIntakeRequest,
     WorkspaceIntakeService,
@@ -10,6 +11,7 @@ use async_trait::async_trait;
 
 use crate::db::{ActionDb, LocalKeychain};
 use crate::entity::EntityType;
+use crate::services::context::{ExternalClients, ServiceContext, SystemClock, SystemRng};
 
 use super::contracts::{RejectionReason, WorkspaceCategory, WorkspaceFileKind};
 use super::lifecycle::{lifecycle_state_slug, workspace_file_kind_from_slug};
@@ -39,19 +41,36 @@ impl IngestPipelineWorkspaceIntake {
 impl WorkspaceIntakeService for IngestPipelineWorkspaceIntake {
     async fn ingest(
         &self,
-        _ctx: &abilities_runtime::abilities::registry::AbilityContext<'_>,
+        ctx: &abilities_runtime::abilities::registry::AbilityContext<'_>,
         req: WorkspaceIntakeRequest,
     ) -> Result<WorkspaceIntakeReceipt, WorkspaceIntakeError> {
+        ctx.services()
+            .check_mutation_allowed()
+            .map_err(|e| WorkspaceIntakeError::DbError(e.to_string()))?;
         let workspace_root = self.workspace_root.clone();
-        tokio::task::spawn_blocking(move || ingest_sync(workspace_root, req))
-            .await
-            .map_err(|e| WorkspaceIntakeError::Io(format!("workspace intake task failed: {e}")))?
+        let original_actor = ability_actor_label(&ctx.actor).to_string();
+        let ability_id = ctx.services().ability_id.map(str::to_string);
+        tokio::task::spawn_blocking(move || {
+            let clock = SystemClock;
+            let rng = SystemRng;
+            let external = ExternalClients::default();
+            let mut service_ctx = ServiceContext::new_live(&clock, &rng, &external)
+                .with_actor("system:workspace_ingestion");
+            if let Some(ability_id) = ability_id.as_deref() {
+                service_ctx = service_ctx.with_ability_id(ability_id);
+            }
+            ingest_sync(&service_ctx, workspace_root, req, original_actor)
+        })
+        .await
+        .map_err(|e| WorkspaceIntakeError::Io(format!("workspace intake task failed: {e}")))?
     }
 }
 
 fn ingest_sync(
+    ctx: &ServiceContext<'_>,
     workspace_root: PathBuf,
     req: WorkspaceIntakeRequest,
+    original_actor: String,
 ) -> Result<WorkspaceIntakeReceipt, WorkspaceIntakeError> {
     let source_type = parse_workspace_file_kind(&req.source_type_slug)
         .ok_or_else(|| WorkspaceIntakeError::InvalidSourceTypeSlug(req.source_type_slug.clone()))?;
@@ -96,10 +115,12 @@ fn ingest_sync(
         entity,
         mode,
         category_hint,
+        invocation_actor: original_actor,
+        validated_content: None,
     };
     let pipeline = build_pipeline(workspace_root);
     let receipt = pipeline
-        .run(conn, request)
+        .run(ctx, &db, request)
         .map_err(intake_error_from_ingest)?;
     Ok(WorkspaceIntakeReceipt {
         run_id: receipt.ingestion_run_id.0,
@@ -108,6 +129,17 @@ fn ingest_sync(
         lifecycle_state_after_slug: lifecycle_state_slug(receipt.lifecycle_state_after).to_string(),
         resolved_path: receipt.resolved_path,
     })
+}
+
+fn ability_actor_label(actor: &Actor) -> &'static str {
+    match actor {
+        Actor::Agent => "agent",
+        Actor::User => "user",
+        Actor::Admin => "admin",
+        Actor::System => "system",
+        Actor::SurfaceClient { .. } => "surface_client",
+        Actor::McpClient { .. } => "mcp_client",
+    }
 }
 
 fn parse_workspace_file_kind(slug: &str) -> Option<WorkspaceFileKind> {

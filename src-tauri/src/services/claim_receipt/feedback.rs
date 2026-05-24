@@ -919,7 +919,7 @@ mod tests {
             .db_write(move |db| {
                 db.conn_ref()
                     .execute(
-                        "INSERT INTO intelligence_claims /* dos7-allowed: claim receipt feedback tests seed backing claims */ (
+                        "INSERT INTO intelligence_claims /* dos7-allowed: claim receipt feedback unit test seed */ (
                             id, subject_ref, claim_type, field_path, topic_key, text,
                             dedup_key, item_hash, actor, data_source, source_ref,
                             source_asof, observed_at, created_at, provenance_json,

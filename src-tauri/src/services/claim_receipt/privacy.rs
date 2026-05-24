@@ -724,7 +724,7 @@ mod tests {
     ) {
         let observed_at = "2026-05-20T12:00:00Z";
         conn.execute(
-            r#"INSERT INTO intelligence_claims /* dos7-allowed: claim receipt privacy tests seed backing claims */ (
+            r#"INSERT INTO intelligence_claims /* dos7-allowed: claim receipt privacy unit test seed */ (
                 id, subject_ref, claim_type, field_path, topic_key, text, dedup_key,
                 item_hash, actor, data_source, source_ref, source_asof, observed_at,
                 created_at, provenance_json, metadata_json, claim_state, surfacing_state,

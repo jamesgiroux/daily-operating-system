@@ -10,7 +10,6 @@ use std::time::Duration;
 use abilities_runtime::abilities::provenance::source::{EntityId, WorkspaceFileKind};
 use chrono::{DateTime, Utc};
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
-use rusqlite::Connection;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc;
 use tokio::time::sleep;
@@ -20,6 +19,7 @@ use crate::entity::EntityType;
 use crate::parser::count_inbox;
 use crate::people;
 use crate::projects;
+use crate::services::context::{ExternalClients, ServiceContext, SystemClock, SystemRng};
 use crate::services::workspace_ingestion::contracts::RejectionReason;
 use crate::services::workspace_ingestion::pipeline::{
     file_id_from_identity, EntityRef, IngestError, IngestPipeline, IngestRequest,
@@ -658,7 +658,7 @@ fn entity_ref(
 
 fn ingest_after_upsert(
     pipeline: &IngestPipeline,
-    conn: &Connection,
+    db: &crate::db::ActionDb,
     workspace_root: &Path,
     path: &Path,
     source_type: WorkspaceFileKind,
@@ -686,9 +686,16 @@ fn ingest_after_upsert(
         entity,
         mode: IngestionMode::Realtime,
         category_hint: None,
+        invocation_actor: "system:workspace_watcher".to_string(),
+        validated_content: None,
     };
 
-    pipeline.run(conn, request).map(|_| ())
+    let clock = SystemClock;
+    let rng = SystemRng;
+    let external = ExternalClients::default();
+    let ctx =
+        ServiceContext::new_live(&clock, &rng, &external).with_actor("system:workspace_watcher");
+    pipeline.run(&ctx, db, request).map(|_| ())
 }
 
 fn log_ingest_failure(path: &Path, err: IngestError) {
@@ -715,7 +722,6 @@ fn handle_people_changes(paths: &[PathBuf], state: &AppState, workspace: &Path) 
     };
     let workspace_root = canonical_workspace_root(workspace);
     let pipeline = wiring::build_pipeline(workspace_root.to_path_buf());
-    let conn = db.conn_ref();
 
     let user_domains = {
         let g = state.config.read();
@@ -751,7 +757,7 @@ fn handle_people_changes(paths: &[PathBuf], state: &AppState, workspace: &Path) 
                         let _ = people::write_person_markdown(workspace, &person, &db);
                         if let Err(err) = ingest_after_upsert(
                             &pipeline,
-                            conn,
+                            &db,
                             &workspace_root,
                             path,
                             WorkspaceFileKind::EntityDoc,
@@ -798,7 +804,6 @@ fn handle_account_changes(paths: &[PathBuf], _state: &AppState, workspace: &Path
     };
     let workspace_root = canonical_workspace_root(workspace);
     let pipeline = wiring::build_pipeline(workspace_root.to_path_buf());
-    let conn = db.conn_ref();
 
     for path in paths {
         if !path.exists() {
@@ -822,7 +827,7 @@ fn handle_account_changes(paths: &[PathBuf], _state: &AppState, workspace: &Path
                     let _ = accounts::write_account_markdown(workspace, &account, Some(&json), &db);
                     if let Err(err) = ingest_after_upsert(
                         &pipeline,
-                        conn,
+                        &db,
                         &workspace_root,
                         path,
                         WorkspaceFileKind::EntityDoc,
@@ -863,7 +868,6 @@ fn handle_project_changes(paths: &[PathBuf], _state: &AppState, workspace: &Path
     };
     let workspace_root = canonical_workspace_root(workspace);
     let pipeline = wiring::build_pipeline(workspace_root.to_path_buf());
-    let conn = db.conn_ref();
 
     for path in paths {
         if !path.exists() {
@@ -881,7 +885,7 @@ fn handle_project_changes(paths: &[PathBuf], _state: &AppState, workspace: &Path
                     let _ = projects::write_project_markdown(workspace, &project, Some(&json), &db);
                     if let Err(err) = ingest_after_upsert(
                         &pipeline,
-                        conn,
+                        &db,
                         &workspace_root,
                         path,
                         WorkspaceFileKind::EntityDoc,
@@ -922,7 +926,6 @@ fn handle_account_content_changes(
         crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())).ok()?;
     let workspace_root = canonical_workspace_root(workspace);
     let pipeline = wiring::build_pipeline(workspace_root.to_path_buf());
-    let conn = db.conn_ref();
 
     let accounts_dir = workspace.join("Accounts");
     let mut affected_entity_ids = std::collections::HashSet::new();
@@ -973,7 +976,7 @@ fn handle_account_content_changes(
             }) {
                 if let Err(err) = ingest_after_upsert(
                     &pipeline,
-                    conn,
+                    &db,
                     &workspace_root,
                     path,
                     WorkspaceFileKind::EntityDoc,
@@ -1018,7 +1021,6 @@ fn handle_project_content_changes(
         crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())).ok()?;
     let workspace_root = canonical_workspace_root(workspace);
     let pipeline = wiring::build_pipeline(workspace_root.to_path_buf());
-    let conn = db.conn_ref();
 
     let projects_dir = workspace.join("Projects");
     let mut affected_entity_ids = std::collections::HashSet::new();
@@ -1069,7 +1071,7 @@ fn handle_project_content_changes(
             }) {
                 if let Err(err) = ingest_after_upsert(
                     &pipeline,
-                    conn,
+                    &db,
                     &workspace_root,
                     path,
                     WorkspaceFileKind::EntityDoc,

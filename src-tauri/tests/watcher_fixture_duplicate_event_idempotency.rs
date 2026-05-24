@@ -2,7 +2,9 @@ use std::path::Path;
 
 use abilities_runtime::abilities::provenance::source::{EntityId, WorkspaceFileKind};
 use chrono::{DateTime, Utc};
+use dailyos_lib::db::ActionDb;
 use dailyos_lib::entity::EntityType;
+use dailyos_lib::services::context::{ExternalClients, ServiceContext, SystemClock, SystemRng};
 use dailyos_lib::services::workspace_ingestion::contracts::RejectionReason;
 use dailyos_lib::services::workspace_ingestion::pipeline::{
     file_id_from_identity, EntityRef, IngestError, IngestPipeline, IngestRequest,
@@ -16,6 +18,7 @@ use rusqlite::Connection;
 fn duplicate_watcher_events_are_idempotent_against_w2_a_pipeline_receipt() {
     let conn = Connection::open_in_memory().expect("sqlite");
     dailyos_lib::migration_test_api::run_migrations(&conn).expect("migrations");
+    let db = ActionDb::from_conn(&conn);
     let workspace = tempfile::tempdir().expect("workspace");
     let workspace_root = workspace
         .path()
@@ -30,7 +33,7 @@ fn duplicate_watcher_events_are_idempotent_against_w2_a_pipeline_receipt() {
     let entity = Some(entity_ref(EntityType::Account, "acme", Some("Acme")));
     run_pipeline(
         &pipeline,
-        &conn,
+        &db,
         &workspace_root,
         &file_path,
         WorkspaceFileKind::EntityDoc,
@@ -39,7 +42,7 @@ fn duplicate_watcher_events_are_idempotent_against_w2_a_pipeline_receipt() {
     .expect("first ingest succeeds");
     let duplicate = run_pipeline(
         &pipeline,
-        &conn,
+        &db,
         &workspace_root,
         &file_path,
         WorkspaceFileKind::EntityDoc,
@@ -57,7 +60,7 @@ fn duplicate_watcher_events_are_idempotent_against_w2_a_pipeline_receipt() {
 
 fn run_pipeline(
     pipeline: &IngestPipeline,
-    conn: &Connection,
+    db: &ActionDb,
     workspace_root: &Path,
     path: &Path,
     source_type: WorkspaceFileKind,
@@ -83,8 +86,14 @@ fn run_pipeline(
         entity,
         mode: IngestionMode::Realtime,
         category_hint: None,
+        invocation_actor: "system:test".to_string(),
+        validated_content: None,
     };
-    pipeline.run(conn, request).map(|_| ())
+    let clock = SystemClock;
+    let rng = SystemRng;
+    let external = ExternalClients::default();
+    let ctx = ServiceContext::new_live(&clock, &rng, &external).with_actor("system:test");
+    pipeline.run(&ctx, db, request).map(|_| ())
 }
 
 fn entity_ref(entity_type: EntityType, id: &str, name: Option<&str>) -> EntityRef {

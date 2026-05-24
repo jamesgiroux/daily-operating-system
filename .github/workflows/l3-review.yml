@@ -159,6 +159,32 @@ jobs:
 
           echo "config-fence: no L3 gate-config paths in the integrated range"
 
+  # ─── Suite firing detection (2026-05-23: gate Suite S/P by need) ─────
+  # Per engineering-ladder.md revision: Suite S fires only when the integrated
+  # diff touches paths in matrix.yml's security-auditor.when_changed; Suite P
+  # fires only when it touches performance-engineer.when_changed. Suite E
+  # always fires.
+  detect-suite-firing:
+    name: L3 / detect-suite-firing
+    needs: gate
+    runs-on: ubuntu-latest
+    outputs:
+      needs-s: ${{ steps.detect.outputs.needs-s }}
+      needs-p: ${{ steps.detect.outputs.needs-p }}
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          fetch-depth: 0
+      - run: pip install 'pyyaml==6.0.1'
+      - id: detect
+        env:
+          RANGE: ${{ needs.gate.outputs.range }}
+        run: |
+          set -euo pipefail
+          git diff --name-only $RANGE \
+            | python3 .github/scripts/detect-l3-suite-firing.py \
+                .github/reviewer-prompts/matrix.yml
+
   panel-codex:
     name: L3 / panel / codex-challenge
     needs: gate
@@ -205,7 +231,8 @@ jobs:
 
   suite-s:
     name: L3 / suite-s
-    needs: gate
+    needs: [gate, detect-suite-firing]
+    if: needs.detect-suite-firing.outputs.needs-s == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
@@ -219,7 +246,8 @@ jobs:
 
   suite-p:
     name: L3 / suite-p
-    needs: gate
+    needs: [gate, detect-suite-firing]
+    if: needs.detect-suite-firing.outputs.needs-p == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
@@ -260,7 +288,7 @@ jobs:
 
   aggregate:
     name: L3 / aggregate
-    needs: [gate, panel-codex, panel-architect, suite-s, suite-p, suite-e]
+    needs: [gate, detect-suite-firing, panel-codex, panel-architect, suite-s, suite-p, suite-e]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -270,23 +298,59 @@ jobs:
 
       - id: verdict
         env:
+          DETECT_RESULT: ${{ needs.detect-suite-firing.result }}
           CODEX_RESULT: ${{ needs.panel-codex.result }}
           ARCH_RESULT: ${{ needs.panel-architect.result }}
           S_RESULT: ${{ needs.suite-s.result }}
           P_RESULT: ${{ needs.suite-p.result }}
           E_RESULT: ${{ needs.suite-e.result }}
+          NEEDS_S: ${{ needs.detect-suite-firing.outputs.needs-s }}
+          NEEDS_P: ${{ needs.detect-suite-firing.outputs.needs-p }}
         run: |
           set -euo pipefail
-          if [[ "$CODEX_RESULT" == "success" \
-             && "$ARCH_RESULT"  == "success" \
-             && "$S_RESULT"     == "success" \
-             && "$P_RESULT"     == "success" \
-             && "$E_RESULT"     == "success" ]]; then
+          # Suites S and P now fire by need (2026-05-23 ladder revision).
+          # 'skipped' is a valid pass state when the suite was not needed.
+
+          # Fail-closed guard: the detector itself must have succeeded AND
+          # produced a definite true/false for each suite. If the detector
+          # failed (NEEDS_S/NEEDS_P empty), treating skipped + "" as pass
+          # would let a needed-but-skipped suite slip through. Refuse.
+          if [[ "$DETECT_RESULT" != "success" ]]; then
+            echo "::error::detect-suite-firing result=$DETECT_RESULT — cannot determine suite need; failing closed"
+            echo "verdict=fail" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          for var in NEEDS_S NEEDS_P; do
+            val="${!var}"
+            if [[ "$val" != "true" && "$val" != "false" ]]; then
+              echo "::error::$var='$val' (expected exactly 'true' or 'false'); failing closed"
+              echo "verdict=fail" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+
+          # Treat as success ⇔ result is 'success' OR (result is 'skipped' AND that suite wasn't needed).
+          check() {
+            local result="$1"; local needed="$2"; local label="$3"
+            if [[ "$result" == "success" ]]; then return 0; fi
+            if [[ "$result" == "skipped" && "$needed" == "false" ]]; then return 0; fi
+            echo "::error::$label result=$result (needed=$needed) — not a pass state"
+            return 1
+          }
+
+          ok=1
+          [[ "$CODEX_RESULT" == "success" ]] || { echo "::error::codex result=$CODEX_RESULT"; ok=0; }
+          [[ "$ARCH_RESULT"  == "success" ]] || { echo "::error::architect result=$ARCH_RESULT"; ok=0; }
+          check "$S_RESULT" "$NEEDS_S" "Suite S" || ok=0
+          check "$P_RESULT" "$NEEDS_P" "Suite P" || ok=0
+          [[ "$E_RESULT"     == "success" ]] || { echo "::error::Suite E result=$E_RESULT (always required)"; ok=0; }
+
+          if [[ "$ok" == "1" ]]; then
             echo "verdict=pass" >> "$GITHUB_OUTPUT"
           else
             echo "verdict=fail" >> "$GITHUB_OUTPUT"
           fi
-          echo "results: codex=$CODEX_RESULT arch=$ARCH_RESULT S=$S_RESULT P=$P_RESULT E=$E_RESULT"
+          echo "results: detect=$DETECT_RESULT codex=$CODEX_RESULT arch=$ARCH_RESULT S=$S_RESULT (needed=$NEEDS_S) P=$P_RESULT (needed=$NEEDS_P) E=$E_RESULT"
 
       - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:

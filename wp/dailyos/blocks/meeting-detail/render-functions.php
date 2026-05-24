@@ -160,10 +160,10 @@ if ( ! function_exists( 'dailyos_meeting_detail_render' ) ) {
 		$out  = '<section ' . $wrapper_attrs . '>';
 		// Inner-blocks slot. The W1 producers consumed across the 10 typed
 		// inner blocks are:
-		//   - get_entity_intelligence (Facts/Health/Touchpoints/OpenLoops/...)
-		//   - meeting_prep_status (DOS-335 — prep DTO)
-		//   - claim_receipt (audience-keyed receipt per claim_ref)
-		//   - record_claim_feedback (per-claim feedback affordance)
+		// - get_entity_intelligence (Facts/Health/Touchpoints/OpenLoops/...)
+		// - meeting_prep_status (DOS-335 — prep DTO)
+		// - claim_receipt (audience-keyed receipt per claim_ref)
+			// - record_claim_feedback (per-claim feedback affordance).
 		$out .= '<div class="dailyos-inner-blocks-slot">' . $inner . '</div>';
 		$out .= '</section>';
 

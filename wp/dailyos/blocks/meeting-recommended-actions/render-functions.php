@@ -168,7 +168,7 @@ if ( ! function_exists( 'dailyos_meeting_recommended_actions_empty_chip' ) ) {
 	 */
 	function dailyos_meeting_recommended_actions_empty_chip( string $reason, string $label ): string {
 		return sprintf(
-			'<span class="dailyos-empty-chip wp-block-dailyos-meeting-recommended-actions is-empty" data-empty-reason="%s">%s</span>',
+			'<section class="editorial-reveal meeting-intel_chapterSection meeting-intel_chapterSection--empty is-empty" data-ds-name="MeetingRecommendedActions"><span class="dailyos-empty-chip" data-empty-reason="%s">%s</span></section>',
 			esc_attr( $reason ),
 			esc_html( $label )
 		);

@@ -246,7 +246,7 @@ mod tests {
                 let observed_at = Utc::now().to_rfc3339();
                 db.conn_ref()
                     .execute(
-                        "INSERT INTO intelligence_claims /* dos7-allowed: claim receipt render tests seed backing claims */ (
+                        "INSERT INTO intelligence_claims /* dos7-allowed: claim receipt render unit test seed */ (
                             id, subject_ref, claim_type, field_path, topic_key, text, dedup_key,
                             item_hash, actor, data_source, source_ref, source_asof, observed_at,
                             created_at, provenance_json, metadata_json, claim_state, surfacing_state,

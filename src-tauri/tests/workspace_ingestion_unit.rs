@@ -9,8 +9,8 @@ use abilities_runtime::abilities::provenance::source::{
 use abilities_runtime::abilities::provenance::DocumentId;
 use chrono::Utc;
 use dailyos_lib::services::workspace_ingestion::contracts::{
-    Extractor, FileIdentity, NullExtractor, NullSignalEmitter, RejectionReason, SignalEmitter,
-    WorkspaceCategory, WorkspaceFileKind,
+    ExtractionContext, Extractor, FileIdentity, NullExtractor, NullSignalEmitter, RejectionReason,
+    SignalEmitter, WorkspaceCategory, WorkspaceFileKind,
 };
 use dailyos_lib::services::workspace_ingestion::lifecycle::LifecycleState;
 
@@ -138,12 +138,25 @@ fn null_extractor_is_send_sync_and_returns_empty() {
     // Construct a dummy file handle for the Extractor::extract call. We can't
     // create a `std::fs::File` without I/O, so use a tempfile.
     let tmp = tempfile::NamedTempFile::new().expect("tempfile");
-    let file = std::fs::File::open(tmp.path()).expect("open tempfile");
-    let proposals = extractor.extract(&file, &identity, WorkspaceFileKind::Inbox);
+    let mut file = std::fs::File::open(tmp.path()).expect("open tempfile");
+    let now = Utc::now();
+    let context = ExtractionContext {
+        file_id: "wf-null",
+        identity: &identity,
+        content: "",
+        source_type: WorkspaceFileKind::Inbox,
+        source_asof: now,
+        resolved_category: None,
+        linked_subject: None,
+        ingestion_run_id: "run-null",
+        observed_at: now,
+        invocation_actor: "system:test",
+    };
+    let report = extractor.extract(&mut file, &context).expect("extract");
     assert!(
-        proposals.is_empty(),
-        "NullExtractor must return empty Vec, got {} items",
-        proposals.len()
+        report.proposals.is_empty(),
+        "NullExtractor must return empty proposals, got {} items",
+        report.proposals.len()
     );
 }
 

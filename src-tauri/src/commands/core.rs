@@ -199,9 +199,37 @@ pub async fn get_meeting_intelligence(
     meeting_id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<MeetingIntelligence, String> {
+    let started = std::time::Instant::now();
     let app_state = state.inner().clone();
     let ctx = app_state.live_service_context();
-    crate::services::meetings::get_meeting_intelligence(&ctx, &app_state, &meeting_id).await
+    let result =
+        crate::services::meetings::get_meeting_intelligence(&ctx, &app_state, &meeting_id).await;
+    log_command_latency(
+        "get_meeting_intelligence",
+        started,
+        READ_CMD_LATENCY_BUDGET_MS,
+    );
+    result
+}
+
+/// Mark a meeting detail surface as viewed after the read payload has rendered.
+#[tauri::command]
+pub async fn mark_meeting_intelligence_viewed(
+    meeting_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let started = std::time::Instant::now();
+    let app_state = state.inner().clone();
+    let ctx = app_state.live_service_context();
+    let result =
+        crate::services::meetings::mark_meeting_intelligence_viewed(&ctx, &app_state, &meeting_id)
+            .await;
+    log_command_latency(
+        "mark_meeting_intelligence_viewed",
+        started,
+        READ_CMD_LATENCY_BUDGET_MS,
+    );
+    result
 }
 
 /// Single-service full refresh for a meeting briefing.

@@ -87,6 +87,8 @@ pub async fn get_emails_enriched(
                     .entity_id
                     .as_ref()
                     .and_then(|eid| entity_names.get(eid).cloned());
+                let (summary_context_trust_band, summary_context_source_count) =
+                    email_summary_context_for_display(dbe);
                 crate::types::Email {
                     id: dbe.email_id.clone(),
                     sender: dbe.sender_name.clone().unwrap_or_default(),
@@ -101,6 +103,8 @@ pub async fn get_emails_enriched(
                     is_unread: dbe.is_unread,
                     avatar_url: None,
                     summary: dbe.contextual_summary.clone(),
+                    summary_context_trust_band,
+                    summary_context_source_count,
                     recommended_action: None,
                     conversation_arc: None,
                     email_type: None,
@@ -570,6 +574,23 @@ pub fn compare_email_rank(a: &crate::types::Email, b: &crate::types::Email) -> O
     sb.partial_cmp(&sa).unwrap_or(Ordering::Equal)
 }
 
+pub(crate) fn email_summary_context_for_display(
+    dbe: &crate::db::DbEmail,
+) -> (Option<String>, Option<usize>) {
+    if dbe.contextual_summary.is_none()
+        || dbe.summary_context_prompt_version.as_deref()
+            != Some(crate::db::emails::EMAIL_SUMMARY_CONTEXT_PROMPT_VERSION)
+    {
+        return (None, None);
+    }
+
+    let source_count = dbe
+        .summary_context_source_count
+        .and_then(|count| usize::try_from(count).ok())
+        .filter(|count| *count > 0);
+    (dbe.summary_context_trust_band.clone(), source_count)
+}
+
 fn build_email_commitment_context(owner: Option<&str>, original_commitment: &str) -> String {
     let mut lines = vec![format!(
         "Original commitment: {}",
@@ -891,7 +912,10 @@ pub fn get_entity_emails(
                             contextual_summary, sentiment, urgency, user_is_last_sender,
                             last_sender_email, message_count, created_at, updated_at,
                             relevance_score, score_reason,
-                            pinned_at, commitments, questions, is_noise, to_recipients, cc_recipients
+                            pinned_at, commitments, questions, is_noise, to_recipients, cc_recipients,
+                            summary_context_prompt_version, summary_context_trust_band,
+                            summary_context_source_count, summary_context_source_keys_json,
+                            summary_context_generated_at
                      FROM emails WHERE sender_email = ?1 AND resolved_at IS NULL AND is_noise = 0 ORDER BY received_at DESC",
                 )
                 .map_err(|e| format!("query error: {e}"))?;
@@ -931,6 +955,11 @@ pub fn get_entity_emails(
                         is_noise: row.get::<_, i32>(30).map(|v| v != 0).unwrap_or(false),
                         to_recipients: row.get(31).ok(),
                         cc_recipients: row.get(32).ok(),
+                        summary_context_prompt_version: row.get(33).ok(),
+                        summary_context_trust_band: row.get(34).ok(),
+                        summary_context_source_count: row.get(35).ok(),
+                        summary_context_source_keys_json: row.get(36).ok(),
+                        summary_context_generated_at: row.get(37).ok(),
                     })
                 })
                 .map_err(|e| format!("query error: {e}"))?;
@@ -968,7 +997,10 @@ pub fn get_entity_emails(
                         contextual_summary, sentiment, urgency, user_is_last_sender,
                         last_sender_email, message_count, created_at, updated_at,
                         relevance_score, score_reason,
-                            pinned_at, commitments, questions, is_noise, to_recipients, cc_recipients
+                        pinned_at, commitments, questions, is_noise, to_recipients, cc_recipients,
+                        summary_context_prompt_version, summary_context_trust_band,
+                        summary_context_source_count, summary_context_source_keys_json,
+                        summary_context_generated_at
                  FROM emails WHERE sender_email IN ({}) AND resolved_at IS NULL AND is_noise = 0 ORDER BY received_at DESC",
                 placeholders.join(",")
             );
@@ -1016,6 +1048,11 @@ pub fn get_entity_emails(
                         is_noise: row.get::<_, i32>(30).map(|v| v != 0).unwrap_or(false),
                         to_recipients: row.get(31).ok(),
                         cc_recipients: row.get(32).ok(),
+                        summary_context_prompt_version: row.get(33).ok(),
+                        summary_context_trust_band: row.get(34).ok(),
+                        summary_context_source_count: row.get(35).ok(),
+                        summary_context_source_keys_json: row.get(36).ok(),
+                        summary_context_generated_at: row.get(37).ok(),
                     })
                 })
                 .map_err(|e| format!("query error: {e}"))?;
@@ -2339,6 +2376,11 @@ mod tests {
             is_noise: false,
             to_recipients: None,
             cc_recipients: None,
+            summary_context_prompt_version: None,
+            summary_context_trust_band: None,
+            summary_context_source_count: None,
+            summary_context_source_keys_json: None,
+            summary_context_generated_at: None,
         };
 
         db.upsert_email(&mk("em-A-older", &earlier))
@@ -2423,6 +2465,11 @@ mod tests {
             is_noise: false,
             to_recipients: None,
             cc_recipients: None,
+            summary_context_prompt_version: None,
+            summary_context_trust_band: None,
+            summary_context_source_count: None,
+            summary_context_source_keys_json: None,
+            summary_context_generated_at: None,
         };
         db.upsert_email(&a).expect("upsert A");
 
@@ -2501,6 +2548,11 @@ mod tests {
             is_noise: false,
             to_recipients: None,
             cc_recipients: None,
+            summary_context_prompt_version: None,
+            summary_context_trust_band: None,
+            summary_context_source_count: None,
+            summary_context_source_keys_json: None,
+            summary_context_generated_at: None,
         };
 
         // Thread 1 has two siblings. Thread 2 has one row, both currently
@@ -2586,6 +2638,11 @@ mod tests {
             is_noise: false,
             to_recipients: None,
             cc_recipients: None,
+            summary_context_prompt_version: None,
+            summary_context_trust_band: None,
+            summary_context_source_count: None,
+            summary_context_source_keys_json: None,
+            summary_context_generated_at: None,
         };
 
         // Resolved historical row + active row in the same thread.

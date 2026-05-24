@@ -1014,9 +1014,16 @@ const MIGRATIONS: &[Migration] = &[
     // Migration 259 (mcp_transport_nonce_ledger repair) is intentionally
     // absent. It briefly reintroduced the remote transport nonce ledger after
     // DOS-168 removed transport ceremony for local MCP.
-    Migration::Sql {
+    // v1.4.4a W5 — email summary trust/source badges must be tied to the
+    // enrichment pass that produced the summary, not computed from a later
+    // entity-claim snapshot.
+    Migration::Fn {
         version: 260,
-        sql: include_str!("migrations/260_drop_mcp_transport_nonce_ledger.sql"),
+        apply: migrate_v260_email_summary_context_evidence,
+    },
+    Migration::Sql {
+        version: 261,
+        sql: include_str!("migrations/261_drop_mcp_transport_nonce_ledger.sql"),
     },
 ];
 
@@ -2784,6 +2791,14 @@ fn migrate_v161_dos_276_commitment_alias_remediation(
         conn,
         include_str!("migrations/161_dos_276_commitment_alias_remediation.sql"),
         "DOS-276 commitment alias remediation",
+    )
+}
+
+fn migrate_v260_email_summary_context_evidence(conn: &Connection) -> Result<(), MigrationError> {
+    apply_idempotent_sql_migration(
+        conn,
+        include_str!("migrations/260_email_summary_context_evidence.sql"),
+        "v1.4.4a W5 email summary context evidence",
     )
 }
 
@@ -4989,7 +5004,7 @@ mod tests {
     }
 
     #[test]
-    fn migration_260_drops_reintroduced_mcp_transport_nonce_ledger() {
+    fn migration_261_drops_reintroduced_mcp_transport_nonce_ledger() {
         let conn = mem_db();
         run_migrations(&conn).expect("build current schema");
         conn.execute_batch(
@@ -5001,7 +5016,7 @@ mod tests {
                  consumed_at INTEGER NULL,
                  UNIQUE (nonce, client_id)
              );
-             DELETE FROM schema_version WHERE version = 260;
+             DELETE FROM schema_version WHERE version >= 260;
              INSERT OR IGNORE INTO schema_version (version) VALUES (259);",
         )
         .expect("simulate DB that briefly applied the obsolete nonce ledger repair");
@@ -5012,10 +5027,13 @@ mod tests {
         );
 
         let applied = run_migrations(&conn).expect("cleanup migration should succeed");
-        assert_eq!(applied, 1, "only v260 cleanup should be pending");
+        assert_eq!(
+            applied, 2,
+            "v260 context evidence and v261 cleanup should be pending"
+        );
         assert!(
             !table_exists(&conn, "mcp_transport_nonce_ledger").expect("table lookup"),
-            "v260 should drop the obsolete nonce ledger"
+            "v261 should drop the obsolete nonce ledger"
         );
     }
 

@@ -607,6 +607,16 @@ pub struct DbEmail {
     pub entity_id: Option<String>,
     pub entity_type: Option<String>,
     pub contextual_summary: Option<String>,
+    /// Prompt/evidence version that produced contextual_summary metadata.
+    pub summary_context_prompt_version: Option<String>,
+    /// Trust band for the claim-backed context used by the summary.
+    pub summary_context_trust_band: Option<String>,
+    /// Distinct prompt-safe source count used by the summary.
+    pub summary_context_source_count: Option<i64>,
+    /// JSON array of source keys used by the summary; not exposed to UI.
+    pub summary_context_source_keys_json: Option<String>,
+    /// UTC timestamp when summary context metadata was generated.
+    pub summary_context_generated_at: Option<String>,
     pub sentiment: Option<String>,
     pub urgency: Option<String>,
     pub user_is_last_sender: bool,

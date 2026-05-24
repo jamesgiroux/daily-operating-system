@@ -134,9 +134,8 @@ export default function PersonDetailEditorial() {
   const preset = useActivePreset();
   useRevealObserver(!person.loading && !!person.detail);
 
-  // Shared intelligence field update hook (must be before shellConfig useMemo)
+  // Shared folio save status hook (must be before shellConfig useMemo)
   const {
-    updateField: handleUpdateIntelField,
     saveStatus,
     setSaveStatus: setFolioSaveStatus,
   } = useIntelligenceFieldUpdate("person", personId, person.silentRefresh);
@@ -271,7 +270,6 @@ export default function PersonDetailEditorial() {
         <PersonInsightChapter
           detail={detail}
           intelligence={intelligence}
-          onUpdateField={handleUpdateIntelField}
           feedbackSlot={
             <IntelligenceFeedback
               value={feedback.getFeedback("person_insight")}
@@ -308,7 +306,6 @@ export default function PersonDetailEditorial() {
       <div id="the-landscape" className={`editorial-reveal ${shared.chapterSectionWithPadding}`}>
         <WatchList
           intelligence={intelligence}
-          onUpdateField={handleUpdateIntelField}
           sectionId="the-landscape"
           chapterTitle="The Landscape"
           getItemFeedback={(fieldPath) => feedback.getFeedback(fieldPath)}

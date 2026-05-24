@@ -390,7 +390,6 @@ export default function AccountDetailPage() {
             />
             <StrategicLandscape
               intelligence={intelligence}
-              onUpdateField={page.handleUpdateIntelField}
               onItemFeedback={fb.submit}
             />
           </MarginSection>
@@ -405,7 +404,6 @@ export default function AccountDetailPage() {
             />
             <ValueCommitments
               intelligence={intelligence}
-              onUpdateField={page.handleUpdateIntelField}
               onItemFeedback={fb.submit}
             />
           </MarginSection>
@@ -791,6 +789,8 @@ export default function AccountDetailPage() {
                     headline={r.title}
                     rationale={r.context ?? ""}
                     provenance={provenance}
+                    trustBand={r.trustBand ?? null}
+                    sourceCount={r.commitmentSourceCount ?? null}
                     accepting={work.suggestionAcceptInFlight.has(r.id)}
                     onAccept={() => work.handleAcceptSuggestion(r.id)}
                     dismissing={work.suggestionDismissInFlight.has(r.id)}
@@ -804,6 +804,7 @@ export default function AccountDetailPage() {
                         entityType="account"
                         field={`work_suggestion:${r.id}`}
                         itemKey={r.title}
+                        source="account_detail_work"
                         onDismissed={() => {
                           suppressions.markSuppressed(`work_suggestion:${r.id}`, r.title);
                           return work.handleDismissSuggestion(r.id);

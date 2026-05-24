@@ -1056,6 +1056,8 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
                             .entity_id
                             .as_ref()
                             .and_then(|eid| entity_names.get(eid).cloned());
+                        let (summary_context_trust_band, summary_context_source_count) =
+                            crate::services::emails::email_summary_context_for_display(dbe);
                         crate::types::Email {
                             id: dbe.email_id.clone(),
                             sender: dbe.sender_name.clone().unwrap_or_default(),
@@ -1069,6 +1071,8 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
                             },
                             avatar_url: None,
                             summary: dbe.contextual_summary.clone(),
+                            summary_context_trust_band,
+                            summary_context_source_count,
                             recommended_action: None,
                             conversation_arc: None,
                             email_type: None,

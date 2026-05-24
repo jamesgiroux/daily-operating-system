@@ -38,7 +38,7 @@ if not re.search(r"ActionDb::open_readonly\s*\(", bridge) or "render_mcp_ability
     violations.append("src-tauri/src/bridges/types.rs: MCP ability data redactor does not pass ActionDb and provenance into render_mcp_ability_data_for_surface_with_provenance")
 if "render_mcp_ability_data_without_claim_lookup(data)" not in bridge:
     violations.append("src-tauri/src/bridges/types.rs: MCP ability data redactor lacks fail-closed no-claim-lookup fallback")
-if not re.search(r"BridgeSurface::TauriApp\s*\|\s*BridgeSurface::Worker\s*\|\s*BridgeSurface::Eval(?:\s*\|\s*BridgeSurface::SurfaceClient)?\s*=>\s*data", bridge):
+if not re.search(r"BridgeSurface::TauriApp\s*\|\s*BridgeSurface::Worker\s*\|\s*BridgeSurface::Eval\s*\|\s*BridgeSurface::SurfaceClient\s*\|\s*BridgeSurface::LocalLoopback\s*=>\s*data", bridge):
     violations.append("src-tauri/src/bridges/types.rs: non-MCP surfaces must pass ability data through unchanged")
 if "string leaf has exactly three possible outcomes" not in service:
     violations.append("src-tauri/src/services/sensitivity.rs: MCP ability data redactor lacks deny-by-default documentation")
@@ -179,6 +179,7 @@ ROOTS = [
     Path("src-tauri/abilities-runtime/src/abilities"),
     Path("src-tauri/abilities-runtime/src/services/context.rs"),
     Path("src-tauri/abilities-runtime/src/types.rs"),
+    Path("src-tauri/abilities-runtime/src/services/context.rs"),
 ]
 source_by_path = {path: path.read_text() for root in ROOTS for path in ([root] if root.is_file() else root.rglob("*.rs"))}
 combined = "\n".join(source_by_path.values())
@@ -335,6 +336,7 @@ SAFE_STRING_FIELDS = {
         "kind": "enum metadata",
         "id": "identifier metadata",
     },
+    "Paginated": {},
     "CursorState": {
         "advisory": "pagination advisory metadata",
         "reason": "pagination invalidation metadata",
@@ -351,7 +353,12 @@ SAFE_STRING_FIELDS = {
         "label": "render-policy-safe provenance label",
         "source_type": "enum metadata",
     },
+    "EnvelopeProvenance": {},
     "EnvelopeTrustSummary": {},
+    "SectionState": {},
+    "ProvenanceRef": {
+        "source_ids": "source identifier metadata",
+    },
     "EntityFact": {
         "claim_id": "identifier metadata",
         "field_path": "schema path metadata",
@@ -388,6 +395,7 @@ SAFE_STRING_FIELDS = {
         "recent_touchpoint_ids": "identifier metadata",
         "caveats": "constant relationship caveat metadata",
     },
+    "RelationshipTruncation": {},
     "RelationshipsBundle": {
         "caveats": "constant relationship caveat metadata",
     },
@@ -504,18 +512,39 @@ NESTED_OUTPUT_STRUCTS = {
     "Paginated": ["CursorState"],
     "EntityIntelligenceEnvelope": [
         "NormalizedSubject",
-        "EnvelopeProvenance",
+        "SectionState",
+        "EntityFact",
+        "HealthStory",
+        "MetadataProposal",
+        "OpenLoopWithReceipt",
+        "RelationshipsBundle",
+        "TouchpointBundle",
+        "ThreadSummary",
+        "RecordEntry",
         "EnvelopeTrustSummary",
+        "EnvelopeProvenance",
     ],
+    "SectionState": ["EmptyReason"],
+    "EntityFact": ["ProvenanceRef"],
     "HealthStory": ["HealthStoryRow"],
-    "OpenLoopWithReceipt": ["OpenLoop", "ReceiptTargetRef"],
-    "TouchpointBundle": ["CandidateSetRef", "SubjectScope", "EmptyReason"],
+    "HealthStoryRow": ["ProvenanceRef"],
+    "MetadataProposal": ["ProvenanceRef"],
+    "OpenLoopWithReceipt": ["OpenLoop", "ReceiptTargetRef", "ProvenanceRef"],
     "RelationshipsBundle": [
+        "RelationshipEdge",
+        "RelationshipParticipant",
         "CandidateSetRef",
         "SubjectScope",
         "EmptyReason",
         "RelationshipTruncation",
     ],
+    "RelationshipEdge": ["ProvenanceRef"],
+    "RelationshipParticipant": ["ProvenanceRef"],
+    "TouchpointBundle": ["Touchpoint", "CandidateSetRef", "SubjectScope", "EmptyReason"],
+    "Touchpoint": ["ProvenanceRef"],
+    "ThreadSummary": ["ProvenanceRef"],
+    "RecordEntry": ["ProvenanceRef"],
+    "EnvelopeProvenance": ["EnvelopeProvenanceSource"],
     "ClaimReceiptSnapshot": [
         "ClaimReceiptTarget",
         "ClaimReceiptTrust",
@@ -527,16 +556,16 @@ NESTED_OUTPUT_STRUCTS = {
 }
 
 EXPECTED_AGENT_OUTPUTS = {
+    "claim_receipt": "ClaimReceiptSnapshot",
     "get_entity_context": "GetEntityContextOutput",
+    "get_entity_intelligence": "EntityIntelligenceEnvelope",
+    "list_accounts": "Paginated<AccountSummary>",
+    "list_people": "Paginated<PersonSummary>",
+    "list_projects": "Paginated<ProjectSummary>",
     "prepare_meeting": "MeetingBrief",
     "list_open_loops": "OpenLoopsResult",
     "get_daily_readiness": "DailyReadiness",
     "detect_risk_shift": "RiskShiftResult",
-    "get_entity_intelligence": "EntityIntelligenceEnvelope",
-    "claim_receipt": "ClaimReceiptSnapshot",
-    "list_accounts": "Paginated<AccountSummary>",
-    "list_people": "Paginated<PersonSummary>",
-    "list_projects": "Paginated<ProjectSummary>",
 }
 
 SAFE_WRAPPERS = ("RenderableMcpClaimText", "RenderableMcpEntityName")
@@ -628,8 +657,9 @@ def inspect_struct(struct_name: str, seen: set[str], violations: list[str]):
         inspect_struct(normalize_type(generic.group(1)), seen, violations)
         return
     fields = struct_fields(struct_name)
-    enum_known = enum_body(struct_name) is not None
-    if not fields and not enum_known and struct_name != "BriefTemporalScope":
+    enum_fields = enum_string_fields(struct_name)
+    has_enum_body = enum_body(struct_name) is not None
+    if not fields and not enum_fields and not has_enum_body and struct_name != "BriefTemporalScope":
         violations.append(f"{struct_name}: output struct not found for Agent-allowed ability audit")
         return
     for field_name, type_text in fields:
@@ -644,7 +674,7 @@ def inspect_struct(struct_name: str, seen: set[str], violations: list[str]):
             or nested in NESTED_OUTPUT_STRUCTS
         ):
             inspect_struct(nested, seen, violations)
-    for field_name in enum_string_fields(struct_name):
+    for field_name in enum_fields:
         if field_name not in SAFE_STRING_FIELDS.get(struct_name, {}):
             violations.append(f"{struct_name}.{field_name}: enum string field is not audited for MCP")
     for nested in NESTED_OUTPUT_STRUCTS.get(struct_name, []):

@@ -30,6 +30,7 @@ import type {
   LinkedEntity,
   ContinuityThread,
   PredictionScorecard,
+  RenderedProvenanceSummary,
 } from "@/types";
 import { parseDate, formatRelativeDateLong, formatShortDate, stripHtml } from "@/lib/utils";
 import { getPrimaryEntityName } from "@/lib/entity-helpers";
@@ -52,6 +53,7 @@ import { EditableText } from "@/components/ui/EditableText";
 import { ClaimTextRenderer } from "@/components/ui/ClaimTextRenderer";
 import { TrustBandIndicator } from "@/components/ui/TrustBandIndicator";
 import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
+import { useMeetingEntityIntelligence } from "@/hooks/useMeetingEntityIntelligence";
 import {
   fieldPathCandidates,
   partitionTrustEvidence,
@@ -81,6 +83,7 @@ import {
 } from "lucide-react";
 import clsx from "clsx";
 import styles from "./meeting-intel.module.css";
+import type { EntityIntelligenceEnvelope } from "@/services/entity-intelligence/contracts";
 
 // ── Chapter Nav definitions ──
 
@@ -198,6 +201,7 @@ export default function MeetingDetailPage() {
 
   // Intelligence quality feedback
   const feedback = useIntelligenceFeedback(meetingId ?? undefined, "meeting");
+  const meetingEntityIntelligence = useMeetingEntityIntelligence(meetingId);
 
   // Entity mutation in progress — shows "Updating briefing..."
   const [briefingUpdating, setBriefingUpdating] = useState(false);
@@ -268,6 +272,18 @@ export default function MeetingDetailPage() {
       setLinkedEntities(intel.linkedEntities ?? []);
       setEntityHealthMap(intel.entityHealthMap ?? {});
       setIntelligenceQuality(intel.intelligenceQuality);
+      const hadNewSignals = Boolean(intel.intelligenceQuality?.hasNewSignals);
+      void invoke("mark_meeting_intelligence_viewed", { meetingId })
+        .then(() => {
+          if (hadNewSignals) {
+            setIntelligenceQuality((current) =>
+              current ? { ...current, hasNewSignals: false } : current,
+            );
+          }
+        })
+        .catch((error) => {
+          console.warn("Unable to mark meeting intelligence viewed", error);
+        });
       const formatRange = (startRaw?: string, endRaw?: string) => {
         if (!startRaw) return "";
         const start = parseDate(startRaw);
@@ -1094,6 +1110,7 @@ Thanks!`;
   const hasRisks = riskTrustItems.length > 0;
   const hasRoom = unifiedAttendees.length > 0;
   const hasPlan = agendaTrustPartition.current.length > 0 || (meetingId && isEditable);
+  const liveMeetingIntelligence = meetingEntityIntelligence.response?.data ?? null;
   return (
     <>
       <div className={styles.pageContainer}>
@@ -1373,6 +1390,11 @@ Thanks!`;
                   Intelligence builds as you meet with this account.
                 </p>
               )}
+
+              <MeetingEntityIntelligencePanel
+                envelope={liveMeetingIntelligence}
+                renderedProvenance={meetingEntityIntelligence.response?.rendered_provenance}
+              />
 
               {/* Since Last Meeting — compact timeline of what changed */}
               {sinceLastTrustItems.length > 0 && (
@@ -2032,6 +2054,70 @@ function UnifiedAttendeeList({
           + {remaining} more
         </button>
       )}
+    </div>
+  );
+}
+
+function meetingRenderedSourceCount(renderedProvenance?: RenderedProvenanceSummary | null): number {
+  const sources = renderedProvenance?.value?.sources;
+  if (Array.isArray(sources)) return sources.length;
+  const aboutThis = renderedProvenance?.value?.about_this;
+  if (aboutThis && typeof aboutThis === "object") {
+    const summary = (aboutThis as { summary?: unknown }).summary;
+    if (summary && typeof summary === "object") {
+      const sourceCount = (summary as { source_count?: unknown; sourceCount?: unknown }).source_count
+        ?? (summary as { source_count?: unknown; sourceCount?: unknown }).sourceCount;
+      return typeof sourceCount === "number" ? sourceCount : 0;
+    }
+  }
+  return 0;
+}
+
+function MeetingEntityIntelligencePanel({
+  envelope,
+  renderedProvenance,
+}: {
+  envelope: EntityIntelligenceEnvelope | null;
+  renderedProvenance?: RenderedProvenanceSummary | null;
+}) {
+  if (!envelope) return null;
+
+  const facts = envelope.facts.items.slice(0, 3);
+  const healthRows = envelope.healthStory?.rows.slice(0, 2) ?? [];
+  const openLoops = envelope.openLoops.items.slice(0, 2);
+  const sourceCount = meetingRenderedSourceCount(renderedProvenance);
+  const hasContent = facts.length > 0 || healthRows.length > 0 || openLoops.length > 0;
+  if (!hasContent) return null;
+
+  return (
+    <div className={styles.currentStateWrap} data-testid="meeting-entity-intelligence">
+      <p className={styles.currentStateHeading}>
+        Live Context
+        {sourceCount > 0 && (
+          <span className={styles.trustCount}>
+            {sourceCount} source{sourceCount === 1 ? "" : "s"}
+          </span>
+        )}
+      </p>
+      <div className={styles.currentStateGrid}>
+        {facts.map((fact) => (
+          <span key={fact.claimId} className={styles.currentStateItem}>
+            <ClaimTextRenderer value={fact.renderedText} surface="tauri_meeting_detail" />
+            <TrustBandIndicator band={fact.trustBand} />
+          </span>
+        ))}
+        {healthRows.map((row, index) => (
+          <span key={`${row.label}-${index}`} className={styles.currentStateItem}>
+            <ClaimTextRenderer value={`${row.label}: ${row.body}`} surface="tauri_meeting_detail" />
+          </span>
+        ))}
+        {openLoops.map((item) => (
+          <span key={item.openLoop.id} className={styles.currentStateItem}>
+            <ClaimTextRenderer value={item.openLoop.description} surface="tauri_meeting_detail" />
+            <TrustBandIndicator band={item.trustBand} />
+          </span>
+        ))}
+      </div>
     </div>
   );
 }

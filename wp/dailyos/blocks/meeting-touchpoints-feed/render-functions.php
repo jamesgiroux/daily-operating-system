@@ -148,10 +148,11 @@ if ( ! function_exists( 'dailyos_meeting_touchpoints_feed_render' ) ) {
 			$out .= '<span class="meeting-intel_touchpointTitle">' . esc_html( $row['title'] ) . '</span>';
 			$out .= '<span class="meeting-intel_touchpointMeta">';
 			$out .= '<span class="meeting-intel_touchpointDate">' . esc_html( $row['date'] ) . '</span>';
-			$out .= '<span class="meeting-intel_touchpointSeparator">&middot;</span>';
-			$out .= '<span class="meeting-intel_touchpointAttendees">'
-				. esc_html( sprintf( __( '%d attendees', 'dailyos' ), $row['attendee_count'] ) )
-				. '</span>';
+				$out .= '<span class="meeting-intel_touchpointSeparator">&middot;</span>';
+				$out .= '<span class="meeting-intel_touchpointAttendees">'
+					/* translators: %d: attendee count. */
+					. esc_html( sprintf( __( '%d attendees', 'dailyos' ), $row['attendee_count'] ) )
+					. '</span>';
 			$out .= '</span>';
 			$out .= '</a>';
 			$out .= '</li>';
@@ -208,7 +209,7 @@ if ( ! function_exists( 'dailyos_meeting_touchpoints_feed_empty_chip' ) ) {
 	 */
 	function dailyos_meeting_touchpoints_feed_empty_chip( string $reason, string $label ): string {
 		return sprintf(
-			'<span class="dailyos-empty-chip wp-block-dailyos-meeting-touchpoints-feed is-empty" data-empty-reason="%s">%s</span>',
+			'<section class="meeting-intel_chapterSection meeting-intel_chapterSection--empty is-empty" data-ds-name="MeetingTouchpointsFeed"><span class="dailyos-empty-chip" data-empty-reason="%s">%s</span></section>',
 			esc_attr( $reason ),
 			esc_html( $label )
 		);

@@ -22,9 +22,11 @@ import type {
   StrategicProgram,
 } from "@/types";
 import type { RolePreset } from "@/types/preset";
+import { mergeEntityDetailIntelligence } from "@/services/entity-intelligence/entity-detail-mapper";
 import { useAccountFields } from "./useAccountFields";
 import { useAccountWorkData } from "./useAccountWorkData";
 import { useEnrichmentProgress } from "./useEnrichmentProgress";
+import { useEntityDetailIntelligence } from "./useEntityDetailIntelligence";
 import { useTeamManagement } from "./useTeamManagement";
 import { useTauriEvent } from "./useTauriEvent";
 
@@ -179,7 +181,11 @@ export function useAccountDetail(accountId: string | undefined) {
     };
   }, []);
 
-  const intelligence = detail?.intelligence ?? null;
+  const entityIntelligence = useEntityDetailIntelligence("account", accountId);
+  const intelligence = mergeEntityDetailIntelligence(
+    detail?.intelligence ?? null,
+    entityIntelligence.response,
+  );
 
   // ─── Core data loading ────────────────────────────────────────────────
 

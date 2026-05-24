@@ -29,8 +29,9 @@ use crate::abilities::list_open_loops::{ListOpenLoopsInput, OpenLoopSubject, Ope
 use crate::abilities::provenance::source_time::{parse_source_timestamp, SourceTimestampStatus};
 use crate::abilities::provenance::trust::claim_trust_band_from_score;
 use crate::abilities::provenance::{
-    AbilityExecutionMode, AbilityVersion, FieldAttribution, FieldPath, ProvenanceBuilder,
-    ProvenanceBuilderConfig, SchemaVersion, SubjectAttribution, SubjectRef,
+    AbilityExecutionMode, AbilityVersion, DataSource, FieldAttribution, FieldPath, GleanDownstream,
+    ProvenanceBuilder, ProvenanceBuilderConfig, SchemaVersion, SignalId, SourceAttribution,
+    SourceIdentifier, SourceName, SubjectAttribution, SubjectRef,
 };
 use crate::abilities::trust::types::TrustBand;
 use crate::abilities::{
@@ -97,7 +98,6 @@ pub async fn build_entity_intelligence(
     let facts = if active_sections.contains(&EnvelopeSection::Facts) {
         build_facts(
             &claims,
-            &subject_ref,
             &render_actor,
             render_surface,
             &mut envelope_provenance,
@@ -222,6 +222,11 @@ pub async fn build_entity_intelligence(
     // `Provenance` records the producer call.
     let mut builder = ProvenanceBuilder::new(provenance_config(ctx, input.schema_version));
     let subject_attr = SubjectAttribution::direct_confident(subject_ref);
+    add_outer_provenance_sources(
+        &mut builder,
+        &envelope.provenance.sources,
+        ctx.services().clock.now(),
+    )?;
     builder.set_subject(subject_attr.clone());
     builder
         .attribute_subtree(
@@ -297,6 +302,51 @@ fn active_section_set(
             .copied()
             .collect(),
         Some(list) => list.iter().copied().collect(),
+    }
+}
+
+fn add_outer_provenance_sources(
+    builder: &mut ProvenanceBuilder,
+    sources: &[EnvelopeProvenanceSource],
+    default_observed_at: DateTime<Utc>,
+) -> Result<(), AbilityError> {
+    for source in sources {
+        let source_asof = source.as_of;
+        let observed_at = source_asof.unwrap_or(default_observed_at);
+        let source_attribution = SourceAttribution::new(
+            outer_data_source(source),
+            vec![SourceIdentifier::Signal {
+                signal_id: SignalId::new(source.id.clone()),
+            }],
+            observed_at,
+            source_asof,
+            1.0,
+            None,
+        )
+        .map_err(provenance_error)?;
+        builder.add_source(source_attribution);
+    }
+    Ok(())
+}
+
+fn outer_data_source(source: &EnvelopeProvenanceSource) -> DataSource {
+    let source_type = source
+        .source_type
+        .as_deref()
+        .unwrap_or(source.label.as_str())
+        .trim()
+        .to_ascii_lowercase();
+    match source_type.as_str() {
+        "user" => DataSource::User,
+        "google" => DataSource::Google,
+        "glean" => DataSource::Glean {
+            downstream: GleanDownstream::Documents,
+        },
+        "clay" => DataSource::Clay,
+        "ai" => DataSource::Ai,
+        "co_attendance" | "co-attendance" => DataSource::CoAttendance,
+        "local_enrichment" | "local-enrichment" => DataSource::LocalEnrichment,
+        other => DataSource::Other(SourceName::new(other)),
     }
 }
 
@@ -385,7 +435,6 @@ fn render_actor_for_context(ctx: &AbilityContext<'_>) -> RenderActor {
 
 fn build_facts(
     claims: &[IntelligenceClaim],
-    subject_ref: &SubjectRef,
     render_actor: &RenderActor,
     render_surface: RenderSurface,
     provenance: &mut EnvelopeProvenance,
@@ -400,7 +449,7 @@ fn build_facts(
         let source_id = upsert_provenance_source(provenance, claim);
         items.push(EntityFact {
             claim_id: claim.id.clone(),
-            subject_ref: subject_ref.clone(),
+            subject_ref: subject_ref_from_claim(claim),
             field_path: claim.field_path.clone(),
             claim_type: claim.claim_type.clone(),
             rendered_text,
@@ -1791,6 +1840,7 @@ mod tests {
     use crate::abilities::registry::AbilityContext;
     use crate::abilities::{Actor, NOOP_ABILITY_TRACER};
     use crate::intelligence::provider::ReplayProvider;
+    use crate::sensitivity::ClaimVerificationState;
     use crate::services::context::{
         ClaimDismissalSurface, EntityContextClaimReadFuture, EntityContextClaimReadHandle,
         EntityNeighborhoodQuery, EntityNeighborhoodReadError, EntityNeighborhoodReadFuture,
@@ -1798,7 +1848,9 @@ mod tests {
         EntityParticipantSnapshot, EntityRelationshipEdgeSnapshot,
         EntityRelationshipInclusionReason, FixedClock, ServiceContext, SystemRng,
     };
-    use crate::types::{ClaimSensitivity, IntelligenceClaim};
+    use crate::types::{
+        ClaimSensitivity, ClaimState, IntelligenceClaim, SurfacingState, TemporalScope,
+    };
 
     struct EmptyClaimReader;
 
@@ -1929,6 +1981,53 @@ mod tests {
             touchpoints_count: 0,
             threads_count: 0,
             record_entries_count: 0,
+        }
+    }
+
+    fn claim_fixture(
+        id: &str,
+        subject_kind: &str,
+        subject_id: &str,
+        text: &str,
+    ) -> IntelligenceClaim {
+        IntelligenceClaim {
+            id: id.to_string(),
+            claim_version: 1,
+            subject_ref: serde_json::json!({
+                "kind": subject_kind,
+                "id": subject_id,
+            })
+            .to_string(),
+            claim_type: "relationship_health".to_string(),
+            field_path: Some("/health".to_string()),
+            topic_key: None,
+            text: text.to_string(),
+            dedup_key: format!("{subject_kind}:{subject_id}:{id}"),
+            item_hash: None,
+            actor: "test".to_string(),
+            data_source: "user".to_string(),
+            source_ref: None,
+            source_asof: Some("2026-05-23T10:00:00Z".to_string()),
+            observed_at: "2026-05-23T10:00:00Z".to_string(),
+            created_at: "2026-05-23T10:00:00Z".to_string(),
+            provenance_json: "{}".to_string(),
+            metadata_json: None,
+            claim_state: ClaimState::Active,
+            surfacing_state: SurfacingState::Active,
+            demotion_reason: None,
+            reactivated_at: None,
+            retraction_reason: None,
+            expires_at: None,
+            superseded_by: None,
+            trust_score: Some(0.91),
+            trust_computed_at: None,
+            trust_version: None,
+            thread_id: None,
+            temporal_scope: TemporalScope::State,
+            sensitivity: ClaimSensitivity::Internal,
+            verification_state: ClaimVerificationState::Active,
+            verification_reason: None,
+            needs_user_decision_at: None,
         }
     }
 
@@ -2160,6 +2259,32 @@ mod tests {
         assert_eq!(
             trust_band_for_confidence(0.95, Freshness::Stale),
             TrustBand::NeedsVerification
+        );
+    }
+
+    #[test]
+    fn facts_keep_their_claim_subject_instead_of_request_subject() {
+        let claims = vec![claim_fixture(
+            "claim-acc-b-health",
+            "account",
+            "acc-b",
+            "Account B risk is rising.",
+        )];
+        let render_actor = RenderActor::user("user", None::<String>);
+        let mut provenance = EnvelopeProvenance::empty();
+
+        let facts = build_facts(
+            &claims,
+            &render_actor,
+            RenderSurface::TauriMeetingDetail,
+            &mut provenance,
+        )
+        .expect("facts render");
+
+        assert_eq!(facts.items.len(), 1);
+        assert_eq!(
+            facts.items[0].subject_ref,
+            SubjectRef::Account("acc-b".to_string())
         );
     }
 

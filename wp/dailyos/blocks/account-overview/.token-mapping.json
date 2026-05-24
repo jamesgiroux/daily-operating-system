@@ -1,0 +1,34 @@
+[
+  {
+    "source_token": "--color-account",
+    "target_token": "wp--preset--color--account"
+  },
+  {
+    "source_token": "--color-desk-charcoal-4",
+    "target_token": "wp--preset--color--desk-charcoal-4"
+  },
+  {
+    "source_token": "--color-paper-warm-white",
+    "target_token": "wp--preset--color--paper-warm-white"
+  },
+  {
+    "source_token": "--color-rule-light",
+    "target_token": "wp--preset--color--rule-light"
+  },
+  {
+    "source_token": "--color-text-primary",
+    "target_token": "wp--preset--color--text-primary"
+  },
+  {
+    "source_token": "--color-trust-likely-current",
+    "target_token": "wp--preset--color--trust-likely-current"
+  },
+  {
+    "source_token": "--color-trust-needs-verification",
+    "target_token": "wp--preset--color--trust-needs-verification"
+  },
+  {
+    "source_token": "--color-trust-use-with-caution",
+    "target_token": "wp--preset--color--trust-use-with-caution"
+  }
+]

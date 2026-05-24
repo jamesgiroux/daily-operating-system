@@ -18,6 +18,7 @@
 //! abilities-runtime variant by deliberate choice; downstream lanes inherit.
 
 use std::fs::File;
+use std::io;
 use std::path::PathBuf;
 
 // Top-level `pub use` re-exports of canonical substrate primitives consumed
@@ -35,6 +36,8 @@ pub use abilities_runtime::abilities::provenance::subject::SubjectRef;
 pub use abilities_runtime::types::ClaimSensitivity;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+
+use crate::entity::EntityType;
 
 use super::lifecycle;
 
@@ -131,27 +134,159 @@ pub enum RejectionReason {
     UnsupportedFormat,
 }
 
-/// Extraction shape returned by W3-A's `Extractor::extract`. Wrapper that
-/// bundles extractor output with workspace-specific metadata BEFORE conversion
-/// to the canonical commit shape (`dailyos_lib::services::claims::ClaimProposal`
-/// at `services/claims.rs:74`, 18 fields).
-///
-/// W3-A is responsible for the `into_commit(self, actor: &str) -> ClaimProposal`
-/// mapping that translates this extraction shape into the commit shape, packing
-/// workspace-specific bits (`lifecycle_state`, `initial_source_reliability`,
-/// `ingestion_run_id`) into the commit shape's `metadata_json` field per
-/// existing `services::claims` convention.
-///
-/// W1-A defines the extraction shape only; downstream commit happens through
-/// `services::claims::commit_claim`, the single writer of `intelligence_claims`.
+/// Canonical DB/link-backed subject that extraction may attribute claims to.
+/// Request DTOs are hints only; the pipeline populates this after verifying the
+/// entity row and an active `document_entity_links` row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedLinkedSubject {
+    pub entity_type: EntityType,
+    pub entity_id: String,
+    pub entity_name: Option<String>,
+    pub link_id: String,
+}
+
+impl ResolvedLinkedSubject {
+    pub fn subject_kind_slug(&self) -> &'static str {
+        match self.entity_type {
+            EntityType::Account => "account",
+            EntityType::Project => "project",
+            EntityType::Person => "person",
+            EntityType::Other => "other",
+        }
+    }
+
+    pub fn is_claim_supported(&self) -> bool {
+        matches!(
+            self.entity_type,
+            EntityType::Account | EntityType::Project | EntityType::Person
+        )
+    }
+}
+
+/// System-owned extraction context. The extractor reads content from the
+/// validated file handle, but all authority-bearing metadata comes from this
+/// object.
+pub struct ExtractionContext<'a> {
+    pub file_id: &'a str,
+    pub identity: &'a FileIdentity,
+    pub content: &'a str,
+    pub source_type: WorkspaceFileKind,
+    pub source_asof: DateTime<Utc>,
+    pub resolved_category: Option<&'a WorkspaceCategory>,
+    pub linked_subject: Option<&'a ResolvedLinkedSubject>,
+    pub ingestion_run_id: &'a str,
+    pub observed_at: DateTime<Utc>,
+    pub invocation_actor: &'a str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DroppedFactSource {
+    Frontmatter,
+    Body,
+    Structured,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DroppedFact {
+    pub reason: String,
+    pub source: DroppedFactSource,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub field: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub claim_type_candidate: Option<String>,
+}
+
+impl DroppedFact {
+    pub fn new(reason: impl Into<String>, source: DroppedFactSource) -> Self {
+        Self {
+            reason: reason.into(),
+            source,
+            field: None,
+            claim_type_candidate: None,
+        }
+    }
+
+    pub fn with_field(mut self, field: impl Into<String>) -> Self {
+        self.field = Some(field.into());
+        self
+    }
+
+    pub fn with_claim_type_candidate(mut self, claim_type: impl Into<String>) -> Self {
+        self.claim_type_candidate = Some(claim_type.into());
+        self
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExtractionWarning {
+    pub code: String,
+    pub message: String,
+}
+
+impl ExtractionWarning {
+    pub fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
+        Self {
+            code: code.into(),
+            message: message.into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ExtractionReport {
+    pub proposals: Vec<WorkspaceClaimProposal>,
+    pub dropped_facts: Vec<DroppedFact>,
+    pub warnings: Vec<ExtractionWarning>,
+}
+
+#[derive(Debug)]
+pub enum ExtractionError {
+    Io(io::Error),
+    Provenance(String),
+    UnsupportedContent(String),
+}
+
+impl std::fmt::Display for ExtractionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io(error) => write!(
+                f,
+                "workspace extraction I/O error: kind={:?} os={:?}",
+                error.kind(),
+                error.raw_os_error()
+            ),
+            Self::Provenance(message) => {
+                write!(f, "workspace extraction provenance error: {message}")
+            }
+            Self::UnsupportedContent(message) => {
+                write!(f, "workspace extraction unsupported content: {message}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for ExtractionError {}
+
+impl From<io::Error> for ExtractionError {
+    fn from(value: io::Error) -> Self {
+        Self::Io(value)
+    }
+}
+
+/// Extraction shape returned by W3-A's `Extractor::extract`. The subject is the
+/// pipeline-verified link subject, never a frontmatter/body/path-derived value.
+/// Conversion to `services::claims::ClaimProposal` happens in the pipeline and
+/// commits through `services::claims::commit_claim`.
 #[derive(Debug, Clone)]
 pub struct WorkspaceClaimProposal {
     pub claim_type: ClaimType,
-    /// `subject_ref` entity ids are canonical v1.4.0 entity-slug format
-    /// (consumed by `services::claims::commit_claim`).
-    pub subject_ref: SubjectRef,
-    pub content: serde_json::Value,
+    pub subject: ResolvedLinkedSubject,
+    pub text: String,
+    pub field_path: Option<String>,
+    pub topic_key: Option<String>,
     pub source_asof: DateTime<Utc>,
+    pub observed_at: DateTime<Utc>,
     pub data_source: DataSource,
     pub sensitivity: ClaimSensitivity,
     /// Canonical 7-field `SourceAttribution` consumed from existing substrate at
@@ -174,16 +309,7 @@ pub struct WorkspaceClaimProposal {
     /// proposal", not "what document is this evidence from").
     pub ingestion_run_id: String,
     pub lifecycle_state: lifecycle::LifecycleState,
-    /// One trust-factor input populated by W3-A's extractor (normalized
-    /// 0.0–1.0 derived from extraction confidence). Satisfies wave-plan
-    /// §Architecture invariants line 323 "at least one trust factor input from
-    /// creation". At `services::claims::commit_claim` time this single field
-    /// is combined with corroboration query, contradiction query, freshness
-    /// decay per `data_source`/`source_asof`, etc. to construct the full
-    /// `abilities_runtime::abilities::trust::types::TrustFactorInputs`
-    /// (11-field struct). W1-A does NOT reinvent any trust-factor type
-    /// (V1.1's `TrustFactorInput` was caught in cycle 2 and reverted).
-    pub initial_source_reliability: f64,
+    pub source_ref: String,
 }
 
 /// Extraction trait. W3-A's `WorkspaceExtractor` implements this; W2-A
@@ -192,10 +318,9 @@ pub struct WorkspaceClaimProposal {
 pub trait Extractor: Send + Sync {
     fn extract(
         &self,
-        file: &File,
-        identity: &FileIdentity,
-        source_type: WorkspaceFileKind,
-    ) -> Vec<WorkspaceClaimProposal>;
+        file: &mut File,
+        context: &ExtractionContext<'_>,
+    ) -> Result<ExtractionReport, ExtractionError>;
 }
 
 /// Signal-emission trait. Each method maps 1:1 to a
@@ -225,11 +350,10 @@ pub struct NullExtractor;
 impl Extractor for NullExtractor {
     fn extract(
         &self,
-        _file: &File,
-        _identity: &FileIdentity,
-        _source_type: WorkspaceFileKind,
-    ) -> Vec<WorkspaceClaimProposal> {
-        Vec::new()
+        _file: &mut File,
+        _context: &ExtractionContext<'_>,
+    ) -> Result<ExtractionReport, ExtractionError> {
+        Ok(ExtractionReport::default())
     }
 }
 

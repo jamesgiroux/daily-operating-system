@@ -59,7 +59,7 @@ if ( ! function_exists( 'dailyos_triage_section_render' ) ) {
 		}
 
 		$envelope = dailyos_resolve_envelope( $handle, 'account', $entity_id, $scope_set );
-		$projected_sections = ['facts'];
+		$projected_sections = [ 'facts' ];
 		$any_present = false;
 		$first_empty_reason = '';
 		foreach ( $projected_sections as $section_key ) {
@@ -73,7 +73,7 @@ if ( ! function_exists( 'dailyos_triage_section_render' ) ) {
 			}
 		}
 		$out  = '<section id="needs-attention" class="entity-detail_chapterSection" data-ds-tier="pattern" data-ds-name="TriageSection" data-ds-spec="patterns/TriageSection.md">';
-		$out .= '<section class="health_blockHeader" data-dailyos-projection="triage-section" data-dailyos-envelope-sections="' . esc_attr( implode( ',', ['facts'] ) ) . '">';
+		$out .= '<section class="health_blockHeader" data-dailyos-projection="triage-section" data-dailyos-envelope-sections="' . esc_attr( implode( ',', [ 'facts' ] ) ) . '">';
 		$out .= '<hr class="health_blockHeaderRule" />';
 		$out .= '<div class="health_blockHeaderTitleRow">';
 		$out .= '<h2 class="health_blockHeaderTitle">' . esc_html__( 'Needs attention', 'dailyos' ) . '</h2>';

@@ -20,7 +20,7 @@ use crate::abilities::{AbilityContext, AbilityResult};
     allowed_modes = [Live, Simulate, Evaluate],
     requires_confirmation = false,
     may_publish = false,
-    composes = [{ id = "get_entity_context", ability = "get_entity_context", optional = false }],
+    composes = [{ id = "get_entity_intelligence", ability = "get_entity_intelligence", optional = false }],
     experimental = false,
     signal_policy = { emits_on_output_change = [], coalesce = false }
 )]

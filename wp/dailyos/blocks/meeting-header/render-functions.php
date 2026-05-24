@@ -100,7 +100,7 @@ if ( ! function_exists( 'dailyos_meeting_header_render' ) ) {
 			[ $time_local, $meeting_type, $primary_account ],
 			static fn( $value ) => '' !== (string) $value
 		);
-		$metadata_text = implode( ' · ', array_map( 'esc_html', $metadata_parts ) );
+		$metadata_text  = implode( ' · ', array_map( 'esc_html', $metadata_parts ) );
 
 		$out  = '<header ' . $wrapper_attrs . '>';
 		$out .= '<p class="meeting-intel_recordOverline">'
@@ -176,7 +176,7 @@ if ( ! function_exists( 'dailyos_meeting_header_empty_chip' ) ) {
 	 */
 	function dailyos_meeting_header_empty_chip( string $reason, string $label ): string {
 		return sprintf(
-			'<span class="dailyos-empty-chip wp-block-dailyos-meeting-header is-empty" data-empty-reason="%s">%s</span>',
+			'<header class="wp-block-dailyos-meeting-header wp-block-dailyos-meeting-header--empty is-empty"><span class="dailyos-empty-chip" data-empty-reason="%s">%s</span></header>',
 			esc_attr( $reason ),
 			esc_html( $label )
 		);
