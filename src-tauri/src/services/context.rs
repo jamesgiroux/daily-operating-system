@@ -48,6 +48,7 @@ pub struct LiveListOpenLoopsReader;
 pub struct LiveAccountListReader;
 pub struct LivePersonListReader;
 pub struct LiveProjectListReader;
+pub struct LiveWorkspaceGraphReader;
 pub struct LiveEntityContextClaimReader;
 pub struct LivePrepareMeetingContextReader;
 pub struct LiveDailyReadinessContextReader;
@@ -69,6 +70,7 @@ pub fn attach_live_workspace_readers(ctx: ServiceContext<'_>) -> ServiceContext<
         .with_account_list_reader(Arc::new(LiveAccountListReader))
         .with_person_list_reader(Arc::new(LivePersonListReader))
         .with_project_list_reader(Arc::new(LiveProjectListReader))
+        .with_workspace_graph_reader(Arc::new(LiveWorkspaceGraphReader))
         .with_entity_context_claim_reader(Arc::new(LiveEntityContextClaimReader))
         .with_prepare_meeting_context_reader(Arc::new(LivePrepareMeetingContextReader))
         .with_daily_readiness_context_reader(Arc::new(LiveDailyReadinessContextReader))
@@ -259,6 +261,33 @@ impl ProjectListReadHandle for LiveProjectListReader {
             .await
             .map_err(|error| {
                 ProjectListReadError::ReadFailed(format!("project list read task failed: {error}"))
+            })?
+        })
+    }
+}
+
+impl WorkspaceGraphReadHandle for LiveWorkspaceGraphReader {
+    fn read_workspace_graph<'a>(
+        &'a self,
+        request: WorkspaceGraphReadRequest,
+    ) -> WorkspaceGraphReadFuture<'a> {
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                let db = open_action_db().map_err(WorkspaceGraphReadError::ReadFailed)?;
+                let diagnostic_key =
+                    crate::services::workspace_ingestion::graph::local_install_diagnostic_key()
+                        .map_err(WorkspaceGraphReadError::ReadFailed)?;
+                crate::services::workspace_ingestion::graph::read_workspace_graph(
+                    db.conn_ref(),
+                    request,
+                    &diagnostic_key,
+                )
+            })
+            .await
+            .map_err(|error| {
+                WorkspaceGraphReadError::ReadFailed(format!(
+                    "workspace graph read task failed: {error}"
+                ))
             })?
         })
     }

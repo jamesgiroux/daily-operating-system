@@ -1275,6 +1275,7 @@ dependencies = [
  "fastembed",
  "filetime",
  "hex",
+ "hmac",
  "html2text",
  "http",
  "http-body-util",

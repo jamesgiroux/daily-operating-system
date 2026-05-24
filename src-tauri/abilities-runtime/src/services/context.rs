@@ -47,6 +47,9 @@ use crate::abilities::temporal::{
     RefreshEngagementCurveResult, TemporalMaintenanceHandle, TrajectoryBundle,
     TrajectoryQueryDepth, TrajectoryReadHandle,
 };
+pub use crate::abilities::workspace_graph::contracts::{
+    WorkspaceGraphReadRequest, WorkspaceGraphResponse,
+};
 pub use crate::sensitivity::ClaimDismissalSurface;
 use crate::sensitivity::{renderable_claim_text_with_value, RenderActor, RenderSurface};
 use crate::services::external_replay::{
@@ -850,6 +853,7 @@ pub struct ServiceContext<'a> {
     account_list_reader: Option<Arc<dyn AccountListReadHandle>>,
     person_list_reader: Option<Arc<dyn PersonListReadHandle>>,
     project_list_reader: Option<Arc<dyn ProjectListReadHandle>>,
+    workspace_graph_reader: Option<Arc<dyn WorkspaceGraphReadHandle>>,
     workspace_intake: Option<Arc<dyn WorkspaceIntakeService>>,
 }
 
@@ -1109,6 +1113,31 @@ pub type ProjectListReadFuture<'a> =
 
 pub trait ProjectListReadHandle: Send + Sync {
     fn read_projects<'a>(&'a self, query: ProjectListQuery) -> ProjectListReadFuture<'a>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum WorkspaceGraphReadError {
+    #[error("{0}")]
+    InvalidCursor(String),
+    #[error("{0}")]
+    InvalidFilter(String),
+    #[error("page size {requested} exceeds max {max}")]
+    PageSizeTooLarge { requested: u32, max: u32 },
+    #[error("{0}")]
+    ReadFailed(String),
+    #[error("{0}")]
+    AuditFailed(String),
+}
+
+pub type WorkspaceGraphReadFuture<'a> = Pin<
+    Box<dyn Future<Output = Result<WorkspaceGraphResponse, WorkspaceGraphReadError>> + Send + 'a>,
+>;
+
+pub trait WorkspaceGraphReadHandle: Send + Sync {
+    fn read_workspace_graph<'a>(
+        &'a self,
+        request: WorkspaceGraphReadRequest,
+    ) -> WorkspaceGraphReadFuture<'a>;
 }
 
 // -----------------------------------------------------------------------------
@@ -1679,6 +1708,7 @@ impl<'a> ServiceContext<'a> {
             account_list_reader: None,
             person_list_reader: None,
             project_list_reader: None,
+            workspace_graph_reader: None,
             workspace_intake: None,
         }
     }
@@ -1712,6 +1742,7 @@ impl<'a> ServiceContext<'a> {
             account_list_reader: None,
             person_list_reader: None,
             project_list_reader: None,
+            workspace_graph_reader: None,
             workspace_intake: None,
         }
     }
@@ -1756,6 +1787,7 @@ impl<'a> ServiceContext<'a> {
             account_list_reader: None,
             person_list_reader: None,
             project_list_reader: None,
+            workspace_graph_reader: None,
             workspace_intake: None,
         }
     }
@@ -1868,6 +1900,14 @@ impl<'a> ServiceContext<'a> {
 
     pub fn with_project_list_reader(mut self, reader: Arc<dyn ProjectListReadHandle>) -> Self {
         self.project_list_reader = Some(reader);
+        self
+    }
+
+    pub fn with_workspace_graph_reader(
+        mut self,
+        reader: Arc<dyn WorkspaceGraphReadHandle>,
+    ) -> Self {
+        self.workspace_graph_reader = Some(reader);
         self
     }
 
@@ -2047,6 +2087,19 @@ impl<'a> ServiceContext<'a> {
         };
 
         reader.read_projects(query).await
+    }
+
+    pub async fn read_workspace_graph(
+        &self,
+        request: WorkspaceGraphReadRequest,
+    ) -> Result<WorkspaceGraphResponse, WorkspaceGraphReadError> {
+        let Some(reader) = &self.workspace_graph_reader else {
+            return Err(WorkspaceGraphReadError::ReadFailed(
+                self.missing_reader_error("workspace_graph_read"),
+            ));
+        };
+
+        reader.read_workspace_graph(request).await
     }
 
     pub async fn read_trajectory_bundle(
