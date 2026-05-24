@@ -1,0 +1,15 @@
+**Findings**
+
+1. **High: v1.4.7 migration ownership is still internally contradictory.**
+   [.docs/plans/v1.4.7-waves.md](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/.docs/plans/v1.4.7-waves.md:144) correctly says v220-v239 is historical and future v1.4.7 migrations must not reuse it because dev has already advanced past those slots. But the active migration section still reserves v220-v239 at lines 228-240, W0 still asks to announce v220-v239 at line 328, W1-A still claims v220-v222 at line 350, and the summary still says v220-v239 at line 795. That preserves the exact skip-risk the W4-C packet is trying to avoid.
+
+2. **Medium: v1.4.7 actor-substrate text still treats `Actor::McpClient` as future work in active gates.**
+   The current-dev note says the MCP actor/skeleton substrate is already present and W4-C consumes it without editing MCP actor/gateway/auth/transport code at [.docs/plans/v1.4.7-waves.md](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/.docs/plans/v1.4.7-waves.md:106). But active W0/ADR text still says the ADR PR lands the enum change at lines 253-255, W0 open/close gates still require drafting/merging that actor variant work at lines 325 and 332, and the L0 table repeats it at line 774. This is not a W4-C code ownership leak, but it is stale downstream ownership text.
+
+**Clean Checks**
+
+The W4-C packet itself holds the account/Glean and claim boundaries: no account/Glean producer edits, no direct `commit_claim`, no claim retraction/source-purge/trust recompute, no signal-bus changes, and no MCP handler/gateway/auth/transport edits beyond coordinated `tool_descriptions.yaml`.
+
+The placement YAML no longer advertises the old `topic` / plain `content` / `document_id` / optional `category` surface and includes live + dry-run receipt examples matching the packet.
+
+VERDICT: HOLD

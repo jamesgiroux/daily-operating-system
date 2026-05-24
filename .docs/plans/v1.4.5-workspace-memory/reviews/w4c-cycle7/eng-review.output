@@ -1,0 +1,9 @@
+**Findings**
+
+- **MEDIUM**: MCP resource reconciliation is not exact yet. The V0.8 receipt freezes `workspace_file_kind: "mcp_placement"`, `lifecycle_state: "ingested"`, cursor `kind: "workspace_placement"`, and includes `idempotency_id`; the YAML example still says `memory_document`, `active`, cursor `workspace_place_document`, and omits `idempotency_id`. Anchors: [L0 packet §4 Receipt](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/.docs/plans/v1.4.5-workspace-memory/L0-packet-W4-C-DOS-474.md:206), [tool_descriptions.yaml](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/src-tauri/src/services/mcp_v2/resources/tool_descriptions.yaml:583).
+
+- **HIGH / CONDITION**: Migration ownership is implementable but still gated. The packet correctly leaves the slot TBD because the runner advances by `MAX(version)` and applies only `version > current`; current `public/dev` is at v261. L1 must coordinate the next contiguous slot or split migration-dependent work before implementation. Anchors: [L0 packet §7](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/.docs/plans/v1.4.5-workspace-memory/L0-packet-W4-C-DOS-474.md:368), [migrations.rs](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/src-tauri/src/migrations.rs:2122), [migrations.rs](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/src-tauri/src/migrations.rs:3622).
+
+No prohibited current diff detected: only wave docs and the coordinated `tool_descriptions.yaml` resource changed. The service boundary, actor/runtime shape, idempotency/rate/transaction/cleanup model, account/Glean separation, no direct claim writer, no trust/source-purge edits, and no MCP handler/gateway/auth/transport edits are otherwise coherent.
+
+APPROVE WITH CONDITIONS

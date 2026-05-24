@@ -1,0 +1,13 @@
+**Findings**
+
+No blocking L0 design findings.
+
+The packet now cleanly pins W4-C to the current-dev `Actor::McpClient` substrate without owning MCP gateway/auth/transport work: [L0 packet](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/.docs/plans/v1.4.5-workspace-memory/L0-packet-W4-C-DOS-474.md:16), [v1.4.7 waves](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/.docs/plans/v1.4.7-waves.md:106).
+
+The v280 migration plan is explicit and merge-gated against lower reserved slots: [L0 packet](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/.docs/plans/v1.4.5-workspace-memory/L0-packet-W4-C-DOS-474.md:373), [L0 packet](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/.docs/plans/v1.4.5-workspace-memory/L0-packet-W4-C-DOS-474.md:472), [v1.4.7 waves](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/.docs/plans/v1.4.7-waves.md:144). The older v1.4.5 migration table is superseded for DOS-474 by the lane-specific v280 note, so I am not holding on that: [v1.4.5 waves](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/.docs/plans/v1.4.5-waves.md:966).
+
+The ability/service contract, validation, idempotency, transaction boundaries, source handle rules, and handle-relative write boundary are specified at L0 depth: [L0 packet](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/.docs/plans/v1.4.5-workspace-memory/L0-packet-W4-C-DOS-474.md:132), [L0 packet](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/.docs/plans/v1.4.5-workspace-memory/L0-packet-W4-C-DOS-474.md:173), [L0 packet](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/.docs/plans/v1.4.5-workspace-memory/L0-packet-W4-C-DOS-474.md:343), [L0 packet](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/.docs/plans/v1.4.5-workspace-memory/L0-packet-W4-C-DOS-474.md:363).
+
+The coordinated `tool_descriptions.yaml` placement resource now advertises the W4-C request/receipt/cursor shape, not the stale `topic`/plain `content`/`document_id` surface: [tool_descriptions.yaml](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/src-tauri/src/services/mcp_v2/resources/tool_descriptions.yaml:399), [tool_descriptions.yaml](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/src-tauri/src/services/mcp_v2/resources/tool_descriptions.yaml:502), [tool_descriptions.yaml](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/src-tauri/src/services/mcp_v2/resources/tool_descriptions.yaml:633).
+
+VERDICT: PASS

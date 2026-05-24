@@ -16,6 +16,10 @@
 //! BEFORE INSERT trigger was removed during integration review (schema-
 //! change creep); v180 is now strictly data repair + comment marker on the
 //! deprecated inactive_expires_at column.
+//!
+//! Workspace placement idempotency, rate, and audit ledgers are not statically
+//! seeded in mock scenarios: they are service-owned operational records and
+//! must be produced through the workspace placement service path.
 
 use std::path::Path;
 

@@ -1,0 +1,25 @@
+1. **HIGH — Public error codes are not public over the live MCP transport.**
+Refs: [L0 packet §5](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/.docs/plans/v1.4.5-workspace-memory/L0-packet-W4-C-DOS-474.md:202), [transport.rs](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/src-tauri/src/services/mcp_v2/transport.rs:229), [transport.rs](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/src-tauri/src/services/mcp_v2/transport.rs:282).
+Action: do not rely on `ToolError.detail` prefixes for public taxonomy. The rmcp adapter strips `BadParams.detail` and `UpstreamFailure.detail`, so clients cannot see `invalid_content_type`, `category_not_allowed`, `idempotency_in_progress`, or `previous_attempt_failed`. Add a safe public `code` field in `ErrorData.data`, or revise §5 to be server-side-only and add golden tests for the actual public error shape.
+
+2. **HIGH — Service-side rate ledger and scope-aware receipt rendering lose gateway grant context.**
+Refs: [L0 packet §6](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/.docs/plans/v1.4.5-workspace-memory/L0-packet-W4-C-DOS-474.md:233), [contracts.rs](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/src-tauri/src/services/mcp_v2/contracts.rs:257), [actor_policy.rs](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/src-tauri/src/services/mcp_v2/actor_policy.rs:52).
+Action: specify a server-only DTO/context handoff from `tool_placement.rs` carrying `client_id`, `tool_name`, and gateway-resolved grants into the placement service, or keep rate accounting and receipt redaction in the handler. `Actor::McpClient` intentionally carries no scopes, so the service cannot safely decide `resolved_path` visibility from ability context alone.
+
+3. **HIGH — `dry_run` success receipt is not frozen.**
+Refs: [L0 packet §4 Receipt](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/.docs/plans/v1.4.5-workspace-memory/L0-packet-W4-C-DOS-474.md:168), [L0 packet §7](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/.docs/plans/v1.4.5-workspace-memory/L0-packet-W4-C-DOS-474.md:325).
+Action: define exact dry-run values for `document_handle`, `source_handle`, `source_asof`, `lifecycle_state`, `claim_count_produced`, and `mutation_cursor`. Current receipt implies an ingested placement, while the dry-run algorithm forbids idempotency, lifecycle, run, and file rows.
+
+4. **MED — `tools/list` compatibility needs an explicit grant and registration contract.**
+Refs: [L0 packet §4](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/.docs/plans/v1.4.5-workspace-memory/L0-packet-W4-C-DOS-474.md:106), [transport.rs](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/src-tauri/src/services/mcp_v2/transport.rs:140), [tool_descriptions.yaml](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/src-tauri/src/services/mcp_v2/resources/tool_descriptions.yaml:399).
+Action: add the exact `mcp_tool_grant` provisioning/regrant path for `dailyos.write.place_document` with `rate_limit_max=10`, `rate_limit_window_secs=60`, `exposure=Invocable`, and `write.workspace_place_document`. Also add a `tools/list` test proving the listed input schema is the frozen v1 schema, not the current `topic/content` placeholder.
+
+5. **MED — Public receipt schema omits the live MCP wrapper.**
+Refs: [L0 packet §4 Receipt](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/.docs/plans/v1.4.5-workspace-memory/L0-packet-W4-C-DOS-474.md:168), [transport.rs](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/src-tauri/src/services/mcp_v2/transport.rs:207).
+Action: state whether public MCP clients receive this receipt as a JSON object or as the current single `Content::text(JSON)` payload. If the plan wants structured JSON, it must include a transport change.
+
+6. **MED — Idempotent replay can silently ignore non-key request changes.**
+Refs: [L0 packet §7](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/.docs/plans/v1.4.5-workspace-memory/L0-packet-W4-C-DOS-474.md:278), [L0 packet §7](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/.docs/plans/v1.4.5-workspace-memory/L0-packet-W4-C-DOS-474.md:327).
+Action: either include `category` and `content_type` in the idempotency key, or define a mismatch error when same entity/content/dedup key arrives with different stored non-key fields. Otherwise a client can ask to place the same bytes in a different category and receive a replay for the old placement.
+
+Final verdict: HOLD.

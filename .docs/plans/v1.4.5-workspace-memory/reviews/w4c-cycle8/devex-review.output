@@ -1,0 +1,7 @@
+**Hold Findings**
+
+- [L0 packet](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/.docs/plans/v1.4.5-workspace-memory/L0-packet-W4-C-DOS-474.md:47) forbids exposing `entity_id` through MCP receipts/tool metadata, but the required live and dry-run receipts include `entity_id` at lines 205-206 and 240-241, and the coordinated metadata includes it at [tool_descriptions.yaml:635](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/src-tauri/src/services/mcp_v2/resources/tool_descriptions.yaml:635). Amend this to distinguish raw internal entity IDs from public opaque entity handles, or remove the receipt field consistently.
+
+- [tool_descriptions.yaml:580](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/src-tauri/src/services/mcp_v2/resources/tool_descriptions.yaml:580) makes only `mutation_cursor.kind` required, so metadata permits a live `workspace_placement` cursor without `document_handle`, `source_handle`, or `idempotency_id`. The packet requires those on live success at [L0 packet:215](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/.docs/plans/v1.4.5-workspace-memory/L0-packet-W4-C-DOS-474.md:215), and dry-run must omit durable handles at [L0 packet:257](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.5-w4-c-dos-474/.docs/plans/v1.4.5-workspace-memory/L0-packet-W4-C-DOS-474.md:257). Use conditional schema or split live/dry-run return variants so DOS-480 cannot drift.
+
+HOLD
