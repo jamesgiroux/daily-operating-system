@@ -31,7 +31,18 @@ impl ActionDb {
                     actions.decision_owner,
                     actions.decision_stakes,
                     all_links.linear_identifier,
-                    all_links.linear_url
+                    all_links.linear_url,
+                    actions.commitment_id, actions.owner_raw, actions.owner_entity_id,
+                    actions.owner_confidence, actions.owner_source,
+                    actions.trust_score, actions.trust_band,
+                    (SELECT COUNT(DISTINCT acs.source_key)
+                     FROM action_commitment_sources acs
+                     WHERE acs.action_id = actions.id
+                        OR acs.commitment_id IN (
+                            SELECT b.commitment_id
+                            FROM ai_commitment_bridge b
+                            WHERE b.action_id = actions.id
+                        ))
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              LEFT JOIN action_linear_links all_links ON actions.id = all_links.action_id
@@ -54,6 +65,7 @@ impl ActionDb {
             action.decision_stakes = row.get(22)?;
             action.linear_identifier = row.get(23)?;
             action.linear_url = row.get(24)?;
+            Self::map_commitment_claim_columns(&mut action, row, 25)?;
             Ok(action)
         })?;
 
@@ -193,7 +205,18 @@ impl ActionDb {
                     account_id, project_id, source_type, source_id, source_label,
                     context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
                     actions.action_kind,
-                    all_links.linear_identifier, all_links.linear_url
+                    all_links.linear_identifier, all_links.linear_url,
+                    actions.commitment_id, actions.owner_raw, actions.owner_entity_id,
+                    actions.owner_confidence, actions.owner_source,
+                    actions.trust_score, actions.trust_band,
+                    (SELECT COUNT(DISTINCT acs.source_key)
+                     FROM action_commitment_sources acs
+                     WHERE acs.action_id = actions.id
+                        OR acs.commitment_id IN (
+                            SELECT b.commitment_id
+                            FROM ai_commitment_bridge b
+                            WHERE b.action_id = actions.id
+                        ))
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              LEFT JOIN action_linear_links all_links ON actions.id = all_links.action_id
@@ -206,6 +229,7 @@ impl ActionDb {
             let mut action = Self::map_action_row(row)?;
             action.linear_identifier = row.get(18)?;
             action.linear_url = row.get(19)?;
+            Self::map_commitment_claim_columns(&mut action, row, 20)?;
             Ok(action)
         })?;
 
@@ -227,7 +251,18 @@ impl ActionDb {
                     account_id, project_id, source_type, source_id, source_label,
                     context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
                     actions.action_kind,
-                    all_links.linear_identifier, all_links.linear_url
+                    all_links.linear_identifier, all_links.linear_url,
+                    actions.commitment_id, actions.owner_raw, actions.owner_entity_id,
+                    actions.owner_confidence, actions.owner_source,
+                    actions.trust_score, actions.trust_band,
+                    (SELECT COUNT(DISTINCT acs.source_key)
+                     FROM action_commitment_sources acs
+                     WHERE acs.action_id = actions.id
+                        OR acs.commitment_id IN (
+                            SELECT b.commitment_id
+                            FROM ai_commitment_bridge b
+                            WHERE b.action_id = actions.id
+                        ))
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              LEFT JOIN action_linear_links all_links ON actions.id = all_links.action_id
@@ -242,6 +277,7 @@ impl ActionDb {
             let mut action = Self::map_action_row(row)?;
             action.linear_identifier = row.get(18)?;
             action.linear_url = row.get(19)?;
+            Self::map_commitment_claim_columns(&mut action, row, 20)?;
             Ok(action)
         })?;
 
@@ -431,7 +467,18 @@ impl ActionDb {
                     account_id, project_id, source_type, source_id, source_label,
                     context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
                     actions.action_kind,
-                    all_links.linear_identifier, all_links.linear_url
+                    all_links.linear_identifier, all_links.linear_url,
+                    actions.commitment_id, actions.owner_raw, actions.owner_entity_id,
+                    actions.owner_confidence, actions.owner_source,
+                    actions.trust_score, actions.trust_band,
+                    (SELECT COUNT(DISTINCT acs.source_key)
+                     FROM action_commitment_sources acs
+                     WHERE acs.action_id = actions.id
+                        OR acs.commitment_id IN (
+                            SELECT b.commitment_id
+                            FROM ai_commitment_bridge b
+                            WHERE b.action_id = actions.id
+                        ))
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              LEFT JOIN action_linear_links all_links ON actions.id = all_links.action_id
@@ -445,6 +492,7 @@ impl ActionDb {
             let mut action = Self::map_action_row(row)?;
             action.linear_identifier = row.get(18)?;
             action.linear_url = row.get(19)?;
+            Self::map_commitment_claim_columns(&mut action, row, 20)?;
             Ok(action)
         })?;
 
@@ -745,14 +793,29 @@ impl ActionDb {
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
                     context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
-                    actions.action_kind
+                    actions.action_kind,
+                    actions.commitment_id, actions.owner_raw, actions.owner_entity_id,
+                    actions.owner_confidence, actions.owner_source,
+                    actions.trust_score, actions.trust_band,
+                    (SELECT COUNT(DISTINCT acs.source_key)
+                     FROM action_commitment_sources acs
+                     WHERE acs.action_id = actions.id
+                        OR acs.commitment_id IN (
+                            SELECT b.commitment_id
+                            FROM ai_commitment_bridge b
+                            WHERE b.action_id = actions.id
+                        ))
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE status = 'backlog'
              ORDER BY priority, created_at DESC",
         )?;
 
-        let rows = stmt.query_map([], Self::map_action_row)?;
+        let rows = stmt.query_map([], |row| {
+            let mut action = Self::map_action_row(row)?;
+            Self::map_commitment_claim_columns(&mut action, row, 18)?;
+            Ok(action)
+        })?;
 
         let mut actions = Vec::new();
         for row in rows {
@@ -795,7 +858,18 @@ impl ActionDb {
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
                     context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
-                    actions.action_kind
+                    actions.action_kind,
+                    actions.commitment_id, actions.owner_raw, actions.owner_entity_id,
+                    actions.owner_confidence, actions.owner_source,
+                    actions.trust_score, actions.trust_band,
+                    (SELECT COUNT(DISTINCT acs.source_key)
+                     FROM action_commitment_sources acs
+                     WHERE acs.action_id = actions.id
+                        OR acs.commitment_id IN (
+                            SELECT b.commitment_id
+                            FROM ai_commitment_bridge b
+                            WHERE b.action_id = actions.id
+                        ))
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE status = 'backlog'
@@ -816,10 +890,11 @@ impl ActionDb {
              ORDER BY priority, created_at DESC",
         )?;
 
-        let rows = stmt.query_map(
-            params![owner_prefix.as_str(), owner_name.as_str()],
-            Self::map_action_row,
-        )?;
+        let rows = stmt.query_map(params![owner_prefix.as_str(), owner_name.as_str()], |row| {
+            let mut action = Self::map_action_row(row)?;
+            Self::map_commitment_claim_columns(&mut action, row, 18)?;
+            Ok(action)
+        })?;
 
         let mut actions = Vec::new();
         for row in rows {
@@ -1845,6 +1920,28 @@ mod tests {
                 [],
             )
             .expect("insert legacy ambiguous seed");
+        db.conn
+            .execute(
+                "UPDATE actions
+                 SET commitment_id = 'commitment-a-mine',
+                     account_id = 'acct-1',
+                     trust_score = 0.86,
+                     trust_band = 'likely_current'
+                 WHERE id = 'a-mine'",
+                [],
+            )
+            .expect("seed trust metadata");
+        db.conn
+            .execute(
+                "INSERT INTO action_commitment_sources
+                 (id, commitment_id, action_id, source_key, source_type, source_id,
+                  source_label, observed_at, source_confidence, trust_score, trust_band)
+                 VALUES ('src-a-mine', 'commitment-a-mine', 'a-mine',
+                         'meeting:demo', 'meeting', 'demo', 'Meeting',
+                         datetime('now'), 0.9, 0.86, 'likely_current')",
+                [],
+            )
+            .expect("seed source metadata");
 
         // Mine + unassigned only.
         let scoped = db
@@ -1852,6 +1949,42 @@ mod tests {
             .expect("scoped");
         let ids: std::collections::HashSet<_> = scoped.iter().map(|a| a.id.clone()).collect();
         assert!(ids.contains("a-mine"), "expected a-mine in scoped set");
+        let mine = scoped
+            .iter()
+            .find(|action| action.id == "a-mine")
+            .expect("a-mine row");
+        assert_eq!(
+            mine.commitment_id.as_deref(),
+            Some("commitment-a-mine"),
+            "suggestion reads must preserve commitment identity"
+        );
+        assert_eq!(
+            mine.trust_band.as_deref(),
+            Some("likely_current"),
+            "suggestion reads must preserve trust band"
+        );
+        assert_eq!(
+            mine.commitment_source_count,
+            Some(1),
+            "suggestion reads must preserve corroborating source count"
+        );
+        let account_suggestions = db
+            .get_account_suggestions("acct-1")
+            .expect("account suggestions");
+        let account_mine = account_suggestions
+            .iter()
+            .find(|action| action.id == "a-mine")
+            .expect("account-scoped suggestion");
+        assert_eq!(
+            account_mine.trust_band.as_deref(),
+            Some("likely_current"),
+            "account suggestion reads must preserve trust band"
+        );
+        assert_eq!(
+            account_mine.commitment_source_count,
+            Some(1),
+            "account suggestion reads must preserve corroborating source count"
+        );
         assert!(ids.contains("b-mine-case"), "case-insensitive owner match");
         assert!(
             ids.contains("e-unassigned") && ids.contains("f-unassigned-null"),

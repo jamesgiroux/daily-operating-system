@@ -15,6 +15,7 @@ import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
 import { EmailEntityChip } from "@/components/ui/email-entity-chip";
 import { EntityPicker } from "@/components/ui/entity-picker";
 import { DatePicker } from "@/components/ui/date-picker";
+import { TrustBandIndicator } from "@/components/ui/TrustBandIndicator";
 import { compareEmailRank } from "@/lib/email-ranking";
 import { Archive, Check, Clock, ExternalLink, Pin, X } from "lucide-react";
 import { toast } from "sonner";
@@ -1171,6 +1172,12 @@ function EmailIntelItem({
           emailId={email.id}
           onEntityChanged={onEntityChanged}
         />
+        {email.summaryContextTrustBand && <TrustBandIndicator band={email.summaryContextTrustBand} />}
+        {email.summaryContextSourceCount && email.summaryContextSourceCount > 0 && (
+          <span>
+            claim context · {email.summaryContextSourceCount} source{email.summaryContextSourceCount === 1 ? "" : "s"}
+          </span>
+        )}
         {email.sentiment && email.sentiment !== "neutral" && (
           <span className={s.emailIntelSentiment}>
             <span

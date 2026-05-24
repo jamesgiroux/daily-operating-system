@@ -22,6 +22,7 @@ use std::path::Path;
 use chrono::{Datelike, Local, TimeZone, Utc};
 use serde::Serialize;
 
+use crate::db::emails::EMAIL_SUMMARY_CONTEXT_PROMPT_VERSION;
 use crate::db::ActionDb;
 use crate::intelligence::io::{
     AccountHealth, AdoptionSignals, AgreementOutlook, Blocker, CadenceAssessment, CompanyContext,
@@ -4259,6 +4260,30 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
                 summary, sentiment, urgency, enrichment_state, last_seen_at, relevance_score, user_is_last_sender, message_count, &today, &today],
         ).map_err(|e| format!("Email {}: {}", email_id, e))?;
     }
+
+    conn.execute(
+        "UPDATE emails
+            SET summary_context_prompt_version = ?1,
+                summary_context_trust_band = CASE
+                    WHEN email_id IN ('mock-email-acme-1', 'mock-email-globex-4') THEN 'use_with_caution'
+                    ELSE 'likely_current'
+                END,
+                summary_context_source_count = CASE
+                    WHEN email_id IN ('mock-email-acme-1', 'mock-email-globex-4') THEN 3
+                    ELSE 2
+                END,
+                summary_context_source_keys_json = CASE
+                    WHEN email_id IN ('mock-email-acme-1', 'mock-email-globex-4')
+                        THEN '[\"claim:mock-email:relationship\",\"claim:mock-account:risk\",\"claim:mock-meeting:followup\"]'
+                    ELSE '[\"claim:mock-email:relationship\",\"claim:mock-account:context\"]'
+                END,
+                summary_context_generated_at = ?2
+          WHERE email_id LIKE 'mock-email-%'
+            AND contextual_summary IS NOT NULL
+            AND entity_id IS NOT NULL",
+        rusqlite::params![EMAIL_SUMMARY_CONTEXT_PROMPT_VERSION, &today],
+    )
+    .map_err(|e| format!("Email summary context evidence: {}", e))?;
 
     // ── Pinned emails ──
     conn.execute(

@@ -7,7 +7,10 @@ import type { DbAction } from "@/types";
 interface UseSuggestedActionsReturn {
   suggestedActions: DbAction[];
   acceptAction: (id: string) => Promise<void>;
-  rejectAction: (id: string, source?: "actions_page" | "daily_briefing" | "meeting_detail") => Promise<void>;
+  rejectAction: (
+    id: string,
+    source?: "actions_page" | "daily_briefing" | "meeting_detail" | "account_detail_work"
+  ) => Promise<void>;
   isLoading: boolean;
   refresh: () => Promise<void>;
   showAll: boolean;
@@ -66,7 +69,7 @@ export function useSuggestedActions(): UseSuggestedActionsReturn {
   const rejectAction = useCallback(
     async (
       id: string,
-      source: "actions_page" | "daily_briefing" | "meeting_detail" = "actions_page"
+      source: "actions_page" | "daily_briefing" | "meeting_detail" | "account_detail_work" = "actions_page"
     ) => {
       try {
         await invoke("reject_suggested_action", { id, source });

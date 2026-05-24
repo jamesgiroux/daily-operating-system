@@ -360,4 +360,33 @@ describe("DailyBriefing", () => {
 
     expect(container.querySelector("section")).not.toBeNull();
   });
+
+  it("renders email summary trust and source context", () => {
+    render(
+      <DailyBriefing
+        data={makeDashboardData({
+          emails: [
+            {
+              id: "email-1",
+              sender: "Alex",
+              senderEmail: "alex@example.com",
+              subject: "Renewal",
+              priority: "high",
+              entityId: "acct-1",
+              entityType: "account",
+              entityName: "Example Co",
+              summary: "Renewal risk moved because the buyer asked for a new timeline.",
+              summaryContextTrustBand: "use_with_caution",
+              summaryContextSourceCount: 2,
+              relevanceScore: 0.9,
+            },
+          ],
+        })}
+        freshness={freshness}
+      />,
+    );
+
+    expect(screen.getByRole("img", { name: /trust band: use with caution/i })).toBeInTheDocument();
+    expect(screen.getByText("claim context · 2 sources")).toBeInTheDocument();
+  });
 });

@@ -1019,6 +1019,13 @@ const MIGRATIONS: &[Migration] = &[
         version: 259,
         sql: include_str!("migrations/259_mcp_transport_nonce_ledger_repair.sql"),
     },
+    // v1.4.4a W5 — email summary trust/source badges must be tied to the
+    // enrichment pass that produced the summary, not computed from a later
+    // entity-claim snapshot.
+    Migration::Fn {
+        version: 260,
+        apply: migrate_v260_email_summary_context_evidence,
+    },
 ];
 
 const V155_SHADOW_TRUST_VERSION: i64 = 1_401_003;
@@ -2785,6 +2792,14 @@ fn migrate_v161_dos_276_commitment_alias_remediation(
         conn,
         include_str!("migrations/161_dos_276_commitment_alias_remediation.sql"),
         "DOS-276 commitment alias remediation",
+    )
+}
+
+fn migrate_v260_email_summary_context_evidence(conn: &Connection) -> Result<(), MigrationError> {
+    apply_idempotent_sql_migration(
+        conn,
+        include_str!("migrations/260_email_summary_context_evidence.sql"),
+        "v1.4.4a W5 email summary context evidence",
     )
 }
 
@@ -4995,7 +5010,7 @@ mod tests {
         run_migrations(&conn).expect("build current schema");
         conn.execute_batch(
             "DROP TABLE mcp_transport_nonce_ledger;
-             DELETE FROM schema_version WHERE version = 259;",
+             DELETE FROM schema_version WHERE version >= 259;",
         )
         .expect("simulate v258 DB that skipped nonce ledger migration");
         assert_eq!(current_version(&conn).expect("current version"), 258);
@@ -5005,7 +5020,11 @@ mod tests {
         );
 
         let applied = run_migrations(&conn).expect("repair migration should succeed");
-        assert_eq!(applied, 1, "only v259 repair should be pending");
+        let expected = MIGRATIONS.iter().filter(|m| m.version() >= 259).count();
+        assert_eq!(
+            applied, expected,
+            "v259 repair and later migrations should be pending"
+        );
         assert!(
             table_exists(&conn, "mcp_transport_nonce_ledger").expect("table lookup"),
             "v259 should recreate the nonce ledger"

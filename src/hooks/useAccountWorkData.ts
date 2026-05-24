@@ -26,6 +26,8 @@ import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import type { DbAction } from "@/types";
 
+const ACCOUNT_DETAIL_WORK_SOURCE = "account_detail_work";
+
 export interface UseAccountWorkDataResult {
   commitments: DbAction[];
   suggestions: DbAction[];
@@ -179,7 +181,7 @@ export function useAccountWorkData(
         if (row && row.status === "backlog") {
           await invoke("reject_suggested_action", {
             id: actionId,
-            source: "actions_page",
+            source: ACCOUNT_DETAIL_WORK_SOURCE,
           });
         } else {
           // archive_action isn't wired as a Tauri command today — fall
@@ -188,7 +190,7 @@ export function useAccountWorkData(
           // silently drop the card.
           await invoke("reject_suggested_action", {
             id: actionId,
-            source: "actions_page",
+            source: ACCOUNT_DETAIL_WORK_SOURCE,
           });
         }
         await silentRefresh();
@@ -229,7 +231,7 @@ export function useAccountWorkData(
       try {
         await invoke("reject_suggested_action", {
           id: actionId,
-          source: "actions_page",
+          source: ACCOUNT_DETAIL_WORK_SOURCE,
         });
         await silentRefresh();
       } catch (err) {
@@ -250,7 +252,7 @@ export function useAccountWorkData(
       try {
         await invoke("dismiss_suggested_action", {
           id: actionId,
-          source: "actions_page",
+          source: ACCOUNT_DETAIL_WORK_SOURCE,
         });
         await silentRefresh();
       } catch (err) {
