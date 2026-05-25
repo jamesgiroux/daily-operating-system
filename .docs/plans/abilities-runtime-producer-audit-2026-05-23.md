@@ -371,3 +371,111 @@ Recommended first slice:
 5. Keep trust recomputation investigation on the todo list for all claim types, with section-aware caveats as a follow-on.
 
 This slice should make the Glean-vs-DailyOS comparison materially fairer without creating an account-only producer architecture.
+
+## 2026-05-24 Subagent Addendum — Legacy Surface Bypass Sweep
+
+The initial audit focused on producer coverage. A follow-up subagent sweep expanded the scope to legacy reads and generated-artifact paths that can still bypass the abilities runtime.
+
+### Method
+
+Four read-only subagents split the audit by responsibility:
+
+- raw SQLite/projection reads outside the runtime
+- filesystem and generated prose/artifact paths
+- MCP v1/v2 and Tauri surface contracts
+- abilities-runtime producer coverage and live reader seams
+
+The shared classification below separates acceptable deterministic inputs from authority bypasses.
+
+### Confirmed Good
+
+- MCP v2 `dailyos.read.account_status` invokes `get_entity_intelligence` through the runtime gateway. It is not reading generated JSON or legacy `entity_assessment` directly.
+- `get_entity_intelligence` is now the right central envelope for MCP-safe entity output: facts, open loops, relationships, touchpoints, and record entries are composed through service-context readers.
+- Account fact promotion exists for selected sourced account fields and is the right pattern to generalize.
+- Relationship and participation evidence is partly available through the generic neighborhood reader. It already covers linked entities, account stakeholders, project members, meeting attendees, and participant counts.
+- User feedback and tombstones are live in the claim services and suppress active claim readers; the problem is producer coverage and old projection surfaces, not a missing lifecycle substrate.
+
+### Immediate Mechanical Findings
+
+- MCP v2 local grants can outlive compiled handlers. If a tool existed in a previous binary or catalog state, `tools/list` could advertise a stale invocable grant even when no handler is registered. This produces confusing host behavior such as tool selection followed by an unavailable ability. The current branch now prunes stale local grants at startup and defensively intersects `tools/list` with the registered handler set.
+- `dailyos.read.account_status` still describes `subject` as a name or handle while the handler currently treats it as an entity id. Subject resolution remains a W2 acceptance gap.
+- MCP v1 remains a bypass surface by design: `get_briefing`, `search_meetings`, `search_content`, and project/person `query_entity` still read files, raw DB rows, or legacy projections. That is acceptable only while v1 is treated as legacy/debug and not the path for headless product validation.
+- MCP v1 hides raw abilities from `tools/list`, but exact-name ability calls can still route to the bridge. That makes unadvertised ability names a callable bypass unless the call path also enforces the advertised-tool allowlist.
+- MCP v1 also hides some static tools from `tools/list` while their handlers remain callable by exact name. Hidden static tools need the same fail-closed treatment as hidden abilities unless they are explicitly debug-only and unavailable to Claude Desktop.
+
+### Authority Bypasses That Need Producer Work
+
+The largest bypass class is not one table. It is generated analysis/prose that is still treated as input authority by other surfaces.
+
+- Report and briefing composers read legacy projections and direct evidence tables, synthesize prose via PTY calls, then persist `reports.content_json` or briefing JSON. Examples: account health, EBR/QBR, SWOT, risk briefing, Book of Business, weekly impact, monthly wrapped, and workflow deliverables.
+- `build_intelligence_context()` is the central legacy prompt bridge. It assembles account source refs, email signals, stakeholders, meetings, actions, entity context rows, and prior intelligence directly for enrichment/report prompts.
+- Meeting prep still has a split authority path: `prep_context_json` is the primary UI read source, while `prep_frozen_json` remains an active export/cache and PTY enrichment target.
+- Meeting detail post-meeting intelligence reads interaction dynamics, champion health, role changes, and captures directly into a user-visible intelligence panel.
+- Transcript processing can use legacy call-summary intelligence as prompt input, then persists meeting outcomes and actions without a direct claim producer for all extracted conclusions.
+- Email enrichment writes useful urgency, sentiment, and action-shaped data, but `get_entity_intelligence` has no generic email/signal reader yet.
+- Success-plan suggestions can still fall back to `entity_assessment` fields when newer success-plan signal rows are absent.
+- Content chat packages legacy entity intelligence beside facts, actions, meetings, and semantic matches.
+- Generated artifacts are mostly export projections, but some live paths still read `_today/data/*.json`, `risk-briefing.json`, `dashboard.md`, or `dashboard.json` as prompt input or cached UI state.
+- Context providers can still mutate durable intelligence. Glean context gathering writes org health and contact/relationship data that later feeds local context, but those writes do not consistently pass through claim promotion, signal propagation, or trust recompute.
+- Progressive dimension enrichment writes snapshots through the legacy assessment path before finalization. It should be classified as an operational partial read model unless it goes through the same durable finalization path as completed enrichment.
+- Provider-local Glean product classification and some stakeholder side writes still write useful intelligence outside the shared side-effect/finalization services.
+
+### Acceptable Reads
+
+Not every raw table read is a bypass. These are acceptable when they stay deterministic and feed a runtime producer or a non-authoritative export:
+
+- list/index abilities over accounts, projects, people, meetings
+- MCP v2 account-status service-context readers
+- meeting metadata, meeting attendees, captures, and actions when used as evidence inputs
+- deterministic health scoring inputs
+- export, migration, backup, rebuild, and recovery paths
+- compatibility legacy payloads ignored by the frontend ability-envelope mapper
+
+### Producer Remediation Implications
+
+The remediation should not teach MCP or Tauri to read report JSON, dashboard files, or account-shaped legacy projections. The service-oriented fix is to classify each generated-output path:
+
+- `durable producer`: extracted assertions become claims/signals with provenance, temporal scope, sensitivity, lifecycle, and trust recomputation
+- `read-model producer`: deterministic evidence becomes a bounded runtime section with caveats and source refs
+- `downstream artifact`: report/prose output consumes the runtime and remains an artifact, never authority
+
+Priority producer gaps after the subagent sweep:
+
+1. Transcript/capture outcomes into generic claims or runtime evidence.
+2. Email and generic signal events into entity touchpoints/threads.
+3. Actions/open loops into claim-backed or provenance-safe runtime evidence for MCP.
+4. Report/prose conclusions explicitly classified as artifacts unless promoted by a services-owned extraction step.
+5. Meeting prep and daily briefing switched to runtime-backed context builders instead of legacy prompt bridges.
+6. Project/person MCP rich answers routed through the same `get_entity_intelligence` path as accounts.
+7. Glean context/provider-local side effects moved behind shared services-owned finalization and side-effect producers.
+8. MCP v1 exact-call paths fail closed for unadvertised abilities and hidden static tools.
+
+### Next Acceptance Criteria
+
+- Claude Desktop sees only registered MCP v2 tools from the current binary.
+- `dailyos.read.account_status` resolves subject names, slugs, and ids before runtime invocation.
+- The executive-briefing eval uses runtime output, not legacy files or reports, and contains recent touchpoints, relationship participants, open loops, sourced commercial facts, and caveats.
+- No new AI producer persists durable user-visible intelligence outside `services/` without a claim/signal/read-model classification.
+- Generated JSON/markdown remains export-only except for explicit import/recovery workflows.
+
+## 2026-05-25 Stranded Evidence Addendum
+
+The L4 comparison exposed a second-order audit failure: some durable evidence was already present in legacy service tables, and the runtime reader even touched some of it, but the useful semantics were dropped before `get_entity_intelligence` reached MCP.
+
+This is a broader class than one account field. The inventory now tracks both missing producers and "queried-but-discarded" evidence. A read-only production inventory confirmed the risk: legacy/evidence tables are materially populated, so fixture-level runtime success is not enough. Counts included thousands of action/source rows, email rows, meeting links, captures, source refs, signal events, and existing claims.
+
+| Evidence class | Durable source | Runtime state | Current remediation |
+| --- | --- | --- | --- |
+| Structured account facts | account/source-reference rows | Promoted to `account_fact` claims by producer/backfill; migration 265 now records a one-time service-owned runtime evidence backfill request so existing local rows run through the same producer path after migrations | Keep producer/backfill; add eval checks that surfaced commercial facts come from claims, not direct schema reads |
+| Core entity scalar facts | account, project, and person schema fields | Stable DB fields can disappear from MCP if no claim exists, or can render with weak freshness when `source_asof` is absent | Generalize sourced entity-field producers beyond account facts; runtime freshness falls back to `observed_at` when `source_asof` is missing |
+| Entity assessment and health narrative | `entity_assessment`, `entity_quality`, `health_score_history` | Derived app summaries and health rows remain mostly outside `get_entity_intelligence` health, except where separately claim-backed | Add generic health/read-model producer; keep reports and cached prose downstream only |
+| Account-team and stakeholder roles | account-stakeholder role rows | Relationship reader queried role but emitted generic stakeholder evidence, losing owner/RM/champion semantics | Preserve safe role categories in relationship edges and account-specific participant roles; prioritize explicit roles before generic associated links |
+| Actions and commitments | action/open-loop rows, commitment sources | Tauri could see them, MCP intentionally dropped synthesized action evidence; commitment source provenance/trust is still thinned in open-loop projection | Expose bounded action evidence to MCP as `Internal` open-loop/commitment runtime evidence; follow-on should promote durable commitments into first-class claims or preserve source rows in the read model |
+| Meeting/entity links | current linked-entity graph plus legacy meeting junctions | Legacy readers could miss current graph-only links or resurrect dismissed legacy links | Read current graph first and use legacy junctions only as fallback |
+| Transcripts, captures, and meeting summaries | transcript/capture/outcome tables | Some paths write side tables and generated summaries without generic claim/runtime production | W3 producer work: commit extracted assertions or expose bounded read-model evidence with source refs and caveats |
+| Email and content signals | email enrichment, linked content, indexed artifacts | Useful urgency/sentiment/context often remains outside entity runtime | W3 producer work: thread/touchpoint/read-model producers; reports stay downstream artifacts |
+| Metadata proposals and review candidates | stakeholder suggestions, review queues, claim-review deferrals | `metadata_proposals` is still empty even when proposal-like rows exist elsewhere | Add generic metadata proposal producer with suppression/provenance state |
+| Thread context | `thread_metadata`, `intelligence_claims.thread_id`, emails | `threads` section is empty; claims are not grouped by conversation context | Add `services::threads` runtime producer over claim-backed and linked communication evidence |
+| Feedback and suppression controls | tombstones, feedback events, claim-surface dismissals, linking dismissals | Claim reads honor claim suppression, but non-claim read models apply bespoke filters and often drop suppression provenance | Centralize suppression hooks and carry suppression/exclusion caveats through section state |
+
+Acceptance addition: a stranded-evidence audit is incomplete if it only asks "is there a table?" or "does a query run?" It must also verify the runtime carries the evidence's meaning, provenance, freshness, sensitivity, and suppression semantics through to the surface projection.

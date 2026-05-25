@@ -48,7 +48,7 @@ pub fn coherence_check(
         .prepare(
             "SELECT mh.title, mt.summary FROM meetings mh
              LEFT JOIN meeting_transcripts mt ON mt.meeting_id = mh.id
-             INNER JOIN meeting_entities me ON me.meeting_id = mh.id
+             INNER JOIN effective_meeting_entities me ON me.meeting_id = mh.id
              WHERE me.entity_id = ?1
                AND mh.start_time > datetime('now', '-90 days')
              ORDER BY mh.start_time DESC

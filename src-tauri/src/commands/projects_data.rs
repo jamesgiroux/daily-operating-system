@@ -375,7 +375,7 @@ pub fn run_hygiene_scan_now(state: State<'_, Arc<AppState>>) -> Result<HygieneSt
             &db,
             &config,
             workspace,
-            Some(&state.hygiene.budget),
+            Some(state.hygiene.budget.as_ref()),
             Some(&state.intel_queue),
             false,
             Some(state.embedding_model.as_ref()),

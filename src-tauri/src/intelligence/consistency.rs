@@ -101,7 +101,7 @@ pub fn build_fact_context(
         .prepare(
             "SELECT p.id, p.name, p.role, COUNT(DISTINCT ma.meeting_id) AS attendance_count, \
                     MAX(mh.start_time) AS last_seen \
-             FROM meeting_entities me \
+             FROM effective_meeting_entities me \
              JOIN meeting_attendees ma ON ma.meeting_id = me.meeting_id \
              JOIN people p ON p.id = ma.person_id \
              JOIN meetings mh ON mh.id = me.meeting_id \

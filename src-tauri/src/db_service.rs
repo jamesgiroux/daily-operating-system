@@ -112,7 +112,9 @@ impl DbAccessError {
             Some(rusqlite::Error::SqliteFailure(sqlite_error, _))
                 if matches!(
                     sqlite_error.code,
-                    rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
+                    rusqlite::ErrorCode::DatabaseBusy
+                        | rusqlite::ErrorCode::DatabaseLocked
+                        | rusqlite::ErrorCode::NotADatabase
                 ) =>
             {
                 DbAccessErrorClass::Retryable
@@ -886,6 +888,15 @@ mod tests {
     #[test]
     fn db_access_error_classifies_database_locked_as_retryable() {
         let error = DbAccessError::from(sqlite_error(rusqlite::ffi::SQLITE_LOCKED, "locked"));
+
+        assert_eq!(error.class(), DbAccessErrorClass::Retryable);
+        assert!(error.is_retryable());
+    }
+
+    #[test]
+    fn db_access_error_classifies_notadb_as_retryable() {
+        let error =
+            DbAccessError::from(sqlite_error(rusqlite::ffi::SQLITE_NOTADB, "not a database"));
 
         assert_eq!(error.class(), DbAccessErrorClass::Retryable);
         assert!(error.is_retryable());

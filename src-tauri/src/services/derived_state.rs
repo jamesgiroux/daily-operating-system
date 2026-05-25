@@ -539,8 +539,27 @@ fn rebuild_entity_assessment_from_claims(
     tx: &ActionDb,
     claim: &IntelligenceClaim,
 ) -> Result<(), ProjectionErrorClass> {
-    let (entity_id, entity_type) = entity_identity_from_subject_ref(&claim.subject_ref)?;
-    let claims = crate::services::claims::load_claims_active(tx, &claim.subject_ref, None)
+    rebuild_entity_assessment_from_subject_ref(ctx, tx, &claim.subject_ref)
+}
+
+pub(crate) fn rebuild_entity_assessment_projection_for_subject_ref(
+    ctx: &ServiceContext<'_>,
+    tx: &ActionDb,
+    subject_ref: &str,
+) -> Result<(), String> {
+    run_rule_savepoint(tx, "entity_intelligence_bulk", || {
+        rebuild_entity_assessment_from_subject_ref(ctx, tx, subject_ref)
+    })
+    .map_err(|error_class| format!("entity assessment projection failed: {error_class:?}"))
+}
+
+fn rebuild_entity_assessment_from_subject_ref(
+    ctx: &ServiceContext<'_>,
+    tx: &ActionDb,
+    subject_ref: &str,
+) -> Result<(), ProjectionErrorClass> {
+    let (entity_id, entity_type) = entity_identity_from_subject_ref(subject_ref)?;
+    let claims = crate::services::claims::load_claims_active(tx, subject_ref, None)
         .map_err(|_| ProjectionErrorClass::ValidationError)?;
     let projected = EntityAssessmentProjection::from_claims(&claims);
     if let Some((existing_entity_type, existing_projected)) =

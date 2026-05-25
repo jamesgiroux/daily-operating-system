@@ -1,5 +1,34 @@
 use super::*;
 
+fn relation_exists(db: &ActionDb, relation_name: &str) -> Result<bool, DbError> {
+    db.conn
+        .query_row(
+            "SELECT EXISTS(
+            SELECT 1 FROM sqlite_master
+            WHERE type IN ('table', 'view') AND name = ?1
+        )",
+            params![relation_name],
+            |row| row.get::<_, i64>(0),
+        )
+        .map(|value| value != 0)
+        .map_err(DbError::from)
+}
+
+fn current_graph_has_rows_for_meeting(db: &ActionDb, meeting_id: &str) -> Result<bool, DbError> {
+    if !relation_exists(db, "linked_entities_raw")? {
+        return Ok(false);
+    }
+    db.conn
+        .prepare(
+            "SELECT 1
+             FROM linked_entities_raw
+             WHERE owner_type = 'meeting' AND owner_id = ?1
+             LIMIT 1",
+        )?
+        .exists(params![meeting_id])
+        .map_err(DbError::from)
+}
+
 impl ActionDb {
     // =========================================================================
     // Projects
@@ -391,7 +420,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT m.id, m.title, m.calendar_event_id, m.start_time
              FROM meetings m
-             LEFT JOIN meeting_entities me ON me.meeting_id = m.id
+             LEFT JOIN effective_meeting_entities me ON me.meeting_id = m.id
              WHERE m.start_time >= ?1 AND me.meeting_id IS NULL
              ORDER BY m.start_time DESC
              LIMIT ?2",
@@ -428,7 +457,7 @@ impl ActionDb {
         Ok(actions)
     }
 
-    /// Get meetings linked to a project via the meeting_entities junction table.
+    /// Get meetings linked to a project via the current graph-compatible link view.
     pub fn get_meetings_for_project(
         &self,
         project_id: &str,
@@ -440,7 +469,7 @@ impl ActionDb {
                     m.calendar_event_id, mt.transcript_path
              FROM meetings m
              LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
-             JOIN meeting_entities me ON me.meeting_id = m.id
+             JOIN effective_meeting_entities me ON me.meeting_id = m.id
              WHERE me.entity_id = ?1 AND me.entity_type = 'project'
              ORDER BY m.start_time DESC
              LIMIT ?2",
@@ -628,14 +657,51 @@ impl ActionDb {
         entity_id: &str,
         entity_type: &str,
     ) -> Result<bool, DbError> {
-        let exists: bool = self
+        let legacy_exists: bool = self
             .conn
             .prepare(
                 "SELECT 1 FROM meeting_entity_dismissals
                  WHERE meeting_id = ?1 AND entity_id = ?2 AND entity_type = ?3",
             )?
             .exists(params![meeting_id, entity_id, entity_type])?;
-        Ok(exists)
+        if legacy_exists {
+            return Ok(true);
+        }
+
+        if relation_exists(self, "linked_entities_raw")? {
+            let raw_dismissed = self
+                .conn
+                .prepare(
+                    "SELECT 1 FROM linked_entities_raw
+                     WHERE owner_type = 'meeting'
+                       AND owner_id = ?1
+                       AND entity_id = ?2
+                       AND entity_type = ?3
+                       AND source = 'user_dismissed'",
+                )?
+                .exists(params![meeting_id, entity_id, entity_type])?;
+            if raw_dismissed {
+                return Ok(true);
+            }
+        }
+
+        if relation_exists(self, "linking_dismissals")? {
+            let graph_dismissed = self
+                .conn
+                .prepare(
+                    "SELECT 1 FROM linking_dismissals
+                     WHERE owner_type = 'meeting'
+                       AND owner_id = ?1
+                       AND entity_id = ?2
+                       AND entity_type = ?3",
+                )?
+                .exists(params![meeting_id, entity_id, entity_type])?;
+            if graph_dismissed {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
     }
 
     /// List all (entity_id, entity_type) pairs dismissed for a
@@ -646,6 +712,8 @@ impl ActionDb {
         &self,
         meeting_id: &str,
     ) -> Result<std::collections::HashSet<(String, String)>, DbError> {
+        let mut set = std::collections::HashSet::new();
+
         let mut stmt = self.conn.prepare(
             "SELECT entity_id, entity_type FROM meeting_entity_dismissals
              WHERE meeting_id = ?1",
@@ -653,10 +721,41 @@ impl ActionDb {
         let rows = stmt.query_map(params![meeting_id], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })?;
-        let mut set = std::collections::HashSet::new();
         for r in rows {
             set.insert(r?);
         }
+
+        if relation_exists(self, "linked_entities_raw")? {
+            let mut stmt = self.conn.prepare(
+                "SELECT entity_id, entity_type
+                 FROM linked_entities_raw
+                 WHERE owner_type = 'meeting'
+                   AND owner_id = ?1
+                   AND source = 'user_dismissed'",
+            )?;
+            let rows = stmt.query_map(params![meeting_id], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?;
+            for r in rows {
+                set.insert(r?);
+            }
+        }
+
+        if relation_exists(self, "linking_dismissals")? {
+            let mut stmt = self.conn.prepare(
+                "SELECT entity_id, entity_type
+                 FROM linking_dismissals
+                 WHERE owner_type = 'meeting'
+                   AND owner_id = ?1",
+            )?;
+            let rows = stmt.query_map(params![meeting_id], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?;
+            for r in rows {
+                set.insert(r?);
+            }
+        }
+
         Ok(set)
     }
 
@@ -668,6 +767,16 @@ impl ActionDb {
         &self,
         meeting_id: &str,
     ) -> Result<Vec<LinkedEntity>, DbError> {
+        if relation_exists(self, "linked_entities")? {
+            let current = self.get_current_meeting_linked_entities(meeting_id)?;
+            if !current.is_empty() {
+                return Ok(current);
+            }
+            if current_graph_has_rows_for_meeting(self, meeting_id)? {
+                return Ok(Vec::new());
+            }
+        }
+
         let mut stmt = self.conn.prepare(
             "SELECT e.id, e.name, me.entity_type, me.confidence, me.is_primary
              FROM meeting_entities me
@@ -694,8 +803,19 @@ impl ActionDb {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
-    /// Get all entities linked to a meeting via the junction table.
+    /// Get all entities linked to a meeting via the current entity graph, with
+    /// legacy junction fallback only when no current graph state exists.
     pub fn get_meeting_entities(&self, meeting_id: &str) -> Result<Vec<DbEntity>, DbError> {
+        if relation_exists(self, "linked_entities")? {
+            let current = self.get_current_meeting_entities(meeting_id)?;
+            if !current.is_empty() {
+                return Ok(current);
+            }
+            if current_graph_has_rows_for_meeting(self, meeting_id)? {
+                return Ok(Vec::new());
+            }
+        }
+
         let mut stmt = self.conn.prepare(
             "SELECT e.id, e.name, e.entity_type, e.tracker_path, e.updated_at
              FROM entities e
@@ -729,7 +849,28 @@ impl ActionDb {
         if meeting_ids.is_empty() {
             return Ok(HashMap::new());
         }
-        let placeholders: Vec<String> = (0..meeting_ids.len())
+
+        let mut map = if relation_exists(self, "linked_entities")? {
+            self.get_current_meeting_entity_map(meeting_ids)?
+        } else {
+            HashMap::new()
+        };
+        let mut legacy_ids = Vec::new();
+        for meeting_id in meeting_ids {
+            if map.contains_key(meeting_id) {
+                continue;
+            }
+            if current_graph_has_rows_for_meeting(self, meeting_id)? {
+                map.insert(meeting_id.clone(), Vec::new());
+            } else {
+                legacy_ids.push(meeting_id.clone());
+            }
+        }
+        if legacy_ids.is_empty() {
+            return Ok(map);
+        }
+
+        let placeholders: Vec<String> = (0..legacy_ids.len())
             .map(|i| format!("?{}", i + 1))
             .collect();
         let sql = format!(
@@ -741,7 +882,7 @@ impl ActionDb {
             placeholders.join(", ")
         );
         let mut stmt = self.conn.prepare(&sql)?;
-        let params: Vec<&dyn rusqlite::types::ToSql> = meeting_ids
+        let params: Vec<&dyn rusqlite::types::ToSql> = legacy_ids
             .iter()
             .map(|id| id as &dyn rusqlite::types::ToSql)
             .collect();
@@ -767,6 +908,115 @@ impl ActionDb {
                     is_primary,
                     suggested,
                     role: None,
+                    applied_rule: None,
+                },
+            ))
+        })?;
+        for row in rows {
+            let (meeting_id, entity) = row?;
+            map.entry(meeting_id).or_default().push(entity);
+        }
+        Ok(map)
+    }
+
+    fn get_current_meeting_linked_entities(
+        &self,
+        meeting_id: &str,
+    ) -> Result<Vec<LinkedEntity>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT e.id, e.name, le.entity_type, COALESCE(le.confidence, 0.95), le.role
+             FROM linked_entities le
+             JOIN entities e ON e.id = le.entity_id AND e.entity_type = le.entity_type
+             WHERE le.owner_type = 'meeting' AND le.owner_id = ?1
+             ORDER BY CASE le.role WHEN 'primary' THEN 0
+                                   WHEN 'related' THEN 1
+                                   ELSE 2 END,
+                      COALESCE(le.confidence, 0.0) DESC,
+                      e.name ASC",
+        )?;
+        let rows = stmt.query_map(params![meeting_id], |row| {
+            let confidence: f64 = row.get(3)?;
+            let role: String = row.get(4)?;
+            Ok(LinkedEntity {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                entity_type: row.get(2)?,
+                confidence,
+                is_primary: role == "primary",
+                suggested: role == "auto_suggested",
+                role: Some(role),
+                applied_rule: None,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(DbError::from)
+    }
+
+    fn get_current_meeting_entities(&self, meeting_id: &str) -> Result<Vec<DbEntity>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT e.id, e.name, e.entity_type, e.tracker_path, e.updated_at
+             FROM linked_entities le
+             JOIN entities e ON e.id = le.entity_id AND e.entity_type = le.entity_type
+             WHERE le.owner_type = 'meeting' AND le.owner_id = ?1
+             ORDER BY CASE le.role WHEN 'primary' THEN 0
+                                   WHEN 'related' THEN 1
+                                   ELSE 2 END,
+                      e.name ASC",
+        )?;
+        let rows = stmt.query_map(params![meeting_id], |row| {
+            let et: String = row.get(2)?;
+            Ok(DbEntity {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                entity_type: EntityType::from_str_lossy(&et),
+                tracker_path: row.get(3)?,
+                updated_at: row.get(4)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(DbError::from)
+    }
+
+    fn get_current_meeting_entity_map(
+        &self,
+        meeting_ids: &[String],
+    ) -> Result<HashMap<String, Vec<LinkedEntity>>, DbError> {
+        if meeting_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let placeholders: Vec<String> = (0..meeting_ids.len())
+            .map(|i| format!("?{}", i + 1))
+            .collect();
+        let sql = format!(
+            "SELECT le.owner_id, e.id, e.name, le.entity_type,
+                    COALESCE(le.confidence, 0.95), le.role
+             FROM linked_entities le
+             JOIN entities e ON e.id = le.entity_id AND e.entity_type = le.entity_type
+             WHERE le.owner_type = 'meeting' AND le.owner_id IN ({})
+             ORDER BY le.owner_id ASC,
+                      CASE le.role WHEN 'primary' THEN 0
+                                    WHEN 'related' THEN 1
+                                    ELSE 2 END,
+                      COALESCE(le.confidence, 0.0) DESC,
+                      e.name ASC",
+            placeholders.join(", ")
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let params: Vec<&dyn rusqlite::types::ToSql> = meeting_ids
+            .iter()
+            .map(|id| id as &dyn rusqlite::types::ToSql)
+            .collect();
+        let rows = stmt.query_map(params.as_slice(), |row| {
+            let meeting_id: String = row.get(0)?;
+            let role: String = row.get(5)?;
+            Ok((
+                meeting_id,
+                LinkedEntity {
+                    id: row.get(1)?,
+                    name: row.get(2)?,
+                    entity_type: row.get(3)?,
+                    confidence: row.get(4)?,
+                    is_primary: role == "primary",
+                    suggested: role == "auto_suggested",
+                    role: Some(role),
                     applied_rule: None,
                 },
             ))
@@ -854,7 +1104,7 @@ impl ActionDb {
                    AND p.relationship = 'external'
                    AND (SELECT COUNT(DISTINCT ma2.meeting_id)
                         FROM meeting_attendees ma2
-                        JOIN meeting_entities me2 ON me2.meeting_id = ma2.meeting_id
+                        JOIN effective_meeting_entities me2 ON me2.meeting_id = ma2.meeting_id
                         WHERE ma2.person_id = ma.person_id
                           AND me2.entity_id = ?1 AND me2.entity_type = 'account') >= 2
                  ON CONFLICT(account_id, person_id) DO NOTHING",

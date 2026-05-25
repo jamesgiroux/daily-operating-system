@@ -542,12 +542,12 @@ fn is_retry_due(next_attempt_at: Option<&str>) -> bool {
 
 /// Resolve the primary account_id for a meeting.
 ///
-/// Uses explicit account links in `meeting_entities`.
+/// Uses explicit account links through the graph-compatible meeting link view.
 fn resolve_meeting_account_id(db: &crate::db::ActionDb, meeting_id: &str) -> Option<String> {
     db.conn_ref()
         .query_row(
             "SELECT me.entity_id
-             FROM meeting_entities me
+             FROM effective_meeting_entities me
              WHERE me.meeting_id = ?1
                AND me.entity_type = 'account'
              ORDER BY me.rowid ASC

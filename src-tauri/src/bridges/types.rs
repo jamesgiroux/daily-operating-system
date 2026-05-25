@@ -534,11 +534,14 @@ pub(crate) async fn invoke_registry_json<'a>(
     )
 }
 
-pub(crate) struct RequestScopedInvocation {
+pub(crate) struct RequestScopedInvocation<'a> {
     pub registry_actor: Actor,
     pub response_actor: BridgeActor,
     pub surface: BridgeSurface,
     pub claim_dismissal_surface: ClaimDismissalSurface,
+    pub dry_run: bool,
+    pub confirmation: Option<&'a ConfirmationToken>,
+    pub confirmation_store: Option<&'a dyn ConfirmationTokenStore>,
 }
 
 pub(crate) async fn invoke_registry_json_for_actor<'a>(
@@ -546,7 +549,7 @@ pub(crate) async fn invoke_registry_json_for_actor<'a>(
     services: &'a ServiceContext<'a>,
     provider: &'a dyn IntelligenceProvider,
     tracer: &'a dyn AbilityTracer,
-    invocation: RequestScopedInvocation,
+    invocation: RequestScopedInvocation<'a>,
     ability_name: &str,
     input_json: serde_json::Value,
 ) -> Result<AbilityResponseJson, AbilityInvokeError> {
@@ -555,6 +558,9 @@ pub(crate) async fn invoke_registry_json_for_actor<'a>(
         response_actor,
         surface,
         claim_dismissal_surface,
+        dry_run,
+        confirmation,
+        confirmation_store,
     } = invocation;
     let descriptor = resolve_pre_dispatch(
         registry,
@@ -588,9 +594,9 @@ pub(crate) async fn invoke_registry_json_for_actor<'a>(
         mode: services.mode,
         surface,
         claim_dismissal_surface,
-        dry_run: false,
-        confirmation: None,
-        confirmation_store: None,
+        dry_run,
+        confirmation,
+        confirmation_store,
     };
     let args_hash = confirmation_args_hash(&input_json);
     verify_confirmation_token(
@@ -607,7 +613,7 @@ pub(crate) async fn invoke_registry_json_for_actor<'a>(
         provider,
         tracer,
         registry_actor,
-        None,
+        confirmation.map(|token| token as &dyn ConfirmationProof),
         claim_dismissal_surface,
     );
     let output_json = registry
@@ -1005,8 +1011,9 @@ fn provenance_actor_for_bridge(actor: BridgeActor) -> ProvenanceActor {
         BridgeActor::SurfaceClient => ProvenanceActor::External {
             source: "surface_client".to_string(),
         },
-        BridgeActor::McpClient => ProvenanceActor::External {
-            source: "mcp_client".to_string(),
+        BridgeActor::McpClient => ProvenanceActor::Agent {
+            name: "dailyos-mcp".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
         },
     }
 }

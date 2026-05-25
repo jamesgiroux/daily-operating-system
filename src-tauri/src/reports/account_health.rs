@@ -87,7 +87,7 @@ fn build_account_health_prompt(
         .conn_ref()
         .query_row(
             "SELECT COUNT(*) FROM meetings m
-             JOIN meeting_entities me ON me.meeting_id = m.id
+             JOIN effective_meeting_entities me ON me.meeting_id = m.id
              WHERE me.entity_id = ?1 AND m.start_time > ?2
                AND m.meeting_type NOT IN ('personal', 'focus', 'blocked')",
             rusqlite::params![entity_id, ninety_days_ago],
@@ -245,7 +245,7 @@ pub fn gather_account_health_input(
         .conn_ref()
         .query_row(
             "SELECT COUNT(*) FROM meetings m
-             JOIN meeting_entities me ON me.meeting_id = m.id
+             JOIN effective_meeting_entities me ON me.meeting_id = m.id
              WHERE me.entity_id = ?1 AND m.start_time > ?2
                AND m.meeting_type NOT IN ('personal', 'focus', 'blocked')",
             rusqlite::params![entity_id, ninety_days_ago],

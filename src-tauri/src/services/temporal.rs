@@ -548,19 +548,24 @@ fn count_meetings(
     start: DateTime<Utc>,
     end: DateTime<Utc>,
 ) -> Result<u32, String> {
-    if !table_exists(db, "meetings")? || !table_exists(db, "meeting_entities")? {
+    if !table_exists(db, "meetings")? || !has_entity_meeting_links(db)? {
         return Ok(0);
     }
+    let Some(cte_sql) = entity_subject_meeting_links_cte(db)? else {
+        return Ok(0);
+    };
 
     db.conn_ref()
         .query_row(
-            "SELECT COUNT(DISTINCT m.id)
+            &format!(
+                "{cte_sql}
+             SELECT COUNT(DISTINCT m.id)
              FROM meetings m
-             JOIN meeting_entities me ON me.meeting_id = m.id
-             WHERE me.entity_type = ?1
-               AND me.entity_id = ?2
+             JOIN subject_meetings sm ON sm.meeting_id = m.id
+             WHERE 1 = 1
                AND datetime(m.start_time) >= datetime(?3)
-               AND datetime(m.start_time) < datetime(?4)",
+               AND datetime(m.start_time) < datetime(?4)"
+            ),
             params![entity_type, entity_id, start.to_rfc3339(), end.to_rfc3339()],
             |row| row.get::<_, i64>(0),
         )
@@ -753,38 +758,41 @@ fn engagement_source_refs_json(
 ) -> Result<String, String> {
     let mut refs = Vec::new();
 
-    if table_exists(db, "meetings")? && table_exists(db, "meeting_entities")? {
-        let mut stmt = db
-            .conn_ref()
-            .prepare(
-                "SELECT DISTINCT m.id, m.start_time
+    if table_exists(db, "meetings")? && has_entity_meeting_links(db)? {
+        if let Some(cte_sql) = entity_subject_meeting_links_cte(db)? {
+            let sql = format!(
+                "{cte_sql}
+                 SELECT DISTINCT m.id, m.start_time
                  FROM meetings m
-                 JOIN meeting_entities me ON me.meeting_id = m.id
-                 WHERE me.entity_type = ?1
-                   AND me.entity_id = ?2
+                 JOIN subject_meetings sm ON sm.meeting_id = m.id
+                 WHERE 1 = 1
                    AND datetime(m.start_time) >= datetime(?3)
                    AND datetime(m.start_time) < datetime(?4)
-                 ORDER BY datetime(m.start_time) ASC, m.id ASC",
-            )
-            .map_err(|error| format!("prepare meeting engagement sources: {error}"))?;
-        let rows = stmt
-            .query_map(
-                params![entity_type, entity_id, start.to_rfc3339(), end.to_rfc3339()],
-                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
-            )
-            .map_err(|error| format!("query meeting engagement sources: {error}"))?;
-        for row in rows {
-            let (meeting_id, observed_at_raw) =
-                row.map_err(|error| format!("map meeting engagement source: {error}"))?;
-            let observed_at = parse_db_datetime(&observed_at_raw)?;
-            refs.push(SourceRef::Direct {
-                data_source: DataSource::Google,
-                identifier: SourceIdentifier::Meeting {
-                    meeting_id: MeetingId::new(meeting_id),
-                },
-                observed_at,
-                source_asof: Some(observed_at),
-            });
+                 ORDER BY datetime(m.start_time) ASC, m.id ASC"
+            );
+            let mut stmt = db
+                .conn_ref()
+                .prepare(&sql)
+                .map_err(|error| format!("prepare meeting engagement sources: {error}"))?;
+            let rows = stmt
+                .query_map(
+                    params![entity_type, entity_id, start.to_rfc3339(), end.to_rfc3339()],
+                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+                )
+                .map_err(|error| format!("query meeting engagement sources: {error}"))?;
+            for row in rows {
+                let (meeting_id, observed_at_raw) =
+                    row.map_err(|error| format!("map meeting engagement source: {error}"))?;
+                let observed_at = parse_db_datetime(&observed_at_raw)?;
+                refs.push(SourceRef::Direct {
+                    data_source: DataSource::Google,
+                    identifier: SourceIdentifier::Meeting {
+                        meeting_id: MeetingId::new(meeting_id),
+                    },
+                    observed_at,
+                    source_asof: Some(observed_at),
+                });
+            }
         }
     }
 
@@ -983,6 +991,78 @@ fn table_exists(db: &ActionDb, table_name: &str) -> Result<bool, String> {
         .map_err(|error| format!("check table {table_name}: {error}"))
 }
 
+fn relation_exists(db: &ActionDb, relation_name: &str) -> Result<bool, String> {
+    db.conn_ref()
+        .query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM sqlite_master
+                WHERE type IN ('table', 'view') AND name = ?1
+            )",
+            params![relation_name],
+            |row| row.get::<_, i64>(0),
+        )
+        .map(|value| value != 0)
+        .map_err(|error| format!("check relation {relation_name}: {error}"))
+}
+
+fn has_entity_meeting_links(db: &ActionDb) -> Result<bool, String> {
+    Ok(relation_exists(db, "linked_entities")? || table_exists(db, "meeting_entities")?)
+}
+
+fn entity_subject_meeting_links_cte(db: &ActionDb) -> Result<Option<String>, String> {
+    let has_linked_entities = relation_exists(db, "linked_entities")?;
+    let has_meeting_entities = table_exists(db, "meeting_entities")?;
+    let current_link_relation = meeting_entity_link_dedupe_relation(db)?;
+    let mut branches = Vec::new();
+    if has_linked_entities {
+        branches.push(
+            "SELECT le.owner_id AS meeting_id
+             FROM linked_entities le
+             WHERE le.owner_type = 'meeting'
+               AND le.entity_type = ?1
+               AND le.entity_id = ?2"
+                .to_string(),
+        );
+    }
+    if has_meeting_entities {
+        let linked_dedupe = if has_linked_entities {
+            format!(
+                "AND NOT EXISTS (
+                 SELECT 1
+                 FROM {current_link_relation} le2
+                 WHERE le2.owner_type = 'meeting'
+                   AND le2.owner_id = me.meeting_id
+             )"
+            )
+        } else {
+            String::new()
+        };
+        branches.push(format!(
+            "SELECT me.meeting_id
+             FROM meeting_entities me
+             WHERE me.entity_type = ?1
+               AND me.entity_id = ?2
+               {linked_dedupe}"
+        ));
+    }
+    if branches.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(format!(
+            "WITH subject_meetings AS ({})",
+            branches.join(" UNION ALL ")
+        )))
+    }
+}
+
+fn meeting_entity_link_dedupe_relation(db: &ActionDb) -> Result<&'static str, String> {
+    Ok(if relation_exists(db, "linked_entities_raw")? {
+        "linked_entities_raw"
+    } else {
+        "linked_entities"
+    })
+}
+
 fn column_exists(db: &ActionDb, table_name: &str, column_name: &str) -> Result<bool, String> {
     let mut stmt = db
         .conn_ref()
@@ -1045,4 +1125,113 @@ fn u16_from_i64(value: i64) -> Result<u16, String> {
 
 fn u32_from_i64(value: i64) -> Result<u32, String> {
     u32::try_from(value).map_err(|_| format!("i64 value {value} does not fit u32"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::Connection;
+
+    fn test_db() -> ActionDb {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "
+            CREATE TABLE meetings (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                start_time TEXT
+            );
+            CREATE TABLE meeting_entities (
+                meeting_id TEXT NOT NULL,
+                entity_id TEXT NOT NULL,
+                entity_type TEXT NOT NULL
+            );
+            CREATE TABLE linked_entities (
+                owner_type TEXT NOT NULL,
+                owner_id TEXT NOT NULL,
+                entity_id TEXT NOT NULL,
+                entity_type TEXT NOT NULL,
+                role TEXT NOT NULL,
+                source TEXT NOT NULL,
+                confidence REAL
+            );
+            ",
+        )
+        .unwrap();
+        ActionDb::from_connection_for_tests(conn)
+    }
+
+    #[test]
+    fn engagement_meeting_counts_read_linked_entities_before_legacy_junction() {
+        let db = test_db();
+        db.conn_ref()
+            .execute_batch(
+                "
+                INSERT INTO meetings (id, title, start_time) VALUES
+                    ('meeting-1', 'Current Entity Sync', '2026-05-12T15:00:00Z');
+                INSERT INTO linked_entities
+                    (owner_type, owner_id, entity_id, entity_type, role, source, confidence)
+                VALUES
+                    ('meeting', 'meeting-1', 'entity-1', 'account', 'related', 'rule:P4a', 0.93);
+                ",
+            )
+            .unwrap();
+
+        let start = Utc.with_ymd_and_hms(2026, 5, 11, 0, 0, 0).unwrap();
+        let end = Utc.with_ymd_and_hms(2026, 5, 18, 0, 0, 0).unwrap();
+
+        let count = count_meetings(&db, "account", "entity-1", start, end).unwrap();
+        assert_eq!(count, 1);
+
+        let refs_json =
+            engagement_source_refs_json(&db, "account", "entity-1", start, end).unwrap();
+        let refs = parse_source_refs(&refs_json);
+        assert_eq!(refs.len(), 1);
+        assert!(matches!(
+            &refs[0],
+            SourceRef::Direct {
+                identifier: SourceIdentifier::Meeting { meeting_id },
+                ..
+            } if meeting_id.0.as_str() == "meeting-1"
+        ));
+    }
+
+    #[test]
+    fn engagement_meeting_counts_do_not_fallback_to_legacy_after_current_graph_dismissal() {
+        let db = test_db();
+        db.conn_ref()
+            .execute_batch(
+                "
+                CREATE TABLE linked_entities_raw (
+                    owner_type TEXT NOT NULL,
+                    owner_id TEXT NOT NULL,
+                    entity_id TEXT NOT NULL,
+                    entity_type TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    confidence REAL
+                );
+                INSERT INTO meetings (id, title, start_time) VALUES
+                    ('meeting-1', 'Current Entity Sync', '2026-05-12T15:00:00Z');
+                INSERT INTO meeting_entities (meeting_id, entity_id, entity_type)
+                VALUES ('meeting-1', 'entity-1', 'account');
+                INSERT INTO linked_entities_raw
+                    (owner_type, owner_id, entity_id, entity_type, role, source, confidence)
+                VALUES
+                    ('meeting', 'meeting-1', 'entity-1', 'account', 'related', 'user_dismissed', 1.0);
+                ",
+            )
+            .unwrap();
+
+        let start = Utc.with_ymd_and_hms(2026, 5, 11, 0, 0, 0).unwrap();
+        let end = Utc.with_ymd_and_hms(2026, 5, 18, 0, 0, 0).unwrap();
+
+        let count = count_meetings(&db, "account", "entity-1", start, end).unwrap();
+        assert_eq!(count, 0);
+
+        let refs_json =
+            engagement_source_refs_json(&db, "account", "entity-1", start, end).unwrap();
+        let refs = parse_source_refs(&refs_json);
+        assert!(refs.is_empty());
+    }
 }

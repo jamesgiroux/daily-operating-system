@@ -4,6 +4,7 @@ use crate::state::AppState;
 
 pub mod account_fact_claims;
 pub mod accounts;
+pub mod action_claims;
 pub mod actions;
 pub mod claim_receipt;
 pub mod claim_review_queue;
@@ -44,6 +45,7 @@ pub mod projection_signing;
 pub mod projects;
 pub mod recommendations;
 pub mod reports;
+pub mod runtime_evidence_backfill;
 pub mod sensitivity;
 pub mod settings;
 pub mod signals;

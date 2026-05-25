@@ -1,16 +1,15 @@
-use crate::abilities::{
-    AbilityCategory, AbilityContext, AbilityError, AbilityErrorKind, AbilityResult, Actor,
-};
 use crate::abilities::provenance::{
     AbilityExecutionMode, AbilityVersion, FieldAttribution, FieldPath, ProvenanceBuilder,
     ProvenanceBuilderConfig, SchemaVersion, SubjectAttribution, SubjectRef,
 };
+use crate::abilities::{
+    AbilityCategory, AbilityContext, AbilityError, AbilityErrorKind, AbilityResult, Actor,
+};
 use crate::services::workspace_intake::{
-    PlacementError, PlacementErrorCode, PlacementInvocationContext,
-    WorkspacePlaceDocumentInput, WorkspacePlaceDocumentRequest, WorkspacePlaceDocumentReceipt,
-    WORKSPACE_PLACE_DOCUMENT_CONTENT_B64_MAX_BYTES,
-    WORKSPACE_PLACE_DOCUMENT_SCHEMA_VERSION, WORKSPACE_PLACE_DOCUMENT_SERIALIZED_ARGUMENTS_MAX_BYTES,
-    WORKSPACE_PLACE_DOCUMENT_TOOL_NAME,
+    PlacementError, PlacementErrorCode, PlacementInvocationContext, WorkspacePlaceDocumentInput,
+    WorkspacePlaceDocumentReceipt, WorkspacePlaceDocumentRequest,
+    WORKSPACE_PLACE_DOCUMENT_CONTENT_B64_MAX_BYTES, WORKSPACE_PLACE_DOCUMENT_SCHEMA_VERSION,
+    WORKSPACE_PLACE_DOCUMENT_SERIALIZED_ARGUMENTS_MAX_BYTES, WORKSPACE_PLACE_DOCUMENT_TOOL_NAME,
 };
 
 pub async fn workspace_place_document(
@@ -22,9 +21,11 @@ pub async fn workspace_place_document(
     let receipt = ctx
         .services()
         .workspace_intake()
-        .ok_or_else(|| ability_error(PlacementError::internal(
-            "workspace placement service unavailable",
-        )))?
+        .ok_or_else(|| {
+            ability_error(PlacementError::internal(
+                "workspace placement service unavailable",
+            ))
+        })?
         .place_document(ctx, invocation, input)
         .await
         .map_err(ability_error)?;
@@ -222,9 +223,7 @@ mod tests {
     #[test]
     fn missing_required_fields_map_to_frozen_placement_error_code() {
         let mut raw = valid_raw();
-        raw.as_object_mut()
-            .expect("object")
-            .remove("category");
+        raw.as_object_mut().expect("object").remove("category");
 
         assert_eq!(
             placement_code(raw),
@@ -257,9 +256,7 @@ mod tests {
     #[test]
     fn serialized_arguments_limit_runs_before_typed_request_parse() {
         let mut raw = valid_raw();
-        raw["extra"] = json!("x".repeat(
-            WORKSPACE_PLACE_DOCUMENT_SERIALIZED_ARGUMENTS_MAX_BYTES
-        ));
+        raw["extra"] = json!("x".repeat(WORKSPACE_PLACE_DOCUMENT_SERIALIZED_ARGUMENTS_MAX_BYTES));
 
         assert_eq!(
             placement_code(raw),
@@ -279,7 +276,9 @@ mod tests {
 
         assert_eq!(
             error.kind,
-            AbilityErrorKind::HardError(PlacementErrorCode::CategoryNotAllowed.as_str().to_string())
+            AbilityErrorKind::HardError(
+                PlacementErrorCode::CategoryNotAllowed.as_str().to_string()
+            )
         );
         assert!(
             error.message.contains(r#""allowed":["notes"]"#),

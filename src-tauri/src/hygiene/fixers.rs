@@ -286,7 +286,7 @@ pub(super) fn archive_phantom_accounts(db: &ActionDb) -> (usize, Vec<HygieneFixD
              WHERE LOWER(a.name) = 'internal'
                AND a.account_type != 'internal'
                AND a.archived = 0
-               AND NOT EXISTS (SELECT 1 FROM meeting_entities me WHERE me.entity_id = a.id AND me.entity_type = 'account')
+               AND NOT EXISTS (SELECT 1 FROM effective_meeting_entities me WHERE me.entity_id = a.id AND me.entity_type = 'account')
                AND NOT EXISTS (SELECT 1 FROM actions act WHERE act.account_id = a.id)
                AND NOT EXISTS (SELECT 1 FROM account_stakeholders as_ WHERE as_.account_id = a.id)",
         )
@@ -383,7 +383,7 @@ pub(super) fn archive_empty_shell_accounts(db: &ActionDb) -> (usize, Vec<Hygiene
             "SELECT a.id, a.name FROM accounts a
              WHERE a.archived = 0
                AND a.updated_at <= datetime('now', '-30 days')
-               AND NOT EXISTS (SELECT 1 FROM meeting_entities me WHERE me.entity_id = a.id AND me.entity_type = 'account')
+               AND NOT EXISTS (SELECT 1 FROM effective_meeting_entities me WHERE me.entity_id = a.id AND me.entity_type = 'account')
                AND NOT EXISTS (SELECT 1 FROM actions act WHERE act.account_id = a.id)
                AND NOT EXISTS (SELECT 1 FROM account_stakeholders as_ WHERE as_.account_id = a.id)
                AND NOT EXISTS (SELECT 1 FROM account_events ae WHERE ae.account_id = a.id)

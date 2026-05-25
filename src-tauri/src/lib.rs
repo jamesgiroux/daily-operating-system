@@ -128,6 +128,212 @@ use tokio::sync::mpsc;
 
 /// Channel buffer size for scheduler messages
 const SCHEDULER_CHANNEL_SIZE: usize = 32;
+const RUNTIME_EVIDENCE_BACKFILL_INITIAL_DELAY_MS: u64 = 10_000;
+const RUNTIME_EVIDENCE_BACKFILL_SLICE_PAUSE_MS: u64 = 15_000;
+
+async fn run_runtime_evidence_backfill_slice(init_state: &Arc<AppState>) -> bool {
+    let runtime_evidence_backfill = init_state
+        .db_write(move |db| {
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let ext = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+            crate::services::runtime_evidence_backfill::run_runtime_evidence_backfill_if_pending(
+                &ctx, db,
+            )
+        })
+        .await;
+    match runtime_evidence_backfill {
+        Ok(Some(report)) => {
+            let account_report = &report.account_fact_report;
+            let entity_report = &report.entity_intelligence_report;
+            let action_report = &report.action_claim_report;
+            let error_count = report.error_count();
+            let status = if report.completed {
+                "completed"
+            } else {
+                "slice"
+            };
+            log::info!(
+                "[runtime_evidence_backfill] {status}: {} account fact claim(s) committed, {} already present, entity {}/{} row(s) examined ({} row(s) backfilled, {} claim(s) inserted), action {}/{} row(s) examined ({} claim(s) committed, {} withdrawn), {} recompute job(s), {} error(s)",
+                account_report.claims_committed,
+                account_report.claims_already_present,
+                entity_report.next_offset,
+                entity_report.total_rows,
+                entity_report.rows_backfilled,
+                entity_report.claims_inserted,
+                action_report.next_offset,
+                action_report.total_rows,
+                action_report.claims_committed,
+                action_report.claims_withdrawn,
+                report.recompute_jobs_enqueued(),
+                error_count
+            );
+            for error in account_report.source_ref_errors.iter() {
+                log::warn!("[runtime_evidence_backfill] 265 source ref error: {error}");
+            }
+            for error in account_report.claim_errors.iter() {
+                log::warn!("[runtime_evidence_backfill] 265 claim error: {error}");
+            }
+            for error in account_report.recompute_enqueue_errors.iter() {
+                log::warn!("[runtime_evidence_backfill] 265 recompute enqueue error: {error}");
+            }
+            for error in entity_report.errors.iter() {
+                log::warn!("[runtime_evidence_backfill] 266 entity intelligence error: {error}");
+            }
+            for error in action_report.errors.iter() {
+                log::warn!("[runtime_evidence_backfill] 266 action claim error: {error}");
+            }
+            if report.recompute_jobs_enqueued() > 0 {
+                crate::services::invalidation_jobs::drain_pending_claim_recomputes(init_state)
+                    .await;
+            }
+            let account_fact_blocked = !account_report.claim_errors.is_empty()
+                || !account_report.recompute_enqueue_errors.is_empty()
+                || !account_report.source_ref_errors.is_empty();
+            !report.completed && !account_fact_blocked
+        }
+        Ok(None) => {
+            log::debug!("[runtime_evidence_backfill] startup hook: no pending request");
+            false
+        }
+        Err(error) => {
+            let retryable = error.is_retryable();
+            let message = error.to_string();
+            init_state
+                .recover_db_service_after_access_error(&error, "Runtime evidence backfill")
+                .await;
+            let locked = message.contains("database is locked") || message.contains("SQLITE_BUSY");
+            if retryable || locked {
+                log::debug!("[runtime_evidence_backfill] startup hook retrying: {message}");
+            } else {
+                log::warn!("[runtime_evidence_backfill] startup hook failed: {message}");
+            }
+            retryable || locked
+        }
+    }
+}
+
+async fn run_db_service_startup_tasks(init_state: Arc<AppState>) {
+    if crate::pty::background_workers_disabled() {
+        log::info!(
+            "Startup background maintenance skipped because background workers are disabled"
+        );
+        return;
+    }
+
+    // Drain persisted health_recompute_pending markers that survived a prior
+    // crash. Runs once on startup; failures leave markers in place for the next
+    // attempt.
+    let clock = crate::services::context::SystemClock;
+    let rng = crate::services::context::SystemRng;
+    let ext = crate::services::context::ExternalClients::default();
+    let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+    crate::services::health_debouncer::drain_pending(&ctx, &init_state).await;
+
+    // Run the claims cutover (rekey m1-m8 to runtime dedup_key shape +
+    // JSON-blob mechanism 9 backfill + reconcile) once after the SQL
+    // migrations 129-131 land. Idempotent — guarded by
+    // `migration_state.dos7_cutover_completed_at`.
+    let workspace_root: std::path::PathBuf = init_state
+        .config_read_or_recover()
+        .ok()
+        .and_then(|c| {
+            c.as_ref()
+                .map(|cfg| std::path::PathBuf::from(&cfg.workspace_path))
+        })
+        .unwrap_or_default();
+    if workspace_root.as_os_str().is_empty() {
+        log::debug!(
+            "[DOS-7 cutover] startup hook: workspace_path empty; skipping until configured"
+        );
+    } else {
+        let cutover_result = {
+            let svc = init_state.db_service.read().await.clone();
+            match svc {
+                Some(svc) => {
+                    crate::services::claims_backfill::run_dos7_cutover_if_pending_via_db_service(
+                        svc,
+                        workspace_root,
+                    )
+                    .await
+                    .map_err(|e| format!("DOS-7 cutover: {e}"))
+                }
+                None => init_state
+                    .db_write(move |db| {
+                        let clock = crate::services::context::SystemClock;
+                        let rng = crate::services::context::SystemRng;
+                        let ext = crate::services::context::ExternalClients::default();
+                        let ctx =
+                            crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+                        crate::services::claims_backfill::run_dos7_cutover_if_pending(
+                            &ctx,
+                            db,
+                            &workspace_root,
+                        )
+                        .map_err(|e| format!("DOS-7 cutover: {e}"))
+                    })
+                    .await
+                    .map_err(String::from),
+            }
+        };
+        match cutover_result {
+            Ok(Some(report)) => {
+                log::info!(
+                    "[DOS-7 cutover] completed at startup: \
+                     schema_epoch {}→{}, \
+                     m1-m8 rekey {}/{}, \
+                     m9 inserted {}, \
+                     reconcile findings {}",
+                    report.schema_epoch_before,
+                    report.schema_epoch_after,
+                    report.rekey_report.rows_rewritten,
+                    report.rekey_report.rows_examined,
+                    report.json_blob_report.claims_inserted,
+                    report.reconcile_findings,
+                );
+            }
+            Ok(None) => {
+                log::debug!(
+                    "[DOS-7 cutover] startup hook: already complete or claims schema absent"
+                );
+            }
+            Err(e) => {
+                log::warn!(
+                    "[DOS-7 cutover] startup hook failed: {e}; legacy is_suppressed remains authoritative until next startup retry"
+                );
+            }
+        }
+    }
+
+    let runtime_backfill_state = init_state.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(
+            RUNTIME_EVIDENCE_BACKFILL_INITIAL_DELAY_MS,
+        ))
+        .await;
+        while run_runtime_evidence_backfill_slice(&runtime_backfill_state).await {
+            tokio::time::sleep(std::time::Duration::from_millis(
+                RUNTIME_EVIDENCE_BACKFILL_SLICE_PAUSE_MS,
+            ))
+            .await;
+        }
+    });
+    crate::services::invalidation_jobs::drain_pending_claim_recomputes(&init_state).await;
+    crate::services::invalidation_jobs::drain_pending_targeted_claim_repairs(&init_state).await;
+    let repair_worker_state = init_state.clone();
+    tauri::async_runtime::spawn(async move {
+        crate::services::invalidation_jobs::run_targeted_claim_repair_worker(repair_worker_state)
+            .await;
+    });
+    let claim_recompute_worker_state = init_state.clone();
+    tauri::async_runtime::spawn(async move {
+        crate::services::invalidation_jobs::run_claim_recompute_worker(
+            claim_recompute_worker_state,
+        )
+        .await;
+    });
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -198,170 +404,16 @@ pub fn run() {
                 .load(std::sync::atomic::Ordering::Relaxed)
                 && !state.is_database_recovery_required()
             {
-                let init_state = state.clone();
-                tauri::async_runtime::spawn(async move {
-                    if let Err(e) = init_state.init_db_service().await {
-                        log::warn!("DbService init failed: {e}. Falling back to sync mutex.");
-                    } else {
-                        log::info!("DbService initialized (1 writer + 2 readers)");
-                        // drain persisted
-                        // health_recompute_pending markers that survived a
-                        // prior crash. Runs once on startup; failures leave
-                        // markers in place for the next attempt.
-                        let clock = crate::services::context::SystemClock;
-                        let rng = crate::services::context::SystemRng;
-                        let ext = crate::services::context::ExternalClients::default();
-                        let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
-                        crate::services::health_debouncer::drain_pending(&ctx, &init_state).await;
-                        crate::services::invalidation_jobs::drain_pending_claim_recomputes(&init_state).await;
-                        crate::services::invalidation_jobs::drain_pending_targeted_claim_repairs(&init_state).await;
-                        let repair_worker_state = init_state.clone();
-                        tauri::async_runtime::spawn(async move {
-                            crate::services::invalidation_jobs::run_targeted_claim_repair_worker(
-                                repair_worker_state,
-                            )
-                            .await;
-                        });
-
-                        // Run the claims cutover (rekey
-                        // m1-m8 to runtime dedup_key shape + JSON-blob
-                        // mechanism 9 backfill + reconcile) once after the
-                        // SQL migrations 129-131 land. Idempotent — guarded
-                        // by `migration_state.dos7_cutover_completed_at`.
-                        let workspace_root: std::path::PathBuf = init_state
-                            .config_read_or_recover()
-                            .ok()
-                            .and_then(|c| c.as_ref().map(|cfg| std::path::PathBuf::from(&cfg.workspace_path)))
-                            .unwrap_or_default();
-                        if workspace_root.as_os_str().is_empty() {
-                            log::debug!(
-                                "[DOS-7 cutover] startup hook: workspace_path empty; skipping until configured"
-                            );
-                        } else {
-                            let cutover_result = {
-                                let svc = init_state.db_service.read().await.clone();
-                                match svc {
-                                    Some(svc) => {
-                                        crate::services::claims_backfill::run_dos7_cutover_if_pending_via_db_service(
-                                            svc,
-                                            workspace_root,
-                                        )
-                                        .await
-                                        .map_err(|e| format!("DOS-7 cutover: {e}"))
-                                    }
-                                    None => {
-                                        init_state
-                                            .db_write(move |db| {
-                                                let clock = crate::services::context::SystemClock;
-                                                let rng = crate::services::context::SystemRng;
-                                                let ext = crate::services::context::ExternalClients::default();
-                                                let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
-                                                crate::services::claims_backfill::run_dos7_cutover_if_pending(
-                                                    &ctx,
-                                                    db,
-                                                    &workspace_root,
-                                                )
-                                                .map_err(|e| format!("DOS-7 cutover: {e}"))
-                                            })
-                                            .await.map_err(String::from)
-                                    }
-                                }
-                            };
-                            match cutover_result {
-                                Ok(Some(report)) => {
-                                    log::info!(
-                                        "[DOS-7 cutover] completed at startup: \
-                                         schema_epoch {}→{}, \
-                                         m1-m8 rekey {}/{}, \
-                                         m9 inserted {}, \
-                                         reconcile findings {}",
-                                        report.schema_epoch_before,
-                                        report.schema_epoch_after,
-                                        report.rekey_report.rows_rewritten,
-                                        report.rekey_report.rows_examined,
-                                        report.json_blob_report.claims_inserted,
-                                        report.reconcile_findings,
-                                    );
-                                }
-                                Ok(None) => {
-                                    log::debug!(
-                                        "[DOS-7 cutover] startup hook: already complete or claims schema absent"
-                                    );
-                                }
-                                Err(e) => {
-                                    log::warn!(
-                                        "[DOS-7 cutover] startup hook failed: {e}; legacy is_suppressed remains authoritative until next startup retry"
-                                    );
-                                }
-                            }
-                        }
-
-                        let account_fact_backfill = init_state
-                            .db_write(move |db| {
-                                let clock = crate::services::context::SystemClock;
-                                let rng = crate::services::context::SystemRng;
-                                let ext = crate::services::context::ExternalClients::default();
-                                let ctx = crate::services::context::ServiceContext::new_live(
-                                    &clock, &rng, &ext,
-                                );
-                                crate::services::account_fact_claims::backfill_account_fact_claims(
-                                    &ctx, db,
-                                )
-                            })
-                            .await
-                            .map_err(String::from);
-                        match account_fact_backfill {
-                            Ok(report) => {
-                                let error_count = report.claim_errors.len()
-                                    + report.recompute_enqueue_errors.len();
-                                let should_log_info = report.claims_committed > 0
-                                    || report.recompute_jobs_enqueued > 0
-                                    || error_count > 0;
-                                if should_log_info {
-                                    log::info!(
-                                        "[account_fact_claims] startup backfill: {} committed, {} already present, {} recompute job(s), {} error(s)",
-                                        report.claims_committed,
-                                        report.claims_already_present,
-                                        report.recompute_jobs_enqueued,
-                                        error_count
-                                    );
-                                    for error in report.claim_errors {
-                                        log::warn!(
-                                            "[account_fact_claims] startup backfill error: {error}"
-                                        );
-                                    }
-                                    for error in report.recompute_enqueue_errors {
-                                        log::warn!(
-                                            "[account_fact_claims] startup recompute enqueue error: {error}"
-                                        );
-                                    }
-                                } else {
-                                    log::debug!(
-                                        "[account_fact_claims] startup backfill: no new account fact claims"
-                                    );
-                                }
-                                if report.recompute_jobs_enqueued > 0 {
-                                    crate::services::invalidation_jobs::drain_pending_claim_recomputes(
-                                        &init_state,
-                                    )
-                                    .await;
-                                }
-                            }
-                            Err(error) => {
-                                log::warn!(
-                                    "[account_fact_claims] startup backfill failed: {error}"
-                                );
-                            }
-                        }
-                        let claim_recompute_worker_state = init_state.clone();
-                        tauri::async_runtime::spawn(async move {
-                            crate::services::invalidation_jobs::run_claim_recompute_worker(
-                                claim_recompute_worker_state,
-                            )
-                            .await;
-                        });
+                match tauri::async_runtime::block_on(state.init_db_service()) {
+                    Ok(()) => {
+                        log::info!("DbService initialized before startup workers (1 writer + 2 readers)");
+                        let init_state = state.clone();
+                        tauri::async_runtime::spawn(run_db_service_startup_tasks(init_state));
                     }
-                });
+                    Err(e) => {
+                        log::warn!("DbService init failed: {e}. Falling back to sync DB opens.");
+                    }
+                }
             } else {
                 log::warn!("DbService init skipped: startup recovery required");
             }
@@ -402,11 +454,15 @@ pub fn run() {
                 async move { crate::surface_runtime::run_supervised_http_endpoint(s).await }
             });
 
-            // Defer startup workspace sync/indexing so app setup stays responsive.
-            let startup_state = state.clone();
-            tauri::async_runtime::spawn_blocking(move || {
-                crate::state::run_startup_sync(&startup_state);
-            });
+            let background_workers_disabled = crate::pty::background_workers_disabled();
+            if background_workers_disabled {
+                log::info!("Nonessential startup/background workers disabled for this run");
+            } else {
+                // Defer startup workspace sync/indexing so app setup stays responsive.
+                let startup_state = state.clone();
+                tauri::async_runtime::spawn(async move {
+                    crate::state::run_startup_sync(startup_state).await;
+                });
 
             // Spawn scheduler
             let scheduler_state = state.clone();
@@ -617,6 +673,7 @@ pub fn run() {
                     Err(e) => log::warn!("stakeholder_domains boot sweep failed: {e}"),
                 }
             });
+            }
 
             // Create tray menu
             let open_item = MenuItem::with_id(app, "open", "Open DailyOS", true, None::<&str>)?;

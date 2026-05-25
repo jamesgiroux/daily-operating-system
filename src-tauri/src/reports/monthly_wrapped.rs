@@ -276,7 +276,7 @@ fn build_monthly_wrapped_prompt(
     let entities_touched: i64 = db
         .conn_ref()
         .query_row(
-            "SELECT COUNT(DISTINCT me.entity_id) FROM meeting_entities me
+            "SELECT COUNT(DISTINCT me.entity_id) FROM effective_meeting_entities me
              JOIN meetings m ON m.id = me.meeting_id
              WHERE m.start_time >= ?1 AND m.start_time <= ?2 AND me.entity_type = 'account'",
             rusqlite::params![month_start_str, month_end_str],
@@ -301,7 +301,7 @@ fn build_monthly_wrapped_prompt(
         .conn_ref()
         .query_row(
             "SELECT a.name, COUNT(*) as cnt
-             FROM meeting_entities me
+             FROM effective_meeting_entities me
              JOIN meetings m ON m.id = me.meeting_id
              JOIN accounts a ON a.id = me.entity_id
              WHERE m.start_time >= ?1 AND m.start_time <= ?2 AND me.entity_type = 'account'

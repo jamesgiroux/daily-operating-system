@@ -3627,7 +3627,7 @@ pub fn backfill_internal_meeting_associations(
         .prepare(
             "SELECT m.id, m.title, m.attendees
              FROM meetings m
-             LEFT JOIN meeting_entities me ON me.meeting_id = m.id AND me.entity_type = 'account'
+             LEFT JOIN effective_meeting_entities me ON me.meeting_id = m.id AND me.entity_type = 'account'
              WHERE m.meeting_type IN ('internal', 'team_sync', 'one_on_one')
                AND me.meeting_id IS NULL",
         )

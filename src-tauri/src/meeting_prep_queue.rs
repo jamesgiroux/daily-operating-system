@@ -270,7 +270,7 @@ pub fn sweep_meetings_needing_prep(state: &AppState) {
     // Find future meetings that have at least one linked entity but no prep
     let sql = "SELECT DISTINCT m.id
                FROM meetings m
-               INNER JOIN meeting_entities me ON m.id = me.meeting_id
+               INNER JOIN effective_meeting_entities me ON m.id = me.meeting_id
                LEFT JOIN meeting_prep mp ON mp.meeting_id = m.id
                LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
                WHERE julianday(m.start_time) > julianday('now')
@@ -323,7 +323,11 @@ pub async fn run_meeting_prep_processor(state: Arc<AppState>, app: AppHandle) {
     // Startup sweep: enqueue all future meetings that have linked entities but no prep.
     // This ensures every meeting with entity intelligence gets a mechanical briefing
     // before the user ever opens it. ADR-0086: meeting prep is a consumer of entity intel.
-    sweep_meetings_needing_prep(&state);
+    if crate::pty::background_workers_disabled() {
+        log::info!("MeetingPrepProcessor: background workers disabled; startup sweep skipped");
+    } else {
+        sweep_meetings_needing_prep(&state);
+    }
 
     let mut polls_since_prune: u64 = 0;
     let prune_interval = 60 / POLL_INTERVAL_SECS;
@@ -337,6 +341,10 @@ pub async fn run_meeting_prep_processor(state: Arc<AppState>, app: AppHandle) {
         tokio::select! {
             _ = tokio::time::sleep(interval) => {}
             _ = state.integrations.prep_queue_wake.notified() => {}
+        }
+
+        if crate::pty::background_workers_disabled() {
+            continue;
         }
 
         // Dev mode isolation: pause background processing while dev sandbox is active

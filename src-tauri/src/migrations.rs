@@ -1039,6 +1039,33 @@ const MIGRATIONS: &[Migration] = &[
         version: 263,
         apply: migrate_v263_claim_subject_lookup_index,
     },
+    // v1.4.4a W2/W3 L4 — compatibility read view for meeting/entity links.
+    // Runtime surfaces should see current `linked_entities` graph state first,
+    // with legacy `meeting_entities` fallback only when no current graph state
+    // exists for that meeting.
+    Migration::Sql {
+        version: 264,
+        sql: include_str!("migrations/264_effective_meeting_entities_view.sql"),
+    },
+    // v1.4.4a W2A — request a service-owned runtime evidence backfill.
+    // The SQL migration only marks intent; Rust services perform claim writes,
+    // provenance preservation, and recompute enqueue after startup.
+    Migration::Sql {
+        version: 265,
+        sql: include_str!("migrations/265_runtime_evidence_backfill_request.sql"),
+    },
+    // v1.4.4a W2A — request a second service-owned evidence backfill for
+    // legacy entity intelligence projections and action open loops.
+    Migration::Sql {
+        version: 266,
+        sql: include_str!("migrations/266_runtime_entity_action_backfill_request.sql"),
+    },
+    // v1.4.4a W2A — repair older local databases that marked v178 applied
+    // before the Linear issue state columns existed.
+    Migration::Fn {
+        version: 267,
+        apply: v178_dos_285_linear_issue_state::migrate_v178,
+    },
 ];
 
 const V155_SHADOW_TRUST_VERSION: i64 = 1_401_003;
@@ -6558,6 +6585,156 @@ mod tests {
         assert!(
             current_version(&conn).expect("current version") >= 263,
             "schema version is at least v263"
+        );
+    }
+
+    #[test]
+    fn migration_264_effective_meeting_entities_prefers_current_graph() {
+        let conn = mem_db();
+        run_migrations(&conn).expect("build current schema");
+
+        conn.execute(
+            "INSERT INTO entities (id, name, entity_type, tracker_path, updated_at)
+             VALUES
+                ('acct-current', 'Current Account', 'account', '', '2026-01-01T00:00:00Z'),
+                ('acct-legacy', 'Legacy Account', 'account', '', '2026-01-01T00:00:00Z'),
+                ('acct-dismissed', 'Dismissed Account', 'account', '', '2026-01-01T00:00:00Z')",
+            [],
+        )
+        .expect("seed entities");
+        conn.execute(
+            "INSERT INTO meetings (id, title, meeting_type, start_time, created_at)
+             VALUES
+                ('m-current', 'Current graph meeting', 'customer', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'),
+                ('m-legacy', 'Legacy meeting', 'customer', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'),
+                ('m-dismissed', 'Dismissed graph meeting', 'customer', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+            [],
+        )
+        .expect("seed meetings");
+        conn.execute(
+            "INSERT INTO meeting_entities (meeting_id, entity_id, entity_type)
+             VALUES
+                ('m-current', 'acct-legacy', 'account'),
+                ('m-legacy', 'acct-legacy', 'account'),
+                ('m-dismissed', 'acct-dismissed', 'account')",
+            [],
+        )
+        .expect("seed legacy links");
+        conn.execute(
+            "INSERT INTO linked_entities_raw
+                (owner_type, owner_id, entity_id, entity_type, role, source, confidence, graph_version, created_at)
+             VALUES
+                ('meeting', 'm-current', 'acct-current', 'account', 'primary', 'rule:test', 0.9, 1, '2026-01-01T00:00:00Z'),
+                ('meeting', 'm-dismissed', 'acct-dismissed', 'account', 'primary', 'user_dismissed', 0.9, 1, '2026-01-01T00:00:00Z')",
+            [],
+        )
+        .expect("seed current graph links");
+
+        let current: String = conn
+            .query_row(
+                "SELECT entity_id FROM effective_meeting_entities WHERE meeting_id = 'm-current'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read current graph row");
+        assert_eq!(current, "acct-current");
+
+        let legacy: String = conn
+            .query_row(
+                "SELECT entity_id FROM effective_meeting_entities WHERE meeting_id = 'm-legacy'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read legacy fallback row");
+        assert_eq!(legacy, "acct-legacy");
+
+        let dismissed_count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM effective_meeting_entities WHERE meeting_id = 'm-dismissed'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read dismissed count");
+        assert_eq!(
+            dismissed_count, 0,
+            "dismissed current graph state blocks legacy resurrection"
+        );
+
+        assert!(
+            current_version(&conn).expect("current version") >= 264,
+            "schema version is at least v264"
+        );
+    }
+
+    #[test]
+    fn migration_265_requests_service_owned_runtime_evidence_backfill() {
+        let conn = mem_db();
+        run_migrations(&conn).expect("build current schema");
+
+        let requested_count: i64 = conn
+            .query_row(
+                "SELECT count(*)
+                   FROM migration_state
+                  WHERE key = 'runtime_evidence_backfill_265_requested_at'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read runtime evidence backfill request marker");
+        assert_eq!(requested_count, 1);
+
+        let completed_count: i64 = conn
+            .query_row(
+                "SELECT count(*)
+                   FROM migration_state
+                  WHERE key = 'runtime_evidence_backfill_265_completed_at'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read runtime evidence backfill completion marker");
+        assert_eq!(
+            completed_count, 0,
+            "migration must not mark service backfill complete before services run"
+        );
+
+        assert!(
+            current_version(&conn).expect("current version") >= 265,
+            "schema version is at least v265"
+        );
+    }
+
+    #[test]
+    fn migration_266_requests_entity_and_action_runtime_evidence_backfill() {
+        let conn = mem_db();
+        run_migrations(&conn).expect("build current schema");
+
+        let requested_count: i64 = conn
+            .query_row(
+                "SELECT count(*)
+                   FROM migration_state
+                  WHERE key = 'runtime_evidence_backfill_266_requested_at'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read runtime evidence backfill request marker");
+        assert_eq!(requested_count, 1);
+
+        let completed_count: i64 = conn
+            .query_row(
+                "SELECT count(*)
+                   FROM migration_state
+                  WHERE key = 'runtime_evidence_backfill_266_completed_at'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read runtime evidence backfill completion marker");
+        assert_eq!(
+            completed_count, 0,
+            "migration must not mark service backfill complete before services run"
+        );
+
+        assert!(
+            current_version(&conn).expect("current version") >= 266,
+            "schema version is at least v266"
         );
     }
 }

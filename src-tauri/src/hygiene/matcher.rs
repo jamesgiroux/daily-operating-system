@@ -385,9 +385,8 @@ pub(super) fn fix_auto_merge_duplicates(db: &ActionDb) -> (usize, Vec<HygieneFix
 
 /// Link people to accounts based on meeting co-attendance patterns.
 ///
-/// If a person attends 3+ meetings that are linked to an account (via
-/// `meeting_entities`) but has no `account_stakeholders` link to that account,
-/// create the link automatically.
+/// If a person attends 3+ meetings that are linked to an account but has no
+/// `account_stakeholders` link to that account, create the link automatically.
 pub(super) fn fix_co_attendance_links(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
     // Find (person_id, entity_id, shared_meeting_count) where the person
     // co-attends meetings linked to an account but has no account_stakeholders link.
@@ -396,7 +395,7 @@ pub(super) fn fix_co_attendance_links(db: &ActionDb) -> (usize, Vec<HygieneFixDe
         .prepare(
             "SELECT ma.person_id, p.name, me.entity_id, a.name, COUNT(*) AS shared
              FROM meeting_attendees ma
-             JOIN meeting_entities me ON me.meeting_id = ma.meeting_id AND me.entity_type = 'account'
+             JOIN effective_meeting_entities me ON me.meeting_id = ma.meeting_id AND me.entity_type = 'account'
              JOIN people p ON p.id = ma.person_id AND p.archived = 0 AND p.relationship = 'external'
              JOIN accounts a ON a.id = me.entity_id AND a.archived = 0
              WHERE NOT EXISTS (

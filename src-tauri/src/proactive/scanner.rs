@@ -3,7 +3,6 @@
 //! Piggybacks on the hygiene scanner's timing — runs after each hygiene scan
 //! completes, and also before `prepare_today()` runs.
 
-use crate::db::ActionDb;
 use crate::state::AppState;
 
 use super::engine::{self, DetectorContext};
@@ -11,10 +10,7 @@ use super::engine::{self, DetectorContext};
 /// Run a proactive scan using the default engine.
 ///
 /// Called from hygiene loop and pre-briefing hook.
-pub fn run_proactive_scan(state: &AppState) -> Result<usize, String> {
-    let db = ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-        .map_err(|e| format!("DB open failed: {e}"))?;
-
+pub async fn run_proactive_scan(state: &AppState) -> Result<usize, String> {
     let (profile, user_domains) = {
         let config_guard = state.config.read();
         let config = config_guard.as_ref();
@@ -34,6 +30,11 @@ pub fn run_proactive_scan(state: &AppState) -> Result<usize, String> {
         profile,
     };
 
-    let engine = engine::default_engine();
-    engine.run_scan(&db, &ctx)
+    state
+        .db_write(move |db| {
+            let engine = engine::default_engine();
+            engine.run_scan(db, &ctx)
+        })
+        .await
+        .map_err(|e| format!("DB write failed: {e}"))
 }

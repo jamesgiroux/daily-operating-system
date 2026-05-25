@@ -452,7 +452,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT DISTINCT m.id, m.attendees, me.entity_id, a.name
              FROM meetings m
-             INNER JOIN meeting_entities me ON m.id = me.meeting_id
+             INNER JOIN effective_meeting_entities me ON m.id = me.meeting_id
              INNER JOIN accounts a ON a.id = me.entity_id
              WHERE me.entity_type = 'account'
                AND m.attendees IS NOT NULL
@@ -1076,7 +1076,7 @@ impl ActionDb {
                     m.calendar_event_id, mt.transcript_path
              FROM meetings m
              LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
-             INNER JOIN meeting_entities me ON m.id = me.meeting_id
+             INNER JOIN effective_meeting_entities me ON m.id = me.meeting_id
              WHERE me.entity_id = ?1
                AND me.entity_type = 'account'
                AND me.confidence >= 0.70
@@ -1127,7 +1127,7 @@ impl ActionDb {
         self.conn
             .query_row(
                 "SELECT COUNT(*)
-                 FROM meeting_entities me
+                 FROM effective_meeting_entities me
                  WHERE me.entity_id = ?1
                    AND me.entity_type = 'account'
                    AND me.confidence >= 0.70",
@@ -1146,7 +1146,7 @@ impl ActionDb {
             .query_row(
                 "SELECT COUNT(DISTINCT m.id)
                  FROM meetings m
-                 INNER JOIN meeting_entities me ON m.id = me.meeting_id
+                 INNER JOIN effective_meeting_entities me ON m.id = me.meeting_id
                  INNER JOIN meeting_transcripts mt ON mt.meeting_id = m.id
                  WHERE me.entity_id = ?1
                    AND me.entity_type = 'account'
@@ -1185,7 +1185,7 @@ impl ActionDb {
              FROM meetings m
              LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
              LEFT JOIN meeting_prep mp ON mp.meeting_id = m.id
-             INNER JOIN meeting_entities me ON m.id = me.meeting_id
+             INNER JOIN effective_meeting_entities me ON m.id = me.meeting_id
              WHERE me.entity_id = ?1
                AND me.entity_type = 'account'
                AND me.confidence >= 0.70
@@ -1237,7 +1237,7 @@ impl ActionDb {
                     m.calendar_event_id, m.description
              FROM meetings m
              LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
-             INNER JOIN meeting_entities me ON m.id = me.meeting_id
+             INNER JOIN effective_meeting_entities me ON m.id = me.meeting_id
              WHERE me.entity_id = ?1 AND me.entity_type = 'account'
                AND julianday(m.start_time) >= julianday('now')
              ORDER BY m.start_time ASC
@@ -2413,7 +2413,7 @@ impl ActionDb {
         Ok(total)
     }
 
-    /// Get meetings for any entity (generic, via junction table).
+    /// Get meetings for any entity through the graph-compatible link view.
     pub fn get_meetings_for_entity(
         &self,
         entity_id: &str,
@@ -2425,7 +2425,7 @@ impl ActionDb {
                     m.calendar_event_id
              FROM meetings m
              LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
-             JOIN meeting_entities me ON me.meeting_id = m.id
+             JOIN effective_meeting_entities me ON me.meeting_id = m.id
              WHERE me.entity_id = ?1
              ORDER BY m.start_time DESC
              LIMIT ?2",
@@ -2465,12 +2465,12 @@ impl ActionDb {
 
     /// Compute activity signals for a project.
     pub fn get_project_signals(&self, project_id: &str) -> Result<ProjectSignals, DbError> {
-        // Meeting counts via junction table
+        // Meeting counts through the graph-compatible link view
         let count_30d: i32 = self
             .conn
             .query_row(
                 "SELECT COUNT(*) FROM meetings m
-                 JOIN meeting_entities me ON me.meeting_id = m.id
+                 JOIN effective_meeting_entities me ON me.meeting_id = m.id
                  WHERE me.entity_id = ?1 AND me.entity_type = 'project'
                    AND m.start_time >= date('now', '-30 days')",
                 params![project_id],
@@ -2482,7 +2482,7 @@ impl ActionDb {
             .conn
             .query_row(
                 "SELECT COUNT(*) FROM meetings m
-                 JOIN meeting_entities me ON me.meeting_id = m.id
+                 JOIN effective_meeting_entities me ON me.meeting_id = m.id
                  WHERE me.entity_id = ?1 AND me.entity_type = 'project'
                    AND m.start_time >= date('now', '-90 days')",
                 params![project_id],
@@ -2494,7 +2494,7 @@ impl ActionDb {
             .conn
             .query_row(
                 "SELECT MAX(m.start_time) FROM meetings m
-                 JOIN meeting_entities me ON me.meeting_id = m.id
+                 JOIN effective_meeting_entities me ON me.meeting_id = m.id
                  WHERE me.entity_id = ?1 AND me.entity_type = 'project'",
                 params![project_id],
                 |row| row.get(0),

@@ -186,7 +186,7 @@ impl ActionDb {
                     COALESCE(mh.attendees, '') as attendees,
                     me.entity_id as account_id
              FROM meetings mh
-             LEFT JOIN meeting_entities me ON me.meeting_id = mh.id AND me.entity_type = 'account'
+             LEFT JOIN effective_meeting_entities me ON me.meeting_id = mh.id AND me.entity_type = 'account'
              WHERE mh.start_time <= datetime('now', '-1 hour')
                AND mh.start_time >= datetime('now', ?1)
                AND mh.attendees IS NOT NULL AND mh.attendees != ''",

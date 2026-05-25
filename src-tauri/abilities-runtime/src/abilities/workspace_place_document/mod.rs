@@ -48,7 +48,10 @@ mod tests {
 
         assert_eq!(descriptor.category, AbilityCategory::Transform);
         assert_eq!(descriptor.policy.allowed_actors, &[ActorKind::McpClient]);
-        assert_eq!(descriptor.policy.required_scopes, &[WORKSPACE_PLACE_DOCUMENT_SCOPE]);
+        assert_eq!(
+            descriptor.policy.required_scopes,
+            &[WORKSPACE_PLACE_DOCUMENT_SCOPE]
+        );
         assert_eq!(descriptor.policy.mcp_exposure, McpExposure::Invocable);
         assert!(descriptor.policy.may_publish);
     }

@@ -115,9 +115,10 @@ impl EntityContextReadHandle for LiveEntityContextReader {
     ) -> EntityContextReadFuture<'a> {
         Box::pin(async move {
             tokio::task::spawn_blocking(move || {
-                let db =
-                    crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-                        .map_err(|error| format!("Database unavailable: {error}"))?;
+                let db = crate::db::ActionDb::open_readonly(std::sync::Arc::new(
+                    crate::db::LocalKeychain::new(),
+                ))
+                .map_err(|error| format!("Database unavailable: {error}"))?;
                 read_entity_context_entries_from_db(&db, &entity_type, &entity_id)
             })
             .await
@@ -131,13 +132,7 @@ impl ListOpenLoopsReadHandle for LiveListOpenLoopsReader {
         Box::pin(async move {
             tokio::task::spawn_blocking(move || {
                 let db = open_action_db().map_err(ListOpenLoopsReadError::ReadFailed)?;
-                let actions = load_open_loop_actions(&db, &query)?;
-                let claims = actions
-                    .into_iter()
-                    .filter(is_open_loop_action)
-                    .filter_map(|action| open_loop_claim_for_action(action, &query))
-                    .collect::<Vec<_>>();
-                Ok(ListOpenLoopsSnapshot { claims })
+                read_open_loops_from_db(&db, &query)
             })
             .await
             .map_err(|error| {
@@ -409,7 +404,7 @@ impl MarkdownPreviewReadHandle for LiveMarkdownPreviewReader {
 }
 
 fn open_action_db() -> Result<crate::db::ActionDb, String> {
-    crate::db::ActionDb::open(Arc::new(crate::db::LocalKeychain::new()))
+    crate::db::ActionDb::open_readonly(Arc::new(crate::db::LocalKeychain::new()))
         .map_err(|error| format!("Database unavailable: {error}"))
 }
 
@@ -455,74 +450,67 @@ fn health_band_for_account(
     }
 }
 
-fn load_open_loop_actions(
+pub(crate) fn read_open_loops_from_db(
     db: &crate::db::ActionDb,
     query: &ListOpenLoopsQuery,
-) -> Result<Vec<crate::db::DbAction>, ListOpenLoopsReadError> {
-    match (query.entity_type.as_deref(), query.entity_id.as_deref()) {
-        (None, None) => db
-            .get_due_actions(36_500)
-            .map_err(|error| ListOpenLoopsReadError::ReadFailed(error.to_string())),
-        (Some("account"), Some(entity_id)) => {
-            let mut seen = HashSet::new();
-            let mut rows = Vec::new();
-            for action in db
-                .get_account_actions(entity_id)
-                .map_err(|error| ListOpenLoopsReadError::ReadFailed(error.to_string()))?
-                .into_iter()
-                .chain(
-                    db.get_account_commitments(entity_id)
-                        .map_err(|error| ListOpenLoopsReadError::ReadFailed(error.to_string()))?,
-                )
-            {
-                if seen.insert(action.id.clone()) {
-                    rows.push(action);
-                }
-            }
-            Ok(rows)
+) -> Result<ListOpenLoopsSnapshot, ListOpenLoopsReadError> {
+    let claims = load_open_loop_claims_from_substrate(db, query)?;
+    Ok(ListOpenLoopsSnapshot { claims })
+}
+
+fn load_open_loop_claims_from_substrate(
+    db: &crate::db::ActionDb,
+    query: &ListOpenLoopsQuery,
+) -> Result<Vec<abilities_runtime::types::IntelligenceClaim>, ListOpenLoopsReadError> {
+    const OPEN_LOOP_TYPES: &[&str] = &["open_loop", "commitment"];
+    const OPEN_LOOP_LIMIT: usize = 500;
+
+    let claims = match (query.entity_type.as_deref(), query.entity_id.as_deref()) {
+        (None, None) => {
+            crate::services::claims::load_prompt_claims_by_types_active_for_surface_limited(
+                db,
+                OPEN_LOOP_TYPES,
+                query.surface.as_str(),
+                OPEN_LOOP_LIMIT,
+            )
+            .map_err(|error| ListOpenLoopsReadError::ReadFailed(error.to_string()))?
         }
-        (Some("person"), Some(entity_id)) => db
-            .get_person_actions(entity_id)
-            .map_err(|error| ListOpenLoopsReadError::ReadFailed(error.to_string())),
-        (Some("project"), Some(entity_id)) => db
-            .get_project_actions(entity_id)
-            .map_err(|error| ListOpenLoopsReadError::ReadFailed(error.to_string())),
-        (Some("meeting"), Some(entity_id)) => db
-            .get_actions_for_meeting(entity_id)
-            .map_err(|error| ListOpenLoopsReadError::ReadFailed(error.to_string())),
-        (Some(entity_type), Some(entity_id)) => Err(ListOpenLoopsReadError::SubjectNotOwned {
-            entity_type: entity_type.to_string(),
-            entity_id: entity_id.to_string(),
-        }),
-        (entity_type, entity_id) => Err(ListOpenLoopsReadError::ReadFailed(format!(
-            "incomplete open loop subject filter: entity_type={entity_type:?}, entity_id={entity_id:?}"
-        ))),
-    }
+        (Some(entity_type), Some(entity_id)) => {
+            let entity_type = entity_type.trim();
+            if !matches!(entity_type, "account" | "project" | "person" | "meeting") {
+                return Err(ListOpenLoopsReadError::SubjectNotOwned {
+                    entity_type: entity_type.to_string(),
+                    entity_id: entity_id.to_string(),
+                });
+            }
+            crate::services::claims::load_entity_context_prompt_claims_active_for_surface_limited(
+                db,
+                entity_type,
+                entity_id,
+                1,
+                query.surface.as_str(),
+                OPEN_LOOP_LIMIT,
+            )
+            .map_err(|error| ListOpenLoopsReadError::ReadFailed(error.to_string()))?
+            .into_iter()
+            .filter(|claim| OPEN_LOOP_TYPES.contains(&claim.claim_type.as_str()))
+            .collect()
+        }
+        (entity_type, entity_id) => {
+            return Err(ListOpenLoopsReadError::ReadFailed(format!(
+                "incomplete open loop subject filter: entity_type={entity_type:?}, entity_id={entity_id:?}"
+            )));
+        }
+    };
+
+    Ok(claims)
 }
 
-fn is_open_loop_action(action: &crate::db::DbAction) -> bool {
-    matches!(
-        action.status.as_str(),
-        crate::action_status::BACKLOG
-            | crate::action_status::UNSTARTED
-            | crate::action_status::STARTED
-    )
-}
-
+#[cfg(test)]
 fn open_loop_claim_for_action(
     action: crate::db::DbAction,
     query: &ListOpenLoopsQuery,
 ) -> Option<abilities_runtime::types::IntelligenceClaim> {
-    // Action rows do not carry the source claim sensitivity that MCP/agent
-    // prompt surfaces need. Keep them visible to first-party Tauri surfaces,
-    // but do not synthesize them as Public claim text for MCP.
-    if matches!(
-        query.surface,
-        ClaimDismissalSurface::McpTool | ClaimDismissalSurface::McpToolDetail
-    ) {
-        return None;
-    }
-
     let (entity_type, entity_id) = open_loop_subject_for_action(&action, query)?;
     let claim_type = if action.action_kind == crate::action_status::KIND_COMMITMENT {
         abilities_runtime::ClaimType::Commitment.as_str()
@@ -539,6 +527,7 @@ fn open_loop_claim_for_action(
         "status": action.status,
         "owner": action.owner_raw.or(action.waiting_on),
         "due_date": action.due_date,
+        "source_type": action.source_type,
         "source_label": action.source_label,
         "surface": query.surface.as_str(),
     });
@@ -577,13 +566,14 @@ fn open_loop_claim_for_action(
         trust_version: None,
         thread_id: None,
         temporal_scope: abilities_runtime::types::TemporalScope::State,
-        sensitivity: abilities_runtime::types::ClaimSensitivity::Public,
+        sensitivity: abilities_runtime::types::ClaimSensitivity::Internal,
         verification_state: abilities_runtime::ClaimVerificationState::Active,
         verification_reason: None,
         needs_user_decision_at: None,
     })
 }
 
+#[cfg(test)]
 fn open_loop_subject_for_action(
     action: &crate::db::DbAction,
     query: &ListOpenLoopsQuery,
@@ -620,9 +610,10 @@ impl EntityContextClaimReadHandle for LiveEntityContextClaimReader {
     ) -> EntityContextClaimReadFuture<'a> {
         Box::pin(async move {
             tokio::task::spawn_blocking(move || {
-                let db =
-                    crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-                        .map_err(|error| format!("Database unavailable: {error}"))?;
+                let db = crate::db::ActionDb::open_readonly(std::sync::Arc::new(
+                    crate::db::LocalKeychain::new(),
+                ))
+                .map_err(|error| format!("Database unavailable: {error}"))?;
                 crate::services::claims::load_entity_context_claims_active_for_surface(
                     &db,
                     &entity_type,
@@ -647,9 +638,10 @@ impl EntityContextClaimReadHandle for LiveEntityContextClaimReader {
     ) -> EntityContextClaimReadFuture<'a> {
         Box::pin(async move {
             tokio::task::spawn_blocking(move || {
-                let db =
-                    crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-                        .map_err(|error| format!("Database unavailable: {error}"))?;
+                let db = crate::db::ActionDb::open_readonly(std::sync::Arc::new(
+                    crate::db::LocalKeychain::new(),
+                ))
+                .map_err(|error| format!("Database unavailable: {error}"))?;
                 crate::services::claims::load_entity_context_claims_active_for_surface_limited(
                     &db,
                     &entity_type,
@@ -675,9 +667,10 @@ impl EntityContextClaimReadHandle for LiveEntityContextClaimReader {
     ) -> EntityContextClaimReadFuture<'a> {
         Box::pin(async move {
             tokio::task::spawn_blocking(move || {
-                let db =
-                    crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-                        .map_err(|error| format!("Database unavailable: {error}"))?;
+                let db = crate::db::ActionDb::open_readonly(std::sync::Arc::new(
+                    crate::db::LocalKeychain::new(),
+                ))
+                .map_err(|error| format!("Database unavailable: {error}"))?;
                 crate::services::claims::load_entity_context_prompt_claims_active_for_surface_limited(
                     &db,
                     &entity_type,
@@ -783,9 +776,10 @@ impl PrepareMeetingContextReadHandle for LivePrepareMeetingContextReader {
     ) -> PrepareMeetingContextReadFuture<'a> {
         Box::pin(async move {
             tokio::task::spawn_blocking(move || {
-                let db =
-                    crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-                        .map_err(|error| format!("Database unavailable: {error}"))?;
+                let db = crate::db::ActionDb::open_readonly(std::sync::Arc::new(
+                    crate::db::LocalKeychain::new(),
+                ))
+                .map_err(|error| format!("Database unavailable: {error}"))?;
                 crate::services::meetings::load_prepare_meeting_context_snapshot(&db, &meeting_id)
             })
             .await
@@ -895,6 +889,7 @@ fn project_daily_readiness_context_snapshot(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::TimeZone;
     use rusqlite::params;
 
     fn fixture_action() -> crate::db::DbAction {
@@ -936,25 +931,30 @@ mod tests {
     }
 
     #[test]
-    fn action_open_loop_synthesis_is_not_mcp_visible_without_claim_sensitivity() {
+    fn action_open_loop_synthesis_is_mcp_visible_as_internal_runtime_evidence() {
         let action = fixture_action();
         let mcp_query = ListOpenLoopsQuery {
             entity_type: Some("account".to_string()),
             entity_id: Some("acct-1".to_string()),
             surface: ClaimDismissalSurface::McpTool,
         };
-        assert!(
-            open_loop_claim_for_action(action.clone(), &mcp_query).is_none(),
-            "action rows must not become MCP prompt context without source claim sensitivity"
+        let mcp_claim = open_loop_claim_for_action(action.clone(), &mcp_query)
+            .expect("action rows should become bounded MCP runtime evidence");
+        assert_eq!(
+            mcp_claim.sensitivity,
+            abilities_runtime::types::ClaimSensitivity::Internal,
+            "local MCP runs under the first-party OS/keychain boundary, so action evidence is internal"
         );
         let mcp_detail_query = ListOpenLoopsQuery {
             entity_type: Some("account".to_string()),
             entity_id: Some("acct-1".to_string()),
             surface: ClaimDismissalSurface::McpToolDetail,
         };
-        assert!(
-            open_loop_claim_for_action(action.clone(), &mcp_detail_query).is_none(),
-            "MCP detail provenance must not synthesize action rows without source claim sensitivity"
+        let mcp_detail_claim = open_loop_claim_for_action(action.clone(), &mcp_detail_query)
+            .expect("MCP detail should expose the same bounded runtime evidence");
+        assert_eq!(
+            mcp_detail_claim.sensitivity,
+            abilities_runtime::types::ClaimSensitivity::Internal
         );
 
         let tauri_query = ListOpenLoopsQuery {
@@ -962,9 +962,54 @@ mod tests {
             entity_id: Some("acct-1".to_string()),
             surface: ClaimDismissalSurface::TauriEntityDetail,
         };
+        let tauri_claim = open_loop_claim_for_action(action, &tauri_query)
+            .expect("first-party Tauri surfaces can still render local action open loops");
+        assert_eq!(
+            tauri_claim.sensitivity,
+            abilities_runtime::types::ClaimSensitivity::Internal
+        );
+    }
+
+    #[test]
+    fn open_loop_reader_reads_claim_backed_action_evidence_not_raw_actions() {
+        let db = crate::db::ActionDb::from_connection_for_tests(
+            crate::migrations::migrated_in_memory_for_tests(),
+        );
+        db.upsert_account(&crate::db::DbAccount {
+            id: "acct-1".to_string(),
+            name: "Example Account".to_string(),
+            account_type: crate::db::AccountType::Customer,
+            updated_at: "2026-05-20T00:00:00Z".to_string(),
+            ..Default::default()
+        })
+        .expect("seed account");
+        let action = fixture_action();
+        db.upsert_action(&action).expect("seed action");
+        let query = ListOpenLoopsQuery {
+            entity_type: Some("account".to_string()),
+            entity_id: Some("acct-1".to_string()),
+            surface: ClaimDismissalSurface::McpTool,
+        };
+
+        let before = read_open_loops_from_db(&db, &query).expect("read open loops before sync");
         assert!(
-            open_loop_claim_for_action(action, &tauri_query).is_some(),
-            "first-party Tauri surfaces can still render local action open loops"
+            before.claims.is_empty(),
+            "open-loop reader must not synthesize raw action rows when no claim exists"
+        );
+
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 22, 12, 0, 0).unwrap());
+        let rng = SeedableRng::new(44);
+        let ext = ExternalClients::default();
+        let ctx = ServiceContext::test_live(&clock, &rng, &ext);
+        crate::services::action_claims::sync_action_open_loop_claim(&ctx, &db, &action)
+            .expect("sync action claim");
+
+        let after = read_open_loops_from_db(&db, &query).expect("read open loops after sync");
+        assert_eq!(after.claims.len(), 1);
+        assert_eq!(after.claims[0].claim_type, "open_loop");
+        assert_eq!(
+            after.claims[0].field_path.as_deref(),
+            Some("actions.action-1")
         );
     }
 
@@ -1019,13 +1064,12 @@ impl MeetingPrepStatusReadHandle for LiveMeetingPrepStatusReader {
     ) -> MeetingPrepStatusReadFuture<'a> {
         Box::pin(async move {
             tokio::task::spawn_blocking(move || {
-                let db =
-                    crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-                        .map_err(|error| {
-                            MeetingPrepStatusReadError::ReadFailed(format!(
-                                "Database unavailable: {error}"
-                            ))
-                        })?;
+                let db = crate::db::ActionDb::open_readonly(std::sync::Arc::new(
+                    crate::db::LocalKeychain::new(),
+                ))
+                .map_err(|error| {
+                    MeetingPrepStatusReadError::ReadFailed(format!("Database unavailable: {error}"))
+                })?;
                 project_meeting_prep_status_snapshot(&db, &meeting_id)
             })
             .await
@@ -1123,9 +1167,10 @@ impl TrajectoryReadHandle for LiveTemporalWorkspaceReader {
     ) -> TrajectoryReadFuture<'a> {
         Box::pin(async move {
             tokio::task::spawn_blocking(move || {
-                let db =
-                    crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-                        .map_err(|error| format!("Database unavailable: {error}"))?;
+                let db = crate::db::ActionDb::open_readonly(std::sync::Arc::new(
+                    crate::db::LocalKeychain::new(),
+                ))
+                .map_err(|error| format!("Database unavailable: {error}"))?;
                 crate::services::temporal::read_trajectory_bundle_from_db(
                     &db,
                     &entity_type,
@@ -1247,10 +1292,11 @@ fn live_render_claim_receipt(
         }
     }
 
-    let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-        .map_err(|error| {
-            ClaimReceiptReadError::ReadFailed(format!("Database unavailable: {error}"))
-        })?;
+    let db =
+        crate::db::ActionDb::open_readonly(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            .map_err(|error| {
+                ClaimReceiptReadError::ReadFailed(format!("Database unavailable: {error}"))
+            })?;
     let audience = audience_for_surface(app_surface);
     let mut receipt = match build_receipt_for_audience(&app_target, audience, db.conn_ref()) {
         Ok(receipt) => receipt,

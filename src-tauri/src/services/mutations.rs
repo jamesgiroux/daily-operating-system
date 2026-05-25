@@ -753,7 +753,7 @@ pub fn upsert_action_if_not_completed(
     action: &DbAction,
 ) -> Result<bool, String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
-    db.with_transaction(|tx| {
+    let wrote = db.with_transaction(|tx| {
         let wrote = tx
             .upsert_action_if_not_completed_with_status(action)
             .map_err(|e| e.to_string())?;
@@ -778,7 +778,22 @@ pub fn upsert_action_if_not_completed(
         )
         .map_err(|e| format!("signal emit failed: {e}"))?;
         Ok(true)
-    })
+    })?;
+    if wrote {
+        let outcome = crate::services::action_claims::sync_action_open_loop_claim(ctx, db, action)
+            .map_err(|error| format!("action claim sync failed: {error}"))?;
+        if let Some((entity_type, entity_id)) = outcome.changed_subject() {
+            crate::services::action_claims::enqueue_action_claim_recompute(
+                ctx,
+                db,
+                entity_type,
+                entity_id,
+                "action_upsert",
+            )
+            .map_err(|error| format!("action claim recompute enqueue failed: {error}"))?;
+        }
+    }
+    Ok(wrote)
 }
 
 fn action_signal_target(action: &DbAction) -> (&'static str, String) {

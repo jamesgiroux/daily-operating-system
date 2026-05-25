@@ -2322,6 +2322,7 @@ mod tests {
         assert!(claims
             .iter()
             .any(|claim| claim.text == "customer status: active"));
+        assert!(claims.iter().all(|claim| claim.source_asof.is_none()));
     }
 
     #[test]

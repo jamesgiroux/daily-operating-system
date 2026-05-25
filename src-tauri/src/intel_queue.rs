@@ -654,6 +654,10 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             _ = state.integrations.intel_queue_wake.notified() => {}
         }
 
+        if crate::pty::background_workers_disabled() {
+            continue;
+        }
+
         // Dev mode isolation: pause background processing while dev sandbox is active
         if crate::db::is_dev_db_mode() {
             continue;
@@ -3380,7 +3384,7 @@ pub(crate) fn invalidate_and_requeue_meeting_preps_with_db(
         .conn_ref()
         .prepare(
             "SELECT m.id FROM meetings m
-             JOIN meeting_entities me ON me.meeting_id = m.id
+             JOIN effective_meeting_entities me ON me.meeting_id = m.id
              WHERE me.entity_id = ?1
                AND m.start_time > ?2
                AND m.meeting_type NOT IN ('personal', 'focus', 'blocked')",

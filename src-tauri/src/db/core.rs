@@ -135,6 +135,11 @@ impl ActionDb {
         &self.conn
     }
 
+    /// Consume the wrapper and return the underlying connection.
+    pub fn into_connection(self) -> Connection {
+        self.conn
+    }
+
     /// Borrow a `Connection` owned elsewhere as an `ActionDb` view.
     ///
     /// `ActionDb` is `repr(transparent)` over `rusqlite::Connection`, so this
@@ -497,8 +502,15 @@ impl ActionDb {
 
         // PRAGMA key MUST be first
         conn.execute_batch(&encryption_key.to_pragma())?;
+        conn.query_row("SELECT count(*) FROM sqlite_master LIMIT 1", [], |row| {
+            row.get::<_, i64>(0)
+        })
+        .map_err(|e| {
+            DbError::Encryption(format!(
+                "SQLCipher read-only key verification failed (database unreadable): {e}"
+            ))
+        })?;
 
-        conn.execute_batch("PRAGMA journal_mode=WAL;")?;
         conn.execute_batch("PRAGMA busy_timeout = 5000;")?;
         conn.execute_batch("PRAGMA query_only = ON;")?;
         Ok(Self { conn })

@@ -15,13 +15,13 @@ impl ActionDb {
                     account_id, project_id, source_type, source_id, source_label,
                     context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
                     actions.action_kind,
-                    (SELECT m.title FROM meeting_entities me
+                    (SELECT m.title FROM effective_meeting_entities me
                      JOIN meetings m ON me.meeting_id = m.id
                      WHERE me.entity_id = actions.account_id
                        AND m.start_time >= date('now')
                        AND m.start_time < date('now', '+3 days')
                      ORDER BY m.start_time ASC LIMIT 1) AS next_meeting_title,
-                    (SELECT m.start_time FROM meeting_entities me
+                    (SELECT m.start_time FROM effective_meeting_entities me
                      JOIN meetings m ON me.meeting_id = m.id
                      WHERE me.entity_id = actions.account_id
                        AND m.start_time >= date('now')
@@ -312,7 +312,7 @@ impl ActionDb {
                    AND a.source_id IN (
                      SELECT m.id FROM meetings m
                      LEFT JOIN meeting_attendees ma ON m.id = ma.meeting_id
-                     LEFT JOIN meeting_entities me ON m.id = me.meeting_id
+                     LEFT JOIN effective_meeting_entities me ON m.id = me.meeting_id
                      WHERE (ma.person_id = ?1
                         OR (me.entity_type = 'person' AND me.entity_id = ?1))
                         AND (
@@ -350,7 +350,7 @@ impl ActionDb {
              FROM meetings m
              LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
              LEFT JOIN meeting_attendees ma ON m.id = ma.meeting_id
-             LEFT JOIN meeting_entities me ON m.id = me.meeting_id
+             LEFT JOIN effective_meeting_entities me ON m.id = me.meeting_id
              WHERE (
                    ma.person_id = ?1
                    OR (me.entity_type = 'person' AND me.entity_id = ?1)

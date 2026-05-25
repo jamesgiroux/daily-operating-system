@@ -222,7 +222,7 @@ impl PlacementError {
             PlacementErrorCode::PlacementInternal,
             "workspace placement failed internally",
         )
-            .with_trace_id(uuid::Uuid::new_v4().to_string())
+        .with_trace_id(uuid::Uuid::new_v4().to_string())
     }
 }
 

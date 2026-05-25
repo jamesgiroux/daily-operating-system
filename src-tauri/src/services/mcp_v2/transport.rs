@@ -18,6 +18,7 @@
 //! - **Trust model**: local stdio is inside the OS-user boundary. Authorization
 //!   is the server-side manifest + exposure + rate-limit path in the gateway.
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use parking_lot::Mutex;
@@ -30,6 +31,7 @@ use rmcp::service::RequestContext;
 use rmcp::{RoleServer, ServerHandler};
 use rusqlite::Connection;
 
+use super::actor_policy::ToolGrant;
 use super::auth;
 use super::contracts::{
     McpClientId, McpToolRequestEnvelope, McpToolResponseEnvelope, McpToolResult, ScopedName,
@@ -52,7 +54,8 @@ use super::taxonomy::TaxonomyCatalog;
 pub struct V2ServerHandler {
     gateway: Arc<Gateway>,
     catalog: Arc<dyn TaxonomyCatalog>,
-    conn: Arc<Mutex<Connection>>,
+    conn: Option<Arc<Mutex<Connection>>>,
+    local_stdio_grants: Arc<Vec<ToolGrant>>,
     verified_client_id: McpClientId,
 }
 
@@ -67,7 +70,25 @@ impl V2ServerHandler {
         Self {
             gateway,
             catalog,
-            conn,
+            conn: Some(conn),
+            local_stdio_grants: Arc::new(Vec::new()),
+            verified_client_id,
+        }
+    }
+
+    /// Construct a local stdio handler whose tool exposure is held in memory.
+    /// This avoids MCP startup/auth writes racing the app-owned SQLCipher DB.
+    pub fn from_local_stdio(
+        gateway: Arc<Gateway>,
+        catalog: Arc<dyn TaxonomyCatalog>,
+        local_stdio_grants: Vec<ToolGrant>,
+        verified_client_id: McpClientId,
+    ) -> Self {
+        Self {
+            gateway,
+            catalog,
+            conn: None,
+            local_stdio_grants: Arc::new(local_stdio_grants),
             verified_client_id,
         }
     }
@@ -110,6 +131,17 @@ fn tool_from_description(desc: &ToolDescription) -> Tool {
     }
 }
 
+fn registered_invocable_tool_names(
+    grants: &[ScopedName],
+    registered_tools: &BTreeSet<ScopedName>,
+) -> Vec<ScopedName> {
+    grants
+        .iter()
+        .filter(|name| registered_tools.contains(*name))
+        .cloned()
+        .collect()
+}
+
 // ---------------------------------------------------------------------------
 // rmcp::ServerHandler impl
 // ---------------------------------------------------------------------------
@@ -139,20 +171,38 @@ impl ServerHandler for V2ServerHandler {
     ) -> Result<ListToolsResult, ErrorData> {
         // Per L0 AC-6: filter by `mcp_tool_grant` rows for
         // `verified_client_id` where exposure = Invocable.
-        let grants = {
-            let conn_guard = self.conn.lock();
+        let grants = if let Some(conn) = self.conn.as_ref() {
+            let conn_guard = conn.lock();
             auth::list_invocable_tool_grants(&conn_guard, &self.verified_client_id).map_err(
                 |e| ErrorData::internal_error(format!("mcp_v2 tool_grant lookup: {e}"), None),
             )?
+        } else {
+            self.local_stdio_grants
+                .iter()
+                .filter(|grant| {
+                    matches!(
+                        grant.exposure,
+                        abilities_runtime::abilities::registry::McpExposure::Invocable
+                    )
+                })
+                .map(|grant| grant.tool_name.clone())
+                .collect()
         };
 
-        let mut tools = Vec::with_capacity(grants.len());
-        for grant_name in &grants {
+        let registered_tools = self
+            .gateway
+            .registered_tools()
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        let visible_tools = registered_invocable_tool_names(&grants, &registered_tools);
+
+        let mut tools = Vec::with_capacity(visible_tools.len());
+        for grant_name in &visible_tools {
             if let Some(desc) = self.catalog.description_for(grant_name) {
                 tools.push(tool_from_description(desc));
             }
-            // Catalog entries without a matching registered handler are
-            // silently absent — pending in catalog, not invocable yet.
+            // Catalog entries without a matching registered handler remain
+            // absent even if stale local grants exist from an older binary.
         }
         Ok(ListToolsResult {
             next_cursor: None,
@@ -186,19 +236,32 @@ impl ServerHandler for V2ServerHandler {
         // via `tokio::task::spawn_blocking`. Inside the blocking thread the
         // handler's `block_on` is safe because we are not on a worker.
         let gateway = self.gateway.clone();
-        let conn = self.conn.clone();
         let client_id = self.verified_client_id.clone();
-        let response_envelope = tokio::task::spawn_blocking(move || {
-            let mut conn_guard = conn.lock();
-            gateway.handle_tool_call(&mut conn_guard, &client_id, envelope)
-        })
-        .await
-        .map_err(|join_err| {
-            ErrorData::internal_error(
-                format!("mcp_v2 dispatch task join failed: {join_err}"),
-                None,
-            )
-        })?;
+        let response_envelope = if let Some(conn) = self.conn.clone() {
+            tokio::task::spawn_blocking(move || {
+                let mut conn_guard = conn.lock();
+                gateway.handle_tool_call(&mut conn_guard, &client_id, envelope)
+            })
+            .await
+            .map_err(|join_err| {
+                ErrorData::internal_error(
+                    format!("mcp_v2 dispatch task join failed: {join_err}"),
+                    None,
+                )
+            })?
+        } else {
+            let grants = self.local_stdio_grants.clone();
+            tokio::task::spawn_blocking(move || {
+                gateway.handle_local_stdio_tool_call(&client_id, envelope, grants.as_slice())
+            })
+            .await
+            .map_err(|join_err| {
+                ErrorData::internal_error(
+                    format!("mcp_v2 dispatch task join failed: {join_err}"),
+                    None,
+                )
+            })?
+        };
 
         unwrap_response(response_envelope)
     }
@@ -347,6 +410,24 @@ mod tests {
         assert!(description.contains("test summary"));
         assert!(description.contains("When to call:\ntest when"));
         assert!(description.contains("When NOT to call:\ntest when not"));
+    }
+
+    #[test]
+    fn mcp_v2_tools_list_registered_handlers_only() {
+        let grants = vec![
+            ScopedName::new("dailyos.read.account_status"),
+            ScopedName::new("dailyos.read.daily_briefing"),
+        ];
+        let registered_tools = [ScopedName::new("dailyos.read.account_status")]
+            .into_iter()
+            .collect::<BTreeSet<_>>();
+
+        let visible = registered_invocable_tool_names(&grants, &registered_tools);
+
+        assert_eq!(
+            visible,
+            vec![ScopedName::new("dailyos.read.account_status")]
+        );
     }
 
     #[test]

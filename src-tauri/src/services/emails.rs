@@ -427,7 +427,7 @@ pub async fn get_emails_enriched(
                     .filter(|eid| {
                         db.conn_ref()
                             .query_row(
-                                "SELECT COUNT(*) FROM meeting_entities me
+                                "SELECT COUNT(*) FROM effective_meeting_entities me
                          JOIN meetings mh ON me.meeting_id = mh.id
                          WHERE me.entity_id = ?1 AND mh.start_time >= ?2 AND mh.start_time < ?3",
                                 rusqlite::params![eid, em_start, em_end],

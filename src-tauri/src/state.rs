@@ -107,7 +107,7 @@ pub struct HygieneState {
     pub scan_running: AtomicBool,
     pub last_scan_at: Mutex<Option<String>>,
     pub next_scan_at: Mutex<Option<String>>,
-    pub budget: HygieneBudget,
+    pub budget: Arc<HygieneBudget>,
     pub full_orphan_scan_done: AtomicBool,
 }
 
@@ -355,6 +355,7 @@ pub struct AppState {
     /// `RwLock<Option<>>` instead of `OnceCell` so dev mode can reinitialize
     /// the service to point at `dailyos-dev.db`.
     pub db_service: tokio::sync::RwLock<Option<std::sync::Arc<crate::db_service::DbService>>>,
+    db_service_reinit_lock: tokio::sync::Mutex<()>,
     /// User activity monitor for throttling background work.
     pub activity: Arc<crate::activity::ActivityMonitor>,
     /// Calendar subsystem state.
@@ -856,6 +857,7 @@ impl AppState {
                 last_scheduled_run: RwLock::new(HashMap::new()),
             },
             db_service: tokio::sync::RwLock::new(None),
+            db_service_reinit_lock: tokio::sync::Mutex::new(()),
             activity: Arc::new(crate::activity::ActivityMonitor::new()),
             calendar: CalendarState {
                 google_auth: Mutex::new(google_auth),
@@ -883,7 +885,7 @@ impl AppState {
                 next_scan_at: Mutex::new(None),
                 // Hygiene call-count budget is deprecated. Use unlimited
                 // so hygiene can enqueue freely; token budget enforced at PTY call time.
-                budget: HygieneBudget::unlimited(),
+                budget: Arc::new(HygieneBudget::unlimited()),
                 full_orphan_scan_done: AtomicBool::new(false),
             },
             pre_dev_workspace: Mutex::new(None),
@@ -960,6 +962,7 @@ impl AppState {
                 last_scheduled_run: RwLock::new(HashMap::new()),
             },
             db_service: tokio::sync::RwLock::new(Some(db_service)),
+            db_service_reinit_lock: tokio::sync::Mutex::new(()),
             activity: Arc::new(crate::activity::ActivityMonitor::new()),
             calendar: CalendarState {
                 google_auth: Mutex::new(GoogleAuthStatus::NotConfigured),
@@ -985,7 +988,7 @@ impl AppState {
                 scan_running: AtomicBool::new(false),
                 last_scan_at: Mutex::new(None),
                 next_scan_at: Mutex::new(None),
-                budget: HygieneBudget::unlimited(),
+                budget: Arc::new(HygieneBudget::unlimited()),
                 full_orphan_scan_done: AtomicBool::new(false),
             },
             pre_dev_workspace: Mutex::new(None),
@@ -1448,6 +1451,36 @@ impl AppState {
         self.init_db_service().await
     }
 
+    /// Reopen the shared DB pool after a connection-local SQLCipher failure.
+    ///
+    /// SQLCipher can report SQLITE_NOTADB when a long-lived connection observes
+    /// an invalid WAL frame from an external process. The main DB can still pass
+    /// integrity checks after reopening, so background workers should refresh
+    /// the pool once instead of logging the same failure forever.
+    pub async fn recover_db_service_after_access_error(
+        &self,
+        error: &DbAccessError,
+        context: &'static str,
+    ) -> bool {
+        if !db_access_error_needs_pool_reopen(error) {
+            return false;
+        }
+
+        let _guard = self.db_service_reinit_lock.lock().await;
+        log::warn!("{context}: refreshing DbService after SQLCipher connection error: {error}");
+        match self.reinit_db_service().await {
+            Ok(()) => true,
+            Err(reinit_error) => {
+                self.set_database_recovery_required(
+                    "database_connection_recovery_failed",
+                    format!("{context}: {reinit_error}"),
+                );
+                log::warn!("{context}: DbService refresh failed: {reinit_error}");
+                false
+            }
+        }
+    }
+
     /// Run a read-only closure on a reader connection. Never blocks writes.
     ///
     /// The closure receives `&ActionDb` and runs on a dedicated OS thread —
@@ -1581,6 +1614,11 @@ impl AppState {
     }
 }
 
+fn db_access_error_needs_pool_reopen(error: &DbAccessError) -> bool {
+    let message = error.to_string().to_ascii_lowercase();
+    message.contains("file is not a database") || message.contains("sqlite_notadb")
+}
+
 impl Default for AppState {
     fn default() -> Self {
         Self::new()
@@ -1588,10 +1626,7 @@ impl Default for AppState {
 }
 
 /// Run startup workspace sync/indexing in the background.
-///
-/// Uses a fresh DB connection to avoid blocking UI reads on the global DB mutex
-/// during startup.
-pub fn run_startup_sync(state: &AppState) {
+pub async fn run_startup_sync(state: Arc<AppState>) {
     if state.is_database_recovery_required() {
         log::warn!("Startup sync skipped: database recovery required");
         return;
@@ -1605,7 +1640,7 @@ pub fn run_startup_sync(state: &AppState) {
         }
     };
 
-    let workspace = std::path::Path::new(&config.workspace_path);
+    let workspace = std::path::PathBuf::from(&config.workspace_path);
     if !workspace.exists() {
         log::debug!(
             "Startup sync skipped: workspace does not exist ({})",
@@ -1615,84 +1650,100 @@ pub fn run_startup_sync(state: &AppState) {
     }
 
     // Refresh managed workspace files if version changed
-    if let Err(e) = crate::util::write_managed_workspace_files(workspace) {
+    if let Err(e) = crate::util::write_managed_workspace_files(&workspace) {
         log::warn!(
             "Startup sync: failed to write managed workspace files: {}",
             e
         );
     }
 
-    let db = match crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())) {
-        Ok(db) => db,
-        Err(e) => {
-            log::warn!("Startup sync skipped: failed to open DB: {}", e);
-            return;
-        }
-    };
+    let user_domains = config.resolved_user_domains();
+    let embeddings_enabled = config.embeddings.enabled;
+    let sync_result = state
+        .db_write(move |db| {
+            match crate::people::sync_people_from_workspace(&workspace, db, &user_domains) {
+                Ok(n) if n > 0 => log::info!("Startup sync: synced {} people from workspace", n),
+                Ok(_) => {}
+                Err(e) => log::warn!("Startup sync: people sync failed: {}", e),
+            }
 
-    match crate::people::sync_people_from_workspace(workspace, &db, &config.resolved_user_domains())
-    {
-        Ok(n) if n > 0 => log::info!("Startup sync: synced {} people from workspace", n),
-        Ok(_) => {}
-        Err(e) => log::warn!("Startup sync: people sync failed: {}", e),
-    }
+            match crate::accounts::sync_accounts_from_workspace(&workspace, db) {
+                Ok(n) if n > 0 => log::info!("Startup sync: synced {} accounts from workspace", n),
+                Ok(_) => {}
+                Err(e) => log::warn!("Startup sync: accounts sync failed: {}", e),
+            }
 
-    match crate::accounts::sync_accounts_from_workspace(workspace, &db) {
-        Ok(n) if n > 0 => log::info!("Startup sync: synced {} accounts from workspace", n),
-        Ok(_) => {}
-        Err(e) => log::warn!("Startup sync: accounts sync failed: {}", e),
-    }
+            match crate::projects::sync_projects_from_workspace(&workspace, db) {
+                Ok(n) if n > 0 => {
+                    log::info!("Startup sync: synced {} projects from workspace", n);
+                }
+                Ok(_) => {}
+                Err(e) => log::warn!("Startup sync: projects sync failed: {}", e),
+            }
 
-    match crate::projects::sync_projects_from_workspace(workspace, &db) {
-        Ok(n) if n > 0 => log::info!("Startup sync: synced {} projects from workspace", n),
-        Ok(_) => {}
-        Err(e) => log::warn!("Startup sync: projects sync failed: {}", e),
-    }
+            // One-time backfill of dashboard.json narrative fields into DB columns.
+            match db.backfill_dashboard_json_to_db(&workspace) {
+                Ok(n) if n > 0 => log::info!("Startup sync: backfilled {} dashboard.json → DB", n),
+                Ok(_) => {}
+                Err(e) => log::warn!("Startup sync: dashboard.json backfill failed: {}", e),
+            }
 
-    // One-time backfill of dashboard.json narrative fields into DB columns.
-    match db.backfill_dashboard_json_to_db(workspace) {
-        Ok(n) if n > 0 => log::info!("Startup sync: backfilled {} dashboard.json → DB", n),
-        Ok(_) => {}
-        Err(e) => log::warn!("Startup sync: dashboard.json backfill failed: {}", e),
-    }
+            match crate::accounts::sync_all_content_indexes(&workspace, db) {
+                Ok(n) if n > 0 => log::info!("Startup sync: indexed {} content files", n),
+                Ok(_) => {}
+                Err(e) => log::warn!("Startup sync: content index sync failed: {}", e),
+            }
 
-    match crate::accounts::sync_all_content_indexes(workspace, &db) {
-        Ok(n) if n > 0 => log::info!("Startup sync: indexed {} content files", n),
-        Ok(_) => {}
-        Err(e) => log::warn!("Startup sync: content index sync failed: {}", e),
-    }
+            let entities_with_content = if embeddings_enabled {
+                match db.get_entities_with_content() {
+                    Ok(entities) => entities,
+                    Err(e) => {
+                        log::warn!("Startup sync: failed to queue embedding work: {}", e);
+                        Vec::new()
+                    }
+                }
+            } else {
+                Vec::new()
+            };
 
-    if config.embeddings.enabled {
-        match db.get_entities_with_content() {
-            Ok(entities) => {
-                for (entity_id, entity_type) in entities {
-                    state
-                        .embedding_queue
-                        .enqueue(crate::processor::embeddings::EmbeddingRequest {
-                            entity_id,
-                            entity_type,
-                            requested_at: Instant::now(),
-                        });
+            // Migrate legacy people notes to entity_context_entries (idempotent).
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let external = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &external);
+            match crate::services::entity_context::migrate_legacy_notes(&ctx, db) {
+                Ok(n) if n > 0 => log::info!("Startup sync: migrated {} legacy notes", n),
+                Ok(_) => {}
+                Err(e) => log::warn!("Startup sync: legacy notes migration failed: {}", e),
+            }
+
+            // Rebuild search index.
+            {
+                use crate::db::search::SearchDb;
+                match db.conn_ref().rebuild_search_index() {
+                    Ok(count) => log::info!("Search index rebuilt: {} entries", count),
+                    Err(e) => log::warn!("Search index rebuild failed: {}", e),
                 }
             }
-            Err(e) => log::warn!("Startup sync: failed to queue embedding work: {}", e),
+
+            Ok(entities_with_content)
+        })
+        .await;
+
+    match sync_result {
+        Ok(entities) => {
+            for (entity_id, entity_type) in entities {
+                state
+                    .embedding_queue
+                    .enqueue(crate::processor::embeddings::EmbeddingRequest {
+                        entity_id,
+                        entity_type,
+                        requested_at: Instant::now(),
+                    });
+            }
         }
-    }
-
-    // Migrate legacy people notes to entity_context_entries (idempotent)
-    let ctx = state.live_service_context();
-    match crate::services::entity_context::migrate_legacy_notes(&ctx, &db) {
-        Ok(n) if n > 0 => log::info!("Startup sync: migrated {} legacy notes", n),
-        Ok(_) => {}
-        Err(e) => log::warn!("Startup sync: legacy notes migration failed: {}", e),
-    }
-
-    // Rebuild search index
-    {
-        use crate::db::search::SearchDb;
-        match db.conn_ref().rebuild_search_index() {
-            Ok(count) => log::info!("Search index rebuilt: {} entries", count),
-            Err(e) => log::warn!("Search index rebuild failed: {}", e),
+        Err(error) => {
+            log::warn!("Startup sync skipped: DB write failed: {error}");
         }
     }
 }

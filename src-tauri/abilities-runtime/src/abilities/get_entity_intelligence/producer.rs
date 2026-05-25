@@ -29,9 +29,8 @@ use crate::abilities::list_open_loops::{ListOpenLoopsInput, OpenLoopSubject, Ope
 use crate::abilities::provenance::source_time::{parse_source_timestamp, SourceTimestampStatus};
 use crate::abilities::provenance::trust::claim_trust_band_from_score;
 use crate::abilities::provenance::{
-    AbilityExecutionMode, AbilityVersion, DataSource, FieldAttribution, FieldPath, GleanDownstream,
-    ProvenanceBuilder, ProvenanceBuilderConfig, SchemaVersion, SignalId, SourceAttribution,
-    SourceIdentifier, SourceName, SubjectAttribution, SubjectRef,
+    AbilityExecutionMode, AbilityVersion, FieldAttribution, FieldPath, ProvenanceBuilder,
+    ProvenanceBuilderConfig, SchemaVersion, SubjectAttribution, SubjectRef,
 };
 use crate::abilities::trust::types::TrustBand;
 use crate::abilities::{
@@ -219,17 +218,13 @@ pub async fn build_entity_intelligence(
     // Attach top-level `AbilityOutput` provenance so the runtime emits a
     // consistent envelope alongside its sibling abilities. The envelope's own
     // `provenance` field is the display-safe per-source index; the outer
-    // `Provenance` records the producer call.
+    // `Provenance` records only the producer call so high-cardinality source
+    // indexes do not get duplicated into a second provenance graph.
     let mut builder = ProvenanceBuilder::new(provenance_config(ctx, input.schema_version));
     let subject_attr = SubjectAttribution::direct_confident(subject_ref);
-    add_outer_provenance_sources(
-        &mut builder,
-        &envelope.provenance.sources,
-        ctx.services().clock.now(),
-    )?;
     builder.set_subject(subject_attr.clone());
     builder
-        .attribute_subtree(
+        .attribute(
             FieldPath::root(),
             FieldAttribution::constant(subject_attr.clone()),
         )
@@ -302,51 +297,6 @@ fn active_section_set(
             .copied()
             .collect(),
         Some(list) => list.iter().copied().collect(),
-    }
-}
-
-fn add_outer_provenance_sources(
-    builder: &mut ProvenanceBuilder,
-    sources: &[EnvelopeProvenanceSource],
-    default_observed_at: DateTime<Utc>,
-) -> Result<(), AbilityError> {
-    for source in sources {
-        let source_asof = source.as_of;
-        let observed_at = source_asof.unwrap_or(default_observed_at);
-        let source_attribution = SourceAttribution::new(
-            outer_data_source(source),
-            vec![SourceIdentifier::Signal {
-                signal_id: SignalId::new(source.id.clone()),
-            }],
-            observed_at,
-            source_asof,
-            1.0,
-            None,
-        )
-        .map_err(provenance_error)?;
-        builder.add_source(source_attribution);
-    }
-    Ok(())
-}
-
-fn outer_data_source(source: &EnvelopeProvenanceSource) -> DataSource {
-    let source_type = source
-        .source_type
-        .as_deref()
-        .unwrap_or(source.label.as_str())
-        .trim()
-        .to_ascii_lowercase();
-    match source_type.as_str() {
-        "user" => DataSource::User,
-        "google" => DataSource::Google,
-        "glean" => DataSource::Glean {
-            downstream: GleanDownstream::Documents,
-        },
-        "clay" => DataSource::Clay,
-        "ai" => DataSource::Ai,
-        "co_attendance" | "co-attendance" => DataSource::CoAttendance,
-        "local_enrichment" | "local-enrichment" => DataSource::LocalEnrichment,
-        other => DataSource::Other(SourceName::new(other)),
     }
 }
 
@@ -1746,7 +1696,11 @@ fn upsert_static_provenance_source(
 // ---- freshness ------------------------------------------------------------
 
 fn freshness_for_claim(claim: &IntelligenceClaim) -> Freshness {
-    let Some(source_asof) = parse_optional_timestamp(claim.source_asof.as_deref()) else {
+    let source_timestamp = claim
+        .source_asof
+        .as_deref()
+        .or(Some(claim.observed_at.as_str()));
+    let Some(source_asof) = parse_optional_timestamp(source_timestamp) else {
         return Freshness::Unknown;
     };
     let now = Utc::now();
@@ -2092,6 +2046,20 @@ mod tests {
         safe_claim.created_at = "2026-05-23T10:00:00Z".to_string();
         claims.push(safe_claim);
         claims
+    }
+
+    #[test]
+    fn claim_freshness_falls_back_to_observed_at_when_source_asof_missing() {
+        let mut claim = claim_fixture(
+            "claim-observed-at-only",
+            "account",
+            "acct-test-001",
+            "Observed claim",
+        );
+        claim.source_asof = None;
+        claim.observed_at = chrono::Utc::now().to_rfc3339();
+
+        assert_eq!(freshness_for_claim(&claim), Freshness::Current);
     }
 
     #[test]

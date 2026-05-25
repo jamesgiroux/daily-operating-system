@@ -127,7 +127,7 @@ pub fn assess_intelligence_quality(db: &ActionDb, meeting_id: &str) -> Intellige
     // 2. Check if meeting has linked entities
     let entity_count: i64 = conn
         .query_row(
-            "SELECT COUNT(*) FROM meeting_entities WHERE meeting_id = ?1",
+            "SELECT COUNT(*) FROM effective_meeting_entities WHERE meeting_id = ?1",
             rusqlite::params![meeting_id],
             |row| row.get(0),
         )
@@ -149,9 +149,9 @@ pub fn assess_intelligence_quality(db: &ActionDb, meeting_id: &str) -> Intellige
         let past_meeting_count: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM meetings m
-                 JOIN meeting_entities me ON me.meeting_id = m.id
+                 JOIN effective_meeting_entities me ON me.meeting_id = m.id
                  WHERE me.entity_id IN (
-                     SELECT entity_id FROM meeting_entities WHERE meeting_id = ?1
+                     SELECT entity_id FROM effective_meeting_entities WHERE meeting_id = ?1
                  )
                  AND m.id != ?1
                  AND m.start_time < ?2",
@@ -171,8 +171,8 @@ pub fn assess_intelligence_quality(db: &ActionDb, meeting_id: &str) -> Intellige
                 "SELECT COUNT(*) FROM actions a
                  WHERE a.status IN ('backlog', 'unstarted', 'started')
                  AND (
-                     a.account_id IN (SELECT entity_id FROM meeting_entities WHERE meeting_id = ?1)
-                     OR a.project_id IN (SELECT entity_id FROM meeting_entities WHERE meeting_id = ?1)
+                     a.account_id IN (SELECT entity_id FROM effective_meeting_entities WHERE meeting_id = ?1)
+                     OR a.project_id IN (SELECT entity_id FROM effective_meeting_entities WHERE meeting_id = ?1)
                  )",
                 rusqlite::params![meeting_id],
                 |row| row.get(0),
@@ -190,7 +190,7 @@ pub fn assess_intelligence_quality(db: &ActionDb, meeting_id: &str) -> Intellige
              WHERE se.superseded_by IS NULL
              AND (se.entity_type, se.entity_id) IN (
                  SELECT me.entity_type, me.entity_id
-                 FROM meeting_entities me
+                 FROM effective_meeting_entities me
                  WHERE me.meeting_id = ?1
              )",
             rusqlite::params![meeting_id],

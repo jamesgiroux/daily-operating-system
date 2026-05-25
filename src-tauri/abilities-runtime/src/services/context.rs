@@ -1270,10 +1270,11 @@ pub trait SourceManagementActionHandle: Send + Sync {
 //
 // Narrow read handle for entity-scoped touchpoint composition: the producer
 // asks for upcoming + recent meeting-shaped interactions for a subject; the
-// app-side reader resolves those out of `meeting_entities` + parent/child
-// account expansion + attendee-match fallback. Subject isolation lives in the
-// reader's filter — the reader returns each candidate with an explicit
-// `inclusion_reason`, never a raw join soup.
+// app-side reader resolves those out of the current entity-link graph, with
+// legacy junction rows as fallback, plus parent/child account expansion and
+// attendee-match fallback. Subject isolation lives in the reader's filter —
+// the reader returns each candidate with an explicit `inclusion_reason`, never
+// a raw join soup.
 // -----------------------------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1293,7 +1294,7 @@ pub struct EntityTouchpointsQuery {
 /// envelope so callers can debug subject bleed without re-querying.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TouchpointInclusionReason {
-    /// Direct row in `meeting_entities` for this subject.
+    /// Direct meeting/entity link for this subject.
     SubjectMatch,
     /// Inherited via parent/child account or related entity link.
     EntityLink,
@@ -1368,7 +1369,7 @@ pub trait EntityTouchpointsReadHandle: Send + Sync {
 //
 // Read-only projection over existing relationship substrate. This is not a new
 // canonical graph store; app-side readers assemble bounded relationship and
-// participation evidence from existing tables (meeting_entities,
+// participation evidence from existing tables (linked entity graph,
 // meeting_attendees, account_stakeholders/entity_members, person_relationships,
 // hierarchy links, actions/content/email where available).
 // -----------------------------------------------------------------------------

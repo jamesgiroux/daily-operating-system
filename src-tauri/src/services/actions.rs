@@ -62,6 +62,46 @@ fn action_entity_info(action: &crate::db::DbAction, fallback_id: &str) -> (&'sta
     (entity_type, entity_id)
 }
 
+fn sync_action_claim_after_mutation(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    id: &str,
+    operation: &str,
+) {
+    match db.get_action_by_id(id) {
+        Ok(Some(action)) => {
+            match crate::services::action_claims::sync_action_open_loop_claim(ctx, db, &action) {
+                Ok(outcome) => {
+                    if let Some((entity_type, entity_id)) = outcome.changed_subject() {
+                        if let Err(error) =
+                            crate::services::action_claims::enqueue_action_claim_recompute(
+                                ctx,
+                                db,
+                                entity_type,
+                                entity_id,
+                                operation,
+                            )
+                        {
+                            log::warn!(
+                                "actions: action claim recompute enqueue failed after {operation} for action={id}: {error}"
+                            );
+                        }
+                    }
+                }
+                Err(error) => {
+                    log::warn!(
+                        "actions: action claim sync failed after {operation} for action={id}: {error}"
+                    );
+                }
+            }
+        }
+        Ok(None) => {}
+        Err(error) => {
+            log::warn!("actions: action claim sync could not reload action={id}: {error}");
+        }
+    }
+}
+
 /// Complete an action and emit the completion signal.
 pub fn complete_action(
     ctx: &ServiceContext<'_>,
@@ -72,6 +112,7 @@ pub fn complete_action(
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let action = db.get_action_by_id(id).ok().flatten();
     db.complete_action(id).map_err(|e| e.to_string())?;
+    sync_action_claim_after_mutation(ctx, db, id, "complete");
 
     if let Some(ref action) = action {
         let (entity_type, entity_id) = action_entity_info(action, id);
@@ -125,6 +166,7 @@ pub fn reopen_action(
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let action = db.get_action_by_id(id).ok().flatten();
     db.reopen_action(id).map_err(|e| e.to_string())?;
+    sync_action_claim_after_mutation(ctx, db, id, "reopen");
 
     if let Some(ref action) = action {
         let (entity_type, entity_id) = action_entity_info(action, id);
@@ -154,6 +196,7 @@ pub fn accept_suggested_action(
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let action = db.get_action_by_id(id).ok().flatten();
     db.accept_suggested_action(id).map_err(|e| e.to_string())?;
+    sync_action_claim_after_mutation(ctx, db, id, "accept");
 
     if let Some(ref action) = action {
         let (entity_type, entity_id) = action_entity_info(action, id);
@@ -208,6 +251,7 @@ pub fn reject_suggested_action(
     let action = db.get_action_by_id(id).ok().flatten();
     db.reject_suggested_action_with_source(id, source)
         .map_err(|e| e.to_string())?;
+    sync_action_claim_after_mutation(ctx, db, id, "reject");
 
     // Emit rejection signal for correction learning
     if let Some(ref action) = action {
@@ -282,6 +326,7 @@ pub fn dismiss_suggested_action(
     let action = db.get_action_by_id(id).ok().flatten();
     db.reject_suggested_action_with_source(id, source)
         .map_err(|e| e.to_string())?;
+    sync_action_claim_after_mutation(ctx, db, id, "dismiss");
 
     if let Some(ref action) = action {
         // Tombstone so the enrichment pipeline suppresses re-proposal
@@ -336,6 +381,7 @@ pub fn update_action_priority(
     let action = db.get_action_by_id(id).ok().flatten();
     db.update_action_priority(id, priority)
         .map_err(|e| e.to_string())?;
+    sync_action_claim_after_mutation(ctx, db, id, "priority_update");
 
     if let Some(ref action) = action {
         let (entity_type, entity_id) = action_entity_info(action, id);
@@ -503,6 +549,7 @@ pub async fn create_action(
         .db_write(move |db| {
             let ctx = state_for_ctx.live_service_context();
             db.upsert_action(&action).map_err(|e| e.to_string())?;
+            sync_action_claim_after_mutation(&ctx, db, &action.id, "create");
 
             // Emit signal for manually created actions
             let (entity_type, entity_id) = action_entity_info(&action, &action.id);
@@ -754,7 +801,9 @@ pub(crate) fn apply_update_action(
     }
 
     action.updated_at = ctx.clock.now().to_rfc3339();
-    db.upsert_action(&action).map_err(|e| e.to_string())
+    db.upsert_action(&action).map_err(|e| e.to_string())?;
+    sync_action_claim_after_mutation(ctx, db, &action.id, "update");
+    Ok(())
 }
 
 /// Get full detail for a single action, with resolved relationships.
