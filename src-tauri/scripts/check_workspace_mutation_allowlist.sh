@@ -40,12 +40,73 @@ filter_comment_allowlist() {
   printf '%s' "$filtered"
 }
 
+filter_cfg_test_modules() {
+  python3 -c '
+import re
+import sys
+from collections import defaultdict
+
+files = defaultdict(list)
+for raw in sys.stdin:
+    line = raw.rstrip("\n")
+    if not line:
+        continue
+    parts = line.split(":", 2)
+    if len(parts) < 3:
+        print(line)
+        continue
+    files[parts[0]].append((int(parts[1]), line))
+
+for path, hits in files.items():
+    try:
+        with open(path, encoding="utf-8") as fh:
+            source = fh.read().split("\n")
+    except OSError:
+        for _, hit in hits:
+            print(hit)
+        continue
+
+    test_ranges = []
+    pending_cfg_test = False
+    in_test_module = False
+    range_start = None
+    depth = 0
+
+    for idx, src_line in enumerate(source):
+        stripped = src_line.strip()
+        if pending_cfg_test and re.match(r"(pub\s+)?mod\s+\w+", stripped):
+            in_test_module = True
+            range_start = idx
+            depth = src_line.count("{") - src_line.count("}")
+            pending_cfg_test = False
+            continue
+        if pending_cfg_test and not stripped.startswith("#["):
+            pending_cfg_test = False
+        if re.match(r"\s*#\[cfg\s*\(\s*test\s*\)\s*\]", src_line):
+            pending_cfg_test = True
+            continue
+        if in_test_module:
+            depth += src_line.count("{") - src_line.count("}")
+            if depth <= 0:
+                test_ranges.append((range_start + 1, idx + 1))
+                in_test_module = False
+
+    def in_test_range(line_no):
+        return any(start <= line_no <= end for start, end in test_ranges)
+
+    for line_no, hit in hits:
+        if not in_test_range(line_no):
+            print(hit)
+'
+}
+
 table_matches="$(
   grep -rEni --include='*.rs' --include='*.sql' "$table_pattern" "${roots[@]}" 2>/dev/null \
     | grep -Ev '^[^:]+:[0-9]+:[[:space:]]*(//|--)' \
     | grep -Ev "($allowed_regex)" \
     || true
 )"
+table_matches="$(printf '%s' "$table_matches" | filter_cfg_test_modules)"
 table_matches="$(filter_comment_allowlist "$table_matches")"
 
 fs_matches="$(
@@ -54,6 +115,7 @@ fs_matches="$(
     | grep -Ei 'workspace|Workspace|workspace_root|workspace_path|canonical_path|file_ref' \
     || true
 )"
+fs_matches="$(printf '%s' "$fs_matches" | filter_cfg_test_modules)"
 fs_matches="$(filter_comment_allowlist "$fs_matches")"
 
 if [[ -n "$table_matches" || -n "$fs_matches" ]]; then

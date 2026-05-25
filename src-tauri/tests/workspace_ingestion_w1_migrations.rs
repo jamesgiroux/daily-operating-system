@@ -3,6 +3,54 @@
 
 use rusqlite::Connection;
 
+fn table_columns(conn: &Connection, table: &str) -> Vec<String> {
+    conn.prepare(&format!("PRAGMA table_info({table})"))
+        .unwrap_or_else(|error| panic!("prepare columns for {table}: {error}"))
+        .query_map([], |row| row.get::<_, String>(1))
+        .unwrap_or_else(|error| panic!("query columns for {table}: {error}"))
+        .filter_map(Result::ok)
+        .collect()
+}
+
+fn assert_has_columns(conn: &Connection, table: &str, required: &[&str]) {
+    let columns = table_columns(conn, table);
+    for column in required {
+        assert!(
+            columns.iter().any(|found| found == column),
+            "{table} missing required column `{column}`; got {columns:?}"
+        );
+    }
+}
+
+fn assert_forbidden_columns_absent(conn: &Connection, table: &str) {
+    let columns = table_columns(conn, table);
+    for forbidden in &[
+        "canonical_path",
+        "relative_path",
+        "filename",
+        "absolute_path",
+        "raw_path",
+        "claim_text",
+        "file_content",
+        "prompt",
+        "output_body",
+    ] {
+        assert!(
+            !columns.iter().any(|column| column == forbidden),
+            "{table} must not store raw surfaced field `{forbidden}`"
+        );
+    }
+}
+
+fn index_names(conn: &Connection, table: &str) -> Vec<String> {
+    conn.prepare(&format!("PRAGMA index_list({table})"))
+        .unwrap_or_else(|error| panic!("prepare indexes for {table}: {error}"))
+        .query_map([], |row| row.get::<_, String>(1))
+        .unwrap_or_else(|error| panic!("query indexes for {table}: {error}"))
+        .filter_map(Result::ok)
+        .collect()
+}
+
 #[test]
 fn w1_migrations_v250_through_v254_apply_in_order() {
     let conn = Connection::open_in_memory().expect("open in-memory sqlite");
@@ -37,6 +85,212 @@ fn w1_migrations_v250_through_v254_apply_in_order() {
             "missing required table `{required}`; got {table_names:?}"
         );
     }
+}
+
+#[test]
+fn w5_a_backfill_state_migration_creates_privacy_safe_run_item_operation_tables() {
+    let conn = Connection::open_in_memory().expect("open in-memory sqlite");
+    conn.execute_batch("PRAGMA foreign_keys = ON")
+        .expect("foreign keys");
+    for sql in [
+        include_str!("../src/migrations/250_workspace_file_lifecycle.sql"),
+        include_str!("../src/migrations/264_workspace_backfill_state.sql"),
+    ] {
+        conn.execute_batch(sql)
+            .unwrap_or_else(|e| panic!("migration apply: {e}"));
+    }
+
+    let tables: Vec<String> = conn
+        .prepare(
+            "SELECT name FROM sqlite_master
+             WHERE type='table' AND name LIKE 'workspace_backfill_%'
+             ORDER BY name",
+        )
+        .expect("prepare")
+        .query_map([], |row| row.get::<_, String>(0))
+        .expect("query")
+        .filter_map(Result::ok)
+        .collect();
+    assert_eq!(
+        tables,
+        vec![
+            "workspace_backfill_items",
+            "workspace_backfill_operations",
+            "workspace_backfill_runs",
+        ]
+    );
+
+    assert_has_columns(
+        &conn,
+        "workspace_backfill_runs",
+        &[
+            "run_id",
+            "mode",
+            "status",
+            "workspace_root_fingerprint",
+            "actor",
+            "reason_counts_json",
+            "source_class_counts_json",
+            "divergence_counts_json",
+            "started_at",
+            "completed_at",
+            "created_at",
+            "updated_at",
+        ],
+    );
+    assert_has_columns(
+        &conn,
+        "workspace_backfill_items",
+        &[
+            "run_id",
+            "source_handle",
+            "item_handle",
+            "file_id",
+            "content_sha256",
+            "duplicate_group_handle",
+            "candidate_kind",
+            "entity_type",
+            "entity_id",
+            "category",
+            "exposure_state",
+            "source_time_basis",
+            "source_time_confidence",
+            "backfill_observed_at",
+            "status",
+            "reason_code",
+            "created_at",
+            "updated_at",
+        ],
+    );
+    assert_has_columns(
+        &conn,
+        "workspace_backfill_operations",
+        &[
+            "id",
+            "run_id",
+            "source_handle",
+            "operation_kind",
+            "status",
+            "created_lifecycle",
+            "updated_lifecycle_fields",
+            "created_link_handle",
+            "reason_code",
+            "created_at",
+            "updated_at",
+        ],
+    );
+    for table in &[
+        "workspace_backfill_runs",
+        "workspace_backfill_items",
+        "workspace_backfill_operations",
+    ] {
+        assert_forbidden_columns_absent(&conn, table);
+    }
+
+    for (table, index) in [
+        ("workspace_backfill_runs", "idx_wbr_status"),
+        ("workspace_backfill_items", "idx_wbi_source_handle"),
+        ("workspace_backfill_items", "idx_wbi_file_id"),
+        ("workspace_backfill_items", "idx_wbi_status"),
+        ("workspace_backfill_operations", "idx_wbo_run_source"),
+        ("workspace_backfill_operations", "idx_wbo_kind_status"),
+    ] {
+        let indexes = index_names(&conn, table);
+        assert!(
+            indexes.iter().any(|found| found == index),
+            "{table} missing index {index}; got {indexes:?}"
+        );
+    }
+
+    conn.execute(
+        "INSERT INTO workspace_backfill_runs
+         (run_id, mode, status, workspace_root_fingerprint, actor)
+         VALUES ('run-1', 'apply', 'running', 'root:v1:test', 'system:workspace_backfill:v1')",
+        [],
+    )
+    .expect("valid run");
+    conn.execute(
+        "INSERT INTO workspace_backfill_items
+         (run_id, source_handle, item_handle, file_id, candidate_kind, exposure_state,
+          source_time_basis, source_time_confidence, backfill_observed_at, status)
+         VALUES ('run-1', 'source:v1:test', 'item:v1:test', 'file-1', 'entity_doc',
+          'pending_review', 'filesystem_mtime', 'filesystem_unverified',
+          '2026-05-25T00:00:00.000Z', 'planned')",
+        [],
+    )
+    .expect("valid item");
+    conn.execute(
+        "INSERT INTO workspace_backfill_operations
+         (run_id, source_handle, operation_kind, status)
+         VALUES ('run-1', 'source:v1:test', 'register_source', 'planned')",
+        [],
+    )
+    .expect("valid operation");
+
+    assert!(
+        conn.execute(
+            "INSERT INTO workspace_backfill_runs
+             (run_id, mode, status, workspace_root_fingerprint, actor)
+             VALUES ('run-bad-mode', 'preview', 'running', 'root:v1:test', 'system')",
+            [],
+        )
+        .is_err(),
+        "run mode CHECK must reject non-dry_run/apply values"
+    );
+    assert!(
+        conn.execute(
+            "INSERT INTO workspace_backfill_runs
+             (run_id, mode, status, workspace_root_fingerprint, actor)
+             VALUES ('run-bad-status', 'apply', 'queued', 'root:v1:test', 'system')",
+            [],
+        )
+        .is_err(),
+        "run status CHECK must reject untracked states"
+    );
+    assert!(
+        conn.execute(
+            "INSERT INTO workspace_backfill_items
+             (run_id, source_handle, item_handle, file_id, candidate_kind, exposure_state,
+              backfill_observed_at, status)
+             VALUES ('run-1', 'source:v1:bad-exposure', 'item:v1:bad', 'file-2',
+              'entity_doc', 'trusted', '2026-05-25T00:00:00.000Z', 'planned')",
+            [],
+        )
+        .is_err(),
+        "item exposure CHECK must reject trusted promotion vocabulary"
+    );
+    assert!(
+        conn.execute(
+            "INSERT INTO workspace_backfill_items
+             (run_id, source_handle, item_handle, file_id, candidate_kind,
+              backfill_observed_at, status)
+             VALUES ('run-1', 'source:v1:bad-status', 'item:v1:bad', 'file-2',
+              'entity_doc', '2026-05-25T00:00:00.000Z', 'queued')",
+            [],
+        )
+        .is_err(),
+        "item status CHECK must reject untracked states"
+    );
+    assert!(
+        conn.execute(
+            "INSERT INTO workspace_backfill_operations
+             (run_id, source_handle, operation_kind, status)
+             VALUES ('run-1', 'source:v1:test', 'register_source', 'queued')",
+            [],
+        )
+        .is_err(),
+        "operation status CHECK must reject untracked states"
+    );
+    assert!(
+        conn.execute(
+            "INSERT INTO workspace_backfill_operations
+             (run_id, source_handle, operation_kind, status)
+             VALUES ('run-1', 'source:v1:missing', 'register_source', 'planned')",
+            [],
+        )
+        .is_err(),
+        "operation rows must reference an existing backfill item"
+    );
 }
 
 #[test]

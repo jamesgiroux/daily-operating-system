@@ -61,6 +61,7 @@ pub mod trust_recompute;
 pub mod user_entity;
 pub mod version_dispatcher;
 pub mod versioning;
+pub mod workspace_backfill;
 pub mod workspace_ingestion;
 
 #[cfg(test)]

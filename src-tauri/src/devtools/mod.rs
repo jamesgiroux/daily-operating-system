@@ -762,6 +762,22 @@ pub fn purge_mock_data(_state: &AppState) -> Result<String, String> {
     let n = delete_mock("signal_events", "entity_id");
     summary.push(format!("signal_events: {}", n));
 
+    // --- Workspace backfill operational state ---
+    let n = delete_mock("workspace_backfill_operations", "run_id");
+    summary.push(format!("workspace_backfill_operations: {}", n));
+
+    let n = delete_mock("workspace_backfill_items", "run_id");
+    summary.push(format!("workspace_backfill_items: {}", n));
+
+    let n = delete_mock("workspace_backfill_runs", "run_id");
+    summary.push(format!("workspace_backfill_runs: {}", n));
+
+    let n = delete_mock("document_entity_links", "file_id");
+    summary.push(format!("document_entity_links: {}", n));
+
+    let n = delete_mock("workspace_file_lifecycle", "file_id");
+    summary.push(format!("workspace_file_lifecycle: {}", n));
+
     let n = delete_mock("intelligence_feedback", "entity_id");
     summary.push(format!("intelligence_feedback: {}", n));
 
@@ -6551,6 +6567,302 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
     .map_err(|e| format!("Seed health_recompute_pending: {}", e))?;
 
     seed_claim_review_deferrals(db)?;
+    seed_workspace_backfill_state(db)?;
+
+    Ok(())
+}
+
+/// Seed representative workspace backfill state so dev mode exercises the new
+/// operational tables without storing raw paths inside the backfill tables.
+fn seed_workspace_backfill_state(db: &ActionDb) -> Result<(), String> {
+    assert_dev_db_connection(db)?;
+
+    let conn = db.conn_ref();
+    let now = chrono::Utc::now();
+    let now_iso = now.to_rfc3339();
+    let five_min_ago = (now - chrono::Duration::minutes(5)).to_rfc3339();
+    let run_id = "mock-w5-backfill-apply";
+
+    conn.execute(
+        "DELETE FROM workspace_backfill_operations WHERE run_id = ?1",
+        rusqlite::params![run_id],
+    )
+    .map_err(|e| format!("Reset workspace_backfill_operations seed rows: {e}"))?;
+    conn.execute(
+        "DELETE FROM workspace_backfill_items WHERE run_id = ?1",
+        rusqlite::params![run_id],
+    )
+    .map_err(|e| format!("Reset workspace_backfill_items seed rows: {e}"))?;
+    conn.execute(
+        "DELETE FROM workspace_backfill_runs WHERE run_id = ?1",
+        rusqlite::params![run_id],
+    )
+    .map_err(|e| format!("Reset workspace_backfill_runs seed row: {e}"))?;
+    conn.execute(
+        "DELETE FROM document_entity_links WHERE file_id IN (?1, ?2)",
+        rusqlite::params![
+            "mock-workspace-file-acme-summary",
+            "mock-workspace-file-inbox-note",
+        ],
+    )
+    .map_err(|e| format!("Reset document_entity_links seed rows: {e}"))?;
+    conn.execute(
+        "DELETE FROM workspace_file_lifecycle WHERE file_id IN (?1, ?2)",
+        rusqlite::params![
+            "mock-workspace-file-acme-summary",
+            "mock-workspace-file-inbox-note",
+        ],
+    )
+    .map_err(|e| format!("Reset workspace_file_lifecycle seed rows: {e}"))?;
+
+    conn.execute(
+        "INSERT OR REPLACE INTO workspace_backfill_runs (
+            run_id, mode, status, workspace_root_fingerprint, actor,
+            reason_counts_json, source_class_counts_json, divergence_counts_json,
+            started_at, completed_at, updated_at
+        ) VALUES (?1, 'apply', 'completed', ?2, 'system:workspace_backfill:v1',
+            ?3, ?4, ?5, ?6, ?7, ?7)",
+        rusqlite::params![
+            run_id,
+            "mock-workspace-root",
+            r#"{"entity_linked":1,"pending_entity_assignment":1}"#,
+            r#"{"entity_doc":1,"inbox":1}"#,
+            r#"{"duplicate_content_groups":0}"#,
+            &five_min_ago,
+            &now_iso,
+        ],
+    )
+    .map_err(|e| format!("Seed workspace_backfill_runs: {e}"))?;
+
+    let lifecycle_rows = [
+        (
+            "mock-workspace-file-acme-summary",
+            "Accounts/Acme Corp/notes/backfill-summary.md",
+            "entity_doc",
+            r#"{"workspace_file":{"kind":"entity_doc"}}"#,
+            "pending",
+            Some("mock-acme-corp"),
+            Some("account"),
+            Some("notes"),
+            Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+        ),
+        (
+            "mock-workspace-file-inbox-note",
+            "_inbox/backfill-review.md",
+            "inbox",
+            r#"{"workspace_file":{"kind":"inbox"}}"#,
+            "pending_entity_assignment",
+            None,
+            None,
+            None,
+            Some("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+        ),
+    ];
+
+    for (
+        file_id,
+        canonical_path,
+        source_type,
+        data_source,
+        lifecycle_state,
+        entity_id,
+        entity_type,
+        category,
+        content_sha256,
+    ) in lifecycle_rows
+    {
+        conn.execute(
+            "INSERT OR REPLACE INTO workspace_file_lifecycle (
+                file_id, canonical_path, device, inode, source_type, data_source,
+                lifecycle_state, source_asof, entity_id, entity_type, category,
+                content_sha256, updated_at
+            ) VALUES (?1, ?2, 0, 0, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?6)",
+            rusqlite::params![
+                file_id,
+                canonical_path,
+                source_type,
+                data_source,
+                lifecycle_state,
+                &now_iso,
+                entity_id,
+                entity_type,
+                category,
+                content_sha256,
+            ],
+        )
+        .map_err(|e| format!("Seed workspace_file_lifecycle row {file_id}: {e}"))?;
+    }
+
+    conn.execute(
+        "INSERT OR REPLACE INTO document_entity_links (
+            link_id, file_id, entity_type, entity_id, attribution_source,
+            confidence, rationale, actor, updated_at
+        ) VALUES (?1, ?2, 'account', 'mock-acme-corp', 'backfill', 0.95,
+            NULL, 'system:workspace_backfill:v1', ?3)",
+        rusqlite::params![
+            "mock-backfill-link-acme-summary",
+            "mock-workspace-file-acme-summary",
+            &now_iso,
+        ],
+    )
+    .map_err(|e| format!("Seed document_entity_links backfill row: {e}"))?;
+
+    let item_rows: [(
+        &str,
+        &str,
+        &str,
+        Option<&str>,
+        Option<&str>,
+        &str,
+        Option<&str>,
+        Option<&str>,
+        Option<&str>,
+        &str,
+        Option<&str>,
+        Option<&str>,
+        Option<&str>,
+    ); 2] = [
+        (
+            "mock-source-handle-acme-summary",
+            "mock-item-handle-acme-summary",
+            "mock-workspace-file-acme-summary",
+            Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+            None,
+            "entity_doc",
+            Some("account"),
+            Some("mock-acme-corp"),
+            Some("notes"),
+            "applied",
+            Some("entity_linked"),
+            Some("filesystem_modified_at"),
+            Some("strong"),
+        ),
+        (
+            "mock-source-handle-inbox-note",
+            "mock-item-handle-inbox-note",
+            "mock-workspace-file-inbox-note",
+            Some("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+            None,
+            "inbox",
+            None,
+            None,
+            None,
+            "applied",
+            Some("pending_entity_assignment"),
+            Some("filesystem_modified_at"),
+            Some("strong"),
+        ),
+    ];
+
+    for (
+        source_handle,
+        item_handle,
+        file_id,
+        content_sha256,
+        duplicate_group_handle,
+        candidate_kind,
+        entity_type,
+        entity_id,
+        category,
+        status,
+        reason_code,
+        source_time_basis,
+        source_time_confidence,
+    ) in item_rows
+    {
+        conn.execute(
+            "INSERT OR REPLACE INTO workspace_backfill_items (
+                run_id, source_handle, item_handle, file_id, content_sha256,
+                duplicate_group_handle, candidate_kind, entity_type, entity_id,
+                category, exposure_state, source_time_basis, source_time_confidence,
+                backfill_observed_at, status, reason_code, updated_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
+                'pending_review', ?11, ?12, ?13, ?14, ?15, ?13)",
+            rusqlite::params![
+                run_id,
+                source_handle,
+                item_handle,
+                file_id,
+                content_sha256,
+                duplicate_group_handle,
+                candidate_kind,
+                entity_type,
+                entity_id,
+                category,
+                source_time_basis,
+                source_time_confidence,
+                &now_iso,
+                status,
+                reason_code,
+            ],
+        )
+        .map_err(|e| format!("Seed workspace_backfill_items row {source_handle}: {e}"))?;
+    }
+
+    let operation_rows = [
+        (
+            "mock-source-handle-acme-summary",
+            "register_workspace_file",
+            "applied",
+            1_i64,
+            r#"["content_sha256","category","entity"]"#,
+            Some("mock-backfill-link-acme-summary"),
+            Some("entity_linked"),
+        ),
+        (
+            "mock-source-handle-inbox-note",
+            "register_workspace_file",
+            "applied",
+            1_i64,
+            r#"["lifecycle_state","content_sha256"]"#,
+            None,
+            Some("pending_entity_assignment"),
+        ),
+    ];
+
+    for (
+        source_handle,
+        operation_kind,
+        status,
+        created_lifecycle,
+        updated_lifecycle_fields,
+        created_link_handle,
+        reason_code,
+    ) in operation_rows
+    {
+        conn.execute(
+            "INSERT INTO workspace_backfill_operations (
+                run_id, source_handle, operation_kind, status, created_lifecycle,
+                updated_lifecycle_fields, created_link_handle, reason_code, updated_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            rusqlite::params![
+                run_id,
+                source_handle,
+                operation_kind,
+                status,
+                created_lifecycle,
+                updated_lifecycle_fields,
+                created_link_handle,
+                reason_code,
+                &now_iso,
+            ],
+        )
+        .map_err(|e| format!("Seed workspace_backfill_operations row {source_handle}: {e}"))?;
+    }
+
+    crate::signals::bus::emit_signal_fixture_event(
+        db,
+        "mock-sig-workspace-backfill-acme-link",
+        "account",
+        "mock-acme-corp",
+        "workspace_file_entity_link_changed",
+        "workspace_backfill",
+        Some(r#"{"file_id":"mock-workspace-file-acme-summary","entity_type":"account","entity_id":"mock-acme-corp","actor_kind":"system"}"#),
+        0.95,
+        Some(90),
+        &now_iso,
+    )
+    .map_err(|e| format!("Seed workspace backfill signal: {e}"))?;
 
     Ok(())
 }
