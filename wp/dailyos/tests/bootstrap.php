@@ -300,6 +300,30 @@ namespace {
 		}
 	}
 
+	if ( ! function_exists( 'has_filter' ) ) {
+		function has_filter( string $hook_name, mixed $callback = false ): int|false {
+			if ( empty( $GLOBALS['dailyos_test_filters'][ $hook_name ] ) ) {
+				return false;
+			}
+
+			ksort( $GLOBALS['dailyos_test_filters'][ $hook_name ] );
+
+			if ( false === $callback ) {
+				return (int) array_key_first( $GLOBALS['dailyos_test_filters'][ $hook_name ] );
+			}
+
+			foreach ( $GLOBALS['dailyos_test_filters'][ $hook_name ] as $priority => $callbacks ) {
+				foreach ( $callbacks as [ $registered_callback ] ) {
+					if ( $registered_callback === $callback ) {
+						return (int) $priority;
+					}
+				}
+			}
+
+			return false;
+		}
+	}
+
 	if ( ! function_exists( 'do_action' ) ) {
 		function do_action( string $hook_name, mixed ...$args ): void {
 			$GLOBALS['dailyos_test_current_actions'][] = $hook_name;

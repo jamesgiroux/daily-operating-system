@@ -16,6 +16,17 @@ final class DailyOS_Runtime_Client {
 	private const CONTENT_TYPE = 'application/json';
 
 	/**
+	 * Request-scoped cache for validated runtime base URLs.
+	 *
+	 * Normal PHP requests discard this with the process/request lifecycle. Tests
+	 * and long-running CLI loops can call clear_runtime_base_url_cache() between
+	 * logical requests so filters and sentinel discovery can re-evaluate.
+	 *
+	 * @var array<string, string|null>
+	 */
+	private static array $runtime_base_url_cache = [];
+
+	/**
 	 * Non-secret marker and process-local credential source.
 	 *
 	 * @var DailyOS_Credential_Store
@@ -38,6 +49,16 @@ final class DailyOS_Runtime_Client {
 	public function __construct( DailyOS_Credential_Store $credential_store, DailyOS_Hmac_Signer $signer ) {
 		$this->credential_store = $credential_store;
 		$this->signer           = $signer;
+	}
+
+	/**
+	 * Clear the request-scoped runtime base URL cache.
+	 *
+	 * Use when a long-running process starts a new logical request or after an
+	 * endpoint invalidation needs the next runtime call to re-run discovery.
+	 */
+	public static function clear_runtime_base_url_cache(): void {
+		self::$runtime_base_url_cache = [];
 	}
 
 	/**
@@ -555,6 +576,7 @@ final class DailyOS_Runtime_Client {
 		// original failure may be transient. A previous "only retry if URL
 		// differs" guard missed same-port transient refusals.
 		if ( self::is_connection_refused( $response ) ) {
+			self::clear_runtime_base_url_cache();
 			\DailyOS\DailyOS_Plugin::invalidate_runtime_endpoint_cache();
 			$retry_base_url = $this->discover_runtime_base_url( $marker );
 			if ( null !== $retry_base_url ) {
@@ -609,6 +631,7 @@ final class DailyOS_Runtime_Client {
 		$response = wp_remote_post( $url, $post_args );
 
 		if ( self::is_connection_refused( $response ) ) {
+			self::clear_runtime_base_url_cache();
 			\DailyOS\DailyOS_Plugin::invalidate_runtime_endpoint_cache();
 			$retry_base_url = $this->discover_runtime_base_url( $marker );
 			if ( null !== $retry_base_url ) {
@@ -839,19 +862,28 @@ final class DailyOS_Runtime_Client {
 	 * @return string|null Base URL, or null when not paired.
 	 */
 	private function discover_runtime_base_url( array $marker ): ?string {
+		$marker_runtime_url = isset( $marker['runtime_url'] ) ? (string) $marker['runtime_url'] : '';
+		$can_filter         = ! function_exists( 'current_user_can' ) || current_user_can( 'manage_options' );
+		$cache_key          = ( $can_filter ? 'filterable' : 'restricted' ) . '|' . $marker_runtime_url;
+
+		if ( array_key_exists( $cache_key, self::$runtime_base_url_cache ) ) {
+			return self::$runtime_base_url_cache[ $cache_key ];
+		}
+
 		// Prefer the sentinel-discovered URL (current runtime port across
 		// restarts) over the stored marker (may be stale after the runtime
 		// restarts on a new port). Signed callers still authenticate at the
 		// route; local callers only need this shared discovery result.
 		$sentinel_url = \DailyOS\DailyOS_Plugin::discover_runtime_base_url();
 
-		$marker_url = isset( $marker['runtime_url'] ) ? self::normalize_loopback_runtime_url( (string) $marker['runtime_url'] ) : null;
+		$marker_url = '' !== $marker_runtime_url ? self::normalize_loopback_runtime_url( $marker_runtime_url ) : null;
 
 		// Admin filter override path retained — admins can still pin a specific URL
 		// for dev/testing. Sentinel is the runtime-tracked default; marker is the
 		// post-pairing baseline; filter overrides both for power users.
-		if ( function_exists( 'current_user_can' ) && ! current_user_can( 'manage_options' ) ) {
-			return $sentinel_url ?? $marker_url;
+		if ( ! $can_filter ) {
+			self::$runtime_base_url_cache[ $cache_key ] = $sentinel_url ?? $marker_url;
+			return self::$runtime_base_url_cache[ $cache_key ];
 		}
 
 		$filter_seed  = $sentinel_url ?? ( $marker_url ?? '' );
@@ -861,13 +893,15 @@ final class DailyOS_Runtime_Client {
 			$normalized_filtered_url = self::normalize_loopback_runtime_url( $filtered_url );
 
 			if ( null !== $normalized_filtered_url ) {
-				return $normalized_filtered_url;
+				self::$runtime_base_url_cache[ $cache_key ] = $normalized_filtered_url;
+				return self::$runtime_base_url_cache[ $cache_key ];
 			}
 
 			$this->log_invalid_runtime_url_override();
 		}
 
-		return $sentinel_url ?? $marker_url;
+		self::$runtime_base_url_cache[ $cache_key ] = $sentinel_url ?? $marker_url;
+		return self::$runtime_base_url_cache[ $cache_key ];
 	}
 
 	/**

@@ -746,6 +746,7 @@ final class DailyOS_Plugin {
 	public static function invalidate_runtime_endpoint_cache(): void {
 		self::$sentinel_cache     = null;
 		self::$sentinel_cached_at = 0.0;
+		DailyOS_Runtime_Client::clear_runtime_base_url_cache();
 	}
 
 	/**
@@ -836,13 +837,17 @@ final class DailyOS_Plugin {
 	 * scope a client to a single render) run after this and win — preserving
 	 * the existing test seam.
 	 *
-	 * When unpaired, returns the existing filter value (null by default) so the
-	 * renderer short-circuits to its is-empty fallback. When paired but transport
-	 * is unreachable, the client's request() returns WP_Error and the renderer
-	 * routes to runtime_unavailable_notice downstream.
+	 * This filter namespace is reserved for DailyOS runtime-client wiring.
+	 * Callbacks must return a DailyOS_Runtime_Client instance or null; duck-typed
+	 * third-party objects are not part of the contract.
+	 *
+	 * When unpaired, returns null so the renderer short-circuits to its is-empty
+	 * fallback. When paired but transport is unreachable, the client's request()
+	 * returns WP_Error and the renderer routes to runtime_unavailable_notice
+	 * downstream.
 	 *
 	 * @param mixed $existing Existing filter value from prior callbacks.
-	 * @return mixed Runtime client when paired and no override; $existing otherwise.
+	 * @return DailyOS_Runtime_Client|null Runtime client when paired; null otherwise.
 	 */
 	public function default_runtime_client_for_block( mixed $existing ): mixed {
 		if ( $existing instanceof DailyOS_Runtime_Client ) {
@@ -850,7 +855,7 @@ final class DailyOS_Plugin {
 		}
 		$store = new DailyOS_Credential_Store();
 		if ( ! $store->is_paired() ) {
-			return $existing;
+			return null;
 		}
 		return new DailyOS_Runtime_Client( $store, new DailyOS_Hmac_Signer( $store ) );
 	}

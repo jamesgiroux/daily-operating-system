@@ -19,6 +19,95 @@ fail() {
   failures=$((failures + 1))
 }
 
+runtime_filter_registered_in_plugin_init() {
+  local plugin_php="$1"
+
+  awk '
+    function brace_delta(line, opens, closes) {
+      opens = gsub(/\{/, "{", line)
+      closes = gsub(/\}/, "}", line)
+      return opens - closes
+    }
+
+    BEGIN {
+      in_class = 0
+      pending_class = 0
+      class_depth = 0
+      in_init = 0
+      pending_init = 0
+      init_depth = 0
+      registration = "add_filter\\([[:space:]]*'\''dailyos_runtime_client_for_block'\''[[:space:]]*,[[:space:]]*\\[[[:space:]]*\\$this[[:space:]]*,[[:space:]]*'\''default_runtime_client_for_block'\''[[:space:]]*\\][[:space:]]*,[[:space:]]*5"
+    }
+
+    !in_class && !pending_class && $0 ~ /^[[:space:]]*(final[[:space:]]+)?class[[:space:]]+DailyOS_Plugin([[:space:]]|\{)/ {
+      pending_class = 1
+    }
+
+    pending_class {
+      if ($0 ~ /\{/) {
+        in_class = 1
+        pending_class = 0
+        class_depth = brace_delta($0)
+        if (class_depth <= 0) {
+          in_class = 0
+        }
+      }
+      next
+    }
+
+    in_class && !in_init && !pending_init && $0 ~ /^[[:space:]]*public[[:space:]]+function[[:space:]]+init[[:space:]]*\(/ {
+      pending_init = 1
+    }
+
+    pending_init {
+      if ($0 ~ /\{/) {
+        in_init = 1
+        pending_init = 0
+        init_depth = brace_delta($0)
+        if ($0 ~ registration) {
+          found = 1
+          exit
+        }
+        if (init_depth <= 0) {
+          in_init = 0
+        }
+      }
+      class_depth += brace_delta($0)
+      if (class_depth <= 0) {
+        in_class = 0
+      }
+      next
+    }
+
+    in_init {
+      if ($0 ~ registration) {
+        found = 1
+        exit
+      }
+      init_depth += brace_delta($0)
+      if (init_depth <= 0) {
+        in_init = 0
+      }
+      class_depth += brace_delta($0)
+      if (class_depth <= 0) {
+        in_class = 0
+      }
+      next
+    }
+
+    in_class {
+      class_depth += brace_delta($0)
+      if (class_depth <= 0) {
+        in_class = 0
+      }
+    }
+
+    END {
+      exit found ? 0 : 1
+    }
+  ' "$plugin_php"
+}
+
 # ----- inv #1: global filter registered in init() -----
 PLUGIN_PHP="$ROOT_DIR/wp/dailyos/includes/class-dailyos-plugin.php"
 
@@ -27,8 +116,8 @@ if [ ! -f "$PLUGIN_PHP" ]; then
 else
   # The registration must appear inside init() and reference the
   # default_runtime_client_for_block callback at priority 5.
-  if ! grep -qE "add_filter\(\s*'dailyos_runtime_client_for_block'\s*,\s*\[\s*\\\$this\s*,\s*'default_runtime_client_for_block'\s*\]\s*,\s*5" "$PLUGIN_PHP"; then
-    fail "inv #1: default_runtime_client_for_block filter not registered at priority 5 in $PLUGIN_PHP — every dailyos/* block will render is-empty regardless of runtime state"
+  if ! runtime_filter_registered_in_plugin_init "$PLUGIN_PHP"; then
+    fail "inv #1: default_runtime_client_for_block filter not registered at priority 5 inside DailyOS_Plugin::init() in $PLUGIN_PHP — every dailyos/* block will render is-empty regardless of runtime state"
   fi
 fi
 

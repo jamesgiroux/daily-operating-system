@@ -25,6 +25,8 @@ The marker contains `marker_version`, `runtime_instance_id`, `site_nonce_hash`, 
 
 Session material is request-local. The plugin retrieves it through the gated `dailyos_wp_bridge_session_key` filter and never persists HMAC keys, derived keys, pairing tokens, or session keys in WordPress storage or browser-visible state.
 
+`dailyos_runtime_client_for_block` is a reserved DailyOS filter namespace. Runtime block renderers expect this filter to resolve to a `DailyOS_Runtime_Client` instance or `null`; third-party duck-typed clients are outside the contract.
+
 ## MCP Server
 
 The plugin registers a DailyOS-specific MCP server with `wordpress/mcp-adapter` v0.5.0. The server uses an explicit allowlist from the ability inventory, defaults to Read/Transform invocable abilities, and filters DailyOS tools out of non-DailyOS MCP server listings.

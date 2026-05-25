@@ -233,6 +233,81 @@ final class DailyOS_RuntimeClientTest extends TestCase {
 	}
 
 	/**
+	 * Runtime URL filter validation is cached within one logical request.
+	 */
+	public function test_runtime_url_filter_is_evaluated_once_for_two_runtime_calls_in_one_request(): void {
+		$this->save_marker();
+		$this->add_session_key_filter();
+
+		$filter_calls = 0;
+
+		add_filter(
+			'dailyos_wp_bridge_runtime_url',
+			static function () use ( &$filter_calls ): string {
+				++$filter_calls;
+				return 'http://127.0.0.1:54322';
+			},
+			10,
+			1
+		);
+
+		$GLOBALS['dailyos_test_remote_post_response'] = [
+			'response' => [ 'code' => 200 ],
+			'body'     => '{"ok":true}',
+		];
+
+		$client = new DailyOS_Runtime_Client( new DailyOS_Credential_Store(), new DailyOS_Hmac_Signer() );
+		$client->invoke_ability( 'briefing.daily', [], [] );
+		$client->invoke_ability( 'briefing.daily', [ 'depth' => 'standard' ], [] );
+
+		$this->assertSame( 1, $filter_calls );
+		$this->assertCount( 2, $GLOBALS['dailyos_test_remote_post_calls'] );
+		$this->assertSame( 'http://127.0.0.1:54322/v1/local/invoke', $GLOBALS['dailyos_test_remote_post_calls'][0]['url'] );
+		$this->assertSame( 'http://127.0.0.1:54322/v1/local/invoke', $GLOBALS['dailyos_test_remote_post_calls'][1]['url'] );
+	}
+
+	/**
+	 * Clearing the request cache lets long-running loops re-evaluate the filter.
+	 */
+	public function test_runtime_url_cache_clear_allows_new_request_to_re_evaluate_filter(): void {
+		$this->save_marker();
+		$this->add_session_key_filter();
+
+		$filter_calls = 0;
+		$port         = 54322;
+
+		add_filter(
+			'dailyos_wp_bridge_runtime_url',
+			static function () use ( &$filter_calls, &$port ): string {
+				++$filter_calls;
+				return 'http://127.0.0.1:' . $port;
+			},
+			10,
+			1
+		);
+
+		$GLOBALS['dailyos_test_remote_post_response'] = [
+			'response' => [ 'code' => 200 ],
+			'body'     => '{"ok":true}',
+		];
+
+		$client = new DailyOS_Runtime_Client( new DailyOS_Credential_Store(), new DailyOS_Hmac_Signer() );
+		$client->invoke_ability( 'briefing.daily', [], [] );
+		$port = 54323;
+		$client->invoke_ability( 'briefing.daily', [], [] );
+
+		$this->assertSame( 1, $filter_calls );
+		$this->assertSame( 'http://127.0.0.1:54322/v1/local/invoke', $GLOBALS['dailyos_test_remote_post_calls'][0]['url'] );
+		$this->assertSame( 'http://127.0.0.1:54322/v1/local/invoke', $GLOBALS['dailyos_test_remote_post_calls'][1]['url'] );
+
+		DailyOS_Runtime_Client::clear_runtime_base_url_cache();
+		$client->invoke_ability( 'briefing.daily', [], [] );
+
+		$this->assertSame( 2, $filter_calls );
+		$this->assertSame( 'http://127.0.0.1:54323/v1/local/invoke', $GLOBALS['dailyos_test_remote_post_calls'][2]['url'] );
+	}
+
+	/**
 	 * Sentinel discovery follows the new port after a hot Tauri restart.
 	 */
 	public function test_runtime_sentinel_cache_resets_after_restart_and_uses_new_port(): void {

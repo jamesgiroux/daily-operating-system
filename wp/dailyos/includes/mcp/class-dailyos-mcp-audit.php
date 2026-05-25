@@ -43,6 +43,10 @@ final class DailyOS_Mcp_Audit {
 			}
 		}
 
+		if ( ! is_string( $event['actor_instance'] ) || '' === trim( $event['actor_instance'] ) ) {
+			throw new \InvalidArgumentException( 'Invalid MCP audit actor instance.' );
+		}
+
 		if (
 			defined( 'WP_DEBUG_LOG' )
 			&& WP_DEBUG_LOG

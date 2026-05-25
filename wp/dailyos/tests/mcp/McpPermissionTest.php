@@ -12,6 +12,7 @@ use DailyOS\Mcp\DailyOS_Mcp_Audit;
 use DailyOS\Mcp\DailyOS_Mcp_Permission;
 use DailyOS\Mcp\DailyOS_Mcp_Roles;
 use DailyOS\Mcp\DailyOS_Mcp_Server;
+use DailyOS\Transport\DailyOS_Credential_Store;
 use PHPUnit\Framework\TestCase;
 use WP\MCP\Core\McpAdapter;
 
@@ -36,6 +37,13 @@ final class DailyOS_McpPermissionTest extends TestCase {
 		$GLOBALS['dailyos_test_user_can_callback'] = static function ( int $user_id, string $capability ): bool {
 			return 42 === $user_id && 'dailyos_invoke_mcp_ability' === $capability;
 		};
+
+		( new DailyOS_Credential_Store() )->save_marker(
+			[
+				'runtime_instance_id'  => 'runtime-123',
+				'plugin_instance_uuid' => 'plugin-1',
+			]
+		);
 	}
 
 	/**

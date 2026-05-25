@@ -226,18 +226,21 @@ final class DailyOS_ActivationTest extends TestCase {
 
 		DailyOS_Plugin::instance()->init();
 
-		$this->assertNotEmpty(
-			$GLOBALS['dailyos_test_filters']['dailyos_runtime_client_for_block'] ?? [],
+		$expected_callback = [ DailyOS_Plugin::instance(), 'default_runtime_client_for_block' ];
+
+		$this->assertSame(
+			5,
+			has_filter( 'dailyos_runtime_client_for_block' ),
 			'init() must register the default dailyos_runtime_client_for_block filter so the live render path can reach the typed runtime_unavailable_notice when transport is unreachable'
 		);
-		$this->assertArrayHasKey(
+		$this->assertSame(
 			5,
-			$GLOBALS['dailyos_test_filters']['dailyos_runtime_client_for_block'],
+			has_filter( 'dailyos_runtime_client_for_block', $expected_callback ),
 			'default filter must register at priority 5 so per-render overrides at priority 10 (REST preview, test fixtures) continue to win'
 		);
 		[ $callback, $accepted_args ] = $GLOBALS['dailyos_test_filters']['dailyos_runtime_client_for_block'][5][0];
 		$this->assertIsArray( $callback, 'callback must be an instance-method tuple [ $plugin, method_name ]' );
-		$this->assertSame( DailyOS_Plugin::instance(), $callback[0], 'callback must dispatch to the plugin singleton' );
+		$this->assertSame( $expected_callback[0], $callback[0], 'callback must dispatch to the plugin singleton' );
 		$this->assertSame( 'default_runtime_client_for_block', $callback[1], 'callback must point at default_runtime_client_for_block' );
 		$this->assertSame( 1, $accepted_args, 'callback must accept the existing filter value to preserve per-render overrides' );
 	}
@@ -257,11 +260,26 @@ final class DailyOS_ActivationTest extends TestCase {
 		$this->assertSame( $pre_existing, $result, 'default provider must defer to a priority-10 override that already supplied a client (REST preview + test seam)' );
 	}
 
-	public function test_default_runtime_client_for_block_returns_existing_when_unpaired(): void {
+	public function test_default_runtime_client_for_block_returns_null_when_unpaired(): void {
 		// Test bootstrap leaves the credential store unpaired (no options seeded).
 		$result = DailyOS_Plugin::instance()->default_runtime_client_for_block( null );
 
 		$this->assertNull( $result, 'unpaired state must surface as null so the renderer falls through to its is-empty path; runtime-unavailable diagnostics fire post-pair when transport itself fails' );
+	}
+
+	public function test_default_runtime_client_for_block_rejects_duck_typed_existing_when_unpaired(): void {
+		$pre_existing = new class() {
+			/**
+			 * Duck-typed method that renderers look for.
+			 */
+			public function project_composition_for_surface(): array {
+				return [];
+			}
+		};
+
+		$result = DailyOS_Plugin::instance()->default_runtime_client_for_block( $pre_existing );
+
+		$this->assertNull( $result, 'unpaired state must not preserve arbitrary duck-typed objects registered before the reserved DailyOS runtime-client provider' );
 	}
 
 	/**
