@@ -38,7 +38,15 @@ status_for_axis() {
       fi
       ;;
     backfill)
-      printf 'blocked\tcargo test --test v146_validation backfill_registration_safety\tblocked until W5-A PR #388 is merged/rebased\n'
+      if (
+        cd "$ROOT_DIR"
+        cargo test --manifest-path src-tauri/Cargo.toml workspace_backfill --lib --bins >/dev/null
+        cargo test --manifest-path src-tauri/Cargo.toml --test workspace_ingestion_w1_migrations w5_a_backfill_state_migration_creates_privacy_safe_run_item_operation_tables >/dev/null
+      ); then
+        printf 'pass\tcargo test workspace_backfill --lib --bins + W5-A migration coverage\tW5-A conservative backfill registration tests passed on the stacked base\n'
+      else
+        printf 'fail\tcargo test workspace_backfill --lib --bins + W5-A migration coverage\tW5-A conservative backfill registration tests failed on the stacked base\n'
+      fi
       ;;
     graph-audit)
       printf 'blocked\tcargo test --test v146_validation graph_audit_zero_gaps_on_hermetic_fixture_db\tblocked until graph projection and explicit ingestion dependencies are merged/rebased\n'

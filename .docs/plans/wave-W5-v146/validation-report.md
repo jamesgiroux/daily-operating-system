@@ -11,8 +11,9 @@
 | --- | --- | --- |
 | `bash tests/v146_validation/redaction_lint.sh --self-test` | pass | Positive and negative lint fixtures behaved as expected. |
 | `bash tests/v146_validation/redaction_lint.sh` | pass | Current report draft is privacy-safe. |
+| `bash tests/v146_validation/run.sh backfill` | pass | W5-A conservative backfill registration tests pass on the stacked base. |
 | `bash tests/v146_validation/run.sh redaction` | pass | Redaction axis is green. |
-| `bash tests/v146_validation/run.sh all` | blocked | Writes blocked evidence because upstream mandatory axes are not available yet. |
+| `bash tests/v146_validation/run.sh all` | blocked | Backfill and redaction are green; W4/MCP/lifecycle-dependent axes remain blocked. |
 | `bash scripts/release-gate/run-v146-validation.sh` | blocked | Wrapper delegates to the W5-B runner and preserves the blocked exit status. |
 
 ## Dependency Gate
@@ -31,7 +32,7 @@
 
 | Axis | Status | Current evidence |
 | --- | --- | --- |
-| Backfill registration safety | blocked | Harness shell created; final assertions wait for W5-A on the W5-B base. |
+| Backfill registration safety | green | Focused W5-A backfill service/bin tests plus v264 migration coverage pass on the stacked base. |
 | Explicit ingestion to claim provenance | blocked | Requires merged explicit ingestion and graph projection paths. |
 | Trust-band discipline | blocked | Requires trust recompute and promotion/reingest semantics on the merged base. |
 | Signal propagation and prep invalidation | blocked | Requires the literal `WorkspaceFileIngested -> EntityIntelligenceUpdated -> prep invalidation` chain. |
