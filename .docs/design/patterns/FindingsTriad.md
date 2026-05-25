@@ -24,6 +24,7 @@ Group the meeting's most important wins, risks, and decisions into three scannab
 - For prediction-backed comparison — use `PredictionsVsRealityGrid`.
 - For a single relationship-health finding — use `ChampionHealthBlock`.
 - For confirmed commitments — use `CommitmentRow`.
+- For project-level decision records with provenance — use `DecisionLog`. The `decisions` bucket here is for findings about a decision captured in a meeting, not the durable project decision trail.
 
 ## States / variants
 

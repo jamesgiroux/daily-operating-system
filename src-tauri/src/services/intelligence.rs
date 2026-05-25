@@ -6944,6 +6944,69 @@ mod mutation_smoke_tests {
     }
 
     #[test]
+    fn finalize_mode_queue_only_effect_plan_pins_event_and_supplemental_spawn() {
+        let queue_glean = FinalizeMode::QueueWorker {
+            is_background: false,
+            producer: crate::intel_queue::EnrichmentProducer::Glean,
+        }
+        .queue_only_effects();
+        assert!(
+            queue_glean.emit_intelligence_updated,
+            "QueueWorker finalize emits intelligence-updated"
+        );
+        assert!(
+            queue_glean.spawn_supplemental_glean_finalize,
+            "QueueWorker Glean finalize spawns supplemental leading-signals/peer-benchmark work"
+        );
+        assert!(queue_glean.run_self_healing_completion);
+        assert!(queue_glean.record_claude_code_sync_success);
+
+        let queue_pty = FinalizeMode::QueueWorker {
+            is_background: false,
+            producer: crate::intel_queue::EnrichmentProducer::Pty,
+        }
+        .queue_only_effects();
+        assert!(
+            queue_pty.emit_intelligence_updated,
+            "PTY queue fallback still emits intelligence-updated"
+        );
+        assert!(
+            !queue_pty.spawn_supplemental_glean_finalize,
+            "PTY queue fallback must not spawn Glean supplemental work"
+        );
+        assert!(queue_pty.run_self_healing_completion);
+        assert!(queue_pty.record_claude_code_sync_success);
+
+        for mode in [
+            FinalizeMode::ManualRefresh {
+                producer: crate::intel_queue::EnrichmentProducer::Glean,
+            },
+            FinalizeMode::ManualRefresh {
+                producer: crate::intel_queue::EnrichmentProducer::Pty,
+            },
+            FinalizeMode::TrustRecompute,
+        ] {
+            let effects = mode.queue_only_effects();
+            assert!(
+                !effects.emit_intelligence_updated,
+                "{mode:?} must not emit queue-worker intelligence-updated"
+            );
+            assert!(
+                !effects.spawn_supplemental_glean_finalize,
+                "{mode:?} must not spawn supplemental leading-signals/peer-benchmark work"
+            );
+            assert!(
+                !effects.run_self_healing_completion,
+                "{mode:?} must not run queue-worker self-healing completion"
+            );
+            assert!(
+                !effects.record_claude_code_sync_success,
+                "{mode:?} must not record queue-worker claude_code sync success"
+            );
+        }
+    }
+
+    #[test]
     fn manual_refresh_promotes_account_facts_only_for_glean_producer() {
         let state = remote_glean_state();
 

@@ -170,9 +170,12 @@ final class DailyOS_FeedbackRuntimeContractTest extends TestCase {
 	private function assert_variant_payload_contract( string $action, array $outbound ): void {
 		$rule = self::VARIANT_PAYLOAD_CONTRACT[ $action ];
 
-		if ( 'omit' === $rule || 'optional' === $rule ) {
-			// Variants that don't require payload_json — only confirm we
-			// didn't accidentally inject one for variants meant to be empty.
+		if ( 'omit' === $rule ) {
+			$this->assertArrayNotHasKey( 'payload_json', $outbound, "variant '{$action}' MUST omit payload_json" );
+			return;
+		}
+
+		if ( 'optional' === $rule ) {
 			return;
 		}
 
@@ -180,6 +183,7 @@ final class DailyOS_FeedbackRuntimeContractTest extends TestCase {
 		$this->assertIsArray( $outbound['payload_json'], 'payload_json MUST be a JSON object on the wire (not a string) — runtime optional_payload_json drops non-objects' );
 		$this->assertArrayHasKey( $rule, $outbound['payload_json'], "variant '{$action}' payload_json MUST contain '{$rule}' per record_claim_feedback contract" );
 		$this->assertIsString( $outbound['payload_json'][ $rule ], "payload_json['{$rule}'] MUST be string per validate_feedback_action_metadata" );
+		$this->assertNotSame( '', trim( $outbound['payload_json'][ $rule ] ), "payload_json['{$rule}'] MUST be non-empty after trim per validate_feedback_action_metadata" );
 	}
 
 	private function payload_for_variant( string $action ): array {

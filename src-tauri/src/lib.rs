@@ -1198,8 +1198,6 @@ pub fn run() {
             commands::get_glean_auth_status,
             commands::get_glean_token_health,
             commands::disconnect_glean,
-            // Glean Agent Validation Spike (temporary dev exploration)
-            commands::dev_explore_glean_tools,
             // Discover accounts from Glean
             commands::discover_accounts_from_glean,
             commands::import_account_from_glean,

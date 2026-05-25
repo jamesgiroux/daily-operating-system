@@ -2769,6 +2769,34 @@ pub(crate) enum FinalizeMode {
     TrustRecompute,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct FinalizeQueueOnlyEffects {
+    pub emit_intelligence_updated: bool,
+    pub spawn_supplemental_glean_finalize: bool,
+    pub run_self_healing_completion: bool,
+    pub record_claude_code_sync_success: bool,
+}
+
+impl FinalizeMode {
+    pub(crate) fn queue_only_effects(self) -> FinalizeQueueOnlyEffects {
+        let is_queue_worker = matches!(self, FinalizeMode::QueueWorker { .. });
+        let spawn_supplemental_glean_finalize = matches!(
+            self,
+            FinalizeMode::QueueWorker {
+                producer: EnrichmentProducer::Glean,
+                ..
+            }
+        );
+
+        FinalizeQueueOnlyEffects {
+            emit_intelligence_updated: is_queue_worker,
+            spawn_supplemental_glean_finalize,
+            run_self_healing_completion: is_queue_worker,
+            record_claude_code_sync_success: is_queue_worker,
+        }
+    }
+}
+
 pub(crate) fn run_enrichment_finalize_post_commit(
     state: &Arc<AppState>,
     db: &crate::db::ActionDb,
@@ -2784,6 +2812,7 @@ pub(crate) fn run_enrichment_finalize_post_commit(
         FinalizeMode::TrustRecompute => EnrichmentProducer::Pty,
     };
     let is_glean_producer = side_effect_producer.is_glean();
+    let queue_only_effects = mode.queue_only_effects();
     if is_glean_producer {
         run_enrichment_post_commit_side_effects(
             state.as_ref(),
@@ -2801,7 +2830,9 @@ pub(crate) fn run_enrichment_finalize_post_commit(
         } => {
             if producer.is_glean() {
                 run_shared_glean_finalization(state.as_ref(), db, input, intel)?;
-                spawn_queue_worker_supplemental_glean_finalize(state, input, is_background);
+                if queue_only_effects.spawn_supplemental_glean_finalize {
+                    spawn_queue_worker_supplemental_glean_finalize(state, input, is_background);
+                }
             }
         }
         FinalizeMode::TrustRecompute => {
@@ -2837,7 +2868,7 @@ pub(crate) fn run_enrichment_finalize_post_commit(
         )?;
     }
 
-    if matches!(mode, FinalizeMode::QueueWorker { .. }) {
+    if queue_only_effects.emit_intelligence_updated {
         if let Some(app) = state.app_handle() {
             #[allow(
                 clippy::let_underscore_must_use,
@@ -2859,7 +2890,7 @@ pub(crate) fn run_enrichment_finalize_post_commit(
 
     crate::self_healing::feedback::record_enrichment_success(db, &input.entity_id);
 
-    if matches!(mode, FinalizeMode::QueueWorker { .. }) {
+    if queue_only_effects.run_self_healing_completion {
         #[allow(
             clippy::let_underscore_must_use,
             reason = "intentional best-effort discard; preserves existing non-blocking behavior"
@@ -2872,6 +2903,8 @@ pub(crate) fn run_enrichment_finalize_post_commit(
             &state.intel_queue,
             Some(state.signals.engine.as_ref()),
         );
+    }
+    if queue_only_effects.record_claude_code_sync_success {
         #[allow(
             clippy::let_underscore_must_use,
             reason = "intentional best-effort discard; preserves existing non-blocking behavior"

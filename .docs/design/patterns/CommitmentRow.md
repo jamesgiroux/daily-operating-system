@@ -23,7 +23,8 @@ Render a confirmed commitment captured from the meeting, making ownership explic
 
 - For AI-proposed follow-up items that need accept / dismiss controls — use [SuggestedActionRow](SuggestedActionRow.md).
 - For stale work items that need task controls — use the surface's pending action row.
-- For findings, decisions, or evidence-backed observations — use `FindingsTriad`.
+- For meeting-derived findings, risks, and decision signals — a finding that the room decided something — use `FindingsTriad`.
+- For project-level decision records — a dated, sourced decision on the durable project trail — use `DecisionLog`.
 
 ## States / variants
 

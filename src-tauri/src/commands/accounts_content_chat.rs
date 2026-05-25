@@ -1462,42 +1462,49 @@ pub async fn index_entity_files(
 /// Path must resolve to within the workspace directory or ~.dailyos.
 #[tauri::command]
 pub fn reveal_in_finder(path: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
-    let canonical = std::fs::canonicalize(&path).map_err(|e| format!("Invalid path: {}", e))?;
-    let canonical_str = canonical.to_string_lossy();
-
-    // Allow workspace directory
-    let workspace_ok = state
+    let workspace_path = state
         .config
         .read()
         .as_ref()
-        .map(|cfg| cfg.workspace_path.clone())
-        .map(|wp| {
-            std::fs::canonicalize(&wp)
-                .map(|cwp| canonical_str.starts_with(&*cwp.to_string_lossy()))
-                .unwrap_or(false)
-        })
-        .unwrap_or(false);
-
-    // Allow ~/.dailyos/
-    let config_ok = dirs::home_dir()
-        .map(|h| {
-            let config_dir = h.join(".dailyos");
-            std::fs::canonicalize(&config_dir)
-                .map(|cd| canonical_str.starts_with(&*cd.to_string_lossy()))
-                .unwrap_or(false)
-        })
-        .unwrap_or(false);
-
-    if !workspace_ok && !config_ok {
-        return Err("Path is outside the workspace directory".to_string());
-    }
+        .map(|cfg| std::path::PathBuf::from(&cfg.workspace_path))
+        .filter(|path| !path.as_os_str().is_empty());
+    let home_dir = dirs::home_dir();
+    let canonical =
+        canonicalize_reveal_target(&path, workspace_path.as_deref(), home_dir.as_deref())?;
 
     std::process::Command::new("open")
         .arg("-R")
-        .arg(&path)
+        .arg(&canonical)
         .spawn()
         .map_err(|e| format!("Failed to open Finder: {}", e))?;
     Ok(())
+}
+
+fn canonicalize_reveal_target(
+    path: impl AsRef<std::path::Path>,
+    workspace_path: Option<&std::path::Path>,
+    home_dir: Option<&std::path::Path>,
+) -> Result<std::path::PathBuf, String> {
+    let canonical = std::fs::canonicalize(path).map_err(|e| format!("Invalid path: {}", e))?;
+    let mut allowed_roots = Vec::new();
+
+    if let Some(workspace_path) = workspace_path {
+        if let Ok(workspace_root) = std::fs::canonicalize(workspace_path) {
+            allowed_roots.push(workspace_root);
+        }
+    }
+
+    if let Some(home_dir) = home_dir {
+        if let Ok(config_root) = std::fs::canonicalize(home_dir.join(".dailyos")) {
+            allowed_roots.push(config_root);
+        }
+    }
+
+    if allowed_roots.iter().any(|root| canonical.starts_with(root)) {
+        Ok(canonical)
+    } else {
+        Err("Path is outside the workspace directory".to_string())
+    }
 }
 
 /// Export a meeting briefing as a styled HTML file and open in the default browser.
@@ -1524,11 +1531,25 @@ pub fn export_briefing_html(meeting_id: String, markdown: String) -> Result<(), 
     // Convert markdown to simple HTML
     let body_html = markdown_to_simple_html(&markdown);
 
-    let html = format!(
+    let html = briefing_html_document(&body_html);
+
+    std::fs::write(&path, &html).map_err(|e| format!("Failed to write HTML: {}", e))?;
+
+    std::process::Command::new("open")
+        .arg(path.to_str().unwrap_or(""))
+        .spawn()
+        .map_err(|e| format!("Failed to open browser: {}", e))?;
+
+    Ok(())
+}
+
+fn briefing_html_document(body_html: &str) -> String {
+    format!(
         r#"<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'none'; object-src 'none'; base-uri 'none'; connect-src 'none'; img-src data:; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; frame-ancestors 'none'">
 <title>Intelligence Report</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,200..800;1,6..72,200..800&family=DM+Sans:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -1551,16 +1572,7 @@ pub fn export_briefing_html(meeting_id: String, markdown: String) -> Result<(), 
 </body>
 </html>"#,
         body_html
-    );
-
-    std::fs::write(&path, &html).map_err(|e| format!("Failed to write HTML: {}", e))?;
-
-    std::process::Command::new("open")
-        .arg(path.to_str().unwrap_or(""))
-        .spawn()
-        .map_err(|e| format!("Failed to open browser: {}", e))?;
-
-    Ok(())
+    )
 }
 
 /// Simple markdown to HTML converter for briefing export.
@@ -1568,9 +1580,31 @@ fn markdown_to_simple_html(md: &str) -> String {
     let mut html = String::new();
     let mut in_list = false;
     let mut list_type = "ul";
+    let mut in_code_block = false;
 
     for line in md.lines() {
         let trimmed = line.trim();
+
+        if in_code_block {
+            if trimmed == "```" {
+                html.push_str("</code></pre>\n");
+                in_code_block = false;
+            } else {
+                html.push_str(&escape_html_text(line));
+                html.push('\n');
+            }
+            continue;
+        }
+
+        if trimmed == "```" {
+            if in_list {
+                html.push_str(&format!("</{}>\n", list_type));
+                in_list = false;
+            }
+            html.push_str("<pre><code>");
+            in_code_block = true;
+            continue;
+        }
 
         if trimmed.is_empty() {
             if in_list {
@@ -1586,45 +1620,50 @@ fn markdown_to_simple_html(md: &str) -> String {
                 html.push_str(&format!("</{}>\n", list_type));
                 in_list = false;
             }
-            html.push_str(&format!("<h1>{}</h1>\n", rest));
+            html.push_str(&format!("<h1>{}</h1>\n", render_inline_markdown(rest)));
         } else if let Some(rest) = trimmed.strip_prefix("## ") {
             if in_list {
                 html.push_str(&format!("</{}>\n", list_type));
                 in_list = false;
             }
-            html.push_str(&format!("<h2>{}</h2>\n", rest));
+            html.push_str(&format!("<h2>{}</h2>\n", render_inline_markdown(rest)));
         } else if let Some(rest) = trimmed.strip_prefix("### ") {
             if in_list {
                 html.push_str(&format!("</{}>\n", list_type));
                 in_list = false;
             }
-            html.push_str(&format!("<h3>{}</h3>\n", rest));
+            html.push_str(&format!("<h3>{}</h3>\n", render_inline_markdown(rest)));
         }
         // Unordered list
         else if let Some(rest) = trimmed.strip_prefix("- ") {
-            if !in_list {
+            if !in_list || list_type != "ul" {
+                if in_list {
+                    html.push_str(&format!("</{}>\n", list_type));
+                }
                 html.push_str("<ul>\n");
                 in_list = true;
                 list_type = "ul";
             }
-            html.push_str(&format!("<li>{}</li>\n", rest));
+            html.push_str(&format!("<li>{}</li>\n", render_inline_markdown(rest)));
         }
         // Ordered list
-        else if trimmed.len() > 2
-            && trimmed
-                .chars()
-                .next()
-                .map(|c| c.is_ascii_digit())
-                .unwrap_or(false)
-            && trimmed.contains(". ")
-        {
-            if let Some(pos) = trimmed.find(". ") {
-                if !in_list {
+        else if let Some((prefix, rest)) = trimmed.split_once(". ") {
+            if !prefix.is_empty() && prefix.chars().all(|c| c.is_ascii_digit()) {
+                if !in_list || list_type != "ol" {
+                    if in_list {
+                        html.push_str(&format!("</{}>\n", list_type));
+                    }
                     html.push_str("<ol>\n");
                     in_list = true;
                     list_type = "ol";
                 }
-                html.push_str(&format!("<li>{}</li>\n", &trimmed[pos + 2..]));
+                html.push_str(&format!("<li>{}</li>\n", render_inline_markdown(rest)));
+            } else {
+                if in_list {
+                    html.push_str(&format!("</{}>\n", list_type));
+                    in_list = false;
+                }
+                html.push_str(&format!("<p>{}</p>\n", render_inline_markdown(trimmed)));
             }
         }
         // Horizontal rule
@@ -1641,8 +1680,12 @@ fn markdown_to_simple_html(md: &str) -> String {
                 html.push_str(&format!("</{}>\n", list_type));
                 in_list = false;
             }
-            html.push_str(&format!("<p>{}</p>\n", trimmed));
+            html.push_str(&format!("<p>{}</p>\n", render_inline_markdown(trimmed)));
         }
+    }
+
+    if in_code_block {
+        html.push_str("</code></pre>\n");
     }
 
     if in_list {
@@ -1650,6 +1693,182 @@ fn markdown_to_simple_html(md: &str) -> String {
     }
 
     html
+}
+
+fn render_inline_markdown(text: &str) -> String {
+    let mut html = String::new();
+    let mut parts = text.split('`').peekable();
+    let mut in_code = false;
+
+    while let Some(part) = parts.next() {
+        let escaped = escape_html_text(part);
+        if in_code {
+            html.push_str("<code>");
+            html.push_str(&escaped);
+            html.push_str("</code>");
+        } else {
+            html.push_str(&escaped);
+        }
+
+        if parts.peek().is_some() {
+            in_code = !in_code;
+        }
+    }
+
+    html
+}
+
+fn escape_html_text(text: &str) -> String {
+    let mut escaped = String::with_capacity(text.len());
+    for ch in text.chars() {
+        match ch {
+            '&' => escaped.push_str("&amp;"),
+            '<' => escaped.push_str("&lt;"),
+            '>' => escaped.push_str("&gt;"),
+            '"' => escaped.push_str("&quot;"),
+            '\'' => escaped.push_str("&#39;"),
+            _ => escaped.push(ch),
+        }
+    }
+    escaped
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn markdown_to_simple_html_escapes_active_content_and_entities_as_text() {
+        let html = markdown_to_simple_html(
+            "# <script>alert(1)</script>\n\
+             \n\
+             Text <img src=x onerror=alert(1)> &amp; \"quoted\"\n\
+             - <b onclick=alert(1)>item</b>\n\
+             1. <span onload=alert(1)>first</span>\n\
+             Inline `code <tag onclick=x>`",
+        );
+
+        assert!(html.contains("<h1>&lt;script&gt;alert(1)&lt;/script&gt;</h1>"));
+        assert!(html.contains(
+            "<p>Text &lt;img src=x onerror=alert(1)&gt; &amp;amp; &quot;quoted&quot;</p>"
+        ));
+        assert!(html.contains("<li>&lt;b onclick=alert(1)&gt;item&lt;/b&gt;</li>"));
+        assert!(html.contains("<li>&lt;span onload=alert(1)&gt;first&lt;/span&gt;</li>"));
+        assert!(html.contains("<code>code &lt;tag onclick=x&gt;</code>"));
+        assert!(!html.contains("<script>"));
+        assert!(!html.contains("<img"));
+        assert!(!html.contains("<b onclick"));
+        assert!(!html.contains("<span onload"));
+    }
+
+    #[test]
+    fn markdown_to_simple_html_preserves_supported_markdown_shapes() {
+        let html = markdown_to_simple_html(
+            "# Title\n\
+             ## Section\n\
+             ### Detail\n\
+             \n\
+             Paragraph\n\
+             - Item\n\
+             1. First\n\
+             ---\n\
+             ```\n\
+             raw <tag>\n\
+             ```",
+        );
+
+        assert!(html.contains("<h1>Title</h1>"));
+        assert!(html.contains("<h2>Section</h2>"));
+        assert!(html.contains("<h3>Detail</h3>"));
+        assert!(html.contains("<p>Paragraph</p>"));
+        assert!(html.contains("<ul>\n<li>Item</li>\n</ul>"));
+        assert!(html.contains("<ol>\n<li>First</li>\n</ol>"));
+        assert!(html.contains("<hr>"));
+        assert!(html.contains("<pre><code>raw &lt;tag&gt;\n</code></pre>"));
+    }
+
+    #[test]
+    fn briefing_html_document_sets_restrictive_csp() {
+        let html = briefing_html_document("<p>Body</p>");
+
+        assert!(html.contains("Content-Security-Policy"));
+        assert!(html.contains("default-src 'none'"));
+        assert!(html.contains("script-src 'none'"));
+        assert!(html.contains("object-src 'none'"));
+        assert!(html.contains("<p>Body</p>"));
+    }
+
+    #[test]
+    fn canonicalize_reveal_target_allows_workspace_child() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let file = workspace.path().join("child.txt");
+        std::fs::write(&file, "ok").expect("write child");
+
+        let target = canonicalize_reveal_target(&file, Some(workspace.path()), None)
+            .expect("workspace child should be allowed");
+
+        assert_eq!(target, file.canonicalize().expect("canonical child"));
+    }
+
+    #[test]
+    fn canonicalize_reveal_target_denies_sibling_prefix() {
+        let root = tempfile::tempdir().expect("root");
+        let workspace = root.path().join("workspace");
+        let sibling = root.path().join("workspace-sibling");
+        std::fs::create_dir(&workspace).expect("workspace");
+        std::fs::create_dir(&sibling).expect("sibling");
+        let file = sibling.join("secret.txt");
+        std::fs::write(&file, "no").expect("write sibling");
+
+        let err = canonicalize_reveal_target(&file, Some(&workspace), None)
+            .expect_err("sibling prefix must be denied");
+
+        assert_eq!(err, "Path is outside the workspace directory");
+    }
+
+    #[test]
+    fn canonicalize_reveal_target_denies_symlink_escape() {
+        let root = tempfile::tempdir().expect("root");
+        let workspace = root.path().join("workspace");
+        let outside = root.path().join("outside");
+        std::fs::create_dir(&workspace).expect("workspace");
+        std::fs::create_dir(&outside).expect("outside");
+        let outside_file = outside.join("secret.txt");
+        std::fs::write(&outside_file, "no").expect("write outside");
+        let link = workspace.join("link.txt");
+        std::os::unix::fs::symlink(&outside_file, &link).expect("symlink");
+
+        let err = canonicalize_reveal_target(&link, Some(&workspace), None)
+            .expect_err("symlink escape must be denied");
+
+        assert_eq!(err, "Path is outside the workspace directory");
+    }
+
+    #[test]
+    fn canonicalize_reveal_target_rejects_missing_path_without_echoing_input() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let missing = workspace.path().join("missing-sensitive-name.txt");
+
+        let err = canonicalize_reveal_target(&missing, Some(workspace.path()), None)
+            .expect_err("missing path should fail");
+
+        assert!(err.starts_with("Invalid path:"));
+        assert!(!err.contains("missing-sensitive-name"));
+    }
+
+    #[test]
+    fn canonicalize_reveal_target_allows_dailyos_config_child() {
+        let home = tempfile::tempdir().expect("home");
+        let config_dir = home.path().join(".dailyos");
+        std::fs::create_dir(&config_dir).expect("config dir");
+        let file = config_dir.join("settings.json");
+        std::fs::write(&file, "{}").expect("write config");
+
+        let target =
+            canonicalize_reveal_target(&file, None, Some(home.path())).expect("config child");
+
+        assert_eq!(target, file.canonicalize().expect("canonical config child"));
+    }
 }
 
 // =============================================================================

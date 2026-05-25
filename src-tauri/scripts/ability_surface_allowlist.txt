@@ -373,7 +373,6 @@ start_glean_auth
 get_glean_auth_status
 get_glean_token_health
 disconnect_glean
-dev_explore_glean_tools
 discover_accounts_from_glean
 import_account_from_glean
 onboarding_import_accounts
