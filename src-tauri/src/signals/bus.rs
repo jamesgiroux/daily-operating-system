@@ -674,7 +674,7 @@ fn emit_signal_event(
 
 fn record_unknown_signal_type_observation(
     typed_signal: &SignalType,
-    payload_privacy: PayloadPrivacy,
+    _original_payload_privacy: PayloadPrivacy,
     signal: &EmitSignalEvent<'_>,
 ) {
     if !matches!(typed_signal, SignalType::Legacy { .. }) {
@@ -693,7 +693,8 @@ fn record_unknown_signal_type_observation(
     crate::services::fail_improve::record_unknown_signal_type(
         signal.signal_type,
         payload,
-        payload_privacy,
+        // The payload above is the redacted envelope, not the original signal body.
+        PayloadPrivacy::NonPiiMetadata,
     );
 }
 
@@ -1692,6 +1693,94 @@ mod tests {
     }
 
     #[test]
+    fn dos495_legacy_sensitive_unknown_signals_write_redacted_fail_improve_observations() {
+        let _env_guard = fail_improve_env_lock().lock().expect("env lock");
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let _restore = EnvRestore {
+            previous: std::env::var_os("DAILYOS_FAIL_IMPROVE_ROOT"),
+        };
+        std::env::set_var("DAILYOS_FAIL_IMPROVE_ROOT", tmp.path());
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .expect("runtime");
+        runtime.block_on(async {
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+            let sender_restore = UnknownSignalSenderRestore::replace(Some(tx));
+            let worker = tokio::spawn(
+                crate::services::fail_improve::run_unknown_signal_observation_worker(rx),
+            );
+
+            let db = test_db();
+            for (prefix, sensitive_value) in [
+                ("claim_dos495_unknown_", "raw claim body should not persist"),
+                (
+                    "correction_dos495_unknown_",
+                    "raw correction body should not persist",
+                ),
+                (
+                    "feedback_dos495_unknown_",
+                    "raw feedback body should not persist",
+                ),
+            ] {
+                let signal_type = format!("{prefix}{}", Uuid::new_v4().simple());
+                emit_signal_event(
+                    &db,
+                    EmitSignalEvent {
+                        entity_type: "account",
+                        entity_id: "acct-dos495-sensitive",
+                        signal_type: &signal_type,
+                        source: "unit_test",
+                        value: Some(sensitive_value),
+                        confidence: 1.0,
+                        source_context: Some("private source context should not persist"),
+                        id: None,
+                        created_at: Some("2026-05-25T16:00:00Z"),
+                        decay_half_life_days: Some(7),
+                        insert_mode: SignalInsertMode::Insert,
+                        channel: SignalEmissionChannel::ServiceFacade,
+                        refresh_meetings: false,
+                    },
+                )
+                .expect("emit unknown sensitive legacy signal");
+
+                let entry = wait_for_unknown_signal_jsonl_entry(tmp.path(), &signal_type).await;
+                let payload = entry.payload.as_object().expect("payload object");
+                let keys = payload
+                    .keys()
+                    .map(String::as_str)
+                    .collect::<std::collections::BTreeSet<_>>();
+                assert_eq!(
+                    keys,
+                    std::collections::BTreeSet::from([
+                        "channel",
+                        "createdAt",
+                        "entityType",
+                        "observedAt",
+                        "signalType",
+                        "source",
+                    ])
+                );
+                assert_eq!(
+                    payload
+                        .get("signalType")
+                        .and_then(serde_json::Value::as_str),
+                    Some(signal_type.as_str())
+                );
+
+                let raw = read_unknown_signal_jsonl(tmp.path()).expect("unknown signal jsonl");
+                assert!(!raw.contains(sensitive_value));
+                assert!(!raw.contains("private source context should not persist"));
+                assert!(!raw.contains("acct-dos495-sensitive"));
+            }
+
+            sender_restore.restore();
+            worker.await.expect("worker exits after channel closes");
+        });
+    }
+
+    #[test]
     fn dos262_concurrent_unknown_signal_type_uses_single_llm_resolution_and_cache() {
         let _env_guard = fail_improve_env_lock().lock().expect("env lock");
         let _resolution_restore =
@@ -1963,21 +2052,25 @@ mod tests {
         panic!("unknown signal observation was not queued for {signal_type}");
     }
 
-    async fn wait_for_unknown_signal_jsonl_entry(root: &std::path::Path, signal_type: &str) {
+    async fn wait_for_unknown_signal_jsonl_entry(
+        root: &std::path::Path,
+        signal_type: &str,
+    ) -> crate::services::fail_improve::UnknownSignalTypeObservation {
         for _ in 0..50 {
             if let Some(raw) = read_unknown_signal_jsonl(root) {
-                let found = raw.lines().any(|line| {
+                let found = raw.lines().find_map(|line| {
                     let entry: crate::services::fail_improve::UnknownSignalTypeObservation =
                         serde_json::from_str(line).expect("entry");
-                    entry.signal_type == signal_type
+                    (entry.signal_type == signal_type
                         && entry
                             .payload
                             .get("signalType")
                             .and_then(serde_json::Value::as_str)
-                            == Some(signal_type)
+                            == Some(signal_type))
+                    .then_some(entry)
                 });
-                if found {
-                    return;
+                if let Some(entry) = found {
+                    return entry;
                 }
             }
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;

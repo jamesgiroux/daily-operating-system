@@ -996,4 +996,25 @@ mod tests {
             ));
         }
     }
+
+    #[test]
+    fn dos705_salience_signals_use_coalesced_invalidation_policy() {
+        for signal in [
+            SignalType::SurfacingDecisionMade,
+            SignalType::SalienceCandidateRefreshTriggered,
+        ] {
+            let policy = policy_for(&signal);
+            assert_eq!(
+                policy.durability,
+                DurabilityClass::CoalescedDurablePropagation
+            );
+            assert_eq!(policy.role, SignalRole::Invalidation);
+            assert!(matches!(
+                policy.propagation,
+                PropagationPolicy::PropagateAsync {
+                    coalesce: Some(CoalescingPolicy::EntitySignal { window })
+                } if window == Duration::from_millis(500)
+            ));
+        }
+    }
 }

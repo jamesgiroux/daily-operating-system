@@ -46,6 +46,7 @@ use crate::bridges::types::{
     AbilityResponseJson, BridgeActor, BridgeSurface, RequestScopedInvocation,
 };
 use crate::bridges::BridgeSurfaceError;
+use crate::services::claims::ClaimError;
 use crate::services::context::ClaimDismissalSurface;
 use crate::services::surface_nonce::{
     PresenceNonceRequestMeta, SurfaceNonceError, SurfaceNonceService,
@@ -3049,8 +3050,72 @@ enum VerifyWireThroughOutcome {
     },
     PhaseThreeFailed {
         verify: crate::services::surface_nonce::SurfaceNonceVerify,
-        claim_error: crate::services::claims::ClaimError,
+        claim_error: ClaimError,
     },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct SafeClaimErrorLogFields {
+    class: &'static str,
+    message: &'static str,
+}
+
+fn safe_phase_three_claim_error_log_fields(error: &ClaimError) -> SafeClaimErrorLogFields {
+    match error {
+        ClaimError::InvalidFeedback(_) => SafeClaimErrorLogFields {
+            class: "invalid_feedback",
+            message: "feedback payload rejected",
+        },
+        ClaimError::InvalidActor(_)
+        | ClaimError::ActorClassNotAllowed { .. }
+        | ClaimError::ActorNotPermittedForClaimType { .. } => SafeClaimErrorLogFields {
+            class: "actor_rejected",
+            message: "feedback actor rejected",
+        },
+        ClaimError::UnknownClaimId(_) | ClaimError::ClaimNotFound(_) => SafeClaimErrorLogFields {
+            class: "claim_lookup_failed",
+            message: "claim lookup failed",
+        },
+        ClaimError::StaleVersion { .. }
+        | ClaimError::InflatedVersion { .. }
+        | ClaimError::MissingExpectedClaimVersion { .. }
+        | ClaimError::ClaimVersionOverflow { .. }
+        | ClaimError::MidFlightMutation { .. } => SafeClaimErrorLogFields {
+            class: "claim_version_rejected",
+            message: "claim version rejected",
+        },
+        ClaimError::Mode(_) => SafeClaimErrorLogFields {
+            class: "mode_rejected",
+            message: "feedback write rejected by execution mode",
+        },
+        ClaimError::SubjectRef(_) => SafeClaimErrorLogFields {
+            class: "subject_ref_rejected",
+            message: "claim subject reference rejected",
+        },
+        ClaimError::UnknownClaimType(_) => SafeClaimErrorLogFields {
+            class: "claim_type_rejected",
+            message: "claim type rejected",
+        },
+        ClaimError::InvalidSupersession(_) => SafeClaimErrorLogFields {
+            class: "supersession_rejected",
+            message: "claim supersession rejected",
+        },
+        ClaimError::TombstonedPreGate => SafeClaimErrorLogFields {
+            class: "tombstone_pre_gate",
+            message: "tombstoned claim rejected",
+        },
+        ClaimError::ImmutableColumnUpdate(_) => SafeClaimErrorLogFields {
+            class: "immutable_column_update",
+            message: "claim update rejected",
+        },
+        ClaimError::Transaction(_)
+        | ClaimError::Db(_)
+        | ClaimError::Rusqlite(_)
+        | ClaimError::Serde(_) => SafeClaimErrorLogFields {
+            class: "substrate_error",
+            message: "feedback write substrate error",
+        },
+    }
 }
 
 async fn surface_nonce_verify_response(
@@ -3158,13 +3223,16 @@ async fn surface_nonce_verify_response(
                 &validated,
                 request_meta,
                 &verify.request_id,
+                verify.consumed_at,
             );
+            let error_log = safe_phase_three_claim_error_log_fields(&claim_error);
             log::warn!(
                 "surface nonce verify consumed but record_claim_feedback failed: \
-                 claim_id={} request_id={} error={}",
-                verify.claim_id,
-                verify.request_id,
-                claim_error,
+                 claim_id_hash={} request_id_hash={} error_class={} error_message={}",
+                hmac::hash_prefix(&verify.claim_id),
+                hmac::hash_prefix(&verify.request_id),
+                error_log.class,
+                error_log.message,
             );
             json_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -6715,6 +6783,29 @@ mod tests {
             !normalized.contains("surface_client_bridge.authorize("),
             "project_composition route must not charge standard authorize"
         );
+    }
+
+    #[test]
+    fn dos716_phase_three_claim_error_log_fields_redact_payload_context() {
+        let marker = "private-feedback-marker";
+        let err = ClaimError::InvalidFeedback(format!("malformed feedback payload near {marker}"));
+
+        let fields = safe_phase_three_claim_error_log_fields(&err);
+        let rendered = format!(
+            "error_class={} error_message={}",
+            fields.class, fields.message
+        );
+
+        assert_eq!(
+            fields,
+            SafeClaimErrorLogFields {
+                class: "invalid_feedback",
+                message: "feedback payload rejected",
+            }
+        );
+        assert!(!rendered.contains(marker));
+        assert!(!rendered.contains("expected value"));
+        assert!(!rendered.contains("payload_json"));
     }
 
     #[test]

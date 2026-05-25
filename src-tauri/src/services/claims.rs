@@ -5327,6 +5327,12 @@ fn validate_feedback_actor(actor: &str) -> Result<(), ClaimError> {
     }
 }
 
+const INVALID_FEEDBACK_PAYLOAD_JSON_MESSAGE: &str = "payload_json must be valid JSON";
+
+fn invalid_feedback_payload_json() -> ClaimError {
+    ClaimError::InvalidFeedback(INVALID_FEEDBACK_PAYLOAD_JSON_MESSAGE.to_string())
+}
+
 fn validate_feedback_payload(
     input: &ClaimFeedbackInput,
     metadata: &ClaimFeedbackMetadata,
@@ -5338,9 +5344,8 @@ fn validate_feedback_payload(
         .filter(|s| !s.is_empty());
     let payload = raw_payload
         .map(|payload| {
-            serde_json::from_str::<serde_json::Value>(payload).map_err(|e| {
-                ClaimError::InvalidFeedback(format!("payload_json must be valid JSON: {e}"))
-            })
+            serde_json::from_str::<serde_json::Value>(payload)
+                .map_err(|_| invalid_feedback_payload_json())
         })
         .transpose()?;
 
@@ -5429,9 +5434,8 @@ fn payload_string(payload_json: Option<&str>, key: &str) -> Result<Option<String
     else {
         return Ok(None);
     };
-    let payload: serde_json::Value = serde_json::from_str(raw).map_err(|e| {
-        ClaimError::InvalidFeedback(format!("payload_json must be valid JSON: {e}"))
-    })?;
+    let payload: serde_json::Value =
+        serde_json::from_str(raw).map_err(|_| invalid_feedback_payload_json())?;
     Ok(payload
         .get(key)
         .and_then(serde_json::Value::as_str)
@@ -15403,6 +15407,37 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn dos716_malformed_feedback_payload_reports_generic_json_error() {
+        let db = test_db();
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let marker = "private-feedback-marker";
+        let malformed_payload = format!(r#"{{"corrected_text":"{marker}","#);
+        let mut input = feedback_input("claim-not-needed", FeedbackAction::NeedsNuance);
+        input.payload_json = Some(malformed_payload.clone());
+
+        let err = record_claim_feedback(&ctx, &db, input)
+            .expect_err("malformed feedback JSON should reject before claim lookup");
+        let display = err.to_string();
+        assert!(matches!(
+            &err,
+            ClaimError::InvalidFeedback(message)
+                if message == INVALID_FEEDBACK_PAYLOAD_JSON_MESSAGE
+        ));
+        assert!(!display.contains(marker));
+        assert!(!display.contains("line"));
+
+        let helper_err = payload_string(Some(&malformed_payload), "corrected_text")
+            .expect_err("payload_string must use the same safe JSON error");
+        assert!(matches!(
+            &helper_err,
+            ClaimError::InvalidFeedback(message)
+                if message == INVALID_FEEDBACK_PAYLOAD_JSON_MESSAGE
+        ));
+        assert!(!helper_err.to_string().contains(marker));
     }
 
     #[test]

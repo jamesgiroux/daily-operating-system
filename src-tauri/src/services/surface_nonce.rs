@@ -120,10 +120,11 @@ impl SurfaceNonceService {
         fallback_request_id: &str,
         request_meta: PresenceNonceRequestMeta,
     ) -> Result<SurfaceNonceIssue, SurfaceNonceError> {
-        ensure_surface_client(session, fallback_request_id)?;
+        let now = ctx.clock.now();
+        ensure_surface_client(session, fallback_request_id, now)?;
         let request = IssueNonceRequest::parse(payload, fallback_request_id)
-            .map_err(|error| self.shape_error(session, error, request_meta.clone()))?;
-        let audit = NonceAuditContext::from_issue(session, &request).with_request_meta(
+            .map_err(|error| self.shape_error(session, error, request_meta.clone(), now))?;
+        let audit = NonceAuditContext::from_issue(session, &request, now).with_request_meta(
             request_meta.ip_hash.clone(),
             request_meta.user_agent_hash.clone(),
         );
@@ -185,7 +186,6 @@ impl SurfaceNonceService {
             ));
         }
 
-        let now = ctx.clock.now();
         let expires_at = now + self.inner.config.ttl;
         let fields = PresenceNonceBindingFields {
             surface_client_id: session.surface_client_id.clone(),
@@ -237,10 +237,11 @@ impl SurfaceNonceService {
         fallback_request_id: &str,
         request_meta: PresenceNonceRequestMeta,
     ) -> Result<SurfaceNonceVerify, SurfaceNonceError> {
-        ensure_surface_client(session, fallback_request_id)?;
+        let now = ctx.clock.now();
+        ensure_surface_client(session, fallback_request_id, now)?;
         let request = VerifyNonceRequest::parse(payload, fallback_request_id)
-            .map_err(|error| self.shape_error(session, error, request_meta.clone()))?;
-        let audit = NonceAuditContext::from_verify(session, &request).with_request_meta(
+            .map_err(|error| self.shape_error(session, error, request_meta.clone(), now))?;
+        let audit = NonceAuditContext::from_verify(session, &request, now).with_request_meta(
             request_meta.ip_hash.clone(),
             request_meta.user_agent_hash.clone(),
         );
@@ -262,14 +263,11 @@ impl SurfaceNonceService {
         })?;
         let digest = self.inner.digest_key.digest(&nonce_bytes);
 
-        match self.inner.store.verify_and_consume(
-            ctx,
-            db,
-            digest,
-            &request,
-            ctx.clock.now(),
-            audit.clone(),
-        ) {
+        match self
+            .inner
+            .store
+            .verify_and_consume(ctx, db, digest, &request, now, audit.clone())
+        {
             Ok(verified) => {
                 let audit_events = vec![audit_event(
                     "presence_nonce_verified",
@@ -319,7 +317,7 @@ impl SurfaceNonceService {
             composition_id,
             current_version,
             now,
-            NonceAuditContext::from_session(session, request_id),
+            NonceAuditContext::from_session(session, request_id, now),
         )
     }
 
@@ -366,8 +364,9 @@ impl SurfaceNonceService {
         session: &ValidatedSurfaceSession,
         error: RequestShapeError,
         request_meta: PresenceNonceRequestMeta,
+        now: DateTime<Utc>,
     ) -> SurfaceNonceError {
-        let audit = NonceAuditContext::from_session(session, &error.request_id)
+        let audit = NonceAuditContext::from_session(session, &error.request_id, now)
             .with_request_meta(request_meta.ip_hash, request_meta.user_agent_hash);
         self.charge_failure_best_effort(session, None, &audit);
         SurfaceNonceError::rejected(error.reason, audit)
@@ -385,8 +384,9 @@ impl SurfaceNonceService {
         session: &ValidatedSurfaceSession,
         request_meta: PresenceNonceRequestMeta,
         request_id: &str,
+        now: DateTime<Utc>,
     ) {
-        let audit = NonceAuditContext::from_session(session, request_id)
+        let audit = NonceAuditContext::from_session(session, request_id, now)
             .with_request_meta(request_meta.ip_hash, request_meta.user_agent_hash);
         self.charge_failure_best_effort(session, None, &audit);
     }
@@ -1373,7 +1373,11 @@ struct NonceAuditContext {
 }
 
 impl NonceAuditContext {
-    fn from_session(session: &ValidatedSurfaceSession, request_id: &str) -> Self {
+    fn from_session(
+        session: &ValidatedSurfaceSession,
+        request_id: &str,
+        now: DateTime<Utc>,
+    ) -> Self {
         Self {
             session: session.clone(),
             request_id: request_id.to_string(),
@@ -1390,7 +1394,7 @@ impl NonceAuditContext {
             attempted_surface_client_id: None,
             ip_hash: None,
             user_agent_hash: None,
-            now: Utc::now(),
+            now,
         }
     }
 
@@ -1414,8 +1418,12 @@ impl NonceAuditContext {
         self
     }
 
-    fn from_issue(session: &ValidatedSurfaceSession, request: &IssueNonceRequest) -> Self {
-        let mut audit = Self::from_session(session, &request.request_id);
+    fn from_issue(
+        session: &ValidatedSurfaceSession,
+        request: &IssueNonceRequest,
+        now: DateTime<Utc>,
+    ) -> Self {
+        let mut audit = Self::from_session(session, &request.request_id, now);
         audit.claim_id = Some(request.claim_id.clone());
         audit.field_path = Some(request.field_path.clone());
         audit.presented_claim_version = Some(request.claim_version);
@@ -1425,8 +1433,12 @@ impl NonceAuditContext {
         audit
     }
 
-    fn from_verify(session: &ValidatedSurfaceSession, request: &VerifyNonceRequest) -> Self {
-        let mut audit = Self::from_session(session, &request.request_id);
+    fn from_verify(
+        session: &ValidatedSurfaceSession,
+        request: &VerifyNonceRequest,
+        now: DateTime<Utc>,
+    ) -> Self {
+        let mut audit = Self::from_session(session, &request.request_id, now);
         audit.claim_id = Some(request.claim_id.clone());
         audit.field_path = Some(request.field_path.clone());
         audit.presented_claim_version = Some(request.claim_version);
@@ -1527,17 +1539,18 @@ fn session_hash(session_id: &str) -> String {
 fn ensure_surface_client(
     session: &ValidatedSurfaceSession,
     request_id: &str,
+    now: DateTime<Utc>,
 ) -> Result<(), SurfaceNonceError> {
     if !matches!(session.actor, Actor::SurfaceClient { .. }) {
         return Err(SurfaceNonceError::rejected(
             PresenceNonceRejectReason::WrongActor,
-            NonceAuditContext::from_session(session, request_id),
+            NonceAuditContext::from_session(session, request_id, now),
         ));
     }
     if session.wp_user_id.is_none() {
         return Err(SurfaceNonceError::rejected(
             PresenceNonceRejectReason::WrongUser,
-            NonceAuditContext::from_session(session, request_id),
+            NonceAuditContext::from_session(session, request_id, now),
         ));
     }
     Ok(())
@@ -2392,6 +2405,114 @@ mod tests {
     }
 
     #[test]
+    fn dos714_issue_budget_rolls_over_on_fixed_service_clock() {
+        let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 13, 12, 0, 0).unwrap());
+        let rng = SeedableRng::new(1);
+        let ext = ExternalClients::default();
+        let ctx = ctx(&clock, &rng, &ext);
+        let db = db();
+        let service = service(SurfaceNonceConfig {
+            issue_budget_per_minute: 1,
+            ..SurfaceNonceConfig::default()
+        });
+        let session = session("session-1", 42);
+
+        let mut first_payload = issue_payload();
+        first_payload["request_id"] = json!("dos714-issue-1");
+        service
+            .issue_nonce(
+                &ctx,
+                &db,
+                &session,
+                first_payload,
+                "dos714-issue-1",
+                PresenceNonceRequestMeta::default(),
+            )
+            .expect("first issue consumes the fixed-clock budget window");
+
+        let mut blocked_payload = issue_payload();
+        blocked_payload["request_id"] = json!("dos714-issue-blocked");
+        let blocked = service
+            .issue_nonce(
+                &ctx,
+                &db,
+                &session,
+                blocked_payload,
+                "dos714-issue-blocked",
+                PresenceNonceRequestMeta::default(),
+            )
+            .expect_err("same fixed-clock minute is rate limited");
+        assert_eq!(blocked.reason, PresenceNonceRejectReason::RateLimited);
+
+        clock.advance(Duration::seconds(60));
+
+        let mut second_payload = issue_payload();
+        second_payload["request_id"] = json!("dos714-issue-2");
+        service
+            .issue_nonce(
+                &ctx,
+                &db,
+                &session,
+                second_payload,
+                "dos714-issue-2",
+                PresenceNonceRequestMeta::default(),
+            )
+            .expect("advanced fixed clock opens a new issue budget window");
+    }
+
+    #[test]
+    fn dos714_verify_budget_rolls_over_on_fixed_service_clock() {
+        let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 13, 12, 0, 0).unwrap());
+        let rng = SeedableRng::new(1);
+        let ext = ExternalClients::default();
+        let ctx = ctx(&clock, &rng, &ext);
+        let db = db();
+        let service = service(SurfaceNonceConfig {
+            verify_budget_per_minute: 1,
+            ..SurfaceNonceConfig::default()
+        });
+        let session = session("session-1", 42);
+        let first_token = issue_token(&service, &ctx, &db, &session, "dos714-verify-issue-1");
+        let second_token = issue_token(&service, &ctx, &db, &session, "dos714-verify-issue-2");
+
+        service
+            .verify_nonce(
+                &ctx,
+                &db,
+                &session,
+                verify_payload(&first_token),
+                "dos714-verify-1",
+                PresenceNonceRequestMeta::default(),
+            )
+            .expect("first verify consumes the fixed-clock budget window");
+
+        let blocked = service
+            .verify_nonce(
+                &ctx,
+                &db,
+                &session,
+                verify_payload(&second_token),
+                "dos714-verify-blocked",
+                PresenceNonceRequestMeta::default(),
+            )
+            .expect_err("same fixed-clock minute is rate limited");
+        assert_eq!(blocked.reason, PresenceNonceRejectReason::RateLimited);
+
+        clock.advance(Duration::seconds(60));
+
+        service
+            .verify_nonce(
+                &ctx,
+                &db,
+                &session,
+                verify_payload(&second_token),
+                "dos714-verify-2",
+                PresenceNonceRequestMeta::default(),
+            )
+            .expect("advanced fixed clock opens a new verify budget window");
+    }
+
+    #[test]
     fn dos571_fixture_store_pressure_lru() {
         let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 13, 12, 0, 0).unwrap());
         let rng = SeedableRng::new(1);
@@ -2644,7 +2765,8 @@ mod tests {
         // Constructs a NonceAuditContext with synthetic ip/UA hashes and
         // verifies audit_event surfaces them in the detail JSON.
         let session = session("session-1", 42);
-        let mut audit = NonceAuditContext::from_session(&session, "request-1")
+        let now = Utc.with_ymd_and_hms(2026, 5, 19, 12, 0, 0).unwrap();
+        let mut audit = NonceAuditContext::from_session(&session, "request-1", now)
             .with_request_meta(Some("ip_hash:abc".into()), Some("ua_hash:def".into()));
         audit.action = Some(PresenceNonceAction::NeedsNuance);
 
@@ -2659,7 +2781,8 @@ mod tests {
     #[test]
     fn audit_event_records_attempted_wp_user_on_wrong_user_rejection() {
         let session = session("session-1", 42);
-        let audit = NonceAuditContext::from_session(&session, "request-1")
+        let now = Utc.with_ymd_and_hms(2026, 5, 19, 12, 0, 0).unwrap();
+        let audit = NonceAuditContext::from_session(&session, "request-1", now)
             .with_attempted_user(Some(999), Some("attacker-client".into()));
 
         let event = audit_event(
@@ -2953,6 +3076,7 @@ mod tests {
             &session,
             PresenceNonceRequestMeta::default(),
             "phase3-record-feedback-failed",
+            clock.now(),
         );
 
         let failure_key = NonceBudgetKey::narrow(&session, NonceBudgetClass::Failure);

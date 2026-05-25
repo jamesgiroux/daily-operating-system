@@ -793,20 +793,6 @@ where
         .await
 }
 
-/// Legacy direct-fallback adapter. Registry signal typing fail-improve wrapping
-/// lives at `IntelligenceProvider::complete` via `complete_registry_signal_typing`.
-pub async fn execute_registry_signal_typing<L, LFut>(
-    input: SignalTypingInput,
-    llm_fallback: L,
-    _ctx: &ServiceContext<'_>,
-) -> Result<String>
-where
-    L: FnOnce(&SignalTypingInput) -> LFut,
-    LFut: Future<Output = Result<String>>,
-{
-    llm_fallback(&input).await
-}
-
 pub fn record_unknown_signal_type(
     signal_type: &str,
     payload: Value,
@@ -1256,6 +1242,36 @@ mod tests {
         }
     }
 
+    struct CountingRegistryCompletionFixtureProvider {
+        calls: Arc<Mutex<usize>>,
+    }
+
+    #[async_trait::async_trait]
+    impl IntelligenceProvider for CountingRegistryCompletionFixtureProvider {
+        async fn complete(
+            &self,
+            _prompt: PromptInput,
+            _tier: ModelTier,
+        ) -> std::result::Result<Completion, ProviderError> {
+            *self.calls.lock() += 1;
+            Ok(Completion {
+                text: serde_json::json!({
+                    "signal_type": "account_risk",
+                })
+                .to_string(),
+                fingerprint_metadata: Default::default(),
+            })
+        }
+
+        fn provider_kind(&self) -> crate::intelligence::provider::ProviderKind {
+            crate::intelligence::provider::ProviderKind::Other("counting_fixture")
+        }
+
+        fn current_model(&self, _tier: ModelTier) -> crate::intelligence::provider::ModelName {
+            crate::intelligence::provider::ModelName::new("counting-fixture")
+        }
+    }
+
     #[tokio::test]
     async fn deterministic_hit_updates_counts_without_jsonl_entry() {
         let tmp = tempfile::tempdir().expect("tempdir");
@@ -1291,6 +1307,46 @@ mod tests {
         assert_eq!(counts.llm_fallbacks, 0);
         assert_eq!(counts.deterministic_rate, 1.0);
         assert_eq!(counts.updated_at, "2026-05-09T14:30:00+00:00");
+    }
+
+    #[tokio::test]
+    async fn registry_completion_deterministic_hit_skips_provider_and_records_hit() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let loop_ = FailImproveLoop::new(tmp.path().to_path_buf());
+        let (clock, rng, ext) = test_ctx();
+        let ctx = ServiceContext::new_live(&clock, &rng, &ext);
+        let input = SignalTypingInput {
+            signal_type: "account_created".to_string(),
+        };
+        let prompt = registry_signal_typing_prompt_input(&input, None);
+        let calls = Arc::new(Mutex::new(0));
+        let provider = CountingRegistryCompletionFixtureProvider {
+            calls: Arc::clone(&calls),
+        };
+
+        let output = complete_registry_signal_typing_with_loop(
+            &loop_,
+            &provider,
+            input,
+            prompt,
+            ModelTier::Mechanical,
+            &ctx,
+        )
+        .await
+        .expect("provider completion");
+
+        assert_eq!(output, "account_created");
+        assert_eq!(*calls.lock(), 0);
+        assert!(loop_
+            .read_artifact_to_string(SIGNAL_TYPING_OPERATION, ArtifactKind::Jsonl)
+            .expect("read jsonl")
+            .is_none());
+
+        let counts = read_counts(&loop_, SIGNAL_TYPING_OPERATION);
+        assert_eq!(counts.total_calls, 1);
+        assert_eq!(counts.deterministic_hits, 1);
+        assert_eq!(counts.llm_fallbacks, 0);
+        assert_eq!(counts.deterministic_rate, 1.0);
     }
 
     #[tokio::test]
