@@ -1790,7 +1790,11 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("nonce.sqlite");
         std::mem::forget(dir);
-        let db = ActionDb::open_at_unencrypted(path).expect("db");
+        seeded_db_at(&path)
+    }
+
+    fn seeded_db_at(path: &std::path::Path) -> ActionDb {
+        let db = ActionDb::open_at_unencrypted(path.to_path_buf()).expect("db");
         db.conn_ref()
             .execute(
                 "INSERT INTO accounts (id, name, updated_at) VALUES (?1, ?2, ?3)",
@@ -2084,6 +2088,101 @@ mod tests {
             .expect_err("replay");
         assert_eq!(replay.reason, PresenceNonceRejectReason::Replayed);
         assert_eq!(replay.status, StatusCode::FORBIDDEN);
+    }
+
+    #[test]
+    fn dos718_concurrent_verify_consumes_nonce_once() {
+        use std::sync::{Arc, Barrier};
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("nonce.sqlite");
+        let db = seeded_db_at(&path);
+        let service = service(SurfaceNonceConfig::default());
+        let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 13, 12, 0, 0).unwrap());
+        let rng = SeedableRng::new(1);
+        let ext = ExternalClients::default();
+        let ctx = ctx(&clock, &rng, &ext);
+        let session = session("session-1", 42);
+        let issued = service
+            .issue_nonce(
+                &ctx,
+                &db,
+                &session,
+                issue_payload(),
+                "request-1",
+                PresenceNonceRequestMeta::default(),
+            )
+            .expect("issue");
+        drop(db);
+
+        let barrier = Arc::new(Barrier::new(2));
+        let results = std::thread::scope(|scope| {
+            let first = {
+                let barrier = Arc::clone(&barrier);
+                let service = service.clone();
+                let session = session.clone();
+                let path = path.clone();
+                let token = issued.presence_nonce.clone();
+                scope.spawn(move || {
+                    verify_nonce_from_thread(barrier, service, path, session, token, "first")
+                })
+            };
+            let second = {
+                let barrier = Arc::clone(&barrier);
+                let service = service.clone();
+                let session = session.clone();
+                let path = path.clone();
+                let token = issued.presence_nonce.clone();
+                scope.spawn(move || {
+                    verify_nonce_from_thread(barrier, service, path, session, token, "second")
+                })
+            };
+
+            vec![first.join().unwrap(), second.join().unwrap()]
+        });
+
+        let success_count = results.iter().filter(|result| result.is_ok()).count();
+        let replay_errors = results
+            .into_iter()
+            .filter_map(Result::err)
+            .collect::<Vec<_>>();
+
+        assert_eq!(success_count, 1);
+        assert_eq!(replay_errors.len(), 1);
+        let replay = replay_errors.into_iter().next().expect("one replay error");
+        assert_eq!(replay.reason, PresenceNonceRejectReason::Replayed);
+        let replay_event = replay
+            .audit_events
+            .iter()
+            .find(|event| event.event_kind == "presence_nonce_rejected")
+            .expect("replay rejection audit event");
+        assert_eq!(replay_event.detail["reason"], "replayed");
+    }
+
+    fn verify_nonce_from_thread(
+        barrier: std::sync::Arc<std::sync::Barrier>,
+        service: SurfaceNonceService,
+        db_path: std::path::PathBuf,
+        session: ValidatedSurfaceSession,
+        token: String,
+        request_id: &'static str,
+    ) -> Result<SurfaceNonceVerify, SurfaceNonceError> {
+        barrier.wait();
+        let db = ActionDb::open_at_unencrypted(db_path).expect("db");
+        let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 13, 12, 0, 0).unwrap());
+        let rng = SeedableRng::new(1);
+        let ext = ExternalClients::default();
+        let ctx = ctx(&clock, &rng, &ext);
+        let mut payload = verify_payload(&token);
+        payload["feedback_request_id"] = json!(request_id);
+        service.verify_nonce(
+            &ctx,
+            &db,
+            &session,
+            payload,
+            request_id,
+            PresenceNonceRequestMeta::default(),
+        )
     }
 
     #[test]

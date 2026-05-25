@@ -70,6 +70,32 @@ final class DailyOS_PresenceNonceTest extends TestCase {
 	}
 
 	/**
+	 * The signed nonce transport forwards browser request metadata for runtime audit hashing.
+	 */
+	public function test_issue_presence_nonce_forwards_originating_request_meta_headers(): void {
+		$GLOBALS['dailyos_test_is_user_logged_in'] = true;
+		$GLOBALS['dailyos_test_current_user_id']   = 42;
+		$_SERVER['REMOTE_ADDR']                    = '203.0.113.10';
+		$_SERVER['HTTP_USER_AGENT']                = 'DailyOS Test Browser';
+		$this->save_marker();
+		$this->add_session_key_filter();
+
+		$GLOBALS['dailyos_test_remote_post_response'] = [
+			'response' => [
+				'code' => 200,
+			],
+			'body'     => '{"ok":true,"presence_nonce":"nonce-token"}',
+		];
+
+		$result = DailyOS_Plugin::instance()->issue_presence_nonce( $this->nonce_request() );
+
+		$this->assertTrue( $result['ok'] );
+		$headers = $GLOBALS['dailyos_test_remote_post_calls'][0]['args']['headers'];
+		$this->assertSame( '203.0.113.10', $headers['X-Real-IP'] );
+		$this->assertSame( 'DailyOS Test Browser', $headers['User-Agent'] );
+	}
+
+	/**
 	 * Claim_version must be a JSON integer, not a coercible string.
 	 */
 	public function test_issue_presence_nonce_rejects_string_claim_version(): void {

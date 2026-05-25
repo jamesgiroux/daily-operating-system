@@ -619,6 +619,13 @@ final class DailyOS_Plugin {
 	private static float $sentinel_cached_at = 0.0;
 
 	/**
+	 * Test-only override for the runtime sentinel path.
+	 *
+	 * @var string|null
+	 */
+	private static ?string $runtime_endpoint_sentinel_path_for_tests = null;
+
+	/**
 	 * Discover the current Tauri runtime endpoint via the sentinel file.
 	 *
 	 * Reads `~/.dailyos/runtime-endpoint.json` written by the Tauri runtime on bind.
@@ -749,9 +756,25 @@ final class DailyOS_Plugin {
 	}
 
 	/**
+	 * Override runtime sentinel discovery in tests.
+	 *
+	 * @internal
+	 *
+	 * @param string|null $path Sentinel path, or null to restore HOME-based discovery.
+	 */
+	public static function set_runtime_endpoint_sentinel_path_for_tests( ?string $path ): void {
+		self::$runtime_endpoint_sentinel_path_for_tests = $path;
+		self::invalidate_runtime_endpoint_cache();
+	}
+
+	/**
 	 * Path to the runtime sentinel file. Returns null if HOME is unavailable.
 	 */
 	private static function runtime_endpoint_sentinel_path(): ?string {
+		if ( null !== self::$runtime_endpoint_sentinel_path_for_tests ) {
+			return self::$runtime_endpoint_sentinel_path_for_tests;
+		}
+
 		$home = getenv( 'HOME' );
 		if ( ! is_string( $home ) || '' === trim( $home ) ) {
 			return null;

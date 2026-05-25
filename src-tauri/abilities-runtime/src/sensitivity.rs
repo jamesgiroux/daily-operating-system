@@ -66,6 +66,10 @@ impl ClaimDismissalSurface {
         }
     }
 
+    pub const fn allows_dismissal_write(self) -> bool {
+        !matches!(self, Self::Worker | Self::Eval)
+    }
+
     pub fn from_name(value: &str) -> Option<Self> {
         match value.trim().to_ascii_lowercase().as_str() {
             "tauri_entity_detail" | "entity_detail" => Some(Self::TauriEntityDetail),

@@ -35,7 +35,7 @@
   - **Migration v182:** index on `(surface_client_id, expires_at)` for efficient sweep.
   - **Migration v183 (reserved):** rollback path if any.
   - **Rust service:** `src-tauri/src/services/surface_feedback.rs` with `issue_nonce`, `consume_nonce`, `expire_nonces_sweep`.
-  - **Audit event types:** `pairing.feedback.nonce_issued`, `.consumed`, `.expired`, `.replay_rejected`.
+  - **Audit event types:** `presence_nonce_issued`, `presence_nonce_verified`, `presence_nonce_invalidated`, `presence_nonce_rejected`.
   - **PHP REST endpoint:** `wp/dailyos/v1/feedback` (POST issues + consumes the 2-phase nonce flow).
   - **JS feedback affordance UI:** per-block React component rendered inline when claim has feedback affordance enabled; button + optional textarea (`user_intent_text`, 500 char cap, sensitivity=User).
   - **Wire-up:** consume_nonce → `record_claim_feedback` substrate service.
@@ -55,7 +55,7 @@
 | actor-filtered provenance, sensitivity=User | ADR-0108 | `user_intent_text` (the optional textarea note) carries sensitivity=User. Audit log displays only the actor handle + redacted hash, never the raw text. Per-surface display policy must redact the text unless the requesting actor === the originating actor. |
 | W4-F presence-nonce v1.4.2 spike artifacts | `wp/dailyos/includes/class-dailyos-plugin.php:520-816` + `wp/dailyos/tests/PresenceNonceTest.php` | The presence-nonce REST scaffold (`issue_presence_nonce`, `can_issue_presence_nonce`, `strip_presence_nonces_from_post_data`, `sweep_presence_nonces`) is the existing seam W4 extends. W4 adds a sibling endpoint (`/v1/feedback`) using the same authorization shape (signed runtime call) and a parallel table (`surface_feedback_nonces` vs `surface_presence_nonces`). |
 | `MutationGuard`, `check_mutation_allowed` | `services/claims.rs` | Existing chokepoint contract. `record_claim_feedback` already passes `ctx.check_mutation_allowed()`; W4 service `surface_feedback::consume_nonce` must do the same before signing through to claims. |
-| audit events, pairing.feedback | none specifically; ADR-0094 (audit-log + enterprise observability) covers the event-shape contract | New event types must register with the existing audit infrastructure (no schema additions; the `event_type` column accepts the 4 new strings). |
+| audit events, presence_nonce | ADR-0094 (audit-log + enterprise observability) covers the event-shape contract | W4 reuses the existing `presence_nonce_*` vocabulary already emitted by the nonce substrate; no schema additions are required because `event_type` is `TEXT`. |
 
 **Net K-in conclusion:** W4 is the WRITE-PATH WIRE-UP between (a) WP's per-block feedback affordance UI and (b) the substrate's already-locked `record_claim_feedback`. Net-new: a 2-phase nonce lifecycle service + table + audit events + REST endpoint + per-block JS affordance. Every piece either consumes an already-shipped substrate OR mirrors an existing pattern (presence-nonce shape, ClaimFeedback row shape).
 
@@ -122,7 +122,7 @@ pub fn issue_nonce(
     input: IssueNonceInput,
 ) -> Result<IssueNonceOutcome, SurfaceFeedbackError> {
     ctx.check_mutation_allowed()?;
-    // … validate input, write row, emit pairing.feedback.nonce_issued audit event.
+    // ... validate input, write row, emit presence_nonce_issued audit event.
 }
 
 pub fn consume_nonce(
@@ -134,7 +134,7 @@ pub fn consume_nonce(
     // 1. Load nonce by nonce_id.
     // 2. Validate: not consumed (replay rejection), not expired, action_kind matches issued,
     //    requesting actor === issuing actor (presence binding).
-    // 3. Mark consumed; emit pairing.feedback.nonce_consumed audit event.
+    // 3. Mark consumed; emit presence_nonce_verified audit event.
     // 4. Translate to ClaimFeedbackInput (using the nonce's claim_id + user_intent_text).
     // 5. Call services::claim::record_claim_feedback (which itself enters MutationGuard +
     //    enqueue_signals_for_feedback).
@@ -146,22 +146,22 @@ pub fn expire_nonces_sweep(
     now: DateTime<Utc>,
 ) -> Result<SweepOutcome, SurfaceFeedbackError> {
     // Reap rows where expires_at < now AND consumed_at IS NULL.
-    // Emit pairing.feedback.nonce_expired audit event per row reaped (batch-write for efficiency).
+    // Emit presence_nonce_invalidated audit event per row reaped (batch-write for efficiency).
 }
 ```
 
 **Error variants** (`SurfaceFeedbackError`): `NonceNotFound`, `NonceExpired`, `NonceAlreadyConsumed`, `ActorMismatch` (replay-from-different-session), `ActionKindMismatch` (UI race or replay), `UnknownClaimId`, `Mutation(ClaimError)` (downstream from `record_claim_feedback`).
 
-### 5.5 Audit events (4 types)
+### 5.5 Audit events (implemented presence-nonce vocabulary)
 
-Added to the audit-event allowlist; no schema migration required (the `event_type` column is `TEXT`).
+Added to the audit-event allowlist; no schema migration required (the `event_type` column is `TEXT`). The current substrate keeps the pre-existing `presence_nonce_*` event vocabulary so nonce forensics share one query surface across issue, verify, replay, expiry, and invalidation. Earlier packet drafts used a feedback-specific namespace; those names are historical only.
 
 | Event type | Emitted when | Payload (`event_data` JSON) |
 |---|---|---|
-| `pairing.feedback.nonce_issued` | `issue_nonce` succeeds | `{ nonce_id, surface_client_id, session_id, claim_id, action_kind, expires_at, actor_kind, request_id }` |
-| `pairing.feedback.nonce_consumed` | `consume_nonce` succeeds (BEFORE the downstream `record_claim_feedback` audit row, so the chain is `nonce_issued → nonce_consumed → claim_feedback_recorded`) | `{ nonce_id, claim_id, action_kind, request_id, claim_feedback_id, ... }` |
-| `pairing.feedback.nonce_expired` | `expire_nonces_sweep` reaps an un-consumed nonce past `expires_at` | `{ nonce_id, claim_id, expires_at, swept_at }` |
-| `pairing.feedback.replay_rejected` | `consume_nonce` rejects because the nonce was already consumed or the actor doesn't match | `{ nonce_id, claim_id, rejection_reason: 'already_consumed' \| 'actor_mismatch' \| 'expired', request_id }` |
+| `presence_nonce_issued` | `issue_nonce` succeeds | `{ nonce_digest_prefix, surface_client_id_hash, session_id_hash, claim_id_hash, action, expires_at, request_id, ... }` |
+| `presence_nonce_verified` | `verify_nonce` succeeds and consumes the nonce before downstream `record_claim_feedback` | `{ nonce_digest_prefix, claim_id_hash, action, request_id, ... }` |
+| `presence_nonce_rejected` | `verify_nonce` rejects, including replay (`reason = "replayed"`) and actor/tuple mismatch cases | `{ nonce_digest_prefix, claim_id_hash, reason, request_id, ... }` |
+| `presence_nonce_invalidated` | expiry, store pressure, or composition refresh invalidates a live nonce | `{ nonce_digest_prefix, claim_id_hash, reason, count?, request_id, ... }` |
 
 `user_intent_text` is **NEVER** emitted in audit event payloads — sensitivity=User per ADR-0108. Audit consumers can look up the redacted text via the actor-filtered projection if authorized.
 
@@ -201,15 +201,15 @@ CSS: per-block `style.css` + plugin-owned baseline tokens (no inline CSS per mem
 2. Simulate JS: POST `/v1/feedback` with `action_kind: 'mark_outdated'`. Receive `nonce_id`.
 3. POST `/v1/feedback` again with `nonce_id` + same action_kind. Runtime consumes the nonce + records feedback.
 4. Re-render: claim now shows `superseded` lifecycle + `UseWithCaution` (or `NeedsVerification`) trust band per ADR-0123 §1.
-5. Audit log contains: `nonce_issued → nonce_consumed → claim_feedback_recorded`.
-6. Replay: POST `/v1/feedback` a third time with the same `nonce_id`. Runtime rejects + emits `replay_rejected`. Render unchanged.
+5. Audit log contains: `presence_nonce_issued -> presence_nonce_verified -> claim_feedback_recorded`.
+6. Replay: POST `/v1/feedback` a third time with the same `nonce_id`. Runtime rejects + emits `presence_nonce_rejected` with `reason = "replayed"`. Render unchanged.
 
 ## 6. Decisions to lock at L0
 
 1. **All write paths go through `services::surface_feedback`.** WP REST handler is a thin envelope: validates request, signs the runtime call, relays the response. No DB writes from WP. (Locks ADR-0111 + ADR-0126 mirror.)
 2. **`record_claim_feedback` is consumed unchanged.** W4 does not modify `services::claims::record_claim_feedback` or the 9-variant `FeedbackAction` enum. CI gate: PR must not touch `services/claims.rs` non-test files. (Mirrors v1.4.3 W3 §9 inv #13 composite boundary discipline.)
 3. **Two-phase nonce.** No single-shot path. Every feedback write requires `issue_nonce` THEN `consume_nonce` from the same actor on the same surface_client_id.
-4. **Replay-rejection is non-negotiable.** A consumed nonce can never be consumed again; the rejection is recorded as `pairing.feedback.replay_rejected` audit event for forensic trail.
+4. **Replay-rejection is non-negotiable.** A consumed nonce can never be consumed again; the rejection is recorded as a `presence_nonce_rejected` audit event with `reason = "replayed"` for forensic trail.
 5. **`user_intent_text` sensitivity=User.** Never appears in audit event payloads. Redaction enforced at the projection layer per W2 DOS-477 leak guards (extend the existing channel list to cover the new feedback-render path).
 6. **24h default TTL on un-consumed nonces.** Sweep job runs hourly (mirrors `dailyos_nonce_sweep` cron). Expired rows transition to audit-only trail; not deleted.
 7. **W4 ships affordance UI ONLY on `dailyos/account-overview`** for v1.4.3 acceptance. Other W2 primitive blocks + composites get affordance UI in v1.4.4 surface migration. Decision rationale: smallest surface area that proves the end-to-end loop without expanding scope into v1.4.4 entity-surface composition.
@@ -225,7 +225,7 @@ L4 captures: 9 affordance states (one per `FeedbackAction` variant) + 3 chrome s
 `src-tauri/abilities-runtime/tests/surface_feedback_nonce_lifecycle.rs` — happy path: issue → consume → audit trail correct.
 
 ### 8.2 Rust integration: replay rejection
-`src-tauri/abilities-runtime/tests/surface_feedback_replay_rejection.rs` — issue → consume → consume-again rejected with `replay_rejected` audit event.
+`src-tauri/abilities-runtime/tests/surface_feedback_replay_rejection.rs` — issue -> consume -> consume-again rejected with `presence_nonce_rejected` / `reason = "replayed"` audit event.
 
 ### 8.3 Rust integration: expiry sweep
 `src-tauri/abilities-runtime/tests/surface_feedback_expire_sweep.rs` — issue → wait past expires_at → run sweep → audit event emitted, row marked expired.
@@ -249,7 +249,7 @@ L4 captures: 9 affordance states (one per `FeedbackAction` variant) + 3 chrome s
 `wp/dailyos/tests/FeedbackUserIntentRedactionTest.php` — `user_intent_text` is NEVER returned to a non-originating actor. Cross-references W2 DOS-477 channel list (extends from 10 to 11 channels: add "feedback-projection rendering" if not already covered).
 
 ### 8.10 Audit log forensic test
-`src-tauri/abilities-runtime/tests/surface_feedback_audit_trail.rs` — for a happy-path feedback, verify the chain `nonce_issued → nonce_consumed → claim_feedback_recorded` lands in the audit log with consistent `request_id` correlation.
+`src-tauri/abilities-runtime/tests/surface_feedback_audit_trail.rs` — for a happy-path feedback, verify the chain `presence_nonce_issued -> presence_nonce_verified -> claim_feedback_recorded` lands in the audit log with consistent `request_id` correlation.
 
 ## 9. Invariants (CI-enforced)
 
@@ -258,7 +258,7 @@ L4 captures: 9 affordance states (one per `FeedbackAction` variant) + 3 chrome s
 3. **`surface_feedback::consume_nonce` MUST pass through `ctx.check_mutation_allowed()`.** Grep gate on `services/surface_feedback.rs`.
 4. **No raw `user_intent_text` in audit event payloads.** Grep gate on `audit-event writer` callers in surface_feedback service.
 5. **REST endpoint MUST use `DailyOS_Runtime_Client` for runtime calls.** No raw `wp_remote_post` to the runtime sentinel from feedback handler.
-6. **Replay-rejection MUST emit `pairing.feedback.replay_rejected`.** Verified by §8.2 integration test.
+6. **Replay-rejection MUST emit `presence_nonce_rejected` with `reason = "replayed"`.** Verified by §8.2 integration test.
 7. **No customer-specific data in test fixtures.** CLAUDE.md rule. Use `acct-test-001`, `claim-test-001` generic IDs.
 8. **No PII in commit messages.** CLAUDE.md rule.
 9. **L2-status on every code commit.** CLAUDE.md rule + commit-msg hook.

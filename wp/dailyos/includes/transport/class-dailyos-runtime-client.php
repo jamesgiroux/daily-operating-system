@@ -533,6 +533,10 @@ final class DailyOS_Runtime_Client {
 			$headers['X-DailyOS-Multisite-Blog-Id'] = $identity['multisite_blog_id'];
 		}
 
+		foreach ( $this->originating_request_headers() as $name => $value ) {
+			$headers[ $name ] = $value;
+		}
+
 		// Cold-cache producer commits + writer-mutex contention from background
 		// workers can take >5s in local-to-local deployments. The original 5s
 		// timeout was sized for a remote-shaped expectation; local renders
@@ -569,6 +573,63 @@ final class DailyOS_Runtime_Client {
 		}
 
 		return $parsed;
+	}
+
+	/**
+	 * Forward sanitized browser request metadata for runtime-side audit hashing.
+	 *
+	 * @return array<string, string> Header names and values.
+	 */
+	private function originating_request_headers(): array {
+		$headers = [];
+
+		$forwarded_for = $this->safe_origin_header( $_SERVER['HTTP_X_FORWARDED_FOR'] ?? null, 512 );
+		if ( null !== $forwarded_for ) {
+			$headers['X-Forwarded-For'] = $forwarded_for;
+		} else {
+			$real_ip = $this->safe_origin_header(
+				$_SERVER['HTTP_X_REAL_IP'] ?? ( $_SERVER['REMOTE_ADDR'] ?? null ),
+				128
+			);
+			if ( null !== $real_ip ) {
+				$headers['X-Real-IP'] = $real_ip;
+			}
+		}
+
+		$user_agent = $this->safe_origin_header( $_SERVER['HTTP_USER_AGENT'] ?? null, 512 );
+		if ( null !== $user_agent ) {
+			$headers['User-Agent'] = $user_agent;
+		}
+
+		return $headers;
+	}
+
+	/**
+	 * Normalize server-provided request metadata before forwarding as a header.
+	 *
+	 * @param mixed $value Header candidate.
+	 * @param int   $max_length Maximum header length.
+	 * @return string|null Sanitized header value, or null when empty/invalid.
+	 */
+	private function safe_origin_header( mixed $value, int $max_length ): ?string {
+		if ( ! is_scalar( $value ) ) {
+			return null;
+		}
+
+		$value = trim( (string) $value );
+		if ( '' === $value ) {
+			return null;
+		}
+
+		$value = preg_replace( '/[\r\n]+/', ' ', $value );
+		$value = preg_replace( '/[^\x20-\x7E\t]/', '', is_string( $value ) ? $value : '' );
+		$value = trim( is_string( $value ) ? $value : '' );
+
+		if ( '' === $value ) {
+			return null;
+		}
+
+		return substr( $value, 0, $max_length );
 	}
 
 	/**

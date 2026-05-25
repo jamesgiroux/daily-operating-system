@@ -5455,6 +5455,20 @@ fn normalize_claim_surface(surface: &str) -> Result<ClaimDismissalSurface, Claim
     })
 }
 
+fn normalize_claim_dismissal_write_surface(
+    surface: &str,
+) -> Result<ClaimDismissalSurface, ClaimError> {
+    let surface = normalize_claim_surface(surface)?;
+    if surface.allows_dismissal_write() {
+        return Ok(surface);
+    }
+
+    Err(ClaimError::InvalidFeedback(format!(
+        "surface dismissal writes are not supported for read-context-only surface '{}'",
+        surface.as_str()
+    )))
+}
+
 fn feedback_metadata_for_claim(
     claim: &IntelligenceClaim,
     input: &ClaimFeedbackInput,
@@ -7692,7 +7706,7 @@ fn targeted_repair_policy_repair_coalescing_surface(
                 "surface_inappropriate repair requires payload_json.surface".to_string(),
             )
         })
-        .and_then(|surface| normalize_claim_surface(&surface))?;
+        .and_then(|surface| normalize_claim_dismissal_write_surface(&surface))?;
     Ok(Some(format!("surface:{}", surface.as_str())))
 }
 
@@ -8469,7 +8483,7 @@ fn targeted_repair_apply_policy_repair(
                 "surface_inappropriate repair requires payload_json.surface".to_string(),
             )
         })
-        .and_then(|surface| normalize_claim_surface(&surface))?;
+        .and_then(|surface| normalize_claim_dismissal_write_surface(&surface))?;
     let surface = surface.as_str();
 
     tx.conn_ref().execute(
@@ -14645,6 +14659,48 @@ mod tests {
     }
 
     #[test]
+    fn targeted_repair_surface_inappropriate_rejects_read_context_only_surfaces() {
+        for read_context_surface in [
+            ClaimDismissalSurface::Worker.as_str(),
+            ClaimDismissalSurface::Eval.as_str(),
+        ] {
+            let db = test_db();
+            seed_account(&db);
+            let (clock, rng, external) = ctx_parts();
+            let ctx = live_ctx(&clock, &rng, &external);
+            let claim_id = inserted_claim_id(
+                commit_claim(
+                    &ctx,
+                    &db,
+                    proposal("Read-context surfaces must not persist dismissals"),
+                )
+                .unwrap(),
+            );
+
+            let mut input = feedback_input(&claim_id, FeedbackAction::SurfaceInappropriate);
+            input.payload_json =
+                Some(serde_json::json!({ "surface": read_context_surface }).to_string());
+
+            let error = record_claim_feedback(&ctx, &db, input)
+                .expect_err("read-context-only surface rejected");
+            assert!(
+                matches!(error, ClaimError::InvalidFeedback(ref message) if message.contains("read-context-only surface")),
+                "unexpected error for {read_context_surface}: {error:?}"
+            );
+
+            let dismissals: i64 = db
+                .conn_ref()
+                .query_row(
+                    "SELECT count(*) FROM claim_surface_dismissals WHERE claim_id = ?1",
+                    params![&claim_id],
+                    |row| row.get(0),
+                )
+                .expect("dismissal count");
+            assert_eq!(dismissals, 0);
+        }
+    }
+
+    #[test]
     fn entity_context_surface_limited_reader_caps_visible_claims() {
         let db = test_db();
         seed_account(&db);
@@ -14702,7 +14758,7 @@ mod tests {
             );
             db.conn_ref()
                 .execute(
-                    "UPDATE intelligence_claims
+                    "UPDATE intelligence_claims /* dos7-allowed: entity context cap ordering fixture */
                      SET created_at = ?1
                      WHERE id = ?2",
                     params![
@@ -14798,7 +14854,7 @@ mod tests {
             );
             db.conn_ref()
                 .execute(
-                    "UPDATE intelligence_claims
+                    "UPDATE intelligence_claims /* dos7-allowed: prompt safety page-cap fixture */
                      SET sensitivity = 'confidential', created_at = ?1
                      WHERE id = ?2",
                     params![format!("2026-05-02T12:{index:02}:00Z"), id],
@@ -14817,7 +14873,7 @@ mod tests {
         );
         db.conn_ref()
             .execute(
-                "UPDATE intelligence_claims
+                "UPDATE intelligence_claims /* dos7-allowed: prompt safety page-cap fixture */
                  SET sensitivity = 'internal', created_at = ?1
                  WHERE id = 'claim-internal-older'",
                 params!["2026-05-02T11:00:00Z"],

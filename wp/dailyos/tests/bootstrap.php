@@ -123,6 +123,19 @@ namespace {
 		$GLOBALS['dailyos_test_next_uuid']            = 1;
 		$GLOBALS['dailyos_test_current_blog_id']      = 1;
 		$GLOBALS['dailyos_test_is_multisite']         = false;
+
+		unset(
+			$_SERVER['HTTP_X_FORWARDED_FOR'],
+			$_SERVER['HTTP_X_REAL_IP'],
+			$_SERVER['REMOTE_ADDR'],
+			$_SERVER['HTTP_USER_AGENT']
+		);
+
+		if ( class_exists( '\DailyOS\DailyOS_Plugin' ) ) {
+			\DailyOS\DailyOS_Plugin::set_runtime_endpoint_sentinel_path_for_tests(
+				sys_get_temp_dir() . '/dailyos-runtime-endpoint-test-unset-' . getmypid() . '.json'
+			);
+		}
 	}
 
 	$GLOBALS['wpdb'] = new class() {

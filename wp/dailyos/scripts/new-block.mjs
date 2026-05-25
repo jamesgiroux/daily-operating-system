@@ -195,7 +195,7 @@ async function copyTemplate( src, dst, vars ) {
 }
 
 /**
- * Build the 5-step paste-snippet manifest per V1.3 §5.4.
+ * Build the 6-step paste-snippet manifest per V1.3 §5.4.
  * @param {string} blockName
  * @param {string} abilityName
  */

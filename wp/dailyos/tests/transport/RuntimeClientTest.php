@@ -250,6 +250,9 @@ final class DailyOS_RuntimeClientTest extends TestCase {
 			];
 
 			$this->write_runtime_sentinel( $home, 54322 );
+			DailyOS_Plugin::set_runtime_endpoint_sentinel_path_for_tests(
+				$home . '/.dailyos/runtime-endpoint.json'
+			);
 			DailyOS_Plugin::invalidate_runtime_endpoint_cache();
 			$client = new DailyOS_Runtime_Client( new DailyOS_Credential_Store(), new DailyOS_Hmac_Signer() );
 			$client->invoke_ability( 'briefing.daily', [], [] );
@@ -261,7 +264,7 @@ final class DailyOS_RuntimeClientTest extends TestCase {
 			$client->invoke_ability( 'briefing.daily', [], [] );
 			$this->assertSame( 'http://127.0.0.1:54323/v1/local/invoke', $GLOBALS['dailyos_test_remote_post_calls'][0]['url'] );
 		} finally {
-			DailyOS_Plugin::invalidate_runtime_endpoint_cache();
+			DailyOS_Plugin::set_runtime_endpoint_sentinel_path_for_tests( null );
 			if ( false === $original_home ) {
 				putenv( 'HOME' );
 			} else {
