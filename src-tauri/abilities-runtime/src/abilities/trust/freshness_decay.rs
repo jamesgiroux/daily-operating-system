@@ -82,6 +82,27 @@ pub struct RenewalContext {
     pub days_to_renewal: Option<i64>,
 }
 
+impl RenewalContext {
+    pub fn resolved_days_to_renewal(&self, now: Option<DateTime<Utc>>) -> Option<i64> {
+        self.days_to_renewal.or_else(|| {
+            let now = now?;
+            let renewal_at = self.renewal_at?;
+            Some(
+                renewal_at
+                    .date_naive()
+                    .signed_duration_since(now.date_naive())
+                    .num_days(),
+            )
+        })
+    }
+
+    pub fn with_resolved_days_to_renewal(&self, now: DateTime<Utc>) -> Self {
+        let mut context = self.clone();
+        context.days_to_renewal = self.resolved_days_to_renewal(Some(now));
+        context
+    }
+}
+
 pub struct ScoringContext<'a> {
     pub clock: &'a dyn Clock,
     pub renewal_context: Option<RenewalContext>,
@@ -633,16 +654,7 @@ fn renewal_is_imminent(
         return false;
     };
 
-    let days_to_renewal = renewal_context.days_to_renewal.or_else(|| {
-        let now = now?;
-        let renewal_at = renewal_context.renewal_at?;
-        Some(
-            renewal_at
-                .date_naive()
-                .signed_duration_since(now.date_naive())
-                .num_days(),
-        )
-    });
+    let days_to_renewal = renewal_context.resolved_days_to_renewal(now);
 
     let renewal_window_days = freshness_config().policy.renewal_imminent_window_days;
     days_to_renewal.is_some_and(|days| (0..=renewal_window_days).contains(&days))

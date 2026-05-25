@@ -31,7 +31,7 @@ if ( ! function_exists( 'dailyos_avatar_render' ) ) {
 
 		$runtime_client = apply_filters( 'dailyos_runtime_client_for_block', null );
 		if ( ! is_object( $runtime_client ) || ! method_exists( $runtime_client, 'project_composition_for_surface' ) ) {
-			return dailyos_avatar_render_payload( $attributes );
+			return dailyos_avatar_render_runtime_unavailable_notice();
 		}
 
 		$composition_version = isset( $attributes['composition_version'] ) ? (int) $attributes['composition_version'] : 0;
@@ -53,7 +53,14 @@ if ( ! function_exists( 'dailyos_avatar_render' ) ) {
 	 * @return string
 	 */
 	function dailyos_avatar_render_from_projection( mixed $response, array $attributes ): string {
-		if ( is_wp_error( $response ) || ( isset( $response['ok'] ) && false === $response['ok'] ) ) {
+		if ( is_wp_error( $response ) ) {
+			return dailyos_avatar_render_runtime_unavailable_notice();
+		}
+		if ( isset( $response['ok'] ) && false === $response['ok'] ) {
+			$code = isset( $response['error']['code'] ) ? (string) $response['error']['code'] : '';
+			if ( in_array( $code, [ 'runtime_unavailable', 'runtime_request_failed', 'runtime_invalid_json', 'runtime_http_error' ], true ) ) {
+				return dailyos_avatar_render_runtime_unavailable_notice();
+			}
 			return dailyos_avatar_render_payload( $attributes );
 		}
 
@@ -135,6 +142,15 @@ if ( ! function_exists( 'dailyos_avatar_render' ) ) {
 			esc_attr( $vars ),
 			dailyos_chrome_render_empty( $initials )
 		);
+	}
+
+	/**
+	 * Render the runtime-unavailable diagnostic for composed avatar renders.
+	 */
+	function dailyos_avatar_render_runtime_unavailable_notice(): string {
+		return '<span class="dailyos-avatar dailyos-avatarFallback dailyos-runtime-unavailable" data-empty-reason="runtime_unavailable" data-ds-name="Avatar" data-ds-tier="primitive" data-ds-spec="primitives/Avatar.md" role="status">'
+			. esc_html__( 'Runtime unavailable', 'dailyos' )
+			. '</span>';
 	}
 
 	/**

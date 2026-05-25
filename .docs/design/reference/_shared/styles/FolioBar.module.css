@@ -161,8 +161,8 @@
 }
 
 .FolioBar_folioRefreshButton:focus-visible {
-  outline: none;
-  border-color: var(--color-spice-turmeric);
+  outline: 2px solid var(--color-spice-turmeric);
+  outline-offset: 2px;
 }
 
 .FolioBar_folioRefreshButton:disabled {

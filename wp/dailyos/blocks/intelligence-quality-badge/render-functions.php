@@ -29,7 +29,7 @@ if ( ! function_exists( 'dailyos_intelligence_quality_badge_render' ) ) {
 
 		$runtime_client = apply_filters( 'dailyos_runtime_client_for_block', null );
 		if ( ! is_object( $runtime_client ) || ! method_exists( $runtime_client, 'project_composition_for_surface' ) ) {
-			return dailyos_intelligence_quality_badge_render_payload( $attributes );
+			return dailyos_intelligence_quality_badge_render_runtime_unavailable_notice();
 		}
 
 		$composition_version = isset( $attributes['composition_version'] ) ? (int) $attributes['composition_version'] : 0;
@@ -51,7 +51,14 @@ if ( ! function_exists( 'dailyos_intelligence_quality_badge_render' ) ) {
 	 * @return string
 	 */
 	function dailyos_intelligence_quality_badge_render_from_projection( mixed $response, array $attributes ): string {
-		if ( is_wp_error( $response ) || ( isset( $response['ok'] ) && false === $response['ok'] ) ) {
+		if ( is_wp_error( $response ) ) {
+			return dailyos_intelligence_quality_badge_render_runtime_unavailable_notice();
+		}
+		if ( isset( $response['ok'] ) && false === $response['ok'] ) {
+			$code = isset( $response['error']['code'] ) ? (string) $response['error']['code'] : '';
+			if ( in_array( $code, [ 'runtime_unavailable', 'runtime_request_failed', 'runtime_invalid_json', 'runtime_http_error' ], true ) ) {
+				return dailyos_intelligence_quality_badge_render_runtime_unavailable_notice();
+			}
 			return dailyos_intelligence_quality_badge_render_payload( $attributes );
 		}
 
@@ -134,6 +141,15 @@ if ( ! function_exists( 'dailyos_intelligence_quality_badge_render' ) ) {
 		}
 		$out .= '</span>';
 		return $out;
+	}
+
+	/**
+	 * Render the runtime-unavailable diagnostic for composed quality renders.
+	 */
+	function dailyos_intelligence_quality_badge_render_runtime_unavailable_notice(): string {
+		return '<span class="dailyos-intelligence-quality-badge dailyos-intelligence-quality-badge--runtime-unavailable" data-empty-reason="runtime_unavailable" data-ds-name="IntelligenceQualityBadge" data-ds-tier="primitive" data-ds-spec="primitives/IntelligenceQualityBadge.md" role="status">'
+			. esc_html__( 'Runtime unavailable', 'dailyos' )
+			. '</span>';
 	}
 
 	/**

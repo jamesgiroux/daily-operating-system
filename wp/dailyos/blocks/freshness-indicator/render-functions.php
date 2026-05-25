@@ -31,7 +31,7 @@ if ( ! function_exists( 'dailyos_freshness_indicator_render' ) ) {
 
 		$runtime_client = apply_filters( 'dailyos_runtime_client_for_block', null );
 		if ( ! is_object( $runtime_client ) || ! method_exists( $runtime_client, 'project_composition_for_surface' ) ) {
-			return dailyos_freshness_indicator_render_payload( $attributes );
+			return dailyos_freshness_indicator_render_runtime_unavailable_notice();
 		}
 
 		$composition_version = isset( $attributes['composition_version'] ) ? (int) $attributes['composition_version'] : 0;
@@ -53,7 +53,14 @@ if ( ! function_exists( 'dailyos_freshness_indicator_render' ) ) {
 	 * @return string
 	 */
 	function dailyos_freshness_indicator_render_from_projection( mixed $response, array $attributes ): string {
-		if ( is_wp_error( $response ) || ( isset( $response['ok'] ) && false === $response['ok'] ) ) {
+		if ( is_wp_error( $response ) ) {
+			return dailyos_freshness_indicator_render_runtime_unavailable_notice();
+		}
+		if ( isset( $response['ok'] ) && false === $response['ok'] ) {
+			$code = isset( $response['error']['code'] ) ? (string) $response['error']['code'] : '';
+			if ( in_array( $code, [ 'runtime_unavailable', 'runtime_request_failed', 'runtime_invalid_json', 'runtime_http_error' ], true ) ) {
+				return dailyos_freshness_indicator_render_runtime_unavailable_notice();
+			}
 			return dailyos_freshness_indicator_render_payload( $attributes );
 		}
 
@@ -131,6 +138,15 @@ if ( ! function_exists( 'dailyos_freshness_indicator_render' ) ) {
 			esc_attr( $staleness ),
 			esc_html( $label )
 		);
+	}
+
+	/**
+	 * Render the runtime-unavailable diagnostic for composed freshness renders.
+	 */
+	function dailyos_freshness_indicator_render_runtime_unavailable_notice(): string {
+		return '<span class="dailyos-freshness-indicator dailyos-freshness-indicator--inline dailyos-runtime-unavailable" data-empty-reason="runtime_unavailable" data-ds-name="FreshnessIndicator" data-ds-tier="primitive" data-ds-spec="primitives/FreshnessIndicator.md" role="status">'
+			. esc_html__( 'Runtime unavailable', 'dailyos' )
+			. '</span>';
 	}
 
 	/**

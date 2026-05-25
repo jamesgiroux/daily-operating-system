@@ -35,7 +35,7 @@ if ( ! function_exists( 'dailyos_score_band_render' ) ) {
 
 		$runtime_client = apply_filters( 'dailyos_runtime_client_for_block', null );
 		if ( ! is_object( $runtime_client ) || ! method_exists( $runtime_client, 'project_composition_for_surface' ) ) {
-			return dailyos_score_band_render_empty_primitive();
+			return dailyos_score_band_render_runtime_unavailable_notice();
 		}
 
 		$cache_hint_param = '' !== $cache_hint_token ? $cache_hint_token : null;
@@ -189,7 +189,7 @@ if ( ! function_exists( 'dailyos_score_band_render' ) ) {
 	 * Render the empty-state inline primitive shell for the score-band block.
 	 */
 	function dailyos_score_band_render_empty_primitive(): string {
-		return '<span class="wp-block-dailyos-score-band dailyos-primitive-inline is-empty" data-ds-tier="primitive" data-ds-name="ScoreBand" data-ds-spec="primitives/ScoreBand.md"></span>';
+		return '<span class="wp-block-dailyos-score-band dailyos-primitive-inline is-empty" data-empty-reason="missing_composition_id" data-ds-tier="primitive" data-ds-name="ScoreBand" data-ds-spec="primitives/ScoreBand.md"></span>';
 	}
 
 	/**

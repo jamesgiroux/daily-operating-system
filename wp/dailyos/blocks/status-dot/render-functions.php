@@ -30,16 +30,14 @@ if ( ! function_exists( 'dailyos_status_dot_render' ) ) {
 		$cache_hint_token    = isset( $attributes['cache_hint_token'] ) ? (string) $attributes['cache_hint_token'] : '';
 
 		if ( '' === $composition_id ) {
-			return '<div class="wp-block-dailyos-status-dot is-empty">'
+			return '<div class="wp-block-dailyos-status-dot is-empty" data-empty-reason="missing_composition_id">'
 				. esc_html__( 'No content to show here.', 'dailyos' )
 				. '</div>';
 		}
 
 		$runtime_client = apply_filters( 'dailyos_runtime_client_for_block', null );
 		if ( ! is_object( $runtime_client ) || ! method_exists( $runtime_client, 'project_composition_for_surface' ) ) {
-			return '<div class="wp-block-dailyos-status-dot is-empty">'
-				. esc_html__( 'No content to show here.', 'dailyos' )
-				. '</div>';
+			return dailyos_status_dot_render_runtime_unavailable_notice();
 		}
 
 		$cache_hint_param = '' !== $cache_hint_token ? $cache_hint_token : null;

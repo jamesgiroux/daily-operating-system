@@ -185,6 +185,22 @@ fn renewal_context_with_only_renewal_at_uses_scoring_clock() {
 }
 
 #[test]
+fn renewal_threshold_uses_explicit_days_without_clock() {
+    let renewal_context = RenewalContext {
+        renewal_at: None,
+        days_to_renewal: Some(30),
+    };
+
+    assert_eq!(
+        freshness_threshold_days_for_data_source(
+            &DataSource::Other(SourceName::new("renewal_notes")),
+            Some(&renewal_context),
+        ),
+        400.0
+    );
+}
+
+#[test]
 fn default_unmapped_warns_and_uses_21_days() {
     DEFAULT_WARNING_COUNT.store(0, std::sync::atomic::Ordering::SeqCst);
     warned_default_sources().lock().clear();

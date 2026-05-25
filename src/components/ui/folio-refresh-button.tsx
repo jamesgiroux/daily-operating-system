@@ -6,6 +6,8 @@
  * and hero components for consistency.
  */
 
+import styles from "./folio-refresh-button.module.css";
+
 interface FolioRefreshButtonProps {
   onClick: () => void;
   loading: boolean;
@@ -34,32 +36,9 @@ export function FolioRefreshButton({
     <button
       onClick={onClick}
       disabled={loading}
+      aria-busy={loading ? "true" : "false"}
       title={title ?? displayLabel}
-      style={{
-        fontFamily: "var(--font-mono)",
-        fontSize: 11,
-        fontWeight: 600,
-        letterSpacing: "0.06em",
-        textTransform: "uppercase",
-        color: "var(--color-text-tertiary)",
-        background: "none",
-        border: "1px solid var(--color-rule-heavy)",
-        borderRadius: 4,
-        padding: "2px 10px",
-        cursor: loading ? "default" : "pointer",
-        opacity: loading ? 0.6 : 1,
-        transition: "color 150ms, border-color 150ms, opacity 150ms",
-      }}
-      onMouseEnter={(e) => {
-        if (!loading) {
-          e.currentTarget.style.color = "var(--color-text-secondary)";
-          e.currentTarget.style.borderColor = "var(--color-text-tertiary)";
-        }
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.color = "var(--color-text-tertiary)";
-        e.currentTarget.style.borderColor = "var(--color-rule-heavy)";
-      }}
+      className={styles.button}
     >
       {displayLabel}
     </button>

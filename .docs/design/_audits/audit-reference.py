@@ -759,6 +759,13 @@ def audit_surface(entry: dict[str, Any]) -> dict[str, Any]:
         stem = css_path.stem.replace(".module", "")
         if stem in CHROME_RUNTIME:
             continue
+        # Reference Folio chrome is injected from body data attributes, so
+        # static HTML does not contain the refresh button module prefix even
+        # when the shipped surface imports and renders FolioRefreshButton.
+        if component == "FolioRefreshButton" and re.search(
+            r'data-folio-actions="[^"]*\brefresh\b', html
+        ):
+            continue
         # Heuristic: confirm the component is actually used in JSX before
         # complaining (cuts false positives where a component is imported
         # but only conditionally rendered or used as a type).

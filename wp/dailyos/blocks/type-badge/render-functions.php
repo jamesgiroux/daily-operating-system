@@ -35,7 +35,7 @@ if ( ! function_exists( 'dailyos_type_badge_render' ) ) {
 
 		$runtime_client = apply_filters( 'dailyos_runtime_client_for_block', null );
 		if ( ! is_object( $runtime_client ) || ! method_exists( $runtime_client, 'project_composition_for_surface' ) ) {
-			return dailyos_type_badge_render_empty_primitive();
+			return dailyos_type_badge_render_runtime_unavailable_notice();
 		}
 
 		$cache_hint_param = '' !== $cache_hint_token ? $cache_hint_token : null;
@@ -187,7 +187,7 @@ if ( ! function_exists( 'dailyos_type_badge_render' ) ) {
 	 * Render the empty-state inline primitive shell for the type-badge block.
 	 */
 	function dailyos_type_badge_render_empty_primitive(): string {
-		return '<span class="wp-block-dailyos-type-badge dailyos-primitive-inline is-empty" data-ds-tier="primitive" data-ds-name="TypeBadge" data-ds-spec="primitives/TypeBadge.md"></span>';
+		return '<span class="wp-block-dailyos-type-badge dailyos-primitive-inline is-empty" data-empty-reason="missing_composition_id" data-ds-tier="primitive" data-ds-name="TypeBadge" data-ds-spec="primitives/TypeBadge.md"></span>';
 	}
 
 	/**

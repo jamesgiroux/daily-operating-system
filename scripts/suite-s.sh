@@ -4,9 +4,10 @@
 # Wraps every CI policy script + cargo-audit + clippy with -D warnings into a
 # single fail-closed runner. Outputs a JSON summary for the L3 aggregator.
 #
-# Usage: scripts/suite-s.sh [--out path] [--scope SCOPE-ID]
+# Usage: scripts/suite-s.sh [--out path] [--scope SCOPE-ID] [--self-test]
 #   --out  Write JSON summary to this path (default: stdout)
 #   --scope L3 scope identifier (free-form, e.g. v1.4.1-W0 or DOS-cleanup-batch); not enforced
+#   --self-test  Verify Suite S wrapper command/config wiring without running the full suite
 #
 # Exit: 0 if all checks pass; 1 if any check fails.
 
@@ -14,11 +15,13 @@ set -euo pipefail
 
 OUT=""
 SCOPE=""
+SELF_TEST=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --) shift ;;
     --out) OUT="$2"; shift 2 ;;
     --scope) SCOPE="$2"; shift 2 ;;
+    --self-test) SELF_TEST=1; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -26,8 +29,67 @@ done
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
-OAUTH_SECRET_SCAN_SCRIPT="$(mktemp "${TMPDIR:-/tmp}/dailyos-oauth-secret-scan.XXXXXX")"
-trap 'rm -f "$OAUTH_SECRET_SCAN_SCRIPT"' EXIT
+SUITE_S_TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/dailyos-suite-s.XXXXXX")"
+trap 'rm -rf "$SUITE_S_TMP_ROOT"' EXIT
+
+OAUTH_SECRET_SCAN_SCRIPT="$SUITE_S_TMP_ROOT/oauth-secret-scan.sh"
+CARGO_AUDIT_POLICY="$REPO_ROOT/audit.toml"
+CARGO_AUDIT_LOCKFILE="$REPO_ROOT/src-tauri/Cargo.lock"
+CARGO_AUDIT_WORKDIR="$SUITE_S_TMP_ROOT/cargo-audit"
+CARGO_AUDIT_CONFIG="$CARGO_AUDIT_WORKDIR/.cargo/audit.toml"
+
+prepare_cargo_audit_config() {
+  if [[ ! -f "$CARGO_AUDIT_POLICY" ]]; then
+    echo "missing cargo-audit policy: $CARGO_AUDIT_POLICY" >&2
+    return 1
+  fi
+  if [[ ! -f "$CARGO_AUDIT_LOCKFILE" ]]; then
+    echo "missing cargo-audit lockfile: $CARGO_AUDIT_LOCKFILE" >&2
+    return 1
+  fi
+
+  mkdir -p "$(dirname "$CARGO_AUDIT_CONFIG")"
+  # cargo-audit discovers policy from .cargo/audit.toml, not repo-root audit.toml.
+  # Keep the generated helper in temp while preserving the repo-root policy intent.
+  sed 's/^severity-threshold[[:space:]]*=/severity_threshold =/' \
+    "$CARGO_AUDIT_POLICY" > "$CARGO_AUDIT_CONFIG"
+}
+
+prepare_cargo_audit_config
+
+if [[ "$SELF_TEST" -eq 1 ]]; then
+  if ! command -v cargo >/dev/null 2>&1; then
+    echo "FAIL: cargo is required for Suite S self-test" >&2
+    exit 2
+  fi
+  if ! cargo audit --version >/dev/null 2>&1; then
+    echo "FAIL: cargo-audit is required for Suite S self-test" >&2
+    exit 2
+  fi
+  if [[ "$CARGO_AUDIT_CONFIG" != "$SUITE_S_TMP_ROOT"/* ]]; then
+    echo "FAIL: generated cargo-audit config is not under temp root" >&2
+    exit 1
+  fi
+  if ! rg -q '^severity_threshold[[:space:]]*=[[:space:]]*"high"' "$CARGO_AUDIT_CONFIG"; then
+    echo "FAIL: generated cargo-audit config does not carry the repo policy threshold" >&2
+    exit 1
+  fi
+  if rg -q '^severity-threshold[[:space:]]*=' "$CARGO_AUDIT_CONFIG"; then
+    echo "FAIL: generated cargo-audit config still uses unsupported severity-threshold spelling" >&2
+    exit 1
+  fi
+  audit_settings="$(
+    cd "$CARGO_AUDIT_WORKDIR"
+    cargo audit --file "$CARGO_AUDIT_LOCKFILE" --no-fetch --stale --format json \
+      | python3 -c 'import json,sys; print(json.load(sys.stdin)["settings"]["severity"])'
+  )"
+  if [[ "$audit_settings" != "high" ]]; then
+    echo "FAIL: cargo-audit did not load generated policy; severity=$audit_settings" >&2
+    exit 1
+  fi
+  echo "PASS: Suite S cargo-audit wrapper resolves repo lockfile and temp policy config"
+  exit 0
+fi
 
 # Each entry: "label::command"
 CHECKS=(
@@ -40,7 +102,7 @@ CHECKS=(
   "durable-source-comments::./scripts/check_no_ephemeral_issue_refs_in_comments.sh"
   "oauth-secret-scan::bash \"$OAUTH_SECRET_SCAN_SCRIPT\""
   "clippy-deny-warnings::bash src-tauri/scripts/build-mcp.sh --stub && cargo clippy --manifest-path src-tauri/Cargo.toml --workspace --all-features --lib --bins -- -D warnings"
-  "cargo-audit::cargo audit --file src-tauri/Cargo.lock"
+  "cargo-audit::cd \"$CARGO_AUDIT_WORKDIR\" && cargo audit --file \"$CARGO_AUDIT_LOCKFILE\""
 )
 
 # Inline OAuth secret scan (matches CI policy step)

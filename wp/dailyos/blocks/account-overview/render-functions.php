@@ -45,7 +45,7 @@ if ( ! function_exists( 'dailyos_account_overview_render' ) ) {
 		$cache_hint_token    = isset( $attributes['cache_hint_token'] ) ? (string) $attributes['cache_hint_token'] : '';
 
 		if ( '' === $composition_id ) {
-			return '<div class="wp-block-dailyos-account-overview is-empty">'
+			return '<div class="wp-block-dailyos-account-overview is-empty" data-empty-reason="missing_composition_id">'
 				. esc_html__( 'No account context to show here.', 'dailyos' )
 				. '</div>';
 		}
@@ -56,9 +56,7 @@ if ( ! function_exists( 'dailyos_account_overview_render' ) ) {
 		// passes a real DailyOS_Runtime_Client through the filter from
 		// class-dailyos-plugin.php.
 		if ( ! is_object( $runtime_client ) || ! method_exists( $runtime_client, 'project_composition_for_surface' ) ) {
-			return '<div class="wp-block-dailyos-account-overview is-empty">'
-				. esc_html__( 'No account context to show here.', 'dailyos' )
-				. '</div>';
+			return dailyos_account_overview_render_runtime_unavailable_notice();
 		}
 
 		$cache_hint_param = '' !== $cache_hint_token ? $cache_hint_token : null;

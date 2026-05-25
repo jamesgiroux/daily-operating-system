@@ -189,8 +189,8 @@
     if (status) right.append(el('span', { class: F('folioStatus') }, status));
 
     // Actions slot — folioActions container wraps page-specific buttons.
-    // Refresh button mirrors src/components/ui/folio-refresh-button.tsx exactly:
-    // title varies per page (Refresh briefings on week, Refresh on others).
+    // Refresh button keeps the FolioBar reference class for chrome styling and
+    // the source component module class for reference-fidelity import parity.
     if (actions.length) {
       const actWrap = el('div', { class: F('folioActions') });
       const refreshTitle = body.dataset.folioRefreshTitle || 'Refresh';
@@ -199,7 +199,7 @@
           actWrap.append(el('button', {
             type: 'button',
             title: refreshTitle,
-            class: F('folioRefreshButton'),
+            class: `${F('folioRefreshButton')} folio-refresh-button_button`,
           }, 'Refresh'));
         } else if (a === 'archive') {
           actWrap.append(el('button', {

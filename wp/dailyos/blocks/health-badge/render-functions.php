@@ -29,7 +29,7 @@ if ( ! function_exists( 'dailyos_health_badge_render' ) ) {
 
 		$runtime_client = apply_filters( 'dailyos_runtime_client_for_block', null );
 		if ( ! is_object( $runtime_client ) || ! method_exists( $runtime_client, 'project_composition_for_surface' ) ) {
-			return dailyos_health_badge_render_payload( $attributes );
+			return dailyos_health_badge_render_runtime_unavailable_notice();
 		}
 
 		$composition_version = isset( $attributes['composition_version'] ) ? (int) $attributes['composition_version'] : 0;
@@ -51,7 +51,14 @@ if ( ! function_exists( 'dailyos_health_badge_render' ) ) {
 	 * @return string
 	 */
 	function dailyos_health_badge_render_from_projection( mixed $response, array $attributes ): string {
-		if ( is_wp_error( $response ) || ( isset( $response['ok'] ) && false === $response['ok'] ) ) {
+		if ( is_wp_error( $response ) ) {
+			return dailyos_health_badge_render_runtime_unavailable_notice();
+		}
+		if ( isset( $response['ok'] ) && false === $response['ok'] ) {
+			$code = isset( $response['error']['code'] ) ? (string) $response['error']['code'] : '';
+			if ( in_array( $code, [ 'runtime_unavailable', 'runtime_request_failed', 'runtime_invalid_json', 'runtime_http_error' ], true ) ) {
+				return dailyos_health_badge_render_runtime_unavailable_notice();
+			}
 			return dailyos_health_badge_render_payload( $attributes );
 		}
 
@@ -184,5 +191,14 @@ if ( ! function_exists( 'dailyos_health_badge_render' ) ) {
 			$score_html,
 			$trend_html
 		);
+	}
+
+	/**
+	 * Render the runtime-unavailable diagnostic for composed health renders.
+	 */
+	function dailyos_health_badge_render_runtime_unavailable_notice(): string {
+		return '<span class="dailyos-health-badge dailyos-health-badge--runtime-unavailable" data-empty-reason="runtime_unavailable" data-ds-name="HealthBadge" data-ds-tier="primitive" data-ds-spec="primitives/HealthBadge.md" role="status">'
+			. esc_html__( 'Runtime unavailable', 'dailyos' )
+			. '</span>';
 	}
 }

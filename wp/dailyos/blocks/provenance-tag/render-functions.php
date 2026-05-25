@@ -49,7 +49,7 @@ if ( ! function_exists( 'dailyos_provenance_tag_render' ) ) {
 
 		$runtime_client = apply_filters( 'dailyos_runtime_client_for_block', null );
 		if ( ! is_object( $runtime_client ) || ! method_exists( $runtime_client, 'project_composition_for_surface' ) ) {
-			return dailyos_provenance_tag_render_empty_primitive();
+			return dailyos_provenance_tag_render_runtime_unavailable_notice();
 		}
 
 		$cache_hint_param = '' !== $cache_hint_token ? $cache_hint_token : null;
@@ -532,7 +532,7 @@ if ( ! function_exists( 'dailyos_provenance_tag_render' ) ) {
 		if ( '' !== $extra_class ) {
 			$classes .= ' ' . $extra_class;
 		}
-		return '<span class="' . esc_attr( $classes ) . '" data-ds-tier="primitive" data-ds-name="ProvenanceTag" data-ds-spec="primitives/ProvenanceTag.md"></span>';
+		return '<span class="' . esc_attr( $classes ) . '" data-empty-reason="missing_composition_id" data-ds-tier="primitive" data-ds-name="ProvenanceTag" data-ds-spec="primitives/ProvenanceTag.md"></span>';
 	}
 
 	/**

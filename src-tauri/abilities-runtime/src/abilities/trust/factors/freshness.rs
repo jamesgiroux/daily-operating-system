@@ -32,24 +32,8 @@ pub fn freshness_factor_input_for_claim(
         age_days: freshness.age_days,
         temporal_scope: claim.temporal_scope.clone(),
         timestamp_known: freshness.timestamp_known,
-        renewal_context: resolved_renewal_context(renewal_context, now),
+        renewal_context: renewal_context.map(|context| context.with_resolved_days_to_renewal(now)),
     }
-}
-
-fn resolved_renewal_context(
-    renewal_context: Option<&RenewalContext>,
-    now: DateTime<Utc>,
-) -> Option<RenewalContext> {
-    let mut renewal_context = renewal_context.cloned()?;
-    if renewal_context.days_to_renewal.is_none() {
-        renewal_context.days_to_renewal = renewal_context.renewal_at.map(|renewal_at| {
-            renewal_at
-                .date_naive()
-                .signed_duration_since(now.date_naive())
-                .num_days()
-        });
-    }
-    Some(renewal_context)
 }
 
 pub fn freshness_weight(input: &FreshnessFactorInput, config: &TrustConfig) -> f64 {
