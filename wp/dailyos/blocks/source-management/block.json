@@ -1,0 +1,32 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "dailyos/source-management",
+	"title": "Source Management",
+	"category": "dailyos",
+	"description": "Renders a read-only DailyOS workspace source ledger for an entity.",
+	"supports": {
+		"html": false,
+		"reusable": false,
+		"inserter": true
+	},
+	"attributes": {
+		"entity_type": {
+			"type": "string",
+			"default": ""
+		},
+		"entity_id": {
+			"type": "string",
+			"default": ""
+		},
+		"page_size": {
+			"type": "number",
+			"default": 25
+		}
+	},
+	"render": "file:./render.php",
+	"editorScript": "file:./edit.js",
+	"viewScript": "file:./view.js",
+	"style": "file:./style.css",
+	"editorStyle": "file:./editor.css"
+}

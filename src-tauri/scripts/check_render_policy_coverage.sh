@@ -336,6 +336,50 @@ SAFE_STRING_FIELDS = {
         "kind": "enum metadata",
         "id": "identifier metadata",
     },
+    "WorkspaceGraphNotModified": {
+        "graph_version": "opaque graph version metadata",
+    },
+    "WorkspaceGraphProjection": {
+        "graph_version": "opaque graph version metadata",
+    },
+    "WorkspaceGraphEntity": {
+        "entity_type": "enum metadata",
+        "entity_id": "identifier metadata",
+        "entity_name": "entity name metadata",
+    },
+    "WorkspaceGraphFileLink": {
+        "link_handle": "opaque diagnostic handle metadata",
+        "source_handle": "opaque source handle metadata",
+        "data_source_kind": "enum metadata",
+        "workspace_file_kind": "enum metadata",
+        "lifecycle_state": "enum metadata",
+        "category": "controlled category metadata",
+        "source_asof": "timestamp metadata",
+        "attribution_source": "attribution metadata",
+    },
+    "WorkspaceGraphUserOverride": {
+        "at": "timestamp metadata",
+    },
+    "WorkspaceGraphAudit": {
+        "graph_version": "opaque graph version metadata",
+    },
+    "WorkspaceGraphAuditGap": {
+        "category": "controlled gap category metadata",
+        "gap_id": "opaque diagnostic gap identifier metadata",
+        "workspace_source_handle": "opaque workspace source handle metadata",
+        "source_handle": "opaque source handle metadata",
+        "link_handle": "opaque link handle metadata",
+        "claim_handle": "opaque claim handle metadata",
+        "entity_type": "enum metadata",
+        "entity_id": "identifier metadata",
+        "linked_entity_type": "enum metadata",
+        "linked_entity_id": "identifier metadata",
+        "claim_entity_type": "enum metadata",
+        "claim_entity_id": "identifier metadata",
+        "workspace_file_kind": "enum metadata",
+        "lifecycle_state": "enum metadata",
+        "reason": "controlled audit reason metadata",
+    },
     "Paginated": {},
     "CursorState": {
         "advisory": "pagination advisory metadata",
@@ -553,6 +597,23 @@ NESTED_OUTPUT_STRUCTS = {
         "ClaimReceiptAction",
     ],
     "ClaimReceiptProvenance": ["ClaimReceiptProvenanceSource"],
+    "WorkspaceGraphResponse": [
+        "WorkspaceGraphProjection",
+        "WorkspaceGraphNotModified",
+    ],
+    "WorkspaceGraphProjection": [
+        "WorkspaceGraphPage",
+        "WorkspaceGraphProjectionBody",
+        "WorkspaceGraphAudit",
+    ],
+    "WorkspaceGraphProjectionBody": ["WorkspaceGraphEntity"],
+    "WorkspaceGraphEntity": [
+        "WorkspaceGraphFileLink",
+        "WorkspaceGraphClaimSummary",
+    ],
+    "WorkspaceGraphFileLink": ["WorkspaceGraphUserOverride"],
+    "WorkspaceGraphClaimSummary": ["WorkspaceGraphTrustBandSummary"],
+    "WorkspaceGraphAudit": ["WorkspaceGraphAuditGap"],
 }
 
 EXPECTED_AGENT_OUTPUTS = {
@@ -566,6 +627,7 @@ EXPECTED_AGENT_OUTPUTS = {
     "list_open_loops": "OpenLoopsResult",
     "get_daily_readiness": "DailyReadiness",
     "detect_risk_shift": "RiskShiftResult",
+    "workspace_graph": "WorkspaceGraphResponse",
 }
 
 SAFE_WRAPPERS = ("RenderableMcpClaimText", "RenderableMcpEntityName")

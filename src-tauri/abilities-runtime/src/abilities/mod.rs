@@ -18,13 +18,16 @@ pub mod list_open_loops;
 pub mod list_pagination;
 pub mod list_people;
 pub mod list_projects;
+pub mod markdown_preview;
 pub mod prepare_meeting;
 pub mod provenance;
 pub mod registry;
+pub mod source_management_ledger;
 pub mod temporal;
 pub mod threads;
 pub mod tracer;
 pub mod trust;
+pub mod workspace_graph;
 pub mod workspace_place_document;
 
 pub use claims::{

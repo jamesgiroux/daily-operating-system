@@ -398,28 +398,100 @@
   {
     "name": "dailyos.write.place_document",
     "side": "Write",
-    "summary": "Places a document into working memory.",
-    "when_to_call": "When the user wants to save or file a document under a topic.",
+    "summary": "Places a text document into local workspace memory for a specific entity.",
+    "when_to_call": "When the user wants to save or file a text document for a known account, person, or project in DailyOS workspace memory.",
     "when_NOT_to_call": "Do NOT call for general file upload to shared drives.",
     "scopesRequired": [
       "write.workspace_place_document"
     ],
     "parameters": [
       {
-        "name": "topic",
+        "name": "schema_version",
         "schema": {
-          "type": "string"
+          "type": "integer",
+          "const": 1
         },
         "required": true,
-        "description": "Topic"
+        "description": "Workspace placement schema version. Must be 1."
       },
       {
-        "name": "content",
+        "name": "entity",
+        "schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "entity_type",
+            "entity_id"
+          ],
+          "properties": {
+            "entity_type": {
+              "type": "string",
+              "enum": [
+                "account",
+                "person",
+                "project"
+              ]
+            },
+            "entity_id": {
+              "type": "string"
+            }
+          }
+        },
+        "required": true,
+        "description": "Target DailyOS entity."
+      },
+      {
+        "name": "content_b64",
         "schema": {
           "type": "string"
         },
         "required": true,
-        "description": "Document content"
+        "description": "RFC 4648 standard base64 text bytes with required padding."
+      },
+      {
+        "name": "content_type",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "text/markdown",
+            "text/plain",
+            "application/json"
+          ]
+        },
+        "required": true,
+        "description": "Textual document content type."
+      },
+      {
+        "name": "filename_hint",
+        "schema": {
+          "type": "string"
+        },
+        "required": false,
+        "description": "Optional safe filename hint."
+      },
+      {
+        "name": "category",
+        "schema": {
+          "type": "string"
+        },
+        "required": true,
+        "description": "Required workspace category slug allowed for the target entity type."
+      },
+      {
+        "name": "client_dedup_key",
+        "schema": {
+          "type": "string"
+        },
+        "required": false,
+        "description": "Optional caller idempotency key."
+      },
+      {
+        "name": "dry_run",
+        "schema": {
+          "type": "boolean"
+        },
+        "required": false,
+        "description": "Preview placement without writing a document."
       }
     ],
     "returns": {
@@ -427,30 +499,92 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "document_id": {
+          "schema_version": {
+            "type": "integer"
+          },
+          "document_handle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_handle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "entity_type": {
             "type": "string"
+          },
+          "entity_id": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "workspace_file_kind": {
+            "type": "string"
+          },
+          "source_asof": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lifecycle_state": {
+            "type": "string"
+          },
+          "claim_count_produced": {
+            "type": "integer"
+          },
+          "idempotent_replay": {
+            "type": "boolean"
+          },
+          "dry_run": {
+            "type": "boolean"
+          },
+          "resolved_path": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "mutation_cursor": {
             "type": "object"
           }
         }
       },
-      "description": "New document identifier"
+      "description": "Opaque placement receipt"
     },
     "examples": [
       {
-        "prompt": "Save this Acme renewal context under the Acme topic",
+        "prompt": "Save this renewal context for the selected account",
         "invocation": {
           "name": "dailyos.write.place_document",
           "arguments": {
-            "topic": "Acme",
-            "content": "opaque"
+            "schema_version": 1,
+            "entity": {
+              "entity_type": "account",
+              "entity_id": "acct_123"
+            },
+            "content_b64": "b3BhcXVl",
+            "content_type": "text/markdown",
+            "filename_hint": "renewal-notes.md",
+            "category": "notes",
+            "dry_run": false
           }
         },
         "expectedResponseShape": {
-          "document_id": "opaque",
+          "schema_version": 1,
+          "document_handle": "opaque",
+          "source_handle": "opaque",
+          "lifecycle_state": "ingested",
           "mutation_cursor": {
-            "document_id": "opaque"
+            "kind": "workspace_placement",
+            "document_handle": "opaque",
+            "source_handle": "opaque",
+            "idempotency_id": "opaque"
           }
         }
       }
@@ -458,11 +592,11 @@
     "selectionFixtures": {
       "positive": [
         {
-          "prompt": "Save this Acme renewal context under the Acme topic",
+          "prompt": "Save this renewal context for the selected account",
           "expectedTool": "dailyos.write.place_document"
         },
         {
-          "prompt": "File this note under the Hooli deal",
+          "prompt": "File this note for the selected project",
           "expectedTool": "dailyos.write.place_document"
         }
       ],
@@ -567,7 +701,7 @@
       ],
       "negativeAdjacentTool": [
         {
-          "prompt": "Save this full document under the Acme topic",
+          "prompt": "Save this full document for the selected account",
           "expectedTool": "dailyos.write.place_document"
         }
       ]

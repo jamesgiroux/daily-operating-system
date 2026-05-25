@@ -37,7 +37,10 @@ pub use abilities_runtime::types::ClaimSensitivity;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use crate::db::ActionDb;
 use crate::entity::EntityType;
+use crate::services::context::ServiceContext;
+use crate::signals::propagation::PropagationEngine;
 
 use super::lifecycle;
 
@@ -323,24 +326,117 @@ pub trait Extractor: Send + Sync {
     ) -> Result<ExtractionReport, ExtractionError>;
 }
 
+/// Context required for workspace signal emission. The caller supplies the live
+/// service/DB/propagation handles so emitters use the service signal facade
+/// instead of opening their own handles or reaching into `signals::bus`.
+pub struct SignalEmitContext<'a, 'svc> {
+    pub services: &'a ServiceContext<'svc>,
+    pub db: &'a ActionDb,
+    pub propagation: Option<&'a PropagationEngine>,
+}
+
+impl<'a, 'svc> SignalEmitContext<'a, 'svc> {
+    pub fn new(
+        services: &'a ServiceContext<'svc>,
+        db: &'a ActionDb,
+        propagation: Option<&'a PropagationEngine>,
+    ) -> Self {
+        Self {
+            services,
+            db,
+            propagation,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum SignalEmitError {
+    MissingEntityTarget(&'static str),
+    MissingPropagationEngine(&'static str),
+    Serialize {
+        signal_type: &'static str,
+        message: String,
+    },
+    Emit {
+        signal_type: &'static str,
+        message: String,
+    },
+}
+
+impl std::fmt::Display for SignalEmitError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::MissingEntityTarget(signal_type) => {
+                write!(f, "workspace signal {signal_type} missing entity target")
+            }
+            Self::MissingPropagationEngine(signal_type) => {
+                write!(
+                    f,
+                    "workspace signal {signal_type} missing propagation engine"
+                )
+            }
+            Self::Serialize {
+                signal_type,
+                message,
+            } => write!(
+                f,
+                "workspace signal {signal_type} payload serialization failed: {message}"
+            ),
+            Self::Emit {
+                signal_type,
+                message,
+            } => write!(
+                f,
+                "workspace signal {signal_type} emission failed: {message}"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for SignalEmitError {}
+
 /// Signal-emission trait. Each method maps 1:1 to a
-/// `SignalType::WorkspaceFile*` variant in W3-B's `signals/policy_registry.rs`
-/// (5 methods → 5 variants). W3-B's `WorkspaceSignalEmitter` implements this;
-/// W2-A constructs the pipeline with `NullSignalEmitter` by default and
-/// `wiring.rs` swaps in `WorkspaceSignalEmitter` after W3-B merges. W1-C's
-/// `link::override_link` consumes `&dyn SignalEmitter` for `emit_link_changed`.
+/// `SignalType::WorkspaceFile*` variant in `signals/policy_registry.rs`.
+/// Implementations are fallible so required invalidating signals cannot be
+/// silently dropped.
 pub trait SignalEmitter: Send + Sync {
     fn emit_file_ingested(
         &self,
+        ctx: &SignalEmitContext<'_, '_>,
         file_id: &str,
-        file_hash: &str,
         ingestion_run_id: &str,
+        entity_type: &str,
+        entity_id: &str,
+    ) -> Result<(), SignalEmitError>;
+    fn emit_file_rejected(
+        &self,
+        ctx: &SignalEmitContext<'_, '_>,
+        file_id: Option<&str>,
+        reason: RejectionReason,
+    ) -> Result<(), SignalEmitError>;
+    fn emit_file_pending_entity_assignment(
+        &self,
+        ctx: &SignalEmitContext<'_, '_>,
+        file_id: &str,
+        ingestion_run_id: &str,
+    ) -> Result<(), SignalEmitError>;
+    fn emit_file_quarantined(
+        &self,
+        ctx: &SignalEmitContext<'_, '_>,
+        file_id: &str,
+        reason: &str,
+        actor: &str,
+        entity_type: Option<&str>,
         entity_id: Option<&str>,
-    );
-    fn emit_file_rejected(&self, file_id: Option<&str>, reason: RejectionReason);
-    fn emit_file_pending_entity_assignment(&self, file_id: &str, ingestion_run_id: &str);
-    fn emit_file_quarantined(&self, file_id: &str, reason: &str, actor: &str);
-    fn emit_link_changed(&self, file_id: &str, entity_id: &str, actor: &str);
+    ) -> Result<(), SignalEmitError>;
+    fn emit_link_changed(
+        &self,
+        ctx: &SignalEmitContext<'_, '_>,
+        file_id: &str,
+        entity_type: &str,
+        entity_id: &str,
+        actor: &str,
+    ) -> Result<(), SignalEmitError>;
 }
 
 /// No-op extractor. Lets W1 + W2 compile against the `Extractor` trait before
@@ -364,18 +460,53 @@ pub struct NullSignalEmitter;
 impl SignalEmitter for NullSignalEmitter {
     fn emit_file_ingested(
         &self,
+        _ctx: &SignalEmitContext<'_, '_>,
         _file_id: &str,
-        _file_hash: &str,
         _ingestion_run_id: &str,
-        _entity_id: Option<&str>,
-    ) {
+        _entity_type: &str,
+        _entity_id: &str,
+    ) -> Result<(), SignalEmitError> {
+        Ok(())
     }
 
-    fn emit_file_rejected(&self, _file_id: Option<&str>, _reason: RejectionReason) {}
+    fn emit_file_rejected(
+        &self,
+        _ctx: &SignalEmitContext<'_, '_>,
+        _file_id: Option<&str>,
+        _reason: RejectionReason,
+    ) -> Result<(), SignalEmitError> {
+        Ok(())
+    }
 
-    fn emit_file_pending_entity_assignment(&self, _file_id: &str, _ingestion_run_id: &str) {}
+    fn emit_file_pending_entity_assignment(
+        &self,
+        _ctx: &SignalEmitContext<'_, '_>,
+        _file_id: &str,
+        _ingestion_run_id: &str,
+    ) -> Result<(), SignalEmitError> {
+        Ok(())
+    }
 
-    fn emit_file_quarantined(&self, _file_id: &str, _reason: &str, _actor: &str) {}
+    fn emit_file_quarantined(
+        &self,
+        _ctx: &SignalEmitContext<'_, '_>,
+        _file_id: &str,
+        _reason: &str,
+        _actor: &str,
+        _entity_type: Option<&str>,
+        _entity_id: Option<&str>,
+    ) -> Result<(), SignalEmitError> {
+        Ok(())
+    }
 
-    fn emit_link_changed(&self, _file_id: &str, _entity_id: &str, _actor: &str) {}
+    fn emit_link_changed(
+        &self,
+        _ctx: &SignalEmitContext<'_, '_>,
+        _file_id: &str,
+        _entity_type: &str,
+        _entity_id: &str,
+        _actor: &str,
+    ) -> Result<(), SignalEmitError> {
+        Ok(())
+    }
 }

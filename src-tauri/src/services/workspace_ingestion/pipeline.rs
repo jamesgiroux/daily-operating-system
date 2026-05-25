@@ -17,11 +17,12 @@ use crate::db::ActionDb;
 use crate::entity::EntityType;
 use crate::services::claims::{commit_claim, ClaimProposal};
 use crate::services::context::ServiceContext;
+use crate::signals::propagation::PropagationEngine;
 
 use super::contracts::{
     DroppedFact, DroppedFactSource, ExtractionContext, ExtractionReport, Extractor, FileIdentity,
-    RejectionReason, ResolvedLinkedSubject, SignalEmitter, WorkspaceCategory,
-    WorkspaceClaimProposal,
+    RejectionReason, ResolvedLinkedSubject, SignalEmitContext, SignalEmitError, SignalEmitter,
+    WorkspaceCategory, WorkspaceClaimProposal,
 };
 use super::lifecycle::{workspace_file_kind_slug, LifecycleError, LifecycleRepo, LifecycleState};
 use super::link::{LinkAttributionSource, LinkError, LinkRepo};
@@ -133,11 +134,32 @@ impl IngestPipeline {
         &self,
         ctx: &ServiceContext<'_>,
         db: &ActionDb,
+        request: IngestRequest,
+    ) -> Result<IngestReceipt, IngestError> {
+        self.run_inner(ctx, db, None, request)
+    }
+
+    pub fn run_with_signal_engine(
+        &self,
+        ctx: &ServiceContext<'_>,
+        db: &ActionDb,
+        propagation: &PropagationEngine,
+        request: IngestRequest,
+    ) -> Result<IngestReceipt, IngestError> {
+        self.run_inner(ctx, db, Some(propagation), request)
+    }
+
+    fn run_inner(
+        &self,
+        ctx: &ServiceContext<'_>,
+        db: &ActionDb,
+        propagation: Option<&PropagationEngine>,
         mut request: IngestRequest,
     ) -> Result<IngestReceipt, IngestError> {
         ctx.check_mutation_allowed()
             .map_err(|e| IngestError::DbError(format!("workspace ingestion blocked: {e}")))?;
         let conn = db.conn_ref();
+        let signal_ctx = SignalEmitContext::new(ctx, db, propagation);
         let expected = file_id_from_identity(&request.identity, &self.workspace_root)
             .map_err(|e| IngestError::DbError(format!("file id derivation failed: {e:?}")))?;
         if expected != request.file_id {
@@ -162,7 +184,7 @@ impl IngestPipeline {
             let file_size = request.file.metadata().map_err(IngestError::Io)?.len();
             if file_size > self.max_file_bytes {
                 self.reject_before_run(
-                    conn,
+                    &signal_ctx,
                     &request.file_id,
                     RejectionReason::FileTooLarge,
                     LifecycleState::Pending,
@@ -175,13 +197,23 @@ impl IngestPipeline {
                 .file
                 .read_to_end(&mut bytes)
                 .map_err(IngestError::Io)?;
-            String::from_utf8(bytes)
-                .map_err(|_| IngestError::Rejected(RejectionReason::UnsupportedFormat))?
+            match String::from_utf8(bytes) {
+                Ok(content) => content,
+                Err(_) => {
+                    self.reject_before_run(
+                        &signal_ctx,
+                        &request.file_id,
+                        RejectionReason::UnsupportedFormat,
+                        LifecycleState::Pending,
+                    )?;
+                    return Err(IngestError::Rejected(RejectionReason::UnsupportedFormat));
+                }
+            }
         };
         let file_size = content.len() as u64;
         if file_size > self.max_file_bytes {
             self.reject_before_run(
-                conn,
+                &signal_ctx,
                 &request.file_id,
                 RejectionReason::FileTooLarge,
                 LifecycleState::Pending,
@@ -190,7 +222,7 @@ impl IngestPipeline {
         }
         if content.as_bytes().contains(&0) {
             self.reject_before_run(
-                conn,
+                &signal_ctx,
                 &request.file_id,
                 RejectionReason::UnsupportedFormat,
                 LifecycleState::Pending,
@@ -331,84 +363,100 @@ impl IngestPipeline {
             }
         }
 
-        let mut committed_count = 0_u64;
-        for proposal in commit_ready {
-            let claim_type = proposal.claim_type.clone();
-            if let Err(error) = commit_claim(ctx, db, proposal) {
-                let commit_errors = vec![CommitErrorReport {
-                    claim_type,
-                    reason: error.to_string(),
-                }];
-                let error_log = run_error_log(
-                    &extraction_report,
-                    committed_count,
-                    &commit_errors,
-                    committed_count > 0,
-                );
-                RunsRepo::complete_run(
-                    conn,
-                    &run_id,
-                    IngestionRunStatus::Failed,
-                    committed_count,
-                    Some(error_log),
-                )?;
-                LifecycleRepo::transition(
-                    conn,
-                    &request.file_id,
-                    LifecycleState::Ingesting,
-                    LifecycleState::Rejected,
-                )?;
-                return Err(IngestError::DbError(format!(
-                    "claim commit failed: {error}"
-                )));
-            }
-            committed_count += 1;
-        }
-
-        let error_log = if extraction_report.dropped_facts.is_empty()
-            && extraction_report.warnings.is_empty()
-        {
-            None
-        } else {
-            Some(run_error_log(
-                &extraction_report,
-                committed_count,
-                &[],
-                false,
-            ))
-        };
-        RunsRepo::complete_run(
-            conn,
-            &run_id,
-            IngestionRunStatus::Success,
-            committed_count,
-            error_log,
-        )?;
-
         let lifecycle_state_after = if linked_subject.is_some() {
             LifecycleState::Ingested
         } else {
             LifecycleState::PendingEntityAssignment
         };
-        LifecycleRepo::transition(
-            conn,
-            &request.file_id,
-            LifecycleState::Ingesting,
-            lifecycle_state_after,
-        )?;
 
-        let entity_id_for_signal = linked_subject.as_ref().map(|e| e.entity_id.as_str());
-        match lifecycle_state_after {
-            LifecycleState::Ingested => self.signal_emitter.emit_file_ingested(
+        let finalization_result = db.with_transaction(|tx_db| {
+            let tx_conn = tx_db.conn_ref();
+            let mut committed_count = 0_u64;
+            for proposal in commit_ready {
+                let claim_type = proposal.claim_type.clone();
+                if let Err(error) = commit_claim(ctx, tx_db, proposal) {
+                    return Err(format!("claim commit failed for {claim_type}: {error}"));
+                }
+                committed_count += 1;
+            }
+
+            let error_log = if extraction_report.dropped_facts.is_empty()
+                && extraction_report.warnings.is_empty()
+            {
+                None
+            } else {
+                Some(run_error_log(
+                    &extraction_report,
+                    committed_count,
+                    &[],
+                    false,
+                ))
+            };
+
+            RunsRepo::complete_run(
+                tx_conn,
+                &run_id,
+                IngestionRunStatus::Success,
+                committed_count,
+                error_log,
+            )
+            .map_err(|e| e.to_string())?;
+
+            LifecycleRepo::transition(
+                tx_conn,
                 &request.file_id,
-                &content_sha256,
-                &run_id.0,
-                entity_id_for_signal,
-            ),
-            LifecycleState::PendingEntityAssignment => self
-                .signal_emitter
-                .emit_file_pending_entity_assignment(&request.file_id, &run_id.0),
-            _ => {}
+                LifecycleState::Ingesting,
+                lifecycle_state_after,
+            )
+            .map_err(|e| e.to_string())?;
+
+            let tx_signal_ctx = SignalEmitContext::new(ctx, tx_db, propagation);
+            let entity_type_for_signal = linked_subject.as_ref().map(|e| e.subject_kind_slug());
+            let entity_id_for_signal = linked_subject.as_ref().map(|e| e.entity_id.as_str());
+            match lifecycle_state_after {
+                LifecycleState::Ingested => self
+                    .signal_emitter
+                    .emit_file_ingested(
+                        &tx_signal_ctx,
+                        &request.file_id,
+                        &run_id.0,
+                        entity_type_for_signal
+                            .ok_or(SignalEmitError::MissingEntityTarget(
+                                "workspace_file_ingested",
+                            ))
+                            .map_err(|e| e.to_string())?,
+                        entity_id_for_signal
+                            .ok_or(SignalEmitError::MissingEntityTarget(
+                                "workspace_file_ingested",
+                            ))
+                            .map_err(|e| e.to_string())?,
+                    )
+                    .map_err(|e| e.to_string())?,
+                LifecycleState::PendingEntityAssignment => self
+                    .signal_emitter
+                    .emit_file_pending_entity_assignment(
+                        &tx_signal_ctx,
+                        &request.file_id,
+                        &run_id.0,
+                    )
+                    .map_err(|e| e.to_string())?,
+                _ => {}
+            }
+            Ok(committed_count)
+        });
+        if let Err(message) = finalization_result {
+            if let Err(cleanup) = fail_in_progress_run_after_finalization_error(
+                conn,
+                &run_id,
+                &request.file_id,
+                &message,
+            ) {
+                log::warn!(
+                    "workspace ingestion signal finalization cleanup failed for {}: {cleanup}",
+                    request.file_id
+                );
+            }
+            return Err(IngestError::DbError(message));
         }
 
         let resolved_path =
@@ -484,7 +532,7 @@ impl IngestPipeline {
 
     fn reject_before_run(
         &self,
-        conn: &Connection,
+        signal_ctx: &SignalEmitContext<'_, '_>,
         file_id: &str,
         reason: RejectionReason,
         from: LifecycleState,
@@ -494,10 +542,24 @@ impl IngestPipeline {
             found_bytes: None,
             detected_format: None,
         };
-        LifecycleRepo::transition(conn, file_id, from, LifecycleState::Rejected)?;
-        self.signal_emitter
-            .emit_file_rejected(Some(file_id), reason.clone());
-        Ok(())
+        signal_ctx
+            .db
+            .with_transaction(|tx_db| {
+                LifecycleRepo::transition(
+                    tx_db.conn_ref(),
+                    file_id,
+                    from,
+                    LifecycleState::Rejected,
+                )
+                .map_err(|e| e.to_string())?;
+                let tx_signal_ctx =
+                    SignalEmitContext::new(signal_ctx.services, tx_db, signal_ctx.propagation);
+                self.signal_emitter
+                    .emit_file_rejected(&tx_signal_ctx, Some(file_id), reason.clone())
+                    .map_err(|e| e.to_string())?;
+                Ok(())
+            })
+            .map_err(IngestError::DbError)
     }
 }
 
@@ -887,6 +949,30 @@ fn is_valid_doc_type(value: &str) -> bool {
     }
 }
 
+fn fail_in_progress_run_after_finalization_error(
+    conn: &Connection,
+    run_id: &IngestionRunId,
+    file_id: &str,
+    message: &str,
+) -> Result<(), IngestError> {
+    let error_log = serde_json::json!({
+        "error": "workspace_ingestion_finalization_failed",
+        "message": message,
+    });
+    RunsRepo::complete_run(conn, run_id, IngestionRunStatus::Failed, 0, Some(error_log))?;
+    if let Some(row) = LifecycleRepo::get(conn, file_id)? {
+        if row.lifecycle_state == LifecycleState::Ingesting {
+            LifecycleRepo::transition(
+                conn,
+                file_id,
+                LifecycleState::Ingesting,
+                LifecycleState::Rejected,
+            )?;
+        }
+    }
+    Ok(())
+}
+
 pub fn file_id_from_identity(
     identity: &FileIdentity,
     workspace_root: &Path,
@@ -902,16 +988,51 @@ pub fn file_id_from_identity(
 }
 
 pub fn quarantine_source(
-    conn: &Connection,
+    signal_ctx: &SignalEmitContext<'_, '_>,
+    emitter: &dyn SignalEmitter,
     file_id: &str,
     reason: &str,
     actor: QuarantineActor,
 ) -> Result<(), IngestError> {
-    let actor_id = match actor {
+    let actor_id = actor_id_for_quarantine(actor);
+    signal_ctx
+        .db
+        .with_transaction(|tx_db| {
+            let tx_signal_ctx =
+                SignalEmitContext::new(signal_ctx.services, tx_db, signal_ctx.propagation);
+            let lifecycle = transition_source_to_quarantined(tx_db.conn_ref(), file_id, &actor_id)
+                .map_err(|e| e.to_string())?;
+            let (entity_type, entity_id) =
+                quarantine_signal_target(tx_db.conn_ref(), &lifecycle, file_id)
+                    .map_err(|e| e.to_string())?;
+            emitter
+                .emit_file_quarantined(
+                    &tx_signal_ctx,
+                    file_id,
+                    reason,
+                    &actor_id,
+                    entity_type.as_deref(),
+                    entity_id.as_deref(),
+                )
+                .map_err(|e| e.to_string())?;
+            Ok(())
+        })
+        .map_err(IngestError::DbError)
+}
+
+fn actor_id_for_quarantine(actor: QuarantineActor) -> String {
+    match actor {
         QuarantineActor::User { user_id } => user_id,
-    };
-    LifecycleRepo::record_user_override(conn, file_id, &actor_id)?;
-    let lifecycle = LifecycleRepo::get(conn, file_id)?.ok_or(LifecycleError::FileNotFound)?;
+    }
+}
+
+fn transition_source_to_quarantined(
+    conn: &Connection,
+    file_id: &str,
+    actor_id: &str,
+) -> Result<super::lifecycle::WorkspaceFileLifecycle, IngestError> {
+    LifecycleRepo::record_user_override(conn, file_id, actor_id)?;
+    let mut lifecycle = LifecycleRepo::get(conn, file_id)?.ok_or(LifecycleError::FileNotFound)?;
     if lifecycle.lifecycle_state != LifecycleState::Quarantined {
         LifecycleRepo::transition(
             conn,
@@ -919,9 +1040,34 @@ pub fn quarantine_source(
             lifecycle.lifecycle_state,
             LifecycleState::Quarantined,
         )?;
+        lifecycle = LifecycleRepo::get(conn, file_id)?.ok_or(LifecycleError::FileNotFound)?;
     }
-    let _redacted_reason = reason;
-    Ok(())
+    Ok(lifecycle)
+}
+
+fn quarantine_signal_target(
+    conn: &Connection,
+    lifecycle: &super::lifecycle::WorkspaceFileLifecycle,
+    file_id: &str,
+) -> Result<(Option<String>, Option<String>), IngestError> {
+    if let (Some(entity_type), Some(entity_id)) =
+        (lifecycle.entity_type.as_ref(), lifecycle.entity_id.as_ref())
+    {
+        return Ok((Some(entity_type.clone()), Some(entity_id.clone())));
+    }
+
+    let active_links =
+        LinkRepo::list_links_for_file(conn, file_id, false).map_err(link_error_to_ingest)?;
+    let [link] = active_links.as_slice() else {
+        return Ok((None, None));
+    };
+    if link.entity_type == EntityType::Other {
+        return Ok((None, None));
+    }
+    Ok((
+        Some(link.entity_type.as_str().to_string()),
+        Some(link.entity_id.clone()),
+    ))
 }
 
 impl From<LifecycleError> for IngestError {
@@ -946,6 +1092,12 @@ impl From<RunsError> for IngestError {
 
 impl From<ResolvePathError> for IngestError {
     fn from(value: ResolvePathError) -> Self {
+        IngestError::DbError(value.to_string())
+    }
+}
+
+impl From<SignalEmitError> for IngestError {
+    fn from(value: SignalEmitError) -> Self {
         IngestError::DbError(value.to_string())
     }
 }

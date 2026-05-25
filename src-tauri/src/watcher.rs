@@ -20,13 +20,15 @@ use crate::parser::count_inbox;
 use crate::people;
 use crate::projects;
 use crate::services::context::{ExternalClients, ServiceContext, SystemClock, SystemRng};
-use crate::services::workspace_ingestion::contracts::RejectionReason;
+use crate::services::workspace_ingestion::contracts::{RejectionReason, SignalEmitContext};
 use crate::services::workspace_ingestion::pipeline::{
     file_id_from_identity, EntityRef, IngestError, IngestPipeline, IngestRequest,
 };
 use crate::services::workspace_ingestion::registry::WorkspaceSourceRegistry;
 use crate::services::workspace_ingestion::runs::IngestionMode;
+use crate::services::workspace_ingestion::signals::emit_pre_pipeline_rejection;
 use crate::services::workspace_ingestion::wiring;
+use crate::signals::propagation::PropagationEngine;
 use crate::state::AppState;
 
 /// Debounce window for file system events
@@ -663,9 +665,21 @@ fn ingest_after_upsert(
     path: &Path,
     source_type: WorkspaceFileKind,
     entity: Option<EntityRef>,
+    signal_engine: &PropagationEngine,
 ) -> Result<(), IngestError> {
-    let (file, identity) = WorkspaceSourceRegistry::open_validated(workspace_root, path)
-        .map_err(IngestError::Rejected)?;
+    let clock = SystemClock;
+    let rng = SystemRng;
+    let external = ExternalClients::default();
+    let ctx =
+        ServiceContext::new_live(&clock, &rng, &external).with_actor("system:workspace_watcher");
+    let (file, identity) = match WorkspaceSourceRegistry::open_validated(workspace_root, path) {
+        Ok(opened) => opened,
+        Err(reason) => {
+            let signal_ctx = SignalEmitContext::new(&ctx, db, None);
+            emit_pre_pipeline_rejection(&signal_ctx, reason.clone())?;
+            return Err(IngestError::Rejected(reason));
+        }
+    };
 
     let source_asof: DateTime<Utc> = identity
         .canonical_path
@@ -674,8 +688,14 @@ fn ingest_after_upsert(
         .map_err(IngestError::Io)?
         .into();
 
-    let file_id = file_id_from_identity(&identity, workspace_root)
-        .map_err(|_| IngestError::Rejected(RejectionReason::OutsideWorkspace))?;
+    let file_id = match file_id_from_identity(&identity, workspace_root) {
+        Ok(file_id) => file_id,
+        Err(_) => {
+            let signal_ctx = SignalEmitContext::new(&ctx, db, None);
+            emit_pre_pipeline_rejection(&signal_ctx, RejectionReason::OutsideWorkspace)?;
+            return Err(IngestError::Rejected(RejectionReason::OutsideWorkspace));
+        }
+    };
 
     let request = IngestRequest {
         file,
@@ -690,12 +710,9 @@ fn ingest_after_upsert(
         validated_content: None,
     };
 
-    let clock = SystemClock;
-    let rng = SystemRng;
-    let external = ExternalClients::default();
-    let ctx =
-        ServiceContext::new_live(&clock, &rng, &external).with_actor("system:workspace_watcher");
-    pipeline.run(&ctx, db, request).map(|_| ())
+    pipeline
+        .run_with_signal_engine(&ctx, db, signal_engine, request)
+        .map(|_| ())
 }
 
 fn log_ingest_failure(path: &Path, err: IngestError) {
@@ -766,6 +783,7 @@ fn handle_people_changes(paths: &[PathBuf], state: &AppState, workspace: &Path) 
                                 person.id.clone(),
                                 Some(person.name.clone()),
                             )),
+                            state.signals.engine.as_ref(),
                         ) {
                             log_ingest_failure(path, err);
                         }
@@ -786,7 +804,7 @@ fn handle_people_changes(paths: &[PathBuf], state: &AppState, workspace: &Path) 
 /// Handle detected changes to Accounts/*/dashboard.json files.
 ///
 /// Reads the changed JSON files, syncs to SQLite, regenerates dashboard.md.
-fn handle_account_changes(paths: &[PathBuf], _state: &AppState, workspace: &Path) {
+fn handle_account_changes(paths: &[PathBuf], state: &AppState, workspace: &Path) {
     // Skip watcher sync when dev DB mode is active. The watcher watches
     // the live workspace, but the DB is pointing at the dev DB — syncing would
     // leak live account data into the dev sandbox.
@@ -836,6 +854,7 @@ fn handle_account_changes(paths: &[PathBuf], _state: &AppState, workspace: &Path
                             account.id.clone(),
                             Some(account.name.clone()),
                         )),
+                        state.signals.engine.as_ref(),
                     ) {
                         log_ingest_failure(path, err);
                     }
@@ -852,7 +871,7 @@ fn handle_account_changes(paths: &[PathBuf], _state: &AppState, workspace: &Path
 /// Handle detected changes to Projects/*/dashboard.json files.
 ///
 /// Reads the changed JSON files, syncs to SQLite, regenerates dashboard.md.
-fn handle_project_changes(paths: &[PathBuf], _state: &AppState, workspace: &Path) {
+fn handle_project_changes(paths: &[PathBuf], state: &AppState, workspace: &Path) {
     // Skip watcher sync in dev DB mode (same rationale as accounts above)
     if crate::db::is_dev_db_mode() {
         log::debug!("Watcher: skipping project sync — dev DB mode active");
@@ -894,6 +913,7 @@ fn handle_project_changes(paths: &[PathBuf], _state: &AppState, workspace: &Path
                             project.id.clone(),
                             Some(project.name.clone()),
                         )),
+                        state.signals.engine.as_ref(),
                     ) {
                         log_ingest_failure(path, err);
                     }
@@ -913,7 +933,7 @@ fn handle_project_changes(paths: &[PathBuf], _state: &AppState, workspace: &Path
 /// and returns a payload for the frontend event.
 fn handle_account_content_changes(
     paths: &[PathBuf],
-    _state: &AppState,
+    state: &AppState,
     workspace: &Path,
 ) -> Option<ContentChangePayload> {
     // Skip in dev DB mode
@@ -985,6 +1005,7 @@ fn handle_account_content_changes(
                         account.id.clone(),
                         Some(account.name.clone()),
                     )),
+                    state.signals.engine.as_ref(),
                 ) {
                     log_ingest_failure(path, err);
                 }
@@ -1008,7 +1029,7 @@ fn handle_account_content_changes(
 /// syncs their content index, and returns a payload for the frontend event.
 fn handle_project_content_changes(
     paths: &[PathBuf],
-    _state: &AppState,
+    state: &AppState,
     workspace: &Path,
 ) -> Option<ContentChangePayload> {
     // Skip in dev DB mode
@@ -1080,6 +1101,7 @@ fn handle_project_content_changes(
                         project.id.clone(),
                         Some(project.name.clone()),
                     )),
+                    state.signals.engine.as_ref(),
                 ) {
                     log_ingest_failure(path, err);
                 }

@@ -54,6 +54,8 @@ regex = "1"
 sha2 = "0.10"
 unicode-normalization = "0.1"
 hex = "0.4"
+hmac = "0.12"
+pulldown-cmark = "0.13"
 walkdir = "2"
 http = "1"
 bytes = "1"
@@ -152,6 +154,10 @@ path = "src/bin/reconcile_post_migration.rs"
 [[bin]]
 name = "repair_entity_linking"
 path = "src/bin/repair_entity_linking.rs"
+
+[[bin]]
+name = "workspace_graph_audit"
+path = "src/bin/workspace_graph_audit.rs"
 
 [[bin]]
 name = "release-gate"

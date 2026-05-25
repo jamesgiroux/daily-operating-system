@@ -14703,6 +14703,7 @@ mod tests {
             db.conn_ref()
                 .execute(
                     "UPDATE intelligence_claims
+                     -- dos7-allowed: ordering fixture for surface-limited reader
                      SET created_at = ?1
                      WHERE id = ?2",
                     params![
@@ -14799,6 +14800,7 @@ mod tests {
             db.conn_ref()
                 .execute(
                     "UPDATE intelligence_claims
+                     -- dos7-allowed: prompt-safety cap fixture
                      SET sensitivity = 'confidential', created_at = ?1
                      WHERE id = ?2",
                     params![format!("2026-05-02T12:{index:02}:00Z"), id],
@@ -14818,6 +14820,7 @@ mod tests {
         db.conn_ref()
             .execute(
                 "UPDATE intelligence_claims
+                 -- dos7-allowed: prompt-safety cap fixture
                  SET sensitivity = 'internal', created_at = ?1
                  WHERE id = 'claim-internal-older'",
                 params!["2026-05-02T11:00:00Z"],

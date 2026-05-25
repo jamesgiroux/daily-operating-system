@@ -93,7 +93,10 @@ fn run_pipeline(
     let rng = SystemRng;
     let external = ExternalClients::default();
     let ctx = ServiceContext::new_live(&clock, &rng, &external).with_actor("system:test");
-    pipeline.run(&ctx, db, request).map(|_| ())
+    let signal_engine = dailyos_lib::signals::propagation::default_engine();
+    pipeline
+        .run_with_signal_engine(&ctx, db, &signal_engine, request)
+        .map(|_| ())
 }
 
 fn entity_ref(entity_type: EntityType, id: &str, name: Option<&str>) -> EntityRef {

@@ -47,6 +47,16 @@ use crate::abilities::temporal::{
     RefreshEngagementCurveResult, TemporalMaintenanceHandle, TrajectoryBundle,
     TrajectoryQueryDepth, TrajectoryReadHandle,
 };
+pub use crate::abilities::workspace_graph::contracts::{
+    WorkspaceGraphReadRequest, WorkspaceGraphResponse,
+};
+pub use crate::abilities::markdown_preview::contracts::{
+    MarkdownPreviewOutput, MarkdownPreviewReadRequest,
+};
+pub use crate::abilities::source_management_ledger::contracts::{
+    SourceManagementActionReceipt, SourceManagementActionRequest, SourceManagementLedgerReadRequest,
+    SourceManagementLedgerResponse,
+};
 pub use crate::sensitivity::ClaimDismissalSurface;
 use crate::sensitivity::{renderable_claim_text_with_value, RenderActor, RenderSurface};
 use crate::services::external_replay::{
@@ -851,6 +861,10 @@ pub struct ServiceContext<'a> {
     account_list_reader: Option<Arc<dyn AccountListReadHandle>>,
     person_list_reader: Option<Arc<dyn PersonListReadHandle>>,
     project_list_reader: Option<Arc<dyn ProjectListReadHandle>>,
+    markdown_preview_reader: Option<Arc<dyn MarkdownPreviewReadHandle>>,
+    workspace_graph_reader: Option<Arc<dyn WorkspaceGraphReadHandle>>,
+    source_management_ledger_reader: Option<Arc<dyn SourceManagementLedgerReadHandle>>,
+    source_management_action_handler: Option<Arc<dyn SourceManagementActionHandle>>,
     workspace_intake: Option<Arc<dyn WorkspaceIntakeService>>,
 }
 
@@ -1151,6 +1165,104 @@ pub type ProjectListReadFuture<'a> =
 
 pub trait ProjectListReadHandle: Send + Sync {
     fn read_projects<'a>(&'a self, query: ProjectListQuery) -> ProjectListReadFuture<'a>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum MarkdownPreviewReadError {
+    #[error("{0}")]
+    InvalidSourceHandle(String),
+    #[error("source not found")]
+    SourceNotFound,
+    #[error("{0}")]
+    SourceUnavailable(String),
+    #[error("{0}")]
+    UnsupportedSource(String),
+}
+
+pub type MarkdownPreviewReadFuture<'a> = Pin<
+    Box<dyn Future<Output = Result<MarkdownPreviewOutput, MarkdownPreviewReadError>> + Send + 'a>,
+>;
+
+pub trait MarkdownPreviewReadHandle: Send + Sync {
+    fn read_markdown_preview<'a>(
+        &'a self,
+        request: MarkdownPreviewReadRequest,
+    ) -> MarkdownPreviewReadFuture<'a>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum WorkspaceGraphReadError {
+    #[error("{0}")]
+    InvalidCursor(String),
+    #[error("{0}")]
+    InvalidFilter(String),
+    #[error("page size {requested} exceeds max {max}")]
+    PageSizeTooLarge { requested: u32, max: u32 },
+    #[error("{0}")]
+    ReadFailed(String),
+    #[error("{0}")]
+    AuditFailed(String),
+}
+
+pub type WorkspaceGraphReadFuture<'a> = Pin<
+    Box<dyn Future<Output = Result<WorkspaceGraphResponse, WorkspaceGraphReadError>> + Send + 'a>,
+>;
+
+pub trait WorkspaceGraphReadHandle: Send + Sync {
+    fn read_workspace_graph<'a>(
+        &'a self,
+        request: WorkspaceGraphReadRequest,
+    ) -> WorkspaceGraphReadFuture<'a>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum SourceManagementLedgerReadError {
+    #[error("{0}")]
+    InvalidCursor(String),
+    #[error("{0}")]
+    InvalidFilter(String),
+    #[error("page size {requested} exceeds max {max}")]
+    PageSizeTooLarge { requested: u32, max: u32 },
+    #[error("{0}")]
+    ReadFailed(String),
+}
+
+pub type SourceManagementLedgerReadFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<SourceManagementLedgerResponse, SourceManagementLedgerReadError>>
+            + Send
+            + 'a,
+    >,
+>;
+
+pub trait SourceManagementLedgerReadHandle: Send + Sync {
+    fn read_source_management_ledger<'a>(
+        &'a self,
+        request: SourceManagementLedgerReadRequest,
+    ) -> SourceManagementLedgerReadFuture<'a>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum SourceManagementActionError {
+    #[error("{0}")]
+    InvalidRequest(String),
+    #[error("{0}")]
+    ActionFailed(String),
+}
+
+pub type SourceManagementActionFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<SourceManagementActionReceipt, SourceManagementActionError>>
+            + Send
+            + 'a,
+    >,
+>;
+
+pub trait SourceManagementActionHandle: Send + Sync {
+    fn apply_source_management_action<'a>(
+        &'a self,
+        request: SourceManagementActionRequest,
+    ) -> SourceManagementActionFuture<'a>;
 }
 
 // -----------------------------------------------------------------------------
@@ -1832,6 +1944,10 @@ impl<'a> ServiceContext<'a> {
             account_list_reader: None,
             person_list_reader: None,
             project_list_reader: None,
+            markdown_preview_reader: None,
+            workspace_graph_reader: None,
+            source_management_ledger_reader: None,
+            source_management_action_handler: None,
             workspace_intake: None,
         }
     }
@@ -1866,6 +1982,10 @@ impl<'a> ServiceContext<'a> {
             account_list_reader: None,
             person_list_reader: None,
             project_list_reader: None,
+            markdown_preview_reader: None,
+            workspace_graph_reader: None,
+            source_management_ledger_reader: None,
+            source_management_action_handler: None,
             workspace_intake: None,
         }
     }
@@ -1911,6 +2031,10 @@ impl<'a> ServiceContext<'a> {
             account_list_reader: None,
             person_list_reader: None,
             project_list_reader: None,
+            markdown_preview_reader: None,
+            workspace_graph_reader: None,
+            source_management_ledger_reader: None,
+            source_management_action_handler: None,
             workspace_intake: None,
         }
     }
@@ -2031,6 +2155,38 @@ impl<'a> ServiceContext<'a> {
 
     pub fn with_project_list_reader(mut self, reader: Arc<dyn ProjectListReadHandle>) -> Self {
         self.project_list_reader = Some(reader);
+        self
+    }
+
+    pub fn with_markdown_preview_reader(
+        mut self,
+        reader: Arc<dyn MarkdownPreviewReadHandle>,
+    ) -> Self {
+        self.markdown_preview_reader = Some(reader);
+        self
+    }
+
+    pub fn with_workspace_graph_reader(
+        mut self,
+        reader: Arc<dyn WorkspaceGraphReadHandle>,
+    ) -> Self {
+        self.workspace_graph_reader = Some(reader);
+        self
+    }
+
+    pub fn with_source_management_ledger_reader(
+        mut self,
+        reader: Arc<dyn SourceManagementLedgerReadHandle>,
+    ) -> Self {
+        self.source_management_ledger_reader = Some(reader);
+        self
+    }
+
+    pub fn with_source_management_action_handler(
+        mut self,
+        handler: Arc<dyn SourceManagementActionHandle>,
+    ) -> Self {
+        self.source_management_action_handler = Some(handler);
         self
     }
 
@@ -2265,6 +2421,58 @@ impl<'a> ServiceContext<'a> {
         };
 
         reader.read_projects(query).await
+    }
+
+    pub async fn read_markdown_preview(
+        &self,
+        request: MarkdownPreviewReadRequest,
+    ) -> Result<MarkdownPreviewOutput, MarkdownPreviewReadError> {
+        let Some(reader) = &self.markdown_preview_reader else {
+            return Err(MarkdownPreviewReadError::SourceUnavailable(
+                self.missing_reader_error("markdown_preview_read"),
+            ));
+        };
+
+        reader.read_markdown_preview(request).await
+    }
+
+    pub async fn read_workspace_graph(
+        &self,
+        request: WorkspaceGraphReadRequest,
+    ) -> Result<WorkspaceGraphResponse, WorkspaceGraphReadError> {
+        let Some(reader) = &self.workspace_graph_reader else {
+            return Err(WorkspaceGraphReadError::ReadFailed(
+                self.missing_reader_error("workspace_graph_read"),
+            ));
+        };
+
+        reader.read_workspace_graph(request).await
+    }
+
+    pub async fn read_source_management_ledger(
+        &self,
+        request: SourceManagementLedgerReadRequest,
+    ) -> Result<SourceManagementLedgerResponse, SourceManagementLedgerReadError> {
+        let Some(reader) = &self.source_management_ledger_reader else {
+            return Err(SourceManagementLedgerReadError::ReadFailed(
+                self.missing_reader_error("source_management_ledger_read"),
+            ));
+        };
+
+        reader.read_source_management_ledger(request).await
+    }
+
+    pub async fn apply_source_management_action(
+        &self,
+        request: SourceManagementActionRequest,
+    ) -> Result<SourceManagementActionReceipt, SourceManagementActionError> {
+        let Some(handler) = &self.source_management_action_handler else {
+            return Err(SourceManagementActionError::ActionFailed(
+                self.missing_reader_error("source_management_action"),
+            ));
+        };
+
+        handler.apply_source_management_action(request).await
     }
 
     pub async fn read_trajectory_bundle(

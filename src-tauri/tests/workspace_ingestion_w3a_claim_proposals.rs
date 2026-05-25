@@ -5,11 +5,15 @@ use chrono::{DateTime, Utc};
 use dailyos_lib::db::{ActionDb, DbAccount};
 use dailyos_lib::entity::EntityType;
 use dailyos_lib::services::context::{ExternalClients, ServiceContext, SystemClock, SystemRng};
-use dailyos_lib::services::workspace_ingestion::contracts::RejectionReason;
-use dailyos_lib::services::workspace_ingestion::lifecycle::LifecycleRepo;
+use dailyos_lib::services::workspace_ingestion::contracts::{
+    RejectionReason, SignalEmitContext, SignalEmitError, SignalEmitter,
+};
+use dailyos_lib::services::workspace_ingestion::extract::WorkspaceExtractor;
+use dailyos_lib::services::workspace_ingestion::lifecycle::{LifecycleRepo, LifecycleState};
 use dailyos_lib::services::workspace_ingestion::link::{LinkAttributionSource, LinkRepo};
 use dailyos_lib::services::workspace_ingestion::pipeline::{
     file_id_from_identity, EntityRef, IngestError, IngestPipeline, IngestReceipt, IngestRequest,
+    DEFAULT_MAX_FILE_BYTES,
 };
 use dailyos_lib::services::workspace_ingestion::registry::WorkspaceSourceRegistry;
 use dailyos_lib::services::workspace_ingestion::runs::IngestionMode;
@@ -185,6 +189,139 @@ fn rejected_existing_link_fails_closed_without_resurrection() {
     assert!(error_log.to_string().contains("rejected_link"));
 }
 
+#[test]
+fn ingested_signal_failure_rolls_back_claim_commit() {
+    let fixture = Fixture::new();
+    fixture.seed_account("acme", "Acme");
+    let note = fixture.write_account_file("Acme", "notes.md", "Important local context.");
+    let (file, identity) = WorkspaceSourceRegistry::open_validated(&fixture.workspace_root, &note)
+        .map_err(IngestError::Rejected)
+        .expect("open validated");
+    let source_asof: DateTime<Utc> = identity
+        .canonical_path
+        .metadata()
+        .and_then(|metadata| metadata.modified())
+        .map_err(IngestError::Io)
+        .expect("source asof")
+        .into();
+    let file_id = file_id_from_identity(&identity, &fixture.workspace_root).expect("file id");
+    let request = IngestRequest {
+        file,
+        identity,
+        file_id: file_id.clone(),
+        source_asof,
+        source_type: WorkspaceFileKind::EntityDoc,
+        entity: Some(entity_ref(EntityType::Account, "acme", Some("Acme"))),
+        mode: IngestionMode::Realtime,
+        category_hint: None,
+        invocation_actor: "user".to_string(),
+        validated_content: None,
+    };
+    let pipeline = IngestPipeline::new(
+        Box::new(WorkspaceExtractor),
+        Box::new(FailingIngestedSignalEmitter),
+        DEFAULT_MAX_FILE_BYTES,
+        "workspace-extractor-v1",
+        fixture.workspace_root.clone(),
+    );
+
+    let error = run_pipeline(&ActionDb::from_conn(&fixture.conn), &pipeline, request)
+        .expect_err("required ingested signal failure fails ingestion");
+
+    match error {
+        IngestError::DbError(message) => {
+            assert!(message.contains("workspace_file_ingested"));
+        }
+        other => panic!("expected DB finalization error, got {other:?}"),
+    }
+    assert_claim_count(&fixture.conn, 0);
+
+    let (status, claim_count, error_log): (String, i64, String) = fixture
+        .conn
+        .query_row(
+            "SELECT status, claim_count_produced, error_log \
+             FROM document_ingestion_runs WHERE file_id = ?1",
+            [&file_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .expect("failed run");
+    assert_eq!(status, "failed");
+    assert_eq!(claim_count, 0);
+    let error_log: serde_json::Value = serde_json::from_str(&error_log).expect("error log json");
+    assert_eq!(
+        error_log["error"],
+        "workspace_ingestion_finalization_failed"
+    );
+    assert!(error_log["message"]
+        .as_str()
+        .expect("error message")
+        .contains("workspace_file_ingested"));
+
+    let lifecycle = LifecycleRepo::get(&fixture.conn, &file_id)
+        .expect("lifecycle lookup")
+        .expect("lifecycle row");
+    assert_eq!(lifecycle.lifecycle_state, LifecycleState::Rejected);
+}
+
+struct FailingIngestedSignalEmitter;
+
+impl SignalEmitter for FailingIngestedSignalEmitter {
+    fn emit_file_ingested(
+        &self,
+        _ctx: &SignalEmitContext<'_, '_>,
+        _file_id: &str,
+        _ingestion_run_id: &str,
+        _entity_type: &str,
+        _entity_id: &str,
+    ) -> Result<(), SignalEmitError> {
+        Err(SignalEmitError::Emit {
+            signal_type: "workspace_file_ingested",
+            message: "test failure".to_string(),
+        })
+    }
+
+    fn emit_file_rejected(
+        &self,
+        _ctx: &SignalEmitContext<'_, '_>,
+        _file_id: Option<&str>,
+        _reason: RejectionReason,
+    ) -> Result<(), SignalEmitError> {
+        Ok(())
+    }
+
+    fn emit_file_pending_entity_assignment(
+        &self,
+        _ctx: &SignalEmitContext<'_, '_>,
+        _file_id: &str,
+        _ingestion_run_id: &str,
+    ) -> Result<(), SignalEmitError> {
+        Ok(())
+    }
+
+    fn emit_file_quarantined(
+        &self,
+        _ctx: &SignalEmitContext<'_, '_>,
+        _file_id: &str,
+        _reason: &str,
+        _actor: &str,
+        _entity_type: Option<&str>,
+        _entity_id: Option<&str>,
+    ) -> Result<(), SignalEmitError> {
+        Ok(())
+    }
+
+    fn emit_link_changed(
+        &self,
+        _ctx: &SignalEmitContext<'_, '_>,
+        _file_id: &str,
+        _entity_type: &str,
+        _entity_id: &str,
+        _actor: &str,
+    ) -> Result<(), SignalEmitError> {
+        Ok(())
+    }
+}
+
 struct Fixture {
     conn: Connection,
     _workspace: tempfile::TempDir,
@@ -271,7 +408,8 @@ fn run_pipeline(
     let rng = SystemRng;
     let external = ExternalClients::default();
     let ctx = ServiceContext::new_live(&clock, &rng, &external).with_actor("system:test");
-    pipeline.run(&ctx, db, request)
+    let signal_engine = dailyos_lib::signals::propagation::default_engine();
+    pipeline.run_with_signal_engine(&ctx, db, &signal_engine, request)
 }
 
 fn seed_rejected_link(

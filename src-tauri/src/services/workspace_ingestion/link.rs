@@ -31,8 +31,9 @@ use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
-use super::contracts::SignalEmitter;
+use super::contracts::{SignalEmitContext, SignalEmitter};
 use super::lifecycle::UserOverride;
+use crate::db::ActionDb;
 use crate::entity::EntityType;
 
 /// Opaque UUID4 identifier for a document/entity link row.
@@ -367,27 +368,50 @@ impl LinkRepo {
     /// `add_link(... UserRelink)` (V1.3 fold #2).
     pub fn override_link(
         conn: &Connection,
+        signal_ctx: &SignalEmitContext<'_, '_>,
         emitter: &dyn SignalEmitter,
         file_id: &str,
         entity_type: EntityType,
         entity_id: &str,
         actor: &str,
     ) -> Result<(), LinkError> {
-        let rows = conn
-            .execute(
-                "UPDATE document_entity_links SET \
-                 user_override_actor = ?1, \
-                 user_override_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), \
-                 updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') \
-                 WHERE file_id = ?2 AND entity_type = ?3 AND entity_id = ?4 AND rejected = 0",
-                params![actor, file_id, entity_type_slug(entity_type), entity_id],
-            )
-            .map_err(|e| LinkError::DbError(e.to_string()))?;
-        if rows == 0 {
-            return Err(LinkError::NotFound);
-        }
-        emitter.emit_link_changed(file_id, entity_id, actor);
-        Ok(())
+        let db = ActionDb::from_conn(conn);
+        db.with_transaction(|tx_db| {
+            let rows = tx_db
+                .conn_ref()
+                .execute(
+                    "UPDATE document_entity_links SET \
+                     user_override_actor = ?1, \
+                     user_override_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), \
+                     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') \
+                     WHERE file_id = ?2 AND entity_type = ?3 AND entity_id = ?4 AND rejected = 0",
+                    params![actor, file_id, entity_type_slug(entity_type), entity_id],
+                )
+                .map_err(|e| e.to_string())?;
+            if rows == 0 {
+                return Err("workspace link override target not found".to_string());
+            }
+
+            let tx_signal_ctx =
+                SignalEmitContext::new(signal_ctx.services, tx_db, signal_ctx.propagation);
+            emitter
+                .emit_link_changed(
+                    &tx_signal_ctx,
+                    file_id,
+                    entity_type_slug(entity_type),
+                    entity_id,
+                    actor,
+                )
+                .map_err(|e| e.to_string())?;
+            Ok(())
+        })
+        .map_err(|message| {
+            if message == "workspace link override target not found" {
+                LinkError::NotFound
+            } else {
+                LinkError::DbError(message)
+            }
+        })
     }
 
     /// Reject-existing API. Flips `rejected = 1` and populates
@@ -423,6 +447,8 @@ impl LinkRepo {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::test_utils::test_db;
+    use crate::services::context::{ExternalClients, ServiceContext, SystemClock, SystemRng};
     use crate::services::workspace_ingestion::contracts::NullSignalEmitter;
 
     fn fresh_conn() -> Connection {
@@ -480,6 +506,19 @@ mod tests {
         .expect("insert link");
     }
 
+    fn with_null_signal_context<T>(
+        f: impl FnOnce(&SignalEmitContext<'_, '_>, &NullSignalEmitter) -> T,
+    ) -> T {
+        let db = test_db();
+        let clock = SystemClock;
+        let rng = SystemRng;
+        let external = ExternalClients::default();
+        let services = ServiceContext::new_live(&clock, &rng, &external);
+        let signal_ctx = SignalEmitContext::new(&services, &db, None);
+        let emitter = NullSignalEmitter;
+        f(&signal_ctx, &emitter)
+    }
+
     #[test]
     fn list_links_for_file_filters_rejected_when_include_false() {
         let conn = fresh_conn();
@@ -528,15 +567,17 @@ mod tests {
             LinkAttributionSource::Classifier,
             false,
         );
-        let emitter = NullSignalEmitter;
-        LinkRepo::override_link(
-            &conn,
-            &emitter,
-            "wf-1",
-            EntityType::Account,
-            "acme",
-            "user-1",
-        )
+        with_null_signal_context(|signal_ctx, emitter| {
+            LinkRepo::override_link(
+                &conn,
+                signal_ctx,
+                emitter,
+                "wf-1",
+                EntityType::Account,
+                "acme",
+                "user-1",
+            )
+        })
         .expect("Ok");
 
         let links = LinkRepo::list_links_for_file(&conn, "wf-1", false).expect("Ok");
@@ -548,15 +589,17 @@ mod tests {
     #[test]
     fn override_link_returns_notfound_for_missing_triple() {
         let conn = fresh_conn();
-        let emitter = NullSignalEmitter;
-        let err = LinkRepo::override_link(
-            &conn,
-            &emitter,
-            "wf-1",
-            EntityType::Account,
-            "nobody",
-            "user-1",
-        )
+        let err = with_null_signal_context(|signal_ctx, emitter| {
+            LinkRepo::override_link(
+                &conn,
+                signal_ctx,
+                emitter,
+                "wf-1",
+                EntityType::Account,
+                "nobody",
+                "user-1",
+            )
+        })
         .expect_err("missing");
         assert!(matches!(err, LinkError::NotFound));
     }
@@ -573,16 +616,18 @@ mod tests {
             LinkAttributionSource::Classifier,
             true, // rejected
         );
-        let emitter = NullSignalEmitter;
         // override_link only touches active rows; rejected link → NotFound.
-        let err = LinkRepo::override_link(
-            &conn,
-            &emitter,
-            "wf-1",
-            EntityType::Account,
-            "acme",
-            "user-1",
-        )
+        let err = with_null_signal_context(|signal_ctx, emitter| {
+            LinkRepo::override_link(
+                &conn,
+                signal_ctx,
+                emitter,
+                "wf-1",
+                EntityType::Account,
+                "acme",
+                "user-1",
+            )
+        })
         .expect_err("rejected link should NotFound");
         assert!(matches!(err, LinkError::NotFound));
     }

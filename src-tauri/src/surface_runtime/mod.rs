@@ -5572,6 +5572,7 @@ mod tests {
             SurfaceScope::new("read.account_overview"),
             SurfaceScope::new("read.composition"),
             SurfaceScope::new("submit.feedback"),
+            SurfaceScope::new("write.entity_intake"),
         ];
 
         if let Ok(registry) = AbilityRegistry::global_checked() {
