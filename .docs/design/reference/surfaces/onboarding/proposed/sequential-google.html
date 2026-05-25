@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Onboarding · Proposed · Step 1 Google — DailyOS Reference</title>
+
+<link rel="stylesheet" href="../../../_shared/fonts.css">
+<link rel="stylesheet" href="../../../_shared/styles/design-tokens.css">
+<link rel="stylesheet" href="../../../_shared/styles/AtmosphereLayer.module.css">
+<link rel="stylesheet" href="../../../_shared/styles/FolioBar.module.css">
+<link rel="stylesheet" href="../../../_shared/styles/FloatingNavIsland.module.css">
+<link rel="stylesheet" href="../../../_shared/styles/ChapterHeading.module.css">
+<link rel="stylesheet" href="../../../_shared/styles/onboarding.module.css">
+<link rel="stylesheet" href="../../../_shared/styles/ui-button.css">
+<link rel="stylesheet" href="../../../_shared/styles/tailwind-shims.css">
+<link rel="stylesheet" href="../../../_shared/chrome.css">
+<link rel="stylesheet" href="../../../_shared/inspector.css">
+
+<style>
+  .ob-prop-step-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: var(--space-sm);
+  }
+  .ob-prop-step-bar {
+    display: inline-flex; gap: 4px;
+  }
+  .ob-prop-step-bar span {
+    width: 28px; height: 3px;
+    background: var(--color-rule-light);
+    border-radius: 2px;
+  }
+  .ob-prop-step-bar span[data-active="true"] {
+    background: var(--color-text-primary);
+  }
+  .ob-prop-step-bar span[data-done="true"] {
+    background: var(--color-spice-turmeric);
+  }
+</style>
+</head>
+<body
+  data-folio-label="Setup · Proposed (sequential)"
+  data-folio-crumbs="Reference > Surfaces > Onboarding > Proposed > Step 1"
+  data-tint="turmeric"
+  data-active-page=""
+  data-nav-mode="chapters-only"
+  data-active-chapter="google"
+  data-chapters="google:mail:Google|claude:terminal:Claude|role:briefcase:Role">
+
+<div class="onboarding_wrapper">
+  <div class="onboarding_contentColumn">
+    <div class="onboarding_flexCol onboarding_gap24">
+
+      <!-- Step bar -->
+      <div>
+        <div class="ob-prop-step-eyebrow">
+          Step 1 of 3
+          <span class="ob-prop-step-bar">
+            <span data-active="true"></span>
+            <span></span>
+            <span></span>
+          </span>
+        </div>
+      </div>
+
+      <!-- Heading -->
+      <div class="ChapterHeading_heading">
+        <hr class="ChapterHeading_rule">
+        <div class="ChapterHeading_titleRow">
+          <h2 class="ChapterHeading_title">Connect Google.</h2>
+        </div>
+        <p class="ChapterHeading_epigraph">
+          So we can prep your meetings and triage your inbox. Everything processes locally.
+        </p>
+      </div>
+
+      <!-- Single connect action, big and friendly -->
+      <button type="button" class="ui-button ui-button-default ui-button-lg ui-button-full" data-slot="button" data-variant="default" data-size="lg">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+        Connect Google Calendar &amp; Gmail
+      </button>
+
+      <p class="onboarding_privacyNote" style="text-align: center;">
+        You can also skip this and add it later in Settings.
+      </p>
+
+      <!-- Forward / skip -->
+      <div class="flex justify-between" style="display:flex; justify-content:space-between; gap: var(--space-sm);">
+        <button type="button" class="onboarding_skipButton">Skip</button>
+        <a href="sequential-claude.html" class="ui-button ui-button-default ui-button-default-size" data-slot="button" data-variant="default" data-size="default" style="text-decoration:none;">
+          Continue
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="ml-2 size-4"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+        </a>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="../../../_shared/chrome.js"></script>
+<script src="../../../_shared/inspector.js"></script>
+</body>
+</html>

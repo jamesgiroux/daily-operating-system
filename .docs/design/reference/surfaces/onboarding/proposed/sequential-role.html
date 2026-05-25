@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Onboarding · Proposed · Step 3 Role — DailyOS Reference</title>
+
+<link rel="stylesheet" href="../../../_shared/fonts.css">
+<link rel="stylesheet" href="../../../_shared/styles/design-tokens.css">
+<link rel="stylesheet" href="../../../_shared/styles/AtmosphereLayer.module.css">
+<link rel="stylesheet" href="../../../_shared/styles/FolioBar.module.css">
+<link rel="stylesheet" href="../../../_shared/styles/FloatingNavIsland.module.css">
+<link rel="stylesheet" href="../../../_shared/styles/ChapterHeading.module.css">
+<link rel="stylesheet" href="../../../_shared/styles/onboarding.module.css">
+<link rel="stylesheet" href="../../../_shared/styles/ui-button.css">
+<link rel="stylesheet" href="../../../_shared/styles/tailwind-shims.css">
+<link rel="stylesheet" href="../../../_shared/chrome.css">
+<link rel="stylesheet" href="../../../_shared/inspector.css">
+
+<style>
+  .ob-prop-step-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: var(--space-sm);
+  }
+  .ob-prop-step-bar { display: inline-flex; gap: 4px; }
+  .ob-prop-step-bar span {
+    width: 28px; height: 3px;
+    background: var(--color-rule-light);
+    border-radius: 2px;
+  }
+  .ob-prop-step-bar span[data-active="true"] { background: var(--color-text-primary); }
+  .ob-prop-step-bar span[data-done="true"] { background: var(--color-spice-turmeric); }
+</style>
+</head>
+<body
+  data-folio-label="Setup · Proposed (sequential)"
+  data-folio-crumbs="Reference > Surfaces > Onboarding > Proposed > Step 3"
+  data-tint="turmeric"
+  data-active-page=""
+  data-nav-mode="chapters-only"
+  data-active-chapter="role"
+  data-chapters="google:mail:Google|claude:terminal:Claude|role:briefcase:Role">
+
+<div class="onboarding_wrapper">
+  <div class="onboarding_contentColumn">
+    <div class="onboarding_flexCol onboarding_gap24">
+
+      <div>
+        <div class="ob-prop-step-eyebrow">
+          Step 3 of 3
+          <span class="ob-prop-step-bar">
+            <span data-done="true"></span>
+            <span data-done="true"></span>
+            <span data-active="true"></span>
+          </span>
+        </div>
+      </div>
+
+      <div class="ChapterHeading_heading">
+        <hr class="ChapterHeading_rule">
+        <div class="ChapterHeading_titleRow">
+          <h2 class="ChapterHeading_title">What's your role?</h2>
+        </div>
+        <p class="ChapterHeading_epigraph">
+          This shapes your vitals, vocabulary, and how AI prepares your briefings. Change anytime in Settings.
+        </p>
+      </div>
+
+      <div class="onboarding_presetGrid">
+        <button type="button" class="onboarding_presetCard">
+          <div class="onboarding_flexRow onboarding_gap8">
+            <span class="onboarding_presetName">Core</span>
+          </div>
+          <span class="onboarding_presetDesc">
+            The default DailyOS operating mode for project-centered work. Tracks projects, meetings, decisions, and follow-through.
+          </span>
+        </button>
+        <button type="button" class="onboarding_presetCard onboarding_presetCardSelected">
+          <div class="onboarding_flexRow onboarding_gap8">
+            <span class="onboarding_presetName">Customer Success</span>
+            <span class="onboarding_accentColor onboarding_flexShrink0">Selected</span>
+          </div>
+          <span class="onboarding_presetDesc">
+            For CSMs who own a portfolio of accounts. Tracks ARR, health, renewals, and stakeholder relationships.
+          </span>
+        </button>
+        <button type="button" class="onboarding_presetCard">
+          <div class="onboarding_flexRow onboarding_gap8">
+            <span class="onboarding_presetName">Affiliates &amp; Partnerships</span>
+          </div>
+          <span class="onboarding_presetDesc">
+            For affiliate, creator, partnership, and alliance teams managing external relationships and joint pipeline.
+          </span>
+        </button>
+        <button type="button" class="onboarding_presetCard">
+          <div class="onboarding_flexRow onboarding_gap8">
+            <span class="onboarding_presetName">Product &amp; Marketing</span>
+          </div>
+          <span class="onboarding_presetDesc">
+            For product and marketing teams coordinating initiatives, launches, campaigns, and cross-functional delivery.
+          </span>
+        </button>
+      </div>
+
+      <div class="flex justify-between" style="display:flex; justify-content:space-between; gap: var(--space-sm);">
+        <a href="sequential-claude.html" class="onboarding_skipButton" style="text-decoration:none;">← Back</a>
+        <button type="button" class="ui-button ui-button-default ui-button-lg" data-slot="button" data-variant="default" data-size="lg">
+          Start DailyOS
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="ml-2 size-4"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+        </button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="../../../_shared/chrome.js"></script>
+<script src="../../../_shared/inspector.js"></script>
+</body>
+</html>

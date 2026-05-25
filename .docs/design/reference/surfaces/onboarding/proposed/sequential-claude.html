@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Onboarding · Proposed · Step 2 Claude — DailyOS Reference</title>
+
+<link rel="stylesheet" href="../../../_shared/fonts.css">
+<link rel="stylesheet" href="../../../_shared/styles/design-tokens.css">
+<link rel="stylesheet" href="../../../_shared/styles/AtmosphereLayer.module.css">
+<link rel="stylesheet" href="../../../_shared/styles/FolioBar.module.css">
+<link rel="stylesheet" href="../../../_shared/styles/FloatingNavIsland.module.css">
+<link rel="stylesheet" href="../../../_shared/styles/ChapterHeading.module.css">
+<link rel="stylesheet" href="../../../_shared/styles/onboarding.module.css">
+<link rel="stylesheet" href="../../../_shared/styles/ui-button.css">
+<link rel="stylesheet" href="../../../_shared/styles/tailwind-shims.css">
+<link rel="stylesheet" href="../../../_shared/chrome.css">
+<link rel="stylesheet" href="../../../_shared/inspector.css">
+
+<style>
+  .ob-prop-step-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: var(--space-sm);
+  }
+  .ob-prop-step-bar { display: inline-flex; gap: 4px; }
+  .ob-prop-step-bar span {
+    width: 28px; height: 3px;
+    background: var(--color-rule-light);
+    border-radius: 2px;
+  }
+  .ob-prop-step-bar span[data-active="true"] { background: var(--color-text-primary); }
+  .ob-prop-step-bar span[data-done="true"] { background: var(--color-spice-turmeric); }
+</style>
+</head>
+<body
+  data-folio-label="Setup · Proposed (sequential)"
+  data-folio-crumbs="Reference > Surfaces > Onboarding > Proposed > Step 2"
+  data-tint="turmeric"
+  data-active-page=""
+  data-nav-mode="chapters-only"
+  data-active-chapter="claude"
+  data-chapters="google:mail:Google|claude:terminal:Claude|role:briefcase:Role">
+
+<div class="onboarding_wrapper">
+  <div class="onboarding_contentColumn">
+    <div class="onboarding_flexCol onboarding_gap24">
+
+      <div>
+        <div class="ob-prop-step-eyebrow">
+          Step 2 of 3
+          <span class="ob-prop-step-bar">
+            <span data-done="true"></span>
+            <span data-active="true"></span>
+            <span></span>
+          </span>
+        </div>
+      </div>
+
+      <div class="ChapterHeading_heading">
+        <hr class="ChapterHeading_rule">
+        <div class="ChapterHeading_titleRow">
+          <h2 class="ChapterHeading_title">Install Claude Code.</h2>
+        </div>
+        <p class="ChapterHeading_epigraph">
+          The local AI engine that writes your briefings. One command in your terminal.
+        </p>
+      </div>
+
+      <div class="onboarding_ruleSection">
+        <div class="onboarding_sectionLabel">Run this in Terminal</div>
+        <code class="onboarding_codeBlock">cd ~/Documents/DailyOS
+claude login</code>
+        <p class="onboarding_installHint">
+          Running from your workspace scopes Claude's access to just that folder.
+        </p>
+      </div>
+
+      <button type="button" class="ui-button ui-button-outline ui-button-default-size ui-button-full w-full" data-slot="button" data-variant="outline" data-size="default">
+        Re-check
+      </button>
+
+      <div class="flex justify-between" style="display:flex; justify-content:space-between; gap: var(--space-sm);">
+        <a href="sequential-google.html" class="onboarding_skipButton" style="text-decoration:none;">← Back</a>
+        <div style="display:flex; gap: var(--space-sm);">
+          <button type="button" class="onboarding_skipButton">Skip</button>
+          <a href="sequential-role.html" class="ui-button ui-button-default ui-button-default-size" data-slot="button" data-variant="default" data-size="default" style="text-decoration:none;">
+            Continue
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="ml-2 size-4"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+          </a>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="../../../_shared/chrome.js"></script>
+<script src="../../../_shared/inspector.js"></script>
+</body>
+</html>
