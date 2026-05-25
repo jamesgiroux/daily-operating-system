@@ -716,6 +716,14 @@ fn ingest_after_upsert(
 }
 
 fn log_ingest_failure(path: &Path, err: IngestError) {
+    if matches!(err, IngestError::AlreadyProcessed { .. }) {
+        log::debug!(
+            "Watcher: workspace file already processed for {}",
+            path.display()
+        );
+        return;
+    }
+
     log::warn!(
         "Watcher: workspace-file ingestion failed after upsert for {}: {}",
         path.display(),

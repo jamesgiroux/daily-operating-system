@@ -1232,11 +1232,23 @@ pub async fn dev_apply_scenario(
 /// Returns an error in release builds. In debug builds, returns counts
 /// and status for config, database, today data, and Google auth.
 #[tauri::command]
-pub fn dev_get_state(state: State<'_, Arc<AppState>>) -> Result<crate::devtools::DevState, String> {
+pub async fn dev_get_state(
+    state: State<'_, Arc<AppState>>,
+) -> Result<crate::devtools::DevState, String> {
     if !cfg!(debug_assertions) {
         return Err("Dev tools not available in release builds".into());
     }
-    crate::devtools::get_dev_state(&state)
+    let counts = match state
+        .db_read(|db| Ok(crate::devtools::read_dev_state_counts(db)))
+        .await
+    {
+        Ok(counts) => counts,
+        Err(error) => {
+            log::warn!("dev_get_state: database counts unavailable: {error}");
+            crate::devtools::DevStateCounts::default()
+        }
+    };
+    crate::devtools::get_dev_state(&state, counts)
 }
 
 /// Daily briefing — mechanical delivery only (no AI).

@@ -31,7 +31,7 @@ pub fn compute_co_attendance(
          FROM meeting_attendees a1
          JOIN meeting_attendees a2 ON a1.meeting_id = a2.meeting_id AND a1.person_id < a2.person_id
          JOIN meetings m ON m.id = a1.meeting_id
-         JOIN meeting_entities me ON me.meeting_id = m.id AND me.entity_id = ?1
+         JOIN effective_meeting_entities me ON me.meeting_id = m.id AND me.entity_id = ?1
          WHERE m.start_time >= datetime('now', '-' || ?2 || ' days')
          GROUP BY a1.person_id, a2.person_id
          HAVING COUNT(DISTINCT a1.meeting_id) >= ?3

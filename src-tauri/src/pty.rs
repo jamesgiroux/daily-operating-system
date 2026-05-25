@@ -86,6 +86,8 @@ pub const DEFAULT_CLAUDE_TIMEOUT_SECS: u64 = 300;
 pub const AI_USAGE_DAILY_KEY: &str = "ai_usage_daily";
 pub const AI_USAGE_RECENT_KEY: &str = "ai_usage_recent";
 pub const BACKGROUND_AI_GUARD_KEY: &str = "background_ai_guard";
+const BACKGROUND_WORKERS_DISABLED_ENV: &str = "DAILYOS_DISABLE_BACKGROUND_WORKERS";
+const BACKGROUND_INTEL_DISABLED_ENV: &str = "DAILYOS_DISABLE_BACKGROUND_INTEL";
 /// KV key for the persisted daily token usage counter (local day key).
 pub const AI_DAILY_TOKEN_USAGE_KEY: &str = "ai_daily_token_usage";
 /// Default daily AI token budget (50k tokens). User-configurable in Settings.
@@ -544,6 +546,23 @@ pub fn current_background_ai_pause_status() -> BackgroundAiPauseStatus {
 
 pub fn background_ai_paused() -> bool {
     current_background_ai_pause_status().paused
+}
+
+fn env_flag_enabled(key: &str) -> bool {
+    std::env::var(key)
+        .map(|value| {
+            let value = value.trim();
+            !value.is_empty()
+                && !value.eq_ignore_ascii_case("0")
+                && !value.eq_ignore_ascii_case("false")
+                && !value.eq_ignore_ascii_case("no")
+        })
+        .unwrap_or(false)
+}
+
+pub fn background_workers_disabled() -> bool {
+    env_flag_enabled(BACKGROUND_WORKERS_DISABLED_ENV)
+        || env_flag_enabled(BACKGROUND_INTEL_DISABLED_ENV)
 }
 
 fn record_ai_usage(

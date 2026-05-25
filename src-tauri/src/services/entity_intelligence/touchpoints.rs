@@ -39,8 +39,9 @@ impl EntityTouchpointsReadHandle for LiveEntityTouchpointsReader {
     ) -> EntityTouchpointsReadFuture<'a> {
         Box::pin(async move {
             tokio::task::spawn_blocking(move || {
-                let db = ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-                    .map_err(|error| {
+                let db =
+                    ActionDb::open_readonly(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                        .map_err(|error| {
                         EntityTouchpointsReadError::ReadFailed(format!(
                             "Database unavailable: {error}"
                         ))
@@ -163,12 +164,18 @@ fn read_meetings_for_scope(
             "ORDER BY m.start_time DESC",
         ),
     };
+    let current_link_relation = meeting_entity_link_dedupe_relation(db)?;
+    let legacy_person_dedupe = format!(
+        "AND NOT EXISTS (
+             SELECT 1
+              FROM {current_link_relation} le2
+             WHERE le2.owner_type = 'meeting'
+                AND le2.owner_id = me.meeting_id
+         )"
+    );
 
     let sql = if args.entity_type == "person" {
-        let second_placeholders: Vec<String> = (0..args.scope_ids.len())
-            .map(|i| format!("?{}", i + 3 + args.scope_ids.len()))
-            .collect();
-        let second_csv = second_placeholders.join(", ");
+        let cap_index = args.scope_ids.len() + 3;
         format!(
             "SELECT DISTINCT
                 m.id,
@@ -176,41 +183,66 @@ fn read_meetings_for_scope(
                 m.meeting_type,
                 m.start_time,
                 m.end_time,
-                CASE WHEN me.entity_id IS NOT NULL THEN 'subject_match' ELSE 'attendee_match' END AS reason,
-                COALESCE(me.entity_id, ma.person_id) AS matched_id
+                CASE
+                  WHEN le.entity_id IS NOT NULL OR me.entity_id IS NOT NULL THEN 'subject_match'
+                  ELSE 'attendee_match'
+                END AS reason,
+                COALESCE(le.entity_id, me.entity_id, ma.person_id) AS matched_id
              FROM meetings m
+             LEFT JOIN linked_entities le
+                 ON le.owner_type = 'meeting'
+                AND le.owner_id = m.id
+                AND le.entity_type = 'person'
+                AND le.entity_id IN ({first_csv})
              LEFT JOIN meeting_entities me
                  ON me.meeting_id = m.id
                 AND me.entity_type = 'person'
                 AND me.entity_id IN ({first_csv})
+                {legacy_person_dedupe}
              LEFT JOIN meeting_attendees ma
                  ON ma.meeting_id = m.id
-                AND ma.person_id IN ({second_csv})
-             WHERE (me.entity_id IS NOT NULL OR ma.person_id IS NOT NULL)
+                AND ma.person_id IN ({first_csv})
+             WHERE (le.entity_id IS NOT NULL OR me.entity_id IS NOT NULL OR ma.person_id IS NOT NULL)
                AND {range_clause}
              {order_clause}
              LIMIT ?{cap_index}",
             first_csv = placeholders_csv,
-            second_csv = second_csv,
             range_clause = range_clause,
             order_clause = order_clause,
-            cap_index = args.scope_ids.len() * 2 + 3,
+            legacy_person_dedupe = legacy_person_dedupe,
+            cap_index = cap_index,
         )
     } else {
         format!(
-            "SELECT DISTINCT
+            "WITH subject_links AS (
+                SELECT le.owner_id AS meeting_id, le.entity_id AS matched_id
+                  FROM linked_entities le
+                 WHERE le.owner_type = 'meeting'
+                   AND le.entity_type = ?{type_index}
+                   AND le.entity_id IN ({placeholders_csv})
+                UNION ALL
+                SELECT me.meeting_id, me.entity_id AS matched_id
+                  FROM meeting_entities me
+                 WHERE me.entity_type = ?{type_index}
+                   AND me.entity_id IN ({placeholders_csv})
+                   AND NOT EXISTS (
+                       SELECT 1
+                         FROM {current_link_relation} le2
+                        WHERE le2.owner_type = 'meeting'
+                          AND le2.owner_id = me.meeting_id
+                   )
+             )
+             SELECT DISTINCT
                 m.id,
                 m.title,
                 m.meeting_type,
                 m.start_time,
                 m.end_time,
                 'subject_match' AS reason,
-                me.entity_id AS matched_id
+                subject_links.matched_id AS matched_id
              FROM meetings m
-             INNER JOIN meeting_entities me
-                 ON me.meeting_id = m.id
-                AND me.entity_type = ?{type_index}
-                AND me.entity_id IN ({placeholders_csv})
+             INNER JOIN subject_links
+                 ON subject_links.meeting_id = m.id
              WHERE {range_clause}
              {order_clause}
              LIMIT ?{cap_index}",
@@ -219,6 +251,7 @@ fn read_meetings_for_scope(
             order_clause = order_clause,
             type_index = args.scope_ids.len() + 3,
             cap_index = args.scope_ids.len() + 4,
+            current_link_relation = current_link_relation,
         )
     };
 
@@ -233,9 +266,6 @@ fn read_meetings_for_scope(
         bound_params.push(Box::new(id.clone()));
     }
     if args.entity_type == "person" {
-        for id in args.scope_ids {
-            bound_params.push(Box::new(id.clone()));
-        }
         bound_params.push(Box::new(cap_capped));
     } else {
         bound_params.push(Box::new(args.entity_type.to_string()));
@@ -382,6 +412,28 @@ fn read_string_list(
     Ok(out)
 }
 
+fn meeting_entity_link_dedupe_relation(db: &ActionDb) -> Result<&'static str, String> {
+    Ok(if object_exists(db, "linked_entities_raw")? {
+        "linked_entities_raw"
+    } else {
+        "linked_entities"
+    })
+}
+
+fn object_exists(db: &ActionDb, name: &str) -> Result<bool, String> {
+    db.conn_ref()
+        .query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM sqlite_master
+                WHERE type IN ('table', 'view') AND name = ?1
+            )",
+            params![name],
+            |row| row.get::<_, i64>(0),
+        )
+        .map(|value| value != 0)
+        .map_err(|error| format!("check object {name}: {error}"))
+}
+
 fn describe_filter(
     entity_type: &str,
     entity_id: &str,
@@ -411,6 +463,57 @@ mod tests {
     //! (`src-tauri/tests/entity_intelligence_no_bypass/`).
 
     use super::*;
+    use chrono::TimeZone;
+    use rusqlite::Connection;
+
+    fn test_db() -> ActionDb {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "
+            CREATE TABLE accounts (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                parent_id TEXT,
+                updated_at TEXT
+            );
+            CREATE TABLE projects (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                parent_id TEXT,
+                updated_at TEXT
+            );
+            CREATE TABLE meetings (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                meeting_type TEXT NOT NULL,
+                start_time TEXT NOT NULL,
+                end_time TEXT
+            );
+            CREATE TABLE meeting_entities (
+                meeting_id TEXT NOT NULL,
+                entity_id TEXT NOT NULL,
+                entity_type TEXT NOT NULL,
+                confidence REAL DEFAULT 0.95
+            );
+            CREATE TABLE meeting_attendees (
+                meeting_id TEXT NOT NULL,
+                person_id TEXT NOT NULL
+            );
+            CREATE TABLE linked_entities (
+                owner_type TEXT NOT NULL,
+                owner_id TEXT NOT NULL,
+                entity_id TEXT NOT NULL,
+                entity_type TEXT NOT NULL,
+                role TEXT NOT NULL,
+                source TEXT,
+                rule_id TEXT,
+                confidence REAL
+            );
+            ",
+        )
+        .unwrap();
+        ActionDb::from_connection_for_tests(conn)
+    }
 
     #[test]
     fn classify_inclusion_distinguishes_subject_match_vs_entity_link() {
@@ -476,6 +579,92 @@ mod tests {
         assert!(desc.contains("scope_includes=2"));
         // Account subjects never get the attendee fallback.
         assert!(!desc.contains("attendee_match_fallback"));
+    }
+
+    #[test]
+    fn account_touchpoints_read_linked_entities_before_legacy_junction() {
+        let db = test_db();
+        db.conn_ref()
+            .execute_batch(
+                "
+                INSERT INTO accounts (id, name, parent_id, updated_at)
+                VALUES ('account-1', 'Example Account', NULL, '2026-05-01T00:00:00Z');
+                INSERT INTO meetings (id, title, meeting_type, start_time, end_time)
+                VALUES ('meeting-1', 'Account Sync', 'customer', '2026-05-20T16:00:00Z', NULL);
+                INSERT INTO linked_entities
+                    (owner_type, owner_id, entity_id, entity_type, role, source, rule_id, confidence)
+                VALUES
+                    ('meeting', 'meeting-1', 'account-1', 'account', 'related', 'rule:P4a', 'P4a', 0.93);
+                ",
+            )
+            .unwrap();
+
+        let snapshot = read_entity_touchpoints_from_db(
+            &db,
+            &EntityTouchpointsQuery {
+                entity_type: "account".to_string(),
+                entity_id: "account-1".to_string(),
+                now: chrono::Utc.with_ymd_and_hms(2026, 5, 24, 12, 0, 0).unwrap(),
+                upcoming_window_days: 14,
+                recent_window_days: 30,
+                per_side_cap: 10,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(snapshot.recent.len(), 1);
+        assert_eq!(snapshot.recent[0].meeting_id, "meeting-1");
+        assert_eq!(
+            snapshot.recent[0].inclusion_reason,
+            TouchpointInclusionReason::SubjectMatch
+        );
+    }
+
+    #[test]
+    fn account_touchpoints_do_not_fallback_to_legacy_after_current_graph_dismissal() {
+        let db = test_db();
+        db.conn_ref()
+            .execute_batch(
+                "
+                CREATE TABLE linked_entities_raw (
+                    owner_type TEXT NOT NULL,
+                    owner_id TEXT NOT NULL,
+                    entity_id TEXT NOT NULL,
+                    entity_type TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    rule_id TEXT,
+                    confidence REAL
+                );
+                INSERT INTO accounts (id, name, parent_id, updated_at)
+                VALUES ('account-1', 'Example Account', NULL, '2026-05-01T00:00:00Z');
+                INSERT INTO meetings (id, title, meeting_type, start_time, end_time)
+                VALUES ('meeting-1', 'Account Sync', 'customer', '2026-05-20T16:00:00Z', NULL);
+                INSERT INTO meeting_entities (meeting_id, entity_id, entity_type, confidence)
+                VALUES ('meeting-1', 'account-1', 'account', 0.95);
+                INSERT INTO linked_entities_raw
+                    (owner_type, owner_id, entity_id, entity_type, role, source, rule_id, confidence)
+                VALUES
+                    ('meeting', 'meeting-1', 'account-1', 'account', 'related', 'user_dismissed', 'user', 1.0);
+                ",
+            )
+            .unwrap();
+
+        let snapshot = read_entity_touchpoints_from_db(
+            &db,
+            &EntityTouchpointsQuery {
+                entity_type: "account".to_string(),
+                entity_id: "account-1".to_string(),
+                now: chrono::Utc.with_ymd_and_hms(2026, 5, 24, 12, 0, 0).unwrap(),
+                upcoming_window_days: 14,
+                recent_window_days: 30,
+                per_side_cap: 10,
+            },
+        )
+        .unwrap();
+
+        assert!(snapshot.recent.is_empty());
+        assert!(snapshot.upcoming.is_empty());
     }
 
     #[test]

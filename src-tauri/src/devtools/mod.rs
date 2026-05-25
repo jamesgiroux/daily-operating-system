@@ -429,6 +429,54 @@ pub struct DevState {
     pub has_dev_workspace: bool,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct DevStateCounts {
+    pub has_database: bool,
+    pub action_count: usize,
+    pub account_count: usize,
+    pub project_count: usize,
+    pub meeting_count: usize,
+    pub people_count: usize,
+}
+
+pub fn read_dev_state_counts(db: &ActionDb) -> DevStateCounts {
+    let actions = db
+        .conn_ref()
+        .query_row("SELECT COUNT(*) FROM actions", [], |r| r.get::<_, usize>(0))
+        .unwrap_or(0);
+    let accounts = db
+        .conn_ref()
+        .query_row("SELECT COUNT(*) FROM accounts", [], |r| {
+            r.get::<_, usize>(0)
+        })
+        .unwrap_or(0);
+    let projects = db
+        .conn_ref()
+        .query_row("SELECT COUNT(*) FROM projects", [], |r| {
+            r.get::<_, usize>(0)
+        })
+        .unwrap_or(0);
+    let meetings = db
+        .conn_ref()
+        .query_row("SELECT COUNT(*) FROM meetings", [], |r| {
+            r.get::<_, usize>(0)
+        })
+        .unwrap_or(0);
+    let people = db
+        .conn_ref()
+        .query_row("SELECT COUNT(*) FROM people", [], |r| r.get::<_, usize>(0))
+        .unwrap_or(0);
+
+    DevStateCounts {
+        has_database: true,
+        action_count: actions,
+        account_count: accounts,
+        project_count: projects,
+        meeting_count: meetings,
+        people_count: people,
+    }
+}
+
 /// Check if the current workspace is the dev sandbox (not a real user workspace).
 pub(crate) fn is_dev_workspace(state: &AppState) -> bool {
     let current = {
@@ -843,7 +891,7 @@ pub fn clean_dev_artifacts(include_workspace: bool) -> Result<String, String> {
 }
 
 /// Query current dev state for the panel UI.
-pub fn get_dev_state(state: &AppState) -> Result<DevState, String> {
+pub fn get_dev_state(state: &AppState, counts: DevStateCounts) -> Result<DevState, String> {
     if !cfg!(debug_assertions) {
         return Err("Dev tools not available in release builds".into());
     }
@@ -866,40 +914,6 @@ pub fn get_dev_state(state: &AppState) -> Result<DevState, String> {
         })
         .unwrap_or(false);
 
-    let (has_database, action_count, account_count, project_count, meeting_count, people_count) =
-        match ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())) {
-            Ok(db) => {
-                let actions = db
-                    .conn_ref()
-                    .query_row("SELECT COUNT(*) FROM actions", [], |r| r.get::<_, usize>(0))
-                    .unwrap_or(0);
-                let accounts = db
-                    .conn_ref()
-                    .query_row("SELECT COUNT(*) FROM accounts", [], |r| {
-                        r.get::<_, usize>(0)
-                    })
-                    .unwrap_or(0);
-                let projects = db
-                    .conn_ref()
-                    .query_row("SELECT COUNT(*) FROM projects", [], |r| {
-                        r.get::<_, usize>(0)
-                    })
-                    .unwrap_or(0);
-                let meetings = db
-                    .conn_ref()
-                    .query_row("SELECT COUNT(*) FROM meetings", [], |r| {
-                        r.get::<_, usize>(0)
-                    })
-                    .unwrap_or(0);
-                let people = db
-                    .conn_ref()
-                    .query_row("SELECT COUNT(*) FROM people", [], |r| r.get::<_, usize>(0))
-                    .unwrap_or(0);
-                (true, actions, accounts, projects, meetings, people)
-            }
-            Err(_) => (false, 0, 0, 0, 0, 0),
-        };
-
     let google_auth_status = {
         let g = state.calendar.google_auth.lock();
         match &*g {
@@ -915,12 +929,12 @@ pub fn get_dev_state(state: &AppState) -> Result<DevState, String> {
         is_debug_build: cfg!(debug_assertions),
         has_config,
         workspace_path,
-        has_database,
-        action_count,
-        account_count,
-        project_count,
-        meeting_count,
-        people_count,
+        has_database: counts.has_database,
+        action_count: counts.action_count,
+        account_count: counts.account_count,
+        project_count: counts.project_count,
+        meeting_count: counts.meeting_count,
+        people_count: counts.people_count,
         has_today_data,
         google_auth_status,
         is_dev_db_mode: crate::db::is_dev_db_mode(),

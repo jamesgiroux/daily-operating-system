@@ -410,35 +410,43 @@ fn render_mcp_ability_data_value(
     load_claim: &impl Fn(&str) -> Option<IntelligenceClaim>,
 ) -> Option<serde_json::Value> {
     match value {
-        serde_json::Value::Object(object) => match tagged_mcp_claim_text(&object) {
-            TaggedMcpClaimTextMatch::Tagged(tagged) => {
-                render_tagged_mcp_claim_text(tagged, load_claim)
+        serde_json::Value::Object(object) => {
+            if let Some(subject_ref) = tagged_mcp_subject_ref(path, &object) {
+                return Some(subject_ref);
             }
-            TaggedMcpClaimTextMatch::Malformed => None,
-            TaggedMcpClaimTextMatch::NotTagged => {
-                if let Some(entity_name) = tagged_mcp_entity_name(&object) {
-                    return Some(entity_name);
+            if let Some(metadata_text) = render_mcp_renderable_metadata_text(path, &object) {
+                return Some(metadata_text);
+            }
+            match tagged_mcp_claim_text(&object) {
+                TaggedMcpClaimTextMatch::Tagged(tagged) => {
+                    render_tagged_mcp_claim_text(tagged, load_claim)
                 }
-
-                let object_claim_id_hint = claim_id_hint_from_object(&object)
-                    .or_else(|| claim_id_hint.map(str::to_string));
-                let mut rendered = serde_json::Map::new();
-                for (key, value) in object {
-                    path.push(key.clone());
-                    if let Some(value) = render_mcp_ability_data_value(
-                        value,
-                        path,
-                        object_claim_id_hint.as_deref(),
-                        provenance,
-                        load_claim,
-                    ) {
-                        rendered.insert(key, value);
+                TaggedMcpClaimTextMatch::Malformed => None,
+                TaggedMcpClaimTextMatch::NotTagged => {
+                    if let Some(entity_name) = tagged_mcp_entity_name(&object) {
+                        return Some(entity_name);
                     }
-                    path.pop();
+
+                    let object_claim_id_hint = claim_id_hint_from_object(&object)
+                        .or_else(|| claim_id_hint.map(str::to_string));
+                    let mut rendered = serde_json::Map::new();
+                    for (key, value) in object {
+                        path.push(key.clone());
+                        if let Some(value) = render_mcp_ability_data_value(
+                            value,
+                            path,
+                            object_claim_id_hint.as_deref(),
+                            provenance,
+                            load_claim,
+                        ) {
+                            rendered.insert(key, value);
+                        }
+                        path.pop();
+                    }
+                    Some(serde_json::Value::Object(rendered))
                 }
-                Some(serde_json::Value::Object(rendered))
             }
-        },
+        }
         serde_json::Value::Array(values) => Some(serde_json::Value::Array(
             values
                 .into_iter()
@@ -497,6 +505,55 @@ fn tagged_mcp_entity_name(
         serde_json::Value::String(entity_id),
     );
     Some(serde_json::Value::Object(rendered))
+}
+
+fn tagged_mcp_subject_ref(
+    path: &[String],
+    object: &serde_json::Map<String, serde_json::Value>,
+) -> Option<serde_json::Value> {
+    let last = path.last()?;
+    if last != "subjectRef" && last != "relatedSubjectRef" {
+        return None;
+    }
+
+    let mut rendered = serde_json::Map::new();
+    for entity_kind in ["account", "project", "person", "meeting", "email"] {
+        let Some(entity_id) = object.get(entity_kind).and_then(serde_json::Value::as_str) else {
+            continue;
+        };
+        if !is_mcp_metadata_identifier(entity_id) {
+            continue;
+        }
+        rendered.insert(
+            entity_kind.to_string(),
+            serde_json::Value::String(entity_id.to_string()),
+        );
+    }
+
+    if rendered.is_empty() {
+        None
+    } else {
+        Some(serde_json::Value::Object(rendered))
+    }
+}
+
+fn render_mcp_renderable_metadata_text(
+    path: &[String],
+    object: &serde_json::Map<String, serde_json::Value>,
+) -> Option<serde_json::Value> {
+    let value_class = mcp_renderable_metadata_text_class_for_path(path)?;
+    let text = object.get("text")?.as_str()?.trim();
+    if !mcp_metadata_value_is_valid(value_class, text) {
+        log::warn!(
+            target: "dailyos_lib::services::sensitivity",
+            "MCP renderable metadata validator rejected path={} class={:?}",
+            json_pointer_from_path(path),
+            value_class
+        );
+        return None;
+    }
+
+    Some(serde_json::json!({ "text": text }))
 }
 
 fn tagged_mcp_claim_text(
@@ -964,6 +1021,7 @@ fn is_array_index(value: &str) -> bool {
 enum McpAbilityMetadataValueClass {
     Identifier,
     EntityKind,
+    MetadataToken,
     TemporalScope,
     Timestamp,
     MeetingTitle,
@@ -1104,6 +1162,284 @@ const MCP_ABILITY_METADATA_STRING_ALLOWLIST: &[McpAbilityMetadataPathRule] = &[
             "seniority",
         ],
         value_class: McpAbilityMetadataValueClass::EntityName,
+    },
+    // get_entity_intelligence envelope metadata.
+    McpAbilityMetadataPathRule {
+        pattern: &["subject", "subjectRef"],
+        value_class: McpAbilityMetadataValueClass::Identifier,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["provenance", "sources", "*", "label"],
+        value_class: McpAbilityMetadataValueClass::EntityName,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["provenance", "sources", "*", "sourceType"],
+        value_class: McpAbilityMetadataValueClass::Identifier,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["provenance", "sources", "*", "asOf"],
+        value_class: McpAbilityMetadataValueClass::Timestamp,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &[
+            "relationships",
+            "items",
+            "*",
+            "edges",
+            "items",
+            "*",
+            "edgeId",
+        ],
+        value_class: McpAbilityMetadataValueClass::Identifier,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &[
+            "relationships",
+            "items",
+            "*",
+            "edges",
+            "items",
+            "*",
+            "edgeType",
+        ],
+        value_class: McpAbilityMetadataValueClass::MetadataToken,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &[
+            "relationships",
+            "items",
+            "*",
+            "edges",
+            "items",
+            "*",
+            "observedAt",
+        ],
+        value_class: McpAbilityMetadataValueClass::Timestamp,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &[
+            "relationships",
+            "items",
+            "*",
+            "edges",
+            "items",
+            "*",
+            "sourceAsof",
+        ],
+        value_class: McpAbilityMetadataValueClass::Timestamp,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &[
+            "relationships",
+            "items",
+            "*",
+            "edges",
+            "items",
+            "*",
+            "inclusionReason",
+        ],
+        value_class: McpAbilityMetadataValueClass::MetadataToken,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &[
+            "relationships",
+            "items",
+            "*",
+            "edges",
+            "items",
+            "*",
+            "trustBand",
+        ],
+        value_class: McpAbilityMetadataValueClass::MetadataToken,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &[
+            "relationships",
+            "items",
+            "*",
+            "edges",
+            "items",
+            "*",
+            "freshness",
+        ],
+        value_class: McpAbilityMetadataValueClass::MetadataToken,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &[
+            "relationships",
+            "items",
+            "*",
+            "participants",
+            "items",
+            "*",
+            "lastSeenAt",
+        ],
+        value_class: McpAbilityMetadataValueClass::Timestamp,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &[
+            "relationships",
+            "items",
+            "*",
+            "participants",
+            "items",
+            "*",
+            "recentTouchpointIds",
+            "*",
+        ],
+        value_class: McpAbilityMetadataValueClass::Identifier,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &[
+            "relationships",
+            "items",
+            "*",
+            "participants",
+            "items",
+            "*",
+            "trustBand",
+        ],
+        value_class: McpAbilityMetadataValueClass::MetadataToken,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &[
+            "relationships",
+            "items",
+            "*",
+            "participants",
+            "items",
+            "*",
+            "freshness",
+        ],
+        value_class: McpAbilityMetadataValueClass::MetadataToken,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &[
+            "touchpoints",
+            "items",
+            "*",
+            "upcoming",
+            "items",
+            "*",
+            "meetingId",
+        ],
+        value_class: McpAbilityMetadataValueClass::Identifier,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &[
+            "touchpoints",
+            "items",
+            "*",
+            "upcoming",
+            "items",
+            "*",
+            "kind",
+        ],
+        value_class: McpAbilityMetadataValueClass::EntityKind,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &[
+            "touchpoints",
+            "items",
+            "*",
+            "upcoming",
+            "items",
+            "*",
+            "when",
+        ],
+        value_class: McpAbilityMetadataValueClass::Timestamp,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &[
+            "touchpoints",
+            "items",
+            "*",
+            "upcoming",
+            "items",
+            "*",
+            "inclusionReason",
+        ],
+        value_class: McpAbilityMetadataValueClass::MetadataToken,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &[
+            "touchpoints",
+            "items",
+            "*",
+            "upcoming",
+            "items",
+            "*",
+            "trustBand",
+        ],
+        value_class: McpAbilityMetadataValueClass::MetadataToken,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &[
+            "touchpoints",
+            "items",
+            "*",
+            "upcoming",
+            "items",
+            "*",
+            "freshness",
+        ],
+        value_class: McpAbilityMetadataValueClass::MetadataToken,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &[
+            "touchpoints",
+            "items",
+            "*",
+            "recent",
+            "items",
+            "*",
+            "meetingId",
+        ],
+        value_class: McpAbilityMetadataValueClass::Identifier,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["touchpoints", "items", "*", "recent", "items", "*", "kind"],
+        value_class: McpAbilityMetadataValueClass::EntityKind,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["touchpoints", "items", "*", "recent", "items", "*", "when"],
+        value_class: McpAbilityMetadataValueClass::Timestamp,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &[
+            "touchpoints",
+            "items",
+            "*",
+            "recent",
+            "items",
+            "*",
+            "inclusionReason",
+        ],
+        value_class: McpAbilityMetadataValueClass::MetadataToken,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &[
+            "touchpoints",
+            "items",
+            "*",
+            "recent",
+            "items",
+            "*",
+            "trustBand",
+        ],
+        value_class: McpAbilityMetadataValueClass::MetadataToken,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &[
+            "touchpoints",
+            "items",
+            "*",
+            "recent",
+            "items",
+            "*",
+            "freshness",
+        ],
+        value_class: McpAbilityMetadataValueClass::MetadataToken,
     },
     // prepare_meeting meeting metadata.
     McpAbilityMetadataPathRule {
@@ -1346,6 +1682,65 @@ fn mcp_ability_metadata_rule_for_path(
         .find(|rule| mcp_metadata_path_matches(rule.pattern, path))
 }
 
+fn mcp_renderable_metadata_text_class_for_path(
+    path: &[String],
+) -> Option<McpAbilityMetadataValueClass> {
+    const RULES: &[McpAbilityMetadataPathRule] = &[
+        McpAbilityMetadataPathRule {
+            pattern: &[
+                "relationships",
+                "items",
+                "*",
+                "edges",
+                "items",
+                "*",
+                "relatedDisplayLabel",
+            ],
+            value_class: McpAbilityMetadataValueClass::EntityName,
+        },
+        McpAbilityMetadataPathRule {
+            pattern: &[
+                "relationships",
+                "items",
+                "*",
+                "participants",
+                "items",
+                "*",
+                "displayLabel",
+            ],
+            value_class: McpAbilityMetadataValueClass::EntityName,
+        },
+        McpAbilityMetadataPathRule {
+            pattern: &[
+                "relationships",
+                "items",
+                "*",
+                "participants",
+                "items",
+                "*",
+                "role",
+            ],
+            value_class: McpAbilityMetadataValueClass::EntityName,
+        },
+        McpAbilityMetadataPathRule {
+            pattern: &[
+                "relationships",
+                "items",
+                "*",
+                "participants",
+                "items",
+                "*",
+                "relationship",
+            ],
+            value_class: McpAbilityMetadataValueClass::EntityName,
+        },
+    ];
+    RULES
+        .iter()
+        .find(|rule| mcp_metadata_path_matches(rule.pattern, path))
+        .map(|rule| rule.value_class)
+}
+
 fn mcp_metadata_path_matches(pattern: &[&str], path: &[String]) -> bool {
     pattern.len() == path.len()
         && pattern.iter().zip(path).all(|(expected, actual)| {
@@ -1361,6 +1756,7 @@ fn mcp_metadata_value_is_valid(value_class: McpAbilityMetadataValueClass, text: 
     match value_class {
         McpAbilityMetadataValueClass::Identifier => is_mcp_metadata_identifier(text),
         McpAbilityMetadataValueClass::EntityKind => is_mcp_entity_kind(text),
+        McpAbilityMetadataValueClass::MetadataToken => is_mcp_metadata_token(text),
         McpAbilityMetadataValueClass::TemporalScope => is_mcp_temporal_scope(text),
         McpAbilityMetadataValueClass::Timestamp => is_iso8601_timestamp(text),
         McpAbilityMetadataValueClass::MeetingTitle | McpAbilityMetadataValueClass::EntityName => {
@@ -1394,6 +1790,15 @@ fn is_mcp_entity_kind(value: &str) -> bool {
 
 fn is_mcp_temporal_scope(value: &str) -> bool {
     value.trim().eq_ignore_ascii_case("state")
+}
+
+fn is_mcp_metadata_token(value: &str) -> bool {
+    let value = value.trim();
+    !value.is_empty()
+        && value.len() <= 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
 }
 
 fn is_iso8601_timestamp(value: &str) -> bool {
@@ -2247,6 +2652,140 @@ CREATE TABLE accounts (
                 .as_ref()
                 .and_then(|context| context.description.as_deref()),
             Some("stale company context")
+        );
+    }
+
+    #[test]
+    fn mcp_ability_data_preserves_entity_intelligence_metadata_without_claim_lookup() {
+        let raw = serde_json::json!({
+            "subject": {
+                "subjectRef": { "account": "entity-1" }
+            },
+            "provenance": {
+                "sources": [{
+                    "id": "relationship:linked_entities:meeting:meeting-1:account:entity-1",
+                    "label": "linked_entities",
+                    "sourceType": "linked_entities",
+                    "asOf": "2026-05-20T15:00:00Z",
+                    "redacted": false
+                }],
+                "redactionApplied": false
+            },
+            "relationships": {
+                "items": [{
+                    "edges": {
+                        "items": [{
+                            "edgeId": "meeting_link:meeting:meeting-1",
+                            "edgeType": "meeting_link",
+                            "subjectRef": { "account": "entity-1" },
+                            "relatedSubjectRef": { "meeting": "meeting-1" },
+                            "relatedDisplayLabel": {
+                                "text": "Current Entity Sync",
+                                "policy": {
+                                    "kind": "render",
+                                    "sensitivity": "internal",
+                                    "surface": "mcp_tool"
+                                }
+                            },
+                            "observedAt": "2026-05-20T15:00:00Z",
+                            "sourceAsof": "2026-05-20T15:00:00Z",
+                            "inclusionReason": "subject_match",
+                            "trustBand": "likely_current",
+                            "freshness": "current",
+                            "provenance": {
+                                "sourceIds": [
+                                    "relationship:linked_entities:meeting:meeting-1:account:entity-1"
+                                ]
+                            }
+                        }]
+                    },
+                    "participants": {
+                        "items": [{
+                            "subjectRef": { "person": "person-1" },
+                            "displayLabel": {
+                                "text": "Example Person",
+                                "policy": {
+                                    "kind": "render",
+                                    "sensitivity": "internal",
+                                    "surface": "mcp_tool"
+                                }
+                            },
+                            "normalizedTouchpointCount": 2,
+                            "recentTouchpointIds": ["meeting-1"],
+                            "lastSeenAt": "2026-05-20T15:00:00Z",
+                            "trustBand": "likely_current",
+                            "freshness": "current",
+                            "provenance": {
+                                "sourceIds": [
+                                    "relationship:linked_entities:meeting:meeting-1:account:entity-1"
+                                ]
+                            }
+                        }]
+                    }
+                }]
+            },
+            "touchpoints": {
+                "items": [{
+                    "upcoming": {
+                        "items": [{
+                            "meetingId": "meeting-1",
+                            "kind": "meeting",
+                            "when": "2026-05-27T15:00:00Z",
+                            "subjectRef": { "account": "entity-1" },
+                            "inclusionReason": "subject_match",
+                            "trustBand": "likely_current",
+                            "freshness": "current",
+                            "provenance": {
+                                "sourceIds": [
+                                    "relationship:linked_entities:meeting:meeting-1:account:entity-1"
+                                ]
+                            }
+                        }]
+                    },
+                    "recent": {
+                        "items": []
+                    }
+                }]
+            }
+        });
+
+        let rendered = render_mcp_ability_data_without_claim_lookup(raw);
+
+        assert_eq!(
+            rendered
+                .pointer("/subject/subjectRef/account")
+                .and_then(serde_json::Value::as_str),
+            Some("entity-1")
+        );
+        assert_eq!(
+            rendered
+                .pointer("/relationships/items/0/edges/items/0/edgeType")
+                .and_then(serde_json::Value::as_str),
+            Some("meeting_link")
+        );
+        assert_eq!(
+            rendered
+                .pointer("/relationships/items/0/edges/items/0/relatedDisplayLabel/text")
+                .and_then(serde_json::Value::as_str),
+            Some("Current Entity Sync")
+        );
+        assert_eq!(
+            rendered
+                .pointer("/relationships/items/0/participants/items/0/displayLabel/text")
+                .and_then(serde_json::Value::as_str),
+            Some("Example Person")
+        );
+        assert_eq!(
+            rendered
+                .pointer("/touchpoints/items/0/upcoming/items/0/when")
+                .and_then(serde_json::Value::as_str),
+            Some("2026-05-27T15:00:00Z")
+        );
+        assert_eq!(
+            rendered
+                .pointer("/provenance/sources/0/sourceType")
+                .and_then(serde_json::Value::as_str),
+            Some("linked_entities")
         );
     }
 }

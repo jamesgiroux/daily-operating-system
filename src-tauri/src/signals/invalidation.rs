@@ -15,7 +15,8 @@ const MIN_CONFIDENCE: f64 = 0.70;
 
 /// Check if a newly-emitted signal should invalidate any upcoming meeting preps.
 ///
-/// For the signal's entity, queries upcoming meetings (48h) via `meeting_entities`.
+/// For the signal's entity, queries upcoming meetings (48h) through the
+/// graph-compatible meeting link view.
 /// If the signal confidence ≥ 0.7 and the meeting exists, pushes the meeting ID
 /// to the prep invalidation queue.
 pub fn check_and_invalidate_preps(
@@ -99,7 +100,7 @@ impl ActionDb {
         let hours_param = format!("+{} hours", hours);
         let mut stmt = self.conn_ref().prepare(
             "SELECT DISTINCT me.meeting_id
-             FROM meeting_entities me
+             FROM effective_meeting_entities me
              JOIN meetings mh ON mh.id = me.meeting_id
              WHERE me.entity_id = ?1 AND me.entity_type = ?2
                AND mh.start_time >= datetime('now')

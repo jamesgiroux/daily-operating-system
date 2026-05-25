@@ -361,6 +361,40 @@ pub fn emit_signal(
     Ok(outcome.event.id)
 }
 
+/// Emit an internal signal that should not fan out to meeting refresh state.
+///
+/// Use this for bookkeeping signals whose entity already names the affected
+/// state and where meeting-prep invalidation would only add writer load.
+pub fn emit_signal_without_meeting_refresh(
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+    signal_type: &str,
+    source: &str,
+    value: Option<&str>,
+    confidence: f64,
+) -> Result<String, DbError> {
+    let outcome = emit_signal_event(
+        db,
+        EmitSignalEvent {
+            entity_type,
+            entity_id,
+            signal_type,
+            source,
+            value,
+            confidence,
+            source_context: None,
+            id: None,
+            created_at: None,
+            decay_half_life_days: None,
+            insert_mode: SignalInsertMode::Insert,
+            channel: SignalEmissionChannel::Infrastructure,
+            refresh_meetings: false,
+        },
+    )?;
+    Ok(outcome.event.id)
+}
+
 /// Emit a signal event with a deterministic id.
 ///
 /// If the id already exists, the existing evidence is kept and the outcome is
@@ -804,7 +838,7 @@ fn emit_signal_flag_upcoming_meetings(db: &ActionDb, entity_type: &str, entity_i
     if let Err(e) = db.conn_ref().execute(
         "UPDATE meeting_transcripts SET has_new_signals = 1
          WHERE meeting_id IN (
-             SELECT me.meeting_id FROM meeting_entities me
+             SELECT me.meeting_id FROM effective_meeting_entities me
              INNER JOIN meetings m ON m.id = me.meeting_id
              WHERE me.entity_id = ?1 AND me.entity_type = ?2
              AND julianday(m.start_time) > julianday('now')
@@ -985,7 +1019,7 @@ pub fn emit_signal_propagate_and_evaluate(
 pub fn propagate_signal_to_meetings(db: &ActionDb, entity_id: &str) -> Result<usize, DbError> {
     let conn = db.conn_ref();
     let mut stmt = conn.prepare(
-        "SELECT me.meeting_id FROM meeting_entities me
+        "SELECT me.meeting_id FROM effective_meeting_entities me
          INNER JOIN meetings m ON m.id = me.meeting_id
          LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
          WHERE me.entity_id = ?1

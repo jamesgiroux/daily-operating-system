@@ -324,87 +324,16 @@ fn load_prepare_meeting_subjects(
 ) -> Result<Vec<PrepareMeetingSubjectSnapshot>, String> {
     let mut subjects = Vec::new();
 
-    if object_exists(db, "linked_entities")? {
-        let mut statement = db
-            .conn_ref()
-            .prepare(
-                "SELECT lr.entity_type, lr.entity_id,
-                        COALESCE(e.name, lr.entity_id) AS display_name
-                 FROM linked_entities lr
-                 LEFT JOIN entities e
-                      ON e.id = lr.entity_id AND e.entity_type = lr.entity_type
-                 WHERE lr.owner_type = 'meeting'
-                   AND lr.owner_id = ?1
-                   AND lr.entity_type IN ('account', 'project', 'person')
-                 ORDER BY CASE lr.role WHEN 'primary' THEN 0
-                                       WHEN 'related' THEN 1
-                                       ELSE 2 END,
-                          display_name ASC",
-            )
-            .map_err(|error| format!("prepare linked entity read: {error}"))?;
-        let rows = statement
-            .query_map(rusqlite::params![meeting_id], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                ))
-            })
-            .map_err(|error| format!("read linked entities: {error}"))?;
-        for row in rows {
-            let (kind, id, display_name) =
-                row.map_err(|error| format!("map linked entity: {error}"))?;
-            push_prepare_meeting_subject(&mut subjects, &kind, &id, &display_name);
-        }
-    }
-
-    if object_exists(db, "meeting_entities")? {
-        let display_join = if object_exists(db, "entities")? {
-            "COALESCE(e.name, me.entity_id)"
-        } else {
-            "me.entity_id"
-        };
-        let sql = if object_exists(db, "entities")? {
-            format!(
-                "SELECT me.entity_type, me.entity_id, {display_join} AS display_name
-                 FROM meeting_entities me
-                 LEFT JOIN entities e
-                      ON e.id = me.entity_id AND e.entity_type = me.entity_type
-                 WHERE me.meeting_id = ?1
-                   AND me.entity_type IN ('account', 'project', 'person')
-                 ORDER BY COALESCE(me.is_primary, 0) DESC,
-                          COALESCE(me.confidence, 0.0) DESC,
-                          display_name ASC"
-            )
-        } else {
-            format!(
-                "SELECT me.entity_type, me.entity_id, {display_join} AS display_name
-                 FROM meeting_entities me
-                 WHERE me.meeting_id = ?1
-                   AND me.entity_type IN ('account', 'project', 'person')
-                 ORDER BY COALESCE(me.is_primary, 0) DESC,
-                          COALESCE(me.confidence, 0.0) DESC,
-                          display_name ASC"
-            )
-        };
-        let mut statement = db
-            .conn_ref()
-            .prepare(&sql)
-            .map_err(|error| format!("prepare meeting entity read: {error}"))?;
-        let rows = statement
-            .query_map(rusqlite::params![meeting_id], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                ))
-            })
-            .map_err(|error| format!("read meeting entities: {error}"))?;
-        for row in rows {
-            let (kind, id, display_name) =
-                row.map_err(|error| format!("map meeting entity: {error}"))?;
-            push_prepare_meeting_subject(&mut subjects, &kind, &id, &display_name);
-        }
+    for entity in db
+        .get_meeting_entities(meeting_id)
+        .map_err(|error| format!("read meeting entities: {error}"))?
+    {
+        push_prepare_meeting_subject(
+            &mut subjects,
+            entity.entity_type.as_str(),
+            &entity.id,
+            &entity.name,
+        );
     }
 
     Ok(subjects)
@@ -2208,7 +2137,7 @@ fn find_prior_meeting(
         .collect();
     let sql = format!(
         "SELECT DISTINCT m.id FROM meetings m
-         INNER JOIN meeting_entities me ON me.meeting_id = m.id
+         INNER JOIN effective_meeting_entities me ON me.meeting_id = m.id
          WHERE me.entity_id IN ({})
            AND m.start_time < ?1
            AND m.id != ?2
@@ -2874,17 +2803,15 @@ pub async fn unlink_meeting_entity_with_prep_queue(
             // field_path='account'. Project/Person link dismissals
             // could resurface because PRE-GATE matches on field_path
             // and saw 'account' instead of the real entity_type.
-            let entity_type: String = db
-                .conn_ref()
-                .query_row(
-                    "SELECT entity_type FROM meeting_entities \
-                     WHERE meeting_id = ?1 AND entity_id = ?2 LIMIT 1",
-                    rusqlite::params![meeting_id_s, entity_id_s],
-                    |row| row.get(0),
-                )
-                .map_err(|e| {
+            let entity_type = db
+                .get_meeting_linked_entities(&meeting_id_s)
+                .map_err(|e| e.to_string())?
+                .into_iter()
+                .find(|entity| entity.id == entity_id_s)
+                .map(|entity| entity.entity_type)
+                .ok_or_else(|| {
                     format!(
-                        "unlink_meeting_entity_with_prep_queue: meeting_entities row not found for ({}, {}): {e}",
+                        "unlink_meeting_entity_with_prep_queue: meeting link not found for ({}, {})",
                         meeting_id_s, entity_id_s
                     )
                 })?;
@@ -3001,8 +2928,8 @@ pub fn persist_classification_entities(
 ///     so a later lower-confidence sweep can never downgrade a previously
 ///     linked primary.
 ///
-/// Dismissed entities (user-unlinked, recorded in
-/// `meeting_entity_dismissals`) are skipped before any write. This closes
+/// Dismissed entities (user-unlinked, recorded in the legacy dismissal table
+/// or the current entity-link graph) are skipped before any write. This closes
 /// the "dismissed entity comes back every sync" loop at the calendar-sync
 /// edge, mirroring the guard in
 /// `persist_and_invalidate_entity_links_sync_scored` for the resolver edge.
@@ -3271,14 +3198,14 @@ pub fn persist_and_invalidate_entity_links_sync_scored(
     }
 
     // Track whether a link existed before for prep-invalidation accounting.
+    let existing_link_ids: HashSet<String> = db
+        .get_meeting_linked_entities(meeting_id)
+        .map(|entities| entities.into_iter().map(|entity| entity.id).collect())
+        .unwrap_or_default();
     let mut linked = 0usize;
     for candidate in &candidates {
         // Check existence first so we can increment only on new inserts.
-        let already: bool = db
-            .conn_ref()
-            .prepare("SELECT 1 FROM meeting_entities WHERE meeting_id = ?1 AND entity_id = ?2")
-            .and_then(|mut s| s.exists(rusqlite::params![meeting_id, candidate.entity_id]))
-            .unwrap_or(false);
+        let already = existing_link_ids.contains(&candidate.entity_id);
 
         match db.link_meeting_entity_with_confidence(
             meeting_id,

@@ -26,8 +26,9 @@ impl EntityNeighborhoodReadHandle for LiveEntityNeighborhoodReader {
     ) -> EntityNeighborhoodReadFuture<'a> {
         Box::pin(async move {
             tokio::task::spawn_blocking(move || {
-                let db = ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
-                    .map_err(|error| {
+                let db =
+                    ActionDb::open_readonly(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                        .map_err(|error| {
                         EntityNeighborhoodReadError::ReadFailed(format!(
                             "Database unavailable: {error}"
                         ))
@@ -258,20 +259,25 @@ fn read_member_edges(
                     ""
                 };
             let role_expr = if object_exists(db, "account_stakeholder_roles")? {
+                let role_priority = account_stakeholder_role_priority_sql("r.role");
                 format!(
-                    "(SELECT role FROM account_stakeholder_roles r WHERE r.account_id = s.account_id AND r.person_id = s.person_id {role_dismissal_filter} ORDER BY role LIMIT 1)"
+                    "(SELECT r.role FROM account_stakeholder_roles r WHERE r.account_id = s.account_id AND r.person_id = s.person_id {role_dismissal_filter} ORDER BY {role_priority}, r.role LIMIT 1)"
                 )
             } else {
                 "NULL".to_string()
             };
+            let role_priority_expr = account_stakeholder_role_priority_sql(&format!(
+                "COALESCE({role_expr}, 'associated')"
+            ));
             let sql = format!(
                 "SELECT p.id, p.name, COALESCE({role_expr}, 'associated') AS role,
-                        COALESCE(s.last_seen_in_glean, s.created_at), s.data_source
+                        COALESCE(s.last_seen_in_glean, s.created_at), s.data_source,
+                        {role_priority_expr} AS role_priority
                  FROM account_stakeholders s
                  JOIN people p ON p.id = s.person_id
                  WHERE s.account_id = ?1
                    {stakeholder_status_filter}
-                 ORDER BY p.name
+                 ORDER BY role_priority, p.name
                  LIMIT ?2"
             );
             let conn = db.conn_ref();
@@ -291,10 +297,11 @@ fn read_member_edges(
                 )
                 .map_err(|e| e.to_string())?;
             for row in rows {
-                let (person_id, name, _role, source_asof, data_source) =
+                let (person_id, name, role, source_asof, data_source) =
                     row.map_err(|e| e.to_string())?;
+                let edge_type = account_stakeholder_edge_type(&role);
                 edges.push(edge(
-                    "stakeholder",
+                    &edge_type,
                     related_entity("person", person_id.clone(), Some(name)),
                     edge_source(
                         "account_stakeholders",
@@ -374,19 +381,23 @@ fn read_meeting_edges(
         return Ok(false);
     }
     let start = edges.len();
+    let has_meeting_links = has_entity_meeting_links(db)?;
     match query.entity_type.as_str() {
-        "meeting" if object_exists(db, "meeting_entities")? => {
-            let confidence_expr = meeting_entity_confidence_expr(db)?;
+        "meeting" if has_meeting_links => {
+            let Some(cte_sql) = meeting_subject_links_cte(db)? else {
+                return Ok(false);
+            };
             let sql = format!(
-                "SELECT me.entity_type, me.entity_id,
-                        COALESCE(a.name, pr.name, p.name, me.entity_id) AS label,
-                        {confidence_expr}
-                 FROM meeting_entities me
-                 LEFT JOIN accounts a ON me.entity_type = 'account' AND a.id = me.entity_id
-                 LEFT JOIN projects pr ON me.entity_type = 'project' AND pr.id = me.entity_id
-                 LEFT JOIN people p ON me.entity_type = 'person' AND p.id = me.entity_id
-                 WHERE me.meeting_id = ?1
-                 ORDER BY me.entity_type, label
+                "{cte_sql}
+                 SELECT ml.entity_type, ml.entity_id,
+                        COALESCE(a.name, pr.name, p.name, ml.entity_id) AS label,
+                        ml.confidence,
+                        ml.source_type
+                 FROM meeting_links ml
+                 LEFT JOIN accounts a ON ml.entity_type = 'account' AND a.id = ml.entity_id
+                 LEFT JOIN projects pr ON ml.entity_type = 'project' AND pr.id = ml.entity_id
+                 LEFT JOIN people p ON ml.entity_type = 'person' AND p.id = ml.entity_id
+                 ORDER BY ml.entity_type, label
                  LIMIT ?2"
             );
             let conn = db.conn_ref();
@@ -400,18 +411,23 @@ fn read_meeting_edges(
                             row.get::<_, String>(1)?,
                             row.get::<_, Option<String>>(2)?,
                             row.get::<_, f32>(3)?,
+                            row.get::<_, String>(4)?,
                         ))
                     },
                 )
                 .map_err(|e| e.to_string())?;
             for row in rows {
-                let (entity_type, entity_id, label, confidence) = row.map_err(|e| e.to_string())?;
+                let (entity_type, entity_id, label, confidence, source_type) =
+                    row.map_err(|e| e.to_string())?;
                 edges.push(edge(
                     "meeting_subject",
                     related_entity(&entity_type, entity_id.clone(), label),
                     edge_source(
-                        "meeting_entities",
-                        format!("meeting_entities:{}:{entity_id}", query.entity_id),
+                        &source_type,
+                        format!(
+                            "{source_type}:meeting:{}:{entity_type}:{entity_id}",
+                            query.entity_id
+                        ),
                         None,
                     ),
                     confidence,
@@ -460,13 +476,15 @@ fn read_meeting_edges(
                 ));
             }
         }
-        subject_kind if object_exists(db, "meeting_entities")? => {
-            let confidence_expr = meeting_entity_confidence_expr(db)?;
+        subject_kind if has_meeting_links => {
+            let Some(cte_sql) = entity_subject_meeting_links_cte(db)? else {
+                return Ok(false);
+            };
             let sql = format!(
-                "SELECT m.id, m.title, m.start_time, {confidence_expr}
+                "{cte_sql}
+                 SELECT m.id, m.title, m.start_time, sm.confidence, sm.source_type
                  FROM meetings m
-                 JOIN meeting_entities me ON me.meeting_id = m.id
-                 WHERE me.entity_type = ?1 AND me.entity_id = ?2
+                 JOIN subject_meetings sm ON sm.meeting_id = m.id
                  ORDER BY m.start_time DESC
                  LIMIT ?3"
             );
@@ -481,18 +499,20 @@ fn read_meeting_edges(
                             row.get::<_, String>(1)?,
                             row.get::<_, Option<String>>(2)?,
                             row.get::<_, f32>(3)?,
+                            row.get::<_, String>(4)?,
                         ))
                     },
                 )
                 .map_err(|e| e.to_string())?;
             for row in rows {
-                let (meeting_id, title, start_time, confidence) = row.map_err(|e| e.to_string())?;
+                let (meeting_id, title, start_time, confidence, source_type) =
+                    row.map_err(|e| e.to_string())?;
                 edges.push(edge(
                     "meeting_link",
                     related_entity("meeting", meeting_id.clone(), Some(title)),
                     edge_source(
-                        "meeting_entities",
-                        format!("meeting_entities:{meeting_id}:{}", query.entity_id),
+                        &source_type,
+                        format!("{source_type}:{meeting_id}:{}", query.entity_id),
                         start_time,
                     ),
                     confidence,
@@ -616,9 +636,7 @@ fn read_participants(
     let rows = match query.entity_type.as_str() {
         "meeting" => read_meeting_subject_participants(db, query)?,
         "person" => read_person_coattendance_participants(db, query)?,
-        kind if object_exists(db, "meeting_entities")? => {
-            read_entity_subject_participants(db, query, kind)?
-        }
+        kind if has_entity_meeting_links(db)? => read_entity_subject_participants(db, query, kind)?,
         _ => Vec::new(),
     };
 
@@ -655,6 +673,9 @@ fn read_entity_subject_participants(
     query: &EntityNeighborhoodQuery,
     kind: &str,
 ) -> Result<Vec<EntityParticipantSnapshot>, String> {
+    let Some(cte_sql) = entity_subject_meeting_links_cte(db)? else {
+        return Ok(Vec::new());
+    };
     let explicit_filter = match kind {
         "account" if object_exists(db, "account_stakeholders")? => {
             if column_exists(db, "account_stakeholders", "status")? {
@@ -668,18 +689,33 @@ fn read_entity_subject_participants(
         }
         _ => "",
     };
+    let role_projection = if kind == "account" && object_exists(db, "account_stakeholder_roles")? {
+        let role_dismissal_filter =
+            if column_exists(db, "account_stakeholder_roles", "dismissed_at")? {
+                "AND r.dismissed_at IS NULL"
+            } else {
+                ""
+            };
+        let role_priority = account_stakeholder_role_priority_sql("r.role");
+        format!(
+            "COALESCE((SELECT r.role FROM account_stakeholder_roles r WHERE r.account_id = ?2 AND r.person_id = p.id {role_dismissal_filter} ORDER BY {role_priority}, r.role LIMIT 1), p.role)"
+        )
+    } else {
+        "p.role".to_string()
+    };
     let sql = format!(
-        "SELECT p.id, p.name, p.role, p.relationship,
+        "{cte_sql}
+         SELECT p.id, p.name, {role_projection} AS role, p.relationship,
                 COUNT(DISTINCT m.id) AS touchpoint_count,
                 MAX(m.start_time) AS last_seen,
                 GROUP_CONCAT(DISTINCT m.id) AS meeting_ids
          FROM meetings m
-         JOIN meeting_entities me ON me.meeting_id = m.id
+         JOIN subject_meetings sm ON sm.meeting_id = m.id
          JOIN meeting_attendees ma ON ma.meeting_id = m.id
          JOIN people p ON p.id = ma.person_id
-         WHERE me.entity_type = ?1 AND me.entity_id = ?2
+         WHERE 1 = 1
            AND (COALESCE(p.relationship, 'unknown') != 'internal' {explicit_filter})
-         GROUP BY p.id, p.name, p.role, p.relationship
+         GROUP BY p.id, p.name, p.relationship
          ORDER BY touchpoint_count DESC, last_seen DESC
          LIMIT ?3"
     );
@@ -980,6 +1016,153 @@ fn meeting_entity_confidence_expr(db: &ActionDb) -> Result<&'static str, String>
     })
 }
 
+fn account_stakeholder_role_priority_sql(role_expr: &str) -> String {
+    format!(
+        "CASE COALESCE({role_expr}, 'associated')
+            WHEN 'rm' THEN 0
+            WHEN 'relationship_manager' THEN 0
+            WHEN 'ae' THEN 1
+            WHEN 'account_owner' THEN 1
+            WHEN 'owner' THEN 1
+            WHEN 'commercial_owner' THEN 1
+            WHEN 'champion' THEN 2
+            WHEN 'executive_sponsor' THEN 3
+            WHEN 'primary_contact' THEN 4
+            WHEN 'decision_maker' THEN 5
+            WHEN 'technical_contact' THEN 6
+            WHEN 'technical' THEN 6
+            WHEN 'associated' THEN 90
+            ELSE 50
+        END"
+    )
+}
+
+fn account_stakeholder_edge_type(role: &str) -> String {
+    match role.trim().to_ascii_lowercase().as_str() {
+        "rm" | "relationship_manager" => "stakeholder_rm".to_string(),
+        "ae" | "account_owner" | "owner" | "commercial_owner" => {
+            "stakeholder_account_owner".to_string()
+        }
+        "champion" => "stakeholder_champion".to_string(),
+        "executive_sponsor" => "stakeholder_executive_sponsor".to_string(),
+        "primary_contact" => "stakeholder_primary_contact".to_string(),
+        "decision_maker" => "stakeholder_decision_maker".to_string(),
+        "technical_contact" | "technical" => "stakeholder_technical_contact".to_string(),
+        _ => "stakeholder".to_string(),
+    }
+}
+
+fn has_entity_meeting_links(db: &ActionDb) -> Result<bool, String> {
+    Ok(object_exists(db, "linked_entities")? || object_exists(db, "meeting_entities")?)
+}
+
+fn meeting_subject_links_cte(db: &ActionDb) -> Result<Option<String>, String> {
+    let has_linked_entities = object_exists(db, "linked_entities")?;
+    let has_meeting_entities = object_exists(db, "meeting_entities")?;
+    let current_link_relation = meeting_entity_link_dedupe_relation(db)?;
+    let mut branches = Vec::new();
+    if has_linked_entities {
+        branches.push(
+            "SELECT le.entity_type, le.entity_id,
+                    COALESCE(le.confidence, 0.95) AS confidence,
+                    'linked_entities' AS source_type
+             FROM linked_entities le
+             WHERE le.owner_type = 'meeting' AND le.owner_id = ?1"
+                .to_string(),
+        );
+    }
+    if has_meeting_entities {
+        let confidence_expr = meeting_entity_confidence_expr(db)?;
+        let linked_dedupe = if has_linked_entities {
+            format!(
+                "AND NOT EXISTS (
+                 SELECT 1
+                 FROM {current_link_relation} le2
+                 WHERE le2.owner_type = 'meeting'
+                   AND le2.owner_id = me.meeting_id
+             )"
+            )
+        } else {
+            String::new()
+        };
+        branches.push(format!(
+            "SELECT me.entity_type, me.entity_id,
+                    {confidence_expr} AS confidence,
+                    'meeting_entities' AS source_type
+             FROM meeting_entities me
+             WHERE me.meeting_id = ?1
+               {linked_dedupe}"
+        ));
+    }
+    if branches.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(format!(
+            "WITH meeting_links AS ({})",
+            branches.join(" UNION ALL ")
+        )))
+    }
+}
+
+fn entity_subject_meeting_links_cte(db: &ActionDb) -> Result<Option<String>, String> {
+    let has_linked_entities = object_exists(db, "linked_entities")?;
+    let has_meeting_entities = object_exists(db, "meeting_entities")?;
+    let current_link_relation = meeting_entity_link_dedupe_relation(db)?;
+    let mut branches = Vec::new();
+    if has_linked_entities {
+        branches.push(
+            "SELECT le.owner_id AS meeting_id,
+                    COALESCE(le.confidence, 0.95) AS confidence,
+                    'linked_entities' AS source_type
+             FROM linked_entities le
+             WHERE le.owner_type = 'meeting'
+               AND le.entity_type = ?1
+               AND le.entity_id = ?2"
+                .to_string(),
+        );
+    }
+    if has_meeting_entities {
+        let confidence_expr = meeting_entity_confidence_expr(db)?;
+        let linked_dedupe = if has_linked_entities {
+            format!(
+                "AND NOT EXISTS (
+                 SELECT 1
+                 FROM {current_link_relation} le2
+                 WHERE le2.owner_type = 'meeting'
+                   AND le2.owner_id = me.meeting_id
+             )"
+            )
+        } else {
+            String::new()
+        };
+        branches.push(format!(
+            "SELECT me.meeting_id,
+                    {confidence_expr} AS confidence,
+                    'meeting_entities' AS source_type
+             FROM meeting_entities me
+             WHERE me.entity_type = ?1
+               AND me.entity_id = ?2
+               {linked_dedupe}"
+        ));
+    }
+    if branches.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(format!(
+            "WITH subject_meetings AS ({})",
+            branches.join(" UNION ALL ")
+        )))
+    }
+}
+
+fn meeting_entity_link_dedupe_relation(db: &ActionDb) -> Result<&'static str, String> {
+    Ok(if object_exists(db, "linked_entities_raw")? {
+        "linked_entities_raw"
+    } else {
+        "linked_entities"
+    })
+}
+
 fn object_exists(db: &ActionDb, name: &str) -> Result<bool, String> {
     let conn = db.conn_ref();
     conn.query_row(
@@ -1150,6 +1333,77 @@ mod tests {
     }
 
     #[test]
+    fn entity_neighborhood_reads_linked_entities_before_legacy_junction() {
+        let db = test_db();
+        db.conn_ref()
+            .execute_batch(
+                "
+                INSERT INTO accounts (id, name, parent_id, updated_at) VALUES
+                    ('account-1', 'Example Account', NULL, '2026-05-20T00:00:00Z');
+                INSERT INTO people (id, email, name, role, relationship, last_seen) VALUES
+                    ('person-1', 'one@example.com', 'Person One', 'Director', 'external', '2026-05-22T00:00:00Z');
+                INSERT INTO meetings (id, title, meeting_type, start_time, end_time) VALUES
+                    ('meeting-1', 'Current Account Sync', 'customer', '2026-05-22T15:00:00Z', NULL);
+                INSERT INTO linked_entities_raw
+                    (owner_type, owner_id, entity_id, entity_type, role, source, rule_id, confidence, graph_version, created_at)
+                VALUES
+                    ('meeting', 'meeting-1', 'account-1', 'account', 'related', 'rule:P4a', 'P4a', 0.93, 1, '2026-05-20T00:00:00Z');
+                INSERT INTO meeting_attendees (meeting_id, person_id) VALUES
+                    ('meeting-1', 'person-1');
+                ",
+            )
+            .unwrap();
+
+        let snapshot =
+            read_entity_neighborhood_from_db(&db, &query("account", "account-1")).unwrap();
+
+        assert!(snapshot.edges.iter().any(|edge| {
+            edge.edge_type == "meeting_link"
+                && edge.related_entity_id == "meeting-1"
+                && edge.source_type == "linked_entities"
+        }));
+        assert!(snapshot.participants.iter().any(|participant| {
+            participant.person_id == "person-1"
+                && participant.normalized_touchpoint_count == 1
+                && participant.recent_touchpoint_ids == vec!["meeting-1".to_string()]
+        }));
+    }
+
+    #[test]
+    fn entity_neighborhood_does_not_fallback_to_legacy_after_current_graph_dismissal() {
+        let db = test_db();
+        db.conn_ref()
+            .execute_batch(
+                "
+                INSERT INTO accounts (id, name, parent_id, updated_at) VALUES
+                    ('account-1', 'Example Account', NULL, '2026-05-20T00:00:00Z');
+                INSERT INTO people (id, email, name, role, relationship, last_seen) VALUES
+                    ('person-1', 'one@example.com', 'Person One', 'Director', 'external', '2026-05-22T00:00:00Z');
+                INSERT INTO meetings (id, title, meeting_type, start_time, end_time) VALUES
+                    ('meeting-1', 'Current Account Sync', 'customer', '2026-05-22T15:00:00Z', NULL);
+                INSERT INTO meeting_entities (meeting_id, entity_id, entity_type, confidence) VALUES
+                    ('meeting-1', 'account-1', 'account', 0.95);
+                INSERT INTO linked_entities_raw
+                    (owner_type, owner_id, entity_id, entity_type, role, source, rule_id, confidence, graph_version, created_at)
+                VALUES
+                    ('meeting', 'meeting-1', 'account-1', 'account', 'related', 'user_dismissed', 'user', 1.0, 1, '2026-05-20T00:00:00Z');
+                INSERT INTO meeting_attendees (meeting_id, person_id) VALUES
+                    ('meeting-1', 'person-1');
+                ",
+            )
+            .unwrap();
+
+        let snapshot =
+            read_entity_neighborhood_from_db(&db, &query("account", "account-1")).unwrap();
+
+        assert!(!snapshot
+            .edges
+            .iter()
+            .any(|edge| edge.edge_type == "meeting_link"));
+        assert!(snapshot.participants.is_empty());
+    }
+
+    #[test]
     fn participant_cap_keeps_highest_signal_people() {
         let db = test_db();
         db.conn_ref()
@@ -1293,6 +1547,61 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["person-active"]
         );
+    }
+
+    #[test]
+    fn account_relationships_preserve_prioritized_safe_stakeholder_roles() {
+        let db = test_db();
+        db.conn_ref()
+            .execute_batch(
+                "
+                INSERT INTO accounts (id, name, parent_id, updated_at) VALUES
+                    ('account-1', 'Example Account', NULL, '2026-05-20T00:00:00Z');
+                INSERT INTO people (id, email, name, role, relationship, last_seen) VALUES
+                    ('person-rm', 'rm@example.com', 'Relationship Lead', NULL, 'internal', '2026-05-22T00:00:00Z'),
+                    ('person-ae', 'ae@example.com', 'Commercial Lead', NULL, 'internal', '2026-05-22T00:00:00Z'),
+                    ('person-associated', 'associated@example.com', 'Associated Person', NULL, 'external', '2026-05-22T00:00:00Z');
+                INSERT INTO meetings (id, title, meeting_type, start_time, end_time) VALUES
+                    ('meeting-1', 'Account Review', 'customer', '2026-05-22T15:00:00Z', NULL);
+                INSERT INTO meeting_entities (meeting_id, entity_id, entity_type, confidence) VALUES
+                    ('meeting-1', 'account-1', 'account', 0.95);
+                INSERT INTO meeting_attendees (meeting_id, person_id) VALUES
+                    ('meeting-1', 'person-rm'),
+                    ('meeting-1', 'person-associated');
+                INSERT INTO account_stakeholders
+                    (account_id, person_id, data_source, last_seen_in_glean, created_at, status)
+                VALUES
+                    ('account-1', 'person-rm', 'user', '2026-05-22T15:00:00Z', '2026-05-01T00:00:00Z', 'active'),
+                    ('account-1', 'person-ae', 'user', '2026-05-22T15:00:00Z', '2026-05-01T00:00:00Z', 'active'),
+                    ('account-1', 'person-associated', 'user', '2026-05-22T15:00:00Z', '2026-05-01T00:00:00Z', 'active');
+                INSERT INTO account_stakeholder_roles (account_id, person_id, role, dismissed_at) VALUES
+                    ('account-1', 'person-rm', 'associated', NULL),
+                    ('account-1', 'person-rm', 'rm', NULL),
+                    ('account-1', 'person-ae', 'ae', NULL),
+                    ('account-1', 'person-associated', 'associated', NULL);
+                ",
+            )
+            .unwrap();
+
+        let mut query = query("account", "account-1");
+        query.per_edge_cap = 2;
+        let snapshot = read_entity_neighborhood_from_db(&db, &query).unwrap();
+
+        assert_eq!(
+            snapshot
+                .edges
+                .iter()
+                .filter(|edge| edge.source_type == "account_stakeholders")
+                .map(|edge| (edge.related_entity_id.as_str(), edge.edge_type.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("person-rm", "stakeholder_rm"),
+                ("person-ae", "stakeholder_account_owner"),
+            ]
+        );
+        assert!(snapshot.participants.iter().any(|participant| {
+            participant.person_id == "person-rm" && participant.role.as_deref() == Some("rm")
+        }));
     }
 
     #[test]

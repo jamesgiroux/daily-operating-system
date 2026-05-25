@@ -1888,7 +1888,7 @@ fn get_meeting_history(
                 "SELECT m.id, m.title, m.meeting_type, m.start_time, mt.summary
              FROM meetings m
              LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
-             INNER JOIN meeting_entities me ON m.id = me.meeting_id
+             INNER JOIN effective_meeting_entities me ON m.id = me.meeting_id
              WHERE me.entity_id = ?1
                AND m.start_time >= date('now', ?2)
              ORDER BY m.start_time DESC

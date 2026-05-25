@@ -15,6 +15,7 @@
 //! D3 owns the 9-mechanism backfill. D4 routes existing dismissal callers
 //! through `commit_claim`. D5 owns reconcile_post_migration.
 
+use std::cell::Cell;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, OnceLock};
 
@@ -803,6 +804,89 @@ fn db_id_of(db: &ActionDb) -> usize {
 }
 
 static COMMIT_LOCKS: OnceLock<Mutex<HashMap<CommitKey, Arc<Mutex<()>>>>> = OnceLock::new();
+
+thread_local! {
+    static LEGACY_PROJECTION_SUPPRESSION_DEPTH: Cell<usize> = const { Cell::new(0) };
+    static SHADOW_CANONICALIZATION_SUPPRESSION_DEPTH: Cell<usize> = const { Cell::new(0) };
+    static CANONICAL_MATCH_SUPPRESSION_DEPTH: Cell<usize> = const { Cell::new(0) };
+}
+
+#[must_use = "dropping the guard resumes per-claim legacy projection"]
+pub(crate) struct LegacyProjectionSuppressionGuard;
+
+impl Drop for LegacyProjectionSuppressionGuard {
+    fn drop(&mut self) {
+        LEGACY_PROJECTION_SUPPRESSION_DEPTH.with(|depth| {
+            depth.set(depth.get().saturating_sub(1));
+        });
+    }
+}
+
+/// Suppress the synchronous compatibility projection normally run by
+/// `commit_claim`. Bulk backfills use this to commit many claim rows and then
+/// rebuild the affected legacy projection once per subject.
+pub(crate) fn suppress_legacy_projection_for_current_thread() -> LegacyProjectionSuppressionGuard {
+    LEGACY_PROJECTION_SUPPRESSION_DEPTH.with(|depth| {
+        depth.set(depth.get().saturating_add(1));
+    });
+    LegacyProjectionSuppressionGuard
+}
+
+fn legacy_projection_suppressed_for_current_thread() -> bool {
+    LEGACY_PROJECTION_SUPPRESSION_DEPTH.with(|depth| depth.get() > 0)
+}
+
+#[must_use = "dropping the guard resumes post-commit shadow canonicalization"]
+pub(crate) struct ShadowCanonicalizationSuppressionGuard;
+
+impl Drop for ShadowCanonicalizationSuppressionGuard {
+    fn drop(&mut self) {
+        SHADOW_CANONICALIZATION_SUPPRESSION_DEPTH.with(|depth| {
+            depth.set(depth.get().saturating_sub(1));
+        });
+    }
+}
+
+/// Suppress the post-commit shadow canonicalization audit for bulk historical
+/// backfills. `commit_claim` still runs the live tombstone, duplicate, and
+/// contradiction gates before writing the claim.
+pub(crate) fn suppress_shadow_canonicalization_for_current_thread(
+) -> ShadowCanonicalizationSuppressionGuard {
+    SHADOW_CANONICALIZATION_SUPPRESSION_DEPTH.with(|depth| {
+        depth.set(depth.get().saturating_add(1));
+    });
+    ShadowCanonicalizationSuppressionGuard
+}
+
+fn shadow_canonicalization_suppressed_for_current_thread() -> bool {
+    SHADOW_CANONICALIZATION_SUPPRESSION_DEPTH.with(|depth| depth.get() > 0)
+}
+
+#[must_use = "dropping the guard resumes semantic duplicate and contradiction checks"]
+pub(crate) struct CanonicalMatchSuppressionGuard;
+
+impl Drop for CanonicalMatchSuppressionGuard {
+    fn drop(&mut self) {
+        CANONICAL_MATCH_SUPPRESSION_DEPTH.with(|depth| {
+            depth.set(depth.get().saturating_sub(1));
+        });
+    }
+}
+
+/// Suppress expensive global canonical-match scans for bulk historical
+/// imports. This does not bypass exact dedup preflights performed by the
+/// producer, and `commit_claim` still runs the tombstone pre-gate before
+/// writing.
+pub(crate) fn suppress_canonical_match_for_current_thread() -> CanonicalMatchSuppressionGuard {
+    CANONICAL_MATCH_SUPPRESSION_DEPTH.with(|depth| {
+        depth.set(depth.get().saturating_add(1));
+    });
+    CanonicalMatchSuppressionGuard
+}
+
+fn canonical_match_suppressed_for_current_thread() -> bool {
+    CANONICAL_MATCH_SUPPRESSION_DEPTH.with(|depth| depth.get() > 0)
+}
 
 fn commit_locks() -> &'static Mutex<HashMap<CommitKey, Arc<Mutex<()>>>> {
     COMMIT_LOCKS.get_or_init(|| Mutex::new(HashMap::new()))
@@ -3587,6 +3671,9 @@ fn project_legacy_state_for_claim(
     tx: &ActionDb,
     claim: &IntelligenceClaim,
 ) -> Result<(), ClaimError> {
+    if legacy_projection_suppressed_for_current_thread() {
+        return Ok(());
+    }
     let outcomes = crate::services::derived_state::project_claim_to_db_legacy_tx(ctx, tx, claim);
     for outcome in outcomes {
         crate::services::derived_state::record_projection_outcome(ctx, tx, &claim.id, &outcome)
@@ -6260,6 +6347,7 @@ where
         // shadow the active claim).
         if proposal.tombstone.is_none()
             && !matches!(metadata.commit_policy_class, CommitPolicyClass::Append)
+            && !canonical_match_suppressed_for_current_thread()
         {
             let mut canonical_duplicate_needs_verification = None;
             if let Some(mut existing) = load_active_claim_by_dedup_key(
@@ -6765,11 +6853,14 @@ where
 
     mutation_guard.mark_completed();
 
-    if let Err(error) = record_shadow_canonicalization_for_committed_claim(ctx, db, &committed) {
-        log::warn!(
-            "shadow canonicalization audit failed after claim commit; \
-             repair_target=canonicalization_shadow_audit error={error}"
-        );
+    if !shadow_canonicalization_suppressed_for_current_thread() {
+        if let Err(error) = record_shadow_canonicalization_for_committed_claim(ctx, db, &committed)
+        {
+            log::warn!(
+                "shadow canonicalization audit failed after claim commit; \
+                 repair_target=canonicalization_shadow_audit error={error}"
+            );
+        }
     }
     Ok(committed)
 }
@@ -9471,6 +9562,67 @@ pub fn load_entity_context_prompt_claims_active_for_surface_limited(
         Some(limit),
         true,
     )
+}
+
+pub fn load_prompt_claims_by_types_active_for_surface_limited(
+    db: &ActionDb,
+    claim_types: &[&str],
+    surface: &str,
+    limit: usize,
+) -> Result<Vec<IntelligenceClaim>, ClaimError> {
+    if limit == 0 || claim_types.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let surface = normalize_claim_surface(surface)?;
+    let has_surface_dismissals = table_exists_sqlite(db.conn_ref(), "claim_surface_dismissals")?;
+    let surface_columns = claim_surface_shadow_columns(db.conn_ref(), "current_claim")?;
+    let mut bound_params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+    let mut claim_type_predicates = Vec::with_capacity(claim_types.len());
+
+    for claim_type in claim_types {
+        let position = bound_params.len() + 1;
+        bound_params.push(Box::new((*claim_type).to_string()));
+        claim_type_predicates.push(format!("current_claim.claim_type = ?{position}"));
+    }
+
+    let dismissal_filter = if has_surface_dismissals {
+        let surface_position = bound_params.len() + 1;
+        bound_params.push(Box::new(surface.as_str().to_string()));
+        format!(
+            "AND NOT EXISTS (
+                SELECT 1
+                FROM claim_surface_dismissals dismissal
+                WHERE dismissal.claim_id = current_claim.id
+                  AND dismissal.surface = ?{surface_position}
+            )"
+        )
+    } else {
+        String::new()
+    };
+    let limit_position = bound_params.len() + 1;
+    bound_params.push(Box::new(limit as i64));
+    let claim_type_filter = claim_type_predicates.join(" OR ");
+    let sql = format!(
+        "SELECT {CLAIM_COLUMNS}, {surface_columns}
+         FROM intelligence_claims current_claim
+         WHERE ({claim_type_filter})
+           AND current_claim.claim_state = 'active'
+           AND current_claim.surfacing_state = 'active'
+           AND current_claim.sensitivity IN ('public', 'internal')
+           {dismissal_filter}
+         ORDER BY current_claim.created_at DESC
+         LIMIT ?{limit_position}"
+    );
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+        bound_params.iter().map(|param| param.as_ref()).collect();
+    let mut stmt = db.conn_ref().prepare(&sql)?;
+    let mut rows = stmt.query(rusqlite::params_from_iter(param_refs))?;
+    let mut claims = Vec::new();
+    while let Some(row) = rows.next()? {
+        claims.push(read_claim_row_with_surface_shadow_state(row)?);
+    }
+    Ok(claims)
 }
 
 fn load_entity_context_claims_active_for_surface_inner(

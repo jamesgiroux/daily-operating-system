@@ -16,11 +16,13 @@ use rmcp::model::*;
 use rmcp::schemars::JsonSchema;
 use rmcp::service::RequestContext;
 use rmcp::{tool, Error as McpError, RoleServer, ServerHandler, ServiceExt};
+use serde::de;
 use serde::{Deserialize, Serialize};
 
 use dailyos_lib::abilities::provenance::{
     build_ownership_policy_for_invocation, validate_serialized_subject_ownership, InvocationId,
 };
+use dailyos_lib::abilities::registry::McpExposure;
 use dailyos_lib::abilities::{AbilityDescriptor, AbilityRegistry};
 use dailyos_lib::bridges::mcp::McpAbilityBridge;
 use dailyos_lib::bridges::tauri::TauriAbilityBridge;
@@ -28,12 +30,24 @@ use dailyos_lib::bridges::{BridgeSurfaceError, McpSessionId};
 use dailyos_lib::db::ActionDb;
 use dailyos_lib::embeddings::EmbeddingModel;
 use dailyos_lib::services::mcp_v2::handlers::tool_account_status::present_account_status_response_with_context;
+use dailyos_lib::services::mcp_v2::{
+    actor_policy::{ToolGrant, ToolRateLimit},
+    contracts::{McpClientId as V2McpClientId, ScopedName},
+    gateway::Gateway,
+    handlers::registration::register_v147_handlers,
+    taxonomy::{TaxonomyCatalog, YamlTaxonomyCatalog},
+    transport::V2ServerHandler,
+};
 use dailyos_lib::services::sensitivity::{
     render_mcp_static_json_for_surface, render_mcp_static_text_for_surface, McpStaticTextClass,
     RenderableMcpClaimText, RenderableMcpStaticText, RenderableMcpText,
 };
 use dailyos_lib::state::load_config;
 use dailyos_lib::types::Config;
+
+const DEFAULT_LOCAL_MCP_CLIENT_ID: &str = "dailyos-local-stdio";
+const DAILYOS_MCP_CLIENT_ID_ENV: &str = "DAILYOS_MCP_CLIENT_ID";
+const DAILYOS_MCP_LEGACY_V1_ENV: &str = "DAILYOS_MCP_LEGACY_V1";
 
 // =============================================================================
 // Server State
@@ -90,20 +104,25 @@ struct SearchMeetingsParams {
     #[schemars(description = "Search query text")]
     query: String,
     /// Maximum number of results (default 20, max 50).
-    #[schemars(description = "Max results (default 20, max 50)")]
+    #[serde(default, deserialize_with = "deserialize_optional_usize_lenient")]
+    #[schemars(description = "Max results (default 20, max 50). Numeric strings are accepted.")]
     limit: Option<usize>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct SearchContentParams {
     /// Entity name or ID to search within.
-    #[schemars(description = "Entity name or ID to search within")]
-    entity_id: String,
+    #[serde(default, alias = "entity", alias = "subject")]
+    #[schemars(
+        description = "Optional entity name or ID to search within. If omitted, DailyOS will try to infer the entity from the query."
+    )]
+    entity_id: Option<String>,
     /// Natural language search query.
     #[schemars(description = "What to search for in workspace files")]
     query: String,
     /// Maximum number of results (default 10, max 30).
-    #[schemars(description = "Max results (default 10, max 30)")]
+    #[serde(default, deserialize_with = "deserialize_optional_usize_lenient")]
+    #[schemars(description = "Max results (default 10, max 30). Numeric strings are accepted.")]
     top_k: Option<usize>,
 }
 
@@ -239,10 +258,9 @@ impl DailyOsMcp {
     }
 
     #[tool(
-        description = "Look up a specific account, project, or person in the DailyOS workspace. Returns entity details, intelligence summary, open actions, and upcoming meetings. Use this when the user asks about a specific customer, project, or contact."
+        description = "Primary lookup for a specific account, project, or person in the DailyOS workspace. For accounts, returns the claim-backed DailyOS runtime projection with entity details, intelligence summary, open actions, upcoming meetings, facts, open loops, relationships, touchpoints, priorities, and provenance. Use this first when the user asks for an account, project, or person briefing."
     )]
     async fn query_entity(&self, #[tool(aggr)] params: QueryEntityParams) -> String {
-        let query_lower = params.query.to_lowercase();
         let entity_type = params.entity_type.as_deref().unwrap_or("all");
 
         let mut result: Option<EntityResult> = None;
@@ -253,9 +271,7 @@ impl DailyOsMcp {
                 let db = self.db.lock();
                 db.get_all_accounts().ok().and_then(|accounts| {
                     accounts.into_iter().find_map(|acct| {
-                        if acct.id == params.query
-                            || acct.name.to_lowercase().contains(&query_lower)
-                        {
+                        if entity_query_matches(&params.query, &acct.id, &acct.name) {
                             let actions = db.get_account_actions(&acct.id).unwrap_or_default();
                             let meetings = db
                                 .get_upcoming_meetings_for_account(&acct.id, 5)
@@ -290,7 +306,13 @@ impl DailyOsMcp {
                     .await;
                 let (intelligence_summary, intelligence) = match intelligence_result {
                     Ok(value) => (account_intelligence_summary(&value), Some(value)),
-                    Err(_error) => (None, None),
+                    Err(error) => {
+                        return account_runtime_unavailable_response(
+                            &account.id,
+                            &account.entity.name,
+                            error,
+                        );
+                    }
                 };
 
                 let mut entity = account.entity;
@@ -305,7 +327,7 @@ impl DailyOsMcp {
             let db = self.db.lock();
             if let Ok(projects) = db.get_all_projects() {
                 for proj in &projects {
-                    if proj.id == params.query || proj.name.to_lowercase().contains(&query_lower) {
+                    if entity_query_matches(&params.query, &proj.id, &proj.name) {
                         let actions = db.get_project_actions(&proj.id).unwrap_or_default();
                         let meetings = db.get_meetings_for_project(&proj.id, 5).unwrap_or_default();
                         let legacy_intel = db
@@ -339,9 +361,8 @@ impl DailyOsMcp {
             let db = self.db.lock();
             if let Ok(people) = db.get_people(None) {
                 for person in &people {
-                    if person.id == params.query
-                        || person.name.to_lowercase().contains(&query_lower)
-                        || person.email.to_lowercase().contains(&query_lower)
+                    if entity_query_matches(&params.query, &person.id, &person.name)
+                        || entity_query_matches(&params.query, &person.email, &person.email)
                     {
                         let legacy_intel = db
                             .get_entity_intelligence(&person.id)
@@ -523,7 +544,7 @@ impl DailyOsMcp {
     }
 
     #[tool(
-        description = "Search past meetings in DailyOS by title, summary, or prep content. Use this when the user asks about past meetings, what was discussed, or wants to find a specific meeting."
+        description = "Search past meetings in DailyOS by title and allowed meeting metadata. Use this when the user wants to find a specific meeting record or cadence history. Do not use this as the authority for what was discussed; use claim-backed account intelligence for account briefings."
     )]
     fn search_meetings(&self, #[tool(aggr)] params: SearchMeetingsParams) -> String {
         if params.query.trim().is_empty() {
@@ -536,8 +557,15 @@ impl DailyOsMcp {
 
         let mut stmt = match db.conn_ref().prepare(
             "SELECT m.id, m.title, m.meeting_type, m.start_time,
-                    (SELECT me.entity_id FROM meeting_entities me
-                     WHERE me.meeting_id = m.id AND me.entity_type = 'account' LIMIT 1) AS account_id,
+                    (SELECT le.entity_id FROM linked_entities le
+                     WHERE le.owner_type = 'meeting'
+                       AND le.owner_id = m.id
+                       AND le.entity_type = 'account'
+                     ORDER BY CASE le.role WHEN 'primary' THEN 0
+                                           WHEN 'related' THEN 1
+                                           ELSE 2 END,
+                              COALESCE(le.confidence, 0.0) DESC
+                     LIMIT 1) AS account_id,
                     mt.summary, mp.prep_context_json
              FROM meetings m
              LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
@@ -645,7 +673,7 @@ impl DailyOsMcp {
     }
 
     #[tool(
-        description = "Semantic search over workspace files for an entity. Returns the most relevant text passages from documents, transcripts, and notes. Use when the user asks about specific details, information, or topics within their files for a particular account, project, or person."
+        description = "Semantic search over workspace files for an account, project, or person. Returns relevant passages from documents, transcripts, and notes. Use query_entity first for entity briefings; use search_content when you need supporting source passages. Pass entity_id when known, or DailyOS will try to infer the entity from the query."
     )]
     fn search_content(&self, #[tool(aggr)] params: SearchContentParams) -> String {
         if params.query.trim().is_empty() {
@@ -654,9 +682,19 @@ impl DailyOsMcp {
 
         let db = self.db.lock();
 
-        // Resolve entity_id: try exact match first, then fuzzy match on name
-        let resolved_id = resolve_entity_id(&db, &params.entity_id);
-        let entity_id = resolved_id.as_deref().unwrap_or(&params.entity_id);
+        let entity_hint = params
+            .entity_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        let resolved_id = entity_hint
+            .and_then(|hint| resolve_entity_id(&db, hint))
+            .or_else(|| resolve_entity_id_from_query_text(&db, &params.query))
+            .or_else(|| entity_hint.map(str::to_string));
+        let Some(entity_id) = resolved_id else {
+            return "search_content needs an account, project, or person to scope the search. Call query_entity first, or retry search_content with an entity_id/name plus the topic to search for.".to_string();
+        };
+        let display_entity = entity_hint.unwrap_or(entity_id.as_str());
 
         let top_k = params.top_k.unwrap_or(10).min(30);
         let model_ref = if self.embedding_model.is_ready() {
@@ -668,7 +706,7 @@ impl DailyOsMcp {
         match dailyos_lib::queries::search::search_entity_content(
             &db,
             model_ref,
-            entity_id,
+            &entity_id,
             &params.query,
             top_k,
             0.7,
@@ -677,7 +715,7 @@ impl DailyOsMcp {
             Ok(matches) if matches.is_empty() => {
                 format!(
                     "No content found for entity '{}' matching '{}'.",
-                    params.entity_id, params.query
+                    display_entity, params.query
                 )
             }
             Ok(matches) => {
@@ -737,7 +775,7 @@ impl DailyOsMcp {
                 if output.is_empty() {
                     format!(
                         "No renderable content found for entity '{}' matching '{}'.",
-                        params.entity_id, params.query
+                        display_entity, params.query
                     )
                 } else {
                     output
@@ -757,6 +795,7 @@ pub enum McpToolRoute {
     Static,
     GetProvenance,
     RequestConfirmation,
+    LegacyEntityListAlias,
     Ability,
 }
 
@@ -767,6 +806,8 @@ pub fn mcp_route_for_tool_name(name: &str) -> McpToolRoute {
         McpToolRoute::GetProvenance
     } else if name == "request_confirmation" {
         McpToolRoute::RequestConfirmation
+    } else if legacy_entity_list_alias_type(name).is_some() {
+        McpToolRoute::LegacyEntityListAlias
     } else {
         McpToolRoute::Ability
     }
@@ -774,6 +815,7 @@ pub fn mcp_route_for_tool_name(name: &str) -> McpToolRoute {
 
 pub fn list_hybrid_tools_for_bridge(ability_bridge: &McpAbilityBridge<'_>) -> Vec<Tool> {
     let mut tools = DailyOsMcp::tool_box().list();
+    tools.retain(|tool| should_advertise_static_tool_to_legacy_mcp(tool.name.as_ref()));
     tools.push(get_provenance_tool_descriptor());
     // Hide request_confirmation from the advertised tool set while the gate
     // is off so MCP clients don't see a tool that always returns
@@ -781,15 +823,142 @@ pub fn list_hybrid_tools_for_bridge(ability_bridge: &McpAbilityBridge<'_>) -> Ve
     if ability_bridge.confirmation_enabled() {
         tools.push(request_confirmation_tool_descriptor());
     }
-    // Keep this descriptor-based listing until the deferred MCP server migration
-    // moves tool discovery to the contract-first operation registry.
+    // Legacy Claude Desktop v1 exposes stable, human-facing tools only. Runtime
+    // abilities are still consumed behind those tools and remain callable by
+    // exact name for compatibility/debug paths, but they are too raw for direct
+    // model selection in this surface.
     tools.extend(
         ability_bridge
             .list_descriptors()
             .iter()
+            .filter(|descriptor| should_advertise_ability_descriptor_to_legacy_mcp(descriptor))
             .map(|descriptor| ability_descriptor_to_tool(descriptor)),
     );
     tools
+}
+
+fn should_advertise_static_tool_to_legacy_mcp(name: &str) -> bool {
+    !matches!(
+        name,
+        // The current workspace-content chunks are not consistently claim-backed,
+        // so MCP render policy can drop every match. Keep the handler callable
+        // for explicit/debug use, but do not let legacy Claude Desktop choose it
+        // for account briefings until the content substrate path is complete.
+        "search_content"
+    )
+}
+
+fn should_advertise_ability_descriptor_to_legacy_mcp(descriptor: &AbilityDescriptor) -> bool {
+    let _ = descriptor;
+    false
+}
+
+fn legacy_entity_list_alias_type(name: &str) -> Option<&'static str> {
+    match name {
+        "list_accounts" => Some("account"),
+        "list_projects" => Some("project"),
+        "list_people" => Some("person"),
+        _ => None,
+    }
+}
+
+fn legacy_entity_list_alias_filter_name(request: &CallToolRequestParam) -> Option<String> {
+    let arguments = request.arguments.as_ref()?;
+
+    if let Some(value) = arguments
+        .get("name")
+        .or_else(|| arguments.get("query"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return Some(value.to_string());
+    }
+
+    let filter = arguments.get("filter")?;
+    let filter_json = match filter {
+        serde_json::Value::String(value) => {
+            serde_json::from_str::<serde_json::Value>(value).ok()?
+        }
+        serde_json::Value::Object(_) => filter.clone(),
+        _ => return None,
+    };
+
+    filter_json
+        .get("name")
+        .or_else(|| filter_json.get("query"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn legacy_entity_list_alias_has_unresolved_filter_args(request: &CallToolRequestParam) -> bool {
+    request
+        .arguments
+        .as_ref()
+        .is_some_and(|arguments| !arguments.is_empty())
+        && legacy_entity_list_alias_filter_name(request).is_none()
+}
+
+fn deserialize_optional_usize_lenient<'de, D>(deserializer: D) -> Result<Option<usize>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let Some(value) = Option::<serde_json::Value>::deserialize(deserializer)? else {
+        return Ok(None);
+    };
+
+    match value {
+        serde_json::Value::Null => Ok(None),
+        serde_json::Value::Number(number) => number
+            .as_u64()
+            .and_then(|value| usize::try_from(value).ok())
+            .map(Some)
+            .ok_or_else(|| de::Error::custom("expected a non-negative integer")),
+        serde_json::Value::String(value) => {
+            let value = value.trim();
+            if value.is_empty() {
+                return Ok(None);
+            }
+            value
+                .parse::<usize>()
+                .map(Some)
+                .map_err(|_| de::Error::custom("expected a numeric string"))
+        }
+        _ => Err(de::Error::custom("expected an integer or numeric string")),
+    }
+}
+
+async fn invoke_legacy_entity_list_alias_tool(
+    server: &DailyOsMcp,
+    request: CallToolRequestParam,
+) -> Result<CallToolResult, McpError> {
+    let Some(entity_type) = legacy_entity_list_alias_type(request.name.as_ref()) else {
+        return Err(mcp_error_from_bridge_surface_error(
+            BridgeSurfaceError::AbilityUnavailable,
+        ));
+    };
+
+    let text = if legacy_entity_list_alias_has_unresolved_filter_args(&request) {
+        format!(
+            "Invalid {name} arguments. Use filter.name, filter.query, top-level name, or top-level query to request one entity; omit arguments only when you want the full {entity_type} list.",
+            name = request.name.as_ref(),
+        )
+    } else if let Some(query) = legacy_entity_list_alias_filter_name(&request) {
+        server
+            .query_entity(QueryEntityParams {
+                query,
+                entity_type: Some(entity_type.to_string()),
+            })
+            .await
+    } else {
+        server.list_entities(ListEntitiesParams {
+            entity_type: Some(entity_type.to_string()),
+        })
+    };
+
+    Ok(CallToolResult::success(vec![Content::text(text)]))
 }
 
 fn get_provenance_tool_descriptor() -> Tool {
@@ -1036,10 +1205,9 @@ impl ServerHandler for DailyOsMcp {
             },
             instructions: Some(
                 "DailyOS MCP server. Provides read-only access to your daily briefing, \
-                 accounts, projects, people, meeting history, and workspace file contents. \
+                 accounts, projects, people, and meeting history. \
                  Use get_briefing for today's schedule, query_entity for entity details, \
-                 list_entities for portfolio overview, search_meetings for meeting history, \
-                 and search_content for semantic search over workspace files."
+                 list_entities for portfolio overview, and search_meetings for meeting history."
                     .to_string(),
             ),
         }
@@ -1078,6 +1246,9 @@ impl ServerHandler for DailyOsMcp {
                 )
                 .await
             }
+            McpToolRoute::LegacyEntityListAlias => {
+                invoke_legacy_entity_list_alias_tool(self, request).await
+            }
             McpToolRoute::Ability => {
                 invoke_mcp_ability_tool(&self.ability_bridge, self.mcp_session_id, request).await
             }
@@ -1092,15 +1263,10 @@ impl ServerHandler for DailyOsMcp {
 /// Resolve a user-provided entity identifier (name or ID) to an entity ID.
 /// Tries exact ID match first, then fuzzy name match across accounts, projects, people.
 fn resolve_entity_id(db: &ActionDb, query: &str) -> Option<String> {
-    let query_lower = query.to_lowercase();
-
     // Check accounts
     if let Ok(accounts) = db.get_all_accounts() {
         for acct in &accounts {
-            if acct.id == query {
-                return Some(acct.id.clone());
-            }
-            if acct.name.to_lowercase().contains(&query_lower) {
+            if entity_query_matches(query, &acct.id, &acct.name) {
                 return Some(acct.id.clone());
             }
         }
@@ -1109,10 +1275,7 @@ fn resolve_entity_id(db: &ActionDb, query: &str) -> Option<String> {
     // Check projects
     if let Ok(projects) = db.get_all_projects() {
         for proj in &projects {
-            if proj.id == query {
-                return Some(proj.id.clone());
-            }
-            if proj.name.to_lowercase().contains(&query_lower) {
+            if entity_query_matches(query, &proj.id, &proj.name) {
                 return Some(proj.id.clone());
             }
         }
@@ -1121,11 +1284,8 @@ fn resolve_entity_id(db: &ActionDb, query: &str) -> Option<String> {
     // Check people
     if let Ok(people) = db.get_people(None) {
         for person in &people {
-            if person.id == query {
-                return Some(person.id.clone());
-            }
-            if person.name.to_lowercase().contains(&query_lower)
-                || person.email.to_lowercase().contains(&query_lower)
+            if entity_query_matches(query, &person.id, &person.name)
+                || entity_query_matches(query, &person.email, &person.email)
             {
                 return Some(person.id.clone());
             }
@@ -1133,6 +1293,90 @@ fn resolve_entity_id(db: &ActionDb, query: &str) -> Option<String> {
     }
 
     None
+}
+
+fn entity_query_matches(query: &str, entity_id: &str, entity_label: &str) -> bool {
+    let query = query.trim();
+    if query.is_empty() {
+        return false;
+    }
+    if entity_id == query {
+        return true;
+    }
+
+    let query_normalized = normalize_entity_match_text(query);
+    let id_normalized = normalize_entity_match_text(entity_id);
+    let label_normalized = normalize_entity_match_text(entity_label);
+
+    if query_normalized.is_empty() {
+        return false;
+    }
+
+    (!id_normalized.is_empty()
+        && (id_normalized == query_normalized || id_normalized.contains(&query_normalized)))
+        || (!label_normalized.is_empty()
+            && (label_normalized.contains(&query_normalized)
+                || query_normalized.contains(&label_normalized)))
+}
+
+fn resolve_entity_id_from_query_text(db: &ActionDb, query: &str) -> Option<String> {
+    let query_normalized = normalize_entity_match_text(query);
+    if query_normalized.is_empty() {
+        return None;
+    }
+
+    if let Some(entity_id) = resolve_entity_id(db, query) {
+        return Some(entity_id);
+    }
+
+    if let Ok(accounts) = db.get_all_accounts() {
+        for acct in &accounts {
+            if normalized_text_mentions_entity(&query_normalized, &acct.id)
+                || normalized_text_mentions_entity(&query_normalized, &acct.name)
+            {
+                return Some(acct.id.clone());
+            }
+        }
+    }
+
+    if let Ok(projects) = db.get_all_projects() {
+        for proj in &projects {
+            if normalized_text_mentions_entity(&query_normalized, &proj.id)
+                || normalized_text_mentions_entity(&query_normalized, &proj.name)
+            {
+                return Some(proj.id.clone());
+            }
+        }
+    }
+
+    if let Ok(people) = db.get_people(None) {
+        for person in &people {
+            if normalized_text_mentions_entity(&query_normalized, &person.id)
+                || normalized_text_mentions_entity(&query_normalized, &person.name)
+                || normalized_text_mentions_entity(&query_normalized, &person.email)
+            {
+                return Some(person.id.clone());
+            }
+        }
+    }
+
+    None
+}
+
+fn normalized_text_mentions_entity(normalized_text: &str, entity_label: &str) -> bool {
+    let entity_normalized = normalize_entity_match_text(entity_label);
+    !entity_normalized.is_empty() && normalized_text.contains(&entity_normalized)
+}
+
+fn normalize_entity_match_text(value: &str) -> String {
+    value
+        .to_lowercase()
+        .chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { ' ' })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn mcp_entity_summary(
@@ -1359,6 +1603,43 @@ fn build_entity_result(
     }
 }
 
+fn account_runtime_unavailable_response(
+    account_id: &str,
+    account_label: &str,
+    error: BridgeSurfaceError,
+) -> String {
+    let payload = serde_json::json!({
+        "schemaVersion": 1,
+        "surface": "legacy.query_entity",
+        "producer": "get_entity_intelligence",
+        "status": "unavailable",
+        "error": "account_runtime_unavailable",
+        "errorKind": bridge_surface_error_kind(&error),
+        "subject": {
+            "kind": "account",
+            "id": account_id,
+            "displayLabel": account_label,
+        },
+        "answer": format!(
+            "DailyOS could not read claim-backed account intelligence for {account_label}; static account rows were not returned as a substitute."
+        ),
+    });
+
+    serde_json::to_string_pretty(&payload).unwrap_or_else(|e| format!("Error: {e}"))
+}
+
+fn bridge_surface_error_kind(error: &BridgeSurfaceError) -> &'static str {
+    match error {
+        BridgeSurfaceError::AbilityUnavailable => "ability_unavailable",
+        BridgeSurfaceError::ProducerUnavailable => "producer_unavailable",
+        BridgeSurfaceError::InputSchemaInvalid => "input_schema_invalid",
+        BridgeSurfaceError::InputReservedField => "input_reserved_field",
+        BridgeSurfaceError::Validation(_) => "validation",
+        BridgeSurfaceError::Ownership(_) => "ownership",
+        _ => "runtime_error",
+    }
+}
+
 fn account_intelligence_summary(value: &serde_json::Value) -> Option<String> {
     if !account_status_has_assessment_content(value) {
         return None;
@@ -1394,46 +1675,92 @@ fn account_status_has_assessment_content(value: &serde_json::Value) -> bool {
 // Main
 // =============================================================================
 
-/// Temporarily redirect stdout (fd 1) to stderr for the duration of `f`.
-///
-/// The MCP server communicates over stdio. Any writes to stdout before rmcp
-/// takes over the channel corrupt the JSON-RPC stream. Native libraries
-/// (ONNX Runtime, fastembed) may write to stdout during initialisation, so
-/// we redirect stdout → stderr for that window only.
-fn with_stdout_suppressed<F: FnOnce() -> R, R>(f: F) -> R {
-    unsafe {
-        let saved = libc::dup(libc::STDOUT_FILENO);
-        libc::dup2(libc::STDERR_FILENO, libc::STDOUT_FILENO);
-        let result = f();
-        libc::dup2(saved, libc::STDOUT_FILENO);
-        libc::close(saved);
-        result
-    }
-}
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    if std::env::var(DAILYOS_MCP_LEGACY_V1_ENV).as_deref() == Ok("1") {
+        return run_legacy_v1_server().await;
+    }
+
+    run_v2_server().await
+}
+
+async fn run_v2_server() -> anyhow::Result<()> {
+    let embedding_model = Arc::new(EmbeddingModel::new());
+    dailyos_lib::services::claims::register_claim_embedding_model(Arc::clone(&embedding_model));
+
+    let catalog: Arc<dyn TaxonomyCatalog> = Arc::new(
+        YamlTaxonomyCatalog::load_embedded()
+            .map_err(|e| anyhow::anyhow!("Failed to load MCP v2 taxonomy: {e}"))?,
+    );
+
+    let mut gateway = Gateway::new();
+    gateway.set_taxonomy(Arc::clone(&catalog));
+    register_v147_handlers(&mut gateway, &catalog, tokio::runtime::Handle::current())
+        .map_err(|e| anyhow::anyhow!("Failed to register MCP v2 handlers: {e}"))?;
+
+    let registered_tools: Vec<ScopedName> = gateway.registered_tools().cloned().collect();
+    let pending_catalog_tools = gateway
+        .seal()
+        .map_err(|e| anyhow::anyhow!("Failed to seal MCP v2 gateway: {e}"))?;
+    if !pending_catalog_tools.is_empty() {
+        eprintln!(
+            "MCP v2 catalog has {} planned tool(s) without handlers; not advertising them.",
+            pending_catalog_tools.len()
+        );
+    }
+
+    let client_id = local_v2_client_id();
+    let grants = local_stdio_grants_for_registered_tools(&registered_tools, catalog.as_ref())?;
+
+    let server = V2ServerHandler::from_local_stdio(Arc::new(gateway), catalog, grants, client_id);
+    let service = server.serve(rmcp::transport::io::stdio()).await?;
+    service.waiting().await?;
+
+    drop(embedding_model);
+    Ok(())
+}
+
+fn local_v2_client_id() -> V2McpClientId {
+    let configured = std::env::var(DAILYOS_MCP_CLIENT_ID_ENV)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| DEFAULT_LOCAL_MCP_CLIENT_ID.to_string());
+    V2McpClientId::new(configured)
+}
+
+fn local_stdio_grants_for_registered_tools(
+    registered_tools: &[ScopedName],
+    catalog: &dyn TaxonomyCatalog,
+) -> anyhow::Result<Vec<ToolGrant>> {
+    registered_tools
+        .iter()
+        .map(|tool_name| {
+            let desc = catalog.description_for(tool_name).ok_or_else(|| {
+                anyhow::anyhow!("registered MCP v2 tool missing taxonomy: {tool_name}")
+            })?;
+            Ok(ToolGrant {
+                tool_name: tool_name.clone(),
+                scopes_granted: desc.scopes_required.clone(),
+                exposure: McpExposure::Invocable,
+                rate_limit: ToolRateLimit {
+                    max_calls: 600,
+                    window_seconds: 60,
+                },
+            })
+        })
+        .collect()
+}
+
+async fn run_legacy_v1_server() -> anyhow::Result<()> {
     let config =
         load_config().map_err(|e| anyhow::anyhow!("Failed to load DailyOS config: {e}"))?;
 
     let db = ActionDb::open_readonly(std::sync::Arc::new(dailyos_lib::db::LocalKeychain::new()))
         .map_err(|e| anyhow::anyhow!("Failed to open database: {e}"))?;
 
-    // Initialize embedding model synchronously — MCP server starts before any
-    // tool calls so this won't block user interaction.
-    // stdout is redirected to stderr during init to prevent native library
-    // output (ONNX Runtime, fastembed) from corrupting the MCP JSON-RPC stream.
     let embedding_model = Arc::new(EmbeddingModel::new());
     dailyos_lib::services::claims::register_claim_embedding_model(Arc::clone(&embedding_model));
-    with_stdout_suppressed(|| {
-        let models_dir = dirs::home_dir()
-            .unwrap_or_default()
-            .join(".dailyos")
-            .join("models");
-        if let Err(e) = embedding_model.initialize(models_dir) {
-            eprintln!("Embedding model unavailable: {e}");
-        }
-    });
 
     let ability_registry = match AbilityRegistry::global_checked() {
         Ok(registry) => registry,
@@ -1489,6 +1816,8 @@ mod tests {
     use dailyos_lib::services::context::ExecutionMode;
 
     const AGENT_ACTORS: &[ActorKind] = &[ActorKind::Agent];
+    const AGENT_MCP_CLIENT_ACTORS: &[ActorKind] = &[ActorKind::Agent, ActorKind::McpClient];
+    const MCP_CLIENT_ACTORS: &[ActorKind] = &[ActorKind::McpClient];
     const USER_ACTORS: &[ActorKind] = &[ActorKind::User];
     const LIVE_MODES: &[ExecutionMode] = &[ExecutionMode::Live];
 
@@ -1563,6 +1892,21 @@ mod tests {
             input_schema: closed_object_schema,
             output_schema: closed_object_schema,
         }
+    }
+
+    fn mcp_descriptor(name: &'static str, category: AbilityCategory) -> AbilityDescriptor {
+        let mut descriptor = descriptor(name, category, MCP_CLIENT_ACTORS, LIVE_MODES);
+        descriptor.policy.mcp_exposure = McpExposure::Invocable;
+        descriptor
+    }
+
+    fn confirmed_mcp_descriptor(
+        name: &'static str,
+        category: AbilityCategory,
+    ) -> AbilityDescriptor {
+        let mut descriptor = descriptor(name, category, AGENT_MCP_CLIENT_ACTORS, LIVE_MODES);
+        descriptor.policy.mcp_exposure = McpExposure::Invocable;
+        confirmation_descriptor(descriptor)
     }
 
     fn confirmation_descriptor(mut descriptor: AbilityDescriptor) -> AbilityDescriptor {
@@ -1655,6 +1999,30 @@ mod tests {
         );
     }
 
+    #[test]
+    fn legacy_query_entity_account_runtime_failure_fails_closed() {
+        let payload: serde_json::Value =
+            serde_json::from_str(&account_runtime_unavailable_response(
+                "account-1",
+                "Example Account",
+                BridgeSurfaceError::AbilityUnavailable,
+            ))
+            .unwrap();
+
+        assert_eq!(payload["surface"], "legacy.query_entity");
+        assert_eq!(payload["producer"], "get_entity_intelligence");
+        assert_eq!(payload["status"], "unavailable");
+        assert_eq!(payload["errorKind"], "ability_unavailable");
+        assert_eq!(payload["subject"]["id"], "account-1");
+        assert!(payload.get("open_actions").is_none());
+        assert!(payload.get("upcoming_meetings").is_none());
+        assert!(payload.get("intelligence").is_none());
+        assert!(payload["answer"]
+            .as_str()
+            .unwrap()
+            .contains("static account rows were not returned"));
+    }
+
     #[derive(Default)]
     struct ApprovingAttestationHost;
 
@@ -1685,8 +2053,7 @@ mod tests {
     }
 
     #[test]
-    fn mcp_list_tools_includes_inherent_static_tools_and_ability_descriptors_filtered_by_agent_actor(
-    ) {
+    fn mcp_list_tools_advertises_static_tools_but_not_raw_ability_descriptors() {
         let registry = registry_with(vec![
             descriptor(
                 "agent_fixture_ability",
@@ -1714,20 +2081,12 @@ mod tests {
         assert!(names.contains(&"get_briefing"));
         assert!(names.contains(&"get_provenance"));
         assert!(names.contains(&"request_confirmation"));
-        assert!(names.contains(&"agent_fixture_ability"));
+        assert!(names.contains(&"query_entity"));
+        assert!(names.contains(&"list_entities"));
+        assert!(names.contains(&"search_meetings"));
+        assert!(!names.contains(&"search_content"));
+        assert!(!names.contains(&"agent_fixture_ability"));
         assert!(!names.contains(&"user_fixture_ability"));
-
-        let ability_tool = tools
-            .iter()
-            .find(|tool| tool.name == "agent_fixture_ability")
-            .unwrap();
-        assert_eq!(
-            ability_tool
-                .input_schema
-                .get("additionalProperties")
-                .and_then(serde_json::Value::as_bool),
-            Some(false)
-        );
 
         let get_provenance_tool = tools
             .iter()
@@ -1752,6 +2111,56 @@ mod tests {
                 .and_then(serde_json::Value::as_bool),
             Some(false)
         );
+    }
+
+    #[test]
+    fn mcp_list_tools_omits_internal_entity_runtime_ability_descriptors() {
+        let registry = registry_with(vec![
+            descriptor(
+                "get_entity_context",
+                AbilityCategory::Read,
+                AGENT_ACTORS,
+                LIVE_MODES,
+            ),
+            descriptor(
+                "get_entity_intelligence",
+                AbilityCategory::Read,
+                AGENT_ACTORS,
+                LIVE_MODES,
+            ),
+            descriptor(
+                "list_open_loops",
+                AbilityCategory::Read,
+                AGENT_ACTORS,
+                LIVE_MODES,
+            ),
+        ]);
+        let bridge = McpAbilityBridge::new(&registry);
+        let tools = list_hybrid_tools_for_bridge(&bridge);
+        let names = tools
+            .iter()
+            .map(|tool| tool.name.as_ref())
+            .collect::<Vec<_>>();
+
+        assert!(names.contains(&"query_entity"));
+        assert!(!names.contains(&"get_entity_context"));
+        assert!(!names.contains(&"get_entity_intelligence"));
+        assert!(!names.contains(&"list_open_loops"));
+    }
+
+    #[test]
+    fn mcp_list_tools_omits_unclaim_backed_workspace_search_from_legacy_surface() {
+        let registry = registry_with(vec![]);
+        let bridge = McpAbilityBridge::new(&registry);
+        let tools = list_hybrid_tools_for_bridge(&bridge);
+        let names = tools
+            .iter()
+            .map(|tool| tool.name.as_ref())
+            .collect::<Vec<_>>();
+
+        assert!(names.contains(&"query_entity"));
+        assert!(names.contains(&"search_meetings"));
+        assert!(!names.contains(&"search_content"));
     }
 
     #[test]
@@ -1782,16 +2191,74 @@ mod tests {
             serde_json::Value::Object(object) => object,
             _ => JsonObject::new(),
         };
-        let registry = registry_with(vec![descriptor]);
-        let bridge = McpAbilityBridge::new(&registry);
-
-        let tools = list_hybrid_tools_for_bridge(&bridge);
-        let ability_tool = tools
-            .iter()
-            .find(|tool| tool.name == "agent_fixture_ability")
-            .expect("registry ability tool descriptor");
+        let ability_tool = ability_descriptor_to_tool(&descriptor);
 
         assert_eq!(ability_tool.input_schema.as_ref(), &expected_schema);
+    }
+
+    #[test]
+    fn search_content_schema_allows_missing_entity_id() {
+        let tools = DailyOsMcp::tool_box().list();
+        let search_content = tools
+            .iter()
+            .find(|tool| tool.name == "search_content")
+            .expect("search_content tool descriptor");
+        let required = search_content
+            .input_schema
+            .get("required")
+            .and_then(serde_json::Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+
+        assert!(required.contains(&json!("query")));
+        assert!(!required.contains(&json!("entity_id")));
+    }
+
+    #[test]
+    fn static_tool_params_accept_numeric_strings_from_claude_desktop() {
+        let meetings: SearchMeetingsParams =
+            serde_json::from_value(json!({ "query": "Example Account", "limit": "15" }))
+                .expect("string limit should deserialize");
+        let content: SearchContentParams = serde_json::from_value(json!({
+            "query": "Example Account",
+            "entity_id": "example-account",
+            "top_k": "7"
+        }))
+        .expect("string top_k should deserialize");
+
+        assert_eq!(meetings.limit, Some(15));
+        assert_eq!(content.top_k, Some(7));
+    }
+
+    #[test]
+    fn entity_mention_normalization_handles_punctuation_drift() {
+        assert!(normalized_text_mentions_entity(
+            "prepare an executive briefing for example account",
+            "Example-Account"
+        ));
+        assert!(normalized_text_mentions_entity(
+            "prepare an executive briefing for example account",
+            "Example Account"
+        ));
+    }
+
+    #[test]
+    fn entity_query_matching_handles_slug_and_display_name_variants() {
+        assert!(entity_query_matches(
+            "example account",
+            "example-account",
+            "Example-Account"
+        ));
+        assert!(entity_query_matches(
+            "example-account",
+            "example-account",
+            "Example Account"
+        ));
+        assert!(entity_query_matches(
+            "briefing for example account",
+            "example-account",
+            "Example Account"
+        ));
     }
 
     #[test]
@@ -1812,15 +2279,50 @@ mod tests {
             mcp_route_for_tool_name("request_confirmation"),
             McpToolRoute::RequestConfirmation
         );
+        assert_eq!(
+            mcp_route_for_tool_name("list_accounts"),
+            McpToolRoute::LegacyEntityListAlias
+        );
+    }
+
+    #[test]
+    fn legacy_entity_list_alias_filter_name_accepts_json_string_filter() {
+        let request = request(
+            "list_accounts",
+            json!({ "filter": "{\"name\":\"Example Account\"}" }),
+        );
+
+        assert_eq!(
+            legacy_entity_list_alias_filter_name(&request),
+            Some("Example Account".to_string())
+        );
+    }
+
+    #[test]
+    fn legacy_entity_list_alias_filter_name_accepts_top_level_query() {
+        let request = request("list_accounts", json!({ "query": "Example Account" }));
+
+        assert_eq!(
+            legacy_entity_list_alias_filter_name(&request),
+            Some("Example Account".to_string())
+        );
+    }
+
+    #[test]
+    fn legacy_entity_list_alias_marks_unknown_args_as_invalid_filter() {
+        let request = request("list_accounts", json!({ "schemaVersion": 1 }));
+
+        assert_eq!(legacy_entity_list_alias_filter_name(&request), None);
+        assert!(legacy_entity_list_alias_has_unresolved_filter_args(
+            &request
+        ));
     }
 
     #[tokio::test]
     async fn mcp_call_tool_routes_to_invoke_ability_for_registered_ability_name() {
-        let registry = registry_with(vec![descriptor(
+        let registry = registry_with(vec![mcp_descriptor(
             "agent_fixture_ability",
             AbilityCategory::Read,
-            AGENT_ACTORS,
-            LIVE_MODES,
         )]);
         let bridge = McpAbilityBridge::new(&registry);
         let result = invoke_mcp_ability_tool(
@@ -1840,12 +2342,10 @@ mod tests {
 
     #[tokio::test]
     async fn mcp_call_tool_consumes_confirmation_token_via_session_cache() {
-        let registry = registry_with(vec![confirmation_descriptor(descriptor(
+        let registry = registry_with(vec![confirmed_mcp_descriptor(
             "agent_confirmed",
             AbilityCategory::Read,
-            AGENT_ACTORS,
-            LIVE_MODES,
-        ))]);
+        )]);
         let ability_bridge = McpAbilityBridge::new(&registry).with_confirmation_enabled();
         let tauri_bridge = TauriAbilityBridge::new_with_attestation_host(
             &registry,
@@ -1892,12 +2392,10 @@ mod tests {
 
     #[tokio::test]
     async fn mcp_call_tool_with_no_token_for_privileged_ability_returns_byte_equal_unavailable() {
-        let registry = registry_with(vec![confirmation_descriptor(descriptor(
+        let registry = registry_with(vec![confirmed_mcp_descriptor(
             "agent_confirmed",
             AbilityCategory::Read,
-            AGENT_ACTORS,
-            LIVE_MODES,
-        ))]);
+        )]);
         let ability_bridge = McpAbilityBridge::new(&registry);
 
         let err = invoke_mcp_ability_tool(
@@ -1922,12 +2420,10 @@ mod tests {
     #[tokio::test]
     async fn mcp_call_tool_with_mismatched_args_after_token_issuance_returns_byte_equal_unavailable(
     ) {
-        let registry = registry_with(vec![confirmation_descriptor(descriptor(
+        let registry = registry_with(vec![confirmed_mcp_descriptor(
             "agent_confirmed",
             AbilityCategory::Read,
-            AGENT_ACTORS,
-            LIVE_MODES,
-        ))]);
+        )]);
         let ability_bridge = McpAbilityBridge::new(&registry).with_confirmation_enabled();
         let tauri_bridge = TauriAbilityBridge::new_with_attestation_host(
             &registry,
@@ -1971,11 +2467,9 @@ mod tests {
 
     #[tokio::test]
     async fn mcp_call_tool_routes_get_provenance_to_bridge_session_scoped_lookup() {
-        let registry = registry_with(vec![descriptor(
+        let registry = registry_with(vec![mcp_descriptor(
             "agent_fixture_ability",
             AbilityCategory::Read,
-            AGENT_ACTORS,
-            LIVE_MODES,
         )]);
         let bridge = McpAbilityBridge::new(&registry);
         let session_id = session(1);
@@ -2000,7 +2494,10 @@ mod tests {
 
         assert_eq!(provenance_result.is_error, Some(false));
         assert_eq!(provenance_value["surface"], "mcp_tool_detail");
-        assert_eq!(provenance_value["value"]["invocation_id"], invocation_id);
+        assert!(
+            provenance_value["value"].is_object(),
+            "MCP client provenance detail should return a rendered object"
+        );
 
         let camel_case_handle_result = invoke_mcp_get_provenance_tool(
             &bridge,

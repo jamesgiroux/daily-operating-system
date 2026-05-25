@@ -641,7 +641,7 @@ impl ActionDb {
     ) -> Result<i32, crate::db::DbError> {
         let count: i32 = self.conn_ref().query_row(
             "SELECT COUNT(*) FROM meetings mh
-             JOIN meeting_entities me ON me.meeting_id = mh.id
+             JOIN effective_meeting_entities me ON me.meeting_id = mh.id
              WHERE me.entity_id = ?1 AND mh.start_time >= ?2 AND mh.start_time <= ?3",
             rusqlite::params![account_id, start, end],
             |row| row.get(0),

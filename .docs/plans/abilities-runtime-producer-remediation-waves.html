@@ -130,11 +130,11 @@
 <section class="plans-section" aria-labelledby="wave-overview">
   <header class="plans-section-header">
     <p class="plans-section-eyebrow">Wave shape</p>
-    <h2 id="wave-overview" class="plans-section-title">5 waves, hard ordering across, parallel within.</h2>
+    <h2 id="wave-overview" class="plans-section-title">5 waves, with W2 split for authority before comparison.</h2>
     <p class="plans-section-lede">
-      W0 freezes the contract and fixtures. W1 builds the generic neighborhood and producer orchestration seams. W2 makes MCP useful for the
-      comparison prompt. W3 and W4 finish the promised runtime sections and trust semantics. L3 + L5 gate each
-      wave before the next starts.
+      W0 freezes the contract and fixtures. W1 builds the generic neighborhood and producer orchestration seams. W2A seals the
+      MCP comparison path against legacy authority, then W2B makes the Claude Desktop comparison prompt testable. W3 and W4
+      finish the promised runtime sections and trust semantics. L3 + L5 gate each wave before the next starts.
     </p>
   </header>
 
@@ -161,8 +161,14 @@
         <td>read-model substrate lands</td>
       </tr>
       <tr>
-        <td>W2 — MCP executive briefing</td>
-        <td>shared MCP projection, entity resolver, host eval fixture</td>
+        <td>W2A — Runtime authority seal</td>
+        <td>MCP tool exposure, legacy-authority gates, minimum runtime evidence for comparison</td>
+        <td>2</td>
+        <td>comparison path cannot bypass runtime</td>
+      </tr>
+      <tr>
+        <td>W2B — MCP executive briefing</td>
+        <td>shared MCP projection, entity resolver, host eval fixture, Claude Desktop L4</td>
         <td>3</td>
         <td>comparison prompt is testable</td>
       </tr>
@@ -180,6 +186,26 @@
       </tr>
     </tbody>
   </table>
+</section>
+
+<section class="plans-section" aria-labelledby="stranded-evidence">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">W2A audit expansion</p>
+    <h2 id="stranded-evidence" class="plans-section-title">Inventory evidence that exists but loses meaning before runtime.</h2>
+    <p class="plans-section-lede">
+      The comparison prompt should fail if durable working-state evidence exists in services-owned tables but does not reach
+      <code>get_entity_intelligence</code> with its semantics intact.
+    </p>
+  </header>
+  <ul class="plans-related">
+    <li><strong>Account facts:</strong> sourced structured fields must promote to claim-backed facts before MCP or WordPress use them.</li>
+    <li><strong>Core entity facts:</strong> account, project, person, and future entity scalar fields need a generic sourced-field producer; runtime freshness must degrade from source dates or observation dates instead of rendering as unknown.</li>
+    <li><strong>Stakeholder roles:</strong> account-team, owner, relationship-manager, champion, executive-sponsor, and technical-contact semantics must survive generic neighborhood projection instead of collapsing to anonymous stakeholder links.</li>
+    <li><strong>Actions and commitments:</strong> local work rows must either surface as bounded internal open-loop evidence or become first-class claims with provenance, source confidence, owner refs, and freshness; they may not disappear from MCP while remaining visible in Tauri.</li>
+    <li><strong>Meetings and transcripts:</strong> current linked-entity graph, attendees, captures, transcripts, and summaries need runtime readers/producers; legacy junctions and generated files are fallbacks or artifacts, not authority.</li>
+    <li><strong>Email and content signals:</strong> enrichment output that changes account/person/project judgment must be classified as durable producer, read-model producer, or downstream artifact before it ships.</li>
+    <li><strong>Feedback and suppression:</strong> tombstones, dismissed links, claim deferrals, and user corrections must affect read-model evidence as consistently as claim-backed facts.</li>
+  </ul>
 </section>
 
 <section class="plans-section" aria-labelledby="wave-details">
@@ -200,7 +226,12 @@
       <p class="callout-prose"><strong>Pass:</strong> account, project, person, and meeting fixtures return bounded relationship edges with source, recency, confidence, inclusion reason, section caveats, and sensitivity-safe subject refs. Default traversal depth is no more than 2, with per-edge caps and truncation metadata. Duplicate attendees collapse by canonical person/email key; internal participants are included only when the subject kind or explicit relationship makes them relevant. Queue and manual Glean refresh produce equivalent claim/signal/fact side effects for the same fixture output.</p>
     </article>
     <article class="callout">
-      <h3 class="callout-title">W2 — MCP executive briefing</h3>
+      <h3 class="callout-title">W2A — Runtime authority seal</h3>
+      <p class="callout-prose">Seal the headless comparison path before the Claude Desktop eval: MCP v2 may advertise only registered handlers, generated files and report JSON stay out of runtime authority, and every comparison-critical evidence class is either runtime-backed or explicitly caveated. Add migration 265 as a one-time service-owned runtime evidence backfill request so existing local data can move through producers before the W2 parity check. Add no-bypass tests for stale MCP grants, legacy projection reads, generated artifacts, cached prose, report outputs, stale v1 aliases, and static meeting-content descriptions in the MCP comparison path.</p>
+      <p class="callout-prose"><strong>Pass:</strong> Claude Desktop sees only tools compiled into the current v2 binary; <code>dailyos.read.account_status</code> output comes from <code>get_entity_intelligence</code> plus registered service-context readers; no W2 comparison fixture can satisfy required sections from <code>entity_assessment</code>, <code>reports.content_json</code>, <code>prep_frozen_json</code>, <code>risk-briefing.json</code>, <code>dashboard.json</code>, <code>dashboard.md</code>, or <code>_today/data/*.json</code>. Missing evidence fails as a section caveat, not as a legacy fallback. Legacy v1 compatibility routes either call the runtime-backed account path or return an explicit unavailable/invalid-arguments payload; hidden static tools and unadvertised raw abilities are not exact-callable by Claude Desktop; they may not silently substitute static rows, raw ability envelopes, or full lists.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">W2B — MCP executive briefing</h3>
       <p class="callout-prose">Implement a shared MCP projection for the ability envelope, then make <code>dailyos.read.account_status</code> consume it. Return touchpoints, record entries, relationship participants, section caveats, priorities, trust, freshness, and provenance refs. Add subject resolution for natural names, slugs, and ids.</p>
       <p class="callout-prose"><strong>Pass:</strong> the source-safe executive-briefing fixture runs in Claude Desktop, calls the DailyOS MCP tool, and receives enough structured DailyOS output to compare against a broad-corpus answer without direct DB reads or uncaveated derived claims.</p>
     </article>
@@ -357,24 +388,27 @@
 
 <section class="plans-section" aria-labelledby="w2-eval-contract">
   <header class="plans-section-header">
-    <p class="plans-section-eyebrow">W2 eval contract</p>
+    <p class="plans-section-eyebrow">W2A/W2B eval contract</p>
     <h2 id="w2-eval-contract" class="plans-section-title">Claude Desktop comparison is a concrete acceptance test.</h2>
     <p class="plans-section-lede">
-      W2 is done when a source-safe fixture proves that Claude Desktop can ask DailyOS for an executive briefing and receive
-      assessed, provenance-aware evidence that a broad-corpus answer does not have by itself.
+      W2A first proves the MCP comparison path cannot fall back to legacy artifacts or stale tool grants. W2B is done when a
+      source-safe fixture proves that Claude Desktop can ask DailyOS for an executive briefing and receive assessed,
+      provenance-aware evidence that a broad-corpus answer does not have by itself.
     </p>
   </header>
 
   <ul class="plans-related">
     <li><strong>Fixture prompt:</strong> "Please prepare an executive briefing for the Example account. It should include an executive summary/overview of the account and its commercial status with us, current risks and wins and the top three stakeholders by meeting attendance and a two to three line analysis of their influence on the account. Please also include two to three top priorities for this account."</li>
     <li><strong>Fixture subject:</strong> synthetic account with linked people, projects, meetings, actions, source refs, mixed freshness, and at least one caveated/low-trust item. Production subjects are tested only by an approved local run and are not committed to docs, logs, fixtures, or screenshots.</li>
-    <li><strong>Expected tool behavior:</strong> Claude Desktop selects the DailyOS MCP tool for personal working context; <code>dailyos.read.account_status</code> resolves the subject, uses the shared runtime projection, and returns a payload under 64 KiB unless truncation metadata is present.</li>
+    <li><strong>Expected tool behavior:</strong> Claude Desktop selects the DailyOS MCP tool for personal working context; <code>dailyos.read.account_status</code> resolves the subject, uses the shared runtime projection, advertises that it returns assessed evidence with trust/freshness/provenance refs, and returns a payload under 64 KiB unless truncation metadata is present.</li>
+    <li><strong>W2A authority rule:</strong> the comparison path may not read generated entity files, daily briefing JSON, cached report JSON, or legacy intelligence projections as authority. Those paths remain exports, recovery inputs, or downstream artifacts unless a services-owned producer promotes their assertions into claims/signals or bounded runtime evidence.</li>
     <li><strong>Tool metadata:</strong> the MCP v2 tool description, input schema descriptions, result description, and host guidance must tell Claude that DailyOS returns assessed working-state evidence with provenance, not a raw search index. It must state when to call DailyOS, when not to call it, and how to interpret trust bands, freshness, caveats, and source refs.</li>
     <li><strong>Host-selection fixtures:</strong> positive fixture selects DailyOS for personal working-state evidence. Negative fixture avoids DailyOS for broad-corpus, web, or enterprise-search questions that should go to Glean/search instead.</li>
-    <li><strong>Required test names:</strong> <code>account_status_exec_briefing_fixture_uses_runtime_projection</code>, <code>account_status_subject_resolution_edges</code>, <code>account_status_host_selection_positive_negative</code>, <code>entity_neighborhood_snapshot_covers_account_project_person_meeting</code>, <code>mcp_projection_redacts_non_renderable_fields</code>, and <code>mcp_projection_blocks_prompt_injection_text</code>.</li>
+    <li><strong>Required test names:</strong> <code>mcp_v2_tools_list_registered_handlers_only</code>, <code>mcp_comparison_path_rejects_legacy_authority</code>, <code>legacy_query_entity_account_runtime_failure_fails_closed</code>, <code>legacy_entity_list_alias_filter_name_accepts_top_level_query</code>, <code>legacy_entity_list_alias_marks_unknown_args_as_invalid_filter</code>, <code>account_status_exec_briefing_fixture_uses_runtime_projection</code>, <code>account_status_subject_resolution_edges</code>, <code>account_status_host_selection_positive_negative</code>, <code>account_status_presenter_stays_within_mcp_payload_budget_for_large_runtime_text</code>, <code>entity_neighborhood_snapshot_covers_account_project_person_meeting</code>, <code>mcp_projection_redacts_non_renderable_fields</code>, <code>mcp_projection_blocks_prompt_injection_text</code>, and <code>mcp_projection_strips_invisible_text_and_caps_item_size</code>.</li>
     <li><strong>Negative render fixtures:</strong> confidential text, user-only notes, paraphrased private text, attendee names or emails, owner labels, source labels, provenance refs, instruction-like external text, invisible Unicode, poisoned prior intelligence, and hostile thread/calendar text must each prove blocked fields are omitted, sanitized, or replaced with a render-policy caveat.</li>
     <li><strong>Comparison rubric:</strong> pass requires tool selected for the DailyOS-appropriate prompt, all required briefing sections present, no raw DB/schema request, at least five provenance-backed claims or evidence rows, stakeholder candidates sourced from participation, stale/low-trust sections hedged, no prompt-injection instruction carried into the host answer, and broad-corpus answer lacks DailyOS-only working-state evidence. Anything below all required sections or any raw-claim-id/DB-row answer fails W2.</li>
     <li><strong>Failure examples:</strong> returns only claim ids or hashes; omits touchpoints/record/relationships; invents influence without evidence; treats stale or low-trust sections as current; asks the host model to inspect raw DB rows; leaks fields blocked by render policy.</li>
+    <li><strong>W2A failure examples:</strong> Claude Desktop sees a planned-but-unregistered v2 tool; a comparison fixture succeeds by reading <code>entity_assessment</code>, <code>reports.content_json</code>, <code>prep_frozen_json</code>, generated dashboard/intelligence files, or <code>_today/data</code>; stale or missing runtime evidence is silently replaced by cached prose; a stale legacy alias returns a full entity list when the caller intended one entity; <code>search_meetings</code> is advertised as discussion-content authority while returning only metadata-safe fields.</li>
   </ul>
 
   <table class="reviewer-matrix">
@@ -547,6 +581,7 @@
   <ul class="plans-related">
     <li><code>get_entity_intelligence</code> returns claim-backed facts, open loops, touchpoints, relationships/participation evidence, threads, metadata proposals, health story, record entries, section caveats, trust, and provenance when supporting evidence exists.</li>
     <li>MCP and WordPress consume abilities/runtime output, not parallel schema adapters or direct DB joins.</li>
+    <li>Headless comparison paths fail closed with section caveats instead of falling back to generated artifacts, report JSON, cached prose, or stale legacy projections.</li>
     <li>The same producer/read-model shape works for account, project, person, and meeting fixtures.</li>
     <li>The host-model comparison prompt can produce a useful executive briefing with commercial status, risks, wins, stakeholder candidates, caveated influence analysis, priorities, trust/freshness language, and source refs.</li>
     <li>Trust recomputation and section caveats prevent unsupported assertions from rendering as equally certain as source-backed facts.</li>

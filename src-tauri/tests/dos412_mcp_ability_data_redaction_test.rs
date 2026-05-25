@@ -4,8 +4,7 @@ use std::pin::Pin;
 use chrono::{TimeZone, Utc};
 use dailyos_lib::abilities::registry::{AbilityPolicy, McpExposure, SignalPolicy};
 use dailyos_lib::abilities::{
-    AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityRegistry, Actor,
-    ActorKind,
+    AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityRegistry, ActorKind,
 };
 use dailyos_lib::bridges::mcp::McpAbilityBridge;
 use dailyos_lib::bridges::tauri::TauriAbilityBridge;
@@ -61,7 +60,8 @@ CREATE TABLE accounts (
 const SUBJECT_ACCOUNT_ID: &str = "acct-dos412-mcp-ability";
 const TS: &str = "2026-05-06T12:00:00Z";
 
-const USER_AGENT_ACTORS: &[ActorKind] = &[ActorKind::User, ActorKind::Agent];
+const USER_AGENT_MCP_ACTORS: &[ActorKind] =
+    &[ActorKind::User, ActorKind::Agent, ActorKind::McpClient];
 const LIVE_MODES: &[ExecutionMode] = &[ExecutionMode::Live];
 
 type ErasedFuture<'a> =
@@ -727,12 +727,12 @@ fn synthetic_descriptor() -> AbilityDescriptor {
         schema_version: 1,
         category: AbilityCategory::Read,
         policy: AbilityPolicy {
-            allowed_actors: USER_AGENT_ACTORS,
+            allowed_actors: USER_AGENT_MCP_ACTORS,
             allowed_modes: LIVE_MODES,
             requires_confirmation: false,
             may_publish: false,
             required_scopes: &[],
-            mcp_exposure: McpExposure::None,
+            mcp_exposure: McpExposure::Invocable,
             client_side_executable: false,
             rate_limit: None,
         },

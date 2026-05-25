@@ -296,6 +296,24 @@ impl ActionDb {
         }
     }
 
+    pub fn dead_letter_invalidation_job(&self, job_id: &str, error: &str) -> Result<(), DbError> {
+        let mut outcome: Option<Result<(), DbError>> = None;
+        let tx_result = self.with_transaction(|tx| {
+            let result = tx.dead_letter_job_inner(job_id, error);
+            let tx_result = result
+                .as_ref()
+                .map(|_| ())
+                .map_err(std::string::ToString::to_string);
+            outcome = Some(result);
+            tx_result
+        });
+
+        match tx_result {
+            Ok(()) => outcome.unwrap_or(Ok(())),
+            Err(error) => Err(DbError::Migration(error)),
+        }
+    }
+
     pub fn terminalize_claim_recompute_job(
         &self,
         job_id: &str,
@@ -619,12 +637,41 @@ impl ActionDb {
         now: &str,
         lease_expires_at: &str,
     ) -> Result<Option<InvalidationJob>, DbError> {
+        let exhausted_marker = json!({
+            "reason": "dead_lettered_before_claim",
+            "error": "attempts exhausted before worker claim",
+            "job_kind": job_kind,
+        })
+        .to_string();
+        self.conn_ref().execute(
+            "UPDATE invalidation_jobs
+             SET status = 'dead_lettered',
+                 lease_owner = NULL,
+                 lease_expires_at = NULL,
+                 dead_lettered_at = ?2,
+                 last_error = 'attempts exhausted before worker claim',
+                 stale_marker_json = ?3,
+                 updated_at = ?2
+             WHERE job_kind = ?1
+               AND attempts >= max_attempts
+               AND status IN ('pending', 'running')
+               AND (
+                    (status = 'pending' AND datetime(next_run_at) <= datetime(?2))
+                    OR
+                    (status = 'running'
+                     AND lease_expires_at IS NOT NULL
+                     AND datetime(lease_expires_at) <= datetime(?2))
+               )",
+            params![job_kind, now, exhausted_marker],
+        )?;
+
         let job_id: Option<String> = self
             .conn_ref()
             .query_row(
                 "SELECT id
                  FROM invalidation_jobs
                  WHERE job_kind = ?1
+                   AND attempts < max_attempts
                    AND (
                         (status = 'pending' AND datetime(next_run_at) <= datetime(?2))
                         OR
@@ -711,6 +758,29 @@ impl ActionDb {
             )?;
             Ok(JobFailureDisposition::RetryScheduled)
         }
+    }
+
+    fn dead_letter_job_inner(&self, job_id: &str, error: &str) -> Result<(), DbError> {
+        let now_str = Utc::now().to_rfc3339();
+        let stale_marker = json!({
+            "reason": "dead_lettered",
+            "error": error,
+            "job_id": job_id,
+        })
+        .to_string();
+        self.conn_ref().execute(
+            "UPDATE invalidation_jobs
+             SET status = 'dead_lettered',
+                 lease_owner = NULL,
+                 lease_expires_at = NULL,
+                 dead_lettered_at = ?2,
+                 last_error = ?3,
+                 stale_marker_json = ?4,
+                 updated_at = ?2
+             WHERE id = ?1",
+            params![job_id, &now_str, error, &stale_marker],
+        )?;
+        Ok(())
     }
 
     fn terminalize_claim_recompute_job_inner(
@@ -1479,6 +1549,40 @@ mod tests {
         assert_eq!(dead.len(), 1);
         assert_eq!(dead[0].id, receipt.job_id);
         assert!(dead[0].stale_marker_json.is_some());
+    }
+
+    #[test]
+    fn exhausted_expired_job_is_dead_lettered_before_reclaim() {
+        let db = test_db();
+        seed_account(&db, "acct-expired-dead", 1);
+        let mut input = claim_input("sig-1", "acct-expired-dead", 1);
+        input.max_attempts = 1;
+        let receipt = db.enqueue_invalidation_job(input).expect("enqueue");
+        let claimed = db
+            .claim_next_claim_recompute_job("worker-a", 30)
+            .expect("claim")
+            .expect("claimed job");
+        assert_eq!(claimed.id, receipt.job_id);
+        let expired = (Utc::now() - Duration::seconds(30)).to_rfc3339();
+        db.conn_ref()
+            .execute(
+                "UPDATE invalidation_jobs
+                    SET lease_expires_at = ?2
+                  WHERE id = ?1",
+                params![&receipt.job_id, &expired],
+            )
+            .expect("expire lease");
+
+        let next = db
+            .claim_next_claim_recompute_job("worker-b", 30)
+            .expect("claim after exhaustion");
+        assert!(next.is_none());
+        let dead = db
+            .get_invalidation_job(&receipt.job_id)
+            .expect("read exhausted job")
+            .expect("job exists");
+        assert_eq!(dead.status, STATUS_DEAD_LETTERED);
+        assert!(dead.stale_marker_json.is_some());
     }
 
     #[test]

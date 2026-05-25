@@ -570,7 +570,7 @@ pub fn build_intelligence_context(
                     mch.champion_name, mch.champion_status
              FROM meeting_interaction_dynamics mid
              JOIN meetings m ON m.id = mid.meeting_id
-             JOIN meeting_entities me ON me.meeting_id = m.id AND me.entity_id = ?1
+             JOIN effective_meeting_entities me ON me.meeting_id = m.id AND me.entity_id = ?1
              LEFT JOIN meeting_champion_health mch ON mch.meeting_id = m.id
              ORDER BY m.start_time DESC LIMIT 5"
         ) {
@@ -603,7 +603,7 @@ pub fn build_intelligence_context(
             "SELECT m.start_time, mch.champion_name, mch.champion_status, mch.champion_evidence
              FROM meeting_champion_health mch
              JOIN meetings m ON m.id = mch.meeting_id
-             JOIN meeting_entities me ON me.meeting_id = m.id AND me.entity_id = ?1
+             JOIN effective_meeting_entities me ON me.meeting_id = m.id AND me.entity_id = ?1
              WHERE mch.champion_name IS NOT NULL
              ORDER BY m.start_time DESC LIMIT 5",
         ) {
@@ -3053,40 +3053,46 @@ pub(crate) fn extract_json_from_response(response: &str) -> Option<&str> {
         }
     }
 
-    // Try raw JSON object
+    // Try raw JSON object. Glean sometimes appends explanatory text after a
+    // valid object, so use the same balanced-object scanner instead of handing
+    // trailing prose to serde_json.
     let trimmed = response.trim();
     if trimmed.starts_with('{') {
-        return Some(trimmed);
+        return extract_balanced_json_object(trimmed);
     }
     // Look for JSON embedded in other text
     if let Some(start) = response.find('{') {
-        let candidate = &response[start..];
-        let mut depth = 0i32;
-        let mut in_string = false;
-        let mut escape = false;
-        for (i, ch) in candidate.char_indices() {
-            if escape {
-                escape = false;
-                continue;
-            }
-            if ch == '\\' && in_string {
-                escape = true;
-                continue;
-            }
-            if ch == '"' {
-                in_string = !in_string;
-                continue;
-            }
-            if in_string {
-                continue;
-            }
-            if ch == '{' {
-                depth += 1;
-            } else if ch == '}' {
-                depth -= 1;
-                if depth == 0 {
-                    return Some(&candidate[..=i]);
-                }
+        return extract_balanced_json_object(&response[start..]);
+    }
+    None
+}
+
+fn extract_balanced_json_object(candidate: &str) -> Option<&str> {
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut escape = false;
+    for (i, ch) in candidate.char_indices() {
+        if escape {
+            escape = false;
+            continue;
+        }
+        if ch == '\\' && in_string {
+            escape = true;
+            continue;
+        }
+        if ch == '"' {
+            in_string = !in_string;
+            continue;
+        }
+        if in_string {
+            continue;
+        }
+        if ch == '{' {
+            depth += 1;
+        } else if ch == '}' {
+            depth -= 1;
+            if depth == 0 {
+                return Some(&candidate[..=i]);
             }
         }
     }
@@ -4022,6 +4028,18 @@ Some trailing text"#;
         assert_eq!(intel.executive_assessment.as_deref(), Some("Brief."));
         assert_eq!(intel.risks.len(), 1);
         assert_eq!(intel.risks[0].urgency, "low");
+    }
+
+    #[test]
+    fn test_parse_json_response_raw_with_trailing_text() {
+        let response = r#"{"executiveAssessment": "Brief.", "risks": []}
+Retrieved from available sources."#;
+
+        let intel = parse_intelligence_response(response, "beta", "project", 0, vec![])
+            .expect("should parse leading JSON and ignore trailing text");
+
+        assert_eq!(intel.executive_assessment.as_deref(), Some("Brief."));
+        assert!(intel.risks.is_empty());
     }
 
     #[test]

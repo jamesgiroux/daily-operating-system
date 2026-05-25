@@ -57,6 +57,31 @@ pub fn emit(
     .map_err(|e| e.to_string())
 }
 
+/// Emit internal bookkeeping evidence without invalidating meeting-prep state.
+#[allow(clippy::too_many_arguments)]
+pub fn emit_without_meeting_refresh(
+    ctx: &crate::services::context::ServiceContext<'_>,
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+    signal_type: &str,
+    source: &str,
+    value: Option<&str>,
+    confidence: f64,
+) -> Result<String, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    bus::emit_signal_without_meeting_refresh(
+        db,
+        entity_type,
+        entity_id,
+        signal_type,
+        source,
+        value,
+        confidence,
+    )
+    .map_err(|e| e.to_string())
+}
+
 /// Emit a signal with a deterministic id. Duplicate ids return a coalesced
 /// outcome and do not append another row.
 #[allow(clippy::too_many_arguments)]

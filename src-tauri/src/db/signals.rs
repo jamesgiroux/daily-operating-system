@@ -39,12 +39,12 @@ impl ActionDb {
     /// Compute stakeholder signals for an account: meeting frequency, last contact,
     /// and relationship temperature. Returns `None` if account not found.
     pub fn get_stakeholder_signals(&self, account_id: &str) -> Result<StakeholderSignals, DbError> {
-        // Meeting counts for 30/90 day windows (via junction table)
+        // Meeting counts for 30/90 day windows (via graph-compatible link view)
         let count_30d: i32 = self
             .conn
             .query_row(
                 "SELECT COUNT(*) FROM meetings m
-                 INNER JOIN meeting_entities me ON m.id = me.meeting_id
+                 INNER JOIN effective_meeting_entities me ON m.id = me.meeting_id
                  WHERE me.entity_id = ?1
                    AND m.start_time >= date('now', '-30 days')",
                 params![account_id],
@@ -56,7 +56,7 @@ impl ActionDb {
             .conn
             .query_row(
                 "SELECT COUNT(*) FROM meetings m
-                 INNER JOIN meeting_entities me ON m.id = me.meeting_id
+                 INNER JOIN effective_meeting_entities me ON m.id = me.meeting_id
                  WHERE me.entity_id = ?1
                    AND m.start_time >= date('now', '-90 days')",
                 params![account_id],
@@ -69,7 +69,7 @@ impl ActionDb {
             .conn
             .query_row(
                 "SELECT MAX(m.start_time) FROM meetings m
-                 INNER JOIN meeting_entities me ON m.id = me.meeting_id
+                 INNER JOIN effective_meeting_entities me ON m.id = me.meeting_id
                  WHERE me.entity_id = ?1
                    AND m.start_time <= datetime('now')",
                 params![account_id],

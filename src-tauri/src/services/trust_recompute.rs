@@ -1059,7 +1059,7 @@ fn emit_claim_trust_changed_signal(
     })
     .to_string();
 
-    let signal_id = match crate::services::signals::emit(
+    if let Err(e) = crate::services::signals::emit_without_meeting_refresh(
         ctx,
         db,
         subject_type,
@@ -1069,39 +1069,10 @@ fn emit_claim_trust_changed_signal(
         Some(&payload),
         1.0,
     ) {
-        Ok(id) => id,
-        Err(e) => {
-            log::warn!(
-                "TrustRecompute: failed to emit ClaimTrustChanged for claim {}: {}",
-                claim.id,
-                e
-            );
-            return;
-        }
-    };
-
-    if let Err(e) = crate::services::invalidation_jobs::enqueue_signal_claim_recompute_in_tx(
-        db,
-        &signal_id,
-        subject_type,
-        subject_id,
-    ) {
-        log::error!(
-            "TrustRecompute: failed to enqueue claim_recompute job for signal {} (claim {}): {}",
-            signal_id,
+        log::warn!(
+            "TrustRecompute: failed to emit ClaimTrustChanged for claim {}: {}",
             claim.id,
             e
-        );
-        record_trust_recompute_pipeline_failure(
-            ctx,
-            db,
-            subject_type,
-            subject_id,
-            "invalidation_enqueue_failed",
-            Some(&format!(
-                "claim_id={} signal_id={signal_id} error={e}",
-                claim.id
-            )),
         );
     }
 }
@@ -1123,7 +1094,7 @@ fn emit_confidence_evidence_signals(
             "caveats": &evidence.caveats,
         })
         .to_string();
-        if let Err(e) = crate::services::signals::emit(
+        if let Err(e) = crate::services::signals::emit_without_meeting_refresh(
             ctx,
             db,
             subject_type,
@@ -1318,7 +1289,7 @@ mod tests {
     }
 
     #[test]
-    fn recompute_emits_change_signal_for_unscored_to_scored_claim() {
+    fn recompute_emits_change_signal_without_self_enqueueing_recompute() {
         let db = test_db();
         let account_id = "acct-unscored-signal";
         seed_account(&db, account_id);
@@ -1344,6 +1315,6 @@ mod tests {
         assert!(score.is_some());
         assert_eq!(version, Some(1));
         assert_eq!(signal_count(&db, "ClaimTrustChanged"), 1);
-        assert_eq!(invalidation_job_count(&db), 1);
+        assert_eq!(invalidation_job_count(&db), 0);
     }
 }

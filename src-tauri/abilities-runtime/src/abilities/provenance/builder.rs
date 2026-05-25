@@ -253,7 +253,11 @@ impl ProvenanceBuilder {
 
     fn validate_leaf_coverage(&self, serialized: &Value) -> Result<(), ProvenanceError> {
         for leaf_path in json_leaf_paths(serialized)? {
-            if !self.field_attributions.contains_key(&leaf_path) {
+            if !self
+                .field_attributions
+                .keys()
+                .any(|field_path| field_path.covers(&leaf_path))
+            {
                 return Err(ProvenanceError::MissingFieldAttribution {
                     field_path: leaf_path,
                 });
@@ -716,6 +720,24 @@ mod tests {
             .provenance
             .field_attributions
             .contains_key(&FieldPath::new("/account/risk").unwrap()));
+    }
+
+    #[test]
+    fn root_attribution_can_cover_nested_output_without_leaf_expansion() {
+        let mut builder = builder();
+        builder
+            .attribute(FieldPath::root(), FieldAttribution::constant(subject()))
+            .unwrap();
+
+        let output = builder
+            .finalize(json!({ "account": { "name": "acct-1", "risk": 2 } }))
+            .unwrap();
+
+        assert_eq!(output.provenance.field_attributions.len(), 1);
+        assert!(output
+            .provenance
+            .field_attributions
+            .contains_key(&FieldPath::root()));
     }
 
     #[test]

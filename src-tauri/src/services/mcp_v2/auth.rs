@@ -261,6 +261,76 @@ pub fn list_invocable_tool_grants(
     Ok(out)
 }
 
+/// Ensure the built-in local stdio client exists and has grants for the
+/// handlers this binary registered at boot.
+///
+/// This is intentionally local-only: Claude Desktop and DailyOS run as the
+/// same macOS user, so the OS user boundary is the pairing boundary. The grant
+/// table still stays authoritative for tool exposure, but startup no longer
+/// requires a separate remote-style pairing ceremony.
+pub fn ensure_local_stdio_client_grants(
+    conn: &mut Connection,
+    client_id: &McpClientId,
+    grants: &[ToolGrant],
+) -> Result<(), AuthError> {
+    let now = now_millis();
+    let tx = conn.transaction()?;
+    tx.execute(
+        "INSERT INTO mcp_client_manifest \
+         (client_id, paired_at, revoked_at, transport_key_ref) \
+         VALUES (?1, ?2, NULL, NULL) \
+         ON CONFLICT(client_id) DO UPDATE SET revoked_at = NULL",
+        params![client_id.as_str(), now],
+    )?;
+
+    for grant in grants {
+        tx.execute(
+            "INSERT INTO mcp_tool_grant \
+             (client_id, tool_name, scopes_granted_json, exposure, rate_limit_max, rate_limit_window_secs) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
+             ON CONFLICT(client_id, tool_name) DO UPDATE SET \
+                scopes_granted_json = excluded.scopes_granted_json, \
+                exposure = excluded.exposure, \
+                rate_limit_max = excluded.rate_limit_max, \
+                rate_limit_window_secs = excluded.rate_limit_window_secs",
+            params![
+                client_id.as_str(),
+                grant.tool_name.as_str(),
+                serde_json::to_string(&grant.scopes_granted)?,
+                exposure_tag(grant.exposure),
+                grant.rate_limit.max_calls,
+                grant.rate_limit.window_seconds,
+            ],
+        )?;
+    }
+
+    if grants.is_empty() {
+        tx.execute(
+            "DELETE FROM mcp_tool_grant WHERE client_id = ?1",
+            params![client_id.as_str()],
+        )?;
+    } else {
+        let placeholders = std::iter::repeat_n("?", grants.len())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!(
+            "DELETE FROM mcp_tool_grant \
+             WHERE client_id = ? AND tool_name NOT IN ({placeholders})"
+        );
+        let mut values = Vec::with_capacity(grants.len() + 1);
+        values.push(client_id.as_str().to_string());
+        values.extend(
+            grants
+                .iter()
+                .map(|grant| grant.tool_name.as_str().to_string()),
+        );
+        tx.execute(&sql, rusqlite::params_from_iter(values.iter()))?;
+    }
+
+    tx.commit()?;
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Internals: RNG, time, encoding helpers
 // ---------------------------------------------------------------------------
@@ -295,5 +365,71 @@ fn parse_exposure(tag: &str) -> McpExposure {
         "Invocable" => McpExposure::Invocable,
         "MetadataOnly" => McpExposure::MetadataOnly,
         _ => McpExposure::None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_mcp_auth_tables(conn: &Connection) {
+        conn.execute_batch(
+            "
+            CREATE TABLE mcp_client_manifest (
+                client_id TEXT PRIMARY KEY,
+                paired_at INTEGER NOT NULL,
+                revoked_at INTEGER NULL,
+                transport_key_ref TEXT NULL
+            );
+            CREATE TABLE mcp_tool_grant (
+                client_id TEXT,
+                tool_name TEXT,
+                scopes_granted_json TEXT NOT NULL,
+                exposure TEXT NOT NULL CHECK (exposure IN ('None','MetadataOnly','Invocable')),
+                rate_limit_max INTEGER NOT NULL,
+                rate_limit_window_secs INTEGER NOT NULL,
+                PRIMARY KEY (client_id, tool_name)
+            );
+            ",
+        )
+        .expect("create MCP auth tables");
+    }
+
+    fn invocable_grant(name: &str) -> ToolGrant {
+        ToolGrant {
+            tool_name: ScopedName::new(name),
+            scopes_granted: vec![Scope::new(name)],
+            exposure: McpExposure::Invocable,
+            rate_limit: ToolRateLimit {
+                max_calls: 600,
+                window_seconds: 60,
+            },
+        }
+    }
+
+    #[test]
+    fn local_stdio_grants_prune_stale_tools_for_client() {
+        let mut conn = Connection::open_in_memory().expect("open sqlite");
+        create_mcp_auth_tables(&conn);
+        let client_id = McpClientId::new("local-client");
+
+        ensure_local_stdio_client_grants(
+            &mut conn,
+            &client_id,
+            &[
+                invocable_grant("dailyos.read.account_status"),
+                invocable_grant("dailyos.read.daily_briefing"),
+            ],
+        )
+        .expect("seed initial grants");
+        ensure_local_stdio_client_grants(
+            &mut conn,
+            &client_id,
+            &[invocable_grant("dailyos.read.account_status")],
+        )
+        .expect("refresh grants");
+
+        let grants = list_invocable_tool_grants(&conn, &client_id).expect("list grants");
+        assert_eq!(grants, vec![ScopedName::new("dailyos.read.account_status")]);
     }
 }

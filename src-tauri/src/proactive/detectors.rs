@@ -58,7 +58,7 @@ pub fn detect_renewal_gap(db: &ActionDb, ctx: &DetectorContext) -> Vec<RawInsigh
             .conn_ref()
             .query_row(
                 "SELECT COUNT(*) FROM meetings mh
-                 JOIN meeting_entities me ON me.meeting_id = mh.id
+                 JOIN effective_meeting_entities me ON me.meeting_id = mh.id
                  WHERE me.entity_id = ?1 AND me.entity_type = 'account'
                  AND mh.start_time >= ?2
                  AND mh.start_time < ?3",
@@ -123,11 +123,11 @@ pub fn detect_relationship_drift(db: &ActionDb, ctx: &DetectorContext) -> Vec<Ra
 
     let sql = "SELECT p.id, p.name,
         (SELECT COUNT(*) FROM meetings mh
-         JOIN meeting_entities me ON me.meeting_id = mh.id
+         JOIN effective_meeting_entities me ON me.meeting_id = mh.id
          WHERE me.entity_id = p.id AND me.entity_type = 'person'
          AND mh.start_time >= ?1 AND mh.start_time < ?3) as meetings_30d,
         (SELECT COUNT(*) FROM meetings mh
-         JOIN meeting_entities me ON me.meeting_id = mh.id
+         JOIN effective_meeting_entities me ON me.meeting_id = mh.id
          WHERE me.entity_id = p.id AND me.entity_type = 'person'
          AND mh.start_time >= ?2 AND mh.start_time < ?3) as meetings_90d
     FROM people p
@@ -400,7 +400,7 @@ pub fn detect_stale_champion(db: &ActionDb, ctx: &DetectorContext) -> Vec<RawIns
             let last_meeting: Option<String> = conn
                 .query_row(
                     "SELECT MAX(mh.start_time) FROM meetings mh
-                     JOIN meeting_entities me ON me.meeting_id = mh.id
+                     JOIN effective_meeting_entities me ON me.meeting_id = mh.id
                      WHERE me.entity_id = ?1 AND me.entity_type = 'person'",
                     params![person_id],
                     |row| row.get(0),
@@ -606,7 +606,7 @@ pub fn detect_prep_coverage_gap(db: &ActionDb, ctx: &DetectorContext) -> Vec<Raw
     for meeting_id in &meetings {
         let entity_count: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM meeting_entities WHERE meeting_id = ?1",
+                "SELECT COUNT(*) FROM effective_meeting_entities WHERE meeting_id = ?1",
                 params![meeting_id],
                 |row| row.get(0),
             )
@@ -661,7 +661,7 @@ pub fn detect_no_contact_accounts(db: &ActionDb, ctx: &DetectorContext) -> Vec<R
              WHERE a.archived = 0 AND a.account_type = 'customer'
              AND NOT EXISTS (
                  SELECT 1 FROM meetings mh
-                 JOIN meeting_entities me ON me.meeting_id = mh.id
+                 JOIN effective_meeting_entities me ON me.meeting_id = mh.id
                  WHERE me.entity_id = a.id AND me.entity_type = 'account'
                    AND mh.start_time >= ?1
              )

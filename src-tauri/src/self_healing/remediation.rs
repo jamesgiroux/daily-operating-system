@@ -36,7 +36,7 @@ fn meeting_imminence_score(db: &ActionDb, entity_id: &str) -> f64 {
         .query_row(
             "SELECT MIN((julianday(mh.start_time) - julianday('now')) * 24.0)
              FROM meetings mh
-             INNER JOIN meeting_entities me ON me.meeting_id = mh.id
+             INNER JOIN effective_meeting_entities me ON me.meeting_id = mh.id
              WHERE me.entity_id = ?1 AND mh.start_time > datetime('now')",
             rusqlite::params![entity_id],
             |row| row.get(0),
@@ -92,7 +92,7 @@ fn entity_importance_score(db: &ActionDb, entity_id: &str) -> f64 {
         .conn_ref()
         .query_row(
             "SELECT COUNT(*) FROM meetings mh
-             INNER JOIN meeting_entities me ON me.meeting_id = mh.id
+             INNER JOIN effective_meeting_entities me ON me.meeting_id = mh.id
              WHERE me.entity_id = ?1 AND mh.start_time > datetime('now', '-90 days')",
             rusqlite::params![entity_id],
             |row| row.get(0),

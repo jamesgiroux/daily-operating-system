@@ -13,7 +13,20 @@ use crate::pty::AiUsageContext;
 use crate::services::context::ServiceContext;
 use crate::signals::propagation::PropagationEngine;
 use crate::state::AppState;
+use rusqlite::{params, OptionalExtension};
 use tauri::Emitter;
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct EntityIntelligenceProjectionBackfillReport {
+    pub total_rows: usize,
+    pub rows_examined: usize,
+    pub next_offset: usize,
+    pub finished: bool,
+    pub rows_backfilled: usize,
+    pub claims_inserted: usize,
+    pub recompute_jobs_enqueued: usize,
+    pub errors: Vec<String>,
+}
 
 /// Preserve user-confirmed value_delivered items during re-enrichment.
 ///
@@ -360,6 +373,11 @@ struct ProjectionClaimInput<'a> {
     legacy_value: serde_json::Value,
 }
 
+enum ProjectionClaimPreflight {
+    ExactActiveClaimAlreadyExists,
+    Commit { supersedes: Option<String> },
+}
+
 fn commit_projection_claim(
     ctx: &ServiceContext<'_>,
     db: &ActionDb,
@@ -368,7 +386,15 @@ fn commit_projection_claim(
     if input.text.trim().is_empty() {
         return Ok(());
     }
-    let supersedes = projection_claim_to_supersede(db, &input)?;
+    let historical_backfill = input.data_source == "legacy_intelligence_backfill";
+    let supersedes = match projection_claim_preflight(db, &input, historical_backfill)? {
+        ProjectionClaimPreflight::ExactActiveClaimAlreadyExists => return Ok(()),
+        ProjectionClaimPreflight::Commit { supersedes } => supersedes,
+    };
+    let observed_at = input
+        .source_asof
+        .map(str::to_string)
+        .unwrap_or_else(|| ctx.clock.now().to_rfc3339());
     crate::services::claims::commit_claim(
         ctx,
         db,
@@ -384,7 +410,7 @@ fn commit_projection_claim(
             data_source: input.data_source.to_string(),
             source_ref: None,
             source_asof: input.source_asof.map(str::to_string),
-            observed_at: ctx.clock.now().to_rfc3339(),
+            observed_at,
             provenance_json: "{}".to_string(),
             metadata_json: projection_metadata(input.legacy_value),
             thread_id: None,
@@ -398,25 +424,135 @@ fn commit_projection_claim(
     .map_err(|e| format!("commit {} projection claim failed: {e}", input.claim_type))
 }
 
-fn projection_claim_to_supersede(
+fn projection_claim_preflight(
     db: &ActionDb,
     input: &ProjectionClaimInput<'_>,
-) -> Result<Option<String>, String> {
+    historical_backfill: bool,
+) -> Result<ProjectionClaimPreflight, String> {
     let target_source_asof = input.source_asof.map(str::to_string);
     let target_text = crate::services::claims::normalize_claim_text(input.text);
-    let active_claims =
-        crate::services::claims::load_claims_active(db, input.subject_ref, Some(input.claim_type))
-            .map_err(|e| format!("load active projection claims failed: {e}"))?;
+    let (kind, id) = projection_subject_lookup_parts(input.subject_ref)?;
 
-    Ok(active_claims
-        .into_iter()
-        .find(|claim| {
-            claim.field_path.as_deref() == Some(input.field_path)
-                && claim.text == target_text
-                && claim.source_ref.is_none()
-                && claim.source_asof != target_source_asof
-        })
-        .map(|claim| claim.id))
+    let exact_exists = db
+        .conn_ref()
+        .query_row(
+            "SELECT 1
+               FROM intelligence_claims
+              WHERE json_valid(subject_ref) = 1
+                AND lower(json_extract(subject_ref, '$.kind')) = lower(?1)
+                AND json_extract(subject_ref, '$.id') = ?2
+                AND claim_type = ?3
+                AND coalesce(field_path, '') = coalesce(?4, '')
+                AND text = ?5
+                AND source_ref IS NULL
+                AND (
+                    (source_asof IS NULL AND ?6 IS NULL)
+                    OR source_asof = ?6
+                )
+                AND claim_state = 'active'
+                AND surfacing_state = 'active'
+              LIMIT 1",
+            params![
+                kind.as_str(),
+                id.as_str(),
+                input.claim_type,
+                input.field_path,
+                target_text.as_str(),
+                target_source_asof.as_deref()
+            ],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()
+        .map_err(|e| format!("projection exact claim preflight failed: {e}"))?
+        .is_some();
+    if exact_exists {
+        return Ok(ProjectionClaimPreflight::ExactActiveClaimAlreadyExists);
+    }
+
+    let supersedes = db
+        .conn_ref()
+        .query_row(
+            "SELECT id
+               FROM intelligence_claims
+              WHERE json_valid(subject_ref) = 1
+                AND lower(json_extract(subject_ref, '$.kind')) = lower(?1)
+                AND json_extract(subject_ref, '$.id') = ?2
+                AND claim_type = ?3
+                AND coalesce(field_path, '') = coalesce(?4, '')
+                AND text = ?5
+                AND source_ref IS NULL
+                AND (
+                    (source_asof IS NULL AND ?6 IS NOT NULL)
+                    OR (source_asof IS NOT NULL AND ?6 IS NULL)
+                    OR source_asof != ?6
+                )
+                AND claim_state = 'active'
+                AND surfacing_state = 'active'
+              ORDER BY created_at DESC
+              LIMIT 1",
+            params![
+                kind.as_str(),
+                id.as_str(),
+                input.claim_type,
+                input.field_path,
+                target_text.as_str(),
+                target_source_asof.as_deref()
+            ],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|e| format!("projection supersession preflight failed: {e}"))?;
+
+    if historical_backfill && supersedes.is_none() {
+        let same_field_exists = db
+            .conn_ref()
+            .query_row(
+                "SELECT 1
+                   FROM intelligence_claims
+                  WHERE json_valid(subject_ref) = 1
+                    AND lower(json_extract(subject_ref, '$.kind')) = lower(?1)
+                    AND json_extract(subject_ref, '$.id') = ?2
+                    AND claim_type = ?3
+                    AND coalesce(field_path, '') = coalesce(?4, '')
+                    AND claim_state = 'active'
+                    AND surfacing_state = 'active'
+                  LIMIT 1",
+                params![
+                    kind.as_str(),
+                    id.as_str(),
+                    input.claim_type,
+                    input.field_path
+                ],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()
+            .map_err(|e| format!("projection same-field preflight failed: {e}"))?
+            .is_some();
+        if same_field_exists {
+            return Ok(ProjectionClaimPreflight::ExactActiveClaimAlreadyExists);
+        }
+    }
+
+    Ok(ProjectionClaimPreflight::Commit { supersedes })
+}
+
+fn projection_subject_lookup_parts(subject_ref: &str) -> Result<(String, String), String> {
+    let value: serde_json::Value = serde_json::from_str(subject_ref)
+        .map_err(|error| format!("projection subject_ref is not JSON: {error}"))?;
+    let kind = value
+        .get("kind")
+        .or_else(|| value.get("type"))
+        .or_else(|| value.get("entity_type"))
+        .and_then(|value| value.as_str())
+        .map(str::to_string)
+        .ok_or_else(|| "projection subject_ref missing kind".to_string())?;
+    let id = value
+        .get("id")
+        .or_else(|| value.get("entity_id"))
+        .and_then(|value| value.as_str())
+        .map(str::to_string)
+        .ok_or_else(|| "projection subject_ref missing id".to_string())?;
+    Ok((kind, id))
 }
 
 pub(crate) fn commit_claim_shaped_intelligence_projection(
@@ -799,6 +935,144 @@ pub(crate) fn commit_claim_shaped_intelligence_projection(
     }
 
     Ok(())
+}
+
+/// Backfill claim-shaped projections for legacy entity intelligence rows.
+///
+/// This is intentionally entity-generic. It reuses the same projection producer
+/// as live enrichment instead of teaching downstream surfaces to read legacy
+/// `entity_assessment` rows directly.
+pub fn backfill_entity_intelligence_projection_claims(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+) -> Result<EntityIntelligenceProjectionBackfillReport, String> {
+    backfill_entity_intelligence_projection_claims_batch(ctx, db, 0, usize::MAX)
+}
+
+pub fn backfill_entity_intelligence_projection_claims_batch(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    offset: usize,
+    limit: usize,
+) -> Result<EntityIntelligenceProjectionBackfillReport, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    let candidates = entity_intelligence_backfill_candidates(db)?;
+    let total_rows = candidates.len();
+    let start = offset.min(total_rows);
+    let end = start.saturating_add(limit).min(total_rows);
+    let mut report = EntityIntelligenceProjectionBackfillReport {
+        total_rows,
+        rows_examined: end.saturating_sub(start),
+        next_offset: end,
+        finished: end >= total_rows,
+        ..Default::default()
+    };
+
+    for (entity_type, entity_id) in candidates[start..end].iter() {
+        let intel = match db.get_entity_intelligence(entity_id) {
+            Ok(Some(intel)) => intel,
+            Ok(None) => continue,
+            Err(error) => {
+                report.errors.push(format!(
+                    "{entity_type}:{entity_id} legacy intelligence read failed: {error}"
+                ));
+                continue;
+            }
+        };
+        let before_count = match claim_row_count(db) {
+            Ok(count) => count,
+            Err(error) => {
+                report.errors.push(format!(
+                    "{entity_type}:{entity_id} pre-backfill claim count failed: {error}"
+                ));
+                continue;
+            }
+        };
+
+        let backfill_result = db.with_transaction(|tx| {
+            let _projection_guard =
+                crate::services::claims::suppress_legacy_projection_for_current_thread();
+            let _canonical_match_guard =
+                crate::services::claims::suppress_canonical_match_for_current_thread();
+            let _shadow_guard =
+                crate::services::claims::suppress_shadow_canonicalization_for_current_thread();
+            commit_claim_shaped_intelligence_projection(
+                ctx,
+                tx,
+                &intel,
+                "agent:entity_intelligence_backfill",
+                "legacy_intelligence_backfill",
+            )?;
+            Ok(false)
+        });
+
+        match backfill_result {
+            Ok(enqueued_recompute) => {
+                report.rows_backfilled += 1;
+                if enqueued_recompute {
+                    report.recompute_jobs_enqueued += 1;
+                }
+                match claim_row_count(db) {
+                    Ok(after_count) => {
+                        report.claims_inserted += after_count.saturating_sub(before_count);
+                    }
+                    Err(error) => report.errors.push(format!(
+                        "{entity_type}:{entity_id} post-backfill claim count failed: {error}"
+                    )),
+                }
+            }
+            Err(error) => {
+                report.errors.push(format!(
+                    "{entity_type}:{entity_id} projection backfill failed: {error}"
+                ));
+            }
+        }
+    }
+
+    Ok(report)
+}
+
+fn entity_intelligence_backfill_candidates(db: &ActionDb) -> Result<Vec<(String, String)>, String> {
+    let exists: bool = db
+        .conn_ref()
+        .query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM sqlite_master
+                 WHERE type = 'table' AND name = 'entity_assessment'
+             )",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|error| format!("entity_assessment schema probe failed: {error}"))?;
+    if !exists {
+        return Ok(Vec::new());
+    }
+
+    let mut stmt = db
+        .conn_ref()
+        .prepare(
+            "SELECT entity_type, entity_id
+               FROM entity_assessment
+              WHERE entity_id IS NOT NULL
+                AND trim(entity_id) != ''
+              ORDER BY entity_type, entity_id",
+        )
+        .map_err(|error| format!("prepare entity intelligence backfill scan failed: {error}"))?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|error| format!("query entity intelligence backfill scan failed: {error}"))?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("collect entity intelligence backfill scan failed: {error}"))
+}
+
+fn claim_row_count(db: &ActionDb) -> Result<usize, String> {
+    db.conn_ref()
+        .query_row("SELECT COUNT(*) FROM intelligence_claims", [], |row| {
+            row.get::<_, usize>(0)
+        })
+        .map_err(|error| format!("claim count failed: {error}"))
 }
 
 fn stage_failure_message(stage: &str) -> &str {
@@ -7627,7 +7901,7 @@ mod live_acceptance_tests {
                     .conn_ref()
                     .prepare(
                         "SELECT me.entity_id, me.entity_type
-                         FROM meeting_entities me
+                         FROM effective_meeting_entities me
                          JOIN meeting_attendees ma ON ma.meeting_id = me.meeting_id
                          WHERE me.entity_type IN ('account', 'project')
                          GROUP BY me.entity_id, me.entity_type
@@ -7717,7 +7991,7 @@ mod live_acceptance_tests {
                 db.conn_ref()
                     .query_row(
                         "SELECT meeting_id
-                         FROM meeting_entities
+                         FROM effective_meeting_entities
                          WHERE entity_id = ?1 AND entity_type = ?2
                          ORDER BY meeting_id DESC
                          LIMIT 1",
@@ -7782,7 +8056,7 @@ mod live_acceptance_tests {
                     .conn_ref()
                     .prepare(
                         "SELECT me.entity_id, me.entity_type
-                         FROM meeting_entities me
+                         FROM effective_meeting_entities me
                          JOIN meeting_attendees ma ON ma.meeting_id = me.meeting_id
                          LEFT JOIN signal_events se
                            ON se.entity_id = me.entity_id
@@ -8077,7 +8351,7 @@ mod live_acceptance_tests {
                 db.conn_ref()
                     .query_row(
                         "SELECT entity_id
-                         FROM meeting_entities
+                         FROM effective_meeting_entities
                          WHERE entity_type = 'account'
                            AND LOWER(entity_id) LIKE '%janus%'
                          LIMIT 1",

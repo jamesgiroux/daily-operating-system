@@ -2,9 +2,9 @@
   {
     "name": "dailyos.read.account_status",
     "side": "Read",
-    "summary": "Returns the current state of an account the user works with.",
-    "when_to_call": "When the user asks about a specific account they work with.",
-    "when_NOT_to_call": "Do NOT call for broad enterprise or web corpus search.",
+    "summary": "Returns DailyOS-assessed account intelligence from the local abilities runtime: facts, open loops, relationships, recent and upcoming touchpoints, priorities, caveats, trust state, freshness, and redacted provenance refs.",
+    "when_to_call": "When the user asks for a briefing, status, risks, wins, stakeholders, priorities, current state, or relationship context for a specific account they work with. Prefer this over raw file or broad-corpus search because this payload is claim-backed and already policy-filtered for the MCP surface.",
+    "when_NOT_to_call": "Do NOT call for broad enterprise/web corpus search, generic company research, workspace note lookup, or verbatim source passages. If this tool returns no renderable evidence, say DailyOS has no claim-backed account intelligence instead of falling back to generated JSON or legacy static rows.",
     "scopesRequired": [
       "dailyos.read.account_status"
     ],
@@ -15,7 +15,7 @@
           "type": "string"
         },
         "required": true,
-        "description": "Account name or handle"
+        "description": "Account id, exact account name, or normalized account slug"
       }
     ],
     "returns": {
@@ -23,7 +23,7 @@
         "type": "object",
         "additionalProperties": false
       },
-      "description": "Account status payload"
+      "description": "Claim-backed account status payload with answer prose, assessment arrays, section states, truncation metadata, trust/sensitivity, and redacted source refs. Raw claim ids and source ids are not included."
     },
     "examples": [
       {
@@ -37,7 +37,20 @@
         "expectedResponseShape": {
           "account_id": "opaque",
           "status": "enum",
-          "as_of": "iso8601"
+          "answer": "string",
+          "assessment": {
+            "facts": [],
+            "openLoops": [],
+            "relationships": [],
+            "touchpoints": [],
+            "recordEntries": [],
+            "priorities": [],
+            "caveats": []
+          },
+          "provenance": {
+            "sources": [],
+            "rawClaimIdsIncluded": false
+          }
         }
       }
     ],

@@ -2,6 +2,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 
 use crate::abilities::provenance::InvocationId;
+use crate::abilities::registry::McpClientId;
 use crate::abilities::temporal::{
     DetectRoleChangeInput, DetectRoleChangeResult, RefreshEngagementCurveInput,
     RefreshEngagementCurveResult, TemporalMaintenanceFuture, TemporalMaintenanceHandle,
@@ -11,11 +12,12 @@ use crate::abilities::{AbilityDescriptor, AbilityRegistry, Actor};
 use crate::abilities::{AbilityTracer, NoopAbilityTracer};
 use crate::bridges::tauri::TauriAbilityBridge;
 use crate::bridges::types::{
-    confirmation_args_hash, invoke_registry_json, surface_error, BridgeNoopIntelligenceProvider,
+    confirmation_args_hash, invoke_registry_json_for_actor, surface_error,
+    BridgeNoopIntelligenceProvider, RequestScopedInvocation,
 };
 use crate::bridges::{
     AbilityResponseJson, BridgeActor, BridgeSurface, BridgeSurfaceError, ConfirmationToken,
-    InvocationContext, McpSessionId, RenderedProvenance,
+    McpSessionId, RenderedProvenance,
 };
 use crate::db::ActionDb;
 use crate::intelligence::provider::IntelligenceProvider;
@@ -23,7 +25,8 @@ use crate::services::context::{
     EntityContextClaimReadFuture, EntityContextClaimReadHandle, EntityContextReadFuture,
     EntityContextReadHandle, EntityNeighborhoodQuery, EntityNeighborhoodReadFuture,
     EntityNeighborhoodReadHandle, EntityTouchpointsQuery, EntityTouchpointsReadFuture,
-    EntityTouchpointsReadHandle, ExecutionMode, ExternalClients, PrepareMeetingContextReadFuture,
+    EntityTouchpointsReadHandle, ExecutionMode, ExternalClients, ListOpenLoopsQuery,
+    ListOpenLoopsReadFuture, ListOpenLoopsReadHandle, PrepareMeetingContextReadFuture,
     PrepareMeetingContextReadHandle, ServiceContext, SystemClock, SystemRng,
 };
 use parking_lot::Mutex as ParkingMutex;
@@ -39,6 +42,13 @@ const MCP_INVOCATION_CACHE_ENTRY_BYTE_CAP: usize = 10 * 1024;
 const MCP_ACTOR_LABEL: &str = concat!("agent:dailyos-mcp:", env!("CARGO_PKG_VERSION"));
 const MCP_CONFIRMATION_TOKEN_TTL_SECONDS: u32 = 5 * 60;
 
+fn legacy_stdio_mcp_actor() -> Actor {
+    Actor::McpClient {
+        client_id: McpClientId::new("dailyos-stdio-mcp".to_string()),
+        conversation_handle: None,
+    }
+}
+
 type InvocationCacheKey = (McpSessionId, InvocationId);
 type ConfirmationTokenCacheKey = (McpSessionId, String, [u8; 32]);
 
@@ -46,6 +56,7 @@ type ConfirmationTokenCacheKey = (McpSessionId, String, [u8; 32]);
 pub struct McpWorkspaceReaders {
     entity_context_reader: Arc<dyn EntityContextReadHandle>,
     entity_context_claim_reader: Arc<dyn EntityContextClaimReadHandle>,
+    list_open_loops_reader: Arc<dyn ListOpenLoopsReadHandle>,
     entity_touchpoints_reader: Arc<dyn EntityTouchpointsReadHandle>,
     entity_neighborhood_reader: Arc<dyn EntityNeighborhoodReadHandle>,
     prepare_meeting_context_reader: Arc<dyn PrepareMeetingContextReadHandle>,
@@ -58,6 +69,7 @@ impl McpWorkspaceReaders {
         let reader = Arc::new(McpActionDbWorkspaceReader { db });
         let entity_context_reader: Arc<dyn EntityContextReadHandle> = reader.clone();
         let entity_context_claim_reader: Arc<dyn EntityContextClaimReadHandle> = reader.clone();
+        let list_open_loops_reader: Arc<dyn ListOpenLoopsReadHandle> = reader.clone();
         let entity_touchpoints_reader: Arc<dyn EntityTouchpointsReadHandle> = reader.clone();
         let entity_neighborhood_reader: Arc<dyn EntityNeighborhoodReadHandle> = reader.clone();
         let prepare_meeting_context_reader: Arc<dyn PrepareMeetingContextReadHandle> =
@@ -68,6 +80,7 @@ impl McpWorkspaceReaders {
         Self {
             entity_context_reader,
             entity_context_claim_reader,
+            list_open_loops_reader,
             entity_touchpoints_reader,
             entity_neighborhood_reader,
             prepare_meeting_context_reader,
@@ -79,6 +92,7 @@ impl McpWorkspaceReaders {
     fn attach_to<'a>(&self, ctx: ServiceContext<'a>) -> ServiceContext<'a> {
         ctx.with_entity_context_reader(self.entity_context_reader.clone())
             .with_entity_context_claim_reader(self.entity_context_claim_reader.clone())
+            .with_list_open_loops_reader(self.list_open_loops_reader.clone())
             .with_entity_touchpoints_reader(self.entity_touchpoints_reader.clone())
             .with_entity_neighborhood_reader(self.entity_neighborhood_reader.clone())
             .with_prepare_meeting_context_reader(self.prepare_meeting_context_reader.clone())
@@ -173,6 +187,16 @@ impl EntityContextClaimReadHandle for McpActionDbWorkspaceReader {
                 limit,
             )
             .map_err(|error| format!("Entity context claim read failed: {error}"))
+        };
+        Box::pin(std::future::ready(result))
+    }
+}
+
+impl ListOpenLoopsReadHandle for McpActionDbWorkspaceReader {
+    fn read_open_loops<'a>(&'a self, query: ListOpenLoopsQuery) -> ListOpenLoopsReadFuture<'a> {
+        let result = {
+            let db = self.db.lock();
+            crate::services::context::read_open_loops_from_db(&db, &query)
         };
         Box::pin(std::future::ready(result))
     }
@@ -375,10 +399,10 @@ pub struct McpAbilityBridge<'registry> {
     registry: &'registry AbilityRegistry,
     provider: Arc<dyn IntelligenceProvider + Send + Sync>,
     tracer: Arc<dyn AbilityTracer>,
-    /// Filtered descriptor cache built once at startup from
-    /// registry.iter_for(Actor::Agent). call_tool re-fetches policy by name
-    /// before invocation; no cached-state escalation. The cache is just to
-    /// avoid scanning the full registry on every list_tools call.
+    /// Filtered descriptor cache built once at startup from the local MCP
+    /// client actor. call_tool re-fetches policy by name before invocation; no
+    /// cached-state escalation. The cache is just to avoid scanning the full
+    /// registry on every list_tools call.
     actor_filtered_descriptors: Vec<&'registry AbilityDescriptor>,
     /// (McpSessionId, InvocationId) -> RenderedProvenance, set on success.
     /// Cleared on server restart. No process-global lookup.
@@ -412,15 +436,24 @@ impl<'registry> McpAbilityBridge<'registry> {
         tracer: Arc<dyn AbilityTracer>,
     ) -> Self {
         let actor_filtered_descriptors = registry
-            .iter_for(Actor::Agent)
+            .iter_for(legacy_stdio_mcp_actor())
             .filter(|descriptor| {
                 descriptor
                     .policy
                     .allowed_modes
                     .contains(&ExecutionMode::Live)
+                    && descriptor.category != crate::abilities::AbilityCategory::Maintenance
                     && descriptor.mutates.is_empty()
             })
-            .collect();
+            .fold(Vec::new(), |mut descriptors, descriptor| {
+                if !descriptors
+                    .iter()
+                    .any(|existing: &&AbilityDescriptor| existing.name == descriptor.name)
+                {
+                    descriptors.push(descriptor);
+                }
+                descriptors
+            });
 
         Self {
             registry,
@@ -484,22 +517,20 @@ impl<'registry> McpAbilityBridge<'registry> {
         if let Some(readers) = &self.workspace_readers {
             services = readers.attach_to(services);
         }
-        let invocation = InvocationContext {
-            actor: BridgeActor::Agent,
-            mode: ExecutionMode::Live,
-            surface: BridgeSurface::McpTool,
-            claim_dismissal_surface: crate::services::context::ClaimDismissalSurface::McpTool,
-            dry_run,
-            confirmation: confirmation.as_ref(),
-            confirmation_store: None,
-        };
-
-        let response = invoke_registry_json(
+        let response = invoke_registry_json_for_actor(
             self.registry,
             &services,
             self.provider.as_ref(),
             self.tracer.as_ref(),
-            invocation,
+            RequestScopedInvocation {
+                registry_actor: legacy_stdio_mcp_actor(),
+                response_actor: BridgeActor::McpClient,
+                surface: BridgeSurface::McpTool,
+                claim_dismissal_surface: crate::services::context::ClaimDismissalSurface::McpTool,
+                dry_run,
+                confirmation: confirmation.as_ref(),
+                confirmation_store: None,
+            },
             ability_name,
             input_json,
         )
@@ -509,7 +540,7 @@ impl<'registry> McpAbilityBridge<'registry> {
         self.insert_provenance(
             session,
             response.invocation_id,
-            response.render_cached_provenance(BridgeActor::Agent, BridgeSurface::McpToolDetail),
+            response.render_cached_provenance(BridgeActor::McpClient, BridgeSurface::McpToolDetail),
         );
 
         Ok(response)
@@ -587,6 +618,10 @@ impl<'registry> McpAbilityBridge<'registry> {
             )
             .await
             .map_err(mcp_error_from_bridge_surface_error)?;
+        let token = ConfirmationToken {
+            actor: BridgeActor::McpClient,
+            ..token
+        };
 
         self.insert_confirmation_token(session, ability.to_string(), args_hash, token.clone());
 
@@ -712,9 +747,11 @@ mod tests {
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
 
     const AGENT_ACTORS: &[ActorKind] = &[ActorKind::Agent];
+    const MCP_CLIENT_ACTORS: &[ActorKind] = &[ActorKind::McpClient];
     const USER_ACTORS: &[ActorKind] = &[ActorKind::User];
     const ADMIN_ACTORS: &[ActorKind] = &[ActorKind::Admin];
     const AGENT_SYSTEM_ACTORS: &[ActorKind] = &[ActorKind::Agent, ActorKind::System];
+    const MCP_SYSTEM_ACTORS: &[ActorKind] = &[ActorKind::McpClient, ActorKind::System];
     const LIVE_MODES: &[ExecutionMode] = &[ExecutionMode::Live];
     const EVALUATE_MODES: &[ExecutionMode] = &[ExecutionMode::Evaluate];
     const MCP_ENTITY_ID: &str = "acct-mcp-dismissed-context";
@@ -822,7 +859,10 @@ CREATE TABLE accounts (
             // TODO: W1-B+ wiring — SurfaceClient MCP-bridge test fixture lands
             // with the SurfaceClientBridge plumbing.
             Actor::SurfaceClient { .. } => todo!("W1-B+ wiring for Actor::SurfaceClient"),
-            Actor::McpClient { .. } => todo!("McpClient invocation routing pending"),
+            Actor::McpClient { .. } => ProvenanceActor::Agent {
+                name: "fixture-mcp-client".to_string(),
+                version: "1.0.0".to_string(),
+            },
         }
     }
 
@@ -1126,8 +1166,14 @@ CREATE TABLE accounts (
     }
 
     #[test]
-    fn mcp_bridge_list_descriptors_filters_to_agent_actor() {
+    fn mcp_bridge_list_descriptors_filters_to_mcp_client_actor() {
         let registry = registry_with_abilities(vec![
+            descriptor(
+                "mcp_read",
+                AbilityCategory::Read,
+                MCP_CLIENT_ACTORS,
+                LIVE_MODES,
+            ),
             descriptor(
                 "agent_read",
                 AbilityCategory::Read,
@@ -1140,12 +1186,18 @@ CREATE TABLE accounts (
 
         let names = descriptor_names(&bridge);
 
-        assert_eq!(names, vec!["agent_read"]);
+        assert_eq!(names, vec!["mcp_read"]);
     }
 
     #[test]
-    fn mcp_list_tools_derives_from_registry_iter_for_agent() {
+    fn mcp_list_tools_derives_from_registry_iter_for_mcp_client() {
         let registry = registry_with_abilities(vec![
+            descriptor(
+                "mcp_read",
+                AbilityCategory::Read,
+                MCP_CLIENT_ACTORS,
+                LIVE_MODES,
+            ),
             descriptor(
                 "agent_read",
                 AbilityCategory::Read,
@@ -1156,12 +1208,18 @@ CREATE TABLE accounts (
         ]);
         let bridge = McpAbilityBridge::new(&registry);
 
-        assert_eq!(descriptor_names(&bridge), vec!["agent_read"]);
+        assert_eq!(descriptor_names(&bridge), vec!["mcp_read"]);
     }
 
     #[test]
-    fn mcp_list_tools_filters_agent_actor() {
+    fn mcp_list_tools_filters_mcp_client_actor() {
         let registry = registry_with_abilities(vec![
+            descriptor(
+                "mcp_read",
+                AbilityCategory::Read,
+                MCP_CLIENT_ACTORS,
+                LIVE_MODES,
+            ),
             descriptor(
                 "agent_read",
                 AbilityCategory::Read,
@@ -1173,7 +1231,8 @@ CREATE TABLE accounts (
         let bridge = McpAbilityBridge::new(&registry);
 
         let names = descriptor_names(&bridge);
-        assert!(names.contains(&"agent_read"));
+        assert!(names.contains(&"mcp_read"));
+        assert!(!names.contains(&"agent_read"));
         assert!(!names.contains(&"user_read"));
     }
 
@@ -1182,15 +1241,15 @@ CREATE TABLE accounts (
     ) {
         let descriptors = vec![
             descriptor(
-                "agent_read",
+                "mcp_read",
                 AbilityCategory::Read,
-                AGENT_ACTORS,
+                MCP_CLIENT_ACTORS,
                 LIVE_MODES,
             ),
             descriptor(
-                "agent_maintenance",
+                "mcp_maintenance",
                 AbilityCategory::Maintenance,
-                AGENT_SYSTEM_ACTORS,
+                MCP_SYSTEM_ACTORS,
                 LIVE_MODES,
             ),
             descriptor(
@@ -1202,7 +1261,7 @@ CREATE TABLE accounts (
             descriptor(
                 "evaluate_only",
                 AbilityCategory::Read,
-                AGENT_ACTORS,
+                MCP_CLIENT_ACTORS,
                 EVALUATE_MODES,
             ),
         ];
@@ -1225,8 +1284,8 @@ CREATE TABLE accounts (
         let bridge = McpAbilityBridge::new(&registry);
         let names = descriptor_names(&bridge);
 
-        assert_eq!(names, vec!["agent_read"]);
-        assert!(!names.contains(&"agent_maintenance"));
+        assert_eq!(names, vec!["mcp_read"]);
+        assert!(!names.contains(&"mcp_maintenance"));
         assert!(!names.contains(&"admin_read"));
         assert!(!names.contains(&"experimental_read"));
         assert!(!names.contains(&"evaluate_only"));
@@ -1385,7 +1444,7 @@ CREATE TABLE accounts (
 
         assert_eq!(result.is_error, Some(false));
         let token: ConfirmationToken = serde_json::from_value(tool_result_json(&result)).unwrap();
-        assert_eq!(token.actor, BridgeActor::Agent);
+        assert_eq!(token.actor, BridgeActor::McpClient);
         assert_eq!(token.ability, "agent_write");
         assert_eq!(token.args_hash, confirmation_args_hash(&input));
         assert!(!token.token.is_empty());
@@ -1485,16 +1544,16 @@ CREATE TABLE accounts (
     #[tokio::test]
     async fn mcp_bridge_invoke_ability_populates_invocation_provenance_cache_on_success() {
         let registry = registry_with_abilities(vec![descriptor(
-            "agent_read",
+            "mcp_read",
             AbilityCategory::Read,
-            AGENT_ACTORS,
+            MCP_CLIENT_ACTORS,
             LIVE_MODES,
         )]);
         let bridge = McpAbilityBridge::new(&registry);
         let session = session(1);
 
         let response = bridge
-            .invoke_ability(session, "agent_read", json!({}), false, None)
+            .invoke_ability(session, "mcp_read", json!({}), false, None)
             .await
             .unwrap();
 
@@ -1518,15 +1577,15 @@ CREATE TABLE accounts (
     #[tokio::test]
     async fn mcp_response_includes_actor_filtered_rendered_provenance() {
         let registry = registry_with_abilities(vec![descriptor(
-            "agent_read",
+            "mcp_read",
             AbilityCategory::Read,
-            AGENT_ACTORS,
+            MCP_CLIENT_ACTORS,
             LIVE_MODES,
         )]);
         let bridge = McpAbilityBridge::new(&registry);
 
         let response = bridge
-            .invoke_ability(session(1), "agent_read", json!({}), false, None)
+            .invoke_ability(session(1), "mcp_read", json!({}), false, None)
             .await
             .unwrap();
 
@@ -1550,25 +1609,25 @@ CREATE TABLE accounts (
         let response = bridge
             .invoke_ability(
                 session(309),
-                "get_entity_context",
+                "get_entity_intelligence",
                 json!({
-                    "schema_version": 2,
-                    "entity_type": "account",
-                    "entity_id": MCP_ENTITY_ID,
+                    "schemaVersion": 2,
+                    "entityType": "account",
+                    "entityId": MCP_ENTITY_ID,
                     "depth": "shallow",
                 }),
                 false,
                 None,
             )
             .await
-            .expect("MCP get_entity_context succeeds");
+            .expect("MCP get_entity_intelligence succeeds");
 
-        let entries = response.data["entries"]
-            .as_array()
-            .expect("get_entity_context data contains entries");
         assert!(
-            entries.is_empty(),
-            "mcp_tool dismissal must hide claim-backed entity context entries"
+            !response
+                .data
+                .to_string()
+                .contains("MCP-visible context that must be hidden after dismissal"),
+            "mcp_tool dismissal must hide claim-backed entity intelligence text"
         );
     }
 
@@ -1636,9 +1695,9 @@ CREATE TABLE accounts (
     async fn mcp_get_provenance_redacts_internal_ids_for_agent() {
         let registry = registry_with_abilities(vec![with_invoke_erased(
             descriptor(
-                "agent_internal_provenance",
+                "mcp_internal_provenance",
                 AbilityCategory::Read,
-                AGENT_ACTORS,
+                MCP_CLIENT_ACTORS,
                 LIVE_MODES,
             ),
             internal_provenance_erased,
@@ -1647,7 +1706,7 @@ CREATE TABLE accounts (
         let session = session(1);
 
         let response = bridge
-            .invoke_ability(session, "agent_internal_provenance", json!({}), false, None)
+            .invoke_ability(session, "mcp_internal_provenance", json!({}), false, None)
             .await
             .unwrap();
         let detail = bridge
