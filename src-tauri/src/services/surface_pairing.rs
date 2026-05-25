@@ -36,8 +36,9 @@ pub const SESSION_SUSPICIOUS_THROTTLE_SECONDS: i64 = 60;
 // Read scopes are derived from the registry at pair time (see
 // `default_granted_scopes`). ADR-0129 frames the WP surface as the user's
 // own loopback, so every Read ability that admits SurfaceClient is in the
-// default grant. Non-Read scopes (today: feedback submission) stay explicit.
-const DEFAULT_EXPLICIT_NON_READ_SCOPES: &[&str] = &["submit.feedback"];
+// default grant. Non-Read scopes (feedback plus source-management actions)
+// stay explicit.
+const DEFAULT_EXPLICIT_NON_READ_SCOPES: &[&str] = &["submit.feedback", "write.entity_intake"];
 const HMAC_SESSION_KEY_INFO: &[u8] = b"dailyos-wp-bridge-v1";
 const HMAC_SESSION_KEY_BYTES: usize = 32;
 
@@ -2985,14 +2986,18 @@ mod tests {
     #[test]
     fn default_granted_scopes_auto_derives_from_registry() {
         // Every Read ability that admits SurfaceClient contributes its
-        // required_scopes to the default grant. submit.feedback stays as the
-        // one explicit non-Read scope. New Read abilities flow in without a
-        // constant update — this is the regression guard for "L4 surface
-        // empties out after substrate adds a new Read ability."
+        // required_scopes to the default grant. Non-Read scopes stay on the
+        // explicit allowlist. New Read abilities flow in without a constant
+        // update — this is the regression guard for "L4 surface empties out
+        // after substrate adds a new Read ability."
         let scopes = default_granted_scopes();
         assert!(
             scopes.contains(&"submit.feedback".to_string()),
             "submit.feedback must remain in the explicit non-Read grant set"
+        );
+        assert!(
+            scopes.contains(&"write.entity_intake".to_string()),
+            "write.entity_intake must remain in the explicit non-Read grant set for source-management actions"
         );
         let registry =
             AbilityRegistry::global_checked().expect("registry initializes in test process");
@@ -4147,6 +4152,7 @@ mod tests {
         assert!(!raw.contains("\"wp_user_id\""));
         assert!(!raw.contains("read.account_overview"));
         assert!(!raw.contains("submit.feedback"));
+        assert!(!raw.contains("write.entity_intake"));
         assert!(!raw.contains("subsidiary.com"));
         assert!(raw.contains("wp_user_hash"));
         let record: crate::audit_log::AuditRecord =

@@ -8,9 +8,11 @@ use abilities_runtime::abilities::provenance::source::{
 };
 use abilities_runtime::abilities::provenance::DocumentId;
 use chrono::Utc;
+use dailyos_lib::db::ActionDb;
+use dailyos_lib::services::context::{ExternalClients, ServiceContext, SystemClock, SystemRng};
 use dailyos_lib::services::workspace_ingestion::contracts::{
     ExtractionContext, Extractor, FileIdentity, NullExtractor, NullSignalEmitter, RejectionReason,
-    SignalEmitter, WorkspaceCategory, WorkspaceFileKind,
+    SignalEmitContext, SignalEmitter, WorkspaceCategory, WorkspaceFileKind,
 };
 use dailyos_lib::services::workspace_ingestion::lifecycle::LifecycleState;
 
@@ -163,13 +165,43 @@ fn null_extractor_is_send_sync_and_returns_empty() {
 #[test]
 fn null_signal_emitter_methods_are_noops_callable_through_dyn() {
     let boxed: Box<dyn SignalEmitter> = Box::new(NullSignalEmitter);
-    boxed.emit_file_ingested("f1", "deadbeef", "run1", Some("entity1"));
-    boxed.emit_file_ingested("f1", "deadbeef", "run1", None);
-    boxed.emit_file_rejected(Some("f2"), RejectionReason::PathTraversalAttempt);
-    boxed.emit_file_rejected(None, RejectionReason::FileTooLarge);
-    boxed.emit_file_pending_entity_assignment("f3", "run3");
-    boxed.emit_file_quarantined("f4", "user requested", "user-1");
-    boxed.emit_link_changed("f5", "entity-2", "user-1");
+    let conn = rusqlite::Connection::open_in_memory().expect("in-memory sqlite");
+    let db = ActionDb::from_conn(&conn);
+    let clock = SystemClock;
+    let rng = SystemRng;
+    let external = ExternalClients::default();
+    let services = ServiceContext::new_live(&clock, &rng, &external);
+    let signal_ctx = SignalEmitContext::new(&services, db, None);
+
+    boxed
+        .emit_file_ingested(&signal_ctx, "f1", "run1", "account", "entity1")
+        .expect("noop ingested");
+    boxed
+        .emit_file_rejected(
+            &signal_ctx,
+            Some("f2"),
+            RejectionReason::PathTraversalAttempt,
+        )
+        .expect("noop rejected");
+    boxed
+        .emit_file_rejected(&signal_ctx, None, RejectionReason::FileTooLarge)
+        .expect("noop rejected without file");
+    boxed
+        .emit_file_pending_entity_assignment(&signal_ctx, "f3", "run3")
+        .expect("noop pending entity");
+    boxed
+        .emit_file_quarantined(
+            &signal_ctx,
+            "f4",
+            "user requested",
+            "user-1",
+            Some("account"),
+            Some("entity1"),
+        )
+        .expect("noop quarantined");
+    boxed
+        .emit_link_changed(&signal_ctx, "f5", "account", "entity-2", "user-1")
+        .expect("noop link changed");
     // If we reach here without panicking the dyn dispatch worked.
 }
 

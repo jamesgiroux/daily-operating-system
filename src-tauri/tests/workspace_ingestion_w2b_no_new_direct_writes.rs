@@ -168,6 +168,8 @@ fn ingest_request_compile_shape_uses_canonical_w2a_fields_and_test_pipeline() {
     let watcher = read("src/watcher.rs");
     let helper = function_body(&watcher, "fn ingest_after_upsert");
     assert!(helper.contains("WorkspaceSourceRegistry::open_validated"));
+    assert!(helper.contains("emit_pre_pipeline_rejection"));
+    assert!(helper.contains("SignalEmitContext::new"));
     assert_order(
         helper,
         "WorkspaceSourceRegistry::open_validated",
@@ -187,7 +189,7 @@ fn ingest_request_compile_shape_uses_canonical_w2a_fields_and_test_pipeline() {
     ] {
         assert!(helper.contains(field), "missing canonical field {field}");
     }
-    assert!(helper.contains("pipeline.run(&ctx, db, request)"));
+    assert!(helper.contains("run_with_signal_engine"));
     assert!(!helper.contains("source_path"));
     assert!(!helper.contains("data_source"));
 }

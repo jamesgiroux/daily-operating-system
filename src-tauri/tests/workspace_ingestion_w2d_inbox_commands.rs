@@ -43,6 +43,35 @@ fn process_inbox_file_without_entity_id_creates_lifecycle_row_and_run() {
 }
 
 #[test]
+fn invalid_inbox_filename_emits_workspace_rejection_signal() {
+    let conn = migrated_conn();
+    let db = ActionDb::from_conn(&conn);
+    let workspace = tempfile::tempdir().expect("workspace");
+    let workspace_root = workspace.path().canonicalize().expect("workspace root");
+
+    let error = dailyos_lib::command_test_api::process_inbox_file_for_tests(
+        db,
+        &workspace_root,
+        "../outside.txt",
+    )
+    .expect_err("invalid filename rejected");
+
+    assert!(error.contains("path traversal"));
+    let value: String = conn
+        .query_row(
+            "SELECT value FROM signal_events
+             WHERE entity_type = 'workspace_ingestion'
+               AND entity_id = 'workspace_ingestion'
+               AND signal_type = 'workspace_file_rejected'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("workspace rejection signal");
+    assert!(value.contains("\"reason_code\":\"path_traversal_attempt\""));
+    assert!(!value.contains("\"file_id\""));
+}
+
+#[test]
 fn get_inbox_files_returns_lifecycle_rows_not_filesystem_listing() {
     let conn = migrated_conn();
     let db = ActionDb::from_conn(&conn);

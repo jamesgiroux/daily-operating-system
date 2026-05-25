@@ -107,6 +107,120 @@ final class DailyOS_Runtime_Client {
 	}
 
 	/**
+	 * Read a sanitized markdown preview for an opaque workspace source handle.
+	 *
+	 * @param string $source_handle Opaque source handle from the workspace graph.
+	 * @return array<string, mixed>|\WP_Error Runtime response with top-level `data`.
+	 */
+	public function read_markdown_preview( string $source_handle ): array|\WP_Error {
+		$body_bytes = $this->encode_json(
+			[
+				'ability' => 'markdown_preview',
+				'input'   => [
+					'schemaVersion' => 1,
+					'sourceHandle'  => $source_handle,
+				],
+			]
+		);
+
+		if ( null === $body_bytes ) {
+			return $this->error_response( 'json_encode_failed', 'DailyOS markdown preview request could not be encoded.' );
+		}
+
+		return $this->normalize_surface_ability_response(
+			$this->signed_post( '/v1/surface/invoke', $body_bytes )
+		);
+	}
+
+	/**
+	 * Read the source-management ledger for an entity-scoped workspace surface.
+	 *
+	 * @param string $entity_type Entity type.
+	 * @param string $entity_id Entity identifier.
+	 * @param int    $page_size Maximum rows to read.
+	 * @return array<string, mixed>|\WP_Error Runtime response with top-level `data`.
+	 */
+	public function read_source_management_ledger( string $entity_type, string $entity_id, int $page_size = 25 ): array|\WP_Error {
+		$body_bytes = $this->encode_json(
+			[
+				'ability' => 'source_management_ledger',
+				'input'   => [
+					'schemaVersion' => 1,
+					'entityType'    => $entity_type,
+					'entityId'      => $entity_id,
+					'pageSize'      => max( 1, min( 100, $page_size ) ),
+				],
+			]
+		);
+
+		if ( null === $body_bytes ) {
+			return $this->error_response( 'json_encode_failed', 'DailyOS source-management request could not be encoded.' );
+		}
+
+		return $this->normalize_surface_ability_response(
+			$this->signed_post( '/v1/surface/invoke', $body_bytes )
+		);
+	}
+
+	/**
+	 * Apply a source-management action for an entity-scoped source.
+	 *
+	 * @param string $action Action key.
+	 * @param string $entity_type Entity type.
+	 * @param string $entity_id Entity identifier.
+	 * @param string $source_key Opaque source key.
+	 * @return array<string, mixed>|\WP_Error Runtime response with top-level `data`.
+	 */
+	public function apply_source_management_action( string $action, string $entity_type, string $entity_id, string $source_key ): array|\WP_Error {
+		$body_bytes = $this->encode_json(
+			[
+				'ability' => 'source_management_action',
+				'input'   => [
+					'schemaVersion' => 1,
+					'action'        => $action,
+					'entityType'    => $entity_type,
+					'entityId'      => $entity_id,
+					'sourceKey'     => $source_key,
+				],
+			]
+		);
+
+		if ( null === $body_bytes ) {
+			return $this->error_response( 'json_encode_failed', 'DailyOS source action request could not be encoded.' );
+		}
+
+		return $this->normalize_surface_ability_response(
+			$this->signed_post( '/v1/surface/invoke', $body_bytes )
+		);
+	}
+
+	/**
+	 * Normalize a signed surface ability response for block render helpers.
+	 *
+	 * @param array<string, mixed>|\WP_Error $response Runtime response.
+	 * @return array<string, mixed>|\WP_Error Response with `data` when present.
+	 */
+	private function normalize_surface_ability_response( array|\WP_Error $response ): array|\WP_Error {
+		if ( is_wp_error( $response ) || ! is_array( $response ) ) {
+			return $response;
+		}
+
+		if ( isset( $response['ability'] ) && is_array( $response['ability'] ) ) {
+			$ability = $response['ability'];
+			if ( isset( $ability['data'] ) && is_array( $ability['data'] ) ) {
+				return [
+					'ok'         => true === ( $response['ok'] ?? false ),
+					'request_id' => $response['request_id'] ?? null,
+					'ability'    => $ability,
+					'data'       => $ability['data'],
+				];
+			}
+		}
+
+		return $response;
+	}
+
+	/**
 	 * Normalize ability-specific wire payloads before JSON encoding.
 	 *
 	 * @param string               $name Ability name.

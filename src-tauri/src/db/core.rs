@@ -15,6 +15,7 @@ use crate::db::encryption;
 use crate::db::key_provider::{DbKeyProvider, EncryptionKey, LocalKeychain, UserIdentity};
 use ring::hmac;
 use rusqlite::{params, Connection, OpenFlags};
+use sha2::{Digest, Sha256};
 
 // ---------------------------------------------------------------------------
 // Dev DB isolation
@@ -25,6 +26,8 @@ use rusqlite::{params, Connection, OpenFlags};
 /// `ActionDb::open()` independently — the static flag means they automatically
 /// pick up the right path without plumbing config through every thread.
 static DEV_DB_MODE: AtomicBool = AtomicBool::new(false);
+const WORKSPACE_GRAPH_DIAGNOSTIC_KEY_DERIVATION_DOMAIN: &[u8] =
+    b"DAILYOS-WORKSPACE-GRAPH-DIAGNOSTIC-HANDLE-V1\n";
 
 /// Activate dev-mode DB isolation. All subsequent `ActionDb::open()` calls
 /// will target `~/.dailyos/dailyos-dev.db` instead of `dailyos.db`.
@@ -88,6 +91,15 @@ pub(crate) fn local_db_keyed_audit_tag(
     ))
 }
 
+pub(crate) fn local_db_workspace_graph_diagnostic_key_bytes() -> Result<[u8; 32], String> {
+    let db_path = ActionDb::db_path_public().map_err(|e| e.to_string())?;
+    let provider = LocalKeychain::new();
+    let key = provider.get_or_create_key(&UserIdentity::local(db_path))?;
+    Ok(workspace_graph_diagnostic_key_bytes(
+        key.as_hex().as_bytes(),
+    ))
+}
+
 #[cfg(test)]
 pub(crate) fn local_db_keyed_audit_tag_for_tests(
     secret: &str,
@@ -108,6 +120,13 @@ fn keyed_audit_tag(tag_prefix: &str, domain: &str, components: &[&str], secret: 
     }
     let tag = context.sign();
     format!("{tag_prefix}_{}", hex::encode(&tag.as_ref()[..16]))
+}
+
+fn workspace_graph_diagnostic_key_bytes(secret: &[u8]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(WORKSPACE_GRAPH_DIAGNOSTIC_KEY_DERIVATION_DOMAIN);
+    hasher.update(secret);
+    hasher.finalize().into()
 }
 
 impl ActionDb {

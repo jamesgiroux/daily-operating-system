@@ -1,0 +1,27 @@
+.dailyos-markdown-preview-editor {
+	border: 1px solid var(--wp--preset--color--desk-charcoal-8);
+	border-radius: 8px;
+	display: grid;
+	gap: 12px;
+	padding: 16px;
+}
+
+.dailyos-markdown-preview-editor__field {
+	display: grid;
+	font-size: 12px;
+	gap: 4px;
+}
+
+.dailyos-markdown-preview-editor__field input {
+	border: 1px solid var(--wp--preset--color--desk-charcoal-8);
+	border-radius: 6px;
+	font-size: 13px;
+	padding: 6px 8px;
+}
+
+.dailyos-markdown-preview-editor__notice {
+	color: var(--wp--preset--color--text-secondary);
+	font-size: 13px;
+	line-height: 1.45;
+	margin: 0;
+}

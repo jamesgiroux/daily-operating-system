@@ -28,10 +28,11 @@ use crate::db::{ActionDb, LocalKeychain};
 use crate::entity::EntityType;
 use crate::services::context::{ExternalClients, ServiceContext, SystemClock, SystemRng};
 
-use super::contracts::{RejectionReason, WorkspaceCategory, WorkspaceFileKind};
+use super::contracts::{RejectionReason, SignalEmitContext, WorkspaceCategory, WorkspaceFileKind};
 use super::lifecycle::{lifecycle_state_slug, workspace_file_kind_from_slug};
 use super::pipeline::{file_id_from_identity, EntityRef, FileIdError, IngestError, IngestRequest};
 use super::registry::{ResolvePathError, WorkspaceCategoryRegistry};
+use super::signals::emit_pre_pipeline_rejection;
 use super::wiring::build_pipeline;
 use super::{registry::WorkspaceSourceRegistry, runs::IngestionMode};
 
@@ -40,18 +41,41 @@ const PLACEMENT_RATE_LIMIT_WINDOW_SECONDS: i64 = 60 * 60;
 
 pub struct IngestPipelineWorkspaceIntake {
     workspace_root: PathBuf,
+    signal_engine: Option<Arc<crate::signals::propagation::PropagationEngine>>,
 }
 
 impl IngestPipelineWorkspaceIntake {
     pub fn new(workspace_root: PathBuf) -> Self {
-        Self { workspace_root }
+        Self {
+            workspace_root,
+            signal_engine: None,
+        }
+    }
+
+    pub fn with_signal_engine(
+        workspace_root: PathBuf,
+        signal_engine: Arc<crate::signals::propagation::PropagationEngine>,
+    ) -> Self {
+        Self {
+            workspace_root,
+            signal_engine: Some(signal_engine),
+        }
     }
 
     pub fn from_config_or_empty() -> Self {
+        Self::from_config_or_empty_with_signal_engine(None)
+    }
+
+    pub fn from_config_or_empty_with_signal_engine(
+        signal_engine: Option<Arc<crate::signals::propagation::PropagationEngine>>,
+    ) -> Self {
         let workspace_root = crate::state::load_config()
             .map(|config| PathBuf::from(config.workspace_path))
             .unwrap_or_default();
-        Self::new(workspace_root)
+        Self {
+            workspace_root,
+            signal_engine,
+        }
     }
 }
 
@@ -66,6 +90,7 @@ impl WorkspaceIntakeService for IngestPipelineWorkspaceIntake {
             .check_mutation_allowed()
             .map_err(|e| WorkspaceIntakeError::DbError(e.to_string()))?;
         let workspace_root = self.workspace_root.clone();
+        let signal_engine = self.signal_engine.clone();
         let original_actor = ability_actor_label(&ctx.actor).to_string();
         let ability_id = ctx.services().ability_id.map(str::to_string);
         tokio::task::spawn_blocking(move || {
@@ -77,7 +102,13 @@ impl WorkspaceIntakeService for IngestPipelineWorkspaceIntake {
             if let Some(ability_id) = ability_id.as_deref() {
                 service_ctx = service_ctx.with_ability_id(ability_id);
             }
-            ingest_sync(&service_ctx, workspace_root, req, original_actor)
+            ingest_sync(
+                &service_ctx,
+                workspace_root,
+                signal_engine,
+                req,
+                original_actor,
+            )
         })
         .await
         .map_err(|e| WorkspaceIntakeError::Io(format!("workspace intake task failed: {e}")))?
@@ -93,6 +124,7 @@ impl WorkspaceIntakeService for IngestPipelineWorkspaceIntake {
             .check_mutation_allowed()
             .map_err(|e| PlacementError::internal(e.to_string()))?;
         let workspace_root = self.workspace_root.clone();
+        let signal_engine = self.signal_engine.clone();
         let ability_id = ctx.services().ability_id.map(str::to_string);
         tokio::task::spawn_blocking(move || {
             let clock = SystemClock;
@@ -103,16 +135,17 @@ impl WorkspaceIntakeService for IngestPipelineWorkspaceIntake {
             if let Some(ability_id) = ability_id.as_deref() {
                 service_ctx = service_ctx.with_ability_id(ability_id);
             }
-            place_document_sync(&service_ctx, workspace_root, invocation, req)
+            place_document_sync(&service_ctx, workspace_root, signal_engine, invocation, req)
         })
         .await
         .map_err(|e| PlacementError::internal(format!("workspace placement task failed: {e}")))?
     }
 }
 
-fn ingest_sync(
+pub(crate) fn ingest_sync(
     ctx: &ServiceContext<'_>,
     workspace_root: PathBuf,
+    signal_engine: Option<Arc<crate::signals::propagation::PropagationEngine>>,
     req: WorkspaceIntakeRequest,
     original_actor: String,
 ) -> Result<WorkspaceIntakeReceipt, WorkspaceIntakeError> {
@@ -140,15 +173,29 @@ fn ingest_sync(
     }
 
     let (file, identity) =
-        WorkspaceSourceRegistry::open_validated(&workspace_root, Path::new(&req.file_ref))
-            .map_err(intake_error_from_rejection)?;
+        match WorkspaceSourceRegistry::open_validated(&workspace_root, Path::new(&req.file_ref)) {
+            Ok(opened) => opened,
+            Err(reason) => {
+                let signal_ctx = SignalEmitContext::new(ctx, &db, None);
+                emit_pre_pipeline_rejection(&signal_ctx, reason.clone())
+                    .map_err(|e| WorkspaceIntakeError::DbError(e.to_string()))?;
+                return Err(intake_error_from_rejection(reason));
+            }
+        };
     let source_asof = file
         .metadata()
         .and_then(|m| m.modified())
         .map(chrono::DateTime::<chrono::Utc>::from)
         .map_err(|e| WorkspaceIntakeError::Io(io_error_redacted(e)))?;
-    let file_id =
-        file_id_from_identity(&identity, &workspace_root).map_err(intake_file_id_error)?;
+    let file_id = match file_id_from_identity(&identity, &workspace_root) {
+        Ok(file_id) => file_id,
+        Err(error) => {
+            let signal_ctx = SignalEmitContext::new(ctx, &db, None);
+            emit_pre_pipeline_rejection(&signal_ctx, RejectionReason::OutsideWorkspace)
+                .map_err(|e| WorkspaceIntakeError::DbError(e.to_string()))?;
+            return Err(intake_file_id_error(error));
+        }
+    };
 
     let request = IngestRequest {
         file,
@@ -163,8 +210,13 @@ fn ingest_sync(
         validated_content: None,
     };
     let pipeline = build_pipeline(workspace_root);
+    let propagation = signal_engine.as_deref().ok_or_else(|| {
+        WorkspaceIntakeError::DbError(
+            "workspace intake requires a live signal propagation engine".to_string(),
+        )
+    })?;
     let receipt = pipeline
-        .run(ctx, &db, request)
+        .run_with_signal_engine(ctx, &db, propagation, request)
         .map_err(intake_error_from_ingest)?;
     Ok(WorkspaceIntakeReceipt {
         run_id: receipt.ingestion_run_id.0,
@@ -282,6 +334,7 @@ fn io_error_redacted(error: std::io::Error) -> String {
 fn place_document_sync(
     ctx: &ServiceContext<'_>,
     workspace_root: PathBuf,
+    signal_engine: Option<Arc<crate::signals::propagation::PropagationEngine>>,
     invocation: PlacementInvocationContext,
     req: WorkspacePlaceDocumentRequest,
 ) -> Result<WorkspacePlaceDocumentReceipt, PlacementError> {
@@ -321,6 +374,7 @@ fn place_document_sync(
         ctx,
         &db,
         &workspace_root,
+        signal_engine.as_deref(),
         &invocation,
         &req,
         target_key.as_str(),
@@ -357,6 +411,7 @@ fn place_document_after_rate(
     ctx: &ServiceContext<'_>,
     db: &ActionDb,
     workspace_root: &Path,
+    signal_engine: Option<&crate::signals::propagation::PropagationEngine>,
     invocation: &PlacementInvocationContext,
     req: &WorkspacePlaceDocumentRequest,
     _target_audit_key: &str,
@@ -548,7 +603,17 @@ fn place_document_after_rate(
                 validated_content: Some(content_text),
             };
             let pipeline = build_pipeline(workspace_root.to_path_buf());
-            let receipt = match pipeline.run(ctx, db, request) {
+            let Some(signal_engine) = signal_engine else {
+                mark_placement_failed(
+                    conn,
+                    &row.idempotency_id,
+                    PlacementErrorCode::PlacementInternal,
+                )?;
+                return Err(PlacementError::internal(
+                    "workspace placement requires a live signal propagation engine",
+                ));
+            };
+            let receipt = match pipeline.run_with_signal_engine(ctx, db, signal_engine, request) {
                 Ok(receipt) => receipt,
                 Err(error) => {
                     log::warn!("workspace placement ingestion failed: {error}");

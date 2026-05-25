@@ -692,7 +692,7 @@ mod tests {
     use std::pin::Pin;
     use std::sync::Arc;
 
-    use chrono::{TimeZone, Utc};
+    use chrono::Utc;
     use rusqlite::{params, Connection};
     use serde_json::json;
 
@@ -993,7 +993,11 @@ CREATE TABLE accounts (
         sensitivity: ClaimSensitivity,
         created_at: &str,
     ) -> String {
-        let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 9, 12, 0, 0).unwrap());
+        let clock = FixedClock::new(
+            chrono::DateTime::parse_from_rfc3339(created_at)
+                .expect("fixture created_at is RFC3339")
+                .with_timezone(&Utc),
+        );
         let rng = SeedableRng::new(309);
         let external = ExternalClients::default();
         let ctx = ServiceContext::new_live(&clock, &rng, &external).with_actor("agent:test");
@@ -1033,12 +1037,6 @@ CREATE TABLE accounts (
             CommittedClaim::Inserted { claim } => claim.id,
             other => panic!("expected inserted claim, got {other:?}"),
         };
-        db.conn_ref()
-            .execute(
-                "UPDATE intelligence_claims SET created_at = ?1 WHERE id = ?2",
-                params![created_at, claim_id.as_str()],
-            )
-            .expect("pin MCP fixture claim created_at");
         claim_id
     }
 
@@ -1051,7 +1049,7 @@ CREATE TABLE accounts (
                 "INSERT INTO claim_surface_dismissals (
                     claim_id, surface, actor, dismissed_at
                  ) VALUES (?1, ?2, ?3, ?4)",
-                rusqlite::params![claim_id, surface, "agent:test", "2026-05-09T12:01:00Z"],
+                params![claim_id, surface, "agent:test", "2026-05-09T12:01:00Z"],
             )
             .expect("insert claim surface dismissal");
     }

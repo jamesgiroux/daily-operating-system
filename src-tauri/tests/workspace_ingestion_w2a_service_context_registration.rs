@@ -12,6 +12,9 @@ fn service_context_exposes_optional_workspace_intake_and_live_registration() {
 
     let app_context = std::fs::read_to_string(root.join("src/services/context.rs"))
         .expect("read app service context");
-    assert!(app_context.contains("IngestPipelineWorkspaceIntake::from_config_or_empty()"));
+    assert!(app_context.contains("attach_live_workspace_readers_with_signal_engine"));
+    assert!(app_context.contains(
+        "IngestPipelineWorkspaceIntake::from_config_or_empty_with_signal_engine(signal_engine)"
+    ));
     assert!(app_context.contains(".with_workspace_intake("));
 }

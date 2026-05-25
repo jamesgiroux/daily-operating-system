@@ -885,14 +885,11 @@ impl AbilityRegistry {
             // scope at ScopeSet construction; once seeded here, unknown
             // scopes are rejected at the wire boundary. See ADR-0111 §8
             //
-            let mut union: BTreeSet<SurfaceScope> = by_name
-                .values()
-                .flat_map(|descriptor| descriptor.policy.required_scopes.iter())
-                .map(|s| SurfaceScope::new(*s))
-                .collect();
-            union.insert(SurfaceScope::new("read.account_overview"));
-            union.insert(SurfaceScope::new("read.composition"));
-            union.insert(SurfaceScope::new("submit.feedback"));
+            let union = seeded_scope_allowlist(
+                by_name
+                    .values()
+                    .flat_map(|descriptor| descriptor.policy.required_scopes.iter().copied()),
+            );
             // OnceLock::set returns Err if already initialized — that's
             // the intended path on subsequent registry builds within a
             // single process. We do not surface the result.
@@ -1040,6 +1037,17 @@ impl AbilityRegistry {
             message: format!("unknown ability `{name}`"),
         })
     }
+}
+
+fn seeded_scope_allowlist(
+    scopes: impl IntoIterator<Item = &'static str>,
+) -> BTreeSet<SurfaceScope> {
+    let mut union: BTreeSet<SurfaceScope> = scopes.into_iter().map(SurfaceScope::new).collect();
+    union.insert(SurfaceScope::new("read.account_overview"));
+    union.insert(SurfaceScope::new("read.composition"));
+    union.insert(SurfaceScope::new("read.entity_names"));
+    union.insert(SurfaceScope::new("submit.feedback"));
+    union
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2673,6 +2681,14 @@ mod tests {
         assert!(!set.contains(&SurfaceScope::new("submit.feedback")));
         assert_eq!(set.len(), 1);
         assert!(!set.is_empty());
+    }
+
+    #[test]
+    fn production_allowlist_includes_optional_entity_names_scope() {
+        let allowlist = seeded_scope_allowlist(["read.workspace_graph"]);
+        assert!(allowlist.contains(&SurfaceScope::new("read.workspace_graph")));
+        assert!(allowlist.contains(&SurfaceScope::new("read.entity_names")));
+        assert!(!allowlist.contains(&SurfaceScope::new("read.unregistered_scope")));
     }
 
     #[test]

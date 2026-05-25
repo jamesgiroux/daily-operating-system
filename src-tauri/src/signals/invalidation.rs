@@ -44,6 +44,10 @@ pub fn check_and_invalidate_preps(
         "relationship_reclassified",
         "transcript_outcomes", // manually attached transcript — invalidate linked future meeting preps
         "field_updated", // DOS-110: account field changes (including sentiment) invalidate prep
+        "workspace_file_ingested",
+        "workspace_file_quarantined",
+        "workspace_file_entity_link_changed",
+        "workspace_source_policy_changed",
     ];
 
     if !invalidating_types.contains(&signal.signal_type.as_str()) {
@@ -162,6 +166,26 @@ mod tests {
     }
 
     #[test]
+    fn workspace_audit_only_signals_are_not_invalidating() {
+        for signal_type in [
+            "workspace_file_rejected",
+            "workspace_file_pending_entity_assignment",
+        ] {
+            let db = test_db();
+            let queue = Mutex::new(Vec::<String>::new());
+            let signal = make_signal(signal_type, 0.95);
+
+            check_and_invalidate_preps(&db, &signal, &queue);
+
+            let q = queue.lock();
+            assert!(
+                q.is_empty(),
+                "{signal_type} should not invalidate prep without entity content change"
+            );
+        }
+    }
+
+    #[test]
     fn test_invalidation_with_upcoming_meeting() {
         let db = test_db();
         let conn = db.conn_ref();
@@ -195,14 +219,21 @@ mod tests {
         )
         .unwrap();
 
-        let queue = Mutex::new(Vec::<String>::new());
-        let signal = make_signal("stakeholder_change", 0.85);
+        for signal_type in [
+            "stakeholder_change",
+            "workspace_file_ingested",
+            "workspace_file_quarantined",
+            "workspace_file_entity_link_changed",
+        ] {
+            let queue = Mutex::new(Vec::<String>::new());
+            let signal = make_signal(signal_type, 0.85);
 
-        check_and_invalidate_preps(&db, &signal, &queue);
+            check_and_invalidate_preps(&db, &signal, &queue);
 
-        let q = queue.lock();
-        assert_eq!(q.len(), 1);
-        assert_eq!(q[0], "m1");
+            let q = queue.lock();
+            assert_eq!(q.len(), 1, "{signal_type} should invalidate prep");
+            assert_eq!(q[0], "m1");
+        }
     }
 
     #[test]

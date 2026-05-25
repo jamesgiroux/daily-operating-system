@@ -11,7 +11,7 @@ fn intake_impl_validates_category_before_pipeline_invocation() {
         .find("WorkspaceCategoryRegistry::validate")
         .expect("validate call");
     let run = source
-        .find(".run(ctx, &db, request)")
+        .find(".run_with_signal_engine(ctx, &db, propagation, request)")
         .expect("pipeline run");
     assert!(
         validate < run,

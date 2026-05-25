@@ -48,6 +48,12 @@ pub struct LiveListOpenLoopsReader;
 pub struct LiveAccountListReader;
 pub struct LivePersonListReader;
 pub struct LiveProjectListReader;
+pub struct LiveMarkdownPreviewReader;
+pub struct LiveWorkspaceGraphReader;
+pub struct LiveSourceManagementLedgerReader;
+pub struct LiveSourceManagementActionHandler {
+    signal_engine: Option<Arc<crate::signals::propagation::PropagationEngine>>,
+}
 pub struct LiveEntityContextClaimReader;
 pub struct LivePrepareMeetingContextReader;
 pub struct LiveDailyReadinessContextReader;
@@ -64,11 +70,24 @@ pub struct LiveMeetingPrepStatusReader;
 pub struct LiveClaimReceiptReader;
 
 pub fn attach_live_workspace_readers(ctx: ServiceContext<'_>) -> ServiceContext<'_> {
+    attach_live_workspace_readers_with_signal_engine(ctx, None)
+}
+
+pub fn attach_live_workspace_readers_with_signal_engine(
+    ctx: ServiceContext<'_>,
+    signal_engine: Option<Arc<crate::signals::propagation::PropagationEngine>>,
+) -> ServiceContext<'_> {
     ctx.with_entity_context_reader(Arc::new(LiveEntityContextReader))
         .with_list_open_loops_reader(Arc::new(LiveListOpenLoopsReader))
         .with_account_list_reader(Arc::new(LiveAccountListReader))
         .with_person_list_reader(Arc::new(LivePersonListReader))
         .with_project_list_reader(Arc::new(LiveProjectListReader))
+        .with_markdown_preview_reader(Arc::new(LiveMarkdownPreviewReader))
+        .with_workspace_graph_reader(Arc::new(LiveWorkspaceGraphReader))
+        .with_source_management_ledger_reader(Arc::new(LiveSourceManagementLedgerReader))
+        .with_source_management_action_handler(Arc::new(LiveSourceManagementActionHandler {
+            signal_engine: signal_engine.clone(),
+        }))
         .with_entity_context_claim_reader(Arc::new(LiveEntityContextClaimReader))
         .with_prepare_meeting_context_reader(Arc::new(LivePrepareMeetingContextReader))
         .with_daily_readiness_context_reader(Arc::new(LiveDailyReadinessContextReader))
@@ -84,7 +103,7 @@ pub fn attach_live_workspace_readers(ctx: ServiceContext<'_>) -> ServiceContext<
         .with_meeting_prep_status_reader(Arc::new(LiveMeetingPrepStatusReader))
         .with_claim_receipt_reader(Arc::new(LiveClaimReceiptReader))
         .with_workspace_intake(Arc::new(
-            crate::services::workspace_ingestion::workspace_intake_impl::IngestPipelineWorkspaceIntake::from_config_or_empty(),
+            crate::services::workspace_ingestion::workspace_intake_impl::IngestPipelineWorkspaceIntake::from_config_or_empty_with_signal_engine(signal_engine),
         ))
 }
 
@@ -262,6 +281,128 @@ impl ProjectListReadHandle for LiveProjectListReader {
             .await
             .map_err(|error| {
                 ProjectListReadError::ReadFailed(format!("project list read task failed: {error}"))
+            })?
+        })
+    }
+}
+
+impl WorkspaceGraphReadHandle for LiveWorkspaceGraphReader {
+    fn read_workspace_graph<'a>(
+        &'a self,
+        request: WorkspaceGraphReadRequest,
+    ) -> WorkspaceGraphReadFuture<'a> {
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                let db = open_action_db().map_err(WorkspaceGraphReadError::ReadFailed)?;
+                let diagnostic_key =
+                    crate::services::workspace_ingestion::graph::local_install_diagnostic_key()
+                        .map_err(WorkspaceGraphReadError::ReadFailed)?;
+                crate::services::workspace_ingestion::graph::read_workspace_graph(
+                    db.conn_ref(),
+                    request,
+                    &diagnostic_key,
+                )
+            })
+            .await
+            .map_err(|error| {
+                WorkspaceGraphReadError::ReadFailed(format!(
+                    "workspace graph read task failed: {error}"
+                ))
+            })?
+        })
+    }
+}
+
+impl SourceManagementLedgerReadHandle for LiveSourceManagementLedgerReader {
+    fn read_source_management_ledger<'a>(
+        &'a self,
+        request: SourceManagementLedgerReadRequest,
+    ) -> SourceManagementLedgerReadFuture<'a> {
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                let db = open_action_db().map_err(SourceManagementLedgerReadError::ReadFailed)?;
+                let diagnostic_key =
+                    crate::services::workspace_ingestion::graph::local_install_diagnostic_key()
+                        .map_err(SourceManagementLedgerReadError::ReadFailed)?;
+                crate::services::source_management_ledger::read_source_management_ledger(
+                    db.conn_ref(),
+                    request,
+                    &diagnostic_key,
+                )
+            })
+            .await
+            .map_err(|error| {
+                SourceManagementLedgerReadError::ReadFailed(format!(
+                    "source management ledger read task failed: {error}"
+                ))
+            })?
+        })
+    }
+}
+
+impl SourceManagementActionHandle for LiveSourceManagementActionHandler {
+    fn apply_source_management_action<'a>(
+        &'a self,
+        request: SourceManagementActionRequest,
+    ) -> SourceManagementActionFuture<'a> {
+        let signal_engine = self.signal_engine.clone();
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                let db = open_action_db().map_err(SourceManagementActionError::ActionFailed)?;
+                let workspace_root = crate::state::load_config()
+                    .map(|config| std::path::PathBuf::from(config.workspace_path))
+                    .map_err(|error| {
+                        SourceManagementActionError::ActionFailed(error.to_string())
+                    })?;
+                let diagnostic_key =
+                    crate::services::workspace_ingestion::graph::local_install_diagnostic_key()
+                        .map_err(SourceManagementActionError::ActionFailed)?;
+                let clock = SystemClock;
+                let rng = SystemRng;
+                let external = ExternalClients::default();
+                let service_ctx = ServiceContext::new_live(&clock, &rng, &external)
+                    .with_actor("system:source_management_action");
+                crate::services::source_management_ledger::apply_source_management_action(
+                    &service_ctx,
+                    &db,
+                    workspace_root,
+                    signal_engine,
+                    request,
+                    &diagnostic_key,
+                )
+            })
+            .await
+            .map_err(|error| {
+                SourceManagementActionError::ActionFailed(format!(
+                    "source management action task failed: {error}"
+                ))
+            })?
+        })
+    }
+}
+
+impl MarkdownPreviewReadHandle for LiveMarkdownPreviewReader {
+    fn read_markdown_preview<'a>(
+        &'a self,
+        request: MarkdownPreviewReadRequest,
+    ) -> MarkdownPreviewReadFuture<'a> {
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                let db = open_action_db().map_err(MarkdownPreviewReadError::SourceUnavailable)?;
+                let config = crate::state::load_config()
+                    .map_err(MarkdownPreviewReadError::SourceUnavailable)?;
+                let workspace_root = std::path::PathBuf::from(config.workspace_path);
+                crate::services::markdown_preview::read_markdown_preview(
+                    db.conn_ref(),
+                    &workspace_root,
+                    request,
+                )
+            })
+            .await
+            .map_err(|error| {
+                MarkdownPreviewReadError::SourceUnavailable(format!(
+                    "markdown preview read task failed: {error}"
+                ))
             })?
         })
     }

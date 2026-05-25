@@ -30,10 +30,9 @@ use super::pipeline::EntityRef;
 /// - `Pending` → `PendingEntityAssignment`: W2-A emits
 ///   `emit_file_pending_entity_assignment` when intake cannot resolve entity
 ///   (maps to `WorkspaceFilePendingEntityAssignment`).
-/// - Any state → `Quarantined`: W2-A's `quarantine_source(file_id, reason,
-///   actor)` emits `emit_file_quarantined` (maps to
-///   `WorkspaceFileQuarantined`; triggers claim retraction for the file's
-///   prior claims).
+/// - Any state → `Quarantined`: W2-A's `quarantine_source(..., file_id,
+///   reason, actor)` emits `emit_file_quarantined` (maps to
+///   `WorkspaceFileQuarantined`; triggers invalidation for derived state).
 /// - `Ingested` → `Superseded`: W2-A on successful re-ingestion of a file at
 ///   the same `(file_id, content_sha256)` key; no signal directly, but the
 ///   subsequent `Ingested` row emits its own `emit_file_ingested`.
