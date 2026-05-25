@@ -110,7 +110,7 @@ pub struct BriefingState {
 
 /// Overall presence of a briefing for the requested date.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", rename_all_fields = "camelCase")]
 pub enum BriefingAvailability {
     Available,
     Empty { reason: BriefingEmptyReason },
@@ -128,7 +128,7 @@ pub enum BriefingEmptyReason {
 /// Freshness posture across the briefing's underlying prep + claim inputs.
 /// Independent of integrity — a Fresh briefing can have HasCorrections.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", rename_all_fields = "camelCase")]
 pub enum BriefingFreshness {
     Fresh,
     Stale { reason: BriefingStaleReason },
@@ -146,7 +146,7 @@ pub enum BriefingStaleReason {
 /// Claim-store integrity — corrections / ambiguity that consumers should
 /// surface even when the briefing is otherwise fresh.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", rename_all_fields = "camelCase")]
 pub enum BriefingIntegrity {
     Clean,
     HasCorrections { superseded_claim_ids: Vec<String> },
@@ -163,7 +163,7 @@ pub struct AmbiguityPair {
 
 /// Typed non-blocking advisory surfaced alongside the briefing state.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", rename_all_fields = "camelCase")]
 pub enum BriefingAdvisory {
     /// A watch proposal is available for review. Pairs with the
     /// `watch_proposals` envelope field.
