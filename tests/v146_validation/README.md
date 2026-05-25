@@ -9,7 +9,9 @@ Authoritative plan:
 Current status:
 
 - L0 passed locally on 2026-05-25.
-- Full validation remains dependency-gated on W5-A, W4, W3-A/B/C, and actual MCP/placement paths.
+- W5-A is folded into the active W5 validation PR; backfill and redaction axes have automated green checks on the rebased base.
+- Graph-audit, signal, and filesystem axes now have automated partial evidence, but remain blocked at packet level until their full matrices are covered.
+- Full validation remains dependency-gated on the trust-band matrix, the literal workspace signal middle hop, actual MCP placement handler execution, and missing lifecycle actions.
 - A blocked axis is not a pass. Interim reports may record `blocked`, but W5-B Done requires all mandatory axes to be green.
 
 ## Commands
@@ -17,10 +19,13 @@ Current status:
 ```bash
 bash tests/v146_validation/redaction_lint.sh --self-test
 bash tests/v146_validation/redaction_lint.sh
+bash tests/v146_validation/run.sh graph-audit
+bash tests/v146_validation/run.sh filesystem
+bash tests/v146_validation/run.sh signals
 bash tests/v146_validation/run.sh redaction
 ```
 
-`bash tests/v146_validation/run.sh all` is reserved for the final W5-B validation pass. Until upstream dependencies land, it should produce blocked evidence and exit non-zero.
+`bash tests/v146_validation/run.sh all` is reserved for the final W5-B validation pass. Until the remaining substrate gaps are closed, it should produce blocked evidence and exit non-zero.
 
 ## Evidence Rules
 
@@ -33,4 +38,3 @@ Committed and Linear-ready evidence may include only:
 - command names and pass/fail/blocked statuses
 
 Evidence must not include raw paths, filenames, claim text, file content, prompt text, output bodies, entity names, customer/company names, emails, domains, raw file IDs, raw source handles, raw hashes, or provenance blobs.
-

@@ -43,28 +43,50 @@ status_for_axis() {
         cargo test --manifest-path src-tauri/Cargo.toml workspace_backfill --lib --bins >/dev/null
         cargo test --manifest-path src-tauri/Cargo.toml --test workspace_ingestion_w1_migrations w5_a_backfill_state_migration_creates_privacy_safe_run_item_operation_tables >/dev/null
       ); then
-        printf 'pass\tcargo test workspace_backfill --lib --bins + W5-A migration coverage\tW5-A conservative backfill registration tests passed on the stacked base\n'
+        printf 'pass\tcargo test workspace_backfill --lib --bins + W5-A migration coverage\tW5-A conservative backfill registration tests passed on the rebased base\n'
       else
-        printf 'fail\tcargo test workspace_backfill --lib --bins + W5-A migration coverage\tW5-A conservative backfill registration tests failed on the stacked base\n'
+        printf 'fail\tcargo test workspace_backfill --lib --bins + W5-A migration coverage\tW5-A conservative backfill registration tests failed on the rebased base\n'
       fi
       ;;
     graph-audit)
-      printf 'blocked\tcargo test --test v146_validation graph_audit_zero_gaps_on_hermetic_fixture_db\tblocked until graph projection and explicit ingestion dependencies are merged/rebased\n'
+      if (
+        cd "$ROOT_DIR"
+        cargo test --manifest-path src-tauri/Cargo.toml --test v146_validation graph_audit_zero_gaps_on_hermetic_fixture_db >/dev/null
+        cargo test --manifest-path src-tauri/Cargo.toml --lib workspace_ingestion::graph::tests >/dev/null
+      ); then
+        printf 'blocked\tcargo test --test v146_validation graph_audit_zero_gaps_on_hermetic_fixture_db + cargo test --lib workspace_ingestion::graph::tests\tpartial explicit ingestion and graph audit evidence passed; blocked until entity-intake, inbox, and MCP placement path matrix is complete\n'
+      else
+        printf 'fail\tcargo test --test v146_validation graph_audit_zero_gaps_on_hermetic_fixture_db + cargo test --lib workspace_ingestion::graph::tests\texplicit ingestion provenance chain or graph audit projection tests failed\n'
+      fi
       ;;
     trust)
-      printf 'blocked\tcargo test --test v146_validation trust_band_discipline\tblocked until trust recompute path is available on the W5 base\n'
+      printf 'blocked\tcargo test --test v146_validation trust_band_discipline\tblocked until the full W5 trust matrix covers recent, stale, pending-review, and reingest-without-freshness cases through real recompute\n'
       ;;
     signals)
-      printf 'blocked\tcargo test --test v146_validation signal_propagation_invalidates_prep\tblocked until WorkspaceFileIngested -> EntityIntelligenceUpdated -> prep invalidation is present\n'
+      if (
+        cd "$ROOT_DIR"
+        cargo test --manifest-path src-tauri/Cargo.toml --test v146_validation signal_propagation_invalidates_prep_partial_evidence >/dev/null
+      ); then
+        printf 'blocked\tcargo test --test v146_validation signal_propagation_invalidates_prep_partial_evidence\tpartial signal evidence passed; blocked until WorkspaceFileIngested -> EntityIntelligenceUpdated -> prep invalidation is present\n'
+      else
+        printf 'fail\tcargo test --test v146_validation signal_propagation_invalidates_prep_partial_evidence\tpartial workspace signal/prep invalidation evidence failed\n'
+      fi
       ;;
     contexts)
-      printf 'blocked\tcargo test --test v146_validation context_inclusion_privacy_parity\tblocked until actual MCP/gateway or registered-handler path is available\n'
+      printf 'blocked\tcargo test --test v146_validation context_inclusion_privacy_parity\tblocked because dailyos.write.place_document catalog exists but the MCP v2 handler remains a placeholder\n'
       ;;
     lifecycle)
-      printf 'blocked\tcargo test --test v146_validation lifecycle_actions_and_user_correction_round_trip\tblocked until all named lifecycle actions are service-callable\n'
+      printf 'blocked\tcargo test --test v146_validation lifecycle_actions_and_user_correction_round_trip\tblocked because source-management actions currently expose reingest/quarantine/relink only, not ignore/scratchpad or archive/delete\n'
       ;;
     filesystem)
-      printf 'blocked\tcargo test --test v146_validation filesystem_validation_negative_fixtures\tblocked until Rust negative fixtures are implemented against the merged base\n'
+      if (
+        cd "$ROOT_DIR"
+        cargo test --manifest-path src-tauri/Cargo.toml --test v146_validation filesystem_validation_negative_fixtures >/dev/null
+      ); then
+        printf 'blocked\tcargo test --test v146_validation filesystem_validation_negative_fixtures\tpartial negative filesystem/path validation fixtures passed; blocked until oversized, non-UTF8, managed/hidden, and unsupported-file matrix is complete\n'
+      else
+        printf 'fail\tcargo test --test v146_validation filesystem_validation_negative_fixtures\tnegative filesystem/path validation fixtures failed\n'
+      fi
       ;;
     *)
       echo "unknown axis: $axis" >&2

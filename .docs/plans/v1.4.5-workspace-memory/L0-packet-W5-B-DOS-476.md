@@ -26,6 +26,7 @@ W5-B must not make W5-A historical backfill an implicit claim producer. Claim-pr
 - **V1.0** - Initial W5-B validation packet.
 - **V1.1** - L0 cycle-1 blocker fold. Removes false-green release-gate path, makes entity-intake and `_inbox` mandatory ingestion paths, treats MCP/headless parity and source lifecycle suppression as fail-closed gates, moves hermetic graph assertions into Rust integration tests, adds W5-B release-gate wiring, adds manual-evidence redaction contract, and expands K-in references.
 - **V1.2** - L0 cycle-2 feasibility fix. Splits POSIX-impossible NUL filename coverage into an invalid path/input rejection test and platform-gates non-UTF8 filename plus hardlink fixtures where the host filesystem cannot represent them.
+- **V1.3** - Rebased-base readiness refresh. Records that W5-A is folded into the active W5 validation PR, explicit ingestion and graph projection now have partial automated evidence, filesystem negative fixtures have partial automated evidence, and MCP placement/lifecycle/signal-middle-hop gaps remain blocked.
 
 ---
 
@@ -155,17 +156,19 @@ If discovery shows a named AC has no service/action/bridge substrate, W5-B marks
 
 ## 9. Current Readiness Findings
 
-Read-only prep on 2026-05-25 found:
+Read-only prep on 2026-05-25, refreshed after rebasing on merged W4/W5-A substrate, found:
 
 - W5-A backfill service and CLI are testable and cover dry-run, apply, pending-review state, graph exclusion, privacy-safe signal behavior, duplicate grouping, source-time handling, and resume safety.
 - Entity intake is wired enough to test ability -> `WorkspaceIntakeService` invocation and block rendering from claim rows.
 - `_inbox` flow is testable for lifecycle registration and pending entity assignment.
-- Markdown preview and source-management read surfaces exist in the W4 stack, but W4 PR #385 is still open/unstable. W5-B must not count W4 surface evidence as landed until #385 is green and merged/rebased.
+- Markdown preview and source-management read surfaces exist on the rebased base.
 - Full live WP-to-Tauri loopback evidence is not currently present.
-- Source-management action round trip must be validated through a real action path, not render-only ledger reads. Current concern: `reingest` action readiness when entity name is unavailable. If confirmed, this is a W4/source-management blocker, not a W5-B workaround.
+- Source-management action round trip must be validated through a real action path, not render-only ledger reads. Current action substrate exposes `reingest`, `quarantine`, and `relink`; ignore/scratchpad plus archive/delete remain missing and block Axis 6.
 - MCP placement has contract/catalog pieces, but the actual MCP v2 handler path is not fully wired. MCP/headless parity remains blocked until a real MCP/gateway or registered-handler path is exercised.
-- Scratchpad/ignored and archive/delete lifecycle effects are named DOS-476 ACs, but current action readiness is unproven. Missing actions block Axis 6 and W5 release close.
-- Static code inspection did not confirm a literal `WorkspaceFileIngested -> EntityIntelligenceUpdated` derivation. Axis 4 remains release-blocked unless the implemented base proves the literal wave-plan chain or the owning W3-B/W4 issue lands that hop.
+- Scratchpad/ignored and archive/delete lifecycle effects are named DOS-476 ACs; missing actions block Axis 6 and W5 release close.
+- Automated explicit-ingestion evidence proves a direct pipeline fixture creates lifecycle, run, link, and `commit_claim` rows with privacy-safe provenance, but Axis 2 remains release-blocked until entity-intake, `_inbox`, and MCP placement path coverage is complete.
+- Automated partial signal evidence proves workspace ingestion emits privacy-safe `WorkspaceFileIngested` and queues prep invalidation, but static code inspection still does not confirm a literal `WorkspaceFileIngested -> EntityIntelligenceUpdated` derivation. Axis 4 remains release-blocked unless the implemented base proves the literal wave-plan chain or the owning substrate issue lands that hop.
+- Automated partial filesystem evidence covers traversal, encoded traversal, outside absolute paths, workspace root equality, symlink escape, NUL input, and hardlink rejection when supported. Axis 7 remains release-blocked until oversized, non-UTF8, managed/hidden, and unsupported-file cases are automated in this W5-B axis.
 - `WorkspaceExtractor` is intentionally narrow: note-like, linked Account/Project/Person content becomes `UserNote` claim proposals. W5-B fixtures must use that shape for claim-producing automated tests.
 - Stale-source trust-band validation likely requires explicit trust recompute/job execution. W5-B must include the existing recompute step; hand-setting trust scores is not valid evidence.
 
