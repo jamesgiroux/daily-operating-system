@@ -90,6 +90,11 @@ pub async fn invoke_ability(
         &[],
         policy,
     ) {
+        log::error!(
+            "ability response ownership validation failed for {}: {}",
+            ability_name,
+            err
+        );
         record_ability_invocation_metric(state.inner().as_ref(), ability_meta, Outcome::Failure);
         return Err(err.into());
     }
