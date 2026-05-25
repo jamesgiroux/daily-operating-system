@@ -4,8 +4,11 @@
  *
  * Validates v1.4.3 W3 magazine theme style variations against
  * L0 Packet E §8.5: well-formed JSON, declared schema/version/title,
- * and the §6 #3 "no new tokens" invariant (all color values resolve
- * via `var(--wp--preset--color--*)` references, never literal hex).
+ * and the §6 #3 "no new tokens" invariant (color values under `styles.*`
+ * resolve via `var(--wp--preset--color--*)` references, never literal hex).
+ * WordPress style variation previews require `settings.color.background`
+ * to remain a literal color value, so that field is intentionally outside
+ * the token-reference gate.
  *
  * @package DailyOS
  */
@@ -109,6 +112,26 @@ final class DailyOS_StyleVariationSchemaTest extends TestCase {
 			sprintf(
 				'Style variation %s.json must not embed literal hex colors inside styles.* — '
 				. 'use var(--wp--preset--color--*) references instead (§6 #3 no-new-tokens invariant).',
+				$slug
+			)
+		);
+	}
+
+	/**
+	 * WordPress style variations use `settings.color.background` as preview
+	 * metadata, where the FSE schema expects a literal color value rather than
+	 * a palette variable reference.
+	 *
+	 * @dataProvider variation_provider
+	 */
+	public function test_settings_background_remains_literal_for_fse_preview( string $slug ): void {
+		$payload = self::load_variation( $slug );
+
+		$this->assertMatchesRegularExpression(
+			'/^#[0-9a-fA-F]{6}$/',
+			(string) ( $payload['settings']['color']['background'] ?? '' ),
+			sprintf(
+				'Style variation %s.json should keep settings.color.background as a literal FSE preview color.',
 				$slug
 			)
 		);

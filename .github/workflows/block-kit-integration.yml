@@ -218,10 +218,17 @@ jobs:
             exit 1
           fi
 
-          # inv #2: no inline style="" in templates/parts.
-          if grep -RnE 'style="' wp/dailyos/theme/templates wp/dailyos/theme/parts 2>/dev/null \
-              | grep -vE 'flex-basis|gap|padding|margin'; then
-            : # Allow inline style for layout flex-basis on FSE column blocks (standard FSE output)
+          # inv #2: no inline style="" in templates/parts, except standard
+          # FSE layout attributes emitted for column/group layout controls.
+          disallowed_inline_styles="$(
+            grep -RnE 'style="' wp/dailyos/theme/templates wp/dailyos/theme/parts 2>/dev/null \
+              | grep -vE 'flex-basis|gap|padding|margin' \
+              || true
+          )"
+          if [ -n "$disallowed_inline_styles" ]; then
+            echo "$disallowed_inline_styles" >&2
+            echo "FAIL: W3 theme template/part files contain disallowed inline style attributes" >&2
+            exit 1
           fi
 
           # inv #14: customTemplates empty in W3.
