@@ -1,0 +1,1111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Can you define trust in code? &middot; DailyOS Demo Day</title>
+
+  <link rel="stylesheet" href="../design/reference/_shared/fonts.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/design-tokens.css">
+
+  <link rel="stylesheet" href="../design/reference/_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/FolioBar.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/MagazinePageLayout.module.css">
+
+  <link rel="stylesheet" href="../design/reference/_shared/styles/monthly-wrapped.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/tailwind-shims.css">
+
+  <link rel="stylesheet" href="../design/reference/_shared/chrome.css">
+
+  <style>
+    /* ===================================================================
+       DEMO DAY DECK — local extensions over monthly-wrapped.
+       Light-only palette, no dark slides anywhere. Every white-on-dark
+       module class is overridden inside .demo-deck so text reads on linen
+       / cream / warm-white / sage / saffron / turmeric backgrounds.
+       =================================================================== */
+
+    /* Suppress chrome.js extras we don't need in the deck. */
+    [class*="FloatingNavIsland"],
+    [class*="FolioBar"],
+    .chrome-toggle,
+    .inspector-toggle { display: none !important; }
+
+    /* Reclaim the vertical space the FolioBar used to occupy. */
+    .MagazinePageLayout_magazinePage,
+    .MagazinePageLayout_pageContainer { padding-top: 0 !important; margin-top: 0 !important; }
+    .monthly-wrapped_viewportBreakout { margin-top: 0 !important; }
+
+    /* Slides need a bit more breathing room than the default. */
+    .demo-deck .monthly-wrapped_slide {
+      padding: 96px 80px 120px;
+    }
+
+    /* ---- Color overrides for module classes that bake white text ---- */
+    .demo-deck .monthly-wrapped_splashOverline,
+    .demo-deck .monthly-wrapped_volumeOverline,
+    .demo-deck .monthly-wrapped_hiddenPatternOverline,
+    .demo-deck .monthly-wrapped_priorityOverline,
+    .demo-deck .monthly-wrapped_personalityOverline,
+    .demo-deck .monthly-wrapped_carryForwardOverline   { color: rgba(42,43,61,0.6); }
+
+    .demo-deck .monthly-wrapped_splashMonth,
+    .demo-deck .monthly-wrapped_volumeStat,
+    .demo-deck .monthly-wrapped_hiddenPatternQuote,
+    .demo-deck .monthly-wrapped_priorityEmptyText,
+    .demo-deck .monthly-wrapped_personalityDescription,
+    .demo-deck .monthly-wrapped_closeHeadline          { color: var(--color-desk-ink); }
+
+    .demo-deck .monthly-wrapped_splashYear             { color: var(--color-spice-terracotta); }
+    .demo-deck .monthly-wrapped_volumeStatLabel        { color: rgba(42,43,61,0.78); }
+    .demo-deck .monthly-wrapped_volumeSubStats         { color: rgba(42,43,61,0.7); }
+    .demo-deck .monthly-wrapped_momentsOverline        { color: var(--color-desk-ink); }
+    .demo-deck .monthly-wrapped_personalityTypeName    { color: var(--color-spice-terracotta); }
+    .demo-deck .monthly-wrapped_personalityKeyTrait    { color: rgba(42,43,61,0.62); }
+    .demo-deck .monthly-wrapped_personalityRarity      { color: var(--color-spice-terracotta); }
+    .demo-deck .monthly-wrapped_closeSubLabel          { color: rgba(42,43,61,0.6); }
+
+    /* ===================================================================
+       DECK TYPOGRAPHY — small set of utility classes for headlines/ledes
+       that work on every light bg.
+       =================================================================== */
+
+    .d-eyebrow {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: rgba(42,43,61,0.55);
+      margin: 0 0 24px;
+    }
+    .d-eyebrow-tag {
+      display: inline-block;
+      padding: 4px 10px;
+      border: 1px solid currentColor;
+      border-radius: 999px;
+    }
+
+    .d-headline {
+      font-family: var(--font-serif);
+      font-weight: 300;
+      font-size: clamp(40px, 5.8vw, 80px);
+      line-height: 1.04;
+      letter-spacing: -0.02em;
+      color: var(--color-desk-ink);
+      margin: 0 0 32px;
+      max-width: 16ch;
+    }
+    .d-headline--wide { max-width: 20ch; }
+    .d-headline--med  { font-size: clamp(36px, 4.4vw, 60px); }
+    .d-headline--sm   { font-size: clamp(28px, 3.4vw, 44px); }
+
+    .d-lede {
+      font-family: var(--font-serif);
+      font-size: clamp(20px, 1.7vw, 26px);
+      line-height: 1.45;
+      color: var(--color-desk-ink);
+      max-width: 56ch;
+      margin: 0 0 28px;
+    }
+    .d-lede--narrow { max-width: 44ch; }
+    .d-lede--wide   { max-width: 68ch; }
+
+    .d-meta {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      letter-spacing: 0.04em;
+      color: rgba(42,43,61,0.6);
+      max-width: 72ch;
+    }
+
+    .d-bignum {
+      font-family: var(--font-serif);
+      font-weight: 300;
+      font-size: clamp(96px, 13vw, 168px);
+      line-height: 0.95;
+      letter-spacing: -0.03em;
+      color: var(--color-desk-ink);
+      margin: 0;
+    }
+    .d-bignum-label {
+      font-family: var(--font-mono);
+      font-size: 14px;
+      letter-spacing: 0.04em;
+      color: rgba(42,43,61,0.7);
+      margin-top: 18px;
+    }
+    .d-bignum-sub {
+      font-family: var(--font-serif);
+      font-size: 20px;
+      color: rgba(42,43,61,0.78);
+      margin-top: 4px;
+    }
+
+    /* ===================================================================
+       DIAGRAM A — Micro-expressions ↔ Claim anatomy (parallel columns)
+       =================================================================== */
+
+    .d-parallel {
+      display: grid;
+      grid-template-columns: 1fr 1px 1fr;
+      gap: 56px;
+      max-width: 1040px;
+      width: 100%;
+      margin: 24px 0 0;
+      align-items: stretch;
+    }
+    .d-parallel-rule { background: rgba(42,43,61,0.15); }
+    .d-parallel-side { display: flex; flex-direction: column; gap: 32px; }
+
+    .d-parallel-title {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: rgba(42,43,61,0.55);
+      padding-bottom: 14px;
+      border-bottom: 1px solid rgba(42,43,61,0.18);
+    }
+
+    .d-signals { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 18px; }
+    .d-signals li {
+      font-family: var(--font-serif);
+      font-weight: 300;
+      font-size: 22px;
+      line-height: 1.35;
+      color: var(--color-desk-ink);
+      padding-left: 0;
+      position: relative;
+    }
+    .d-signals li small {
+      display: block;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      color: rgba(42,43,61,0.55);
+      margin-top: 2px;
+    }
+
+    .d-conclusion {
+      font-family: var(--font-serif);
+      font-style: italic;
+      font-size: 18px;
+      color: rgba(42,43,61,0.78);
+      padding-top: 24px;
+      margin-top: auto;
+      border-top: 1px dashed rgba(42,43,61,0.25);
+    }
+    .d-conclusion strong { font-style: normal; color: var(--color-desk-ink); display: block; font-size: 22px; letter-spacing: -0.01em; margin-bottom: 4px; }
+
+    /* ===================================================================
+       DIAGRAM B — Flat memory vs weighted memory
+       =================================================================== */
+
+    .d-memcompare {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 48px;
+      max-width: 1040px;
+      width: 100%;
+      margin-top: 28px;
+    }
+    .d-memcol {
+      background: rgba(255,255,255,0.55);
+      border: 1px solid rgba(42,43,61,0.15);
+      border-radius: 14px;
+      padding: 28px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .d-memcol-eyebrow {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: rgba(42,43,61,0.55);
+    }
+    .d-memcol-query {
+      font-family: var(--font-serif);
+      font-style: italic;
+      font-size: 17px;
+      color: rgba(42,43,61,0.78);
+      padding-bottom: 14px;
+      border-bottom: 1px solid rgba(42,43,61,0.12);
+    }
+    .d-memitems { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 12px; }
+
+    .d-memitem--flat {
+      display: flex; gap: 14px; align-items: center;
+      font-family: var(--font-sans);
+      font-size: 14px;
+      color: rgba(42,43,61,0.7);
+    }
+    .d-memitem--flat::before {
+      content: '';
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: rgba(42,43,61,0.45);
+      flex: 0 0 auto;
+    }
+
+    .d-memitem--weighted {
+      display: grid;
+      grid-template-columns: 14px 1fr;
+      gap: 14px;
+      align-items: start;
+    }
+    .d-memitem--weighted .d-memdot {
+      width: 12px; height: 12px;
+      border-radius: 50%;
+      margin-top: 6px;
+    }
+    .d-memitem--weighted .d-memdot--hi { background: var(--color-spice-terracotta); box-shadow: 0 0 0 4px rgba(196,101,74,0.18); }
+    .d-memitem--weighted .d-memdot--md { background: var(--color-spice-saffron); box-shadow: 0 0 0 3px rgba(222,184,65,0.20); }
+    .d-memitem--weighted .d-memdot--lo { background: var(--color-garden-sage); }
+    .d-memitem--weighted .d-memdot--off{ background: transparent; border: 1px solid rgba(42,43,61,0.3); }
+
+    .d-memitem--weighted .d-memtext {
+      font-family: var(--font-serif);
+      font-size: 16px;
+      line-height: 1.35;
+      color: var(--color-desk-ink);
+    }
+    .d-memitem--weighted .d-memband {
+      display: block;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      color: rgba(42,43,61,0.55);
+      margin-top: 3px;
+    }
+
+    .d-memcol-footer {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      color: rgba(42,43,61,0.55);
+      padding-top: 14px;
+      border-top: 1px dashed rgba(42,43,61,0.2);
+      margin-top: auto;
+    }
+
+    /* ===================================================================
+       DIAGRAM C — The claim card (five pillars)
+       =================================================================== */
+
+    .d-claimcard {
+      background: var(--color-paper-warm-white);
+      border: 1px solid rgba(42,43,61,0.2);
+      border-radius: 16px;
+      box-shadow: 0 24px 60px -28px rgba(42,43,61,0.35);
+      max-width: 760px;
+      width: 100%;
+      margin: 28px 0 0;
+      overflow: hidden;
+    }
+    .d-claimcard-header {
+      padding: 18px 28px;
+      background: var(--color-desk-ink);
+      color: var(--color-paper-warm-white);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .d-claimcard-header em { font-style: normal; opacity: 0.55; }
+
+    .d-pillar {
+      display: grid;
+      grid-template-columns: 160px 1fr auto;
+      gap: 24px;
+      padding: 20px 28px;
+      border-top: 1px solid rgba(42,43,61,0.1);
+      align-items: baseline;
+    }
+    .d-pillar:first-of-type { border-top: none; }
+    .d-pillar-name {
+      font-family: var(--font-serif);
+      font-weight: 300;
+      font-size: 22px;
+      letter-spacing: -0.01em;
+      color: var(--color-desk-ink);
+    }
+    .d-pillar-q {
+      font-family: var(--font-serif);
+      font-size: 17px;
+      color: rgba(42,43,61,0.78);
+      line-height: 1.4;
+    }
+    .d-pillar-q small {
+      display: block;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      color: rgba(42,43,61,0.5);
+      margin-top: 4px;
+    }
+    .d-pillar-flag {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      padding: 4px 10px;
+      border-radius: 999px;
+      color: rgba(42,43,61,0.65);
+      border: 1px solid rgba(42,43,61,0.2);
+      white-space: nowrap;
+    }
+    .d-pillar-flag--live { color: var(--color-garden-rosemary); border-color: var(--color-garden-rosemary); }
+    .d-pillar-flag--next { color: var(--color-spice-terracotta); border-color: var(--color-spice-terracotta); }
+
+    /* ===================================================================
+       DIAGRAM D — The whole loop (SVG)
+       =================================================================== */
+
+    .d-loop {
+      max-width: 980px;
+      width: 100%;
+      margin: 20px 0 0;
+      color: var(--color-desk-ink);
+    }
+    .d-loop svg { width: 100%; height: auto; display: block; }
+    .d-loop text { font-family: var(--font-mono); fill: var(--color-desk-ink); }
+    .d-loop .d-loop-node-label { font-family: var(--font-serif); font-size: 16px; letter-spacing: -0.01em; }
+    .d-loop .d-loop-node-sub   { font-family: var(--font-mono);  font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; fill: rgba(42,43,61,0.55); }
+    .d-loop .d-loop-edge-label { font-family: var(--font-mono);  font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; fill: rgba(42,43,61,0.6); }
+
+    /* ===================================================================
+       DIAGRAM E — Surface fan-out (SVG)
+       =================================================================== */
+
+    .d-fanout {
+      max-width: 880px;
+      width: 100%;
+      margin: 28px 0 0;
+    }
+    .d-fanout svg { width: 100%; height: auto; display: block; }
+    .d-fanout text { font-family: var(--font-mono); fill: var(--color-desk-ink); }
+    .d-fanout .d-fanout-runtime { font-family: var(--font-serif); font-size: 20px; letter-spacing: -0.01em; }
+    .d-fanout .d-fanout-surface { font-family: var(--font-serif); font-size: 18px; letter-spacing: -0.01em; }
+    .d-fanout .d-fanout-sub     { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; fill: rgba(42,43,61,0.55); }
+
+    /* ===================================================================
+       STATS — file types and PR list reused from earlier deck
+       =================================================================== */
+
+    .d-statGrid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px 56px;
+      max-width: 760px;
+      width: 100%;
+      margin-top: 32px;
+    }
+    .d-statRow {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 24px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid rgba(42,43,61,0.18);
+    }
+    .d-statRow-label { font-family: var(--font-sans); font-size: 14px; color: var(--color-desk-ink); }
+    .d-statRow-value { font-family: var(--font-mono); font-size: 14px; letter-spacing: 0.02em; font-variant-numeric: tabular-nums; color: var(--color-desk-ink); }
+
+    .d-prList { max-width: 760px; width: 100%; margin-top: 28px; }
+    .d-prItem {
+      display: grid;
+      grid-template-columns: 56px 1fr;
+      gap: 20px;
+      padding: 14px 0;
+      border-bottom: 1px solid rgba(42,43,61,0.12);
+      align-items: baseline;
+    }
+    .d-prItem-num   { font-family: var(--font-mono); font-size: 13px; color: rgba(42,43,61,0.55); }
+    .d-prItem-title { font-family: var(--font-serif); font-size: 18px; line-height: 1.4; color: var(--color-desk-ink); }
+    .d-prItem-note  { display: block; font-family: var(--font-mono); font-size: 12px; color: rgba(42,43,61,0.55); letter-spacing: 0.02em; margin-top: 4px; }
+
+    /* ===================================================================
+       Three-words row on the close slide
+       =================================================================== */
+    .d-pills { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 24px; }
+    .d-pill {
+      font-family: var(--font-serif);
+      font-size: 18px;
+      padding: 10px 22px;
+      border-radius: 6px;
+      color: var(--color-desk-ink);
+    }
+    .d-pill--memory   { background: var(--color-spice-saffron); }
+    .d-pill--judgment { background: var(--color-spice-turmeric); }
+    .d-pill--trust    { background: var(--color-garden-sage); }
+
+    /* ===================================================================
+       SLIDE SWITCHER — fixed bottom-right
+       =================================================================== */
+    .d-switcher {
+      position: fixed;
+      bottom: 28px;
+      right: 28px;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 6px;
+      background: rgba(42,43,61,0.92);
+      backdrop-filter: blur(8px);
+      border-radius: 999px;
+      box-shadow: 0 12px 40px -12px rgba(42,43,61,0.35);
+      color: var(--color-paper-warm-white);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      letter-spacing: 0.04em;
+    }
+    .d-switcher-btn {
+      width: 32px; height: 32px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: none;
+      border-radius: 50%;
+      color: inherit;
+      cursor: pointer;
+      transition: background 120ms ease;
+    }
+    .d-switcher-btn:hover:not(:disabled) { background: rgba(255,255,255,0.12); }
+    .d-switcher-btn:disabled { opacity: 0.3; cursor: default; }
+    .d-switcher-btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .d-switcher-indicator {
+      min-width: 56px;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+      padding: 0 8px;
+    }
+
+    /* Smooth scroll for keyboard / button nav */
+    .monthly-wrapped_slideContainer { scroll-behavior: smooth; }
+
+    /* Make the cover/close stand a bit more apart */
+    .demo-cover .d-headline { font-size: clamp(48px, 7vw, 96px); max-width: 14ch; }
+    .demo-close .d-headline { font-size: clamp(48px, 6vw, 84px); }
+  </style>
+</head>
+<body
+  data-folio-label="Demo Day · The Trust Question"
+  data-folio-crumbs="Research > Demo Day > The Trust Question"
+  data-tint="eucalyptus"
+  data-active-page="me">
+
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+
+<div class="monthly-wrapped_viewportBreakout">
+  <div class="monthly-wrapped_slideContainer demo-deck">
+
+    <!-- 1. COVER ============================================ -->
+    <section class="monthly-wrapped_slide monthly-wrapped_bgWarmWhite demo-cover">
+      <p class="d-eyebrow">DailyOS &middot; Demo Day &middot; May 25, 2026</p>
+      <h1 class="d-headline">
+        If we want trustworthy output, the system itself has to be trustworthy.
+      </h1>
+      <p class="d-lede d-lede--wide">
+        Radical Speed Month was us trying to define trust in code.
+        Here&rsquo;s what that took.
+      </p>
+    </section>
+
+    <!-- 2. THE TRUST GAP (HALLUCINATION) ===================== -->
+    <section class="monthly-wrapped_slide monthly-wrapped_bgTerracotta">
+      <p class="d-eyebrow">The pain</p>
+      <h2 class="d-headline d-headline--med">
+        Is this a fact, or did the AI just make it up?
+      </h2>
+      <p class="d-lede d-lede--wide">
+        Every person using AI ends up asking some version of this question. The answer
+        arrives confident and complete, with no way to tell what&rsquo;s grounded,
+        what&rsquo;s stale, what&rsquo;s a guess, or what got pulled from where.
+      </p>
+      <p class="d-lede d-lede--narrow">
+        So you double-check everything by hand. Which is the work the AI was supposed to remove.
+      </p>
+      <p class="d-meta" style="margin-top: 24px;">
+        Hallucinations aren&rsquo;t a model problem. They&rsquo;re an architecture problem.
+        The model produces. The system around it has no idea what it just produced.
+      </p>
+    </section>
+
+    <!-- 3. THE TRUST QUESTION ================================ -->
+    <section class="monthly-wrapped_slide monthly-wrapped_bgLinen">
+      <p class="d-eyebrow">The question that ate the month</p>
+      <h2 class="d-headline">
+        Can you define trust in code?
+      </h2>
+      <p class="d-lede">
+        AI is happy to give you an answer. Most of the time we don&rsquo;t trust the answer.
+        The model isn&rsquo;t usually wrong. The system around the model has no way to tell
+        us what it&rsquo;s sure of, what&rsquo;s stale, what&rsquo;s a guess, and what to
+        leave out.
+      </p>
+      <p class="d-lede d-lede--narrow">
+        If trust is the bottleneck, then trust is what we have to build.
+      </p>
+    </section>
+
+    <!-- 4. THE BET — WISER, NOT JUST SMARTER ================ -->
+    <section class="monthly-wrapped_slide monthly-wrapped_bgEucalyptus">
+      <p class="d-eyebrow">The bet</p>
+      <h2 class="d-headline d-headline--med">
+        Not just smarter. Wiser.
+      </h2>
+      <p class="d-lede d-lede--wide">
+        Karpathy ships a wiki his AI maintains. Garry Tan ships a brain his AI reads
+        before every reply. Kieran Klaassen&rsquo;s compound engineering pattern is in
+        every new agent skill ecosystem. They&rsquo;re all chasing the same thing.
+        Better recall, faster retrieval, longer compounding loops. Personal AI is
+        getting smart.
+      </p>
+      <p class="d-lede d-lede--wide">
+        We think the harder problem is making it wiser.
+        Memory and judgment. That&rsquo;s what wiser looks like.
+      </p>
+    </section>
+
+    <!-- 5. MICRO-EXPRESSIONS (DIAGRAM A) ===================== -->
+    <section class="monthly-wrapped_slide monthly-wrapped_bgWarmWhite">
+      <p class="d-eyebrow">How humans decide trust</p>
+      <h2 class="d-headline d-headline--sm" style="margin-bottom: 16px;">
+        You call it gut instinct. It&rsquo;s really micro-signals compounding.
+      </h2>
+      <p class="d-lede d-lede--wide" style="margin-bottom: 8px;">
+        When you meet someone new, you don&rsquo;t decide to trust them. Your eyes and
+        ears pick up dozens of small things. Face, hands, voice, posture, clothing.
+        They compound into an opinion before you&rsquo;ve thought a sentence. AI has no
+        system for this. We had to build one.
+      </p>
+
+      <div class="d-parallel">
+        <div class="d-parallel-side">
+          <p class="d-parallel-title">Human trust</p>
+          <ul class="d-signals">
+            <li>The face <small>a flicker, an eyebrow</small></li>
+            <li>The hands <small>open or guarded</small></li>
+            <li>The voice <small>pace, certainty, warmth</small></li>
+            <li>The posture <small>what they lean into</small></li>
+            <li>The clothing <small>the context they came in</small></li>
+          </ul>
+          <p class="d-conclusion">
+            <strong>Gut instinct.</strong>
+            You didn&rsquo;t decide. You compounded.
+          </p>
+        </div>
+
+        <div class="d-parallel-rule" aria-hidden="true"></div>
+
+        <div class="d-parallel-side">
+          <p class="d-parallel-title">DailyOS trust</p>
+          <ul class="d-signals">
+            <li>Subject <small>who or what it&rsquo;s about</small></li>
+            <li>Temporal scope <small>when it was true</small></li>
+            <li>Sensitivity <small>who&rsquo;s allowed to see</small></li>
+            <li>Lifecycle <small>whether it&rsquo;s still believed</small></li>
+            <li>Salience <small>whether it&rsquo;s worth surfacing now</small></li>
+          </ul>
+          <p class="d-conclusion">
+            <strong>Trust band.</strong>
+            The system didn&rsquo;t decide. It compounded.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6. WHAT AI IS MISSING (DIAGRAM B) ==================== -->
+    <section class="monthly-wrapped_slide monthly-wrapped_bgWarmWhite" style="background: var(--color-paper-cream);">
+      <p class="d-eyebrow" style="color: rgba(42,43,61,0.7);">What today&rsquo;s AI is missing</p>
+      <h2 class="d-headline d-headline--med">
+        Every fact, the same weight, at the same time.
+      </h2>
+      <p class="d-lede d-lede--wide">
+        Today&rsquo;s AI memory is flat. Ask about an account and it returns
+        everything it has, at the same volume, with no internal sense of what to believe
+        more, what to flag, or what to leave out.
+      </p>
+
+      <div class="d-memcompare">
+        <div class="d-memcol">
+          <span class="d-memcol-eyebrow">AI today &middot; flat memory</span>
+          <p class="d-memcol-query">&ldquo;Tell me about Acme Corp.&rdquo;</p>
+          <ul class="d-memitems">
+            <li class="d-memitem--flat">Jen Park is the exec sponsor.</li>
+            <li class="d-memitem--flat">Renewal closes Q3.</li>
+            <li class="d-memitem--flat">Sara is the CSM.</li>
+            <li class="d-memitem--flat">SDK migration plan from February.</li>
+            <li class="d-memitem--flat">Headquartered in Boston.</li>
+            <li class="d-memitem--flat">Procurement reviewed pricing last spring.</li>
+          </ul>
+          <p class="d-memcol-footer">No signal for what matters.</p>
+        </div>
+
+        <div class="d-memcol">
+          <span class="d-memcol-eyebrow">DailyOS &middot; weighted memory</span>
+          <p class="d-memcol-query">&ldquo;Tell me about Acme Corp.&rdquo;</p>
+          <ul class="d-memitems">
+            <li class="d-memitem--weighted">
+              <span class="d-memdot d-memdot--hi"></span>
+              <span class="d-memtext">Jen Park became exec sponsor this week.
+                <span class="d-memband">likely_current &middot; today &middot; corroborated 3&times;</span>
+              </span>
+            </li>
+            <li class="d-memitem--weighted">
+              <span class="d-memdot d-memdot--hi"></span>
+              <span class="d-memtext">Renewal closes in Q3.
+                <span class="d-memband">likely_current &middot; last week</span>
+              </span>
+            </li>
+            <li class="d-memitem--weighted">
+              <span class="d-memdot d-memdot--md"></span>
+              <span class="d-memtext">SDK migration plan from February.
+                <span class="d-memband">use_with_caution &middot; 3mo old</span>
+              </span>
+            </li>
+            <li class="d-memitem--weighted">
+              <span class="d-memdot d-memdot--off"></span>
+              <span class="d-memtext" style="opacity: 0.55; text-decoration: line-through; text-decoration-color: rgba(42,43,61,0.4);">Sara is the CSM.
+                <span class="d-memband" style="text-decoration: none;">superseded &middot; Sara left in April</span>
+              </span>
+            </li>
+          </ul>
+          <p class="d-memcol-footer">Each fact carries its own self-evidence.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 7. THE FIVE PILLARS (DIAGRAM C) ====================== -->
+    <section class="monthly-wrapped_slide monthly-wrapped_bgSage">
+      <p class="d-eyebrow">The five pillars</p>
+      <h2 class="d-headline d-headline--med">
+        The micro-signals every claim carries.
+      </h2>
+      <p class="d-lede d-lede--wide" style="margin-bottom: 12px;">
+        For a memory to become trust, it has to carry the proof of its own trustworthiness.
+        Every claim DailyOS holds carries five things. Together they tell the system what
+        to surface and how confidently.
+      </p>
+
+      <div class="d-claimcard">
+        <div class="d-claimcard-header">
+          <span>Claim &middot; anatomy</span>
+          <em>one record &middot; five signals</em>
+        </div>
+        <div class="d-pillar">
+          <div class="d-pillar-name">Subject</div>
+          <div class="d-pillar-q">Who or what is this about?
+            <small>account &middot; person &middot; project &middot; meeting</small>
+          </div>
+          <span class="d-pillar-flag d-pillar-flag--live">Shipped</span>
+        </div>
+        <div class="d-pillar">
+          <div class="d-pillar-name">Temporal&nbsp;scope</div>
+          <div class="d-pillar-q">When was it true? When does it go stale?
+            <small>point-in-time &middot; persistent state &middot; trend</small>
+          </div>
+          <span class="d-pillar-flag d-pillar-flag--live">Shipped</span>
+        </div>
+        <div class="d-pillar">
+          <div class="d-pillar-name">Sensitivity</div>
+          <div class="d-pillar-q">Who&rsquo;s allowed to see this?
+            <small>public &middot; internal &middot; confidential &middot; user-only</small>
+          </div>
+          <span class="d-pillar-flag d-pillar-flag--live">Shipped</span>
+        </div>
+        <div class="d-pillar">
+          <div class="d-pillar-name">Lifecycle</div>
+          <div class="d-pillar-q">Is it still believed?
+            <small>proposed &rarr; committed &rarr; superseded &rarr; retracted</small>
+          </div>
+          <span class="d-pillar-flag d-pillar-flag--live">Shipped</span>
+        </div>
+        <div class="d-pillar">
+          <div class="d-pillar-name">Salience</div>
+          <div class="d-pillar-q">Worth surfacing right now?
+            <small>useful &middot; quiet &middot; contextual &middot; decay</small>
+          </div>
+          <span class="d-pillar-flag d-pillar-flag--next">v1.4.6 &middot; next</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 10. HOW TRUST GETS DECIDED =========================== -->
+    <section class="monthly-wrapped_slide monthly-wrapped_bgLinen">
+      <p class="d-eyebrow">How trust gets decided</p>
+      <h2 class="d-headline d-headline--med">
+        The five signals compound into a band.
+      </h2>
+      <p class="d-lede d-lede--wide">
+        The system doesn&rsquo;t hand you a confidence percentage. Nobody&rsquo;s eye for
+        trust works that way. It hands you a band, the way you&rsquo;d describe a new
+        acquaintance. Someone you trust. Someone you&rsquo;d double-check. Someone
+        you&rsquo;d ask a question of first.
+      </p>
+
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; max-width: 920px; width: 100%; margin-top: 24px;">
+        <div style="padding: 24px; background: rgba(126,170,123,0.18); border-left: 3px solid var(--color-garden-sage); border-radius: 8px;">
+          <p style="font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--color-garden-rosemary); margin: 0 0 10px;">likely_current</p>
+          <p style="font-family: var(--font-serif); font-size: 17px; line-height: 1.4; color: var(--color-desk-ink); margin: 0;">Use it. Surface it without qualification.</p>
+        </div>
+        <div style="padding: 24px; background: rgba(222,184,65,0.22); border-left: 3px solid var(--color-spice-saffron); border-radius: 8px;">
+          <p style="font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--color-desk-ink); margin: 0 0 10px;">use_with_caution</p>
+          <p style="font-family: var(--font-serif); font-size: 17px; line-height: 1.4; color: var(--color-desk-ink); margin: 0;">Surface it with the uncertainty showing.</p>
+        </div>
+        <div style="padding: 24px; background: rgba(196,101,74,0.18); border-left: 3px solid var(--color-spice-terracotta); border-radius: 8px;">
+          <p style="font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--color-spice-terracotta); margin: 0 0 10px;">needs_verification</p>
+          <p style="font-family: var(--font-serif); font-size: 17px; line-height: 1.4; color: var(--color-desk-ink); margin: 0;">Ask before acting. Get a human or a second source.</p>
+        </div>
+      </div>
+
+      <p class="d-meta" style="margin-top: 36px;">
+        Computed from the five pillars plus source quality, corroboration across sources,
+        contradictions on the record, and every correction you&rsquo;ve made.
+      </p>
+    </section>
+
+    <!-- 11. THE WHOLE LOOP (DIAGRAM D) ======================= -->
+    <section class="monthly-wrapped_slide monthly-wrapped_bgWarmWhite">
+      <p class="d-eyebrow">The whole loop</p>
+      <h2 class="d-headline d-headline--sm" style="margin-bottom: 8px;">
+        Signals in. Surfaces out. Feedback closes the loop.
+      </h2>
+
+      <div class="d-loop">
+        <svg viewBox="0 0 960 540" xmlns="http://www.w3.org/2000/svg" aria-label="DailyOS intelligence loop">
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 Z" fill="var(--color-desk-ink)" opacity="0.7"/>
+            </marker>
+          </defs>
+
+          <!-- Sources -->
+          <rect x="80"  y="40" width="800" height="56" rx="10" fill="none" stroke="var(--color-desk-ink)" stroke-width="1.4" stroke-dasharray="3 4" opacity="0.7"/>
+          <text x="480" y="64" text-anchor="middle" class="d-loop-node-sub">Sources</text>
+          <text x="480" y="84" text-anchor="middle" class="d-loop-node-label">Gmail &middot; Calendar &middot; Transcripts &middot; Documents &middot; Your edits</text>
+
+          <!-- Signals arrow -->
+          <line x1="480" y1="100" x2="480" y2="150" stroke="var(--color-desk-ink)" stroke-width="1.5" opacity="0.7" marker-end="url(#arrow)"/>
+          <text x="495" y="130" class="d-loop-edge-label">Signals</text>
+
+          <!-- Claim substrate -->
+          <rect x="240" y="160" width="480" height="68" rx="10" fill="var(--color-paper-warm-white)" stroke="var(--color-desk-ink)" stroke-width="1.5"/>
+          <text x="480" y="184" text-anchor="middle" class="d-loop-node-sub">Claim substrate</text>
+          <text x="480" y="208" text-anchor="middle" class="d-loop-node-label">subject &middot; time &middot; sensitivity &middot; lifecycle &middot; salience</text>
+
+          <!-- Trust arrow -->
+          <line x1="480" y1="232" x2="480" y2="280" stroke="var(--color-desk-ink)" stroke-width="1.5" opacity="0.7" marker-end="url(#arrow)"/>
+          <text x="495" y="262" class="d-loop-edge-label">Trust compiler</text>
+
+          <!-- Abilities runtime -->
+          <rect x="280" y="290" width="400" height="60" rx="10" fill="var(--color-paper-warm-white)" stroke="var(--color-desk-ink)" stroke-width="1.5"/>
+          <text x="480" y="312" text-anchor="middle" class="d-loop-node-sub">Abilities runtime</text>
+          <text x="480" y="334" text-anchor="middle" class="d-loop-node-label">prepare_meeting &middot; get_entity_context &middot; detect_risk_shift</text>
+
+          <!-- Surface arrow -->
+          <line x1="480" y1="354" x2="480" y2="420" stroke="var(--color-desk-ink)" stroke-width="1.5" opacity="0.7" marker-end="url(#arrow)"/>
+
+          <!-- Surface box (single, agnostic) -->
+          <rect x="320" y="425" width="320" height="60" rx="10" fill="none" stroke="var(--color-desk-ink)" stroke-width="1.4"/>
+          <text x="480" y="450" text-anchor="middle" class="d-loop-node-sub">Surface</text>
+          <text x="480" y="472" text-anchor="middle" class="d-loop-node-label">where the answer shows up</text>
+
+          <!-- Feedback curve back to top -->
+          <path d="M 860 450 C 920 450, 920 60, 860 60" fill="none" stroke="var(--color-spice-terracotta)" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
+          <text x="910" y="260" text-anchor="middle" class="d-loop-edge-label" fill="var(--color-spice-terracotta)" transform="rotate(90 910 260)">Feedback</text>
+        </svg>
+      </div>
+    </section>
+
+    <!-- 12. WHY AN ABILITIES RUNTIME ========================= -->
+    <section class="monthly-wrapped_slide monthly-wrapped_bgLinen">
+      <p class="d-eyebrow">Why an abilities runtime</p>
+      <h2 class="d-headline d-headline--med">
+        One front door for everything the system can do.
+      </h2>
+      <p class="d-lede d-lede--wide">
+        An <em>ability</em> is a single thing DailyOS knows how to do, like
+        <code>prepare_meeting</code>, <code>get_entity_context</code>, or
+        <code>detect_risk_shift</code>. The runtime is the one registry that hosts them.
+        Every call routes through it, which is how provenance, versioning, and permissions
+        stay consistent everywhere they show up.
+      </p>
+
+      <div class="d-fanout">
+        <svg viewBox="0 0 880 400" xmlns="http://www.w3.org/2000/svg" aria-label="Abilities runtime stack">
+          <defs>
+            <marker id="arrow2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 Z" fill="var(--color-desk-ink)" opacity="0.7"/>
+            </marker>
+          </defs>
+
+          <!-- Abilities (named capabilities) -->
+          <rect x="80" y="20" width="720" height="76" rx="10" fill="none" stroke="var(--color-desk-ink)" stroke-width="1.4" stroke-dasharray="3 4" opacity="0.7"/>
+          <text x="440" y="46" text-anchor="middle" class="d-fanout-sub">Abilities</text>
+          <text x="440" y="74" text-anchor="middle" class="d-fanout-surface">prepare_meeting &middot; get_entity_context &middot; detect_risk_shift &middot; ...</text>
+
+          <line x1="440" y1="100" x2="440" y2="150" stroke="var(--color-desk-ink)" stroke-width="1.5" opacity="0.7" marker-end="url(#arrow2)"/>
+
+          <!-- Runtime -->
+          <rect x="40" y="158" width="800" height="120" rx="12" fill="var(--color-paper-warm-white)" stroke="var(--color-desk-ink)" stroke-width="1.8"/>
+          <text x="440" y="186" text-anchor="middle" class="d-fanout-sub">Abilities runtime</text>
+          <text x="440" y="216" text-anchor="middle" class="d-fanout-runtime">one registry &middot; one entrypoint</text>
+          <text x="440" y="248" text-anchor="middle" class="d-fanout-sub">provenance &middot; versioning &middot; actor filtering &middot; contracts</text>
+
+          <line x1="440" y1="282" x2="440" y2="328" stroke="var(--color-desk-ink)" stroke-width="1.5" opacity="0.7" marker-end="url(#arrow2)"/>
+
+          <!-- Single surface -->
+          <rect x="280" y="333" width="320" height="60" rx="10" fill="none" stroke="var(--color-desk-ink)" stroke-width="1.4"/>
+          <text x="440" y="358" text-anchor="middle" class="d-fanout-sub">Surface</text>
+          <text x="440" y="380" text-anchor="middle" class="d-fanout-surface">where the answer shows up</text>
+        </svg>
+      </div>
+
+      <p class="d-meta" style="margin-top: 28px;">
+        Without this front door, every consumer of the substrate ends up inventing its
+        own context, its own prompts, its own provenance. With it, those things live once.
+      </p>
+    </section>
+
+    <!-- 11. WHAT 33 DAYS SHIPPED ============================= -->
+    <section class="monthly-wrapped_slide monthly-wrapped_bgWarmWhite">
+      <p class="d-eyebrow">Evidence the substrate is real</p>
+      <h2 class="d-headline d-headline--med">
+        What shipped during RSM.
+      </h2>
+
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 48px; max-width: 940px; width: 100%; margin-top: 16px;">
+        <div>
+          <p class="d-bignum" style="font-size: clamp(64px, 8vw, 104px);">932</p>
+          <p class="d-bignum-label">commits to public/dev</p>
+          <p class="d-bignum-sub">147 PRs merged &middot; 159 opened</p>
+        </div>
+        <div>
+          <p class="d-bignum" style="font-size: clamp(64px, 8vw, 104px);">+613k</p>
+          <p class="d-bignum-label">net tracked lines</p>
+          <p class="d-bignum-sub">4,042 files &middot; substrate more than doubled</p>
+        </div>
+        <div>
+          <p class="d-bignum" style="font-size: clamp(64px, 8vw, 104px);">22.4B</p>
+          <p class="d-bignum-label">tokens building it</p>
+          <p class="d-bignum-sub">2,032 coding-agent sessions</p>
+        </div>
+      </div>
+
+      <div class="d-statGrid" style="margin-top: 56px; max-width: 940px; grid-template-columns: repeat(4, minmax(0, 1fr));">
+        <div class="d-statRow"><span class="d-statRow-label">Rust</span><span class="d-statRow-value">+264k</span></div>
+        <div class="d-statRow"><span class="d-statRow-label">Markdown</span><span class="d-statRow-value">+102k</span></div>
+        <div class="d-statRow"><span class="d-statRow-label">JSON</span><span class="d-statRow-value">+79k</span></div>
+        <div class="d-statRow"><span class="d-statRow-label">CSS</span><span class="d-statRow-value">+64k</span></div>
+        <div class="d-statRow"><span class="d-statRow-label">PHP</span><span class="d-statRow-value">+35k</span></div>
+        <div class="d-statRow"><span class="d-statRow-label">HTML</span><span class="d-statRow-value">+23k</span></div>
+        <div class="d-statRow"><span class="d-statRow-label">React</span><span class="d-statRow-value">+12k</span></div>
+        <div class="d-statRow"><span class="d-statRow-label">SQL</span><span class="d-statRow-value">+11k</span></div>
+      </div>
+
+      <p class="d-meta" style="margin-top: 28px;">
+        While we were building, the app was running. 10,349 AI calls, 9,576 successes,
+        92.5%. Mostly background entity enrichment, email action extraction, meeting
+        prep, and today&rsquo;s briefing.
+      </p>
+    </section>
+
+    <!-- 12. WHAT WISER PRODUCES ============================= -->
+    <section class="monthly-wrapped_slide monthly-wrapped_bgWarmWhite" style="background: var(--color-paper-cream);">
+      <p class="d-eyebrow">So what?</p>
+      <h2 class="d-headline d-headline--med">
+        A trustworthy workspace produces output you can act on.
+      </h2>
+      <p class="d-lede d-lede--wide">
+        When every claim carries its own evidence, the briefings get sharper, the prep
+        gets shorter, the decisions get easier. The better the output, the better the
+        work it lets you do.
+      </p>
+    </section>
+
+    <!-- 13. THE PAIN THE SOLUTION CREATES ==================== -->
+    <section class="monthly-wrapped_slide monthly-wrapped_bgWarmWhite">
+      <p class="d-eyebrow">The pain we just created</p>
+      <h2 class="d-headline d-headline--med">
+        The more we trust the output, the more we&rsquo;ll generate.
+      </h2>
+      <p class="d-lede d-lede--wide">
+        Markdown notes, HTML plans, prep docs, transcripts, six versions of an onboarding
+        screen. A trustworthy substrate is also a productive one. All that rich output
+        has to live somewhere.
+      </p>
+
+      <div style="max-width: 760px; width: 100%; margin-top: 32px; padding-top: 28px; border-top: 1px solid rgba(42,43,61,0.18);">
+        <h3 class="d-headline d-headline--sm" style="margin-bottom: 14px;">
+          Sound familiar?
+        </h3>
+        <p class="d-lede d-lede--wide" style="margin-bottom: 0;">
+          At Automattic we&rsquo;ve been solving content management for over twenty years.
+          Now we need to solve it locally. Not just remotely.
+        </p>
+      </div>
+    </section>
+
+    <!-- 15b. ONE MORE THING — SURFACES REVEAL ================ -->
+    <section class="monthly-wrapped_slide monthly-wrapped_bgLinen">
+      <p class="d-eyebrow">One more thing</p>
+      <h2 class="d-headline d-headline--med">
+        What if it wasn&rsquo;t just an app?
+      </h2>
+      <p class="d-lede d-lede--wide">
+        The runtime works inside WordPress, where we already spend our time. It works
+        inside Claude or Codex over MCP, where people are spending more and more of
+        theirs. Same claims, same trust bands, same provenance.
+      </p>
+
+      <div class="d-fanout">
+        <svg viewBox="0 0 880 380" xmlns="http://www.w3.org/2000/svg" aria-label="DailyOS runtime, multiple surfaces">
+          <defs>
+            <marker id="arrow4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 Z" fill="var(--color-desk-ink)" opacity="0.7"/>
+            </marker>
+          </defs>
+
+          <!-- Runtime hub -->
+          <circle cx="440" cy="190" r="108" fill="var(--color-paper-warm-white)" stroke="var(--color-desk-ink)" stroke-width="1.8"/>
+          <text x="440" y="178" text-anchor="middle" class="d-fanout-sub">DailyOS runtime</text>
+          <text x="440" y="206" text-anchor="middle" class="d-fanout-runtime">one substrate</text>
+
+          <!-- Surface: Tauri app -->
+          <rect x="40"  y="40"  width="200" height="68" rx="10" fill="none" stroke="var(--color-desk-ink)" stroke-width="1.4"/>
+          <text x="140" y="68"  text-anchor="middle" class="d-fanout-sub">Today</text>
+          <text x="140" y="92"  text-anchor="middle" class="d-fanout-surface">Desktop app</text>
+
+          <!-- Surface: MCP -->
+          <rect x="640" y="40"  width="200" height="68" rx="10" fill="none" stroke="var(--color-desk-ink)" stroke-width="1.4"/>
+          <text x="740" y="68"  text-anchor="middle" class="d-fanout-sub">What if</text>
+          <text x="740" y="92"  text-anchor="middle" class="d-fanout-surface">Claude &middot; Codex via MCP</text>
+
+          <!-- Surface: WordPress -->
+          <rect x="340" y="312" width="200" height="68" rx="10" fill="none" stroke="var(--color-desk-ink)" stroke-width="1.4"/>
+          <text x="440" y="340" text-anchor="middle" class="d-fanout-sub">What if</text>
+          <text x="440" y="364" text-anchor="middle" class="d-fanout-surface">Local WordPress layer</text>
+
+          <!-- Lines -->
+          <line x1="240" y1="74"  x2="350" y2="148" stroke="var(--color-desk-ink)" stroke-width="1.4" opacity="0.7" marker-end="url(#arrow4)"/>
+          <line x1="640" y1="74"  x2="530" y2="148" stroke="var(--color-desk-ink)" stroke-width="1.4" opacity="0.7" marker-end="url(#arrow4)"/>
+          <line x1="440" y1="312" x2="440" y2="300" stroke="var(--color-desk-ink)" stroke-width="1.4" opacity="0.7" marker-end="url(#arrow4)"/>
+        </svg>
+      </div>
+
+    </section>
+
+    <!-- 15. CLOSE ============================================ -->
+    <section class="monthly-wrapped_slide monthly-wrapped_bgEucalyptus demo-close">
+      <p class="d-eyebrow">Why all this earth had to move</p>
+      <h2 class="d-headline">
+        Memory. Judgment. Trust.
+      </h2>
+      <p class="d-lede d-lede--wide">
+        Memory knows what happened. Judgment decides what matters.
+        Trust is what they produce together when the substrate is doing its job.
+        That&rsquo;s the bet. That&rsquo;s what RSM was for.
+      </p>
+
+      <div class="d-pills">
+        <span class="d-pill d-pill--memory">Memory</span>
+        <span class="d-pill d-pill--judgment">Judgment</span>
+        <span class="d-pill d-pill--trust">Trust</span>
+      </div>
+
+      <p class="d-meta" style="margin-top: 56px;">
+        Demo Day &middot; May 25, 2026.
+        Stats anchored to <code>public/dev</code> on May 25. Open PRs not included.
+      </p>
+    </section>
+
+  </div>
+</div>
+
+</main>
+</div>
+
+<!-- ===================================================================
+     SLIDE SWITCHER — fixed bottom-right
+     =================================================================== -->
+<nav class="d-switcher" aria-label="Slide navigation">
+  <button class="d-switcher-btn d-switcher-prev" type="button" aria-label="Previous slide">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
+  </button>
+  <span class="d-switcher-indicator" aria-live="polite">1 / 16</span>
+  <button class="d-switcher-btn d-switcher-next" type="button" aria-label="Next slide">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+  </button>
+</nav>
+
+<script src="../design/reference/_shared/chrome.js"></script>
+<script>
+(function () {
+  const container = document.querySelector('.demo-deck');
+  if (!container) return;
+  const slides = Array.from(container.querySelectorAll('.monthly-wrapped_slide'));
+  const total = slides.length;
+  const indicator = document.querySelector('.d-switcher-indicator');
+  const prevBtn = document.querySelector('.d-switcher-prev');
+  const nextBtn = document.querySelector('.d-switcher-next');
+  let current = 0;
+
+  function paint(i) {
+    current = Math.max(0, Math.min(total - 1, i));
+    indicator.textContent = (current + 1) + ' / ' + total;
+    prevBtn.disabled = current === 0;
+    nextBtn.disabled = current === total - 1;
+  }
+
+  function go(i) {
+    const next = Math.max(0, Math.min(total - 1, i));
+    slides[next].scrollIntoView({ behavior: 'smooth', block: 'start' });
+    paint(next);
+  }
+
+  prevBtn.addEventListener('click', () => go(current - 1));
+  nextBtn.addEventListener('click', () => go(current + 1));
+
+  // Keep indicator in sync when user scrolls/snaps manually
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
+        const idx = slides.indexOf(entry.target);
+        if (idx >= 0) paint(idx);
+      }
+    });
+  }, { threshold: [0.5] });
+  slides.forEach((s) => observer.observe(s));
+
+  // Keyboard
+  document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') {
+      e.preventDefault();
+      go(current + 1);
+    } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+      e.preventDefault();
+      go(current - 1);
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      go(0);
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      go(total - 1);
+    }
+  });
+
+  paint(0);
+})();
+</script>
+</body>
+</html>

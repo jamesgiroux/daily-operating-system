@@ -1274,7 +1274,7 @@ mod tests {
             .await
             .unwrap_err();
 
-        assert_eq!(err, BridgeSurfaceError::AbilityUnavailable);
+        assert_eq!(err, BridgeSurfaceError::InputReservedField);
     }
 
     #[tokio::test]

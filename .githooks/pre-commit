@@ -38,10 +38,58 @@ append_error() {
   fi
 }
 
+GIT_DIR_RESOLVED="$(git rev-parse --git-dir 2>/dev/null || true)"
+HOOK_STATE_DIR=""
+HOOK_GAUNTLET_CACHE=""
+if [ -n "$GIT_DIR_RESOLVED" ]; then
+  HOOK_STATE_DIR="${GIT_DIR_RESOLVED}/hooks-state"
+  HOOK_GAUNTLET_CACHE="${HOOK_STATE_DIR}/last-green-gauntlet-v2"
+fi
+
+cache_field() {
+  local key="$1"
+  [ -n "$HOOK_GAUNTLET_CACHE" ] && [ -f "$HOOK_GAUNTLET_CACHE" ] || return 0
+  grep -E "^${key}=" "$HOOK_GAUNTLET_CACHE" 2>/dev/null | head -1 | cut -d= -f2- || true
+}
+
+write_gauntlet_cache() {
+  local tree="$1"
+  local rust_passed="$2"
+  local frontend_passed="$3"
+  [ -n "$HOOK_STATE_DIR" ] && [ -n "$HOOK_GAUNTLET_CACHE" ] && [ -n "$tree" ] || return 0
+  mkdir -p "$HOOK_STATE_DIR" 2>/dev/null || true
+  {
+    printf 'version=2\n'
+    printf 'tree=%s\n' "$tree"
+    printf 'rust=%s\n' "$rust_passed"
+    printf 'frontend=%s\n' "$frontend_passed"
+  } > "$HOOK_GAUNTLET_CACHE" 2>/dev/null || true
+}
+
+run_silenced_check() {
+  local label="$1"
+  local exit_code="$2"
+  shift 2
+
+  local log_dir="${HOOK_STATE_DIR:-/tmp}"
+  mkdir -p "$log_dir" 2>/dev/null || true
+  local safe_label
+  safe_label="$(printf '%s' "$label" | tr -c '[:alnum:]_.-' '_')"
+  local log_file="${log_dir}/${safe_label}.log"
+
+  echo "pre-commit: ${label}" >&2
+  if ! "$@" >"$log_file" 2>&1; then
+    printf '🚫 Pre-commit gate FAILED. Fix before committing:\n❌ %s FAILED\n' "$label" >&2
+    printf '   Log: %s\n' "$log_file" >&2
+    tail -40 "$log_file" >&2 || true
+    exit "$exit_code"
+  fi
+}
+
 staged_added_lines() {
   git diff --cached -U0 -- "$1" 2>/dev/null \
-    | grep -E '^\+' \
-    | grep -v '^\+\+\+' \
+    | grep '^+' \
+    | grep -v '^+++' \
     || true
 }
 
@@ -65,35 +113,7 @@ if [ "${WIP:-0}" = "1" ]; then
   echo "pre-commit: WIP=1 set — skipping heavy checks (clippy/test/tsc). pre-push will catch them." >&2
 fi
 
-# 0. Ensure Tauri externalBin stub exists (required for cargo build/clippy/test).
-if [ -d "$BACKEND_DIR" ] && [ -f "${BACKEND_DIR}/scripts/build-mcp.sh" ]; then
-  if ! ls "${BACKEND_DIR}/binaries/"dailyos-mcp-* >/dev/null 2>&1; then
-    bash "${BACKEND_DIR}/scripts/build-mcp.sh" --stub >/dev/null 2>&1 || true
-  fi
-fi
-
-# 1. Clippy — only if Rust files staged AND not in WIP mode.
-if [ "$HAS_RUST" = true ] && [ "$WIP_MODE" = false ] && [ -d "$BACKEND_DIR" ]; then
-  if ! cargo clippy --manifest-path "$BACKEND_DIR/Cargo.toml" -- -D warnings >/dev/null 2>&1; then
-    append_error "❌ cargo clippy -- -D warnings FAILED"
-  fi
-fi
-
-# 2. Cargo test — only if Rust files staged AND not in WIP mode.
-if [ "$HAS_RUST" = true ] && [ "$WIP_MODE" = false ] && [ -d "$BACKEND_DIR" ]; then
-  if ! cargo test --lib --manifest-path "$BACKEND_DIR/Cargo.toml" >/dev/null 2>&1; then
-    append_error "❌ cargo test --lib FAILED"
-  fi
-fi
-
-# 3. TypeScript type check — only if frontend files staged AND not in WIP mode.
-if [ "$HAS_FRONTEND" = true ] && [ "$WIP_MODE" = false ] && [ -f "${CWD}/package.json" ]; then
-  if ! pnpm tsc --noEmit >/dev/null 2>&1; then
-    append_error "❌ pnpm tsc --noEmit FAILED"
-  fi
-fi
-
-# 3a. lint-staged — fast eslint + stylelint on changed files only (DOS-533).
+# 1. lint-staged — fast eslint + stylelint on changed files only (DOS-533).
 # Runs even in WIP mode because it's fast (<5s) and only touches staged files.
 # Skip cleanly if lint-staged isn't installed yet (config rolling out gradually).
 # --concurrent true: eslint + stylelint can run in parallel on non-overlapping
@@ -225,9 +245,11 @@ done <<< "$STAGED_FILES"
 # per-file loop — same terms, same exclusions, same exit signal.
 PII_BLOCKLIST="${CWD}/.claude/pii-blocklist.txt"
 if [ -f "$PII_BLOCKLIST" ]; then
-  PII_TERMS="$(grep -v '^[[:space:]]*#' "$PII_BLOCKLIST" | grep -v '^[[:space:]]*$' | sed 's/[][(){}.*+?^$|\\]/\\&/g' | paste -sd '|' - || true)"
-  if [ -n "$PII_TERMS" ]; then
-    bad_paths="$(printf '%s\n' "$STAGED_FILES" | grep -iwE "$PII_TERMS" 2>/dev/null || true)"
+  PII_TERMS_FILE="${HOOK_STATE_DIR:-/tmp}/pii-blocklist-terms.$$"
+  mkdir -p "$(dirname "$PII_TERMS_FILE")" 2>/dev/null || true
+  grep -v '^[[:space:]]*#' "$PII_BLOCKLIST" | grep -v '^[[:space:]]*$' > "$PII_TERMS_FILE" 2>/dev/null || true
+  if [ -s "$PII_TERMS_FILE" ]; then
+    bad_paths="$(printf '%s\n' "$STAGED_FILES" | grep -iwFf "$PII_TERMS_FILE" 2>/dev/null || true)"
     if [ -n "$bad_paths" ]; then
       append_error "🔒 PII check: staged filename(s) match blocklist:"
       append_error "$(printf '%s\n' "$bad_paths" | sed 's/^/   /')"
@@ -240,7 +262,7 @@ if [ -f "$PII_BLOCKLIST" ]; then
       [ -z "$pii_current_file" ] && return 0
       [ "$pii_current_file" = ".claude/pii-blocklist.txt" ] && { pii_current_file=""; pii_current_added=""; return 0; }
       if [ -n "$pii_current_added" ]; then
-        bad_content="$(printf '%s\n' "$pii_current_added" | grep -iwE "$PII_TERMS" 2>/dev/null || true)"
+        bad_content="$(printf '%s\n' "$pii_current_added" | grep -iwFf "$PII_TERMS_FILE" 2>/dev/null || true)"
         if [ -n "$bad_content" ]; then
           append_error "🔒 PII check: staged diff in ${pii_current_file} contains blocklisted term(s):"
           append_error "$(printf '%s\n' "$bad_content" | head -5 | sed 's/^/   /')"
@@ -267,6 +289,7 @@ if [ -f "$PII_BLOCKLIST" ]; then
     done < <(git diff --cached -U0 --diff-filter=ACM 2>/dev/null || true)
     flush_pii_check
   fi
+  rm -f "$PII_TERMS_FILE"
 fi
 
 # 8. Reference fidelity gate (cheap unless audit script does heavy work)
@@ -281,7 +304,7 @@ if printf '%s\n' "$STAGED_FILES" | grep -qE '\.docs/design/reference/(surfaces|_
   fi
 fi
 
-# Block commit if any errors.
+# Block commit before prompt/cargo checks if cheap/path-local checks already failed.
 if [ -n "$ERRORS" ]; then
   printf '🚫 Pre-commit gate FAILED. Fix these before committing:\n%s\n' "$ERRORS" >&2
   exit 2
@@ -300,18 +323,55 @@ if [ "$HAS_PROMPT_RELEVANT_CHANGE" = true ]; then
   "$ROOT_DIR/scripts/check_prompt_fingerprint_boundary.sh"
 fi
 
-# Cache tree-SHA: lets pre-push short-circuit its duplicate gauntlet when
-# HEAD's tree hasn't drifted from what pre-commit just verified. Only write
-# the marker when the heavy gauntlet actually ran (not WIP mode) AND
-# everything passed. Pre-push compares HEAD's tree to this marker.
-# Use `git rev-parse --git-dir` so the marker is per-worktree (in worktrees
-# the path `.git` is a file pointing at `.git/worktrees/<name>/`).
-if [ "$WIP_MODE" = false ]; then
-  GIT_DIR_RESOLVED="$(git rev-parse --git-dir 2>/dev/null)"
-  if [ -n "$GIT_DIR_RESOLVED" ]; then
-    mkdir -p "${GIT_DIR_RESOLVED}/hooks-state" 2>/dev/null || true
-    git write-tree > "${GIT_DIR_RESOLVED}/hooks-state/last-green-tree" 2>/dev/null || true
+# Heavy gauntlet cache: repeated commit attempts against the same index tree
+# should not re-run clippy/test/tsc after they have already passed once. The
+# cache records which tiers passed, so doc-only commits cannot accidentally mark
+# a Rust or frontend tree as verified.
+CURRENT_INDEX_TREE="$(git write-tree 2>/dev/null || echo "")"
+HEAVY_CACHE_HIT=false
+if [ "$WIP_MODE" = false ] && [ -n "$CURRENT_INDEX_TREE" ]; then
+  CACHED_TREE="$(cache_field tree)"
+  CACHED_RUST="$(cache_field rust)"
+  CACHED_FRONTEND="$(cache_field frontend)"
+  if [ "$CACHED_TREE" = "$CURRENT_INDEX_TREE" ]; then
+    RUST_COVERED=false
+    FRONTEND_COVERED=false
+    if [ "$HAS_RUST" = false ] || [ "$CACHED_RUST" = true ]; then
+      RUST_COVERED=true
+    fi
+    if [ "$HAS_FRONTEND" = false ] || [ "$CACHED_FRONTEND" = true ]; then
+      FRONTEND_COVERED=true
+    fi
+    if [ "$RUST_COVERED" = true ] && [ "$FRONTEND_COVERED" = true ]; then
+      HEAVY_CACHE_HIT=true
+      echo "pre-commit: index tree ${CURRENT_INDEX_TREE} already passed required heavy checks — skipping clippy/test/tsc" >&2
+    fi
   fi
+fi
+
+RUST_GAUNTLET_PASSED=false
+FRONTEND_GAUNTLET_PASSED=false
+
+if [ "$WIP_MODE" = false ] && [ "$HEAVY_CACHE_HIT" = false ]; then
+  # Ensure Tauri externalBin stub exists (required for cargo build/clippy/test).
+  if [ "$HAS_RUST" = true ] && [ -d "$BACKEND_DIR" ] && [ -f "${BACKEND_DIR}/scripts/build-mcp.sh" ]; then
+    if ! ls "${BACKEND_DIR}/binaries/"dailyos-mcp-* >/dev/null 2>&1; then
+      bash "${BACKEND_DIR}/scripts/build-mcp.sh" --stub >/dev/null 2>&1 || true
+    fi
+  fi
+
+  if [ "$HAS_RUST" = true ] && [ -d "$BACKEND_DIR" ]; then
+    run_silenced_check "cargo clippy -- -D warnings" 2 cargo clippy --manifest-path "$BACKEND_DIR/Cargo.toml" -- -D warnings
+    run_silenced_check "cargo test --lib" 2 cargo test --lib --manifest-path "$BACKEND_DIR/Cargo.toml"
+    RUST_GAUNTLET_PASSED=true
+  fi
+
+  if [ "$HAS_FRONTEND" = true ] && [ -f "${CWD}/package.json" ]; then
+    run_silenced_check "pnpm tsc --noEmit" 2 pnpm tsc --noEmit
+    FRONTEND_GAUNTLET_PASSED=true
+  fi
+
+  write_gauntlet_cache "$CURRENT_INDEX_TREE" "$RUST_GAUNTLET_PASSED" "$FRONTEND_GAUNTLET_PASSED"
 fi
 
 exit 0
