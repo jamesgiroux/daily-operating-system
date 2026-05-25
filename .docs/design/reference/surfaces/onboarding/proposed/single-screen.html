@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Onboarding · Proposed · Single Screen — DailyOS Reference</title>
+
+<link rel="stylesheet" href="../../../_shared/fonts.css">
+<link rel="stylesheet" href="../../../_shared/styles/design-tokens.css">
+<link rel="stylesheet" href="../../../_shared/styles/AtmosphereLayer.module.css">
+<link rel="stylesheet" href="../../../_shared/styles/FolioBar.module.css">
+<link rel="stylesheet" href="../../../_shared/styles/FloatingNavIsland.module.css">
+<link rel="stylesheet" href="../../../_shared/styles/ChapterHeading.module.css">
+<link rel="stylesheet" href="../../../_shared/styles/onboarding.module.css">
+<link rel="stylesheet" href="../../../_shared/styles/ui-button.css">
+<link rel="stylesheet" href="../../../_shared/styles/tailwind-shims.css">
+<link rel="stylesheet" href="../../../_shared/chrome.css">
+<link rel="stylesheet" href="../../../_shared/inspector.css">
+
+<style>
+  /* Proposed: three connector tiles stacked vertically, each carrying its own status.
+     Reuses onboarding_presetCard as the visual base; adds a status row + connect action. */
+  .ob-prop-tileStack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+  }
+  .ob-prop-tile {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: var(--space-md);
+    padding: var(--space-lg);
+    background: var(--color-paper-warm-white);
+    border: 1px solid var(--color-rule-light);
+    border-radius: var(--radius-editorial-md);
+    transition: border-color var(--transition-normal);
+  }
+  .ob-prop-tile[data-state="done"] {
+    border-color: var(--color-rule-heavy);
+    background: var(--color-paper-cream);
+  }
+  .ob-prop-tile-icon {
+    width: 40px; height: 40px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: var(--radius-editorial-sm);
+    background: var(--color-paper-cream);
+    color: var(--color-text-secondary);
+    flex-shrink: 0;
+  }
+  .ob-prop-tile[data-state="done"] .ob-prop-tile-icon {
+    background: var(--color-spice-turmeric);
+    color: var(--color-paper-cream);
+  }
+  .ob-prop-tile-body { min-width: 0; }
+  .ob-prop-tile-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+    margin: 0 0 4px;
+  }
+  .ob-prop-tile-name {
+    font-family: var(--font-serif);
+    font-size: 20px;
+    font-weight: 400;
+    color: var(--color-text-primary);
+    margin: 0 0 2px;
+    line-height: 1.2;
+  }
+  .ob-prop-tile-meta {
+    font-family: var(--font-sans);
+    font-size: 13px;
+    color: var(--color-text-secondary);
+    margin: 0;
+    line-height: 1.4;
+  }
+  .ob-prop-tile-status {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.05em;
+    color: var(--color-text-tertiary);
+  }
+  .ob-prop-tile-status[data-tone="done"] { color: var(--color-text-primary); }
+  .ob-prop-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: currentColor;
+  }
+  .ob-prop-cta-row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: var(--space-md);
+    padding-top: var(--space-md);
+    border-top: 1px solid var(--color-rule-light);
+  }
+  .ob-prop-progress {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    color: var(--color-text-tertiary);
+  }
+  .ob-prop-skip {
+    font-family: var(--font-sans);
+    font-size: 13px;
+    color: var(--color-text-tertiary);
+    background: none;
+    border: 0;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+  .ob-prop-role-mini {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    width: 100%;
+    margin-top: var(--space-sm);
+  }
+  .ob-prop-role-chip {
+    padding: 6px 10px;
+    border: 1px solid var(--color-rule-light);
+    border-radius: var(--radius-editorial-sm);
+    background: var(--color-paper-cream);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    text-align: left;
+    cursor: pointer;
+  }
+  .ob-prop-role-chip[aria-pressed="true"] {
+    border-color: var(--color-spice-turmeric);
+    color: var(--color-text-primary);
+    background: var(--color-paper-warm-white);
+  }
+</style>
+</head>
+<body
+  data-folio-label="Setup · Proposed (single)"
+  data-folio-crumbs="Reference > Surfaces > Onboarding > Proposed > Single Screen"
+  data-tint="turmeric"
+  data-active-page=""
+  data-nav-mode="chapters-only"
+  data-active-chapter="setup"
+  data-chapters="setup:sparkles:Setup">
+
+<div class="onboarding_wrapper">
+  <div class="onboarding_contentColumn">
+    <div class="onboarding_flexCol onboarding_gap32">
+
+      <!-- Brand + welcome line -->
+      <div class="onboarding_brandMark">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="40" height="40" aria-hidden="true">
+          <path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/>
+        </svg>
+      </div>
+
+      <div class="onboarding_flexCol onboarding_gap12">
+        <h1 class="onboarding_heroHeadline">Three things, then you're in.</h1>
+        <p class="onboarding_bodyTextConstrained">
+          DailyOS works best with your calendar, your email, and the AI that
+          writes your briefings. Pick a role so we know how to prep your day.
+          Everything else you'll set up as you go.
+        </p>
+      </div>
+
+      <!-- Three stacked tiles -->
+      <div class="ob-prop-tileStack">
+
+        <!-- Tile 1: Google — done state -->
+        <div class="ob-prop-tile" data-state="done">
+          <div class="ob-prop-tile-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+          </div>
+          <div class="ob-prop-tile-body">
+            <p class="ob-prop-tile-label">01 · Connect</p>
+            <p class="ob-prop-tile-name">Google</p>
+            <p class="ob-prop-tile-meta">Calendar + Gmail — meeting prep and email triage.</p>
+          </div>
+          <span class="ob-prop-tile-status" data-tone="done">
+            <span class="ob-prop-dot"></span>
+            sam@example.com
+          </span>
+        </div>
+
+        <!-- Tile 2: Claude Code — pending state -->
+        <div class="ob-prop-tile" data-state="pending">
+          <div class="ob-prop-tile-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+          </div>
+          <div class="ob-prop-tile-body">
+            <p class="ob-prop-tile-label">02 · Install</p>
+            <p class="ob-prop-tile-name">Claude Code</p>
+            <p class="ob-prop-tile-meta">The AI engine that writes your briefings and analyzes mail.</p>
+          </div>
+          <button type="button" class="ui-button ui-button-default ui-button-default-size" data-slot="button" data-variant="default" data-size="default">
+            Install
+          </button>
+        </div>
+
+        <!-- Tile 3: Role preset — inline picker, one selected -->
+        <div class="ob-prop-tile" data-state="done" style="grid-template-columns: auto 1fr; align-items: start;">
+          <div class="ob-prop-tile-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="7" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+          </div>
+          <div class="ob-prop-tile-body" style="grid-column: 2 / -1;">
+            <p class="ob-prop-tile-label">03 · Pick your role</p>
+            <p class="ob-prop-tile-name">Customer Success</p>
+            <p class="ob-prop-tile-meta">Shapes your vitals, vocabulary, and briefing prep. Change anytime.</p>
+            <div class="ob-prop-role-mini">
+              <button type="button" class="ob-prop-role-chip">Core</button>
+              <button type="button" class="ob-prop-role-chip" aria-pressed="true">Customer Success</button>
+              <button type="button" class="ob-prop-role-chip">Affiliates &amp; Partnerships</button>
+              <button type="button" class="ob-prop-role-chip">Product &amp; Marketing</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- CTA row -->
+      <div class="ob-prop-cta-row">
+        <span class="ob-prop-progress">2 of 3 ready</span>
+        <div style="display: flex; align-items: center; gap: var(--space-md);">
+          <button type="button" class="ob-prop-skip">Skip setup</button>
+          <button type="button" class="ui-button ui-button-default ui-button-lg" data-slot="button" data-variant="default" data-size="lg" disabled>
+            Start DailyOS
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="ml-2 size-4"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="../../../_shared/chrome.js"></script>
+<script src="../../../_shared/inspector.js"></script>
+</body>
+</html>

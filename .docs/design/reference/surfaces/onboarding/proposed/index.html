@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Onboarding · Proposed — DailyOS Reference</title>
+
+<link rel="stylesheet" href="../../../_shared/fonts.css">
+<link rel="stylesheet" href="../../../_shared/styles/design-tokens.css">
+<link rel="stylesheet" href="../../../_shared/styles/AtmosphereLayer.module.css">
+<link rel="stylesheet" href="../../../_shared/styles/FolioBar.module.css">
+<link rel="stylesheet" href="../../../_shared/styles/FloatingNavIsland.module.css">
+<link rel="stylesheet" href="../../../_shared/styles/MagazinePageLayout.module.css">
+<link rel="stylesheet" href="../../../_shared/chrome.css">
+<link rel="stylesheet" href="../../../_shared/inspector.css">
+
+<style>
+  .ob-cover {
+    padding-top: var(--space-5xl);
+    padding-bottom: var(--space-2xl);
+    border-bottom: 1px solid var(--color-rule-heavy);
+  }
+  .ob-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+    margin: 0 0 var(--space-md);
+  }
+  .ob-eyebrow a { color: inherit; border-bottom: 1px solid currentColor; text-decoration: none; }
+  .ob-title {
+    font-family: var(--font-serif);
+    font-size: 64px;
+    font-weight: 400;
+    letter-spacing: -0.02em;
+    line-height: 1.04;
+    margin: 0;
+  }
+  .ob-lede {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-weight: 300;
+    font-size: 19px;
+    color: var(--color-text-secondary);
+    max-width: 700px;
+    margin: var(--space-md) 0 0;
+  }
+  .ob-stats {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+    margin-top: var(--space-lg);
+    display: flex;
+    gap: var(--space-lg);
+    flex-wrap: wrap;
+  }
+
+  .ob-section {
+    padding: var(--space-3xl) 0;
+    border-bottom: 1px solid var(--color-rule-light);
+  }
+
+  .ob-compare {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-2xl);
+  }
+  @media (max-width: 960px) {
+    .ob-compare { grid-template-columns: 1fr; }
+  }
+
+  .ob-shape-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+    margin: 0 0 var(--space-xs);
+  }
+  .ob-shape-name {
+    font-family: var(--font-serif);
+    font-size: 28px;
+    font-weight: 400;
+    margin: 0 0 var(--space-sm);
+    line-height: 1.2;
+  }
+  .ob-shape-meta {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-size: 15px;
+    color: var(--color-text-secondary);
+    margin: 0 0 var(--space-lg);
+  }
+  .ob-shape-thumb {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 4 / 5;
+    background: var(--color-paper-cream);
+    border: 1px solid var(--color-rule-light);
+    border-radius: var(--radius-editorial-md);
+    overflow: hidden;
+  }
+  .ob-shape-thumb iframe {
+    position: absolute;
+    top: 0; left: 0;
+    width: 1280px; height: 1600px;
+    transform: scale(0.4);
+    transform-origin: 0 0;
+    pointer-events: none;
+    border: 0;
+  }
+  .ob-shape-strip {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--space-xs);
+    width: 100%;
+    aspect-ratio: 4 / 5;
+  }
+  .ob-shape-strip-cell {
+    position: relative;
+    background: var(--color-paper-cream);
+    border: 1px solid var(--color-rule-light);
+    border-radius: var(--radius-editorial-sm);
+    overflow: hidden;
+  }
+  .ob-shape-strip-cell iframe {
+    position: absolute;
+    top: 0; left: 0;
+    width: 1280px; height: 1600px;
+    transform: scale(0.15);
+    transform-origin: 0 0;
+    pointer-events: none;
+    border: 0;
+  }
+  .ob-shape-strip-cell-label {
+    position: absolute;
+    bottom: 6px;
+    left: 8px;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+    background: var(--color-paper-warm-white);
+    padding: 2px 6px;
+    border-radius: 2px;
+    z-index: 2;
+  }
+  .ob-shape-actions {
+    margin-top: var(--space-md);
+    display: flex;
+    gap: var(--space-md);
+    flex-wrap: wrap;
+    font-family: var(--font-mono);
+    font-size: 12px;
+  }
+  .ob-shape-actions a {
+    color: var(--color-text-primary);
+    text-decoration: none;
+    border-bottom: 1px solid var(--color-text-primary);
+  }
+  .ob-shape-actions a:hover { color: var(--color-spice-turmeric); border-color: var(--color-spice-turmeric); }
+
+  .ob-pros {
+    margin: var(--space-md) 0 0;
+    padding: 0;
+    list-style: none;
+  }
+  .ob-pros li {
+    font-family: var(--font-serif);
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--color-text-secondary);
+    padding: 4px 0 4px 18px;
+    position: relative;
+  }
+  .ob-pros li::before {
+    content: "+";
+    position: absolute;
+    left: 0;
+    color: var(--color-spice-turmeric);
+    font-family: var(--font-mono);
+    font-weight: 700;
+  }
+  .ob-cons li::before { content: "−"; color: var(--color-text-tertiary); }
+
+  .ob-cuts {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: var(--space-md);
+  }
+  .ob-cuts-card {
+    padding: var(--space-md);
+    border: 1px solid var(--color-rule-light);
+    border-radius: var(--radius-editorial-sm);
+    background: var(--color-paper-warm-white);
+  }
+  .ob-cuts-card h4 {
+    font-family: var(--font-serif);
+    font-size: 17px;
+    font-weight: 400;
+    margin: 0 0 4px;
+  }
+  .ob-cuts-card p {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-size: 13px;
+    color: var(--color-text-secondary);
+    margin: 0;
+    line-height: 1.45;
+  }
+  .ob-cuts-card[data-cut] h4 {
+    text-decoration: line-through;
+    text-decoration-color: var(--color-text-tertiary);
+    color: var(--color-text-tertiary);
+  }
+</style>
+</head>
+<body
+  data-folio-label="Onboarding · Proposed"
+  data-folio-crumbs="Reference > Surfaces > Onboarding > Proposed"
+  data-tint="turmeric"
+  data-active-page="">
+
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+
+  <section class="ob-cover">
+    <p class="ob-eyebrow"><a href="../index.html">← Onboarding (current 8 steps)</a></p>
+    <h1 class="ob-title">Proposed: three things, then you're in.</h1>
+    <p class="ob-lede">
+      Strip onboarding to the minimum that lets DailyOS actually work — connect Google,
+      install Claude Code, pick a role. Everything else (your card, first account, briefing
+      prime, dashboard tour) happens lazily once you're inside the app.
+    </p>
+    <div class="ob-stats">
+      <span>8 → 3 steps</span>
+      <span>2 connectors + 1 preset</span>
+      <span>turmeric tint preserved</span>
+    </div>
+  </section>
+
+  <section class="ob-section">
+    <div class="ob-compare">
+
+      <!-- SHAPE A -->
+      <div>
+        <p class="ob-shape-label">Shape A</p>
+        <h2 class="ob-shape-name">Single screen</h2>
+        <p class="ob-shape-meta">One panel, three tiles, one CTA. No step counter.</p>
+
+        <div class="ob-shape-thumb">
+          <iframe src="single-screen.html" loading="lazy" title="Single screen"></iframe>
+        </div>
+
+        <div class="ob-shape-actions">
+          <a href="single-screen.html" target="_blank">Open full size →</a>
+        </div>
+
+        <ul class="ob-pros">
+          <li>Whole setup visible at once — feels short by construction.</li>
+          <li>Tiles double as ongoing status; same surface works in Settings later.</li>
+          <li>One CTA to commit; no "are we done yet" ambiguity.</li>
+        </ul>
+        <ul class="ob-pros ob-cons">
+          <li>Google OAuth bounce away/back makes the page reload mid-task — single panel has to gracefully restore.</li>
+          <li>Three actions on one screen can feel busier than three calm steps.</li>
+        </ul>
+      </div>
+
+      <!-- SHAPE B -->
+      <div>
+        <p class="ob-shape-label">Shape B</p>
+        <h2 class="ob-shape-name">Sequential, 3 steps</h2>
+        <p class="ob-shape-meta">One purpose per screen, ~10 seconds each. Step bar at the top.</p>
+
+        <div class="ob-shape-strip">
+          <div class="ob-shape-strip-cell">
+            <iframe src="sequential-google.html" loading="lazy" title="Step 1"></iframe>
+            <span class="ob-shape-strip-cell-label">1 · Google</span>
+          </div>
+          <div class="ob-shape-strip-cell">
+            <iframe src="sequential-claude.html" loading="lazy" title="Step 2"></iframe>
+            <span class="ob-shape-strip-cell-label">2 · Claude</span>
+          </div>
+          <div class="ob-shape-strip-cell">
+            <iframe src="sequential-role.html" loading="lazy" title="Step 3"></iframe>
+            <span class="ob-shape-strip-cell-label">3 · Role</span>
+          </div>
+        </div>
+
+        <div class="ob-shape-actions">
+          <a href="sequential-google.html" target="_blank">Step 1 →</a>
+          <a href="sequential-claude.html" target="_blank">Step 2 →</a>
+          <a href="sequential-role.html" target="_blank">Step 3 →</a>
+        </div>
+
+        <ul class="ob-pros">
+          <li>Each screen has one job; OAuth bounce returns to a clean step 1 → step 2.</li>
+          <li>Calm pacing — empty space carries the brand voice.</li>
+          <li>Closer to today's flow, lower risk of regression on the auth dance.</li>
+        </ul>
+        <ul class="ob-pros ob-cons">
+          <li>Three screens still <em>feels</em> like three screens, even at 30 seconds total.</li>
+          <li>Step bar adds chrome that single-screen avoids.</li>
+        </ul>
+      </div>
+
+    </div>
+  </section>
+
+  <section class="ob-section">
+    <div style="margin-bottom: var(--space-lg);">
+      <p class="ob-shape-label">What we're cutting</p>
+      <h2 class="ob-shape-name">From 8 steps to 3</h2>
+      <p class="ob-shape-meta">
+        Everything below moves into the app — discovered when the user actually needs it, not
+        front-loaded into setup.
+      </p>
+    </div>
+
+    <div class="ob-cuts">
+      <div class="ob-cuts-card">
+        <h4>Connect Google</h4>
+        <p>Kept.</p>
+      </div>
+      <div class="ob-cuts-card">
+        <h4>Install Claude Code</h4>
+        <p>Kept.</p>
+      </div>
+      <div class="ob-cuts-card">
+        <h4>Role preset</h4>
+        <p>Kept — shapes vocabulary and prep.</p>
+      </div>
+      <div class="ob-cuts-card" data-cut>
+        <h4>Welcome</h4>
+        <p>Folded into the setup screen's heading.</p>
+      </div>
+      <div class="ob-cuts-card" data-cut>
+        <h4>Glean</h4>
+        <p>Optional anyway — moves to Settings → Sources.</p>
+      </div>
+      <div class="ob-cuts-card" data-cut>
+        <h4>About You / YouCard</h4>
+        <p>Derived from Google profile + role preset. Edit later in your card.</p>
+      </div>
+      <div class="ob-cuts-card" data-cut>
+        <h4>First account</h4>
+        <p>Empty state in Accounts becomes the prompt. Add the first one when it matters.</p>
+      </div>
+      <div class="ob-cuts-card" data-cut>
+        <h4>Prime briefing</h4>
+        <p>Runs automatically the first time the user opens the briefing surface.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div style="text-align:center; padding:72px 0 24px;">
+      <div style="display:flex; justify-content:center; gap:0.4em; color:var(--color-spice-turmeric);">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+      </div>
+    </div>
+    <p style="font-family:var(--font-serif); font-style:italic; color:var(--color-text-tertiary); text-align:center; padding-bottom:48px;">
+      Cold start to working DailyOS in under a minute.
+    </p>
+  </section>
+
+</main>
+</div>
+
+<script src="../../../_shared/chrome.js"></script>
+<script src="../../../_shared/inspector.js"></script>
+</body>
+</html>
