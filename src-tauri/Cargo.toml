@@ -160,6 +160,10 @@ name = "workspace_graph_audit"
 path = "src/bin/workspace_graph_audit.rs"
 
 [[bin]]
+name = "workspace_backfill"
+path = "src/bin/workspace_backfill.rs"
+
+[[bin]]
 name = "release-gate"
 path = "src/bin/release_gate.rs"
 required-features = ["release-gate"]

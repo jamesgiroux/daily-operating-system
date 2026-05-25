@@ -40,6 +40,12 @@ use crate::entity::EntityType;
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct DocumentEntityLinkId(pub String);
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LinkInsertOutcome {
+    pub link_id: DocumentEntityLinkId,
+    pub inserted: bool,
+}
+
 /// Attribution-source taxonomy per L0 V1.3 §4. Snake_case serde tag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -264,6 +270,30 @@ impl LinkRepo {
         rationale: Option<&str>,
         actor: &str,
     ) -> Result<DocumentEntityLinkId, LinkError> {
+        Self::add_link_with_outcome_in_tx(
+            conn,
+            file_id,
+            entity_type,
+            entity_id,
+            attribution_source,
+            confidence,
+            rationale,
+            actor,
+        )
+        .map(|outcome| outcome.link_id)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_link_with_outcome_in_tx(
+        conn: &Connection,
+        file_id: &str,
+        entity_type: EntityType,
+        entity_id: &str,
+        attribution_source: LinkAttributionSource,
+        confidence: f64,
+        rationale: Option<&str>,
+        actor: &str,
+    ) -> Result<LinkInsertOutcome, LinkError> {
         let et_slug = entity_type_slug(entity_type);
         // Tombstone guard for classifier-class sources only.
         if attribution_source.is_classifier_class() {
@@ -314,6 +344,7 @@ impl LinkRepo {
             .optional()
             .map_err(|e| LinkError::DbError(e.to_string()))?;
 
+        let inserted = inserted_id.is_some();
         let final_id = match inserted_id {
             Some(id) => id,
             None => {
@@ -328,7 +359,10 @@ impl LinkRepo {
                 .map_err(|e| LinkError::DbError(e.to_string()))?
             }
         };
-        Ok(DocumentEntityLinkId(final_id))
+        Ok(LinkInsertOutcome {
+            link_id: DocumentEntityLinkId(final_id),
+            inserted,
+        })
     }
 
     /// Lists active (and optionally rejected) links for a file.
