@@ -1596,3 +1596,175 @@
   width: 44px;
   text-align: center;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   SINGLE-SCREEN SETUP — Three-tile layout for the minimal onboarding wizard.
+   One panel, three stacked tiles (Google · Claude Code · Role), one Start CTA.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.tileStack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.tile {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-lg);
+  background: var(--color-paper-warm-white);
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial-md);
+  transition: border-color var(--transition-normal);
+}
+
+.tileDone {
+  border-color: var(--color-rule-heavy);
+  background: var(--color-paper-cream);
+}
+
+.tileWide {
+  grid-template-columns: auto 1fr;
+  align-items: start;
+}
+
+.tileIcon {
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-editorial-sm);
+  background: var(--color-paper-cream);
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+}
+
+.tileDone .tileIcon {
+  background: var(--color-spice-turmeric);
+  color: var(--color-paper-cream);
+}
+
+.tileBody {
+  min-width: 0;
+}
+
+.tileLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  margin: 0 0 4px;
+}
+
+.tileName {
+  font-family: var(--font-serif);
+  font-size: 20px;
+  font-weight: 400;
+  color: var(--color-text-primary);
+  margin: 0 0 2px;
+  line-height: 1.2;
+}
+
+.tileMeta {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.tileStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  color: var(--color-text-tertiary);
+}
+
+.tileStatusDone {
+  color: var(--color-text-primary);
+}
+
+.tileDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.tileAction {
+  margin-top: var(--space-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.tileActionHint {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+.tileCtaRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--color-rule-light);
+}
+
+.tileCtaActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.tileProgress {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+}
+
+.roleMiniGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  width: 100%;
+  margin-top: var(--space-sm);
+}
+
+.roleMiniChip {
+  padding: 6px 10px;
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial-sm);
+  background: var(--color-paper-cream);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.roleMiniChip:hover:not(:disabled) {
+  border-color: var(--color-rule-heavy);
+  color: var(--color-text-primary);
+}
+
+.roleMiniChip:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.roleMiniChipSelected {
+  border-color: var(--color-spice-turmeric);
+  color: var(--color-text-primary);
+  background: var(--color-paper-warm-white);
+}

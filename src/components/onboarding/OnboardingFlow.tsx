@@ -1,229 +1,90 @@
 /**
- * OnboardingFlow.tsx — First-run wizard (three connectors)
+ * OnboardingFlow.tsx — Single-screen first-run setup.
  *
- * Step sequence:
- * Welcome → Google → Claude Code → Glean → YouCard → FirstAccount → Role → Prime
- *
- * Google moves first (provides email identity for Glean discovery).
- * Claude Code is skippable (recommended, not blocking).
- * Glean is new and optional — enables account discovery + profile pre-fill.
- * Each step persists immediately via Tauri commands.
+ * Three tiles, one CTA: Connect Google · Install Claude Code · Pick a role.
+ * Everything else (you-card, first account, briefing prime) happens lazily
+ * inside the app — no front-loaded setup beyond what DailyOS needs to work.
  */
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { homeDir, join } from "@tauri-apps/api/path";
-import type { EntityMode, DiscoveredAccount, GleanAuthStatus } from "@/types";
-
-import { AtmosphereLayer } from "@/components/layout/AtmosphereLayer";
-import { FolioBar } from "@/components/layout/FolioBar";
-import { FloatingNavIsland, type ChapterItem } from "@/components/layout/FloatingNavIsland";
+import { toast } from "sonner";
 import {
-  Sparkles,
   Mail,
   Terminal,
-  Globe,
-  User,
   Briefcase,
-  Building,
+  ArrowRight,
+  Loader2,
 } from "lucide-react";
 
-import { Welcome } from "./chapters/Welcome";
-import { GoogleConnect } from "./chapters/GoogleConnect";
-import { ClaudeCode } from "./chapters/ClaudeCode";
-import { GleanConnect } from "./chapters/GleanConnect";
-import { YouCardStep, type YouCardFormData } from "./chapters/YouCardStep";
-import { FirstAccountStep } from "./chapters/FirstAccountStep";
-import { EntityMode as EntityModeChapter } from "./chapters/EntityMode";
-import { PrimeBriefing } from "./chapters/PrimeBriefing";
+import type { EntityMode } from "@/types";
+import { Button } from "@/components/ui/button";
+import { AtmosphereLayer } from "@/components/layout/AtmosphereLayer";
+import { FolioBar } from "@/components/layout/FolioBar";
+import { useGoogleAuth } from "@/hooks/useGoogleAuth";
+
 import styles from "./onboarding.module.css";
 
 interface OnboardingFlowProps {
   onComplete: () => void;
 }
 
-const CHAPTERS = [
-  "welcome",
-  "google",
-  "claude-code",
-  "glean",
-  "youcard",
-  "first-account",
-  "role",
-  "prime",
-] as const;
-
-type Chapter = (typeof CHAPTERS)[number];
-
-const CHAPTER_ICONS: Record<Chapter, React.ReactNode> = {
-  "welcome": <Sparkles size={16} strokeWidth={1.8} />,
-  "google": <Mail size={16} strokeWidth={1.8} />,
-  "claude-code": <Terminal size={16} strokeWidth={1.8} />,
-  "glean": <Globe size={16} strokeWidth={1.8} />,
-  "youcard": <User size={16} strokeWidth={1.8} />,
-  "first-account": <Building size={16} strokeWidth={1.8} />,
-  "role": <Briefcase size={16} strokeWidth={1.8} />,
-  "prime": <Sparkles size={16} strokeWidth={1.8} />,
-};
-
-const CHAPTER_LABELS: Record<Chapter, string> = {
-  "welcome": "Welcome",
-  "google": "Google",
-  "claude-code": "Claude",
-  "glean": "Glean",
-  "youcard": "About You",
-  "first-account": "Account",
-  "role": "Your Role",
-  "prime": "Prime",
-};
-
-const DEFAULT_WORKSPACE = "~/Documents/DailyOS";
-
-/** Map wizard_last_step to the NEXT chapter to show */
-function resolveResumeChapter(lastStep: string | null | undefined): Chapter {
-  if (!lastStep) return CHAPTERS[0];
-  const idx = CHAPTERS.indexOf(lastStep as Chapter);
-  if (idx === -1) return CHAPTERS[0];
-  // Advance to the step after the last completed one
-  const next = idx + 1;
-  return next < CHAPTERS.length ? CHAPTERS[next] : CHAPTERS[CHAPTERS.length - 1];
+interface ClaudeStatus {
+  installed: boolean;
+  authenticated: boolean;
+  nodeInstalled: boolean;
 }
 
 export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
-  const [chapter, setChapter] = useState<Chapter>(CHAPTERS[0]);
-  const [visitedChapters, setVisitedChapters] = useState<Set<Chapter>>(new Set([CHAPTERS[0]]));
-  const [resumeChecked, setResumeChecked] = useState(false);
+  const [googleReady, setGoogleReady] = useState(false);
+  const [claudeReady, setClaudeReady] = useState(false);
+  const [roleReady, setRoleReady] = useState(false);
+  const [isDevMode, setIsDevMode] = useState(false);
 
-  // Glean state
-  const [gleanConnected, setGleanConnected] = useState(false);
-  const [discoveredAccounts, setDiscoveredAccounts] = useState<DiscoveredAccount[]>([]);
-  const [discoveryLoading, setDiscoveryLoading] = useState(false);
-  const [importedAccountNames, setImportedAccountNames] = useState<string[]>([]);
+  const readyCount = [googleReady, claudeReady, roleReady].filter(Boolean).length;
+  const allReady = readyCount === 3;
+  const canStart = allReady || isDevMode;
 
-  // Resume from last completed step on mount
   useEffect(() => {
-    if (resumeChecked) return;
+    if (!import.meta.env.DEV) return;
+    invoke<{ isDevDbMode?: boolean }>("dev_get_state")
+      .then((s) => setIsDevMode(s.isDevDbMode === true))
+      .catch(() => {});
+  }, []);
 
-    const doResume = async () => {
-      try {
-        const state = await invoke<{ wizardLastStep?: string | null }>("get_app_state");
-        const resumeTo = resolveResumeChapter(state.wizardLastStep);
-
-        // Re-check Glean auth on resume to restore gleanConnected state
-        try {
-          const gleanStatus = await invoke<GleanAuthStatus>("get_glean_auth_status");
-          if (gleanStatus.status === "authenticated") {
-            setGleanConnected(true);
-          }
-        } catch {
-          // Non-fatal
-        }
-
-        if (resumeTo !== "welcome") {
-          const visited = new Set<Chapter>();
-          for (const c of CHAPTERS) {
-            visited.add(c);
-            if (c === resumeTo) break;
-          }
-          setChapter(resumeTo);
-          setVisitedChapters(visited);
-        }
-      } catch {
-        // Non-fatal — just start from beginning
-      } finally {
-        setResumeChecked(true);
-      }
-    };
-
-    doResume();
-  }, [resumeChecked]);
-
-  // Lifted form state
-  const [youCardData, setYouCardData] = useState<YouCardFormData>({
-    name: "",
-    company: "",
-    title: "",
-    domains: [],
-  });
-
-  function goToChapter(c: Chapter) {
-    setChapter(c);
-    setVisitedChapters((prev) => new Set([...prev, c]));
-  }
-
-  // Auto-create workspace at default path (dev-aware)
+  // Auto-create workspace at default path (dev-aware) — fires on Claude ready and on completion
   const autoCreateWorkspace = useCallback(async () => {
     try {
-      // Check if workspace is already set
       const existing = await invoke<{ workspacePath?: string }>("get_config")
         .then((c) => c.workspacePath)
         .catch(() => null);
+      if (existing) return;
 
-      if (!existing) {
-        const home = await homeDir();
-        // Use DailyOS-dev when dev sandbox is active, DailyOS otherwise
-        const isDevDb = import.meta.env.DEV
-          ? await invoke<{ isDevDbMode?: boolean }>("dev_get_state")
-              .then((s) => s.isDevDbMode === true)
-              .catch(() => false)
-          : false;
-        const dirName = isDevDb ? "DailyOS-dev" : "DailyOS";
-        const absPath = await join(home, "Documents", dirName);
-        await invoke("set_workspace_path", { path: absPath });
-      }
+      const home = await homeDir();
+      const isDevDb = import.meta.env.DEV
+        ? await invoke<{ isDevDbMode?: boolean }>("dev_get_state")
+            .then((s) => s.isDevDbMode === true)
+            .catch(() => false)
+        : false;
+      const dirName = isDevDb ? "DailyOS-dev" : "DailyOS";
+      const absPath = await join(home, "Documents", dirName);
+      await invoke("set_workspace_path", { path: absPath });
     } catch (e) {
       console.error("Auto-create workspace failed:", e); // Expected: best-effort workspace creation
     }
   }, []);
 
-  // "Skip setup" — auto-create workspace, land on empty dashboard
-  async function handleSkipSetup() {
+  async function handleStart() {
     try {
       await autoCreateWorkspace();
-      // Set lock timeout to "Never" for new installs
       await invoke("set_lock_timeout", { minutes: null }).catch(() => {});
-    } catch {
-      // Non-fatal
-    }
-    onComplete();
-  }
-
-  // Handle demo mode entry from Welcome
-  async function handleDemoMode() {
-    try {
-      await autoCreateWorkspace();
-      await invoke("install_demo_data");
-    } catch (e) {
-      console.error("Demo install failed:", e); // Expected: best-effort demo install
-    }
-    onComplete();
-  }
-
-  // Fire Glean account discovery in background
-  async function triggerGleanDiscovery() {
-    setDiscoveryLoading(true);
-    try {
-      const accounts = await invoke<DiscoveredAccount[]>("discover_accounts_from_glean");
-      setDiscoveredAccounts(accounts);
-    } catch (e) {
-      console.error("Glean discovery failed:", e); // Expected: best-effort discovery
-    } finally {
-      setDiscoveryLoading(false);
-    }
-  }
-
-  // Complete wizard — mark done, trigger calendar poll if connected
-  async function handleWizardComplete(_mode: EntityMode) {
-    try {
-      // Ensure workspace exists — required for the post-reload config check
-      await autoCreateWorkspace();
-      await invoke("set_wizard_step", { step: "prime" }).catch(() => {});
       await invoke("set_wizard_completed");
       // Trigger immediate calendar poll if Google is connected
       try {
         const authStatus = await invoke<{ status: string }>("get_google_auth_status");
         if (authStatus.status === "authenticated") {
-          // Non-blocking calendar poll
           invoke("run_workflow", { workflowId: "today" }).catch(() => {});
         }
       } catch {
@@ -235,140 +96,340 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
     onComplete();
   }
 
-  // Build chapter items for FloatingNavIsland (step dots, not labels)
-  const navChapters: ChapterItem[] = CHAPTERS
-    .filter((c) => c !== "welcome")
-    .map((c) => ({
-      id: c,
-      label: CHAPTER_LABELS[c],
-      icon: CHAPTER_ICONS[c],
-    }));
+  async function handleSkip() {
+    try {
+      await autoCreateWorkspace();
+      await invoke("set_lock_timeout", { minutes: null }).catch(() => {});
+    } catch {
+      // Non-fatal
+    }
+    onComplete();
+  }
 
   return (
     <div className={styles.wrapper}>
       <AtmosphereLayer color="turmeric" />
       <FolioBar publicationLabel="Setup" />
 
-      {/* FloatingNavIsland — show step dots (skip welcome) */}
-      {chapter !== "welcome" && (
-        <FloatingNavIsland
-          chapters={navChapters}
-          activeChapterId={chapter}
-          activeColor="turmeric"
-          onChapterClick={(id) => {
-            if (visitedChapters.has(id as Chapter)) {
-              goToChapter(id as Chapter);
-            }
-          }}
-        />
-      )}
-
-      {/* Content column */}
       <div className={styles.contentColumn}>
-        {/* Step content */}
-        {chapter === "welcome" && (
-          <Welcome
-            onNext={() => goToChapter("google")}
-            onDemoMode={handleDemoMode}
-            onSkipSetup={handleSkipSetup}
-          />
-        )}
+        <div className={`${styles.flexCol} ${styles.gap32}`}>
 
-        {chapter === "google" && (
-          <GoogleConnect
-            onNext={async () => {
-              await invoke("set_wizard_step", { step: "google" }).catch(() => {});
-              goToChapter("claude-code");
-            }}
-          />
-        )}
+          {/* Brand mark */}
+          <div className={styles.brandMark}>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="40" height="40" aria-hidden="true">
+              <path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/>
+            </svg>
+          </div>
 
-        {chapter === "claude-code" && (
-          <ClaudeCode
-            workspacePath={DEFAULT_WORKSPACE}
-            onNext={async (_installed) => {
-              // Silently auto-create workspace on Claude Code success
-              await autoCreateWorkspace();
-              // Set lock timeout to "Never" for new installs
-              await invoke("set_lock_timeout", { minutes: null }).catch(() => {});
-              // Check iCloud warning inline — returns warning message or null
-              try {
-                const icloudMsg = await invoke<string | null>("check_icloud_warning");
-                if (icloudMsg) {
-                  console.warn("Workspace may be iCloud-synced:", icloudMsg);
-                }
-              } catch {
-                // Non-fatal
-              }
-              await invoke("set_wizard_step", { step: "claude-code" }).catch(() => {});
-              goToChapter("glean");
-            }}
-            onSkip={async () => {
-              await autoCreateWorkspace();
-              await invoke("set_lock_timeout", { minutes: null }).catch(() => {});
-              await invoke("set_wizard_step", { step: "claude-code" }).catch(() => {});
-              goToChapter("glean");
-            }}
-          />
-        )}
+          {/* Hero */}
+          <div className={`${styles.flexCol} ${styles.gap12}`}>
+            <h1 className={styles.heroHeadline}>Three things, then you're in.</h1>
+            <p className={styles.bodyTextConstrained}>
+              DailyOS works best with your calendar, your email, and the AI that
+              writes your briefings. Pick a role so we know how to prep your day.
+              Everything else you'll set up as you go.
+            </p>
+          </div>
 
-        {chapter === "glean" && (
-          <GleanConnect
-            onNext={async (connected) => {
-              setGleanConnected(connected);
-              await invoke("set_wizard_step", { step: "glean" }).catch(() => {});
-              if (connected) {
-                // Fire discovery in background — results appear on FirstAccountStep
-                triggerGleanDiscovery();
-              }
-              goToChapter("youcard");
-            }}
-            onSkip={async () => {
-              await invoke("set_wizard_step", { step: "glean" }).catch(() => {});
-              goToChapter("youcard");
-            }}
-          />
-        )}
+          {/* Tiles */}
+          <div className={styles.tileStack}>
+            <GoogleTile onReadyChange={setGoogleReady} />
+            <ClaudeTile
+              onReadyChange={setClaudeReady}
+              onJustReady={autoCreateWorkspace}
+            />
+            <RoleTile onReadyChange={setRoleReady} />
+          </div>
 
-        {chapter === "youcard" && (
-          <YouCardStep
-            formData={youCardData}
-            onFormChange={setYouCardData}
-            onNext={() => goToChapter("first-account")}
-            onSkip={() => goToChapter("first-account")}
-            gleanConnected={gleanConnected}
-          />
-        )}
+          {/* CTA row */}
+          <div className={styles.tileCtaRow}>
+            <span className={styles.tileProgress}>
+              {isDevMode && !allReady ? `${readyCount} of 3 ready · dev mode` : `${readyCount} of 3 ready`}
+            </span>
+            <div className={styles.tileCtaActions}>
+              <button type="button" className={styles.skipButton} onClick={handleSkip}>
+                Skip setup
+              </button>
+              <Button size="lg" onClick={handleStart} disabled={!canStart}>
+                Start DailyOS
+                <ArrowRight className="ml-2 size-4" />
+              </Button>
+            </div>
+          </div>
 
-        {chapter === "first-account" && (
-          <FirstAccountStep
-            gleanConnected={gleanConnected}
-            discoveredAccounts={discoveredAccounts}
-            discoveryLoading={discoveryLoading}
-            onImported={setImportedAccountNames}
-            onNext={() => {
-              goToChapter("role");
-            }}
-            onSkip={() => {
-              goToChapter("role");
-            }}
-          />
-        )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
-        {chapter === "role" && (
-          <EntityModeChapter
-            onNext={async (_mode) => {
-              await invoke("set_wizard_step", { step: "role" }).catch(() => {});
-              goToChapter("prime");
-            }}
-          />
-        )}
+/* ─── Tiles ───────────────────────────────────────────────────────────────── */
 
-        {chapter === "prime" && (
-          <PrimeBriefing
-            importedAccountNames={importedAccountNames}
-            onComplete={() => handleWizardComplete("both")}
-          />
+interface TileProps {
+  onReadyChange: (ready: boolean) => void;
+}
+
+function GoogleTile({ onReadyChange }: TileProps) {
+  const { status, connect, loading } = useGoogleAuth();
+  const isConnected = status.status === "authenticated";
+
+  useEffect(() => {
+    onReadyChange(isConnected);
+  }, [isConnected, onReadyChange]);
+
+  const connectedEmail = status.status === "authenticated" ? status.email : "";
+
+  return (
+    <div className={`${styles.tile} ${isConnected ? styles.tileDone : ""}`}>
+      <div className={styles.tileIcon}>
+        <Mail size={18} strokeWidth={1.8} />
+      </div>
+      <div className={styles.tileBody}>
+        <p className={styles.tileLabel}>01 · Connect</p>
+        <p className={styles.tileName}>Google</p>
+        <p className={styles.tileMeta}>
+          Calendar + Gmail — meeting prep and email triage. Everything processes locally.
+        </p>
+      </div>
+      {isConnected ? (
+        <span className={`${styles.tileStatus} ${styles.tileStatusDone}`}>
+          <span className={styles.tileDot} />
+          {connectedEmail}
+        </span>
+      ) : (
+        <Button onClick={connect} disabled={loading}>
+          {loading ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+          Connect
+        </Button>
+      )}
+    </div>
+  );
+}
+
+interface ClaudeTileProps extends TileProps {
+  onJustReady: () => void;
+}
+
+function ClaudeTile({ onReadyChange, onJustReady }: ClaudeTileProps) {
+  const [status, setStatus] = useState<ClaudeStatus | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [installing, setInstalling] = useState(false);
+  const [installMessage, setInstallMessage] = useState<string | null>(null);
+  const [installError, setInstallError] = useState<string | null>(null);
+  const justReadyFired = useRef(false);
+
+  const isReady = !!(status?.installed && status?.authenticated);
+
+  useEffect(() => {
+    onReadyChange(isReady);
+    if (isReady && !justReadyFired.current) {
+      justReadyFired.current = true;
+      onJustReady();
+    }
+  }, [isReady, onReadyChange, onJustReady]);
+
+  useEffect(() => {
+    const unlisten = listen<{ step: string; status: string; message: string }>(
+      "install-claude-progress",
+      (event) => {
+        const { step, status: evtStatus, message } = event.payload;
+        if (evtStatus === "error") {
+          setInstallError(message);
+          setInstallMessage(null);
+        } else if (step === "complete") {
+          setInstallMessage(null);
+          setInstallError(null);
+        } else {
+          setInstallMessage(message);
+          setInstallError(null);
+        }
+      },
+    );
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, []);
+
+  const checkStatus = useCallback(async (clearCache = false) => {
+    setChecking(true);
+    try {
+      if (clearCache) {
+        await invoke("clear_claude_status_cache");
+      }
+      const result = await invoke<ClaudeStatus>("check_claude_status");
+      setStatus(result);
+    } catch {
+      setStatus({ installed: false, authenticated: false, nodeInstalled: false });
+    } finally {
+      setChecking(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    checkStatus();
+  }, [checkStatus]);
+
+  async function handleInstall() {
+    setInstalling(true);
+    setInstallError(null);
+    setInstallMessage(null);
+    try {
+      await invoke("install_claude_cli");
+      await checkStatus(true);
+    } catch {
+      await checkStatus(true);
+    } finally {
+      setInstalling(false);
+    }
+  }
+
+  // Determine right-column content
+  let rightCol: React.ReactNode = null;
+  if (checking && !status) {
+    rightCol = (
+      <span className={styles.tileStatus}>
+        <Loader2 size={14} className="animate-spin" />
+        Checking…
+      </span>
+    );
+  } else if (isReady) {
+    rightCol = (
+      <span className={`${styles.tileStatus} ${styles.tileStatusDone}`}>
+        <span className={styles.tileDot} />
+        Ready
+      </span>
+    );
+  } else if (status && status.installed && !status.authenticated) {
+    rightCol = (
+      <Button variant="outline" onClick={() => checkStatus(true)} disabled={checking}>
+        {checking && <Loader2 className="mr-2 size-4 animate-spin" />}
+        Re-check
+      </Button>
+    );
+  } else if (status && !status.installed) {
+    rightCol = (
+      <Button onClick={handleInstall} disabled={installing || checking}>
+        {installing && <Loader2 className="mr-2 size-4 animate-spin" />}
+        {installing ? installMessage ?? "Installing…" : installError ? "Try again" : "Install"}
+      </Button>
+    );
+  }
+
+  // Auth instructions only when installed-but-not-authed
+  const showAuthInstructions = !!(status && status.installed && !status.authenticated);
+
+  return (
+    <div className={`${styles.tile} ${isReady ? styles.tileDone : ""} ${showAuthInstructions ? styles.tileWide : ""}`}>
+      <div className={styles.tileIcon}>
+        <Terminal size={18} strokeWidth={1.8} />
+      </div>
+      <div className={styles.tileBody}>
+        <p className={styles.tileLabel}>02 · Install</p>
+        <p className={styles.tileName}>Claude Code</p>
+        <p className={styles.tileMeta}>
+          The local AI engine that writes your briefings and analyzes mail.
+        </p>
+        {showAuthInstructions && (
+          <div className={styles.tileAction}>
+            <code className={styles.codeBlock}>
+              cd ~/Documents/DailyOS{"\n"}claude login
+            </code>
+            <p className={styles.tileActionHint}>
+              Run this in Terminal, then click Re-check.
+            </p>
+            {rightCol}
+          </div>
+        )}
+        {installError && !showAuthInstructions && (
+          <p className={`${styles.tileMeta} ${styles.dangerColor}`}>{installError}</p>
+        )}
+      </div>
+      {!showAuthInstructions && rightCol}
+    </div>
+  );
+}
+
+function RoleTile({ onReadyChange }: TileProps) {
+  const [presets, setPresets] = useState<[string, string, string][]>([]);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const isReady = selected !== null;
+
+  useEffect(() => {
+    onReadyChange(isReady);
+  }, [isReady, onReadyChange]);
+
+  useEffect(() => {
+    invoke<[string, string, string][]>("get_available_presets")
+      .then(setPresets)
+      .catch((err) => {
+        console.error("get_available_presets failed:", err); // Expected: background init on mount
+        setPresets([]);
+      });
+
+    // Restore existing role selection if user re-enters the wizard
+    invoke<{ defaultEntityMode: string; id?: string } | null>("get_active_preset")
+      .then((preset) => {
+        if (preset && typeof preset === "object" && "id" in preset && preset.id) {
+          setSelected(preset.id);
+        }
+      })
+      .catch(() => {
+        // Non-fatal
+      });
+  }, []);
+
+  async function handleSelect(presetId: string) {
+    if (saving) return;
+    const previous = selected;
+    setSelected(presetId);
+    setSaving(true);
+    try {
+      await invoke("set_role", { role: presetId });
+      // Read back the entity mode for any downstream consumers (parity with old EntityMode chapter)
+      await invoke<{ defaultEntityMode: string } | null>("get_active_preset")
+        .then((preset) => (preset?.defaultEntityMode ?? "account") as EntityMode)
+        .catch(() => "account");
+    } catch (err) {
+      toast.error(typeof err === "string" ? err : "Failed to set role");
+      setSelected(previous);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className={`${styles.tile} ${styles.tileWide} ${isReady ? styles.tileDone : ""}`}>
+      <div className={styles.tileIcon}>
+        <Briefcase size={18} strokeWidth={1.8} />
+      </div>
+      <div className={styles.tileBody}>
+        <p className={styles.tileLabel}>03 · Pick your role</p>
+        <p className={styles.tileName}>
+          {isReady && presets.length > 0
+            ? presets.find(([id]) => id === selected)?.[1] ?? "Selected"
+            : "What's your role?"}
+        </p>
+        <p className={styles.tileMeta}>
+          Shapes your vitals, vocabulary, and briefing prep. Change anytime in Settings.
+        </p>
+        {presets.length === 0 ? (
+          <p className={`${styles.tileActionHint} ${styles.tileAction}`}>Loading roles…</p>
+        ) : (
+          <div className={styles.roleMiniGrid}>
+            {presets.map(([id, name]) => (
+              <button
+                key={id}
+                type="button"
+                className={`${styles.roleMiniChip} ${selected === id ? styles.roleMiniChipSelected : ""}`}
+                aria-pressed={selected === id}
+                disabled={saving && selected !== id}
+                onClick={() => handleSelect(id)}
+              >
+                {name}
+              </button>
+            ))}
+          </div>
         )}
       </div>
     </div>
