@@ -1340,10 +1340,10 @@ mod tests {
                 "
                 INSERT INTO accounts (id, name, parent_id, updated_at) VALUES
                     ('account-1', 'Example Account', NULL, '2026-05-20T00:00:00Z');
-                INSERT INTO people (id, email, name, role, relationship, last_seen) VALUES
-                    ('person-1', 'one@example.com', 'Person One', 'Director', 'external', '2026-05-22T00:00:00Z');
-                INSERT INTO meetings (id, title, meeting_type, start_time, end_time) VALUES
-                    ('meeting-1', 'Current Account Sync', 'customer', '2026-05-22T15:00:00Z', NULL);
+                INSERT INTO people (id, email, name, role, relationship, last_seen, updated_at) VALUES
+                    ('person-1', 'one@example.com', 'Person One', 'Director', 'external', '2026-05-22T00:00:00Z', '2026-05-22T00:00:00Z');
+                INSERT INTO meetings (id, title, meeting_type, start_time, end_time, created_at) VALUES
+                    ('meeting-1', 'Current Account Sync', 'customer', '2026-05-22T15:00:00Z', NULL, '2026-05-22T00:00:00Z');
                 INSERT INTO linked_entities_raw
                     (owner_type, owner_id, entity_id, entity_type, role, source, rule_id, confidence, graph_version, created_at)
                 VALUES
@@ -1377,10 +1377,10 @@ mod tests {
                 "
                 INSERT INTO accounts (id, name, parent_id, updated_at) VALUES
                     ('account-1', 'Example Account', NULL, '2026-05-20T00:00:00Z');
-                INSERT INTO people (id, email, name, role, relationship, last_seen) VALUES
-                    ('person-1', 'one@example.com', 'Person One', 'Director', 'external', '2026-05-22T00:00:00Z');
-                INSERT INTO meetings (id, title, meeting_type, start_time, end_time) VALUES
-                    ('meeting-1', 'Current Account Sync', 'customer', '2026-05-22T15:00:00Z', NULL);
+                INSERT INTO people (id, email, name, role, relationship, last_seen, updated_at) VALUES
+                    ('person-1', 'one@example.com', 'Person One', 'Director', 'external', '2026-05-22T00:00:00Z', '2026-05-22T00:00:00Z');
+                INSERT INTO meetings (id, title, meeting_type, start_time, end_time, created_at) VALUES
+                    ('meeting-1', 'Current Account Sync', 'customer', '2026-05-22T15:00:00Z', NULL, '2026-05-22T00:00:00Z');
                 INSERT INTO meeting_entities (meeting_id, entity_id, entity_type, confidence) VALUES
                     ('meeting-1', 'account-1', 'account', 0.95);
                 INSERT INTO linked_entities_raw
@@ -1557,12 +1557,12 @@ mod tests {
                 "
                 INSERT INTO accounts (id, name, parent_id, updated_at) VALUES
                     ('account-1', 'Example Account', NULL, '2026-05-20T00:00:00Z');
-                INSERT INTO people (id, email, name, role, relationship, last_seen) VALUES
-                    ('person-rm', 'rm@example.com', 'Relationship Lead', NULL, 'internal', '2026-05-22T00:00:00Z'),
-                    ('person-ae', 'ae@example.com', 'Commercial Lead', NULL, 'internal', '2026-05-22T00:00:00Z'),
-                    ('person-associated', 'associated@example.com', 'Associated Person', NULL, 'external', '2026-05-22T00:00:00Z');
-                INSERT INTO meetings (id, title, meeting_type, start_time, end_time) VALUES
-                    ('meeting-1', 'Account Review', 'customer', '2026-05-22T15:00:00Z', NULL);
+                INSERT INTO people (id, email, name, role, relationship, last_seen, updated_at) VALUES
+                    ('person-rm', 'rm@example.com', 'Relationship Lead', NULL, 'internal', '2026-05-22T00:00:00Z', '2026-05-22T00:00:00Z'),
+                    ('person-ae', 'ae@example.com', 'Commercial Lead', NULL, 'internal', '2026-05-22T00:00:00Z', '2026-05-22T00:00:00Z'),
+                    ('person-associated', 'associated@example.com', 'Associated Person', NULL, 'external', '2026-05-22T00:00:00Z', '2026-05-22T00:00:00Z');
+                INSERT INTO meetings (id, title, meeting_type, start_time, end_time, created_at) VALUES
+                    ('meeting-1', 'Account Review', 'customer', '2026-05-22T15:00:00Z', NULL, '2026-05-22T00:00:00Z');
                 INSERT INTO meeting_entities (meeting_id, entity_id, entity_type, confidence) VALUES
                     ('meeting-1', 'account-1', 'account', 0.95);
                 INSERT INTO meeting_attendees (meeting_id, person_id) VALUES
