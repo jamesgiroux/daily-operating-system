@@ -75,6 +75,11 @@ fn workspace_category_as_slug_and_from_slug_round_trip_for_known_variants() {
 fn workspace_category_other_accepts_lex_valid_lowercase_ascii_slugs() {
     let ok = ["custom_slug", "another-slug", "slug_with_42_digits"];
     for slug in &ok {
+        assert_eq!(
+            WorkspaceCategory::other_slug(*slug),
+            Some(WorkspaceCategory::Other((*slug).to_string())),
+            "other_slug must construct only non-built-in custom slugs"
+        );
         let parsed = WorkspaceCategory::from_slug(slug)
             .unwrap_or_else(|| panic!("from_slug must accept lex-valid {slug}"));
         match &parsed {
@@ -84,6 +89,24 @@ fn workspace_category_other_accepts_lex_valid_lowercase_ascii_slugs() {
             }
             other => panic!("expected Other({slug}), got {other:?}"),
         }
+    }
+}
+
+#[test]
+fn workspace_category_other_constructor_rejects_known_slugs() {
+    for known in &[
+        "presentations",
+        "transcripts",
+        "meetings",
+        "notes",
+        "contracts",
+        "attachments",
+    ] {
+        assert_eq!(
+            WorkspaceCategory::other_slug(*known),
+            None,
+            "known category slug {known:?} must use its dedicated variant"
+        );
     }
 }
 
@@ -256,23 +279,34 @@ fn migrations_v250_v251_apply_against_in_memory_db_and_register_columns() {
 }
 
 #[test]
-fn migrations_slice_max_version_is_at_least_251() {
-    // Internal substrate check: ensures W1-A's v251 lands at the tail of the
-    // registered MIGRATIONS slice (i.e., `version > current` runner filter
-    // will pick up new DBs at any version ≤251). We assert ≥251 rather than
-    // ==251 so future maintenance migrations don't false-fail this test.
-    // The actual MIGRATIONS slice is internal; the schema_version table
-    // populated by a fresh `run_migrations` walks the slice. As a proxy,
-    // verify the SQL files exist (compile-time `include_str!` already
-    // guarantees this if the registration is wired correctly).
-    let v250_sql = include_str!("../src/migrations/250_workspace_file_lifecycle.sql");
-    let v251_sql = include_str!("../src/migrations/251_workspace_file_lifecycle_category.sql");
+fn migrations_runner_registers_workspace_lifecycle_versions() {
+    use dailyos_lib::migration_test_api::run_migrations;
+    use rusqlite::Connection;
+
+    let conn = Connection::open_in_memory().expect("open in-memory sqlite");
+    run_migrations(&conn).expect("production migration runner applies");
+
+    let max_version: i64 = conn
+        .query_row(
+            "SELECT COALESCE(MAX(version), 0) FROM schema_version",
+            [],
+            |row| row.get(0),
+        )
+        .expect("read schema_version max");
     assert!(
-        v250_sql.contains("CREATE TABLE IF NOT EXISTS workspace_file_lifecycle"),
-        "v250 must create workspace_file_lifecycle"
+        max_version >= 251,
+        "production MIGRATIONS slice must register at least v251, got {max_version}"
     );
-    assert!(
-        v251_sql.contains("ADD COLUMN category"),
-        "v251 must add category column"
+
+    let category_col_count: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM pragma_table_info('workspace_file_lifecycle') WHERE name = 'category'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("inspect workspace_file_lifecycle columns");
+    assert_eq!(
+        category_col_count, 1,
+        "migration runner must apply v251 category column"
     );
 }

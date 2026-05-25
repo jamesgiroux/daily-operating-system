@@ -1,9 +1,9 @@
 # TrustBandBadge
 
 **Tier:** primitive
-**Status:** proposed
+**Status:** integrated
 **Owner:** James
-**Last updated:** 2026-05-02
+**Last updated:** 2026-05-25
 **`data-ds-name`:** `TrustBandBadge`
 **`data-ds-spec`:** `primitives/TrustBandBadge.md`
 **Variants:** `band="likely_current" | "use_with_caution" | "needs_verification"`
@@ -69,3 +69,4 @@ Distinct from `IntelligenceQualityBadge` (completeness vocabulary) and `Freshnes
 ## History
 
 - 2026-05-02 — Proposed primitive per design system D5. Maps to v1.4.0 substrate render contract.
+- 2026-05-25 — Promoted to integrated after source implementation shipped.

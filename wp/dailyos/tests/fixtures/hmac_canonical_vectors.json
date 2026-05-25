@@ -67,5 +67,28 @@
         "timestamp": "2024-11-13T12:16:40Z",
         "expected_canonical_bytes_b64": "REFJTFlPUy1XUC1CUklER0UtSE1BQy1WMQptZXRob2Q6MwpQVVQKcGF0aF9xdWVyeToyNwovZGFpbHlvcy92MS9leGFtcGxlP2Zvbz1iYXIKY29udGVudF90eXBlOjMxCmFwcGxpY2F0aW9uL2pzb247IGNoYXJzZXQ9dXRmLTgKYm9keToyCltdCnNpdGVfYmluZGluZ19kaWdlc3Q6NjQKY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjYwpzaXRlX25vbmNlOjE3CnNpdGVOb25jZUdhbW1hNzg5CndwX3VzZXJfaWQ6MwoxMDgKd3Bfc2l0ZV9pZDoxNgppbnN0YWxsLWdhbW1hOjEyCmhvbWVfdXJsOjIwCmh0dHBzOi8vZXhhbXBsZS50ZXN0CnNpdGVfdXJsOjI4Cmh0dHBzOi8vZXhhbXBsZS50ZXN0L25ldHdvcmsKd3BfaW5zdGFsbF91dWlkOjM2CjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDEwMwpwbHVnaW5faW5zdGFuY2VfdXVpZDozNgowMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAyMDMKbXVsdGlzaXRlX2Jsb2dfaWQ6MgoxMgpub25jZToxNQpub25jZS1nYW1tYS03ODkKdGltZXN0YW1wOjIwCjIwMjQtMTEtMTNUMTI6MTY6NDBaCnJlcXVlc3RfaWQ6MAoK",
         "expected_signature_hex": "3c0fb5e0921a281caa50ace4cd4a519981ef6b0edb11374abc3d153aeef7d4af"
+    },
+    {
+        "name": "content_type_preserves_non_http_ows_edges",
+        "session_key_hex": "4545454545454545454545454545454545454545454545454545454545454545",
+        "method": "POST",
+        "path_query": "/dailyos/v1/ows",
+        "content_type": " \t\n\r\u0000\u000b\fapplication/json\f\u000b\u0000\r\n\t ",
+        "body_b64": "e30=",
+        "identity": {
+            "site_binding_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "site_nonce": "siteNonceDelta012",
+            "wp_user_id": "64",
+            "wp_site_id": "site-2",
+            "home_url": "https://example.test",
+            "site_url": "https://example.test/wp",
+            "wp_install_uuid": "00000000-0000-4000-8000-000000000104",
+            "plugin_instance_uuid": "00000000-0000-4000-8000-000000000204",
+            "multisite_blog_id": ""
+        },
+        "nonce": "nonce-delta-012",
+        "timestamp": "2024-11-13T12:18:20Z",
+        "expected_canonical_bytes_b64": "REFJTFlPUy1XUC1CUklER0UtSE1BQy1WMQptZXRob2Q6NApQT1NUCnBhdGhfcXVlcnk6MTUKL2RhaWx5b3MvdjEvb3dzCmNvbnRlbnRfdHlwZToyMgoACwxhcHBsaWNhdGlvbi9qc29uDAsACmJvZHk6Mgp7fQpzaXRlX2JpbmRpbmdfZGlnZXN0OjY0CmRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGQKc2l0ZV9ub25jZToxNwpzaXRlTm9uY2VEZWx0YTAxMgp3cF91c2VyX2lkOjIKNjQKd3Bfc2l0ZV9pZDo2CnNpdGUtMgpob21lX3VybDoyMApodHRwczovL2V4YW1wbGUudGVzdApzaXRlX3VybDoyMwpodHRwczovL2V4YW1wbGUudGVzdC93cAp3cF9pbnN0YWxsX3V1aWQ6MzYKMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMTA0CnBsdWdpbl9pbnN0YW5jZV91dWlkOjM2CjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDIwNAptdWx0aXNpdGVfYmxvZ19pZDowCgpub25jZToxNQpub25jZS1kZWx0YS0wMTIKdGltZXN0YW1wOjIwCjIwMjQtMTEtMTNUMTI6MTg6MjBaCnJlcXVlc3RfaWQ6MAoK",
+        "expected_signature_hex": "12c32b6bf31ff5e89b80e4bf22ebdbbdcfaccdb21b927ff50960eacda353e907"
     }
 ]

@@ -3,7 +3,7 @@
 **Tier:** primitive
 **Status:** integrated
 **Owner:** James
-**Last updated:** 2026-05-02
+**Last updated:** 2026-05-25
 **`data-ds-name`:** `IntelligenceQualityBadge`
 **`data-ds-spec`:** `primitives/IntelligenceQualityBadge.md`
 **Variants:** `quality="sparse" | "developing" | "ready" | "fresh"`
@@ -39,13 +39,13 @@ D-spine adds two related labels that map to the same primitive:
 
 Quality dot color (per `_shared/primitives.css`):
 - sparse → `--color-text-tertiary` (grey)
-- developing → `--color-spice-saffron`
+- developing → `--color-spice-turmeric`
 - ready → `--color-garden-sage`
 - fresh → `--color-garden-sage` brighter
 
 ## Tokens consumed
 
-- `--color-garden-sage`, `--color-spice-saffron`, `--color-text-tertiary` (per variant dot)
+- `--color-garden-sage`, `--color-spice-turmeric`, `--color-text-tertiary` (per variant dot)
 - `--font-mono` (label, uppercase, small-caps treatment)
 - `--space-xs`, `--space-sm`
 
@@ -79,3 +79,4 @@ Existing primitive in `src/`. Confirmed in synthesis D5 — keep this name; do n
 - 2026-05-02 — Documented as canonical (existing src/ primitive).
 - Audit 04 — surfaced as the existing primitive most components touch for completeness signaling.
 - Audit 03 — D-spine `prep-state` consolidation candidate.
+- 2026-05-25 — Aligned `developing` with the shipped turmeric token.

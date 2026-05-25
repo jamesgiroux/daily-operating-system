@@ -14702,8 +14702,8 @@ mod tests {
             );
             db.conn_ref()
                 .execute(
-                    "UPDATE intelligence_claims
-                     SET created_at = ?1
+                    "UPDATE intelligence_claims /* dos7-allowed: entity context unit test pins fixture recency */
+                     SET created_at = ?1 /* dos7-allowed: entity context unit test pins fixture recency */
                      WHERE id = ?2",
                     params![
                         format!("2026-05-02T13:{index:02}:00Z"),
@@ -14798,8 +14798,9 @@ mod tests {
             );
             db.conn_ref()
                 .execute(
-                    "UPDATE intelligence_claims
-                     SET sensitivity = 'confidential', created_at = ?1
+                    "UPDATE intelligence_claims /* dos7-allowed: prompt-context unit test seeds sensitivity ordering */
+                     SET sensitivity = 'confidential' /* dos7-allowed: prompt-context unit test seeds sensitivity ordering */,
+                         created_at = ?1 /* dos7-allowed: prompt-context unit test seeds sensitivity ordering */
                      WHERE id = ?2",
                     params![format!("2026-05-02T12:{index:02}:00Z"), id],
                 )
@@ -14817,8 +14818,9 @@ mod tests {
         );
         db.conn_ref()
             .execute(
-                "UPDATE intelligence_claims
-                 SET sensitivity = 'internal', created_at = ?1
+                "UPDATE intelligence_claims /* dos7-allowed: prompt-context unit test seeds sensitivity ordering */
+                 SET sensitivity = 'internal' /* dos7-allowed: prompt-context unit test seeds sensitivity ordering */,
+                     created_at = ?1 /* dos7-allowed: prompt-context unit test seeds sensitivity ordering */
                  WHERE id = 'claim-internal-older'",
                 params!["2026-05-02T11:00:00Z"],
             )

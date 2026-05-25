@@ -183,3 +183,13 @@ strip = true
 [[test]]
 name = "block_kit_integration_harness"
 path = "abilities-runtime/tests/block_kit_integration_harness.rs"
+
+[[test]]
+name = "dos589_fixture_signal_replay_cursor"
+path = "tests/dos589_fixture_signal_replay_cursor.rs"
+required-features = ["test-harness"]
+
+[[test]]
+name = "dos589_fixture_signal_scope_leak"
+path = "tests/dos589_fixture_signal_scope_leak.rs"
+required-features = ["test-harness"]

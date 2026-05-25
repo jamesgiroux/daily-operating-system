@@ -1271,21 +1271,19 @@ fn dispatched_event_from_row(row: &VersionEventRow) -> DispatchedEvent {
 }
 
 // ---------------------------------------------------------------------------
-// Test introspection helpers (cargo test only)
+// Test introspection helpers
 // ---------------------------------------------------------------------------
 //
-// Marked `#[doc(hidden)]` to keep them off the public API docs. Reaching
-// these requires an `ActionDb` handle, which is itself behind the
-// substrate trust boundary — no remote route can call them. The tighter
-// `#[cfg(any(test, feature = "test-harness"))]` gate would require the
-// workspace CI invocation to opt into the feature for the dos589
-// fixtures; see the linked maintenance ticket for that follow-up.
+// Marked `#[doc(hidden)]` to keep them off the public API docs, and gated so
+// production builds do not expose fixture-only cursor/key introspection.
 
+#[cfg(any(test, feature = "test-harness"))]
 #[doc(hidden)]
 pub fn __test_encode_cursor(cursor_uuid: &str, subscription_id: &str, local_key: &[u8]) -> String {
     CursorEnvelope::encode(cursor_uuid, subscription_id, local_key)
 }
 
+#[cfg(any(test, feature = "test-harness"))]
 #[doc(hidden)]
 pub fn __test_decode_cursor_subscription_id(wire: &str) -> Option<String> {
     CursorEnvelope::decode(wire).map(|env| env.subscription_id)
@@ -1295,6 +1293,7 @@ pub fn __test_decode_cursor_subscription_id(wire: &str) -> Option<String> {
 /// valid cursor envelope without going through a delivered event. Production
 /// callers never need this — the dispatcher always encodes envelopes on the
 /// caller's behalf.
+#[cfg(any(test, feature = "test-harness"))]
 #[doc(hidden)]
 pub fn __test_load_local_key(
     db: &ActionDb,

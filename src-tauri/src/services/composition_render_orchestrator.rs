@@ -206,7 +206,20 @@ pub fn resolve_producer_ability_name(composition_id: &str) -> Option<&'static st
 /// Extract the account_id encoded in an `account-overview` composition_id.
 /// Pattern: `dailyos/account-overview:account:{account_id}`.
 pub fn extract_account_id_from_composition_id(composition_id: &str) -> Option<&str> {
-    composition_id.strip_prefix("dailyos/account-overview:account:")
+    let account_id = composition_id.strip_prefix("dailyos/account-overview:account:")?;
+    if is_valid_account_id_tail(account_id) {
+        Some(account_id)
+    } else {
+        None
+    }
+}
+
+fn is_valid_account_id_tail(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -318,5 +331,24 @@ mod tests {
             Some("acct-42")
         );
         assert!(extract_account_id_from_composition_id("dailyos/other:foo").is_none());
+    }
+
+    #[test]
+    fn account_id_extract_rejects_malformed_tails() {
+        for bad in &[
+            "".to_string(),
+            "acct/42".to_string(),
+            "acct\n42".to_string(),
+            "acct 42".to_string(),
+            "acct.42".to_string(),
+            "acct:42".to_string(),
+            "x".repeat(65),
+        ] {
+            let composition_id = format!("dailyos/account-overview:account:{bad}");
+            assert!(
+                extract_account_id_from_composition_id(&composition_id).is_none(),
+                "malformed account id tail must be rejected: {bad:?}"
+            );
+        }
     }
 }

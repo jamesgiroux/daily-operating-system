@@ -91,7 +91,29 @@ impl WorkspaceCategory {
             Self::Notes => "notes",
             Self::Contracts => "contracts",
             Self::Attachments => "attachments",
-            Self::Other(s) => s.as_str(),
+            Self::Other(s) => {
+                debug_assert!(
+                    is_valid_slug_shape(s),
+                    "WorkspaceCategory::Other must carry a lexically valid slug"
+                );
+                debug_assert!(
+                    !is_known_category_slug(s),
+                    "WorkspaceCategory::Other must not duplicate a known category slug"
+                );
+                s.as_str()
+            }
+        }
+    }
+
+    /// Builds an `Other` category only when the slug is lexically valid and
+    /// does not shadow a known category slug. Registry allow/deny semantics
+    /// still live at `WorkspaceCategoryRegistry::validate`.
+    pub fn other_slug(s: impl Into<String>) -> Option<Self> {
+        let s = s.into();
+        if is_valid_slug_shape(&s) && !is_known_category_slug(&s) {
+            Some(Self::Other(s))
+        } else {
+            None
         }
     }
 
@@ -111,6 +133,13 @@ impl WorkspaceCategory {
             _ => None,
         }
     }
+}
+
+fn is_known_category_slug(s: &str) -> bool {
+    matches!(
+        s,
+        "presentations" | "transcripts" | "meetings" | "notes" | "contracts" | "attachments"
+    )
 }
 
 fn is_valid_slug_shape(s: &str) -> bool {

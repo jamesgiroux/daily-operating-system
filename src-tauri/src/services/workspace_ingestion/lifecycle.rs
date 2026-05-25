@@ -9,7 +9,7 @@
 
 use abilities_runtime::abilities::provenance::source::DataSource;
 use chrono::{DateTime, Utc};
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, types::Type, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
 use crate::entity::EntityType;
@@ -158,8 +158,8 @@ impl LifecycleRepo {
             params![
                 file_id,
                 canonical_path,
-                identity.device as i64,
-                identity.inode as i64,
+                u64_to_sql_i64("device", identity.device)?,
+                u64_to_sql_i64("inode", identity.inode)?,
                 workspace_file_kind_slug(source_type),
                 data_source_json,
                 source_asof.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
@@ -321,8 +321,8 @@ fn row_to_lifecycle(row: &rusqlite::Row<'_>) -> rusqlite::Result<WorkspaceFileLi
     Ok(WorkspaceFileLifecycle {
         file_id: row.get(0)?,
         canonical_path: row.get(1)?,
-        device: row.get::<_, i64>(2)? as u64,
-        inode: row.get::<_, i64>(3)? as u64,
+        device: sql_i64_to_u64(row.get::<_, i64>(2)?, 2)?,
+        inode: sql_i64_to_u64(row.get::<_, i64>(3)?, 3)?,
         source_type: workspace_file_kind_from_slug(&source_type_raw)
             .unwrap_or(WorkspaceFileKind::Inbox),
         data_source: serde_json::from_str(&data_source_raw).unwrap_or(DataSource::WorkspaceFile {
@@ -343,6 +343,20 @@ fn row_to_lifecycle(row: &rusqlite::Row<'_>) -> rusqlite::Result<WorkspaceFileLi
         },
         created_at: parse_dt(&created_at_raw),
         updated_at: parse_dt(&updated_at_raw),
+    })
+}
+
+fn u64_to_sql_i64(field: &str, value: u64) -> Result<i64, LifecycleError> {
+    i64::try_from(value).map_err(|_| {
+        LifecycleError::DbError(format!(
+            "{field} value {value} exceeds SQLite INTEGER positive range"
+        ))
+    })
+}
+
+fn sql_i64_to_u64(value: i64, column: usize) -> rusqlite::Result<u64> {
+    u64::try_from(value).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(column, Type::Integer, Box::new(error))
     })
 }
 

@@ -981,7 +981,7 @@ fn content_type_for_canonical_request(headers: &HeaderMap) -> Result<String, Sig
     let value = value
         .to_str()
         .map_err(|_| SignedTransportError::canonicalization_mismatch("content_type_non_utf8"))?;
-    Ok(trim_ascii_whitespace(value).to_string())
+    Ok(trim_http_ows(value).to_string())
 }
 
 fn required_session_id_header(headers: &HeaderMap) -> Result<&str, SignedTransportError> {
@@ -1206,8 +1206,8 @@ fn is_safe_identifier(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
 }
 
-fn trim_ascii_whitespace(value: &str) -> &str {
-    value.trim_matches(|character: char| character.is_ascii_whitespace())
+fn trim_http_ows(value: &str) -> &str {
+    value.trim_matches(|character: char| matches!(character, ' ' | '\t' | '\n' | '\r'))
 }
 
 fn parseable_active_session_id(
@@ -1678,6 +1678,28 @@ mod tests {
         assert!(rendered.contains("path_query:29\n/v1/surface/abilities?a=1&a=2\n"));
         assert!(rendered.contains("content_type:0\n\n"));
         assert!(rendered.contains("body:0\n\n"));
+    }
+
+    #[test]
+    fn content_type_trim_preserves_non_http_ows_edges() {
+        assert_eq!(
+            trim_http_ows(
+                " \t\n\r\u{0000}\u{000b}\u{000c}application/json\u{000c}\u{000b}\u{0000}\r\n\t "
+            ),
+            "\u{0000}\u{000b}\u{000c}application/json\u{000c}\u{000b}\u{0000}"
+        );
+        assert_eq!(
+            trim_http_ows("\u{0000}application/json\u{0000}"),
+            "\u{0000}application/json\u{0000}"
+        );
+        assert_eq!(
+            trim_http_ows("\u{000b}application/json\u{000b}"),
+            "\u{000b}application/json\u{000b}"
+        );
+        assert_eq!(
+            trim_http_ows("\u{000c}application/json\u{000c}"),
+            "\u{000c}application/json\u{000c}"
+        );
     }
 
     #[test]

@@ -692,8 +692,8 @@ mod tests {
     use std::pin::Pin;
     use std::sync::Arc;
 
-    use chrono::{TimeZone, Utc};
-    use rusqlite::{params, Connection};
+    use chrono::Utc;
+    use rusqlite::Connection;
     use serde_json::json;
 
     use super::*;
@@ -993,7 +993,10 @@ CREATE TABLE accounts (
         sensitivity: ClaimSensitivity,
         created_at: &str,
     ) -> String {
-        let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 9, 12, 0, 0).unwrap());
+        let created_at_ts = chrono::DateTime::parse_from_rfc3339(created_at)
+            .expect("MCP fixture created_at must parse")
+            .with_timezone(&Utc);
+        let clock = FixedClock::new(created_at_ts);
         let rng = SeedableRng::new(309);
         let external = ExternalClients::default();
         let ctx = ServiceContext::new_live(&clock, &rng, &external).with_actor("agent:test");
@@ -1033,12 +1036,6 @@ CREATE TABLE accounts (
             CommittedClaim::Inserted { claim } => claim.id,
             other => panic!("expected inserted claim, got {other:?}"),
         };
-        db.conn_ref()
-            .execute(
-                "UPDATE intelligence_claims SET created_at = ?1 WHERE id = ?2",
-                params![created_at, claim_id.as_str()],
-            )
-            .expect("pin MCP fixture claim created_at");
         claim_id
     }
 

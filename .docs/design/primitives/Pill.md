@@ -3,7 +3,7 @@
 **Tier:** primitive
 **Status:** integrated
 **Owner:** James
-**Last updated:** 2026-05-05
+**Last updated:** 2026-05-25
 **`data-ds-name`:** `Pill`
 **`data-ds-spec`:** `primitives/Pill.md`
 **Variants:** `tone="sage" | "turmeric" | "terracotta" | "larkspur" | "neutral"`
@@ -61,6 +61,9 @@ CSS class form (matches `_shared/.pill`):
 </span>
 ```
 
+The WordPress block projection uses the `dailyos-pill--tone-*` class as its
+tone authority and omits a parallel `data-tone` attribute.
+
 ## Source
 
 - **Mockup substrate:** `.docs/_archive/mockups/claude-design-project/mockups/surfaces/_shared/primitives.css` (`.pill`)
@@ -78,3 +81,4 @@ Wave 1 consumers (direct or via composing primitives): DailyBriefing, AccountDet
 
 - 2026-05-02 — Promoted to canonical from `_shared/.pill`. Audit 03 surfaced 7+ existing pill variants across surfaces — consolidation to this primitive begins with v1.4.3.
 - 2026-05-05 — Source updated to shipped React primitive.
+- 2026-05-25 — Documented class-only tone authority for the WordPress block projection.

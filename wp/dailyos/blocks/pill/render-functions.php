@@ -36,9 +36,8 @@ function dailyos_pill_render( array $attributes ): string {
 	$label_html = esc_html( $label );
 
 	return sprintf(
-		'<span class="%s" data-tone="%s" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md">%s%s</span>',
+		'<span class="%s" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md">%s%s</span>',
 		esc_attr( implode( ' ', $classes ) ),
-		esc_attr( $tone ),
 		$dot_html,
 		$label_html
 	);

@@ -3,10 +3,10 @@
 **Tier:** primitive
 **Status:** integrated
 **Owner:** James
-**Last updated:** 2026-05-02
+**Last updated:** 2026-05-25
 **`data-ds-name`:** `ProvenanceTag`
 **`data-ds-spec`:** `primitives/ProvenanceTag.md`
-**Variants:** plain (label only); `discrepancy` (highlights when sources disagree)
+**Variants:** plain (label only); `with-source`; `age-only`; `discrepancy` (highlights when sources disagree)
 **Design system version introduced:** 0.1.0
 
 ## Job
@@ -29,6 +29,8 @@ Render a muted source-attribution label for a piece of intelligence — "where d
 ## States / variants
 
 - **default** — small muted label with source name (e.g., "Glean", "Salesforce", "Email")
+- **with-source** — explicit source-attribution phrase when the source should be visible in prose (e.g., "from Glean", "from Salesforce", "from email")
+- **age-only** — recency-only provenance treatment for surfaces that already name the source elsewhere; use `FreshnessIndicator` instead when the job is purely raw freshness
 - **discrepancy** — when sources disagree on a fact, render with attention treatment (subtle outline or warn color)
 
 Note from Audit 04: production behavior intentionally hides `pty_synthesis` provenance — synthesized intelligence renders without the tag by default. Document this explicitly.
@@ -45,6 +47,8 @@ Note from Audit 04: production behavior intentionally hides `pty_synthesis` prov
 ```tsx
 <ProvenanceTag itemSource="glean" />
 <ProvenanceTag itemSource="Salesforce" discrepancy />
+<ProvenanceTag itemSource="email" data-variant="with-source" />
+<ProvenanceTag itemSource="local_file" data-variant="age-only" />
 {/* Renders nothing for synthesized: */}
 <ProvenanceTag itemSource="pty_synthesis" />
 ```
@@ -66,3 +70,4 @@ Existing primitive in `src/`. The mockup substrate proposes a related `Provenanc
 
 - 2026-05-02 — Documented as canonical (existing src/ primitive).
 - Audit 04 — confirmed pty_synthesis suppression behavior.
+- 2026-05-25 — Added `with-source` and `age-only` variants to match shipped provenance treatments.

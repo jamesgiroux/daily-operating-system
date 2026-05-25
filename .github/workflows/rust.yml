@@ -77,6 +77,12 @@ jobs:
         working-directory: src-tauri
         run: cargo test --workspace
 
+      - name: Run DOS589 cursor fixture harness tests
+        working-directory: src-tauri
+        run: |
+          cargo test --features test-harness --test dos589_fixture_signal_replay_cursor
+          cargo test --features test-harness --test dos589_fixture_signal_scope_leak
+
       - name: Run MCP dynamic reader harness test
         working-directory: src-tauri
         run: cargo test --features test-harness --test w05_a_mcp_dynamic_tool_readers_test

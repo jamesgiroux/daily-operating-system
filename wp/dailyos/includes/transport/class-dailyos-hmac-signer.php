@@ -52,7 +52,7 @@ final class DailyOS_Hmac_Signer {
 		string $request_id = ''
 	): string {
 		$normalized_method       = strtoupper( $method );
-		$normalized_content_type = trim( $content_type, " \t\n\r\0\x0B" );
+		$normalized_content_type = trim( $content_type, " \t\n\r" );
 
 		$this->assert_utf8( 'method', $normalized_method );
 		$this->assert_utf8( 'path_query', $path_query );

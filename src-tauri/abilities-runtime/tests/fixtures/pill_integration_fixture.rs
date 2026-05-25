@@ -41,7 +41,7 @@ pub fn pill_fixture() -> BlockIntegrationFixture {
             },
             RendererBranchAssertion {
                 branch_label: "default-tone".to_string(),
-                expected_html_pattern: "data-tone=\"neutral\"".to_string(),
+                expected_html_pattern: "dailyos-pill--tone-neutral".to_string(),
             },
         ],
         expected_wrapper: BlockWrapperAssertion {

@@ -1,0 +1,5 @@
+error[E0063]: missing fields `data_source`, `lifecycle_state`, `source_asof` and 1 other field in initializer of `WorkspaceFileLifecycle`
+ --> tests/trybuild/workspace_file_lifecycle_missing_core_fields_fails.rs:6:13
+  |
+6 |     let _ = WorkspaceFileLifecycle {
+  |             ^^^^^^^^^^^^^^^^^^^^^^ missing `data_source`, `lifecycle_state`, `source_asof` and 1 other field

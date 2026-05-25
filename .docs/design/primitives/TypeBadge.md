@@ -3,7 +3,7 @@
 **Tier:** primitive
 **Status:** integrated
 **Owner:** James
-**Last updated:** 2026-05-02
+**Last updated:** 2026-05-25
 **`data-ds-name`:** `TypeBadge`
 **`data-ds-spec`:** `primitives/TypeBadge.md`
 **Variants:** `accountType="customer" | "internal" | "partner"` (extensible)
@@ -27,7 +27,7 @@ Render an account-type categorical badge (Customer / Internal / Partner) with th
 
 ## States / variants
 
-- `accountType="customer"` — turmeric tone (background turmeric-12, text turmeric)
+- `accountType="customer"` — account tone (background account-12, text account)
 - `accountType="internal"` — larkspur tone (background larkspur-15, text larkspur)
 - `accountType="partner"` — rosemary tone (background rosemary-12, text rosemary)
 - Optional `editable` — adds a chevron and dropdown affordance (existing AccountTypeBadge in src does this)
@@ -36,7 +36,7 @@ Mockup `.type-badge` adds an optional `chev` for the dropdown variant.
 
 ## Tokens consumed
 
-- `--color-spice-turmeric-12`, `--color-spice-turmeric` (customer)
+- `--color-account-12`, `--color-account` (customer)
 - `--color-garden-larkspur-15`, `--color-garden-larkspur` (internal)
 - `--color-garden-rosemary-12`, `--color-garden-rosemary` (partner)
 - `--font-mono` (label, small-caps treatment)
@@ -71,3 +71,4 @@ Audit 02 surfaced `AccountTypeBadge` (the local dropdown implementation) as a "s
 
 - 2026-05-02 — Promoted to canonical from mockup `_shared/.type-badge` + production `AccountTypeBadge`.
 - Audit 02 — flagged AccountTypeBadge as local-reimplementation candidate.
+- 2026-05-25 — Aligned customer colors with shipped account tokens.
