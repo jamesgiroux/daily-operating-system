@@ -8,8 +8,10 @@ use std::sync::Arc;
 use crate::services::mcp_v2::contracts::ScopedName;
 use crate::services::mcp_v2::gateway::Gateway;
 use crate::services::mcp_v2::taxonomy::TaxonomyCatalog;
+use crate::signals::propagation::PropagationEngine;
 
 use super::tool_account_status::AccountStatusHandler;
+use super::tool_placement::PlacementHandler;
 
 /// Errors registering wave-scoped handlers at boot.
 #[derive(Debug)]
@@ -38,12 +40,15 @@ impl std::error::Error for RegistrationError {}
 
 /// Register all v1.4.7 W2-A Phase-A handlers on the gateway.
 ///
-/// Cycle-1 scope: `dailyos.read.account_status` only. Phase-B (daily_briefing)
-/// adds its handler via this same helper once its sub-ticket lands.
+/// Current registered scope includes the account status read tool plus the
+/// v1.4.5 workspace placement write tool once its placement substrate is
+/// present on the rebased base. Phase-B (daily_briefing) adds its handler via
+/// this same helper once its sub-ticket lands.
 pub fn register_v147_handlers(
     gateway: &mut Gateway,
     catalog: &Arc<dyn TaxonomyCatalog>,
     runtime: tokio::runtime::Handle,
+    signal_engine: Arc<PropagationEngine>,
 ) -> Result<(), RegistrationError> {
     let account_status_name = ScopedName::new("dailyos.read.account_status");
     let description = catalog
@@ -51,9 +56,57 @@ pub fn register_v147_handlers(
         .ok_or_else(|| RegistrationError::CatalogEntryMissing(account_status_name.clone()))?
         .clone();
 
-    let handler = AccountStatusHandler::from_runtime(description, runtime)
+    let handler = AccountStatusHandler::from_runtime(description, runtime.clone())
+        .map_err(RegistrationError::AbilityRegistry)?;
+    gateway.register(Arc::new(handler));
+
+    let placement_name = ScopedName::new("dailyos.write.place_document");
+    let description = catalog
+        .description_for(&placement_name)
+        .ok_or_else(|| RegistrationError::CatalogEntryMissing(placement_name.clone()))?
+        .clone();
+
+    let handler = PlacementHandler::from_runtime(description, runtime, Arc::clone(&signal_engine))
         .map_err(RegistrationError::AbilityRegistry)?;
     gateway.register(Arc::new(handler));
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use crate::services::mcp_v2::contracts::ScopedName;
+    use crate::services::mcp_v2::gateway::Gateway;
+    use crate::services::mcp_v2::taxonomy::{TaxonomyCatalog, YamlTaxonomyCatalog};
+    use crate::signals::propagation::default_engine;
+
+    use super::*;
+
+    #[test]
+    fn registers_workspace_placement_handler_from_catalog() {
+        let runtime = tokio::runtime::Runtime::new().expect("runtime");
+        let catalog: Arc<dyn TaxonomyCatalog> =
+            Arc::new(YamlTaxonomyCatalog::load_embedded().expect("catalog"));
+        let mut gateway = Gateway::new();
+        gateway.set_taxonomy(Arc::clone(&catalog));
+
+        register_v147_handlers(
+            &mut gateway,
+            &catalog,
+            runtime.handle().clone(),
+            Arc::new(default_engine()),
+        )
+        .expect("register handlers");
+
+        let registered = gateway.registered_tools().cloned().collect::<Vec<_>>();
+        assert!(registered.contains(&ScopedName::new("dailyos.read.account_status")));
+        assert!(registered.contains(&ScopedName::new("dailyos.write.place_document")));
+        let pending = gateway.seal().expect("registered handlers match catalog");
+        assert!(
+            !pending.contains(&ScopedName::new("dailyos.write.place_document")),
+            "placement handler should no longer be a catalog-only placeholder"
+        );
+    }
 }

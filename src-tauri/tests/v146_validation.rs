@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Duration, Utc};
 use dailyos_lib::abilities::provenance::source::EntityId;
+use dailyos_lib::abilities::registry::McpExposure;
 use dailyos_lib::abilities::workspace_graph::contracts::{
     WorkspaceGraphInput, WorkspaceGraphPrivacyProfile, WorkspaceGraphReadRequest,
     WorkspaceGraphResponse,
@@ -10,6 +11,13 @@ use dailyos_lib::abilities::workspace_graph::contracts::{
 use dailyos_lib::db::{ActionDb, DbAccount};
 use dailyos_lib::entity::EntityType;
 use dailyos_lib::services::context::{ExternalClients, ServiceContext, SystemClock, SystemRng};
+use dailyos_lib::services::mcp_v2::actor_policy::{ToolGrant, ToolRateLimit};
+use dailyos_lib::services::mcp_v2::contracts::{
+    McpClientId, McpToolRequestEnvelope, McpToolResult, Scope, ScopedName, ToolError,
+};
+use dailyos_lib::services::mcp_v2::gateway::Gateway;
+use dailyos_lib::services::mcp_v2::handlers::registration::register_v147_handlers;
+use dailyos_lib::services::mcp_v2::taxonomy::{TaxonomyCatalog, YamlTaxonomyCatalog};
 use dailyos_lib::services::workspace_ingestion::contracts::{
     NullExtractor, RejectionReason, WorkspaceFileKind,
 };
@@ -25,6 +33,54 @@ use dailyos_lib::services::workspace_ingestion::signals::WorkspaceSignalEmitter;
 use dailyos_lib::services::workspace_ingestion::wiring;
 use parking_lot::Mutex;
 use rusqlite::{params, Connection};
+
+#[test]
+fn mcp_placement_handler_registered_for_headless_path() {
+    let runtime = tokio::runtime::Runtime::new().expect("runtime");
+    let catalog: Arc<dyn TaxonomyCatalog> =
+        Arc::new(YamlTaxonomyCatalog::load_embedded().expect("catalog"));
+    let mut gateway = Gateway::new();
+    gateway.set_taxonomy(Arc::clone(&catalog));
+    register_v147_handlers(
+        &mut gateway,
+        &catalog,
+        runtime.handle().clone(),
+        Arc::new(dailyos_lib::signals::propagation::default_engine()),
+    )
+    .expect("register v2 handlers");
+    gateway.seal().expect("registered handlers validate");
+
+    let tool_name = ScopedName::new("dailyos.write.place_document");
+    assert!(gateway.registered_tools().any(|name| name == &tool_name));
+
+    let response = gateway.handle_local_stdio_tool_call(
+        &McpClientId::new("validation-client"),
+        McpToolRequestEnvelope {
+            conversation_handle: None,
+            tool_name: tool_name.clone(),
+            params: serde_json::json!({}),
+        },
+        &[ToolGrant {
+            tool_name,
+            scopes_granted: vec![],
+            exposure: McpExposure::Invocable,
+            rate_limit: ToolRateLimit {
+                max_calls: 0,
+                window_seconds: 0,
+            },
+        }],
+    );
+
+    assert_eq!(
+        response.result,
+        McpToolResult::Error {
+            error: ToolError::Unauthorized {
+                missing_scope: Scope::new("write.workspace_place_document")
+            }
+        },
+        "registered placement handler should be resolved before scope denial"
+    );
+}
 
 #[test]
 fn graph_audit_zero_gaps_on_hermetic_fixture_db() {
