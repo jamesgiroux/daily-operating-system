@@ -25,9 +25,9 @@ if ( ! defined( 'DAILYOS_SUGGESTED_NEXT_STEPS_FEEDBACK_KINDS' ) ) {
 				'adrVariant'   => 'RecommendationFeedbackDecision::Convert',
 			],
 			'dismiss'           => [
-				'decisionKind' => 'dismiss',
+				'decisionKind'  => 'dismiss',
 				'dismissReason' => 'notRelevant',
-				'adrVariant'   => 'RecommendationFeedbackDecision::Dismiss',
+				'adrVariant'    => 'RecommendationFeedbackDecision::Dismiss',
 			],
 			'dismissWithReason' => [
 				'decisionKind'  => 'dismiss',
