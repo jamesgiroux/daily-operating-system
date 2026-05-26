@@ -6,12 +6,15 @@ use dailyos_lib::abilities::provenance::source::EntityId;
 use dailyos_lib::db::{ActionDb, DbAccount};
 use dailyos_lib::entity::EntityType;
 use dailyos_lib::services::context::{ExternalClients, ServiceContext, SystemClock, SystemRng};
-use dailyos_lib::services::workspace_ingestion::contracts::{RejectionReason, WorkspaceFileKind};
+use dailyos_lib::services::workspace_ingestion::contracts::{
+    NullExtractor, RejectionReason, WorkspaceFileKind,
+};
 use dailyos_lib::services::workspace_ingestion::pipeline::{
-    file_id_from_identity, EntityRef, IngestReceipt, IngestRequest,
+    file_id_from_identity, EntityRef, IngestError, IngestPipeline, IngestReceipt, IngestRequest,
 };
 use dailyos_lib::services::workspace_ingestion::registry::WorkspaceSourceRegistry;
 use dailyos_lib::services::workspace_ingestion::runs::IngestionMode;
+use dailyos_lib::services::workspace_ingestion::signals::WorkspaceSignalEmitter;
 use dailyos_lib::services::workspace_ingestion::wiring;
 use parking_lot::Mutex;
 use rusqlite::{params, Connection};
@@ -262,6 +265,13 @@ fn filesystem_validation_negative_fixtures() {
         RejectionReason::PathTraversalAttempt,
     );
 
+    let non_utf8_path = Path::new(OsStr::from_bytes(b"non-utf8-\xff.md"));
+    assert_rejected(
+        &fixture.workspace_root,
+        non_utf8_path,
+        RejectionReason::PathTraversalAttempt,
+    );
+
     let hardlink_source = fixture.workspace_root.join("hardlink-source.md");
     let hardlink_alias = fixture.workspace_root.join("hardlink-alias.md");
     std::fs::write(&hardlink_source, "hardlink").expect("hardlink source");
@@ -283,7 +293,70 @@ fn filesystem_validation_negative_fixtures() {
         assert_eq!(
             count(&fixture.conn, &sql, []),
             0,
-            "{table} should stay empty"
+            "{table} should stay empty for registry-level rejections"
+        );
+    }
+
+    let explicit = Fixture::new();
+    std::fs::write(explicit.workspace_root.join("oversized.md"), "012345678")
+        .expect("oversized write");
+    std::fs::write(
+        explicit.workspace_root.join("invalid-utf8.md"),
+        [0xff, 0xfe],
+    )
+    .expect("invalid utf8 write");
+    std::fs::write(
+        explicit.workspace_root.join("nul-content.md"),
+        b"safe\0unsafe",
+    )
+    .expect("nul content write");
+
+    assert_pipeline_rejected(
+        &explicit,
+        Path::new("oversized.md"),
+        RejectionReason::FileTooLarge,
+        8,
+    );
+    assert_pipeline_rejected(
+        &explicit,
+        Path::new("invalid-utf8.md"),
+        RejectionReason::UnsupportedFormat,
+        1024,
+    );
+    assert_pipeline_rejected(
+        &explicit,
+        Path::new("nul-content.md"),
+        RejectionReason::UnsupportedFormat,
+        1024,
+    );
+
+    assert_eq!(
+        count(
+            &explicit.conn,
+            "SELECT COUNT(*)
+             FROM workspace_file_lifecycle
+             WHERE lifecycle_state = 'rejected'",
+            [],
+        ),
+        3,
+        "pipeline-level rejections should leave only rejected lifecycle audit rows",
+    );
+    assert_rejection_signal_reasons(
+        &explicit.conn,
+        &["file_too_large", "unsupported_format", "unsupported_format"],
+    );
+    for table in [
+        "document_ingestion_runs",
+        "document_entity_links",
+        "content_index",
+        "content_embeddings",
+        "intelligence_claims",
+    ] {
+        let sql = format!("SELECT COUNT(*) FROM {table}");
+        assert_eq!(
+            count(&explicit.conn, &sql, []),
+            0,
+            "{table} should stay empty for pipeline-level rejections"
         );
     }
 }
@@ -433,6 +506,89 @@ fn assert_rejected(workspace_root: &Path, path: &Path, expected: RejectionReason
     let err = WorkspaceSourceRegistry::open_validated(workspace_root, path)
         .expect_err("path should be rejected");
     assert_eq!(err, expected);
+}
+
+fn assert_pipeline_rejected(
+    fixture: &Fixture,
+    path: &Path,
+    expected: RejectionReason,
+    max_file_bytes: u64,
+) {
+    let (file, identity) = WorkspaceSourceRegistry::open_validated(&fixture.workspace_root, path)
+        .expect("open validated before pipeline rejection");
+    let source_asof: DateTime<Utc> = identity
+        .canonical_path
+        .metadata()
+        .and_then(|metadata| metadata.modified())
+        .expect("source asof")
+        .into();
+    let file_id = file_id_from_identity(&identity, &fixture.workspace_root).expect("file id");
+    let request = IngestRequest {
+        file,
+        identity,
+        file_id,
+        source_asof,
+        source_type: WorkspaceFileKind::EntityDoc,
+        entity: None,
+        mode: IngestionMode::Realtime,
+        category_hint: None,
+        invocation_actor: "user".to_string(),
+        validated_content: None,
+    };
+
+    let clock = SystemClock;
+    let rng = SystemRng;
+    let external = ExternalClients::default();
+    let ctx =
+        ServiceContext::new_live(&clock, &rng, &external).with_actor("system:v146_validation");
+    let db = ActionDb::from_conn(&fixture.conn);
+    let pipeline = IngestPipeline::new(
+        Box::new(NullExtractor),
+        Box::new(WorkspaceSignalEmitter),
+        max_file_bytes,
+        "workspace-validation-null-extractor-v1",
+        fixture.workspace_root.clone(),
+    );
+    let err = pipeline
+        .run(&ctx, db, request)
+        .expect_err("ingest should reject");
+    match err {
+        IngestError::Rejected(reason) => assert_eq!(reason, expected),
+        other => panic!("unexpected ingest error: {other:?}"),
+    }
+}
+
+fn assert_rejection_signal_reasons(conn: &Connection, expected: &[&str]) {
+    let mut stmt = conn
+        .prepare(
+            "SELECT value
+             FROM signal_events
+             WHERE signal_type = 'workspace_file_rejected'",
+        )
+        .expect("signal query");
+    let mut reasons = stmt
+        .query_map([], |row| row.get::<_, String>(0))
+        .expect("signal rows")
+        .map(|row| {
+            let payload = row.expect("signal payload");
+            assert!(!payload.contains("oversized.md"));
+            assert!(!payload.contains("invalid-utf8.md"));
+            assert!(!payload.contains("nul-content.md"));
+            let value: serde_json::Value =
+                serde_json::from_str(&payload).expect("signal json payload");
+            value["reason_code"]
+                .as_str()
+                .expect("reason_code")
+                .to_string()
+        })
+        .collect::<Vec<_>>();
+    reasons.sort();
+    let mut expected = expected
+        .iter()
+        .map(|reason| reason.to_string())
+        .collect::<Vec<_>>();
+    expected.sort();
+    assert_eq!(reasons, expected);
 }
 
 fn count<P>(conn: &Connection, sql: &str, params: P) -> i64

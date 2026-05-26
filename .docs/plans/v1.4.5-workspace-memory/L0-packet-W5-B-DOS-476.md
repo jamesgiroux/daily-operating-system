@@ -28,6 +28,7 @@ W5-B must not make W5-A historical backfill an implicit claim producer. Claim-pr
 - **V1.2** - L0 cycle-2 feasibility fix. Splits POSIX-impossible NUL filename coverage into an invalid path/input rejection test and platform-gates non-UTF8 filename plus hardlink fixtures where the host filesystem cannot represent them.
 - **V1.3** - Rebased-base readiness refresh. Records that W5-A is folded into the active W5 validation PR, explicit ingestion and graph projection now have partial automated evidence, filesystem negative fixtures have partial automated evidence, and MCP placement/lifecycle/signal-middle-hop gaps remain blocked.
 - **V1.4** - Release-gate branch refresh. Records that the signal middle hop is now present and green: explicit workspace ingestion emits `WorkspaceFileIngested`, emits `EntityIntelligenceUpdated`, and invalidates affected prep through the middle-hop signal.
+- **V1.5** - Filesystem-axis refresh. Records green automated evidence for registry-level unsafe path rejection, explicit ingestion size/format rejection, non-UTF8 path byte-input rejection, and conservative backfill hidden/managed/unsupported skips.
 
 ---
 
@@ -169,7 +170,7 @@ Read-only prep on 2026-05-25, refreshed after rebasing on merged W4/W5-A substra
 - Scratchpad/ignored and archive/delete lifecycle effects are named DOS-476 ACs; missing actions block Axis 6 and W5 release close.
 - Automated explicit-ingestion evidence proves a direct pipeline fixture creates lifecycle, run, link, and `commit_claim` rows with privacy-safe provenance, but Axis 2 remains release-blocked until entity-intake, `_inbox`, and MCP placement path coverage is complete.
 - Automated signal evidence proves workspace ingestion emits privacy-safe `WorkspaceFileIngested`, emits privacy-safe `EntityIntelligenceUpdated`, and queues prep invalidation through that middle-hop signal. Axis 4 is green on the release-gate branch.
-- Automated partial filesystem evidence covers traversal, encoded traversal, outside absolute paths, workspace root equality, symlink escape, NUL input, and hardlink rejection when supported. Axis 7 remains release-blocked until oversized, non-UTF8, managed/hidden, and unsupported-file cases are automated in this W5-B axis.
+- Automated filesystem evidence covers traversal, encoded traversal, outside absolute paths, workspace root equality, symlink escape, NUL input, non-UTF8 path byte-input rejection, hardlink rejection when supported, explicit ingestion oversized/unsupported-format rejection, and conservative backfill hidden/managed/unsupported skips. Axis 7 is green on the filesystem-validation branch.
 - `WorkspaceExtractor` is intentionally narrow: note-like, linked Account/Project/Person content becomes `UserNote` claim proposals. W5-B fixtures must use that shape for claim-producing automated tests.
 - Stale-source trust-band validation likely requires explicit trust recompute/job execution. W5-B must include the existing recompute step; hand-setting trust scores is not valid evidence.
 
