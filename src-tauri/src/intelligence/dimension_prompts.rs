@@ -306,7 +306,7 @@ pub fn build_glean_dimension_prompt(
     prompt.push_str(
         "\nFor every array item, include an `\"itemSource\"` object:\n\
          ```json\n\
-         \"itemSource\": { \"source\": \"glean_crm|glean_zendesk|glean_gong|glean_chat|transcript\", \
+         \"itemSource\": { \"source\": \"glean_crm|glean_zendesk|glean_gong|glean_chat\", \
          \"confidence\": 0.9, \"sourcedAt\": \"2026-03-15T00:00:00Z\", \
          \"reference\": \"Salesforce opportunity\" }\n\
          ```\n\n",

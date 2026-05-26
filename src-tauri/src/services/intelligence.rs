@@ -143,8 +143,7 @@ fn projection_claim_data_source(
     match fallback {
         "glean" => match source {
             Some(source) => authorized_glean_projection_data_source(source)
-                .or_else(|| authorized_non_glean_projection_data_source(source))
-                .unwrap_or("ai_enrichment")
+                .unwrap_or("glean")
                 .to_string(),
             None => "glean".to_string(),
         },
@@ -4996,7 +4995,7 @@ mod tests {
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .expect("read generated risk claim");
-        assert_eq!(data_source, "ai_enrichment");
+        assert_eq!(data_source, "glean");
         assert_eq!(projection_producer, "glean");
 
         let pty_account_id = "acc-generated-risk-untrusted-pty-item-source";
@@ -5054,7 +5053,7 @@ mod tests {
     }
 
     #[test]
-    fn glean_projection_preserves_allowed_non_glean_item_source() {
+    fn glean_projection_coerces_non_glean_item_source_to_glean_boundary() {
         let db = test_db();
         let engine = PropagationEngine::default();
         let account_id = "acc-generated-risk-transcript-source";
@@ -5089,11 +5088,14 @@ mod tests {
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .expect("read generated risk claim");
-        assert_eq!(data_source, "transcript");
+        assert_eq!(data_source, "glean");
         assert_eq!(projection_producer, "glean");
         let provenance: serde_json::Value =
             serde_json::from_str(&provenance_json).expect("provenance JSON");
-        assert_eq!(provenance["sources"][0]["data_source"], "local_enrichment");
+        assert_eq!(
+            provenance["sources"][0]["data_source"]["glean"]["downstream"],
+            "unknown"
+        );
 
         let report = crate::db::data_lifecycle::purge_source(
             &db,
@@ -5101,9 +5103,9 @@ mod tests {
         )
         .expect("purge Glean");
 
-        assert_eq!(report.generated_projection_claims_withdrawn, 0);
-        assert_eq!(report.generated_projection_recompute_jobs_enqueued, 0);
-        assert_eq!(active_generated_risk_count(&db, account_id), 1);
+        assert_eq!(report.generated_projection_claims_withdrawn, 1);
+        assert_eq!(report.generated_projection_recompute_jobs_enqueued, 1);
+        assert_eq!(active_generated_risk_count(&db, account_id), 0);
     }
 
     #[test]
