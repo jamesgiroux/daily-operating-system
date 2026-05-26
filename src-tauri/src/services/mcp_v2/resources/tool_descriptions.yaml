@@ -221,7 +221,43 @@
     "scopesRequired": [
       "dailyos.read.portfolio_attention"
     ],
-    "parameters": [],
+    "parameters": [
+      {
+        "name": "pageSize",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 25
+        },
+        "required": false,
+        "description": "Maximum ranked attention items to return"
+      },
+      {
+        "name": "cursor",
+        "schema": {
+          "type": "string"
+        },
+        "required": false,
+        "description": "Opaque cursor from a previous portfolio attention response"
+      },
+      {
+        "name": "entityTypes",
+        "schema": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "account",
+              "project",
+              "person",
+              "meeting"
+            ]
+          }
+        },
+        "required": false,
+        "description": "Entity types to include; defaults to accounts"
+      }
+    ],
     "returns": {
       "schema": {
         "type": "object",

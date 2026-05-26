@@ -13,6 +13,7 @@ use crate::signals::propagation::PropagationEngine;
 use super::tool_account_status::AccountStatusHandler;
 use super::tool_briefing::{DailyBriefingHandler, MeetingBriefingHandler};
 use super::tool_placement::PlacementHandler;
+use super::tool_portfolio::PortfolioAttentionHandler;
 
 /// Errors registering wave-scoped handlers at boot.
 #[derive(Debug)]
@@ -78,6 +79,16 @@ pub fn register_v147_handlers(
 
     gateway.register(Arc::new(MeetingBriefingHandler::new(description)));
 
+    let portfolio_attention_name = ScopedName::new("dailyos.read.portfolio_attention");
+    let description = catalog
+        .description_for(&portfolio_attention_name)
+        .ok_or_else(|| RegistrationError::CatalogEntryMissing(portfolio_attention_name.clone()))?
+        .clone();
+
+    let handler = PortfolioAttentionHandler::from_runtime(description, runtime.clone())
+        .map_err(RegistrationError::AbilityRegistry)?;
+    gateway.register(Arc::new(handler));
+
     let placement_name = ScopedName::new("dailyos.write.place_document");
     let description = catalog
         .description_for(&placement_name)
@@ -122,6 +133,7 @@ mod tests {
         assert!(registered.contains(&ScopedName::new("dailyos.read.account_status")));
         assert!(registered.contains(&ScopedName::new("dailyos.read.daily_briefing")));
         assert!(registered.contains(&ScopedName::new("dailyos.read.meeting_briefing")));
+        assert!(registered.contains(&ScopedName::new("dailyos.read.portfolio_attention")));
         assert!(registered.contains(&ScopedName::new("dailyos.write.place_document")));
         let pending = gateway.seal().expect("registered handlers match catalog");
         assert!(
@@ -131,6 +143,10 @@ mod tests {
         assert!(
             !pending.contains(&ScopedName::new("dailyos.read.meeting_briefing")),
             "meeting briefing handler should no longer be a catalog-only placeholder"
+        );
+        assert!(
+            !pending.contains(&ScopedName::new("dailyos.read.portfolio_attention")),
+            "portfolio attention handler should no longer be a catalog-only placeholder"
         );
         assert!(
             !pending.contains(&ScopedName::new("dailyos.write.place_document")),

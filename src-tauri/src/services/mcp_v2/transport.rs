@@ -418,11 +418,13 @@ mod tests {
             ScopedName::new("dailyos.read.account_status"),
             ScopedName::new("dailyos.read.daily_briefing"),
             ScopedName::new("dailyos.read.meeting_briefing"),
+            ScopedName::new("dailyos.read.portfolio_attention"),
         ];
         let registered_tools = [
             ScopedName::new("dailyos.read.account_status"),
             ScopedName::new("dailyos.read.daily_briefing"),
             ScopedName::new("dailyos.read.meeting_briefing"),
+            ScopedName::new("dailyos.read.portfolio_attention"),
         ]
         .into_iter()
         .collect::<BTreeSet<_>>();
@@ -435,6 +437,7 @@ mod tests {
                 ScopedName::new("dailyos.read.account_status"),
                 ScopedName::new("dailyos.read.daily_briefing"),
                 ScopedName::new("dailyos.read.meeting_briefing"),
+                ScopedName::new("dailyos.read.portfolio_attention"),
             ]
         );
     }

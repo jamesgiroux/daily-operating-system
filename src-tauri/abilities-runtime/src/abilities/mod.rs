@@ -19,6 +19,7 @@ pub mod list_pagination;
 pub mod list_people;
 pub mod list_projects;
 pub mod markdown_preview;
+pub mod portfolio_attention;
 pub mod prepare_meeting;
 pub mod provenance;
 pub mod recommendations;
