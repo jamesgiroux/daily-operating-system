@@ -556,6 +556,9 @@ pub struct EnrichmentComplete {
     pub succeeded: u32,
     pub failed: u32,
     pub failed_dimensions: Vec<String>,
+    pub total_dimensions: u32,
+    pub applicable_total: u32,
+    pub skipped_dimensions: Vec<String>,
     pub wall_clock_ms: u64,
 }
 
@@ -1702,13 +1705,34 @@ fn run_parallel_enrichment(
 
     let is_incremental = ctx.prior_intelligence.is_some();
     let overall_start = Instant::now();
-    let total_dimensions = DIMENSION_NAMES.len() as u32;
+    let applicability = dimension_prompts::dimension_applicability(
+        &input.entity_type,
+        input.relationship.as_deref(),
+    );
+    let total_dimensions = applicability.applicable.len() as u32;
+    let canonical_total_dimensions = DIMENSION_NAMES.len() as u32;
+    let skipped_dimensions: Vec<String> = applicability
+        .skipped
+        .iter()
+        .map(|dimension| (*dimension).to_string())
+        .collect();
+
+    if total_dimensions == 0 {
+        return Err(format!(
+            "No applicable dimensions for {} ({})",
+            input.entity_id, input.entity_type
+        ));
+    }
 
     // Channel for receiving dimension results as they complete
     let (tx, rx) = std::sync::mpsc::channel();
 
     // Spawn one thread per dimension
     for &dimension in DIMENSION_NAMES {
+        if !applicability.applicable.contains(&dimension) {
+            continue;
+        }
+
         let dim_prompt = dimension_prompts::build_dimension_prompt(
             dimension,
             &input.entity_name,
@@ -1846,9 +1870,11 @@ fn run_parallel_enrichment(
 
     let total_ms = overall_start.elapsed().as_millis();
     log::info!(
-        "[I574] Parallel enrichment: {}/6 dimensions succeeded in {}ms",
+        "[I574] Parallel enrichment: {}/{} applicable dimensions succeeded in {}ms (skipped: {:?})",
         succeeded,
-        total_ms
+        total_dimensions,
+        total_ms,
+        skipped_dimensions,
     );
 
     // Emit completion event
@@ -1865,13 +1891,19 @@ fn run_parallel_enrichment(
                 succeeded,
                 failed: failed_dims.len() as u32,
                 failed_dimensions: failed_dims,
+                total_dimensions: canonical_total_dimensions,
+                applicable_total: total_dimensions,
+                skipped_dimensions,
                 wall_clock_ms: total_ms as u64,
             },
         );
     }
 
     if succeeded == 0 {
-        return Err("All 6 dimensions failed".to_string());
+        return Err(format!(
+            "All {} applicable dimensions failed",
+            total_dimensions
+        ));
     }
 
     // Extract inferred relationships from the combined raw output

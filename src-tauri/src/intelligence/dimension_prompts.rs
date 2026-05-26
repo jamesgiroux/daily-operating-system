@@ -30,6 +30,60 @@ pub const DIMENSION_NAMES: &[&str] = &[
     "engagement_signals",
 ];
 
+/// Dimension selection for a specific entity refresh.
+///
+/// The six canonical dimensions still define the complete account shape, but
+/// non-account entities should not be asked to synthesize account-only fields.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DimensionApplicability {
+    pub applicable: Vec<&'static str>,
+    pub skipped: Vec<&'static str>,
+}
+
+pub fn dimension_applicability(
+    entity_type: &str,
+    relationship: Option<&str>,
+) -> DimensionApplicability {
+    let applicable: Vec<&'static str> = DIMENSION_NAMES
+        .iter()
+        .copied()
+        .filter(|dimension| is_dimension_applicable(dimension, entity_type, relationship))
+        .collect();
+    let skipped: Vec<&'static str> = DIMENSION_NAMES
+        .iter()
+        .copied()
+        .filter(|dimension| !applicable.contains(dimension))
+        .collect();
+    DimensionApplicability {
+        applicable,
+        skipped,
+    }
+}
+
+pub fn is_dimension_applicable(
+    dimension: &str,
+    entity_type: &str,
+    relationship: Option<&str>,
+) -> bool {
+    let entity_type = entity_type.to_ascii_lowercase();
+    let relationship = relationship.unwrap_or_default().trim().to_ascii_lowercase();
+    let is_account = entity_type == "account";
+    let is_project = entity_type == "project";
+    let is_person = entity_type == "person";
+    let is_commercial_excluded_relationship = matches!(
+        relationship.as_str(),
+        "internal" | "employee" | "partner" | "vendor"
+    );
+
+    match dimension {
+        "core_assessment" => true,
+        "engagement_signals" => true,
+        "commercial_financial" => is_account && !is_commercial_excluded_relationship,
+        "stakeholder_champion" | "strategic_context" | "value_success" => is_account || is_project,
+        _ => !is_person,
+    }
+}
+
 // =============================================================================
 // PTY dimension prompt builder
 // =============================================================================
@@ -100,6 +154,7 @@ pub fn build_dimension_prompt(
         "Return ONLY a JSON object — no other text before or after. \
          The JSON must conform exactly to this schema:\n\n",
     );
+    prompt.push_str(PROMPT_QUALITY_RULES);
     prompt.push_str(&dimension_json_schema(dimension, entity_type, ctx));
 
     // Source attribution instructions
@@ -242,6 +297,7 @@ pub fn build_glean_dimension_prompt(
          parseable by `JSON.parse()`.\n\n",
     );
     prompt.push_str("The JSON object must have these fields:\n\n");
+    prompt.push_str(PROMPT_QUALITY_RULES);
     prompt.push_str(&dimension_json_schema(dimension, entity_type, ctx));
 
     // Source attribution for Glean
@@ -757,11 +813,18 @@ RECONCILIATION RULES:\n\
 - Items tagged [user_correction] are SACRED — include them verbatim in your output, never modify or drop\n\
 - Items tagged [transcript] are personal observations — preserve even if you have no corroborating data\n\
 - If your data CONTRADICTS an existing item, include BOTH with \"discrepancy\": true on yours\n\
-- Tag every item with \"itemSource\": {\"source\": \"glean_crm|glean_zendesk|glean_gong|glean_chat\", \"confidence\": 0.7-0.9, \"sourcedAt\": \"ISO timestamp\", \"reference\": \"data source name\"}\n\n\
+- Tag every item with \"itemSource\": {\"source\": \"glean_crm|glean_zendesk|glean_gong|glean_chat\", \"confidence\": 0.8, \"sourcedAt\": \"ISO timestamp\", \"reference\": \"data source name\"}\n\n\
 ACCOUNT TRUTH rules:\n\
 - Fields marked \"(source: Salesforce, fact)\" or \"(source: user, fact)\" are ground truth. Do not contradict them.\n\
 - Fields marked \"(source: user, fact \u{2014} do not reassign)\" are explicitly locked by the user. Never change the assignment.\n\
 - You may add context, evidence, or assessments about these fields but do not change the underlying value.\n\n";
+
+const PROMPT_QUALITY_RULES: &str = "\
+## Quality Rules\n\n\
+- Prefer empty arrays or null over unsupported claims.\n\
+- If evidence is stale or timing is unknown, say so in the relevant unknowns or narrative field instead of sounding current.\n\
+- Do not write generic summaries. Every sentence should add a concrete source-grounded fact, risk, opportunity, or unknown.\n\
+- Do not invent commercial state, stakeholder sentiment, product usage, or relationship strength from metadata alone.\n\n";
 
 /// Inject source-tagged existing intelligence items into the prompt.
 ///
@@ -900,7 +963,7 @@ fn dimension_json_schema(dimension: &str, entity_type: &str, ctx: &IntelligenceC
         "core_assessment" => {
             s.push_str(
                 r#"  "executiveAssessment": "2-4 paragraphs. P1: one-sentence verdict. P2: top risk. P3: biggest opportunity. P4 (optional): key unknowns. Max 250 words.",
-  "risks": [{"text": "full risk paragraph (multi-sentence)", "headline": "punchy 1-liner ≤80 chars — the triage card heading", "evidence": "supporting detail: named people, timelines, data points (optional)", "urgency": "critical|watch|low", "kindLabel": "specific label like 'Renewal drag · compliance gap' or 'Active friction · unresolved' or 'Expansion window · question unanswered'", "itemSource": {"source": "...", "confidence": 0.7, "sourcedAt": "...", "reference": "..."}}],
+  "risks": [{"text": "full risk paragraph (multi-sentence)", "headline": "punchy 1-liner under 80 chars, used as the triage card heading", "evidence": "supporting detail: named people, timelines, data points (optional)", "urgency": "critical|watch|low", "kindLabel": "specific label like 'Renewal drag / compliance gap' or 'Active friction / unresolved'", "itemSource": {"source": "...", "confidence": 0.7, "sourcedAt": "...", "reference": "..."}}],
   "recentWins": [{"text": "verifiable win", "impact": "high|medium|low", "itemSource": {"source": "...", "confidence": 0.7, "sourcedAt": "...", "reference": "..."}}],
   "pullQuote": "One impactful sentence — the single most important thing about this account right now. Written as an editorial pull quote, not a summary. Max 30 words.",
   "currentState": {
@@ -913,7 +976,7 @@ fn dimension_json_schema(dimension: &str, entity_type: &str, ctx: &IntelligenceC
         }
         "stakeholder_champion" => {
             s.push_str(
-                r#"  "stakeholderInsights": [{"name": "full name", "role": "job title", "assessment": "1-2 sentences about engagement", "engagement": "high|medium|low|unknown", "verified": "true ONLY when the assessment is grounded in an actual customer-conversation transcript; false when the assessment is inferred from meeting attendance or metadata alone", "verifiedSource": "meeting|glean|user or null when verified=false", "verifiedAt": "ISO date of verification or null when verified=false", "itemSource": {"source": "...", "confidence": 0.7, "sourcedAt": "...", "reference": "..."}}],
+                r#"  "stakeholderInsights": [{"name": "full name", "role": "job title", "assessment": "1-2 sentences about engagement", "engagement": "high|medium|low|unknown", "verified": false, "verifiedSource": null, "verifiedAt": null, "itemSource": {"source": "...", "confidence": 0.7, "sourcedAt": "...", "reference": "..."}}],
   "coverageAssessment": {"roleFillRate": 0.0, "gaps": ["missing role"], "covered": ["filled role"], "level": "strong|adequate|thin|critical"},
   "organizationalChanges": [{"changeType": "departure|hire|promotion|reorg|role_change", "person": "name", "from": "...", "to": "...", "detectedAt": "ISO date", "itemSource": {"source": "...", "confidence": 0.7, "sourcedAt": "...", "reference": "..."}}],
   "internalTeam": [{"name": "...", "role": "RM|AE|TAM|Division Lead|etc", "source": "glean|user|crm"}],
@@ -934,9 +997,9 @@ fn dimension_json_schema(dimension: &str, entity_type: &str, ctx: &IntelligenceC
             } else {
                 s.push_str(
                     r#"  "health": {
-    "score": "0-100", "band": "green|yellow|red", "source": "computed",
-    "confidence": "0.0-1.0",
-    "trend": {"direction": "improving|stable|declining|volatile", "rationale": "1 sentence", "timeframe": "30d|90d", "confidence": "0.0-1.0"},
+    "score": 72.0, "band": "green", "source": "computed",
+    "confidence": 0.7,
+    "trend": {"direction": "stable", "rationale": "1 sentence", "timeframe": "30d", "confidence": 0.7},
     "recommendedActions": ["specific next action"]
   },
 "#,
@@ -949,7 +1012,7 @@ fn dimension_json_schema(dimension: &str, entity_type: &str, ctx: &IntelligenceC
   "blockers": [{"description": "...", "owner": "...", "since": "ISO date", "impact": "critical|high|moderate|low"}],
   "productClassification": {
     "products": [
-      {"type": "cms|analytics", "tier": "enhanced|signature|standard|basic|premier|unknown|null", "arr": 0.0, "billingTerms": "annual|monthly|multi_year|null"}
+      {"type": "cms", "tier": "enhanced", "arr": 0.0, "billingTerms": "annual"}
     ]
   }
 "#,
@@ -964,7 +1027,7 @@ fn dimension_json_schema(dimension: &str, entity_type: &str, ctx: &IntelligenceC
                 s.push_str(
                     r#"
   "competitiveContext": [{"competitor": "name", "threatLevel": "displacement|evaluation|mentioned|incumbent", "context": "1 sentence", "detectedAt": "ISO date or null", "itemSource": {"source": "...", "confidence": 0.7, "sourcedAt": "...", "reference": "..."}}],
-  "strategicPriorities": [{"priority": "short name, ≤80 chars", "status": "active|exploring|evaluating|paused|completed|at_risk", "owner": "short party name only — e.g. 'Chris Anderson & Diego Martinez' or 'Globex commercial team'. NOT a rationale.", "timeline": "short phrase only — e.g. 'Ongoing', 'Q2 2026', 'Beta March 2026'. NOT a rationale.", "context": "optional one sentence (≤180 chars) of rationale explaining why this matters or how it's evolving; leave null if you'd have nothing new to add beyond the priority name"}],
+  "strategicPriorities": [{"priority": "short name under 80 chars", "status": "active|exploring|evaluating|paused|completed|at_risk", "owner": "short party name only, not a rationale", "timeline": "short phrase only, not a rationale", "context": "optional one sentence under 180 chars of rationale, or null"}],
   "marketContext": [{"title": "short title (e.g. 'DORA compliance + SOC 2 Type II')", "body": "1-3 sentence narrative explaining why this regulatory/market/compliance force shapes this account's buying, renewal, or usage decisions", "category": "regulatory|market|geopolitical|compliance|industry|other", "effectiveDate": "ISO date or null", "itemSource": {"source": "...", "confidence": 0.7, "sourcedAt": "...", "reference": "..."}}],
   "regulatoryContext": [{"standard": "DORA|SOC_2_TYPE_II|HIPAA|GDPR|CUSTOM (or other framework name)", "status": "required|in_progress|met|gap — use 'gap' when the customer has signalled a compliance need that is not yet satisfied", "evidence": "one sentence of concrete evidence from the transcript/email/Glean source", "sourceReference": "meeting id, email id, or Glean document URI — null if not available", "detectedAt": "ISO date of first detection", "itemSource": {"source": "...", "confidence": 0.85, "sourcedAt": "...", "reference": "..."}}]
 "#,
@@ -1035,6 +1098,98 @@ mod tests {
             recent_captures: "Win: reduced churn 20%".to_string(),
             ..Default::default()
         }
+    }
+
+    fn schema_json(schema: &str) -> &str {
+        schema
+            .trim()
+            .strip_prefix("```json")
+            .expect("dimension schema should use a json fence")
+            .trim()
+            .strip_suffix("```")
+            .expect("dimension schema should close its fence")
+            .trim()
+    }
+
+    #[test]
+    fn dimension_applicability_skips_account_only_dimensions_for_people() {
+        let applicability = dimension_applicability("person", Some("internal"));
+
+        assert_eq!(
+            applicability.applicable,
+            vec!["core_assessment", "engagement_signals"]
+        );
+        assert_eq!(
+            applicability.skipped,
+            vec![
+                "stakeholder_champion",
+                "commercial_financial",
+                "strategic_context",
+                "value_success"
+            ]
+        );
+    }
+
+    #[test]
+    fn dimension_applicability_keeps_account_shape_for_customer_accounts() {
+        let applicability = dimension_applicability("account", Some("customer"));
+
+        assert_eq!(applicability.applicable, DIMENSION_NAMES);
+        assert!(applicability.skipped.is_empty());
+    }
+
+    #[test]
+    fn dimension_applicability_preserves_partner_account_context_dimensions() {
+        let applicability = dimension_applicability("account", Some("partner"));
+
+        assert_eq!(
+            applicability.applicable,
+            vec![
+                "core_assessment",
+                "stakeholder_champion",
+                "strategic_context",
+                "value_success",
+                "engagement_signals"
+            ]
+        );
+        assert_eq!(applicability.skipped, vec!["commercial_financial"]);
+    }
+
+    #[test]
+    fn dimension_schema_examples_are_valid_json() {
+        let ctx = make_ctx();
+
+        for dimension in DIMENSION_NAMES {
+            let schema = dimension_json_schema(dimension, "account", &ctx);
+            serde_json::from_str::<serde_json::Value>(schema_json(&schema))
+                .unwrap_or_else(|err| panic!("{dimension} schema should parse as JSON: {err}"));
+        }
+    }
+
+    #[test]
+    fn dimension_prompts_include_quality_rules_for_local_and_glean() {
+        let ctx = make_ctx();
+        let local_prompt = build_dimension_prompt(
+            "core_assessment",
+            "Test Account",
+            "account",
+            None,
+            &ctx,
+            false,
+            None,
+        );
+        let glean_prompt = build_glean_dimension_prompt(
+            "core_assessment",
+            "Test Account",
+            "account",
+            None,
+            &ctx,
+            false,
+            None,
+        );
+
+        assert!(local_prompt.contains("Prefer empty arrays or null over unsupported claims"));
+        assert!(glean_prompt.contains("Prefer empty arrays or null over unsupported claims"));
     }
 
     // -----------------------------------------------------------------------

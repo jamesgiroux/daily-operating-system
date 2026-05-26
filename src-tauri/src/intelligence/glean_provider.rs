@@ -178,11 +178,26 @@ impl GleanIntelligenceProvider {
 
         let overall_start = Instant::now();
         let is_incremental = ctx.prior_intelligence.is_some();
-        let total_dimensions = DIMENSION_NAMES.len() as u32;
+        let applicability = dimension_prompts::dimension_applicability(entity_type, relationship);
+        let total_dimensions = applicability.applicable.len() as u32;
+        let canonical_total_dimensions = DIMENSION_NAMES.len() as u32;
+        let skipped_dimensions: Vec<String> = applicability
+            .skipped
+            .iter()
+            .map(|dimension| (*dimension).to_string())
+            .collect();
 
-        // Build 6 dimension prompts
+        if total_dimensions == 0 {
+            return Err(format!(
+                "No applicable Glean dimensions for {} ({})",
+                entity_name, entity_type
+            ));
+        }
+
+        // Build dimension prompts for the dimensions that apply to this entity.
         let prompts: Vec<(String, String)> = DIMENSION_NAMES
             .iter()
+            .filter(|dim| applicability.applicable.contains(dim))
             .map(|dim| {
                 let prompt = dimension_prompts::build_glean_dimension_prompt(
                     dim,
@@ -198,10 +213,11 @@ impl GleanIntelligenceProvider {
             .collect();
 
         log::info!(
-            "[I574] Glean parallel enrichment for {} ({}) — {} dimensions, incremental={}",
+            "[I574] Glean parallel enrichment for {} ({}) — {}/{} applicable dimensions, incremental={}",
             entity_name,
             entity_type,
             prompts.len(),
+            canonical_total_dimensions,
             is_incremental,
         );
 
@@ -213,8 +229,9 @@ impl GleanIntelligenceProvider {
 
         // Use tokio::sync::mpsc channel to receive dimension results as they
         // complete, enabling progressive DB writes and event emission.
-        let (tx, mut rx) =
-            tokio::sync::mpsc::channel::<(String, Result<IntelligenceJson, String>)>(6);
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<(String, Result<IntelligenceJson, String>)>(
+            prompts.len().max(1),
+        );
         let mut wrote_debug_file = false;
 
         for (dim_name, prompt) in prompts {
@@ -276,7 +293,7 @@ impl GleanIntelligenceProvider {
                             reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                         )]
                         let _ = sender
-                            .send((dim_name, Err("timed out after 30s".to_string())))
+                            .send((dim_name, Err("timed out after 240s".to_string())))
                             .await;
                         return;
                     }
@@ -416,10 +433,12 @@ impl GleanIntelligenceProvider {
 
         let total_ms = overall_start.elapsed().as_millis();
         log::info!(
-            "[I574] Glean parallel: {}/6 dimensions succeeded for {} in {}ms (failed: {:?})",
+            "[I574] Glean parallel: {}/{} applicable dimensions succeeded for {} in {}ms (skipped: {:?}, failed: {:?})",
             succeeded,
+            total_dimensions,
             entity_name,
             total_ms,
+            skipped_dimensions,
             failed_dims,
         );
 
@@ -437,6 +456,9 @@ impl GleanIntelligenceProvider {
                     succeeded,
                     failed: failed_dims.len() as u32,
                     failed_dimensions: failed_dims.clone(),
+                    total_dimensions: canonical_total_dimensions,
+                    applicable_total: total_dimensions,
+                    skipped_dimensions: skipped_dimensions.clone(),
                     wall_clock_ms: total_ms as u64,
                 },
             );
@@ -474,7 +496,12 @@ impl GleanIntelligenceProvider {
                             "entity_type": entity_type,
                             "succeeded": succeeded,
                             "failed": failed_dims.len(),
-                            "failed_dimensions": failed_dims,
+                            "failed_dimensions": failed_dims.clone(),
+                            "required_failed_dimensions": failed_dims.clone(),
+                            "optional_failed_dimensions": Vec::<String>::new(),
+                            "total_dimensions": canonical_total_dimensions,
+                            "applicable_total": total_dimensions,
+                            "skipped_dimensions": skipped_dimensions.clone(),
                             "wall_clock_ms": total_ms,
                         }),
                     );
@@ -496,6 +523,11 @@ impl GleanIntelligenceProvider {
                             "succeeded": succeeded,
                             "failed": failed_dims.len(),
                             "failed_dimensions": failed_dims.clone(),
+                            "required_failed_dimensions": failed_dims.clone(),
+                            "optional_failed_dimensions": Vec::<String>::new(),
+                            "total_dimensions": canonical_total_dimensions,
+                            "applicable_total": total_dimensions,
+                            "skipped_dimensions": skipped_dimensions.clone(),
                             "wall_clock_ms": total_ms,
                             "will_fall_back": succeeded == 0,
                         }),
@@ -505,7 +537,10 @@ impl GleanIntelligenceProvider {
         }
 
         if succeeded == 0 {
-            return Err(format!("All 6 Glean dimensions failed for {}", entity_name));
+            return Err(format!(
+                "All {} applicable Glean dimensions failed for {}",
+                total_dimensions, entity_name
+            ));
         }
 
         // Set metadata on combined result.
