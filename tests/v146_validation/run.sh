@@ -65,11 +65,11 @@ status_for_axis() {
     signals)
       if (
         cd "$ROOT_DIR"
-        cargo test --manifest-path src-tauri/Cargo.toml --test v146_validation signal_propagation_invalidates_prep_partial_evidence >/dev/null
+        cargo test --manifest-path src-tauri/Cargo.toml --test v146_validation signal_propagation_invalidates_prep >/dev/null
       ); then
-        printf 'blocked\tcargo test --test v146_validation signal_propagation_invalidates_prep_partial_evidence\tpartial signal evidence passed; blocked until WorkspaceFileIngested -> EntityIntelligenceUpdated -> prep invalidation is present\n'
+        printf 'pass\tcargo test --test v146_validation signal_propagation_invalidates_prep\tWorkspaceFileIngested -> EntityIntelligenceUpdated -> prep invalidation evidence passed with privacy-safe payloads\n'
       else
-        printf 'fail\tcargo test --test v146_validation signal_propagation_invalidates_prep_partial_evidence\tpartial workspace signal/prep invalidation evidence failed\n'
+        printf 'fail\tcargo test --test v146_validation signal_propagation_invalidates_prep\tworkspace signal middle-hop/prep invalidation evidence failed\n'
       fi
       ;;
     contexts)

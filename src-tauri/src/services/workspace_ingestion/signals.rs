@@ -17,6 +17,7 @@ pub const WORKSPACE_FILE_PENDING_ENTITY_ASSIGNMENT: &str =
 pub const WORKSPACE_FILE_QUARANTINED: &str = "workspace_file_quarantined";
 pub const WORKSPACE_FILE_ENTITY_LINK_CHANGED: &str = "workspace_file_entity_link_changed";
 pub const WORKSPACE_SOURCE_POLICY_CHANGED: &str = "workspace_source_policy_changed";
+pub const ENTITY_INTELLIGENCE_UPDATED: &str = "entity_intelligence_updated";
 
 const WORKSPACE_SIGNAL_SOURCE: &str = "workspace_ingestion";
 const WORKSPACE_FILE_ENTITY_TYPE: &str = "workspace_file";
@@ -31,6 +32,13 @@ pub struct WorkspaceFileIngestedSignal {
     pub ingestion_run_id: String,
     pub entity_type: String,
     pub entity_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkspaceEntityIntelligenceUpdatedSignal {
+    pub file_id: String,
+    pub ingestion_run_id: String,
+    pub reason_code: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -114,6 +122,18 @@ impl SignalEmitter for WorkspaceSignalEmitter {
             entity_type,
             entity_id,
             &payload,
+        )?;
+        let intelligence_payload = WorkspaceEntityIntelligenceUpdatedSignal {
+            file_id: file_id.to_string(),
+            ingestion_run_id: ingestion_run_id.to_string(),
+            reason_code: WORKSPACE_FILE_INGESTED.to_string(),
+        };
+        emit_invalidating(
+            ctx,
+            ENTITY_INTELLIGENCE_UPDATED,
+            entity_type,
+            entity_id,
+            &intelligence_payload,
         )
     }
 
