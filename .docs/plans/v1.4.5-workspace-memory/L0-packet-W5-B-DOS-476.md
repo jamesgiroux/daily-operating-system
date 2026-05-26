@@ -29,6 +29,7 @@ W5-B must not make W5-A historical backfill an implicit claim producer. Claim-pr
 - **V1.3** - Rebased-base readiness refresh. Records that W5-A is folded into the active W5 validation PR, explicit ingestion and graph projection now have partial automated evidence, filesystem negative fixtures have partial automated evidence, and MCP placement/lifecycle/signal-middle-hop gaps remain blocked.
 - **V1.4** - Release-gate branch refresh. Records that the signal middle hop is now present and green: explicit workspace ingestion emits `WorkspaceFileIngested`, emits `EntityIntelligenceUpdated`, and invalidates affected prep through the middle-hop signal.
 - **V1.5** - Filesystem-axis refresh. Records green automated evidence for registry-level unsafe path rejection, explicit ingestion size/format rejection, non-UTF8 path byte-input rejection, and conservative backfill hidden/managed/unsupported skips.
+- **V1.6** - Graph-axis refresh. Records automated entity-seeded and inbox assignment provenance evidence with zero workspace graph audit gaps; keeps MCP placement handler evidence as the remaining Axis 2 blocker.
 
 ---
 
@@ -168,7 +169,7 @@ Read-only prep on 2026-05-25, refreshed after rebasing on merged W4/W5-A substra
 - Source-management action round trip must be validated through a real action path, not render-only ledger reads. Current action substrate exposes `reingest`, `quarantine`, and `relink`; ignore/scratchpad plus archive/delete remain missing and block Axis 6.
 - MCP placement has contract/catalog pieces, but the actual MCP v2 handler path is not fully wired. MCP/headless parity remains blocked until a real MCP/gateway or registered-handler path is exercised.
 - Scratchpad/ignored and archive/delete lifecycle effects are named DOS-476 ACs; missing actions block Axis 6 and W5 release close.
-- Automated explicit-ingestion evidence proves a direct pipeline fixture creates lifecycle, run, link, and `commit_claim` rows with privacy-safe provenance, but Axis 2 remains release-blocked until entity-intake, `_inbox`, and MCP placement path coverage is complete.
+- Automated explicit-ingestion evidence proves direct entity-seeded ingestion and inbox assignment create lifecycle, run, link, and `commit_claim` rows with privacy-safe provenance and zero graph-audit gaps, but Axis 2 remains release-blocked until actual MCP placement handler coverage is complete.
 - Automated signal evidence proves workspace ingestion emits privacy-safe `WorkspaceFileIngested`, emits privacy-safe `EntityIntelligenceUpdated`, and queues prep invalidation through that middle-hop signal. Axis 4 is green on the release-gate branch.
 - Automated filesystem evidence covers traversal, encoded traversal, outside absolute paths, workspace root equality, symlink escape, NUL input, non-UTF8 path byte-input rejection, hardlink rejection when supported, explicit ingestion oversized/unsupported-format rejection, and conservative backfill hidden/managed/unsupported skips. Axis 7 is green on the filesystem-validation branch.
 - `WorkspaceExtractor` is intentionally narrow: note-like, linked Account/Project/Person content becomes `UserNote` claim proposals. W5-B fixtures must use that shape for claim-producing automated tests.

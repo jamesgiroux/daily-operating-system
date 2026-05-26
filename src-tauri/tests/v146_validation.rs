@@ -3,11 +3,18 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Duration, Utc};
 use dailyos_lib::abilities::provenance::source::EntityId;
+use dailyos_lib::abilities::workspace_graph::contracts::{
+    WorkspaceGraphInput, WorkspaceGraphPrivacyProfile, WorkspaceGraphReadRequest,
+    WorkspaceGraphResponse,
+};
 use dailyos_lib::db::{ActionDb, DbAccount};
 use dailyos_lib::entity::EntityType;
 use dailyos_lib::services::context::{ExternalClients, ServiceContext, SystemClock, SystemRng};
 use dailyos_lib::services::workspace_ingestion::contracts::{
     NullExtractor, RejectionReason, WorkspaceFileKind,
+};
+use dailyos_lib::services::workspace_ingestion::graph::{
+    diagnostic_key_for_tests, read_workspace_graph,
 };
 use dailyos_lib::services::workspace_ingestion::pipeline::{
     file_id_from_identity, EntityRef, IngestError, IngestPipeline, IngestReceipt, IngestRequest,
@@ -135,6 +142,147 @@ fn graph_audit_zero_gaps_on_hermetic_fixture_db() {
     assert!(!serialized_provenance.contains("Graph Account"));
     assert!(!serialized_provenance.contains("graph-note.md"));
     assert!(!serialized_provenance.contains("Graph validation context"));
+
+    assert_graph_zero_gaps_for_entity(
+        &fixture,
+        "account",
+        "acct-v146-graph",
+        1,
+        1,
+        &[
+            &receipt.file_id,
+            "Graph Account",
+            "graph-note.md",
+            "Graph validation context",
+        ],
+    );
+}
+
+#[test]
+fn explicit_ingestion_to_claim_provenance_covers_entity_seeded_and_inbox_assignment() {
+    let fixture = Fixture::new();
+    fixture.seed_account("acct-v146-paths", "Path Matrix Account");
+
+    let entity_seeded_note = fixture.write_account_file(
+        "Path Matrix Account",
+        "entity-seeded-note.md",
+        "Entity seeded graph validation note.",
+    );
+    let entity_seeded = fixture.ingest_account_note_with_mode(
+        &entity_seeded_note,
+        EntityRef {
+            entity_type: EntityType::Account,
+            entity_id: EntityId::new("acct-v146-paths".to_string()),
+            entity_name: Some("Path Matrix Account".to_string()),
+        },
+        IngestionMode::EntitySeeded,
+        None,
+    );
+    assert_eq!(entity_seeded.claim_proposals.len(), 1);
+    assert_workspace_claim(
+        &fixture.conn,
+        &entity_seeded.file_id,
+        "acct-v146-paths",
+        "workspace_file:entity_doc",
+        "entity_doc",
+    );
+    assert_eq!(
+        count(
+            &fixture.conn,
+            "SELECT COUNT(*)
+             FROM document_ingestion_runs
+             WHERE run_id = ?1
+               AND mode = 'entity_seeded'
+               AND status = 'success'
+               AND claim_count_produced = 1",
+            params![&entity_seeded.ingestion_run_id.0],
+        ),
+        1
+    );
+    assert_eq!(
+        count(
+            &fixture.conn,
+            "SELECT COUNT(*)
+             FROM document_entity_links
+             WHERE file_id = ?1
+               AND attribution_source = 'entity_intake'
+               AND rejected = 0",
+            params![&entity_seeded.file_id],
+        ),
+        1
+    );
+
+    let inbox_note = fixture.write_inbox_file(
+        "assigned-note.md",
+        "Inbox assignment graph validation note.",
+    );
+    let process_result = dailyos_lib::command_test_api::process_inbox_file_for_tests(
+        ActionDb::from_conn(&fixture.conn),
+        &fixture.workspace_root,
+        "assigned-note.md",
+    )
+    .expect("process inbox");
+    assert_eq!(process_result["status"], "needs_entity");
+
+    let inbox_file_id = file_id_for_path(&fixture.workspace_root, &inbox_note);
+    let inbox_receipt = dailyos_lib::command_test_api::assign_inbox_entity_for_tests(
+        ActionDb::from_conn(&fixture.conn),
+        &fixture.workspace_root,
+        inbox_file_id.clone(),
+        "account".to_string(),
+        "acct-v146-paths".to_string(),
+        "path-matrix-account".to_string(),
+        "inbox".to_string(),
+    )
+    .expect("assign inbox entity");
+    assert_eq!(inbox_receipt.file_id, inbox_file_id);
+    assert_eq!(inbox_receipt.lifecycle_state_after, "ingested");
+    assert_workspace_claim(
+        &fixture.conn,
+        &inbox_receipt.file_id,
+        "acct-v146-paths",
+        "workspace_file:inbox",
+        "inbox",
+    );
+    assert_eq!(
+        count(
+            &fixture.conn,
+            "SELECT COUNT(*)
+             FROM document_entity_links
+             WHERE file_id = ?1
+               AND attribution_source = 'user_relink'
+               AND rejected = 0",
+            params![&inbox_receipt.file_id],
+        ),
+        1
+    );
+    assert_eq!(
+        count(
+            &fixture.conn,
+            "SELECT COUNT(*)
+             FROM intelligence_claims
+             WHERE subject_ref LIKE '%acct-v146-paths%'",
+            [],
+        ),
+        2
+    );
+
+    assert_graph_zero_gaps_for_entity(
+        &fixture,
+        "account",
+        "acct-v146-paths",
+        2,
+        2,
+        &[
+            &entity_seeded.file_id,
+            &inbox_receipt.file_id,
+            "Path Matrix Account",
+            "entity-seeded-note.md",
+            "assigned-note.md",
+            "Entity seeded graph validation note",
+            "Inbox assignment graph validation note",
+        ],
+    );
 }
 
 #[test]
@@ -457,10 +605,28 @@ impl Fixture {
         path
     }
 
+    fn write_inbox_file(&self, filename: &str, content: &str) -> PathBuf {
+        let dir = self.workspace_root.join("_inbox");
+        std::fs::create_dir_all(&dir).expect("inbox dir");
+        let path = dir.join(filename);
+        std::fs::write(&path, content).expect("write inbox note");
+        path
+    }
+
     fn ingest_account_note(
         &self,
         path: &Path,
         entity: EntityRef,
+        prep_queue: Option<Arc<Mutex<Vec<String>>>>,
+    ) -> IngestReceipt {
+        self.ingest_account_note_with_mode(path, entity, IngestionMode::Realtime, prep_queue)
+    }
+
+    fn ingest_account_note_with_mode(
+        &self,
+        path: &Path,
+        entity: EntityRef,
+        mode: IngestionMode,
         prep_queue: Option<Arc<Mutex<Vec<String>>>>,
     ) -> IngestReceipt {
         let (file, identity) = WorkspaceSourceRegistry::open_validated(&self.workspace_root, path)
@@ -479,7 +645,7 @@ impl Fixture {
             source_asof,
             source_type: WorkspaceFileKind::EntityDoc,
             entity: Some(entity),
-            mode: IngestionMode::Realtime,
+            mode,
             category_hint: None,
             invocation_actor: "user".to_string(),
             validated_content: None,
@@ -500,6 +666,113 @@ impl Fixture {
             .run_with_signal_engine(&ctx, db, &signal_engine, request)
             .expect("ingest succeeds")
     }
+}
+
+fn assert_workspace_claim(
+    conn: &Connection,
+    file_id: &str,
+    entity_id: &str,
+    expected_data_source: &str,
+    expected_kind: &str,
+) {
+    let source_ref = format!("workspace_file:{file_id}");
+    let claim = conn
+        .query_row(
+            "SELECT subject_ref, data_source, source_ref, source_asof,
+                    provenance_json, metadata_json, sensitivity
+             FROM intelligence_claims
+             WHERE source_ref = ?1",
+            [&source_ref],
+            |row| {
+                Ok(ClaimRow {
+                    subject_ref: row.get(0)?,
+                    data_source: row.get(1)?,
+                    source_ref: row.get(2)?,
+                    source_asof: row.get(3)?,
+                    provenance_json: row.get(4)?,
+                    metadata_json: row.get(5)?,
+                    sensitivity: row.get(6)?,
+                })
+            },
+        )
+        .expect("workspace claim row");
+    let subject_ref: serde_json::Value =
+        serde_json::from_str(&claim.subject_ref).expect("subject_ref json");
+    assert_eq!(subject_ref["kind"], "account");
+    assert_eq!(subject_ref["id"], entity_id);
+    assert_eq!(claim.data_source, expected_data_source);
+    assert_eq!(claim.source_ref, source_ref);
+    assert!(!claim.source_asof.trim().is_empty());
+    assert_eq!(claim.sensitivity, "user_only");
+
+    let metadata: serde_json::Value =
+        serde_json::from_str(&claim.metadata_json).expect("metadata json");
+    assert_eq!(metadata["producer"], "workspace_ingestion");
+    assert_eq!(metadata["workspace_file_id"], file_id);
+    assert_eq!(metadata["workspace_file_kind"], expected_kind);
+    assert!(metadata["ingestion_run_id"]
+        .as_str()
+        .is_some_and(|value| !value.is_empty()));
+    assert!(metadata["document_entity_link_id"]
+        .as_str()
+        .is_some_and(|value| !value.is_empty()));
+}
+
+fn assert_graph_zero_gaps_for_entity(
+    fixture: &Fixture,
+    entity_type: &str,
+    entity_id: &str,
+    expected_file_links: usize,
+    expected_claim_total: u32,
+    forbidden_fragments: &[&str],
+) {
+    let response = read_workspace_graph(
+        &fixture.conn,
+        WorkspaceGraphReadRequest {
+            input: WorkspaceGraphInput {
+                schema_version: 1,
+                entity_filter: None,
+                category_filter: None,
+                cursor: None,
+                if_none_match: None,
+                include_entity_names: false,
+                page_size: 50,
+            },
+            privacy_profile: WorkspaceGraphPrivacyProfile::FirstParty,
+        },
+        &diagnostic_key_for_tests("v146-graph-audit"),
+    )
+    .expect("workspace graph read");
+    let WorkspaceGraphResponse::Projection(projection) = response else {
+        panic!("expected workspace graph projection");
+    };
+    assert!(
+        projection.audit.gaps.is_empty(),
+        "workspace graph audit gaps: {:?}",
+        projection.audit.gaps
+    );
+    let entity = projection
+        .projection
+        .entities
+        .iter()
+        .find(|entity| entity.entity_type == entity_type && entity.entity_id == entity_id)
+        .expect("graph entity");
+    assert_eq!(entity.file_links.len(), expected_file_links);
+    assert_eq!(entity.claim_summary.total, expected_claim_total);
+
+    let serialized = serde_json::to_string(&projection).expect("projection json");
+    for fragment in forbidden_fragments {
+        assert!(
+            !serialized.contains(fragment),
+            "graph projection should not leak raw fixture fragment `{fragment}`"
+        );
+    }
+}
+
+fn file_id_for_path(workspace_root: &Path, path: &Path) -> String {
+    let (_file, identity) =
+        WorkspaceSourceRegistry::open_validated(workspace_root, path).expect("open validated");
+    file_id_from_identity(&identity, workspace_root).expect("file id")
 }
 
 fn assert_rejected(workspace_root: &Path, path: &Path, expected: RejectionReason) {
