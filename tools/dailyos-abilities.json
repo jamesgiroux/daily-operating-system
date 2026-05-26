@@ -300,6 +300,28 @@
       }
     },
     {
+      "name": "list_suggested_next_steps",
+      "description": "",
+      "category": "read",
+      "annotations": {},
+      "wp_permission": "none",
+      "allowed_actors": [
+        "user",
+        "runtime",
+        "surface_client"
+      ],
+      "required_scopes": [
+        "read.recommendations"
+      ],
+      "mcp_exposure": "none",
+      "client_side_executable": false,
+      "idempotency_class": "idempotent",
+      "composition_kind": {
+        "produces_blocks": false,
+        "block_types": []
+      }
+    },
+    {
       "name": "markdown_preview",
       "description": "",
       "category": "read",

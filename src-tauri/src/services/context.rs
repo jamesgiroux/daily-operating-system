@@ -57,6 +57,7 @@ pub struct LiveMarkdownPreviewReader;
 pub struct LiveWorkspaceGraphReader;
 pub struct LiveSourceManagementLedgerReader;
 pub struct LiveSalienceReader;
+pub struct LiveSuggestedNextStepsReader;
 pub struct LiveSourceManagementActionHandler {
     signal_engine: Option<Arc<crate::signals::propagation::PropagationEngine>>,
 }
@@ -92,6 +93,7 @@ pub fn attach_live_workspace_readers_with_signal_engine(
         .with_workspace_graph_reader(Arc::new(LiveWorkspaceGraphReader))
         .with_source_management_ledger_reader(Arc::new(LiveSourceManagementLedgerReader))
         .with_salience_reader(Arc::new(LiveSalienceReader))
+        .with_suggested_next_steps_reader(Arc::new(LiveSuggestedNextStepsReader))
         .with_source_management_action_handler(Arc::new(LiveSourceManagementActionHandler {
             signal_engine: signal_engine.clone(),
         }))
@@ -384,6 +386,25 @@ impl SalienceReadHandle for LiveSalienceReader {
                     "salience read task failed: {error}"
                 ))
             })?
+        })
+    }
+}
+
+impl SuggestedNextStepsReadHandle for LiveSuggestedNextStepsReader {
+    fn list_suggested_next_steps<'a>(
+        &'a self,
+        input: runtime_salience::ListSuggestedNextStepsInput,
+        actor: abilities_runtime::abilities::registry::ActorKind,
+    ) -> SuggestedNextStepsReadFuture<'a> {
+        Box::pin(async move {
+            let state = crate::state::AppState::new();
+            crate::services::recommendations::render::list_suggested_next_steps_projection(
+                &state, input, actor,
+            )
+            .await
+            .map_err(|error| {
+                runtime_salience::SuggestedNextStepsReadError::ReadFailed(error.to_string())
+            })
         })
     }
 }

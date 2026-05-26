@@ -46,8 +46,10 @@ pub use crate::abilities::markdown_preview::contracts::{
     MarkdownPreviewOutput, MarkdownPreviewReadRequest,
 };
 pub use crate::abilities::recommendations::contracts::{
-    SalienceReadError, ScoreSalienceReadRequest, ScoreSalienceResponse,
+    ListSuggestedNextStepsInput, ListSuggestedNextStepsResponse, SalienceReadError,
+    ScoreSalienceReadRequest, ScoreSalienceResponse, SuggestedNextStepsReadError,
 };
+use crate::abilities::registry::ActorKind;
 pub use crate::abilities::source_management_ledger::contracts::{
     SourceManagementActionReceipt, SourceManagementActionRequest,
     SourceManagementLedgerReadRequest, SourceManagementLedgerResponse,
@@ -868,6 +870,7 @@ pub struct ServiceContext<'a> {
     workspace_graph_reader: Option<Arc<dyn WorkspaceGraphReadHandle>>,
     source_management_ledger_reader: Option<Arc<dyn SourceManagementLedgerReadHandle>>,
     salience_reader: Option<Arc<dyn SalienceReadHandle>>,
+    suggested_next_steps_reader: Option<Arc<dyn SuggestedNextStepsReadHandle>>,
     source_management_action_handler: Option<Arc<dyn SourceManagementActionHandle>>,
     workspace_intake: Option<Arc<dyn WorkspaceIntakeService>>,
 }
@@ -1251,6 +1254,22 @@ pub type SalienceReadFuture<'a> =
 
 pub trait SalienceReadHandle: Send + Sync {
     fn score_salience<'a>(&'a self, request: ScoreSalienceReadRequest) -> SalienceReadFuture<'a>;
+}
+
+pub type SuggestedNextStepsReadFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<ListSuggestedNextStepsResponse, SuggestedNextStepsReadError>>
+            + Send
+            + 'a,
+    >,
+>;
+
+pub trait SuggestedNextStepsReadHandle: Send + Sync {
+    fn list_suggested_next_steps<'a>(
+        &'a self,
+        input: ListSuggestedNextStepsInput,
+        actor: ActorKind,
+    ) -> SuggestedNextStepsReadFuture<'a>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -1960,6 +1979,7 @@ impl<'a> ServiceContext<'a> {
             workspace_graph_reader: None,
             source_management_ledger_reader: None,
             salience_reader: None,
+            suggested_next_steps_reader: None,
             source_management_action_handler: None,
             workspace_intake: None,
         }
@@ -1999,6 +2019,7 @@ impl<'a> ServiceContext<'a> {
             workspace_graph_reader: None,
             source_management_ledger_reader: None,
             salience_reader: None,
+            suggested_next_steps_reader: None,
             source_management_action_handler: None,
             workspace_intake: None,
         }
@@ -2049,6 +2070,7 @@ impl<'a> ServiceContext<'a> {
             workspace_graph_reader: None,
             source_management_ledger_reader: None,
             salience_reader: None,
+            suggested_next_steps_reader: None,
             source_management_action_handler: None,
             workspace_intake: None,
         }
@@ -2199,6 +2221,14 @@ impl<'a> ServiceContext<'a> {
 
     pub fn with_salience_reader(mut self, reader: Arc<dyn SalienceReadHandle>) -> Self {
         self.salience_reader = Some(reader);
+        self
+    }
+
+    pub fn with_suggested_next_steps_reader(
+        mut self,
+        reader: Arc<dyn SuggestedNextStepsReadHandle>,
+    ) -> Self {
+        self.suggested_next_steps_reader = Some(reader);
         self
     }
 
@@ -2493,6 +2523,20 @@ impl<'a> ServiceContext<'a> {
         };
 
         reader.score_salience(request).await
+    }
+
+    pub async fn list_suggested_next_steps(
+        &self,
+        input: ListSuggestedNextStepsInput,
+        actor: ActorKind,
+    ) -> Result<ListSuggestedNextStepsResponse, SuggestedNextStepsReadError> {
+        let Some(reader) = &self.suggested_next_steps_reader else {
+            return Err(SuggestedNextStepsReadError::ReadFailed(
+                self.missing_reader_error("suggested_next_steps_read"),
+            ));
+        };
+
+        reader.list_suggested_next_steps(input, actor).await
     }
 
     pub async fn apply_source_management_action(
