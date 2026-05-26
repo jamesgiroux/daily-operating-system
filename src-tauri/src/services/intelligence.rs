@@ -138,6 +138,7 @@ fn projection_claim_data_source(
             None => "glean".to_string(),
         },
         source if source.starts_with("glean_") => source.to_string(),
+        "" => "ai_enrichment".to_string(),
         source => source.to_string(),
     }
 }
@@ -284,7 +285,7 @@ fn projection_provenance_data_source(source: &str) -> crate::abilities::provenan
         "ai" | "ai_enrichment" | "ai_inference" | "pty_synthesis" => {
             crate::abilities::provenance::DataSource::Ai
         }
-        "" => crate::abilities::provenance::DataSource::LegacyUnattributed,
+        "" => crate::abilities::provenance::DataSource::Ai,
         other => crate::abilities::provenance::DataSource::Other(
             crate::abilities::provenance::SourceName::new(other),
         ),

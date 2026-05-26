@@ -10695,6 +10695,7 @@ fn load_best_local_projection_corroboration(
                 AND data_source != 'ai_enrichment_progressive'
                 AND data_source != 'glean'
                 AND data_source NOT LIKE 'glean_%'
+                AND trim(data_source) != ''
               ORDER BY strength DESC,
                        coalesce(last_reinforced_at, created_at) DESC,
                        data_source ASC
@@ -10870,7 +10871,9 @@ fn projection_reissue_provenance_data_source(
         "ai" | "ai_enrichment" | "ai_inference" | "pty_synthesis" => {
             crate::abilities::provenance::DataSource::Ai
         }
-        "" => crate::abilities::provenance::DataSource::LegacyUnattributed,
+        "" => crate::abilities::provenance::DataSource::Other(
+            crate::abilities::provenance::SourceName::new("unknown_projection_source"),
+        ),
         other => crate::abilities::provenance::DataSource::Other(
             crate::abilities::provenance::SourceName::new(other),
         ),
@@ -10908,7 +10911,7 @@ fn delete_glean_generated_projection_corroborations_for_source_purge_in_tx(
 ) -> Result<usize, ClaimError> {
     db.conn_ref()
         .execute(
-            "DELETE FROM claim_corroborations
+            "DELETE FROM claim_corroborations -- dos7-allowed: source purge removes corroboration evidence; corroborations have no lifecycle column
               WHERE (
                     data_source = 'glean'
                     OR data_source LIKE 'glean_%'
