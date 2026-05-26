@@ -6612,6 +6612,7 @@ fn seed_workspace_backfill_state(db: &ActionDb) -> Result<(), String> {
         rusqlite::params![run_id],
     )
     .map_err(|e| format!("Reset workspace_backfill_runs seed row: {e}"))?;
+    // dos7-allowed: devtools-w5-backfill-fixture
     conn.execute(
         "DELETE FROM document_entity_links WHERE file_id IN (?1, ?2)",
         rusqlite::params![
@@ -6620,6 +6621,7 @@ fn seed_workspace_backfill_state(db: &ActionDb) -> Result<(), String> {
         ],
     )
     .map_err(|e| format!("Reset document_entity_links seed rows: {e}"))?;
+    // dos7-allowed: devtools-w5-backfill-fixture
     conn.execute(
         "DELETE FROM workspace_file_lifecycle WHERE file_id IN (?1, ?2)",
         rusqlite::params![
@@ -6685,6 +6687,7 @@ fn seed_workspace_backfill_state(db: &ActionDb) -> Result<(), String> {
         content_sha256,
     ) in lifecycle_rows
     {
+        // dos7-allowed: devtools-w5-backfill-fixture
         conn.execute(
             "INSERT OR REPLACE INTO workspace_file_lifecycle (
                 file_id, canonical_path, device, inode, source_type, data_source,
@@ -6707,6 +6710,7 @@ fn seed_workspace_backfill_state(db: &ActionDb) -> Result<(), String> {
         .map_err(|e| format!("Seed workspace_file_lifecycle row {file_id}: {e}"))?;
     }
 
+    // dos7-allowed: devtools-w5-backfill-fixture
     conn.execute(
         "INSERT OR REPLACE INTO document_entity_links (
             link_id, file_id, entity_type, entity_id, attribution_source,
