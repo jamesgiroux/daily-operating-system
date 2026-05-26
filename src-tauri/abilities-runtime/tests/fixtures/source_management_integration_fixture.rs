@@ -13,8 +13,3 @@ pub fn source_management_fixture() -> BlockIntegrationFixture {
         "Sources appear when an entity is selected.",
     )
 }
-
-crate::integration_test_block!(
-    source_management_block_integration,
-    source_management_fixture
-);

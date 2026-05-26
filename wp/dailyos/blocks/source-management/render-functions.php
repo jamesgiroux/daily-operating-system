@@ -12,6 +12,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 if ( ! function_exists( 'dailyos_source_management_render' ) ) {
+	if ( function_exists( 'add_action' ) ) {
+		add_action( 'rest_api_init', 'dailyos_source_management_register_routes' );
+	}
+
 	/**
 	 * Register source-management action route.
 	 */
@@ -28,10 +32,6 @@ if ( ! function_exists( 'dailyos_source_management_render' ) ) {
 				'permission_callback' => 'dailyos_source_management_can_mutate',
 			]
 		);
-	}
-
-	if ( function_exists( 'add_action' ) ) {
-		add_action( 'rest_api_init', 'dailyos_source_management_register_routes' );
 	}
 
 	/**
