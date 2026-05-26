@@ -42,6 +42,16 @@ use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::abilities::composition::{Composition, CompositionDocId};
+pub use crate::abilities::markdown_preview::contracts::{
+    MarkdownPreviewOutput, MarkdownPreviewReadRequest,
+};
+pub use crate::abilities::recommendations::contracts::{
+    SalienceReadError, ScoreSalienceReadRequest, ScoreSalienceResponse,
+};
+pub use crate::abilities::source_management_ledger::contracts::{
+    SourceManagementActionReceipt, SourceManagementActionRequest,
+    SourceManagementLedgerReadRequest, SourceManagementLedgerResponse,
+};
 use crate::abilities::temporal::{
     DetectRoleChangeInput, DetectRoleChangeResult, RefreshEngagementCurveInput,
     RefreshEngagementCurveResult, TemporalMaintenanceHandle, TrajectoryBundle,
@@ -49,13 +59,6 @@ use crate::abilities::temporal::{
 };
 pub use crate::abilities::workspace_graph::contracts::{
     WorkspaceGraphReadRequest, WorkspaceGraphResponse,
-};
-pub use crate::abilities::markdown_preview::contracts::{
-    MarkdownPreviewOutput, MarkdownPreviewReadRequest,
-};
-pub use crate::abilities::source_management_ledger::contracts::{
-    SourceManagementActionReceipt, SourceManagementActionRequest, SourceManagementLedgerReadRequest,
-    SourceManagementLedgerResponse,
 };
 pub use crate::sensitivity::ClaimDismissalSurface;
 use crate::sensitivity::{renderable_claim_text_with_value, RenderActor, RenderSurface};
@@ -864,6 +867,7 @@ pub struct ServiceContext<'a> {
     markdown_preview_reader: Option<Arc<dyn MarkdownPreviewReadHandle>>,
     workspace_graph_reader: Option<Arc<dyn WorkspaceGraphReadHandle>>,
     source_management_ledger_reader: Option<Arc<dyn SourceManagementLedgerReadHandle>>,
+    salience_reader: Option<Arc<dyn SalienceReadHandle>>,
     source_management_action_handler: Option<Arc<dyn SourceManagementActionHandle>>,
     workspace_intake: Option<Arc<dyn WorkspaceIntakeService>>,
 }
@@ -1240,6 +1244,13 @@ pub trait SourceManagementLedgerReadHandle: Send + Sync {
         &'a self,
         request: SourceManagementLedgerReadRequest,
     ) -> SourceManagementLedgerReadFuture<'a>;
+}
+
+pub type SalienceReadFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<ScoreSalienceResponse, SalienceReadError>> + Send + 'a>>;
+
+pub trait SalienceReadHandle: Send + Sync {
+    fn score_salience<'a>(&'a self, request: ScoreSalienceReadRequest) -> SalienceReadFuture<'a>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -1948,6 +1959,7 @@ impl<'a> ServiceContext<'a> {
             markdown_preview_reader: None,
             workspace_graph_reader: None,
             source_management_ledger_reader: None,
+            salience_reader: None,
             source_management_action_handler: None,
             workspace_intake: None,
         }
@@ -1986,6 +1998,7 @@ impl<'a> ServiceContext<'a> {
             markdown_preview_reader: None,
             workspace_graph_reader: None,
             source_management_ledger_reader: None,
+            salience_reader: None,
             source_management_action_handler: None,
             workspace_intake: None,
         }
@@ -2035,6 +2048,7 @@ impl<'a> ServiceContext<'a> {
             markdown_preview_reader: None,
             workspace_graph_reader: None,
             source_management_ledger_reader: None,
+            salience_reader: None,
             source_management_action_handler: None,
             workspace_intake: None,
         }
@@ -2180,6 +2194,11 @@ impl<'a> ServiceContext<'a> {
         reader: Arc<dyn SourceManagementLedgerReadHandle>,
     ) -> Self {
         self.source_management_ledger_reader = Some(reader);
+        self
+    }
+
+    pub fn with_salience_reader(mut self, reader: Arc<dyn SalienceReadHandle>) -> Self {
+        self.salience_reader = Some(reader);
         self
     }
 
@@ -2461,6 +2480,19 @@ impl<'a> ServiceContext<'a> {
         };
 
         reader.read_source_management_ledger(request).await
+    }
+
+    pub async fn score_salience(
+        &self,
+        request: ScoreSalienceReadRequest,
+    ) -> Result<ScoreSalienceResponse, SalienceReadError> {
+        let Some(reader) = &self.salience_reader else {
+            return Err(SalienceReadError::ReadFailed(
+                self.missing_reader_error("salience_read"),
+            ));
+        };
+
+        reader.score_salience(request).await
     }
 
     pub async fn apply_source_management_action(

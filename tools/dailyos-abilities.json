@@ -357,6 +357,27 @@
       }
     },
     {
+      "name": "score_salience",
+      "description": "",
+      "category": "read",
+      "annotations": {},
+      "wp_permission": "none",
+      "allowed_actors": [
+        "user",
+        "runtime"
+      ],
+      "required_scopes": [
+        "read.recommendations"
+      ],
+      "mcp_exposure": "none",
+      "client_side_executable": false,
+      "idempotency_class": "idempotent",
+      "composition_kind": {
+        "produces_blocks": false,
+        "block_types": []
+      }
+    },
+    {
       "name": "source_management_action",
       "description": "",
       "category": "transform",

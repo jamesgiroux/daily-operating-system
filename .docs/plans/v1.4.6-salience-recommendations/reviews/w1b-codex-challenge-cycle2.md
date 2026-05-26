@@ -1,0 +1,14 @@
+BLOCK
+
+Findings ordered by severity:
+
+- HIGH — Persistent recompute is a mutating service path but the plan does not require the ADR-0104/ADR-0102 mutation gate. The packet says `recompute_salience_for_claim` writes `salience_factors` rows in one transaction, but only names schema validation and does not require `ctx.check_mutation_allowed()` or a non-Live rejection test. Current `ServiceContext` explicitly says every public service mutation must call that gate first. Add this to the service shape and tests: Live writes; Evaluate/Simulate return `WriteBlockedByMode` without rows.
+  [packet](</Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.6-w1-b-dos-330/.docs/plans/v1.4.6-salience-recommendations/L0-packet-W1-B-DOS-330.md:187>) [ServiceContext](</Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.6-w1-b-dos-330/src-tauri/abilities-runtime/src/services/context.rs:2570>)
+
+- HIGH — v270 migration is not retry/crash safe as written. The proposed SQL uses plain `CREATE TABLE` in a multi-statement migration, while the migration runner executes `Migration::Sql` directly and records the schema version only after success. A crash or later statement failure can leave one table created but v270 unrecorded, causing the next run to fail at `CREATE TABLE`. Use `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS` with idempotent seed rows, or register v270 as a `Migration::Fn` wrapped in the repo’s idempotent migration helper. Add a rerun/partial-application migration test.
+  [packet SQL](</Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.6-w1-b-dos-330/.docs/plans/v1.4.6-salience-recommendations/L0-packet-W1-B-DOS-330.md:102>) [runner](</Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.6-w1-b-dos-330/src-tauri/src/migrations.rs:3792>)
+
+- MEDIUM — MCP exposure is still ambiguous after the cycle-1 “remove MCP/SurfaceClient exposure” blocker. The packet sets `mcp_exposure = MetadataOnly` while also saying direct MCP/SurfaceClient invocation is deferred. Since ADR-0102 defines `MetadataOnly` as an exposure tier, make W1-B unambiguous: use `mcp_exposure = None`, `client_side_executable = false`, no `SurfaceClient`/`McpClient` actors, and tests asserting hidden from MCP/SurfaceClient enumeration, not just non-invocable.
+  [packet](</Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.6-w1-b-dos-330/.docs/plans/v1.4.6-salience-recommendations/L0-packet-W1-B-DOS-330.md:248>) [ADR-0102](</Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.6-w1-b-dos-330/.docs/decisions/0102-abilities-as-runtime-contract.md:236>)
+
+Cycle-1 blockers are mostly remediated in shape, but not fully enough for implementation: read/write split is missing the required mutator gate, and MCP exposure remains semantically open.
