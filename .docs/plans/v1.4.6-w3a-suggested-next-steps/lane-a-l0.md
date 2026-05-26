@@ -293,16 +293,96 @@ ADR citations added per K-in: ADR-0102 (Abilities as Runtime Contract — canoni
 
 `docs/solutions/security-issues/prompt-channel-sensitivity-class-sweep-2026-05-18.md` cited in A1 (class-sweep test pattern). `docs/solutions/workflow-issues/k-in-grep-substrate-type-not-proposed-name-2026-05-19.md` cited as method note (grep substrate types, not proposed names). `feedback_l0_reconcile_against_dev.md` cited — fork SHA verified clean against `public/dev` HEAD `e73ac894`.
 
-### Open questions remaining after cycle 1
+---
 
-1. **Receipt batch helper scope.** A2 #5 leaves a fallback (per-call loop + L4 benchmark gate). Default position is to ship the batch helper; cycle-2 reviewer should confirm whether the batch helper is in W3-A scope or path-α maintenance.
-2. **Decided-state echo window length.** A4 #2 introduces a "recent decided" window during which the row stays visible with an Undo affordance. Length unspecified; L4 evidence informs (10 seconds vs page-load-scoped).
-3. **Briefing-surface chapter wrapper class.** A5 #1 says "verified by L1 grep before render.php authoring." Resolve at L1 dispatch.
+## Cycle 2 amendments (2026-05-26 evening) — class-sweep + cycle-2 reviewer tightenings
+
+Cycle 2 panel: adversarial APPROVE-with-tightening; feasibility APPROVE with 4 framing fixes; design-lens CYCLE_3 with 3 blockers + 3 advisories.
+
+**Class pattern flagged across reviewers:** the cycle-1 amendments-at-top pattern produced **in-document contradictions** (original sections retain old text superseded by amendments). Design-lens hit it on §3.3 `primary_factor` and block.json `maxItems`; adversarial hit it on §4.3 work-surface text. Per memory rule "same-shape findings twice = class-wide sweep," cycle 2 performs an **inline sweep** of the originals so a reader of any single section gets the correct contract without needing to cross-reference amendments.
+
+### A16. Echo window + collapse mechanic + use_with_caution modifier + banner copy (resolves design-lens cycle-2 blockers + Open Q #2)
+
+**Resolution.**
+
+1. **Decided-state echo window: server-side bounded.**
+   - `FeedbackState::Decided` carries `decided_at: DateTime<Utc>` (already present in cycle-1 contracts — ADR-0123 V1.1)
+   - Server-side hard ceiling: **30 seconds** after `decided_at` the row drops from the projection regardless of client state (combines adversarial's 60s cap and design-lens's session-scoped preference at a middle-ground)
+   - Client-side Undo affordance disappears at 30s even if user keeps the tab open
+   - L4 evidence captures the 30s timeout behavior (timer-based test, not a flake)
+   - **A2 projection rule extends:** rows with `Decided` feedback older than 30s are filtered out by the projection before SurfaceClient render
+
+2. **`decided_dismissed` row-collapse mechanic.**
+   - CSS transition on `max-height` and `opacity` over 200ms
+   - Class: `suggested-next-steps_row--collapsing` applied on Dismiss click; row animates to `max-height: 0; opacity: 0;` then a server-side re-render on next page load drops it from the projection (per #1 above)
+   - Reduced-motion preference (`@media (prefers-reduced-motion: reduce)`) snaps instead of animating
+
+3. **`use_with_caution` row treatment.**
+   - **Indicator-level class only** — no row-level modifier. The trust-band pill (ADR-0132) carries its own `TrustBandIndicator_useWithCaution` class for the pill color/copy.
+   - Row layout is unchanged from `likely_current` rows
+   - `needs_verification` is the only trust band that gets a row-level modifier (`suggested-next-steps_row--needsVerification` per A5 #2) — terracotta-accent treatment + opacity adjustment on the why-this-now caption
+   - Three-band coverage: `likely_current` → default row; `use_with_caution` → default row + cautionary pill; `needs_verification` → modifier row + needs-verification pill
+
+4. **Disabled banner string (replaces A4 #3 placeholder).**
+   - User-visible copy: **"Feedback opens on the next sync."**
+   - No "update," "release," "ship," or wave-name leakage
+   - Banner uses `dailyos-info-chip` class (existing primitive — confirmed by L1 grep before render)
+   - aria-live="polite" so screen readers announce the state when navigating into the affordance row
+
+5. **Keyboard disclosure for hover-reveal sub-affordance row.**
+   - "More feedback…" button is a focusable `<button>` with `aria-expanded="false"` initially, `aria-controls="<row-id>-more-feedback"`
+   - Click OR `Enter`/`Space` keyboard activation toggles `aria-expanded` and reveals the sub-affordance row
+   - Sub-affordance row uses `aria-hidden="true"` when collapsed; `aria-hidden="false"` when expanded
+   - The hover-reveal is a CSS enhancement (mouse users see it on hover); the button is the canonical disclosure trigger
+   - Tab order: primary affordances → "More feedback…" button → (when expanded) sub-affordances → next row
+
+6. **Touch fallback (path-α maintenance).**
+   - Today's WP Studio surface is desktop-only; touch is forward-deferred
+   - Filed as Codebase Maintenance ticket: "Cross-device hover-reveal fallback for `dailyos/suggested-next-steps` and similar v1.4.x blocks" — resolution mode = pre-cross-device-surface L0
+   - W3-A's keyboard-disclosure pattern (#5 above) is the touch-compatible disclosure today (tap = focus + activate)
+
+### A17. Framing fixes (resolves feasibility cycle-2 PARTIALs)
+
+1. **A2 #4 framing — `SurfaceContext`, not actor.** Reword: `render_receipt_for(state, target, surface)` takes `SurfaceContext`, not `Actor`. Privacy enforcement happens via `audience_for_surface(surface)` derived FROM the outer ability's actor. The mechanism still propagates SurfaceClient-tier redaction; the framing now matches the function signature.
+
+2. **A4 #4 framing — first feedback-POST affordance, not first view.js.** Reword: "W3-A is the first DailyOS block with a **client-side feedback-POST affordance script**. The view.js bundle pattern is established (7 existing blocks: `evidence-drawer`, `entity-intake`, `projects-index`, `people-index`, `source-management`, `accounts-index`, `account-overview`) but none currently POST feedback claims. W3-A introduces the new affordance category." The CI-gate inputs list in §7 retains the view.js bundle entry but reframes the cost as "feedback affordance category," not "view.js bundle as a new pattern."
+
+3. **A2 #5 receipt batch helper resolution (Open Q #1).** **Decision: batch helper ships in W3-A.** Authoring scope is small (one new function returning `Vec<ClaimReceiptSnapshot>` with a single `WHERE claim_id IN (...)` substrate read) and the L4 benchmark gate fallback adds CI complexity without removing the work. The per-call loop is filed as path-α maintenance only if the batch helper proves out-of-scope at L1 dispatch (unlikely; explicit gate).
+
+### A18. Additive scope items (resolves feasibility cycle-2 PARTIALs)
+
+1. **§2 in-scope additive:** `wp/dailyos/blocks/suggested-next-steps/style.css` contains a new `.disabled-affordance` CSS class (confirmed by L1 grep that no existing class with this name exists in `wp/dailyos/`).
+
+2. **§6 test plan pinned:** PHPUnit with mocked runtime client is the **in-scope** integration pattern; cross-process Tauri-loopback-in-CI harness is **out-of-scope** for W3-A. Mock pattern is consistent with existing block tests (`wp/dailyos/tests/blocks/AccountDetailBlockTest.php` precedent).
+
+3. **A12 work surface fallback if W3-B delayed.** If W3-B is materially delayed and the work surface has no recommendations slot, W3-A's block stays unembedded on the work surface. The user-visible behavior at W3-A merge is: 4 entity surfaces render the block; work surface does not. This is the explicit holding pattern; the wave plan W3-A → W3-B sequencing (`v1.4.6-waves.md:527`) makes the holding period bounded.
+
+### A19. Inline section sweep (class-pattern resolution)
+
+Cycle 2 sweeps the in-document contradictions flagged by design-lens and adversarial. The following original sections are **edited inline** to match the amendment contract — readers no longer need to cross-reference the amendments to get the correct shape:
+
+| Original section | Edited inline at cycle 2 | Source amendment |
+|------------------|--------------------------|------------------|
+| §3.3 `SuggestedNextStepItem` struct | `primary_factor: SalienceFactorKind` removed; `factor_band: PrimaryFactorBand` added; `why_this_now` renamed to `why_this_now_surface_text` | A1 |
+| §3.4 step heading + projection function name | renamed to `services::recommendations::render::list_suggested_next_steps_projection`; column names locked | A2/A3/A17 |
+| §4.1 block.json | `maxItems` default `8` → `5`; `headingLabel` notes per ADR-0083 vocabulary; `parent` constraint omitted (no work-surface reference) | A5/A6/A9 |
+| §4.3 render-functions.php algorithm | work-surface branch removed; entity-detail vs meeting-intel wrapper class per surface; trust-band placement + line-clamp + terminal states + 3-primary affordance pattern | A4/A5/A6/A9 |
+| §4.5 editor/view scripts | reframed as new feedback-POST affordance category; A16 keyboard disclosure + aria pattern + disabled banner | A4/A16/A17 |
+| §6 Integration test bullet | pin PHPUnit-mocked-runtime; cross-process harness out-of-scope | A18 |
+| §11 K-in citations | 5 missing ADRs + class-sweep solution + reconcile-against-dev solution added | A15 |
+
+After A19, every section reads consistently with the amendments. If a future cycle needs further revision, **inline edits are the primary path**, not new amendments-at-top — amendment cycle reserves for genuinely new resolutions (A16 etc.).
+
+### Open questions remaining after cycle 2
+
+1. **Briefing-surface chapter wrapper class.** A5 #1 deferred to L1 grep. Resolve at L1 dispatch (not blocking L0 approval).
+
+(Cycle-1 Open Q #1 receipt batch helper — RESOLVED by A17 #3 as W3-A in-scope. Cycle-1 Open Q #2 echo window — RESOLVED by A16 #1 as 30s server-side ceiling. Both removed from open list.)
 
 ### Updated cycle status
 
-- Original §0–§15: preserved with sections that A1–A15 supersede flagged inline by amendment number.
-- **Cycle 1 status: REVISED, ready for cycle 2 review of a subset panel** (adversarial F1 resolution; feasibility substrate alignment + render_receipt_for; design-lens 3 blocking findings). K-in and scope-guardian likely not needed in cycle 2 unless their findings need re-litigation.
+- **A1–A18 amendments + A19 inline sweep complete.** Every original section now matches its governing amendment.
+- **Cycle 2 status: REVISED, ready for cycle 3 design-lens-only verification.** Adversarial + feasibility leaned APPROVE in cycle 2; design-lens is the only remaining gate. If cycle 3 closes design-lens's 3 blockers (struct contradiction → A19, maxItems default → A19, echo window → A16), L0 approve.
 
 ---
 
@@ -365,18 +445,23 @@ L0 design review (`/plan-design-review`) explicitly owns the reference-HTML-firs
 
 | File / surface                                                                                                                  | Owner   |
 |----------------------------------------------------------------------------------------------------------------------------------|---------|
-| `src-tauri/abilities-runtime/src/abilities/recommendations/list_suggested_next_steps.rs` (or extension of `mod.rs`)              | W3-A    |
-| `src-tauri/abilities-runtime/src/abilities/recommendations/contracts.rs` — additive: list-projection DTO                          | W3-A    |
-| `src-tauri/src/services/recommendations/projection.rs` (new) — substrate-side projection from `surfacing_decisions` + claim store | W3-A    |
+| `src-tauri/abilities-runtime/src/abilities/recommendations/list_suggested_next_steps.rs` (new ability) or extension of `mod.rs`  | W3-A    |
+| `src-tauri/abilities-runtime/src/abilities/recommendations/contracts.rs` — additive: list-projection DTO (incl. `PrimaryFactorBand`, `SuggestedNextStepItem`, `ListSuggestedNextStepsResponse`, `RecommendedActionView`) | W3-A    |
+| `src-tauri/src/services/recommendations/render.rs` — fill existing 6-line placeholder with `list_suggested_next_steps_projection`, `read_recommendation_for_render`, `render_receipts_for_batch` (per A3 + A17 #3) | W3-A    |
 | `src-tauri/src/services/context.rs` — wire new read handle (additive trait method)                                                | W3-A    |
-| `tools/dailyos-abilities.json` — regen after new ability lands                                                                   | W3-A    |
+| `tools/dailyos-abilities.json` — regen after new ability lands (deterministic per feasibility-confirmed `emit_ability_inventory`) | W3-A    |
 | `wp/dailyos/blocks/suggested-next-steps/block.json`                                                                              | W3-A    |
 | `wp/dailyos/blocks/suggested-next-steps/render.php` + `render-functions.php`                                                     | W3-A    |
-| `wp/dailyos/blocks/suggested-next-steps/style.css` (block CSS module)                                                            | W3-A    |
-| `wp/dailyos/theme/theme.json` — additive only, with token-name resolution from L0 design review                                  | W3-A    |
-| `.docs/design/reference/surfaces/{account,project,person}.html` — author reference sections (per §1)                              | W3-A    |
-| `wp/dailyos/tests/blocks/suggested-next-steps/` (PHPUnit or render-fixture tests)                                                 | W3-A    |
-| Integration fixture proving WP-block-calls-ability path                                                                          | W3-A    |
+| `wp/dailyos/blocks/suggested-next-steps/style.css` — includes new `disabled-affordance` class (A18 #1) and `suggested-next-steps_*` tokens (A5) | W3-A    |
+| `wp/dailyos/blocks/suggested-next-steps/view.js` — feedback-POST affordance handler + hover-reveal disclosure (new affordance category; bundle pattern established — A17 #2) | W3-A    |
+| `wp/dailyos/blocks/suggested-next-steps/feedback-kinds.ts` — ADR-0123 10-variant mapping constants (A4 #6) | W3-A    |
+| `wp/dailyos/theme/theme.json` — additive only, each new token named + design-review-confirmed (A5 #6)                            | W3-A    |
+| `.docs/design/reference/surfaces/{account,project,person,meeting}.html` — author reference sections (per A7; lands as first commit in PR sequence) | W3-A    |
+| `wp/dailyos/tests/blocks/suggested-next-steps/` — PHPUnit with mocked runtime client (A18 #2)                                     | W3-A    |
+| Integration fixture proving WP-block-calls-ability path — PHPUnit-mocked-runtime pattern (A18 #2); cross-process Tauri harness out-of-scope | W3-A    |
+| Privacy class-sweep test (A1 #4): parametric over all 10 `FactorRationale` variants and all 6 `RecommendedAction` variants       | W3-A    |
+| Per-Actor dry-run test (A8): enumerate all `Actor` variants through the registry, assert allowlist matches `[User, System, SurfaceClient]` | W3-A    |
+| Registry channel diffs where file-explicit (A8 enumerated 6 channels — confirm at L1 grep)                                       | W3-A    |
 
 ### Out of scope
 
@@ -447,19 +532,29 @@ pub struct ListSuggestedNextStepsResponse {
 pub struct SuggestedNextStepItem {
     pub claim_id: ClaimId,                       // stable id for feedback callbacks
     pub headline: String,                        // product-safe (no PII bleed from raw evidence text)
-    pub why_this_now: String,                    // pre-rendered text from WhyThisNow.text (W2-A produces)
-    pub primary_factor: SalienceFactorKind,      // for chip / icon rendering only — NOT full factor breakdown
+    pub why_this_now_surface_text: String,       // SurfaceClient-redacted variant per A1; numerics → qualitative bands
+    pub factor_band: PrimaryFactorBand,          // 5-band collapse of 10 SalienceFactorKind variants (A1 #2)
     pub recommended_action: RecommendedActionView, // privacy-safe view (see §3.4)
-    pub trust_band: TrustBand,                   // for trust-band primitive rendering (ADR-0108)
+    pub trust_band: TrustBand,                   // for trust-band primitive rendering (ADR-0108, ADR-0132)
     pub receipt: ClaimReceiptSnapshot,           // Shared Receipt DTO per v1.4.4 invariant (v1.4.6-waves.md:543)
-    pub feedback_state: FeedbackState,           // for affordance state (pending vs decided)
+    pub feedback_state: FeedbackState,           // includes decided_at: DateTime<Utc> per ADR-0123 V1.1 (A16 #1)
     pub conversion_state: ConversionState,       // for "already converted" affordance state
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum PrimaryFactorBand {
+    TimeSensitive,     // collapses Urgency, Timing
+    NewInformation,    // collapses Novelty, Freshness
+    OpenLoopRelated,   // collapses OpenLoopRelevance
+    TrustChange,       // collapses Trust, Corroboration, Contradiction
+    Other,             // collapses Importance, UserFit
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum RecommendedActionView {
-    ScheduleMeeting { entity_label: String, when_window: String }, // no raw rationale; rationale flows through why_this_now
+    ScheduleMeeting { entity_label: String, when_window: String }, // no raw rationale; rationale flows through why_this_now_surface_text
     SendMessage    { entity_label: String, channel: String },
     ReviewClaim    { claim_label: String },
     UpdateRecord   { entity_label: String, field_label: String },
@@ -468,28 +563,38 @@ pub enum RecommendedActionView {
 }
 ```
 
-**Privacy boundaries (load-bearing — codex security review hits this hardest):**
+**Privacy boundaries (load-bearing — class sweep per A1):**
 
-- `RecommendedActionView` is the **projection** of `RecommendedAction` for surfaces — **never** ships the raw enum payload to a `SurfaceClient`. Entity IDs become resolved labels via the same redaction layer the receipt projection uses (`ClaimReceiptRedactionLevel`).
-- `SuggestedNextStepItem` carries `primary_factor` only, **never** the full `Vec<SalienceFactor>`. Full factor breakdown stays inside `score_salience` (User/System actors only). The hidden-ability contract is preserved (`v1.4.6-waves.md:941`).
+- `RecommendedActionView` is the **projection** of `RecommendedAction` for surfaces — **never** ships the raw enum payload to a `SurfaceClient`. Entity IDs become resolved labels via the same redaction layer the receipt projection uses (`ClaimReceiptRedactionLevel`). String fields run through the same numeric-redactor used for `why_this_now_surface_text` (A1 #3).
+- `SuggestedNextStepItem` carries `factor_band` (5-band collapse), **NOT** `primary_factor` (the 10-variant discriminant). Full `Vec<SalienceFactor>` stays inside `score_salience` (User/System actors only). The hidden-ability contract is preserved (`v1.4.6-waves.md:941`).
+- `why_this_now_surface_text` is the SurfaceClient-redacted variant — numerics replaced with qualitative bands (`high` / `moderate` / `low`); raw `vector_distance`, `decay_factor`, `feedback_history_score`, integer counts dropped. The User/System variant with numerics stays available only to `score_salience` callers.
 - `provenance` flows through `ClaimReceiptSnapshot.provenance` (the receipt's resolved view), not as a raw envelope on the item.
-- `feedback_state` and `conversion_state` ship as-is — they are part of the claim's lifecycle and are surface-safe.
+- `feedback_state` and `conversion_state` ship as-is — they are part of the claim's lifecycle and are surface-safe. `decided_at` timestamp gates server-side row drop at 30s (A16 #1).
 
-**Hidden-ability sweep test (codex security panel):** the W3-A integration fixture MUST include a test that, given a SurfaceClient invocation, the response JSON does NOT contain any of: `factors` array, raw `RecommendedAction` payload fields not surfaced in `RecommendedActionView`, raw evidence source paths, prompt/provider-looking strings.
+**Privacy class-sweep test (per A1 updated AC #4):** the integration fixture asserts (a) no `factors` array, no `primary_factor` field name, no raw `RecommendedAction` payload fields appear in any SurfaceClient response; (b) parametric over all 10 `FactorRationale` variants — none of `vector_distance`, `decay_factor`, `source_authority`, `signal_age_secs`, `calendar_proximity_secs`, `feedback_history_score`, `corroboration_count`, `contradiction_count`, `open_loop_count` appear as JSON numerics OR substring-matched in any string field; (c) parametric over all 6 `RecommendedAction` variants — `RecommendedActionView` carries no raw `entity_id` / `field_path` / `payload` JSON. Models `docs/solutions/security-issues/prompt-channel-sensitivity-class-sweep-2026-05-18.md`.
 
 ### §3.4 Substrate-side projection rules
 
 The new `services::recommendations::projection::list_suggested_next_steps()` function:
 
-1. **Filters** `surfacing_decisions` to `tier ∈ {Critical, Notable, Background}` and `kind = Render` (Quiet, Defer, Suppress excluded for surfaces — `v1.4.6-waves.md:544`).
-2. **Joins** with the claim store for `RecommendationClaim` rows matching the `subject` filter.
-3. **Orders** by salience `total` descending, then by `created_at` descending as tiebreaker.
-4. **Truncates** to `max_items` (default 8, ceiling 8).
-5. **Maps** `RecommendedAction` → `RecommendedActionView` via redaction layer.
-6. **Invokes** existing `claim_receipt` projection per claim to populate `receipt` field — re-using v1.4.4 Shared Receipt DTO, not authoring a parallel one (`v1.4.6-waves.md:543`).
-7. **Returns** the privacy-safe response.
+**Function:** `services::recommendations::render::list_suggested_next_steps_projection(state, input, actor) -> Result<ListSuggestedNextStepsResponse>` (per A3; lives in the existing `render.rs` placeholder).
 
-Salience scoring is NOT recomputed at projection time — it reads the already-stored evaluation from W1-B's path (`services/recommendations/salience.rs::score_salience`). The hidden-ability contract calls the same substrate read; this ability projects the surface-safe subset.
+1. **Filters** `surfacing_decisions` (v271) by SQL columns:
+   - `subject_kind = ?` AND `subject_id = ?` (when `input.subject` is `Some`)
+   - `surfacing_tier IN ('critical', 'notable', 'background')` (lowercase string-encoded per v271 CHECK constraint; excludes `'quiet'`)
+   - `decision_kind = 'render'` (excludes `'defer'`, `'suppress'`)
+   - `created_at >= now() - INTERVAL '30 seconds'` for decided rows OR `feedback_state = 'pending'` (A16 #1 — server-side echo window ceiling)
+2. **Reads denormalized fields** from `surfacing_decisions` directly: `salience_total`, `why_this_now_json` (parsed to `WhyThisNow`), `trigger_refs_json`, `salience_evaluation_id`, `action_signature`. No claim-store join needed for these.
+3. **Calls `read_recommendation_for_render(claim_id, actor)`** (new function in `render.rs` per A2 #2) for the fields NOT in `surfacing_decisions`: full typed `RecommendedAction`, `TrustBand`, `evidence: Vec<EvidenceRef>`, `feedback_state` (full `Decided` variant with `decided_at`), `conversion_state`.
+4. **Orders** by `salience_total DESC`, then `created_at DESC` as tiebreaker.
+5. **Truncates** to `max_items` (default 5, ceiling 8 per A5 #4).
+6. **Maps `RecommendedAction` → `RecommendedActionView`** via the redaction layer (A1 #3).
+7. **Computes `factor_band: PrimaryFactorBand`** from `WhyThisNow.primary_factor` via the 5-band collapse table in §3.3.
+8. **Generates `why_this_now_surface_text`** by re-rendering the W2-A template gated on actor — numerics → qualitative bands, raw integer leaves dropped (A1 #1).
+9. **Calls `render_receipts_for_batch(state, claim_ids, surface)`** (new helper in `render.rs` per A2 #5 + A17 #3) to populate `receipt` field for all items in one substrate read — replaces the N+1 per-call pattern. Inner privacy enforcement flows via `SurfaceContext` derived from outer actor (A17 #1); audience is `audience_for_surface(surface)` per ADR-0108.
+10. **Returns** the privacy-safe `ListSuggestedNextStepsResponse`.
+
+Salience scoring is NOT recomputed at projection time — it reads `salience_total` from the `surfacing_decisions` row written by W1-B. The hidden `score_salience` ability (User/System only) calls the same substrate read but returns the full factor breakdown; this projection returns the surface-safe subset (`factor_band` + redacted `why_this_now_surface_text`).
 
 ### §3.5 Provenance envelope
 
@@ -516,7 +621,7 @@ Output ships with full `Provenance` envelope per ADR-0105. Schema version `1` fo
     "supports": { "html": false, "reusable": false, "inserter": false },
     "usesContext": [ "dailyos/entityType", "dailyos/entityId" ],
     "attributes": {
-        "maxItems":  { "type": "number", "default": 8 },
+        "maxItems":  { "type": "number", "default": 5 },
         "headingLabel": { "type": "string" }
     },
     "render": "file:./render.php"
@@ -524,10 +629,11 @@ Output ships with full `Provenance` envelope per ADR-0105. Schema version `1` fo
 ```
 
 Notes:
-- `inserter: false` — block is inserted by composition (W3-B), not directly by editor
-- `usesContext` mirrors `meeting-recommended-actions:9` precedent — block resolves entity from outer context provided by `dailyos/{account,project,person,meeting}-detail` and from a future `dailyos/work-surface` wrapper (W3-B scope)
-- `headingLabel` attribute lets the parent surface override the section heading ("Suggested next steps for this account" vs "Suggested topics for next 1:1")
-- `parent` constraint deliberately omitted at W3-A — W3-B configures it once embedding pages are confirmed
+- `inserter: false` — block is inserted by composition (W3-B), not directly by editor; the `title` field is the developer-facing block-inserter label, never user-visible
+- `usesContext` mirrors `meeting-recommended-actions:9` precedent — block resolves entity from outer context provided by `dailyos/{account,project,person,meeting}-detail` parents
+- `headingLabel` attribute lets the parent surface override the section heading per ADR-0083 vocabulary (A6); defaults are hardcoded per-surface in `render-functions.php` ("What's next with {Account.name}", "What's next on {Project.name}", "Open threads with {Person.name}", "What to cover" for meeting prep)
+- `parent` constraint deliberately omitted at W3-A — work-surface integration deferred to W3-B per A9 (`dailyos/work-surface` does not exist; `the-work` and `open-loops-feed` blocks exist instead). W3-A's block is entity-only at merge.
+- `maxItems` default `5` matches the editorial-reading-surface density convention; ceiling `8` is enforced server-side (A5 #4). W3-B may bump default to 8 for the work surface where the recommendation list is the primary content.
 
 ### §4.2 `render.php` shape (terse stub)
 
@@ -541,44 +647,71 @@ return dailyos_suggested_next_steps_render( $attributes ?? [], $block ?? null );
 
 ### §4.3 `render-functions.php` algorithm
 
-Mirrors `meeting-recommended-actions/render-functions.php` precedent. Differences:
+Inherits structural pattern from `meeting-recommended-actions/render-functions.php`. Per-surface specifics:
 
 1. **Subject resolution.** Resolve `SubjectRef` from `$block->context`:
    - `dailyos/entityType = 'account'` + `dailyos/entityId = '...'` → `SubjectRef::Account(...)`
    - `'project'`, `'person'`, `'meeting'` → analogous
-   - Missing context with `parent === 'dailyos/work-surface'` → `SubjectRef::Global` (or `SubjectRef::User` per W3-B confirmation)
-   - All other missing context → empty chip `missing_subject_context`
+   - All other missing context → empty chip `missing_subject_context`. Work-surface integration deferred to W3-B (A9) — block does not attempt global-feed resolution at W3-A.
 
-2. **Ability call.** `$runtime_client->invoke_ability('list_suggested_next_steps', [...input...], $scope_set)` with `surface = surface_for_context(...)`.
+2. **Ability call.** `$runtime_client->invoke_ability('list_suggested_next_steps', [...input...], $scope_set)` with `surface = surface_for_context(...)`. Note: `$scope_set` is informational only — the `/v1/local/invoke` transport `unset()`s it; enforcement is Rust registry-side per A8 + A17 #1.
 
-3. **Error handling** per `meeting-recommended-actions:46–65`:
+3. **Section wrapper class (per-surface — A5 #1):**
+   - Account / Project / Person → `entity-detail_chapterSection`
+   - Meeting → `meeting-intel_chapterSection`
+   - Briefing → resolved at L1 grep against existing briefing chapter pattern; default fallback composes `editorial-reveal` + `ChapterHeading_*`
+
+4. **Section heading.** `editorial-reveal` + `ChapterHeading_*` family. Default `headingLabel` (per ADR-0083 vocabulary per A6, hardcoded in render-functions.php with `$entity_type` switch):
+   - Account → `"What's next with {Account.name}"`
+   - Project → `"What's next on {Project.name}"`
+   - Person → `"Open threads with {Person.name}"`
+   - Meeting prep → `"What to cover"` (no name interpolation; chapter joins parent's per A12)
+   - Entity-name interpolation uses the resolved label from the same redaction layer as `RecommendedActionView` (A1 #3). If the resolved label exceeds 40 characters, truncate with ellipsis at word boundary; no row-wrap.
+
+5. **Error handling** per `meeting-recommended-actions:46–65`:
    - Runtime unavailable → empty chip `runtime_unavailable`
    - WP_Error / `ok === false` → empty chip `envelope_error`
-   - Empty items list → empty chip `no_recommendations` (label varies by surface — "No suggested next steps." for accounts/projects, "No suggested topics." for person/meeting)
+   - Empty items list → empty chip `no_recommendations` with surface-specific copy (A6): Account/Project → `"Nothing flagged right now."`, Person → `"No open threads."`, Meeting prep → `"Nothing to cover yet."`
 
-4. **Per-item rendering:**
-   - Section heading: `editorial-reveal` + `ChapterHeading_*` family with `attributes.headingLabel` (or surface default)
-   - Per-row: trust-band primitive (server-rendered per ADR-0108 audience filter from `receipt.trust`), headline, why-this-now caption, recommended-action view, action affordance ("Convert to action" / "Dismiss" / "Not useful")
-   - Provenance summary inline-or-drawer: link to `evidence-drawer` block where it exists, otherwise inline truncated source list
-   - Each affordance carries `data-claim-id="..."` + `data-feedback-kind="dismiss|accept|notUseful|tooNoisy|convert"` for the W4-A feedback handler (see §9)
+6. **Per-item rendering:**
+   - Row class: `suggested-next-steps_row`. For `trust_band = needs_verification`, additionally applies `suggested-next-steps_row--needsVerification` modifier (terracotta-accent treatment per A5 #2 + A16 #3). For `likely_current` and `use_with_caution`, no row-level modifier — only the ADR-0132 trust-band pill carries band-specific class (A16 #3).
+   - **Trust-band placement:** trails the headline text node as a finis marker (per `meeting-intel_currentStateItem` precedent, `meeting.html:399-401`). Pill rendered server-side from `receipt.trust` via ADR-0108 audience filter.
+   - **Headline:** text from `SuggestedNextStepItem.headline`; primary visual weight.
+   - **Why-this-now caption:** `<p class="suggested-next-steps_whyThisNow">` with CSS `line-clamp: 2`; content from `why_this_now_surface_text` (A1-redacted).
+   - **Recommended-action view:** rendered from `RecommendedActionView` variant.
+   - **Provenance summary:** inline truncated source list; links to `evidence-drawer` block where the parent surface composes one (DOS-689 precedent).
+   - **Affordance row:** 3 primary visible buttons per A4 #1 — `Convert to action`, `Dismiss`, `More feedback…` (focusable button with `aria-expanded` toggling the hover-reveal sub-affordance row per A16 #5).
+   - **Sub-affordance row (revealed on click/hover):** `Mark as not useful`, `Mark as too noisy`, `Dismiss with reason…` (which opens a small reason picker mapping to `DismissReason::NotRelevant | AlreadyKnew | WrongSubject | Other(BoundedNote)`).
+   - **ADR-0123 mapping:** affordance `data-feedback-kind` values map directly to ADR-0123's 10 typed `RecommendationFeedbackDecision` variants. Constant file: `wp/dailyos/blocks/suggested-next-steps/feedback-kinds.ts`.
+   - **Terminal-state CSS classes** (per A4 #2 + A16 #2):
+     - `pending` → default
+     - `in_flight` → row class `suggested-next-steps_row--inFlight`; opacity 60%; `aria-busy="true"`; affordances disabled
+     - `decided_dismissed` → `suggested-next-steps_row--collapsing` animates `max-height` + `opacity` over 200ms (snap if `prefers-reduced-motion: reduce`). Server drops row at next render once `now() - decided_at > 30s` (A16 #1)
+     - `decided_converted` → row replaces affordance set with confirmation chip "Converted to action — {action-link}"; same 30s server-side drop
+     - `disabled` → block-level banner (A4 #3 + A16 #4) "Feedback opens on the next sync."; affordances render with class `disabled-affordance` (W3-A authors this class per A18 #1), `tabindex="-1"`, `aria-disabled="true"`; no per-button tooltip
+     - `error` → affordances re-enable; inline non-dismissible retry chip below the row
 
-5. **Always-visible empty chip** when `items === []`, per `v1.4.6-waves.md:544` invariant — "§10 invariant — never silent-hidden" (`meeting-recommended-actions:163`).
+7. **Always-visible empty chip** when `items === []`, per `v1.4.6-waves.md:544` invariant — "§10 invariant — never silent-hidden" (`meeting-recommended-actions:163`).
 
 ### §4.4 Style module
 
 - New file: `wp/dailyos/blocks/suggested-next-steps/style.css`
-- Class namespace: `suggested-next-steps_*` (matches `meeting-intel_*` precedent shape)
-- Composes existing primitives where possible; new classes only where the parity matrix gap forces them
-- Block stylesheet enqueue follows existing wp-block-themes pattern (registered via `register_block_type_from_metadata`)
+- Class namespace: `suggested-next-steps_*` (matches the surface-prefix convention per NAMING.md when the pattern is unique to that surface)
+- Composes existing primitives — `ChapterHeading_*`, `editorial-reveal`, `dailyos-empty-chip`, ADR-0132 trust-band pill, ADR-0108 evidence drawer — per A5 #1 + #6
+- New tokens required: `suggested-next-steps_row`, `suggested-next-steps_row--needsVerification`, `suggested-next-steps_row--inFlight`, `suggested-next-steps_row--collapsing`, `suggested-next-steps_whyThisNow`, `disabled-affordance` (per A18 #1). Each new token verified by `/plan-design-review` to confirm no existing token covers it (per A5 #6).
+- Block stylesheet enqueue via `register_block_type_from_metadata`
 
 ### §4.5 Editor / view scripts
 
-Per wave plan: `editor/view files only if the block needs interactive controls` (`v1.4.6-waves.md:942`). W3-A view script needs:
+W3-A introduces a `view.js` carrying the first DailyOS block client-side **feedback-POST affordance** script. The `view.js` bundle pattern itself is established in 7 existing blocks (`evidence-drawer`, `entity-intake`, `projects-index`, `people-index`, `source-management`, `accounts-index`, `account-overview`) — what's new is the affordance category (per A17 #2).
 
-- **Client-side affordance handler** — POSTs to a feedback ability (W4-A) via the WP REST endpoint that bridges to the abilities runtime
-- During the W4-A gap (see §9), the click handler is registered but **either** disabled (button shows `aria-disabled="true"` until feedback ability lands) **or** stubbed to a no-op endpoint that returns `200 not_yet_implemented`
+`view.js` responsibilities:
 
-W3-A authors the affordance markup + handler. The decision between disabled vs no-op stub is an L0 question (see §12).
+- **Hover-reveal disclosure** of the secondary affordance row (mouse). Canonical trigger is the focusable `More feedback…` button with `aria-expanded` (A16 #5) — keyboard and touch users disclose via button activation, mouse users disclose via hover. CSS owns the hover; JS owns the toggle.
+- **Affordance POST handler** — on click of `Convert / Dismiss / Mark as not useful / Mark as too noisy / Dismiss-with-reason`, POSTs to the W4-A `submit_recommendation_feedback` ability via the `/v1/local/invoke` transport. During the W4-A gap, the handler is feature-flagged off (A11-style explicit guard) and the affordances render in disabled state per the §4.3 step 6 `disabled` terminal-state class.
+- **Engagement signal emission** — `Rendered` on mount + `Clicked` on affordance click — also feature-flagged off until W4-C lands (A11). Guards are explicit, not silent no-ops.
+- **Terminal-state class swap on click** — adds `suggested-next-steps_row--inFlight` before the POST; on response, swaps to `--collapsing` or `--error` as appropriate; CSS owns the animation.
+- **Touch fallback** — keyboard-disclosure pattern works for touch (tap = focus + activate). Cross-device-specific touch refinements are path-α maintenance (A16 #6).
 
 ---
 
@@ -587,17 +720,21 @@ W3-A authors the affordance markup + handler. The decision between disabled vs n
 Plain-language ACs, traceable to the wave plan invariants and DOS-298 description.
 
 1. **Ability ships and is registered.** `list_suggested_next_steps` appears in `tools/dailyos-abilities.json` (regen committed in same PR), and `AbilityRegistry::global_checked()` exposes it to `Actor::SurfaceClient` with scope `read.recommendations`. `cargo test recommendations::list_suggested_next_steps` passes.
-2. **Block renders for the four entity surfaces.** Test fixture proves `dailyos/suggested-next-steps` inside `dailyos/{account,project,person,meeting}-detail` parents produces non-empty HTML with the expected class names when seeded recommendations exist for that subject.
-3. **Empty state ships visible chip.** Each surface's empty render produces `dailyos-empty-chip` with a machine-readable reason (`no_recommendations`, `missing_subject_context`, `runtime_unavailable`, `envelope_error`). No silent hiding — `v1.4.6-waves.md:544`.
-4. **Hidden-ability sweep passes.** Integration test asserts SurfaceClient JSON response contains no `factors` array, no raw `RecommendedAction` payload, no envelope copy. `score_salience` actor allowlist unchanged.
-5. **Trust band renders per claim.** Each item's `receipt.trust.band` flows through the existing trust-band primitive; trust display matches the receipt's actor-filtered view (ADR-0108).
-6. **Why-this-now is product-safe.** No raw evidence-source paths, no prompt/provider-looking strings, no PII bleed. Test asserts against a fixture with seeded sensitive content.
+2. **Block renders for the four entity surfaces.** Test fixture proves `dailyos/suggested-next-steps` inside `dailyos/{account,project,person,meeting}-detail` parents produces non-empty HTML with the expected class names when seeded recommendations exist for that subject. Section wrapper class is `entity-detail_chapterSection` for account/project/person; `meeting-intel_chapterSection` for meeting (A5 #1).
+3. **Empty state ships visible chip.** Each surface's empty render produces `dailyos-empty-chip` with a machine-readable reason (`no_recommendations`, `missing_subject_context`, `runtime_unavailable`, `envelope_error`). Surface-specific copy per A6 ("Nothing flagged right now." / "No open threads." / "Nothing to cover yet."). No silent hiding — `v1.4.6-waves.md:544`.
+4. **Privacy class-sweep passes (A1).** Parametric integration test over all 10 `FactorRationale` variants and all 6 `RecommendedAction` variants. SurfaceClient JSON response contains no `factors` array, no `primary_factor` field, no raw `RecommendedAction` payload, no envelope copy, and no `FactorRationale` numerics appear as JSON numerics OR substring-matched in any string field. `score_salience` actor allowlist unchanged (`[User, System]` only).
+5. **Trust band renders per claim.** Each item's `receipt.trust.band` flows through the ADR-0132 pill primitive trailing the headline. `likely_current` and `use_with_caution` render with indicator-only class; `needs_verification` adds the `suggested-next-steps_row--needsVerification` row modifier (A5 #2 + A16 #3).
+6. **Why-this-now is privacy-safe (A1).** `why_this_now_surface_text` carries the SurfaceClient-redacted variant; numerics replaced with qualitative bands. CSS `line-clamp: 2` enforces visual budget. Test asserts against a fixture with seeded sensitive content.
 7. **Receipt is the Shared Receipt DTO.** Each item carries `ClaimReceiptSnapshot`, not a parallel receipt struct. `cargo clippy -- -D warnings` enforces (grep CI on `RecommendationReceipt|RecRow` per `v1.4.6-waves.md:543`).
 8. **No W2 table reads from the block.** Static grep in CI: `wp/dailyos/blocks/suggested-next-steps/**` contains no references to `surfacing_decisions`, `triggers_log`, or any other W2 table name.
 9. **No new migrations.** Empty migrations diff in the PR (per `v1.4.6-waves.md:464`).
-10. **Reference HTML lands** for account/project/person surfaces — sections added to `.docs/design/reference/surfaces/{account,project,person}.html` matching the block's rendered shape. Visual parity matrix in §1 of this packet is updated from "gap" to "matches reference: lines X-Y".
-11. **L4 surface QA runs BEFORE L2** per `v1.4.6-waves.md:440`. `/qa-only` evidence (screenshots of empty + non-empty + over-budget states) is attached to the Linear ticket before L2 dispatch.
-12. **Cycle hygiene.** Full validation: `cargo clippy -- -D warnings && cargo test && pnpm tsc --noEmit && phpunit (wp/dailyos/tests)`.
+10. **Reference HTML lands FIRST in PR sequence (A7).** Reference sections added to `.docs/design/reference/surfaces/{account,project,person,meeting}.html` as the first commit in the W3-A PR; `render.php` follows. Reviewers reject a PR where `render.php` lands without a preceding reference-HTML commit. Visual parity matrix in §1 is updated from "gap" to "matches reference: lines X-Y".
+11. **L4 surface QA runs BEFORE L2 (A10).** `/qa-only` evidence attached to DOS-298 before L2 dispatch: 20-screenshot grid, wire-JSON snapshot, Tauri-vs-WP parity (or forward-defer note per ADR-0129 §7), trust-band band-by-band coverage, 30s echo-window timing test.
+12. **Registry channels enumerated (A8).** 6 channels confirmed at L1; per-Actor dry-run test asserts `[User, System, SurfaceClient]` allowlist exactly.
+13. **Affordances map to ADR-0123 10 variants (A4 #6).** Constant file `feedback-kinds.ts` ships; `data-feedback-kind` values match the 10 typed `RecommendationFeedbackDecision` variants.
+14. **Decided-state echo window enforced server-side (A16 #1).** Rows with `Decided` feedback older than 30 seconds are filtered out by the projection regardless of client state. Time-skipped test verifies.
+15. **All cycle-1/2 amendments reflected in original sections.** A19 sweep complete: every section reads consistently with its governing amendment without cross-reference.
+16. **Cycle hygiene.** Full validation: `cargo clippy -- -D warnings && cargo test && pnpm tsc --noEmit && phpunit (wp/dailyos/tests)`.
 
 ---
 
@@ -605,30 +742,41 @@ Plain-language ACs, traceable to the wave plan invariants and DOS-298 descriptio
 
 ### Unit (Rust)
 
-- `list_suggested_next_steps` golden wire-shape fixture (mirrors `recommendation_contract_golden_wire_shape` test pattern in `services/recommendations/contracts.rs:441`)
-- Hidden-actor denial: `Actor::McpClient` denied before reader
+- `list_suggested_next_steps_projection` golden wire-shape fixture (mirrors `recommendation_contract_golden_wire_shape` test pattern in `services/recommendations/contracts.rs:441`)
+- Hidden-actor denial: `Actor::McpClient` denied before reader; per-Actor dry-run test per A8 (3 succeed, 3 fail with `Capability` error)
 - Surface actor allowed with `read.recommendations` scope; denied without scope
-- Subject filtering: `SubjectRef::Account(x)` returns only account-x recommendations; `None` returns global feed
-- `max_items` ceiling respected (request 100, response capped at 8)
-- Privacy-safe response: parametric test asserts no leakage of raw factors / raw payload / raw evidence sources / prompt strings
+- Subject filtering: `SubjectRef::Account(x)` returns only account-x recommendations; `None` returns empty (work-surface integration deferred to W3-B per A9)
+- `max_items` ceiling respected (request 100, response capped at 8); default = 5 when attribute unset
+- **Privacy class-sweep test (A1 #4):** parametric over all 10 `FactorRationale` variants — none of `vector_distance`, `decay_factor`, `source_authority`, `signal_age_secs`, `calendar_proximity_secs`, `feedback_history_score`, `corroboration_count`, `contradiction_count`, `open_loop_count` appear as JSON numerics OR substring-matched in any string field; parametric over all 6 `RecommendedAction` variants — `RecommendedActionView` carries no raw `entity_id` / `field_path` / `payload`. Asserts `primary_factor` field name absent; `factors` array absent.
+- Inner `render_receipts_for_batch` privacy: parametric test asserts SurfaceClient outer actor produces receipts with SurfaceClient-tier redaction (per A2 #4 + A17 #1)
+- 30s decided-row drop: time-skipped test asserts `Decided` row older than 30s is filtered out by projection (A16 #1)
 
 ### Unit (PHP)
 
 - `dailyos_suggested_next_steps_extract_items()` parser handles ability response shape (`response.ability.data.items`, `response.data.items`, fallback to raw)
-- Empty chip variants render with correct reason codes
-- Section heading uses `attributes.headingLabel` when set, surface default otherwise
-- Affordance markup carries `data-claim-id` + `data-feedback-kind` for every item
+- Empty chip variants render with correct reason codes (`missing_subject_context`, `runtime_unavailable`, `envelope_error`, `no_recommendations`)
+- Section heading uses `attributes.headingLabel` when set, A6 surface defaults otherwise
+- Section wrapper class per surface: `entity-detail_chapterSection` for account/project/person; `meeting-intel_chapterSection` for meeting (A5 #1)
+- Affordance markup carries `data-claim-id` + `data-feedback-kind` for every item; mapping matches ADR-0123 10 variants per `feedback-kinds.ts` constants
+- ARIA labels per affordance (A4 #5)
+- Terminal-state class swap: `--inFlight`, `--collapsing`, `--needsVerification` modifiers applied correctly
+- Trust-band placement: pill trails headline (`meeting.html:399-401` precedent)
+- Disabled-state banner string: "Feedback opens on the next sync." with `aria-live="polite"` (A16 #4)
 
 ### Integration
 
-- End-to-end fixture: WP block render → runtime client filter → ability invocation → projection from seeded substrate → rendered HTML matches snapshot
-- Snapshot tests for: empty state, single-item, max-items-truncated, over-budget-with-defer
+- **PHPUnit-mocked-runtime pattern (A18 #2 — in-scope):** End-to-end fixture: WP block render → runtime client mocked to return canned envelope → rendered HTML matches snapshot. Cross-process Tauri-loopback-in-CI harness is **out-of-scope** for W3-A.
+- Snapshot tests for: empty state, single-item, max-items=5 default, max-items=8 ceiling, decided-dismissed in collapse animation, decided-converted with confirmation chip, error state with retry chip, disabled state with banner
 
 ### L4 surface QA (before L2)
 
 - `/qa-only` walks Account, Project, Person, Meeting surfaces in the local WP install
-- Captures screenshots for empty + 1 + 3 + 8 recommendation counts
-- Verifies trust band rendering, why-this-now caption, feedback affordance presence (and disabled-state if W4-A gap holds)
+- **Screenshot grid (A10 #1):** empty + 1 + 3 + 5 + 8 recommendation counts × 4 entity surfaces = 20 screenshots
+- **Wire-JSON snapshot (A10 #2):** full `ListSuggestedNextStepsResponse` JSON for a seeded 5-item fixture committed as a golden snapshot under `wp/dailyos/tests/fixtures/suggested-next-steps/`
+- **Tauri-vs-WP parity (A10 #3):** side-by-side trust-band visual comparison for a single seeded recommendation; if Tauri has no equivalent surface today, document forward-defer to v1.4.7+ MCP/Tauri-thin-surface decision per ADR-0129 §7
+- **Trust-band band-by-band coverage (A10 #4):** `likely_current`, `use_with_caution` (indicator-only — A16 #3), `needs_verification` (with row-modifier — A5 #2) — single-item example of each
+- **Locale coverage:** single-locale baseline; non-default-locale screenshot if harness supports (otherwise path-α per A14 #3)
+- **30s echo window timing test:** capture a `decided_dismissed` state, wait 30s, capture again — verify row dropped
 - Attaches evidence to DOS-298 ticket comment before L2 dispatch
 
 ---
@@ -709,39 +857,49 @@ W4-C (DOS-462 / engagement.rs) wants to record `Rendered`, `Clicked`, `Dismissed
 
 ## §11 K-in citations
 
-K-in grep results from `docs/solutions/` + `.docs/decisions/` (parallel `ce-learnings-researcher` pending; preliminary scan below):
+K-in grep results from `docs/solutions/` + `.docs/decisions/` (final list confirmed by `ce-learnings-researcher` at cycle 0):
 
 | Source                                                                                                              | Relevance                                                                                                                                          |
 |---------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------|
-| ADR-0102 — Abilities as Runtime Contract                                                                            | All abilities follow `AbilityOutput<T>` shape with single envelope on the wrapper                                                                  |
-| ADR-0105 — Provenance as First-Class Output                                                                         | Envelope lives once; field attributions reference into it                                                                                          |
-| ADR-0108 — Provenance Rendering and Privacy                                                                         | Actor-filtered render; trust-band rendering rules; 64KB serialized cap                                                                             |
-| ADR-0111 — Surface-Independent Ability Invocation                                                                   | `SurfaceClient` actor class; scope-based actor filtering; bridge-per-surface invocation                                                            |
+| ADR-0102 — Abilities as Runtime Contract                                                                            | Canonical ability registration via `#[ability(...)]` macro + `inventory::submit!`; `[SurfaceClient, System]` allowlist pattern                     |
+| ADR-0103 — Maintenance Ability Safety Constraints                                                                   | Hidden-from-clients actor allowlist pattern (model for preserving `score_salience` invariant; test template for A8 dry-run)                        |
+| ADR-0105 — Provenance as First-Class Output                                                                         | Envelope lives once; field attributions reference into it. `ClaimReceiptSnapshot` is the canonical DTO W3-A consumes                                |
+| ADR-0108 — Provenance Rendering and Privacy                                                                         | Actor-filtered render; trust-band rendering rules; 64KB serialized cap. `audience_for_surface(surface)` enforcement path                            |
+| ADR-0111 — Surface-Independent Ability Invocation                                                                   | `SurfaceClient` actor class; scope-based actor filtering; `dailyos_runtime_client_for_block` filter is the canonical WP-to-substrate seam            |
+| ADR-0123 — Typed Claim Feedback Semantics (V1.1)                                                                    | 10 typed `RecommendationFeedbackDecision` variants W3-A affordances map onto; `decided_at` timestamp on `Decided` variant (A16 #1)                  |
 | ADR-0125 — Claim Anatomy, Temporal Scope, Sensitivity, TypeRegistry                                                 | `RecommendationClaim` metadata: temporal=State, sensitivity=Internal, freshness=Medium, commit=Replace, allowed_actor=Agent (see contracts.rs:421) |
+| ADR-0126 — Memory Substrate Invariants                                                                              | Projection invariants over claim store; any new projection function (W3-A's `list_suggested_next_steps_projection`) must conform                    |
 | ADR-0129 — Composable Surfaces                                                                                      | WP as primary surface; blocks are typed projections; WP MCP via Abilities API + MCP Adapter                                                        |
 | ADR-0130 — Surface-Independent Composition Contract                                                                 | §3.1 custom-block fallback projection (relevant if W3-B uses Composition wrapper); §2 size guard                                                   |
+| ADR-0132 — Pill Primitive Dual-Existence                                                                            | Trust-band pill primitive — W3-A reuses (not authors); placement trails headline per A5 #2                                                          |
 | DOS-689 (Evidence Drawer block) — `wp/dailyos/blocks/evidence-drawer/`                                              | Server-rendered provenance summary + client toggle drawer pattern. W3-A links to evidence drawer where present.                                    |
-| `wp/dailyos/blocks/meeting-recommended-actions/`                                                                    | The dominant block precedent — `usesContext` + runtime_client filter + scope filter + empty-chip-never-silent invariant                            |
+| `wp/dailyos/blocks/meeting-recommended-actions/`                                                                    | Block precedent — `usesContext` + runtime_client filter + empty-chip-never-silent invariant. W3-A inherits structure; affordance category is new   |
+| `wp/dailyos/blocks/{evidence-drawer,entity-intake,projects-index,people-index,source-management,accounts-index,account-overview}/view.js` | 7 existing `view.js` precedents — bundle pattern is established; W3-A's `view.js` introduces feedback-POST as new affordance category (A17 #2) |
 | `services/recommendations/contracts.rs`                                                                             | RecommendationClaim type + RecommendedAction enum + SurfacingDecision + WhyThisNow                                                                 |
-| `abilities-runtime/src/abilities/recommendations/mod.rs`                                                            | `score_salience` ability — hidden-from-clients invariant W3-A MUST preserve                                                                        |
-| `abilities-runtime/src/abilities/claim_receipt/`                                                                    | Shared Receipt DTO that W3-A reuses for `SuggestedNextStepItem.receipt`                                                                            |
+| `abilities-runtime/src/abilities/recommendations/mod.rs`                                                            | `score_salience` ability — hidden-from-clients invariant W3-A MUST preserve (User/System only; SurfaceClient excluded)                              |
+| `abilities-runtime/src/abilities/claim_receipt/`                                                                    | Shared Receipt DTO that W3-A reuses for `SuggestedNextStepItem.receipt`; `render_receipt_for(state, target, surface)` service function (A17 #1)     |
+| `src-tauri/src/migrations/271_recommendation_surfacing.sql`                                                          | v271 schema W3-A projection filters against — `surfacing_tier` + `decision_kind` lowercase string-encoded; 4 indexes already present                |
+| `docs/solutions/security-issues/prompt-channel-sensitivity-class-sweep-2026-05-18.md`                                | Class-level sensitivity-leak test pattern modeled in A1 #4 — leak detector runs against every field of every response variant, not just happy path |
+| `docs/solutions/workflow-issues/k-in-grep-substrate-type-not-proposed-name-2026-05-19.md`                            | Method note: grep substrate types (`RecommendationClaim`, `ClaimReceiptSnapshot`), not proposed names (`SuggestedNextStepItem`)                     |
+| `feedback_l0_reconcile_against_dev.md`                                                                              | Fork SHA verified clean against `public/dev` HEAD `e73ac894` at cycle 1 (A15)                                                                       |
 
-**No `docs/solutions/` entries found for "suggested next steps", "recommendation surface", "block producer", or "projection ability".** Gap is substrate-bound; surfacing/WP binding is W3-A scope.
-
-`ce-learnings-researcher` will run in parallel during L0 review to confirm no hits I missed.
+**No `docs/solutions/` entries found for "suggested next steps", "recommendation surface", "block producer", or "projection ability".** Gap is substrate-bound; surfacing/WP binding is W3-A scope. K-in cycle-0 verdict: **NO REINVENTION DETECTED**, conditional on the 11+ primitives above being cited and consumed — all cited in this section.
 
 ---
 
 ## §12 Open questions (L0 panel decides)
 
-1. **Feedback affordance pattern** (load-bearing — see §9). Option A (disabled-with-tooltip), Option B (skeleton ability), or Option C (reorder waves)?
-2. **theme.json token strategy.** Reuse existing tokens only (matrix §1), or add a `suggested-next-steps_*` token family? Design review decides; default is reuse.
-3. **Work-surface subject resolution.** Work-surface block context resolves to `SubjectRef::Global` or `SubjectRef::User`? Affects projection filter behavior. Plan to confirm with W3-B L0.
-4. **Reference HTML scope.** Does W3-A author full reference sections in account.html / project.html / person.html, or minimal reference snippets that W3-B fills in? Default: minimal sections that the block can be visually verified against; W3-B integrates them into composition.
-5. **`headingLabel` default per surface.** Hardcode in render-functions.php or thread via `usesContext` from outer block? Default: hardcoded in render-functions.php with `dailyos/entityType` switch (matches `meeting-recommended-actions` precedent).
-6. **`max_items` ceiling = 8.** Sane? If L4 surface QA on 8-item dense states regresses scannability, tune down to 5. Decision deferred to L4 evidence.
-7. **Engagement signal firing** (see §9 W4-C). Same pattern as feedback — disable until W4-C lands?
-8. **`score_salience` "User" actor.** Existing ability allows `Actor::User`. W3-A does NOT touch this allowlist. Confirm no path-α regression slips in via service-layer refactor.
+**Status after cycle 2:** All cycle-0 questions resolved by A1–A19 amendments. The only remaining L0 question is briefing-surface wrapper class, which is L1-resolvable.
+
+1. ~~**Feedback affordance pattern.**~~ **RESOLVED (A4 + A16 #4):** Option A (disabled affordance with single block-level banner "Feedback opens on the next sync."). Affordance markup ships server-side; click handler feature-flagged off until W4-A.
+2. ~~**theme.json token strategy.**~~ **RESOLVED (A5 #6):** Reuse first. Each new `suggested-next-steps_*` token requires design-review to name + confirm no existing token covers it.
+3. ~~**Work-surface subject resolution.**~~ **RESOLVED (A9):** `dailyos/work-surface` doesn't exist. W3-A is entity-only at merge; W3-B owns work-surface integration via `the-work` or `open-loops-feed` blocks.
+4. ~~**Reference HTML scope.**~~ **RESOLVED (A7):** Full surface-layer sections in account/project/person/meeting HTML; lands as first commit in PR sequence.
+5. ~~**`headingLabel` default per surface.**~~ **RESOLVED (A6):** Hardcoded per-surface defaults in render-functions.php via `dailyos/entityType` switch ("What's next with {Account.name}" / "Open threads with {Person.name}" / etc).
+6. ~~**`max_items` ceiling = 8.**~~ **RESOLVED (A5 #4):** default 5, ceiling 8 (attribute-tunable).
+7. ~~**Engagement signal firing.**~~ **RESOLVED (A11):** Call sites wired with explicit `ENGAGEMENT_SIGNALS_ENABLED = false` guard until W4-C flips the flag. Not silent no-ops; testable.
+8. ~~**`score_salience` actor allowlist.**~~ **CONFIRMED:** W3-A does NOT touch the allowlist. AC #4 parametric test asserts the hidden-actor invariant.
+9. **Briefing-surface chapter wrapper class.** L1-resolvable. A5 #1 default fallback (`editorial-reveal` + `ChapterHeading_*`) applies if no specific briefing chapter pattern exists.
 
 ---
 
