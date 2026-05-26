@@ -1472,7 +1472,7 @@ fn claim_row_count(db: &ActionDb) -> Result<usize, String> {
 fn stage_failure_message(stage: &str) -> &str {
     match stage {
         "context_gather" => "context gather",
-        "pty_permit" => "PTY permit acquisition",
+        "pty_permit" => "refresh availability",
         "pty_enrichment" => "Claude PTY enrichment",
         "write_results" => "result writeback",
         "finalize" => "refresh finalization",
@@ -1539,6 +1539,10 @@ fn emit_manual_refresh_failed_best_effort(
 }
 
 fn manual_refresh_error(stage: &str, error: &str) -> String {
+    if stage == "pty_permit" {
+        return error.to_string();
+    }
+
     format!(
         "manual refresh failed during {}: {}",
         stage_failure_message(stage),
@@ -1647,7 +1651,7 @@ pub async fn enrich_entity(
             return Err(manual_refresh_error("pty_permit", error));
         }
         Err(_) => {
-            let error = "Background work in progress — your refresh is queued and will run shortly";
+            let error = "Another refresh is already running. Retry shortly.";
             emit_manual_refresh_failed_best_effort(
                 ctx,
                 app_handle,
@@ -4288,6 +4292,21 @@ mod tests {
                 ],
             )
             .expect("seed person");
+    }
+
+    #[test]
+    fn manual_refresh_permit_error_stays_user_facing() {
+        let error = manual_refresh_error(
+            "pty_permit",
+            "Another refresh is already running. Retry shortly.",
+        );
+
+        assert_eq!(error, "Another refresh is already running. Retry shortly.");
+    }
+
+    #[test]
+    fn manual_refresh_permit_stage_uses_product_language() {
+        assert_eq!(stage_failure_message("pty_permit"), "refresh availability");
     }
 
     fn generated_risk_intel(account_id: &str) -> IntelligenceJson {
