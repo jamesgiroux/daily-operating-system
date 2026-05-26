@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Intelligence Generation Contract Remediation - DailyOS Planning</title>
+  <link rel="stylesheet" href="../design/reference/_shared/fonts.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/design-tokens.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/MagazinePageLayout.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/chrome.css">
+  <link rel="stylesheet" href="plans.css">
+</head>
+<body data-tint="eucalyptus" data-active-page="planning">
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+<div class="plans-shell">
+
+<nav class="plans-topnav" aria-label="Planning surface">
+  <a class="plans-mark" href="index.html">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="16" height="16" aria-hidden="true">
+      <path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/>
+    </svg>
+    DailyOS - Planning
+  </a>
+  <div class="plans-topnav-links">
+    <a href="engineering-ladder.html">Engineering Ladder</a>
+    <a href="intelligence-generation-contract-waves.html" data-active="true">Generation Contract</a>
+    <a href="AUTHORING.md">Authoring Ruleset</a>
+  </div>
+</nav>
+
+<section class="plans-cover">
+  <p class="plans-eyebrow">DailyOS - Intelligence Loop - Remediation Plan</p>
+  <h1 class="plans-title">Make refreshes produce better intelligence.</h1>
+  <p class="plans-kicker">Glean and local generation remain separate adapters, but prompt quality, parsing, claims, provenance, trust, and the visible refresh outcome converge before persistence.</p>
+  <p class="plans-lede">
+    The visible symptom was a user-initiated refresh showing partial Glean results: 2 of 6 dimensions completed and 4 failed.
+    The root issue is broader than one connector warning. Remote and local generation can still diverge in prompt format, parser coverage, source attribution, claim production, and degraded-state reporting.
+    This plan fixes the active failures first, then raises the quality bar for the generated output itself. A clean parser is not enough if the prompt produces vague, stale, generic, or hallucinated intelligence.
+  </p>
+  <div class="plans-meta">
+    <span>Created 2026-05-25</span>
+    <span>Status: L0 prep draft</span>
+    <span>Scope: product-quality substrate slice</span>
+    <span>Threat topology: remote-to-local plus local-to-local</span>
+  </div>
+</section>
+
+<section class="plans-section" aria-labelledby="source-and-scope">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Source and scope</p>
+    <h2 id="source-and-scope" class="plans-section-title">Fix the degraded refresh without leaving the model split.</h2>
+    <p class="plans-section-lede">
+      The plan targets prompt/provider contracts, output quality, parsing, normalization, claim materialization, trust recompute, invalidation, and the refresh surface. It does not redesign unrelated UI or create an evaluation platform.
+    </p>
+  </header>
+
+  <ul class="plans-related">
+    <li><strong>Origination:</strong> User-initiated Glean refresh produced a partial-result warning. Audit logs show repeated failures in the same dimension families, which points to structural contract drift rather than random connector instability.</li>
+    <li><strong>Primary goal:</strong> A user-triggered refresh produces visibly better, source-grounded intelligence from Glean or local generation, and explains partial state accurately when the source cannot support a complete answer.</li>
+    <li><strong>Immediate stabilization:</strong> Stop known valid Glean output from being dropped, improve the prompts that caused malformed or low-value output, make failures observable, and make dimension applicability explicit by entity type and relationship.</li>
+    <li><strong>Non-goal:</strong> Do not create a server-canonical architecture, a new HTML generation layer, or surface-specific schema readers that bypass the ability/claim runtime.</li>
+    <li><strong>Non-goal:</strong> Do not hardcode customer names, domains, accounts, emails, or support examples in fixtures, diagnostics, docs, commits, or PR text.</li>
+    <li><strong>Quality constraint:</strong> Do not add broad eval waves or convenience tests. Verification must be practical evidence that prompt quality and visible refresh quality did not regress.</li>
+    <li><strong>K-in:</strong> ADR-0093, ADR-0100, ADR-0101, ADR-0102, ADR-0104, ADR-0106, ADR-0107, ADR-0112, ADR-0113, ADR-0115, ADR-0120, ADR-0125, the prompt-channel sensitivity sweep, and the claim-producer trust audit solution note.</li>
+  </ul>
+</section>
+
+<section class="plans-section" aria-labelledby="user-outcome-quality">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">User-facing outcome</p>
+    <h2 id="user-outcome-quality" class="plans-section-title">The refresh must get smarter, not merely quieter.</h2>
+    <p class="plans-section-lede">
+      The shipped outcome is a better refresh experience: stronger prompts, higher-quality generated intelligence, accurate partial-state messaging, and trust/source state on the fields users actually see.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Quality bar</th>
+        <th>What must be true</th>
+        <th>Practical proof</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Prompt quality</td>
+        <td>Dimension prompts use valid JSON examples, clear unknown/insufficient-evidence behavior, source requirements, injection-resistant data boundaries, and entity-specific instructions. Prompts must not ask for fields the source cannot reasonably support.</td>
+        <td>Prompt review plus one sanitized replay of the degraded Glean failure class and one local/PTY equivalent. The output must be specific, source-grounded, and parseable.</td>
+      </tr>
+      <tr>
+        <td>Output quality</td>
+        <td>Generated intelligence is concrete, current when the source can prove currency, calibrated when it cannot, and useful to the user. Generic summaries, unsupported commercial claims, fake precision, and hallucinated relationships fail the quality bar.</td>
+        <td>A small before/after quality packet for the failing refresh shape: visible fields, source freshness, trust band, skipped/failed dimensions, and any user-facing warning text.</td>
+      </tr>
+      <tr>
+        <td>Refresh clarity</td>
+        <td>The app distinguishes refreshed, reused, skipped, and failed dimensions. Skipped non-applicable dimensions do not count as failures, and applicable failures do not disappear behind successful partial output.</td>
+        <td>One event-contract check and one rendered notification/surface check for applicable total, skipped dimensions, and required failures.</td>
+      </tr>
+      <tr>
+        <td>Correction memory</td>
+        <td>When a user corrects surfaced intelligence, the next refresh must not casually regenerate the same wrong claim from the same weak source.</td>
+        <td>One correction/regeneration check for a surfaced claim. This is a product-quality check, not a broad feedback-eval suite.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="plans-section" aria-labelledby="diagnosis">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Diagnosis</p>
+    <h2 id="diagnosis" class="plans-section-title">The warning is correct; the error contract is not.</h2>
+    <p class="plans-section-lede">
+      The current degraded event tells the user that Glean returned partial results, but it does not preserve enough structured detail for the system to know whether the failure was a connector timeout, invalid prompt schema, parser mismatch, or non-applicable dimension.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Finding</th>
+        <th>Evidence</th>
+        <th>Plan consequence</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Prompt output can be valid but discarded</td>
+        <td><code>dimension_prompts.rs</code> asks for <code>productClassification</code> and <code>gongCallSummaries</code>, while <code>prompts.rs</code> currently maps those fields to empty or <code>None</code>.</td>
+        <td>S0 adds parser coverage, prompt-quality review, and parse-through regressions before broader refactor work.</td>
+      </tr>
+      <tr>
+        <td>Source attribution is requested but not preserved</td>
+        <td>Dimension prompts require <code>itemSource</code>; intermediate parser structs omit it for core risks, wins, stakeholder, and value items.</td>
+        <td>S0 makes source attribution a parser contract and S2 promotes surfaced attribution into claim provenance and <code>source_asof</code>.</td>
+      </tr>
+      <tr>
+        <td>Prompt examples are type unsafe</td>
+        <td>Examples include pseudo-values such as <code>"score": "0-100"</code>, invalid numeric ranges such as <code>0.7-0.9</code>, and boolean fields described as strings.</td>
+        <td>S0 moves ranges to prose and adds a schema-example parse test for every dimension.</td>
+      </tr>
+      <tr>
+        <td>Entity applicability is too broad</td>
+        <td>All six dimensions are fanned out for each entity while some schemas are account-shaped and only partially gated by entity type.</td>
+        <td>S0 freezes a dimension applicability matrix for account, project, person, partner, and internal relationships.</td>
+      </tr>
+      <tr>
+        <td>Provider and service boundaries are leaky</td>
+        <td>Glean provider and Glean context gathering perform writes or side effects before the shared finalization path; queue reconciliation also uses producer-blind source refresh rules.</td>
+        <td>S1 moves drift-producing writes behind service-owned materializers without broad provider cleanup.</td>
+      </tr>
+      <tr>
+        <td>Claims are produced, but not as a complete runtime contract</td>
+        <td>Legacy projection commits some claim-shaped intelligence, but many fields lack provenance, source refs, trust recompute triggers, and consistent feedback loops.</td>
+        <td>S2 audits surfaced generated output against the claim/trust lifecycle instead of adding isolated claim writes.</td>
+      </tr>
+      <tr>
+        <td>Provenance primitives exist but are underused</td>
+        <td>The runtime has source taxonomy, field attribution, ownership checks, and unattributed-field rejection, while several producers still store <code>{}</code> or ad-hoc JSON in claim provenance.</td>
+        <td>S2 requires validated provenance envelopes and source-entity evidence before surfaced generated facts become trusted runtime inputs.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="plans-section plans-section-callouts" aria-label="Central target">
+  <div class="callout-grid">
+    <article class="callout">
+      <h3 class="callout-title">Adapters stay accountable</h3>
+      <p class="callout-prose">Glean chat, PTY, OpenAI/Ollama, and replay providers return completions plus metadata for the refresh path. Writes that affect visible intelligence, future prompt context, or trust move through services.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Contracts live once</h3>
+      <p class="callout-prose">Dimension schema, entity applicability, prompt template metadata, parser expectations, and field attribution must be declared in one auditable registry.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Services materialize</h3>
+      <p class="callout-prose">Claims, projections, side effects, signals, health recompute, and trust invalidation happen through <code>services/</code> with <code>ServiceContext</code> gates.</p>
+    </article>
+  </div>
+</section>
+
+<section class="plans-section" aria-labelledby="target-architecture">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Target architecture</p>
+    <h2 id="target-architecture" class="plans-section-title">One provider-independent production path.</h2>
+    <p class="plans-section-lede">
+      The target is not a new source hierarchy or provider-purity campaign. It is a narrower refresh contract: every source produces observations or completions, every completion normalizes into a typed intelligence result, and durable effects that change visible intelligence, future prompt context, or trust flow through services.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Stage</th>
+        <th>Owner</th>
+        <th>Contract</th>
+        <th>Must not do</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Gather</td>
+        <td><code>context_provider/*</code> plus service intake</td>
+        <td>For the refresh path, return local context plus typed remote observations with source lineage and sensitivity class where those observations affect visible intelligence or future prompt context.</td>
+        <td>Move unrelated gather-side writes solely to satisfy an architectural ideal.</td>
+      </tr>
+      <tr>
+        <td>Generate</td>
+        <td><code>IntelligenceProvider</code> adapters</td>
+        <td>Return <code>Completion</code>, prompt fingerprint metadata, elapsed time, response size, provider kind, and sanitized failure classes.</td>
+        <td>Persist surfaced products, snapshots, claims, or side effects outside service-owned refresh materialization.</td>
+      </tr>
+      <tr>
+        <td>Normalize</td>
+        <td><code>intelligence</code> parser/contract modules</td>
+        <td>Parse to a typed <code>NormalizedIntelligenceOutput</code> with per-dimension status, field attribution, and entity applicability.</td>
+        <td>Drop unknown but declared fields, erase source attribution, or swallow serde failures.</td>
+      </tr>
+      <tr>
+        <td>Compose</td>
+        <td><code>services::intelligence_generation</code> or equivalent</td>
+        <td>Reconcile with existing state using the actual producer/source family, preserve user edits and tombstones, and produce claim/side-effect proposals.</td>
+        <td>Use producer-blind <code>pty_synthesis</code> reconciliation for Glean output.</td>
+      </tr>
+      <tr>
+        <td>Materialize</td>
+        <td><code>services::intelligence</code>, <code>services::claims</code>, <code>services::glean_finalization</code>, <code>services::enrichment_side_effects</code></td>
+        <td>Commit surfaced claims, visible projections, source refs, validated provenance envelopes, signals, and invalidation jobs transactionally where needed.</td>
+        <td>Let queue, provider, or context-provider code write visible intelligence directly.</td>
+      </tr>
+      <tr>
+        <td>Consume</td>
+        <td>Abilities runtime and surfaces</td>
+        <td>Read claim-backed, provenance-bearing, trust-band-aware outputs through abilities and service DTOs. Legacy schema/source-ref facts are compatibility inputs only until claim-backed reads replace them.</td>
+        <td>Teach Tauri, MCP, WordPress, or HTML surfaces to bypass the runtime with bespoke schema reads for refreshed intelligence.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="plans-section" aria-labelledby="wave-overview">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Slice shape</p>
+    <h2 id="wave-overview" class="plans-section-title">Three slices: quality first, substrate only where needed.</h2>
+    <p class="plans-section-lede">
+      The plan should not spend multiple waves on eval infrastructure or abstract purity. Each slice has a user-facing quality outcome, and each substrate change must directly protect that outcome.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Slice</th>
+        <th>Purpose</th>
+        <th>Primary files</th>
+        <th>Gate</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>S0 - Refresh and prompt quality</td>
+        <td>Fix dropped fields, repair prompt instructions/examples, make dimension applicability explicit, and update partial-state diagnostics.</td>
+        <td><code>dimension_prompts.rs</code>, <code>prompts.rs</code>, <code>io.rs</code>, <code>glean_provider.rs</code>, <code>intel_queue.rs</code>, <code>useNotifications.ts</code></td>
+        <td>A replay of the degraded refresh class produces specific, source-grounded, parseable output and an accurate visible partial-state message.</td>
+      </tr>
+      <tr>
+        <td>S1 - Shared materialization for visible intelligence</td>
+        <td>Centralize only the generation-derived writes that affect visible intelligence, future prompt context, or trust. Do not refactor provider purity beyond current drift-producing paths.</td>
+        <td><code>services/intelligence.rs</code>, <code>glean_finalization.rs</code>, <code>enrichment_side_effects.rs</code>, <code>intel_queue.rs</code></td>
+        <td>Glean and local output for the same normalized fields commit through the same service path or document an intentional source-specific exception.</td>
+      </tr>
+      <tr>
+        <td>S2 - Trust, feedback, and source lifecycle for surfaced fields</td>
+        <td>Attach provenance/trust/correction behavior to fields that appear in user-visible intelligence or future prompt context. Leave non-surfaced caches out of scope unless they influence refresh quality.</td>
+        <td><code>services/claims.rs</code>, <code>services/trust_recompute.rs</code>, <code>account_fact_claims.rs</code>, <code>abilities-runtime/src/abilities/provenance/*</code>, bridge/surface redaction files where touched</td>
+        <td>Visible claims show the right trust band, corrections affect the next refresh, and revoked/unavailable sources stop influencing surfaced intelligence.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="plans-section" aria-labelledby="implementation-units">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Implementation units</p>
+    <h2 id="implementation-units" class="plans-section-title">Concrete units, with quality proof named up front.</h2>
+    <p class="plans-section-lede">
+      S0 can land independently only if it proves the actual degraded-refresh class is fixed and the generated output is better. Later slices are scoped to visible intelligence, not broad substrate cleanup.
+    </p>
+  </header>
+
+  <div class="ladder-grid">
+    <article class="ladder-rung" data-tone="chili">
+      <div class="ladder-rung-header">
+        <span class="ladder-rung-id">S0-A</span>
+        <h3 class="ladder-rung-title">Prompt/DTO parity and prompt quality</h3>
+        <p class="ladder-rung-blurb">Add parser fields for declared output, preserve <code>itemSource</code>, replace type-unsafe prompt examples, make serde errors visible as sanitized diagnostics, and remove prompt instructions that invite vague or unsupported output.</p>
+      </div>
+      <div class="ladder-rung-roles">
+        <div class="ladder-role" data-role="implement">
+          <span class="ladder-role-label">Files</span>
+          <ul class="ladder-role-skills">
+            <li><code>src-tauri/src/intelligence/prompts.rs</code></li>
+            <li><code>src-tauri/src/intelligence/dimension_prompts.rs</code></li>
+            <li><code>src-tauri/src/intelligence/io.rs</code></li>
+            <li><code>src-tauri/src/intelligence/glean_provider.rs</code></li>
+          </ul>
+        </div>
+        <div class="ladder-role" data-role="review">
+          <span class="ladder-role-label">Proof</span>
+          <ul class="ladder-role-skills">
+            <li><code>cargo test intelligence::prompts::tests::glean_dimension_parse_preserves_item_source</code></li>
+            <li><code>cargo test intelligence::prompts::tests::commercial_dimension_parses_product_classification</code></li>
+            <li><code>cargo test intelligence::prompts::tests::engagement_dimension_parses_gong_call_summaries</code></li>
+            <li><code>cargo test intelligence::dimension_prompts::tests::dimension_schema_examples_are_valid_json</code></li>
+            <li>Prompt review packet for the failing refresh shape: before/after prompt, output, source grounding, unknown handling, and generic-output rejection.</li>
+          </ul>
+        </div>
+        <div class="ladder-role" data-role="capture">
+          <span class="ladder-role-label">Acceptance</span>
+          <p class="ladder-role-prose">A response containing every field named by a dimension schema round-trips into <code>IntelligenceJson</code> or fails with an explicit, typed reason, and the generated content is more specific and source-grounded than the failing baseline.</p>
+        </div>
+        <div class="ladder-role" data-role="risk">
+          <span class="ladder-role-label">Risk</span>
+          <p class="ladder-role-prose">Do not over-tolerate malformed output. Add aliases only for known legacy compatibility; otherwise fail loud.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="ladder-rung" data-tone="turmeric">
+      <div class="ladder-rung-header">
+        <span class="ladder-rung-id">S0-B</span>
+        <h3 class="ladder-rung-title">Dimension applicability and visible refresh contract</h3>
+        <p class="ladder-rung-blurb">Declare which dimensions are valid for account, project, person, partner, and internal relationship contexts. Skipped dimensions are first-class diagnostics, not failures, and the UI must report the applicable total.</p>
+      </div>
+      <div class="ladder-rung-roles">
+        <div class="ladder-role" data-role="implement">
+          <span class="ladder-role-label">Files</span>
+          <ul class="ladder-role-skills">
+            <li><code>src-tauri/src/intelligence/dimension_prompts.rs</code></li>
+            <li><code>src-tauri/src/intelligence/glean_provider.rs</code></li>
+            <li><code>src-tauri/src/intel_queue.rs</code></li>
+            <li><code>src/hooks/useNotifications.ts</code></li>
+          </ul>
+        </div>
+        <div class="ladder-role" data-role="review">
+          <span class="ladder-role-label">Proof</span>
+          <ul class="ladder-role-skills">
+            <li><code>cargo test intelligence::dimension_prompts::tests::applicability_matrix_skips_account_only_dimensions_for_people</code></li>
+            <li><code>cargo test intelligence::glean_provider::tests::skipped_dimension_is_not_counted_as_failed</code></li>
+            <li>Refresh event proof includes <code>applicable_total</code>, <code>skipped_dimensions</code>, and required-vs-optional failures.</li>
+          </ul>
+        </div>
+        <div class="ladder-role" data-role="capture">
+          <span class="ladder-role-label">Acceptance</span>
+          <p class="ladder-role-prose">A person/project refresh never asks Glean or PTY to synthesize account-only commercial/product fields unless a relationship preset explicitly permits it, and a skipped dimension never appears to the user as a failed dimension.</p>
+        </div>
+        <div class="ladder-role" data-role="risk">
+          <span class="ladder-role-label">Risk</span>
+          <p class="ladder-role-prose">Skipping a dimension cannot hide missing required account intelligence; account applicability stays exhaustive.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="ladder-rung" data-tone="eucalyptus">
+      <div class="ladder-rung-header">
+        <span class="ladder-rung-id">S1</span>
+        <h3 class="ladder-rung-title">Shared materialization for surfaced intelligence</h3>
+        <p class="ladder-rung-blurb">Move only drift-producing, user-visible generation writes into services. Queue becomes orchestration for the visible refresh path; unrelated provider purity cleanup stays out of scope.</p>
+      </div>
+      <div class="ladder-rung-roles">
+        <div class="ladder-role" data-role="implement">
+          <span class="ladder-role-label">Files</span>
+          <ul class="ladder-role-skills">
+            <li><code>src-tauri/src/intelligence/glean_provider.rs</code></li>
+            <li><code>src-tauri/src/intel_queue.rs</code></li>
+            <li><code>src-tauri/src/services/glean_finalization.rs</code></li>
+            <li><code>src-tauri/src/services/enrichment_side_effects.rs</code></li>
+          </ul>
+        </div>
+        <div class="ladder-role" data-role="review">
+          <span class="ladder-role-label">Proof</span>
+          <ul class="ladder-role-skills">
+            <li><code>cargo test services::intelligence::tests::manual_and_queue_refresh_share_materialization_path</code></li>
+            <li>Failure-injection proof defines rollback, retry, or visible degraded behavior for claim/projection/signal failures in the surfaced path.</li>
+          </ul>
+        </div>
+        <div class="ladder-role" data-role="capture">
+          <span class="ladder-role-label">Acceptance</span>
+          <p class="ladder-role-prose">Glean and local generation for the same visible field reach the same service-owned materialization path, or the plan names a narrow source-specific exception with a user-facing reason.</p>
+        </div>
+        <div class="ladder-role" data-role="risk">
+          <span class="ladder-role-label">Risk</span>
+          <p class="ladder-role-prose">Do not delete useful Glean side effects to satisfy an architectural ideal. Move only the writes needed for refresh quality, trust, or future prompt context.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="ladder-rung" data-tone="sage">
+      <div class="ladder-rung-header">
+        <span class="ladder-rung-id">S2</span>
+        <h3 class="ladder-rung-title">Trust, corrections, and lifecycle for surfaced fields</h3>
+        <p class="ladder-rung-blurb">Map generated output into claim proposals only where it affects user-visible intelligence, future context, trust, lifecycle, or feedback. Reinforcing evidence updates existing claims instead of creating display-only state.</p>
+      </div>
+      <div class="ladder-rung-roles">
+        <div class="ladder-role" data-role="implement">
+          <span class="ladder-role-label">Files</span>
+          <ul class="ladder-role-skills">
+            <li><code>src-tauri/src/services/intelligence.rs</code></li>
+            <li><code>src-tauri/src/services/account_fact_claims.rs</code></li>
+            <li><code>src-tauri/src/services/claims.rs</code></li>
+            <li><code>src-tauri/src/services/trust_recompute.rs</code></li>
+            <li><code>src-tauri/src/services/source_asof_backfill.rs</code></li>
+            <li><code>src-tauri/abilities-runtime/src/abilities/provenance/*</code></li>
+          </ul>
+        </div>
+        <div class="ladder-role" data-role="review">
+          <span class="ladder-role-label">Proof</span>
+          <ul class="ladder-role-skills">
+            <li><code>cargo test services::intelligence::tests::generated_risk_claim_carries_item_source_as_source_asof</code></li>
+            <li><code>cargo test services::claims::tests::same_generated_claim_reinforces_existing_claim</code></li>
+            <li><code>cargo test services::trust_recompute::tests::generation_commit_enqueues_trust_recompute</code></li>
+            <li>One correction/regeneration check for a surfaced claim.</li>
+            <li>One source lifecycle check proving revoked or unavailable sources stop influencing surfaced intelligence.</li>
+          </ul>
+        </div>
+        <div class="ladder-role" data-role="capture">
+          <span class="ladder-role-label">Acceptance</span>
+          <p class="ladder-role-prose">Every surfaced generated claim has registry metadata, actor, data source, source reference when available, validated provenance envelope, temporal scope, sensitivity, lifecycle behavior, and trust recompute proof.</p>
+        </div>
+        <div class="ladder-role" data-role="risk">
+          <span class="ladder-role-label">Risk</span>
+          <p class="ladder-role-prose">Do not seed arbitrary trust scores to make surfaces look confident. Trust must come from existing compiler inputs.</p>
+        </div>
+      </div>
+    </article>
+  </div>
+</section>
+
+<section class="plans-section" aria-labelledby="intelligence-loop">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Intelligence Loop check</p>
+    <h2 id="intelligence-loop" class="plans-section-title">The five mandatory questions, answered before code starts.</h2>
+    <p class="plans-section-lede">
+      This work touches new claim producers, source attribution, trust, invalidation, runtime consumption, and feedback. It is incomplete unless all five dimensions ship together.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Question</th>
+        <th>Decision for this plan</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Claim model</td>
+        <td>Generated facts, assessments, risks, commitments, recommendations, stakeholder reads, product/commercial facts, and durable current-state statements become claims or claim reinforcement when they affect future context or user trust. Pure transient diagnostics remain run metadata.</td>
+      </tr>
+      <tr>
+        <td>Provenance and trust</td>
+        <td>All normalized items carry source family, downstream Glean lineage where known, <code>source_asof</code> or observed timestamp, field attribution, prompt fingerprint, actor, sensitivity, and trust recompute trigger.</td>
+      </tr>
+      <tr>
+        <td>Signals and invalidation</td>
+        <td>Claim commits, trust-band changes, source revocation, feedback, degraded materialization, and ability-output changes emit service-owned signals. Dropped or failed invalidation is a visible stale/degraded marker, never silent.</td>
+      </tr>
+      <tr>
+        <td>Runtime and surfaces</td>
+        <td><code>build_intelligence_context()</code>, <code>gather_account_context()</code>, <code>get_entity_intelligence</code>, meeting prep, Tauri, MCP, and HTML/composition surfaces consume the same claim-backed/service DTOs. Legacy schema/source-ref facts are compatibility inputs until claim-backed reads replace them. Surfaces do not parse provider output.</td>
+      </tr>
+      <tr>
+        <td>Feedback loop</td>
+        <td>User corrections, dismissals, wrong-source feedback, contradiction resolution, and claim receipt actions update claim lifecycle/trust inputs and source reliability. A corrected claim changes future prompt context through the central claim readers.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="plans-section" aria-labelledby="claim-producer-contract">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Claim producer contract</p>
+    <h2 id="claim-producer-contract" class="plans-section-title">Generated facts need claim-grade receipts.</h2>
+    <p class="plans-section-lede">
+      The implementation must use the existing claim and provenance substrate instead of inventing a Glean-specific receipt path. This is the minimum contract for any surfaced generated item that can influence future context or user trust.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Requirement</th>
+        <th>Implementation rule</th>
+        <th>Acceptance evidence</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Validated provenance envelope</td>
+        <td>Build provenance with runtime primitives and reject attributed output that cannot identify its source family, field path, and timing when knowable.</td>
+        <td>No new surfaced generated claim stores <code>{}</code>, raw <code>SourceAttribution</code>, or bespoke source JSON in <code>provenance_json</code>.</td>
+      </tr>
+      <tr>
+        <td>Claim proposal helper</td>
+        <td>Create a service-owned helper that maps normalized output into <code>ClaimProposal</code> values with actor, data source, sensitivity, lifecycle, temporal scope, source ref, and source-as-of.</td>
+        <td>Surfaced account facts, entity projections, and Glean-derived facts enter <code>commit_claim</code> through the same helper.</td>
+      </tr>
+      <tr>
+        <td>Reinforcement recompute</td>
+        <td>Every commit, reinforcement, contradiction, withdrawal, correction, and source-reliability update must enqueue or coalesce trust recompute.</td>
+        <td>Tests fail if a same-claim reinforcement changes evidence without a recompute job.</td>
+      </tr>
+      <tr>
+        <td>Glean source ownership</td>
+        <td>Bridge <code>GleanAssessment</code> and opaque downstream source IDs to explicit source/entity links. Prefer indexed <code>SourceAttribution</code> entries over <code>SourceRef::Direct</code>.</td>
+        <td>Ownership validation can prove that a generated claim is supported by a linked source or marks the claim as needing verification.</td>
+      </tr>
+      <tr>
+        <td>Receipt privacy</td>
+        <td>Tauri receives local provenance summaries; MCP receives redacted claim/source identifiers and stripped timing where policy requires it.</td>
+        <td>Receipt checks cover Tauri and MCP redaction only where this slice changes those outputs.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="plans-section" aria-labelledby="test-plan">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Verification</p>
+    <h2 id="test-plan" class="plans-section-title">Practical proof beats broad evals.</h2>
+    <p class="plans-section-lede">
+      The quality bar is real refresh behavior through the Intelligence Loop. Passing type checks is necessary, but the acceptance gate is prompt quality, output quality, and honest degraded rendering for the known failure class.
+    </p>
+  </header>
+
+  <div class="suite-grid">
+    <article class="suite-card" data-suite="s">
+      <span class="suite-letter">S</span>
+      <h3 class="suite-name">Security</h3>
+      <p class="suite-prose">Prompt inputs use centralized claim sensitivity gates; external text is injection-hardened; diagnostics never log raw customer content, names, emails, entity IDs, source excerpts, or opaque Glean documents.</p>
+      <p class="suite-owner"><span class="suite-owner-label">Owner</span> <code>ce-security-lens-reviewer</code> at L0, <code>ce-security-reviewer</code> at L2</p>
+      <p class="suite-pass-rule"><span class="suite-pass-label">Pass</span> no prompt-channel or diagnostic data leaks</p>
+    </article>
+    <article class="suite-card" data-suite="p">
+      <span class="suite-letter">P</span>
+      <h3 class="suite-name">Prompt Quality</h3>
+      <p class="suite-prose">Prompt changes must improve specificity, source grounding, unknown handling, and entity fit for the degraded refresh shape. Parser success alone is not evidence of quality.</p>
+      <p class="suite-owner"><span class="suite-owner-label">Owner</span> implementer plus L2 reviewer</p>
+      <p class="suite-pass-rule"><span class="suite-pass-label">Pass</span> before/after packet shows no loss of output quality</p>
+    </article>
+    <article class="suite-card" data-suite="e">
+      <span class="suite-letter">E</span>
+      <h3 class="suite-name">Targeted Evidence</h3>
+      <p class="suite-prose">Use only small proof cases tied to known risks: degraded Glean replay, local equivalent, applicable/skipped/failed dimensions, one correction recurrence, and one source lifecycle case if touched.</p>
+      <p class="suite-owner"><span class="suite-owner-label">Owner</span> implementer plus <code>ce-testing-reviewer</code> if the diff adds test harness code</p>
+      <p class="suite-pass-rule"><span class="suite-pass-label">Pass</span> no broad eval wave, no convenience-only tests</p>
+    </article>
+  </div>
+
+  <h3 class="plans-subhead">Required command gate</h3>
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Gate</th>
+        <th>Command</th>
+        <th>Expectation</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Rust lint</td>
+        <td><code>cargo clippy -- -D warnings</code></td>
+        <td>No warnings, no new service-boundary exceptions without rationale.</td>
+      </tr>
+      <tr>
+        <td>Rust tests</td>
+        <td><code>cargo test</code></td>
+        <td>Existing tests plus the targeted proof checks for the changed slice pass.</td>
+      </tr>
+      <tr>
+        <td>Frontend types</td>
+        <td><code>pnpm tsc --noEmit</code></td>
+        <td>Partial/degraded event contract and surface DTO changes remain typed.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="plans-section" aria-labelledby="review">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Review protocol</p>
+    <h2 id="review" class="plans-section-title">This is Amendment 3 territory.</h2>
+    <p class="plans-section-lede">
+      The plan touches trust boundaries, privacy, source lifecycle, filesystem/cache writes, claims, provenance, ability runtime, and external provider behavior. L0 should treat this as a product-quality slice with substrate risk, not a small connector patch or a broad platform rewrite.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Gate</th>
+        <th>Reviewers</th>
+        <th>Focus</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>L0</td>
+        <td><code>/codex challenge</code>, <code>ce-feasibility-reviewer</code>, <code>ce-security-lens-reviewer</code>, <code>ce-learnings-researcher</code></td>
+        <td>Contract feasibility, source/privacy threat model, no reinvented substrate, slice sequencing, and prompt/output quality bar.</td>
+      </tr>
+      <tr>
+        <td>L2 S0</td>
+        <td><code>/codex review</code>, <code>ce-api-contract-reviewer</code>, <code>ce-reliability-reviewer</code></td>
+        <td>Prompt quality, parser contract correctness, degraded diagnostics, and visible refresh behavior.</td>
+      </tr>
+      <tr>
+        <td>L2 S1</td>
+        <td><code>/codex review</code>, <code>ce-reliability-reviewer</code>, <code>ce-security-reviewer</code>, <code>ce-performance-reviewer</code></td>
+        <td>Service-owned mutation boundaries for surfaced intelligence, transaction behavior, and parity of moved side effects.</td>
+      </tr>
+      <tr>
+        <td>L2 S2</td>
+        <td><code>/codex review</code>, <code>ce-api-contract-reviewer</code>, <code>ce-security-reviewer</code>, <code>ce-testing-reviewer</code></td>
+        <td>Claim/provenance/trust contracts, surface DTO compatibility, feedback loop, source lifecycle, and redaction where changed.</td>
+      </tr>
+      <tr>
+        <td>L3</td>
+        <td><code>ce-architecture-strategist</code>, <code>ce-schema-drift-detector</code> if migrations land, Suite S/P/E by need</td>
+        <td>Integrated provider-independent path for surfaced intelligence and no remaining source-specific bypasses on the refresh outcome.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="plans-section plans-section-footer">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Related</p>
+    <h2 class="plans-section-title">Durable references this plan depends on.</h2>
+  </header>
+  <ul class="plans-related">
+    <li><strong>.docs/decisions/0093-prompt-injection-hardening.md</strong> External text boundaries, prompt wrapping, validation, and red-team checks.</li>
+    <li><strong>.docs/decisions/0100-glean-first-intelligence-architecture.md</strong> Glean primary, local fallback, source reliability tiers, and Glean as input to the Intelligence Loop.</li>
+    <li><strong>.docs/decisions/0102-abilities-as-runtime-contract.md</strong> Typed, versioned ability outputs with provenance and actor/surface policy.</li>
+    <li><strong>.docs/decisions/0105-provenance-as-first-class-output.md</strong> Source-at-time, field-level attribution, and receipt expectations.</li>
+    <li><strong>.docs/decisions/0106-prompt-fingerprinting-and-provider-interface.md</strong> Provider completion metadata, prompt template IDs, versions, and replay hashes.</li>
+    <li><strong>.docs/decisions/0107-source-taxonomy-alignment.md</strong> Glean as aggregator with downstream lineage, source lifecycle, and scoring classification.</li>
+    <li><strong>.docs/decisions/0112-migration-strategy-parallel-run-and-cutover.md</strong> Parallel-run and fallback rules when a runtime path changes.</li>
+    <li><strong>.docs/decisions/0113-human-and-agent-analysis-as-first-class-claim-sources.md</strong> Actor taxonomy, claim state, propose/commit, tombstones, feedback, and trust ledger.</li>
+    <li><strong>.docs/decisions/0115-signal-granularity-audit.md</strong> Durable invalidation and propagation expectations for claim and trust changes.</li>
+    <li><strong>.docs/decisions/0120-observability-contract.md</strong> Typed, sanitized diagnostics and invocation records.</li>
+    <li><strong>.docs/decisions/0125-claim-anatomy-temporal-sensitivity-typeregistry.md</strong> Temporal scope, sensitivity, claim type registry, and downstream enforcement.</li>
+    <li><strong>.docs/decisions/0128-headless-dailyos-mcp-as-product-surface.md</strong> MCP as a co-equal surface with policy-aware output.</li>
+    <li><strong>.docs/decisions/0130-surface-independent-composition-contract.md</strong> Surface-independent composition and provenance refs.</li>
+    <li><strong>docs/solutions/security-issues/prompt-channel-sensitivity-class-sweep-2026-05-18.md</strong> Centralize prompt-channel sensitivity gates; no one-off prompt readers.</li>
+    <li><strong>docs/solutions/architecture-patterns/claim-producers-require-runtime-wide-trust-audit-2026-05-22.md</strong> New producers require runtime-wide trust/provenance audit.</li>
+  </ul>
+</section>
+
+<div class="finis">
+  <div class="finis-mark">S0 - S1 - S2</div>
+  <div class="finis-date">Intelligence Generation Contract - 2026-05-25</div>
+  <div class="finis-caption">Signal sources can differ. The contract after generation cannot.</div>
+</div>
+
+</div>
+</main>
+</div>
+</body>
+</html>

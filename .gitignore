@@ -92,3 +92,4 @@ tauri-dev.log
 
 # Ad-hoc design screenshots dropped at repo root (temporary visual references, not docs)
 /*.png
+.worktrees

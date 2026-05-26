@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>v1.4.8 Meetings Substrate v2 · DailyOS Planning</title>
+  <link rel="stylesheet" href="../design/reference/_shared/fonts.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/design-tokens.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/MagazinePageLayout.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/chrome.css">
+  <link rel="stylesheet" href="plans.css">
+</head>
+<body data-tint="sage">
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+<div class="plans-shell">
+
+<!-- TOPNAV -->
+<nav class="plans-topnav" aria-label="Planning surface">
+  <a class="plans-mark" href="index.html">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="16" height="16" aria-hidden="true">
+      <path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/>
+    </svg>
+    DailyOS · Planning
+  </a>
+  <div class="plans-topnav-links">
+    <a href="engineering-ladder.html">Engineering Ladder</a>
+    <a href="v1.4.8-meetings-substrate-v2-waves.html" data-active="true">v1.4.8 Waves</a>
+    <a href="AUTHORING.md">Authoring Ruleset</a>
+  </div>
+</nav>
+
+<!-- COVER -->
+<section class="plans-cover">
+  <p class="plans-eyebrow">DailyOS · v1.4.8 · Wave Plan</p>
+  <h1 class="plans-title">My briefing reflects what's actually on my plate.</h1>
+  <p class="plans-kicker">Substrate hardening that makes today's briefing trustworthy — and lays the groundwork so the next surface consuming meetings substrate never has to re-derive "what counts as a meeting."</p>
+  <p class="plans-lede">
+    The today page currently surfaces phantom advisories ("4 briefings need prep" on a 0-meeting day) because the readiness substrate hands raw rows to every consumer and each consumer re-implements its own filter. PR #392 removed the misleading UI strip as a tactical fix. This wave re-architects the meeting → briefing pipeline around the abilities runtime: a single substrate-level projection that every consumer goes through, plus DOS-258-style writer hardening so future drift can't reintroduce the class of bug.
+  </p>
+  <div class="plans-meta">
+    <span>Target: v1.4.8 — substrate + surface payoff</span>
+    <span>Lanes: 2 (A first, B after stabilization)</span>
+    <span>Parallel agents: 1 (sequential)</span>
+    <span>Parent: <a href="https://linear.app/a8c/issue/DOS-773">DOS-773</a></span>
+  </div>
+</section>
+
+<!-- WHAT CHANGES FOR THE USER -->
+<section class="plans-section" aria-labelledby="user-outcome">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">User-facing outcome</p>
+    <h2 id="user-outcome" class="plans-section-title">What changes on the today page.</h2>
+    <p class="plans-section-lede">
+      Visible-to-James fingerprint of this wave. Lane A delivers the user change. Lane B is invisible-until-the-next-consumer; it pays off the next time a new surface tries to read meetings.
+    </p>
+  </header>
+  <ul class="plans-related">
+    <li><strong>Counts I can trust.</strong> "Briefings need prep" reflects actual meetings worth prepping, not personal blocks or all-day events. "Link N meetings" only fires when there are real unlinked meetings to link. The 4-phantom-advisory class is gone, end-to-end.</li>
+    <li><strong>The briefing self-assessment strip comes back.</strong> PR #392 removed it because the metadata was wrong. With Lane A's substrate fix, the strip's freshness label, advisory CTA, trust band, and source count are accurate. Bringing it back is part of the same PR — substrate change and visible payoff land together.</li>
+    <li><strong>Personal time stays out of meeting counts.</strong> Focus blocks, OOO, lunch, dentist — they're on the calendar but they're not "meetings." The briefing already knew this; the substrate didn't. Now they agree.</li>
+    <li><strong>No surprise regressions when the next consumer ships.</strong> The next briefing block, MCP surface, or account-detail view consuming meetings substrate doesn't have to discover the personal-blocks filter on its own. The substrate carries the policy.</li>
+  </ul>
+</section>
+
+<!-- WAVE SHAPE -->
+<section class="plans-section" aria-labelledby="wave-overview">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Wave shape</p>
+    <h2 id="wave-overview" class="plans-section-title">Two lanes, sequential. Lane A ships the user change.</h2>
+    <p class="plans-section-lede">
+      Lane A is the substrate + surface vertical slice. Lane B is preventive writer hardening — bigger blast radius, ships after Lane A is stable in production.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Lane</th>
+        <th>Scope</th>
+        <th>User-facing</th>
+        <th>Linear</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>A — Surface-relevant meetings projection</td>
+        <td>Substrate (intent-carrying read handle) + surface (strip revival)</td>
+        <td>Yes — phantom advisories gone, strip back with correct data, closes DOS-771</td>
+        <td><a href="https://linear.app/a8c/issue/DOS-774">DOS-774</a></td>
+      </tr>
+      <tr>
+        <td>B — Meetings writers hardening</td>
+        <td>Writer adapters per source, invariant enforcement, backfill sweep</td>
+        <td>No — preventive; pays off when next consumer ships</td>
+        <td><a href="https://linear.app/a8c/issue/DOS-775">DOS-775</a></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- LANE A DETAIL -->
+<section class="plans-section" aria-labelledby="lane-a">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Lane A · substrate + surface</p>
+    <h2 id="lane-a" class="plans-section-title">Surface-relevant meetings projection.</h2>
+    <p class="plans-section-lede">
+      Today the narrow read handle <code>DailyReadinessContextReadHandle</code> is shape-narrow but semantics-thin — it returns raw rows and each consumer re-implements the filter. Lane A makes the handle intent-carrying: the substrate owns the "what counts as a briefing-worthy meeting" policy, consumers declare intent, and one filter set lives in one place. The same PR re-enables the briefing self-assessment strip now that its data is correct.
+    </p>
+  </header>
+  <ul class="plans-related">
+    <li><strong>Substrate change:</strong> new <code>MeetingsViewIntent { Briefing, Schedule, AllRows }</code> (final variants pinned at L0). New <code>read_surface_meetings(db, workspace, date, tz, intent) -&gt; Vec&lt;SurfaceMeeting&gt;</code>. Promote <code>focus_capacity::should_exclude_meeting</code> into the substrate function.</li>
+    <li><strong>Handle migration:</strong> <code>DailyReadinessContextReadHandle::read_daily_readiness_context</code> takes intent. Live impl threads it; test fixtures accept it.</li>
+    <li><strong>Consumer migrations:</strong> <code>get_daily_briefing</code> declares <code>Briefing</code>. <code>get_daily_readiness</code> declares its intent (L0 question). <code>focus_capacity</code> callers route through the projection. Frontend defensive filter at <code>DailyBriefing.tsx:283</code> stays or goes (L0 question).</li>
+    <li><strong>Surface payoff:</strong> re-enable <code>DailyBriefingAbilityStrip</code> in <code>DailyBriefing.tsx</code>. The component logic isn't gone in git history — restore from PR #392's parent commit. The data it reads is now correct because Lane A's substrate change fixes the upstream source.</li>
+    <li><strong>Closes DOS-771:</strong> the phantom <code>NeedsPreparation(4)</code> / <code>UnlinkedMeetings(4)</code> advisories are personal calendar blocks leaking through the readiness query. Lane A's substrate filter eliminates the class. Verified live as part of the DoD.</li>
+    <li><strong>Definition of Done:</strong> see <a href="https://linear.app/a8c/issue/DOS-774">DOS-774</a>.</li>
+  </ul>
+</section>
+
+<!-- LANE B DETAIL -->
+<section class="plans-section" aria-labelledby="lane-b">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Lane B · writer hardening</p>
+    <h2 id="lane-b" class="plans-section-title">Apply the DOS-258 deterministic-engine pattern to meeting-row writers.</h2>
+    <p class="plans-section-lede">
+      Currently 3+ production write paths into the <code>meetings</code> table — <code>ensure_meeting_in_history</code>, <code>upsert_meeting</code>, <code>upsert_meeting_for_reconcile</code> — set different field combinations with different invariants. There's no enforced contract that says "a meeting row is created via exactly one of these adapters with these required fields." DOS-258 solved this for entity linkage; Lane B does the same for the writer side.
+    </p>
+  </header>
+  <ul class="plans-related">
+    <li><strong>Invariant matrix:</strong> required fields per row, transcript-row pairing rule, <code>calendar_event_id</code> NULL semantics, <code>intelligence_state</code> initialization. Pinned at L0.</li>
+    <li><strong>Adapter pattern:</strong> <code>services/meetings_writer/</code> with <code>CalendarWriter</code>, <code>ReconcileWriter</code>, <code>ManualWriter</code>. Each adapter normalizes its input source to the same <code>DbMeeting</code> shape with invariants enforced. Mirrors <code>services/entity_linking/{calendar_adapter, email_adapter}</code> from DOS-258.</li>
+    <li><strong>Repository bypass:</strong> keep <code>repository::raw_*</code> for admin/migration paths; production code can't import it (pre-commit grep guard, same as DOS-258).</li>
+    <li><strong>Backfill sweep:</strong> existing rows that violate the new invariants get repaired in a one-time migration. Likely targets: rows from old reconcile passes with local-format <code>start_time</code> strings; rows with <code>calendar_event_id IS NOT NULL</code> but no <code>meeting_transcripts</code> row.</li>
+    <li><strong>Ad-hoc inserter migration:</strong> every <code>INSERT INTO meetings</code> outside the new adapters becomes a clippy/CI violation. Existing call sites migrate to the appropriate adapter.</li>
+    <li><strong>Definition of Done:</strong> see <a href="https://linear.app/a8c/issue/DOS-775">DOS-775</a>.</li>
+  </ul>
+</section>
+
+<!-- REVIEWER MATRIX -->
+<section class="plans-section" aria-labelledby="reviewer-matrix">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">L0 review composition</p>
+    <h2 id="reviewer-matrix" class="plans-section-title">2 planning reviewers per lane (Wave scope), K-in mandatory.</h2>
+    <p class="plans-section-lede">
+      Per the Engineering Ladder, Wave-scoped L0 packets need at least one canonical reviewer plus one domain reviewer routed by what the plan touches. Knowledge-channel inputs run parallel-grep before plan review starts.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Role</th>
+        <th>Reviewer</th>
+        <th>Why</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Adversarial (canonical)</td>
+        <td><code>/codex challenge</code></td>
+        <td>Required on every L0 packet; tries to break the plan before code starts.</td>
+      </tr>
+      <tr>
+        <td>Feasibility (domain)</td>
+        <td><code>ce-feasibility-reviewer</code></td>
+        <td>Will Lane A's trait migration survive contact with all 4 consumer call sites? Will Lane B's adapter pattern actually catch every writer?</td>
+      </tr>
+      <tr>
+        <td>Scope guardian (domain)</td>
+        <td><code>ce-scope-guardian-reviewer</code></td>
+        <td>Both lanes have natural scope-creep magnets: Lane A → redesign <code>calendar_merge</code>; Lane B → migrate to claims. Push back.</td>
+      </tr>
+      <tr>
+        <td>K-in (mandatory)</td>
+        <td><code>ce-learnings-researcher</code></td>
+        <td>Parallel-grep across <code>docs/solutions/</code> + <code>.docs/decisions/</code> for prior meeting/briefing/readiness solutions and ADRs.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- OPEN QUESTIONS -->
+<section class="plans-section" aria-labelledby="open-questions">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Open questions</p>
+    <h2 id="open-questions" class="plans-section-title">Resolved at L0; not yet pinned.</h2>
+  </header>
+
+  <h3 class="plans-section-eyebrow" style="margin-top: 24px;">Lane A</h3>
+  <ul class="plans-related">
+    <li><strong>Intent enum variants.</strong> <code>Briefing</code> / <code>Schedule</code> / <code>AllRows</code> is a starting point. Should <code>Schedule</code> differ from <code>Briefing</code> (e.g., schedule wants all-day events but briefing doesn't)? Final variants pinned at L0.</li>
+    <li><strong>File location.</strong> Stay in <code>services/context.rs</code> (where <code>project_daily_readiness_context_snapshot</code> lives today) or carve out a new <code>services/meetings_view.rs</code>? Affects crate-boundary cleanliness.</li>
+    <li><strong><code>get_daily_readiness</code> intent.</strong> What does this ability currently expect? <code>Briefing</code> or <code>Schedule</code>? Read its consumers before deciding.</li>
+    <li><strong>Frontend defensive filter.</strong> Keep <code>DailyBriefing.tsx:283 scheduleMeetings</code> filter (defensive belt-and-braces) or remove (substrate owns it)? Trade DRY for defense.</li>
+    <li><strong>Strip revival scope.</strong> Bring back exactly what PR #392 removed, or take the opportunity to refine the strip's content (e.g., drop "Trust: unscored" on no-meeting days, change advisory copy)? Flag for <code>ce-design-lens-reviewer</code> if material.</li>
+  </ul>
+
+  <h3 class="plans-section-eyebrow" style="margin-top: 24px;">Lane B</h3>
+  <ul class="plans-related">
+    <li><strong>Invariant matrix.</strong> Required fields per row? Transcript-row pairing required? <code>calendar_event_id</code> NULL semantics?</li>
+    <li><strong><code>intelligence_state</code> lifecycle initialization.</strong> What's the contract at write time?</li>
+    <li><strong>Adapter granularity.</strong> <code>CalendarWriter</code> + <code>ReconcileWriter</code> + <code>ManualWriter</code>, or finer (e.g., separate <code>GranolaWriter</code>, <code>EmailEnrichWriter</code>)?</li>
+    <li><strong>Backfill scope.</strong> Exhaustive sweep of every existing row vs targeted at known violation patterns? Dry-run first?</li>
+    <li><strong>Ad-hoc inserter migration.</strong> Every <code>INSERT INTO meetings</code> outside adapters becomes a violation. Which call sites? Audit pass before adapter design lands.</li>
+  </ul>
+</section>
+
+<!-- OUT OF SCOPE -->
+<section class="plans-section plans-section-callouts">
+  <div class="callout-grid">
+    <article class="callout">
+      <h3 class="callout-title">Out of scope — meetings-as-claims</h3>
+      <p class="callout-prose">Alt 1 from the 2026-05-26 architectural review. The right answer if "trust = claim integrity" later promotes meetings to that tier. Not the scope here. v1.5.x+ candidate if it surfaces.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Out of scope — calendar_merge redesign</h3>
+      <p class="callout-prose">Live calendar truth shouldn't be persisted. Lane A consumes the merge output; it doesn't bypass it. <code>overlay_status</code> stays runtime-computed.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Out of scope — intelligence_state lifecycle</h3>
+      <p class="callout-prose">Lane B pins the initialization invariant only. The full lifecycle redesign (enriching → archived → re-enriched) stays for a future wave.</p>
+    </article>
+  </div>
+</section>
+
+<!-- KNOWLEDGE CHANNEL INPUTS -->
+<section class="plans-section" aria-labelledby="k-in">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Knowledge-channel inputs</p>
+    <h2 id="k-in" class="plans-section-title">K-in mandatory at L0 — parallel-grep these before plan review starts.</h2>
+  </header>
+  <ul class="plans-related">
+    <li><strong><code>docs/solutions/</code></strong> — grep <code>meeting</code>, <code>briefing</code>, <code>readiness</code>; surface any prior fix that overlaps with Lane A's filter or Lane B's writer contract.</li>
+    <li><strong><code>.docs/decisions/</code></strong> — entity linking ADRs (DOS-258 era), abilities runtime ADRs (v1.4.0 era), composable surfaces ADR-0129. Read for boundary contracts the lanes mustn't violate.</li>
+    <li><strong><a href="https://linear.app/a8c/issue/DOS-258">DOS-258</a></strong> — Lane B is the template; read its phased-engine + adapter design first.</li>
+    <li><strong><a href="https://linear.app/a8c/issue/DOS-771">DOS-771</a></strong> — root cause writeup with the personal-blocks-leak diagnosis. The forcing function for Lane A's substrate change.</li>
+    <li><strong>Session conversation 2026-05-26</strong> — architectural review framing Lane A / Lane B carve-up and the user-facing outcome.</li>
+  </ul>
+</section>
+
+<!-- PACING CALLOUTS -->
+<section class="plans-section plans-section-callouts">
+  <div class="callout-grid">
+    <article class="callout">
+      <h3 class="callout-title">Pacing</h3>
+      <p class="callout-prose">Lane B doesn't start until Lane A is stable in production. No agent codes before L0 clears unanimously. Two revision cycles → L6 escalation.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Bounding</h3>
+      <p class="callout-prose">L2 bounded by acceptance criteria. Path-α findings → Codebase Maintenance project. Substrate PR unblocks once AC violations are closed.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Vertical-slice principle</h3>
+      <p class="callout-prose">Lane A ships substrate + the surface that proves it (strip revival). Substrate without a consumer risks being designed wrong; this wave honors the v1.4.5+ pairing rule.</p>
+    </article>
+  </div>
+</section>
+
+<!-- FOOTER / RELATED -->
+<section class="plans-section plans-section-footer">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Related</p>
+    <h2 class="plans-section-title">Cross-references.</h2>
+  </header>
+  <ul class="plans-related">
+    <li><strong><a href="engineering-ladder.html">engineering-ladder.html</a></strong> — L0–L6 + K-channel + skill matrix per rung.</li>
+    <li><strong><a href="https://linear.app/a8c/project/v148-meetings-substrate-v2-0e5ae88df2b7">v1.4.8 — Meetings Substrate v2</a></strong> — Linear project (source of truth for ticket state).</li>
+    <li><strong><a href="https://linear.app/a8c/issue/DOS-773">DOS-773</a></strong> — parent ticket.</li>
+    <li><strong><a href="https://linear.app/a8c/issue/DOS-774">DOS-774</a></strong> — Lane A (closes <a href="https://linear.app/a8c/issue/DOS-771">DOS-771</a>).</li>
+    <li><strong><a href="https://linear.app/a8c/issue/DOS-775">DOS-775</a></strong> — Lane B (related to <a href="https://linear.app/a8c/issue/DOS-258">DOS-258</a> as template).</li>
+  </ul>
+</section>
+
+<!-- FINIS -->
+<div class="finis">
+  <div class="finis-mark">A · B</div>
+  <div class="finis-date">v1.4.8 Wave Plan · 2026-05-26</div>
+  <div class="finis-caption">The substrate gets the policy. The surface gets the truth. The next consumer gets it for free.</div>
+</div>
+
+</div>
+</main>
+</div>
+</body>
+</html>
