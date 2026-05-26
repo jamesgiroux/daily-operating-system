@@ -414,6 +414,14 @@ mod tests {
                 rate_limit_window_secs INTEGER NOT NULL,
                 PRIMARY KEY (client_id, tool_name)
             );
+            CREATE TABLE mcp_conversation_handle (
+                handle TEXT NOT NULL,
+                client_id TEXT NOT NULL,
+                mint_at INTEGER NOT NULL,
+                last_touched_at INTEGER NOT NULL,
+                revoked_at INTEGER NULL,
+                PRIMARY KEY (handle, client_id)
+            );
             ",
         )
         .expect("create MCP auth tables");
@@ -455,5 +463,62 @@ mod tests {
 
         let grants = list_invocable_tool_grants(&conn, &client_id).expect("list grants");
         assert_eq!(grants, vec![ScopedName::new("dailyos.read.account_status")]);
+    }
+
+    #[test]
+    fn resolve_or_mint_handle_reuses_valid_prior_handle_for_same_client() {
+        let mut conn = Connection::open_in_memory().expect("open sqlite");
+        create_mcp_auth_tables(&conn);
+        let client_id = McpClientId::new("local-client");
+
+        let minted =
+            resolve_or_mint_handle(&mut conn, &client_id, None).expect("mint conversation handle");
+        let reused = resolve_or_mint_handle(&mut conn, &client_id, Some(&minted))
+            .expect("reuse prior conversation handle");
+
+        assert_eq!(reused, minted);
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM mcp_conversation_handle", [], |row| row.get(0))
+            .expect("count handles");
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn resolve_or_mint_handle_rejects_prior_handle_for_other_client() {
+        let mut conn = Connection::open_in_memory().expect("open sqlite");
+        create_mcp_auth_tables(&conn);
+        let first_client = McpClientId::new("local-client-a");
+        let second_client = McpClientId::new("local-client-b");
+
+        let minted =
+            resolve_or_mint_handle(&mut conn, &first_client, None).expect("mint conversation handle");
+        let result = resolve_or_mint_handle(&mut conn, &second_client, Some(&minted));
+
+        assert!(matches!(result, Err(AuthError::ConversationRevoked)));
+    }
+
+    #[test]
+    fn resolve_or_mint_handle_replaces_expired_prior_handle_for_same_client() {
+        let mut conn = Connection::open_in_memory().expect("open sqlite");
+        create_mcp_auth_tables(&conn);
+        let client_id = McpClientId::new("local-client");
+
+        let minted =
+            resolve_or_mint_handle(&mut conn, &client_id, None).expect("mint conversation handle");
+        let expired_at = now_millis() - ((HANDLE_EXPIRY_SECONDS + 1) * 1000);
+        conn.execute(
+            "UPDATE mcp_conversation_handle SET last_touched_at = ?1 WHERE handle = ?2 AND client_id = ?3",
+            params![expired_at, minted.as_str(), client_id.as_str()],
+        )
+        .expect("expire prior handle");
+
+        let replaced = resolve_or_mint_handle(&mut conn, &client_id, Some(&minted))
+            .expect("mint replacement handle");
+
+        assert_ne!(replaced, minted);
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM mcp_conversation_handle", [], |row| row.get(0))
+            .expect("count handles");
+        assert_eq!(count, 2);
     }
 }
