@@ -1365,10 +1365,17 @@ mod tests {
             MeetingsViewIntent::AllRows,
         )
         .expect("all-rows projection");
+        let all_ids: Vec<&str> = all_rows.iter().map(|m| m.id.as_str()).collect();
         assert_eq!(
-            all_rows.len(),
-            5,
-            "AllRows intent must include personal blocks alongside customer rows"
+            all_ids,
+            vec![
+                "meet-personal-2",
+                "meet-customer-1",
+                "meet-personal-1",
+                "meet-personal-3",
+                "meet-personal-4",
+            ],
+            "AllRows must include every row in start_time order; got {all_ids:?}"
         );
     }
 

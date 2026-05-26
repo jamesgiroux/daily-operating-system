@@ -23,9 +23,17 @@
 //! dashboard / executive intelligence path. Lane A leaves that filter in
 //! place; the dashboard/entities migration is a follow-up under DOS-773.
 
-use chrono::{NaiveDate, TimeZone};
+use chrono::NaiveDate;
 use chrono_tz::Tz;
 
+use crate::helpers::today_meeting_filter_for_date;
+
+// Post-projection row: type-filter declared by `MeetingsViewIntent` has
+// already been applied. A `SurfaceMeeting` returned from `read_surface_meetings`
+// with `Briefing` intent will never carry `meeting_type = 'personal'`. The
+// alias is intentional for smallest-diff in Lane A; future iterations may
+// wrap it in a newtype with a phantom intent tag so the projection invariant
+// is compile-time.
 pub use abilities_runtime::services::context::{
     DailyReadinessMeetingSnapshot as SurfaceMeeting, MeetingsViewIntent,
 };
@@ -40,28 +48,7 @@ pub fn read_surface_meetings(
     tz: &Tz,
     intent: MeetingsViewIntent,
 ) -> Result<Vec<SurfaceMeeting>, String> {
-    let next_date = date
-        .checked_add_days(chrono::Days::new(1))
-        .ok_or_else(|| format!("invalid next-day range for date `{date}`"))?;
-
-    let day_start_local = date
-        .and_hms_opt(0, 0, 0)
-        .ok_or_else(|| format!("invalid local-day start for date `{date}`"))?;
-    let day_end_local = next_date
-        .and_hms_opt(0, 0, 0)
-        .ok_or_else(|| format!("invalid local-day end for date `{date}`"))?;
-
-    let utc_start = tz
-        .from_local_datetime(&day_start_local)
-        .earliest()
-        .map(|dt| dt.with_timezone(&chrono::Utc).to_rfc3339())
-        .unwrap_or_else(|| format!("{date}T00:00:00+00:00"));
-    let utc_end = tz
-        .from_local_datetime(&day_end_local)
-        .earliest()
-        .map(|dt| dt.with_timezone(&chrono::Utc).to_rfc3339())
-        .unwrap_or_else(|| format!("{next_date}T00:00:00+00:00"));
-
+    let window = today_meeting_filter_for_date(date, tz);
     let conn = db.conn_ref();
     let mut stmt = conn
         .prepare(
@@ -75,7 +62,7 @@ pub fn read_surface_meetings(
         .map_err(|error| error.to_string())?;
 
     let rows = stmt
-        .query_map(rusqlite::params![utc_start, utc_end], |row| {
+        .query_map(rusqlite::params![window.utc_start, window.utc_end], |row| {
             let meeting_type: String = row.get(4)?;
             Ok((
                 SurfaceMeeting {
