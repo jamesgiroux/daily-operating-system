@@ -226,6 +226,7 @@ fn map_placement_ability_error(message: &str) -> ToolError {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
     use std::sync::Arc;
 
     use abilities_runtime::services::workspace_intake::{
@@ -235,12 +236,24 @@ mod tests {
         WorkspacePlacementMutationCursor,
     };
     use async_trait::async_trait;
+    use chrono::Utc;
+    use parking_lot::Mutex;
+    use rusqlite::{params, Connection};
     use serde_json::json;
 
     use super::*;
+    use crate::abilities::workspace_graph::contracts::{
+        WorkspaceGraphInput, WorkspaceGraphPrivacyProfile, WorkspaceGraphReadRequest,
+        WorkspaceGraphResponse,
+    };
+    use crate::db::{ActionDb, DbAccount};
     use crate::services::mcp_v2::contracts::{
         McpClientId, OpaqueConversationHandle, Scope, ScopedName, Side,
     };
+    use crate::services::workspace_ingestion::graph::{
+        diagnostic_key_for_tests, read_workspace_graph,
+    };
+    use crate::services::workspace_ingestion::workspace_intake_impl::place_document_after_rate_for_tests;
 
     struct StubWorkspaceIntake;
 
@@ -285,6 +298,43 @@ mod tests {
         }
     }
 
+    struct HermeticPlacementIntake {
+        conn: Arc<Mutex<Connection>>,
+        workspace_root: PathBuf,
+        signal_engine: Arc<PropagationEngine>,
+    }
+
+    #[async_trait]
+    impl WorkspaceIntakeService for HermeticPlacementIntake {
+        async fn ingest(
+            &self,
+            _ctx: &abilities_runtime::abilities::registry::AbilityContext<'_>,
+            _request: WorkspaceIntakeRequest,
+        ) -> Result<WorkspaceIntakeReceipt, WorkspaceIntakeError> {
+            Err(WorkspaceIntakeError::DbError(
+                "fixture only implements placement".to_string(),
+            ))
+        }
+
+        async fn place_document(
+            &self,
+            ctx: &abilities_runtime::abilities::registry::AbilityContext<'_>,
+            invocation: PlacementInvocationContext,
+            request: WorkspacePlaceDocumentRequest,
+        ) -> Result<WorkspacePlaceDocumentReceipt, PlacementError> {
+            let guard = self.conn.lock();
+            place_document_after_rate_for_tests(
+                ctx.services(),
+                ActionDb::from_conn(&guard),
+                &self.workspace_root,
+                Some(&self.signal_engine),
+                &invocation,
+                &request,
+                "target_opaque",
+            )
+        }
+    }
+
     fn description() -> ToolDescription {
         ToolDescription {
             name: ScopedName::new(TOOL_NAME),
@@ -325,6 +375,41 @@ mod tests {
         })
     }
 
+    fn placement_claim_params() -> Value {
+        json!({
+            "schema_version": 1,
+            "entity": {
+                "entity_type": "account",
+                "entity_id": "acct_placement"
+            },
+            "content_b64": "UGxhY2VtZW50IGdyYXBoIHZhbGlkYXRpb24gbm90ZS4=",
+            "content_type": "text/markdown",
+            "category": "notes",
+            "client_dedup_key": "placement-handler-claim-fixture",
+            "dry_run": false
+        })
+    }
+
+    fn seed_account(conn: &Connection) {
+        ActionDb::from_conn(conn)
+            .upsert_account(&DbAccount {
+                id: "acct_placement".to_string(),
+                name: "Placement Account".to_string(),
+                tracker_path: Some("Accounts/Placement Account".to_string()),
+                updated_at: Utc::now().to_rfc3339(),
+                ..Default::default()
+            })
+            .expect("account seed");
+    }
+
+    fn count<P>(conn: &Connection, sql: &str, params: P) -> i64
+    where
+        P: rusqlite::Params,
+    {
+        conn.query_row(sql, params, |row| row.get(0))
+            .expect("count query")
+    }
+
     #[test]
     fn placement_handler_invokes_ability_and_scrubs_paths() {
         let runtime = tokio::runtime::Runtime::new().expect("runtime");
@@ -352,6 +437,171 @@ mod tests {
             result["mutation_cursor"]["kind"], "workspace_placement",
             "write responses must expose a mutation cursor for gateway audit"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn placement_handler_commits_claim_and_graph_without_path_leak() {
+        let runtime = tokio::runtime::Runtime::new().expect("runtime");
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        crate::migrations::run_migrations(&conn).expect("migrations");
+        seed_account(&conn);
+        let conn = Arc::new(Mutex::new(conn));
+        let workspace = tempfile::tempdir().expect("workspace");
+        let workspace_root = workspace.path().canonicalize().expect("workspace root");
+        let signal_engine = Arc::new(PropagationEngine::new());
+        let handler = PlacementHandler::new(
+            description(),
+            AbilityRegistry::global_checked().expect("registry"),
+            runtime.handle().clone(),
+            Arc::clone(&signal_engine),
+        );
+        let clock = SystemClock;
+        let rng = SystemRng;
+        let external = ExternalClients::default();
+        let services = ServiceContext::new_live(&clock, &rng, &external).with_workspace_intake(
+            Arc::new(HermeticPlacementIntake {
+                conn: Arc::clone(&conn),
+                workspace_root: workspace_root.clone(),
+                signal_engine,
+            }),
+        );
+
+        let result = handler
+            .invoke_with_services(&actor(), placement_claim_params(), &services)
+            .expect("placement succeeds");
+
+        assert_eq!(result["entity_type"], "account");
+        assert_eq!(result["entity_id"], "acct_placement");
+        assert_eq!(result["workspace_file_kind"], "mcp_placement");
+        assert_eq!(result["claim_count_produced"], 1);
+        assert_eq!(result["lifecycle_state"], "ingested");
+        assert_eq!(result["resolved_path"], Value::Null);
+        assert_eq!(result["resolvedPath"], Value::Null);
+        let idempotency_id = result["mutation_cursor"]["idempotency_id"]
+            .as_str()
+            .expect("idempotency cursor");
+        assert!(idempotency_id.starts_with("placement_"));
+
+        let guard = conn.lock();
+        let file_id = guard
+            .query_row(
+                "SELECT file_id
+                 FROM workspace_placement_idempotency
+                 WHERE idempotency_id = ?1
+                   AND status = 'succeeded'
+                   AND run_id IS NOT NULL
+                   AND claim_count_produced = 1",
+                params![idempotency_id],
+                |row| row.get::<_, String>(0),
+            )
+            .expect("placement idempotency success row");
+        assert_eq!(
+            count(
+                &guard,
+                "SELECT COUNT(*)
+                 FROM workspace_file_lifecycle
+                 WHERE file_id = ?1
+                   AND lifecycle_state = 'ingested'
+                   AND source_type = 'mcp_placement'",
+                params![&file_id],
+            ),
+            1
+        );
+        assert_eq!(
+            count(
+                &guard,
+                "SELECT COUNT(*)
+                 FROM document_entity_links
+                 WHERE file_id = ?1
+                   AND entity_type = 'account'
+                   AND entity_id = 'acct_placement'
+                   AND attribution_source = 'mcp_placement'
+                   AND rejected = 0",
+                params![&file_id],
+            ),
+            1
+        );
+
+        let source_ref = format!("workspace_file:{file_id}");
+        let (data_source, metadata_json, provenance_json, sensitivity): (
+            String,
+            String,
+            String,
+            String,
+        ) = guard
+            .query_row(
+                "SELECT data_source, metadata_json, provenance_json, sensitivity
+                 FROM intelligence_claims
+                 WHERE source_ref = ?1",
+                params![&source_ref],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .expect("workspace placement claim");
+        assert_eq!(data_source, "workspace_file:mcp_placement");
+        assert_eq!(sensitivity, "user_only");
+        let metadata: serde_json::Value =
+            serde_json::from_str(&metadata_json).expect("metadata json");
+        assert_eq!(metadata["producer"], "workspace_ingestion");
+        assert_eq!(metadata["workspace_file_id"], file_id);
+        assert_eq!(metadata["workspace_file_kind"], "mcp_placement");
+        assert_eq!(metadata["resolved_category"], "notes");
+        assert!(metadata["ingestion_run_id"]
+            .as_str()
+            .is_some_and(|value| !value.is_empty()));
+
+        for forbidden in [
+            "Placement Account",
+            "Placement graph validation note",
+            workspace_root.to_string_lossy().as_ref(),
+        ] {
+            assert!(
+                !metadata_json.contains(forbidden),
+                "claim metadata leaked raw fixture detail `{forbidden}`"
+            );
+            assert!(
+                !provenance_json.contains(forbidden),
+                "claim provenance leaked raw fixture detail `{forbidden}`"
+            );
+            assert!(
+                !result.to_string().contains(forbidden),
+                "MCP handler response leaked raw fixture detail `{forbidden}`"
+            );
+        }
+
+        let graph = read_workspace_graph(
+            &guard,
+            WorkspaceGraphReadRequest {
+                input: WorkspaceGraphInput {
+                    schema_version: 1,
+                    entity_filter: None,
+                    category_filter: None,
+                    cursor: None,
+                    if_none_match: None,
+                    include_entity_names: false,
+                    page_size: 50,
+                },
+                privacy_profile: WorkspaceGraphPrivacyProfile::FirstParty,
+            },
+            &diagnostic_key_for_tests("workspace-placement-handler-success"),
+        )
+        .expect("workspace graph read");
+        let WorkspaceGraphResponse::Projection(projection) = graph else {
+            panic!("expected workspace graph projection");
+        };
+        assert!(
+            projection.audit.gaps.is_empty(),
+            "workspace graph audit gaps: {:?}",
+            projection.audit.gaps
+        );
+        let entity = projection
+            .projection
+            .entities
+            .iter()
+            .find(|entity| entity.entity_type == "account" && entity.entity_id == "acct_placement")
+            .expect("placement graph entity");
+        assert_eq!(entity.file_links.len(), 1);
+        assert_eq!(entity.claim_summary.total, 1);
     }
 
     #[test]

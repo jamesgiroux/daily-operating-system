@@ -12,8 +12,8 @@ Current status:
 - W5-A is folded into the active W5 validation PR; backfill and redaction axes have automated green checks on the rebased base.
 - Signal propagation is green on the release-gate branch.
 - Filesystem validation is green for registry-level path rejection, explicit ingestion size/format rejection, and conservative backfill hidden/managed/unsupported skips.
-- Graph-audit has automated entity-seeded and inbox assignment evidence plus MCP placement handler registration evidence, but remains blocked at packet level until a successful MCP placement-to-claim fixture is covered.
-- Full validation remains dependency-gated on the trust-band matrix, successful MCP placement execution, full context parity, and missing lifecycle actions.
+- Graph-audit is green for entity-seeded, inbox assignment, and MCP placement handler/service-to-claim fixture coverage.
+- Full validation remains dependency-gated on the trust-band matrix, full context parity, and missing lifecycle actions.
 - A blocked axis is not a pass. Interim reports may record `blocked`, but W5-B Done requires all mandatory axes to be green.
 
 ## Commands

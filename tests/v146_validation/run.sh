@@ -54,11 +54,13 @@ status_for_axis() {
         cargo test --manifest-path src-tauri/Cargo.toml --test v146_validation graph_audit_zero_gaps_on_hermetic_fixture_db >/dev/null &&
         cargo test --manifest-path src-tauri/Cargo.toml --test v146_validation explicit_ingestion_to_claim_provenance_covers_entity_seeded_and_inbox_assignment >/dev/null &&
         cargo test --manifest-path src-tauri/Cargo.toml --test v146_validation mcp_placement_handler_registered_for_headless_path >/dev/null &&
+        cargo test --manifest-path src-tauri/Cargo.toml --lib placement_handler_commits_claim_and_graph_without_path_leak >/dev/null &&
+        cargo test --manifest-path src-tauri/Cargo.toml --lib workspace_placement_success_commits_claim_and_graph_without_path_leak >/dev/null &&
         cargo test --manifest-path src-tauri/Cargo.toml --lib workspace_ingestion::graph::tests >/dev/null
       ); then
-        printf 'blocked\tcargo test --test v146_validation graph_audit_zero_gaps_on_hermetic_fixture_db + explicit_ingestion_to_claim_provenance_covers_entity_seeded_and_inbox_assignment + mcp_placement_handler_registered_for_headless_path + cargo test --lib workspace_ingestion::graph::tests\tentity-seeded and inbox graph audit evidence plus MCP placement handler registration passed; blocked until a successful MCP placement fixture proves the placement-to-claim graph path\n'
+        printf 'pass\tcargo test --test v146_validation graph_audit_zero_gaps_on_hermetic_fixture_db + explicit_ingestion_to_claim_provenance_covers_entity_seeded_and_inbox_assignment + mcp_placement_handler_registered_for_headless_path + cargo test --lib placement_handler_commits_claim_and_graph_without_path_leak + workspace_placement_success_commits_claim_and_graph_without_path_leak + workspace_ingestion::graph::tests\tentity-seeded, inbox assignment, and MCP placement handler/service-to-claim graph audit evidence passed with zero attribution gaps\n'
       else
-        printf 'fail\tcargo test --test v146_validation graph_audit_zero_gaps_on_hermetic_fixture_db + explicit_ingestion_to_claim_provenance_covers_entity_seeded_and_inbox_assignment + mcp_placement_handler_registered_for_headless_path + cargo test --lib workspace_ingestion::graph::tests\texplicit ingestion provenance chain, MCP placement registration, or graph audit projection tests failed\n'
+        printf 'fail\tcargo test --test v146_validation graph_audit_zero_gaps_on_hermetic_fixture_db + explicit_ingestion_to_claim_provenance_covers_entity_seeded_and_inbox_assignment + mcp_placement_handler_registered_for_headless_path + cargo test --lib placement_handler_commits_claim_and_graph_without_path_leak + workspace_placement_success_commits_claim_and_graph_without_path_leak + workspace_ingestion::graph::tests\texplicit ingestion provenance chain, MCP placement registration/handler/service fixture, or graph audit projection tests failed\n'
       fi
       ;;
     trust)

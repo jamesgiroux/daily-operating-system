@@ -664,6 +664,27 @@ fn place_document_after_rate(
     }
 }
 
+#[cfg(test)]
+pub(crate) fn place_document_after_rate_for_tests(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    workspace_root: &Path,
+    signal_engine: Option<&crate::signals::propagation::PropagationEngine>,
+    invocation: &PlacementInvocationContext,
+    req: &WorkspacePlaceDocumentRequest,
+    target_audit_key: &str,
+) -> Result<WorkspacePlaceDocumentReceipt, PlacementError> {
+    place_document_after_rate(
+        ctx,
+        db,
+        workspace_root,
+        signal_engine,
+        invocation,
+        req,
+        target_audit_key,
+    )
+}
+
 fn reserve_placement_rate(
     conn: &Connection,
     invocation: &PlacementInvocationContext,
@@ -1856,7 +1877,17 @@ fn path_rejected(message: impl Into<String>) -> PlacementError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use abilities_runtime::services::workspace_intake::WorkspacePlacementEntity;
+    use crate::abilities::workspace_graph::contracts::{
+        WorkspaceGraphInput, WorkspaceGraphPrivacyProfile, WorkspaceGraphReadRequest,
+        WorkspaceGraphResponse,
+    };
+    use crate::db::DbAccount;
+    use crate::services::workspace_ingestion::graph::{
+        diagnostic_key_for_tests, read_workspace_graph,
+    };
+    use abilities_runtime::services::workspace_intake::{
+        WorkspacePlacementEntity, WORKSPACE_PLACE_DOCUMENT_TOOL_NAME,
+    };
 
     fn placement_request(dry_run: bool) -> WorkspacePlaceDocumentRequest {
         WorkspacePlaceDocumentRequest {
@@ -1871,6 +1902,225 @@ mod tests {
             category: "notes".to_string(),
             client_dedup_key: None,
             dry_run,
+        }
+    }
+
+    fn count<P>(conn: &Connection, sql: &str, params: P) -> i64
+    where
+        P: rusqlite::Params,
+    {
+        conn.query_row(sql, params, |row| row.get(0))
+            .expect("count query")
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn workspace_placement_success_commits_claim_and_graph_without_path_leak() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        crate::migrations::run_migrations(&conn).expect("migrations");
+        let db = ActionDb::from_conn(&conn);
+        db.upsert_account(&DbAccount {
+            id: "acct_123".to_string(),
+            name: "Placement Account".to_string(),
+            tracker_path: Some("Accounts/Placement Account".to_string()),
+            updated_at: Utc::now().to_rfc3339(),
+            ..Default::default()
+        })
+        .expect("account seed");
+
+        let workspace = tempfile::tempdir().expect("workspace");
+        let workspace_root = workspace.path().canonicalize().expect("workspace root");
+        let clock = SystemClock;
+        let rng = SystemRng;
+        let external = ExternalClients::default();
+        let ctx = ServiceContext::new_live(&clock, &rng, &external)
+            .with_actor("system:workspace_placement_test");
+        let signal_engine = crate::signals::propagation::default_engine();
+        let mut request = placement_request(false);
+        request.content_b64 = "UGxhY2VtZW50IGdyYXBoIHZhbGlkYXRpb24gbm90ZS4=".to_string();
+        request.client_dedup_key = Some("placement-claim-fixture".to_string());
+        let invocation = PlacementInvocationContext {
+            actor_id: "mcp_client_validation".to_string(),
+            tool_name: WORKSPACE_PLACE_DOCUMENT_TOOL_NAME.to_string(),
+            can_read_entity_names: false,
+        };
+
+        let receipt = place_document_after_rate(
+            &ctx,
+            db,
+            &workspace_root,
+            Some(&signal_engine),
+            &invocation,
+            &request,
+            "target_opaque",
+        )
+        .expect("placement succeeds");
+
+        assert_eq!(receipt.lifecycle_state, "ingested");
+        assert_eq!(receipt.workspace_file_kind, "mcp_placement");
+        assert_eq!(receipt.claim_count_produced, 1);
+        assert_eq!(receipt.entity_type, "account");
+        assert_eq!(receipt.entity_id, "acct_123");
+        assert_eq!(receipt.category, "notes");
+        assert!(receipt.document_handle.is_some());
+        assert!(receipt.source_handle.is_some());
+        assert_eq!(
+            receipt.resolved_path, None,
+            "MCP placement receipt must not expose a path when entity-name reads are denied"
+        );
+        let WorkspacePlacementMutationCursor::WorkspacePlacement {
+            document_handle,
+            source_handle,
+            idempotency_id,
+        } = &receipt.mutation_cursor
+        else {
+            panic!("successful placement must return a mutation cursor");
+        };
+        assert_eq!(Some(document_handle.clone()), receipt.document_handle);
+        assert_eq!(Some(source_handle.clone()), receipt.source_handle);
+        assert!(idempotency_id.starts_with("placement_"));
+
+        let file_id = conn
+            .query_row(
+                "SELECT file_id
+                 FROM workspace_placement_idempotency
+                 WHERE idempotency_id = ?1
+                   AND status = 'succeeded'
+                   AND run_id IS NOT NULL
+                   AND claim_count_produced = 1",
+                params![idempotency_id],
+                |row| row.get::<_, String>(0),
+            )
+            .expect("placement idempotency success row");
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT COUNT(*)
+                 FROM workspace_file_lifecycle
+                 WHERE file_id = ?1
+                   AND lifecycle_state = 'ingested'
+                   AND source_type = 'mcp_placement'",
+                params![&file_id],
+            ),
+            1
+        );
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT COUNT(*)
+                 FROM document_ingestion_runs
+                 WHERE file_id = ?1
+                   AND mode = 'entity_seeded'
+                   AND status = 'success'
+                   AND claim_count_produced = 1",
+                params![&file_id],
+            ),
+            1
+        );
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT COUNT(*)
+                 FROM document_entity_links
+                 WHERE file_id = ?1
+                   AND entity_type = 'account'
+                   AND entity_id = 'acct_123'
+                   AND attribution_source = 'mcp_placement'
+                   AND rejected = 0",
+                params![&file_id],
+            ),
+            1
+        );
+
+        let source_ref = format!("workspace_file:{file_id}");
+        let (data_source, metadata_json, provenance_json, sensitivity): (
+            String,
+            String,
+            String,
+            String,
+        ) = conn
+            .query_row(
+                "SELECT data_source, metadata_json, provenance_json, sensitivity
+                 FROM intelligence_claims
+                 WHERE source_ref = ?1",
+                params![&source_ref],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .expect("workspace placement claim");
+        assert_eq!(data_source, "workspace_file:mcp_placement");
+        assert_eq!(sensitivity, "user_only");
+        let metadata: serde_json::Value =
+            serde_json::from_str(&metadata_json).expect("metadata json");
+        assert_eq!(metadata["producer"], "workspace_ingestion");
+        assert_eq!(metadata["workspace_file_id"], file_id);
+        assert_eq!(metadata["workspace_file_kind"], "mcp_placement");
+        assert_eq!(metadata["resolved_category"], "notes");
+        assert!(metadata["ingestion_run_id"]
+            .as_str()
+            .is_some_and(|value| !value.is_empty()));
+        assert!(metadata["document_entity_link_id"]
+            .as_str()
+            .is_some_and(|value| !value.is_empty()));
+
+        for forbidden in [
+            "Placement Account",
+            "Placement graph validation note",
+            workspace_root.to_string_lossy().as_ref(),
+        ] {
+            assert!(
+                !metadata_json.contains(forbidden),
+                "claim metadata leaked raw fixture detail `{forbidden}`"
+            );
+            assert!(
+                !provenance_json.contains(forbidden),
+                "claim provenance leaked raw fixture detail `{forbidden}`"
+            );
+        }
+
+        let graph = read_workspace_graph(
+            &conn,
+            WorkspaceGraphReadRequest {
+                input: WorkspaceGraphInput {
+                    schema_version: 1,
+                    entity_filter: None,
+                    category_filter: None,
+                    cursor: None,
+                    if_none_match: None,
+                    include_entity_names: false,
+                    page_size: 50,
+                },
+                privacy_profile: WorkspaceGraphPrivacyProfile::FirstParty,
+            },
+            &diagnostic_key_for_tests("workspace-placement-success"),
+        )
+        .expect("workspace graph read");
+        let WorkspaceGraphResponse::Projection(projection) = graph else {
+            panic!("expected workspace graph projection");
+        };
+        assert!(
+            projection.audit.gaps.is_empty(),
+            "workspace graph audit gaps: {:?}",
+            projection.audit.gaps
+        );
+        let entity = projection
+            .projection
+            .entities
+            .iter()
+            .find(|entity| entity.entity_type == "account" && entity.entity_id == "acct_123")
+            .expect("placement graph entity");
+        assert_eq!(entity.file_links.len(), 1);
+        assert_eq!(entity.claim_summary.total, 1);
+
+        let serialized = serde_json::to_string(&projection).expect("projection json");
+        for forbidden in [
+            "Placement Account",
+            "Placement graph validation note",
+            workspace_root.to_string_lossy().as_ref(),
+        ] {
+            assert!(
+                !serialized.contains(forbidden),
+                "workspace graph leaked raw fixture detail `{forbidden}`"
+            );
         }
     }
 
