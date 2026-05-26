@@ -1,0 +1,29 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "dailyos/suggested-next-steps",
+	"title": "Suggested Next Steps",
+	"category": "dailyos",
+	"description": "Recommendations for the current subject. Renders typed RecommendationClaim list with per-claim trust band, why-this-now, evidence/provenance summary, and feedback affordances.",
+	"supports": {
+		"html": false,
+		"reusable": false,
+		"inserter": false
+	},
+	"usesContext": [
+		"dailyos/entityType",
+		"dailyos/entityId"
+	],
+	"attributes": {
+		"maxItems": {
+			"type": "number",
+			"default": 5
+		},
+		"headingLabel": {
+			"type": "string"
+		}
+	},
+	"render": "file:./render.php",
+	"style": "file:./style.css",
+	"viewScript": "file:./view.js"
+}

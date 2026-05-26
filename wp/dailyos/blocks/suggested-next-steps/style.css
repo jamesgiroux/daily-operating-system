@@ -1,0 +1,150 @@
+/*
+ * Suggested Next Steps block.
+ *
+ * Composes existing chapter heading, editorial reveal, empty-chip,
+ * info-chip, and TrustBandIndicator primitives. This file only owns the
+ * suggested-next-steps_* row/list/affordance tokens plus disabled-affordance.
+ */
+
+.suggested-next-steps_list {
+	display: grid;
+	gap: var(--dailyos-space-sm, 12px);
+	margin-top: var(--dailyos-space-md, 16px);
+}
+
+.suggested-next-steps_row {
+	display: block;
+	max-height: 32rem;
+	overflow: hidden;
+	padding: var(--dailyos-space-sm, 12px) 0;
+	border-top: 1px solid var(--dailyos-color-border-subtle, var(--wp--preset--color--rule-light, rgba(0, 0, 0, 0.12)));
+	opacity: 1;
+	transition:
+		max-height 200ms ease,
+		opacity 200ms ease;
+}
+
+.suggested-next-steps_row--needsVerification {
+	border-top-color: var(--wp--preset--color--trust-needs-verification-12, rgba(196, 101, 74, 0.12));
+}
+
+.suggested-next-steps_row--needsVerification .suggested-next-steps_headline {
+	color: var(--wp--preset--color--trust-needs-verification, #c4654a);
+}
+
+.suggested-next-steps_row--needsVerification .suggested-next-steps_whyThisNow {
+	opacity: 0.82;
+}
+
+.suggested-next-steps_row--inFlight {
+	opacity: 0.6;
+	pointer-events: none;
+}
+
+.suggested-next-steps_row--collapsing {
+	max-height: 0;
+	padding-top: 0;
+	padding-bottom: 0;
+	opacity: 0;
+	pointer-events: none;
+}
+
+.suggested-next-steps_rowHeader {
+	margin: 0;
+}
+
+.suggested-next-steps_headline {
+	margin: 0;
+	color: inherit;
+	font-size: clamp(1rem, 0.96rem + 0.12vw, 1.1rem);
+	font-weight: 600;
+	line-height: 1.35;
+	letter-spacing: 0;
+}
+
+.suggested-next-steps_whyThisNow {
+	display: -webkit-box;
+	margin: var(--dailyos-space-2xs, 4px) 0 0;
+	overflow: hidden;
+	color: var(--dailyos-color-text-secondary, var(--wp--preset--color--text-secondary, currentColor));
+	font-size: var(--dailyos-font-size-sm, 0.9rem);
+	line-height: 1.45;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 2;
+}
+
+.suggested-next-steps_action {
+	margin: var(--dailyos-space-2xs, 4px) 0 0;
+	color: var(--dailyos-color-text-tertiary, var(--wp--preset--color--text-tertiary, currentColor));
+	font-size: var(--dailyos-font-size-xs, 0.8rem);
+	line-height: 1.4;
+}
+
+.suggested-next-steps_affordances,
+.suggested-next-steps_subAffordances {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--dailyos-space-2xs, 4px);
+	margin-top: var(--dailyos-space-xs, 8px);
+}
+
+.suggested-next-steps_button {
+	appearance: none;
+	border: 1px solid var(--dailyos-color-border-subtle, var(--wp--preset--color--rule-light, rgba(0, 0, 0, 0.12)));
+	border-radius: var(--dailyos-radius-sm, 4px);
+	background: transparent;
+	color: inherit;
+	cursor: pointer;
+	font: inherit;
+	font-size: var(--dailyos-font-size-xs, 0.8rem);
+	line-height: 1.2;
+	padding: 0.35rem 0.55rem;
+}
+
+.suggested-next-steps_button:focus-visible {
+	outline: 2px solid var(--dailyos-color-focus-ring, currentColor);
+	outline-offset: 2px;
+}
+
+.suggested-next-steps_buttonExpand {
+	padding-right: 0.65rem;
+}
+
+.suggested-next-steps_subAffordances {
+	max-height: 0;
+	margin-top: 0;
+	overflow: hidden;
+	opacity: 0;
+	pointer-events: none;
+	transition:
+		max-height 200ms ease,
+		margin-top 200ms ease,
+		opacity 200ms ease;
+}
+
+.suggested-next-steps_row:hover .suggested-next-steps_subAffordances,
+.suggested-next-steps_subAffordances[aria-hidden="false"] {
+	max-height: 5rem;
+	margin-top: var(--dailyos-space-xs, 8px);
+	opacity: 1;
+	pointer-events: auto;
+}
+
+.suggested-next-steps_subButton {
+	font-size: var(--dailyos-font-size-xs, 0.8rem);
+}
+
+.disabled-affordance {
+	border-color: var(--dailyos-color-border-subtle, var(--wp--preset--color--rule-light, rgba(0, 0, 0, 0.12)));
+	color: var(--dailyos-color-text-tertiary, var(--wp--preset--color--text-tertiary, currentColor));
+	cursor: default;
+	opacity: 0.55;
+	pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.suggested-next-steps_row,
+	.suggested-next-steps_subAffordances {
+		transition: none;
+	}
+}
