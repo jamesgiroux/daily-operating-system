@@ -1286,9 +1286,9 @@ mod tests {
         assert_eq!(snapshot.coverage_warnings[0].workspace_scope, "local");
     }
 
-    /// DOS-771 regression: a calendar day with N personal blocks and zero
-    /// customer meetings must yield zero rows under `Briefing` intent, so the
-    /// briefing producer doesn't emit phantom "needs prep" / "link N meetings"
+    /// Regression: a calendar day with N personal blocks and zero customer
+    /// meetings must yield zero rows under `Briefing` intent, so the briefing
+    /// producer doesn't emit phantom "needs prep" / "link N meetings"
     /// advisories. `AllRows` keeps the rows for callers that want the raw set.
     #[test]
     fn personal_blocks_excluded_under_briefing_intent() {
@@ -1298,7 +1298,7 @@ mod tests {
         )
         .expect("open db");
 
-        // 4 personal blocks (matches the DOS-771 phantom-row shape) + 1 customer
+        // 4 personal blocks (matches the phantom-row shape) + 1 customer
         // meeting. The customer meeting is the only row Briefing should return.
         let rows = [
             ("meet-personal-1", "Lunch", "personal", "2026-05-23T12:00:00Z"),

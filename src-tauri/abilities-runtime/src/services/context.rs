@@ -1639,7 +1639,7 @@ pub type DailyReadinessContextReadFuture<'a> =
 /// Caller-declared surface intent for meetings projection. The trust contract
 /// is "ask for the shape you'll render, get rows already pruned of types that
 /// don't belong on that surface." Producers don't post-filter; consumers don't
-/// see personal blocks leak into briefing advisories (DOS-771).
+/// see personal blocks leak into briefing advisories.
 ///
 /// `Briefing` and `Schedule` share exclusions today (personal). They're
 /// distinct enum variants so a future divergence (e.g., Schedule keeping

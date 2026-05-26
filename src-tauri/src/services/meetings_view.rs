@@ -3,10 +3,9 @@
 //! a caller-declared intent filter so consumers don't see types they wouldn't
 //! render.
 //!
-//! Lane A of v1.4.8 (Meetings Substrate v2) closes DOS-771: the previous read
-//! path returned every row in the date range, including `meeting_type =
-//! 'personal'`, which the briefing producer then counted toward "needs prep"
-//! advisories on calendar days with zero customer meetings.
+//! The previous read path returned every row in the date range, including
+//! `meeting_type = 'personal'`, which the briefing producer then counted
+//! toward "needs prep" advisories on calendar days with zero customer meetings.
 //!
 //! ## ADR cites
 //!
@@ -20,8 +19,9 @@
 //! ## Two-implementations note
 //!
 //! `focus_capacity::should_exclude_meeting` is the semantic twin used by the
-//! dashboard / executive intelligence path. Lane A leaves that filter in
-//! place; the dashboard/entities migration is a follow-up under DOS-773.
+//! dashboard / executive intelligence path. This module intentionally leaves
+//! that filter in place; the dashboard/entities migration is tracked as a
+//! separate follow-up.
 
 use chrono::NaiveDate;
 use chrono_tz::Tz;
