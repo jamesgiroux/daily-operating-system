@@ -510,6 +510,7 @@ pub fn process_transcript_with_kind(
             .map(|e| e.id.as_str())
             .or(meeting.account.as_deref())
             .unwrap_or(&meeting.id);
+        let resolved_account_id = resolve_meeting_account_id(db, meeting);
 
         if !wins.is_empty() || !risks.is_empty() || !decisions.is_empty() {
             let clock = crate::services::context::SystemClock;
@@ -524,7 +525,7 @@ pub fn process_transcript_with_kind(
                     entity_id,
                     meeting_id: &meeting.id,
                     meeting_title: &meeting.title,
-                    account_id: meeting.account.as_deref(),
+                    account_id: resolved_account_id.as_deref(),
                     wins: &wins,
                     risks: &risks,
                     decisions: &decisions,
@@ -769,12 +770,13 @@ pub fn process_transcript_with_kind(
 
     // Persist Phase 3: dynamics, role changes, commitments
     if let Some(db) = db {
+        let resolved_account_id = resolve_meeting_account_id(db, meeting);
         persist_enriched_transcript_data(
             db,
             &EnrichedTranscriptData {
                 meeting_id: &meeting.id,
                 meeting_title: &meeting.title,
-                account_id: meeting.account.as_deref(),
+                account_id: resolved_account_id.as_deref(),
                 interaction_dynamics: interaction_dynamics.as_ref(),
                 key_advocate_health: None, // key_advocate_health already persisted in Phase 2
                 role_changes: &role_changes,
@@ -1608,6 +1610,24 @@ fn resolve_account_id(db: &ActionDb, candidate: &str) -> Option<String> {
         })
 }
 
+fn resolve_meeting_account_id(db: &ActionDb, meeting: &CalendarEvent) -> Option<String> {
+    meeting
+        .linked_entities
+        .as_ref()
+        .and_then(|entities| {
+            entities
+                .iter()
+                .find(|entity| entity.entity_type == "account")
+        })
+        .and_then(|entity| resolve_account_id(db, &entity.id))
+        .or_else(|| {
+            meeting
+                .account
+                .as_deref()
+                .and_then(|candidate| resolve_account_id(db, candidate))
+        })
+}
+
 /// Phase 2 extraction data to review for role attribution accuracy.
 struct RoleReviewInput<'a> {
     summary: &'a str,
@@ -1776,7 +1796,37 @@ fn parse_transcript_role_review_response(output: &str) -> Option<TranscriptRoleR
         return None;
     }
 
-    serde_json::from_str(&trimmed[start..=end]).ok()
+    let json = &trimmed[start..=end];
+    serde_json::from_str(json).ok().or_else(|| {
+        #[derive(Deserialize)]
+        struct TranscriptRoleReviewEnvelope {
+            extracted: StrictTranscriptRoleReviewPayload,
+        }
+
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct StrictTranscriptRoleReviewPayload {
+            summary: String,
+            discussion: Vec<String>,
+            analysis: Option<String>,
+            wins: Vec<String>,
+            risks: Vec<String>,
+            decisions: Vec<String>,
+            key_advocate_health: Option<KeyAdvocateHealth>,
+        }
+
+        serde_json::from_str::<TranscriptRoleReviewEnvelope>(json)
+            .ok()
+            .map(|envelope| TranscriptRoleReviewPayload {
+                summary: envelope.extracted.summary,
+                discussion: envelope.extracted.discussion,
+                analysis: envelope.extracted.analysis,
+                wins: envelope.extracted.wins,
+                risks: envelope.extracted.risks,
+                decisions: envelope.extracted.decisions,
+                key_advocate_health: envelope.extracted.key_advocate_health,
+            })
+    })
 }
 
 fn parse_reviewed_win_metadata(raw: &str) -> (&str, Option<&str>, Option<&str>) {
@@ -1999,7 +2049,15 @@ struct EnrichedTranscriptData<'a> {
 fn persist_enriched_transcript_data(db: &crate::db::ActionDb, data: &EnrichedTranscriptData<'_>) {
     let meeting_id = data.meeting_id;
     let meeting_title = data.meeting_title;
-    let account_id = data.account_id;
+    let resolved_account_id = data
+        .account_id
+        .and_then(|candidate| resolve_account_id(db, candidate));
+    let account_id = resolved_account_id.as_deref();
+    let captured_commitment_meeting_id = db
+        .get_meeting_by_id(meeting_id)
+        .ok()
+        .flatten()
+        .map(|_| meeting_id);
     let interaction_dynamics = data.interaction_dynamics;
     let key_advocate_health = data.key_advocate_health;
     let role_changes = data.role_changes;
@@ -2075,7 +2133,7 @@ fn persist_enriched_transcript_data(db: &crate::db::ActionDb, data: &EnrichedTra
                     rusqlite::params![
                         commit_id,
                         acct_id,
-                        meeting_id,
+                        captured_commitment_meeting_id,
                         commitment.commitment,
                         owned_by,
                         commitment.target_date,
@@ -4011,6 +4069,86 @@ mod tests {
             metadata: None,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn parse_role_review_accepts_extracted_envelope() {
+        let output = r#"{
+            "extracted": {
+                "summary": "Customer confirmed rollout sequencing.",
+                "discussion": ["Legal owns the remaining review."],
+                "wins": ["Champion aligned procurement."],
+                "risks": [],
+                "decisions": []
+            }
+        }"#;
+
+        let parsed = parse_transcript_role_review_response(output).expect("parse envelope");
+
+        assert_eq!(parsed.summary, "Customer confirmed rollout sequencing.");
+        assert_eq!(parsed.discussion, vec!["Legal owns the remaining review."]);
+        assert_eq!(parsed.wins, vec!["Champion aligned procurement."]);
+    }
+
+    #[test]
+    fn parse_role_review_rejects_incomplete_extracted_envelope() {
+        let output = r#"{
+            "extracted": {
+                "summary": "Customer confirmed rollout sequencing."
+            }
+        }"#;
+
+        assert!(parse_transcript_role_review_response(output).is_none());
+    }
+
+    #[test]
+    fn manual_paste_commitments_keep_account_when_meeting_row_missing() {
+        let db = test_db();
+        db.upsert_account(&sample_account_row("acc-manual-paste", "Acme Corp"))
+            .expect("seed account");
+
+        let commitments = vec![TranscriptCommitment {
+            commitment: "Send rollout checklist".to_string(),
+            target_date: Some("2026-06-01".to_string()),
+            owned_by: Some("us".to_string()),
+            success_criteria: Some("Customer confirms checklist is complete".to_string()),
+        }];
+
+        persist_enriched_transcript_data(
+            &db,
+            &EnrichedTranscriptData {
+                meeting_id: "manual-paste-missing-meeting",
+                meeting_title: "Acme transcript paste",
+                account_id: Some("Acme Corp"),
+                interaction_dynamics: None,
+                key_advocate_health: None,
+                role_changes: &[],
+                commitments: &commitments,
+            },
+        );
+
+        let (account_id, meeting_id): (String, Option<String>) = db
+            .conn_ref()
+            .query_row(
+                "SELECT account_id, meeting_id FROM captured_commitments WHERE title = ?1",
+                rusqlite::params!["Send rollout checklist"],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("commitment captured");
+
+        assert_eq!(account_id, "acc-manual-paste");
+        assert_eq!(meeting_id, None);
+
+        let capture_account_id: Option<String> = db
+            .conn_ref()
+            .query_row(
+                "SELECT account_id FROM captures WHERE content = ?1",
+                rusqlite::params!["Send rollout checklist"],
+                |row| row.get(0),
+            )
+            .expect("commitment capture written");
+
+        assert_eq!(capture_account_id.as_deref(), Some("acc-manual-paste"));
     }
 
     fn sample_project_row(id: &str, name: &str) -> DbProject {
