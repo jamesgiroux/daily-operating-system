@@ -1066,6 +1066,13 @@ const MIGRATIONS: &[Migration] = &[
         version: 267,
         apply: v178_dos_285_linear_issue_state::migrate_v178,
     },
+    // v1.4.5 W5-A — resumable workspace source backfill run/item/operation
+    // state. Uses the next contiguous slot after merged v1.4.4a runtime
+    // evidence backfill requests.
+    Migration::Sql {
+        version: 268,
+        sql: include_str!("migrations/268_workspace_backfill_state.sql"),
+    },
 ];
 
 const V155_SHADOW_TRUST_VERSION: i64 = 1_401_003;

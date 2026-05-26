@@ -299,6 +299,26 @@
       }
     },
     {
+      "name": "markdown_preview",
+      "description": "",
+      "category": "read",
+      "annotations": {},
+      "wp_permission": "none",
+      "allowed_actors": [
+        "surface_client"
+      ],
+      "required_scopes": [
+        "read.markdown_preview"
+      ],
+      "mcp_exposure": "none",
+      "client_side_executable": false,
+      "idempotency_class": "idempotent",
+      "composition_kind": {
+        "produces_blocks": false,
+        "block_types": []
+      }
+    },
+    {
       "name": "prepare_meeting",
       "description": "",
       "category": "transform",
@@ -330,6 +350,70 @@
       "mcp_exposure": "none",
       "client_side_executable": false,
       "idempotency_class": "side_effect",
+      "composition_kind": {
+        "produces_blocks": false,
+        "block_types": []
+      }
+    },
+    {
+      "name": "source_management_action",
+      "description": "",
+      "category": "transform",
+      "annotations": {},
+      "wp_permission": "none",
+      "allowed_actors": [
+        "surface_client"
+      ],
+      "required_scopes": [
+        "write.entity_intake"
+      ],
+      "mcp_exposure": "none",
+      "client_side_executable": false,
+      "idempotency_class": "idempotent",
+      "composition_kind": {
+        "produces_blocks": false,
+        "block_types": []
+      }
+    },
+    {
+      "name": "source_management_ledger",
+      "description": "",
+      "category": "read",
+      "annotations": {},
+      "wp_permission": "none",
+      "allowed_actors": [
+        "user",
+        "runtime",
+        "surface_client"
+      ],
+      "required_scopes": [
+        "read.workspace_sources"
+      ],
+      "mcp_exposure": "none",
+      "client_side_executable": false,
+      "idempotency_class": "idempotent",
+      "composition_kind": {
+        "produces_blocks": false,
+        "block_types": []
+      }
+    },
+    {
+      "name": "workspace_graph",
+      "description": "",
+      "category": "read",
+      "annotations": {},
+      "wp_permission": "none",
+      "allowed_actors": [
+        "user",
+        "runtime",
+        "surface_client"
+      ],
+      "required_scopes": [
+        "read.workspace_graph"
+      ],
+      "mcp_exposure": "none",
+      "client_side_executable": false,
+      "idempotency_class": "idempotent",
       "composition_kind": {
         "produces_blocks": false,
         "block_types": []
