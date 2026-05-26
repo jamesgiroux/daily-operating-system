@@ -30,7 +30,7 @@ use dailyos_lib::services::context::{
     ClaimDismissalSurface, DailyReadinessContextReadFuture, DailyReadinessContextReadHandle,
     DailyReadinessContextSnapshot, DailyReadinessMeetingSnapshot, DailyReadinessOpenLoopSnapshot,
     DailyReadinessRiskSnapshot, DailyReadinessSignalSnapshot, DailyReadinessSubjectSnapshot,
-    EntityContextClaimReadFuture, EntityContextClaimReadHandle, FixedClock,
+    EntityContextClaimReadFuture, EntityContextClaimReadHandle, FixedClock, MeetingsViewIntent,
     PrepareMeetingAttendeeSnapshot, PrepareMeetingContextReadFuture,
     PrepareMeetingContextReadHandle, PrepareMeetingContextSnapshot, PrepareMeetingSnapshot,
     PrepareMeetingSubjectSnapshot, SeedableRng, ServiceContext,
@@ -97,6 +97,7 @@ impl DailyReadinessContextReadHandle for FixtureClaimReader {
         &'a self,
         workspace_scope: String,
         date: String,
+        _intent: MeetingsViewIntent,
     ) -> DailyReadinessContextReadFuture<'a> {
         let result = self
             .daily_snapshots

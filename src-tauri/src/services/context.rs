@@ -1040,6 +1040,7 @@ impl DailyReadinessContextReadHandle for LiveDailyReadinessContextReader {
         &'a self,
         workspace_scope: String,
         date: String,
+        intent: MeetingsViewIntent,
     ) -> DailyReadinessContextReadFuture<'a> {
         // Resolve the user's local-day boundaries in their configured TZ. Without
         // this the SQL query below would naively compare UTC-stored start_time
@@ -1055,7 +1056,7 @@ impl DailyReadinessContextReadHandle for LiveDailyReadinessContextReader {
         Box::pin(async move {
             tokio::task::spawn_blocking(move || {
                 let db = open_action_db()?;
-                project_daily_readiness_context_snapshot(&db, &workspace_scope, &date, &tz)
+                project_daily_readiness_context_snapshot(&db, &workspace_scope, &date, &tz, intent)
             })
             .await
             .map_err(|error| format!("daily readiness context read task failed: {error}"))?
@@ -1068,63 +1069,21 @@ fn project_daily_readiness_context_snapshot(
     workspace_scope: &str,
     date: &str,
     tz: &chrono_tz::Tz,
+    intent: MeetingsViewIntent,
 ) -> Result<DailyReadinessContextSnapshot, String> {
-    use chrono::TimeZone;
     let parsed_date = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
         .map_err(|error| format!("invalid daily readiness date `{date}`: {error}"))?;
-    let next_date = parsed_date
-        .checked_add_days(chrono::Days::new(1))
-        .ok_or_else(|| format!("invalid next-day range for daily readiness date `{date}`"))?;
-    // Resolve local-day boundaries to UTC RFC3339 so the SQL matches the
-    // poller's storage format. `earliest()` handles DST spring-forward gaps;
-    // fallback to a naive UTC boundary keeps the query well-formed if TZ
-    // resolution fails entirely.
-    let day_start_local = parsed_date
-        .and_hms_opt(0, 0, 0)
-        .ok_or_else(|| format!("invalid local-day start for date `{date}`"))?;
-    let day_end_local = next_date
-        .and_hms_opt(0, 0, 0)
-        .ok_or_else(|| format!("invalid local-day end for date `{date}`"))?;
-    let utc_start = tz
-        .from_local_datetime(&day_start_local)
-        .earliest()
-        .map(|dt| dt.with_timezone(&chrono::Utc).to_rfc3339())
-        .unwrap_or_else(|| format!("{parsed_date}T00:00:00+00:00"));
-    let utc_end = tz
-        .from_local_datetime(&day_end_local)
-        .earliest()
-        .map(|dt| dt.with_timezone(&chrono::Utc).to_rfc3339())
-        .unwrap_or_else(|| format!("{next_date}T00:00:00+00:00"));
-    // LEFT JOIN meeting_transcripts to exclude meetings the calendar poller has
-    // archived (= the user cancelled them in their actual calendar). Without
-    // this, ghost meetings persist in the briefing's "needs prep" / "unlinked"
-    // counts even though `calendar_merge` correctly drops them from the focus
-    // capacity view. Mirrors the predicate used by `record_cancelled_calendar_meetings`.
-    let conn = db.conn_ref();
-    let mut stmt = conn
-        .prepare(
-            "SELECT m.id, m.title, m.start_time, m.end_time
-             FROM meetings m
-             LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
-             WHERE m.start_time >= ?1 AND m.start_time < ?2
-             AND (mt.intelligence_state IS NULL OR mt.intelligence_state != 'archived')
-             ORDER BY m.start_time ASC",
-        )
-        .map_err(|error| error.to_string())?;
-    let rows = stmt
-        .query_map(rusqlite::params![utc_start, utc_end], |row| {
-            Ok(DailyReadinessMeetingSnapshot {
-                id: row.get(0)?,
-                title: row.get(1)?,
-                starts_at: row.get(2)?,
-                ends_at: row.get(3)?,
-                workspace_scope: workspace_scope.to_string(),
-            })
-        })
-        .map_err(|error| error.to_string())?;
-    let meetings: Vec<DailyReadinessMeetingSnapshot> = rows
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| error.to_string())?;
+    // Meetings projection is service-owned (see services/meetings_view.rs).
+    // TZ-aware window resolution, the transcript-archive JOIN, and the
+    // per-intent type filter all live there so future consumers (dashboard,
+    // executive intelligence) can share the same policy without re-deriving it.
+    let meetings = crate::services::meetings_view::read_surface_meetings(
+        db,
+        workspace_scope,
+        parsed_date,
+        tz,
+        intent,
+    )?;
     let meeting_ids = meetings
         .iter()
         .map(|meeting| meeting.id.clone())
@@ -1324,8 +1283,14 @@ mod tests {
             .expect("drop linked_entities view");
 
         let tz: chrono_tz::Tz = "UTC".parse().expect("parse UTC tz");
-        let snapshot = project_daily_readiness_context_snapshot(&db, "local", "2026-05-23", &tz)
-            .expect("read daily readiness context");
+        let snapshot = project_daily_readiness_context_snapshot(
+            &db,
+            "local",
+            "2026-05-23",
+            &tz,
+            MeetingsViewIntent::Briefing,
+        )
+        .expect("read daily readiness context");
 
         assert_eq!(snapshot.meetings.len(), 1);
         assert!(snapshot.tracked_subjects.is_empty());
@@ -1340,6 +1305,99 @@ mod tests {
         );
         assert_eq!(snapshot.coverage_warnings[0].count, 1);
         assert_eq!(snapshot.coverage_warnings[0].workspace_scope, "local");
+    }
+
+    /// Regression: a calendar day with N personal blocks and zero customer
+    /// meetings must yield zero rows under `Briefing` intent, so the briefing
+    /// producer doesn't emit phantom "needs prep" / "link N meetings"
+    /// advisories. `AllRows` keeps the rows for callers that want the raw set.
+    #[test]
+    fn personal_blocks_excluded_under_briefing_intent() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let db = crate::db::ActionDb::open_at_unencrypted(
+            tempdir.path().join("personal-block-projection.db"),
+        )
+        .expect("open db");
+
+        // 4 personal blocks (matches the phantom-row shape) + 1 customer
+        // meeting. The customer meeting is the only row Briefing should return.
+        let rows = [
+            ("meet-personal-1", "Lunch", "personal", "2026-05-23T12:00:00Z"),
+            ("meet-personal-2", "Gym", "personal", "2026-05-23T07:00:00Z"),
+            (
+                "meet-personal-3",
+                "School pickup",
+                "personal",
+                "2026-05-23T15:00:00Z",
+            ),
+            (
+                "meet-personal-4",
+                "Doctor",
+                "personal",
+                "2026-05-23T16:00:00Z",
+            ),
+            (
+                "meet-customer-1",
+                "Customer sync",
+                "customer",
+                "2026-05-23T10:00:00Z",
+            ),
+        ];
+        for (id, title, meeting_type, start) in rows {
+            db.conn_ref()
+                .execute(
+                    "INSERT INTO meetings (id, title, meeting_type, start_time, end_time, created_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    params![
+                        id,
+                        title,
+                        meeting_type,
+                        start,
+                        "2026-05-23T23:59:59Z",
+                        "2026-05-23T00:00:00Z",
+                    ],
+                )
+                .expect("insert meeting");
+        }
+
+        let tz: chrono_tz::Tz = "UTC".parse().expect("parse UTC tz");
+        let date = chrono::NaiveDate::from_ymd_opt(2026, 5, 23).expect("date");
+
+        let briefing = crate::services::meetings_view::read_surface_meetings(
+            &db,
+            "local",
+            date,
+            &tz,
+            MeetingsViewIntent::Briefing,
+        )
+        .expect("briefing projection");
+        assert_eq!(
+            briefing.len(),
+            1,
+            "Briefing intent must exclude personal blocks; got {briefing:?}"
+        );
+        assert_eq!(briefing[0].id, "meet-customer-1");
+
+        let all_rows = crate::services::meetings_view::read_surface_meetings(
+            &db,
+            "local",
+            date,
+            &tz,
+            MeetingsViewIntent::AllRows,
+        )
+        .expect("all-rows projection");
+        let all_ids: Vec<&str> = all_rows.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(
+            all_ids,
+            vec![
+                "meet-personal-2",
+                "meet-customer-1",
+                "meet-personal-1",
+                "meet-personal-3",
+                "meet-personal-4",
+            ],
+            "AllRows must include every row in start_time order; got {all_ids:?}"
+        );
     }
 
     #[test]
