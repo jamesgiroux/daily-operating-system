@@ -60,7 +60,13 @@ pub mod substrate_test_api {
         input: &EnrichmentInput,
         intel: &crate::intelligence::IntelligenceJson,
     ) -> Result<PreparedEnrichment, String> {
-        crate::intel_queue::compose_enrichment_intelligence_payload(db, input, intel, None)
+        crate::intel_queue::compose_enrichment_intelligence_payload(
+            db,
+            input,
+            intel,
+            crate::intel_queue::EnrichmentProducer::Pty,
+            None,
+        )
     }
 }
 #[cfg(any(feature = "test-harness", debug_assertions))]

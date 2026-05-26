@@ -407,7 +407,12 @@ impl GleanIntelligenceProvider {
 
                         // Progressive DB write + event emission
                         if let Some(handle) = app_handle {
-                            write_progressive_glean_dimension(entity_id, entity_type, &combined);
+                            write_progressive_glean_dimension(
+                                entity_id,
+                                entity_type,
+                                relationship,
+                                &combined,
+                            );
                             #[allow(
                                 clippy::let_underscore_must_use,
                                 reason = "intentional best-effort discard; preserves existing non-blocking behavior"
@@ -1077,6 +1082,7 @@ fn extract_domains_for_glean_enrichment(_intel: &mut IntelligenceJson) {
 fn write_progressive_glean_dimension(
     entity_id: &str,
     entity_type: &str,
+    relationship: Option<&str>,
     combined: &IntelligenceJson,
 ) {
     let db = match crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())) {
@@ -1091,32 +1097,13 @@ fn write_progressive_glean_dimension(
         }
     };
 
-    // Progressive writes within a single enrichment cycle use simple dimension
-    // merge, NOT reconciliation. Reconciliation is for cross-cycle merges
-    // (e.g., Glean refresh on top of existing PTY data). Within one cycle,
-    // the combined state is authoritative — just overlay it on existing.
-    let existing = db.get_entity_intelligence(entity_id).ok().flatten();
-    let mut merged = if let Some(mut existing) = existing {
-        for dim in crate::intelligence::dimension_prompts::DIMENSION_NAMES {
-            #[allow(
-                clippy::let_underscore_must_use,
-                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-            )]
-            let _ = crate::intelligence::dimension_prompts::merge_dimension_into(
-                &mut existing,
-                dim,
-                combined,
-            );
-        }
-        existing
-    } else {
-        combined.clone()
-    };
-
-    merged.entity_id = entity_id.to_string();
-    merged.entity_type = entity_type.to_string();
-    // dos259-grandfathered: progressive-write enrichment timestamp; migrates to ctx.clock.now() when W2-A lands ServiceContext.
-    merged.enriched_at = chrono::Utc::now().to_rfc3339();
+    let merged = crate::intel_queue::prepare_progressive_dimension_snapshot(
+        &db,
+        entity_id,
+        entity_type,
+        relationship,
+        combined,
+    );
 
     let clock = crate::services::context::SystemClock;
     let rng = crate::services::context::SystemRng;

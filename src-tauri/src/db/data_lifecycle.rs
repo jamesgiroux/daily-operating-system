@@ -393,6 +393,10 @@ pub struct PurgeReport {
     #[serde(default)]
     pub account_fact_recompute_jobs_enqueued: usize,
     #[serde(default)]
+    pub generated_projection_claims_withdrawn: usize,
+    #[serde(default)]
+    pub generated_projection_recompute_jobs_enqueued: usize,
+    #[serde(default)]
     pub technical_footprint_fields_cleared: usize,
     #[serde(default)]
     pub enrichment_commitments_deleted: usize,
@@ -926,6 +930,8 @@ pub fn purge_source(db: &ActionDb, source: DataSource) -> Result<PurgeReport, Db
         let mut account_fact_claims_withdrawn = 0usize;
         let mut account_schema_facts_cleared = 0usize;
         let mut account_fact_recompute_jobs_enqueued = 0usize;
+        let mut generated_projection_claims_withdrawn = 0usize;
+        let mut generated_projection_recompute_jobs_enqueued = 0usize;
         let mut technical_footprint_fields_cleared = 0usize;
         let mut enrichment_commitments_deleted = 0usize;
         let mut account_products_deleted = 0usize;
@@ -951,6 +957,20 @@ pub fn purge_source(db: &ActionDb, source: DataSource) -> Result<PurgeReport, Db
                     account_schema_facts_cleared = account_fact_purge.schema_facts_cleared;
                     account_fact_recompute_jobs_enqueued =
                         account_fact_purge.recompute_jobs_enqueued;
+                }
+
+                if table_exists(tx, "intelligence_claims") {
+                    let projection_purge =
+                        crate::services::intelligence::purge_glean_generated_projection_claims_for_source_purge(
+                            &ctx,
+                            tx,
+                        )
+                        .map_err(|e| {
+                            format!("purge Glean generated projection claims failed: {e}")
+                        })?;
+                    generated_projection_claims_withdrawn = projection_purge.claims_withdrawn;
+                    generated_projection_recompute_jobs_enqueued =
+                        projection_purge.recompute_jobs_enqueued;
                 }
 
                 if table_exists(tx, "entity_assessment") {
@@ -1061,6 +1081,8 @@ pub fn purge_source(db: &ActionDb, source: DataSource) -> Result<PurgeReport, Db
             account_fact_claims_withdrawn,
             account_schema_facts_cleared,
             account_fact_recompute_jobs_enqueued,
+            generated_projection_claims_withdrawn,
+            generated_projection_recompute_jobs_enqueued,
             technical_footprint_fields_cleared,
             enrichment_commitments_deleted,
             account_products_deleted,

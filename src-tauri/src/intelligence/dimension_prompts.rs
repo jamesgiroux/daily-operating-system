@@ -30,6 +30,8 @@ pub const DIMENSION_NAMES: &[&str] = &[
     "engagement_signals",
 ];
 
+pub(crate) const ACCOUNT_ONLY_ENGAGEMENT_FIELDS_CLEAR: &str = "account_only_engagement_fields";
+
 /// Dimension selection for a specific entity refresh.
 ///
 /// The six canonical dimensions still define the complete account shape, but
@@ -462,6 +464,84 @@ pub fn merge_dimension_into(
     }
 
     Ok(())
+}
+
+/// Clear fields for dimensions that should not apply to this entity shape.
+///
+/// Reconciliation preserves missing fields by design, so non-applicable
+/// dimensions need an explicit clear after a refresh changes entity shape or
+/// relationship context.
+pub fn clear_inapplicable_dimension_fields(
+    intel: &mut IntelligenceJson,
+    entity_type: &str,
+    relationship: Option<&str>,
+) -> Vec<&'static str> {
+    let applicability = dimension_applicability(entity_type, relationship);
+    let mut cleared = applicability.skipped;
+    for dimension in &cleared {
+        clear_dimension_fields(intel, dimension);
+    }
+    if !entity_type.eq_ignore_ascii_case("account") {
+        clear_account_only_engagement_fields(intel);
+        cleared.push(ACCOUNT_ONLY_ENGAGEMENT_FIELDS_CLEAR);
+    }
+    cleared
+}
+
+fn clear_dimension_fields(intel: &mut IntelligenceJson, dimension: &str) {
+    match dimension {
+        "core_assessment" => {
+            intel.executive_assessment = None;
+            intel.pull_quote = None;
+            intel.current_state = None;
+            intel.risks.clear();
+            intel.recent_wins.clear();
+        }
+        "stakeholder_champion" => {
+            intel.stakeholder_insights.clear();
+            intel.coverage_assessment = None;
+            intel.organizational_changes.clear();
+            intel.internal_team.clear();
+            intel.relationship_depth = None;
+        }
+        "commercial_financial" => {
+            intel.health = None;
+            intel.contract_context = None;
+            intel.agreement_outlook = None;
+            intel.expansion_signals.clear();
+            intel.blockers.clear();
+            intel.product_classification = None;
+        }
+        "strategic_context" => {
+            intel.company_context = None;
+            intel.competitive_context.clear();
+            intel.strategic_priorities.clear();
+            intel.market_context.clear();
+            intel.regulatory_context.clear();
+        }
+        "value_success" => {
+            intel.value_delivered.clear();
+            intel.success_metrics = None;
+            intel.success_plan_signals = None;
+            intel.open_commitments = None;
+        }
+        "engagement_signals" => {
+            intel.meeting_cadence = None;
+            intel.email_responsiveness = None;
+            intel.product_adoption = None;
+            intel.support_health = None;
+            intel.gong_call_summaries.clear();
+            intel.nps_csat = None;
+        }
+        _ => {}
+    }
+}
+
+fn clear_account_only_engagement_fields(intel: &mut IntelligenceJson) {
+    intel.product_adoption = None;
+    intel.support_health = None;
+    intel.gong_call_summaries.clear();
+    intel.nps_csat = None;
 }
 
 // =============================================================================
@@ -1083,6 +1163,9 @@ fn dimension_json_schema(dimension: &str, entity_type: &str, ctx: &IntelligenceC
 
 #[cfg(test)]
 mod tests {
+    use super::super::io::{
+        AdoptionSignals, CadenceAssessment, GongCallSummary, SatisfactionData, SupportHealth,
+    };
     use super::*;
 
     fn empty_intel() -> IntelligenceJson {
@@ -1136,6 +1219,34 @@ mod tests {
 
         assert_eq!(applicability.applicable, DIMENSION_NAMES);
         assert!(applicability.skipped.is_empty());
+    }
+
+    #[test]
+    fn clear_inapplicable_fields_reports_account_only_engagement_clears_for_people() {
+        let mut intel = empty_intel();
+        intel.product_adoption = Some(AdoptionSignals::default());
+        intel.support_health = Some(SupportHealth::default());
+        intel.gong_call_summaries = vec![GongCallSummary {
+            title: "Account QBR".to_string(),
+            date: "2026-05-22".to_string(),
+            participants: vec!["account team".to_string()],
+            key_topics: "account usage".to_string(),
+            sentiment: "neutral".to_string(),
+        }];
+        intel.nps_csat = Some(SatisfactionData::default());
+        intel.meeting_cadence = Some(CadenceAssessment::default());
+
+        let cleared = clear_inapplicable_dimension_fields(&mut intel, "person", Some("internal"));
+
+        assert!(cleared.contains(&ACCOUNT_ONLY_ENGAGEMENT_FIELDS_CLEAR));
+        assert!(intel.product_adoption.is_none());
+        assert!(intel.support_health.is_none());
+        assert!(intel.gong_call_summaries.is_empty());
+        assert!(intel.nps_csat.is_none());
+        assert!(
+            intel.meeting_cadence.is_some(),
+            "person engagement cadence remains applicable"
+        );
     }
 
     #[test]
