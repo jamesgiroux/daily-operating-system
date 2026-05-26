@@ -5116,19 +5116,19 @@ fn corroborate_in_tx(
     source_mechanism: Option<&str>,
     now: &str,
 ) -> Result<String, ClaimError> {
-    let existing: Option<(String, f64, i64)> = tx
+    let existing: Option<(String, f64, i64, Option<String>)> = tx
         .conn_ref()
         .query_row(
-            "SELECT id, strength, reinforcement_count
+            "SELECT id, strength, reinforcement_count, source_asof
              FROM claim_corroborations
              WHERE claim_id = ?1 AND data_source = ?2",
             params![claim_id, data_source],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .optional()?;
 
     let id = match existing {
-        Some((id, strength, count)) => {
+        Some((id, strength, count, existing_source_asof)) => {
             let numerator = (count as f64 + 2.0).ln();
             let denominator = (count as f64 + 1.0).ln();
             let increment = if denominator > 0.0 {
@@ -5137,13 +5137,15 @@ fn corroborate_in_tx(
                 1.0
             };
             let new_strength = (strength + increment).min(1.0);
+            let source_asof = newest_source_asof(existing_source_asof.as_deref(), source_asof);
             tx.conn_ref().execute(
                 "UPDATE claim_corroborations
                  SET strength = ?1,
                      reinforcement_count = reinforcement_count + 1,
-                     last_reinforced_at = ?2
-                 WHERE id = ?3",
-                params![new_strength, &now, &id],
+                     last_reinforced_at = ?2,
+                     source_asof = ?3
+                 WHERE id = ?4",
+                params![new_strength, &now, source_asof.as_deref(), &id],
             )?;
             id
         }
@@ -5167,6 +5169,26 @@ fn corroborate_in_tx(
         }
     };
     Ok(id)
+}
+
+fn newest_source_asof(existing: Option<&str>, incoming: Option<&str>) -> Option<String> {
+    match (existing, incoming) {
+        (None, None) => None,
+        (Some(existing), None) => Some(existing.to_string()),
+        (None, Some(incoming)) => Some(incoming.to_string()),
+        (Some(existing), Some(incoming)) => {
+            match (
+                DateTime::parse_from_rfc3339(existing),
+                DateTime::parse_from_rfc3339(incoming),
+            ) {
+                (Ok(existing_time), Ok(incoming_time)) if incoming_time > existing_time => {
+                    Some(incoming.to_string())
+                }
+                (Err(_), Ok(_)) => Some(incoming.to_string()),
+                _ => Some(existing.to_string()),
+            }
+        }
+    }
 }
 
 fn insert_semantic_evidence_in_tx(
@@ -10306,26 +10328,14 @@ pub fn withdraw_email_subject_claims_for_existing_emails(
 /// Runs in the caller's transaction and uses the normal claim lifecycle side
 /// effects: subject claim-version bump, claim-version event, and edge
 /// tombstoning. The claim assertion rows remain for audit.
-pub fn withdraw_glean_account_fact_claims_for_source_purge_in_tx(
+fn withdraw_claim_ids_for_source_purge_in_tx(
     ctx: &ServiceContext<'_>,
     db: &ActionDb,
+    claim_ids: Vec<String>,
+    retraction_reason: &str,
 ) -> Result<usize, ClaimError> {
     ctx.check_mutation_allowed()
         .map_err(|e| ClaimError::Mode(e.to_string()))?;
-    let mut stmt = db.conn_ref().prepare(
-        "SELECT ic.id
-           FROM intelligence_claims ic
-          WHERE ic.claim_type = 'account_fact'
-            AND ic.claim_state IN ('active', 'tombstoned', 'dormant')
-            AND json_valid(ic.subject_ref) = 1
-            AND lower(json_extract(ic.subject_ref, '$.kind')) = 'account'
-            AND ic.source_ref LIKE 'glean_account_fact:%'
-          ORDER BY ic.id",
-    )?;
-    let claim_ids = stmt
-        .query_map([], |row| row.get::<_, String>(0))?
-        .collect::<Result<Vec<_>, _>>()?;
-
     let mut withdrawn = 0usize;
     let now = ctx.clock.now().to_rfc3339();
     let actor_kind = VersionActorKind::from_service_actor(ctx.actor);
@@ -10355,9 +10365,9 @@ pub fn withdraw_glean_account_fact_claims_for_source_purge_in_tx(
             "UPDATE intelligence_claims
              SET claim_state = 'withdrawn',
                  surfacing_state = 'dormant',
-                 retraction_reason = coalesce(retraction_reason, 'source_purged:glean')
+                 retraction_reason = coalesce(retraction_reason, ?2)
              WHERE id = ?1",
-            params![claim_id],
+            params![claim_id, retraction_reason],
         )?;
         mark_claim_edges_tombstoned(db, &claim_id, &now)?;
         db.bump_for_subject(&subject)?;
@@ -10377,6 +10387,697 @@ pub fn withdraw_glean_account_fact_claims_for_source_purge_in_tx(
         withdrawn += 1;
     }
     Ok(withdrawn)
+}
+
+pub fn withdraw_generated_projection_claims_for_field_path_roots_in_tx(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+    field_path_roots: &[&str],
+    retraction_reason: &str,
+) -> Result<usize, ClaimError> {
+    if field_path_roots.is_empty() {
+        return Ok(0);
+    }
+
+    let mut stmt = db.conn_ref().prepare(
+        "SELECT ic.id, coalesce(ic.field_path, '')
+           FROM intelligence_claims ic
+          WHERE ic.claim_state = 'active'
+            AND ic.surfacing_state = 'active'
+            AND json_valid(ic.subject_ref) = 1
+            AND lower(json_extract(ic.subject_ref, '$.kind')) = lower(?1)
+            AND json_extract(ic.subject_ref, '$.id') = ?2
+            AND (
+                ic.source_ref LIKE 'intelligence_projection_source:%'
+                OR (
+                    json_valid(ic.provenance_json) = 1
+                    AND json_extract(ic.provenance_json, '$.ability_name') = 'claim_shaped_intelligence_projection'
+                )
+                OR (
+                    ic.metadata_json IS NOT NULL
+                    AND json_valid(ic.metadata_json) = 1
+                    AND json_type(ic.metadata_json, '$.legacy_projection_value') IS NOT NULL
+                )
+            )
+          ORDER BY ic.id",
+    )?;
+    let rows = stmt
+        .query_map(params![entity_type, entity_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    let claim_ids = rows
+        .into_iter()
+        .filter_map(|(claim_id, field_path)| {
+            field_path_roots
+                .iter()
+                .any(|root| field_path_matches_projection_root(&field_path, root))
+                .then_some(claim_id)
+        })
+        .collect();
+
+    withdraw_claim_ids_for_source_purge_in_tx(ctx, db, claim_ids, retraction_reason)
+}
+
+pub struct GeneratedProjectionRefreshWithdrawal<'a> {
+    pub entity_type: &'a str,
+    pub entity_id: &'a str,
+    pub field_path_roots: &'a [&'a str],
+    pub projection_producers: &'a [&'a str],
+    pub retained_claim_keys: &'a [(String, String, String, String)],
+    pub retraction_reason: &'a str,
+}
+
+pub struct GeneratedProjectionRefreshWithdrawalOutcome {
+    pub withdrawn: usize,
+    pub affected_subjects: Vec<(String, String)>,
+}
+
+pub fn withdraw_generated_projection_claims_for_field_path_roots_by_projection_producer_in_tx(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    input: GeneratedProjectionRefreshWithdrawal<'_>,
+) -> Result<GeneratedProjectionRefreshWithdrawalOutcome, ClaimError> {
+    if input.field_path_roots.is_empty() || input.projection_producers.is_empty() {
+        return Ok(GeneratedProjectionRefreshWithdrawalOutcome {
+            withdrawn: 0,
+            affected_subjects: Vec::new(),
+        });
+    }
+
+    let mut stmt = db.conn_ref().prepare(
+        "SELECT ic.id,
+                ic.subject_ref,
+                lower(json_extract(ic.subject_ref, '$.kind')),
+                json_extract(ic.subject_ref, '$.id'),
+                ic.claim_type,
+                coalesce(ic.field_path, ''),
+                ic.text,
+                ic.metadata_json
+           FROM intelligence_claims ic
+          WHERE ic.claim_state = 'active'
+            AND ic.surfacing_state = 'active'
+            AND json_valid(ic.subject_ref) = 1
+            AND (
+                (
+                    lower(json_extract(ic.subject_ref, '$.kind')) = lower(?1)
+                    AND json_extract(ic.subject_ref, '$.id') = ?2
+                )
+                OR (
+                    ic.metadata_json IS NOT NULL
+                    AND json_valid(ic.metadata_json) = 1
+                    AND lower(json_extract(ic.metadata_json, '$.projection_origin_subject.kind')) = lower(?1)
+                    AND json_extract(ic.metadata_json, '$.projection_origin_subject.id') = ?2
+                )
+            )
+            AND (
+                ic.source_ref LIKE 'intelligence_projection_source:%'
+                OR (
+                    json_valid(ic.provenance_json) = 1
+                    AND json_extract(ic.provenance_json, '$.ability_name') = 'claim_shaped_intelligence_projection'
+                )
+                OR (
+                    ic.metadata_json IS NOT NULL
+                    AND json_valid(ic.metadata_json) = 1
+                    AND json_type(ic.metadata_json, '$.legacy_projection_value') IS NOT NULL
+                )
+            )
+          ORDER BY ic.id",
+    )?;
+    let rows = stmt
+        .query_map(params![input.entity_type, input.entity_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, String>(5)?,
+                row.get::<_, String>(6)?,
+                row.get::<_, Option<String>>(7)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut affected_subjects = HashSet::new();
+    let claim_ids = rows
+        .into_iter()
+        .filter_map(
+            |(
+                claim_id,
+                subject_ref,
+                subject_kind,
+                subject_id,
+                claim_type,
+                field_path,
+                text,
+                metadata_json,
+            )| {
+                let field_matches = input
+                    .field_path_roots
+                    .iter()
+                    .any(|root| field_path_matches_projection_root(&field_path, root));
+                if !field_matches {
+                    return None;
+                }
+                if input.retained_claim_keys.iter().any(
+                    |(retained_subject, retained_type, retained_path, retained_text)| {
+                        retained_subject == &subject_ref
+                            && retained_type == &claim_type
+                            && retained_path == &field_path
+                            && retained_text == &text
+                    },
+                ) {
+                    return None;
+                }
+                let producer = projection_producer_from_metadata(metadata_json.as_deref())?;
+                if !input
+                    .projection_producers
+                    .iter()
+                    .any(|candidate| producer.eq_ignore_ascii_case(candidate))
+                {
+                    return None;
+                }
+                affected_subjects.insert((subject_kind, subject_id));
+                Some(claim_id)
+            },
+        )
+        .collect();
+
+    let withdrawn =
+        withdraw_claim_ids_for_source_purge_in_tx(ctx, db, claim_ids, input.retraction_reason)?;
+    Ok(GeneratedProjectionRefreshWithdrawalOutcome {
+        withdrawn,
+        affected_subjects: affected_subjects.into_iter().collect(),
+    })
+}
+
+fn projection_producer_from_metadata(metadata_json: Option<&str>) -> Option<String> {
+    let value = serde_json::from_str::<serde_json::Value>(metadata_json?).ok()?;
+    value
+        .get("projection_producer")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn field_path_matches_projection_root(field_path: &str, root: &str) -> bool {
+    field_path == root
+        || field_path
+            .strip_prefix(root)
+            .is_some_and(|suffix| suffix.starts_with('[') || suffix.starts_with('.'))
+}
+
+/// Withdraw account-fact claims whose evidence came through Glean finalization.
+///
+/// Runs in the caller's transaction and uses the normal claim lifecycle side
+/// effects: subject claim-version bump, claim-version event, and edge
+/// tombstoning. The claim assertion rows remain for audit.
+pub fn withdraw_glean_account_fact_claims_for_source_purge_in_tx(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+) -> Result<usize, ClaimError> {
+    let mut stmt = db.conn_ref().prepare(
+        "SELECT ic.id
+           FROM intelligence_claims ic
+          WHERE ic.claim_type = 'account_fact'
+            AND ic.claim_state IN ('active', 'tombstoned', 'dormant')
+            AND json_valid(ic.subject_ref) = 1
+            AND lower(json_extract(ic.subject_ref, '$.kind')) = 'account'
+            AND ic.source_ref LIKE 'glean_account_fact:%'
+          ORDER BY ic.id",
+    )?;
+    let claim_ids = stmt
+        .query_map([], |row| row.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    withdraw_claim_ids_for_source_purge_in_tx(ctx, db, claim_ids, "source_purged:glean")
+}
+
+/// Withdraw generated projection claims whose item-level evidence came from Glean.
+pub fn withdraw_glean_generated_projection_claims_for_source_purge_in_tx(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+) -> Result<usize, ClaimError> {
+    let mut stmt = db.conn_ref().prepare(
+        "SELECT ic.id
+           FROM intelligence_claims ic
+          WHERE ic.claim_state IN ('active', 'tombstoned', 'dormant')
+            AND json_valid(ic.subject_ref) = 1
+            AND (
+                ic.data_source = 'glean'
+                OR ic.data_source LIKE 'glean_%'
+                OR (
+                    ic.metadata_json IS NOT NULL
+                    AND json_valid(ic.metadata_json) = 1
+                    AND json_extract(ic.metadata_json, '$.projection_producer') = 'glean'
+                    AND ic.data_source IN ('ai', 'ai_enrichment', 'ai_inference')
+                )
+                OR (
+                    EXISTS (
+                        SELECT 1
+                          FROM claim_corroborations cc
+                         WHERE cc.claim_id = ic.id
+                           AND (
+                               cc.data_source = 'glean'
+                               OR cc.data_source LIKE 'glean_%'
+                           )
+                    )
+                    AND NOT EXISTS (
+                        SELECT 1
+                          FROM claim_corroborations cc_local
+                         WHERE cc_local.claim_id = ic.id
+                           AND cc_local.data_source != 'ai_enrichment_progressive'
+                           AND cc_local.data_source != 'glean'
+                           AND cc_local.data_source NOT LIKE 'glean_%'
+                    )
+                    AND (
+                        ic.data_source = 'ai_enrichment_progressive'
+                        OR (
+                            ic.metadata_json IS NOT NULL
+                            AND json_valid(ic.metadata_json) = 1
+                            AND json_extract(ic.metadata_json, '$.projection_producer') = 'ai_enrichment_progressive'
+                        )
+                    )
+                )
+            )
+            AND (
+                ic.source_ref LIKE 'intelligence_projection_source:%'
+                OR (
+                    json_valid(ic.provenance_json) = 1
+                    AND json_extract(ic.provenance_json, '$.ability_name') = 'claim_shaped_intelligence_projection'
+                )
+                OR (
+                    ic.metadata_json IS NOT NULL
+                    AND json_valid(ic.metadata_json) = 1
+                    AND json_type(ic.metadata_json, '$.legacy_projection_value') IS NOT NULL
+                )
+            )
+          ORDER BY ic.id",
+    )?;
+    let claim_ids = stmt
+        .query_map([], |row| row.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    let reissues = load_glean_origin_projection_reissues_for_source_purge(ctx, db)?;
+
+    delete_glean_generated_projection_corroborations_for_source_purge_in_tx(db)?;
+
+    let withdrawn =
+        withdraw_claim_ids_for_source_purge_in_tx(ctx, db, claim_ids, "source_purged:glean")?;
+    for reissue in reissues {
+        commit_claim(ctx, db, reissue.into_claim_proposal())?;
+    }
+    Ok(withdrawn)
+}
+
+struct GeneratedProjectionClaimReissue {
+    subject_ref: String,
+    claim_type: String,
+    field_path: Option<String>,
+    topic_key: Option<String>,
+    text: String,
+    actor: String,
+    data_source: String,
+    source_asof: Option<String>,
+    observed_at: String,
+    provenance_json: String,
+    metadata_json: Option<String>,
+    temporal_scope: TemporalScope,
+    sensitivity: ClaimSensitivity,
+}
+
+impl GeneratedProjectionClaimReissue {
+    fn into_claim_proposal(self) -> ClaimProposal {
+        ClaimProposal {
+            id: None,
+            expected_claim_version: None,
+            subject_ref: self.subject_ref,
+            claim_type: self.claim_type,
+            field_path: self.field_path,
+            topic_key: self.topic_key,
+            text: self.text,
+            actor: self.actor,
+            data_source: self.data_source,
+            source_ref: None,
+            source_asof: self.source_asof,
+            observed_at: self.observed_at,
+            provenance_json: self.provenance_json,
+            metadata_json: self.metadata_json,
+            thread_id: None,
+            temporal_scope: Some(self.temporal_scope),
+            sensitivity: Some(self.sensitivity),
+            supersedes: None,
+            tombstone: None,
+        }
+    }
+}
+
+struct LocalProjectionCorroboration {
+    data_source: String,
+    source_asof: Option<String>,
+    strength: f64,
+}
+
+fn load_glean_origin_projection_reissues_for_source_purge(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+) -> Result<Vec<GeneratedProjectionClaimReissue>, ClaimError> {
+    let mut stmt = db.conn_ref().prepare(
+        "SELECT ic.id
+           FROM intelligence_claims ic
+          WHERE ic.claim_state IN ('active', 'tombstoned', 'dormant')
+            AND json_valid(ic.subject_ref) = 1
+            AND (
+                ic.data_source = 'glean'
+                OR ic.data_source LIKE 'glean_%'
+                OR (
+                    ic.metadata_json IS NOT NULL
+                    AND json_valid(ic.metadata_json) = 1
+                    AND json_extract(ic.metadata_json, '$.projection_producer') = 'glean'
+                    AND ic.data_source IN ('ai', 'ai_enrichment', 'ai_inference')
+                )
+            )
+            AND EXISTS (
+                SELECT 1
+                  FROM claim_corroborations cc_local
+                 WHERE cc_local.claim_id = ic.id
+                   AND cc_local.data_source != 'ai_enrichment_progressive'
+                   AND cc_local.data_source != 'glean'
+                   AND cc_local.data_source NOT LIKE 'glean_%'
+            )
+            AND (
+                ic.source_ref LIKE 'intelligence_projection_source:%'
+                OR (
+                    json_valid(ic.provenance_json) = 1
+                    AND json_extract(ic.provenance_json, '$.ability_name') = 'claim_shaped_intelligence_projection'
+                )
+                OR (
+                    ic.metadata_json IS NOT NULL
+                    AND json_valid(ic.metadata_json) = 1
+                    AND json_type(ic.metadata_json, '$.legacy_projection_value') IS NOT NULL
+                )
+            )
+          ORDER BY ic.id",
+    )?;
+    let claim_ids = stmt
+        .query_map([], |row| row.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut reissues = Vec::new();
+    for claim_id in claim_ids {
+        let Some(claim) = load_claim_by_id(db.conn_ref(), &claim_id)? else {
+            continue;
+        };
+        let Some(local) = load_best_local_projection_corroboration(db, &claim_id)? else {
+            continue;
+        };
+        let observed_at = local
+            .source_asof
+            .clone()
+            .unwrap_or_else(|| ctx.clock.now().to_rfc3339());
+        let provenance_json = projection_reissue_provenance_json(
+            ctx,
+            &claim,
+            &local.data_source,
+            local.source_asof.as_deref(),
+            local.strength,
+            &observed_at,
+        )?;
+        let metadata_json =
+            projection_reissue_metadata_json(claim.metadata_json.as_deref(), &local.data_source)?;
+        reissues.push(GeneratedProjectionClaimReissue {
+            subject_ref: claim.subject_ref,
+            claim_type: claim.claim_type,
+            field_path: claim.field_path,
+            topic_key: claim.topic_key,
+            text: claim.text,
+            actor: claim.actor,
+            data_source: local.data_source,
+            source_asof: local.source_asof,
+            observed_at,
+            provenance_json,
+            metadata_json,
+            temporal_scope: claim.temporal_scope,
+            sensitivity: claim.sensitivity,
+        });
+    }
+    Ok(reissues)
+}
+
+fn load_best_local_projection_corroboration(
+    db: &ActionDb,
+    claim_id: &str,
+) -> Result<Option<LocalProjectionCorroboration>, ClaimError> {
+    db.conn_ref()
+        .query_row(
+            "SELECT data_source, source_asof, strength
+               FROM claim_corroborations
+              WHERE claim_id = ?1
+                AND data_source != 'ai_enrichment_progressive'
+                AND data_source != 'glean'
+                AND data_source NOT LIKE 'glean_%'
+                AND trim(data_source) != ''
+              ORDER BY strength DESC,
+                       coalesce(last_reinforced_at, created_at) DESC,
+                       data_source ASC
+              LIMIT 1",
+            params![claim_id],
+            |row| {
+                Ok(LocalProjectionCorroboration {
+                    data_source: row.get(0)?,
+                    source_asof: row.get(1)?,
+                    strength: row.get(2)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(ClaimError::from)
+}
+
+fn projection_reissue_metadata_json(
+    metadata_json: Option<&str>,
+    projection_producer: &str,
+) -> Result<Option<String>, ClaimError> {
+    let Some(metadata_json) = metadata_json else {
+        return Ok(None);
+    };
+    let mut value = serde_json::from_str::<serde_json::Value>(metadata_json)?;
+    let Some(object) = value.as_object_mut() else {
+        return Ok(None);
+    };
+    object.remove("legacy_projection_value");
+    object.insert(
+        "projection_producer".to_string(),
+        serde_json::json!(projection_producer),
+    );
+    Ok(Some(serde_json::to_string(&value)?))
+}
+
+fn projection_reissue_provenance_json(
+    ctx: &ServiceContext<'_>,
+    claim: &IntelligenceClaim,
+    data_source: &str,
+    source_asof: Option<&str>,
+    strength: f64,
+    observed_at: &str,
+) -> Result<String, ClaimError> {
+    let subject_value = serde_json::from_str::<serde_json::Value>(&claim.subject_ref)?;
+    let (subject_kind, subject_id) = projection_reissue_subject_parts(&subject_value)?;
+    let subject_ref = projection_reissue_provenance_subject_ref(&subject_kind, &subject_id)?;
+    let subject = crate::abilities::provenance::SubjectAttribution::direct_confident(subject_ref);
+    let observed_at = projection_reissue_timestamp(observed_at).unwrap_or_else(|| ctx.clock.now());
+    let source_asof_timestamp = source_asof.and_then(projection_reissue_timestamp);
+    let provenance_data_source = projection_reissue_provenance_data_source(data_source);
+    let source_identifier = crate::abilities::provenance::SourceIdentifier::Entity {
+        entity_id: crate::abilities::provenance::EntityId::new(subject_id),
+        field: claim.field_path.clone(),
+    };
+    let confidence = if strength.is_finite() {
+        strength.clamp(0.0, 1.0) as f32
+    } else {
+        0.5
+    };
+    let source = crate::abilities::provenance::SourceAttribution::new(
+        provenance_data_source,
+        vec![source_identifier],
+        observed_at,
+        source_asof_timestamp,
+        confidence,
+        None,
+    )
+    .map_err(|error| {
+        ClaimError::Transaction(format!("projection reissue source invalid: {error}"))
+    })?;
+
+    let mut config = crate::abilities::provenance::ProvenanceBuilderConfig::new(
+        "claim_shaped_intelligence_projection",
+        ctx.clock.now(),
+    );
+    config.invocation_id = crate::abilities::provenance::InvocationId::new(uuid::Uuid::new_v4());
+    config.actor = projection_reissue_provenance_actor(&claim.actor);
+    config.mode = ctx.mode.into();
+    config.category = crate::abilities::registry::AbilityCategory::Transform;
+
+    let mut builder = crate::abilities::provenance::ProvenanceBuilder::new(config);
+    builder.set_subject(subject.clone());
+    let source_index = builder.add_source(source);
+    let explanation = crate::abilities::provenance::SanitizedExplanation::new(
+        "Generated projection preserved through surviving local corroboration after source purge.",
+    )
+    .map_err(|error| {
+        ClaimError::Transaction(format!("projection reissue explanation invalid: {error}"))
+    })?;
+    let field_attribution = crate::abilities::provenance::FieldAttribution::llm_synthesis(
+        subject,
+        vec![crate::abilities::provenance::SourceRef::Source { source_index }],
+        crate::abilities::provenance::Confidence::provider_reported(confidence).map_err(
+            |error| {
+                ClaimError::Transaction(format!("projection reissue confidence invalid: {error}"))
+            },
+        )?,
+        Some(explanation),
+    )
+    .map_err(|error| {
+        ClaimError::Transaction(format!(
+            "projection reissue field attribution invalid: {error}"
+        ))
+    })?;
+    builder
+        .attribute_subtree(
+            crate::abilities::provenance::FieldPath::root(),
+            field_attribution,
+        )
+        .map_err(|error| {
+            ClaimError::Transaction(format!("projection reissue attribution failed: {error}"))
+        })?;
+    let output = serde_json::json!({
+        "claimType": claim.claim_type.as_str(),
+        "fieldPath": claim.field_path.as_deref(),
+        "text": claim.text.as_str(),
+        "dataSource": data_source,
+        "sourceRef": null,
+        "sourceAsOf": source_asof,
+    });
+    let output = builder.finalize(output).map_err(|error| {
+        ClaimError::Transaction(format!("projection reissue provenance invalid: {error}"))
+    })?;
+    serde_json::to_string(output.provenance()).map_err(ClaimError::from)
+}
+
+fn projection_reissue_subject_parts(
+    value: &serde_json::Value,
+) -> Result<(String, String), ClaimError> {
+    match subject_ref_from_json(value)? {
+        SubjectRef::Account { id } => Ok(("account".to_string(), id)),
+        SubjectRef::Project { id } => Ok(("project".to_string(), id)),
+        SubjectRef::Person { id } => Ok(("person".to_string(), id)),
+        SubjectRef::Meeting { id } => Ok(("meeting".to_string(), id)),
+        other => Err(ClaimError::SubjectRef(format!(
+            "unsupported generated projection reissue subject: {other:?}"
+        ))),
+    }
+}
+
+fn projection_reissue_provenance_subject_ref(
+    subject_kind: &str,
+    subject_id: &str,
+) -> Result<crate::abilities::provenance::SubjectRef, ClaimError> {
+    match subject_kind {
+        "account" => Ok(crate::abilities::provenance::SubjectRef::Account(
+            subject_id.to_string(),
+        )),
+        "project" => Ok(crate::abilities::provenance::SubjectRef::Project(
+            subject_id.to_string(),
+        )),
+        "person" => Ok(crate::abilities::provenance::SubjectRef::Person(
+            subject_id.to_string(),
+        )),
+        "meeting" => Ok(crate::abilities::provenance::SubjectRef::Meeting(
+            subject_id.to_string(),
+        )),
+        other => Err(ClaimError::SubjectRef(format!(
+            "unsupported projection provenance subject: {other}"
+        ))),
+    }
+}
+
+fn projection_reissue_provenance_data_source(
+    source: &str,
+) -> crate::abilities::provenance::DataSource {
+    match source.trim().to_ascii_lowercase().as_str() {
+        "user" | "user_correction" => crate::abilities::provenance::DataSource::User,
+        "google" | "gmail" | "email" => crate::abilities::provenance::DataSource::Google,
+        "clay" => crate::abilities::provenance::DataSource::Clay,
+        "local_enrichment" | "local_file" | "workspace_file" | "transcript" | "meeting"
+        | "post_meeting" | "calendar" => crate::abilities::provenance::DataSource::LocalEnrichment,
+        "ai" | "ai_enrichment" | "ai_inference" | "pty_synthesis" => {
+            crate::abilities::provenance::DataSource::Ai
+        }
+        "" => crate::abilities::provenance::DataSource::Other(
+            crate::abilities::provenance::SourceName::new("unknown_projection_source"),
+        ),
+        other => crate::abilities::provenance::DataSource::Other(
+            crate::abilities::provenance::SourceName::new(other),
+        ),
+    }
+}
+
+fn projection_reissue_provenance_actor(actor: &str) -> crate::abilities::provenance::Actor {
+    let actor = actor.trim();
+    if actor.eq_ignore_ascii_case("user") || actor.starts_with("user:") {
+        return crate::abilities::provenance::Actor::User;
+    }
+    if let Some(agent) = actor.strip_prefix("agent:") {
+        return crate::abilities::provenance::Actor::Agent {
+            name: agent.to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+        };
+    }
+    crate::abilities::provenance::Actor::System {
+        component: if actor.is_empty() {
+            "intelligence_projection".to_string()
+        } else {
+            actor.to_string()
+        },
+    }
+}
+
+fn projection_reissue_timestamp(value: &str) -> Option<DateTime<Utc>> {
+    DateTime::parse_from_rfc3339(value)
+        .ok()
+        .map(|timestamp| timestamp.with_timezone(&Utc))
+}
+
+fn delete_glean_generated_projection_corroborations_for_source_purge_in_tx(
+    db: &ActionDb,
+) -> Result<usize, ClaimError> {
+    db.conn_ref()
+        .execute(
+            "DELETE FROM claim_corroborations -- dos7-allowed: source purge removes corroboration evidence; corroborations have no lifecycle column
+              WHERE (
+                    data_source = 'glean'
+                    OR data_source LIKE 'glean_%'
+                )
+                AND claim_id IN (
+                    SELECT ic.id
+                      FROM intelligence_claims ic
+                     WHERE (
+                            ic.source_ref LIKE 'intelligence_projection_source:%'
+                            OR (
+                                json_valid(ic.provenance_json) = 1
+                                AND json_extract(ic.provenance_json, '$.ability_name') = 'claim_shaped_intelligence_projection'
+                            )
+                            OR (
+                                ic.metadata_json IS NOT NULL
+                                AND json_valid(ic.metadata_json) = 1
+                                AND json_type(ic.metadata_json, '$.legacy_projection_value') IS NOT NULL
+                            )
+                        )
+                )",
+            [],
+        )
+        .map_err(ClaimError::from)
 }
 
 pub fn withdraw_tombstones_for(
@@ -16589,6 +17290,53 @@ mod tests {
         .unwrap();
         assert_eq!(recovered_for_surface.len(), 1);
         assert_eq!(recovered_for_surface[0].id, first_id);
+    }
+
+    #[test]
+    fn same_generated_claim_reinforces_existing_claim() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let mut first = proposal("Renewal budget approval is pending with finance");
+        first.actor = "agent:intelligence".to_string();
+        first.data_source = "ai_enrichment".to_string();
+        first.source_ref = Some("intelligence_projection_source:first".to_string());
+        let first_id = inserted_claim_id(commit_claim(&ctx, &db, first).unwrap());
+        update_claim_trust(&db, &first_id, TrustScore(0.85), 1, &ctx).unwrap();
+
+        let mut second = proposal("Renewal budget approval is pending with finance");
+        second.actor = "agent:intelligence".to_string();
+        second.data_source = "glean_crm".to_string();
+        second.source_ref = Some("intelligence_projection_source:second".to_string());
+        second.source_asof = Some("2026-05-03T12:00:00+00:00".to_string());
+        second.provenance_json = serde_json::json!({
+            "source": "generated_projection",
+            "sourceRef": second.source_ref.as_deref(),
+        })
+        .to_string();
+
+        match commit_claim(&ctx, &db, second).unwrap() {
+            CommittedClaim::Reinforced { claim, .. } => assert_eq!(claim.id, first_id),
+            other => panic!("same generated claim should reinforce, got {other:?}"),
+        }
+
+        let active = load_claims_active(&db, SUBJECT, Some("risk")).unwrap();
+        assert_eq!(active.len(), 1);
+        let corroboration_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*)
+                   FROM claim_corroborations
+                  WHERE claim_id = ?1
+                    AND data_source = 'glean_crm'
+                    AND source_asof = '2026-05-03T12:00:00+00:00'",
+                params![&first_id],
+                |row| row.get(0),
+            )
+            .expect("corroboration count");
+        assert_eq!(corroboration_count, 1);
     }
 
     #[test]

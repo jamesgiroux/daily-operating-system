@@ -400,7 +400,7 @@ fn build_trust_context_for_claim(
     );
     let now = ctx.clock.now();
     let freshness = collect_trust_input(
-        freshness_context_for_claim(now, claim),
+        freshness_context_for_claim(db, now, claim),
         &mut indeterminate_reasons,
     );
     let source_lifecycle = collect_trust_input(
@@ -639,18 +639,17 @@ pub(crate) fn source_lifecycle_for_claim(
 }
 
 pub(crate) fn freshness_context_for_claim(
+    db: &ActionDb,
     now: chrono::DateTime<Utc>,
     claim: &IntelligenceClaim,
 ) -> TrustInput<crate::abilities::trust::FreshnessContext> {
     let mut indeterminate: Option<&'static str> = None;
+    let mut freshest_source_asof = None;
 
     if let Some(source_asof) = claim.source_asof.as_deref() {
         match chrono::DateTime::parse_from_rfc3339(source_asof) {
             Ok(parsed) => {
-                return TrustInput::ok(crate::abilities::trust::FreshnessContext {
-                    timestamp_known: true,
-                    age_days: age_days(now, parsed.with_timezone(&Utc)),
-                });
+                freshest_source_asof = Some(parsed.with_timezone(&Utc));
             }
             Err(e) => {
                 log::warn!(
@@ -660,6 +659,42 @@ pub(crate) fn freshness_context_for_claim(
                 indeterminate = Some("freshness_source_asof_malformed");
             }
         }
+    }
+
+    match freshest_corroboration_source_asof(db, &claim.id) {
+        TrustInput {
+            value: Some(corroboration_source_asof),
+            indeterminate_reason,
+        } => {
+            if freshest_source_asof
+                .map(|current| corroboration_source_asof > current)
+                .unwrap_or(true)
+            {
+                freshest_source_asof = Some(corroboration_source_asof);
+            }
+            if indeterminate_reason.is_some() {
+                indeterminate = indeterminate_reason;
+            }
+        }
+        TrustInput {
+            value: None,
+            indeterminate_reason: Some(reason),
+        } => indeterminate = Some(reason),
+        TrustInput {
+            value: None,
+            indeterminate_reason: None,
+        } => {}
+    }
+
+    if let Some(source_asof) = freshest_source_asof {
+        let value = crate::abilities::trust::FreshnessContext {
+            timestamp_known: true,
+            age_days: age_days(now, source_asof),
+        };
+        return match indeterminate {
+            Some(reason) => TrustInput::indeterminate(value, reason),
+            None => TrustInput::ok(value),
+        };
     }
 
     for (label, fallback) in [
@@ -691,6 +726,66 @@ pub(crate) fn freshness_context_for_claim(
     match indeterminate {
         Some(reason) => TrustInput::indeterminate(value, reason),
         None => TrustInput::ok(value),
+    }
+}
+
+fn freshest_corroboration_source_asof(
+    db: &ActionDb,
+    claim_id: &str,
+) -> TrustInput<Option<chrono::DateTime<Utc>>> {
+    let mut stmt = match db
+        .conn_ref()
+        .prepare("SELECT source_asof FROM claim_corroborations WHERE claim_id = ?1")
+    {
+        Ok(stmt) => stmt,
+        Err(e) => {
+            log::warn!(
+                "TrustRecompute: failed to prepare corroboration freshness read for {claim_id}: {e}"
+            );
+            return TrustInput::indeterminate(None, "freshness_corroboration_prepare_failed");
+        }
+    };
+    let rows = match stmt.query_map(rusqlite::params![claim_id], |row| {
+        row.get::<_, Option<String>>(0)
+    }) {
+        Ok(rows) => rows,
+        Err(e) => {
+            log::warn!(
+                "TrustRecompute: failed to read corroboration freshness for {claim_id}: {e}"
+            );
+            return TrustInput::indeterminate(None, "freshness_corroboration_query_failed");
+        }
+    };
+
+    let mut freshest = None;
+    let mut indeterminate = None;
+    for row in rows {
+        match row {
+            Ok(Some(source_asof)) => match chrono::DateTime::parse_from_rfc3339(&source_asof) {
+                Ok(parsed) => {
+                    let parsed = parsed.with_timezone(&Utc);
+                    if freshest.map(|current| parsed > current).unwrap_or(true) {
+                        freshest = Some(parsed);
+                    }
+                }
+                Err(e) => {
+                    log::warn!(
+                        "TrustRecompute: malformed corroboration source_asof on {claim_id}: {e}"
+                    );
+                    indeterminate = Some("freshness_corroboration_source_asof_malformed");
+                }
+            },
+            Ok(None) => {}
+            Err(e) => {
+                log::warn!("TrustRecompute: malformed corroboration row for {claim_id}: {e}");
+                indeterminate = Some("freshness_corroboration_row_decode_failed");
+            }
+        }
+    }
+
+    match indeterminate {
+        Some(reason) => TrustInput::indeterminate(freshest, reason),
+        None => TrustInput::ok(freshest),
     }
 }
 
@@ -1149,8 +1244,10 @@ mod tests {
     use super::*;
     use crate::db::claims::{ClaimSensitivity, TemporalScope};
     use crate::db::test_utils::test_db;
+    use crate::intelligence::{IntelRisk, IntelligenceJson, ItemSource};
     use crate::services::claims::{commit_claim, ClaimProposal, CommittedClaim};
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng};
+    use crate::signals::propagation::PropagationEngine;
 
     const TS: &str = "2026-05-04T12:00:00+00:00";
 
@@ -1254,6 +1351,117 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("count invalidation jobs")
+    }
+
+    #[test]
+    fn generation_commit_enqueues_trust_recompute() {
+        let db = test_db();
+        let account_id = "acct-generated-trust-recompute";
+        seed_account(&db, account_id);
+        let (clock, rng, ext) = fixed_ctx();
+        let ctx = test_ctx(&clock, &rng, &ext);
+        let engine = PropagationEngine::default();
+        let intel = IntelligenceJson {
+            executive_assessment_render_policy: None,
+            entity_id: account_id.to_string(),
+            entity_type: "account".to_string(),
+            enriched_at: TS.to_string(),
+            risks: vec![IntelRisk {
+                render_policy: None,
+                claim_id: None,
+                text: "Renewal owner has not approved the deployment plan.".to_string(),
+                item_source: Some(ItemSource {
+                    source: "glean_crm".to_string(),
+                    confidence: 0.9,
+                    sourced_at: TS.to_string(),
+                    reference: Some("CRM opportunity fixture".to_string()),
+                }),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        crate::services::intelligence::upsert_assessment_from_enrichment(
+            &ctx, &db, &engine, "account", account_id, &intel,
+        )
+        .expect("commit generated intelligence");
+
+        assert_eq!(
+            invalidation_job_count(&db),
+            1,
+            "generated intelligence commits must enqueue trust recompute"
+        );
+    }
+
+    #[test]
+    fn freshness_context_uses_newer_corroboration_source_asof() {
+        let db = test_db();
+        let account_id = "acct-corroboration-freshness";
+        seed_account(&db, account_id);
+        let (clock, rng, ext) = fixed_ctx();
+        let ctx = test_ctx(&clock, &rng, &ext);
+        let text = "Renewal owner has not approved the deployment plan.";
+
+        let mut first = claim_proposal("account", account_id, "risk", text);
+        first.data_source = "glean_crm".to_string();
+        first.source_asof = Some("2026-05-01T12:00:00+00:00".to_string());
+        first.observed_at = "2026-05-01T12:00:00+00:00".to_string();
+        let claim_id = inserted_claim_id(commit_claim(&ctx, &db, first).expect("commit claim"));
+
+        let mut second = claim_proposal("account", account_id, "risk", text);
+        second.data_source = "glean_crm".to_string();
+        second.source_asof = Some("2026-05-02T12:00:00+00:00".to_string());
+        second.observed_at = "2026-05-02T12:00:00+00:00".to_string();
+        match commit_claim(&ctx, &db, second).expect("reinforce claim") {
+            CommittedClaim::Reinforced { claim, .. } => assert_eq!(claim.id, claim_id),
+            other => panic!("same claim should reinforce, got {other:?}"),
+        }
+
+        let mut third = claim_proposal("account", account_id, "risk", text);
+        third.data_source = "glean_crm".to_string();
+        third.source_asof = Some("2026-05-03T12:00:00+00:00".to_string());
+        third.observed_at = "2026-05-03T12:00:00+00:00".to_string();
+        match commit_claim(&ctx, &db, third).expect("reinforce claim again") {
+            CommittedClaim::Reinforced { claim, .. } => assert_eq!(claim.id, claim_id),
+            other => panic!("same claim should reinforce again, got {other:?}"),
+        }
+
+        let subject_ref = serde_json::json!({ "kind": "account", "id": account_id }).to_string();
+        let active = crate::services::claims::load_claims_active(&db, &subject_ref, Some("risk"))
+            .expect("load active claim");
+        assert_eq!(active.len(), 1);
+        assert_eq!(
+            active[0].source_asof.as_deref(),
+            Some("2026-05-01T12:00:00+00:00"),
+            "the canonical claim row stays immutable"
+        );
+
+        let corroboration: (Option<String>, i64) = db
+            .conn_ref()
+            .query_row(
+                "SELECT source_asof, reinforcement_count
+                   FROM claim_corroborations
+                  WHERE claim_id = ?1
+                    AND data_source = 'glean_crm'",
+                params![&claim_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read corroboration");
+        assert_eq!(
+            corroboration.0.as_deref(),
+            Some("2026-05-03T12:00:00+00:00")
+        );
+        assert_eq!(corroboration.1, 2);
+
+        let (freshness, reason) = freshness_context_for_claim(
+            &db,
+            Utc.with_ymd_and_hms(2026, 5, 4, 12, 0, 0).unwrap(),
+            &active[0],
+        )
+        .into_parts();
+        assert_eq!(reason, None);
+        assert!(freshness.timestamp_known);
+        assert_eq!(freshness.age_days, 1.0);
     }
 
     #[test]

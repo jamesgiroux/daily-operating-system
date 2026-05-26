@@ -556,7 +556,71 @@ pub struct EnrichmentComplete {
     pub succeeded: u32,
     pub failed: u32,
     pub failed_dimensions: Vec<String>,
+    pub total_dimensions: u32,
+    pub applicable_total: u32,
+    pub skipped_dimensions: Vec<String>,
     pub wall_clock_ms: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct QueueRefreshFailure {
+    entity_id: String,
+    stage: &'static str,
+    error: String,
+}
+
+impl QueueRefreshFailure {
+    fn new(entity_id: &str, stage: &'static str, error: impl Into<String>) -> Self {
+        Self {
+            entity_id: entity_id.to_string(),
+            stage,
+            error: error.into(),
+        }
+    }
+}
+
+fn queue_worker_final_status_payloads(
+    completed_count: usize,
+    failures: &[QueueRefreshFailure],
+    manual: bool,
+) -> Vec<serde_json::Value> {
+    if let Some(first_failure) = failures.first() {
+        let message = if completed_count > 0 {
+            "Some insight refreshes failed"
+        } else {
+            "Insight refresh failed"
+        };
+        let error = if failures.len() == 1 {
+            first_failure.error.clone()
+        } else {
+            format!(
+                "{} refreshes failed; first failure: {}",
+                failures.len(),
+                first_failure.error
+            )
+        };
+        return vec![serde_json::json!({
+            "phase": "failed",
+            "message": message,
+            "count": failures.len(),
+            "completedCount": completed_count,
+            "manual": manual,
+            "entityId": first_failure.entity_id,
+            "stage": first_failure.stage,
+            "error": error,
+        })];
+    }
+
+    if completed_count == 0 {
+        return Vec::new();
+    }
+
+    vec![serde_json::json!({
+        "phase": "completed",
+        "message": "Insights updated",
+        "count": completed_count,
+        "manual": manual,
+    })]
 }
 
 /// Context gathered from the DB (held briefly, then released before PTY).
@@ -593,6 +657,33 @@ pub enum EnrichmentProducer {
 impl EnrichmentProducer {
     fn is_glean(self) -> bool {
         matches!(self, EnrichmentProducer::Glean)
+    }
+
+    pub(crate) fn projection_data_source(self) -> &'static str {
+        match self {
+            EnrichmentProducer::Glean => "glean",
+            EnrichmentProducer::Pty => "ai_enrichment",
+        }
+    }
+
+    fn materialization_label(self) -> &'static str {
+        match self {
+            EnrichmentProducer::Glean => "Glean",
+            EnrichmentProducer::Pty => "PTY",
+        }
+    }
+
+    fn side_effect_producer(
+        self,
+    ) -> crate::services::enrichment_side_effects::EnrichmentSideEffectProducer {
+        match self {
+            EnrichmentProducer::Glean => {
+                crate::services::enrichment_side_effects::EnrichmentSideEffectProducer::Glean
+            }
+            EnrichmentProducer::Pty => {
+                crate::services::enrichment_side_effects::EnrichmentSideEffectProducer::Pty
+            }
+        }
     }
 }
 
@@ -1019,6 +1110,8 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
         drop(_permit);
 
         // Phase 3 + 4: Write results and emit events for each entity
+        let mut finalized_count = 0usize;
+        let mut finalization_failures = Vec::new();
         for (request, input, parsed) in &results {
             let intel = &parsed.intel;
             // Check for anomalies in the enrichment output
@@ -1048,6 +1141,11 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             )) {
                 Ok(db) => db,
                 Err(e) => {
+                    finalization_failures.push(QueueRefreshFailure::new(
+                        &request.entity_id,
+                        "open_db",
+                        e.to_string(),
+                    ));
                     log::warn!(
                         "IntelProcessor: failed to open DB for {} persistence: {}",
                         request.entity_id,
@@ -1062,6 +1160,7 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                 &db,
                 input,
                 intel,
+                parsed.producer,
                 if is_background_priority(request.priority) {
                     None
                 } else {
@@ -1070,6 +1169,11 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             ) {
                 Ok(composition) => composition,
                 Err(e) => {
+                    finalization_failures.push(QueueRefreshFailure::new(
+                        &request.entity_id,
+                        "compose",
+                        e.clone(),
+                    ));
                     log::warn!(
                         "IntelProcessor: failed to write results for {}: {}",
                         request.entity_id,
@@ -1084,11 +1188,21 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                     &ctx,
                     tx,
                     &state.signals.engine,
-                    &input.entity_type,
-                    &input.entity_id,
-                    prepared.intelligence(),
+                    crate::services::intelligence::EnrichmentAssessmentUpsert {
+                        entity_type: &input.entity_type,
+                        entity_id: &input.entity_id,
+                        intel: prepared.intelligence(),
+                        projection_intel: prepared.projection_intelligence(),
+                        projection_data_source: parsed.producer.projection_data_source(),
+                        cleared_dimensions: prepared.cleared_dimensions(),
+                    },
                 )
             }) {
+                finalization_failures.push(QueueRefreshFailure::new(
+                    &request.entity_id,
+                    "write_results",
+                    e.clone(),
+                ));
                 log::warn!(
                     "IntelProcessor: failed to persist DB assessment for {}: {}",
                     request.entity_id,
@@ -1108,6 +1222,11 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                     producer: parsed.producer,
                 },
             ) {
+                finalization_failures.push(QueueRefreshFailure::new(
+                    &request.entity_id,
+                    "finalize",
+                    e.clone(),
+                ));
                 log::warn!(
                     "IntelProcessor: failed to finalize enrichment for {}: {}",
                     request.entity_id,
@@ -1115,6 +1234,7 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                 );
                 continue;
             }
+            finalized_count += 1;
 
             log::info!(
                 "IntelProcessor: completed {} ({} risks, {} wins)",
@@ -1125,19 +1245,17 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
         }
 
         // Emit completion status for frontend indicator
-        #[allow(
-            clippy::let_underscore_must_use,
-            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-        )]
-        let _ = app.emit(
-            "background-work-status",
-            serde_json::json!({
-                "phase": "completed",
-                "message": "Insights updated",
-                "count": results.len(),
-                "manual": batch_has_manual,
-            }),
-        );
+        for payload in queue_worker_final_status_payloads(
+            finalized_count,
+            &finalization_failures,
+            batch_has_manual,
+        ) {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
+            let _ = app.emit("background-work-status", payload);
+        }
     }
 }
 
@@ -1702,13 +1820,34 @@ fn run_parallel_enrichment(
 
     let is_incremental = ctx.prior_intelligence.is_some();
     let overall_start = Instant::now();
-    let total_dimensions = DIMENSION_NAMES.len() as u32;
+    let applicability = dimension_prompts::dimension_applicability(
+        &input.entity_type,
+        input.relationship.as_deref(),
+    );
+    let total_dimensions = applicability.applicable.len() as u32;
+    let canonical_total_dimensions = DIMENSION_NAMES.len() as u32;
+    let skipped_dimensions: Vec<String> = applicability
+        .skipped
+        .iter()
+        .map(|dimension| (*dimension).to_string())
+        .collect();
+
+    if total_dimensions == 0 {
+        return Err(format!(
+            "No applicable dimensions for {} ({})",
+            input.entity_id, input.entity_type
+        ));
+    }
 
     // Channel for receiving dimension results as they complete
     let (tx, rx) = std::sync::mpsc::channel();
 
     // Spawn one thread per dimension
     for &dimension in DIMENSION_NAMES {
+        if !applicability.applicable.contains(&dimension) {
+            continue;
+        }
+
         let dim_prompt = dimension_prompts::build_dimension_prompt(
             dimension,
             &input.entity_name,
@@ -1811,6 +1950,7 @@ fn run_parallel_enrichment(
                         write_progressive_dimension(
                             &input.entity_id,
                             &input.entity_type,
+                            input.relationship.as_deref(),
                             &combined,
                         );
                         #[allow(
@@ -1846,9 +1986,11 @@ fn run_parallel_enrichment(
 
     let total_ms = overall_start.elapsed().as_millis();
     log::info!(
-        "[I574] Parallel enrichment: {}/6 dimensions succeeded in {}ms",
+        "[I574] Parallel enrichment: {}/{} applicable dimensions succeeded in {}ms (skipped: {:?})",
         succeeded,
-        total_ms
+        total_dimensions,
+        total_ms,
+        skipped_dimensions,
     );
 
     // Emit completion event
@@ -1865,13 +2007,19 @@ fn run_parallel_enrichment(
                 succeeded,
                 failed: failed_dims.len() as u32,
                 failed_dimensions: failed_dims,
+                total_dimensions: canonical_total_dimensions,
+                applicable_total: total_dimensions,
+                skipped_dimensions,
                 wall_clock_ms: total_ms as u64,
             },
         );
     }
 
     if succeeded == 0 {
-        return Err("All 6 dimensions failed".to_string());
+        return Err(format!(
+            "All {} applicable dimensions failed",
+            total_dimensions
+        ));
     }
 
     // Extract inferred relationships from the combined raw output
@@ -1929,7 +2077,12 @@ fn run_parallel_enrichment(
 /// Opens a short-lived DB connection, reads existing entity_assessment, merges the
 /// new combined state, and writes back. Non-fatal on error — the committed
 /// enrichment persistence path is the authoritative write.
-fn write_progressive_dimension(entity_id: &str, entity_type: &str, combined: &IntelligenceJson) {
+fn write_progressive_dimension(
+    entity_id: &str,
+    entity_type: &str,
+    relationship: Option<&str>,
+    combined: &IntelligenceJson,
+) {
     let db = match crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())) {
         Ok(db) => db,
         Err(e) => {
@@ -1942,6 +2095,27 @@ fn write_progressive_dimension(entity_id: &str, entity_type: &str, combined: &In
         }
     };
 
+    let merged =
+        prepare_progressive_dimension_snapshot(&db, entity_id, entity_type, relationship, combined);
+
+    let clock = crate::services::context::SystemClock;
+    let rng = crate::services::context::SystemRng;
+    let ext = crate::services::context::ExternalClients::default();
+    let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+    if let Err(e) = crate::services::intelligence::upsert_assessment_snapshot(&ctx, &db, &merged) {
+        log::warn!("[I575] Progressive write failed for {}: {}", entity_id, e);
+    } else {
+        log::debug!("[I575] Progressive write succeeded for {}", entity_id,);
+    }
+}
+
+pub(crate) fn prepare_progressive_dimension_snapshot(
+    db: &crate::db::ActionDb,
+    entity_id: &str,
+    entity_type: &str,
+    relationship: Option<&str>,
+    combined: &IntelligenceJson,
+) -> IntelligenceJson {
     // Progressive writes within a single enrichment cycle use simple dimension
     // merge, NOT reconciliation. Reconciliation happens at the final write.
     let existing = db.get_entity_intelligence(entity_id).ok().flatten();
@@ -1968,15 +2142,13 @@ fn write_progressive_dimension(entity_id: &str, entity_type: &str, combined: &In
     merged.entity_type = entity_type.to_string();
     merged.enriched_at = chrono::Utc::now().to_rfc3339();
 
-    let clock = crate::services::context::SystemClock;
-    let rng = crate::services::context::SystemRng;
-    let ext = crate::services::context::ExternalClients::default();
-    let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
-    if let Err(e) = crate::services::intelligence::upsert_assessment_snapshot(&ctx, &db, &merged) {
-        log::warn!("[I575] Progressive write failed for {}: {}", entity_id, e);
-    } else {
-        log::debug!("[I575] Progressive write succeeded for {}", entity_id,);
-    }
+    crate::intelligence::dimension_prompts::clear_inapplicable_dimension_fields(
+        &mut merged,
+        entity_type,
+        relationship,
+    );
+
+    merged
 }
 
 /// Legacy monolithic PTY enrichment — single prompt, 30s timeout.
@@ -2140,12 +2312,22 @@ fn run_consistency_repair_retry(
 #[derive(Debug, Clone)]
 pub struct PreparedEnrichment {
     intelligence: IntelligenceJson,
+    projection_intelligence: IntelligenceJson,
     side_writes: EnrichmentSideWrites,
+    cleared_dimensions: Vec<&'static str>,
 }
 
 impl PreparedEnrichment {
     pub fn intelligence(&self) -> &IntelligenceJson {
         &self.intelligence
+    }
+
+    pub fn projection_intelligence(&self) -> &IntelligenceJson {
+        &self.projection_intelligence
+    }
+
+    pub fn cleared_dimensions(&self) -> &[&'static str] {
+        &self.cleared_dimensions
     }
 
     pub fn into_intelligence(self) -> IntelligenceJson {
@@ -2166,6 +2348,100 @@ struct MalformedSuppressionAudit {
     caller_context: &'static str,
 }
 
+fn filter_suppressed_risks_and_wins(
+    db: &crate::db::ActionDb,
+    input: &EnrichmentInput,
+    intel: &mut IntelligenceJson,
+    mut side_writes: Option<&mut EnrichmentSideWrites>,
+) {
+    use crate::db::intelligence_feedback::SuppressionDecision;
+    use crate::intelligence::canonicalization::{item_hash as canonical_item_hash, ItemKind};
+
+    let pre_risk_count = intel.risks.len();
+    intel.risks.retain(|risk| {
+        let item_key = Some(risk.text.as_str());
+        let hash = canonical_item_hash(ItemKind::Risk, &risk.text);
+        match db.is_suppressed(
+            &input.entity_id,
+            "risks",
+            item_key,
+            Some(&hash),
+            risk.item_source.as_ref().map(|s| s.sourced_at.as_str()),
+        ) {
+            SuppressionDecision::Suppressed { .. } => false,
+            SuppressionDecision::NotSuppressed => true,
+            SuppressionDecision::Malformed { record_id, reason } => {
+                log::error!(
+                    "[is_suppressed] malformed tombstone {:?} for entity {} field risks; \
+                     failing closed: {:?}",
+                    record_id,
+                    input.entity_id,
+                    reason
+                );
+                if let Some(writes) = side_writes.as_deref_mut() {
+                    writes
+                        .malformed_suppression_audits
+                        .push(MalformedSuppressionAudit {
+                            record_id: record_id.0,
+                            reason: format!("{:?}", reason),
+                            field_key: "risks",
+                            caller_context: "intel_queue.compose_enrichment_intelligence.risks",
+                        });
+                }
+                false
+            }
+        }
+    });
+
+    let pre_win_count = intel.recent_wins.len();
+    intel.recent_wins.retain(|win| {
+        let item_key = Some(win.text.as_str());
+        let hash = canonical_item_hash(ItemKind::Win, &win.text);
+        match db.is_suppressed(
+            &input.entity_id,
+            "recentWins",
+            item_key,
+            Some(&hash),
+            win.item_source.as_ref().map(|s| s.sourced_at.as_str()),
+        ) {
+            SuppressionDecision::Suppressed { .. } => false,
+            SuppressionDecision::NotSuppressed => true,
+            SuppressionDecision::Malformed { record_id, reason } => {
+                log::error!(
+                    "[is_suppressed] malformed tombstone {:?} for entity {} field recentWins; \
+                     failing closed: {:?}",
+                    record_id,
+                    input.entity_id,
+                    reason
+                );
+                if let Some(writes) = side_writes.as_deref_mut() {
+                    writes
+                        .malformed_suppression_audits
+                        .push(MalformedSuppressionAudit {
+                            record_id: record_id.0,
+                            reason: format!("{:?}", reason),
+                            field_key: "recentWins",
+                            caller_context:
+                                "intel_queue.compose_enrichment_intelligence.recentWins",
+                        });
+                }
+                false
+            }
+        }
+    });
+
+    let risks_suppressed = pre_risk_count - intel.risks.len();
+    let wins_suppressed = pre_win_count - intel.recent_wins.len();
+    if risks_suppressed > 0 || wins_suppressed > 0 {
+        log::info!(
+            "[I645] Suppression filter for {}: {} risks, {} wins removed",
+            input.entity_id,
+            risks_suppressed,
+            wins_suppressed,
+        );
+    }
+}
+
 /// Phase 3: Compose enrichment results for DB-first persistence.
 /// This phase prepares the intelligence payload and records deferred side
 /// writes that the caller applies in the same transaction as the DB upsert.
@@ -2175,15 +2451,17 @@ pub fn compose_enrichment_intelligence(
     db: &crate::db::ActionDb,
     input: &EnrichmentInput,
     intel: &IntelligenceJson,
+    producer: EnrichmentProducer,
     ai_config: Option<&AiModelConfig>,
 ) -> Result<PreparedEnrichment, String> {
-    compose_enrichment_intelligence_payload(db, input, intel, ai_config)
+    compose_enrichment_intelligence_payload(db, input, intel, producer, ai_config)
 }
 
 pub(crate) fn compose_enrichment_intelligence_payload(
     db: &crate::db::ActionDb,
     input: &EnrichmentInput,
     intel: &IntelligenceJson,
+    producer: EnrichmentProducer,
     ai_config: Option<&AiModelConfig>,
 ) -> Result<PreparedEnrichment, String> {
     // Source-aware reconciliation + preserve user-edited fields
@@ -2267,88 +2545,7 @@ pub(crate) fn compose_enrichment_intelligence_payload(
     // Fail-closed: if we cannot open the feedback DB to check suppression,
     // drop risks/wins for this round rather than writing potentially-tombstoned
     // items. One lost enrichment round is recoverable; tombstone resurrection is not.
-    {
-        use crate::db::intelligence_feedback::SuppressionDecision;
-        use crate::intelligence::canonicalization::{item_hash as canonical_item_hash, ItemKind};
-
-        let pre_risk_count = final_intel.risks.len();
-        final_intel.risks.retain(|risk| {
-            let item_key = Some(risk.text.as_str());
-            let hash = canonical_item_hash(ItemKind::Risk, &risk.text);
-            match db.is_suppressed(
-                &input.entity_id,
-                "risks",
-                item_key,
-                Some(&hash),
-                risk.item_source.as_ref().map(|s| s.sourced_at.as_str()),
-            ) {
-                SuppressionDecision::Suppressed { .. } => false,
-                SuppressionDecision::NotSuppressed => true,
-                SuppressionDecision::Malformed { record_id, reason } => {
-                    log::error!(
-                        "[is_suppressed] malformed tombstone {:?} for entity {} field risks; \
-                         failing closed: {:?}",
-                        record_id,
-                        input.entity_id,
-                        reason
-                    );
-                    side_writes
-                        .malformed_suppression_audits
-                        .push(MalformedSuppressionAudit {
-                            record_id: record_id.0,
-                            reason: format!("{:?}", reason),
-                            field_key: "risks",
-                            caller_context: "intel_queue.compose_enrichment_intelligence.risks",
-                        });
-                    false
-                }
-            }
-        });
-        let pre_win_count = final_intel.recent_wins.len();
-        final_intel.recent_wins.retain(|win| {
-            let item_key = Some(win.text.as_str());
-            let hash = canonical_item_hash(ItemKind::Win, &win.text);
-            match db.is_suppressed(
-                &input.entity_id,
-                "recentWins",
-                item_key,
-                Some(&hash),
-                win.item_source.as_ref().map(|s| s.sourced_at.as_str()),
-            ) {
-                SuppressionDecision::Suppressed { .. } => false,
-                SuppressionDecision::NotSuppressed => true,
-                SuppressionDecision::Malformed { record_id, reason } => {
-                    log::error!(
-                        "[is_suppressed] malformed tombstone {:?} for entity {} field recentWins; \
-                         failing closed: {:?}",
-                        record_id,
-                        input.entity_id,
-                        reason
-                    );
-                    side_writes
-                        .malformed_suppression_audits
-                        .push(MalformedSuppressionAudit {
-                            record_id: record_id.0,
-                            reason: format!("{:?}", reason),
-                            field_key: "recentWins",
-                            caller_context:
-                                "intel_queue.compose_enrichment_intelligence.recentWins",
-                        });
-                    false
-                }
-            }
-        });
-        let risks_suppressed = pre_risk_count - final_intel.risks.len();
-        let wins_suppressed = pre_win_count - final_intel.recent_wins.len();
-        if risks_suppressed > 0 || wins_suppressed > 0 {
-            log::info!(
-                "[I645] Suppression filter for {}: {} risks, {} wins removed",
-                input.entity_id,
-                risks_suppressed,
-                wins_suppressed,
-            );
-        }
-    }
+    filter_suppressed_risks_and_wins(db, input, &mut final_intel, Some(&mut side_writes));
 
     // Merge computed health dimensions with LLM narrative.
     // The algorithmic engine provides score/band/dimensions/confidence;
@@ -2373,28 +2570,112 @@ pub(crate) fn compose_enrichment_intelligence_payload(
     // Reconcile user-entered facts with AI-inferred values.
     // User-edited fields (source weight 1.0) override AI guesses.
     if input.entity_type == "account" {
-        if let Ok(Some(account)) = db.get_account(&input.entity_id) {
-            if let Some(user_arr) = account.arr {
-                let cc = final_intel
-                    .contract_context
-                    .get_or_insert_with(Default::default);
-                if cc.current_arr != Some(user_arr) {
-                    log::info!(
-                        "[intel_queue] Overriding AI currentArr ({:?}) with user ARR ({}) for {}",
-                        cc.current_arr,
-                        user_arr,
-                        input.entity_id,
-                    );
-                    cc.current_arr = Some(user_arr);
-                }
-            }
+        apply_confirmed_account_facts_to_enrichment_projection(db, input, &mut final_intel, true);
+    }
+
+    let cleared_dimensions =
+        crate::intelligence::dimension_prompts::clear_inapplicable_dimension_fields(
+            &mut final_intel,
+            &input.entity_type,
+            input.relationship.as_deref(),
+        );
+    if !cleared_dimensions.is_empty() {
+        log::debug!(
+            "IntelProcessor: cleared skipped dimensions for {} {}: {:?}",
+            input.entity_type,
+            input.entity_id,
+            cleared_dimensions
+        );
+    }
+
+    let mut projection_intelligence = if producer.is_glean() {
+        intel.clone()
+    } else {
+        final_intel.clone()
+    };
+    if producer.is_glean() {
+        apply_deterministic_projection_repairs(db, input, &mut projection_intelligence);
+        if input.entity_type == "account" {
+            apply_confirmed_account_facts_to_enrichment_projection(
+                db,
+                input,
+                &mut projection_intelligence,
+                false,
+            );
         }
+        filter_suppressed_risks_and_wins(db, input, &mut projection_intelligence, None);
+        crate::intelligence::dimension_prompts::clear_inapplicable_dimension_fields(
+            &mut projection_intelligence,
+            &input.entity_type,
+            input.relationship.as_deref(),
+        );
     }
 
     Ok(PreparedEnrichment {
         intelligence: final_intel,
+        projection_intelligence,
         side_writes,
+        cleared_dimensions,
     })
+}
+
+fn apply_confirmed_account_facts_to_enrichment_projection(
+    db: &crate::db::ActionDb,
+    input: &EnrichmentInput,
+    intel: &mut IntelligenceJson,
+    create_missing_contract_context: bool,
+) {
+    let Ok(Some(account)) = db.get_account(&input.entity_id) else {
+        return;
+    };
+    let Some(user_arr) = account.arr else {
+        return;
+    };
+    let contract_context = if create_missing_contract_context {
+        Some(intel.contract_context.get_or_insert_with(Default::default))
+    } else {
+        intel.contract_context.as_mut()
+    };
+    let Some(contract_context) = contract_context else {
+        return;
+    };
+    if contract_context.current_arr != Some(user_arr) {
+        log::info!(
+            "[intel_queue] Overriding AI currentArr ({:?}) with user ARR ({}) for {}",
+            contract_context.current_arr,
+            user_arr,
+            input.entity_id,
+        );
+        contract_context.current_arr = Some(user_arr);
+    }
+}
+
+fn apply_deterministic_projection_repairs(
+    db: &crate::db::ActionDb,
+    input: &EnrichmentInput,
+    projection_intel: &mut IntelligenceJson,
+) {
+    if input.entity_type != "account" && input.entity_type != "project" {
+        return;
+    }
+    let Ok(facts) =
+        crate::intelligence::build_fact_context(db, &input.entity_id, &input.entity_type)
+    else {
+        return;
+    };
+    let initial_report = crate::intelligence::check_consistency(projection_intel, &facts);
+    let repaired_intel =
+        crate::intelligence::apply_deterministic_repairs(projection_intel, &initial_report, &facts);
+    let unresolved_report = crate::intelligence::check_consistency(&repaired_intel, &facts);
+    let mut repaired_intel = repaired_intel;
+    repaired_intel.consistency_status = Some(crate::intelligence::status_from_reports(
+        &initial_report,
+        &unresolved_report,
+    ));
+    repaired_intel.consistency_findings =
+        crate::intelligence::merge_fixed_flags(&initial_report, &unresolved_report);
+    repaired_intel.consistency_checked_at = Some(Utc::now().to_rfc3339());
+    *projection_intel = repaired_intel;
 }
 
 pub fn apply_enrichment_side_writes(
@@ -2636,32 +2917,16 @@ pub fn run_enrichment_post_commit_side_effects(
 
     if input.entity_type == "account" {
         let ctx = state.live_service_context();
-        let (commitment_source_label, signal_source, product_source) = match producer {
-            EnrichmentProducer::Glean => (
-                format!("glean_enrichment:{}", input.entity_id),
-                "glean",
-                "glean",
-            ),
-            EnrichmentProducer::Pty => (
-                format!("pty_enrichment:{}", input.entity_id),
-                "ai_enrichment",
-                "ai_inference",
-            ),
-        };
-        if let Err(error) =
-            crate::services::enrichment_side_effects::sync_account_enrichment_side_effects(
-                &ctx,
-                db,
-                state.signals.engine.as_ref(),
-                &input.entity_id,
-                final_intel,
-                crate::services::enrichment_side_effects::EnrichmentSideEffectSource {
-                    commitment_source_label: &commitment_source_label,
-                    signal_source,
-                    product_source,
-                },
-            )
-        {
+        let sync_result =
+            crate::services::enrichment_side_effects::sync_account_enrichment_side_effects_for_producer(
+            &ctx,
+            db,
+            state.signals.engine.as_ref(),
+            &input.entity_id,
+            final_intel,
+            producer.side_effect_producer(),
+        );
+        if let Err(error) = sync_result {
             log::warn!(
                 "IntelProcessor: enrichment side-effect sync failed for {}: {}",
                 input.entity_id,
@@ -2669,8 +2934,10 @@ pub fn run_enrichment_post_commit_side_effects(
             );
             if producer.is_glean() {
                 return Err(format!(
-                    "Glean enrichment side-effect sync failed for {}: {}",
-                    input.entity_id, error
+                    "{} enrichment side-effect sync failed for {}: {}",
+                    producer.materialization_label(),
+                    input.entity_id,
+                    error
                 ));
             }
         }
@@ -2787,8 +3054,9 @@ pub(crate) fn run_enrichment_finalize_post_commit(
         }
         FinalizeMode::TrustRecompute => EnrichmentProducer::Pty,
     };
-    let is_glean_producer = side_effect_producer.is_glean();
-    if is_glean_producer {
+    let materialize_visible_side_effects_before_export =
+        !matches!(mode, FinalizeMode::TrustRecompute);
+    if materialize_visible_side_effects_before_export {
         run_enrichment_post_commit_side_effects(
             state.as_ref(),
             input,
@@ -2819,7 +3087,7 @@ pub(crate) fn run_enrichment_finalize_post_commit(
     }
 
     fenced_write_enrichment_intelligence(db, &input.entity_dir, intel);
-    if !is_glean_producer {
+    if !materialize_visible_side_effects_before_export {
         run_enrichment_post_commit_side_effects(
             state.as_ref(),
             input,
@@ -3477,6 +3745,34 @@ mod tests {
         f(&ctx)
     }
 
+    #[test]
+    fn queue_worker_final_status_reports_finalize_failures_instead_of_success() {
+        let failures = vec![QueueRefreshFailure::new(
+            "account-finalize-failed",
+            "finalize",
+            "visible side effects failed",
+        )];
+
+        let payloads = queue_worker_final_status_payloads(0, &failures, true);
+
+        assert_eq!(payloads.len(), 1);
+        assert_eq!(payloads[0]["phase"], "failed");
+        assert_eq!(payloads[0]["manual"], true);
+        assert_eq!(payloads[0]["entityId"], "account-finalize-failed");
+        assert_eq!(payloads[0]["stage"], "finalize");
+        assert_eq!(payloads[0]["error"], "visible side effects failed");
+    }
+
+    #[test]
+    fn queue_worker_final_status_counts_only_finalized_successes() {
+        let payloads = queue_worker_final_status_payloads(2, &[], false);
+
+        assert_eq!(payloads.len(), 1);
+        assert_eq!(payloads[0]["phase"], "completed");
+        assert_eq!(payloads[0]["count"], 2);
+        assert_eq!(payloads[0]["manual"], false);
+    }
+
     fn seed_trust_account(db: &crate::db::ActionDb, account_id: &str) {
         db.conn_ref()
             .execute(
@@ -3716,6 +4012,7 @@ mod tests {
         let claim = load_single_trust_claim(&db, account_id);
 
         let (freshness, reason) = freshness_context_for_claim(
+            &db,
             Utc.with_ymd_and_hms(2026, 5, 4, 12, 0, 0).unwrap(),
             &claim,
         )
@@ -3745,6 +4042,7 @@ mod tests {
         let claim = load_single_trust_claim(&db, account_id);
 
         let (freshness, reason) = freshness_context_for_claim(
+            &db,
             Utc.with_ymd_and_hms(2026, 5, 4, 12, 0, 0).unwrap(),
             &claim,
         )
@@ -4471,6 +4769,174 @@ mod tests {
             Some("Prior narrative")
         );
         assert!(fresh.risks.is_empty());
+    }
+
+    #[test]
+    fn compose_enrichment_clears_skipped_dimension_fields_after_reconciliation() {
+        let db = crate::db::test_utils::test_db();
+        let entity_id = "person-skipped-dimensions";
+        let existing = IntelligenceJson {
+            executive_assessment_render_policy: None,
+            entity_id: entity_id.to_string(),
+            entity_type: "person".to_string(),
+            enriched_at: "2026-05-20T00:00:00Z".to_string(),
+            executive_assessment: Some("Prior person summary.".to_string()),
+            health: Some(crate::intelligence::io::AccountHealth::default()),
+            contract_context: Some(crate::intelligence::io::ContractContext::default()),
+            success_metrics: Some(vec![crate::intelligence::io::SuccessMetric {
+                name: "Legacy account metric".to_string(),
+                target: Some("100%".to_string()),
+                current: Some("80%".to_string()),
+                status: Some("stale".to_string()),
+                owner: None,
+            }]),
+            product_adoption: Some(crate::intelligence::io::AdoptionSignals::default()),
+            support_health: Some(crate::intelligence::io::SupportHealth::default()),
+            gong_call_summaries: vec![crate::intelligence::io::GongCallSummary {
+                title: "Legacy account call".to_string(),
+                date: "2026-05-19".to_string(),
+                participants: vec!["Generic Person".to_string()],
+                key_topics: "Legacy account-only summary".to_string(),
+                sentiment: "neutral".to_string(),
+            }],
+            nps_csat: Some(crate::intelligence::io::SatisfactionData::default()),
+            ..Default::default()
+        };
+        db.upsert_entity_intelligence(&existing)
+            .expect("seed existing person intelligence");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let input = EnrichmentInput {
+            workspace: dir.path().to_path_buf(),
+            entity_dir: dir.path().to_path_buf(),
+            entity_id: entity_id.to_string(),
+            entity_type: "person".to_string(),
+            prompt: String::new(),
+            file_manifest: Vec::new(),
+            file_count: 0,
+            computed_health: None,
+            entity_name: "Generic Person".to_string(),
+            relationship: Some("internal".to_string()),
+            intelligence_context: None,
+            active_preset: None,
+        };
+        let incoming = IntelligenceJson {
+            executive_assessment_render_policy: None,
+            entity_id: entity_id.to_string(),
+            entity_type: "person".to_string(),
+            enriched_at: "2026-05-21T00:00:00Z".to_string(),
+            executive_assessment: Some("Fresh person summary.".to_string()),
+            ..Default::default()
+        };
+
+        let prepared = compose_enrichment_intelligence_payload(
+            &db,
+            &input,
+            &incoming,
+            EnrichmentProducer::Pty,
+            None,
+        )
+        .expect("compose person enrichment");
+        let final_intel = prepared.intelligence();
+
+        assert_eq!(
+            final_intel.executive_assessment.as_deref(),
+            Some("Fresh person summary.")
+        );
+        assert!(
+            final_intel.health.is_none(),
+            "commercial health must not survive person refresh"
+        );
+        assert!(
+            final_intel.contract_context.is_none(),
+            "contract context must not survive person refresh"
+        );
+        assert!(
+            final_intel.success_metrics.is_none(),
+            "value-success metrics must not survive person refresh"
+        );
+        assert!(
+            final_intel.product_adoption.is_none(),
+            "account-only product adoption must not survive person refresh"
+        );
+        assert!(
+            final_intel.support_health.is_none(),
+            "account-only support health must not survive person refresh"
+        );
+        assert!(
+            final_intel.gong_call_summaries.is_empty(),
+            "account-only call summaries must not survive person refresh"
+        );
+        assert!(
+            final_intel.nps_csat.is_none(),
+            "account-only satisfaction data must not survive person refresh"
+        );
+    }
+
+    #[test]
+    fn progressive_snapshot_clears_skipped_dimension_fields_before_write() {
+        let db = crate::db::test_utils::test_db();
+        let entity_id = "person-progressive-skipped-dimensions";
+        let existing = IntelligenceJson {
+            executive_assessment_render_policy: None,
+            entity_id: entity_id.to_string(),
+            entity_type: "person".to_string(),
+            enriched_at: "2026-05-20T00:00:00Z".to_string(),
+            health: Some(crate::intelligence::io::AccountHealth::default()),
+            product_adoption: Some(crate::intelligence::io::AdoptionSignals::default()),
+            support_health: Some(crate::intelligence::io::SupportHealth::default()),
+            gong_call_summaries: vec![crate::intelligence::io::GongCallSummary {
+                title: "Legacy account call".to_string(),
+                date: "2026-05-19".to_string(),
+                participants: vec!["Generic Person".to_string()],
+                key_topics: "Legacy account-only summary".to_string(),
+                sentiment: "neutral".to_string(),
+            }],
+            nps_csat: Some(crate::intelligence::io::SatisfactionData::default()),
+            ..Default::default()
+        };
+        db.upsert_entity_intelligence(&existing)
+            .expect("seed existing person intelligence");
+        let combined = IntelligenceJson {
+            executive_assessment_render_policy: None,
+            entity_id: entity_id.to_string(),
+            entity_type: "person".to_string(),
+            enriched_at: "2026-05-21T00:00:00Z".to_string(),
+            executive_assessment: Some("Progressive person summary.".to_string()),
+            ..Default::default()
+        };
+
+        let progressive = prepare_progressive_dimension_snapshot(
+            &db,
+            entity_id,
+            "person",
+            Some("internal"),
+            &combined,
+        );
+
+        assert_eq!(
+            progressive.executive_assessment.as_deref(),
+            Some("Progressive person summary.")
+        );
+        assert!(
+            progressive.health.is_none(),
+            "progressive snapshots must not persist skipped commercial health"
+        );
+        assert!(
+            progressive.product_adoption.is_none(),
+            "progressive snapshots must not persist account-only product adoption"
+        );
+        assert!(
+            progressive.support_health.is_none(),
+            "progressive snapshots must not persist account-only support health"
+        );
+        assert!(
+            progressive.gong_call_summaries.is_empty(),
+            "progressive snapshots must not persist account-only call summaries"
+        );
+        assert!(
+            progressive.nps_csat.is_none(),
+            "progressive snapshots must not persist account-only satisfaction data"
+        );
     }
 
     #[test]

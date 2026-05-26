@@ -178,11 +178,26 @@ impl GleanIntelligenceProvider {
 
         let overall_start = Instant::now();
         let is_incremental = ctx.prior_intelligence.is_some();
-        let total_dimensions = DIMENSION_NAMES.len() as u32;
+        let applicability = dimension_prompts::dimension_applicability(entity_type, relationship);
+        let total_dimensions = applicability.applicable.len() as u32;
+        let canonical_total_dimensions = DIMENSION_NAMES.len() as u32;
+        let skipped_dimensions: Vec<String> = applicability
+            .skipped
+            .iter()
+            .map(|dimension| (*dimension).to_string())
+            .collect();
 
-        // Build 6 dimension prompts
+        if total_dimensions == 0 {
+            return Err(format!(
+                "No applicable Glean dimensions for {} ({})",
+                entity_name, entity_type
+            ));
+        }
+
+        // Build dimension prompts for the dimensions that apply to this entity.
         let prompts: Vec<(String, String)> = DIMENSION_NAMES
             .iter()
+            .filter(|dim| applicability.applicable.contains(dim))
             .map(|dim| {
                 let prompt = dimension_prompts::build_glean_dimension_prompt(
                     dim,
@@ -198,10 +213,11 @@ impl GleanIntelligenceProvider {
             .collect();
 
         log::info!(
-            "[I574] Glean parallel enrichment for {} ({}) — {} dimensions, incremental={}",
+            "[I574] Glean parallel enrichment for {} ({}) — {}/{} applicable dimensions, incremental={}",
             entity_name,
             entity_type,
             prompts.len(),
+            canonical_total_dimensions,
             is_incremental,
         );
 
@@ -213,8 +229,9 @@ impl GleanIntelligenceProvider {
 
         // Use tokio::sync::mpsc channel to receive dimension results as they
         // complete, enabling progressive DB writes and event emission.
-        let (tx, mut rx) =
-            tokio::sync::mpsc::channel::<(String, Result<IntelligenceJson, String>)>(6);
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<(String, Result<IntelligenceJson, String>)>(
+            prompts.len().max(1),
+        );
         let mut wrote_debug_file = false;
 
         for (dim_name, prompt) in prompts {
@@ -276,7 +293,7 @@ impl GleanIntelligenceProvider {
                             reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                         )]
                         let _ = sender
-                            .send((dim_name, Err("timed out after 30s".to_string())))
+                            .send((dim_name, Err("timed out after 240s".to_string())))
                             .await;
                         return;
                     }
@@ -390,7 +407,12 @@ impl GleanIntelligenceProvider {
 
                         // Progressive DB write + event emission
                         if let Some(handle) = app_handle {
-                            write_progressive_glean_dimension(entity_id, entity_type, &combined);
+                            write_progressive_glean_dimension(
+                                entity_id,
+                                entity_type,
+                                relationship,
+                                &combined,
+                            );
                             #[allow(
                                 clippy::let_underscore_must_use,
                                 reason = "intentional best-effort discard; preserves existing non-blocking behavior"
@@ -416,10 +438,12 @@ impl GleanIntelligenceProvider {
 
         let total_ms = overall_start.elapsed().as_millis();
         log::info!(
-            "[I574] Glean parallel: {}/6 dimensions succeeded for {} in {}ms (failed: {:?})",
+            "[I574] Glean parallel: {}/{} applicable dimensions succeeded for {} in {}ms (skipped: {:?}, failed: {:?})",
             succeeded,
+            total_dimensions,
             entity_name,
             total_ms,
+            skipped_dimensions,
             failed_dims,
         );
 
@@ -437,6 +461,9 @@ impl GleanIntelligenceProvider {
                     succeeded,
                     failed: failed_dims.len() as u32,
                     failed_dimensions: failed_dims.clone(),
+                    total_dimensions: canonical_total_dimensions,
+                    applicable_total: total_dimensions,
+                    skipped_dimensions: skipped_dimensions.clone(),
                     wall_clock_ms: total_ms as u64,
                 },
             );
@@ -474,7 +501,12 @@ impl GleanIntelligenceProvider {
                             "entity_type": entity_type,
                             "succeeded": succeeded,
                             "failed": failed_dims.len(),
-                            "failed_dimensions": failed_dims,
+                            "failed_dimensions": failed_dims.clone(),
+                            "required_failed_dimensions": failed_dims.clone(),
+                            "optional_failed_dimensions": Vec::<String>::new(),
+                            "total_dimensions": canonical_total_dimensions,
+                            "applicable_total": total_dimensions,
+                            "skipped_dimensions": skipped_dimensions.clone(),
                             "wall_clock_ms": total_ms,
                         }),
                     );
@@ -496,6 +528,11 @@ impl GleanIntelligenceProvider {
                             "succeeded": succeeded,
                             "failed": failed_dims.len(),
                             "failed_dimensions": failed_dims.clone(),
+                            "required_failed_dimensions": failed_dims.clone(),
+                            "optional_failed_dimensions": Vec::<String>::new(),
+                            "total_dimensions": canonical_total_dimensions,
+                            "applicable_total": total_dimensions,
+                            "skipped_dimensions": skipped_dimensions.clone(),
                             "wall_clock_ms": total_ms,
                             "will_fall_back": succeeded == 0,
                         }),
@@ -505,7 +542,10 @@ impl GleanIntelligenceProvider {
         }
 
         if succeeded == 0 {
-            return Err(format!("All 6 Glean dimensions failed for {}", entity_name));
+            return Err(format!(
+                "All {} applicable Glean dimensions failed for {}",
+                total_dimensions, entity_name
+            ));
         }
 
         // Set metadata on combined result.
@@ -1042,6 +1082,7 @@ fn extract_domains_for_glean_enrichment(_intel: &mut IntelligenceJson) {
 fn write_progressive_glean_dimension(
     entity_id: &str,
     entity_type: &str,
+    relationship: Option<&str>,
     combined: &IntelligenceJson,
 ) {
     let db = match crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())) {
@@ -1056,32 +1097,13 @@ fn write_progressive_glean_dimension(
         }
     };
 
-    // Progressive writes within a single enrichment cycle use simple dimension
-    // merge, NOT reconciliation. Reconciliation is for cross-cycle merges
-    // (e.g., Glean refresh on top of existing PTY data). Within one cycle,
-    // the combined state is authoritative — just overlay it on existing.
-    let existing = db.get_entity_intelligence(entity_id).ok().flatten();
-    let mut merged = if let Some(mut existing) = existing {
-        for dim in crate::intelligence::dimension_prompts::DIMENSION_NAMES {
-            #[allow(
-                clippy::let_underscore_must_use,
-                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-            )]
-            let _ = crate::intelligence::dimension_prompts::merge_dimension_into(
-                &mut existing,
-                dim,
-                combined,
-            );
-        }
-        existing
-    } else {
-        combined.clone()
-    };
-
-    merged.entity_id = entity_id.to_string();
-    merged.entity_type = entity_type.to_string();
-    // dos259-grandfathered: progressive-write enrichment timestamp; migrates to ctx.clock.now() when W2-A lands ServiceContext.
-    merged.enriched_at = chrono::Utc::now().to_rfc3339();
+    let merged = crate::intel_queue::prepare_progressive_dimension_snapshot(
+        &db,
+        entity_id,
+        entity_type,
+        relationship,
+        combined,
+    );
 
     let clock = crate::services::context::SystemClock;
     let rng = crate::services::context::SystemRng;
@@ -1149,6 +1171,7 @@ pub fn reconcile_enrichment(
 ) -> IntelligenceJson {
     let mut result = existing.clone();
     let dismissed = &existing.dismissed_items;
+    let refreshed_fields = new_output.refreshed_fields.clone();
 
     // Helper: check if a vec field (or any of its items' sub-fields) has user edits.
     // When a user edits an individual field like stakeholderInsights[0].engagement,
@@ -1160,6 +1183,8 @@ pub fn reconcile_enrichment(
             e.field_path == field_name || e.field_path.starts_with(&format!("{}[", field_name))
         })
     };
+    let field_refreshed =
+        |field_name: &str| -> bool { refreshed_fields.iter().any(|field| field == field_name) };
 
     // --- Vec fields: source-aware item reconciliation ---
     // Skip reconciliation for fields with user edits — preserve_user_edits
@@ -1170,7 +1195,9 @@ pub fn reconcile_enrichment(
     // against existing pty_synthesis items would wipe them all. Reconcile only
     // when the new output actually has data, or when existing is also empty
     // (nothing to preserve).
-    if !has_user_edits("risks") && (!new_output.risks.is_empty() || existing.risks.is_empty()) {
+    if !has_user_edits("risks")
+        && (field_refreshed("risks") || !new_output.risks.is_empty() || existing.risks.is_empty())
+    {
         result.risks = reconcile_vec_items(
             &existing.risks,
             &new_output.risks,
@@ -1182,7 +1209,9 @@ pub fn reconcile_enrichment(
     }
 
     if !has_user_edits("recentWins")
-        && (!new_output.recent_wins.is_empty() || existing.recent_wins.is_empty())
+        && (field_refreshed("recentWins")
+            || !new_output.recent_wins.is_empty()
+            || existing.recent_wins.is_empty())
     {
         result.recent_wins = reconcile_vec_items(
             &existing.recent_wins,
@@ -1201,7 +1230,9 @@ pub fn reconcile_enrichment(
     result.stakeholder_insights = new_output.stakeholder_insights;
 
     if !has_user_edits("valueDelivered")
-        && (!new_output.value_delivered.is_empty() || existing.value_delivered.is_empty())
+        && (field_refreshed("valueDelivered")
+            || !new_output.value_delivered.is_empty()
+            || existing.value_delivered.is_empty())
     {
         result.value_delivered = reconcile_vec_items(
             &existing.value_delivered,
@@ -1214,7 +1245,9 @@ pub fn reconcile_enrichment(
     }
 
     if !has_user_edits("competitiveContext")
-        && (!new_output.competitive_context.is_empty() || existing.competitive_context.is_empty())
+        && (field_refreshed("competitiveContext")
+            || !new_output.competitive_context.is_empty()
+            || existing.competitive_context.is_empty())
     {
         result.competitive_context = reconcile_vec_items(
             &existing.competitive_context,
@@ -1231,7 +1264,9 @@ pub fn reconcile_enrichment(
     // prior regulatory/market items that user corrections or earlier
     // enrichments accumulated.
     if !has_user_edits("marketContext")
-        && (!new_output.market_context.is_empty() || existing.market_context.is_empty())
+        && (field_refreshed("marketContext")
+            || !new_output.market_context.is_empty()
+            || existing.market_context.is_empty())
     {
         result.market_context = reconcile_vec_items(
             &existing.market_context,
@@ -1244,7 +1279,8 @@ pub fn reconcile_enrichment(
     }
 
     if !has_user_edits("organizationalChanges")
-        && (!new_output.organizational_changes.is_empty()
+        && (field_refreshed("organizationalChanges")
+            || !new_output.organizational_changes.is_empty()
             || existing.organizational_changes.is_empty())
     {
         result.organizational_changes = reconcile_vec_items(
@@ -1258,7 +1294,9 @@ pub fn reconcile_enrichment(
     }
 
     if !has_user_edits("expansionSignals")
-        && (!new_output.expansion_signals.is_empty() || existing.expansion_signals.is_empty())
+        && (field_refreshed("expansionSignals")
+            || !new_output.expansion_signals.is_empty()
+            || existing.expansion_signals.is_empty())
     {
         result.expansion_signals = reconcile_vec_items(
             &existing.expansion_signals,
@@ -1276,7 +1314,7 @@ pub fn reconcile_enrichment(
             (&existing.open_commitments, &new_output.open_commitments)
         {
             // Non-destructive-empty: if new dimension returned empty, keep existing.
-            if !new_oc.is_empty() || existing_oc.is_empty() {
+            if field_refreshed("openCommitments") || !new_oc.is_empty() || existing_oc.is_empty() {
                 let reconciled = reconcile_vec_items(
                     existing_oc,
                     new_oc,
@@ -1333,23 +1371,24 @@ pub fn reconcile_enrichment(
     // Non-source-attributed vecs: strategic_priorities, internal_team, blockers, gong_call_summaries
     // These already use an "only-overwrite-if-non-empty" guard via the is_empty checks below,
     // which preserves existing values when the dimension returns nothing.
-    if !new_output.strategic_priorities.is_empty() {
+    if field_refreshed("strategicPriorities") || !new_output.strategic_priorities.is_empty() {
         result.strategic_priorities = new_output.strategic_priorities;
     }
-    if !new_output.internal_team.is_empty() {
+    if field_refreshed("internalTeam") || !new_output.internal_team.is_empty() {
         result.internal_team =
             reconcile_internal_team(&existing.internal_team, &new_output.internal_team);
     }
-    if !new_output.blockers.is_empty() {
+    if field_refreshed("blockers") || !new_output.blockers.is_empty() {
         result.blockers = new_output.blockers;
     }
-    if !new_output.gong_call_summaries.is_empty() {
+    if field_refreshed("gongCallSummaries") || !new_output.gong_call_summaries.is_empty() {
         result.gong_call_summaries = new_output.gong_call_summaries;
     }
 
     // Carry forward user_edits and dismissed_items from existing
     result.user_edits = existing.user_edits;
     result.dismissed_items = existing.dismissed_items;
+    result.refreshed_fields = refreshed_fields;
 
     // Update metadata
     result.enriched_at = new_output.enriched_at;
@@ -1561,6 +1600,53 @@ mod provider_trait_tests {
             p.current_model(ModelTier::Extraction).as_str(),
             "glean-chat"
         );
+    }
+}
+
+#[cfg(test)]
+mod reconciliation_tests {
+    use super::*;
+    use crate::intelligence::io::{IntelRisk, IntelligenceJson, ItemSource};
+
+    #[test]
+    fn explicit_empty_refreshed_risks_remove_existing_glean_items() {
+        let existing = IntelligenceJson {
+            risks: vec![
+                IntelRisk {
+                    text: "Stale Glean risk".to_string(),
+                    urgency: "watch".to_string(),
+                    item_source: Some(ItemSource {
+                        source: "glean_crm".to_string(),
+                        confidence: 0.9,
+                        sourced_at: "2026-05-20T00:00:00Z".to_string(),
+                        reference: Some("CRM fixture".to_string()),
+                    }),
+                    ..Default::default()
+                },
+                IntelRisk {
+                    text: "Local transcript risk".to_string(),
+                    urgency: "watch".to_string(),
+                    item_source: Some(ItemSource {
+                        source: "pty_synthesis".to_string(),
+                        confidence: 0.5,
+                        sourced_at: "2026-05-19T00:00:00Z".to_string(),
+                        reference: Some("local fixture".to_string()),
+                    }),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        let new_output = IntelligenceJson {
+            refreshed_fields: vec!["risks".to_string()],
+            ..Default::default()
+        };
+
+        let result = reconcile_enrichment(existing, new_output, &["glean_crm"]);
+
+        assert_eq!(result.risks.len(), 1);
+        assert_eq!(result.risks[0].text, "Local transcript risk");
+        assert!(result.refreshed_fields.contains(&"risks".to_string()));
     }
 }
 

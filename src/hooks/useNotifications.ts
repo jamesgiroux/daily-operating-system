@@ -10,18 +10,23 @@ interface SystemStatusPayload {
 }
 
 /**
- * Payload emitted by `GleanProvider` when one or more of the 6 enrichment
+ * Payload emitted by `GleanProvider` when one or more applicable refresh
  * dimensions fail. When `will_fall_back` is true, Glean returned nothing
  * usable and the backend swaps to the legacy PTY enrichment path.
  *
  * Shape defined in src-tauri/src/intelligence/glean_provider.rs (~L412-423).
  */
-interface GleanDegradedPayload {
+export interface GleanDegradedPayload {
   entity_id: string;
   entity_type: string;
   succeeded: number;
   failed: number;
   failed_dimensions: string[];
+  required_failed_dimensions?: string[];
+  optional_failed_dimensions?: string[];
+  total_dimensions?: number;
+  applicable_total?: number;
+  skipped_dimensions?: string[];
   wall_clock_ms: number;
   will_fall_back: boolean;
 }
@@ -39,8 +44,27 @@ interface GleanFallbackPayload {
   reason: string;
 }
 
-/** Total number of Glean enrichment dimensions (health, relationships, etc.). */
+/** Legacy total used when older backend payloads do not include applicability. */
 const GLEAN_DIMENSIONS_TOTAL = 6;
+
+export function formatGleanDegradedMessage(payload: GleanDegradedPayload) {
+  const applicableTotal = Math.max(
+    1,
+    payload.applicable_total ?? payload.total_dimensions ?? GLEAN_DIMENSIONS_TOTAL,
+  );
+  const succeeded = Math.max(0, Math.min(payload.succeeded, applicableTotal));
+  const skippedCount = payload.skipped_dimensions?.length ?? 0;
+  const requiredFailures =
+    payload.required_failed_dimensions ?? payload.failed_dimensions ?? [];
+  const skippedText =
+    skippedCount > 0 ? `; ${skippedCount} not applicable` : "";
+  const failureText =
+    requiredFailures.length > 0
+      ? `; ${requiredFailures.length} need attention`
+      : "";
+
+  return `Glean refresh incomplete (${succeeded}/${applicableTotal} applicable areas updated${skippedText}${failureText}) - showing partial results`;
+}
 
 /**
  * Milestone operations worth toasting.
@@ -115,14 +139,7 @@ export function useNotifications() {
 
   const handleGleanDegraded = useCallback((payload: GleanDegradedPayload) => {
     if (!payload || payload.will_fall_back) return;
-    const succeeded = Math.max(
-      0,
-      Math.min(payload.succeeded, GLEAN_DIMENSIONS_TOTAL),
-    );
-    toast.warning(
-      `Glean enrichment degraded (${succeeded}/${GLEAN_DIMENSIONS_TOTAL} dimensions) — showing partial results`,
-      { duration: 10000 },
-    );
+    toast.warning(formatGleanDegradedMessage(payload), { duration: 10000 });
   }, []);
 
   const handleGleanFallback = useCallback((_payload: GleanFallbackPayload) => {
@@ -148,7 +165,7 @@ export function useNotifications() {
   // System status events — pipeline errors and auth issues from backend
   useTauriEvent("system-status", handleSystemStatus);
 
-  // Glean enrichment degraded — partial dimension failure. If the
+  // Glean refresh incomplete — partial dimension failure. If the
   // backend is also about to fall back to PTY (`will_fall_back`), let
   // the paired `enrichment-glean-fallback` toast own the messaging so
   // we don't double-toast the same account.

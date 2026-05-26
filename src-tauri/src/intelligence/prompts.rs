@@ -2612,12 +2612,19 @@ struct AiIntelResponse {
     expansion_signals: Vec<super::io::ExpansionSignal>,
     #[serde(default)]
     agreement_outlook: Option<super::io::AgreementOutlook>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_product_classification"
+    )]
+    product_classification: Option<super::io::ProductClassification>,
     #[serde(default)]
     support_health: Option<super::io::SupportHealth>,
     #[serde(default)]
     product_adoption: Option<super::io::AdoptionSignals>,
     #[serde(default)]
     nps_csat: Option<super::io::SatisfactionData>,
+    #[serde(default, deserialize_with = "deserialize_gong_call_summaries")]
+    gong_call_summaries: Vec<super::io::GongCallSummary>,
     #[serde(default)]
     source_attribution: Option<std::collections::HashMap<String, Vec<String>>>,
     /// Success plan signals synthesized from aggregate context.
@@ -2702,7 +2709,7 @@ struct AiOpenCommitment {
     source: Option<String>,
     #[serde(default)]
     status: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_optional_item_source")]
     item_source: Option<ItemSource>,
 }
 
@@ -2806,6 +2813,10 @@ struct AiRisk {
     /// Specific kind label (e.g. "Renewal drag · compliance gap").
     #[serde(default)]
     kind_label: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_item_source")]
+    item_source: Option<ItemSource>,
+    #[serde(default)]
+    discrepancy: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2816,6 +2827,10 @@ struct AiWin {
     source: Option<String>,
     #[serde(default)]
     impact: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_item_source")]
+    item_source: Option<ItemSource>,
+    #[serde(default)]
+    discrepancy: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2847,6 +2862,10 @@ struct AiStakeholder {
     verified_source: Option<String>,
     #[serde(default)]
     verified_at: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_item_source")]
+    item_source: Option<ItemSource>,
+    #[serde(default)]
+    discrepancy: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2859,6 +2878,10 @@ struct AiValue {
     source: Option<String>,
     #[serde(default)]
     impact: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_item_source")]
+    item_source: Option<ItemSource>,
+    #[serde(default)]
+    discrepancy: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2881,6 +2904,209 @@ struct AiCompanyContext {
     headquarters: Option<String>,
     #[serde(default)]
     additional_context: Option<String>,
+}
+
+fn deserialize_optional_item_source<'de, D>(deserializer: D) -> Result<Option<ItemSource>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(
+        value.and_then(|value| match serde_json::from_value::<ItemSource>(value) {
+            Ok(source) => Some(source),
+            Err(e) => {
+                log::warn!(
+                    "Ignoring malformed itemSource in intelligence response: {}",
+                    e
+                );
+                None
+            }
+        }),
+    )
+}
+
+fn deserialize_optional_product_classification<'de, D>(
+    deserializer: D,
+) -> Result<Option<super::io::ProductClassification>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    let Some(value) = value else {
+        return Ok(None);
+    };
+
+    match serde_json::from_value::<super::io::ProductClassification>(value.clone()) {
+        Ok(classification) => Ok(Some(classification)),
+        Err(e) => {
+            log::warn!(
+                "Falling back to tolerant productClassification parsing: {}",
+                e
+            );
+            Ok(parse_product_classification_value(&value))
+        }
+    }
+}
+
+fn parse_product_classification_value(
+    value: &serde_json::Value,
+) -> Option<super::io::ProductClassification> {
+    let products = value.get("products")?.as_array()?;
+    let products = products
+        .iter()
+        .filter_map(|product| {
+            let obj = product.as_object()?;
+            let type_ = string_field(obj, "type");
+            let tier = string_field(obj, "tier");
+            let arr = obj.get("arr").and_then(number_or_money_string);
+            let billing_terms = string_field(obj, "billingTerms");
+
+            if type_.is_none() && tier.is_none() && arr.is_none() && billing_terms.is_none() {
+                None
+            } else {
+                Some(super::io::ProductInfo {
+                    type_,
+                    tier,
+                    arr,
+                    billing_terms,
+                })
+            }
+        })
+        .collect();
+
+    Some(super::io::ProductClassification { products })
+}
+
+fn deserialize_gong_call_summaries<'de, D>(
+    deserializer: D,
+) -> Result<Vec<super::io::GongCallSummary>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    let Some(value) = value else {
+        return Ok(Vec::new());
+    };
+
+    match serde_json::from_value::<Vec<super::io::GongCallSummary>>(value.clone()) {
+        Ok(summaries) => Ok(summaries),
+        Err(e) => {
+            log::warn!("Falling back to tolerant gongCallSummaries parsing: {}", e);
+            Ok(parse_gong_call_summaries_value(&value))
+        }
+    }
+}
+
+fn parse_gong_call_summaries_value(value: &serde_json::Value) -> Vec<super::io::GongCallSummary> {
+    value
+        .as_array()
+        .map(|summaries| {
+            summaries
+                .iter()
+                .filter_map(|summary| {
+                    let obj = summary.as_object()?;
+                    let title = string_field(obj, "title")?;
+                    let date = string_field(obj, "date")?;
+                    let key_topics = string_or_string_array_field(obj, "keyTopics")?;
+                    let sentiment =
+                        string_field(obj, "sentiment").unwrap_or_else(|| "neutral".to_string());
+                    let participants = string_array_field(obj, "participants");
+
+                    Some(super::io::GongCallSummary {
+                        title,
+                        date,
+                        participants,
+                        key_topics,
+                        sentiment,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn string_field(obj: &serde_json::Map<String, serde_json::Value>, key: &str) -> Option<String> {
+    obj.get(key)
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn string_array_field(obj: &serde_json::Map<String, serde_json::Value>, key: &str) -> Vec<String> {
+    match obj.get(key) {
+        Some(serde_json::Value::Array(values)) => values
+            .iter()
+            .filter_map(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned)
+            .collect(),
+        Some(serde_json::Value::String(value)) if !value.trim().is_empty() => {
+            vec![value.trim().to_string()]
+        }
+        _ => Vec::new(),
+    }
+}
+
+fn string_or_string_array_field(
+    obj: &serde_json::Map<String, serde_json::Value>,
+    key: &str,
+) -> Option<String> {
+    match obj.get(key) {
+        Some(serde_json::Value::String(value)) => {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        }
+        Some(serde_json::Value::Array(values)) => {
+            let joined = values
+                .iter()
+                .filter_map(|value| value.as_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .collect::<Vec<_>>()
+                .join("; ");
+            if joined.is_empty() {
+                None
+            } else {
+                Some(joined)
+            }
+        }
+        _ => None,
+    }
+}
+
+fn number_or_money_string(value: &serde_json::Value) -> Option<f64> {
+    if let Some(number) = value.as_f64() {
+        return Some(number);
+    }
+
+    let raw = value.as_str()?.trim().to_ascii_lowercase();
+    if raw.is_empty() {
+        return None;
+    }
+
+    let (number, multiplier) = if let Some(stripped) = raw.strip_suffix('k') {
+        (stripped, 1_000.0)
+    } else if let Some(stripped) = raw.strip_suffix('m') {
+        (stripped, 1_000_000.0)
+    } else {
+        (raw.as_str(), 1.0)
+    };
+
+    let cleaned = number
+        .chars()
+        .filter(|ch| ch.is_ascii_digit() || *ch == '.')
+        .collect::<String>();
+    if cleaned.is_empty() {
+        None
+    } else {
+        cleaned.parse::<f64>().ok().map(|value| value * multiplier)
+    }
 }
 
 /// Parse Claude's intelligence response into an IntelligenceJson.
@@ -3099,6 +3325,50 @@ fn extract_balanced_json_object(candidate: &str) -> Option<&str> {
     None
 }
 
+fn response_refreshed_fields(json_str: &str) -> Vec<String> {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(json_str) else {
+        return Vec::new();
+    };
+    let Some(object) = value.as_object() else {
+        return Vec::new();
+    };
+
+    object
+        .keys()
+        .filter_map(|key| canonical_response_field_name(key))
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+fn canonical_response_field_name(field: &str) -> Option<&'static str> {
+    match field {
+        "executiveAssessment" => Some("executiveAssessment"),
+        "pullQuote" => Some("pullQuote"),
+        "health" | "healthScore" | "healthTrend" => Some("health"),
+        "risks" => Some("risks"),
+        "recommendedActions" => Some("recommendedActions"),
+        "recentWins" => Some("recentWins"),
+        "currentState" => Some("currentState"),
+        "competitiveContext" => Some("competitiveContext"),
+        "strategicPriorities" => Some("strategicPriorities"),
+        "marketContext" => Some("marketContext"),
+        "regulatoryContext" => Some("regulatoryContext"),
+        "organizationalChanges" => Some("organizationalChanges"),
+        "internalTeam" => Some("internalTeam"),
+        "blockers" => Some("blockers"),
+        "contractContext" => Some("contractContext"),
+        "expansionSignals" => Some("expansionSignals"),
+        "agreementOutlook" | "renewalOutlook" | "renewal_outlook" => Some("agreementOutlook"),
+        "valueDelivered" => Some("valueDelivered"),
+        "successMetrics" => Some("successMetrics"),
+        "openCommitments" => Some("openCommitments"),
+        "stakeholderInsights" => Some("stakeholderInsights"),
+        "companyContext" => Some("companyContext"),
+        "gongCallSummaries" => Some("gongCallSummaries"),
+        _ => None,
+    }
+}
+
 /// Try to parse the response as JSON format. Returns None if it fails.
 fn try_parse_json_response(
     response: &str,
@@ -3108,6 +3378,7 @@ fn try_parse_json_response(
     manifest: &[SourceManifestEntry],
 ) -> Option<IntelligenceJson> {
     let json_str = extract_json_from_response(response)?;
+    let refreshed_fields = response_refreshed_fields(json_str);
 
     // Validate structure and run anomaly detection before deserialization
     if let Err(e) = super::validation::validate_intelligence_response(json_str) {
@@ -3119,7 +3390,17 @@ fn try_parse_json_response(
         return None;
     }
 
-    let ai_resp: AiIntelResponse = serde_json::from_str(json_str).ok()?;
+    let ai_resp: AiIntelResponse = match serde_json::from_str(json_str) {
+        Ok(parsed) => parsed,
+        Err(e) => {
+            log::warn!(
+                "Intelligence response JSON deserialization failed for {}: {}",
+                entity_id,
+                e
+            );
+            return None;
+        }
+    };
 
     let current_state = ai_resp.current_state.map(|cs| CurrentState {
         working: cs.working,
@@ -3172,6 +3453,7 @@ fn try_parse_json_response(
         enriched_at: Utc::now().to_rfc3339(),
         source_file_count,
         source_manifest: manifest.to_vec(),
+        refreshed_fields,
         executive_assessment: ai_resp.executive_assessment,
         pull_quote: ai_resp.pull_quote,
         risks: ai_resp
@@ -3186,8 +3468,8 @@ fn try_parse_json_response(
                 headline: r.headline,
                 evidence: r.evidence,
                 kind_label: r.kind_label,
-                item_source: None,
-                discrepancy: None,
+                item_source: r.item_source,
+                discrepancy: r.discrepancy,
             })
             .collect(),
         recent_wins: ai_resp
@@ -3199,8 +3481,8 @@ fn try_parse_json_response(
                 text: w.text,
                 source: w.source,
                 impact: w.impact,
-                item_source: None,
-                discrepancy: None,
+                item_source: w.item_source,
+                discrepancy: w.discrepancy,
             })
             .collect(),
         current_state,
@@ -3220,8 +3502,8 @@ fn try_parse_json_response(
                 verified: s.verified,
                 verified_source: s.verified_source,
                 verified_at: s.verified_at,
-                item_source: None,
-                discrepancy: None,
+                item_source: s.item_source,
+                discrepancy: s.discrepancy,
             })
             .collect(),
         value_delivered: ai_resp
@@ -3234,8 +3516,8 @@ fn try_parse_json_response(
                 statement: v.statement,
                 source: v.source,
                 impact: v.impact,
-                item_source: None,
-                discrepancy: None,
+                item_source: v.item_source,
+                discrepancy: v.discrepancy,
             })
             .collect(),
         next_meeting_readiness,
@@ -3316,12 +3598,12 @@ fn try_parse_json_response(
         contract_context: ai_resp.contract_context,
         expansion_signals: ai_resp.expansion_signals,
         agreement_outlook: ai_resp.agreement_outlook,
-        product_classification: None,
+        product_classification: ai_resp.product_classification,
         support_health: ai_resp.support_health,
         product_adoption: ai_resp.product_adoption,
         nps_csat: ai_resp.nps_csat,
         source_attribution: ai_resp.source_attribution,
-        gong_call_summaries: Vec::new(),
+        gong_call_summaries: ai_resp.gong_call_summaries,
         success_plan_signals: ai_resp.success_plan_signals,
         domains: Vec::new(),
         dismissed_items: Vec::new(),
@@ -4016,6 +4298,195 @@ Some trailing text"#;
         assert_eq!(readiness.prep_items.len(), 2);
         let ctx = intel.company_context.unwrap();
         assert_eq!(ctx.industry.as_deref(), Some("Technology"));
+    }
+
+    #[test]
+    fn test_parse_json_response_tracks_explicit_empty_refreshed_fields() {
+        let response = r#"{
+  "executiveAssessment": "Brief.",
+  "risks": [],
+  "stakeholderInsights": []
+}"#;
+
+        let intel = parse_intelligence_response(response, "acme", "account", 2, vec![])
+            .expect("should parse JSON");
+
+        assert!(intel.risks.is_empty());
+        assert!(intel.stakeholder_insights.is_empty());
+        assert!(intel.refreshed_fields.contains(&"risks".to_string()));
+        assert!(intel
+            .refreshed_fields
+            .contains(&"stakeholderInsights".to_string()));
+    }
+
+    #[test]
+    fn test_parse_json_response_preserves_item_sources_and_discrepancies() {
+        let response = r#"{
+  "executiveAssessment": "Brief.",
+  "risks": [
+    {
+      "text": "Renewal timing is uncertain",
+      "urgency": "watch",
+      "itemSource": {"source": "glean_crm", "confidence": 0.9, "sourcedAt": "2026-03-15T00:00:00Z", "reference": "Salesforce opportunity"},
+      "discrepancy": true
+    }
+  ],
+  "recentWins": [
+    {
+      "text": "Usage expanded in the support team",
+      "impact": "medium",
+      "itemSource": {"source": "glean_gong", "confidence": 0.8, "sourcedAt": "2026-03-12T00:00:00Z", "reference": "customer call"},
+      "discrepancy": false
+    }
+  ],
+  "stakeholderInsights": [
+    {
+      "name": "Jordan Lee",
+      "role": "VP Operations",
+      "assessment": "Active executive sponsor.",
+      "engagement": "high",
+      "itemSource": {"source": "transcript", "confidence": 0.8, "sourcedAt": "2026-03-10T00:00:00Z", "reference": "QBR"},
+      "discrepancy": true
+    }
+  ],
+  "valueDelivered": [
+    {
+      "date": "2026-03-01",
+      "statement": "Reduced support response time by 20%",
+      "source": "meeting",
+      "impact": "speed",
+      "itemSource": {"source": "transcript", "confidence": 0.8, "sourcedAt": "2026-03-01T00:00:00Z", "reference": "weekly sync"},
+      "discrepancy": false
+    }
+  ]
+}"#;
+
+        let intel = parse_intelligence_response(response, "account-1", "account", 1, vec![])
+            .expect("should parse JSON with item sources");
+
+        assert_eq!(
+            intel.risks[0].item_source.as_ref().unwrap().source,
+            "glean_crm"
+        );
+        assert_eq!(intel.risks[0].discrepancy, Some(true));
+        assert_eq!(
+            intel.recent_wins[0].item_source.as_ref().unwrap().source,
+            "glean_gong"
+        );
+        assert_eq!(intel.recent_wins[0].discrepancy, Some(false));
+        assert_eq!(
+            intel.stakeholder_insights[0]
+                .item_source
+                .as_ref()
+                .unwrap()
+                .reference
+                .as_deref(),
+            Some("QBR")
+        );
+        assert_eq!(intel.stakeholder_insights[0].discrepancy, Some(true));
+        assert_eq!(
+            intel.value_delivered[0]
+                .item_source
+                .as_ref()
+                .unwrap()
+                .source,
+            "transcript"
+        );
+        assert_eq!(intel.value_delivered[0].discrepancy, Some(false));
+    }
+
+    #[test]
+    fn test_parse_json_response_ignores_malformed_item_source_without_dropping_item() {
+        let response = r#"{
+  "executiveAssessment": "Brief.",
+  "risks": [
+    {
+      "text": "Renewal timing is uncertain",
+      "urgency": "watch",
+      "itemSource": {"source": "glean_crm", "confidence": "high"}
+    }
+  ]
+}"#;
+
+        let intel = parse_intelligence_response(response, "account-1", "account", 1, vec![])
+            .expect("malformed itemSource should not reject the whole response");
+
+        assert_eq!(intel.risks.len(), 1);
+        assert_eq!(intel.risks[0].text, "Renewal timing is uncertain");
+        assert!(intel.risks[0].item_source.is_none());
+    }
+
+    #[test]
+    fn test_parse_json_response_preserves_product_and_gong_fields() {
+        let response = r#"{
+  "executiveAssessment": "Brief.",
+  "productClassification": {
+    "products": [
+      {"type": "cms", "tier": "enhanced", "arr": 125000.0, "billingTerms": "annual"}
+    ]
+  },
+  "gongCallSummaries": [
+    {
+      "title": "Renewal planning",
+      "date": "2026-03-15",
+      "participants": ["Jordan Lee"],
+      "keyTopics": "Renewal timing and rollout risks",
+      "sentiment": "neutral"
+    }
+  ]
+}"#;
+
+        let intel = parse_intelligence_response(response, "account-1", "account", 1, vec![])
+            .expect("should parse JSON with Glean-only fields");
+        let product = &intel.product_classification.unwrap().products[0];
+
+        assert_eq!(product.type_.as_deref(), Some("cms"));
+        assert_eq!(product.tier.as_deref(), Some("enhanced"));
+        assert_eq!(product.arr, Some(125000.0));
+        assert_eq!(product.billing_terms.as_deref(), Some("annual"));
+        assert_eq!(intel.gong_call_summaries.len(), 1);
+        assert_eq!(intel.gong_call_summaries[0].title, "Renewal planning");
+        assert_eq!(
+            intel.gong_call_summaries[0].key_topics,
+            "Renewal timing and rollout risks"
+        );
+    }
+
+    #[test]
+    fn test_parse_json_response_tolerates_malformed_optional_glean_fields() {
+        let response = r#"{
+  "executiveAssessment": "Brief.",
+  "productClassification": {
+    "products": [
+      {"type": "cms", "tier": "enhanced", "arr": "$125k", "billingTerms": "annual"}
+    ]
+  },
+  "gongCallSummaries": [
+    {
+      "title": "Renewal planning",
+      "date": "2026-03-15",
+      "participants": "Jordan Lee",
+      "keyTopics": ["Renewal timing", "Rollout risks"],
+      "sentiment": "neutral"
+    }
+  ]
+}"#;
+
+        let intel = parse_intelligence_response(response, "account-1", "account", 1, vec![])
+            .expect("optional Glean metadata should not reject the whole response");
+        let product = &intel.product_classification.unwrap().products[0];
+
+        assert_eq!(product.type_.as_deref(), Some("cms"));
+        assert_eq!(product.arr, Some(125000.0));
+        assert_eq!(intel.gong_call_summaries.len(), 1);
+        assert_eq!(
+            intel.gong_call_summaries[0].participants,
+            vec!["Jordan Lee".to_string()]
+        );
+        assert_eq!(
+            intel.gong_call_summaries[0].key_topics,
+            "Renewal timing; Rollout risks"
+        );
     }
 
     #[test]
