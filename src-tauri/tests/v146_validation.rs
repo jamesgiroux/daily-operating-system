@@ -8,8 +8,29 @@ use dailyos_lib::abilities::workspace_graph::contracts::{
     WorkspaceGraphInput, WorkspaceGraphPrivacyProfile, WorkspaceGraphReadRequest,
     WorkspaceGraphResponse,
 };
+#[cfg(feature = "test-harness")]
+use dailyos_lib::abilities::{AbilityRegistry, Actor};
+#[cfg(feature = "test-harness")]
+use dailyos_lib::bridges::mcp::McpAbilityBridge;
+#[cfg(feature = "test-harness")]
+use dailyos_lib::bridges::tauri::{TauriAbilityBridge, TauriTestInvokeContext};
+#[cfg(feature = "test-harness")]
+use dailyos_lib::bridges::{BridgeSurface, McpSessionId};
+#[cfg(feature = "test-harness")]
+use dailyos_lib::db::claims::{ClaimSensitivity, TemporalScope};
 use dailyos_lib::db::{ActionDb, DbAccount};
 use dailyos_lib::entity::EntityType;
+#[cfg(feature = "test-harness")]
+use dailyos_lib::intelligence::provider::ReplayProvider;
+#[cfg(feature = "test-harness")]
+use dailyos_lib::services::claims::{
+    commit_claim, load_entity_context_claims_active_for_surface, ClaimProposal, CommittedClaim,
+};
+#[cfg(feature = "test-harness")]
+use dailyos_lib::services::context::{
+    ClaimDismissalSurface, EntityContextClaimReadFuture, EntityContextClaimReadHandle, FixedClock,
+    SeedableRng,
+};
 use dailyos_lib::services::context::{ExternalClients, ServiceContext, SystemClock, SystemRng};
 use dailyos_lib::services::mcp_v2::actor_policy::{ToolGrant, ToolRateLimit};
 use dailyos_lib::services::mcp_v2::contracts::{
@@ -32,7 +53,11 @@ use dailyos_lib::services::workspace_ingestion::runs::IngestionMode;
 use dailyos_lib::services::workspace_ingestion::signals::WorkspaceSignalEmitter;
 use dailyos_lib::services::workspace_ingestion::wiring;
 use parking_lot::Mutex;
+#[cfg(feature = "test-harness")]
+use rusqlite::OpenFlags;
 use rusqlite::{params, Connection};
+#[cfg(feature = "test-harness")]
+use serde_json::json;
 
 #[test]
 fn mcp_placement_handler_registered_for_headless_path() {
@@ -417,6 +442,133 @@ fn signal_propagation_invalidates_prep() {
     assert!(!payload.contains(fixture.workspace_root.to_string_lossy().as_ref()));
 }
 
+#[cfg(feature = "test-harness")]
+#[tokio::test]
+async fn context_inclusion_privacy_parity() {
+    let db_dir = tempfile::tempdir().expect("db tempdir");
+    let db_path = db_dir.path().join("v146-context-parity.db");
+    let fixture = Fixture::new_file_backed(&db_path);
+    fixture.seed_account("acct-v146-context", "Context Account");
+    let note = fixture.write_account_file(
+        "Context Account",
+        "context-parity-note.md",
+        "Context parity note that must not leak to MCP prompt contexts.",
+    );
+    let receipt = fixture.ingest_account_note(
+        &note,
+        EntityRef {
+            entity_type: EntityType::Account,
+            entity_id: EntityId::new("acct-v146-context".to_string()),
+            entity_name: Some("Context Account".to_string()),
+        },
+        None,
+    );
+    let user_only_claim_id =
+        fixture.claim_id_for_source_and_sensitivity(&receipt.file_id, "user_only");
+    let internal_claim_id = fixture.commit_context_claim(
+        &receipt.file_id,
+        "claim-v146-context-internal",
+        "Internal context parity claim visible to MCP.",
+        ClaimSensitivity::Internal,
+    );
+
+    let registry = AbilityRegistry::from_inventory_checked().expect("ability registry builds");
+    let input = json!({
+        "schema_version": 2,
+        "entity_type": "account",
+        "entity_id": "acct-v146-context",
+        "depth": "standard",
+    });
+    let clock = FixedClock::new(
+        DateTime::parse_from_rfc3339("2026-05-26T00:00:00Z")
+            .expect("fixed time")
+            .with_timezone(&Utc),
+    );
+    let rng = SeedableRng::new(146);
+    let external = ExternalClients::default();
+    let provider = ReplayProvider::new(std::collections::HashMap::new());
+
+    let tauri_reader_db = Arc::new(Mutex::new(open_readonly_fixture_conn(&db_path)));
+    let services = ServiceContext::new_live(&clock, &rng, &external)
+        .with_actor("user")
+        .with_entity_context_claim_reader(Arc::new(ActionDbClaimReader {
+            conn: Arc::clone(&tauri_reader_db),
+        }));
+    let tauri_bridge = TauriAbilityBridge::new(&registry);
+    let tauri_user = tauri_bridge
+        .invoke_with_service_context_for_tests(
+            &services,
+            &provider,
+            "get_entity_context",
+            input.clone(),
+        )
+        .await
+        .expect("Tauri user context succeeds");
+    assert_eq!(
+        sorted_entry_ids(&tauri_user.data),
+        sorted(vec![internal_claim_id.clone(), user_only_claim_id.clone()]),
+        "Tauri user context can see the user-only source claim"
+    );
+
+    let tauri_mcp_surface = tauri_bridge
+        .invoke_with_service_context_for_tests_as(
+            &services,
+            &provider,
+            TauriTestInvokeContext::new(
+                Actor::Agent,
+                BridgeSurface::McpTool,
+                ClaimDismissalSurface::McpTool,
+            ),
+            "get_entity_context",
+            input.clone(),
+        )
+        .await
+        .expect("Tauri MCP-surface context succeeds");
+    assert_eq!(
+        sorted_entry_ids(&tauri_mcp_surface.data),
+        vec![internal_claim_id.clone()],
+        "MCP-surface context must filter user-only claims"
+    );
+
+    let mcp_reader_db = Arc::new(Mutex::new(ActionDb::from_connection_for_tests(
+        open_readonly_fixture_conn(&db_path),
+    )));
+    let mcp_bridge = McpAbilityBridge::new_with_action_db_readers(&registry, mcp_reader_db);
+    let mcp_response = mcp_bridge
+        .invoke_ability(
+            McpSessionId::from_uuid(uuid::Uuid::from_u128(146)),
+            "get_entity_context",
+            input,
+            false,
+            None,
+        )
+        .await
+        .expect("MCP get_entity_context succeeds");
+    assert_eq!(
+        sorted_entry_ids(&mcp_response.data),
+        vec![internal_claim_id.clone()],
+        "actual MCP bridge must match the prompt-safe Tauri MCP-surface view"
+    );
+    assert_eq!(
+        mcp_response.rendered_provenance.surface,
+        BridgeSurface::McpTool
+    );
+
+    let serialized = serde_json::to_string(&mcp_response.data).expect("mcp response json");
+    let workspace_root = fixture.workspace_root.to_string_lossy().to_string();
+    for forbidden in [
+        "Context Account",
+        "context-parity-note.md",
+        "Context parity note that must not leak to MCP prompt contexts.",
+        workspace_root.as_str(),
+    ] {
+        assert!(
+            !serialized.contains(forbidden),
+            "MCP context response leaked raw fixture fragment `{forbidden}`"
+        );
+    }
+}
+
 #[cfg(unix)]
 #[test]
 fn filesystem_validation_negative_fixtures() {
@@ -596,6 +748,16 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let conn = Connection::open_in_memory().expect("sqlite");
+        Self::with_connection(conn)
+    }
+
+    #[cfg(feature = "test-harness")]
+    fn new_file_backed(db_path: &Path) -> Self {
+        let conn = Connection::open(db_path).expect("file-backed sqlite");
+        Self::with_connection(conn)
+    }
+
+    fn with_connection(conn: Connection) -> Self {
         dailyos_lib::migration_test_api::run_migrations(&conn).expect("migrations");
         let workspace = tempfile::tempdir().expect("workspace");
         let workspace_root = workspace
@@ -723,6 +885,155 @@ impl Fixture {
             .run_with_signal_engine(&ctx, db, &signal_engine, request)
             .expect("ingest succeeds")
     }
+
+    #[cfg(feature = "test-harness")]
+    fn claim_id_for_source_and_sensitivity(&self, file_id: &str, sensitivity: &str) -> String {
+        self.conn
+            .query_row(
+                "SELECT id
+                 FROM intelligence_claims
+                 WHERE source_ref = ?1
+                   AND sensitivity = ?2
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT 1",
+                params![format!("workspace_file:{file_id}"), sensitivity],
+                |row| row.get(0),
+            )
+            .expect("claim id for source and sensitivity")
+    }
+
+    #[cfg(feature = "test-harness")]
+    fn commit_context_claim(
+        &self,
+        file_id: &str,
+        claim_id: &str,
+        text: &str,
+        sensitivity: ClaimSensitivity,
+    ) -> String {
+        let source_asof: String = self
+            .conn
+            .query_row(
+                "SELECT source_asof
+                 FROM workspace_file_lifecycle
+                 WHERE file_id = ?1",
+                [file_id],
+                |row| row.get(0),
+            )
+            .expect("workspace source_asof");
+        let clock = FixedClock::new(
+            DateTime::parse_from_rfc3339("2026-05-26T00:00:00Z")
+                .expect("fixed time")
+                .with_timezone(&Utc),
+        );
+        let rng = SeedableRng::new(476);
+        let external = ExternalClients::default();
+        let ctx =
+            ServiceContext::new_live(&clock, &rng, &external).with_actor("system:v146_validation");
+        let committed = commit_claim(
+            &ctx,
+            ActionDb::from_conn(&self.conn),
+            ClaimProposal {
+                id: None,
+                expected_claim_version: None,
+                subject_ref: json!({
+                    "kind": "account",
+                    "id": "acct-v146-context",
+                })
+                .to_string(),
+                claim_type: "user_note".to_string(),
+                field_path: Some("workspace.context_parity".to_string()),
+                topic_key: None,
+                text: text.to_string(),
+                actor: "system:v146_validation".to_string(),
+                data_source: "workspace_file:entity_doc".to_string(),
+                source_ref: Some(format!("workspace_file:{file_id}")),
+                source_asof: Some(source_asof.clone()),
+                observed_at: source_asof,
+                provenance_json: "{}".to_string(),
+                metadata_json: Some(
+                    json!({
+                        "producer": "v146_validation",
+                        "validation_claim_key": claim_id,
+                        "workspace_file_id": file_id,
+                        "workspace_file_kind": "entity_doc",
+                    })
+                    .to_string(),
+                ),
+                thread_id: None,
+                temporal_scope: Some(TemporalScope::State),
+                sensitivity: Some(sensitivity),
+                supersedes: None,
+                tombstone: None,
+            },
+        )
+        .expect("commit context parity claim");
+
+        match committed {
+            CommittedClaim::Inserted { claim } => claim.id,
+            other => panic!("expected inserted context parity claim, got {other:?}"),
+        }
+    }
+}
+
+#[cfg(feature = "test-harness")]
+struct ActionDbClaimReader {
+    conn: Arc<Mutex<Connection>>,
+}
+
+#[cfg(feature = "test-harness")]
+impl EntityContextClaimReadHandle for ActionDbClaimReader {
+    fn read_entity_context_claims<'a>(
+        &'a self,
+        entity_type: String,
+        entity_id: String,
+        surface: ClaimDismissalSurface,
+        depth: usize,
+    ) -> EntityContextClaimReadFuture<'a> {
+        let result = {
+            let conn = self.conn.lock();
+            load_entity_context_claims_active_for_surface(
+                ActionDb::from_conn(&conn),
+                &entity_type,
+                &entity_id,
+                depth,
+                surface.as_str(),
+            )
+            .map_err(|error| format!("entity context claim read failed: {error}"))
+        };
+        Box::pin(std::future::ready(result))
+    }
+}
+
+#[cfg(feature = "test-harness")]
+fn open_readonly_fixture_conn(db_path: &Path) -> Connection {
+    let conn = Connection::open_with_flags(
+        db_path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .expect("open readonly fixture DB");
+    conn.execute_batch(
+        "PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON; PRAGMA query_only = ON;",
+    )
+    .expect("configure readonly fixture DB");
+    conn
+}
+
+#[cfg(feature = "test-harness")]
+fn sorted_entry_ids(value: &serde_json::Value) -> Vec<String> {
+    sorted(
+        value["entries"]
+            .as_array()
+            .expect("entries array")
+            .iter()
+            .map(|entry| entry["id"].as_str().expect("entry id").to_string())
+            .collect(),
+    )
+}
+
+#[cfg(feature = "test-harness")]
+fn sorted(mut values: Vec<String>) -> Vec<String> {
+    values.sort();
+    values
 }
 
 fn assert_workspace_claim(

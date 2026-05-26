@@ -79,11 +79,12 @@ status_for_axis() {
     contexts)
       if (
         cd "$ROOT_DIR"
-        cargo test --manifest-path src-tauri/Cargo.toml --test v146_validation mcp_placement_handler_registered_for_headless_path >/dev/null
+        cargo test --manifest-path src-tauri/Cargo.toml --test v146_validation mcp_placement_handler_registered_for_headless_path >/dev/null &&
+        cargo test --manifest-path src-tauri/Cargo.toml --features test-harness --test v146_validation context_inclusion_privacy_parity >/dev/null
       ); then
-        printf 'blocked\tcargo test --test v146_validation mcp_placement_handler_registered_for_headless_path + context_inclusion_privacy_parity\tMCP placement handler registration is real; blocked until full Tauri/MCP context privacy parity is automated\n'
+        printf 'pass\tcargo test --test v146_validation mcp_placement_handler_registered_for_headless_path + cargo test --features test-harness --test v146_validation context_inclusion_privacy_parity\tMCP placement registration and Tauri/MCP source-backed context privacy parity passed\n'
       else
-        printf 'fail\tcargo test --test v146_validation mcp_placement_handler_registered_for_headless_path\tMCP placement handler registration evidence failed\n'
+        printf 'fail\tcargo test --test v146_validation mcp_placement_handler_registered_for_headless_path + cargo test --features test-harness --test v146_validation context_inclusion_privacy_parity\tMCP placement registration or Tauri/MCP context privacy parity evidence failed\n'
       fi
       ;;
     lifecycle)
