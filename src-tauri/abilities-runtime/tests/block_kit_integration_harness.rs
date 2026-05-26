@@ -547,6 +547,8 @@ mod freshness_indicator_integration_fixture;
 mod health_badge_integration_fixture;
 #[path = "fixtures/intelligence_quality_badge_integration_fixture.rs"]
 mod intelligence_quality_badge_integration_fixture;
+#[path = "fixtures/markdown_preview_integration_fixture.rs"]
+mod markdown_preview_integration_fixture;
 #[path = "fixtures/meeting_agenda_draft_integration_fixture.rs"]
 mod meeting_agenda_draft_integration_fixture;
 #[path = "fixtures/meeting_attendees_section_integration_fixture.rs"]
@@ -653,6 +655,7 @@ fn expected_block_fixtures_cover_requested_ci_block() {
         meeting_context_bundle_integration_fixture::meeting_context_bundle_fixture(),
         meeting_detail_integration_fixture::meeting_detail_fixture(),
         meeting_header_integration_fixture::meeting_header_fixture(),
+        markdown_preview_integration_fixture::markdown_preview_fixture(),
         meeting_post_meeting_capture_integration_fixture::meeting_post_meeting_capture_fixture(),
         meeting_prep_status_integration_fixture::meeting_prep_status_fixture(),
         meeting_recommended_actions_integration_fixture::meeting_recommended_actions_fixture(),

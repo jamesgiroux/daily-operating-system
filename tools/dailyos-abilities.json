@@ -173,6 +173,7 @@
       "allowed_actors": [
         "user",
         "runtime",
+        "mcp_client",
         "surface_client"
       ],
       "required_scopes": [
