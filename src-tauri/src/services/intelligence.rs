@@ -2037,6 +2037,13 @@ pub(crate) fn upsert_assessment_from_enrichment_in_active_transaction(
             merge_user_confirmed_values(&mut projection_intel, &existing);
         }
     }
+    withdraw_cleared_dimension_projection_claims(
+        ctx,
+        tx,
+        upsert.entity_type,
+        upsert.entity_id,
+        upsert.cleared_dimensions,
+    )?;
     commit_claim_shaped_intelligence_projection(
         ctx,
         tx,
@@ -2044,12 +2051,13 @@ pub(crate) fn upsert_assessment_from_enrichment_in_active_transaction(
         "agent:intelligence",
         upsert.projection_data_source,
     )?;
-    withdraw_cleared_dimension_projection_claims(
+    withdraw_refreshed_projection_claims(
         ctx,
         tx,
         upsert.entity_type,
         upsert.entity_id,
-        upsert.cleared_dimensions,
+        &projection_intel,
+        upsert.projection_data_source,
     )?;
     crate::services::derived_state::upsert_entity_intelligence_legacy_snapshot(ctx, tx, &intel)
         .map_err(|e| e.to_string())?;
@@ -2174,6 +2182,307 @@ fn enqueue_projection_claim_recomputes(
             }
         }
     }
+}
+
+fn withdraw_refreshed_projection_claims(
+    ctx: &ServiceContext<'_>,
+    tx: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+    projection_intel: &crate::intelligence::IntelligenceJson,
+    projection_data_source: &str,
+) -> Result<usize, String> {
+    let roots = refreshed_projection_field_path_roots(projection_intel, projection_data_source);
+    let producers = refreshed_projection_producers(projection_data_source);
+    if roots.is_empty() || producers.is_empty() {
+        return Ok(0);
+    }
+    let retained_claim_keys = projection_claim_retained_keys(projection_intel);
+
+    let withdrawn = crate::services::claims::withdraw_generated_projection_claims_for_field_path_roots_by_projection_producer_in_tx(
+        ctx,
+        tx,
+        crate::services::claims::GeneratedProjectionRefreshWithdrawal {
+            entity_type,
+            entity_id,
+            field_path_roots: &roots,
+            projection_producers: producers,
+            retained_claim_keys: &retained_claim_keys,
+            retraction_reason: "projection_refreshed",
+        },
+    )
+    .map_err(|error| format!("withdraw refreshed projection claims failed: {error}"))?;
+    if withdrawn > 0 {
+        log::info!(
+            "intelligence: withdrew {withdrawn} stale generated projection claim(s) after refreshed projection on {entity_type}:{entity_id}"
+        );
+    }
+    Ok(withdrawn)
+}
+
+fn refreshed_projection_producers(projection_data_source: &str) -> &'static [&'static str] {
+    match projection_data_source.trim() {
+        "glean" => &["glean"],
+        "ai_enrichment" => &["ai_enrichment"],
+        _ => &[],
+    }
+}
+
+fn refreshed_projection_field_path_roots(
+    intel: &crate::intelligence::IntelligenceJson,
+    projection_data_source: &str,
+) -> Vec<&'static str> {
+    if projection_data_source.trim() != "glean" {
+        return all_projection_field_path_roots();
+    }
+
+    let mut roots = BTreeSet::new();
+    if intel.executive_assessment.is_some() {
+        roots.insert("executiveAssessment");
+    }
+    if intel.pull_quote.is_some() {
+        roots.insert("pullQuote");
+    }
+    if intel.health.is_some() {
+        roots.insert("health");
+    }
+    if !intel.risks.is_empty() {
+        roots.insert("risks");
+    }
+    if !intel.recommended_actions.is_empty() {
+        roots.insert("recommendedActions");
+    }
+    if !intel.recent_wins.is_empty() {
+        roots.insert("recentWins");
+    }
+    if intel.current_state.is_some() {
+        roots.insert("currentState");
+    }
+    if !intel.strategic_priorities.is_empty() {
+        roots.insert("strategicPriorities");
+    }
+    if !intel.blockers.is_empty() {
+        roots.insert("blockers");
+    }
+    if intel.contract_context.is_some() {
+        roots.insert("contractContext");
+    }
+    if !intel.expansion_signals.is_empty() {
+        roots.insert("expansionSignals");
+    }
+    if intel.agreement_outlook.is_some() {
+        roots.insert("agreementOutlook");
+    }
+    if !intel.value_delivered.is_empty() {
+        roots.insert("valueDelivered");
+    }
+    if intel.success_metrics.is_some() {
+        roots.insert("successMetrics");
+    }
+    if intel.open_commitments.is_some() {
+        roots.insert("openCommitments");
+    }
+    if !intel.stakeholder_insights.is_empty() {
+        roots.insert("stakeholderInsights");
+    }
+    if intel.company_context.is_some() {
+        roots.insert("companyContext");
+    }
+
+    roots.into_iter().collect()
+}
+
+fn all_projection_field_path_roots() -> Vec<&'static str> {
+    vec![
+        "executiveAssessment",
+        "pullQuote",
+        "health",
+        "risks",
+        "recommendedActions",
+        "recentWins",
+        "currentState",
+        "strategicPriorities",
+        "blockers",
+        "contractContext",
+        "expansionSignals",
+        "agreementOutlook",
+        "valueDelivered",
+        "successMetrics",
+        "openCommitments",
+        "stakeholderInsights",
+        "companyContext",
+    ]
+}
+
+fn projection_claim_retained_keys(
+    intel: &crate::intelligence::IntelligenceJson,
+) -> Vec<(String, String, String)> {
+    let mut keys = Vec::new();
+
+    if let Some(summary) = intel.executive_assessment.as_deref() {
+        push_projection_claim_key(&mut keys, "entity_summary", "executiveAssessment", summary);
+    }
+    if let Some(pull_quote) = intel.pull_quote.as_deref() {
+        push_projection_claim_key(&mut keys, "entity_summary", "pullQuote", pull_quote);
+    }
+    if let Some(health) = intel.health.as_ref() {
+        if let Some(text) = health_projection_text(health) {
+            push_projection_claim_key(&mut keys, "entity_current_state", "health", &text);
+        }
+        for (idx, action) in health.recommended_actions.iter().enumerate() {
+            push_projection_claim_key(
+                &mut keys,
+                "recommendation",
+                &format!("health.recommendedActions[{idx}]"),
+                action,
+            );
+        }
+    }
+    for (idx, risk) in intel.risks.iter().enumerate() {
+        push_projection_claim_key(
+            &mut keys,
+            "entity_risk",
+            &format!("risks[{idx}]"),
+            &risk.text,
+        );
+    }
+    for (idx, action) in intel.recommended_actions.iter().enumerate() {
+        if let Some(text) = recommended_action_projection_text(action) {
+            push_projection_claim_key(
+                &mut keys,
+                "recommendation",
+                &format!("recommendedActions[{idx}]"),
+                &text,
+            );
+        }
+    }
+    for (idx, win) in intel.recent_wins.iter().enumerate() {
+        push_projection_claim_key(
+            &mut keys,
+            "entity_win",
+            &format!("recentWins[{idx}]"),
+            &win.text,
+        );
+    }
+    if let Some(state) = intel.current_state.as_ref() {
+        if let Some(text) = current_state_projection_text(state) {
+            push_projection_claim_key(&mut keys, "entity_current_state", "currentState", &text);
+        }
+    }
+    for (idx, priority) in intel.strategic_priorities.iter().enumerate() {
+        if let Some(text) = strategic_priority_projection_text(priority) {
+            push_projection_claim_key(
+                &mut keys,
+                "entity_current_state",
+                &format!("strategicPriorities[{idx}]"),
+                &text,
+            );
+        }
+    }
+    for (idx, blocker) in intel.blockers.iter().enumerate() {
+        if let Some(text) = blocker_projection_text(blocker) {
+            push_projection_claim_key(&mut keys, "entity_risk", &format!("blockers[{idx}]"), &text);
+        }
+    }
+    if let Some(context) = intel.contract_context.as_ref() {
+        if let Some(text) = contract_context_projection_text(context) {
+            let claim_type = if intel.entity_type == "account" {
+                "company_context"
+            } else {
+                "entity_current_state"
+            };
+            push_projection_claim_key(&mut keys, claim_type, "contractContext", &text);
+        }
+    }
+    for (idx, signal) in intel.expansion_signals.iter().enumerate() {
+        if let Some(text) = expansion_signal_projection_text(signal) {
+            push_projection_claim_key(
+                &mut keys,
+                "entity_current_state",
+                &format!("expansionSignals[{idx}]"),
+                &text,
+            );
+        }
+    }
+    if let Some(outlook) = intel.agreement_outlook.as_ref() {
+        if let Some(text) = agreement_outlook_projection_text(outlook) {
+            push_projection_claim_key(&mut keys, "entity_current_state", "agreementOutlook", &text);
+        }
+    }
+    for (idx, value) in intel.value_delivered.iter().enumerate() {
+        push_projection_claim_key(
+            &mut keys,
+            "value_delivered",
+            &format!("valueDelivered[{idx}]"),
+            &value.statement,
+        );
+    }
+    if let Some(metrics) = intel.success_metrics.as_ref() {
+        for (idx, metric) in metrics.iter().enumerate() {
+            if let Some(text) = success_metric_projection_text(metric) {
+                push_projection_claim_key(
+                    &mut keys,
+                    "entity_current_state",
+                    &format!("successMetrics[{idx}]"),
+                    &text,
+                );
+            }
+        }
+    }
+    if let Some(commitments) = intel.open_commitments.as_ref() {
+        for (idx, commitment) in commitments.iter().enumerate() {
+            if let Some(text) = open_commitment_projection_text(commitment) {
+                let claim_type = if intel.entity_type == "account" {
+                    "commitment"
+                } else {
+                    "entity_current_state"
+                };
+                push_projection_claim_key(
+                    &mut keys,
+                    claim_type,
+                    &format!("openCommitments[{idx}]"),
+                    &text,
+                );
+            }
+        }
+    }
+    for (idx, insight) in intel.stakeholder_insights.iter().enumerate() {
+        if insight.person_id.is_some() {
+            if let Some(text) = stakeholder_engagement_projection_text(insight) {
+                push_projection_claim_key(
+                    &mut keys,
+                    "stakeholder_engagement",
+                    &format!("stakeholderInsights[{idx}].engagement"),
+                    &text,
+                );
+            }
+        }
+    }
+    if intel.entity_type == "account" {
+        if let Some(context) = intel.company_context.as_ref() {
+            if let Some(text) = company_context_projection_text(context) {
+                push_projection_claim_key(&mut keys, "company_context", "companyContext", &text);
+            }
+        }
+    }
+
+    keys
+}
+
+fn push_projection_claim_key(
+    keys: &mut Vec<(String, String, String)>,
+    claim_type: &str,
+    field_path: &str,
+    text: &str,
+) {
+    if text.trim().is_empty() {
+        return;
+    }
+    keys.push((
+        claim_type.to_string(),
+        field_path.to_string(),
+        crate::services::claims::normalize_claim_text(text),
+    ));
 }
 
 fn withdraw_cleared_dimension_projection_claims(
@@ -4021,6 +4330,67 @@ mod tests {
                 .is_some_and(|fields| !fields.is_empty()),
             "validated provenance envelope should attribute the generated claim"
         );
+    }
+
+    #[test]
+    fn refreshed_glean_projection_withdraws_stale_same_root_claims() {
+        let db = test_db();
+        let engine = PropagationEngine::default();
+        let account_id = "acc-generated-risk-refresh";
+        seed_account(&db, account_id);
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 22, 12, 0, 0).unwrap());
+        let rng = SeedableRng::new(54);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+
+        let first = generated_risk_intel(account_id);
+        upsert_glean_assessment_from_enrichment(&ctx, &db, &engine, "account", account_id, &first)
+            .expect("commit first Glean generated risk projection");
+        let first_claim_id = active_generated_risk_id(&db, account_id);
+
+        let mut second = generated_risk_intel(account_id);
+        second.risks[0].text = "Updated CRM renewal risk needs executive follow-up.".to_string();
+        if let Some(source) = second.risks[0].item_source.as_mut() {
+            source.sourced_at = "2026-05-22T13:30:00Z".to_string();
+            source.reference = Some("Updated CRM opportunity fixture".to_string());
+        }
+        upsert_glean_assessment_from_enrichment(&ctx, &db, &engine, "account", account_id, &second)
+            .expect("commit refreshed Glean generated risk projection");
+
+        assert_eq!(active_generated_risk_count(&db, account_id), 1);
+        let active_text: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT text
+                   FROM intelligence_claims
+                  WHERE claim_type = 'entity_risk'
+                    AND field_path = 'risks[0]'
+                    AND claim_state = 'active'
+                    AND surfacing_state = 'active'
+                    AND json_valid(subject_ref) = 1
+                    AND json_extract(subject_ref, '$.id') = ?1",
+                params![account_id],
+                |row| row.get(0),
+            )
+            .expect("active refreshed risk text");
+        assert_eq!(
+            active_text,
+            "updated crm renewal risk needs executive follow-up."
+        );
+
+        let (old_state, old_surface, old_reason): (String, String, Option<String>) = db
+            .conn_ref()
+            .query_row(
+                "SELECT claim_state, surfacing_state, retraction_reason
+                   FROM intelligence_claims
+                  WHERE id = ?1",
+                params![first_claim_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("read first refreshed claim");
+        assert_eq!(old_state, "withdrawn");
+        assert_eq!(old_surface, "dormant");
+        assert_eq!(old_reason.as_deref(), Some("projection_refreshed"));
     }
 
     #[test]
@@ -5901,51 +6271,79 @@ mod mutation_smoke_tests {
     #[test]
     fn materialization_failure_blocks_export_for_visible_generation_side_effects() {
         let state = remote_glean_state();
-        for (producer, expected_error) in [
-            (
-                crate::intel_queue::EnrichmentProducer::Glean,
-                "Glean enrichment side-effect sync failed",
-            ),
-            (
-                crate::intel_queue::EnrichmentProducer::Pty,
-                "PTY enrichment side-effect sync failed",
-            ),
-        ] {
-            let db = test_db();
-            let entity_id = format!("acc-finalize-side-effect-failure-{producer:?}");
-            seed_finalize_account(&db, &entity_id);
-            db.conn_ref()
-                .execute_batch(
-                    "CREATE TRIGGER fail_commitment_insert
-                     BEFORE INSERT ON captured_commitments
-                     WHEN NEW.account_id LIKE 'acc-finalize-side-effect-failure-%'
-                     BEGIN
-                       SELECT RAISE(ABORT, 'forced visible materialization failure');
-                     END;",
-                )
-                .expect("install side-effect failure trigger");
-            let dir = tempfile::tempdir().expect("tempdir");
-            let input = make_enrichment_input(&entity_id, dir.path());
-            let intel = make_visible_materialization_intel(&entity_id);
+        let db = test_db();
+        let entity_id = "acc-finalize-side-effect-failure-glean";
+        seed_finalize_account(&db, entity_id);
+        db.conn_ref()
+            .execute_batch(
+                "CREATE TRIGGER fail_commitment_insert
+                 BEFORE INSERT ON captured_commitments
+                 WHEN NEW.account_id = 'acc-finalize-side-effect-failure-glean'
+                 BEGIN
+                   SELECT RAISE(ABORT, 'forced visible materialization failure');
+                 END;",
+            )
+            .expect("install side-effect failure trigger");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let input = make_enrichment_input(entity_id, dir.path());
+        let intel = make_visible_materialization_intel(entity_id);
 
-            let result = run_enrichment_finalize_post_commit(
-                &state,
-                &db,
-                &input,
-                &intel,
-                &[],
-                FinalizeMode::ManualRefresh { producer },
-            );
+        let result = run_enrichment_finalize_post_commit(
+            &state,
+            &db,
+            &input,
+            &intel,
+            &[],
+            FinalizeMode::ManualRefresh {
+                producer: crate::intel_queue::EnrichmentProducer::Glean,
+            },
+        );
 
-            assert!(
-                result.is_err_and(|error| error.contains(expected_error)),
-                "{producer:?} side-effect failure must stop finalize success"
-            );
-            assert!(
-                !dir.path().join("intelligence.json").exists(),
-                "generated exports must wait until visible materialization completes for {producer:?}"
-            );
-        }
+        assert!(
+            result.is_err_and(|error| error.contains("Glean enrichment side-effect sync failed")),
+            "Glean side-effect failure must stop finalize success"
+        );
+        assert!(
+            !dir.path().join("intelligence.json").exists(),
+            "Glean generated exports must wait until visible materialization completes"
+        );
+    }
+
+    #[test]
+    fn pty_side_effect_failure_stays_non_fatal_after_commit() {
+        let state = remote_glean_state();
+        let db = test_db();
+        let entity_id = "acc-finalize-side-effect-failure-pty";
+        seed_finalize_account(&db, entity_id);
+        db.conn_ref()
+            .execute_batch(
+                "CREATE TRIGGER fail_commitment_insert
+                 BEFORE INSERT ON captured_commitments
+                 WHEN NEW.account_id = 'acc-finalize-side-effect-failure-pty'
+                 BEGIN
+                   SELECT RAISE(ABORT, 'forced visible materialization failure');
+                 END;",
+            )
+            .expect("install side-effect failure trigger");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let input = make_enrichment_input(entity_id, dir.path());
+        let intel = make_visible_materialization_intel(entity_id);
+
+        run_enrichment_finalize_post_commit(
+            &state,
+            &db,
+            &input,
+            &intel,
+            &[],
+            FinalizeMode::ManualRefresh {
+                producer: crate::intel_queue::EnrichmentProducer::Pty,
+            },
+        )
+        .expect("PTY side-effect failure should remain non-fatal");
+        assert!(
+            dir.path().join("intelligence.json").exists(),
+            "PTY generated exports should continue after non-authoritative side-effect failure"
+        );
     }
 
     #[test]

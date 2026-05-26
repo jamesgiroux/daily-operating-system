@@ -2850,12 +2850,14 @@ pub fn run_enrichment_post_commit_side_effects(
                 input.entity_id,
                 error
             );
-            return Err(format!(
-                "{} enrichment side-effect sync failed for {}: {}",
-                producer.materialization_label(),
-                input.entity_id,
-                error
-            ));
+            if producer.is_glean() {
+                return Err(format!(
+                    "{} enrichment side-effect sync failed for {}: {}",
+                    producer.materialization_label(),
+                    input.entity_id,
+                    error
+                ));
+            }
         }
     }
 

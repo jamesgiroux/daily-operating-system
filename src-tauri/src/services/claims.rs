@@ -10441,6 +10441,98 @@ pub fn withdraw_generated_projection_claims_for_field_path_roots_in_tx(
     withdraw_claim_ids_for_source_purge_in_tx(ctx, db, claim_ids, retraction_reason)
 }
 
+pub struct GeneratedProjectionRefreshWithdrawal<'a> {
+    pub entity_type: &'a str,
+    pub entity_id: &'a str,
+    pub field_path_roots: &'a [&'a str],
+    pub projection_producers: &'a [&'a str],
+    pub retained_claim_keys: &'a [(String, String, String)],
+    pub retraction_reason: &'a str,
+}
+
+pub fn withdraw_generated_projection_claims_for_field_path_roots_by_projection_producer_in_tx(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    input: GeneratedProjectionRefreshWithdrawal<'_>,
+) -> Result<usize, ClaimError> {
+    if input.field_path_roots.is_empty() || input.projection_producers.is_empty() {
+        return Ok(0);
+    }
+
+    let mut stmt = db.conn_ref().prepare(
+        "SELECT ic.id, ic.claim_type, coalesce(ic.field_path, ''), ic.text, ic.metadata_json
+           FROM intelligence_claims ic
+          WHERE ic.claim_state = 'active'
+            AND ic.surfacing_state = 'active'
+            AND json_valid(ic.subject_ref) = 1
+            AND lower(json_extract(ic.subject_ref, '$.kind')) = lower(?1)
+            AND json_extract(ic.subject_ref, '$.id') = ?2
+            AND (
+                ic.source_ref LIKE 'intelligence_projection_source:%'
+                OR (
+                    json_valid(ic.provenance_json) = 1
+                    AND json_extract(ic.provenance_json, '$.ability_name') = 'claim_shaped_intelligence_projection'
+                )
+                OR (
+                    ic.metadata_json IS NOT NULL
+                    AND json_valid(ic.metadata_json) = 1
+                    AND json_type(ic.metadata_json, '$.legacy_projection_value') IS NOT NULL
+                )
+            )
+          ORDER BY ic.id",
+    )?;
+    let rows = stmt
+        .query_map(params![input.entity_type, input.entity_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, Option<String>>(4)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    let claim_ids = rows
+        .into_iter()
+        .filter_map(|(claim_id, claim_type, field_path, text, metadata_json)| {
+            let field_matches = input
+                .field_path_roots
+                .iter()
+                .any(|root| field_path_matches_projection_root(&field_path, root));
+            if !field_matches {
+                return None;
+            }
+            if input.retained_claim_keys.iter().any(
+                |(retained_type, retained_path, retained_text)| {
+                    retained_type == &claim_type
+                        && retained_path == &field_path
+                        && retained_text == &text
+                },
+            ) {
+                return None;
+            }
+            let producer = projection_producer_from_metadata(metadata_json.as_deref())?;
+            input
+                .projection_producers
+                .iter()
+                .any(|candidate| producer.eq_ignore_ascii_case(candidate))
+                .then_some(claim_id)
+        })
+        .collect();
+
+    withdraw_claim_ids_for_source_purge_in_tx(ctx, db, claim_ids, input.retraction_reason)
+}
+
+fn projection_producer_from_metadata(metadata_json: Option<&str>) -> Option<String> {
+    let value = serde_json::from_str::<serde_json::Value>(metadata_json?).ok()?;
+    value
+        .get("projection_producer")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
 fn field_path_matches_projection_root(field_path: &str, root: &str) -> bool {
     field_path == root
         || field_path
