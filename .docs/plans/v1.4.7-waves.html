@@ -42,7 +42,7 @@
   </p>
   <div class="plans-meta">
     <span>Re-baselined: 2026-05-26</span>
-    <span>Status: active, not complete</span>
+    <span>Status: implementation checkpoint reached; validation/merge remaining</span>
     <span>Canonical project: <a href="https://linear.app/a8c/project/v147-mcp-server-v2-abilities-first-6e12027c36c9">Linear v1.4.7</a></span>
     <span>Markdown source: <a href="v1.4.7-waves.md">v1.4.7-waves.md</a></span>
   </div>
@@ -149,26 +149,26 @@
       <tr>
         <td>W2 · Ability-backed reads</td>
         <td>DOS-175, DOS-172, DOS-173, DOS-624</td>
-        <td>Partially done</td>
-        <td>Complete daily/meeting briefing handlers, ranked discovery, and portfolio attention.</td>
+        <td>Implemented on this branch</td>
+        <td>Daily/meeting briefing and portfolio attention handlers are registered; keep L2 and release-gate validation pending.</td>
       </tr>
       <tr>
         <td>W3 · Workspace memory tools</td>
         <td>DOS-479, DOS-480, DOS-171</td>
-        <td>Partially satisfied by v1.4.5 release-gate PRs</td>
-        <td>DOS-480 is satisfied by the merged placement handler path; finish search, provenance, and resources.</td>
+        <td>Implemented on this branch</td>
+        <td>Search, source provenance, placement, and resources are registered; keep contract fidelity validation pending through W5.</td>
       </tr>
       <tr>
         <td>W4 · Controlled feedback and writes</td>
         <td>DOS-167, DOS-169, DOS-170</td>
-        <td>Open</td>
-        <td>Implement service-backed note, action, and action-status tools with receipts and signals.</td>
+        <td>Implemented on this branch</td>
+        <td>Note, action, and action-status tools write through services with receipts; keep security/L2 review pending.</td>
       </tr>
       <tr>
         <td>W5 · Evaluation and release gate</td>
         <td>DOS-481, DOS-482</td>
-        <td>Open</td>
-        <td>Run host-selection and end-to-end Claude Desktop validation against production-shaped data.</td>
+        <td>Mandatory axes green locally</td>
+        <td>Host-selection and W5-B mandatory harness passed; release-gate axis and Claude Desktop dogfood remain.</td>
       </tr>
     </tbody>
   </table>
@@ -194,9 +194,9 @@
 <section class="plans-section" aria-labelledby="tool-state">
   <header class="plans-section-header">
     <p class="plans-section-eyebrow">Tool state</p>
-    <h2 id="tool-state" class="plans-section-title">The catalog is ahead of registered behavior.</h2>
+    <h2 id="tool-state" class="plans-section-title">All catalog tools now have registered handlers on this branch.</h2>
     <p class="plans-section-lede">
-      This table is the working reconciliation target. A tool is not done merely because it has taxonomy copy.
+      This table reflects the local implementation checkpoint. A tool still needs L2, release-gate evidence, and PR merge before Linear closure.
     </p>
   </header>
 
@@ -213,61 +213,61 @@
       <tr>
         <td><code>dailyos.read.account_status</code></td>
         <td>DOS-175 phase A</td>
-        <td>Done enough for prompt comparison</td>
+        <td>Implemented</td>
         <td>Keep runtime projection and subject resolution covered.</td>
       </tr>
       <tr>
         <td><code>dailyos.read.daily_briefing</code></td>
         <td>DOS-175 phase B + DOS-624</td>
-        <td>Open</td>
-        <td>Registered handler, centralized sensitivity rendering, uniform unavailable behavior where needed.</td>
+        <td>Implemented</td>
+        <td>Registered handler with runtime-backed current-day briefing and unavailable behavior.</td>
       </tr>
       <tr>
         <td><code>dailyos.read.meeting_briefing</code></td>
         <td>DOS-175 phase B + DOS-624</td>
-        <td>Open</td>
-        <td>Registered handler, existence-oracle protection, source-safe meeting evidence.</td>
+        <td>Implemented</td>
+        <td>Registered handler with source-safe meeting evidence and existence-oracle protection.</td>
       </tr>
       <tr>
         <td><code>dailyos.read.portfolio_attention</code></td>
         <td>DOS-173</td>
-        <td>Open</td>
+        <td>Implemented</td>
         <td>Ability-backed ranking over trust, freshness, open loops, and salience where available.</td>
       </tr>
       <tr>
         <td><code>dailyos.search.workspace_memory</code></td>
         <td>DOS-479</td>
-        <td>Open or partial</td>
+        <td>Implemented</td>
         <td>Source-aware search through v1.4.5 workspace graph, not arbitrary file search.</td>
       </tr>
       <tr>
         <td><code>dailyos.read.workspace_source_provenance</code></td>
         <td>DOS-479</td>
-        <td>Open or partial</td>
+        <td>Implemented</td>
         <td>Privacy-rendered source/provenance view with sensitivity policy and no raw path leaks.</td>
       </tr>
       <tr>
         <td><code>dailyos.write.place_document</code></td>
         <td>DOS-480</td>
-        <td>Done on <code>dev</code></td>
+        <td>Implemented</td>
         <td>Registered handler reaches workspace ingestion, commits a workspace-file claim, and projects into the workspace graph.</td>
       </tr>
       <tr>
         <td><code>dailyos.submit.note</code></td>
         <td>DOS-167</td>
-        <td>Open</td>
+        <td>Implemented</td>
         <td>Claim/source service receipt, actor attribution, signal emission, correction lifecycle.</td>
       </tr>
       <tr>
         <td><code>dailyos.submit.action</code></td>
         <td>DOS-169</td>
-        <td>Open</td>
+        <td>Implemented</td>
         <td>Internal action creation through services with receipt and invalidation.</td>
       </tr>
       <tr>
         <td><code>dailyos.submit.action_status</code></td>
         <td>DOS-170</td>
-        <td>Open</td>
+        <td>Implemented</td>
         <td>Status update through services with receipt and signal propagation.</td>
       </tr>
     </tbody>
