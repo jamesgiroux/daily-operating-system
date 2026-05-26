@@ -3,7 +3,7 @@
 **Status:** blocked by upstream dependencies  
 **Issue:** DOS-476  
 **Packet:** `.docs/plans/v1.4.5-workspace-memory/L0-packet-W5-B-DOS-476.md`  
-**Branch:** `codex/v1.4.5-w5-e2e-validation`
+**Branch:** `codex/v1.4.5-w5-filesystem-validation`
 
 ## Harness Status
 
@@ -13,10 +13,10 @@
 | `bash tests/v146_validation/redaction_lint.sh` | pass | Current report draft is privacy-safe. |
 | `bash tests/v146_validation/run.sh backfill` | pass | W5-A conservative backfill registration tests pass on the rebased base. |
 | `bash tests/v146_validation/run.sh graph-audit` | blocked | Partial explicit ingestion provenance-chain fixture and workspace graph audit projection tests pass; full path matrix remains incomplete. |
-| `bash tests/v146_validation/run.sh filesystem` | blocked | Partial negative path validation fixtures pass and leave workspace lifecycle/run/link/claim tables untouched; full negative fixture matrix remains incomplete. |
+| `bash tests/v146_validation/run.sh filesystem` | pass | Registry path rejection, explicit ingestion size/format rejection, and conservative backfill hidden/managed/unsupported skips pass with privacy-safe evidence. |
 | `bash tests/v146_validation/run.sh signals` | pass | `WorkspaceFileIngested -> EntityIntelligenceUpdated -> prep invalidation` evidence passes with privacy-safe payloads. |
 | `bash tests/v146_validation/run.sh redaction` | pass | Redaction axis is green. |
-| `bash tests/v146_validation/run.sh all` | blocked | Backfill, signals, and redaction are green; graph-audit, trust, contexts, lifecycle, and filesystem remain blocked. |
+| `bash tests/v146_validation/run.sh all` | blocked | Backfill, signals, filesystem, and redaction are green; graph-audit, trust, contexts, and lifecycle remain blocked. |
 | `bash scripts/release-gate/run-v146-validation.sh` | blocked | Wrapper delegates to the W5-B runner and preserves the blocked exit status. |
 
 ## Dependency Gate
@@ -41,7 +41,7 @@
 | Signal propagation and prep invalidation | green | `src-tauri/tests/v146_validation.rs` proves workspace ingestion emits privacy-safe `workspace_file_ingested`, emits privacy-safe `entity_intelligence_updated`, and queues prep invalidation for the affected meeting. |
 | Context inclusion and MCP/privacy parity | blocked | `dailyos.write.place_document` is cataloged, but the MCP v2 handler is still a placeholder. |
 | Lifecycle actions and user correction | blocked | Source-management action contract currently exposes only reingest, quarantine, and relink; ignore/scratchpad and archive/delete remain unavailable. |
-| Filesystem validation negative fixtures | blocked | Rust negative fixtures cover traversal, encoded traversal, outside absolute paths, workspace root equality, symlink escape, NUL input, and hardlink rejection when supported; oversized, non-UTF8, managed/hidden, and unsupported-file cases remain to be automated in this axis. |
+| Filesystem validation negative fixtures | green | Rust negative fixtures cover traversal, encoded traversal, outside absolute paths, workspace root equality, symlink escape, NUL input, non-UTF8 path byte-input rejection, hardlink rejection when supported, explicit ingestion oversized/unsupported-format rejection, and conservative backfill hidden/managed/unsupported skips. |
 | Redaction lint | green | Self-test and current report scan passed. |
 
 ## Manual Evidence Contract

@@ -81,11 +81,12 @@ status_for_axis() {
     filesystem)
       if (
         cd "$ROOT_DIR"
-        cargo test --manifest-path src-tauri/Cargo.toml --test v146_validation filesystem_validation_negative_fixtures >/dev/null
+        cargo test --manifest-path src-tauri/Cargo.toml --test v146_validation filesystem_validation_negative_fixtures >/dev/null &&
+        cargo test --manifest-path src-tauri/Cargo.toml workspace_backfill_filesystem_negative_matrix_skips_without_writes --lib >/dev/null
       ); then
-        printf 'blocked\tcargo test --test v146_validation filesystem_validation_negative_fixtures\tpartial negative filesystem/path validation fixtures passed; blocked until oversized, non-UTF8, managed/hidden, and unsupported-file matrix is complete\n'
+        printf 'pass\tcargo test --test v146_validation filesystem_validation_negative_fixtures + cargo test workspace_backfill_filesystem_negative_matrix_skips_without_writes --lib\tnegative filesystem/path validation matrix passed for registry, explicit ingestion, and conservative backfill skips\n'
       else
-        printf 'fail\tcargo test --test v146_validation filesystem_validation_negative_fixtures\tnegative filesystem/path validation fixtures failed\n'
+        printf 'fail\tcargo test --test v146_validation filesystem_validation_negative_fixtures + cargo test workspace_backfill_filesystem_negative_matrix_skips_without_writes --lib\tnegative filesystem/path validation matrix failed\n'
       fi
       ;;
     *)

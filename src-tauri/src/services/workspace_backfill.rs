@@ -1491,6 +1491,90 @@ mod tests {
         assert!(!json.contains("same source text"));
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn workspace_backfill_filesystem_negative_matrix_skips_without_writes() {
+        let db = test_db();
+        let temp = TempDir::new().expect("temp");
+        seed_account(db.conn_ref(), temp.path());
+        std::fs::create_dir_all(temp.path().join("_archive")).expect("managed root");
+        let account_notes = temp.path().join("Accounts/ExampleCo/notes");
+
+        std::fs::write(account_notes.join(".hidden.md"), "hidden").expect("hidden file");
+        std::fs::write(temp.path().join("_archive/source.md"), "managed root")
+            .expect("managed root file");
+        std::fs::write(temp.path().join("CLAUDE.md"), "managed").expect("managed file");
+        std::fs::write(account_notes.join("dashboard.json"), "{}").expect("generated file");
+        std::fs::write(account_notes.join("archive.zip"), "unsupported").expect("unsupported file");
+        std::fs::write(account_notes.join("invalid-content.md"), [0xff, 0xfe])
+            .expect("non-UTF8 content");
+        std::fs::write(account_notes.join("large.md"), "012345678").expect("large file");
+
+        let write_boundary = [
+            "workspace_file_lifecycle",
+            "workspace_backfill_runs",
+            "workspace_backfill_items",
+            "workspace_backfill_operations",
+            "document_entity_links",
+            "document_ingestion_runs",
+            "content_index",
+            "content_embeddings",
+            "intelligence_claims",
+            "signal_events",
+        ];
+        let before = table_counts(db.conn_ref(), &write_boundary);
+        let key = BackfillHandleKey::for_tests("install-a");
+
+        let summary = run_workspace_backfill(
+            &db,
+            WorkspaceBackfillOptions {
+                workspace_root: Some(temp.path().to_path_buf()),
+                mode: BackfillMode::DryRun,
+                resume_run_id: None,
+                max_file_bytes: 4,
+            },
+            &key,
+            None,
+        )
+        .expect("dry-run");
+
+        assert_eq!(summary.eligible_count, 0);
+        for (reason, expected_count) in [
+            ("hidden_path", 1),
+            ("managed_root", 1),
+            ("managed_file", 1),
+            ("generated_file", 1),
+            ("unsupported_format", 1),
+            ("non_utf8_file", 1),
+            ("file_too_large", 1),
+        ] {
+            assert_eq!(
+                summary.reason_counts.get(reason),
+                Some(&expected_count),
+                "missing reason {reason}",
+            );
+        }
+        assert_eq!(table_counts(db.conn_ref(), &write_boundary), before);
+
+        let json = serde_json::to_string(&summary).expect("summary json");
+        let root_text = temp.path().to_string_lossy().to_string();
+        for raw in [
+            "ExampleCo",
+            ".hidden.md",
+            "CLAUDE.md",
+            "dashboard.json",
+            "archive.zip",
+            "invalid-content.md",
+            "large.md",
+            root_text.as_str(),
+        ] {
+            assert!(
+                !json.contains(raw),
+                "summary leaked raw fixture data: {raw}"
+            );
+        }
+    }
+
     #[test]
     fn apply_registers_pending_review_source_and_graph_excludes_it() {
         let db = test_db();
