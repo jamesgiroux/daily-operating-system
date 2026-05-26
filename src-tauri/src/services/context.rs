@@ -7,12 +7,17 @@
 
 use std::{collections::HashSet, sync::Arc};
 
+use abilities_runtime::abilities::recommendations::contracts as runtime_salience;
+
 pub use abilities_runtime::services::context::*;
 
 use crate::abilities::temporal::{
     DetectRoleChangeInput, DetectRoleChangeResult, RefreshEngagementCurveInput,
     RefreshEngagementCurveResult, TemporalMaintenanceFuture, TemporalMaintenanceHandle,
     TrajectoryQueryDepth, TrajectoryReadFuture, TrajectoryReadHandle,
+};
+use crate::services::recommendations::{
+    contracts as app_recommendations, salience as app_salience,
 };
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -51,6 +56,7 @@ pub struct LiveProjectListReader;
 pub struct LiveMarkdownPreviewReader;
 pub struct LiveWorkspaceGraphReader;
 pub struct LiveSourceManagementLedgerReader;
+pub struct LiveSalienceReader;
 pub struct LiveSourceManagementActionHandler {
     signal_engine: Option<Arc<crate::signals::propagation::PropagationEngine>>,
 }
@@ -85,6 +91,7 @@ pub fn attach_live_workspace_readers_with_signal_engine(
         .with_markdown_preview_reader(Arc::new(LiveMarkdownPreviewReader))
         .with_workspace_graph_reader(Arc::new(LiveWorkspaceGraphReader))
         .with_source_management_ledger_reader(Arc::new(LiveSourceManagementLedgerReader))
+        .with_salience_reader(Arc::new(LiveSalienceReader))
         .with_source_management_action_handler(Arc::new(LiveSourceManagementActionHandler {
             signal_engine: signal_engine.clone(),
         }))
@@ -335,6 +342,52 @@ impl SourceManagementLedgerReadHandle for LiveSourceManagementLedgerReader {
     }
 }
 
+impl SalienceReadHandle for LiveSalienceReader {
+    fn score_salience<'a>(
+        &'a self,
+        request: runtime_salience::ScoreSalienceReadRequest,
+    ) -> SalienceReadFuture<'a> {
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                let db =
+                    open_action_db().map_err(runtime_salience::SalienceReadError::ReadFailed)?;
+                let clock = SystemClock;
+                let rng = SystemRng;
+                let external = ExternalClients::default();
+                let actor = match request.actor {
+                    abilities_runtime::abilities::registry::ActorKind::User => {
+                        "user:score_salience"
+                    }
+                    abilities_runtime::abilities::registry::ActorKind::System => {
+                        "system:score_salience"
+                    }
+                    _ => "system:score_salience",
+                };
+                let service_ctx = ServiceContext::new_live(&clock, &rng, &external)
+                    .with_actor(actor)
+                    .with_ability_id(runtime_salience::SCORE_SALIENCE_ABILITY_NAME);
+                let result = app_salience::score_salience(
+                    &service_ctx,
+                    &db,
+                    app_salience::ScoreSalienceRequest {
+                        schema_version: request.schema_version,
+                        claim_id: app_recommendations::ClaimId(request.claim_id.0),
+                    },
+                )
+                .map_err(salience_error_to_read_error)?;
+
+                Ok(salience_result_to_runtime(result))
+            })
+            .await
+            .map_err(|error| {
+                runtime_salience::SalienceReadError::ReadFailed(format!(
+                    "salience read task failed: {error}"
+                ))
+            })?
+        })
+    }
+}
+
 impl SourceManagementActionHandle for LiveSourceManagementActionHandler {
     fn apply_source_management_action<'a>(
         &'a self,
@@ -401,6 +454,179 @@ impl MarkdownPreviewReadHandle for LiveMarkdownPreviewReader {
             })?
         })
     }
+}
+
+fn salience_error_to_read_error(
+    error: app_salience::SalienceError,
+) -> runtime_salience::SalienceReadError {
+    match error {
+        app_salience::SalienceError::UnsupportedSchemaVersion(schema_version) => {
+            runtime_salience::SalienceReadError::UnsupportedSchemaVersion(schema_version)
+        }
+        app_salience::SalienceError::ClaimNotFound(claim_id) => {
+            runtime_salience::SalienceReadError::ClaimNotFound(claim_id)
+        }
+        app_salience::SalienceError::ClaimNotVisible(claim_id) => {
+            runtime_salience::SalienceReadError::ClaimNotVisible(claim_id)
+        }
+        other => runtime_salience::SalienceReadError::ReadFailed(other.to_string()),
+    }
+}
+
+fn salience_result_to_runtime(
+    result: app_salience::ScoreSalienceResult,
+) -> runtime_salience::ScoreSalienceResponse {
+    runtime_salience::ScoreSalienceResponse {
+        schema_version: result.schema_version,
+        claim_id: runtime_salience::ClaimId(result.claim_id.0),
+        computed_at: salience_datetime_wire(result.computed_at),
+        persistence: salience_persistence_to_runtime(result.persistence),
+        salience: salience_score_to_runtime(result.salience),
+    }
+}
+
+fn salience_persistence_to_runtime(
+    persistence: app_salience::SaliencePersistence,
+) -> runtime_salience::SaliencePersistence {
+    match persistence {
+        app_salience::SaliencePersistence::Preview => {
+            runtime_salience::SaliencePersistence::Preview
+        }
+        app_salience::SaliencePersistence::Stored { evaluation_id } => {
+            runtime_salience::SaliencePersistence::Stored { evaluation_id }
+        }
+    }
+}
+
+fn salience_score_to_runtime(
+    score: app_recommendations::SalienceScore,
+) -> runtime_salience::SalienceScore {
+    runtime_salience::SalienceScore {
+        total: score.total,
+        factors: score
+            .factors
+            .into_iter()
+            .map(salience_factor_to_runtime)
+            .collect(),
+    }
+}
+
+fn salience_factor_to_runtime(
+    factor: app_recommendations::SalienceFactor,
+) -> runtime_salience::SalienceFactor {
+    runtime_salience::SalienceFactor {
+        kind: salience_factor_kind_to_runtime(factor.kind),
+        value: factor.value,
+        weight: factor.weight,
+        rationale: salience_rationale_to_runtime(factor.rationale),
+    }
+}
+
+fn salience_factor_kind_to_runtime(
+    kind: app_recommendations::SalienceFactorKind,
+) -> runtime_salience::SalienceFactorKind {
+    match kind {
+        app_recommendations::SalienceFactorKind::Importance => {
+            runtime_salience::SalienceFactorKind::Importance
+        }
+        app_recommendations::SalienceFactorKind::Novelty => {
+            runtime_salience::SalienceFactorKind::Novelty
+        }
+        app_recommendations::SalienceFactorKind::Urgency => {
+            runtime_salience::SalienceFactorKind::Urgency
+        }
+        app_recommendations::SalienceFactorKind::Timing => {
+            runtime_salience::SalienceFactorKind::Timing
+        }
+        app_recommendations::SalienceFactorKind::UserFit => {
+            runtime_salience::SalienceFactorKind::UserFit
+        }
+        app_recommendations::SalienceFactorKind::Freshness => {
+            runtime_salience::SalienceFactorKind::Freshness
+        }
+        app_recommendations::SalienceFactorKind::Trust => {
+            runtime_salience::SalienceFactorKind::Trust
+        }
+        app_recommendations::SalienceFactorKind::Corroboration => {
+            runtime_salience::SalienceFactorKind::Corroboration
+        }
+        app_recommendations::SalienceFactorKind::Contradiction => {
+            runtime_salience::SalienceFactorKind::Contradiction
+        }
+        app_recommendations::SalienceFactorKind::OpenLoopRelevance => {
+            runtime_salience::SalienceFactorKind::OpenLoopRelevance
+        }
+    }
+}
+
+fn salience_rationale_to_runtime(
+    rationale: app_recommendations::FactorRationale,
+) -> runtime_salience::FactorRationale {
+    match rationale {
+        app_recommendations::FactorRationale::Importance {
+            trust_band,
+            source_authority,
+        } => runtime_salience::FactorRationale::Importance {
+            trust_band,
+            source_authority,
+        },
+        app_recommendations::FactorRationale::Novelty {
+            vector_distance,
+            neighbor_count,
+        } => runtime_salience::FactorRationale::Novelty {
+            vector_distance,
+            neighbor_count,
+        },
+        app_recommendations::FactorRationale::Urgency {
+            deadline,
+            decay_factor,
+        } => runtime_salience::FactorRationale::Urgency {
+            deadline: deadline.map(salience_datetime_wire),
+            decay_factor,
+        },
+        app_recommendations::FactorRationale::Timing {
+            signal_age_secs,
+            calendar_proximity_secs,
+        } => runtime_salience::FactorRationale::Timing {
+            signal_age_secs,
+            calendar_proximity_secs,
+        },
+        app_recommendations::FactorRationale::UserFit {
+            feedback_history_score,
+        } => runtime_salience::FactorRationale::UserFit {
+            feedback_history_score,
+        },
+        app_recommendations::FactorRationale::Freshness { decay_factor } => {
+            runtime_salience::FactorRationale::Freshness { decay_factor }
+        }
+        app_recommendations::FactorRationale::Trust { trust_band } => {
+            runtime_salience::FactorRationale::Trust { trust_band }
+        }
+        app_recommendations::FactorRationale::Corroboration {
+            corroboration_count,
+        } => runtime_salience::FactorRationale::Corroboration {
+            corroboration_count,
+        },
+        app_recommendations::FactorRationale::Contradiction {
+            contradiction_count,
+        } => runtime_salience::FactorRationale::Contradiction {
+            contradiction_count,
+        },
+        app_recommendations::FactorRationale::OpenLoopRelevance {
+            open_loop_count,
+            has_action,
+        } => runtime_salience::FactorRationale::OpenLoopRelevance {
+            open_loop_count,
+            has_action,
+        },
+    }
+}
+
+fn salience_datetime_wire(value: chrono::DateTime<chrono::Utc>) -> String {
+    serde_json::to_value(value)
+        .ok()
+        .and_then(|value| value.as_str().map(ToString::to_string))
+        .unwrap_or_else(|| value.to_rfc3339())
 }
 
 fn open_action_db() -> Result<crate::db::ActionDb, String> {
@@ -1077,9 +1303,8 @@ mod tests {
             .expect("drop linked_entities view");
 
         let tz: chrono_tz::Tz = "UTC".parse().expect("parse UTC tz");
-        let snapshot =
-            project_daily_readiness_context_snapshot(&db, "local", "2026-05-23", &tz)
-                .expect("read daily readiness context");
+        let snapshot = project_daily_readiness_context_snapshot(&db, "local", "2026-05-23", &tz)
+            .expect("read daily readiness context");
 
         assert_eq!(snapshot.meetings.len(), 1);
         assert!(snapshot.tracked_subjects.is_empty());
@@ -1094,6 +1319,117 @@ mod tests {
         );
         assert_eq!(snapshot.coverage_warnings[0].count, 1);
         assert_eq!(snapshot.coverage_warnings[0].workspace_scope, "local");
+    }
+
+    #[test]
+    fn salience_runtime_adapter_preserves_app_dto_wire_shape() {
+        use abilities_runtime::abilities::trust::types::TrustBand;
+        use app_recommendations::{FactorRationale, SalienceFactor, SalienceFactorKind};
+
+        let result = app_salience::ScoreSalienceResult {
+            schema_version: app_salience::SCORE_SALIENCE_SCHEMA_VERSION,
+            claim_id: app_recommendations::ClaimId("claim-1".to_string()),
+            computed_at: chrono::Utc.with_ymd_and_hms(2026, 5, 26, 12, 0, 0).unwrap(),
+            persistence: app_salience::SaliencePersistence::Stored {
+                evaluation_id: "salience-eval-1".to_string(),
+            },
+            salience: app_recommendations::SalienceScore {
+                total: 0.72,
+                factors: vec![
+                    SalienceFactor {
+                        kind: SalienceFactorKind::Importance,
+                        value: Some(0.75),
+                        weight: 0.2,
+                        rationale: FactorRationale::Importance {
+                            trust_band: TrustBand::LikelyCurrent,
+                            source_authority: 0.8,
+                        },
+                    },
+                    SalienceFactor {
+                        kind: SalienceFactorKind::Novelty,
+                        value: Some(0.5),
+                        weight: 0.1,
+                        rationale: FactorRationale::Novelty {
+                            vector_distance: 0.5,
+                            neighbor_count: 1,
+                        },
+                    },
+                    SalienceFactor {
+                        kind: SalienceFactorKind::Urgency,
+                        value: Some(0.85),
+                        weight: 0.15,
+                        rationale: FactorRationale::Urgency {
+                            deadline: Some(
+                                chrono::Utc.with_ymd_and_hms(2026, 5, 27, 12, 0, 0).unwrap(),
+                            ),
+                            decay_factor: 0.85,
+                        },
+                    },
+                    SalienceFactor {
+                        kind: SalienceFactorKind::Timing,
+                        value: Some(0.7),
+                        weight: 0.1,
+                        rationale: FactorRationale::Timing {
+                            signal_age_secs: 3600,
+                            calendar_proximity_secs: None,
+                        },
+                    },
+                    SalienceFactor {
+                        kind: SalienceFactorKind::UserFit,
+                        value: Some(0.9),
+                        weight: 0.1,
+                        rationale: FactorRationale::UserFit {
+                            feedback_history_score: 0.8,
+                        },
+                    },
+                    SalienceFactor {
+                        kind: SalienceFactorKind::Freshness,
+                        value: Some(0.95),
+                        weight: 0.1,
+                        rationale: FactorRationale::Freshness { decay_factor: 0.95 },
+                    },
+                    SalienceFactor {
+                        kind: SalienceFactorKind::Trust,
+                        value: Some(0.9),
+                        weight: 0.1,
+                        rationale: FactorRationale::Trust {
+                            trust_band: TrustBand::LikelyCurrent,
+                        },
+                    },
+                    SalienceFactor {
+                        kind: SalienceFactorKind::Corroboration,
+                        value: Some(0.25),
+                        weight: 0.05,
+                        rationale: FactorRationale::Corroboration {
+                            corroboration_count: 2,
+                        },
+                    },
+                    SalienceFactor {
+                        kind: SalienceFactorKind::Contradiction,
+                        value: Some(1.0),
+                        weight: 0.05,
+                        rationale: FactorRationale::Contradiction {
+                            contradiction_count: 0,
+                        },
+                    },
+                    SalienceFactor {
+                        kind: SalienceFactorKind::OpenLoopRelevance,
+                        value: Some(0.75),
+                        weight: 0.05,
+                        rationale: FactorRationale::OpenLoopRelevance {
+                            open_loop_count: 1,
+                            has_action: true,
+                        },
+                    },
+                ],
+            },
+        };
+
+        let app_json = serde_json::to_value(&result).expect("serialize app salience result");
+        let runtime_json = serde_json::to_value(salience_result_to_runtime(result))
+            .expect("serialize runtime salience result");
+
+        assert_eq!(runtime_json, app_json);
     }
 }
 

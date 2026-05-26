@@ -1079,6 +1079,11 @@ const MIGRATIONS: &[Migration] = &[
         version: 269,
         apply: migrate_v269_recommendation_claim_metadata_indexes,
     },
+    // v1.4.6 W1-B — inspectable salience factor storage and default weights.
+    Migration::Sql {
+        version: 270,
+        sql: include_str!("migrations/270_salience_factors.sql"),
+    },
 ];
 
 const V155_SHADOW_TRUST_VERSION: i64 = 1_401_003;
@@ -6833,5 +6838,74 @@ mod tests {
             )
             .expect("query recommendation indexes");
         assert_eq!(index_count, 0);
+    }
+
+    #[test]
+    fn migration_270_creates_salience_factor_tables_and_weights() {
+        let conn = mem_db();
+        run_migrations(&conn).expect("build current schema");
+
+        for table_name in ["salience_factors_weights", "salience_factors"] {
+            let table_count: i64 = conn
+                .query_row(
+                    "SELECT count(*)
+                       FROM sqlite_master
+                      WHERE type = 'table'
+                        AND name = ?1",
+                    [table_name],
+                    |row| row.get(0),
+                )
+                .expect("query salience table");
+            assert_eq!(table_count, 1, "{table_name} exists");
+        }
+
+        let (weight_count, weight_sum): (i64, f64) = conn
+            .query_row(
+                "SELECT count(*), sum(default_weight)
+                   FROM salience_factors_weights
+                  WHERE schema_version = 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read salience weights");
+        assert_eq!(weight_count, 10);
+        assert!((weight_sum - 1.0).abs() < 0.0001);
+        assert!(
+            current_version(&conn).expect("current version") >= 270,
+            "schema version is at least v270"
+        );
+    }
+
+    #[test]
+    fn migration_270_is_retry_safe_after_version_record_gap() {
+        let conn = mem_db();
+        run_migrations(&conn).expect("build current schema");
+
+        conn.execute(
+            "UPDATE salience_factors_weights
+                SET default_weight = 0.99
+              WHERE factor_kind = 'importance'",
+            [],
+        )
+        .expect("simulate partial weight mutation");
+        conn.execute("DELETE FROM schema_version WHERE version = 270", [])
+            .expect("simulate v270 version record gap");
+
+        run_migrations(&conn).expect("rerun v270 after version record gap");
+
+        let (weight_count, weight_sum, importance_weight): (i64, f64, f64) = conn
+            .query_row(
+                "SELECT count(*), sum(default_weight),
+                        max(CASE WHEN factor_kind = 'importance' THEN default_weight ELSE NULL END)
+                   FROM salience_factors_weights
+                  WHERE schema_version = 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("read rerun salience weights");
+        assert_eq!(weight_count, 10);
+        assert!((weight_sum - 1.0).abs() < 0.0001);
+        assert!((importance_weight - 0.20).abs() < 0.0001);
+        assert_eq!(current_version(&conn).expect("current version"), 270);
     }
 }

@@ -21,6 +21,7 @@ pub mod list_projects;
 pub mod markdown_preview;
 pub mod prepare_meeting;
 pub mod provenance;
+pub mod recommendations;
 pub mod registry;
 pub mod source_management_ledger;
 pub mod temporal;

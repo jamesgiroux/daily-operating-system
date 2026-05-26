@@ -826,6 +826,9 @@ pub fn purge_mock_data(_state: &AppState) -> Result<String, String> {
     let n = delete_mock("workspace_file_lifecycle", "file_id");
     summary.push(format!("workspace_file_lifecycle: {}", n));
 
+    let n = delete_mock("salience_factors", "claim_id");
+    summary.push(format!("salience_factors: {}", n));
+
     let n = delete_mock("intelligence_feedback", "entity_id");
     summary.push(format!("intelligence_feedback: {}", n));
 
@@ -6581,7 +6584,36 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
     .map_err(|e| format!("Seed health_recompute_pending: {}", e))?;
 
     seed_claim_review_deferrals(db)?;
+    seed_salience_factor_weights(db)?;
     seed_workspace_backfill_state(db)?;
+
+    Ok(())
+}
+
+/// Seed salience factor weights for dev mode. Stored `salience_factors` rows
+/// are recomputation output, so mock scenarios keep those empty and exercise
+/// the score_salience preview path against seeded claims.
+fn seed_salience_factor_weights(db: &ActionDb) -> Result<(), String> {
+    assert_dev_db_connection(db)?;
+
+    let conn = db.conn_ref();
+    conn.execute_batch(
+        "INSERT INTO salience_factors_weights (factor_kind, default_weight, schema_version)
+         VALUES
+           ('importance', 0.20, 1),
+           ('novelty', 0.10, 1),
+           ('urgency', 0.15, 1),
+           ('timing', 0.10, 1),
+           ('userFit', 0.10, 1),
+           ('freshness', 0.10, 1),
+           ('trust', 0.10, 1),
+           ('corroboration', 0.05, 1),
+           ('contradiction', 0.05, 1),
+           ('openLoopRelevance', 0.05, 1)
+         ON CONFLICT(factor_kind, schema_version) DO UPDATE SET
+           default_weight = excluded.default_weight;",
+    )
+    .map_err(|e| format!("Seed salience factor weights: {e}"))?;
 
     Ok(())
 }
