@@ -3083,6 +3083,58 @@ fn candidate_claim_shadowed_by_compatible_tombstone(
     )
 }
 
+fn replace_policy_supersedes_candidate_tx(
+    conn: &rusqlite::Connection,
+    subject: &SubjectRef,
+    proposal: &ClaimProposal,
+    commit_policy: CommitPolicyClass,
+    mutation_target: &ClaimMutationTarget,
+) -> Result<Option<String>, ClaimError> {
+    if !matches!(commit_policy, CommitPolicyClass::Replace)
+        || proposal.claim_type != ClaimType::Recommendation.as_str()
+        || !matches!(
+            mutation_target,
+            ClaimMutationTarget::Insert { .. } | ClaimMutationTarget::InsertWithId { .. }
+        )
+    {
+        return Ok(None);
+    }
+
+    let Some(kind) = subject_kind_label(subject) else {
+        return Ok(None);
+    };
+    let Some(id) = subject_id_for_lookup(subject) else {
+        return Ok(None);
+    };
+
+    let field = proposal.field_path.as_deref().unwrap_or("");
+    let surface_columns = claim_surface_shadow_columns(conn, "active_claim")?;
+    let sql = format!(
+        "SELECT {CLAIM_COLUMNS}, {surface_columns}
+         FROM intelligence_claims active_claim
+         WHERE json_valid(active_claim.subject_ref) = 1
+           AND lower(json_extract(active_claim.subject_ref, '$.kind')) = lower(?1)
+           AND json_extract(active_claim.subject_ref, '$.id') = ?2
+           AND active_claim.claim_type = ?3
+           AND coalesce(active_claim.field_path, '') = coalesce(?4, '')
+           AND active_claim.claim_state = 'active'
+           AND active_claim.surfacing_state = 'active'
+         ORDER BY active_claim.created_at DESC
+         LIMIT 1"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let mut rows = stmt.query(params![kind, id, proposal.claim_type.as_str(), field])?;
+    let existing = if let Some(row) = rows.next()? {
+        Some(read_claim_row_with_surface_shadow_state(row)?)
+    } else {
+        None
+    };
+
+    Ok(existing
+        .filter(|claim| proposal.id.as_deref() != Some(claim.id.as_str()))
+        .map(|claim| claim.id))
+}
+
 fn canonical_input_shadowed_by_compatible_tombstone(
     conn: &rusqlite::Connection,
     input: &CanonicalMatchInput,
@@ -6156,6 +6208,16 @@ where
             return Err(ClaimError::InvalidSupersession(
                 "tombstone commits cannot also supersede another claim".to_string(),
             ));
+        }
+
+        if proposal.supersedes.is_none() && proposal.tombstone.is_none() {
+            proposal.supersedes = replace_policy_supersedes_candidate_tx(
+                tx.conn_ref(),
+                &subject,
+                &proposal,
+                metadata.commit_policy_class,
+                &mutation_target,
+            )?;
         }
 
         if let Some(superseded_id) = proposal.supersedes.as_deref() {
@@ -12184,6 +12246,16 @@ mod tests {
         }
     }
 
+    fn recommendation_proposal(action_kind: &str, text: &str) -> ClaimProposal {
+        let mut p = proposal(text);
+        p.claim_type = "recommendation".to_string();
+        p.field_path = Some(format!("recommendation.{action_kind}"));
+        p.topic_key = Some(action_kind.to_string());
+        p.temporal_scope = None;
+        p.sensitivity = None;
+        p
+    }
+
     fn seed_account(db: &ActionDb) {
         db.conn_ref()
             .execute(
@@ -12299,6 +12371,28 @@ mod tests {
             )
             .expect("read item_hash")
             .unwrap_or_default()
+    }
+
+    fn active_recommendation_ids(db: &ActionDb, field_path: &str) -> Vec<String> {
+        let mut ids = load_claims_active(db, SUBJECT, Some("recommendation"))
+            .expect("load active recommendation claims")
+            .into_iter()
+            .filter(|claim| claim.field_path.as_deref() == Some(field_path))
+            .map(|claim| claim.id)
+            .collect::<Vec<_>>();
+        ids.sort();
+        ids
+    }
+
+    fn claim_contradiction_branch_kinds(db: &ActionDb) -> Vec<String> {
+        let mut stmt = db
+            .conn_ref()
+            .prepare("SELECT branch_kind FROM claim_contradictions ORDER BY detected_at, id")
+            .expect("prepare contradiction branch query");
+        stmt.query_map([], |row| row.get(0))
+            .expect("query contradiction branches")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("map contradiction branches")
     }
 
     fn claim_contradiction_count(db: &ActionDb) -> i64 {
@@ -12461,6 +12555,16 @@ mod tests {
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )
             .expect("read lifecycle columns")
+    }
+
+    fn read_superseded_by(db: &ActionDb, claim_id: &str) -> Option<String> {
+        db.conn_ref()
+            .query_row(
+                "SELECT superseded_by FROM intelligence_claims WHERE id = ?1",
+                params![claim_id],
+                |row| row.get(0),
+            )
+            .expect("read superseded_by")
     }
 
     fn read_trust_columns(
@@ -13223,6 +13327,98 @@ mod tests {
         assert_eq!(
             claim.item_hash,
             Some(item_hash(ItemKind::Risk, &claim.text))
+        );
+    }
+
+    #[test]
+    fn commit_claim_replace_policy_supersedes_prior_recommendation_same_action() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let first_id = inserted_claim_id(
+            commit_claim(
+                &ctx,
+                &db,
+                recommendation_proposal(
+                    "scheduleMeeting",
+                    "Schedule a handoff meeting with the account team",
+                ),
+            )
+            .unwrap(),
+        );
+        let second_id = inserted_claim_id(
+            commit_claim(
+                &ctx,
+                &db,
+                recommendation_proposal(
+                    "scheduleMeeting",
+                    "Schedule an escalation meeting with the account team",
+                ),
+            )
+            .unwrap(),
+        );
+
+        assert_ne!(first_id, second_id);
+        assert_eq!(
+            read_lifecycle_columns(&db, &first_id),
+            (
+                "dormant".to_string(),
+                "dormant".to_string(),
+                Some("superseded".to_string()),
+                None
+            )
+        );
+        assert_eq!(read_superseded_by(&db, &first_id), Some(second_id.clone()));
+        assert_eq!(
+            active_recommendation_ids(&db, "recommendation.scheduleMeeting"),
+            vec![second_id.clone()]
+        );
+        assert_eq!(
+            claim_contradiction_branch_kinds(&db),
+            vec!["supersession".to_string()]
+        );
+    }
+
+    #[test]
+    fn commit_claim_replace_policy_replaces_same_text_recommendation_instead_of_reinforcing() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let first_id = inserted_claim_id(
+            commit_claim(
+                &ctx,
+                &db,
+                recommendation_proposal(
+                    "prepareBrief",
+                    "Prepare an implementation brief for the project team",
+                ),
+            )
+            .unwrap(),
+        );
+        let second = commit_claim(
+            &ctx,
+            &db,
+            recommendation_proposal(
+                "prepareBrief",
+                "Prepare an implementation brief for the project team",
+            ),
+        )
+        .unwrap();
+
+        let second_id = match second {
+            CommittedClaim::Inserted { claim } => claim.id,
+            other => panic!("replace policy should insert a superseding claim, got {other:?}"),
+        };
+
+        assert_ne!(first_id, second_id);
+        assert_eq!(read_superseded_by(&db, &first_id), Some(second_id.clone()));
+        assert_eq!(
+            active_recommendation_ids(&db, "recommendation.prepareBrief"),
+            vec![second_id]
         );
     }
 

@@ -1073,6 +1073,12 @@ const MIGRATIONS: &[Migration] = &[
         version: 268,
         sql: include_str!("migrations/268_workspace_backfill_state.sql"),
     },
+    // v1.4.6 W1-A — recommendation claims stay in intelligence_claims;
+    // add JSON-path indexes for the typed metadata envelope.
+    Migration::Fn {
+        version: 269,
+        apply: migrate_v269_recommendation_claim_metadata_indexes,
+    },
 ];
 
 const V155_SHADOW_TRUST_VERSION: i64 = 1_401_003;
@@ -2871,6 +2877,26 @@ fn migrate_v263_claim_subject_lookup_index(conn: &Connection) -> Result<(), Migr
         conn,
         include_str!("migrations/263_claim_subject_lookup_index.sql"),
         "v1.4.4a W6 claim subject lookup index",
+    )
+}
+
+fn migrate_v269_recommendation_claim_metadata_indexes(
+    conn: &Connection,
+) -> Result<(), MigrationError> {
+    if !table_exists(conn, "intelligence_claims")? {
+        return Ok(());
+    }
+
+    let columns = table_columns(conn, "intelligence_claims")?;
+    let required = ["claim_type", "metadata_json"];
+    if required.iter().any(|column| !columns.contains(*column)) {
+        return Ok(());
+    }
+
+    apply_idempotent_sql_migration(
+        conn,
+        include_str!("migrations/269_recommendation_claim_metadata_indexes.sql"),
+        "v1.4.6 W1-A recommendation claim metadata indexes",
     )
 }
 
@@ -6743,5 +6769,69 @@ mod tests {
             current_version(&conn).expect("current version") >= 266,
             "schema version is at least v266"
         );
+    }
+
+    #[test]
+    fn migration_269_adds_recommendation_metadata_indexes() {
+        let conn = mem_db();
+        run_migrations(&conn).expect("build current schema");
+
+        for index_name in [
+            "idx_claims_recommendation_action_kind",
+            "idx_claims_recommendation_feedback_state",
+            "idx_claims_recommendation_conversion_state",
+        ] {
+            let (index_count, sql): (i64, String) = conn
+                .query_row(
+                    "SELECT count(*), COALESCE(sql, '')
+                       FROM sqlite_master
+                      WHERE type = 'index'
+                        AND name = ?1",
+                    [index_name],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .expect("query sqlite_master for recommendation metadata index");
+            assert_eq!(index_count, 1, "{index_name} exists");
+            assert!(
+                sql.contains("claim_type = 'recommendation'"),
+                "{index_name} is scoped to recommendation claims"
+            );
+            assert!(
+                sql.contains("json_valid(metadata_json) = 1"),
+                "{index_name} ignores malformed metadata_json"
+            );
+        }
+
+        assert!(
+            current_version(&conn).expect("current version") >= 269,
+            "schema version is at least v269"
+        );
+    }
+
+    #[test]
+    fn migration_269_skips_legacy_claim_table_without_claim_type() {
+        let conn = mem_db();
+        conn.execute_batch(
+            "CREATE TABLE intelligence_claims (
+                id TEXT PRIMARY KEY,
+                metadata_json TEXT
+            );",
+        )
+        .expect("create legacy claims table");
+
+        migrate_v269_recommendation_claim_metadata_indexes(&conn)
+            .expect("v269 skips incomplete legacy claim table");
+
+        let index_count: i64 = conn
+            .query_row(
+                "SELECT count(*)
+                   FROM sqlite_master
+                  WHERE type = 'index'
+                    AND name LIKE 'idx_claims_recommendation_%'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("query recommendation indexes");
+        assert_eq!(index_count, 0);
     }
 }
