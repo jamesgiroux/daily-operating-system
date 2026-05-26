@@ -58,11 +58,17 @@
       "positive": [
         {
           "prompt": "What's going on with Acme?",
-          "expectedTool": "dailyos.read.account_status"
+          "expectedTool": "dailyos.read.account_status",
+          "expectedArgumentKeys": [
+            "subject"
+          ]
         },
         {
           "prompt": "How are things looking with the Hooli deal?",
-          "expectedTool": "dailyos.read.account_status"
+          "expectedTool": "dailyos.read.account_status",
+          "expectedArgumentKeys": [
+            "subject"
+          ]
         }
       ],
       "negativeBroadCorpus": [
@@ -187,11 +193,17 @@
       "positive": [
         {
           "prompt": "What should I prep for my 2pm with Acme?",
-          "expectedTool": "dailyos.read.meeting_briefing"
+          "expectedTool": "dailyos.read.meeting_briefing",
+          "expectedArgumentKeys": [
+            "meeting_id"
+          ]
         },
         {
           "prompt": "Brief me on my next call with Hooli",
-          "expectedTool": "dailyos.read.meeting_briefing"
+          "expectedTool": "dailyos.read.meeting_briefing",
+          "expectedArgumentKeys": [
+            "meeting_id"
+          ]
         }
       ],
       "negativeBroadCorpus": [
@@ -480,11 +492,17 @@
       "positive": [
         {
           "prompt": "Where did that note about Acme come from?",
-          "expectedTool": "dailyos.read.workspace_source_provenance"
+          "expectedTool": "dailyos.read.workspace_source_provenance",
+          "expectedArgumentKeys": [
+            "entry_id"
+          ]
         },
         {
           "prompt": "What's the source of this memory entry?",
-          "expectedTool": "dailyos.read.workspace_source_provenance"
+          "expectedTool": "dailyos.read.workspace_source_provenance",
+          "expectedArgumentKeys": [
+            "entry_id"
+          ]
         }
       ],
       "negativeBroadCorpus": [
@@ -703,11 +721,25 @@
       "positive": [
         {
           "prompt": "Save this renewal context for the selected account",
-          "expectedTool": "dailyos.write.place_document"
+          "expectedTool": "dailyos.write.place_document",
+          "expectedArgumentKeys": [
+            "schema_version",
+            "entity",
+            "content_b64",
+            "content_type",
+            "category"
+          ]
         },
         {
           "prompt": "File this note for the selected project",
-          "expectedTool": "dailyos.write.place_document"
+          "expectedTool": "dailyos.write.place_document",
+          "expectedArgumentKeys": [
+            "schema_version",
+            "entity",
+            "content_b64",
+            "content_type",
+            "category"
+          ]
         }
       ],
       "negativeBroadCorpus": [
@@ -837,11 +869,21 @@
       "positive": [
         {
           "prompt": "Note that Acme is concerned about pricing",
-          "expectedTool": "dailyos.submit.note"
+          "expectedTool": "dailyos.submit.note",
+          "expectedArgumentKeys": [
+            "entity_type",
+            "entity_id",
+            "content"
+          ]
         },
         {
           "prompt": "Quick observation that Hooli champion is moving teams",
-          "expectedTool": "dailyos.submit.note"
+          "expectedTool": "dailyos.submit.note",
+          "expectedArgumentKeys": [
+            "entity_type",
+            "entity_id",
+            "content"
+          ]
         }
       ],
       "negativeBroadCorpus": [
@@ -970,11 +1012,21 @@
       "positive": [
         {
           "prompt": "Remind me to follow up with Acme next Tuesday",
-          "expectedTool": "dailyos.submit.action"
+          "expectedTool": "dailyos.submit.action",
+          "expectedArgumentKeys": [
+            "entity_type",
+            "entity_id",
+            "title"
+          ]
         },
         {
           "prompt": "Add a task to send the Hooli proposal by Friday",
-          "expectedTool": "dailyos.submit.action"
+          "expectedTool": "dailyos.submit.action",
+          "expectedArgumentKeys": [
+            "entity_type",
+            "entity_id",
+            "title"
+          ]
         }
       ],
       "negativeBroadCorpus": [
@@ -1075,11 +1127,19 @@
       "positive": [
         {
           "prompt": "I finished the Acme follow-up",
-          "expectedTool": "dailyos.submit.action_status"
+          "expectedTool": "dailyos.submit.action_status",
+          "expectedArgumentKeys": [
+            "action_id",
+            "new_status"
+          ]
         },
         {
           "prompt": "Mark the Hooli proposal task as dropped",
-          "expectedTool": "dailyos.submit.action_status"
+          "expectedTool": "dailyos.submit.action_status",
+          "expectedArgumentKeys": [
+            "action_id",
+            "new_status"
+          ]
         }
       ],
       "negativeBroadCorpus": [

@@ -1,0 +1,20 @@
+{
+  "schema_version": "v147_tool_selection_competitor_tools_v1",
+  "tools": [
+    {
+      "name": "web.search",
+      "class": "external",
+      "description": "Public web search for general internet questions."
+    },
+    {
+      "name": "enterprise.search",
+      "class": "external",
+      "description": "Broad company corpus search outside the user's DailyOS working context."
+    },
+    {
+      "name": "file.search",
+      "class": "external",
+      "description": "Generic file search when the request is not asking for DailyOS memory, judgment, or entity context."
+    }
+  ]
+}

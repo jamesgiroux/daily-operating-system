@@ -277,6 +277,8 @@ pub struct PromptFixture {
     pub expected_tool: Option<ScopedName>,
     #[serde(default)]
     pub expected_tool_class: Option<String>,
+    #[serde(default)]
+    pub expected_argument_keys: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

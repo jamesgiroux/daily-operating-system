@@ -1,0 +1,19 @@
+{
+  "schema_version": "v147_tool_selection_eval_manifest_v1",
+  "catalog_path": "src-tauri/src/services/mcp_v2/resources/tool_descriptions.yaml",
+  "fixture_source": "catalog.selectionFixtures",
+  "competitor_tools_path": "tests/v147_tool_eval/fixtures/competitor-tools.json",
+  "minimums": {
+    "positive_per_tool": 2,
+    "broad_negative_per_tool": 2,
+    "adjacent_negative_per_tool": 1
+  },
+  "thresholds": {
+    "positive_selection_pass_rate": 1,
+    "broad_negative_pass_rate": 1,
+    "adjacent_negative_pass_rate": 1,
+    "fixture_density_pass_rate": 1,
+    "argument_key_pass_rate": 1,
+    "prompt_unambiguity_pass_rate": 1
+  }
+}
