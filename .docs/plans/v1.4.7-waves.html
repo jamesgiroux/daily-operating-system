@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>v1.4.7 MCP Server v2 · DailyOS Planning</title>
+  <link rel="stylesheet" href="../design/reference/_shared/fonts.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/design-tokens.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/MagazinePageLayout.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/chrome.css">
+  <link rel="stylesheet" href="plans.css">
+</head>
+<body data-tint="eucalyptus" data-active-page="planning">
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+<div class="plans-shell">
+
+<nav class="plans-topnav" aria-label="Planning surface">
+  <a class="plans-mark" href="index.html">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="16" height="16" aria-hidden="true">
+      <path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/>
+    </svg>
+    DailyOS · Planning
+  </a>
+  <div class="plans-topnav-links">
+    <a href="engineering-ladder.html">Engineering Ladder</a>
+    <a href="v1.4.7-waves.html" data-active="true">v1.4.7 MCP</a>
+    <a href="abilities-runtime-producer-remediation-waves.html">Runtime Producers</a>
+    <a href="AUTHORING.md">Authoring Ruleset</a>
+  </div>
+</nav>
+
+<section class="plans-cover">
+  <p class="plans-eyebrow">DailyOS · v1.4.7 · MCP Server v2</p>
+  <h1 class="plans-title">Make DailyOS the headless personal intelligence surface.</h1>
+  <p class="plans-kicker">Claude Desktop and other MCP hosts should reach DailyOS for the user's working context, not stale exports or raw search.</p>
+  <p class="plans-lede">
+    This is the re-baselined v1.4.7 plan after the runtime producer remediation detour.
+    The remediation work is merged and restored DailyOS's ability to answer from claim-backed runtime evidence.
+    v1.4.7 remains open: the remaining job is to finish MCP v2 as the direct headless surface over that runtime.
+  </p>
+  <div class="plans-meta">
+    <span>Re-baselined: 2026-05-26</span>
+    <span>Status: active, not complete</span>
+    <span>Canonical project: <a href="https://linear.app/a8c/project/v147-mcp-server-v2-abilities-first-6e12027c36c9">Linear v1.4.7</a></span>
+    <span>Markdown source: <a href="v1.4.7-waves.md">v1.4.7-waves.md</a></span>
+  </div>
+</section>
+
+<section class="plans-section" aria-labelledby="where-we-landed">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Reconciliation</p>
+    <h2 id="where-we-landed" class="plans-section-title">Producer remediation is merged; v1.4.7 is not done.</h2>
+    <p class="plans-section-lede">
+      The project veered because MCP could call the runtime but the runtime was underfed. That became a runtime-producer remediation wave.
+      The detour fixed the blocking substrate problem and should now be treated as a dependency that v1.4.7 consumes.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Track</th>
+        <th>Current state</th>
+        <th>Evidence</th>
+        <th>Plan consequence</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Runtime producer remediation</td>
+        <td>Done enough for v1.4.7 to proceed</td>
+        <td>PRs #366, #375, #390 and related briefing/context fixes merged</td>
+        <td>Consume the runtime output. Do not reopen account-shaped bypass work.</td>
+      </tr>
+      <tr>
+        <td>MCP v2 foundation</td>
+        <td>Partially landed</td>
+        <td>W0 and gateway/taxonomy/account-status work merged; missing packets recovered from backup branch</td>
+        <td>Recover docs, reconcile Linear, continue W2/W3/W4/W5 under v1.4.7.</td>
+      </tr>
+      <tr>
+        <td>Workspace MCP overlap</td>
+        <td>Partially landed through v1.4.5 release-gate work</td>
+        <td>Placement and context parity PRs landed against v1.4.5 validation work</td>
+        <td>Map those PRs to v1.4.7 tickets where they satisfy MCP surface acceptance criteria.</td>
+      </tr>
+      <tr>
+        <td>Daily and meeting briefing MCP tools</td>
+        <td>Not complete</td>
+        <td>Catalog entries exist, but direct handlers are not the completed release surface yet</td>
+        <td>Keep this in v1.4.7 as the next ability-backed read slice.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="plans-section" aria-labelledby="recovered-plans">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Recovered planning packets</p>
+    <h2 id="recovered-plans" class="plans-section-title">The missing MCP local plan was markdown, not HTML.</h2>
+    <p class="plans-section-lede">
+      Repo history showed no separate v1.4.7 MCP HTML plan. The missing local work was a markdown L0 packet set on
+      <code>backup-v147-w1-foundation-pre-rebuild</code>. It has been restored under <code>.docs/plans/v1.4.7-w1-foundation/</code>.
+    </p>
+  </header>
+
+  <ul class="plans-related">
+    <li><strong><a href="v1.4.7-w1-foundation/dos-168-l0-plan.md">DOS-168 L0 packet</a>:</strong> MCP v2 gateway, actor policy, auth, audit, and local-to-local trust model.</li>
+    <li><strong><a href="v1.4.7-w1-foundation/dos-478-l0-plan.md">DOS-478 L0 packet</a>:</strong> tool taxonomy, host-selection contract, YAML catalog, and fixture discipline.</li>
+    <li><strong><a href="v1.4.7-w1-foundation/dos-mcp-transport-l0-plan.md">MCP transport L0 packet</a>:</strong> rmcp transport into the gateway, scoped to local same-user stdio clients.</li>
+    <li><strong><a href="v1.4.7-w1-foundation/dos-175-l0-plan.md">DOS-175 L0 packet</a>:</strong> ability-backed read handler phase A for account status.</li>
+    <li><strong><a href="v1.4.7-w1-foundation/dos-624-cso-amendment.md">DOS-624 CSO amendment</a>:</strong> briefing-specific MCP exposure policy and existence-oracle protections.</li>
+  </ul>
+</section>
+
+<section class="plans-section" aria-labelledby="wave-overview">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Wave shape</p>
+    <h2 id="wave-overview" class="plans-section-title">Finish the original v1.4.7 scope on top of the repaired runtime.</h2>
+    <p class="plans-section-lede">
+      The original waves stay valid. Their implementation order changes only where merged runtime or workspace-memory work has already satisfied part of a ticket.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Wave</th>
+        <th>Linear scope</th>
+        <th>Status after reconciliation</th>
+        <th>Next action</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>W0 · Foundation</td>
+        <td>PR #322 plus ADR-0102 / ADR-0128 amendments</td>
+        <td>Done</td>
+        <td>Keep as historical base.</td>
+      </tr>
+      <tr>
+        <td>W1 · Contract and policy</td>
+        <td>DOS-168, DOS-478, transport ingress</td>
+        <td>Mostly done</td>
+        <td>DOS-478 reconciled; transport traceability recorded as historical W1.5 evidence.</td>
+      </tr>
+      <tr>
+        <td>W2 · Ability-backed reads</td>
+        <td>DOS-175, DOS-172, DOS-173, DOS-624</td>
+        <td>Partially done</td>
+        <td>Complete daily/meeting briefing handlers, ranked discovery, and portfolio attention.</td>
+      </tr>
+      <tr>
+        <td>W3 · Workspace memory tools</td>
+        <td>DOS-479, DOS-480, DOS-171</td>
+        <td>Partially satisfied by v1.4.5 release-gate PRs</td>
+        <td>DOS-480 is satisfied by the merged placement handler path; finish search, provenance, and resources.</td>
+      </tr>
+      <tr>
+        <td>W4 · Controlled feedback and writes</td>
+        <td>DOS-167, DOS-169, DOS-170</td>
+        <td>Open</td>
+        <td>Implement service-backed note, action, and action-status tools with receipts and signals.</td>
+      </tr>
+      <tr>
+        <td>W5 · Evaluation and release gate</td>
+        <td>DOS-481, DOS-482</td>
+        <td>Open</td>
+        <td>Run host-selection and end-to-end Claude Desktop validation against production-shaped data.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="plans-section plans-section-callouts" aria-label="Re-baseline rules">
+  <div class="callout-grid">
+    <article class="callout">
+      <h3 class="callout-title">No runtime bypass</h3>
+      <p class="callout-prose">MCP v2 tools must consume abilities or approved services. Generated JSON, markdown exports, and legacy snapshots are not authority paths.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Catalog is not completion</h3>
+      <p class="callout-prose">A tool may exist in <code>tool_descriptions.yaml</code> before its handler is registered. Linear closure requires live handler, gateway registration, tests, and host-safe output.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Use production only locally</h3>
+      <p class="callout-prose">L4 comparison can use the encrypted local production database, but fixtures and committed artifacts must stay synthetic and source-safe.</p>
+    </article>
+  </div>
+</section>
+
+<section class="plans-section" aria-labelledby="tool-state">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Tool state</p>
+    <h2 id="tool-state" class="plans-section-title">The catalog is ahead of registered behavior.</h2>
+    <p class="plans-section-lede">
+      This table is the working reconciliation target. A tool is not done merely because it has taxonomy copy.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Tool</th>
+        <th>Ticket</th>
+        <th>State</th>
+        <th>Done requires</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>dailyos.read.account_status</code></td>
+        <td>DOS-175 phase A</td>
+        <td>Done enough for prompt comparison</td>
+        <td>Keep runtime projection and subject resolution covered.</td>
+      </tr>
+      <tr>
+        <td><code>dailyos.read.daily_briefing</code></td>
+        <td>DOS-175 phase B + DOS-624</td>
+        <td>Open</td>
+        <td>Registered handler, centralized sensitivity rendering, uniform unavailable behavior where needed.</td>
+      </tr>
+      <tr>
+        <td><code>dailyos.read.meeting_briefing</code></td>
+        <td>DOS-175 phase B + DOS-624</td>
+        <td>Open</td>
+        <td>Registered handler, existence-oracle protection, source-safe meeting evidence.</td>
+      </tr>
+      <tr>
+        <td><code>dailyos.read.portfolio_attention</code></td>
+        <td>DOS-173</td>
+        <td>Open</td>
+        <td>Ability-backed ranking over trust, freshness, open loops, and salience where available.</td>
+      </tr>
+      <tr>
+        <td><code>dailyos.search.workspace_memory</code></td>
+        <td>DOS-479</td>
+        <td>Open or partial</td>
+        <td>Source-aware search through v1.4.5 workspace graph, not arbitrary file search.</td>
+      </tr>
+      <tr>
+        <td><code>dailyos.read.workspace_source_provenance</code></td>
+        <td>DOS-479</td>
+        <td>Open or partial</td>
+        <td>Privacy-rendered source/provenance view with sensitivity policy and no raw path leaks.</td>
+      </tr>
+      <tr>
+        <td><code>dailyos.write.place_document</code></td>
+        <td>DOS-480</td>
+        <td>Done on <code>dev</code></td>
+        <td>Registered handler reaches workspace ingestion, commits a workspace-file claim, and projects into the workspace graph.</td>
+      </tr>
+      <tr>
+        <td><code>dailyos.submit.note</code></td>
+        <td>DOS-167</td>
+        <td>Open</td>
+        <td>Claim/source service receipt, actor attribution, signal emission, correction lifecycle.</td>
+      </tr>
+      <tr>
+        <td><code>dailyos.submit.action</code></td>
+        <td>DOS-169</td>
+        <td>Open</td>
+        <td>Internal action creation through services with receipt and invalidation.</td>
+      </tr>
+      <tr>
+        <td><code>dailyos.submit.action_status</code></td>
+        <td>DOS-170</td>
+        <td>Open</td>
+        <td>Status update through services with receipt and signal propagation.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="plans-section" aria-labelledby="acceptance">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Acceptance</p>
+    <h2 id="acceptance" class="plans-section-title">The release gate is the DailyOS-vs-Glean comparison.</h2>
+    <p class="plans-section-lede">
+      W5 closes only when Claude Desktop can use DailyOS MCP v2 for a real personal-working-context prompt and produce an answer that is at least fact-parity with Glean while adding DailyOS's runtime judgment: trust, freshness, provenance, source caveats, actions, and current local context.
+    </p>
+  </header>
+
+  <ul class="plans-related">
+    <li><strong>Prompt:</strong> executive briefing for an account, including overview, commercial status, current risks and wins, stakeholders/champions, and top priorities.</li>
+    <li><strong>DailyOS must win honestly:</strong> it should not read generated JSON/markdown artifacts, stale snapshots, or raw schema bypasses to beat Glean.</li>
+    <li><strong>Evidence breadth:</strong> local DB evidence, Glean-derived source claims, actions, meetings, transcripts, and workspace sources should flow through runtime-backed sections where available.</li>
+    <li><strong>Caveat behavior:</strong> missing or insufficient evidence must become an explicit section caveat, not confident wrong prose.</li>
+    <li><strong>Host-selection behavior:</strong> Claude Desktop should choose DailyOS for personal working context and avoid DailyOS for broad corpus/web questions.</li>
+  </ul>
+</section>
+
+<section class="plans-section plans-section-footer">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Related</p>
+    <h2 class="plans-section-title">Source material.</h2>
+  </header>
+  <ul class="plans-related">
+    <li><strong><a href="v1.4.7-waves.md">v1.4.7-waves.md</a></strong> Original MCP Server v2 wave plan and issue mapping.</li>
+    <li><strong><a href="abilities-runtime-producer-remediation-waves.html">abilities-runtime-producer-remediation-waves.html</a></strong> Runtime producer remediation detour consumed by v1.4.7.</li>
+    <li><strong><a href="abilities-runtime-producer-audit-2026-05-23.md">abilities-runtime-producer-audit-2026-05-23.md</a></strong> Audit that found the underfed runtime problem.</li>
+    <li><strong><a href="intelligence-generation-contract-waves.html">intelligence-generation-contract-waves.html</a></strong> Adjacent refresh/generation contract plan for Glean and local producers.</li>
+  </ul>
+</section>
+
+<div class="finis">
+  <div class="finis-mark">W0 · W1 · W2 · W3 · W4 · W5</div>
+  <div class="finis-date">v1.4.7 MCP Server v2 · 2026-05-26</div>
+  <div class="finis-caption">The runtime is repaired; the headless surface still needs to ship.</div>
+</div>
+
+</div>
+</main>
+</div>
+</body>
+</html>
