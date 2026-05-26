@@ -14,6 +14,7 @@ fn mcp_comparison_path_rejects_legacy_authority() {
     let comparison_path_files = [
         "src/bridges/mcp.rs",
         "src/services/mcp_v2/handlers/tool_account_status.rs",
+        "src/services/mcp_v2/handlers/tool_placement.rs",
         "src/services/mcp_v2/runtime_projection.rs",
         "src/services/mcp_v2/transport.rs",
     ];

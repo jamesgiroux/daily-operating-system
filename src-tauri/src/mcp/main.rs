@@ -1695,8 +1695,14 @@ async fn run_v2_server() -> anyhow::Result<()> {
 
     let mut gateway = Gateway::new();
     gateway.set_taxonomy(Arc::clone(&catalog));
-    register_v147_handlers(&mut gateway, &catalog, tokio::runtime::Handle::current())
-        .map_err(|e| anyhow::anyhow!("Failed to register MCP v2 handlers: {e}"))?;
+    let signal_engine = Arc::new(dailyos_lib::signals::propagation::default_engine());
+    register_v147_handlers(
+        &mut gateway,
+        &catalog,
+        tokio::runtime::Handle::current(),
+        signal_engine,
+    )
+    .map_err(|e| anyhow::anyhow!("Failed to register MCP v2 handlers: {e}"))?;
 
     let registered_tools: Vec<ScopedName> = gateway.registered_tools().cloned().collect();
     let pending_catalog_tools = gateway

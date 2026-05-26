@@ -53,11 +53,12 @@ status_for_axis() {
         cd "$ROOT_DIR"
         cargo test --manifest-path src-tauri/Cargo.toml --test v146_validation graph_audit_zero_gaps_on_hermetic_fixture_db >/dev/null &&
         cargo test --manifest-path src-tauri/Cargo.toml --test v146_validation explicit_ingestion_to_claim_provenance_covers_entity_seeded_and_inbox_assignment >/dev/null &&
+        cargo test --manifest-path src-tauri/Cargo.toml --test v146_validation mcp_placement_handler_registered_for_headless_path >/dev/null &&
         cargo test --manifest-path src-tauri/Cargo.toml --lib workspace_ingestion::graph::tests >/dev/null
       ); then
-        printf 'blocked\tcargo test --test v146_validation graph_audit_zero_gaps_on_hermetic_fixture_db + explicit_ingestion_to_claim_provenance_covers_entity_seeded_and_inbox_assignment + cargo test --lib workspace_ingestion::graph::tests\tentity-seeded and inbox graph audit evidence passed; blocked until actual MCP placement handler path is complete\n'
+        printf 'blocked\tcargo test --test v146_validation graph_audit_zero_gaps_on_hermetic_fixture_db + explicit_ingestion_to_claim_provenance_covers_entity_seeded_and_inbox_assignment + mcp_placement_handler_registered_for_headless_path + cargo test --lib workspace_ingestion::graph::tests\tentity-seeded and inbox graph audit evidence plus MCP placement handler registration passed; blocked until a successful MCP placement fixture proves the placement-to-claim graph path\n'
       else
-        printf 'fail\tcargo test --test v146_validation graph_audit_zero_gaps_on_hermetic_fixture_db + explicit_ingestion_to_claim_provenance_covers_entity_seeded_and_inbox_assignment + cargo test --lib workspace_ingestion::graph::tests\texplicit ingestion provenance chain or graph audit projection tests failed\n'
+        printf 'fail\tcargo test --test v146_validation graph_audit_zero_gaps_on_hermetic_fixture_db + explicit_ingestion_to_claim_provenance_covers_entity_seeded_and_inbox_assignment + mcp_placement_handler_registered_for_headless_path + cargo test --lib workspace_ingestion::graph::tests\texplicit ingestion provenance chain, MCP placement registration, or graph audit projection tests failed\n'
       fi
       ;;
     trust)
@@ -74,7 +75,14 @@ status_for_axis() {
       fi
       ;;
     contexts)
-      printf 'blocked\tcargo test --test v146_validation context_inclusion_privacy_parity\tblocked because dailyos.write.place_document catalog exists but the MCP v2 handler remains a placeholder\n'
+      if (
+        cd "$ROOT_DIR"
+        cargo test --manifest-path src-tauri/Cargo.toml --test v146_validation mcp_placement_handler_registered_for_headless_path >/dev/null
+      ); then
+        printf 'blocked\tcargo test --test v146_validation mcp_placement_handler_registered_for_headless_path + context_inclusion_privacy_parity\tMCP placement handler registration is real; blocked until full Tauri/MCP context privacy parity is automated\n'
+      else
+        printf 'fail\tcargo test --test v146_validation mcp_placement_handler_registered_for_headless_path\tMCP placement handler registration evidence failed\n'
+      fi
       ;;
     lifecycle)
       printf 'blocked\tcargo test --test v146_validation lifecycle_actions_and_user_correction_round_trip\tblocked because source-management actions currently expose reingest/quarantine/relink only, not ignore/scratchpad or archive/delete\n'

@@ -1034,6 +1034,100 @@ struct McpAbilityMetadataPathRule {
 }
 
 const MCP_ABILITY_METADATA_STRING_ALLOWLIST: &[McpAbilityMetadataPathRule] = &[
+    // workspace_place_document returns opaque receipt metadata. Paths, content,
+    // names, and claim text are intentionally absent from this allowlist.
+    McpAbilityMetadataPathRule {
+        pattern: &["document_handle"],
+        value_class: McpAbilityMetadataValueClass::Identifier,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["documentHandle"],
+        value_class: McpAbilityMetadataValueClass::Identifier,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["source_handle"],
+        value_class: McpAbilityMetadataValueClass::Identifier,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["sourceHandle"],
+        value_class: McpAbilityMetadataValueClass::Identifier,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["entity_type"],
+        value_class: McpAbilityMetadataValueClass::EntityKind,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["entityType"],
+        value_class: McpAbilityMetadataValueClass::EntityKind,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["entity_id"],
+        value_class: McpAbilityMetadataValueClass::Identifier,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["entityId"],
+        value_class: McpAbilityMetadataValueClass::Identifier,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["category"],
+        value_class: McpAbilityMetadataValueClass::MetadataToken,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["workspace_file_kind"],
+        value_class: McpAbilityMetadataValueClass::MetadataToken,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["workspaceFileKind"],
+        value_class: McpAbilityMetadataValueClass::MetadataToken,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["source_asof"],
+        value_class: McpAbilityMetadataValueClass::Timestamp,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["sourceAsof"],
+        value_class: McpAbilityMetadataValueClass::Timestamp,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["lifecycle_state"],
+        value_class: McpAbilityMetadataValueClass::MetadataToken,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["lifecycleState"],
+        value_class: McpAbilityMetadataValueClass::MetadataToken,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["mutation_cursor", "kind"],
+        value_class: McpAbilityMetadataValueClass::MetadataToken,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["mutationCursor", "kind"],
+        value_class: McpAbilityMetadataValueClass::MetadataToken,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["mutation_cursor", "document_handle"],
+        value_class: McpAbilityMetadataValueClass::Identifier,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["mutationCursor", "documentHandle"],
+        value_class: McpAbilityMetadataValueClass::Identifier,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["mutation_cursor", "source_handle"],
+        value_class: McpAbilityMetadataValueClass::Identifier,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["mutationCursor", "sourceHandle"],
+        value_class: McpAbilityMetadataValueClass::Identifier,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["mutation_cursor", "idempotency_id"],
+        value_class: McpAbilityMetadataValueClass::Identifier,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["mutationCursor", "idempotencyId"],
+        value_class: McpAbilityMetadataValueClass::Identifier,
+    },
     // get_entity_context legacy data was a top-level EntityContextEntry array.
     McpAbilityMetadataPathRule {
         pattern: &["*", "id"],
