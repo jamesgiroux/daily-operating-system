@@ -261,6 +261,30 @@ pub fn list_invocable_tool_grants(
     Ok(out)
 }
 
+/// Return the union of scopes granted to invocable manifest rows for
+/// `client_id`. Transport-level MCP resources are not tools, but they still
+/// authorize against the same server-side grant substrate.
+pub fn list_invocable_granted_scopes(
+    conn: &Connection,
+    client_id: &McpClientId,
+) -> Result<Vec<Scope>, AuthError> {
+    let mut stmt = conn.prepare_cached(
+        "SELECT scopes_granted_json FROM mcp_tool_grant \
+         WHERE client_id = ?1 AND exposure = 'Invocable' \
+         ORDER BY tool_name ASC",
+    )?;
+    let rows = stmt.query_map(params![client_id.as_str()], |row| row.get::<_, String>(0))?;
+    let mut out = Vec::new();
+    for row in rows {
+        let scopes_json = row?;
+        let scopes: Vec<Scope> = serde_json::from_str(&scopes_json)?;
+        out.extend(scopes);
+    }
+    out.sort();
+    out.dedup();
+    Ok(out)
+}
+
 /// Ensure the built-in local stdio client exists and has grants for the
 /// handlers this binary registered at boot.
 ///

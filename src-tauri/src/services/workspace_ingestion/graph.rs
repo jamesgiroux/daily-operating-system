@@ -64,6 +64,10 @@ impl WorkspaceGraphDiagnosticKey {
     pub(crate) fn workspace_source_handle(&self, file_id: &str) -> String {
         diagnostic_handle("source", "workspace_file", file_id, self)
     }
+
+    pub(crate) fn mcp_resource_handle(&self, resource_kind: &str, stable_id: &str) -> String {
+        diagnostic_handle("resource", resource_kind, stable_id, self)
+    }
 }
 
 impl fmt::Debug for WorkspaceGraphDiagnosticKey {

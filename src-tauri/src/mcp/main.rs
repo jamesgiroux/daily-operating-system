@@ -32,9 +32,12 @@ use dailyos_lib::embeddings::EmbeddingModel;
 use dailyos_lib::services::mcp_v2::handlers::tool_account_status::present_account_status_response_with_context;
 use dailyos_lib::services::mcp_v2::{
     actor_policy::{ToolGrant, ToolRateLimit},
-    contracts::{McpClientId as V2McpClientId, ScopedName},
+    contracts::{McpClientId as V2McpClientId, Scope, ScopedName},
     gateway::Gateway,
-    handlers::registration::register_v147_handlers,
+    handlers::{
+        registration::register_v147_handlers,
+        tool_resources::{ENTITY_NAMES_SCOPE, ENTITY_RESOURCE_SCOPE},
+    },
     taxonomy::{TaxonomyCatalog, YamlTaxonomyCatalog},
     transport::V2ServerHandler,
 };
@@ -1716,7 +1719,8 @@ async fn run_v2_server() -> anyhow::Result<()> {
     }
 
     let client_id = local_v2_client_id();
-    let grants = local_stdio_grants_for_registered_tools(&registered_tools, catalog.as_ref())?;
+    let mut grants = local_stdio_grants_for_registered_tools(&registered_tools, catalog.as_ref())?;
+    grants.push(local_stdio_resource_grant());
 
     let server = V2ServerHandler::from_local_stdio(Arc::new(gateway), catalog, grants, client_id);
     let service = server.serve(rmcp::transport::io::stdio()).await?;
@@ -1756,6 +1760,21 @@ fn local_stdio_grants_for_registered_tools(
             })
         })
         .collect()
+}
+
+fn local_stdio_resource_grant() -> ToolGrant {
+    ToolGrant {
+        tool_name: ScopedName::new(ENTITY_RESOURCE_SCOPE),
+        scopes_granted: vec![
+            Scope::new(ENTITY_RESOURCE_SCOPE),
+            Scope::new(ENTITY_NAMES_SCOPE),
+        ],
+        exposure: McpExposure::Invocable,
+        rate_limit: ToolRateLimit {
+            max_calls: 600,
+            window_seconds: 60,
+        },
+    }
 }
 
 async fn run_legacy_v1_server() -> anyhow::Result<()> {

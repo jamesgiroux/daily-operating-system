@@ -24,8 +24,9 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use rmcp::model::{
     CallToolRequestParam, CallToolResult, Content, ErrorCode, ErrorData, Implementation,
-    JsonObject, ListToolsResult, PaginatedRequestParam, ProtocolVersion, ServerCapabilities,
-    ServerInfo, Tool,
+    JsonObject, ListResourceTemplatesResult, ListResourcesResult, ListToolsResult,
+    PaginatedRequestParam, ProtocolVersion, ReadResourceRequestParam, ReadResourceResult,
+    ServerCapabilities, ServerInfo, Tool,
 };
 use rmcp::service::RequestContext;
 use rmcp::{RoleServer, ServerHandler};
@@ -34,10 +35,12 @@ use rusqlite::Connection;
 use super::actor_policy::ToolGrant;
 use super::auth;
 use super::contracts::{
-    McpClientId, McpToolRequestEnvelope, McpToolResponseEnvelope, McpToolResult, ScopedName,
+    McpClientId, McpToolRequestEnvelope, McpToolResponseEnvelope, McpToolResult, Scope, ScopedName,
     ToolDescription, ToolError,
 };
 use super::gateway::Gateway;
+use super::handlers::tool_resources;
+use super::handlers::tool_resources::ResourceReadError;
 use super::taxonomy::TaxonomyCatalog;
 
 // ---------------------------------------------------------------------------
@@ -150,7 +153,10 @@ impl ServerHandler for V2ServerHandler {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
             protocol_version: ProtocolVersion::V_2024_11_05,
-            capabilities: ServerCapabilities::builder().enable_tools().build(),
+            capabilities: ServerCapabilities::builder()
+                .enable_tools()
+                .enable_resources()
+                .build(),
             server_info: Implementation {
                 name: "dailyos-mcp-v2".into(),
                 version: env!("CARGO_PKG_VERSION").into(),
@@ -162,6 +168,100 @@ impl ServerHandler for V2ServerHandler {
                     .to_string(),
             ),
         }
+    }
+
+    async fn list_resource_templates(
+        &self,
+        _request: PaginatedRequestParam,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ListResourceTemplatesResult, ErrorData> {
+        Ok(ListResourceTemplatesResult {
+            next_cursor: None,
+            resource_templates: tool_resources::list_resource_templates(),
+        })
+    }
+
+    async fn list_resources(
+        &self,
+        _request: PaginatedRequestParam,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ListResourcesResult, ErrorData> {
+        let scopes = self.granted_scopes_for_resource_access().await?;
+        let resources = if let Some(conn) = self.conn.clone() {
+            tokio::task::spawn_blocking(move || {
+                let conn_guard = conn.lock();
+                let diagnostic_key =
+                    crate::services::workspace_ingestion::graph::local_install_diagnostic_key()
+                        .map_err(ResourceReadError::ReadFailed)?;
+                tool_resources::list_resource_summaries(&conn_guard, &scopes, &diagnostic_key)
+            })
+            .await
+            .map_err(|join_err| {
+                ErrorData::internal_error(
+                    format!("mcp_v2 resource list task join failed: {join_err}"),
+                    None,
+                )
+            })?
+            .map_err(resource_error_to_mcp_error)?
+        } else {
+            tokio::task::spawn_blocking(move || {
+                tool_resources::list_resource_summaries_from_local_db(&scopes)
+            })
+            .await
+            .map_err(|join_err| {
+                ErrorData::internal_error(
+                    format!("mcp_v2 resource list task join failed: {join_err}"),
+                    None,
+                )
+            })?
+            .map_err(resource_error_to_mcp_error)?
+        };
+        Ok(ListResourcesResult {
+            next_cursor: None,
+            resources,
+        })
+    }
+
+    async fn read_resource(
+        &self,
+        request: ReadResourceRequestParam,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ReadResourceResult, ErrorData> {
+        let scopes = self.granted_scopes_for_resource_access().await?;
+        let uri = request.uri;
+        let contents = if let Some(conn) = self.conn.clone() {
+            tokio::task::spawn_blocking(move || {
+                let conn_guard = conn.lock();
+                let diagnostic_key =
+                    crate::services::workspace_ingestion::graph::local_install_diagnostic_key()
+                        .map_err(ResourceReadError::ReadFailed)?;
+                let value =
+                    tool_resources::read_resource(&conn_guard, &uri, &scopes, &diagnostic_key)?;
+                tool_resources::resource_contents(&uri, &value).map(|content| vec![content])
+            })
+            .await
+            .map_err(|join_err| {
+                ErrorData::internal_error(
+                    format!("mcp_v2 resource read task join failed: {join_err}"),
+                    None,
+                )
+            })?
+            .map_err(resource_error_to_mcp_error)?
+        } else {
+            tokio::task::spawn_blocking(move || {
+                let value = tool_resources::read_resource_from_local_db(&uri, &scopes)?;
+                tool_resources::resource_contents(&uri, &value).map(|content| vec![content])
+            })
+            .await
+            .map_err(|join_err| {
+                ErrorData::internal_error(
+                    format!("mcp_v2 resource read task join failed: {join_err}"),
+                    None,
+                )
+            })?
+            .map_err(resource_error_to_mcp_error)?
+        };
+        Ok(ReadResourceResult { contents })
     }
 
     async fn list_tools(
@@ -267,6 +367,41 @@ impl ServerHandler for V2ServerHandler {
     }
 }
 
+impl V2ServerHandler {
+    async fn granted_scopes_for_resource_access(&self) -> Result<Vec<Scope>, ErrorData> {
+        if let Some(conn) = self.conn.clone() {
+            let client_id = self.verified_client_id.clone();
+            tokio::task::spawn_blocking(move || {
+                let conn_guard = conn.lock();
+                auth::list_invocable_granted_scopes(&conn_guard, &client_id)
+            })
+            .await
+            .map_err(|join_err| {
+                ErrorData::internal_error(
+                    format!("mcp_v2 resource grant lookup task join failed: {join_err}"),
+                    None,
+                )
+            })?
+            .map_err(|e| ErrorData::internal_error(format!("mcp_v2 scope lookup: {e}"), None))
+        } else {
+            let mut scopes = self
+                .local_stdio_grants
+                .iter()
+                .filter(|grant| {
+                    matches!(
+                        grant.exposure,
+                        abilities_runtime::abilities::registry::McpExposure::Invocable
+                    )
+                })
+                .flat_map(|grant| grant.scopes_granted.clone())
+                .collect::<Vec<_>>();
+            scopes.sort();
+            scopes.dedup();
+            Ok(scopes)
+        }
+    }
+}
+
 /// Translate the gateway's response envelope into an rmcp result.
 fn unwrap_response(env: McpToolResponseEnvelope) -> Result<CallToolResult, ErrorData> {
     match env.result {
@@ -355,10 +490,43 @@ fn tool_error_to_mcp_error(err: ToolError) -> ErrorData {
     }
 }
 
+fn resource_error_to_mcp_error(err: ResourceReadError) -> ErrorData {
+    use serde_json::json;
+    match err {
+        ResourceReadError::Unauthorized => ErrorData::invalid_request(
+            "resource requires scope your pairing lacks".to_string(),
+            Some(json!({
+                "kind": "unauthorized",
+                "missing_scope": tool_resources::ENTITY_RESOURCE_SCOPE,
+            })),
+        ),
+        ResourceReadError::BadUri(_) => ErrorData::invalid_params(
+            "resource uri is malformed".to_string(),
+            Some(json!({
+                "kind": "bad_params",
+                "detail_logged_server_side": true,
+            })),
+        ),
+        ResourceReadError::NotFound => ErrorData::new(
+            ErrorCode::METHOD_NOT_FOUND,
+            "requested resource not found".to_string(),
+            Some(json!({ "kind": "not_found" })),
+        ),
+        ResourceReadError::ReadFailed(_) => ErrorData::internal_error(
+            "resource read failed".to_string(),
+            Some(json!({
+                "kind": "upstream_failure",
+                "detail_logged_server_side": true,
+            })),
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::services::mcp_v2::contracts::{ParamSchema, ParamSpec, ReturnSpec, Scope, Side};
+    use crate::services::mcp_v2::taxonomy::YamlTaxonomyCatalog;
 
     fn fake_desc(name: &str) -> ToolDescription {
         ToolDescription {
@@ -444,6 +612,36 @@ mod tests {
                 ScopedName::new("dailyos.read.portfolio_attention"),
                 ScopedName::new("dailyos.search.workspace_memory"),
                 ScopedName::new("dailyos.read.workspace_source_provenance"),
+            ]
+        );
+    }
+
+    #[test]
+    fn server_capabilities_include_resources() {
+        let handler = V2ServerHandler::from_local_stdio(
+            Arc::new(Gateway::new()),
+            Arc::new(YamlTaxonomyCatalog::load_embedded().expect("catalog")),
+            Vec::new(),
+            McpClientId::new("test-client"),
+        );
+        let info = handler.get_info();
+        assert!(info.capabilities.tools.is_some());
+        assert!(info.capabilities.resources.is_some());
+    }
+
+    #[test]
+    fn list_resource_templates_returns_dailyos_templates() {
+        let resource_templates = tool_resources::list_resource_templates();
+        let templates = resource_templates
+            .iter()
+            .map(|template| template.uri_template.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            templates,
+            vec![
+                "dailyos://account/{handle}",
+                "dailyos://person/{handle}",
+                "dailyos://source/{handle}",
             ]
         );
     }
