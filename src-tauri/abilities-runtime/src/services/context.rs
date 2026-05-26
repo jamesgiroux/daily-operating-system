@@ -1636,6 +1636,22 @@ pub struct DailyReadinessCoverageWarningSnapshot {
 pub type DailyReadinessContextReadFuture<'a> =
     Pin<Box<dyn Future<Output = Result<DailyReadinessContextSnapshot, String>> + Send + 'a>>;
 
+/// Caller-declared surface intent for meetings projection. The trust contract
+/// is "ask for the shape you'll render, get rows already pruned of types that
+/// don't belong on that surface." Producers don't post-filter; consumers don't
+/// see personal blocks leak into briefing advisories (DOS-771).
+///
+/// `Briefing` and `Schedule` share exclusions today (personal). They're
+/// distinct enum variants so a future divergence (e.g., Schedule keeping
+/// personal blocks for time-blocking awareness) lands as a behavior change,
+/// not a new parameter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MeetingsViewIntent {
+    Briefing,
+    Schedule,
+    AllRows,
+}
+
 /// Narrow read handle for daily-readiness seed assembly. Ability code receives
 /// only this workspace-scoped snapshot, never raw DB or app-state handles.
 pub trait DailyReadinessContextReadHandle: Send + Sync {
@@ -1643,6 +1659,7 @@ pub trait DailyReadinessContextReadHandle: Send + Sync {
         &'a self,
         workspace_scope: String,
         date: String,
+        intent: MeetingsViewIntent,
     ) -> DailyReadinessContextReadFuture<'a>;
 }
 
@@ -2321,10 +2338,11 @@ impl<'a> ServiceContext<'a> {
         &self,
         workspace_scope: String,
         date: String,
+        intent: MeetingsViewIntent,
     ) -> Result<DailyReadinessContextSnapshot, String> {
         if let Some(reader) = &self.daily_readiness_context_reader {
             return reader
-                .read_daily_readiness_context(workspace_scope, date)
+                .read_daily_readiness_context(workspace_scope, date, intent)
                 .await;
         }
 

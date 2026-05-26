@@ -66,7 +66,11 @@ pub async fn build_daily_briefing(
     let date_str = input.date.format("%Y-%m-%d").to_string();
     let readiness = match ctx
         .services()
-        .read_daily_readiness_context(workspace_id.to_string(), date_str.clone())
+        .read_daily_readiness_context(
+            workspace_id.to_string(),
+            date_str.clone(),
+            crate::services::context::MeetingsViewIntent::Briefing,
+        )
         .await
     {
         Ok(snapshot) => snapshot,
@@ -954,7 +958,8 @@ mod state_matrix_fixtures {
     use crate::services::context::{
         ClaimDismissalSurface, DailyReadinessContextReadFuture, DailyReadinessContextReadHandle,
         EntityContextClaimReadFuture, EntityContextClaimReadHandle, ExternalClients, FixedClock,
-        MeetingPrepStatusReadFuture, MeetingPrepStatusReadHandle, SeedableRng, ServiceContext,
+        MeetingPrepStatusReadFuture, MeetingPrepStatusReadHandle, MeetingsViewIntent, SeedableRng,
+        ServiceContext,
     };
     use crate::types::IntelligenceClaim;
     use chrono::TimeZone;
@@ -969,6 +974,7 @@ mod state_matrix_fixtures {
             &'a self,
             _workspace_scope: String,
             _date: String,
+            _intent: MeetingsViewIntent,
         ) -> DailyReadinessContextReadFuture<'a> {
             let snapshot = self.snapshot.clone();
             Box::pin(async move { Ok(snapshot) })

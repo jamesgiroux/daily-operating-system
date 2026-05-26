@@ -1022,7 +1022,11 @@ impl DailyReadinessContext {
     ) -> Result<Self, AbilityError> {
         let snapshot = ctx
             .services()
-            .read_daily_readiness_context(workspace_id.to_string(), date.to_string())
+            .read_daily_readiness_context(
+                workspace_id.to_string(),
+                date.to_string(),
+                crate::services::context::MeetingsViewIntent::Briefing,
+            )
             .await
             .map_err(|error| AbilityError {
                 kind: AbilityErrorKind::HardError("daily_readiness_context_read".into()),
