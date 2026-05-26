@@ -30,7 +30,7 @@ final class DailyOS_SuggestedNextStepsBlockTest extends TestCase {
 	}
 
 	/**
-	 * block.json declares the W3-A metadata contract.
+	 * Block.json declares the W3-A metadata contract.
 	 */
 	public function test_block_json_declares_contract(): void {
 		$block_json = json_decode(
@@ -102,7 +102,7 @@ final class DailyOS_SuggestedNextStepsBlockTest extends TestCase {
 		$this->assertArrayNotHasKey( 'schema_version', $client->requests[0]['payload'] );
 		$this->assertArrayNotHasKey( 'max_items', $client->requests[0]['payload'] );
 		$this->assertSame( [ 'read.recommendations' ], $client->requests[0]['scope_set'] );
-		$this->assertStringContainsString( "What's next with Acme Corp", $html );
+		$this->assertStringContainsString( 'What&#039;s next with Acme Corp', $html );
 	}
 
 	/**
@@ -149,15 +149,15 @@ final class DailyOS_SuggestedNextStepsBlockTest extends TestCase {
 	 */
 	public static function surface_provider(): array {
 		return [
-			'account' => [ 'account', 'acct-1', 'Acme Corp', 'entity-detail_marginLabelSection', "What's next with Acme Corp" ],
-			'project' => [ 'project', 'proj-1', 'Platform Unification', 'entity-detail_chapterSection', "What's next on Platform Unification" ],
+			'account' => [ 'account', 'acct-1', 'Acme Corp', 'entity-detail_marginLabelSection', 'What&#039;s next with Acme Corp' ],
+			'project' => [ 'project', 'proj-1', 'Platform Unification', 'entity-detail_chapterSection', 'What&#039;s next on Platform Unification' ],
 			'person'  => [ 'person', 'person-1', 'Jen Park', 'entity-detail_chapterSectionWithPadding', 'Open threads with Jen Park' ],
 			'meeting' => [ 'meeting', 'meeting-1', 'Renewal Review', 'meeting-intel_chapterSection', 'What to cover' ],
 		];
 	}
 
 	/**
-	 * headingLabel overrides the surface default.
+	 * HeadingLabel overrides the surface default.
 	 */
 	public function test_heading_label_override_wins(): void {
 		$client = $this->fake_runtime_client(
@@ -289,7 +289,12 @@ final class DailyOS_SuggestedNextStepsBlockTest extends TestCase {
 		$this->assertStringContainsString( 'data-empty-reason="envelope_error"', $html );
 
 		$this->setUp();
-		$client = $this->fake_runtime_client( [ 'ok' => true, 'items' => [] ] );
+		$client = $this->fake_runtime_client(
+			[
+				'ok'    => true,
+				'items' => [],
+			]
+		);
 		$this->register_runtime_client_filter( $client );
 		$html = dailyos_suggested_next_steps_render( [], $this->block_context( 'person', 'person-1' ) );
 		$this->assertStringContainsString( 'data-empty-reason="no_recommendations"', $html );
@@ -424,17 +429,17 @@ final class DailyOS_SuggestedNextStepsBlockTest extends TestCase {
 	 */
 	private function item( string $claim_id, string $band = 'likely_current' ): array {
 		return [
-			'claimId'                   => $claim_id,
-			'headline'                  => 'Send the H1 expansion follow-up',
-			'whyThisNowSurfaceText'     => 'Open loop since the last review.',
-			'factorBand'                => 'openLoopRelated',
-			'recommendedAction'         => [
+			'claimId'               => $claim_id,
+			'headline'              => 'Send the H1 expansion follow-up',
+			'whyThisNowSurfaceText' => 'Open loop since the last review.',
+			'factorBand'            => 'openLoopRelated',
+			'recommendedAction'     => [
 				'kind'        => 'sendMessage',
 				'entityLabel' => 'Jen Park',
 				'channel'     => 'email',
 			],
-			'trustBand'                 => $band,
-			'receipt'                   => [
+			'trustBand'             => $band,
+			'receipt'               => [
 				'trust'      => [
 					'band' => $band,
 				],
@@ -442,8 +447,8 @@ final class DailyOS_SuggestedNextStepsBlockTest extends TestCase {
 					'sources' => [],
 				],
 			],
-			'feedbackState'             => 'pending',
-			'conversionState'           => [
+			'feedbackState'         => 'pending',
+			'conversionState'       => [
 				'kind' => 'notConverted',
 			],
 		];

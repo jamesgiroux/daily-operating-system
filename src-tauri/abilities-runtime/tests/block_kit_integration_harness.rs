@@ -607,6 +607,8 @@ mod score_band_integration_fixture;
 mod source_management_integration_fixture;
 #[path = "fixtures/status_dot_integration_fixture.rs"]
 mod status_dot_integration_fixture;
+#[path = "fixtures/suggested_next_steps_integration_fixture.rs"]
+mod suggested_next_steps_integration_fixture;
 #[path = "fixtures/the_work_integration_fixture.rs"]
 mod the_work_integration_fixture;
 #[path = "fixtures/touchpoints_feed_integration_fixture.rs"]
@@ -677,6 +679,7 @@ fn expected_block_fixtures_cover_requested_ci_block() {
         projects_index_integration_fixture::projects_index_fixture(),
         recommended_actions_integration_fixture::recommended_actions_fixture(),
         source_management_integration_fixture::source_management_fixture(),
+        suggested_next_steps_integration_fixture::suggested_next_steps_fixture(),
         the_work_integration_fixture::the_work_fixture(),
         touchpoints_feed_integration_fixture::touchpoints_feed_fixture(),
         trend_strip_integration_fixture::trend_strip_fixture(),

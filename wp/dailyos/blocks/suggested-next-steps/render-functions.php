@@ -244,9 +244,9 @@ if ( ! function_exists( 'dailyos_suggested_next_steps_heading' ) ) {
 	 * Resolve heading text from override or surface defaults.
 	 *
 	 * @param array{type: string, id: string, label: string} $subject    Subject.
-	 * @param array<string, mixed>                          $attributes Block attributes.
-	 * @param array<string, mixed>|null                     $response   Runtime response.
-	 * @param array<int, mixed>                             $items      Items.
+	 * @param array<string, mixed>                           $attributes Block attributes.
+	 * @param array<string, mixed>|null                      $response   Runtime response.
+	 * @param array<int, mixed>                              $items      Items.
 	 * @return string
 	 */
 	function dailyos_suggested_next_steps_heading( array $subject, array $attributes, ?array $response, array $items ): string {
@@ -288,8 +288,8 @@ if ( ! function_exists( 'dailyos_suggested_next_steps_subject_label' ) ) {
 	 * Resolve a redacted display label when present in context or response.
 	 *
 	 * @param array{type: string, id: string, label: string} $subject  Subject.
-	 * @param array<string, mixed>|null                     $response Runtime response.
-	 * @param array<int, mixed>                             $items    Items.
+	 * @param array<string, mixed>|null                      $response Runtime response.
+	 * @param array<int, mixed>                              $items    Items.
 	 * @return string
 	 */
 	function dailyos_suggested_next_steps_subject_label( array $subject, ?array $response, array $items ): string {
@@ -377,9 +377,9 @@ if ( ! function_exists( 'dailyos_suggested_next_steps_render_empty_shell' ) ) {
 	 * Render a visible empty-state chip.
 	 *
 	 * @param array{type: string, id: string, label: string}|null $subject Subject.
-	 * @param string                                             $heading Heading.
-	 * @param string                                             $reason  Empty reason.
-	 * @param string                                             $copy    Empty copy.
+	 * @param string                                              $heading Heading.
+	 * @param string                                              $reason  Empty reason.
+	 * @param string                                              $copy    Empty copy.
 	 * @return string
 	 */
 	function dailyos_suggested_next_steps_render_empty_shell( ?array $subject, string $heading, string $reason, string $copy ): string {
@@ -393,10 +393,10 @@ if ( ! function_exists( 'dailyos_suggested_next_steps_render_shell' ) ) {
 	 * Render the reference shell for the current surface.
 	 *
 	 * @param array{type: string, id: string, label: string}|null $subject  Subject.
-	 * @param string                                             $heading  Heading.
-	 * @param string                                             $body     Inner HTML.
-	 * @param int                                                $count    Item count.
-	 * @param bool                                               $is_empty Empty state.
+	 * @param string                                              $heading  Heading.
+	 * @param string                                              $body     Inner HTML.
+	 * @param int                                                 $count    Item count.
+	 * @param bool                                                $is_empty Empty state.
 	 * @return string
 	 */
 	function dailyos_suggested_next_steps_render_shell( ?array $subject, string $heading, string $body, int $count, bool $is_empty ): string {
@@ -666,7 +666,7 @@ if ( ! function_exists( 'dailyos_suggested_next_steps_render_trust_band_indicato
 	 * @return string
 	 */
 	function dailyos_suggested_next_steps_render_trust_band_indicator( string $band ): string {
-		$labels = [
+		$labels  = [
 			'likely_current'     => __( 'Likely current', 'dailyos' ),
 			'use_with_caution'   => __( 'Use with caution', 'dailyos' ),
 			'needs_verification' => __( 'Needs verification', 'dailyos' ),
