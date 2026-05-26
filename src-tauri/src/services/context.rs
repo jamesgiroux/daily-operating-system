@@ -794,10 +794,21 @@ impl DailyReadinessContextReadHandle for LiveDailyReadinessContextReader {
         workspace_scope: String,
         date: String,
     ) -> DailyReadinessContextReadFuture<'a> {
+        // Resolve the user's local-day boundaries in their configured TZ. Without
+        // this the SQL query below would naively compare UTC-stored start_time
+        // against bare date strings, so meetings between local-midnight and
+        // UTC-midnight (e.g. an evening call on PDT yesterday stored as today
+        // UTC) would leak into "today" and cross-day meetings on the user's
+        // actual today would silently drop. Defaults match `dashboard.rs`.
+        let tz: chrono_tz::Tz = crate::state::load_config()
+            .ok()
+            .map(|c| c.schedules.today.timezone)
+            .and_then(|t| t.parse().ok())
+            .unwrap_or(chrono_tz::America::New_York);
         Box::pin(async move {
             tokio::task::spawn_blocking(move || {
                 let db = open_action_db()?;
-                project_daily_readiness_context_snapshot(&db, &workspace_scope, &date)
+                project_daily_readiness_context_snapshot(&db, &workspace_scope, &date, &tz)
             })
             .await
             .map_err(|error| format!("daily readiness context read task failed: {error}"))?
@@ -809,25 +820,52 @@ fn project_daily_readiness_context_snapshot(
     db: &crate::db::ActionDb,
     workspace_scope: &str,
     date: &str,
+    tz: &chrono_tz::Tz,
 ) -> Result<DailyReadinessContextSnapshot, String> {
+    use chrono::TimeZone;
     let parsed_date = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
         .map_err(|error| format!("invalid daily readiness date `{date}`: {error}"))?;
     let next_date = parsed_date
         .checked_add_days(chrono::Days::new(1))
         .ok_or_else(|| format!("invalid next-day range for daily readiness date `{date}`"))?;
-    let start = parsed_date.format("%Y-%m-%d").to_string();
-    let end = next_date.format("%Y-%m-%d").to_string();
+    // Resolve local-day boundaries to UTC RFC3339 so the SQL matches the
+    // poller's storage format. `earliest()` handles DST spring-forward gaps;
+    // fallback to a naive UTC boundary keeps the query well-formed if TZ
+    // resolution fails entirely.
+    let day_start_local = parsed_date
+        .and_hms_opt(0, 0, 0)
+        .ok_or_else(|| format!("invalid local-day start for date `{date}`"))?;
+    let day_end_local = next_date
+        .and_hms_opt(0, 0, 0)
+        .ok_or_else(|| format!("invalid local-day end for date `{date}`"))?;
+    let utc_start = tz
+        .from_local_datetime(&day_start_local)
+        .earliest()
+        .map(|dt| dt.with_timezone(&chrono::Utc).to_rfc3339())
+        .unwrap_or_else(|| format!("{parsed_date}T00:00:00+00:00"));
+    let utc_end = tz
+        .from_local_datetime(&day_end_local)
+        .earliest()
+        .map(|dt| dt.with_timezone(&chrono::Utc).to_rfc3339())
+        .unwrap_or_else(|| format!("{next_date}T00:00:00+00:00"));
+    // LEFT JOIN meeting_transcripts to exclude meetings the calendar poller has
+    // archived (= the user cancelled them in their actual calendar). Without
+    // this, ghost meetings persist in the briefing's "needs prep" / "unlinked"
+    // counts even though `calendar_merge` correctly drops them from the focus
+    // capacity view. Mirrors the predicate used by `record_cancelled_calendar_meetings`.
     let conn = db.conn_ref();
     let mut stmt = conn
         .prepare(
-            "SELECT id, title, start_time, end_time
-             FROM meetings
-             WHERE start_time >= ?1 AND start_time < ?2
-             ORDER BY start_time ASC",
+            "SELECT m.id, m.title, m.start_time, m.end_time
+             FROM meetings m
+             LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
+             WHERE m.start_time >= ?1 AND m.start_time < ?2
+             AND (mt.intelligence_state IS NULL OR mt.intelligence_state != 'archived')
+             ORDER BY m.start_time ASC",
         )
         .map_err(|error| error.to_string())?;
     let rows = stmt
-        .query_map(rusqlite::params![start, end], |row| {
+        .query_map(rusqlite::params![utc_start, utc_end], |row| {
             Ok(DailyReadinessMeetingSnapshot {
                 id: row.get(0)?,
                 title: row.get(1)?,
@@ -1038,8 +1076,10 @@ mod tests {
             .execute_batch("DROP VIEW IF EXISTS linked_entities;")
             .expect("drop linked_entities view");
 
-        let snapshot = project_daily_readiness_context_snapshot(&db, "local", "2026-05-23")
-            .expect("read daily readiness context");
+        let tz: chrono_tz::Tz = "UTC".parse().expect("parse UTC tz");
+        let snapshot =
+            project_daily_readiness_context_snapshot(&db, "local", "2026-05-23", &tz)
+                .expect("read daily readiness context");
 
         assert_eq!(snapshot.meetings.len(), 1);
         assert!(snapshot.tracked_subjects.is_empty());

@@ -805,7 +805,7 @@ fn finalize_with_provenance(
     schema_version: u32,
 ) -> AbilityResult<DailyBriefingOutput> {
     let mut builder = ProvenanceBuilder::new(provenance_config(ctx, schema_version));
-    let subject_attr = SubjectAttribution::direct_confident(SubjectRef::Unknown);
+    let subject_attr = SubjectAttribution::direct_confident(SubjectRef::Global);
     builder.set_subject(subject_attr.clone());
     builder
         .attribute_subtree(

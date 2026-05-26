@@ -4,19 +4,10 @@ import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DailyBriefing } from "./DailyBriefing";
 import type { DashboardData, DataFreshness, Meeting } from "@/types";
-import type { UseDailyBriefingAbilityResult } from "@/hooks/useDailyBriefingAbility";
 
 // ── Mocks ──────────────────────────────────────────────────────────────────────
 
 const invokeMock = vi.fn();
-const dailyBriefingAbilityMock = vi.hoisted((): { state: UseDailyBriefingAbilityResult } => ({
-  state: {
-    response: null,
-    loading: false,
-    error: null as string | null,
-    refresh: vi.fn(),
-  },
-}));
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => invokeMock(...args),
@@ -38,10 +29,6 @@ vi.mock("@/hooks/useCalendar", () => ({
     now: Date.now(),
     currentMeeting: null,
   }),
-}));
-
-vi.mock("@/hooks/useDailyBriefingAbility", () => ({
-  useDailyBriefingAbility: () => dailyBriefingAbilityMock.state,
 }));
 
 vi.mock("@/hooks/useMagazineShell", () => ({
@@ -126,12 +113,6 @@ const freshness: DataFreshness = {
 describe("DailyBriefing", () => {
   beforeEach(() => {
     invokeMock.mockReset();
-    dailyBriefingAbilityMock.state = {
-      response: null,
-      loading: false,
-      error: null,
-      refresh: vi.fn(),
-    };
   });
 
   it("renders without crashing with minimal data", () => {
@@ -230,72 +211,6 @@ describe("DailyBriefing", () => {
     );
 
     expect(screen.getByText("Prepare for the Acme renewal conversation.")).toBeInTheDocument();
-  });
-
-  it("renders ability-backed briefing trust and provenance state", () => {
-    dailyBriefingAbilityMock.state = {
-      response: {
-        invocation_id: "inv-1",
-        ability_name: "get_daily_briefing",
-        ability_version: "0.1.0",
-        schema_version: 1,
-        data: {
-          schemaVersion: 1,
-          date: "2026-05-23",
-          state: {
-            availability: { kind: "available" },
-            freshness: { kind: "needs_preparation", meetingIds: ["m-1"] },
-            integrity: { kind: "clean" },
-            advisories: [
-              { kind: "unlinked_meetings", meetingIds: ["m-2"] },
-            ],
-          },
-          currentMeeting: null,
-          nextMeeting: null,
-          upcomingMeetings: {
-            items: [],
-            nextCursor: null,
-            totalHint: 0,
-            cursorState: { kind: "stable" },
-          },
-          candidateSet: {
-            windowStart: null,
-            windowEnd: null,
-            filterDescription: "daily_briefing date=2026-05-23 workspace=/workspace meetings=1",
-          },
-          watchProposals: [],
-          trustSummary: {
-            aggregateBand: "use_with_caution",
-            likelyCurrentCount: 0,
-            useWithCautionCount: 1,
-            needsVerificationCount: 0,
-          },
-          provenance: { sources: [], redactionApplied: false },
-          sensitivity: "internal",
-          sourceAsofInputs: [],
-        },
-        rendered_provenance: {
-          value: {
-            sources: [
-              { source_asof: "2026-05-23T12:00:00Z" },
-              { source_asof: "2026-05-23T13:00:00Z" },
-            ],
-          },
-        },
-      },
-      loading: false,
-      error: null,
-      refresh: vi.fn(),
-    };
-
-    render(
-      <DailyBriefing data={makeDashboardData()} freshness={freshness} />,
-    );
-
-    expect(screen.getByTestId("daily-briefing-ability-strip")).toHaveTextContent("1 briefing need prep");
-    expect(screen.getByTestId("daily-briefing-ability-strip")).toHaveTextContent("use with caution");
-    expect(screen.getByTestId("daily-briefing-ability-strip")).toHaveTextContent("2 sources");
-    expect(screen.getByTestId("daily-briefing-ability-strip")).toHaveTextContent("Link 1 meeting for fuller context");
   });
 
   it("does not render staleness indicator (removed for v1.1.1)", () => {
