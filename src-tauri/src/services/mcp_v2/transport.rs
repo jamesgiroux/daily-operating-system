@@ -589,6 +589,7 @@ mod tests {
             ScopedName::new("dailyos.read.portfolio_attention"),
             ScopedName::new("dailyos.search.workspace_memory"),
             ScopedName::new("dailyos.read.workspace_source_provenance"),
+            ScopedName::new("dailyos.submit.action"),
         ];
         let registered_tools = [
             ScopedName::new("dailyos.read.account_status"),
@@ -597,6 +598,7 @@ mod tests {
             ScopedName::new("dailyos.read.portfolio_attention"),
             ScopedName::new("dailyos.search.workspace_memory"),
             ScopedName::new("dailyos.read.workspace_source_provenance"),
+            ScopedName::new("dailyos.submit.action"),
         ]
         .into_iter()
         .collect::<BTreeSet<_>>();
@@ -612,6 +614,7 @@ mod tests {
                 ScopedName::new("dailyos.read.portfolio_attention"),
                 ScopedName::new("dailyos.search.workspace_memory"),
                 ScopedName::new("dailyos.read.workspace_source_provenance"),
+                ScopedName::new("dailyos.submit.action"),
             ]
         );
     }

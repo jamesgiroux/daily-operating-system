@@ -102,6 +102,41 @@ fn sync_action_claim_after_mutation(
     }
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActionMutationCursor {
+    pub action_id: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActionCreationReceipt {
+    pub action_id: String,
+    pub mutation_cursor: ActionMutationCursor,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ActionCreationAttribution {
+    source_type: &'static str,
+    signal_source: &'static str,
+}
+
+impl ActionCreationAttribution {
+    pub const fn user_manual() -> Self {
+        Self {
+            source_type: "user_manual",
+            signal_source: "user_action",
+        }
+    }
+
+    pub const fn mcp_submit_action() -> Self {
+        Self {
+            source_type: "mcp_submit_action",
+            signal_source: "mcp_submit_action",
+        }
+    }
+}
+
 /// Complete an action and emit the completion signal.
 pub fn complete_action(
     ctx: &ServiceContext<'_>,
@@ -451,12 +486,14 @@ pub async fn get_all_actions(state: &AppState) -> ActionsResult {
     }
 }
 
-/// Create a new action with validation and signal emission.
-pub async fn create_action(
+/// Create a new action with validation, claim sync, and signal emission.
+pub fn create_action_in_db(
     ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    engine: &crate::signals::propagation::PropagationEngine,
     request: CreateActionRequest,
-    state: &Arc<AppState>,
-) -> Result<String, String> {
+    attribution: ActionCreationAttribution,
+) -> Result<ActionCreationReceipt, String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let CreateActionRequest {
         title,
@@ -517,7 +554,7 @@ pub async fn create_action(
         completed_at: None,
         account_id,
         project_id,
-        source_type: Some("user_manual".to_string()),
+        source_type: Some(attribution.source_type.to_string()),
         source_id: None,
         source_label,
         action_kind,
@@ -543,49 +580,65 @@ pub async fn create_action(
         linear_url: None,
     };
 
+    db.upsert_action(&action).map_err(|e| e.to_string())?;
+    sync_action_claim_after_mutation(ctx, db, &action.id, "create");
+
+    let (entity_type, entity_id) = action_entity_info(&action, &action.id);
+    emit_action_signal(
+        ctx,
+        db,
+        engine,
+        entity_type,
+        &entity_id,
+        "action_created_manually",
+        attribution.signal_source,
+        Some(&format!(
+            "{{\"action_id\":\"{}\",\"title\":\"{}\"}}",
+            action.id,
+            action.title.replace('"', "\\\"")
+        )),
+        1.0,
+    );
+
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
+    let _ = db.scan_and_flag_decisions();
+
+    if let Some(ref acct_id) = action.account_id {
+        if let Err(e) = auto_link_action_to_objectives(ctx, db, &action.id, &action.title, acct_id)
+        {
+            log::warn!("Auto-link action to objectives failed (non-fatal): {}", e);
+        }
+    }
+
+    Ok(ActionCreationReceipt {
+        action_id: id.clone(),
+        mutation_cursor: ActionMutationCursor { action_id: id },
+    })
+}
+
+/// Create a new action with validation and signal emission.
+pub async fn create_action(
+    ctx: &ServiceContext<'_>,
+    request: CreateActionRequest,
+    state: &Arc<AppState>,
+) -> Result<String, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let engine = state.signals.engine.clone();
     let state_for_ctx = state.clone();
     state
         .db_write(move |db| {
             let ctx = state_for_ctx.live_service_context();
-            db.upsert_action(&action).map_err(|e| e.to_string())?;
-            sync_action_claim_after_mutation(&ctx, db, &action.id, "create");
-
-            // Emit signal for manually created actions
-            let (entity_type, entity_id) = action_entity_info(&action, &action.id);
-            emit_action_signal(
+            let receipt = create_action_in_db(
                 &ctx,
                 db,
                 &engine,
-                entity_type,
-                &entity_id,
-                "action_created_manually",
-                "user_action",
-                Some(&format!(
-                    "{{\"action_id\":\"{}\",\"title\":\"{}\"}}",
-                    action.id,
-                    action.title.replace('"', "\\\"")
-                )),
-                1.0,
-            );
-
-            // Scan for decision-indicating keywords after creation
-            #[allow(
-                clippy::let_underscore_must_use,
-                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-            )]
-            let _ = db.scan_and_flag_decisions();
-
-            // Best-effort auto-link to matching objectives
-            if let Some(ref acct_id) = action.account_id {
-                if let Err(e) =
-                    auto_link_action_to_objectives(&ctx, db, &action.id, &action.title, acct_id)
-                {
-                    log::warn!("Auto-link action to objectives failed (non-fatal): {}", e);
-                }
-            }
-
-            Ok(id)
+                request,
+                ActionCreationAttribution::user_manual(),
+            )?;
+            Ok(receipt.action_id)
         })
         .await
         .map_err(String::from)
@@ -1001,6 +1054,7 @@ mod tests {
     use super::*;
     use crate::db::test_utils::test_db;
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
+    use crate::signals::propagation::default_engine;
     use chrono::TimeZone;
 
     macro_rules! make_ctx {
@@ -1069,6 +1123,57 @@ mod tests {
             clear_person: None,
             priority: None,
         }
+    }
+
+    #[test]
+    fn create_action_in_db_returns_receipt_and_preserves_mcp_attribution() {
+        let db = test_db();
+        make_ctx!(ctx);
+        db.conn_ref()
+            .execute(
+                "INSERT INTO accounts (id, name, updated_at)
+                 VALUES ('acct-1', 'Example Account', '2026-01-01')",
+                [],
+            )
+            .unwrap();
+        let engine = default_engine();
+
+        let receipt = create_action_in_db(
+            &ctx,
+            &db,
+            &engine,
+            CreateActionRequest {
+                title: "Follow up".to_string(),
+                priority: Some("2".to_string()),
+                due_date: Some("2026-05-30".to_string()),
+                account_id: Some("acct-1".to_string()),
+                project_id: None,
+                person_id: None,
+                context: None,
+                source_label: Some("MCP conversation".to_string()),
+                action_kind: Some(crate::action_status::KIND_TASK.to_string()),
+            },
+            ActionCreationAttribution::mcp_submit_action(),
+        )
+        .expect("create action");
+
+        assert_eq!(receipt.mutation_cursor.action_id, receipt.action_id);
+        let (source_type, source_label, account_id): (
+            Option<String>,
+            Option<String>,
+            Option<String>,
+        ) = db
+            .conn_ref()
+            .query_row(
+                "SELECT source_type, source_label, account_id
+                     FROM actions WHERE id = ?1",
+                [&receipt.action_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(source_type.as_deref(), Some("mcp_submit_action"));
+        assert_eq!(source_label.as_deref(), Some("MCP conversation"));
+        assert_eq!(account_id.as_deref(), Some("acct-1"));
     }
 
     fn owner_state(

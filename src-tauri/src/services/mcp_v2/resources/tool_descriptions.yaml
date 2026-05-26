@@ -820,37 +820,68 @@
   {
     "name": "dailyos.submit.action",
     "side": "SubmitCorrection",
-    "summary": "Submits a structured action item.",
-    "when_to_call": "When the user wants to capture a task or follow-up.",
-    "when_NOT_to_call": "Do NOT call for free-form notes.",
+    "summary": "Submits a structured, entity-linked action item through DailyOS services.",
+    "when_to_call": "When the user wants to capture a task or follow-up for a specific DailyOS account, project, or person.",
+    "when_NOT_to_call": "Do NOT call for free-form notes, external task systems, or actions that cannot be linked to a DailyOS entity.",
     "scopesRequired": [
       "dailyos.submit.action"
     ],
     "parameters": [
       {
-        "name": "description",
+        "name": "entity_type",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "account",
+            "project",
+            "person"
+          ]
+        },
+        "required": true,
+        "description": "DailyOS entity type the action belongs to."
+      },
+      {
+        "name": "entity_id",
         "schema": {
           "type": "string"
         },
         "required": true,
-        "description": "Action description"
+        "description": "DailyOS entity id for the account, project, or person."
       },
       {
-        "name": "due_at",
+        "name": "title",
+        "schema": {
+          "type": "string"
+        },
+        "required": true,
+        "description": "Action title."
+      },
+      {
+        "name": "due_date",
         "schema": {
           "type": "string",
-          "format": "date-time"
+          "format": "date"
         },
         "required": false,
-        "description": "Optional due time"
+        "description": "Optional due date in YYYY-MM-DD form."
       },
       {
-        "name": "subject",
+        "name": "priority",
+        "schema": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4
+        },
+        "required": false,
+        "description": "Optional DailyOS priority integer, 0-4."
+      },
+      {
+        "name": "source_attribution",
         "schema": {
           "type": "string"
         },
         "required": false,
-        "description": "Optional subject"
+        "description": "Optional short source label for the user-visible context that produced the action."
       }
     ],
     "returns": {
@@ -874,9 +905,12 @@
         "invocation": {
           "name": "dailyos.submit.action",
           "arguments": {
-            "description": "Follow up with Acme",
-            "due_at": "iso8601",
-            "subject": "Acme"
+            "entity_type": "account",
+            "entity_id": "acct-example",
+            "title": "Follow up with Acme",
+            "due_date": "2026-05-30",
+            "priority": 2,
+            "source_attribution": "MCP conversation"
           }
         },
         "expectedResponseShape": {
