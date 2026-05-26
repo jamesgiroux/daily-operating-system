@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 
 use chrono::Utc;
 use rusqlite::{Connection, Error as SqliteError, ErrorCode};
+use sha2::{Digest, Sha256};
 
 mod v144_audit_action_token;
 mod v166_semantic_merge_safety;
@@ -1083,6 +1084,22 @@ const MIGRATIONS: &[Migration] = &[
     Migration::Sql {
         version: 270,
         sql: include_str!("migrations/270_salience_factors.sql"),
+    },
+    // v1.4.6 W2-A — recommendation surfacing policy and decision audit.
+    Migration::Fn {
+        version: 271,
+        apply: migrate_v271_recommendation_surfacing,
+    },
+    // v1.4.6 W2-B — salience candidate trigger run log.
+    Migration::Sql {
+        version: 272,
+        sql: include_str!("migrations/272_recommendation_triggers_log.sql"),
+    },
+    // v1.4.6 W2 repair — normalize local databases that ran draft W2
+    // surfacing/trigger migrations before L0 terminology hardening.
+    Migration::Fn {
+        version: 273,
+        apply: migrate_v273_recommendation_w2_shape_repair,
     },
 ];
 
@@ -2903,6 +2920,485 @@ fn migrate_v269_recommendation_claim_metadata_indexes(
         include_str!("migrations/269_recommendation_claim_metadata_indexes.sql"),
         "v1.4.6 W1-A recommendation claim metadata indexes",
     )
+}
+
+fn migrate_v271_recommendation_surfacing(conn: &Connection) -> Result<(), MigrationError> {
+    apply_idempotent_sql_migration(
+        conn,
+        include_str!("migrations/271_recommendation_surfacing.sql"),
+        "v1.4.6 W2-A recommendation surfacing policy and decision audit",
+    )
+}
+
+fn migrate_v273_recommendation_w2_shape_repair(conn: &Connection) -> Result<(), MigrationError> {
+    repair_v273_surfacing_decisions(conn)?;
+    repair_v273_triggers_log(conn)
+}
+
+fn repair_v273_surfacing_decisions(conn: &Connection) -> Result<(), MigrationError> {
+    if !table_exists(conn, "surfacing_decisions")? {
+        return apply_idempotent_sql_migration(
+            conn,
+            include_str!("migrations/271_recommendation_surfacing.sql"),
+            "v1.4.6 W2 repair surfacing decisions create",
+        );
+    }
+
+    let columns = table_columns(conn, "surfacing_decisions")?;
+    let table_sql = sqlite_table_sql(conn, "surfacing_decisions")?;
+    let has_final_surface_class =
+        table_sql.contains("surface_class IN ('primary', 'background', 'quiet', 'review')");
+    if columns.contains("defer_until") && has_final_surface_class {
+        return sanitize_v273_surfacing_decisions(conn);
+    }
+
+    let defer_until_expr = if columns.contains("defer_until") {
+        "defer_until"
+    } else {
+        "NULL"
+    };
+
+    run_immediate_migration_transaction(
+        conn,
+        "v1.4.6 W2 repair surfacing decisions rebuild",
+        |conn| {
+            conn.execute_batch(
+                "DROP TABLE IF EXISTS surfacing_decisions_v273_old;
+                 ALTER TABLE surfacing_decisions RENAME TO surfacing_decisions_v273_old;
+                 DROP INDEX IF EXISTS idx_surfacing_decisions_claim_created;
+                 DROP INDEX IF EXISTS idx_surfacing_decisions_budget;
+                 DROP INDEX IF EXISTS idx_surfacing_decisions_subject_action;
+                 DROP INDEX IF EXISTS idx_surfacing_decisions_salience;",
+            )
+            .map_err(|e| format!("v273 surfacing decisions rename: {e}"))?;
+
+            apply_idempotent_sql_statements(
+                conn,
+                include_str!("migrations/271_recommendation_surfacing.sql"),
+                "v1.4.6 W2 repair surfacing decisions create final table",
+            )?;
+
+            conn.execute_batch(&format!(
+                "INSERT INTO surfacing_decisions (
+                    id,
+                    idempotency_key,
+                    policy_version,
+                    claim_id,
+                    decision_kind,
+                    surfacing_tier,
+                    defer_reason,
+                    defer_until,
+                    suppress_reason,
+                    budget_key,
+                    actor_kind,
+                    local_day,
+                    claim_type,
+                    sensitivity,
+                    surface_class,
+                    render_surface,
+                    subject_kind,
+                    subject_id,
+                    action_signature,
+                    salience_total,
+                    salience_evaluation_id,
+                    why_this_now_json,
+                    trigger_refs_json,
+                    evidence_signature,
+                    source_asof,
+                    source_signal_id,
+                    created_at
+                )
+                SELECT
+                    id,
+                    idempotency_key,
+                    policy_version,
+                    claim_id,
+                    decision_kind,
+                    surfacing_tier,
+                    defer_reason,
+                    {defer_until_expr} AS defer_until,
+                    suppress_reason,
+                    budget_key,
+                    actor_kind,
+                    local_day,
+                    claim_type,
+                    sensitivity,
+                    CASE surface_class
+                        WHEN 'external' THEN 'quiet'
+                        ELSE surface_class
+                    END AS surface_class,
+                    render_surface,
+                    subject_kind,
+                    subject_id,
+                    action_signature,
+                    salience_total,
+                    salience_evaluation_id,
+                    why_this_now_json,
+                    trigger_refs_json,
+                    evidence_signature,
+                    source_asof,
+                    source_signal_id,
+                    created_at
+                FROM surfacing_decisions_v273_old;
+                DROP TABLE surfacing_decisions_v273_old;"
+            ))
+            .map_err(|e| format!("v273 surfacing decisions copy: {e}"))?;
+
+            sanitize_v273_surfacing_decisions(conn)?;
+
+            Ok(())
+        },
+    )
+}
+
+fn repair_v273_triggers_log(conn: &Connection) -> Result<(), MigrationError> {
+    if !table_exists(conn, "triggers_log")? {
+        return apply_idempotent_sql_migration(
+            conn,
+            include_str!("migrations/272_recommendation_triggers_log.sql"),
+            "v1.4.6 W2 repair triggers log create",
+        );
+    }
+
+    let columns = table_columns(conn, "triggers_log")?;
+    let needs_rebuild = columns.contains("selected_channel")
+        || !columns.contains("trigger_disposition")
+        || !columns.contains("result_kind")
+        || !columns.contains("downstream_policy");
+    if !needs_rebuild {
+        return sanitize_v273_triggers_log(conn);
+    }
+
+    let selected_channel_expr = if columns.contains("selected_channel") {
+        "COALESCE(selected_channel, '')"
+    } else {
+        "''"
+    };
+    let trigger_disposition_expr = if columns.contains("trigger_disposition") {
+        "trigger_disposition".to_string()
+    } else {
+        format!(
+            "CASE {selected_channel_expr}
+                WHEN 'surface' THEN 'primary_candidate'
+                WHEN 'review' THEN 'review_candidate'
+                WHEN 'quiet' THEN 'quiet_candidate'
+                WHEN 'background' THEN 'silent_prepare'
+                ELSE 'silent_prepare'
+            END"
+        )
+    };
+    let result_kind_expr = if columns.contains("result_kind") {
+        "result_kind".to_string()
+    } else {
+        format!(
+            "CASE
+                WHEN status IN ('failed_retryable', 'failed_terminal') THEN 'failed'
+                WHEN {selected_channel_expr} = 'surface'
+                     AND COALESCE(surfacing_decision_ids_json, '[]') <> '[]'
+                    THEN 'render_decision_recorded'
+                WHEN {selected_channel_expr} = 'review'
+                     AND COALESCE(surfacing_decision_ids_json, '[]') <> '[]'
+                    THEN 'held_for_review'
+                WHEN {selected_channel_expr} = 'quiet'
+                     AND COALESCE(surfacing_decision_ids_json, '[]') <> '[]'
+                    THEN 'stayed_quiet'
+                ELSE 'prepared_silently'
+            END"
+        )
+    };
+    let downstream_policy_expr = if columns.contains("downstream_policy") {
+        "downstream_policy"
+    } else {
+        "'recommendation_surfacing_policy'"
+    };
+
+    run_immediate_migration_transaction(conn, "v1.4.6 W2 repair triggers log rebuild", |conn| {
+        conn.execute_batch(
+            "DROP TABLE IF EXISTS triggers_log_v273_old;
+                 ALTER TABLE triggers_log RENAME TO triggers_log_v273_old;
+                 DROP INDEX IF EXISTS idx_triggers_log_dedupe_policy;
+                 DROP INDEX IF EXISTS idx_triggers_log_subject;
+                 DROP INDEX IF EXISTS idx_triggers_log_retry;
+                 DROP INDEX IF EXISTS idx_triggers_log_signal;",
+        )
+        .map_err(|e| format!("v273 triggers log rename: {e}"))?;
+
+        apply_idempotent_sql_statements(
+            conn,
+            include_str!("migrations/272_recommendation_triggers_log.sql"),
+            "v1.4.6 W2 repair triggers log create final table",
+        )?;
+
+        conn.execute_batch(&format!(
+            "INSERT INTO triggers_log (
+                    run_id,
+                    policy_version,
+                    trigger_class,
+                    trigger_kind,
+                    status,
+                    trigger_disposition,
+                    result_kind,
+                    downstream_policy,
+                    subject_kind,
+                    subject_id,
+                    entity_type,
+                    entity_id,
+                    reason_code,
+                    dedupe_key,
+                    suppression_key,
+                    trust_floor,
+                    freshness_window_secs,
+                    source_signal_id,
+                    source_signal_type,
+                    source_asof,
+                    evidence_signature,
+                    subject_version,
+                    signal_id,
+                    signal_coalesced,
+                    derived_signal_ids_json,
+                    candidate_claim_ids_json,
+                    salience_evaluation_ids_json,
+                    surfacing_decision_ids_json,
+                    error_code,
+                    retry_count,
+                    next_retry_at,
+                    started_at,
+                    completed_at,
+                    updated_at
+                )
+                SELECT
+                    run_id,
+                    policy_version,
+                    trigger_class,
+                    trigger_kind,
+                    status,
+                    {trigger_disposition_expr} AS trigger_disposition,
+                    {result_kind_expr} AS result_kind,
+                    {downstream_policy_expr} AS downstream_policy,
+                    subject_kind,
+                    subject_id,
+                    entity_type,
+                    entity_id,
+                    reason_code,
+                    dedupe_key,
+                    suppression_key,
+                    trust_floor,
+                    freshness_window_secs,
+                    source_signal_id,
+                    source_signal_type,
+                    source_asof,
+                    evidence_signature,
+                    subject_version,
+                    signal_id,
+                    signal_coalesced,
+                    derived_signal_ids_json,
+                    candidate_claim_ids_json,
+                    salience_evaluation_ids_json,
+                    surfacing_decision_ids_json,
+                    error_code,
+                    retry_count,
+                    next_retry_at,
+                    started_at,
+                    completed_at,
+                    updated_at
+                FROM triggers_log_v273_old;
+                DROP TABLE triggers_log_v273_old;"
+        ))
+        .map_err(|e| format!("v273 triggers log copy: {e}"))?;
+
+        sanitize_v273_triggers_log(conn)?;
+
+        Ok(())
+    })
+}
+
+struct V273SurfacingAuditRow {
+    id: String,
+    evidence_signature: Option<String>,
+    source_signal_id: Option<String>,
+}
+
+fn sanitize_v273_surfacing_decisions(conn: &Connection) -> Result<(), MigrationError> {
+    let rows = {
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, evidence_signature, source_signal_id
+                   FROM surfacing_decisions",
+            )
+            .map_err(|e| format!("v273 surfacing sanitize prepare: {e}"))?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(V273SurfacingAuditRow {
+                    id: row.get(0)?,
+                    evidence_signature: row.get(1)?,
+                    source_signal_id: row.get(2)?,
+                })
+            })
+            .map_err(|e| format!("v273 surfacing sanitize read: {e}"))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("v273 surfacing sanitize collect: {e}"))?
+    };
+
+    for row in rows {
+        conn.execute(
+            "UPDATE surfacing_decisions
+                SET evidence_signature = ?2,
+                    source_signal_id = ?3
+              WHERE id = ?1",
+            rusqlite::params![
+                row.id,
+                v273_safe_optional_ref("evidence", row.evidence_signature.as_deref()),
+                v273_safe_optional_ref("signal_ref", row.source_signal_id.as_deref()),
+            ],
+        )
+        .map_err(|e| format!("v273 surfacing sanitize update: {e}"))?;
+    }
+
+    Ok(())
+}
+
+struct V273TriggerAuditRow {
+    run_id: String,
+    source_signal_id: Option<String>,
+    source_signal_type: Option<String>,
+    evidence_signature: Option<String>,
+    dedupe_key: String,
+    suppression_key: String,
+}
+
+fn sanitize_v273_triggers_log(conn: &Connection) -> Result<(), MigrationError> {
+    let rows = {
+        let mut stmt = conn
+            .prepare(
+                "SELECT run_id, source_signal_id, source_signal_type, evidence_signature,
+                        dedupe_key, suppression_key
+                   FROM triggers_log",
+            )
+            .map_err(|e| format!("v273 triggers sanitize prepare: {e}"))?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(V273TriggerAuditRow {
+                    run_id: row.get(0)?,
+                    source_signal_id: row.get(1)?,
+                    source_signal_type: row.get(2)?,
+                    evidence_signature: row.get(3)?,
+                    dedupe_key: row.get(4)?,
+                    suppression_key: row.get(5)?,
+                })
+            })
+            .map_err(|e| format!("v273 triggers sanitize read: {e}"))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("v273 triggers sanitize collect: {e}"))?
+    };
+
+    for row in rows {
+        conn.execute(
+            "UPDATE triggers_log
+                SET source_signal_id = ?2,
+                    source_signal_type = ?3,
+                    evidence_signature = ?4,
+                    dedupe_key = ?5,
+                    suppression_key = ?6
+              WHERE run_id = ?1",
+            rusqlite::params![
+                row.run_id,
+                v273_safe_optional_ref("signal_ref", row.source_signal_id.as_deref()),
+                v273_safe_optional_token("signal_type", row.source_signal_type.as_deref()),
+                v273_safe_optional_ref("evidence", row.evidence_signature.as_deref()),
+                v273_safe_storage_ref("dedupe", &row.dedupe_key),
+                v273_safe_storage_ref("suppression", &row.suppression_key),
+            ],
+        )
+        .map_err(|e| format!("v273 triggers sanitize update: {e}"))?;
+    }
+
+    Ok(())
+}
+
+fn v273_safe_optional_token(prefix: &str, value: Option<&str>) -> Option<String> {
+    value.map(|value| v273_safe_storage_token(prefix, value))
+}
+
+fn v273_safe_optional_ref(prefix: &str, value: Option<&str>) -> Option<String> {
+    value.map(|value| v273_safe_storage_ref(prefix, value))
+}
+
+fn v273_safe_storage_token(prefix: &str, value: &str) -> String {
+    let value = value.trim();
+    if v273_is_safe_storage_token(value) {
+        value.to_string()
+    } else {
+        v273_hashed_storage_ref(prefix, value)
+    }
+}
+
+fn v273_safe_storage_ref(prefix: &str, value: &str) -> String {
+    let value = value.trim();
+    if v273_is_safe_storage_ref(value) {
+        value.to_string()
+    } else {
+        v273_hashed_storage_ref(prefix, value)
+    }
+}
+
+fn v273_is_safe_storage_token(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b':' | b'.'))
+}
+
+fn v273_is_safe_storage_ref(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 160
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b':' | b'.'))
+}
+
+fn v273_hashed_storage_ref(prefix: &str, value: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(prefix.as_bytes());
+    hasher.update(b":");
+    hasher.update(value.as_bytes());
+    format!("{prefix}_{}", hex::encode(&hasher.finalize()[..16]))
+}
+
+fn sqlite_table_sql(conn: &Connection, table_name: &str) -> Result<String, MigrationError> {
+    conn.query_row(
+        "SELECT sql
+           FROM sqlite_master
+          WHERE type = 'table'
+            AND name = ?1",
+        [table_name],
+        |row| row.get(0),
+    )
+    .map_err(|e| format!("Failed to read table SQL for '{}': {e}", table_name))
+}
+
+fn run_immediate_migration_transaction(
+    conn: &Connection,
+    label: &str,
+    apply: impl FnOnce(&Connection) -> Result<(), MigrationError>,
+) -> Result<(), MigrationError> {
+    conn.execute_batch("BEGIN IMMEDIATE;")
+        .map_err(|e| format!("{label}: begin transaction: {e}"))?;
+
+    let result = apply(conn);
+    match result {
+        Ok(()) => conn
+            .execute_batch("COMMIT;")
+            .map_err(|e| format!("{label}: commit transaction: {e}")),
+        Err(error) => {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort cleanup after migration failure"
+            )]
+            let _ = conn.execute_batch("ROLLBACK;");
+            Err(error)
+        }
+    }
 }
 
 fn apply_idempotent_sql_migration(
@@ -6888,8 +7384,8 @@ mod tests {
             [],
         )
         .expect("simulate partial weight mutation");
-        conn.execute("DELETE FROM schema_version WHERE version = 270", [])
-            .expect("simulate v270 version record gap");
+        conn.execute("DELETE FROM schema_version WHERE version >= 270", [])
+            .expect("simulate v270 version record gap before newer migrations run");
 
         run_migrations(&conn).expect("rerun v270 after version record gap");
 
@@ -6906,6 +7402,671 @@ mod tests {
         assert_eq!(weight_count, 10);
         assert!((weight_sum - 1.0).abs() < 0.0001);
         assert!((importance_weight - 0.20).abs() < 0.0001);
-        assert_eq!(current_version(&conn).expect("current version"), 270);
+        assert!(
+            current_version(&conn).expect("current version") >= 270,
+            "current version remains at or beyond v270"
+        );
+    }
+
+    #[test]
+    fn migration_271_creates_recommendation_surfacing_policy_and_decisions() {
+        let conn = mem_db();
+        run_migrations(&conn).expect("build current schema");
+
+        for table_name in ["recommendation_surfacing_policy", "surfacing_decisions"] {
+            let table_count: i64 = conn
+                .query_row(
+                    "SELECT count(*)
+                       FROM sqlite_master
+                      WHERE type = 'table'
+                        AND name = ?1",
+                    [table_name],
+                    |row| row.get(0),
+                )
+                .expect("query surfacing table");
+            assert_eq!(table_count, 1, "{table_name} exists");
+        }
+
+        let policy: (f64, i64, i64, String) = conn
+            .query_row(
+                "SELECT critical_threshold, critical_primary_daily_budget,
+                        notable_primary_daily_budget, policy_source
+                   FROM recommendation_surfacing_policy
+                  WHERE policy_version = 'recommendation_surfacing_v1'
+                    AND claim_type = 'recommendation'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .expect("read surfacing policy defaults");
+        assert!((policy.0 - 0.85).abs() < 0.0001);
+        assert_eq!(policy.1, 1);
+        assert_eq!(policy.2, 3);
+        assert_eq!(policy.3, "claim_type:recommendation");
+        let defer_until_columns: i64 = conn
+            .query_row(
+                "SELECT count(*)
+                   FROM pragma_table_info('surfacing_decisions')
+                  WHERE name = 'defer_until'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read surfacing decision columns");
+        assert_eq!(defer_until_columns, 1);
+        assert!(
+            current_version(&conn).expect("current version") >= 271,
+            "schema version is at least v271"
+        );
+    }
+
+    #[test]
+    fn migration_272_creates_trigger_log_with_retry_and_id_tables() {
+        let conn = mem_db();
+        run_migrations(&conn).expect("build current schema");
+
+        let table_count: i64 = conn
+            .query_row(
+                "SELECT count(*)
+                   FROM sqlite_master
+                  WHERE type = 'table'
+                    AND name = 'triggers_log'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("query trigger log table");
+        assert_eq!(table_count, 1);
+
+        for column_name in [
+            "status",
+            "trigger_disposition",
+            "result_kind",
+            "downstream_policy",
+            "dedupe_key",
+            "next_retry_at",
+            "candidate_claim_ids_json",
+            "salience_evaluation_ids_json",
+            "surfacing_decision_ids_json",
+        ] {
+            let column_count: i64 = conn
+                .query_row(
+                    "SELECT count(*)
+                       FROM pragma_table_info('triggers_log')
+                      WHERE name = ?1",
+                    [column_name],
+                    |row| row.get(0),
+                )
+                .expect("query trigger log column");
+            assert_eq!(column_count, 1, "{column_name} exists");
+        }
+        let legacy_channel_columns: i64 = conn
+            .query_row(
+                "SELECT count(*)
+                   FROM pragma_table_info('triggers_log')
+                  WHERE name = 'selected_channel'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("query legacy trigger channel column");
+        assert_eq!(legacy_channel_columns, 0);
+        assert!(
+            current_version(&conn).expect("current version") >= 272,
+            "schema version is at least v272"
+        );
+    }
+
+    #[test]
+    fn migration_273_repairs_draft_w2_table_shapes() {
+        let conn = mem_db();
+        conn.execute_batch(
+            "CREATE TABLE intelligence_claims (id TEXT PRIMARY KEY);
+            INSERT INTO intelligence_claims (id) VALUES ('claim-old');
+
+            CREATE TABLE surfacing_decisions (
+                id TEXT PRIMARY KEY,
+                idempotency_key TEXT NOT NULL UNIQUE,
+                policy_version TEXT NOT NULL,
+                claim_id TEXT NOT NULL REFERENCES intelligence_claims(id) ON DELETE CASCADE,
+                decision_kind TEXT NOT NULL CHECK (decision_kind IN ('render', 'defer', 'suppress')),
+                surfacing_tier TEXT CHECK (
+                    surfacing_tier IS NULL
+                    OR surfacing_tier IN ('critical', 'notable', 'background', 'quiet')
+                ),
+                defer_reason TEXT CHECK (
+                    defer_reason IS NULL
+                    OR defer_reason IN (
+                        'cooldown_active',
+                        'budget_exhausted',
+                        'awaiting_corroboration',
+                        'pending_trigger'
+                    )
+                ),
+                suppress_reason TEXT CHECK (
+                    suppress_reason IS NULL
+                    OR suppress_reason IN (
+                        'below_threshold',
+                        'user_muted_subject',
+                        'dismissed_recently',
+                        'contradicted_with_stronger_evidence'
+                    )
+                ),
+                budget_key TEXT NOT NULL,
+                actor_kind TEXT NOT NULL,
+                local_day TEXT NOT NULL,
+                claim_type TEXT NOT NULL,
+                sensitivity TEXT NOT NULL,
+                surface_class TEXT NOT NULL CHECK (surface_class IN ('primary', 'background', 'review', 'external')),
+                render_surface TEXT NOT NULL,
+                subject_kind TEXT NOT NULL,
+                subject_id TEXT NOT NULL,
+                action_signature TEXT NOT NULL,
+                salience_total REAL NOT NULL CHECK (salience_total >= 0.0 AND salience_total <= 1.0),
+                salience_evaluation_id TEXT NOT NULL,
+                why_this_now_json TEXT CHECK (why_this_now_json IS NULL OR json_valid(why_this_now_json) = 1),
+                trigger_refs_json TEXT NOT NULL CHECK (json_valid(trigger_refs_json) = 1),
+                evidence_signature TEXT,
+                source_asof TEXT,
+                source_signal_id TEXT,
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX idx_surfacing_decisions_claim_created
+                ON surfacing_decisions(claim_id, created_at DESC);
+            CREATE INDEX idx_surfacing_decisions_budget
+                ON surfacing_decisions(policy_version, budget_key, decision_kind, surfacing_tier);
+            CREATE INDEX idx_surfacing_decisions_subject_action
+                ON surfacing_decisions(
+                    policy_version,
+                    subject_kind,
+                    subject_id,
+                    action_signature,
+                    surface_class,
+                    created_at DESC
+                );
+            CREATE INDEX idx_surfacing_decisions_salience
+                ON surfacing_decisions(salience_evaluation_id);
+            INSERT INTO surfacing_decisions (
+                id,
+                idempotency_key,
+                policy_version,
+                claim_id,
+                decision_kind,
+                surfacing_tier,
+                defer_reason,
+                suppress_reason,
+                budget_key,
+                actor_kind,
+                local_day,
+                claim_type,
+                sensitivity,
+                surface_class,
+                render_surface,
+                subject_kind,
+                subject_id,
+                action_signature,
+                salience_total,
+                salience_evaluation_id,
+                why_this_now_json,
+                trigger_refs_json,
+                evidence_signature,
+                source_asof,
+                source_signal_id,
+                created_at
+            ) VALUES (
+                'decision-old',
+                'idem-old',
+                'recommendation_surfacing_v1',
+                'claim-old',
+                'render',
+                'notable',
+                NULL,
+                NULL,
+                'actor:2026-05-26:recommendation:low:external',
+                'system',
+                '2026-05-26',
+                'recommendation',
+                'low',
+                'external',
+                'activity_log',
+                'account',
+                'acct-1',
+                'follow-up',
+                0.72,
+                'eval-1',
+                NULL,
+                '[]',
+                'provider raw evidence /Users/example/workspace-note.md',
+                '2026-05-26T00:00:00Z',
+                '/Users/example/raw-workspace-note.md',
+                '2026-05-26T01:00:00Z'
+            );
+
+            CREATE TABLE triggers_log (
+                run_id TEXT PRIMARY KEY,
+                policy_version TEXT NOT NULL,
+                trigger_class TEXT NOT NULL CHECK (
+                    trigger_class IN (
+                        'scheduled_freshness',
+                        'event_invalidation',
+                        'manual_refresh',
+                        'entity_change',
+                        'claim_change',
+                        'source_change',
+                        'open_loop_change',
+                        'meeting_window',
+                        'decision_window',
+                        'feedback_echo'
+                    )
+                ),
+                trigger_kind TEXT NOT NULL CHECK (
+                    trigger_kind IN ('signal_arrival', 'entity_change', 'scheduled_scan', 'feedback_echo')
+                ),
+                status TEXT NOT NULL CHECK (
+                    status IN ('started', 'completed', 'failed_retryable', 'failed_terminal')
+                ),
+                selected_channel TEXT NOT NULL CHECK (selected_channel IN ('surface', 'review', 'background', 'quiet')),
+                subject_kind TEXT NOT NULL,
+                subject_id TEXT NOT NULL,
+                entity_type TEXT NOT NULL,
+                entity_id TEXT NOT NULL,
+                reason_code TEXT NOT NULL,
+                dedupe_key TEXT NOT NULL,
+                suppression_key TEXT NOT NULL,
+                trust_floor REAL NOT NULL CHECK (trust_floor >= 0.0 AND trust_floor <= 1.0),
+                freshness_window_secs INTEGER NOT NULL CHECK (freshness_window_secs >= 0),
+                source_signal_id TEXT,
+                source_signal_type TEXT,
+                source_asof TEXT,
+                evidence_signature TEXT,
+                subject_version INTEGER,
+                signal_id TEXT,
+                signal_coalesced INTEGER NOT NULL DEFAULT 0 CHECK (signal_coalesced IN (0, 1)),
+                derived_signal_ids_json TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(derived_signal_ids_json) = 1),
+                candidate_claim_ids_json TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(candidate_claim_ids_json) = 1),
+                salience_evaluation_ids_json TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(salience_evaluation_ids_json) = 1),
+                surfacing_decision_ids_json TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(surfacing_decision_ids_json) = 1),
+                error_code TEXT,
+                retry_count INTEGER NOT NULL DEFAULT 0 CHECK (retry_count >= 0),
+                next_retry_at TEXT,
+                started_at TEXT NOT NULL,
+                completed_at TEXT,
+                updated_at TEXT NOT NULL
+            );
+            CREATE INDEX idx_triggers_log_dedupe_policy
+                ON triggers_log(policy_version, dedupe_key, updated_at DESC);
+            CREATE INDEX idx_triggers_log_subject
+                ON triggers_log(subject_kind, subject_id, started_at DESC);
+            CREATE INDEX idx_triggers_log_retry
+                ON triggers_log(status, next_retry_at)
+                WHERE status = 'failed_retryable';
+            CREATE INDEX idx_triggers_log_signal
+                ON triggers_log(source_signal_id)
+                WHERE source_signal_id IS NOT NULL;
+            INSERT INTO triggers_log (
+                run_id,
+                policy_version,
+                trigger_class,
+                trigger_kind,
+                status,
+                selected_channel,
+                subject_kind,
+                subject_id,
+                entity_type,
+                entity_id,
+                reason_code,
+                dedupe_key,
+                suppression_key,
+                trust_floor,
+                freshness_window_secs,
+                source_signal_id,
+                source_signal_type,
+                source_asof,
+                evidence_signature,
+                subject_version,
+                signal_id,
+                signal_coalesced,
+                derived_signal_ids_json,
+                candidate_claim_ids_json,
+                salience_evaluation_ids_json,
+                surfacing_decision_ids_json,
+                error_code,
+                retry_count,
+                next_retry_at,
+                started_at,
+                completed_at,
+                updated_at
+            ) VALUES (
+                'run-old',
+                'recommendation_trigger_v1',
+                'manual_refresh',
+                'signal_arrival',
+                'completed',
+                'review',
+                'account',
+                'acct-1',
+                'account',
+                'acct-1',
+                'manual_refresh',
+                'dedupe:/Users/example/raw-workspace-note.md',
+                'suppress:/Users/example/raw-workspace-note.md',
+                0.8,
+                3600,
+                '/Users/example/raw-workspace-note.md',
+                'provider output /Users/example/raw-workspace-note.md',
+                '2026-05-26T00:00:00Z',
+                'provider raw evidence /Users/example/workspace-note.md',
+                7,
+                'sig-1',
+                0,
+                '[]',
+                '[\"claim-old\"]',
+                '[\"eval-1\"]',
+                '[\"decision-old\"]',
+                NULL,
+                0,
+                NULL,
+                '2026-05-26T01:00:00Z',
+                '2026-05-26T01:00:01Z',
+                '2026-05-26T01:00:01Z'
+            );",
+        )
+        .expect("create draft W2 tables");
+
+        migrate_v273_recommendation_w2_shape_repair(&conn).expect("repair draft W2 tables");
+
+        let defer_until_columns: i64 = conn
+            .query_row(
+                "SELECT count(*)
+                   FROM pragma_table_info('surfacing_decisions')
+                  WHERE name = 'defer_until'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read repaired surfacing columns");
+        assert_eq!(defer_until_columns, 1);
+
+        let (surface_class, defer_until): (String, Option<String>) = conn
+            .query_row(
+                "SELECT surface_class, defer_until
+                   FROM surfacing_decisions
+                  WHERE id = 'decision-old'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read repaired surfacing row");
+        assert_eq!(surface_class, "quiet");
+        assert_eq!(defer_until, None);
+        let (surfacing_evidence, surfacing_signal): (String, String) = conn
+            .query_row(
+                "SELECT evidence_signature, source_signal_id
+                   FROM surfacing_decisions
+                  WHERE id = 'decision-old'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read repaired surfacing privacy fields");
+        assert!(surfacing_evidence.starts_with("evidence_"));
+        assert!(surfacing_signal.starts_with("signal_ref_"));
+        assert!(
+            index_exists(&conn, "idx_surfacing_decisions_claim_created")
+                .expect("query surfacing index"),
+            "surfacing indexes are recreated on the final table"
+        );
+
+        let legacy_channel_columns: i64 = conn
+            .query_row(
+                "SELECT count(*)
+                   FROM pragma_table_info('triggers_log')
+                  WHERE name = 'selected_channel'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read repaired trigger columns");
+        assert_eq!(legacy_channel_columns, 0);
+
+        let (trigger_disposition, result_kind, downstream_policy): (String, String, String) = conn
+            .query_row(
+                "SELECT trigger_disposition, result_kind, downstream_policy
+                   FROM triggers_log
+                  WHERE run_id = 'run-old'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("read repaired trigger row");
+        assert_eq!(trigger_disposition, "review_candidate");
+        assert_eq!(result_kind, "held_for_review");
+        assert_eq!(downstream_policy, "recommendation_surfacing_policy");
+        let (
+            source_signal_id,
+            source_signal_type,
+            evidence_signature,
+            dedupe_key,
+            suppression_key,
+        ): (String, String, String, String, String) = conn
+            .query_row(
+                "SELECT source_signal_id, source_signal_type, evidence_signature,
+                        dedupe_key, suppression_key
+                   FROM triggers_log
+                  WHERE run_id = 'run-old'",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
+            )
+            .expect("read repaired trigger privacy fields");
+        assert!(source_signal_id.starts_with("signal_ref_"));
+        assert!(source_signal_type.starts_with("signal_type_"));
+        assert!(evidence_signature.starts_with("evidence_"));
+        assert!(dedupe_key.starts_with("dedupe_"));
+        assert!(suppression_key.starts_with("suppression_"));
+        let repaired_privacy_fields = format!(
+            "{surfacing_evidence} {surfacing_signal} {source_signal_id} \
+             {source_signal_type} {evidence_signature} {dedupe_key} {suppression_key}"
+        );
+        assert!(!repaired_privacy_fields.contains("/Users/"));
+        assert!(
+            index_exists(&conn, "idx_triggers_log_dedupe_policy").expect("query trigger index"),
+            "trigger indexes are recreated on the final table"
+        );
+    }
+
+    #[test]
+    fn migration_273_sanitizes_final_w2_tables_without_rebuild() {
+        let conn = mem_db();
+        conn.execute_batch(
+            "CREATE TABLE intelligence_claims (id TEXT PRIMARY KEY);
+             INSERT INTO intelligence_claims (id) VALUES ('claim-final');",
+        )
+        .expect("create parent claim table");
+        migrate_v271_recommendation_surfacing(&conn).expect("create final surfacing schema");
+        conn.execute_batch(include_str!(
+            "migrations/272_recommendation_triggers_log.sql"
+        ))
+        .expect("create final trigger schema");
+
+        conn.execute_batch(
+            "INSERT INTO surfacing_decisions (
+                id,
+                idempotency_key,
+                policy_version,
+                claim_id,
+                decision_kind,
+                surfacing_tier,
+                defer_reason,
+                defer_until,
+                suppress_reason,
+                budget_key,
+                actor_kind,
+                local_day,
+                claim_type,
+                sensitivity,
+                surface_class,
+                render_surface,
+                subject_kind,
+                subject_id,
+                action_signature,
+                salience_total,
+                salience_evaluation_id,
+                why_this_now_json,
+                trigger_refs_json,
+                evidence_signature,
+                source_asof,
+                source_signal_id,
+                created_at
+            ) VALUES (
+                'decision-final',
+                'idem-final',
+                'recommendation_surfacing_v1',
+                'claim-final',
+                'render',
+                'notable',
+                NULL,
+                NULL,
+                NULL,
+                'system:2026-05-26:recommendation:low:primary',
+                'system',
+                '2026-05-26',
+                'recommendation',
+                'low',
+                'primary',
+                'activity_log',
+                'account',
+                'acct-1',
+                'follow-up',
+                0.72,
+                'eval-final',
+                NULL,
+                '[]',
+                'provider raw evidence /Users/example/final-workspace-note.md',
+                '2026-05-26T00:00:00Z',
+                '/Users/example/final-workspace-note.md',
+                '2026-05-26T01:00:00Z'
+            );
+
+            INSERT INTO triggers_log (
+                run_id,
+                policy_version,
+                trigger_class,
+                trigger_kind,
+                status,
+                trigger_disposition,
+                result_kind,
+                downstream_policy,
+                subject_kind,
+                subject_id,
+                entity_type,
+                entity_id,
+                reason_code,
+                dedupe_key,
+                suppression_key,
+                trust_floor,
+                freshness_window_secs,
+                source_signal_id,
+                source_signal_type,
+                source_asof,
+                evidence_signature,
+                subject_version,
+                signal_id,
+                signal_coalesced,
+                derived_signal_ids_json,
+                candidate_claim_ids_json,
+                salience_evaluation_ids_json,
+                surfacing_decision_ids_json,
+                error_code,
+                retry_count,
+                next_retry_at,
+                started_at,
+                completed_at,
+                updated_at
+            ) VALUES (
+                'run-final',
+                'recommendation_trigger_v1',
+                'event_invalidation',
+                'signal_arrival',
+                'completed',
+                'primary_candidate',
+                'render_decision_recorded',
+                'recommendation_surfacing_policy',
+                'account',
+                'acct-1',
+                'account',
+                'acct-1',
+                'source_changed',
+                'dedupe:/Users/example/final-workspace-note.md',
+                'suppress:/Users/example/final-workspace-note.md',
+                0.8,
+                3600,
+                '/Users/example/final-workspace-note.md',
+                'provider output /Users/example/final-workspace-note.md',
+                '2026-05-26T00:00:00Z',
+                'provider raw evidence /Users/example/final-workspace-note.md',
+                7,
+                'sig-final',
+                0,
+                '[]',
+                '[\"claim-final\"]',
+                '[\"eval-final\"]',
+                '[\"decision-final\"]',
+                NULL,
+                0,
+                NULL,
+                '2026-05-26T01:00:00Z',
+                '2026-05-26T01:00:01Z',
+                '2026-05-26T01:00:01Z'
+            );",
+        )
+        .expect("seed final W2 tables with raw audit fields");
+
+        migrate_v273_recommendation_w2_shape_repair(&conn).expect("sanitize final-shape W2 tables");
+
+        let (surfacing_evidence, surfacing_signal): (String, String) = conn
+            .query_row(
+                "SELECT evidence_signature, source_signal_id
+                   FROM surfacing_decisions
+                  WHERE id = 'decision-final'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read sanitized final surfacing fields");
+        assert!(surfacing_evidence.starts_with("evidence_"));
+        assert!(surfacing_signal.starts_with("signal_ref_"));
+
+        let (
+            source_signal_id,
+            source_signal_type,
+            evidence_signature,
+            dedupe_key,
+            suppression_key,
+        ): (String, String, String, String, String) = conn
+            .query_row(
+                "SELECT source_signal_id, source_signal_type, evidence_signature,
+                        dedupe_key, suppression_key
+                   FROM triggers_log
+                  WHERE run_id = 'run-final'",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
+            )
+            .expect("read sanitized final trigger fields");
+        assert!(source_signal_id.starts_with("signal_ref_"));
+        assert!(source_signal_type.starts_with("signal_type_"));
+        assert!(evidence_signature.starts_with("evidence_"));
+        assert!(dedupe_key.starts_with("dedupe_"));
+        assert!(suppression_key.starts_with("suppression_"));
+        let repaired_privacy_fields = format!(
+            "{surfacing_evidence} {surfacing_signal} {source_signal_id} \
+             {source_signal_type} {evidence_signature} {dedupe_key} {suppression_key}"
+        );
+        assert!(!repaired_privacy_fields.contains("/Users/"));
     }
 }

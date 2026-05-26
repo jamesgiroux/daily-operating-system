@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>v1.4.6 Salience and Recommendations - DailyOS Planning</title>
+  <link rel="stylesheet" href="../design/reference/_shared/fonts.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/design-tokens.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/styles/MagazinePageLayout.module.css">
+  <link rel="stylesheet" href="../design/reference/_shared/chrome.css">
+  <link rel="stylesheet" href="plans.css">
+</head>
+<body data-tint="turmeric">
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+<div class="plans-shell">
+
+<nav class="plans-topnav" aria-label="Planning surface">
+  <a class="plans-mark" href="index.html">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="16" height="16" aria-hidden="true">
+      <path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/>
+    </svg>
+    DailyOS - Planning
+  </a>
+  <div class="plans-topnav-links">
+    <a href="engineering-ladder.html">Engineering Ladder</a>
+    <a href="v1.4.6-waves.html" data-active="true">v1.4.6 Waves</a>
+    <a href="AUTHORING.md">Authoring Ruleset</a>
+  </div>
+</nav>
+
+<section class="plans-cover">
+  <p class="plans-eyebrow">DailyOS - v1.4.6 - Wave Plan</p>
+  <h1 class="plans-title">Make DailyOS selective without making new authority.</h1>
+  <p class="plans-kicker">Salience, surfacing, triggers, and recommendation blocks stay claim-backed, ability-backed, and quiet by default.</p>
+  <p class="plans-lede">
+    v1.4.6 turns trustworthy intelligence into selective recommendations: what matters, why it matters now, and what the user should consider doing next.
+    This revision reconciles the original plan with the current Engineering Ladder and the ability producer model that landed after the first draft.
+    W2 may continue as service-local surfacing and trigger plumbing, but future surfaces must consume a recommendation ability projection rather than W2 tables.
+  </p>
+  <div class="plans-meta">
+    <span>Target: v1.4.6</span>
+    <span>Revision: 2026-05-26 reconciliation</span>
+    <span>Waves: W0-W5</span>
+    <span>Parallel agents: 3 peak</span>
+    <span>Source: Linear + v1.4.6-waves.md</span>
+  </div>
+</section>
+
+<section class="plans-section" aria-labelledby="source-and-scope">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Source and scope</p>
+    <h2 id="source-and-scope" class="plans-section-title">A recommendation is a claim, not a parallel product state.</h2>
+    <p class="plans-section-lede">
+      v1.4.6 consumes the claim substrate, trust bands, signal policy registry, ability runtime, WordPress block producer pattern, and producer-remediation lessons from v1.4.4 through v1.4.7.
+    </p>
+  </header>
+  <ul class="plans-related">
+    <li><strong>Canonical markdown:</strong> <code>.docs/plans/v1.4.6-waves.md</code></li>
+    <li><strong>Current W2 packet:</strong> <code>.docs/plans/v1.4.6-salience-recommendations/L0-packet-W2-DOS-331-DOS-334.md</code></li>
+    <li><strong>Scope tier:</strong> project wave plan is Wave; W2 is Standard with Amendment 3 add-on.</li>
+    <li><strong>Origination:</strong> Extension. This extends existing claim, salience, signal, trust, ability, and WP surface substrate.</li>
+    <li><strong>Trust topology:</strong> local-to-local single-user. No new MCP, SurfaceClient, remote, or multi-user exposure ships in W2.</li>
+    <li><strong>Non-goal:</strong> no direct table-backed recommendation surface, no proactive notification policy, no LLM ranking, no new trust primitive, and no Tauri React surface work.</li>
+    <li><strong>K-in basis:</strong> v1.4.4 WordPress surface migration, v1.4.4a ability-backed Tauri cutover, v1.4.5 workspace memory, v1.4.7 MCP abilities-first plan, and the abilities-runtime producer remediation plan.</li>
+  </ul>
+</section>
+
+<section class="plans-section" aria-labelledby="reconciliation">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Reconciliation</p>
+    <h2 id="reconciliation" class="plans-section-title">Two old assumptions are now superseded.</h2>
+    <p class="plans-section-lede">
+      The original plan used an older review panel and was written before ability producers became the surface authority pattern.
+      This revision makes both constraints explicit.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Area</th>
+        <th>Old assumption</th>
+        <th>Current rule</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Review process</td>
+        <td>Codex challenge + domain reviewer + Codex consult; code-reviewer/domain-reviewer at L2; separate L5 drift.</td>
+        <td>Use the 2026-05-23 Engineering Ladder: scoped L0, mandatory K-in, bounded L2 router, advisory path-alpha, L4 before L2 for surfaces, and L5 folded into L3 for v1.x.y.</td>
+      </tr>
+      <tr>
+        <td>Surface authority</td>
+        <td>W3 could render recommendation state through a React component or direct surface contract.</td>
+        <td>W3 is WordPress / SurfaceClient block work over an ability-backed recommendation projection. Blocks never read W2 tables as authority.</td>
+      </tr>
+      <tr>
+        <td>Producer boundary</td>
+        <td>Recommendation, salience, surfacing, and trigger outputs were discussed as one system state.</td>
+        <td>Recommendation claims are durable producers through <code>commit_claim</code>; salience, surfacing, and trigger rows are derived evidence or audit state unless promoted through an ability producer.</td>
+      </tr>
+      <tr>
+        <td>v1.4.7 coupling</td>
+        <td>v1.4.6 release blocked on a specific v1.4.7 portfolio-attention consumer.</td>
+        <td>v1.4.6 publishes stable schema-versioned read contracts; v1.4.7 can consume them or remain on an approved fallback path without blocking v1.4.6.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="plans-section" aria-labelledby="wave-overview">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Wave shape</p>
+    <h2 id="wave-overview" class="plans-section-title">W0-W5, hard ordering across waves.</h2>
+    <p class="plans-section-lede">
+      The wave sequence stays intact. The change is authority: W2 emits and logs policy decisions, while W3+ must expose user-visible recommendation state through ability producers.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Wave</th>
+        <th>Issues</th>
+        <th>Primary output</th>
+        <th>Gate</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>W0 - Project freeze</td>
+        <td>coordination + ADRs</td>
+        <td>Claim type, signal registry, migration block, dependency confirmation</td>
+        <td>L0-ready substrate</td>
+      </tr>
+      <tr>
+        <td>W1 - Contract and salience</td>
+        <td>DOS-329, DOS-330</td>
+        <td><code>RecommendationClaim</code> helper and explicit salience factors / read ability</td>
+        <td>L3 with producer contract verified</td>
+      </tr>
+      <tr>
+        <td>W2 - Surfacing policy</td>
+        <td>DOS-331, DOS-334</td>
+        <td>Surfacing decisions, trigger logs, propagating signals, safe audit payloads</td>
+        <td>Targeted L0 amendment, bounded L2, L3</td>
+      </tr>
+      <tr>
+        <td>W3 - Recommendation surfaces</td>
+        <td>DOS-298, DOS-333</td>
+        <td><code>dailyos/suggested-next-steps</code> block over ability projection</td>
+        <td>L0, L4 before L2, then L3</td>
+      </tr>
+      <tr>
+        <td>W4 - Feedback and adjacent signals</td>
+        <td>DOS-332, DOS-316, DOS-317</td>
+        <td>Recommendation feedback, deviation input, engagement signal bounded to ranking</td>
+        <td>L3 with Suite S/E/P as fired</td>
+      </tr>
+      <tr>
+        <td>W5 - Evaluation and release</td>
+        <td>DOS-338</td>
+        <td><code>tests/v146_eval</code> fixture suite and folded drift close</td>
+        <td>L3 release gate</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="plans-section" aria-labelledby="producer-matrix">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Producer matrix</p>
+    <h2 id="producer-matrix" class="plans-section-title">Durable assertions and audit rows have different jobs.</h2>
+    <p class="plans-section-lede">
+      W2 remains valid only because it is framed as derived policy and audit state. The first user-visible consumer must be an ability projection.
+    </p>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Artifact</th>
+        <th>Authority class</th>
+        <th>Owner</th>
+        <th>Consumer rule</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>RecommendationClaim</code></td>
+        <td>Durable claim producer</td>
+        <td>W1-A / upstream helpers through <code>commit_claim</code></td>
+        <td>All writes carry claim provenance, source dates, sensitivity, lifecycle, and trust semantics.</td>
+      </tr>
+      <tr>
+        <td><code>salience_evaluations</code></td>
+        <td>Derived read-model evidence</td>
+        <td>W1-B</td>
+        <td>Inspectable factor rows are not trust mutations or lifecycle authority.</td>
+      </tr>
+      <tr>
+        <td><code>surfacing_decisions</code></td>
+        <td>Policy audit state</td>
+        <td>W2-A</td>
+        <td>Records render/defer/suppress decisions. Not a surface API and not a second claim authority.</td>
+      </tr>
+      <tr>
+        <td><code>triggers_log</code></td>
+        <td>Operational audit state</td>
+        <td>W2-B</td>
+        <td>Stores run ids, trigger classes, safe source tokens, returned result ids, and closed error codes only.</td>
+      </tr>
+      <tr>
+        <td><code>why_this_now</code></td>
+        <td>Deterministic render helper</td>
+        <td>W2-A</td>
+        <td>Template over typed factors and trigger refs. No LLM, raw claim text, or source body interpolation.</td>
+      </tr>
+      <tr>
+        <td>WP / MCP / Tauri consumers</td>
+        <td>Ability producer / projection</td>
+        <td>W3+ / future v1.4.7+</td>
+        <td>Must consume actor-filtered ability output with rendered provenance and caveats.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="plans-section" aria-labelledby="reviewer-matrix">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Reviewer routing</p>
+    <h2 id="reviewer-matrix" class="plans-section-title">Use the current ladder, not the old panel names.</h2>
+  </header>
+
+  <table class="reviewer-matrix">
+    <thead>
+      <tr>
+        <th>Rung</th>
+        <th>v1.4.6 rule</th>
+        <th>Notable routing</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>L0</td>
+        <td><code>/codex challenge</code> plus routed planning reviewers; K-in is mandatory.</td>
+        <td>W2 uses product + security lens. W3 uses design lens and security lens if actor/provenance output changes.</td>
+      </tr>
+      <tr>
+        <td>L2</td>
+        <td><code>/codex review</code> through <code>l2-bounded-reviewer</code>; 0-2 specialists by diff.</td>
+        <td>W2 expects data migrations + silent-failure hunter. Surface work gets L4 evidence before L2 dispatch.</td>
+      </tr>
+      <tr>
+        <td>L3</td>
+        <td>Integrated wave challenge + architecture strategist; Suite E always, S/P by touched paths.</td>
+        <td>L5 drift is folded into W5's L3 release gate.</td>
+      </tr>
+      <tr>
+        <td>L4</td>
+        <td>User-facing WordPress blocks need hands-on surface proof before L2.</td>
+        <td>W3 Suggested Next Steps and W4 What's Unusual must capture WP Studio/browser evidence.</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="plans-section" aria-labelledby="wave-details">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Wave details</p>
+    <h2 id="wave-details" class="plans-section-title">Execution boundaries that matter.</h2>
+  </header>
+
+  <div class="callout-grid">
+    <article class="callout">
+      <h3 class="callout-title">W2 boundary</h3>
+      <p class="callout-prose">Proceed with <code>services/recommendations/{surfacing,triggers,why_this_now}.rs</code>, v271-v272 migrations, and service signal facade calls. <code>quiet</code> is a first-class auditable surface class; <code>external</code> is out of W2 scope. Do not touch <code>services/claims.rs</code>, <code>commit_claim</code>, trust recompute, or surface/MCP readers.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">W2 L0 amendment</h3>
+      <p class="callout-prose">The current W2 packet now declares Standard + Amendment 3 scope, Extension origination, local-to-local topology, producer classification, a field-by-field trigger-log privacy matrix, and the current L2 router expectation.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">W3 producer gate</h3>
+      <p class="callout-prose">Before a block renders recommendations, the lane identifies the ability projection that returns recommendations, surfacing state, trust, provenance, caveats, and receipt refs. If missing, W3 blocks.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">W4 telemetry</h3>
+      <p class="callout-prose">Engagement is a ranking input only. It never feeds trust scoring, and W4-C carries security review, retention, opt-out, and delete-on-opt-out tests.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">W5 evaluation</h3>
+      <p class="callout-prose">The eval harness lives under <code>tests/v146_eval</code> and validates high-signal, low-signal, stale, noisy, missed-important, and user-corrected cases.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Compatibility</h3>
+      <p class="callout-prose">v1.4.6 publishes stable schemas for future consumers. v1.4.7 portfolio attention may consume them or stay on its approved fallback; that status is recorded, not used as a release blocker.</p>
+    </article>
+  </div>
+</section>
+
+<section class="plans-section" aria-labelledby="suites">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Suites</p>
+    <h2 id="suites" class="plans-section-title">S/P/E fire by need at L3.</h2>
+  </header>
+
+  <div class="suite-grid">
+    <article class="suite-card" data-suite="s">
+      <span class="suite-letter">S</span>
+      <h3 class="suite-name">Security</h3>
+      <p class="suite-prose">Privacy-safe signal payloads, actor-filtered provenance, no direct surface authority, telemetry opt-out, and no raw source/prompt/output text in audit rows.</p>
+      <p class="suite-owner"><span class="suite-owner-label">Owner</span> <code>ce-security-reviewer</code></p>
+      <p class="suite-pass-rule"><span class="suite-pass-label">Pass</span> zero blocker privacy or authority bypass findings</p>
+    </article>
+    <article class="suite-card" data-suite="p">
+      <span class="suite-letter">P</span>
+      <h3 class="suite-name">Performance</h3>
+      <p class="suite-prose">Migration safety, indexed surfacing/trigger queries, and bounded projection fan-out for block consumers.</p>
+      <p class="suite-owner"><span class="suite-owner-label">Owner</span> <code>ce-performance-oracle</code></p>
+      <p class="suite-pass-rule"><span class="suite-pass-label">Pass</span> no unbounded hot-path or migration regression</p>
+    </article>
+    <article class="suite-card" data-suite="e">
+      <span class="suite-letter">E</span>
+      <h3 class="suite-name">Edge cases</h3>
+      <p class="suite-prose">Budget overflow, cooldowns, noisy feedback, material-new-evidence overrides, typed empty/degraded producer states, and missed-important fixtures.</p>
+      <p class="suite-owner"><span class="suite-owner-label">Owner</span> <code>ce-testing-reviewer</code></p>
+      <p class="suite-pass-rule"><span class="suite-pass-label">Pass</span> all required fixture axes green</p>
+    </article>
+  </div>
+</section>
+
+<section class="plans-section plans-section-callouts">
+  <div class="callout-grid">
+    <article class="callout">
+      <h3 class="callout-title">Pacing</h3>
+      <p class="callout-prose">No wave starts until the prior wave clears L3. W3 and later user-facing work must complete L4 evidence before L2 review.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Bounding</h3>
+      <p class="callout-prose">Path-alpha findings file to the maintenance project unless they violate acceptance criteria, ADR contracts, or PR-touched behavior.</p>
+    </article>
+    <article class="callout">
+      <h3 class="callout-title">Migration slots</h3>
+      <p class="callout-prose">v1.4.6 owns v269-v288. W1 used v269-v270; W2 uses v271-v272; later waves claim contiguous remaining slots after rebase.</p>
+    </article>
+  </div>
+</section>
+
+<section class="plans-section plans-section-footer">
+  <header class="plans-section-header">
+    <p class="plans-section-eyebrow">Related</p>
+    <h2 class="plans-section-title">Cross-references.</h2>
+  </header>
+  <ul class="plans-related">
+    <li><strong><code>v1.4.6-waves.md</code></strong> Canonical editable wave plan.</li>
+    <li><strong><code>engineering-ladder.html</code></strong> Current L0-L6 and K-channel protocol.</li>
+    <li><strong><code>v1.4.4a-tauri-briefing-entity-intelligence-waves.html</code></strong> Ability-backed consumer cutover and no-bypass rules.</li>
+    <li><strong><code>abilities-runtime-producer-remediation-waves.html</code></strong> Producer classification and runtime authority rules.</li>
+    <li><strong><code>v1.4.5-waves.md</code></strong> Workspace Memory producer/ability lessons.</li>
+    <li><strong><code>v1.4.7-waves.md</code></strong> MCP abilities-first consumer contract and fallback state.</li>
+  </ul>
+</section>
+
+<div class="finis">
+  <div class="finis-mark">W0 - W1 - W2 - W3 - W4 - W5</div>
+  <div class="finis-date">v1.4.6 Salience and Recommendations - 2026-05-26</div>
+  <div class="finis-caption">Selective intelligence only works when surfacing is explainable and surfaces stay ability-backed.</div>
+</div>
+
+</div>
+</main>
+</div>
+</body>
+</html>
