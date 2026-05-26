@@ -10446,27 +10446,52 @@ pub struct GeneratedProjectionRefreshWithdrawal<'a> {
     pub entity_id: &'a str,
     pub field_path_roots: &'a [&'a str],
     pub projection_producers: &'a [&'a str],
-    pub retained_claim_keys: &'a [(String, String, String)],
+    pub retained_claim_keys: &'a [(String, String, String, String)],
     pub retraction_reason: &'a str,
+}
+
+pub struct GeneratedProjectionRefreshWithdrawalOutcome {
+    pub withdrawn: usize,
+    pub affected_subjects: Vec<(String, String)>,
 }
 
 pub fn withdraw_generated_projection_claims_for_field_path_roots_by_projection_producer_in_tx(
     ctx: &ServiceContext<'_>,
     db: &ActionDb,
     input: GeneratedProjectionRefreshWithdrawal<'_>,
-) -> Result<usize, ClaimError> {
+) -> Result<GeneratedProjectionRefreshWithdrawalOutcome, ClaimError> {
     if input.field_path_roots.is_empty() || input.projection_producers.is_empty() {
-        return Ok(0);
+        return Ok(GeneratedProjectionRefreshWithdrawalOutcome {
+            withdrawn: 0,
+            affected_subjects: Vec::new(),
+        });
     }
 
     let mut stmt = db.conn_ref().prepare(
-        "SELECT ic.id, ic.claim_type, coalesce(ic.field_path, ''), ic.text, ic.metadata_json
+        "SELECT ic.id,
+                ic.subject_ref,
+                lower(json_extract(ic.subject_ref, '$.kind')),
+                json_extract(ic.subject_ref, '$.id'),
+                ic.claim_type,
+                coalesce(ic.field_path, ''),
+                ic.text,
+                ic.metadata_json
            FROM intelligence_claims ic
           WHERE ic.claim_state = 'active'
             AND ic.surfacing_state = 'active'
             AND json_valid(ic.subject_ref) = 1
-            AND lower(json_extract(ic.subject_ref, '$.kind')) = lower(?1)
-            AND json_extract(ic.subject_ref, '$.id') = ?2
+            AND (
+                (
+                    lower(json_extract(ic.subject_ref, '$.kind')) = lower(?1)
+                    AND json_extract(ic.subject_ref, '$.id') = ?2
+                )
+                OR (
+                    ic.metadata_json IS NOT NULL
+                    AND json_valid(ic.metadata_json) = 1
+                    AND lower(json_extract(ic.metadata_json, '$.projection_origin_subject.kind')) = lower(?1)
+                    AND json_extract(ic.metadata_json, '$.projection_origin_subject.id') = ?2
+                )
+            )
             AND (
                 ic.source_ref LIKE 'intelligence_projection_source:%'
                 OR (
@@ -10488,39 +10513,64 @@ pub fn withdraw_generated_projection_claims_for_field_path_roots_by_projection_p
                 row.get::<_, String>(1)?,
                 row.get::<_, String>(2)?,
                 row.get::<_, String>(3)?,
-                row.get::<_, Option<String>>(4)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, String>(5)?,
+                row.get::<_, String>(6)?,
+                row.get::<_, Option<String>>(7)?,
             ))
         })?
         .collect::<Result<Vec<_>, _>>()?;
+    let mut affected_subjects = HashSet::new();
     let claim_ids = rows
         .into_iter()
-        .filter_map(|(claim_id, claim_type, field_path, text, metadata_json)| {
-            let field_matches = input
-                .field_path_roots
-                .iter()
-                .any(|root| field_path_matches_projection_root(&field_path, root));
-            if !field_matches {
-                return None;
-            }
-            if input.retained_claim_keys.iter().any(
-                |(retained_type, retained_path, retained_text)| {
-                    retained_type == &claim_type
-                        && retained_path == &field_path
-                        && retained_text == &text
-                },
-            ) {
-                return None;
-            }
-            let producer = projection_producer_from_metadata(metadata_json.as_deref())?;
-            input
-                .projection_producers
-                .iter()
-                .any(|candidate| producer.eq_ignore_ascii_case(candidate))
-                .then_some(claim_id)
-        })
+        .filter_map(
+            |(
+                claim_id,
+                subject_ref,
+                subject_kind,
+                subject_id,
+                claim_type,
+                field_path,
+                text,
+                metadata_json,
+            )| {
+                let field_matches = input
+                    .field_path_roots
+                    .iter()
+                    .any(|root| field_path_matches_projection_root(&field_path, root));
+                if !field_matches {
+                    return None;
+                }
+                if input.retained_claim_keys.iter().any(
+                    |(retained_subject, retained_type, retained_path, retained_text)| {
+                        retained_subject == &subject_ref
+                            && retained_type == &claim_type
+                            && retained_path == &field_path
+                            && retained_text == &text
+                    },
+                ) {
+                    return None;
+                }
+                let producer = projection_producer_from_metadata(metadata_json.as_deref())?;
+                if !input
+                    .projection_producers
+                    .iter()
+                    .any(|candidate| producer.eq_ignore_ascii_case(candidate))
+                {
+                    return None;
+                }
+                affected_subjects.insert((subject_kind, subject_id));
+                Some(claim_id)
+            },
+        )
         .collect();
 
-    withdraw_claim_ids_for_source_purge_in_tx(ctx, db, claim_ids, input.retraction_reason)
+    let withdrawn =
+        withdraw_claim_ids_for_source_purge_in_tx(ctx, db, claim_ids, input.retraction_reason)?;
+    Ok(GeneratedProjectionRefreshWithdrawalOutcome {
+        withdrawn,
+        affected_subjects: affected_subjects.into_iter().collect(),
+    })
 }
 
 fn projection_producer_from_metadata(metadata_json: Option<&str>) -> Option<String> {
@@ -10816,6 +10866,7 @@ fn projection_reissue_metadata_json(
     let Some(object) = value.as_object_mut() else {
         return Ok(None);
     };
+    object.remove("legacy_projection_value");
     object.insert(
         "projection_producer".to_string(),
         serde_json::json!(projection_producer),

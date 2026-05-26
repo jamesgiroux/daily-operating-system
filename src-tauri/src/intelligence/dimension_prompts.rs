@@ -343,6 +343,7 @@ pub fn merge_dimension_into(
     dimension: &str,
     partial: &IntelligenceJson,
 ) -> Result<(), String> {
+    merge_refreshed_fields(existing, partial);
     match dimension {
         "core_assessment" => {
             if partial.executive_assessment.is_some() {
@@ -354,25 +355,29 @@ pub fn merge_dimension_into(
             if partial.current_state.is_some() {
                 existing.current_state = partial.current_state.clone();
             }
-            if !partial.risks.is_empty() {
+            if !partial.risks.is_empty() || field_was_refreshed(partial, "risks") {
                 existing.risks = partial.risks.clone();
             }
-            if !partial.recent_wins.is_empty() {
+            if !partial.recent_wins.is_empty() || field_was_refreshed(partial, "recentWins") {
                 existing.recent_wins = partial.recent_wins.clone();
             }
         }
 
         "stakeholder_champion" => {
-            if !partial.stakeholder_insights.is_empty() {
+            if !partial.stakeholder_insights.is_empty()
+                || field_was_refreshed(partial, "stakeholderInsights")
+            {
                 existing.stakeholder_insights = partial.stakeholder_insights.clone();
             }
             if partial.coverage_assessment.is_some() {
                 existing.coverage_assessment = partial.coverage_assessment.clone();
             }
-            if !partial.organizational_changes.is_empty() {
+            if !partial.organizational_changes.is_empty()
+                || field_was_refreshed(partial, "organizationalChanges")
+            {
                 existing.organizational_changes = partial.organizational_changes.clone();
             }
-            if !partial.internal_team.is_empty() {
+            if !partial.internal_team.is_empty() || field_was_refreshed(partial, "internalTeam") {
                 existing.internal_team = partial.internal_team.clone();
             }
             // relationship_depth is stakeholder-adjacent
@@ -391,10 +396,12 @@ pub fn merge_dimension_into(
             if partial.agreement_outlook.is_some() {
                 existing.agreement_outlook = partial.agreement_outlook.clone();
             }
-            if !partial.expansion_signals.is_empty() {
+            if !partial.expansion_signals.is_empty()
+                || field_was_refreshed(partial, "expansionSignals")
+            {
                 existing.expansion_signals = partial.expansion_signals.clone();
             }
-            if !partial.blockers.is_empty() {
+            if !partial.blockers.is_empty() || field_was_refreshed(partial, "blockers") {
                 existing.blockers = partial.blockers.clone();
             }
             // Product classification from Glean
@@ -407,23 +414,30 @@ pub fn merge_dimension_into(
             if partial.company_context.is_some() {
                 existing.company_context = partial.company_context.clone();
             }
-            if !partial.competitive_context.is_empty() {
+            if !partial.competitive_context.is_empty()
+                || field_was_refreshed(partial, "competitiveContext")
+            {
                 existing.competitive_context = partial.competitive_context.clone();
             }
-            if !partial.strategic_priorities.is_empty() {
+            if !partial.strategic_priorities.is_empty()
+                || field_was_refreshed(partial, "strategicPriorities")
+            {
                 existing.strategic_priorities = partial.strategic_priorities.clone();
             }
-            if !partial.market_context.is_empty() {
+            if !partial.market_context.is_empty() || field_was_refreshed(partial, "marketContext") {
                 existing.market_context = partial.market_context.clone();
             }
             // Merge regulatory items emitted by strategic_context.
-            if !partial.regulatory_context.is_empty() {
+            if !partial.regulatory_context.is_empty()
+                || field_was_refreshed(partial, "regulatoryContext")
+            {
                 existing.regulatory_context = partial.regulatory_context.clone();
             }
         }
 
         "value_success" => {
-            if !partial.value_delivered.is_empty() {
+            if !partial.value_delivered.is_empty() || field_was_refreshed(partial, "valueDelivered")
+            {
                 existing.value_delivered = partial.value_delivered.clone();
             }
             if partial.success_metrics.is_some() {
@@ -450,7 +464,9 @@ pub fn merge_dimension_into(
             if partial.support_health.is_some() {
                 existing.support_health = partial.support_health.clone();
             }
-            if !partial.gong_call_summaries.is_empty() {
+            if !partial.gong_call_summaries.is_empty()
+                || field_was_refreshed(partial, "gongCallSummaries")
+            {
                 existing.gong_call_summaries = partial.gong_call_summaries.clone();
             }
             if partial.nps_csat.is_some() {
@@ -464,6 +480,25 @@ pub fn merge_dimension_into(
     }
 
     Ok(())
+}
+
+fn field_was_refreshed(intel: &IntelligenceJson, field: &str) -> bool {
+    intel
+        .refreshed_fields
+        .iter()
+        .any(|candidate| candidate == field)
+}
+
+fn merge_refreshed_fields(existing: &mut IntelligenceJson, partial: &IntelligenceJson) {
+    for field in &partial.refreshed_fields {
+        if !existing
+            .refreshed_fields
+            .iter()
+            .any(|candidate| candidate == field)
+        {
+            existing.refreshed_fields.push(field.clone());
+        }
+    }
 }
 
 /// Clear fields for dimensions that should not apply to this entity shape.
@@ -1564,6 +1599,31 @@ mod tests {
         // Should NOT wipe because partial is empty
         assert_eq!(existing.executive_assessment, Some("Existing".to_string()));
         assert_eq!(existing.risks.len(), 1);
+    }
+
+    #[test]
+    fn merge_explicit_empty_refreshed_array_clears_existing_items() {
+        let mut existing = empty_intel();
+        existing.risks = vec![super::super::io::IntelRisk {
+            render_policy: None,
+            claim_id: None,
+            text: "Existing risk".to_string(),
+            source: None,
+            urgency: "critical".to_string(),
+            item_source: None,
+            headline: None,
+            evidence: None,
+            kind_label: None,
+            discrepancy: None,
+        }];
+
+        let mut partial = empty_intel();
+        partial.refreshed_fields = vec!["risks".to_string()];
+
+        merge_dimension_into(&mut existing, "core_assessment", &partial).unwrap();
+
+        assert!(existing.risks.is_empty());
+        assert!(existing.refreshed_fields.contains(&"risks".to_string()));
     }
 
     #[test]

@@ -104,12 +104,23 @@ fn subject_ref_for_entity(entity_type: &str, entity_id: &str) -> Result<String, 
     }
 }
 
-fn projection_metadata(value: serde_json::Value, projection_producer: &str) -> Option<String> {
-    serde_json::to_string(&serde_json::json!({
+fn projection_metadata(
+    value: serde_json::Value,
+    projection_producer: &str,
+    projection_origin_subject: Option<&str>,
+) -> Option<String> {
+    let mut metadata = serde_json::json!({
         "legacy_projection_value": value,
         "projection_producer": projection_producer,
-    }))
-    .ok()
+    });
+    if let (Some(object), Some(origin_subject)) =
+        (metadata.as_object_mut(), projection_origin_subject)
+    {
+        if let Ok(origin_value) = serde_json::from_str::<serde_json::Value>(origin_subject) {
+            object.insert("projection_origin_subject".to_string(), origin_value);
+        }
+    }
+    serde_json::to_string(&metadata).ok()
 }
 
 fn source_asof_from_item_source(
@@ -667,6 +678,7 @@ fn stakeholder_engagement_projection_text(
 
 struct ProjectionClaimInput<'a> {
     subject_ref: &'a str,
+    projection_origin_subject: Option<&'a str>,
     actor: &'a str,
     data_source: &'a str,
     item_source: Option<&'a crate::intelligence::io::ItemSource>,
@@ -731,7 +743,11 @@ fn commit_projection_claim(
             source_asof: input.source_asof.map(str::to_string),
             observed_at,
             provenance_json,
-            metadata_json: projection_metadata(input.legacy_value, input.data_source),
+            metadata_json: projection_metadata(
+                input.legacy_value,
+                input.data_source,
+                input.projection_origin_subject,
+            ),
             thread_id: None,
             temporal_scope: Some(crate::db::claims::TemporalScope::State),
             sensitivity: Some(crate::db::claims::ClaimSensitivity::Internal),
@@ -913,6 +929,7 @@ pub(crate) fn commit_claim_shaped_intelligence_projection(
             db,
             ProjectionClaimInput {
                 subject_ref: &subject_ref,
+                projection_origin_subject: None,
                 actor,
                 data_source,
                 item_source: None,
@@ -931,6 +948,7 @@ pub(crate) fn commit_claim_shaped_intelligence_projection(
             db,
             ProjectionClaimInput {
                 subject_ref: &subject_ref,
+                projection_origin_subject: None,
                 actor,
                 data_source,
                 item_source: None,
@@ -950,6 +968,7 @@ pub(crate) fn commit_claim_shaped_intelligence_projection(
                 db,
                 ProjectionClaimInput {
                     subject_ref: &subject_ref,
+                    projection_origin_subject: None,
                     actor,
                     data_source,
                     item_source: None,
@@ -969,6 +988,7 @@ pub(crate) fn commit_claim_shaped_intelligence_projection(
                 db,
                 ProjectionClaimInput {
                     subject_ref: &subject_ref,
+                    projection_origin_subject: None,
                     actor,
                     data_source,
                     item_source: None,
@@ -988,6 +1008,7 @@ pub(crate) fn commit_claim_shaped_intelligence_projection(
             db,
             ProjectionClaimInput {
                 subject_ref: &subject_ref,
+                projection_origin_subject: None,
                 actor,
                 data_source,
                 item_source: risk.item_source.as_ref(),
@@ -1010,6 +1031,7 @@ pub(crate) fn commit_claim_shaped_intelligence_projection(
             db,
             ProjectionClaimInput {
                 subject_ref: &subject_ref,
+                projection_origin_subject: None,
                 actor,
                 data_source,
                 item_source: None,
@@ -1029,6 +1051,7 @@ pub(crate) fn commit_claim_shaped_intelligence_projection(
             db,
             ProjectionClaimInput {
                 subject_ref: &subject_ref,
+                projection_origin_subject: None,
                 actor,
                 data_source,
                 item_source: win.item_source.as_ref(),
@@ -1049,6 +1072,7 @@ pub(crate) fn commit_claim_shaped_intelligence_projection(
                 db,
                 ProjectionClaimInput {
                     subject_ref: &subject_ref,
+                    projection_origin_subject: None,
                     actor,
                     data_source,
                     item_source: None,
@@ -1072,6 +1096,7 @@ pub(crate) fn commit_claim_shaped_intelligence_projection(
             db,
             ProjectionClaimInput {
                 subject_ref: &subject_ref,
+                projection_origin_subject: None,
                 actor,
                 data_source,
                 item_source: None,
@@ -1094,6 +1119,7 @@ pub(crate) fn commit_claim_shaped_intelligence_projection(
             db,
             ProjectionClaimInput {
                 subject_ref: &subject_ref,
+                projection_origin_subject: None,
                 actor,
                 data_source,
                 item_source: None,
@@ -1114,6 +1140,7 @@ pub(crate) fn commit_claim_shaped_intelligence_projection(
                 db,
                 ProjectionClaimInput {
                     subject_ref: &subject_ref,
+                    projection_origin_subject: None,
                     actor,
                     data_source,
                     item_source: None,
@@ -1141,6 +1168,7 @@ pub(crate) fn commit_claim_shaped_intelligence_projection(
             db,
             ProjectionClaimInput {
                 subject_ref: &subject_ref,
+                projection_origin_subject: None,
                 actor,
                 data_source,
                 item_source: signal.item_source.as_ref(),
@@ -1161,6 +1189,7 @@ pub(crate) fn commit_claim_shaped_intelligence_projection(
                 db,
                 ProjectionClaimInput {
                     subject_ref: &subject_ref,
+                    projection_origin_subject: None,
                     actor,
                     data_source,
                     item_source: None,
@@ -1181,6 +1210,7 @@ pub(crate) fn commit_claim_shaped_intelligence_projection(
             db,
             ProjectionClaimInput {
                 subject_ref: &subject_ref,
+                projection_origin_subject: None,
                 actor,
                 data_source,
                 item_source: value.item_source.as_ref(),
@@ -1204,6 +1234,7 @@ pub(crate) fn commit_claim_shaped_intelligence_projection(
                 db,
                 ProjectionClaimInput {
                     subject_ref: &subject_ref,
+                    projection_origin_subject: None,
                     actor,
                     data_source,
                     item_source: None,
@@ -1228,6 +1259,7 @@ pub(crate) fn commit_claim_shaped_intelligence_projection(
                 db,
                 ProjectionClaimInput {
                     subject_ref: &subject_ref,
+                    projection_origin_subject: None,
                     actor,
                     data_source,
                     item_source: commitment.item_source.as_ref(),
@@ -1259,6 +1291,7 @@ pub(crate) fn commit_claim_shaped_intelligence_projection(
             db,
             ProjectionClaimInput {
                 subject_ref: &person_subject_ref,
+                projection_origin_subject: Some(&subject_ref),
                 actor,
                 data_source,
                 item_source: insight.item_source.as_ref(),
@@ -1280,6 +1313,7 @@ pub(crate) fn commit_claim_shaped_intelligence_projection(
                     db,
                     ProjectionClaimInput {
                         subject_ref: &subject_ref,
+                        projection_origin_subject: None,
                         actor,
                         data_source,
                         item_source: None,
@@ -2051,7 +2085,7 @@ pub(crate) fn upsert_assessment_from_enrichment_in_active_transaction(
         "agent:intelligence",
         upsert.projection_data_source,
     )?;
-    withdraw_refreshed_projection_claims(
+    let refreshed_projection_withdrawal = withdraw_refreshed_projection_claims(
         ctx,
         tx,
         upsert.entity_type,
@@ -2073,14 +2107,13 @@ pub(crate) fn upsert_assessment_from_enrichment_in_active_transaction(
         0.8,
     )
     .map_err(|e| format!("signal emit failed: {e}"))?;
-    enqueue_projection_claim_recomputes(
-        ctx,
-        tx,
-        &signal_id,
+    let recompute_subjects = projection_claim_recompute_subjects(
         upsert.entity_type,
         upsert.entity_id,
         &intel,
+        &refreshed_projection_withdrawal.affected_subjects,
     );
+    enqueue_projection_claim_recomputes(ctx, tx, &signal_id, recompute_subjects);
 
     // After enrichment, reconcile AI objectives with user objectives
     if upsert.entity_type == "account" {
@@ -2140,20 +2173,8 @@ fn enqueue_projection_claim_recomputes(
     ctx: &ServiceContext<'_>,
     tx: &ActionDb,
     origin_signal_id: &str,
-    entity_type: &str,
-    entity_id: &str,
-    intel: &crate::intelligence::IntelligenceJson,
+    subjects: BTreeSet<(String, String)>,
 ) {
-    let mut subjects = BTreeSet::new();
-    subjects.insert((entity_type.to_string(), entity_id.to_string()));
-    for insight in &intel.stakeholder_insights {
-        if let Some(person_id) = insight.person_id.as_deref() {
-            if !person_id.trim().is_empty() {
-                subjects.insert(("person".to_string(), person_id.to_string()));
-            }
-        }
-    }
-
     for (subject_type, subject_id) in subjects {
         if let Err(error) = crate::services::invalidation_jobs::enqueue_signal_claim_recompute_in_tx(
             tx,
@@ -2184,6 +2205,33 @@ fn enqueue_projection_claim_recomputes(
     }
 }
 
+fn projection_claim_recompute_subjects(
+    entity_type: &str,
+    entity_id: &str,
+    intel: &crate::intelligence::IntelligenceJson,
+    withdrawn_subjects: &[(String, String)],
+) -> BTreeSet<(String, String)> {
+    let mut subjects = BTreeSet::new();
+    subjects.insert((entity_type.to_string(), entity_id.to_string()));
+    for insight in &intel.stakeholder_insights {
+        if let Some(person_id) = insight.person_id.as_deref() {
+            if !person_id.trim().is_empty() {
+                subjects.insert(("person".to_string(), person_id.to_string()));
+            }
+        }
+    }
+    for (subject_type, subject_id) in withdrawn_subjects {
+        if !subject_type.trim().is_empty() && !subject_id.trim().is_empty() {
+            subjects.insert((subject_type.clone(), subject_id.clone()));
+        }
+    }
+    subjects
+}
+
+struct RefreshedProjectionWithdrawal {
+    affected_subjects: Vec<(String, String)>,
+}
+
 fn withdraw_refreshed_projection_claims(
     ctx: &ServiceContext<'_>,
     tx: &ActionDb,
@@ -2191,15 +2239,17 @@ fn withdraw_refreshed_projection_claims(
     entity_id: &str,
     projection_intel: &crate::intelligence::IntelligenceJson,
     projection_data_source: &str,
-) -> Result<usize, String> {
+) -> Result<RefreshedProjectionWithdrawal, String> {
     let roots = refreshed_projection_field_path_roots(projection_intel, projection_data_source);
     let producers = refreshed_projection_producers(projection_data_source);
     if roots.is_empty() || producers.is_empty() {
-        return Ok(0);
+        return Ok(RefreshedProjectionWithdrawal {
+            affected_subjects: Vec::new(),
+        });
     }
-    let retained_claim_keys = projection_claim_retained_keys(projection_intel);
+    let retained_claim_keys = projection_claim_retained_keys(projection_intel)?;
 
-    let withdrawn = crate::services::claims::withdraw_generated_projection_claims_for_field_path_roots_by_projection_producer_in_tx(
+    let withdrawal = crate::services::claims::withdraw_generated_projection_claims_for_field_path_roots_by_projection_producer_in_tx(
         ctx,
         tx,
         crate::services::claims::GeneratedProjectionRefreshWithdrawal {
@@ -2212,12 +2262,15 @@ fn withdraw_refreshed_projection_claims(
         },
     )
     .map_err(|error| format!("withdraw refreshed projection claims failed: {error}"))?;
-    if withdrawn > 0 {
+    if withdrawal.withdrawn > 0 {
         log::info!(
-            "intelligence: withdrew {withdrawn} stale generated projection claim(s) after refreshed projection on {entity_type}:{entity_id}"
+            "intelligence: withdrew {} stale generated projection claim(s) after refreshed projection on {entity_type}:{entity_id}",
+            withdrawal.withdrawn
         );
     }
-    Ok(withdrawn)
+    Ok(RefreshedProjectionWithdrawal {
+        affected_subjects: withdrawal.affected_subjects,
+    })
 }
 
 fn refreshed_projection_producers(projection_data_source: &str) -> &'static [&'static str] {
@@ -2234,6 +2287,10 @@ fn refreshed_projection_field_path_roots(
 ) -> Vec<&'static str> {
     if projection_data_source.trim() != "glean" {
         return all_projection_field_path_roots();
+    }
+
+    if !intel.refreshed_fields.is_empty() {
+        return refreshed_projection_field_path_roots_from_fields(&intel.refreshed_fields);
     }
 
     let mut roots = BTreeSet::new();
@@ -2292,6 +2349,28 @@ fn refreshed_projection_field_path_roots(
     roots.into_iter().collect()
 }
 
+fn refreshed_projection_field_path_roots_from_fields(fields: &[String]) -> Vec<&'static str> {
+    let projection_roots = all_projection_field_path_roots();
+    let mut roots = BTreeSet::new();
+    for field in fields {
+        if let Some(root) = projection_roots
+            .iter()
+            .copied()
+            .find(|root| field_path_matches_projection_root(field, root))
+        {
+            roots.insert(root);
+        }
+    }
+    roots.into_iter().collect()
+}
+
+fn field_path_matches_projection_root(field_path: &str, root: &str) -> bool {
+    field_path == root
+        || field_path
+            .strip_prefix(root)
+            .is_some_and(|suffix| suffix.starts_with('[') || suffix.starts_with('.'))
+}
+
 fn all_projection_field_path_roots() -> Vec<&'static str> {
     vec![
         "executiveAssessment",
@@ -2316,22 +2395,42 @@ fn all_projection_field_path_roots() -> Vec<&'static str> {
 
 fn projection_claim_retained_keys(
     intel: &crate::intelligence::IntelligenceJson,
-) -> Vec<(String, String, String)> {
+) -> Result<Vec<(String, String, String, String)>, String> {
     let mut keys = Vec::new();
+    let subject_ref = subject_ref_for_entity(&intel.entity_type, &intel.entity_id)?;
 
     if let Some(summary) = intel.executive_assessment.as_deref() {
-        push_projection_claim_key(&mut keys, "entity_summary", "executiveAssessment", summary);
+        push_projection_claim_key(
+            &mut keys,
+            &subject_ref,
+            "entity_summary",
+            "executiveAssessment",
+            summary,
+        );
     }
     if let Some(pull_quote) = intel.pull_quote.as_deref() {
-        push_projection_claim_key(&mut keys, "entity_summary", "pullQuote", pull_quote);
+        push_projection_claim_key(
+            &mut keys,
+            &subject_ref,
+            "entity_summary",
+            "pullQuote",
+            pull_quote,
+        );
     }
     if let Some(health) = intel.health.as_ref() {
         if let Some(text) = health_projection_text(health) {
-            push_projection_claim_key(&mut keys, "entity_current_state", "health", &text);
+            push_projection_claim_key(
+                &mut keys,
+                &subject_ref,
+                "entity_current_state",
+                "health",
+                &text,
+            );
         }
         for (idx, action) in health.recommended_actions.iter().enumerate() {
             push_projection_claim_key(
                 &mut keys,
+                &subject_ref,
                 "recommendation",
                 &format!("health.recommendedActions[{idx}]"),
                 action,
@@ -2341,6 +2440,7 @@ fn projection_claim_retained_keys(
     for (idx, risk) in intel.risks.iter().enumerate() {
         push_projection_claim_key(
             &mut keys,
+            &subject_ref,
             "entity_risk",
             &format!("risks[{idx}]"),
             &risk.text,
@@ -2350,6 +2450,7 @@ fn projection_claim_retained_keys(
         if let Some(text) = recommended_action_projection_text(action) {
             push_projection_claim_key(
                 &mut keys,
+                &subject_ref,
                 "recommendation",
                 &format!("recommendedActions[{idx}]"),
                 &text,
@@ -2359,6 +2460,7 @@ fn projection_claim_retained_keys(
     for (idx, win) in intel.recent_wins.iter().enumerate() {
         push_projection_claim_key(
             &mut keys,
+            &subject_ref,
             "entity_win",
             &format!("recentWins[{idx}]"),
             &win.text,
@@ -2366,13 +2468,20 @@ fn projection_claim_retained_keys(
     }
     if let Some(state) = intel.current_state.as_ref() {
         if let Some(text) = current_state_projection_text(state) {
-            push_projection_claim_key(&mut keys, "entity_current_state", "currentState", &text);
+            push_projection_claim_key(
+                &mut keys,
+                &subject_ref,
+                "entity_current_state",
+                "currentState",
+                &text,
+            );
         }
     }
     for (idx, priority) in intel.strategic_priorities.iter().enumerate() {
         if let Some(text) = strategic_priority_projection_text(priority) {
             push_projection_claim_key(
                 &mut keys,
+                &subject_ref,
                 "entity_current_state",
                 &format!("strategicPriorities[{idx}]"),
                 &text,
@@ -2381,7 +2490,13 @@ fn projection_claim_retained_keys(
     }
     for (idx, blocker) in intel.blockers.iter().enumerate() {
         if let Some(text) = blocker_projection_text(blocker) {
-            push_projection_claim_key(&mut keys, "entity_risk", &format!("blockers[{idx}]"), &text);
+            push_projection_claim_key(
+                &mut keys,
+                &subject_ref,
+                "entity_risk",
+                &format!("blockers[{idx}]"),
+                &text,
+            );
         }
     }
     if let Some(context) = intel.contract_context.as_ref() {
@@ -2391,13 +2506,20 @@ fn projection_claim_retained_keys(
             } else {
                 "entity_current_state"
             };
-            push_projection_claim_key(&mut keys, claim_type, "contractContext", &text);
+            push_projection_claim_key(
+                &mut keys,
+                &subject_ref,
+                claim_type,
+                "contractContext",
+                &text,
+            );
         }
     }
     for (idx, signal) in intel.expansion_signals.iter().enumerate() {
         if let Some(text) = expansion_signal_projection_text(signal) {
             push_projection_claim_key(
                 &mut keys,
+                &subject_ref,
                 "entity_current_state",
                 &format!("expansionSignals[{idx}]"),
                 &text,
@@ -2406,12 +2528,19 @@ fn projection_claim_retained_keys(
     }
     if let Some(outlook) = intel.agreement_outlook.as_ref() {
         if let Some(text) = agreement_outlook_projection_text(outlook) {
-            push_projection_claim_key(&mut keys, "entity_current_state", "agreementOutlook", &text);
+            push_projection_claim_key(
+                &mut keys,
+                &subject_ref,
+                "entity_current_state",
+                "agreementOutlook",
+                &text,
+            );
         }
     }
     for (idx, value) in intel.value_delivered.iter().enumerate() {
         push_projection_claim_key(
             &mut keys,
+            &subject_ref,
             "value_delivered",
             &format!("valueDelivered[{idx}]"),
             &value.statement,
@@ -2422,6 +2551,7 @@ fn projection_claim_retained_keys(
             if let Some(text) = success_metric_projection_text(metric) {
                 push_projection_claim_key(
                     &mut keys,
+                    &subject_ref,
                     "entity_current_state",
                     &format!("successMetrics[{idx}]"),
                     &text,
@@ -2439,6 +2569,7 @@ fn projection_claim_retained_keys(
                 };
                 push_projection_claim_key(
                     &mut keys,
+                    &subject_ref,
                     claim_type,
                     &format!("openCommitments[{idx}]"),
                     &text,
@@ -2447,10 +2578,12 @@ fn projection_claim_retained_keys(
         }
     }
     for (idx, insight) in intel.stakeholder_insights.iter().enumerate() {
-        if insight.person_id.is_some() {
+        if let Some(person_id) = insight.person_id.as_deref() {
             if let Some(text) = stakeholder_engagement_projection_text(insight) {
+                let person_subject_ref = subject_ref_for_entity("person", person_id)?;
                 push_projection_claim_key(
                     &mut keys,
+                    &person_subject_ref,
                     "stakeholder_engagement",
                     &format!("stakeholderInsights[{idx}].engagement"),
                     &text,
@@ -2461,16 +2594,23 @@ fn projection_claim_retained_keys(
     if intel.entity_type == "account" {
         if let Some(context) = intel.company_context.as_ref() {
             if let Some(text) = company_context_projection_text(context) {
-                push_projection_claim_key(&mut keys, "company_context", "companyContext", &text);
+                push_projection_claim_key(
+                    &mut keys,
+                    &subject_ref,
+                    "company_context",
+                    "companyContext",
+                    &text,
+                );
             }
         }
     }
 
-    keys
+    Ok(keys)
 }
 
 fn push_projection_claim_key(
-    keys: &mut Vec<(String, String, String)>,
+    keys: &mut Vec<(String, String, String, String)>,
+    subject_ref: &str,
     claim_type: &str,
     field_path: &str,
     text: &str,
@@ -2479,6 +2619,7 @@ fn push_projection_claim_key(
         return;
     }
     keys.push((
+        subject_ref.to_string(),
         claim_type.to_string(),
         field_path.to_string(),
         crate::services::claims::normalize_claim_text(text),
@@ -4111,7 +4252,7 @@ mod tests {
     use super::*;
     use crate::db::test_utils::test_db;
     use crate::db::{AccountType, DbAccount};
-    use crate::intelligence::{IntelRisk, IntelligenceJson, ItemSource};
+    use crate::intelligence::{IntelRisk, IntelligenceJson, ItemSource, StakeholderInsight};
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
     use crate::signals::propagation::PropagationEngine;
     use chrono::TimeZone;
@@ -4134,6 +4275,20 @@ mod tests {
             ..Default::default()
         })
         .expect("seed account");
+    }
+
+    fn seed_person(db: &ActionDb, person_id: &str) {
+        db.conn_ref()
+            .execute(
+                "INSERT INTO people (id, email, name, updated_at)
+                 VALUES (?1, ?2, ?3, '2026-05-20T00:00:00Z')",
+                params![
+                    person_id,
+                    format!("{person_id}@example.com"),
+                    format!("Person {person_id}")
+                ],
+            )
+            .expect("seed person");
     }
 
     fn generated_risk_intel(account_id: &str) -> IntelligenceJson {
@@ -4499,6 +4654,175 @@ mod tests {
         assert_eq!(report.generated_projection_recompute_jobs_enqueued, 1);
         assert_eq!(active_generated_risk_count(&db, account_id), 0);
         assert_eq!(withdrawn_generated_risk_count(&db, account_id), 1);
+    }
+
+    #[test]
+    fn explicit_empty_glean_field_withdraws_stale_projection_claim() {
+        let db = test_db();
+        let engine = PropagationEngine::default();
+        let account_id = "acc-generated-risk-empty-refresh";
+        seed_account(&db, account_id);
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 22, 12, 0, 0).unwrap());
+        let rng = SeedableRng::new(54);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+
+        upsert_glean_assessment_from_enrichment(
+            &ctx,
+            &db,
+            &engine,
+            "account",
+            account_id,
+            &generated_risk_intel(account_id),
+        )
+        .expect("commit generated risk projection");
+        assert_eq!(active_generated_risk_count(&db, account_id), 1);
+
+        let empty_risks_refresh = IntelligenceJson {
+            entity_id: account_id.to_string(),
+            entity_type: "account".to_string(),
+            enriched_at: "2026-05-22T13:00:00Z".to_string(),
+            refreshed_fields: vec!["risks".to_string()],
+            ..Default::default()
+        };
+        upsert_glean_assessment_from_enrichment(
+            &ctx,
+            &db,
+            &engine,
+            "account",
+            account_id,
+            &empty_risks_refresh,
+        )
+        .expect("persist explicit empty risks refresh");
+
+        assert_eq!(active_generated_risk_count(&db, account_id), 0);
+        assert_eq!(withdrawn_generated_risk_count(&db, account_id), 1);
+    }
+
+    #[test]
+    fn account_refresh_withdraws_stale_person_subject_stakeholder_projection() {
+        let db = test_db();
+        let engine = PropagationEngine::default();
+        let account_id = "acc-stakeholder-origin-refresh";
+        let person_id = "person-stale-stakeholder-origin";
+        seed_account(&db, account_id);
+        seed_person(&db, person_id);
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 22, 12, 0, 0).unwrap());
+        let rng = SeedableRng::new(55);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+
+        let first_refresh = IntelligenceJson {
+            entity_id: account_id.to_string(),
+            entity_type: "account".to_string(),
+            enriched_at: "2026-05-22T12:00:00Z".to_string(),
+            stakeholder_insights: vec![StakeholderInsight {
+                name: "Fixture Stakeholder".to_string(),
+                role: Some("Champion".to_string()),
+                assessment: Some("Actively backing the rollout.".to_string()),
+                engagement: Some("high".to_string()),
+                person_id: Some(person_id.to_string()),
+                ..Default::default()
+            }],
+            refreshed_fields: vec!["stakeholderInsights".to_string()],
+            ..Default::default()
+        };
+        upsert_glean_assessment_from_enrichment(
+            &ctx,
+            &db,
+            &engine,
+            "account",
+            account_id,
+            &first_refresh,
+        )
+        .expect("commit person-subject stakeholder projection");
+
+        let (active_before, origin_id): (i64, String) = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*),
+                        json_extract(metadata_json, '$.projection_origin_subject.id')
+                   FROM intelligence_claims
+                  WHERE claim_type = 'stakeholder_engagement'
+                    AND field_path = 'stakeholderInsights[0].engagement'
+                    AND claim_state = 'active'
+                    AND surfacing_state = 'active'
+                    AND json_valid(subject_ref) = 1
+                    AND lower(json_extract(subject_ref, '$.kind')) = 'person'
+                    AND json_extract(subject_ref, '$.id') = ?1",
+                params![person_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("active stakeholder projection with origin metadata");
+        assert_eq!(active_before, 1);
+        assert_eq!(origin_id, account_id);
+
+        let second_refresh = IntelligenceJson {
+            entity_id: account_id.to_string(),
+            entity_type: "account".to_string(),
+            enriched_at: "2026-05-22T13:00:00Z".to_string(),
+            refreshed_fields: vec!["stakeholderInsights".to_string()],
+            ..Default::default()
+        };
+        upsert_glean_assessment_from_enrichment(
+            &ctx,
+            &db,
+            &engine,
+            "account",
+            account_id,
+            &second_refresh,
+        )
+        .expect("persist stakeholder refresh without stale person");
+
+        let active_after: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*)
+                   FROM intelligence_claims
+                  WHERE claim_type = 'stakeholder_engagement'
+                    AND claim_state = 'active'
+                    AND surfacing_state = 'active'
+                    AND json_valid(subject_ref) = 1
+                    AND lower(json_extract(subject_ref, '$.kind')) = 'person'
+                    AND json_extract(subject_ref, '$.id') = ?1",
+                params![person_id],
+                |row| row.get(0),
+            )
+            .expect("active stakeholder projection count after refresh");
+        assert_eq!(active_after, 0);
+        let withdrawn_after: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*)
+                   FROM intelligence_claims
+                  WHERE claim_type = 'stakeholder_engagement'
+                    AND claim_state = 'withdrawn'
+                    AND surfacing_state = 'dormant'
+                    AND retraction_reason = 'projection_refreshed'
+                    AND json_valid(subject_ref) = 1
+                    AND lower(json_extract(subject_ref, '$.kind')) = 'person'
+                    AND json_extract(subject_ref, '$.id') = ?1",
+                params![person_id],
+                |row| row.get(0),
+            )
+            .expect("withdrawn stakeholder projection count after refresh");
+        assert_eq!(withdrawn_after, 1);
+        let person_recompute_jobs: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*)
+                   FROM invalidation_jobs
+                  WHERE job_kind = 'claim_recompute'
+                    AND subject_type = 'person'
+                    AND subject_id = ?1",
+                params![person_id],
+                |row| row.get(0),
+            )
+            .expect("person recompute jobs");
+        assert!(
+            person_recompute_jobs >= 1,
+            "withdrawn person-subject projection should enqueue trust recompute"
+        );
     }
 
     #[test]
@@ -5210,14 +5534,16 @@ mod tests {
             active_source_ref,
             active_projection_producer,
             active_provenance_json,
-        ): (String, String, Option<String>, String, String) = db
+            active_metadata_json,
+        ): (String, String, Option<String>, String, String, String) = db
             .conn_ref()
             .query_row(
                 "SELECT id,
                         data_source,
                         source_ref,
                         json_extract(metadata_json, '$.projection_producer'),
-                        provenance_json
+                        provenance_json,
+                        metadata_json
                    FROM intelligence_claims
                   WHERE claim_type = 'entity_summary'
                     AND field_path = 'executiveAssessment'
@@ -5233,6 +5559,7 @@ mod tests {
                         row.get(2)?,
                         row.get(3)?,
                         row.get(4)?,
+                        row.get(5)?,
                     ))
                 },
             )
@@ -5244,6 +5571,17 @@ mod tests {
         let active_provenance: serde_json::Value =
             serde_json::from_str(&active_provenance_json).expect("active provenance JSON");
         assert_eq!(active_provenance["sources"][0]["data_source"], "ai");
+        let active_metadata: serde_json::Value =
+            serde_json::from_str(&active_metadata_json).expect("active metadata JSON");
+        assert_eq!(active_metadata["projection_producer"], "ai_enrichment");
+        assert!(
+            active_metadata.get("legacy_projection_value").is_none(),
+            "reissued local claim metadata must not retain purged Glean projection payload"
+        );
+        assert!(
+            !active_metadata_json.contains("glean"),
+            "reissued local claim metadata must not retain Glean source labels"
+        );
         let remaining_glean_corroborations: i64 = db
             .conn_ref()
             .query_row(
@@ -5514,14 +5852,13 @@ mod mutation_smoke_tests {
             ..Default::default()
         };
 
-        super::enqueue_projection_claim_recomputes(
-            &ctx,
-            &db,
-            &signal_id,
+        let subjects = super::projection_claim_recompute_subjects(
             "account",
             "acc-projection-recompute",
             &intel,
+            &[],
         );
+        super::enqueue_projection_claim_recomputes(&ctx, &db, &signal_id, subjects);
 
         assert_eq!(
             claim_recompute_job_count(&db, "account", "acc-projection-recompute"),

@@ -3325,6 +3325,50 @@ fn extract_balanced_json_object(candidate: &str) -> Option<&str> {
     None
 }
 
+fn response_refreshed_fields(json_str: &str) -> Vec<String> {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(json_str) else {
+        return Vec::new();
+    };
+    let Some(object) = value.as_object() else {
+        return Vec::new();
+    };
+
+    object
+        .keys()
+        .filter_map(|key| canonical_response_field_name(key))
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+fn canonical_response_field_name(field: &str) -> Option<&'static str> {
+    match field {
+        "executiveAssessment" => Some("executiveAssessment"),
+        "pullQuote" => Some("pullQuote"),
+        "health" | "healthScore" | "healthTrend" => Some("health"),
+        "risks" => Some("risks"),
+        "recommendedActions" => Some("recommendedActions"),
+        "recentWins" => Some("recentWins"),
+        "currentState" => Some("currentState"),
+        "competitiveContext" => Some("competitiveContext"),
+        "strategicPriorities" => Some("strategicPriorities"),
+        "marketContext" => Some("marketContext"),
+        "regulatoryContext" => Some("regulatoryContext"),
+        "organizationalChanges" => Some("organizationalChanges"),
+        "internalTeam" => Some("internalTeam"),
+        "blockers" => Some("blockers"),
+        "contractContext" => Some("contractContext"),
+        "expansionSignals" => Some("expansionSignals"),
+        "agreementOutlook" | "renewalOutlook" | "renewal_outlook" => Some("agreementOutlook"),
+        "valueDelivered" => Some("valueDelivered"),
+        "successMetrics" => Some("successMetrics"),
+        "openCommitments" => Some("openCommitments"),
+        "stakeholderInsights" => Some("stakeholderInsights"),
+        "companyContext" => Some("companyContext"),
+        "gongCallSummaries" => Some("gongCallSummaries"),
+        _ => None,
+    }
+}
+
 /// Try to parse the response as JSON format. Returns None if it fails.
 fn try_parse_json_response(
     response: &str,
@@ -3334,6 +3378,7 @@ fn try_parse_json_response(
     manifest: &[SourceManifestEntry],
 ) -> Option<IntelligenceJson> {
     let json_str = extract_json_from_response(response)?;
+    let refreshed_fields = response_refreshed_fields(json_str);
 
     // Validate structure and run anomaly detection before deserialization
     if let Err(e) = super::validation::validate_intelligence_response(json_str) {
@@ -3408,6 +3453,7 @@ fn try_parse_json_response(
         enriched_at: Utc::now().to_rfc3339(),
         source_file_count,
         source_manifest: manifest.to_vec(),
+        refreshed_fields,
         executive_assessment: ai_resp.executive_assessment,
         pull_quote: ai_resp.pull_quote,
         risks: ai_resp
@@ -4252,6 +4298,25 @@ Some trailing text"#;
         assert_eq!(readiness.prep_items.len(), 2);
         let ctx = intel.company_context.unwrap();
         assert_eq!(ctx.industry.as_deref(), Some("Technology"));
+    }
+
+    #[test]
+    fn test_parse_json_response_tracks_explicit_empty_refreshed_fields() {
+        let response = r#"{
+  "executiveAssessment": "Brief.",
+  "risks": [],
+  "stakeholderInsights": []
+}"#;
+
+        let intel = parse_intelligence_response(response, "acme", "account", 2, vec![])
+            .expect("should parse JSON");
+
+        assert!(intel.risks.is_empty());
+        assert!(intel.stakeholder_insights.is_empty());
+        assert!(intel.refreshed_fields.contains(&"risks".to_string()));
+        assert!(intel
+            .refreshed_fields
+            .contains(&"stakeholderInsights".to_string()));
     }
 
     #[test]

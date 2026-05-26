@@ -562,6 +562,67 @@ pub struct EnrichmentComplete {
     pub wall_clock_ms: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct QueueRefreshFailure {
+    entity_id: String,
+    stage: &'static str,
+    error: String,
+}
+
+impl QueueRefreshFailure {
+    fn new(entity_id: &str, stage: &'static str, error: impl Into<String>) -> Self {
+        Self {
+            entity_id: entity_id.to_string(),
+            stage,
+            error: error.into(),
+        }
+    }
+}
+
+fn queue_worker_final_status_payloads(
+    completed_count: usize,
+    failures: &[QueueRefreshFailure],
+    manual: bool,
+) -> Vec<serde_json::Value> {
+    if let Some(first_failure) = failures.first() {
+        let message = if completed_count > 0 {
+            "Some insight refreshes failed"
+        } else {
+            "Insight refresh failed"
+        };
+        let error = if failures.len() == 1 {
+            first_failure.error.clone()
+        } else {
+            format!(
+                "{} refreshes failed; first failure: {}",
+                failures.len(),
+                first_failure.error
+            )
+        };
+        return vec![serde_json::json!({
+            "phase": "failed",
+            "message": message,
+            "count": failures.len(),
+            "completedCount": completed_count,
+            "manual": manual,
+            "entityId": first_failure.entity_id,
+            "stage": first_failure.stage,
+            "error": error,
+        })];
+    }
+
+    if completed_count == 0 {
+        return Vec::new();
+    }
+
+    vec![serde_json::json!({
+        "phase": "completed",
+        "message": "Insights updated",
+        "count": completed_count,
+        "manual": manual,
+    })]
+}
+
 /// Context gathered from the DB (held briefly, then released before PTY).
 /// Public so manual enrichment commands can reuse the split-lock pattern.
 #[derive(Clone)]
@@ -1049,6 +1110,8 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
         drop(_permit);
 
         // Phase 3 + 4: Write results and emit events for each entity
+        let mut finalized_count = 0usize;
+        let mut finalization_failures = Vec::new();
         for (request, input, parsed) in &results {
             let intel = &parsed.intel;
             // Check for anomalies in the enrichment output
@@ -1078,6 +1141,11 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             )) {
                 Ok(db) => db,
                 Err(e) => {
+                    finalization_failures.push(QueueRefreshFailure::new(
+                        &request.entity_id,
+                        "open_db",
+                        e.to_string(),
+                    ));
                     log::warn!(
                         "IntelProcessor: failed to open DB for {} persistence: {}",
                         request.entity_id,
@@ -1101,6 +1169,11 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             ) {
                 Ok(composition) => composition,
                 Err(e) => {
+                    finalization_failures.push(QueueRefreshFailure::new(
+                        &request.entity_id,
+                        "compose",
+                        e.clone(),
+                    ));
                     log::warn!(
                         "IntelProcessor: failed to write results for {}: {}",
                         request.entity_id,
@@ -1125,6 +1198,11 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                     },
                 )
             }) {
+                finalization_failures.push(QueueRefreshFailure::new(
+                    &request.entity_id,
+                    "write_results",
+                    e.clone(),
+                ));
                 log::warn!(
                     "IntelProcessor: failed to persist DB assessment for {}: {}",
                     request.entity_id,
@@ -1144,6 +1222,11 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                     producer: parsed.producer,
                 },
             ) {
+                finalization_failures.push(QueueRefreshFailure::new(
+                    &request.entity_id,
+                    "finalize",
+                    e.clone(),
+                ));
                 log::warn!(
                     "IntelProcessor: failed to finalize enrichment for {}: {}",
                     request.entity_id,
@@ -1151,6 +1234,7 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                 );
                 continue;
             }
+            finalized_count += 1;
 
             log::info!(
                 "IntelProcessor: completed {} ({} risks, {} wins)",
@@ -1161,19 +1245,17 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
         }
 
         // Emit completion status for frontend indicator
-        #[allow(
-            clippy::let_underscore_must_use,
-            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-        )]
-        let _ = app.emit(
-            "background-work-status",
-            serde_json::json!({
-                "phase": "completed",
-                "message": "Insights updated",
-                "count": results.len(),
-                "manual": batch_has_manual,
-            }),
-        );
+        for payload in queue_worker_final_status_payloads(
+            finalized_count,
+            &finalization_failures,
+            batch_has_manual,
+        ) {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
+            let _ = app.emit("background-work-status", payload);
+        }
     }
 }
 
@@ -3661,6 +3743,34 @@ mod tests {
         let (clock, rng, external) = trust_ctx_parts();
         let ctx = ServiceContext::test_live(&clock, &rng, &external);
         f(&ctx)
+    }
+
+    #[test]
+    fn queue_worker_final_status_reports_finalize_failures_instead_of_success() {
+        let failures = vec![QueueRefreshFailure::new(
+            "account-finalize-failed",
+            "finalize",
+            "visible side effects failed",
+        )];
+
+        let payloads = queue_worker_final_status_payloads(0, &failures, true);
+
+        assert_eq!(payloads.len(), 1);
+        assert_eq!(payloads[0]["phase"], "failed");
+        assert_eq!(payloads[0]["manual"], true);
+        assert_eq!(payloads[0]["entityId"], "account-finalize-failed");
+        assert_eq!(payloads[0]["stage"], "finalize");
+        assert_eq!(payloads[0]["error"], "visible side effects failed");
+    }
+
+    #[test]
+    fn queue_worker_final_status_counts_only_finalized_successes() {
+        let payloads = queue_worker_final_status_payloads(2, &[], false);
+
+        assert_eq!(payloads.len(), 1);
+        assert_eq!(payloads[0]["phase"], "completed");
+        assert_eq!(payloads[0]["count"], 2);
+        assert_eq!(payloads[0]["manual"], false);
     }
 
     fn seed_trust_account(db: &crate::db::ActionDb, account_id: &str) {

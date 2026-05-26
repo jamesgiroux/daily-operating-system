@@ -928,6 +928,12 @@ pub struct IntelligenceJson {
     pub source_file_count: usize,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub source_manifest: Vec<SourceManifestEntry>,
+    /// Top-level response fields explicitly present in the latest parsed model output.
+    ///
+    /// This is runtime-only metadata used to distinguish an omitted field from an
+    /// explicit empty array during partial refreshes.
+    #[serde(skip)]
+    pub refreshed_fields: Vec<String>,
 
     /// Prose assessment: account situation / project status / relationship brief.
     #[serde(skip_serializing_if = "Option::is_none")]

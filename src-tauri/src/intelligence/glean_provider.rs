@@ -1171,6 +1171,7 @@ pub fn reconcile_enrichment(
 ) -> IntelligenceJson {
     let mut result = existing.clone();
     let dismissed = &existing.dismissed_items;
+    let refreshed_fields = new_output.refreshed_fields.clone();
 
     // Helper: check if a vec field (or any of its items' sub-fields) has user edits.
     // When a user edits an individual field like stakeholderInsights[0].engagement,
@@ -1182,6 +1183,8 @@ pub fn reconcile_enrichment(
             e.field_path == field_name || e.field_path.starts_with(&format!("{}[", field_name))
         })
     };
+    let field_refreshed =
+        |field_name: &str| -> bool { refreshed_fields.iter().any(|field| field == field_name) };
 
     // --- Vec fields: source-aware item reconciliation ---
     // Skip reconciliation for fields with user edits — preserve_user_edits
@@ -1192,7 +1195,9 @@ pub fn reconcile_enrichment(
     // against existing pty_synthesis items would wipe them all. Reconcile only
     // when the new output actually has data, or when existing is also empty
     // (nothing to preserve).
-    if !has_user_edits("risks") && (!new_output.risks.is_empty() || existing.risks.is_empty()) {
+    if !has_user_edits("risks")
+        && (field_refreshed("risks") || !new_output.risks.is_empty() || existing.risks.is_empty())
+    {
         result.risks = reconcile_vec_items(
             &existing.risks,
             &new_output.risks,
@@ -1204,7 +1209,9 @@ pub fn reconcile_enrichment(
     }
 
     if !has_user_edits("recentWins")
-        && (!new_output.recent_wins.is_empty() || existing.recent_wins.is_empty())
+        && (field_refreshed("recentWins")
+            || !new_output.recent_wins.is_empty()
+            || existing.recent_wins.is_empty())
     {
         result.recent_wins = reconcile_vec_items(
             &existing.recent_wins,
@@ -1223,7 +1230,9 @@ pub fn reconcile_enrichment(
     result.stakeholder_insights = new_output.stakeholder_insights;
 
     if !has_user_edits("valueDelivered")
-        && (!new_output.value_delivered.is_empty() || existing.value_delivered.is_empty())
+        && (field_refreshed("valueDelivered")
+            || !new_output.value_delivered.is_empty()
+            || existing.value_delivered.is_empty())
     {
         result.value_delivered = reconcile_vec_items(
             &existing.value_delivered,
@@ -1236,7 +1245,9 @@ pub fn reconcile_enrichment(
     }
 
     if !has_user_edits("competitiveContext")
-        && (!new_output.competitive_context.is_empty() || existing.competitive_context.is_empty())
+        && (field_refreshed("competitiveContext")
+            || !new_output.competitive_context.is_empty()
+            || existing.competitive_context.is_empty())
     {
         result.competitive_context = reconcile_vec_items(
             &existing.competitive_context,
@@ -1253,7 +1264,9 @@ pub fn reconcile_enrichment(
     // prior regulatory/market items that user corrections or earlier
     // enrichments accumulated.
     if !has_user_edits("marketContext")
-        && (!new_output.market_context.is_empty() || existing.market_context.is_empty())
+        && (field_refreshed("marketContext")
+            || !new_output.market_context.is_empty()
+            || existing.market_context.is_empty())
     {
         result.market_context = reconcile_vec_items(
             &existing.market_context,
@@ -1266,7 +1279,8 @@ pub fn reconcile_enrichment(
     }
 
     if !has_user_edits("organizationalChanges")
-        && (!new_output.organizational_changes.is_empty()
+        && (field_refreshed("organizationalChanges")
+            || !new_output.organizational_changes.is_empty()
             || existing.organizational_changes.is_empty())
     {
         result.organizational_changes = reconcile_vec_items(
@@ -1280,7 +1294,9 @@ pub fn reconcile_enrichment(
     }
 
     if !has_user_edits("expansionSignals")
-        && (!new_output.expansion_signals.is_empty() || existing.expansion_signals.is_empty())
+        && (field_refreshed("expansionSignals")
+            || !new_output.expansion_signals.is_empty()
+            || existing.expansion_signals.is_empty())
     {
         result.expansion_signals = reconcile_vec_items(
             &existing.expansion_signals,
@@ -1298,7 +1314,7 @@ pub fn reconcile_enrichment(
             (&existing.open_commitments, &new_output.open_commitments)
         {
             // Non-destructive-empty: if new dimension returned empty, keep existing.
-            if !new_oc.is_empty() || existing_oc.is_empty() {
+            if field_refreshed("openCommitments") || !new_oc.is_empty() || existing_oc.is_empty() {
                 let reconciled = reconcile_vec_items(
                     existing_oc,
                     new_oc,
@@ -1355,23 +1371,24 @@ pub fn reconcile_enrichment(
     // Non-source-attributed vecs: strategic_priorities, internal_team, blockers, gong_call_summaries
     // These already use an "only-overwrite-if-non-empty" guard via the is_empty checks below,
     // which preserves existing values when the dimension returns nothing.
-    if !new_output.strategic_priorities.is_empty() {
+    if field_refreshed("strategicPriorities") || !new_output.strategic_priorities.is_empty() {
         result.strategic_priorities = new_output.strategic_priorities;
     }
-    if !new_output.internal_team.is_empty() {
+    if field_refreshed("internalTeam") || !new_output.internal_team.is_empty() {
         result.internal_team =
             reconcile_internal_team(&existing.internal_team, &new_output.internal_team);
     }
-    if !new_output.blockers.is_empty() {
+    if field_refreshed("blockers") || !new_output.blockers.is_empty() {
         result.blockers = new_output.blockers;
     }
-    if !new_output.gong_call_summaries.is_empty() {
+    if field_refreshed("gongCallSummaries") || !new_output.gong_call_summaries.is_empty() {
         result.gong_call_summaries = new_output.gong_call_summaries;
     }
 
     // Carry forward user_edits and dismissed_items from existing
     result.user_edits = existing.user_edits;
     result.dismissed_items = existing.dismissed_items;
+    result.refreshed_fields = refreshed_fields;
 
     // Update metadata
     result.enriched_at = new_output.enriched_at;
@@ -1583,6 +1600,53 @@ mod provider_trait_tests {
             p.current_model(ModelTier::Extraction).as_str(),
             "glean-chat"
         );
+    }
+}
+
+#[cfg(test)]
+mod reconciliation_tests {
+    use super::*;
+    use crate::intelligence::io::{IntelRisk, IntelligenceJson, ItemSource};
+
+    #[test]
+    fn explicit_empty_refreshed_risks_remove_existing_glean_items() {
+        let existing = IntelligenceJson {
+            risks: vec![
+                IntelRisk {
+                    text: "Stale Glean risk".to_string(),
+                    urgency: "watch".to_string(),
+                    item_source: Some(ItemSource {
+                        source: "glean_crm".to_string(),
+                        confidence: 0.9,
+                        sourced_at: "2026-05-20T00:00:00Z".to_string(),
+                        reference: Some("CRM fixture".to_string()),
+                    }),
+                    ..Default::default()
+                },
+                IntelRisk {
+                    text: "Local transcript risk".to_string(),
+                    urgency: "watch".to_string(),
+                    item_source: Some(ItemSource {
+                        source: "pty_synthesis".to_string(),
+                        confidence: 0.5,
+                        sourced_at: "2026-05-19T00:00:00Z".to_string(),
+                        reference: Some("local fixture".to_string()),
+                    }),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        let new_output = IntelligenceJson {
+            refreshed_fields: vec!["risks".to_string()],
+            ..Default::default()
+        };
+
+        let result = reconcile_enrichment(existing, new_output, &["glean_crm"]);
+
+        assert_eq!(result.risks.len(), 1);
+        assert_eq!(result.risks[0].text, "Local transcript risk");
+        assert!(result.refreshed_fields.contains(&"risks".to_string()));
     }
 }
 
