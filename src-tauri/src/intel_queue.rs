@@ -597,6 +597,26 @@ impl EnrichmentProducer {
     fn is_glean(self) -> bool {
         matches!(self, EnrichmentProducer::Glean)
     }
+
+    fn materialization_label(self) -> &'static str {
+        match self {
+            EnrichmentProducer::Glean => "Glean",
+            EnrichmentProducer::Pty => "PTY",
+        }
+    }
+
+    fn side_effect_producer(
+        self,
+    ) -> crate::services::enrichment_side_effects::EnrichmentSideEffectProducer {
+        match self {
+            EnrichmentProducer::Glean => {
+                crate::services::enrichment_side_effects::EnrichmentSideEffectProducer::Glean
+            }
+            EnrichmentProducer::Pty => {
+                crate::services::enrichment_side_effects::EnrichmentSideEffectProducer::Pty
+            }
+        }
+    }
 }
 
 /// Parsed enrichment output from one model response section.
@@ -2668,43 +2688,27 @@ pub fn run_enrichment_post_commit_side_effects(
 
     if input.entity_type == "account" {
         let ctx = state.live_service_context();
-        let (commitment_source_label, signal_source, product_source) = match producer {
-            EnrichmentProducer::Glean => (
-                format!("glean_enrichment:{}", input.entity_id),
-                "glean",
-                "glean",
-            ),
-            EnrichmentProducer::Pty => (
-                format!("pty_enrichment:{}", input.entity_id),
-                "ai_enrichment",
-                "ai_inference",
-            ),
-        };
-        if let Err(error) =
-            crate::services::enrichment_side_effects::sync_account_enrichment_side_effects(
-                &ctx,
-                db,
-                state.signals.engine.as_ref(),
-                &input.entity_id,
-                final_intel,
-                crate::services::enrichment_side_effects::EnrichmentSideEffectSource {
-                    commitment_source_label: &commitment_source_label,
-                    signal_source,
-                    product_source,
-                },
-            )
-        {
+        let sync_result =
+            crate::services::enrichment_side_effects::sync_account_enrichment_side_effects_for_producer(
+            &ctx,
+            db,
+            state.signals.engine.as_ref(),
+            &input.entity_id,
+            final_intel,
+            producer.side_effect_producer(),
+        );
+        if let Err(error) = sync_result {
             log::warn!(
                 "IntelProcessor: enrichment side-effect sync failed for {}: {}",
                 input.entity_id,
                 error
             );
-            if producer.is_glean() {
-                return Err(format!(
-                    "Glean enrichment side-effect sync failed for {}: {}",
-                    input.entity_id, error
-                ));
-            }
+            return Err(format!(
+                "{} enrichment side-effect sync failed for {}: {}",
+                producer.materialization_label(),
+                input.entity_id,
+                error
+            ));
         }
     }
 
@@ -2819,8 +2823,9 @@ pub(crate) fn run_enrichment_finalize_post_commit(
         }
         FinalizeMode::TrustRecompute => EnrichmentProducer::Pty,
     };
-    let is_glean_producer = side_effect_producer.is_glean();
-    if is_glean_producer {
+    let materialize_visible_side_effects_before_export =
+        !matches!(mode, FinalizeMode::TrustRecompute);
+    if materialize_visible_side_effects_before_export {
         run_enrichment_post_commit_side_effects(
             state.as_ref(),
             input,
@@ -2851,7 +2856,7 @@ pub(crate) fn run_enrichment_finalize_post_commit(
     }
 
     fenced_write_enrichment_intelligence(db, &input.entity_dir, intel);
-    if !is_glean_producer {
+    if !materialize_visible_side_effects_before_export {
         run_enrichment_post_commit_side_effects(
             state.as_ref(),
             input,

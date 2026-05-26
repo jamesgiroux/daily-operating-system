@@ -1081,6 +1081,7 @@ fn stage_failure_message(stage: &str) -> &str {
         "pty_permit" => "PTY permit acquisition",
         "pty_enrichment" => "Claude PTY enrichment",
         "write_results" => "result writeback",
+        "finalize" => "refresh finalization",
         "relationship_persist" => "relationship persistence",
         _ => stage,
     }
@@ -1554,10 +1555,10 @@ pub async fn enrich_entity(
             &input.entity_id,
             &input.entity_type,
             &input.entity_name,
-            "relationship_persist",
+            "finalize",
             &e,
         );
-        return Err(manual_refresh_error("relationship_persist", &e));
+        return Err(manual_refresh_error("finalize", &e));
     }
 
     if let Some(app) = app_handle {
@@ -3888,6 +3889,153 @@ mod mutation_smoke_tests {
         }
     }
 
+    fn visible_materialization_commitment_rows(
+        db: &crate::db::ActionDb,
+        account_id: &str,
+    ) -> Vec<(String, String, Option<String>, String)> {
+        let mut stmt = db
+            .conn_ref()
+            .prepare(
+                "SELECT title, owner, target_date, source
+                 FROM captured_commitments
+                 WHERE account_id = ?1
+                 ORDER BY title, owner, coalesce(target_date, ''), source",
+            )
+            .expect("prepare commitment materialization query");
+        stmt.query_map(params![account_id], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        })
+        .expect("query commitment materialization")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("collect commitment materialization")
+    }
+
+    fn visible_materialization_product_rows(
+        db: &crate::db::ActionDb,
+        account_id: &str,
+    ) -> Vec<(String, String, String)> {
+        let mut stmt = db
+            .conn_ref()
+            .prepare(
+                "SELECT name, printf('%.2f', coalesce(arr_portion, -1.0)), source
+                 FROM account_products
+                 WHERE account_id = ?1
+                 ORDER BY name, source",
+            )
+            .expect("prepare product materialization query");
+        stmt.query_map(params![account_id], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })
+        .expect("query product materialization")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("collect product materialization")
+    }
+
+    fn make_visible_materialization_intel(entity_id: &str) -> IntelligenceJson {
+        IntelligenceJson {
+            executive_assessment_render_policy: None,
+            entity_id: entity_id.to_string(),
+            entity_type: "account".to_string(),
+            enriched_at: "2026-05-03T01:00:00Z".to_string(),
+            open_commitments: Some(vec![OpenCommitment {
+                commitment_id: None,
+                description: "Send reliability recap".to_string(),
+                owner: Some("vendor".to_string()),
+                due_date: Some("2026-06-01".to_string()),
+                source: None,
+                status: None,
+                item_source: None,
+                discrepancy: None,
+            }]),
+            product_adoption: Some(AdoptionSignals {
+                feature_adoption: vec!["Core platform: 75%".to_string()],
+                ..Default::default()
+            }),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn manual_and_queue_refresh_share_materialization_path() {
+        let state = remote_glean_state();
+
+        for (producer, expected_commitment_prefix, expected_product_source) in [
+            (
+                crate::intel_queue::EnrichmentProducer::Pty,
+                "pty_enrichment:",
+                "ai_inference",
+            ),
+            (
+                crate::intel_queue::EnrichmentProducer::Glean,
+                "glean_enrichment:",
+                "glean",
+            ),
+        ] {
+            let entity_id = format!("acc-shared-materialization-{}", expected_product_source);
+            let intel = make_visible_materialization_intel(&entity_id);
+
+            let queue_db = test_db();
+            seed_finalize_account(&queue_db, &entity_id);
+            let queue_dir = tempfile::tempdir().expect("queue tempdir");
+            let queue_input = make_enrichment_input(&entity_id, queue_dir.path());
+            run_enrichment_finalize_post_commit(
+                &state,
+                &queue_db,
+                &queue_input,
+                &intel,
+                &[],
+                FinalizeMode::QueueWorker {
+                    is_background: false,
+                    producer,
+                },
+            )
+            .expect("queue materialization");
+
+            let manual_db = test_db();
+            seed_finalize_account(&manual_db, &entity_id);
+            let manual_dir = tempfile::tempdir().expect("manual tempdir");
+            let manual_input = make_enrichment_input(&entity_id, manual_dir.path());
+            run_enrichment_finalize_post_commit(
+                &state,
+                &manual_db,
+                &manual_input,
+                &intel,
+                &[],
+                FinalizeMode::ManualRefresh { producer },
+            )
+            .expect("manual materialization");
+
+            let queue_commitments = visible_materialization_commitment_rows(&queue_db, &entity_id);
+            assert_eq!(
+                queue_commitments,
+                visible_materialization_commitment_rows(&manual_db, &entity_id),
+                "queue and manual refresh must commit identical visible commitments for {producer:?}"
+            );
+            assert!(
+                queue_commitments
+                    .iter()
+                    .all(|(_, _, _, source)| source.starts_with(expected_commitment_prefix)),
+                "commitment materialization should use producer-owned source labels"
+            );
+
+            let queue_products = visible_materialization_product_rows(&queue_db, &entity_id);
+            assert_eq!(
+                queue_products,
+                visible_materialization_product_rows(&manual_db, &entity_id),
+                "queue and manual refresh must commit identical visible products for {producer:?}"
+            );
+            assert_eq!(
+                queue_products,
+                vec![(
+                    "Core platform".to_string(),
+                    "0.75".to_string(),
+                    expected_product_source.to_string()
+                )],
+                "product materialization should be normalized and producer-owned"
+            );
+        }
+    }
+
     #[test]
     fn glean_queue_and_manual_refresh_share_finalization_side_effects() {
         let state = remote_glean_state();
@@ -3994,54 +4142,53 @@ mod mutation_smoke_tests {
     }
 
     #[test]
-    fn glean_finalize_blocks_export_when_glean_side_effects_fail() {
+    fn materialization_failure_blocks_export_for_visible_generation_side_effects() {
         let state = remote_glean_state();
-        let db = test_db();
-        let entity_id = "acc-finalize-side-effect-failure";
-        seed_finalize_account(&db, entity_id);
-        db.conn_ref()
-            .execute_batch(
-                "CREATE TRIGGER fail_glean_commitment_insert
-                 BEFORE INSERT ON captured_commitments
-                 WHEN NEW.account_id = 'acc-finalize-side-effect-failure'
-                 BEGIN
-                   SELECT RAISE(ABORT, 'forced Glean side effect failure');
-                 END;",
-            )
-            .expect("install side-effect failure trigger");
-        let dir = tempfile::tempdir().expect("tempdir");
-        let input = make_enrichment_input(entity_id, dir.path());
-        let mut intel = make_glean_signal_intel(entity_id);
-        intel.open_commitments = Some(vec![OpenCommitment {
-            commitment_id: None,
-            description: "Send lifecycle-safe recap".to_string(),
-            owner: Some("vendor".to_string()),
-            due_date: Some("2026-06-01".to_string()),
-            source: Some("glean".to_string()),
-            status: None,
-            item_source: None,
-            discrepancy: None,
-        }]);
+        for (producer, expected_error) in [
+            (
+                crate::intel_queue::EnrichmentProducer::Glean,
+                "Glean enrichment side-effect sync failed",
+            ),
+            (
+                crate::intel_queue::EnrichmentProducer::Pty,
+                "PTY enrichment side-effect sync failed",
+            ),
+        ] {
+            let db = test_db();
+            let entity_id = format!("acc-finalize-side-effect-failure-{producer:?}");
+            seed_finalize_account(&db, &entity_id);
+            db.conn_ref()
+                .execute_batch(
+                    "CREATE TRIGGER fail_commitment_insert
+                     BEFORE INSERT ON captured_commitments
+                     WHEN NEW.account_id LIKE 'acc-finalize-side-effect-failure-%'
+                     BEGIN
+                       SELECT RAISE(ABORT, 'forced visible materialization failure');
+                     END;",
+                )
+                .expect("install side-effect failure trigger");
+            let dir = tempfile::tempdir().expect("tempdir");
+            let input = make_enrichment_input(&entity_id, dir.path());
+            let intel = make_visible_materialization_intel(&entity_id);
 
-        let result = run_enrichment_finalize_post_commit(
-            &state,
-            &db,
-            &input,
-            &intel,
-            &[],
-            FinalizeMode::ManualRefresh {
-                producer: crate::intel_queue::EnrichmentProducer::Glean,
-            },
-        );
+            let result = run_enrichment_finalize_post_commit(
+                &state,
+                &db,
+                &input,
+                &intel,
+                &[],
+                FinalizeMode::ManualRefresh { producer },
+            );
 
-        assert!(
-            result.is_err_and(|error| error.contains("Glean enrichment side-effect sync failed")),
-            "Glean side-effect failure must stop finalize success"
-        );
-        assert!(
-            !dir.path().join("intelligence.json").exists(),
-            "generated exports must wait until Glean substrate side effects complete"
-        );
+            assert!(
+                result.is_err_and(|error| error.contains(expected_error)),
+                "{producer:?} side-effect failure must stop finalize success"
+            );
+            assert!(
+                !dir.path().join("intelligence.json").exists(),
+                "generated exports must wait until visible materialization completes for {producer:?}"
+            );
+        }
     }
 
     #[test]

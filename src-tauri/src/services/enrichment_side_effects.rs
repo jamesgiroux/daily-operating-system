@@ -18,6 +18,45 @@ pub struct EnrichmentSideEffectSource<'a> {
     pub product_source: &'a str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EnrichmentSideEffectProducer {
+    Glean,
+    Pty,
+}
+
+pub fn sync_account_enrichment_side_effects_for_producer(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    engine: &PropagationEngine,
+    account_id: &str,
+    intel: &IntelligenceJson,
+    producer: EnrichmentSideEffectProducer,
+) -> Result<(), String> {
+    let (commitment_source_label, signal_source, product_source) = match producer {
+        EnrichmentSideEffectProducer::Glean => {
+            (format!("glean_enrichment:{account_id}"), "glean", "glean")
+        }
+        EnrichmentSideEffectProducer::Pty => (
+            format!("pty_enrichment:{account_id}"),
+            "ai_enrichment",
+            "ai_inference",
+        ),
+    };
+
+    sync_account_enrichment_side_effects(
+        ctx,
+        db,
+        engine,
+        account_id,
+        intel,
+        EnrichmentSideEffectSource {
+            commitment_source_label: &commitment_source_label,
+            signal_source,
+            product_source,
+        },
+    )
+}
+
 pub fn sync_account_enrichment_side_effects(
     ctx: &ServiceContext<'_>,
     db: &ActionDb,

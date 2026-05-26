@@ -1210,6 +1210,16 @@ mod tests {
     use super::*;
     use crate::db::test_utils::test_db;
 
+    static COALESCING_TEST_LOCK: OnceLock<parking_lot::Mutex<()>> = OnceLock::new();
+
+    fn reset_coalescing_state_for_test() -> parking_lot::MutexGuard<'static, ()> {
+        let guard = COALESCING_TEST_LOCK
+            .get_or_init(|| parking_lot::Mutex::new(()))
+            .lock();
+        *coalescing_state().lock() = CoalescingState::default();
+        guard
+    }
+
     #[test]
     fn test_source_base_weights() {
         assert_eq!(source_base_weight("user_correction"), 1.0);
@@ -1435,7 +1445,7 @@ mod tests {
 
     #[test]
     fn dos237_coalesces_duplicate_entity_signals_inside_window() {
-        *coalescing_state().lock() = CoalescingState::default();
+        let _coalescing_guard = reset_coalescing_state_for_test();
         let db = test_db();
 
         let first = emit_signal(
@@ -1482,7 +1492,7 @@ mod tests {
         //
         // After the fix: rapid transitions on the same meeting collapse to
         // a single signal_events row inside the 500ms window.
-        *coalescing_state().lock() = CoalescingState::default();
+        let _coalescing_guard = reset_coalescing_state_for_test();
         let db = test_db();
 
         let first = emit_signal(
@@ -1536,7 +1546,7 @@ mod tests {
         // Documented ordering: emits land in arrival order. Subscribers
         // that need cross-signal serialization observe both events on the
         // signal_events table ordered by `created_at` ASC.
-        *coalescing_state().lock() = CoalescingState::default();
+        let _coalescing_guard = reset_coalescing_state_for_test();
         let db = test_db();
 
         let prep_id = emit_signal(
@@ -1796,7 +1806,7 @@ mod tests {
     #[test]
     fn dos262_distinct_unknown_signal_types_do_not_coalesce() {
         let _env_guard = fail_improve_env_lock().lock().expect("env lock");
-        *coalescing_state().lock() = CoalescingState::default();
+        let _coalescing_guard = reset_coalescing_state_for_test();
         let tmp = tempfile::tempdir().expect("tempdir");
         let _restore = EnvRestore {
             previous: std::env::var_os("DAILYOS_FAIL_IMPROVE_ROOT"),
