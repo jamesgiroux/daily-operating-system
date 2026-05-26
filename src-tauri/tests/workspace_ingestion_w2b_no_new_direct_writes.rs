@@ -82,6 +82,8 @@ fn workspace_ingestion_w2b_no_new_direct_writes() {
         "entity-markdown-regen",
         "content-index-cache",
         "transcript-direct-write-v146",
+        "devtools-w5-backfill-fixture",
+        "v146-validation-fixture",
     ] {
         assert!(script.contains(token), "script recognizes {token}");
     }

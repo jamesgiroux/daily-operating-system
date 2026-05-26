@@ -502,6 +502,7 @@ fn filesystem_validation_negative_fixtures() {
     }
 
     let explicit = Fixture::new();
+    // dos7-allowed: v146-validation-fixture
     std::fs::write(explicit.workspace_root.join("oversized.md"), "012345678")
         .expect("oversized write");
     std::fs::write(

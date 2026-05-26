@@ -12,11 +12,11 @@
 | `bash tests/v146_validation/redaction_lint.sh --self-test` | pass | Positive and negative lint fixtures behaved as expected. |
 | `bash tests/v146_validation/redaction_lint.sh` | pass | Current report draft is privacy-safe. |
 | `bash tests/v146_validation/run.sh backfill` | pass | W5-A conservative backfill registration tests pass on the rebased base. |
-| `bash tests/v146_validation/run.sh graph-audit` | blocked | Entity-seeded and inbox assignment provenance-chain fixtures, workspace graph audit projection tests, and MCP placement handler registration evidence pass; successful MCP placement-to-claim fixture remains incomplete. |
+| `bash tests/v146_validation/run.sh graph-audit` | pass | Entity-seeded, inbox assignment, and MCP placement handler/service-to-claim graph audit evidence pass with zero attribution gaps. |
 | `bash tests/v146_validation/run.sh filesystem` | pass | Registry path rejection, explicit ingestion size/format rejection, and conservative backfill hidden/managed/unsupported skips pass with privacy-safe evidence. |
 | `bash tests/v146_validation/run.sh signals` | pass | `WorkspaceFileIngested -> EntityIntelligenceUpdated -> prep invalidation` evidence passes with privacy-safe payloads. |
 | `bash tests/v146_validation/run.sh redaction` | pass | Redaction axis is green. |
-| `bash tests/v146_validation/run.sh all` | blocked | Backfill, signals, filesystem, and redaction are green; graph-audit, trust, contexts, and lifecycle remain blocked. |
+| `bash tests/v146_validation/run.sh all` | blocked | Backfill, graph-audit, signals, filesystem, and redaction are green; trust, contexts, and lifecycle remain blocked. |
 | `bash scripts/release-gate/run-v146-validation.sh` | blocked | Wrapper delegates to the W5-B runner and preserves the blocked exit status. |
 
 ## Dependency Gate
@@ -24,11 +24,11 @@
 | Dependency | Status | Evidence |
 | --- | --- | --- |
 | W5-A backfill registration | green | Folded into active PR #389 after PR #388 closed unmerged; focused backfill and migration coverage pass. |
-| W4 source-management and placement stack | partial | Source-management read/action substrate landed; MCP placement now has a registered v2 handler path, but successful placement fixture coverage remains incomplete. |
-| Graph projection service | partial | Workspace graph projection unit tests pass and explicit ingestion provenance chains have zero local graph-audit gaps for direct entity-seeded and inbox assignment fixtures; successful MCP placement graph evidence remains incomplete. |
-| Workspace extractor claim production | partial | Explicit note-like workspace ingestion commits through `commit_claim` with privacy-safe provenance for entity-seeded and inbox assignment paths; successful MCP placement-to-claim coverage is not complete. |
+| W4 source-management and placement stack | partial | Source-management read/action substrate landed; MCP placement has a registered v2 handler path and a successful handler-to-claim fixture, but full context parity remains incomplete. |
+| Graph projection service | green | Workspace graph projection unit tests pass and explicit ingestion provenance chains have zero local graph-audit gaps for direct entity-seeded, inbox assignment, and MCP placement handler/service fixtures. |
+| Workspace extractor claim production | green | Explicit note-like workspace ingestion commits through `commit_claim` with privacy-safe provenance for entity-seeded, inbox assignment, and MCP placement handler/service paths. |
 | Workspace lifecycle signal wiring | green | Explicit ingestion emits `workspace_file_ingested`, emits the `entity_intelligence_updated` middle hop, and invalidates affected prep through the middle-hop signal. |
-| MCP placement path | partial | Registered-handler/gateway scope-denial execution is now covered; successful MCP placement execution through the live workspace intake path still needs a hermetic fixture. |
+| MCP placement path | green | Registered-handler/gateway scope-denial execution is covered, and the registered handler path now has a hermetic placement-to-claim graph fixture through the placement ability and service. |
 | Source lifecycle actions | partial | Current action contract exposes reingest, quarantine, and relink only; ignore/scratchpad plus archive/delete are missing. |
 
 ## Evidence Matrix
@@ -36,7 +36,7 @@
 | Axis | Status | Current evidence |
 | --- | --- | --- |
 | Backfill registration safety | green | Focused W5-A backfill service/bin tests plus v268 migration coverage pass on the rebased base. |
-| Explicit ingestion to claim provenance | blocked | `src-tauri/tests/v146_validation.rs` proves direct entity-seeded ingestion and inbox assignment create lifecycle, run, link, and claim rows through service APIs with zero graph-audit gaps; the MCP placement handler is registered, but the packet-level path matrix remains blocked on successful placement-to-claim fixture evidence. |
+| Explicit ingestion to claim provenance | green | `src-tauri/tests/v146_validation.rs` proves direct entity-seeded ingestion and inbox assignment create lifecycle, run, link, and claim rows through service APIs with zero graph-audit gaps; `placement_handler_commits_claim_and_graph_without_path_leak` proves MCP placement handler output routes through the placement ability/service, writes a file, runs ingestion, commits a workspace-file claim, and appears in the graph with zero attribution gaps. |
 | Trust-band discipline | blocked | Full matrix still needs recent, stale, pending-review, and reingest-without-freshness cases through real recompute. |
 | Signal propagation and prep invalidation | green | `src-tauri/tests/v146_validation.rs` proves workspace ingestion emits privacy-safe `workspace_file_ingested`, emits privacy-safe `entity_intelligence_updated`, and queues prep invalidation for the affected meeting. |
 | Context inclusion and MCP/privacy parity | blocked | `dailyos.write.place_document` now has a registered MCP v2 handler and privacy-safe receipt metadata rendering, but full Tauri/MCP context parity and sensitivity sweep remain unimplemented. |
