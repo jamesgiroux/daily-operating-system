@@ -65,6 +65,7 @@ pub mod version_dispatcher;
 pub mod versioning;
 pub mod workspace_backfill;
 pub mod workspace_ingestion;
+pub mod workspace_source_provenance;
 
 #[cfg(test)]
 mod tests;

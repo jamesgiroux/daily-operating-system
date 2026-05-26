@@ -16,6 +16,8 @@ fn mcp_comparison_path_rejects_legacy_authority() {
         "src/services/mcp_v2/handlers/tool_account_status.rs",
         "src/services/mcp_v2/handlers/tool_portfolio.rs",
         "src/services/mcp_v2/handlers/tool_placement.rs",
+        "src/services/mcp_v2/handlers/tool_workspace_search.rs",
+        "src/services/mcp_v2/handlers/tool_workspace_source_provenance.rs",
         "src/services/mcp_v2/runtime_projection.rs",
         "src/services/mcp_v2/transport.rs",
     ];

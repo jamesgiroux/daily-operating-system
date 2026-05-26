@@ -309,20 +309,70 @@
   {
     "name": "dailyos.search.workspace_memory",
     "side": "Read",
-    "summary": "Searches the user's working memory.",
-    "when_to_call": "When the user asks what they wrote, said, or noted about a topic.",
+    "summary": "Traverses claim-backed local workspace memory by entity and category.",
+    "when_to_call": "When the user asks what local notes, transcripts, placed documents, or other workspace memory are attached to an account, person, or project.",
     "when_NOT_to_call": "Do NOT call for general web search.",
     "scopesRequired": [
       "read.workspace_graph"
     ],
     "parameters": [
       {
-        "name": "query",
+        "name": "entityFilter",
+        "schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "entityTypes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "entityIds": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "required": false,
+        "description": "Optional entity filter. Supported entityTypes are account, person, and project."
+      },
+      {
+        "name": "categoryFilter",
+        "schema": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "required": false,
+        "description": "Optional workspace category slugs, such as notes or transcripts."
+      },
+      {
+        "name": "pageSize",
+        "schema": {
+          "type": "integer"
+        },
+        "required": false,
+        "description": "Maximum graph entities to return for this page."
+      },
+      {
+        "name": "cursor",
         "schema": {
           "type": "string"
         },
-        "required": true,
-        "description": "Natural-language search query"
+        "required": false,
+        "description": "Opaque cursor returned by a previous workspace memory response."
+      },
+      {
+        "name": "includeEntityNames",
+        "schema": {
+          "type": "boolean"
+        },
+        "required": false,
+        "description": "Request entity names when the caller also has read.entity_names; otherwise names are redacted."
       }
     ],
     "returns": {
@@ -330,30 +380,41 @@
         "type": "object",
         "additionalProperties": false
       },
-      "description": "Workspace memory matches"
+      "description": "WorkspaceGraphResponse v1 pass-through projection"
     },
     "examples": [
       {
-        "prompt": "What did I write about the Q1 readout?",
+        "prompt": "What workspace memory is attached to this account?",
         "invocation": {
           "name": "dailyos.search.workspace_memory",
           "arguments": {
-            "query": "Q1 readout"
+            "entityFilter": {
+              "entityTypes": [
+                "account"
+              ],
+              "entityIds": [
+                "acct_123"
+              ]
+            },
+            "pageSize": 25
           }
         },
         "expectedResponseShape": {
-          "matches": []
+          "kind": "projection",
+          "projection": {
+            "entities": []
+          }
         }
       }
     ],
     "selectionFixtures": {
       "positive": [
         {
-          "prompt": "What did I write about the Q1 readout?",
+          "prompt": "What local workspace notes are attached to this account?",
           "expectedTool": "dailyos.search.workspace_memory"
         },
         {
-          "prompt": "Find my notes on the Acme renewal",
+          "prompt": "Find my placed documents for this project",
           "expectedTool": "dailyos.search.workspace_memory"
         }
       ],
@@ -391,7 +452,7 @@
           "type": "string"
         },
         "required": true,
-        "description": "Opaque memory entry identifier"
+        "description": "Opaque workspace memory identifier from a prior workspace memory response, such as a link handle or source key."
       }
     ],
     "returns": {

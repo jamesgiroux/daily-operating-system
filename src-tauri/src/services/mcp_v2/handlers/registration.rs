@@ -14,6 +14,8 @@ use super::tool_account_status::AccountStatusHandler;
 use super::tool_briefing::{DailyBriefingHandler, MeetingBriefingHandler};
 use super::tool_placement::PlacementHandler;
 use super::tool_portfolio::PortfolioAttentionHandler;
+use super::tool_workspace_search::WorkspaceSearchHandler;
+use super::tool_workspace_source_provenance::WorkspaceSourceProvenanceHandler;
 
 /// Errors registering wave-scoped handlers at boot.
 #[derive(Debug)]
@@ -89,6 +91,20 @@ pub fn register_v147_handlers(
         .map_err(RegistrationError::AbilityRegistry)?;
     gateway.register(Arc::new(handler));
 
+    let workspace_search_name = ScopedName::new("dailyos.search.workspace_memory");
+    let description = catalog
+        .description_for(&workspace_search_name)
+        .ok_or_else(|| RegistrationError::CatalogEntryMissing(workspace_search_name.clone()))?
+        .clone();
+    gateway.register(Arc::new(WorkspaceSearchHandler::new(description)));
+
+    let workspace_provenance_name = ScopedName::new("dailyos.read.workspace_source_provenance");
+    let description = catalog
+        .description_for(&workspace_provenance_name)
+        .ok_or_else(|| RegistrationError::CatalogEntryMissing(workspace_provenance_name.clone()))?
+        .clone();
+    gateway.register(Arc::new(WorkspaceSourceProvenanceHandler::new(description)));
+
     let placement_name = ScopedName::new("dailyos.write.place_document");
     let description = catalog
         .description_for(&placement_name)
@@ -134,6 +150,8 @@ mod tests {
         assert!(registered.contains(&ScopedName::new("dailyos.read.daily_briefing")));
         assert!(registered.contains(&ScopedName::new("dailyos.read.meeting_briefing")));
         assert!(registered.contains(&ScopedName::new("dailyos.read.portfolio_attention")));
+        assert!(registered.contains(&ScopedName::new("dailyos.search.workspace_memory")));
+        assert!(registered.contains(&ScopedName::new("dailyos.read.workspace_source_provenance")));
         assert!(registered.contains(&ScopedName::new("dailyos.write.place_document")));
         let pending = gateway.seal().expect("registered handlers match catalog");
         assert!(
@@ -147,6 +165,14 @@ mod tests {
         assert!(
             !pending.contains(&ScopedName::new("dailyos.read.portfolio_attention")),
             "portfolio attention handler should no longer be a catalog-only placeholder"
+        );
+        assert!(
+            !pending.contains(&ScopedName::new("dailyos.search.workspace_memory")),
+            "workspace search handler should no longer be a catalog-only placeholder"
+        );
+        assert!(
+            !pending.contains(&ScopedName::new("dailyos.read.workspace_source_provenance")),
+            "workspace source provenance handler should no longer be a catalog-only placeholder"
         );
         assert!(
             !pending.contains(&ScopedName::new("dailyos.write.place_document")),
