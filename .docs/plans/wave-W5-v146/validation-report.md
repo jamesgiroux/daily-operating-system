@@ -3,7 +3,7 @@
 **Status:** blocked by upstream dependencies  
 **Issue:** DOS-476  
 **Packet:** `.docs/plans/v1.4.5-workspace-memory/L0-packet-W5-B-DOS-476.md`  
-**Branch:** `codex/v1.4.5-w5-mcp-placement-validation`
+**Branch:** `codex/v1.4.5-w5-trust-context-lifecycle`
 
 ## Harness Status
 
@@ -16,7 +16,8 @@
 | `bash tests/v146_validation/run.sh filesystem` | pass | Registry path rejection, explicit ingestion size/format rejection, and conservative backfill hidden/managed/unsupported skips pass with privacy-safe evidence. |
 | `bash tests/v146_validation/run.sh signals` | pass | `WorkspaceFileIngested -> EntityIntelligenceUpdated -> prep invalidation` evidence passes with privacy-safe payloads. |
 | `bash tests/v146_validation/run.sh redaction` | pass | Redaction axis is green. |
-| `bash tests/v146_validation/run.sh all` | blocked | Backfill, graph-audit, signals, filesystem, and redaction are green; trust, contexts, and lifecycle remain blocked. |
+| `bash tests/v146_validation/run.sh contexts` | pass | Registered MCP placement plus Tauri/MCP source-backed context sensitivity parity pass. |
+| `bash tests/v146_validation/run.sh all` | blocked | Backfill, graph-audit, signals, contexts, filesystem, and redaction are green; trust and lifecycle remain blocked. |
 | `bash scripts/release-gate/run-v146-validation.sh` | blocked | Wrapper delegates to the W5-B runner and preserves the blocked exit status. |
 
 ## Dependency Gate
@@ -24,7 +25,7 @@
 | Dependency | Status | Evidence |
 | --- | --- | --- |
 | W5-A backfill registration | green | Folded into active PR #389 after PR #388 closed unmerged; focused backfill and migration coverage pass. |
-| W4 source-management and placement stack | partial | Source-management read/action substrate landed; MCP placement has a registered v2 handler path and a successful handler-to-claim fixture, but full context parity remains incomplete. |
+| W4 source-management and placement stack | partial | Source-management read/action substrate landed; MCP placement has a registered v2 handler path and a successful handler-to-claim fixture; context parity is green, but lifecycle action coverage remains incomplete. |
 | Graph projection service | green | Workspace graph projection unit tests pass and explicit ingestion provenance chains have zero local graph-audit gaps for direct entity-seeded, inbox assignment, and MCP placement handler/service fixtures. |
 | Workspace extractor claim production | green | Explicit note-like workspace ingestion commits through `commit_claim` with privacy-safe provenance for entity-seeded, inbox assignment, and MCP placement handler/service paths. |
 | Workspace lifecycle signal wiring | green | Explicit ingestion emits `workspace_file_ingested`, emits the `entity_intelligence_updated` middle hop, and invalidates affected prep through the middle-hop signal. |
@@ -39,7 +40,7 @@
 | Explicit ingestion to claim provenance | green | `src-tauri/tests/v146_validation.rs` proves direct entity-seeded ingestion and inbox assignment create lifecycle, run, link, and claim rows through service APIs with zero graph-audit gaps; `placement_handler_commits_claim_and_graph_without_path_leak` proves MCP placement handler output routes through the placement ability/service, writes a file, runs ingestion, commits a workspace-file claim, and appears in the graph with zero attribution gaps. |
 | Trust-band discipline | blocked | Full matrix still needs recent, stale, pending-review, and reingest-without-freshness cases through real recompute. |
 | Signal propagation and prep invalidation | green | `src-tauri/tests/v146_validation.rs` proves workspace ingestion emits privacy-safe `workspace_file_ingested`, emits privacy-safe `entity_intelligence_updated`, and queues prep invalidation for the affected meeting. |
-| Context inclusion and MCP/privacy parity | blocked | `dailyos.write.place_document` now has a registered MCP v2 handler and privacy-safe receipt metadata rendering, but full Tauri/MCP context parity and sensitivity sweep remain unimplemented. |
+| Context inclusion and MCP/privacy parity | green | `dailyos.write.place_document` has a registered MCP v2 handler, and `context_inclusion_privacy_parity` proves Tauri user context, Tauri MCP-surface context, and actual MCP bridge context read source-backed claims with matching sensitivity filtering and privacy-safe output. |
 | Lifecycle actions and user correction | blocked | Source-management action contract currently exposes only reingest, quarantine, and relink; ignore/scratchpad and archive/delete remain unavailable. |
 | Filesystem validation negative fixtures | green | Rust negative fixtures cover traversal, encoded traversal, outside absolute paths, workspace root equality, symlink escape, NUL input, non-UTF8 path byte-input rejection, hardlink rejection when supported, explicit ingestion oversized/unsupported-format rejection, and conservative backfill hidden/managed/unsupported skips. |
 | Redaction lint | green | Self-test and current report scan passed. |

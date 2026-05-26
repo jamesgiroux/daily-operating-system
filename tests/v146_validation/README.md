@@ -13,7 +13,8 @@ Current status:
 - Signal propagation is green on the release-gate branch.
 - Filesystem validation is green for registry-level path rejection, explicit ingestion size/format rejection, and conservative backfill hidden/managed/unsupported skips.
 - Graph-audit is green for entity-seeded, inbox assignment, and MCP placement handler/service-to-claim fixture coverage.
-- Full validation remains dependency-gated on the trust-band matrix, full context parity, and missing lifecycle actions.
+- Context parity is green for registered MCP placement plus Tauri/MCP source-backed context sensitivity behavior.
+- Full validation remains dependency-gated on the trust-band matrix and missing lifecycle actions.
 - A blocked axis is not a pass. Interim reports may record `blocked`, but W5-B Done requires all mandatory axes to be green.
 
 ## Commands

@@ -54,7 +54,7 @@ pub struct GetEntityContextOutput {
     category = Read,
     version = "1.0.0",
     schema_version = 2,
-    allowed_actors = [User, Agent, System, SurfaceClient],
+    allowed_actors = [User, Agent, System, SurfaceClient, McpClient],
     allowed_modes = [Live, Evaluate],
     requires_confirmation = false,
     may_publish = false,
@@ -401,7 +401,7 @@ fn provenance_config(ctx: &AbilityContext<'_>, schema_version: u32) -> Provenanc
 }
 
 fn filter_claims_for_actor(actor: Actor, claims: Vec<IntelligenceClaim>) -> Vec<IntelligenceClaim> {
-    if actor == Actor::Agent {
+    if matches!(actor, Actor::Agent | Actor::McpClient { .. }) {
         claims
             .into_iter()
             .filter(agent_can_read_claim)
@@ -434,7 +434,10 @@ pub(crate) fn provenance_actor(actor: Actor) -> crate::abilities::provenance::Ac
         // stage-1a landing only ships the actor variant; no current invocation
         // path constructs Actor::SurfaceClient.
         Actor::SurfaceClient { .. } => todo!("W1-B+ wiring for Actor::SurfaceClient"),
-        Actor::McpClient { .. } => todo!("McpClient invocation routing pending"),
+        Actor::McpClient { .. } => crate::abilities::provenance::Actor::Agent {
+            name: "mcp_client".to_string(),
+            version: "unknown".to_string(),
+        },
     }
 }
 
@@ -473,7 +476,7 @@ fn render_actor_for_context(ctx: &AbilityContext<'_>) -> RenderActor {
         // TODO: W1-B+ wiring — SurfaceClient render actor mapping (per ADR-0108
         // sensitivity rules) lands with the SurfaceClientBridge plumbing.
         Actor::SurfaceClient { .. } => todo!("W1-B+ wiring for Actor::SurfaceClient"),
-        Actor::McpClient { .. } => todo!("McpClient invocation routing pending"),
+        Actor::McpClient { .. } => RenderActor::agent("mcp_client"),
     }
 }
 
