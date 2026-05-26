@@ -828,6 +828,10 @@ pub fn purge_mock_data(_state: &AppState) -> Result<String, String> {
 
     let n = delete_mock("salience_factors", "claim_id");
     summary.push(format!("salience_factors: {}", n));
+    let n = delete_mock("surfacing_decisions", "claim_id");
+    summary.push(format!("surfacing_decisions: {}", n));
+    let n = delete_mock("triggers_log", "entity_id");
+    summary.push(format!("triggers_log: {}", n));
 
     let n = delete_mock("intelligence_feedback", "entity_id");
     summary.push(format!("intelligence_feedback: {}", n));
