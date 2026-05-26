@@ -1,0 +1,9 @@
+VERDICT: PASS
+
+**Findings**
+
+- MEDIUM: `RecommendationClaim` includes `claim_id`, and the packet says helpers convert it to `ClaimProposal`; implementation must leave `ClaimProposal.id = None` for fresh runtime writes, or use the deterministic insert wrapper intentionally. Current substrate treats `Some(id) + None expected_claim_version` as a mutation with version `0`, which is rejected. Citations: `.docs/plans/v1.4.6-salience-recommendations/L0-packet-W1-A-DOS-329.md` §6 lines 141-147; `src-tauri/src/services/claims.rs` lines 78-83 and 141-152.
+
+- LOW: The wave-plan Rust snippet omits `#[serde(tag = "kind", rename_all = "camelCase")]` on `RecommendedAction`, while the L0 packet requires struct-variant enums to be tagged and the v269 index reads `recommendedAction.kind`. Follow the packet serde rule, not the stale snippet. Citations: `.docs/plans/v1.4.6-waves.md` §W1-A lines 555-563; L0 packet §5/§7 lines 114-118 and 153-154.
+
+No blockers. The plan is safe to implement because v269 is now the first safe executable migration slot: the wave plan reserves v269-v288, live `migrations.rs` currently ends at v268, and the runner only applies migrations with `version > current`. The claim substrate already contains `ClaimType::Recommendation` with the ADR-0125 defaults, and `commit_claim` validates registered claim type, subject kind, actor class, defaults, locking, supersession, metadata persistence, and version events. The packet explicitly keeps writes routed through `services::claims::commit_claim`, only adds read indexes over `metadata_json`, and avoids touching `commit_claim`, signal registry, claim receipt, review queue, or MCP bridge.

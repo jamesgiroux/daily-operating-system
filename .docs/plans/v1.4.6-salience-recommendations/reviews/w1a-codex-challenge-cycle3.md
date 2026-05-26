@@ -1,0 +1,5 @@
+BLOCK
+
+- `ReceiptTarget` ownership contradiction: W1-A must not touch `services::claim_receipt::*` in the packet ([line 73](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.6-w1-a-dos-329/.docs/plans/v1.4.6-salience-recommendations/L0-packet-W1-A-DOS-329.md:73)), but the wave plan still says W1-A amends `ReceiptTarget` ([line 363](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.6-w1-a-dos-329/.docs/plans/v1.4.6-waves.md:363)).
+
+- ADR-0123 bridge drift: the packet says `WrongSubject` sends `None` and `corrected_to` requires a W4-A L0 amendment ([line 261](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.6-w1-a-dos-329/.docs/plans/v1.4.6-salience-recommendations/L0-packet-W1-A-DOS-329.md:261)), but the wave plan still lists `corrected_to` as an allowed done-when payload without that caveat ([line 949](/Users/jamesgiroux/Documents/dailyos-repo/.worktrees/codex/v1.4.6-w1-a-dos-329/.docs/plans/v1.4.6-waves.md:949)).
