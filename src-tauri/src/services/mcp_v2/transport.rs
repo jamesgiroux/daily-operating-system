@@ -417,16 +417,25 @@ mod tests {
         let grants = vec![
             ScopedName::new("dailyos.read.account_status"),
             ScopedName::new("dailyos.read.daily_briefing"),
+            ScopedName::new("dailyos.read.meeting_briefing"),
         ];
-        let registered_tools = [ScopedName::new("dailyos.read.account_status")]
-            .into_iter()
-            .collect::<BTreeSet<_>>();
+        let registered_tools = [
+            ScopedName::new("dailyos.read.account_status"),
+            ScopedName::new("dailyos.read.daily_briefing"),
+            ScopedName::new("dailyos.read.meeting_briefing"),
+        ]
+        .into_iter()
+        .collect::<BTreeSet<_>>();
 
         let visible = registered_invocable_tool_names(&grants, &registered_tools);
 
         assert_eq!(
             visible,
-            vec![ScopedName::new("dailyos.read.account_status")]
+            vec![
+                ScopedName::new("dailyos.read.account_status"),
+                ScopedName::new("dailyos.read.daily_briefing"),
+                ScopedName::new("dailyos.read.meeting_briefing"),
+            ]
         );
     }
 

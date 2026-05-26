@@ -835,11 +835,10 @@ fn provenance_config(ctx: &AbilityContext<'_>, schema_version: u32) -> Provenanc
 fn provenance_actor(actor: Actor) -> crate::abilities::provenance::Actor {
     match actor {
         Actor::User => crate::abilities::provenance::Actor::User,
-        // Agent / Admin / System / SurfaceClient / McpClient — `get_daily_briefing`
-        // policy declares allowed_actors=[User] so the registry already gates
-        // non-User invocations before this code runs. Mirror the entity
-        // intelligence projection so provenance still serializes if the
-        // registry gate ever relaxes.
+        // Agent / Admin / System / SurfaceClient are not exposed by the
+        // current ability policy. McpClient is read-only exposed for the
+        // v1.4.7 MCP v2 headless surface. Mirror the entity intelligence
+        // projection so provenance serializes consistently.
         Actor::Agent => crate::abilities::provenance::Actor::Agent {
             name: "agent".to_string(),
             version: "unknown".to_string(),

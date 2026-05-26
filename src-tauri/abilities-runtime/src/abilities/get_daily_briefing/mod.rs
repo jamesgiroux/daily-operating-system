@@ -6,9 +6,10 @@
 //! Per `.docs/plans/v1.4.4-wp-surface-migration/L0-packet-W1-substrate-gaps.md`
 //! §5.10.
 //!
-//! Consumed by the W3 Daily Briefing Gutenberg block. **Not exposed** to
-//! Agent or MCP actors in v1.4.4; future Agent / MCP exposure requires
-//! `/cso` re-approval per AC-507.5.
+//! Consumed by the W3 Daily Briefing Gutenberg block and v1.4.7 MCP v2 read
+//! surface. MCP exposure is read-only and routes through the request-scoped
+//! abilities bridge so the runtime render policy still owns sensitivity and
+//! provenance handling.
 
 pub mod contracts;
 pub mod producer;
@@ -29,12 +30,12 @@ use crate::abilities::{AbilityContext, AbilityResult};
     category = Read,
     version = "0.1.0",
     schema_version = 1,
-    allowed_actors = [User],
+    allowed_actors = [User, McpClient],
     allowed_modes = [Live, Simulate, Evaluate],
     requires_confirmation = false,
     may_publish = false,
     required_scopes = ["read.daily_briefing"],
-    mcp_exposure = None,
+    mcp_exposure = Invocable,
     composes = [
         { id = "get_entity_intelligence", ability = "get_entity_intelligence", optional = false },
         { id = "get_daily_readiness", ability = "get_daily_readiness", optional = false }
