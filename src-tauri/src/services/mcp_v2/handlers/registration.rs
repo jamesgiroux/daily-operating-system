@@ -13,6 +13,7 @@ use crate::signals::propagation::PropagationEngine;
 use super::tool_account_status::AccountStatusHandler;
 use super::tool_briefing::{DailyBriefingHandler, MeetingBriefingHandler};
 use super::tool_create_action::CreateActionHandler;
+use super::tool_note::NoteHandler;
 use super::tool_placement::PlacementHandler;
 use super::tool_portfolio::PortfolioAttentionHandler;
 use super::tool_update_action_status::UpdateActionStatusHandler;
@@ -137,6 +138,16 @@ pub fn register_v147_handlers(
         Arc::clone(&signal_engine),
     )));
 
+    let note_name = ScopedName::new("dailyos.submit.note");
+    let description = catalog
+        .description_for(&note_name)
+        .ok_or_else(|| RegistrationError::CatalogEntryMissing(note_name.clone()))?
+        .clone();
+    gateway.register(Arc::new(NoteHandler::new(
+        description,
+        Arc::clone(&signal_engine),
+    )));
+
     Ok(())
 }
 
@@ -175,6 +186,7 @@ mod tests {
         assert!(registered.contains(&ScopedName::new("dailyos.search.workspace_memory")));
         assert!(registered.contains(&ScopedName::new("dailyos.read.workspace_source_provenance")));
         assert!(registered.contains(&ScopedName::new("dailyos.write.place_document")));
+        assert!(registered.contains(&ScopedName::new("dailyos.submit.note")));
         assert!(registered.contains(&ScopedName::new("dailyos.submit.action")));
         assert!(registered.contains(&ScopedName::new("dailyos.submit.action_status")));
         let pending = gateway.seal().expect("registered handlers match catalog");
@@ -201,6 +213,10 @@ mod tests {
         assert!(
             !pending.contains(&ScopedName::new("dailyos.write.place_document")),
             "placement handler should no longer be a catalog-only placeholder"
+        );
+        assert!(
+            !pending.contains(&ScopedName::new("dailyos.submit.note")),
+            "note handler should no longer be a catalog-only placeholder"
         );
         assert!(
             !pending.contains(&ScopedName::new("dailyos.submit.action")),

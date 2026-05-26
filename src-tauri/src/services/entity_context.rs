@@ -21,6 +21,60 @@ pub const USER_NOTE_CLAIM_TYPE: &str = "user_note";
 const USER_NOTE_LEGACY_NAMESPACE: &str = "b9bd8742-3f99-5b5f-a732-94d1e4e77111";
 
 #[derive(Debug, Clone)]
+pub struct EntityContextNoteCreationRequest {
+    pub entity_type: String,
+    pub entity_id: String,
+    pub title: String,
+    pub content: String,
+    pub source_attribution: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct EntityContextNoteAttribution {
+    actor: &'static str,
+    data_source: &'static str,
+    provenance_source: &'static str,
+    signal_source: &'static str,
+    signal_confidence: f64,
+}
+
+impl EntityContextNoteAttribution {
+    pub const fn user_manual() -> Self {
+        Self {
+            actor: "user",
+            data_source: "manual",
+            provenance_source: "tauri_entity_context",
+            signal_source: "user_note",
+            signal_confidence: 0.85,
+        }
+    }
+
+    pub const fn mcp_submit_note() -> Self {
+        Self {
+            actor: "user:dailyos-mcp-v2",
+            data_source: "manual",
+            provenance_source: "mcp_submit_note",
+            signal_source: "mcp_submit_note",
+            signal_confidence: 0.85,
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EntityContextNoteMutationCursor {
+    pub note_id: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EntityContextNoteCreationReceipt {
+    pub note_id: String,
+    pub mutation_cursor: EntityContextNoteMutationCursor,
+    pub entry: EntityContextEntry,
+}
+
+#[derive(Debug, Clone)]
 pub struct LegacyEntityContextEntry {
     pub id: String,
     pub entity_type: String,
@@ -89,38 +143,82 @@ pub async fn create_entry(
             let ext = crate::services::context::ExternalClients::default();
             let write_ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext)
                 .with_actor("user");
-            let proposal = user_note_claim_proposal(UserNoteProposal {
-                id: None,
-                supersedes: None,
-                entity_type: &entity_type,
-                entity_id: &entity_id,
-                title: &title,
-                content: &content,
-                actor: "user",
-                observed_at: &observed_at,
-                source_ref: None,
-                provenance_json: user_note_provenance_json(None),
-            })?;
-            let committed = commit_claim(&write_ctx, db, proposal)
-                .map_err(|error| format!("Failed to create entity context note claim: {error}"))?;
-            let claim = inserted_claim(committed)?;
-
-            crate::services::signals::emit_and_propagate_or_log(
+            let receipt = create_user_note_claim_in_db(
                 &write_ctx,
                 db,
                 &engine,
-                &entity_type,
-                &entity_id,
-                "user_note_added",
-                "user_note",
-                Some(&title),
-                0.85,
-            );
-
-            entity_context_entry_for_claim(claim)
+                EntityContextNoteCreationRequest {
+                    entity_type,
+                    entity_id,
+                    title,
+                    content,
+                    source_attribution: None,
+                },
+                EntityContextNoteAttribution::user_manual(),
+                Some(observed_at),
+            )?;
+            Ok(receipt.entry)
         })
         .await
         .map_err(String::from)
+}
+
+pub fn create_user_note_claim_in_db(
+    ctx: &crate::services::context::ServiceContext<'_>,
+    db: &crate::db::ActionDb,
+    engine: &crate::signals::propagation::PropagationEngine,
+    request: EntityContextNoteCreationRequest,
+    attribution: EntityContextNoteAttribution,
+    observed_at_override: Option<String>,
+) -> Result<EntityContextNoteCreationReceipt, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+
+    let entity_type = normalize_entity_type(&request.entity_type)?.to_string();
+    let entity_id = crate::util::validate_id_slug(&request.entity_id, "entity_id")?;
+    let title = crate::util::validate_bounded_string(&request.title, "title", 1, 200)?;
+    let content = crate::util::validate_bounded_string(&request.content, "content", 1, 20_000)?;
+    let observed_at = observed_at_override.unwrap_or_else(|| ctx.clock.now().to_rfc3339());
+
+    let proposal = user_note_claim_proposal(UserNoteProposal {
+        id: None,
+        supersedes: None,
+        entity_type: &entity_type,
+        entity_id: &entity_id,
+        title: &title,
+        content: &content,
+        actor: attribution.actor,
+        data_source: attribution.data_source,
+        observed_at: &observed_at,
+        source_ref: None,
+        provenance_json: user_note_provenance_json(
+            attribution,
+            None,
+            request.source_attribution.as_ref(),
+        ),
+    })?;
+    let committed = commit_claim(ctx, db, proposal)
+        .map_err(|error| format!("Failed to create entity context note claim: {error}"))?;
+    let claim = inserted_claim(committed)?;
+
+    crate::services::signals::emit_and_propagate_or_log(
+        ctx,
+        db,
+        engine,
+        &entity_type,
+        &entity_id,
+        "user_note_added",
+        attribution.signal_source,
+        Some(&title),
+        attribution.signal_confidence,
+    );
+
+    let note_id = claim.id.clone();
+    let entry = entity_context_entry_for_claim(claim)?;
+    Ok(EntityContextNoteCreationReceipt {
+        note_id: note_id.clone(),
+        mutation_cursor: EntityContextNoteMutationCursor { note_id },
+        entry,
+    })
 }
 
 /// Update an existing user note by superseding the old immutable claim.
@@ -159,9 +257,14 @@ pub async fn update_entry(
                 title: &title,
                 content: &content,
                 actor: "user",
+                data_source: "manual",
                 observed_at: &observed_at,
                 source_ref: None,
-                provenance_json: user_note_provenance_json(Some(&id)),
+                provenance_json: user_note_provenance_json(
+                    EntityContextNoteAttribution::user_manual(),
+                    Some(&id),
+                    None,
+                ),
             })?;
             commit_claim(&write_ctx, db, proposal)
                 .map_err(|error| format!("Failed to update entity context note claim: {error}"))?;
@@ -288,9 +391,14 @@ pub fn migrate_legacy_notes(
             title: "Notes",
             content: &notes,
             actor: "user",
+            data_source: "manual",
             observed_at: &observed_at,
             source_ref: Some(&source_ref),
-            provenance_json: user_note_provenance_json(None),
+            provenance_json: user_note_provenance_json(
+                EntityContextNoteAttribution::user_manual(),
+                None,
+                None,
+            ),
         })?;
         commit_claim(ctx, db, proposal)
             .map_err(|error| format!("Failed to migrate person notes to claim: {error}"))?;
@@ -369,6 +477,7 @@ pub fn commit_backfilled_user_note(
             title: &legacy.title,
             content: &legacy.content,
             actor: "user",
+            data_source: "manual",
             observed_at: &legacy.created_at,
             source_ref: Some(&source_ref),
             provenance_json: user_note_backfill_provenance_json(&legacy.id),
@@ -441,6 +550,7 @@ struct UserNoteProposal<'a> {
     title: &'a str,
     content: &'a str,
     actor: &'a str,
+    data_source: &'a str,
     observed_at: &'a str,
     source_ref: Option<&'a str>,
     provenance_json: String,
@@ -461,7 +571,7 @@ fn user_note_claim_proposal(input: UserNoteProposal<'_>) -> Result<ClaimProposal
         topic_key: None,
         text: input.content.to_string(),
         actor: input.actor.to_string(),
-        data_source: "manual".to_string(),
+        data_source: input.data_source.to_string(),
         source_ref: input.source_ref.map(str::to_string),
         source_asof: Some(input.observed_at.to_string()),
         observed_at: input.observed_at.to_string(),
@@ -545,12 +655,17 @@ fn title_for_entity_context_claim(claim: &IntelligenceClaim) -> String {
     }
 }
 
-fn user_note_provenance_json(supersedes: Option<&str>) -> String {
+fn user_note_provenance_json(
+    attribution: EntityContextNoteAttribution,
+    supersedes: Option<&str>,
+    source_attribution: Option<&serde_json::Value>,
+) -> String {
     serde_json::json!({
-        "actor": "user",
-        "data_source": "manual",
-        "source": "tauri_entity_context",
+        "actor": attribution.actor,
+        "data_source": attribution.data_source,
+        "source": attribution.provenance_source,
         "supersedes": supersedes,
+        "source_attribution": source_attribution,
     })
     .to_string()
 }
@@ -585,4 +700,113 @@ fn table_has_column(
         }
     }
     Ok(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::test_utils::test_db;
+    use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
+    use crate::signals::propagation::default_engine;
+    use chrono::TimeZone;
+
+    macro_rules! make_ctx {
+        ($ctx:ident) => {
+            let clock =
+                FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 26, 12, 0, 0).unwrap());
+            let rng = SeedableRng::new(42);
+            let ext = ExternalClients::default();
+            let $ctx = ServiceContext::test_live(&clock, &rng, &ext)
+                .with_actor("user:dailyos-mcp-v2:test");
+        };
+    }
+
+    #[test]
+    fn create_user_note_claim_in_db_commits_claim_with_mcp_provenance() {
+        let db = test_db();
+        make_ctx!(ctx);
+        db.conn_ref()
+            .execute(
+                "INSERT INTO accounts (id, name, updated_at)
+                 VALUES ('acct-1', 'Example Account', '2026-01-01')",
+                [],
+            )
+            .unwrap();
+        let engine = default_engine();
+
+        let receipt = create_user_note_claim_in_db(
+            &ctx,
+            &db,
+            &engine,
+            EntityContextNoteCreationRequest {
+                entity_type: "account".to_string(),
+                entity_id: "acct-1".to_string(),
+                title: "Call note".to_string(),
+                content: "Sponsor asked for a readiness recap".to_string(),
+                source_attribution: Some(serde_json::json!({ "label": "MCP conversation" })),
+            },
+            EntityContextNoteAttribution::mcp_submit_note(),
+            None,
+        )
+        .expect("note claim");
+
+        assert_eq!(receipt.mutation_cursor.note_id, receipt.note_id);
+        assert_eq!(receipt.entry.id, receipt.note_id);
+        let (
+            claim_type,
+            subject_ref,
+            text,
+            actor,
+            data_source,
+            source_asof,
+            provenance_json,
+            trust_score,
+        ): (
+            String,
+            String,
+            String,
+            String,
+            String,
+            Option<String>,
+            String,
+            Option<f64>,
+        ) = db
+            .conn_ref()
+            .query_row(
+                "SELECT claim_type, subject_ref, text, actor, data_source, source_asof,
+                        provenance_json, trust_score
+                   FROM intelligence_claims
+                  WHERE id = ?1",
+                [&receipt.note_id],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                        row.get(6)?,
+                        row.get(7)?,
+                    ))
+                },
+            )
+            .unwrap();
+
+        assert_eq!(claim_type, USER_NOTE_CLAIM_TYPE);
+        assert_eq!(text, "Sponsor asked for a readiness recap");
+        assert_eq!(actor, "user:dailyos-mcp-v2");
+        assert_eq!(data_source, "manual");
+        assert_eq!(source_asof.as_deref(), Some("2026-05-26T12:00:00+00:00"));
+        assert_eq!(trust_score, Some(0.85));
+        let subject: serde_json::Value = serde_json::from_str(&subject_ref).unwrap();
+        assert_eq!(subject["kind"], "account");
+        assert_eq!(subject["id"], "acct-1");
+        let provenance: serde_json::Value = serde_json::from_str(&provenance_json).unwrap();
+        assert_eq!(provenance["source"], "mcp_submit_note");
+        assert_eq!(
+            provenance["source_attribution"]["label"],
+            "MCP conversation"
+        );
+    }
 }

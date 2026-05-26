@@ -589,6 +589,7 @@ mod tests {
             ScopedName::new("dailyos.read.portfolio_attention"),
             ScopedName::new("dailyos.search.workspace_memory"),
             ScopedName::new("dailyos.read.workspace_source_provenance"),
+            ScopedName::new("dailyos.submit.note"),
             ScopedName::new("dailyos.submit.action"),
             ScopedName::new("dailyos.submit.action_status"),
         ];
@@ -599,6 +600,7 @@ mod tests {
             ScopedName::new("dailyos.read.portfolio_attention"),
             ScopedName::new("dailyos.search.workspace_memory"),
             ScopedName::new("dailyos.read.workspace_source_provenance"),
+            ScopedName::new("dailyos.submit.note"),
             ScopedName::new("dailyos.submit.action"),
             ScopedName::new("dailyos.submit.action_status"),
         ]
@@ -616,6 +618,7 @@ mod tests {
                 ScopedName::new("dailyos.read.portfolio_attention"),
                 ScopedName::new("dailyos.search.workspace_memory"),
                 ScopedName::new("dailyos.read.workspace_source_provenance"),
+                ScopedName::new("dailyos.submit.note"),
                 ScopedName::new("dailyos.submit.action"),
                 ScopedName::new("dailyos.submit.action_status"),
             ]

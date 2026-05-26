@@ -731,28 +731,59 @@
   {
     "name": "dailyos.submit.note",
     "side": "SubmitCorrection",
-    "summary": "Submits a free-form note.",
-    "when_to_call": "When the user wants to capture a quick thought or observation.",
-    "when_NOT_to_call": "Do NOT call for structured action items.",
+    "summary": "Captures an entity-bound note into the claim substrate.",
+    "when_to_call": "When the user wants to capture a quick thought or observation about a specific account, project, or person.",
+    "when_NOT_to_call": "Do NOT call for structured action items, and do not submit an unbound note without entity_type and entity_id.",
     "scopesRequired": [
       "dailyos.submit.note"
     ],
     "parameters": [
       {
-        "name": "text",
+        "name": "entity_type",
         "schema": {
           "type": "string"
         },
         "required": true,
-        "description": "Note text"
+        "description": "Entity kind: account, project, or person"
       },
       {
-        "name": "subject",
+        "name": "entity_id",
+        "schema": {
+          "type": "string"
+        },
+        "required": true,
+        "description": "Entity identifier from a DailyOS read/search result"
+      },
+      {
+        "name": "content",
+        "schema": {
+          "type": "string"
+        },
+        "required": true,
+        "description": "Note content to capture"
+      },
+      {
+        "name": "title",
         "schema": {
           "type": "string"
         },
         "required": false,
-        "description": "Optional subject"
+        "description": "Optional short note title"
+      },
+      {
+        "name": "source_attribution",
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        },
+        "required": false,
+        "description": "Optional attribution for the conversation or source that produced the note"
       }
     ],
     "returns": {
@@ -776,8 +807,10 @@
         "invocation": {
           "name": "dailyos.submit.note",
           "arguments": {
-            "text": "Acme concerned about pricing",
-            "subject": "Acme"
+            "entity_type": "account",
+            "entity_id": "account-id-from-dailyos",
+            "content": "Concerned about pricing",
+            "source_attribution": "MCP conversation"
           }
         },
         "expectedResponseShape": {
