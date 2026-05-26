@@ -56,7 +56,7 @@ impl WorkspaceGraphDiagnosticKey {
         Self { bytes }
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-harness", debug_assertions))]
     pub(crate) fn for_tests(label: &str) -> Self {
         Self::from_install_secret(label.as_bytes())
     }
@@ -84,6 +84,12 @@ pub fn local_install_diagnostic_key() -> Result<WorkspaceGraphDiagnosticKey, Str
     let bytes = crate::db::local_db_workspace_graph_diagnostic_key_bytes()
         .map_err(|error| format!("diagnostic key unavailable: {error}"))?;
     Ok(WorkspaceGraphDiagnosticKey::from_derived_bytes(bytes))
+}
+
+#[cfg(any(test, feature = "test-harness", debug_assertions))]
+#[doc(hidden)]
+pub fn diagnostic_key_for_tests(label: &str) -> WorkspaceGraphDiagnosticKey {
+    WorkspaceGraphDiagnosticKey::for_tests(label)
 }
 
 #[cfg(test)]

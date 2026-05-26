@@ -1012,7 +1012,7 @@ fn assign_inbox_entity_in_db(
                 entity_id: EntityId::new(entity_id.clone()),
                 entity_name: Some(entity_name.clone()),
             }),
-            mode: IngestionMode::Realtime,
+            mode: IngestionMode::EntitySeeded,
             category_hint: None,
             invocation_actor: "user".to_string(),
             validated_content: Some(validated_content),

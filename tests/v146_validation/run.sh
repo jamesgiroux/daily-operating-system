@@ -51,12 +51,13 @@ status_for_axis() {
     graph-audit)
       if (
         cd "$ROOT_DIR"
-        cargo test --manifest-path src-tauri/Cargo.toml --test v146_validation graph_audit_zero_gaps_on_hermetic_fixture_db >/dev/null
+        cargo test --manifest-path src-tauri/Cargo.toml --test v146_validation graph_audit_zero_gaps_on_hermetic_fixture_db >/dev/null &&
+        cargo test --manifest-path src-tauri/Cargo.toml --test v146_validation explicit_ingestion_to_claim_provenance_covers_entity_seeded_and_inbox_assignment >/dev/null &&
         cargo test --manifest-path src-tauri/Cargo.toml --lib workspace_ingestion::graph::tests >/dev/null
       ); then
-        printf 'blocked\tcargo test --test v146_validation graph_audit_zero_gaps_on_hermetic_fixture_db + cargo test --lib workspace_ingestion::graph::tests\tpartial explicit ingestion and graph audit evidence passed; blocked until entity-intake, inbox, and MCP placement path matrix is complete\n'
+        printf 'blocked\tcargo test --test v146_validation graph_audit_zero_gaps_on_hermetic_fixture_db + explicit_ingestion_to_claim_provenance_covers_entity_seeded_and_inbox_assignment + cargo test --lib workspace_ingestion::graph::tests\tentity-seeded and inbox graph audit evidence passed; blocked until actual MCP placement handler path is complete\n'
       else
-        printf 'fail\tcargo test --test v146_validation graph_audit_zero_gaps_on_hermetic_fixture_db + cargo test --lib workspace_ingestion::graph::tests\texplicit ingestion provenance chain or graph audit projection tests failed\n'
+        printf 'fail\tcargo test --test v146_validation graph_audit_zero_gaps_on_hermetic_fixture_db + explicit_ingestion_to_claim_provenance_covers_entity_seeded_and_inbox_assignment + cargo test --lib workspace_ingestion::graph::tests\texplicit ingestion provenance chain or graph audit projection tests failed\n'
       fi
       ;;
     trust)
