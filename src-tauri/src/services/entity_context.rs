@@ -8,7 +8,7 @@
 use crate::db::claims::{ClaimSensitivity, IntelligenceClaim, TemporalScope};
 use crate::services::claims::{
     commit_claim, load_claim_by_id, load_entity_context_claims_active_for_surface,
-    subject_ref_from_json, withdraw_claim, ClaimProposal, CommittedClaim,
+    subject_ref_from_json, update_claim_trust, withdraw_claim, ClaimProposal, CommittedClaim,
     DeterministicInsertProposal,
 };
 use crate::services::sensitivity::{
@@ -26,7 +26,38 @@ pub struct EntityContextNoteCreationRequest {
     pub entity_id: String,
     pub title: String,
     pub content: String,
+    pub content_origin: EntityContextNoteContentOrigin,
     pub source_attribution: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EntityContextNoteContentOrigin {
+    UserVerbatim,
+    AiAuthored,
+}
+
+impl EntityContextNoteContentOrigin {
+    pub fn parse(value: &str) -> Option<Self> {
+        Some(match value.trim().to_ascii_lowercase().as_str() {
+            "user_verbatim" | "user" | "verbatim" => Self::UserVerbatim,
+            "ai_authored" | "ai_summary" | "ai" | "agent" | "summary" => Self::AiAuthored,
+            _ => return None,
+        })
+    }
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::UserVerbatim => "user_verbatim",
+            Self::AiAuthored => "ai_authored",
+        }
+    }
+
+    const fn initial_trust_override(self) -> Option<f64> {
+        match self {
+            Self::UserVerbatim => None,
+            Self::AiAuthored => Some(0.55),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -56,6 +87,16 @@ impl EntityContextNoteAttribution {
             provenance_source: "mcp_submit_note",
             signal_source: "mcp_submit_note",
             signal_confidence: 0.85,
+        }
+    }
+
+    pub const fn mcp_ai_authored_note() -> Self {
+        Self {
+            actor: "system:dailyos-mcp-v2",
+            data_source: "manual",
+            provenance_source: "mcp_submit_note",
+            signal_source: "mcp_submit_note",
+            signal_confidence: 0.55,
         }
     }
 }
@@ -152,6 +193,7 @@ pub async fn create_entry(
                     entity_id,
                     title,
                     content,
+                    content_origin: EntityContextNoteContentOrigin::UserVerbatim,
                     source_attribution: None,
                 },
                 EntityContextNoteAttribution::user_manual(),
@@ -192,6 +234,7 @@ pub fn create_user_note_claim_in_db(
         source_ref: None,
         provenance_json: user_note_provenance_json(
             attribution,
+            request.content_origin,
             None,
             request.source_attribution.as_ref(),
         ),
@@ -213,6 +256,27 @@ pub fn create_user_note_claim_in_db(
     );
 
     let note_id = claim.id.clone();
+    if let Some(score) = request.content_origin.initial_trust_override() {
+        update_claim_trust(
+            db,
+            &note_id,
+            crate::services::claims::TrustScore(score),
+            1,
+            ctx,
+        )
+        .map_err(|error| format!("Failed to set entity context note trust: {error}"))?;
+        let reloaded = load_claim_by_id(db.conn_ref(), &note_id)
+            .map_err(|error| format!("Failed to reload entity context note claim: {error}"))?
+            .ok_or_else(|| {
+                format!("Entity context note not found after trust update: {note_id}")
+            })?;
+        let entry = entity_context_entry_for_claim(reloaded)?;
+        return Ok(EntityContextNoteCreationReceipt {
+            note_id: note_id.clone(),
+            mutation_cursor: EntityContextNoteMutationCursor { note_id },
+            entry,
+        });
+    }
     let entry = entity_context_entry_for_claim(claim)?;
     Ok(EntityContextNoteCreationReceipt {
         note_id: note_id.clone(),
@@ -262,6 +326,7 @@ pub async fn update_entry(
                 source_ref: None,
                 provenance_json: user_note_provenance_json(
                     EntityContextNoteAttribution::user_manual(),
+                    EntityContextNoteContentOrigin::UserVerbatim,
                     Some(&id),
                     None,
                 ),
@@ -396,6 +461,7 @@ pub fn migrate_legacy_notes(
             source_ref: Some(&source_ref),
             provenance_json: user_note_provenance_json(
                 EntityContextNoteAttribution::user_manual(),
+                EntityContextNoteContentOrigin::UserVerbatim,
                 None,
                 None,
             ),
@@ -657,6 +723,7 @@ fn title_for_entity_context_claim(claim: &IntelligenceClaim) -> String {
 
 fn user_note_provenance_json(
     attribution: EntityContextNoteAttribution,
+    content_origin: EntityContextNoteContentOrigin,
     supersedes: Option<&str>,
     source_attribution: Option<&serde_json::Value>,
 ) -> String {
@@ -664,6 +731,7 @@ fn user_note_provenance_json(
         "actor": attribution.actor,
         "data_source": attribution.data_source,
         "source": attribution.provenance_source,
+        "content_origin": content_origin.as_str(),
         "supersedes": supersedes,
         "source_attribution": source_attribution,
     })
@@ -743,6 +811,7 @@ mod tests {
                 entity_id: "acct-1".to_string(),
                 title: "Call note".to_string(),
                 content: "Sponsor asked for a readiness recap".to_string(),
+                content_origin: EntityContextNoteContentOrigin::UserVerbatim,
                 source_attribution: Some(serde_json::json!({ "label": "MCP conversation" })),
             },
             EntityContextNoteAttribution::mcp_submit_note(),
@@ -804,9 +873,57 @@ mod tests {
         assert_eq!(subject["id"], "acct-1");
         let provenance: serde_json::Value = serde_json::from_str(&provenance_json).unwrap();
         assert_eq!(provenance["source"], "mcp_submit_note");
+        assert_eq!(provenance["content_origin"], "user_verbatim");
         assert_eq!(
             provenance["source_attribution"]["label"],
             "MCP conversation"
         );
+    }
+
+    #[test]
+    fn create_user_note_claim_in_db_lowers_trust_for_ai_authored_notes() {
+        let db = test_db();
+        make_ctx!(ctx);
+        db.conn_ref()
+            .execute(
+                "INSERT INTO accounts (id, name, updated_at)
+                 VALUES ('acct-1', 'Example Account', '2026-01-01')",
+                [],
+            )
+            .unwrap();
+        let engine = default_engine();
+
+        let receipt = create_user_note_claim_in_db(
+            &ctx,
+            &db,
+            &engine,
+            EntityContextNoteCreationRequest {
+                entity_type: "account".to_string(),
+                entity_id: "acct-1".to_string(),
+                title: "Summary note".to_string(),
+                content: "Synthesized host conversation note".to_string(),
+                content_origin: EntityContextNoteContentOrigin::AiAuthored,
+                source_attribution: None,
+            },
+            EntityContextNoteAttribution::mcp_ai_authored_note(),
+            None,
+        )
+        .expect("note claim");
+
+        let (actor, trust_score, provenance_json): (String, Option<f64>, String) = db
+            .conn_ref()
+            .query_row(
+                "SELECT actor, trust_score, provenance_json
+                   FROM intelligence_claims
+                  WHERE id = ?1",
+                [&receipt.note_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+
+        assert_eq!(actor, "system:dailyos-mcp-v2");
+        assert_eq!(trust_score, Some(0.55));
+        let provenance: serde_json::Value = serde_json::from_str(&provenance_json).unwrap();
+        assert_eq!(provenance["content_origin"], "ai_authored");
     }
 }

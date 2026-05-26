@@ -14,8 +14,8 @@ use crate::services::context::{
     SystemRng,
 };
 use crate::services::entity_context::{
-    create_user_note_claim_in_db, EntityContextNoteAttribution, EntityContextNoteCreationReceipt,
-    EntityContextNoteCreationRequest,
+    create_user_note_claim_in_db, EntityContextNoteAttribution, EntityContextNoteContentOrigin,
+    EntityContextNoteCreationReceipt, EntityContextNoteCreationRequest,
 };
 use crate::services::mcp_v2::contracts::{McpActor, McpToolHandler, ToolDescription, ToolError};
 use crate::signals::propagation::PropagationEngine;
@@ -43,12 +43,20 @@ impl NoteHandler {
         db: &ActionDb,
     ) -> Result<Value, ToolError> {
         let request = note_request_from_params(params)?;
+        let attribution = match request.content_origin {
+            EntityContextNoteContentOrigin::UserVerbatim => {
+                EntityContextNoteAttribution::mcp_submit_note()
+            }
+            EntityContextNoteContentOrigin::AiAuthored => {
+                EntityContextNoteAttribution::mcp_ai_authored_note()
+            }
+        };
         let receipt = create_user_note_claim_in_db(
             services,
             db,
             &self.signal_engine,
             request,
-            EntityContextNoteAttribution::mcp_submit_note(),
+            attribution,
             None,
         )
         .map_err(map_note_error)?;
@@ -99,6 +107,7 @@ fn note_request_from_params(params: Value) -> Result<EntityContextNoteCreationRe
     let content =
         required_string(object, "content").or_else(|_| required_string(object, "text"))?;
     let title = optional_string(object, "title")?.unwrap_or_else(|| "Note".to_string());
+    let content_origin = optional_content_origin(object)?;
     let source_attribution = optional_source_attribution(object)?;
 
     Ok(EntityContextNoteCreationRequest {
@@ -106,6 +115,7 @@ fn note_request_from_params(params: Value) -> Result<EntityContextNoteCreationRe
         entity_id,
         title,
         content,
+        content_origin,
         source_attribution,
     })
 }
@@ -168,6 +178,25 @@ fn optional_source_attribution(
     }
 }
 
+fn optional_content_origin(
+    object: &serde_json::Map<String, Value>,
+) -> Result<EntityContextNoteContentOrigin, ToolError> {
+    let Some(value) = object
+        .get("content_origin")
+        .or_else(|| object.get("contentOrigin"))
+    else {
+        return Ok(EntityContextNoteContentOrigin::UserVerbatim);
+    };
+    let Some(value) = value.as_str() else {
+        return Err(ToolError::BadParams {
+            detail: "content_origin must be a string".to_string(),
+        });
+    };
+    EntityContextNoteContentOrigin::parse(value).ok_or_else(|| ToolError::BadParams {
+        detail: format!("unsupported content_origin: {value}"),
+    })
+}
+
 fn map_note_error(message: String) -> ToolError {
     if message.contains("Unsupported")
         || message.contains("cannot be")
@@ -211,12 +240,32 @@ mod tests {
         assert_eq!(request.title, "Note");
         assert_eq!(request.content, "Sponsor wants a readiness recap");
         assert_eq!(
+            request.content_origin,
+            EntityContextNoteContentOrigin::UserVerbatim
+        );
+        assert_eq!(
             request
                 .source_attribution
                 .as_ref()
                 .and_then(|value| value.get("label"))
                 .and_then(Value::as_str),
             Some("MCP conversation")
+        );
+    }
+
+    #[test]
+    fn request_parser_accepts_ai_authored_content_origin() {
+        let request = note_request_from_params(json!({
+            "entityType": "account",
+            "entityId": "acct-1",
+            "text": "Summarized from the host conversation",
+            "contentOrigin": "ai_summary"
+        }))
+        .expect("request");
+
+        assert_eq!(
+            request.content_origin,
+            EntityContextNoteContentOrigin::AiAuthored
         );
     }
 
