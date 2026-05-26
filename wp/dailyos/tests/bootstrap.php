@@ -754,6 +754,19 @@ namespace {
 		}
 	}
 
+	if ( ! function_exists( '_n' ) ) {
+		function _n( string $single, string $plural, int $number, string $domain = 'default' ): string {
+			unset( $domain );
+			return 1 === $number ? $single : $plural;
+		}
+	}
+
+	if ( ! function_exists( 'wp_strip_all_tags' ) ) {
+		function wp_strip_all_tags( string $text ): string {
+			return strip_tags( $text );
+		}
+	}
+
 	if ( ! function_exists( 'add_settings_error' ) ) {
 		function add_settings_error( string $setting, string $code, string $message, string $type = 'error' ): void {
 			$GLOBALS['dailyos_test_settings_errors'][ $setting ][] = [

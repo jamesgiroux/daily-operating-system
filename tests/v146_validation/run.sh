@@ -64,7 +64,15 @@ status_for_axis() {
       fi
       ;;
     trust)
-      printf 'blocked\tcargo test --test v146_validation trust_band_discipline\tblocked until the full W5 trust matrix covers recent, stale, pending-review, and reingest-without-freshness cases through real recompute\n'
+      if (
+        cd "$ROOT_DIR"
+        cargo test --manifest-path src-tauri/Cargo.toml --test v146_validation trust_band_discipline >/dev/null &&
+        cargo test --manifest-path src-tauri/Cargo.toml apply_registers_pending_review_source_and_graph_excludes_it --lib >/dev/null
+      ); then
+        printf 'pass\tcargo test --test v146_validation trust_band_discipline + cargo test apply_registers_pending_review_source_and_graph_excludes_it --lib\tfresh, stale, and missing source_asof claims passed through commit_claim plus real trust recompute; pending-review backfill stays claim-free and graph-excluded\n'
+      else
+        printf 'fail\tcargo test --test v146_validation trust_band_discipline + cargo test apply_registers_pending_review_source_and_graph_excludes_it --lib\ttrust-band recompute matrix or pending-review zero-claim evidence failed\n'
+      fi
       ;;
     signals)
       if (
@@ -88,7 +96,14 @@ status_for_axis() {
       fi
       ;;
     lifecycle)
-      printf 'blocked\tcargo test --test v146_validation lifecycle_actions_and_user_correction_round_trip\tblocked because source-management actions currently expose reingest/quarantine/relink only, not ignore/scratchpad or archive/delete\n'
+      if (
+        cd "$ROOT_DIR"
+        cargo test --manifest-path src-tauri/Cargo.toml --test v146_validation lifecycle_actions_and_user_correction_round_trip >/dev/null
+      ); then
+        printf 'pass\tcargo test --test v146_validation lifecycle_actions_and_user_correction_round_trip\trelink, quarantine, ignore, scratchpad, archive, and delete source actions round-tripped through service APIs and suppressed workspace-backed context reads\n'
+      else
+        printf 'fail\tcargo test --test v146_validation lifecycle_actions_and_user_correction_round_trip\tlifecycle action or source-backed context suppression evidence failed\n'
+      fi
       ;;
     filesystem)
       if (

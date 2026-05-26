@@ -5205,6 +5205,8 @@ fn load_claims_where_limited(
         (None, Some(_)) => " LIMIT ?3",
         _ => "",
     };
+    let workspace_lifecycle_filter =
+        workspace_source_lifecycle_filter(db.conn_ref(), "current_claim")?;
     let sql = format!(
         "SELECT {CLAIM_COLUMNS}, {surface_columns}
          FROM intelligence_claims current_claim
@@ -5213,6 +5215,7 @@ fn load_claims_where_limited(
            AND json_extract(subject_ref, '$.id') = ?2
            {claim_type_filter}
            AND {lifecycle_where}
+           {workspace_lifecycle_filter}
          ORDER BY created_at DESC{limit_clause}"
     );
     let mut stmt = db.conn_ref().prepare(&sql)?;
@@ -5292,6 +5295,8 @@ fn load_claims_where_for_surface_limited_filtered(
         (None, Some(_)) => " LIMIT ?4",
         _ => "",
     };
+    let workspace_lifecycle_filter =
+        workspace_source_lifecycle_filter(db.conn_ref(), "current_claim")?;
     let sql = format!(
         "SELECT {CLAIM_COLUMNS}, {surface_columns}
          FROM intelligence_claims current_claim
@@ -5301,6 +5306,7 @@ fn load_claims_where_for_surface_limited_filtered(
            {claim_type_filter}
            AND {lifecycle_where}
            {prompt_safe_filter}
+           {workspace_lifecycle_filter}
            AND NOT EXISTS (
                SELECT 1
                FROM claim_surface_dismissals dismissal
@@ -5350,6 +5356,8 @@ fn load_claims_where_limited_prompt_safe(
         (None, Some(_)) => " LIMIT ?3",
         _ => "",
     };
+    let workspace_lifecycle_filter =
+        workspace_source_lifecycle_filter(db.conn_ref(), "current_claim")?;
     let sql = format!(
         "SELECT {CLAIM_COLUMNS}, {surface_columns}
          FROM intelligence_claims current_claim
@@ -5359,6 +5367,7 @@ fn load_claims_where_limited_prompt_safe(
            {claim_type_filter}
            AND {lifecycle_where}
            AND sensitivity IN ('public', 'internal')
+           {workspace_lifecycle_filter}
          ORDER BY created_at DESC{limit_clause}"
     );
     let mut stmt = db.conn_ref().prepare(&sql)?;
@@ -5375,6 +5384,31 @@ fn load_claims_where_limited_prompt_safe(
         claims.push(read_claim_row_with_surface_shadow_state(row)?);
     }
     Ok(claims)
+}
+
+fn workspace_source_lifecycle_filter(
+    conn: &Connection,
+    claim_alias: &str,
+) -> Result<String, ClaimError> {
+    if !table_exists_sqlite(conn, "workspace_file_lifecycle")? {
+        return Ok(String::new());
+    }
+    Ok(format!(
+        "AND NOT EXISTS (
+            SELECT 1
+            FROM workspace_file_lifecycle workspace_lifecycle
+            WHERE {claim_alias}.source_ref = 'workspace_file:' || workspace_lifecycle.file_id
+              AND workspace_lifecycle.lifecycle_state IN (
+                'rejected',
+                'quarantined',
+                'superseded',
+                'ignored',
+                'scratchpad',
+                'archived',
+                'deleted'
+              )
+        )"
+    ))
 }
 
 fn actor_class_for_actor(actor: &str) -> Option<ClaimActorClass> {
@@ -9741,6 +9775,8 @@ fn load_entity_context_claims_for_subjects_limited(
     } else {
         String::new()
     };
+    let workspace_lifecycle_filter =
+        workspace_source_lifecycle_filter(db.conn_ref(), "current_claim")?;
     let limit_position = bound_params.len() + 1;
     bound_params.push(Box::new(limit as i64));
     let subject_filter = subject_predicates.join(" OR ");
@@ -9753,6 +9789,7 @@ fn load_entity_context_claims_for_subjects_limited(
            AND current_claim.surfacing_state = 'active'
            {prompt_safe_filter}
            {dismissal_filter}
+           {workspace_lifecycle_filter}
          ORDER BY current_claim.created_at DESC
          LIMIT ?{limit_position}"
     );

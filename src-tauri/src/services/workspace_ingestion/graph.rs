@@ -887,7 +887,13 @@ fn build_audit_gaps(
                     }
                     if matches!(
                         lifecycle.lifecycle_state.as_str(),
-                        "rejected" | "quarantined" | "superseded"
+                        "rejected"
+                            | "quarantined"
+                            | "superseded"
+                            | "ignored"
+                            | "scratchpad"
+                            | "archived"
+                            | "deleted"
                     ) {
                         gaps.push(claim_gap(ClaimGapInput {
                             category: "excluded_file_has_active_workspace_claim",

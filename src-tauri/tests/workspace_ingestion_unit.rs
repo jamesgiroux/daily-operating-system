@@ -19,7 +19,7 @@ use dailyos_lib::services::workspace_ingestion::lifecycle::LifecycleState;
 // ---- LifecycleState ---------------------------------------------------------
 
 #[test]
-fn lifecycle_state_has_exactly_seven_variants_with_canonical_serde_strings() {
+fn lifecycle_state_has_canonical_serde_strings() {
     let pairs: &[(LifecycleState, &str)] = &[
         (LifecycleState::Pending, "pending"),
         (
@@ -31,12 +31,16 @@ fn lifecycle_state_has_exactly_seven_variants_with_canonical_serde_strings() {
         (LifecycleState::Superseded, "superseded"),
         (LifecycleState::Rejected, "rejected"),
         (LifecycleState::Quarantined, "quarantined"),
+        (LifecycleState::Ignored, "ignored"),
+        (LifecycleState::Scratchpad, "scratchpad"),
+        (LifecycleState::Archived, "archived"),
+        (LifecycleState::Deleted, "deleted"),
     ];
 
     assert_eq!(
         pairs.len(),
-        7,
-        "LifecycleState must have exactly 7 variants"
+        11,
+        "LifecycleState must have exactly 11 variants"
     );
 
     for (state, expected_slug) in pairs {

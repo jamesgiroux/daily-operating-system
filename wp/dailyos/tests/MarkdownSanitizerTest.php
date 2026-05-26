@@ -38,6 +38,7 @@ final class DailyOS_MarkdownSanitizerTest extends TestCase {
 			'foreign'      => [ '<foreignObject><body onload=alert(1)></body></foreignObject>', [ 'foreignObject', 'onload', 'alert(1)' ] ],
 			'style_attr'   => [ '<p style="background:url(javascript:alert(1))">x</p>', [ 'style=', 'javascript:', 'alert(1)' ] ],
 			'style_tag'    => [ '<style>@import url(http://example.invalid/style.css)</style>', [ '<style', '@import', 'example.invalid' ] ],
+			// phpcs:ignore WordPress.WP.EnqueuedResources.NonEnqueuedStylesheet -- Sanitizer fixture intentionally includes a dangerous stylesheet link.
 			'link'         => [ '<link rel="stylesheet" href="http://example.invalid/style.css">', [ '<link', 'example.invalid' ] ],
 			'object'       => [ '<object data="http://example.invalid/payload"></object>', [ '<object', 'example.invalid' ] ],
 			'embed'        => [ '<embed src="http://example.invalid/payload">', [ '<embed', 'example.invalid' ] ],

@@ -3,7 +3,14 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Duration, Utc};
 use dailyos_lib::abilities::provenance::source::EntityId;
+use dailyos_lib::abilities::provenance::trust::claim_trust_band_from_score;
 use dailyos_lib::abilities::registry::McpExposure;
+use dailyos_lib::abilities::source_management_ledger::contracts::{
+    SourceManagementActionInput, SourceManagementActionKind, SourceManagementActionRequest,
+    SourceManagementLedgerInput, SourceManagementLedgerPrivacyProfile,
+    SourceManagementLedgerReadRequest,
+};
+use dailyos_lib::abilities::trust::TrustBand;
 use dailyos_lib::abilities::workspace_graph::contracts::{
     WorkspaceGraphInput, WorkspaceGraphPrivacyProfile, WorkspaceGraphReadRequest,
     WorkspaceGraphResponse,
@@ -16,21 +23,17 @@ use dailyos_lib::bridges::mcp::McpAbilityBridge;
 use dailyos_lib::bridges::tauri::{TauriAbilityBridge, TauriTestInvokeContext};
 #[cfg(feature = "test-harness")]
 use dailyos_lib::bridges::{BridgeSurface, McpSessionId};
-#[cfg(feature = "test-harness")]
 use dailyos_lib::db::claims::{ClaimSensitivity, TemporalScope};
 use dailyos_lib::db::{ActionDb, DbAccount};
 use dailyos_lib::entity::EntityType;
 #[cfg(feature = "test-harness")]
 use dailyos_lib::intelligence::provider::ReplayProvider;
-#[cfg(feature = "test-harness")]
 use dailyos_lib::services::claims::{
     commit_claim, load_entity_context_claims_active_for_surface, ClaimProposal, CommittedClaim,
 };
+use dailyos_lib::services::context::{ClaimDismissalSurface, FixedClock, SeedableRng};
 #[cfg(feature = "test-harness")]
-use dailyos_lib::services::context::{
-    ClaimDismissalSurface, EntityContextClaimReadFuture, EntityContextClaimReadHandle, FixedClock,
-    SeedableRng,
-};
+use dailyos_lib::services::context::{EntityContextClaimReadFuture, EntityContextClaimReadHandle};
 use dailyos_lib::services::context::{ExternalClients, ServiceContext, SystemClock, SystemRng};
 use dailyos_lib::services::mcp_v2::actor_policy::{ToolGrant, ToolRateLimit};
 use dailyos_lib::services::mcp_v2::contracts::{
@@ -52,11 +55,14 @@ use dailyos_lib::services::workspace_ingestion::registry::WorkspaceSourceRegistr
 use dailyos_lib::services::workspace_ingestion::runs::IngestionMode;
 use dailyos_lib::services::workspace_ingestion::signals::WorkspaceSignalEmitter;
 use dailyos_lib::services::workspace_ingestion::wiring;
+use dailyos_lib::services::{
+    source_management_ledger::{apply_source_management_action, read_source_management_ledger},
+    trust_recompute::recompute_claim_trust_for_subject,
+};
 use parking_lot::Mutex;
 #[cfg(feature = "test-harness")]
 use rusqlite::OpenFlags;
 use rusqlite::{params, Connection};
-#[cfg(feature = "test-harness")]
 use serde_json::json;
 
 #[test]
@@ -569,6 +575,217 @@ async fn context_inclusion_privacy_parity() {
     }
 }
 
+#[test]
+fn trust_band_discipline() {
+    let fixture = Fixture::new();
+    fixture.seed_account("acct-v146-trust", "Trust Account");
+    let now = DateTime::parse_from_rfc3339("2026-05-26T00:00:00Z")
+        .expect("fixed trust time")
+        .with_timezone(&Utc);
+
+    let fresh_claim_id = fixture.commit_validation_claim(
+        "acct-v146-trust",
+        "Fresh source-backed note for Trust Account.",
+        Some(now - Duration::days(1)),
+        now - Duration::days(1),
+        Some("workspace_file:v146-trust-fresh"),
+    );
+    let stale_claim_id = fixture.commit_validation_claim(
+        "acct-v146-trust",
+        "Stale source-backed note for Trust Account.",
+        Some(now - Duration::days(120)),
+        now - Duration::days(120),
+        Some("workspace_file:v146-trust-stale"),
+    );
+    let missing_source_asof_claim_id = fixture.commit_validation_claim(
+        "acct-v146-trust",
+        "Timestamp-unknown note for Trust Account.",
+        None,
+        now - Duration::days(1),
+        Some("workspace_file:v146-trust-missing-source-asof"),
+    );
+
+    let clock = FixedClock::new(now);
+    let rng = SeedableRng::new(146);
+    let external = ExternalClients::default();
+    let ctx =
+        ServiceContext::new_live(&clock, &rng, &external).with_actor("system:v146_validation");
+    let report = recompute_claim_trust_for_subject(
+        &ctx,
+        &ActionDb::from_conn(&fixture.conn),
+        "account",
+        "acct-v146-trust",
+    )
+    .expect("trust recompute");
+    assert_eq!(report.claims_seen, 3);
+    assert_eq!(report.claims_updated, 3);
+    assert_eq!(report.claims_skipped, 0);
+
+    assert_eq!(
+        fixture.claim_trust_band(&fresh_claim_id),
+        TrustBand::LikelyCurrent,
+        "fresh source_asof should survive recompute as likely current"
+    );
+    assert!(
+        matches!(
+            fixture.claim_trust_band(&stale_claim_id),
+            TrustBand::UseWithCaution | TrustBand::NeedsVerification
+        ),
+        "stale source_asof must not render as likely current"
+    );
+    assert!(
+        matches!(
+            fixture.claim_trust_band(&missing_source_asof_claim_id),
+            TrustBand::UseWithCaution | TrustBand::NeedsVerification
+        ),
+        "missing source_asof must not render as likely current"
+    );
+}
+
+#[test]
+fn lifecycle_actions_and_user_correction_round_trip() {
+    let fixture = Fixture::new();
+    fixture.seed_account("acct-v146-life", "Lifecycle Account");
+    let relink_note = fixture.write_account_file(
+        "Lifecycle Account",
+        "lifecycle-relink.md",
+        "Lifecycle relink validation note.",
+    );
+    let relink_receipt = fixture.ingest_account_note(
+        &relink_note,
+        EntityRef {
+            entity_type: EntityType::Account,
+            entity_id: EntityId::new("acct-v146-life".to_string()),
+            entity_name: Some("Lifecycle Account".to_string()),
+        },
+        None,
+    );
+    assert_eq!(
+        context_claim_count(&fixture, "acct-v146-life"),
+        1,
+        "ingested workspace claims should be visible before policy actions"
+    );
+
+    let signal_engine = Arc::new(dailyos_lib::signals::propagation::default_engine());
+    let diagnostic_key = diagnostic_key_for_tests("v146-lifecycle");
+    let relink_key = fixture.source_key_for_lifecycle_state(&diagnostic_key, "ingested");
+
+    let relink = fixture.apply_source_action(
+        Arc::clone(&signal_engine),
+        &diagnostic_key,
+        &relink_key,
+        SourceManagementActionKind::Relink,
+    );
+    assert_eq!(relink.status, "linked");
+    assert_eq!(
+        fixture.source_lifecycle_state(&relink_receipt.file_id),
+        "ingested"
+    );
+    assert_eq!(
+        count(
+            &fixture.conn,
+            "SELECT COUNT(*)
+             FROM document_entity_links
+             WHERE file_id = ?1
+               AND user_override_actor = 'user:v146_validation'",
+            params![&relink_receipt.file_id],
+        ),
+        1,
+        "relink action should record a user override through the link service"
+    );
+
+    let quarantine = fixture.apply_source_action(
+        Arc::clone(&signal_engine),
+        &diagnostic_key,
+        &relink_key,
+        SourceManagementActionKind::Quarantine,
+    );
+    assert_eq!(quarantine.lifecycle_state, "quarantined");
+    assert_eq!(
+        context_claim_count(&fixture, "acct-v146-life"),
+        0,
+        "quarantined workspace source should stop feeding entity context"
+    );
+
+    let policy_note = fixture.write_account_file(
+        "Lifecycle Account",
+        "lifecycle-policy.md",
+        "Lifecycle policy validation note.",
+    );
+    let policy_receipt = fixture.ingest_account_note(
+        &policy_note,
+        EntityRef {
+            entity_type: EntityType::Account,
+            entity_id: EntityId::new("acct-v146-life".to_string()),
+            entity_name: Some("Lifecycle Account".to_string()),
+        },
+        None,
+    );
+    assert_eq!(context_claim_count(&fixture, "acct-v146-life"), 1);
+    let policy_key = fixture.source_key_for_lifecycle_state(&diagnostic_key, "ingested");
+
+    for (action, expected_state) in [
+        (SourceManagementActionKind::Ignore, "ignored"),
+        (SourceManagementActionKind::Scratchpad, "scratchpad"),
+        (SourceManagementActionKind::Archive, "archived"),
+        (SourceManagementActionKind::Delete, "deleted"),
+    ] {
+        let receipt = fixture.apply_source_action(
+            Arc::clone(&signal_engine),
+            &diagnostic_key,
+            &policy_key,
+            action,
+        );
+        assert_eq!(receipt.lifecycle_state, expected_state);
+        assert_eq!(
+            fixture.source_lifecycle_state(&policy_receipt.file_id),
+            expected_state
+        );
+        assert_eq!(
+            context_claim_count(&fixture, "acct-v146-life"),
+            0,
+            "{expected_state} workspace source should stay out of entity context"
+        );
+    }
+
+    let ledger = read_source_management_ledger(
+        &fixture.conn,
+        SourceManagementLedgerReadRequest {
+            input: SourceManagementLedgerInput {
+                schema_version: 1,
+                entity_type: "account".to_string(),
+                entity_id: "acct-v146-life".to_string(),
+                cursor: None,
+                page_size: 25,
+            },
+            privacy_profile: SourceManagementLedgerPrivacyProfile::SurfaceClient,
+        },
+        &diagnostic_key,
+    )
+    .expect("source ledger after lifecycle actions");
+    let states = ledger
+        .sources
+        .iter()
+        .map(|source| source.lifecycle_state.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert!(states.contains("quarantined"));
+    assert!(states.contains("deleted"));
+
+    let policy_signal_count = count(
+        &fixture.conn,
+        "SELECT COUNT(*)
+         FROM signal_events
+         WHERE signal_type = 'workspace_source_policy_changed'
+           AND entity_type = 'account'
+           AND entity_id = 'acct-v146-life'",
+        [],
+    );
+    assert!(
+        (1..=4).contains(&policy_signal_count),
+        "policy actions should emit at least one invalidating signal; rapid actions may coalesce"
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn filesystem_validation_negative_fixtures() {
@@ -973,6 +1190,175 @@ impl Fixture {
             other => panic!("expected inserted context parity claim, got {other:?}"),
         }
     }
+
+    fn commit_validation_claim(
+        &self,
+        account_id: &str,
+        text: &str,
+        source_asof: Option<DateTime<Utc>>,
+        observed_at: DateTime<Utc>,
+        source_ref: Option<&str>,
+    ) -> String {
+        let clock = FixedClock::new(
+            DateTime::parse_from_rfc3339("2026-05-26T00:00:00Z")
+                .expect("fixed time")
+                .with_timezone(&Utc),
+        );
+        let rng = SeedableRng::new(476);
+        let external = ExternalClients::default();
+        let ctx =
+            ServiceContext::new_live(&clock, &rng, &external).with_actor("system:v146_validation");
+        let committed = commit_claim(
+            &ctx,
+            ActionDb::from_conn(&self.conn),
+            ClaimProposal {
+                id: None,
+                expected_claim_version: None,
+                subject_ref: json!({
+                    "kind": "account",
+                    "id": account_id,
+                })
+                .to_string(),
+                claim_type: "user_note".to_string(),
+                field_path: None,
+                topic_key: None,
+                text: text.to_string(),
+                actor: "system:v146_validation".to_string(),
+                data_source: "workspace_file:entity_doc".to_string(),
+                source_ref: source_ref.map(str::to_string),
+                source_asof: source_asof.map(|value| value.to_rfc3339()),
+                observed_at: observed_at.to_rfc3339(),
+                provenance_json: "{}".to_string(),
+                metadata_json: Some(
+                    json!({
+                        "producer": "v146_validation",
+                        "internal_consistency": 1.0,
+                    })
+                    .to_string(),
+                ),
+                thread_id: None,
+                temporal_scope: Some(TemporalScope::State),
+                sensitivity: Some(ClaimSensitivity::Internal),
+                supersedes: None,
+                tombstone: None,
+            },
+        )
+        .expect("commit validation claim");
+
+        match committed {
+            CommittedClaim::Inserted { claim } => claim.id,
+            other => panic!("expected inserted validation claim, got {other:?}"),
+        }
+    }
+
+    fn claim_trust_band(&self, claim_id: &str) -> TrustBand {
+        let trust_score: Option<f64> = self
+            .conn
+            .query_row(
+                "SELECT trust_score FROM intelligence_claims WHERE id = ?1",
+                [claim_id],
+                |row| row.get(0),
+            )
+            .expect("claim trust score");
+        claim_trust_band_from_score(trust_score)
+    }
+
+    fn source_lifecycle_state(&self, file_id: &str) -> String {
+        self.conn
+            .query_row(
+                "SELECT lifecycle_state
+                 FROM workspace_file_lifecycle
+                 WHERE file_id = ?1",
+                [file_id],
+                |row| row.get(0),
+            )
+            .expect("source lifecycle state")
+    }
+
+    fn source_key_for_lifecycle_state(
+        &self,
+        diagnostic_key: &dailyos_lib::services::workspace_ingestion::graph::WorkspaceGraphDiagnosticKey,
+        lifecycle_state: &str,
+    ) -> String {
+        let ledger = read_source_management_ledger(
+            &self.conn,
+            SourceManagementLedgerReadRequest {
+                input: SourceManagementLedgerInput {
+                    schema_version: 1,
+                    entity_type: "account".to_string(),
+                    entity_id: "acct-v146-life".to_string(),
+                    cursor: None,
+                    page_size: 25,
+                },
+                privacy_profile: SourceManagementLedgerPrivacyProfile::SurfaceClient,
+            },
+            diagnostic_key,
+        )
+        .expect("source management ledger");
+        let matches = ledger
+            .sources
+            .iter()
+            .filter(|source| source.lifecycle_state == lifecycle_state)
+            .map(|source| source.source_key.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            matches.len(),
+            1,
+            "expected exactly one source in lifecycle state {lifecycle_state}, got {:?}",
+            ledger
+                .sources
+                .iter()
+                .map(|source| source.lifecycle_state.as_str())
+                .collect::<Vec<_>>()
+        );
+        matches[0].clone()
+    }
+
+    fn apply_source_action(
+        &self,
+        signal_engine: Arc<dailyos_lib::signals::propagation::PropagationEngine>,
+        diagnostic_key: &dailyos_lib::services::workspace_ingestion::graph::WorkspaceGraphDiagnosticKey,
+        source_key: &str,
+        action: SourceManagementActionKind,
+    ) -> dailyos_lib::abilities::source_management_ledger::contracts::SourceManagementActionReceipt
+    {
+        let clock = SystemClock;
+        let rng = SystemRng;
+        let external = ExternalClients::default();
+        let ctx =
+            ServiceContext::new_live(&clock, &rng, &external).with_actor("user:v146_validation");
+        apply_source_management_action(
+            &ctx,
+            &ActionDb::from_conn(&self.conn),
+            self.workspace_root.clone(),
+            Some(signal_engine),
+            SourceManagementActionRequest {
+                input: SourceManagementActionInput {
+                    schema_version: 1,
+                    entity_type: "account".to_string(),
+                    entity_id: "acct-v146-life".to_string(),
+                    source_key: source_key.to_string(),
+                    action,
+                    reason: Some("user_requested".to_string()),
+                },
+                actor_id: "user:v146_validation".to_string(),
+            },
+            diagnostic_key,
+        )
+        .expect("source management action")
+    }
+}
+
+fn context_claim_count(fixture: &Fixture, account_id: &str) -> usize {
+    load_entity_context_claims_active_for_surface(
+        ActionDb::from_conn(&fixture.conn),
+        "account",
+        account_id,
+        1,
+        ClaimDismissalSurface::TauriEntityDetail.as_str(),
+    )
+    .expect("entity context claims")
+    .len()
 }
 
 #[cfg(feature = "test-harness")]

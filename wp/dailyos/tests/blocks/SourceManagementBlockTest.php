@@ -60,7 +60,7 @@ final class DailyOS_SourceManagementBlockTest extends TestCase {
 				],
 				'sources'      => [
 					[
-							'sourceKey'        => 'source:v1:abcdefghijklmnopqrstuvwxyzABCDEF0123456789_-',
+						'sourceKey'        => 'source:v1:abcdefghijklmnopqrstuvwxyzABCDEF0123456789_-',
 						'sourceHandle'     => 'source_opaque_123',
 						'file_id'          => 'pathhash-alpha',
 						'link_id'          => 'link-alpha',
@@ -70,38 +70,42 @@ final class DailyOS_SourceManagementBlockTest extends TestCase {
 						'sourceKind'       => 'mcp_placement',
 						'lifecycleState'   => 'quarantined',
 						'category'         => 'notes',
-							'sourceAsof'       => '2026-05-24T10:00:00Z',
-							'entity'           => [
-								'entityType' => 'account',
-								'entityId'   => 'acct-test-001',
-							],
-							'latestRun'        => [
+						'sourceAsof'       => '2026-05-24T10:00:00Z',
+						'entity'           => [
+							'entityType' => 'account',
+							'entityId'   => 'acct-test-001',
+						],
+						'latestRun'        => [
+							'status'             => 'success',
+							'claimCountProduced' => 2,
+						],
+						'ingestionRuns'    => [
+							[
 								'status'             => 'success',
 								'claimCountProduced' => 2,
 							],
-							'ingestionRuns'    => [
-								[
-									'status'             => 'success',
-									'claimCountProduced' => 2,
-								],
-								[
-									'status'             => 'failed',
-									'claimCountProduced' => 0,
-								],
+							[
+								'status'             => 'failed',
+								'claimCountProduced' => 0,
 							],
-							'trustBandSummary' => [
+						],
+						'trustBandSummary' => [
 							'total'             => 3,
 							'likelyCurrent'     => 1,
 							'useWithCaution'    => 1,
 							'needsVerification' => 1,
 							'unscored'          => 0,
 						],
-							'actions'          => [
-								'canReingest'    => true,
-								'canQuarantine'  => true,
-								'canRelink'      => true,
-								'disabledReason' => '',
-							],
+						'actions'          => [
+							'canReingest'    => true,
+							'canQuarantine'  => true,
+							'canRelink'      => true,
+							'canIgnore'      => true,
+							'canScratchpad'  => true,
+							'canArchive'     => true,
+							'canDelete'      => true,
+							'disabledReason' => '',
+						],
 					],
 				],
 			]
@@ -118,7 +122,15 @@ final class DailyOS_SourceManagementBlockTest extends TestCase {
 			$this->assertStringContainsString( 'Re-ingest', $html );
 			$this->assertStringContainsString( 'Quarantine', $html );
 			$this->assertStringContainsString( 'Re-link', $html );
+			$this->assertStringContainsString( 'Ignore', $html );
+			$this->assertStringContainsString( 'Scratchpad', $html );
+			$this->assertStringContainsString( 'Archive', $html );
+			$this->assertStringContainsString( 'Delete', $html );
 			$this->assertStringContainsString( 'data-dailyos-source-action="reingest"', $html );
+			$this->assertStringContainsString( 'data-dailyos-source-action="ignore"', $html );
+			$this->assertStringContainsString( 'data-dailyos-source-action="scratchpad"', $html );
+			$this->assertStringContainsString( 'data-dailyos-source-action="archive"', $html );
+			$this->assertStringContainsString( 'data-dailyos-source-action="delete"', $html );
 			$this->assertStringContainsString( 'data-dailyos-source-key="source:v1:abcdefghijklmnopqrstuvwxyzABCDEF0123456789_-"', $html );
 			$this->assertStringNotContainsString( 'source_opaque_123', $html );
 		$this->assertStringNotContainsString( 'pathhash-alpha', $html );
