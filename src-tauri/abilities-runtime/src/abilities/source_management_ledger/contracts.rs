@@ -48,6 +48,10 @@ pub enum SourceManagementActionKind {
     Reingest,
     Quarantine,
     Relink,
+    Ignore,
+    Scratchpad,
+    Archive,
+    Delete,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
@@ -92,6 +96,10 @@ pub struct SourceManagementActionPolicy {
     pub reingest_enabled: bool,
     pub quarantine_enabled: bool,
     pub relink_enabled: bool,
+    pub ignore_enabled: bool,
+    pub scratchpad_enabled: bool,
+    pub archive_enabled: bool,
+    pub delete_enabled: bool,
     pub disabled_reason: String,
 }
 
@@ -163,5 +171,9 @@ pub struct SourceManagementSourceActions {
     pub can_reingest: bool,
     pub can_quarantine: bool,
     pub can_relink: bool,
+    pub can_ignore: bool,
+    pub can_scratchpad: bool,
+    pub can_archive: bool,
+    pub can_delete: bool,
     pub disabled_reason: String,
 }

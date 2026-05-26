@@ -13,6 +13,7 @@ namespace DailyOS;
  * Sanitizes already-rendered preview HTML before it reaches the browser.
  */
 final class DailyOS_Markdown_Sanitizer {
+	// phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- DOMDocument exposes camelCase properties.
 	public const LOCAL_ASSET_PLACEHOLDER = '[local asset blocked]';
 	public const REMOTE_ASSET_PLACEHOLDER = '[remote asset blocked]';
 
@@ -332,7 +333,10 @@ final class DailyOS_Markdown_Sanitizer {
 	 * @return string
 	 */
 	private function clean_class_list( string $value ): string {
-		$tokens = preg_split( '/\s+/', trim( $value ) ) ?: [];
+		$tokens = preg_split( '/\s+/', trim( $value ) );
+		if ( false === $tokens ) {
+			$tokens = [];
+		}
 		$allowed = [];
 		foreach ( $tokens as $token ) {
 			if ( 1 === preg_match( '/^dailyos-markdown-preview(?:__(?:[a-z0-9_-]+)|--(?:[a-z0-9_-]+))?$/', $token ) ) {

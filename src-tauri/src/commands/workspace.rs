@@ -1095,6 +1095,10 @@ fn lifecycle_state_to_slug(state: LifecycleState) -> &'static str {
         LifecycleState::Superseded => "superseded",
         LifecycleState::Rejected => "rejected",
         LifecycleState::Quarantined => "quarantined",
+        LifecycleState::Ignored => "ignored",
+        LifecycleState::Scratchpad => "scratchpad",
+        LifecycleState::Archived => "archived",
+        LifecycleState::Deleted => "deleted",
     }
 }
 

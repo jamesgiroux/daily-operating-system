@@ -368,6 +368,10 @@ pub fn source_policy_action_code(action: &str) -> &'static str {
     match action.trim() {
         "allow" | "allowed" | "enable" | "enabled" | "restore" | "restored" => "enabled",
         "deny" | "denied" | "disable" | "disabled" | "quarantine" | "quarantined" => "disabled",
+        "ignore" | "ignored" => "ignored",
+        "scratchpad" => "scratchpad",
+        "archive" | "archived" => "archived",
+        "delete" | "deleted" => "deleted",
         "category" | "category_changed" | "recategorized" => "category_changed",
         _ => "updated",
     }

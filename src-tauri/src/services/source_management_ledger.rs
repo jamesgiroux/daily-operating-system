@@ -36,9 +36,14 @@ use crate::db::ActionDb;
 use crate::entity::EntityType;
 use crate::services::workspace_ingestion::contracts::{SignalEmitContext, SignalEmitter};
 use crate::services::workspace_ingestion::graph::WorkspaceGraphDiagnosticKey;
+use crate::services::workspace_ingestion::lifecycle::{
+    lifecycle_state_from_slug, lifecycle_state_slug, LifecycleRepo, LifecycleState,
+};
 use crate::services::workspace_ingestion::link::{LinkAttributionSource, LinkError, LinkRepo};
 use crate::services::workspace_ingestion::pipeline::{quarantine_source, QuarantineActor};
-use crate::services::workspace_ingestion::signals::WorkspaceSignalEmitter;
+use crate::services::workspace_ingestion::signals::{
+    emit_source_policy_changed, WorkspaceSignalEmitter, WorkspaceSourcePolicyChangedInput,
+};
 use crate::signals::propagation::PropagationEngine;
 
 const SCHEMA_VERSION: u32 = 1;
@@ -155,6 +160,42 @@ pub fn apply_source_management_action(
         SourceManagementActionKind::Relink => {
             apply_relink_action(ctx, db, signal_engine, &request, &target)
         }
+        SourceManagementActionKind::Ignore => apply_lifecycle_policy_action(
+            ctx,
+            db,
+            signal_engine,
+            &request,
+            &target,
+            LifecycleState::Ignored,
+            "ignored",
+        ),
+        SourceManagementActionKind::Scratchpad => apply_lifecycle_policy_action(
+            ctx,
+            db,
+            signal_engine,
+            &request,
+            &target,
+            LifecycleState::Scratchpad,
+            "scratchpad",
+        ),
+        SourceManagementActionKind::Archive => apply_lifecycle_policy_action(
+            ctx,
+            db,
+            signal_engine,
+            &request,
+            &target,
+            LifecycleState::Archived,
+            "archived",
+        ),
+        SourceManagementActionKind::Delete => apply_lifecycle_policy_action(
+            ctx,
+            db,
+            signal_engine,
+            &request,
+            &target,
+            LifecycleState::Deleted,
+            "deleted",
+        ),
     }
 }
 
@@ -372,6 +413,80 @@ fn apply_relink_action(
         &target.lifecycle.lifecycle_state,
         latest_run_for_file(db.conn_ref(), &target.lifecycle.file_id)?,
     ))
+}
+
+fn apply_lifecycle_policy_action(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    signal_engine: Option<Arc<PropagationEngine>>,
+    request: &SourceManagementActionRequest,
+    target: &ActionTarget,
+    target_state: LifecycleState,
+    status: &str,
+) -> Result<SourceManagementActionReceipt, SourceManagementActionError> {
+    let propagation = signal_engine.as_deref().ok_or_else(|| {
+        SourceManagementActionError::ActionFailed("signal propagation unavailable".to_string())
+    })?;
+    let entity_type = normalize_required_filter(request.input.entity_type.clone());
+    let entity_id = normalize_required_filter(request.input.entity_id.clone());
+    let reason = request
+        .input
+        .reason
+        .as_deref()
+        .map(str::trim)
+        .filter(|reason| !reason.is_empty())
+        .unwrap_or("user_requested");
+    let action_slug = action_slug(request.input.action);
+    let target_lifecycle = lifecycle_state_slug(target_state);
+
+    db.with_transaction(|tx_db| {
+        let tx_conn = tx_db.conn_ref();
+        let current =
+            lifecycle_state_from_slug(&target.lifecycle.lifecycle_state).ok_or_else(|| {
+                format!(
+                    "unknown source lifecycle state: {}",
+                    target.lifecycle.lifecycle_state
+                )
+            })?;
+        LifecycleRepo::record_user_override(tx_conn, &target.lifecycle.file_id, &request.actor_id)
+            .map_err(|error| error.to_string())?;
+        LifecycleRepo::transition(tx_conn, &target.lifecycle.file_id, current, target_state)
+            .map_err(|error| error.to_string())?;
+        let signal_ctx = SignalEmitContext::new(ctx, tx_db, Some(propagation));
+        emit_source_policy_changed(
+            &signal_ctx,
+            WorkspaceSourcePolicyChangedInput {
+                source_handle: &request.input.source_key,
+                policy_action: action_slug,
+                reason,
+                actor: &request.actor_id,
+                entity_type: Some(entity_type.as_str()),
+                entity_id: Some(entity_id.as_str()),
+                policy_receipt_id: None,
+            },
+        )
+        .map_err(|error| error.to_string())
+    })
+    .map_err(SourceManagementActionError::ActionFailed)?;
+
+    Ok(action_receipt(
+        request,
+        status,
+        target_lifecycle,
+        latest_run_for_file(db.conn_ref(), &target.lifecycle.file_id)?,
+    ))
+}
+
+fn action_slug(action: SourceManagementActionKind) -> &'static str {
+    match action {
+        SourceManagementActionKind::Reingest => "reingest",
+        SourceManagementActionKind::Quarantine => "quarantine",
+        SourceManagementActionKind::Relink => "relink",
+        SourceManagementActionKind::Ignore => "ignore",
+        SourceManagementActionKind::Scratchpad => "scratchpad",
+        SourceManagementActionKind::Archive => "archive",
+        SourceManagementActionKind::Delete => "delete",
+    }
 }
 
 fn action_receipt(
@@ -977,16 +1092,28 @@ fn enabled_action_policy() -> SourceManagementActionPolicy {
         reingest_enabled: true,
         quarantine_enabled: true,
         relink_enabled: true,
+        ignore_enabled: true,
+        scratchpad_enabled: true,
+        archive_enabled: true,
+        delete_enabled: true,
         disabled_reason: ACTIONS_READY_REASON.to_string(),
     }
 }
 
 fn source_actions_for(lifecycle: &LifecycleRow) -> SourceManagementSourceActions {
     let can_quarantine = lifecycle.lifecycle_state != "quarantined";
+    let already_ignored = lifecycle.lifecycle_state == "ignored";
+    let already_scratchpad = lifecycle.lifecycle_state == "scratchpad";
+    let already_archived = lifecycle.lifecycle_state == "archived";
+    let already_deleted = lifecycle.lifecycle_state == "deleted";
     SourceManagementSourceActions {
         can_reingest: true,
         can_quarantine,
         can_relink: true,
+        can_ignore: !already_ignored,
+        can_scratchpad: !already_scratchpad,
+        can_archive: !already_archived,
+        can_delete: !already_deleted,
         disabled_reason: if can_quarantine {
             ACTIONS_READY_REASON
         } else {

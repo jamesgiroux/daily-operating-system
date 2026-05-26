@@ -13,7 +13,12 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 if ( ! function_exists( 'dailyos_source_management_render' ) ) {
 	if ( function_exists( 'add_action' ) ) {
-		add_action( 'rest_api_init', 'dailyos_source_management_register_routes' );
+		add_action(
+			'rest_api_init',
+			static function (): void {
+				dailyos_source_management_register_routes();
+			}
+		);
 	}
 
 	/**
@@ -50,7 +55,7 @@ if ( ! function_exists( 'dailyos_source_management_render' ) ) {
 	 * @return mixed
 	 */
 	function dailyos_source_management_handle_action( mixed $request ): mixed {
-		$params = is_object( $request ) && is_callable( [ $request, 'get_json_params' ] )
+		$params    = is_object( $request ) && is_callable( [ $request, 'get_json_params' ] )
 			? $request->get_json_params()
 			: [];
 		$validated = dailyos_source_management_validate_action_payload( is_array( $params ) ? $params : [] );
@@ -84,7 +89,7 @@ if ( ! function_exists( 'dailyos_source_management_render' ) ) {
 		$entity_type = isset( $params['entityType'] ) && is_scalar( $params['entityType'] ) ? strtolower( trim( (string) $params['entityType'] ) ) : '';
 		$entity_id   = isset( $params['entityId'] ) && is_scalar( $params['entityId'] ) ? trim( (string) $params['entityId'] ) : '';
 		$source_key  = isset( $params['sourceKey'] ) && is_scalar( $params['sourceKey'] ) ? trim( (string) $params['sourceKey'] ) : '';
-		if ( ! in_array( $action, [ 'reingest', 'quarantine', 'relink' ], true ) ) {
+		if ( ! in_array( $action, [ 'reingest', 'quarantine', 'relink', 'ignore', 'scratchpad', 'archive', 'delete' ], true ) ) {
 			return new WP_Error( 'dailyos_invalid_source_action', __( 'Source action is unavailable.', 'dailyos' ), [ 'status' => 400 ] );
 		}
 		if ( ! dailyos_source_management_is_entity_type( $entity_type ) || ! dailyos_source_management_is_entity_id( $entity_id ) || ! dailyos_source_management_is_source_key( $source_key ) ) {
@@ -143,7 +148,7 @@ if ( ! function_exists( 'dailyos_source_management_render' ) ) {
 		$entity_type = isset( $attributes['entity_type'] ) && is_scalar( $attributes['entity_type'] )
 			? strtolower( trim( (string) $attributes['entity_type'] ) )
 			: '';
-		$entity_id = isset( $attributes['entity_id'] ) && is_scalar( $attributes['entity_id'] )
+		$entity_id   = isset( $attributes['entity_id'] ) && is_scalar( $attributes['entity_id'] )
 			? trim( (string) $attributes['entity_id'] )
 			: '';
 		if ( ! in_array( $entity_type, [ 'account', 'person', 'project' ], true ) ) {
@@ -230,13 +235,13 @@ if ( ! function_exists( 'dailyos_source_management_render' ) ) {
 		$category  = dailyos_source_management_safe_text( dailyos_source_management_first_string( $source, [ 'category' ], '' ), '', 40 );
 		$lifecycle = dailyos_source_management_lifecycle_label( dailyos_source_management_first_string( $source, [ 'lifecycleState', 'lifecycle_state' ], 'pending' ) );
 		$date      = dailyos_source_management_source_date( $source );
-			$run       = isset( $source['latestRun'] ) && is_array( $source['latestRun'] )
+			$run   = isset( $source['latestRun'] ) && is_array( $source['latestRun'] )
 				? $source['latestRun']
 				: ( isset( $source['latest_run'] ) && is_array( $source['latest_run'] ) ? $source['latest_run'] : [] );
-			$runs      = isset( $source['ingestionRuns'] ) && is_array( $source['ingestionRuns'] )
+			$runs  = isset( $source['ingestionRuns'] ) && is_array( $source['ingestionRuns'] )
 				? $source['ingestionRuns']
 				: ( isset( $source['ingestion_runs'] ) && is_array( $source['ingestion_runs'] ) ? $source['ingestion_runs'] : [] );
-			$trust     = isset( $source['trustBandSummary'] ) && is_array( $source['trustBandSummary'] )
+			$trust = isset( $source['trustBandSummary'] ) && is_array( $source['trustBandSummary'] )
 				? $source['trustBandSummary']
 				: ( isset( $source['trust_band_summary'] ) && is_array( $source['trust_band_summary'] ) ? $source['trust_band_summary'] : [] );
 		$actions   = isset( $source['actions'] ) && is_array( $source['actions'] ) ? $source['actions'] : [];
@@ -249,14 +254,14 @@ if ( ! function_exists( 'dailyos_source_management_render' ) ) {
 		if ( '' !== $category ) {
 			$out .= dailyos_source_management_meta_item( __( 'Category', 'dailyos' ), $category );
 		}
-		$out .= dailyos_source_management_meta_item( __( 'Date', 'dailyos' ), $date );
+		$out     .= dailyos_source_management_meta_item( __( 'Date', 'dailyos' ), $date );
 			$out .= dailyos_source_management_meta_item( __( 'Run', 'dailyos' ), dailyos_source_management_run_label( $run ) );
 			$out .= '</dl>';
 			$out .= dailyos_source_management_run_history( $runs );
 			$out .= dailyos_source_management_trust_summary( $trust );
 			$out .= '</div>';
 			$out .= dailyos_source_management_actions( $source, $actions );
-		$out .= '</li>';
+		$out     .= '</li>';
 
 		return $out;
 	}
@@ -302,15 +307,15 @@ if ( ! function_exists( 'dailyos_source_management_render' ) ) {
 	 * @return string
 	 */
 	function dailyos_source_management_action_policy( array $payload ): string {
-		$policy = isset( $payload['actionPolicy'] ) && is_array( $payload['actionPolicy'] )
+		$policy     = isset( $payload['actionPolicy'] ) && is_array( $payload['actionPolicy'] )
 			? $payload['actionPolicy']
 			: ( isset( $payload['action_policy'] ) && is_array( $payload['action_policy'] ) ? $payload['action_policy'] : [] );
 			$reason = dailyos_source_management_first_string( $policy, [ 'disabledReason', 'disabled_reason' ], 'read_only' );
-			if ( '' === $reason ) {
-				return '';
-			}
-			return '<p class="dailyos-source-management__policy">' . esc_html( dailyos_source_management_policy_label( $reason ) ) . '</p>';
+		if ( '' === $reason ) {
+			return '';
 		}
+			return '<p class="dailyos-source-management__policy">' . esc_html( dailyos_source_management_policy_label( $reason ) ) . '</p>';
+	}
 
 		/**
 		 * Render row actions.
@@ -319,24 +324,28 @@ if ( ! function_exists( 'dailyos_source_management_render' ) ) {
 		 * @param array<string, mixed> $actions Action payload.
 		 * @return string
 		 */
-		function dailyos_source_management_actions( array $source, array $actions ): string {
-			$source_key = dailyos_source_management_first_string( $source, [ 'sourceKey', 'source_key' ], '' );
-			$entity     = isset( $source['entity'] ) && is_array( $source['entity'] ) ? $source['entity'] : [];
-			$entity_type = dailyos_source_management_first_string( $entity, [ 'entityType', 'entity_type' ], '' );
-			$entity_id   = dailyos_source_management_first_string( $entity, [ 'entityId', 'entity_id' ], '' );
-			$has_target  = dailyos_source_management_is_source_key( $source_key )
-				&& dailyos_source_management_is_entity_type( $entity_type )
-				&& dailyos_source_management_is_entity_id( $entity_id );
-			$disabled_reason = dailyos_source_management_policy_label(
-				dailyos_source_management_first_string( $actions, [ 'disabledReason', 'disabled_reason' ], '' )
-			);
-			$out  = '<div class="dailyos-source-management__actions" aria-label="' . esc_attr__( 'Source actions', 'dailyos' ) . '">';
-			$out .= dailyos_source_management_action_button( __( 'Re-ingest', 'dailyos' ), 'reingest', $has_target && dailyos_source_management_bool_value( $actions, [ 'canReingest', 'can_reingest' ] ), $source_key, $entity_type, $entity_id, $disabled_reason );
-			$out .= dailyos_source_management_action_button( __( 'Quarantine', 'dailyos' ), 'quarantine', $has_target && dailyos_source_management_bool_value( $actions, [ 'canQuarantine', 'can_quarantine' ] ), $source_key, $entity_type, $entity_id, $disabled_reason );
-			$out .= dailyos_source_management_action_button( __( 'Re-link', 'dailyos' ), 'relink', $has_target && dailyos_source_management_bool_value( $actions, [ 'canRelink', 'can_relink' ] ), $source_key, $entity_type, $entity_id, $disabled_reason );
-			$out .= '</div>';
-			return $out;
-		}
+	function dailyos_source_management_actions( array $source, array $actions ): string {
+		$source_key      = dailyos_source_management_first_string( $source, [ 'sourceKey', 'source_key' ], '' );
+		$entity          = isset( $source['entity'] ) && is_array( $source['entity'] ) ? $source['entity'] : [];
+		$entity_type     = dailyos_source_management_first_string( $entity, [ 'entityType', 'entity_type' ], '' );
+		$entity_id       = dailyos_source_management_first_string( $entity, [ 'entityId', 'entity_id' ], '' );
+		$has_target      = dailyos_source_management_is_source_key( $source_key )
+			&& dailyos_source_management_is_entity_type( $entity_type )
+			&& dailyos_source_management_is_entity_id( $entity_id );
+		$disabled_reason = dailyos_source_management_policy_label(
+			dailyos_source_management_first_string( $actions, [ 'disabledReason', 'disabled_reason' ], '' )
+		);
+		$out             = '<div class="dailyos-source-management__actions" aria-label="' . esc_attr( __( 'Source actions', 'dailyos' ) ) . '">';
+		$out            .= dailyos_source_management_action_button( __( 'Re-ingest', 'dailyos' ), 'reingest', $has_target && dailyos_source_management_bool_value( $actions, [ 'canReingest', 'can_reingest' ] ), $source_key, $entity_type, $entity_id, $disabled_reason );
+		$out            .= dailyos_source_management_action_button( __( 'Quarantine', 'dailyos' ), 'quarantine', $has_target && dailyos_source_management_bool_value( $actions, [ 'canQuarantine', 'can_quarantine' ] ), $source_key, $entity_type, $entity_id, $disabled_reason );
+		$out            .= dailyos_source_management_action_button( __( 'Re-link', 'dailyos' ), 'relink', $has_target && dailyos_source_management_bool_value( $actions, [ 'canRelink', 'can_relink' ] ), $source_key, $entity_type, $entity_id, $disabled_reason );
+		$out            .= dailyos_source_management_action_button( __( 'Ignore', 'dailyos' ), 'ignore', $has_target && dailyos_source_management_bool_value( $actions, [ 'canIgnore', 'can_ignore' ] ), $source_key, $entity_type, $entity_id, $disabled_reason );
+		$out            .= dailyos_source_management_action_button( __( 'Scratchpad', 'dailyos' ), 'scratchpad', $has_target && dailyos_source_management_bool_value( $actions, [ 'canScratchpad', 'can_scratchpad' ] ), $source_key, $entity_type, $entity_id, $disabled_reason );
+		$out            .= dailyos_source_management_action_button( __( 'Archive', 'dailyos' ), 'archive', $has_target && dailyos_source_management_bool_value( $actions, [ 'canArchive', 'can_archive' ] ), $source_key, $entity_type, $entity_id, $disabled_reason );
+		$out            .= dailyos_source_management_action_button( __( 'Delete', 'dailyos' ), 'delete', $has_target && dailyos_source_management_bool_value( $actions, [ 'canDelete', 'can_delete' ] ), $source_key, $entity_type, $entity_id, $disabled_reason );
+		$out            .= '</div>';
+		return $out;
+	}
 
 		/**
 		 * Render an action affordance.
@@ -350,26 +359,26 @@ if ( ! function_exists( 'dailyos_source_management_render' ) ) {
 		 * @param string $reason Disabled reason.
 		 * @return string
 		 */
-		function dailyos_source_management_action_button( string $label, string $action, bool $enabled, string $source_key, string $entity_type, string $entity_id, string $reason ): string {
-			$attrs = [
-				'type'                     => 'button',
-				'class'                    => 'dailyos-source-management__action',
-				'data-dailyos-source-action' => $action,
-				'data-dailyos-source-key'  => $source_key,
-				'data-dailyos-entity-type' => $entity_type,
-				'data-dailyos-entity-id'   => $entity_id,
-			];
-			if ( ! $enabled ) {
-				$attrs['disabled']      = 'disabled';
-				$attrs['aria-disabled'] = 'true';
-				$attrs['title']         = '' === $reason ? __( 'Unavailable', 'dailyos' ) : $reason;
-			}
-			$out = '<button';
-			foreach ( $attrs as $name => $value ) {
-				$out .= ' ' . esc_attr( $name ) . '="' . esc_attr( $value ) . '"';
-			}
-			return $out . '>' . esc_html( $label ) . '</button>';
+	function dailyos_source_management_action_button( string $label, string $action, bool $enabled, string $source_key, string $entity_type, string $entity_id, string $reason ): string {
+		$attrs = [
+			'type'                       => 'button',
+			'class'                      => 'dailyos-source-management__action',
+			'data-dailyos-source-action' => $action,
+			'data-dailyos-source-key'    => $source_key,
+			'data-dailyos-entity-type'   => $entity_type,
+			'data-dailyos-entity-id'     => $entity_id,
+		];
+		if ( ! $enabled ) {
+			$attrs['disabled']      = 'disabled';
+			$attrs['aria-disabled'] = 'true';
+			$attrs['title']         = '' === $reason ? __( 'Unavailable', 'dailyos' ) : $reason;
 		}
+		$out = '<button';
+		foreach ( $attrs as $name => $value ) {
+			$out .= ' ' . esc_attr( $name ) . '="' . esc_attr( $value ) . '"';
+		}
+		return $out . '>' . esc_html( $label ) . '</button>';
+	}
 
 	/**
 	 * Render trust distribution.
@@ -382,17 +391,33 @@ if ( ! function_exists( 'dailyos_source_management_render' ) ) {
 		if ( 0 === $total ) {
 			return '<p class="dailyos-source-management__trust">' . esc_html__( 'No derived claims', 'dailyos' ) . '</p>';
 		}
-		$likely  = dailyos_source_management_int_value( $trust, [ 'likelyCurrent', 'likely_current' ] );
-		$caution = dailyos_source_management_int_value( $trust, [ 'useWithCaution', 'use_with_caution' ] );
-		$verify  = dailyos_source_management_int_value( $trust, [ 'needsVerification', 'needs_verification' ] );
+		$likely   = dailyos_source_management_int_value( $trust, [ 'likelyCurrent', 'likely_current' ] );
+		$caution  = dailyos_source_management_int_value( $trust, [ 'useWithCaution', 'use_with_caution' ] );
+		$verify   = dailyos_source_management_int_value( $trust, [ 'needsVerification', 'needs_verification' ] );
 		$unscored = dailyos_source_management_int_value( $trust, [ 'unscored' ] );
-		$parts   = [
-			sprintf( _n( '%d likely current', '%d likely current', $likely, 'dailyos' ), $likely ),
-			sprintf( _n( '%d use with caution', '%d use with caution', $caution, 'dailyos' ), $caution ),
-			sprintf( _n( '%d needs verification', '%d needs verification', $verify, 'dailyos' ), $verify ),
+		$parts    = [
+			sprintf(
+				/* translators: %d: number of likely-current claims. */
+				_n( '%d likely current', '%d likely current', $likely, 'dailyos' ),
+				$likely
+			),
+			sprintf(
+				/* translators: %d: number of use-with-caution claims. */
+				_n( '%d use with caution', '%d use with caution', $caution, 'dailyos' ),
+				$caution
+			),
+			sprintf(
+				/* translators: %d: number of needs-verification claims. */
+				_n( '%d needs verification', '%d needs verification', $verify, 'dailyos' ),
+				$verify
+			),
 		];
 		if ( $unscored > 0 ) {
-			$parts[] = sprintf( _n( '%d unscored', '%d unscored', $unscored, 'dailyos' ), $unscored );
+			$parts[] = sprintf(
+				/* translators: %d: number of unscored claims. */
+				_n( '%d unscored', '%d unscored', $unscored, 'dailyos' ),
+				$unscored
+			);
 		}
 		return '<p class="dailyos-source-management__trust">' . esc_html( implode( ', ', $parts ) ) . '</p>';
 	}
@@ -418,7 +443,7 @@ if ( ! function_exists( 'dailyos_source_management_render' ) ) {
 	 * @return string
 	 */
 	function dailyos_source_management_kind_label( string $kind ): string {
-		$key = dailyos_source_management_safe_key( $kind, 'workspace_source' );
+		$key    = dailyos_source_management_safe_key( $kind, 'workspace_source' );
 		$labels = [
 			'drive_sync'         => __( 'Drive file', 'dailyos' ),
 			'entity_doc'         => __( 'Entity document', 'dailyos' ),
@@ -439,7 +464,7 @@ if ( ! function_exists( 'dailyos_source_management_render' ) ) {
 	 * @return string
 	 */
 	function dailyos_source_management_lifecycle_label( string $state ): string {
-		$key = dailyos_source_management_safe_key( $state, 'pending' );
+		$key    = dailyos_source_management_safe_key( $state, 'pending' );
 		$labels = [
 			'ingested'                  => __( 'Active', 'dailyos' ),
 			'ingesting'                 => __( 'Ingesting', 'dailyos' ),
@@ -448,6 +473,10 @@ if ( ! function_exists( 'dailyos_source_management_render' ) ) {
 			'quarantined'               => __( 'Needs review', 'dailyos' ),
 			'rejected'                  => __( 'Rejected', 'dailyos' ),
 			'superseded'                => __( 'Superseded', 'dailyos' ),
+			'ignored'                   => __( 'Ignored', 'dailyos' ),
+			'scratchpad'                => __( 'Scratchpad', 'dailyos' ),
+			'archived'                  => __( 'Archived', 'dailyos' ),
+			'deleted'                   => __( 'Deleted', 'dailyos' ),
 		];
 		return $labels[ $key ] ?? __( 'Pending', 'dailyos' );
 	}
@@ -458,16 +487,16 @@ if ( ! function_exists( 'dailyos_source_management_render' ) ) {
 	 * @param string $reason Raw reason.
 	 * @return string
 	 */
-		function dailyos_source_management_policy_label( string $reason ): string {
-			$key = dailyos_source_management_safe_key( $reason, 'read_only' );
-			if ( 'already_quarantined' === $key ) {
-				return __( 'Already quarantined', 'dailyos' );
-			}
-			if ( 'write_actions_deferred' === $key ) {
-				return __( 'Read-only until source actions land', 'dailyos' );
-			}
-			return __( 'Read-only', 'dailyos' );
+	function dailyos_source_management_policy_label( string $reason ): string {
+		$key = dailyos_source_management_safe_key( $reason, 'read_only' );
+		if ( 'already_quarantined' === $key ) {
+			return __( 'Already quarantined', 'dailyos' );
 		}
+		if ( 'write_actions_deferred' === $key ) {
+			return __( 'Read-only until source actions land', 'dailyos' );
+		}
+		return __( 'Read-only', 'dailyos' );
+	}
 
 	/**
 	 * Render latest run summary.
@@ -475,23 +504,23 @@ if ( ! function_exists( 'dailyos_source_management_render' ) ) {
 	 * @param array<string, mixed> $run Latest run.
 	 * @return string
 	 */
-		function dailyos_source_management_run_label( array $run ): string {
-			if ( empty( $run ) ) {
-				return __( 'No runs', 'dailyos' );
+	function dailyos_source_management_run_label( array $run ): string {
+		if ( empty( $run ) ) {
+			return __( 'No runs', 'dailyos' );
 		}
 		$status = dailyos_source_management_safe_text(
 			dailyos_source_management_first_string( $run, [ 'status' ], 'unknown' ),
 			__( 'Unknown', 'dailyos' ),
 			32
 		);
-		$count = dailyos_source_management_int_value( $run, [ 'claimCountProduced', 'claim_count_produced' ] );
+		$count  = dailyos_source_management_int_value( $run, [ 'claimCountProduced', 'claim_count_produced' ] );
 		return sprintf(
-			/* translators: 1: run status, 2: claim count */
+		/* translators: 1: run status, 2: claim count */
 			__( '%1$s, %2$d claims', 'dailyos' ),
 			ucfirst( $status ),
 			$count
-			);
-		}
+		);
+	}
 
 		/**
 		 * Render bounded ingestion run history.
@@ -499,34 +528,34 @@ if ( ! function_exists( 'dailyos_source_management_render' ) ) {
 		 * @param array<int, mixed> $runs Ingestion run payloads.
 		 * @return string
 		 */
-		function dailyos_source_management_run_history( array $runs ): string {
-			$items = [];
-			foreach ( $runs as $run ) {
-				if ( ! is_array( $run ) ) {
-					continue;
-				}
-				$items[] = dailyos_source_management_run_label( $run );
-				if ( count( $items ) >= 5 ) {
-					break;
-				}
+	function dailyos_source_management_run_history( array $runs ): string {
+		$items = [];
+		foreach ( $runs as $run ) {
+			if ( ! is_array( $run ) ) {
+				continue;
 			}
-			if ( empty( $items ) ) {
-				return '';
+			$items[] = dailyos_source_management_run_label( $run );
+			if ( count( $items ) >= 5 ) {
+				break;
 			}
-			$out = '<ol class="dailyos-source-management__runs" aria-label="' . esc_attr__( 'Ingestion run history', 'dailyos' ) . '">';
-			foreach ( $items as $item ) {
-				$out .= '<li>' . esc_html( $item ) . '</li>';
-			}
-			$out .= '</ol>';
-			return $out;
 		}
+		if ( empty( $items ) ) {
+			return '';
+		}
+		$out = '<ol class="dailyos-source-management__runs" aria-label="' . esc_attr( __( 'Ingestion run history', 'dailyos' ) ) . '">';
+		foreach ( $items as $item ) {
+			$out .= '<li>' . esc_html( $item ) . '</li>';
+		}
+		$out .= '</ol>';
+		return $out;
+	}
 
 		/**
 		 * Render source date.
-	 *
-	 * @param array<string, mixed> $source Source payload.
-	 * @return string
-	 */
+		 *
+		 * @param array<string, mixed> $source Source payload.
+		 * @return string
+		 */
 	function dailyos_source_management_source_date( array $source ): string {
 		$raw = dailyos_source_management_first_string( $source, [ 'sourceAsof', 'source_asof' ], '' );
 		if ( '' === $raw ) {
@@ -539,7 +568,7 @@ if ( ! function_exists( 'dailyos_source_management_render' ) ) {
 		if ( function_exists( 'wp_date' ) ) {
 			return wp_date( 'M j, Y', $timestamp );
 		}
-		return date( 'M j, Y', $timestamp );
+		return gmdate( 'M j, Y', $timestamp );
 	}
 
 	/**
@@ -566,14 +595,14 @@ if ( ! function_exists( 'dailyos_source_management_render' ) ) {
 	 * @param array<int, string>   $keys Candidate keys.
 	 * @return int
 	 */
-		function dailyos_source_management_int_value( array $payload, array $keys ): int {
-			foreach ( $keys as $key ) {
-				if ( isset( $payload[ $key ] ) && is_numeric( $payload[ $key ] ) ) {
-					return max( 0, (int) $payload[ $key ] );
-				}
+	function dailyos_source_management_int_value( array $payload, array $keys ): int {
+		foreach ( $keys as $key ) {
+			if ( isset( $payload[ $key ] ) && is_numeric( $payload[ $key ] ) ) {
+				return max( 0, (int) $payload[ $key ] );
 			}
-			return 0;
 		}
+		return 0;
+	}
 
 		/**
 		 * Pick the first boolean value.
@@ -582,14 +611,14 @@ if ( ! function_exists( 'dailyos_source_management_render' ) ) {
 		 * @param array<int, string>   $keys Candidate keys.
 		 * @return bool
 		 */
-		function dailyos_source_management_bool_value( array $payload, array $keys ): bool {
-			foreach ( $keys as $key ) {
-				if ( isset( $payload[ $key ] ) ) {
-					return true === $payload[ $key ] || 1 === $payload[ $key ] || '1' === $payload[ $key ];
-				}
+	function dailyos_source_management_bool_value( array $payload, array $keys ): bool {
+		foreach ( $keys as $key ) {
+			if ( isset( $payload[ $key ] ) ) {
+				return true === $payload[ $key ] || 1 === $payload[ $key ] || '1' === $payload[ $key ];
 			}
-			return false;
 		}
+		return false;
+	}
 
 		/**
 		 * Validate an opaque source action key.
@@ -597,9 +626,9 @@ if ( ! function_exists( 'dailyos_source_management_render' ) ) {
 		 * @param string $value Candidate key.
 		 * @return bool
 		 */
-		function dailyos_source_management_is_source_key( string $value ): bool {
-			return 1 === preg_match( '/^source:v1:[A-Za-z0-9_-]{16,160}$/', $value );
-		}
+	function dailyos_source_management_is_source_key( string $value ): bool {
+		return 1 === preg_match( '/^source:v1:[A-Za-z0-9_-]{16,160}$/', $value );
+	}
 
 		/**
 		 * Validate an entity type.
@@ -607,9 +636,9 @@ if ( ! function_exists( 'dailyos_source_management_render' ) ) {
 		 * @param string $value Candidate entity type.
 		 * @return bool
 		 */
-		function dailyos_source_management_is_entity_type( string $value ): bool {
-			return in_array( $value, [ 'account', 'person', 'project' ], true );
-		}
+	function dailyos_source_management_is_entity_type( string $value ): bool {
+		return in_array( $value, [ 'account', 'person', 'project' ], true );
+	}
 
 		/**
 		 * Validate an entity id.
@@ -617,23 +646,23 @@ if ( ! function_exists( 'dailyos_source_management_render' ) ) {
 		 * @param string $value Candidate entity id.
 		 * @return bool
 		 */
-		function dailyos_source_management_is_entity_id( string $value ): bool {
-			return 1 === preg_match( '/^[A-Za-z0-9:_-]{1,160}$/', $value );
-		}
+	function dailyos_source_management_is_entity_id( string $value ): bool {
+		return 1 === preg_match( '/^[A-Za-z0-9:_-]{1,160}$/', $value );
+	}
 
 		/**
 		 * Sanitize display text and reject path-like values.
-	 *
-	 * @param mixed  $value Candidate value.
-	 * @param string $fallback Fallback.
-	 * @param int    $max_length Maximum output length.
-	 * @return string
-	 */
+		 *
+		 * @param mixed  $value Candidate value.
+		 * @param string $fallback Fallback.
+		 * @param int    $max_length Maximum output length.
+		 * @return string
+		 */
 	function dailyos_source_management_safe_text( mixed $value, string $fallback, int $max_length = 120 ): string {
 		if ( ! is_scalar( $value ) ) {
 			return $fallback;
 		}
-		$text = preg_replace( '/\s+/', ' ', trim( strip_tags( (string) $value ) ) ) ?? '';
+		$text = preg_replace( '/\s+/', ' ', trim( wp_strip_all_tags( (string) $value ) ) ) ?? '';
 		if ( '' === $text || str_contains( $text, '/' ) || str_contains( $text, '\\' ) ) {
 			return $fallback;
 		}
