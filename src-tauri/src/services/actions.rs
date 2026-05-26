@@ -137,6 +137,54 @@ impl ActionCreationAttribution {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SubmittedActionStatus {
+    Done,
+    Deferred,
+    Dropped,
+}
+
+impl SubmittedActionStatus {
+    pub fn parse(value: &str) -> Option<Self> {
+        Some(match value {
+            "done" | "completed" => Self::Done,
+            "deferred" => Self::Deferred,
+            "dropped" | "archived" | "cancelled" => Self::Dropped,
+            _ => return None,
+        })
+    }
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Done => "done",
+            Self::Deferred => "deferred",
+            Self::Dropped => "dropped",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ActionStatusSubmissionRequest {
+    pub action_id: String,
+    pub new_status: SubmittedActionStatus,
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActionStatusMutationCursor {
+    pub action_id: String,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActionStatusSubmissionReceipt {
+    pub action_id: String,
+    pub status: String,
+    pub mutation_cursor: ActionStatusMutationCursor,
+}
+
 /// Complete an action and emit the completion signal.
 pub fn complete_action(
     ctx: &ServiceContext<'_>,
@@ -189,6 +237,85 @@ pub fn complete_action(
     }
 
     Ok(())
+}
+
+/// Submit a status transition for an existing action from agent surfaces.
+pub fn submit_action_status_in_db(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    engine: &crate::signals::propagation::PropagationEngine,
+    request: ActionStatusSubmissionRequest,
+) -> Result<ActionStatusSubmissionReceipt, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    crate::util::validate_id_slug(&request.action_id, "action_id")?;
+    if let Some(ref note) = request.note {
+        crate::util::validate_bounded_string(note, "note", 1, 1000)?;
+    }
+
+    match request.new_status {
+        SubmittedActionStatus::Done => {
+            complete_action(ctx, db, engine, &request.action_id)?;
+        }
+        SubmittedActionStatus::Deferred | SubmittedActionStatus::Dropped => {
+            let action = db
+                .get_action_by_id(&request.action_id)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| format!("Action not found: {}", request.action_id))?;
+            db.archive_action(&request.action_id)
+                .map_err(|e| e.to_string())?;
+            let operation = request.new_status.as_str();
+            sync_action_claim_after_mutation(ctx, db, &request.action_id, operation);
+
+            let (entity_type, entity_id) = action_entity_info(&action, &request.action_id);
+            let signal_type = match request.new_status {
+                SubmittedActionStatus::Deferred => "action_deferred",
+                SubmittedActionStatus::Dropped => "action_dropped",
+                SubmittedActionStatus::Done => unreachable!(),
+            };
+            let value = json_action_status_payload(
+                &request.action_id,
+                &action.title,
+                request.new_status,
+                request.note.as_deref(),
+            );
+            emit_action_signal(
+                ctx,
+                db,
+                engine,
+                entity_type,
+                &entity_id,
+                signal_type,
+                "mcp_submit_action_status",
+                Some(&value),
+                0.7,
+            );
+        }
+    }
+
+    let status = request.new_status.as_str().to_string();
+    Ok(ActionStatusSubmissionReceipt {
+        action_id: request.action_id.clone(),
+        status: status.clone(),
+        mutation_cursor: ActionStatusMutationCursor {
+            action_id: request.action_id,
+            status,
+        },
+    })
+}
+
+fn json_action_status_payload(
+    action_id: &str,
+    title: &str,
+    status: SubmittedActionStatus,
+    note: Option<&str>,
+) -> String {
+    serde_json::json!({
+        "action_id": action_id,
+        "title": title,
+        "status": status.as_str(),
+        "note": note,
+    })
+    .to_string()
 }
 
 /// Reopen a completed action, setting it back to pending.
@@ -1174,6 +1301,86 @@ mod tests {
         assert_eq!(source_type.as_deref(), Some("mcp_submit_action"));
         assert_eq!(source_label.as_deref(), Some("MCP conversation"));
         assert_eq!(account_id.as_deref(), Some("acct-1"));
+    }
+
+    #[test]
+    fn submit_action_status_in_db_completes_action_and_returns_cursor() {
+        let db = test_db();
+        make_ctx!(ctx);
+        db.conn_ref()
+            .execute(
+                "INSERT INTO actions
+                 (id, title, priority, status, created_at, updated_at, action_kind)
+                 VALUES ('action-1', 'Follow up', 2, 'unstarted', '2026-01-01',
+                         '2026-01-01', 'task')",
+                [],
+            )
+            .unwrap();
+        let engine = default_engine();
+
+        let receipt = submit_action_status_in_db(
+            &ctx,
+            &db,
+            &engine,
+            ActionStatusSubmissionRequest {
+                action_id: "action-1".to_string(),
+                new_status: SubmittedActionStatus::Done,
+                note: Some("Finished".to_string()),
+            },
+        )
+        .expect("submit status");
+
+        assert_eq!(receipt.action_id, "action-1");
+        assert_eq!(receipt.status, "done");
+        assert_eq!(receipt.mutation_cursor.status, "done");
+        let status: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT status FROM actions WHERE id = 'action-1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(status, crate::action_status::COMPLETED);
+    }
+
+    #[test]
+    fn submit_action_status_in_db_archives_dropped_action() {
+        let db = test_db();
+        make_ctx!(ctx);
+        db.conn_ref()
+            .execute(
+                "INSERT INTO actions
+                 (id, title, priority, status, created_at, updated_at, action_kind)
+                 VALUES ('action-drop', 'Drop follow up', 2, 'unstarted', '2026-01-01',
+                         '2026-01-01', 'task')",
+                [],
+            )
+            .unwrap();
+        let engine = default_engine();
+
+        let receipt = submit_action_status_in_db(
+            &ctx,
+            &db,
+            &engine,
+            ActionStatusSubmissionRequest {
+                action_id: "action-drop".to_string(),
+                new_status: SubmittedActionStatus::Dropped,
+                note: None,
+            },
+        )
+        .expect("submit status");
+
+        assert_eq!(receipt.status, "dropped");
+        let status: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT status FROM actions WHERE id = 'action-drop'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(status, crate::action_status::ARCHIVED);
     }
 
     fn owner_state(

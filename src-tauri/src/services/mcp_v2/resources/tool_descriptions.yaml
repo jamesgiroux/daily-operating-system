@@ -953,9 +953,9 @@
   {
     "name": "dailyos.submit.action_status",
     "side": "SubmitCorrection",
-    "summary": "Updates the status of an existing action.",
-    "when_to_call": "When the user reports an action as done, deferred, or dropped.",
-    "when_NOT_to_call": "Do NOT call to create a new action.",
+    "summary": "Submits a status transition for an existing DailyOS action.",
+    "when_to_call": "When the user reports an existing DailyOS action as done, deferred, or dropped.",
+    "when_NOT_to_call": "Do NOT call to create a new action or update non-status action fields.",
     "scopesRequired": [
       "dailyos.submit.action_status"
     ],
@@ -969,7 +969,7 @@
         "description": "Opaque action identifier"
       },
       {
-        "name": "status",
+        "name": "new_status",
         "schema": {
           "type": "string",
           "enum": [
@@ -980,6 +980,14 @@
         },
         "required": true,
         "description": "New status"
+      },
+      {
+        "name": "note",
+        "schema": {
+          "type": "string"
+        },
+        "required": false,
+        "description": "Optional short note explaining the status transition."
       }
     ],
     "returns": {
@@ -1004,13 +1012,16 @@
           "name": "dailyos.submit.action_status",
           "arguments": {
             "action_id": "opaque",
-            "status": "done"
+            "new_status": "done",
+            "note": "Finished in the customer call"
           }
         },
         "expectedResponseShape": {
           "action_id": "opaque",
+          "status": "done",
           "mutation_cursor": {
-            "action_id": "opaque"
+            "action_id": "opaque",
+            "status": "done"
           }
         }
       }

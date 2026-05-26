@@ -15,6 +15,7 @@ use super::tool_briefing::{DailyBriefingHandler, MeetingBriefingHandler};
 use super::tool_create_action::CreateActionHandler;
 use super::tool_placement::PlacementHandler;
 use super::tool_portfolio::PortfolioAttentionHandler;
+use super::tool_update_action_status::UpdateActionStatusHandler;
 use super::tool_workspace_search::WorkspaceSearchHandler;
 use super::tool_workspace_source_provenance::WorkspaceSourceProvenanceHandler;
 
@@ -126,6 +127,16 @@ pub fn register_v147_handlers(
         Arc::clone(&signal_engine),
     )));
 
+    let update_action_status_name = ScopedName::new("dailyos.submit.action_status");
+    let description = catalog
+        .description_for(&update_action_status_name)
+        .ok_or_else(|| RegistrationError::CatalogEntryMissing(update_action_status_name.clone()))?
+        .clone();
+    gateway.register(Arc::new(UpdateActionStatusHandler::new(
+        description,
+        Arc::clone(&signal_engine),
+    )));
+
     Ok(())
 }
 
@@ -165,6 +176,7 @@ mod tests {
         assert!(registered.contains(&ScopedName::new("dailyos.read.workspace_source_provenance")));
         assert!(registered.contains(&ScopedName::new("dailyos.write.place_document")));
         assert!(registered.contains(&ScopedName::new("dailyos.submit.action")));
+        assert!(registered.contains(&ScopedName::new("dailyos.submit.action_status")));
         let pending = gateway.seal().expect("registered handlers match catalog");
         assert!(
             !pending.contains(&ScopedName::new("dailyos.read.daily_briefing")),
@@ -193,6 +205,10 @@ mod tests {
         assert!(
             !pending.contains(&ScopedName::new("dailyos.submit.action")),
             "create action handler should no longer be a catalog-only placeholder"
+        );
+        assert!(
+            !pending.contains(&ScopedName::new("dailyos.submit.action_status")),
+            "update action status handler should no longer be a catalog-only placeholder"
         );
     }
 }
