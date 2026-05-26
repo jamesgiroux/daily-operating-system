@@ -10,8 +10,9 @@ Current status:
 
 - L0 passed locally on 2026-05-25.
 - W5-A is folded into the active W5 validation PR; backfill and redaction axes have automated green checks on the rebased base.
-- Graph-audit, signal, and filesystem axes now have automated partial evidence, but remain blocked at packet level until their full matrices are covered.
-- Full validation remains dependency-gated on the trust-band matrix, the literal workspace signal middle hop, actual MCP placement handler execution, and missing lifecycle actions.
+- Signal propagation is green on the release-gate branch.
+- Graph-audit and filesystem axes have automated partial evidence, but remain blocked at packet level until their full matrices are covered.
+- Full validation remains dependency-gated on the trust-band matrix, actual MCP placement handler execution, and missing lifecycle actions.
 - A blocked axis is not a pass. Interim reports may record `blocked`, but W5-B Done requires all mandatory axes to be green.
 
 ## Commands

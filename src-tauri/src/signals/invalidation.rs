@@ -45,7 +45,7 @@ pub fn check_and_invalidate_preps(
         "relationship_reclassified",
         "transcript_outcomes", // manually attached transcript — invalidate linked future meeting preps
         "field_updated", // DOS-110: account field changes (including sentiment) invalidate prep
-        "workspace_file_ingested",
+        "entity_intelligence_updated",
         "workspace_file_quarantined",
         "workspace_file_entity_link_changed",
         "workspace_source_policy_changed",
@@ -220,9 +220,20 @@ mod tests {
         )
         .unwrap();
 
+        let raw_ingestion_queue = Mutex::new(Vec::<String>::new());
+        check_and_invalidate_preps(
+            &db,
+            &make_signal("workspace_file_ingested", 0.85),
+            &raw_ingestion_queue,
+        );
+        assert!(
+            raw_ingestion_queue.lock().is_empty(),
+            "workspace_file_ingested should route through entity_intelligence_updated for prep invalidation"
+        );
+
         for signal_type in [
             "stakeholder_change",
-            "workspace_file_ingested",
+            "entity_intelligence_updated",
             "workspace_file_quarantined",
             "workspace_file_entity_link_changed",
         ] {

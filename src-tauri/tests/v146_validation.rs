@@ -135,7 +135,7 @@ fn graph_audit_zero_gaps_on_hermetic_fixture_db() {
 }
 
 #[test]
-fn signal_propagation_invalidates_prep_partial_evidence() {
+fn signal_propagation_invalidates_prep() {
     let fixture = Fixture::new();
     fixture.seed_account("acct-v146-signal", "Signal Account");
     fixture.seed_upcoming_meeting("meeting-v146-signal", "acct-v146-signal");
@@ -160,24 +160,50 @@ fn signal_propagation_invalidates_prep_partial_evidence() {
         .lock()
         .contains(&"meeting-v146-signal".to_string()));
 
-    let (entity_type, entity_id, value): (String, String, Option<String>) = fixture
+    let (entity_type, entity_id, source, value): (String, String, String, Option<String>) = fixture
         .conn
         .query_row(
-            "SELECT entity_type, entity_id, value
+            "SELECT entity_type, entity_id, data_source, value
              FROM signal_events
              WHERE signal_type = 'workspace_file_ingested'
              ORDER BY created_at DESC
              LIMIT 1",
             [],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .expect("workspace_file_ingested signal");
     assert_eq!(entity_type, "account");
     assert_eq!(entity_id, "acct-v146-signal");
+    assert_eq!(source, "workspace_ingestion");
 
     let payload = value.expect("signal payload");
     assert!(payload.contains(&receipt.file_id));
     assert!(payload.contains(&receipt.ingestion_run_id.0));
+    assert!(!payload.contains("Signal Account"));
+    assert!(!payload.contains("signal-note.md"));
+    assert!(!payload.contains("Signal validation context"));
+    assert!(!payload.contains(fixture.workspace_root.to_string_lossy().as_ref()));
+
+    let (entity_type, entity_id, source, value): (String, String, String, Option<String>) = fixture
+        .conn
+        .query_row(
+            "SELECT entity_type, entity_id, data_source, value
+             FROM signal_events
+             WHERE signal_type = 'entity_intelligence_updated'
+             ORDER BY created_at DESC
+             LIMIT 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .expect("entity_intelligence_updated signal");
+    assert_eq!(entity_type, "account");
+    assert_eq!(entity_id, "acct-v146-signal");
+    assert_eq!(source, "workspace_ingestion");
+
+    let payload = value.expect("entity intelligence payload");
+    assert!(payload.contains(&receipt.file_id));
+    assert!(payload.contains(&receipt.ingestion_run_id.0));
+    assert!(payload.contains("workspace_file_ingested"));
     assert!(!payload.contains("Signal Account"));
     assert!(!payload.contains("signal-note.md"));
     assert!(!payload.contains("Signal validation context"));
